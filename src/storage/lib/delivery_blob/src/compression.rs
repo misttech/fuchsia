@@ -20,6 +20,89 @@ pub use compression_algorithm::{
 
 /// Validated chunk information from an archive. Compressed ranges are relative to the start of
 /// compressed data (i.e. they start after the header and seek table).
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub struct ZstdError(pub usize);
+
+impl std::fmt::Display for ZstdError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let msg = zstd::zstd_safe::get_error_name(self.0);
+        let enum_code = unsafe { zstd::zstd_safe::zstd_sys::ZSTD_getErrorCode(self.0) };
+        write!(f, "{:?} ({})", enum_code, msg)
+    }
+}
+
+impl std::fmt::Debug for ZstdError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
+}
+
+#[cfg(target_os = "fuchsia")]
+impl From<ZstdError> for zx::Status {
+    fn from(err: ZstdError) -> Self {
+        use zstd::zstd_safe::zstd_sys::ZSTD_ErrorCode::*;
+        let code = unsafe { zstd::zstd_safe::zstd_sys::ZSTD_getErrorCode(err.0) };
+        match code {
+            ZSTD_error_corruption_detected
+            | ZSTD_error_checksum_wrong
+            | ZSTD_error_literals_headerWrong
+            | ZSTD_error_dictionary_corrupted
+            | ZSTD_error_prefix_unknown => zx::Status::IO_DATA_INTEGRITY,
+
+            ZSTD_error_version_unsupported
+            | ZSTD_error_frameParameter_unsupported
+            | ZSTD_error_parameter_unsupported => zx::Status::NOT_SUPPORTED,
+
+            ZSTD_error_parameter_outOfBound
+            | ZSTD_error_srcSize_wrong
+            | ZSTD_error_dstSize_tooSmall => zx::Status::INVALID_ARGS,
+
+            ZSTD_error_no_error
+            | ZSTD_error_GENERIC
+            | ZSTD_error_frameParameter_windowTooLarge
+            | ZSTD_error_dictionary_wrong
+            | ZSTD_error_dictionaryCreation_failed
+            | ZSTD_error_parameter_combination_unsupported
+            | ZSTD_error_tableLog_tooLarge
+            | ZSTD_error_maxSymbolValue_tooLarge
+            | ZSTD_error_maxSymbolValue_tooSmall
+            | ZSTD_error_stabilityCondition_notRespected
+            | ZSTD_error_stage_wrong
+            | ZSTD_error_init_missing
+            | ZSTD_error_memory_allocation
+            | ZSTD_error_workSpace_tooSmall
+            | ZSTD_error_dstBuffer_null
+            | ZSTD_error_noForwardProgress_destFull
+            | ZSTD_error_noForwardProgress_inputEmpty
+            | ZSTD_error_frameIndex_tooLarge
+            | ZSTD_error_seekableIO
+            | ZSTD_error_dstBuffer_wrong
+            | ZSTD_error_srcBuffer_wrong
+            | ZSTD_error_sequenceProducer_failed
+            | ZSTD_error_externalSequences_invalid
+            | ZSTD_error_maxCode => zx::Status::INTERNAL,
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum FormatError {
+    #[error("Zstd error: {0}")]
+    Zstd(ZstdError),
+    #[error("LZ4 error: {0}")]
+    Lz4(lz4::Error),
+}
+
+#[cfg(target_os = "fuchsia")]
+impl From<&FormatError> for zx::Status {
+    fn from(err: &FormatError) -> Self {
+        match err {
+            FormatError::Zstd(e) => zx::Status::from(*e),
+            FormatError::Lz4(_) => zx::Status::IO_DATA_INTEGRITY,
+        }
+    }
+}
+
 // *NOTE*: Use caution when using the `#[source]` attribute or naming fields `source`. Some callers
 // attempt to downcast library errors into the concrete type of the root cause.
 // See https://docs.rs/thiserror/latest/thiserror/ for more information.
@@ -37,11 +120,11 @@ pub enum ChunkedArchiveError {
     #[error("Value is out of range or cannot be represented in specified type.")]
     OutOfRange,
 
-    #[error("Error decompressing chunk {index}: `{error}`.")]
-    DecompressionError { index: usize, error: std::io::Error },
+    #[error("Error decompressing chunk {index}: {error}")]
+    DecompressionError { index: usize, error: FormatError },
 
-    #[error("Error compressing chunk {index}: `{error}`.")]
-    CompressionError { index: usize, error: std::io::Error },
+    #[error("Error compressing chunk {index}: {error}")]
+    CompressionError { index: usize, error: FormatError },
 }
 
 /// Options for constructing a chunked archive.
@@ -116,22 +199,20 @@ impl ChunkedArchiveOptions {
     pub fn compressor(&self) -> Compressor {
         match self {
             Self::V2 { compression_level, .. } => {
-                let mut compressor = zstd::bulk::Compressor::default();
-                compressor
-                    .set_parameter(zstd::zstd_safe::CParameter::CompressionLevel(
-                        *compression_level,
-                    ))
-                    .expect("setting the compression level should never fail");
-                Compressor::Zstd(compressor)
+                let mut cctx = zstd::zstd_safe::CCtx::create();
+                cctx.set_parameter(zstd::zstd_safe::CParameter::CompressionLevel(
+                    *compression_level,
+                ))
+                .expect("setting the compression level should never fail");
+                Compressor::Zstd(cctx)
             }
             Self::V3 { compression_algorithm: CompressionAlgorithm::Zstd } => {
-                let mut compressor = zstd::bulk::Compressor::default();
-                compressor
-                    .set_parameter(zstd::zstd_safe::CParameter::CompressionLevel(
-                        Self::V3_ZSTD_COMPRESSION_LEVEL,
-                    ))
-                    .expect("setting the compression level should never fail");
-                Compressor::Zstd(compressor)
+                let mut cctx = zstd::zstd_safe::CCtx::create();
+                cctx.set_parameter(zstd::zstd_safe::CParameter::CompressionLevel(
+                    Self::V3_ZSTD_COMPRESSION_LEVEL,
+                ))
+                .expect("setting the compression level should never fail");
+                Compressor::Zstd(cctx)
             }
             Self::V3 { compression_algorithm: CompressionAlgorithm::Lz4 } => {
                 Compressor::Lz4 { compression_level: lz4::HcCompressionLevel::custom(12) }
@@ -972,8 +1053,32 @@ mod tests {
                 .unwrap();
         assert!(matches!(
             decompressor.update(&chunk_data, &mut |_chunk| {}),
-            Err(ChunkedArchiveError::DecompressionError { index: 0, .. })
+            Err(ChunkedArchiveError::DecompressionError { .. })
         ));
+    }
+
+    #[test]
+    fn test_decompressor_zstd_data_corruption() {
+        let data = vec![0; 3_000_000];
+        let mut compressed: Vec<u8> = vec![];
+        let archive = match ChunkedArchive::new(&data, Type1Blob::CHUNKED_ARCHIVE_OPTIONS) {
+            Ok(a) => a,
+            Err(e) => {
+                panic!("Failed to compress in test: {:?}", e);
+            }
+        };
+        archive.write(&mut compressed).expect("write archive");
+        let (decoded_archive, chunk_data) =
+            decode_archive(&compressed, compressed.len()).unwrap().unwrap();
+
+        let mut corrupt_data = chunk_data.to_vec();
+        if corrupt_data.len() > 100 {
+            corrupt_data[100] = !corrupt_data[100];
+        }
+
+        let mut decompressor = ChunkedDecompressor::new(decoded_archive).unwrap();
+        let result = decompressor.update(&corrupt_data, &mut |_chunk| {});
+        assert!(matches!(result, Err(ChunkedArchiveError::DecompressionError { .. })));
     }
 
     #[test]

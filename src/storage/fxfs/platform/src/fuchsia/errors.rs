@@ -16,8 +16,18 @@ pub fn map_to_status(error: anyhow::Error) -> Status {
     } else if let Some(delivery_blob_error) = error.root_cause().downcast_ref::<DeliveryBlobError>()
     {
         delivery_blob_error.clone().into()
-    } else if let Some(_) = error.root_cause().downcast_ref::<ChunkedArchiveError>() {
-        Status::IO_DATA_INTEGRITY
+    } else if let Some(chunked_archive_error) =
+        error.root_cause().downcast_ref::<ChunkedArchiveError>()
+    {
+        match chunked_archive_error {
+            ChunkedArchiveError::DecompressionError { error, .. } => Status::from(error),
+            ChunkedArchiveError::IntegrityError | ChunkedArchiveError::BadMagic => {
+                Status::IO_DATA_INTEGRITY
+            }
+            ChunkedArchiveError::InvalidVersion => Status::NOT_SUPPORTED,
+            ChunkedArchiveError::OutOfRange => Status::INVALID_ARGS,
+            ChunkedArchiveError::CompressionError { .. } => Status::INTERNAL,
+        }
     } else {
         // Print the internal error if we re-map it because we will lose any context after this.
         warn!(error:?; "Internal error");

@@ -8,17 +8,18 @@
 //! The compressors and decompressors are enums rather than traits with multiple implementations
 //! because the enums are small and avoid the heap allocation of `Box<dyn Decompressor>`.
 
+use super::{FormatError, ZstdError};
 use crate::compression::ChunkedArchiveError;
 
 thread_local! {
-    static ZSTD_COMPRESSOR: std::cell::RefCell<zstd::bulk::Compressor<'static>> =
+    static ZSTD_COMPRESSOR: std::cell::RefCell<zstd::zstd_safe::CCtx<'static>> =
         std::cell::RefCell::new({
-            let mut compressor = zstd::bulk::Compressor::default();
-            compressor.set_parameter(zstd::zstd_safe::CParameter::ChecksumFlag(true)).unwrap();
-            compressor
+            let mut cctx = zstd::zstd_safe::CCtx::create();
+            cctx.set_parameter(zstd::zstd_safe::CParameter::ChecksumFlag(true)).unwrap();
+            cctx
         });
-    static ZSTD_DECOMPRESSOR: std::cell::RefCell<zstd::bulk::Decompressor<'static>> =
-        std::cell::RefCell::new(zstd::bulk::Decompressor::default());
+    static ZSTD_DECOMPRESSOR: std::cell::RefCell<zstd::zstd_safe::DCtx<'static>> =
+        std::cell::RefCell::new(zstd::zstd_safe::DCtx::default());
 }
 
 /// The compression algorithm used to compress the chunks.
@@ -34,7 +35,7 @@ impl CompressionAlgorithm {
     /// algorithm.
     pub fn decompressor(&self) -> Decompressor {
         match self {
-            Self::Zstd => Decompressor::Zstd(zstd::bulk::Decompressor::default()),
+            Self::Zstd => Decompressor::Zstd(zstd::zstd_safe::DCtx::default()),
             Self::Lz4 => Decompressor::Lz4,
         }
     }
@@ -70,7 +71,7 @@ impl TryFrom<u8> for CompressionAlgorithm {
 
 /// A decompressor that is capable of decompressing chunks of a compressed archive.
 pub enum Decompressor {
-    Zstd(zstd::bulk::Decompressor<'static>),
+    Zstd(zstd::zstd_safe::DCtx<'static>),
     Lz4,
 }
 
@@ -83,15 +84,20 @@ impl Decompressor {
         chunk_index: usize,
     ) -> Result<Vec<u8>, ChunkedArchiveError> {
         match self {
-            Self::Zstd(decompressor) => {
-                decompressor.decompress(data, uncompressed_size).map_err(|error| {
-                    ChunkedArchiveError::DecompressionError { index: chunk_index, error }
-                })
+            Self::Zstd(dctx) => {
+                let mut buffer = Vec::with_capacity(uncompressed_size);
+                match dctx.decompress(&mut buffer, data) {
+                    Ok(_) => Ok(buffer),
+                    Err(code) => Err(ChunkedArchiveError::DecompressionError {
+                        index: chunk_index,
+                        error: FormatError::Zstd(ZstdError(code)),
+                    }),
+                }
             }
             Self::Lz4 => lz4::decompress(data, uncompressed_size).map_err(|_| {
                 ChunkedArchiveError::DecompressionError {
                     index: chunk_index,
-                    error: std::io::Error::other("LZ4 decompression error"),
+                    error: FormatError::Lz4(lz4::Error::DecompressionFailed),
                 }
             }),
         }
@@ -105,15 +111,17 @@ impl Decompressor {
         chunk_index: usize,
     ) -> Result<usize, ChunkedArchiveError> {
         match self {
-            Self::Zstd(decompressor) => {
-                decompressor.decompress_to_buffer(data, destination).map_err(|error| {
-                    ChunkedArchiveError::DecompressionError { index: chunk_index, error }
-                })
-            }
+            Self::Zstd(dctx) => match dctx.decompress(destination, data) {
+                Ok(size) => Ok(size),
+                Err(code) => Err(ChunkedArchiveError::DecompressionError {
+                    index: chunk_index,
+                    error: FormatError::Zstd(ZstdError(code)),
+                }),
+            },
             Self::Lz4 => lz4::decompress_into(data, destination).map_err(|e| {
                 ChunkedArchiveError::DecompressionError {
                     index: chunk_index,
-                    error: std::io::Error::other(e),
+                    error: FormatError::Lz4(e),
                 }
             }),
         }
@@ -137,14 +145,20 @@ impl ThreadLocalDecompressor {
     ) -> Result<Vec<u8>, ChunkedArchiveError> {
         match self {
             Self::Zstd => ZSTD_DECOMPRESSOR.with(|decompressor| {
-                decompressor.borrow_mut().decompress(data, uncompressed_size).map_err(|error| {
-                    ChunkedArchiveError::DecompressionError { index: chunk_index, error }
-                })
+                let mut dctx = decompressor.borrow_mut();
+                let mut buffer = Vec::with_capacity(uncompressed_size);
+                match dctx.decompress(&mut buffer, data) {
+                    Ok(_) => Ok(buffer),
+                    Err(code) => Err(ChunkedArchiveError::DecompressionError {
+                        index: chunk_index,
+                        error: FormatError::Zstd(ZstdError(code)),
+                    }),
+                }
             }),
             Self::Lz4 => lz4::decompress(data, uncompressed_size).map_err(|_| {
                 ChunkedArchiveError::DecompressionError {
                     index: chunk_index,
-                    error: std::io::Error::other("LZ4 decompression error"),
+                    error: FormatError::Lz4(lz4::Error::DecompressionFailed),
                 }
             }),
         }
@@ -159,14 +173,19 @@ impl ThreadLocalDecompressor {
     ) -> Result<usize, ChunkedArchiveError> {
         match self {
             Self::Zstd => ZSTD_DECOMPRESSOR.with(|decompressor| {
-                decompressor.borrow_mut().decompress_to_buffer(data, destination).map_err(|error| {
-                    ChunkedArchiveError::DecompressionError { index: chunk_index, error }
-                })
+                let mut dctx = decompressor.borrow_mut();
+                match dctx.decompress(destination, data) {
+                    Ok(size) => Ok(size),
+                    Err(code) => Err(ChunkedArchiveError::DecompressionError {
+                        index: chunk_index,
+                        error: FormatError::Zstd(ZstdError(code)),
+                    }),
+                }
             }),
             Self::Lz4 => lz4::decompress_into(data, destination).map_err(|e| {
                 ChunkedArchiveError::DecompressionError {
                     index: chunk_index,
-                    error: std::io::Error::other(e),
+                    error: FormatError::Lz4(e),
                 }
             }),
         }
@@ -175,7 +194,7 @@ impl ThreadLocalDecompressor {
 
 /// A compressor that is capable of compressing chunks of a chunked-compression archive.
 pub enum Compressor {
-    Zstd(zstd::bulk::Compressor<'static>),
+    Zstd(zstd::zstd_safe::CCtx<'static>),
     Lz4 { compression_level: lz4::HcCompressionLevel },
 }
 
@@ -187,11 +206,25 @@ impl Compressor {
         chunk_index: usize,
     ) -> Result<Vec<u8>, ChunkedArchiveError> {
         match self {
-            Self::Zstd(compressor) => compressor.compress(data).map_err(|error| {
-                ChunkedArchiveError::CompressionError { index: chunk_index, error }
-            }),
-            Self::Lz4 { compression_level } => Ok(lz4::compress_hc(data, *compression_level)
-                .expect("chunk size is less than max LZ4 input")),
+            Self::Zstd(cctx) => {
+                let buffer_len = zstd::zstd_safe::compress_bound(data.len());
+                let mut buffer = Vec::with_capacity(buffer_len);
+                match cctx.compress2(&mut buffer, data) {
+                    Ok(_) => Ok(buffer),
+                    Err(code) => Err(ChunkedArchiveError::CompressionError {
+                        index: chunk_index,
+                        error: FormatError::Zstd(ZstdError(code)),
+                    }),
+                }
+            }
+            Self::Lz4 { compression_level } => {
+                lz4::compress_hc(data, *compression_level).map_err(|error| {
+                    ChunkedArchiveError::CompressionError {
+                        index: chunk_index,
+                        error: FormatError::Lz4(error),
+                    }
+                })
+            }
         }
     }
 }
@@ -212,17 +245,29 @@ impl ThreadLocalCompressor {
     ) -> Result<Vec<u8>, ChunkedArchiveError> {
         match self {
             Self::Zstd { compression_level } => ZSTD_COMPRESSOR.with(|compressor| {
-                let mut compressor = compressor.borrow_mut();
-                compressor
-                    .set_compression_level(*compression_level)
-                    .expect("setting the compression level should never fail");
-                compressor.compress(data).map_err(|error| ChunkedArchiveError::CompressionError {
-                    index: chunk_index,
-                    error,
-                })
+                let mut cctx = compressor.borrow_mut();
+                cctx.set_parameter(zstd::zstd_safe::CParameter::CompressionLevel(
+                    *compression_level,
+                ))
+                .expect("setting the compression level should never fail");
+                let buffer_len = zstd::zstd_safe::compress_bound(data.len());
+                let mut buffer = Vec::with_capacity(buffer_len);
+                match cctx.compress2(&mut buffer, data) {
+                    Ok(_) => Ok(buffer),
+                    Err(code) => Err(ChunkedArchiveError::CompressionError {
+                        index: chunk_index,
+                        error: FormatError::Zstd(ZstdError(code)),
+                    }),
+                }
             }),
-            Self::Lz4 { compression_level } => Ok(lz4::compress_hc(data, *compression_level)
-                .expect("chunk size is less than max LZ4 input")),
+            Self::Lz4 { compression_level } => {
+                lz4::compress_hc(data, *compression_level).map_err(|error| {
+                    ChunkedArchiveError::CompressionError {
+                        index: chunk_index,
+                        error: FormatError::Lz4(error),
+                    }
+                })
+            }
         }
     }
 }
