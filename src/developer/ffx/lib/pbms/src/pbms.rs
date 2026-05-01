@@ -9,7 +9,7 @@ use crate::gcs::fetch_from_gcs;
 use ::gcs::client::{
     Client, DirectoryProgress, FileProgress, ProgressResponse, ProgressResult, Throttle,
 };
-use anyhow::{Context, Result, bail};
+
 use async_fs::File;
 use futures::{AsyncWriteExt as _, TryStreamExt as _};
 use hyper::StatusCode;
@@ -40,25 +40,21 @@ pub(crate) async fn fetch_from_url<F, I>(
     progress: &F,
     ui: &I,
     client: &Client,
-) -> Result<()>
+) -> std::result::Result<(), crate::PbmsError>
 where
     F: Fn(DirectoryProgress<'_>, FileProgress<'_>) -> ProgressResult,
     I: structured_ui::Interface,
 {
     log::debug!("fetch_from_url {:?}", product_url);
     if product_url.scheme() == GS_SCHEME {
-        fetch_from_gcs(product_url.as_str(), &local_dir, auth_flow, progress, ui, client)
-            .await
-            .context("Downloading from GCS.")?;
+        fetch_from_gcs(product_url.as_str(), &local_dir, auth_flow, progress, ui, client).await?;
     } else if product_url.scheme() == "http" || product_url.scheme() == "https" {
-        fetch_from_web(product_url, &local_dir, progress, ui)
-            .await
-            .context("fetching from http(s)")?;
+        fetch_from_web(product_url, &local_dir, progress, ui).await?;
     } else if let Some(_) = &path_from_file_url(product_url) {
         // Since the file is already local, no fetch is necessary.
         log::debug!("Found local file path {:?}", product_url);
     } else {
-        bail!("Unexpected URI scheme in ({:?})", product_url);
+        return Err(crate::PbmsError::UnexpectedScheme(product_url.scheme().to_string()));
     }
     Ok(())
 }
@@ -68,7 +64,7 @@ async fn fetch_from_web<F, I>(
     local_dir: &Path,
     progress: &F,
     _ui: &I,
-) -> Result<()>
+) -> std::result::Result<(), crate::PbmsError>
 where
     F: Fn(DirectoryProgress<'_>, FileProgress<'_>) -> ProgressResult,
     I: structured_ui::Interface,
@@ -77,25 +73,27 @@ where
     let name = if let Some((_, name)) = product_uri.path().rsplit_once('/') {
         name
     } else {
-        unimplemented!()
+        return Err(crate::PbmsError::MissingNameInUri);
     };
 
     if name.is_empty() {
-        unimplemented!("downloading a directory from a web server is not implemented");
+        return Err(crate::PbmsError::WebDirNotSupported);
     }
 
     let res = fuchsia_hyper::new_client()
         .get(hyper::Uri::from_maybe_shared(product_uri.to_string())?)
-        .await
-        .with_context(|| format!("Requesting {}", product_uri))?;
+        .await?;
 
     match res.status() {
         StatusCode::OK => {}
         StatusCode::NOT_FOUND => {
-            bail!("{} not found", product_uri);
+            return Err(crate::PbmsError::HttpFailed(
+                StatusCode::NOT_FOUND,
+                product_uri.to_string(),
+            ));
         }
         status => {
-            bail!("Unexpected HTTP status downloading {}: {}", product_uri, status);
+            return Err(crate::PbmsError::HttpFailed(status, product_uri.to_string()));
         }
     }
 
@@ -103,20 +101,19 @@ where
     let length = if res.headers().contains_key(CONTENT_LENGTH) {
         res.headers()
             .get(CONTENT_LENGTH)
-            .context("getting content length")?
-            .to_str()?
+            .ok_or_else(|| crate::PbmsError::MissingContentLength)?
+            .to_str()
+            .map_err(|e| crate::PbmsError::InvalidContentLength(e.to_string()))?
             .parse::<u64>()
-            .context("parsing content length")?
+            .map_err(|e| crate::PbmsError::InvalidContentLength(e.to_string()))?
     } else {
         0
     };
 
-    std::fs::create_dir_all(local_dir)
-        .with_context(|| format!("Creating {}", local_dir.display()))?;
+    std::fs::create_dir_all(local_dir)?;
 
     let path = local_dir.join(name);
-    let mut file =
-        File::create(&path).await.with_context(|| format!("Creating {}", path.display()))?;
+    let mut file = File::create(&path).await?;
 
     let mut stream = res.into_body();
 
@@ -127,10 +124,8 @@ where
     // progress UI. The throttle makes the overhead negligible.
     let mut throttle = Throttle::from_duration(std::time::Duration::from_millis(500));
     let url = product_uri.to_string();
-    while let Some(chunk) =
-        stream.try_next().await.with_context(|| format!("Downloading {}", product_uri))?
-    {
-        file.write_all(&chunk).await.with_context(|| format!("Writing {}", path.display()))?;
+    while let Some(chunk) = stream.try_next().await? {
+        file.write_all(&chunk).await?;
         at += chunk.len() as u64;
         if at > of {
             of = at;
@@ -140,7 +135,7 @@ where
                 DirectoryProgress { name: &url, at: 0, of: 1, units: "files" },
                 FileProgress { name: &url, at, of, units: "bytes" },
             )
-            .context("rendering progress")?
+            .map_err(crate::PbmsError::RenderProgress)?
             {
                 ProgressResponse::Cancel => break,
                 _ => (),
@@ -148,7 +143,7 @@ where
         }
     }
 
-    file.close().await.with_context(|| format!("Closing {}", path.display()))?;
+    file.close().await?;
 
     Ok(())
 }
@@ -184,12 +179,11 @@ mod tests {
     }
 
     #[fuchsia::test]
-    #[should_panic(expected = "Unexpected URI scheme")]
     async fn test_fetch_from_url() {
         let url = url::Url::parse("fake://foo").expect("url");
         let ui = structured_ui::MockUi::new();
         let client = Client::initial().expect("creating client");
-        fetch_from_url(
+        let result = fetch_from_url(
             &url,
             Path::new("unused").to_path_buf(),
             &AuthFlowChoice::Default,
@@ -197,7 +191,9 @@ mod tests {
             &ui,
             &client,
         )
-        .await
-        .expect("bad fetch");
+        .await;
+        assert!(
+            matches!(result.unwrap_err(), crate::PbmsError::UnexpectedScheme(s) if s == "fake")
+        );
     }
 }

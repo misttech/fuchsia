@@ -182,7 +182,8 @@ impl EngineOperations for EngineOperationsData {
                     b.clone()
                 }
             }
-            None => pbms::get_product_bundle_path(&self.context)?,
+            None => pbms::get_product_bundle_path(&self.context)
+                .map_err(|e| anyhow::anyhow!("{:?}", e))?,
         };
         pbms::load_product_bundle(&self.context, &pb)
             .await

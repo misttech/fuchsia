@@ -16,7 +16,6 @@ rustc_library("lib") {
 
   deps = [
     "//src/developer/ffx/config:lib",
-    "//src/developer/ffx/lib/errors:lib",
     "//src/developer/lib/credentials:lib",
     "//src/lib/assembly/product_bundle",
     "//src/lib/fuchsia-hyper",
@@ -30,6 +29,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:hyper",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:url",
   ]
 

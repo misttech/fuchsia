@@ -22,9 +22,8 @@
 use crate::gcs::string_from_gcs;
 use crate::pbms::{GS_SCHEME, path_from_file_url};
 use ::gcs::client::{Client, FileProgress, ProgressResult};
-use anyhow::{Context, Result, bail};
+use ::gcs::error::GcsError;
 use camino::{Utf8Path, Utf8PathBuf};
-use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use hyper::{Body, Method, Request};
 use std::path::{Path, PathBuf};
@@ -57,7 +56,109 @@ pub enum AuthFlowChoice {
 
 const PRODUCT_BUNDLE_PATH_KEY: &str = "product.path";
 
-pub fn get_product_bundle_path(context: &EnvironmentContext) -> Result<String> {
+#[derive(Debug, thiserror::Error)]
+pub enum PbmsError {
+    #[error("No product bundle path configured, nor specified.")]
+    NoPathConfigured,
+
+    #[error("Could not find product bundle in {0}")]
+    NotFound(String),
+
+    #[error("Could not find product bundle in {0} nor {1}")]
+    NotFoundAtPaths(String, String),
+
+    #[error("Failed to load product bundle: {0}")]
+    Load(#[from] product_bundle::ProductBundleLoadError),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Url parse error: {0}")]
+    UrlParse(#[from] url::ParseError),
+
+    #[error("Hyper error: {0}")]
+    Hyper(#[from] hyper::Error),
+
+    #[error("Http error failed with status {0} for {1}")]
+    HttpFailed(hyper::StatusCode, String),
+
+    #[error("Unexpected URI scheme in {0}")]
+    UnexpectedScheme(String),
+
+    #[error("GCS error: {0}")]
+    Gcs(#[from] GcsError),
+
+    #[error(
+        "The output directory is {0:?} which looks like a mistake. Please try a different output directory path."
+    )]
+    UnsafeOutputDir(PathBuf),
+
+    #[error(
+        "The directory does not resemble an old product bundle. For caution's sake, please remove the output directory {0:?} by hand and try again."
+    )]
+    NotAProductBundle(PathBuf),
+
+    #[error(
+        "The output directory already exists. Please provide another directory to write to, or use --force to overwrite the contents of {0:?}."
+    )]
+    OutputDirAlreadyExists(PathBuf),
+
+    #[error("Cannot safely concat {0} onto {1}")]
+    UnsafeConcat(String, String),
+
+    #[error("Failed to parse JSON: {0}")]
+    ParseJson(#[from] serde_json::Error),
+
+    #[error("Invalid GS URL: {0}")]
+    InvalidGsUrl(String),
+
+    #[error("Path has no parent: {0}")]
+    NoParent(PathBuf),
+
+    #[error("Missing name in product URI")]
+    MissingNameInUri,
+
+    #[error("Downloading directory from web server is not implemented")]
+    WebDirNotSupported,
+
+    #[error("Invalid URI: {0}")]
+    InvalidUri(#[from] hyper::http::uri::InvalidUri),
+
+    #[error("Missing content length header")]
+    MissingContentLength,
+
+    #[error("Invalid content length: {0}")]
+    InvalidContentLength(String),
+
+    #[error("Failed to render progress: {0}")]
+    RenderProgress(#[source] anyhow::Error),
+
+    #[error("HTTP request builder failed: {0}")]
+    HttpBuilder(#[from] hyper::http::Error),
+
+    #[error("Invalid file URL: {0}")]
+    InvalidFileUrl(String),
+
+    #[error("GCS operation failed: {0}")]
+    GcsOperation(#[source] anyhow::Error),
+
+    #[error("Failed to get new access token")]
+    GetAccessTokenFailed,
+
+    #[error("Refresh token not supported for this auth flow")]
+    RefreshTokenNotSupported,
+
+    #[error("Failed to save credentials: {0}")]
+    SaveCredentials(#[source] anyhow::Error),
+
+    #[error("Failed to get refresh token: {0}")]
+    GetRefreshToken(#[source] anyhow::Error),
+
+    #[error("Progress cancelled by user")]
+    ProgressCancelled,
+}
+
+pub fn get_product_bundle_path(context: &EnvironmentContext) -> Result<String, PbmsError> {
     Ok(context.get(PRODUCT_BUNDLE_PATH_KEY).unwrap_or_default())
 }
 
@@ -104,36 +205,36 @@ pub fn is_local_product_bundle<P: AsRef<Path>>(product_bundle: P) -> bool {
 pub async fn load_product_bundle(
     env: &EnvironmentContext,
     product_bundle: impl AsRef<Utf8Path>,
-) -> Result<LoadedProductBundle> {
+) -> Result<LoadedProductBundle, PbmsError> {
     // Can't use unwrap_or_else here since ffx config get is async.
     let bundle_path: &Utf8Path = product_bundle.as_ref();
     if bundle_path.as_std_path() == Path::new("") {
-        anyhow::bail!("No product bundle path configured, nor specified.");
+        return Err(PbmsError::NoPathConfigured);
     }
 
     log::debug!("Loading a product bundle: {:?}", bundle_path);
 
     if is_local_product_bundle(&bundle_path) {
-        return LoadedProductBundle::try_load_from(&bundle_path).map_err(|e| anyhow::anyhow!(e));
+        return Ok(LoadedProductBundle::try_load_from(&bundle_path)?);
     } else if bundle_path.is_relative() {
         if let Some(base_path) = env.build_dir().map(Utf8Path::from_path).flatten() {
             let base_dir_based_path: Utf8PathBuf = base_path.join(&bundle_path);
 
             if is_local_product_bundle(&base_dir_based_path) {
-                return LoadedProductBundle::try_load_from(&base_dir_based_path)
-                    .map_err(|e| anyhow::anyhow!(e));
+                return Ok(LoadedProductBundle::try_load_from(&base_dir_based_path)?);
             } else {
-                anyhow::bail!(
-                    "Could not find product bundle in {bundle_path:?} nor {base_dir_based_path:?}"
-                );
+                return Err(PbmsError::NotFoundAtPaths(
+                    bundle_path.to_string(),
+                    base_dir_based_path.to_string(),
+                ));
             }
         }
     }
-    anyhow::bail!("Could not find product bundle in {bundle_path:?}");
+    return Err(PbmsError::NotFound(bundle_path.to_string()));
 }
 
 /// Remove prior output directory, if necessary.
-pub async fn make_way_for_output(local_dir: &Path, force: bool) -> Result<()> {
+pub async fn make_way_for_output(local_dir: &Path, force: bool) -> Result<(), PbmsError> {
     log::debug!("make_way_for_output {:?}, force {}", local_dir, force);
     if local_dir.exists() {
         log::debug!("local_dir.exists {:?}", local_dir);
@@ -142,31 +243,15 @@ pub async fn make_way_for_output(local_dir: &Path, force: bool) -> Result<()> {
             return Ok(());
         } else if force {
             if local_dir == Path::new("") || local_dir == Path::new("/") {
-                ffx_bail!(
-                    "The output directory is {:?} which looks like a mistake. \
-                    Please try a different output directory path.",
-                    local_dir
-                );
+                return Err(PbmsError::UnsafeOutputDir(local_dir.to_path_buf()));
             }
             if !local_dir.join("product_bundle.json").exists() {
-                ffx_bail!(
-                    "The directory does not resemble an old product \
-                    bundle. For caution's sake, please remove the output \
-                    directory {:?} by hand and try again.",
-                    local_dir
-                );
+                return Err(PbmsError::NotAProductBundle(local_dir.to_path_buf()));
             }
-            async_fs::remove_dir_all(&local_dir)
-                .await
-                .with_context(|| format!("removing output dir {:?}", local_dir))?;
+            async_fs::remove_dir_all(&local_dir).await?;
             log::debug!("Removed all of {:?}", local_dir);
         } else {
-            ffx_bail!(
-                "The output directory already exists. Please provide \
-                another directory to write to, or use --force to overwrite the \
-                contents of {:?}.",
-                local_dir
-            );
+            return Err(PbmsError::OutputDirAlreadyExists(local_dir.to_path_buf()));
         }
     }
     log::debug!("local_dir dir clear.");
@@ -186,7 +271,7 @@ pub async fn string_from_url<F, I>(
     progress: &F,
     ui: &I,
     client: &Client,
-) -> Result<String>
+) -> Result<String, PbmsError>
 where
     F: Fn(FileProgress<'_>) -> ProgressResult,
     I: structured_ui::Interface,
@@ -201,26 +286,20 @@ where
                 .body(Body::empty())?;
             let res = https_client.request(req).await?;
             if !res.status().is_success() {
-                bail!("http(s) request failed, status {}, for {}", res.status(), product_url);
+                return Err(PbmsError::HttpFailed(res.status(), product_url.to_string()));
             }
             let bytes = hyper::body::to_bytes(res.into_body()).await?;
             String::from_utf8_lossy(&bytes).to_string()
         }
-        GS_SCHEME => string_from_gcs(product_url.as_str(), auth_flow, progress, ui, client)
-            .await
-            .context("Downloading from GCS as string.")?,
+        GS_SCHEME => string_from_gcs(product_url.as_str(), auth_flow, progress, ui, client).await?,
         "file" => {
             if let Some(file_path) = &path_from_file_url(product_url) {
-                std::fs::read_to_string(file_path)
-                    .with_context(|| format!("string_from_url reading {:?}", file_path))?
+                std::fs::read_to_string(file_path).map_err(|e| PbmsError::Io(e))?
             } else {
-                bail!(
-                    "Invalid URL (e.g.: 'file://foo', with two initial slashes is invalid): {}",
-                    product_url
-                )
+                return Err(PbmsError::InvalidFileUrl(product_url.to_string()));
             }
         }
-        _ => bail!("Unexpected URI scheme in ({:?})", product_url),
+        _ => return Err(PbmsError::UnexpectedScheme(product_url.scheme().to_string())),
     })
 }
 
@@ -241,36 +320,27 @@ mod tests {
         // If pb provided but invalid path return None
         let pb_path = build_dir.join("__invalid__").to_string();
         let pb = load_product_bundle(&env.context, &pb_path.clone()).await;
-        assert_eq!(
-            pb.err().unwrap().to_string(),
-            format!("Could not find product bundle in \"{pb_path}\"")
-        );
+        assert!(matches!(pb.err().unwrap(), PbmsError::NotFound(p) if p == pb_path));
 
         // If pb provided and absolute and valid return Some(abspath)
         let pb = load_product_bundle(&env.context, build_dir).await;
-        assert_eq!(
-            pb.err().unwrap().to_string(),
-            format!("Failed to open file {build_dir}/product_bundle.json: No such file or directory (os error 2)")
-        );
+        assert!(matches!(
+            pb.err().unwrap(),
+            PbmsError::Load(product_bundle::ProductBundleLoadError::OpenFile(_, _))
+        ));
 
         // If pb provided, relative and but to a file not a directory.
         let relpath = "foo".to_string();
         std::fs::File::create(build_dir.join(relpath.clone())).expect("create relative dir");
         let pb = load_product_bundle(&env.context, &relpath.clone()).await;
-        assert_eq!(
-            pb.err().unwrap().to_string(),
-            format!("{}/{relpath} is not a directory", build_dir.to_string())
-        );
+        assert!(matches!(
+            pb.err().unwrap(),
+            PbmsError::Load(product_bundle::ProductBundleLoadError::NotADirectory(_))
+        ));
 
         // If pb provided and relative and invalid return None
         let pb = load_product_bundle(&env.context, &"invalid".to_string()).await;
-        assert_eq!(
-            pb.err().unwrap().to_string(),
-            format!(
-                "Could not find product bundle in \"invalid\" nor \"{}/invalid\"",
-                build_dir.to_string()
-            )
-        );
+        assert!(matches!(pb.err().unwrap(), PbmsError::NotFoundAtPaths(_, _)));
     }
 
     #[fuchsia::test]
@@ -279,10 +349,7 @@ mod tests {
 
         // Can handle an empty build path
         let pb = load_product_bundle(&env.context, "some_place".to_string()).await;
-        assert_eq!(
-            pb.err().unwrap().to_string(),
-            format!("Could not find product bundle in \"some_place\"")
-        );
+        assert!(matches!(pb.err().unwrap(), PbmsError::NotFound(p) if p == "some_place"));
     }
 
     #[test]

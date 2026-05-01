@@ -111,7 +111,8 @@ pub async fn from_sdk<F: FastbootInterface>(
     log::debug!("fastboot manifest from_sdk");
     match cmd.product_bundle.as_ref() {
         Some(b) => {
-            let product_bundle = load_product_bundle(context, b).await?.into();
+            let product_bundle =
+                load_product_bundle(context, b).await.map_err(|e| anyhow::anyhow!(e))?.into();
             FlashManifest {
                 resolver: Resolver::new(PathBuf::from(b))?,
                 version: FlashManifestVersion::from_product_bundle(&product_bundle)?,

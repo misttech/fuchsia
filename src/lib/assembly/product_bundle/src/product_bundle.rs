@@ -18,59 +18,78 @@ use std::ops::Deref;
 use std::process::Command;
 use zip::read::ZipArchive;
 
+/// Errors that can occur when loading a product bundle.
 #[derive(Debug, thiserror::Error)]
 pub enum ProductBundleLoadError {
+    /// The path is not a directory.
     #[error("{0} is not a directory")]
     NotADirectory(String),
 
+    /// Failed to open a file.
     #[error("Failed to open file {0}: {1}")]
     OpenFile(Utf8PathBuf, #[source] std::io::Error),
 
+    /// Failed to parse product bundle JSON.
     #[error("Failed to parse product bundle: {0}")]
     Parse(#[from] serde_json::Error),
 
+    /// Product bundle v1 is no longer supported.
     #[error("Product bundle v1 is no longer supported")]
     V1NotSupported,
 
+    /// Canonicalization error.
     #[error("Canonicalization error: {0}")]
     Canonicalization(#[from] CanonicalizeError),
 
+    /// Zip error.
     #[error("Zip error: {0}")]
     Zip(#[from] zip::result::ZipError),
 
+    /// File 'product_bundle.json' not found in zip archive.
     #[error("File 'product_bundle.json' not found in zip archive")]
     NotFoundInZip,
 
+    /// Malformed zip archive.
     #[error("Malformed zip archive: {0}")]
     MalformedZip(String),
 }
 
+/// Errors that can occur when writing a product bundle.
 #[derive(Debug, thiserror::Error)]
 pub enum ProductBundleWriteError {
+    /// Failed to create a file.
     #[error("Failed to create file {0}: {1}")]
     CreateFile(Utf8PathBuf, #[source] std::io::Error),
 
+    /// Failed to write to a file.
     #[error("Failed to write to file: {0}")]
     WriteFile(#[from] serde_json::Error),
 
+    /// Relativize paths error.
     #[error("Relativize paths error: {0}")]
     RelativizePaths(#[from] RelativizeError),
 }
 
+/// Errors that can occur when extracting blobs from a product bundle.
 #[derive(Debug, thiserror::Error)]
 pub enum ProductBundleExtractError {
+    /// System does not exist for the specified slot.
     #[error("System does not exist for the specified slot")]
     SystemNotFound,
 
+    /// System does not contain an fxfs image.
     #[error("System does not contain an fxfs image")]
     FxfsImageNotFound,
 
+    /// fxfs_pbtool not found in platform_tools.
     #[error("fxfs_pbtool not found in platform_tools")]
     ToolNotFound,
 
+    /// Failed to run extraction tool.
     #[error("Failed to run extraction tool: {0}")]
     RunTool(#[source] std::io::Error),
 
+    /// Extraction tool failed with status.
     #[error("Extraction tool failed with status {0}.\nstdout: {1}\nstderr: {2}")]
     ToolFailed(std::process::ExitStatus, String, String),
 }

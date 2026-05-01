@@ -10,7 +10,7 @@ use crate::pbms::{GS_SCHEME, fetch_from_url};
 use crate::{AuthFlowChoice, string_from_url};
 use ::gcs::client::{Client, ProgressResult, ProgressState};
 use ::gcs::gs_url::split_gs_url;
-use anyhow::{Context, Result, bail};
+
 use futures::{StreamExt as _, TryStreamExt as _};
 use std::format;
 use std::path::{Component, Path, PathBuf};
@@ -27,7 +27,7 @@ pub async fn transfer_download<F, I>(
     progress: &F,
     ui: &I,
     client: &Client,
-) -> Result<()>
+) -> Result<(), crate::PbmsError>
 where
     F: Fn(Vec<ProgressState<'_>>) -> ProgressResult,
     I: structured_ui::Interface,
@@ -41,23 +41,22 @@ where
     assert!(local_dir.is_dir());
 
     let tm = string_from_url(&transfer_manifest_url, auth_flow, &|f| progress(vec![f]), ui, client)
-        .await
-        .with_context(|| format!("string from gcs: {:?}", transfer_manifest_url))?;
+        .await?;
 
-    let manifest = serde_json::from_str::<TransferManifest>(&tm)
-        .with_context(|| format!("Parsing json {:?}", tm))?;
+    let manifest = serde_json::from_str::<TransferManifest>(&tm)?;
     match &manifest {
-        TransferManifest::V1(v1_data) => transfer_download_v1(
-            transfer_manifest_url,
-            v1_data,
-            local_dir,
-            auth_flow,
-            progress,
-            ui,
-            client,
-        )
-        .await
-        .context("transferring from v1 manifest")?,
+        TransferManifest::V1(v1_data) => {
+            transfer_download_v1(
+                transfer_manifest_url,
+                v1_data,
+                local_dir,
+                auth_flow,
+                progress,
+                ui,
+                client,
+            )
+            .await?
+        }
     }
     log::debug!("Total fetch images runtime {} seconds.", start.elapsed().as_secs_f32());
     Ok(())
@@ -65,7 +64,7 @@ where
 
 /// Join `relative` onto `base` with light path normalization.
 /// Errors out if the final path is not within `base`.
-fn safe_join(base: &Path, relative: &Path) -> Result<PathBuf> {
+fn safe_join(base: &Path, relative: &Path) -> Result<PathBuf, crate::PbmsError> {
     let mut normalized_relative = PathBuf::new();
     for part in relative.components() {
         match part {
@@ -83,11 +82,10 @@ fn safe_join(base: &Path, relative: &Path) -> Result<PathBuf> {
     if normalized_relative.parent().is_some() {
         Ok(base.join(normalized_relative))
     } else {
-        bail!(
-            "Cannot safely concat \"{}\" onto \"{}\"",
-            relative.to_string_lossy(),
-            base.to_string_lossy()
-        )
+        return Err(crate::PbmsError::UnsafeConcat(
+            relative.to_string_lossy().to_string(),
+            base.to_string_lossy().to_string(),
+        ));
     }
 }
 
@@ -104,7 +102,7 @@ async fn transfer_download_v1<F, I>(
     progress: &F,
     ui: &I,
     client: &Client,
-) -> Result<()>
+) -> Result<(), crate::PbmsError>
 where
     F: Fn(Vec<ProgressState<'_>>) -> ProgressResult,
     I: structured_ui::Interface,
@@ -122,7 +120,7 @@ where
         GS_SCHEME => format!(
             "gs://{}",
             split_gs_url(&transfer_manifest_url.as_str())
-                .context("splitting transfer_manifest_url")?
+                .map_err(|_| crate::PbmsError::InvalidGsUrl(transfer_manifest_url.to_string()))?
                 .0
         ),
         _ => transfer_manifest_url[..url::Position::BeforePath].to_string(),
@@ -136,9 +134,8 @@ where
             Err(_) => format!("{}/{}", base_url, transfer_entry.remote.as_str()),
         };
 
-        let te_local_dir = safe_join(&local_dir, transfer_entry.local.as_std_path())
-            .context("parsing path: `entries[].local`")
-            .map_err(malformed_warning)?;
+        let te_local_dir =
+            safe_join(&local_dir, transfer_entry.local.as_std_path()).map_err(malformed_warning)?;
         let artifact_entry_count = transfer_entry.entries.len() as u64;
         for (k, artifact_entry) in transfer_entry.entries.iter().enumerate() {
             // Avoid using te_remote_dir.join().
@@ -149,12 +146,12 @@ where
             ))?;
 
             let local_file = safe_join(&te_local_dir, artifact_entry.name.as_std_path())
-                .context("parsing path: `entries[].entries[].name`")
                 .map_err(malformed_warning)?;
-            let local_parent = local_file.parent().context("getting local parent")?.to_path_buf();
-            async_fs::create_dir_all(&local_parent)
-                .await
-                .with_context(|| format!("creating local_parent {:?}", local_parent))?;
+            let local_parent = local_file
+                .parent()
+                .ok_or_else(|| crate::PbmsError::NoParent(local_file.to_path_buf()))?
+                .to_path_buf();
+            async_fs::create_dir_all(&local_parent).await?;
 
             log::debug!("Transfer {:?} to {:?}", remote_file, local_parent);
             tasks.push(async move {
@@ -188,8 +185,9 @@ where
             })
         }
     }
-    let mut stream = futures::stream::iter(tasks.into_iter())
-        .buffer_unordered(std::thread::available_parallelism()?.get());
+    let mut stream = futures::stream::iter(tasks.into_iter()).buffer_unordered(
+        std::thread::available_parallelism().map_err(|e| crate::PbmsError::Io(e))?.get(),
+    );
 
     while let Some(()) = stream.try_next().await? {}
     Ok(())
@@ -237,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn test_safe_join() -> Result<()> {
+    fn test_safe_join() -> std::result::Result<(), anyhow::Error> {
         macro_rules! assert_joined {
             ($base:literal, $relative:literal, $result:literal) => {
                 assert_eq!(safe_join(Path::new($base), Path::new($relative))?, Path::new($result));
@@ -248,7 +246,7 @@ mod tests {
             ($base:literal, $relative:literal) => {
                 assert_eq!(
                     safe_join(Path::new($base), Path::new($relative)).unwrap_err().to_string(),
-                    concat!("Cannot safely concat \"", $relative, "\" onto \"", $base, "\""),
+                    concat!("Cannot safely concat ", $relative, " onto ", $base),
                 );
             };
         }

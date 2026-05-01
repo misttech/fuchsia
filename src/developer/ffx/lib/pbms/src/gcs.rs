@@ -5,7 +5,7 @@
 //! Access utilities for gcs metadata.
 
 use crate::AuthFlowChoice;
-use anyhow::{Context, Result, bail};
+
 use gcs::auth;
 use gcs::client::{Client, DirectoryProgress, FileProgress, ProgressResponse, ProgressResult};
 use gcs::error::GcsError;
@@ -23,40 +23,29 @@ pub(crate) async fn fetch_from_gcs<F, I>(
     progress: &F,
     ui: &I,
     client: &Client,
-) -> Result<()>
+) -> Result<(), crate::PbmsError>
 where
     F: Fn(DirectoryProgress<'_>, FileProgress<'_>) -> ProgressResult,
     I: structured_ui::Interface,
 {
     log::debug!("fetch_from_gcs {:?}", gcs_url);
-    let (gcs_bucket, gcs_path) = split_gs_url(gcs_url).context("Splitting gs URL.")?;
+    let (gcs_bucket, gcs_path) =
+        split_gs_url(gcs_url).map_err(|_| crate::PbmsError::InvalidGsUrl(gcs_url.to_string()))?;
     loop {
         log::debug!("gcs_bucket {:?}, gcs_path {:?}", gcs_bucket, gcs_path);
-        match client
-            .fetch_all(gcs_bucket, gcs_path, &local_dir, progress)
-            .await
-            .context("fetching all")
-        {
+        match client.fetch_all(gcs_bucket, gcs_path, &local_dir, progress).await {
             Ok(()) => break,
             Err(e) => match e.downcast_ref::<GcsError>() {
                 Some(GcsError::NeedNewAccessToken) => {
                     log::debug!("fetch_from_gcs got NeedNewAccessToken");
-                    let access_token = handle_new_access_token(auth_flow, ui)
-                        .await
-                        .context("Getting new access token.")?;
+                    let access_token = handle_new_access_token(auth_flow, ui).await?;
                     client.set_access_token(access_token).await;
                 }
                 Some(GcsError::NotFound(b, p)) => {
                     log::warn!("[gs://{}/{} not found]", b, p);
                     break;
                 }
-                Some(_) | None => bail!(
-                    "Cannot get data from gs://{}/{}, saving to {:?}, error {:?}",
-                    gcs_bucket,
-                    gcs_path,
-                    local_dir,
-                    e,
-                ),
+                Some(_) | None => return Err(crate::PbmsError::GcsOperation(e)),
             },
         }
     }
@@ -66,7 +55,10 @@ where
 /// Get a new access token based on the AuthFlowChoice.
 ///
 /// Intended to simplify handling of a GcsError::NeedNewAccessToken error.
-pub async fn handle_new_access_token<I>(auth_flow: &AuthFlowChoice, ui: &I) -> Result<String>
+pub async fn handle_new_access_token<I>(
+    auth_flow: &AuthFlowChoice,
+    ui: &I,
+) -> std::result::Result<String, crate::PbmsError>
 where
     I: structured_ui::Interface,
 {
@@ -76,22 +68,21 @@ where
             let output = std::process::Command::new("gcloud")
                 .args(["auth", "print-access-token"])
                 .output()
-                .with_context(|| "Executing gcloud auth print-access-token")?;
+                .map_err(|e| crate::PbmsError::Io(e))?;
             if !output.status.success() {
                 log::error!(
                     "The gcloud process to get an access token returned {} with stderr:\n{}",
                     output.status,
                     String::from_utf8_lossy(&output.stderr)
                 );
-                return Err(GcsError::ExecForAccessFailed(
+                return Err(crate::PbmsError::Gcs(GcsError::ExecForAccessFailed(
                     "gcloud".into(),
                     output.status,
                     format!(
                         "{}\nHint: You may need to run `gcloud auth login` to authenticate.",
                         String::from_utf8_lossy(&output.stderr)
                     ),
-                )
-                .into());
+                )));
             }
             String::from_utf8_lossy(&output.stdout).trim().to_string()
         }
@@ -100,20 +91,21 @@ where
             let access_token = match auth::new_access_token(&credentials.gcs_credentials()).await {
                 Ok(a) => a,
                 Err(GcsError::NeedNewRefreshToken) => {
-                    update_refresh_token(auth_flow, ui).await.context("Updating refresh token")?;
+                    update_refresh_token(auth_flow, ui).await?;
                     // Make one additional attempt now that the refresh token
                     // is updated.
                     let credentials = credentials::Credentials::load_or_new().await;
-                    auth::new_access_token(&credentials.gcs_credentials()).await?
+                    auth::new_access_token(&credentials.gcs_credentials())
+                        .await
+                        .map_err(|e| crate::PbmsError::Gcs(e))?
                 }
-                Err(_) => bail!("Failed to get new access token"),
+                Err(_) => return Err(crate::PbmsError::GetAccessTokenFailed),
             };
             access_token
         }
         AuthFlowChoice::Exec(exec) => {
-            let output = std::process::Command::new(&exec)
-                .output()
-                .with_context(|| format!("Executing {:?}", exec))?;
+            let output =
+                std::process::Command::new(&exec).output().map_err(|e| crate::PbmsError::Io(e))?;
             if !output.status.success() {
                 log::error!(
                     "The {:?} process to get an access token returned {} with stderr:\n{}",
@@ -121,16 +113,15 @@ where
                     output.status,
                     String::from_utf8_lossy(&output.stderr)
                 );
-                return Err(GcsError::ExecForAccessFailed(
+                return Err(crate::PbmsError::Gcs(GcsError::ExecForAccessFailed(
                     exec.into(),
                     output.status,
                     String::from_utf8_lossy(&output.stderr).to_string(),
-                )
-                .into());
+                )));
             }
             String::from_utf8_lossy(&output.stdout).trim().to_string()
         }
-        AuthFlowChoice::NoAuth => return Err(GcsError::AuthRequired.into()),
+        AuthFlowChoice::NoAuth => return Err(crate::PbmsError::Gcs(GcsError::AuthRequired)),
     };
     Ok(access_token)
 }
@@ -145,13 +136,14 @@ pub(crate) async fn string_from_gcs<F, I>(
     progress: &F,
     ui: &I,
     client: &Client,
-) -> Result<String>
+) -> Result<String, crate::PbmsError>
 where
     F: Fn(FileProgress<'_>) -> ProgressResult,
     I: structured_ui::Interface,
 {
     log::debug!("string_from_gcs {:?}", gcs_url);
-    let (gcs_bucket, gcs_path) = split_gs_url(gcs_url).context("Splitting gs URL.")?;
+    let (gcs_bucket, gcs_path) =
+        split_gs_url(gcs_url).map_err(|_| crate::PbmsError::InvalidGsUrl(gcs_url.to_string()))?;
     let mut result = Vec::new();
     loop {
         log::debug!("gcs_bucket {:?}, gcs_path {:?}", gcs_bucket, gcs_path);
@@ -159,28 +151,19 @@ where
             Ok(ProgressResponse::Continue) => break,
             Ok(ProgressResponse::Cancel) => {
                 log::info!("ProgressResponse requesting cancel, exiting");
-                bail!("ProgressResponse requesting cancel, exiting")
+                return Err(crate::PbmsError::ProgressCancelled);
             }
             Err(e) => match e.downcast_ref::<GcsError>() {
                 Some(GcsError::NeedNewAccessToken) => {
                     log::debug!("string_from_gcs got NeedNewAccessToken");
-                    let access_token = handle_new_access_token(auth_flow, ui)
-                        .await
-                        .context("Getting new access token.")?;
+                    let access_token = handle_new_access_token(auth_flow, ui).await?;
                     client.set_access_token(access_token).await;
                 }
                 Some(GcsError::NotFound(b, p)) => {
                     log::warn!("[gs://{}/{} not found]", b, p);
                     break;
                 }
-                Some(gcs_err) => bail!(
-                    "Cannot get data from gs://{}/{} to string, error {:?}, {:?}",
-                    gcs_bucket,
-                    gcs_path,
-                    e,
-                    gcs_err,
-                ),
-                None => return Err(e),
+                Some(_) | None => return Err(crate::PbmsError::GcsOperation(e)),
             },
         }
     }
@@ -194,38 +177,20 @@ pub async fn list_from_gcs<I>(
     auth_flow: &AuthFlowChoice,
     ui: &I,
     client: &Client,
-) -> Result<Vec<String>>
+) -> Result<Vec<String>, crate::PbmsError>
 where
     I: structured_ui::Interface,
 {
     loop {
-        match client.list(bucket, prefix).await.context("listing all the objects.") {
+        match client.list(bucket, prefix).await {
             Ok(result) => return Ok(result),
             Err(e) => match e.downcast_ref::<GcsError>() {
                 Some(GcsError::NeedNewAccessToken) => {
                     log::debug!("list_from_gcs got NeedNewAccessToken");
-                    let access_token = handle_new_access_token(auth_flow, ui)
-                        .await
-                        .context("Getting new access token.")?;
+                    let access_token = handle_new_access_token(auth_flow, ui).await?;
                     client.set_access_token(access_token).await;
                 }
-                Some(GcsError::NotFound(b, p)) => {
-                    log::warn!("[gs://{}/{} not found]", b, p);
-                    bail!("Data not found from gs://{}/{}, error {:?}", b, p, e,);
-                }
-                Some(gcs_err) => bail!(
-                    "Cannot get data from gs://{}/{}, error {:?}, {:?}",
-                    bucket,
-                    prefix,
-                    e,
-                    gcs_err,
-                ),
-                None => bail!(
-                    "Cannot get data from gs://{}/{} to string (Non-GcsError), error {:?}",
-                    bucket,
-                    prefix,
-                    e,
-                ),
+                Some(_) | None => return Err(crate::PbmsError::GcsOperation(e)),
             },
         }
     }
@@ -234,30 +199,33 @@ where
 /// Prompt the user to visit the OAUTH2 permissions web page and enter a new
 /// authorization code, then convert that to a refresh token and write that
 /// refresh token to the ~/.boto file.
-async fn update_refresh_token<I>(auth_flow: &AuthFlowChoice, ui: &I) -> Result<()>
+async fn update_refresh_token<I>(
+    auth_flow: &AuthFlowChoice,
+    ui: &I,
+) -> std::result::Result<(), crate::PbmsError>
 where
     I: structured_ui::Interface,
 {
     log::debug!("update_refresh_token");
     let refresh_token = match auth_flow {
         AuthFlowChoice::Default | AuthFlowChoice::Pkce => {
-            auth::pkce::new_refresh_token(ui).await.context("get refresh token")?
+            auth::pkce::new_refresh_token(ui).await.map_err(crate::PbmsError::GetRefreshToken)?
         }
         AuthFlowChoice::Device => {
-            auth::device::new_refresh_token(ui).await.context("get device refresh token")?
+            auth::device::new_refresh_token(ui).await.map_err(crate::PbmsError::GetRefreshToken)?
         }
         AuthFlowChoice::Exec(_) | AuthFlowChoice::Gcloud => {
             // gcloud and Exec flows manage their own credentials.
             // They do not write or use the ~/.boto file managed by this library.
-            bail!("There's no refresh token used with gcloud or an executable for auth.");
+            return Err(crate::PbmsError::RefreshTokenNotSupported);
         }
         AuthFlowChoice::NoAuth => {
-            bail!("The refresh token should not be updated when no-auth is used.");
+            return Err(crate::PbmsError::RefreshTokenNotSupported);
         }
     };
     log::debug!("Writing credentials");
     let mut credentials = credentials::Credentials::load_or_new().await;
     credentials.oauth2.refresh_token = refresh_token.to_string();
-    credentials.save().await.context("writing refresh token")?;
+    credentials.save().await.map_err(crate::PbmsError::SaveCredentials)?;
     Ok(())
 }

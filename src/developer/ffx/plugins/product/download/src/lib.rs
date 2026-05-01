@@ -125,7 +125,7 @@ pub async fn pb_download_impl<I: structured_ui::Interface>(
         ),
     };
     log::debug!("make_way_for_output {:?}", product_dir);
-    make_way_for_output(&product_dir, force).await?;
+    make_way_for_output(&product_dir, force).await.map_err(|e| anyhow::anyhow!(e))?;
 
     let parent_dir = product_dir.parent().ok_or_else(|| anyhow!("local dir has no parent"))?;
     let temp_dir = tempfile::TempDir::new_in(&parent_dir).map_err(|e| bug!("{e}"))?;
@@ -148,6 +148,7 @@ pub async fn pb_download_impl<I: structured_ui::Interface>(
         &client,
     )
     .await
+    .map_err(|e| anyhow::anyhow!(e))
     .context("downloading via transfer manifest")?;
 
     // Workaround for having the product bundle nested in a sub-dir.
