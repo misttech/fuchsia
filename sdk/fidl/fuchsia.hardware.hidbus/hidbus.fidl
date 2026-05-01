@@ -39,6 +39,17 @@ type HidBootProtocol = strict enum : uint8 {
     OTHER = 3;
 };
 
+/// The HID protocol doesn't specify any character strings. This const value
+/// limits the length of names passed along from low-level protocols such as
+/// USB and Bluetooth.
+///
+/// Chosen to be larger than the size limits for USB string descriptors
+/// (Universal Serial Bus Specification v2.0, 9.6.7 String) and Bluetooth Device
+/// Name (Bluetooth Specification v5.2, Vol 4, Part E, Section 6.23).
+const MAX_NAME_LENGTH uint32 = 256;
+
+/// Contains both information shared among HID protocols and specific to HID
+/// devices, and information passed along by the low-level transport.
 type HidInfo = table {
     1: dev_num uint8;
     // boot_protocol is NONE if device is not boot protocol.
@@ -50,6 +61,15 @@ type HidInfo = table {
 
     /// polling rate if applicable in usec
     6: polling_rate zx.Duration;
+
+    /// Human-readable name of the manufacturer. Optional.
+    7: manufacturer_name string:MAX_NAME_LENGTH;
+
+    /// Human-readable name of the product. Optional.
+    8: product_name string:MAX_NAME_LENGTH;
+
+    /// Serial number of the device. Optional.
+    9: serial_number string:MAX_NAME_LENGTH;
 };
 
 type Report = resource table {
