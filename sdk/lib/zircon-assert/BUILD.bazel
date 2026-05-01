@@ -28,6 +28,7 @@ idk_noop_atom(
     id = "sdk://zircon-assert",
     idk_name = "zircon-assert",
     stable = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = ["//visibility:public"],
 )
 

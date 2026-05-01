@@ -42,6 +42,7 @@ def analysis_test_suite(name):
         meta_dest = "/pkg/test_not_in_allowlist",
         stable = True,
         type = "data",
+        target_compatible_with = ["@platforms//os:fuchsia"],
         tags = ["manual"],
     )
 
@@ -63,6 +64,7 @@ def analysis_test_suite(name):
         meta_dest = "/pkg/test_no_allowlist",
         stable = True,
         type = "data",
+        target_compatible_with = ["@platforms//os:fuchsia"],
         tags = ["manual"],
     )
 

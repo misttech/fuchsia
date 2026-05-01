@@ -171,7 +171,7 @@ _VALID_ATOM_TYPES = [
     "package",
     "sysroot",
     "version_history",
-    # LINT.ThenChange(//build/sdk/generate_prebuild_idk/idk_generator.py, //build/sdk/manifest_schema.json, //build/sdk/meta/BUILD.bazel:schema_in_idk, //build/sdk/meta/BUILD.gn:schema_in_idk)
+    # LINT.ThenChange(//build/bazel/bazel_idk/private/idk_atom.bzl:idk_atom_types, //build/sdk/generate_prebuild_idk/idk_generator.py, //build/sdk/manifest_schema.json, //build/sdk/meta/BUILD.bazel:schema_in_idk, //build/sdk/meta/BUILD.gn:schema_in_idk)
 ]
 # IdkGenerator may pass "none" as well, but it should not be included in the
 # list of valid types above.

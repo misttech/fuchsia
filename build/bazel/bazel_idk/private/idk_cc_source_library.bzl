@@ -256,6 +256,7 @@ def _idk_cc_source_library_impl(
         atom_build_deps = atom_build_deps,
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
         configurable_info = ":" + configurable_info_name,
+        target_compatible_with = ["@platforms//os:fuchsia"],
         testonly = testonly,
         visibility = get_atom_visibility(visibility),
     )

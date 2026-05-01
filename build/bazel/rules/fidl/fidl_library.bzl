@@ -441,6 +441,7 @@ def _fidl_library_impl(
             atom_build_deps = idk_atom_build_deps,
             additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
             testonly = testonly,
+            target_compatible_with = ["@platforms//os:fuchsia"],
             visibility = get_atom_visibility(visibility, is_fidl_library = True),
         )
         # LINT.ThenChange(//build/fidl/fidl_library.gni:idk_atom)

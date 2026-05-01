@@ -25,7 +25,7 @@ _idk_schema_files = [
     "sysroot.json",
     "version_history.json",
 
-    # LINT.ThenChange(BUILD.gn:schema_in_idk, //build/sdk/sdk_common/__init__.py:idk_atom_types)
+    # LINT.ThenChange(BUILD.gn:schema_in_idk, //build/bazel/bazel_idk/private/idk_atom.bzl:idk_atom_types, //build/sdk/sdk_common/__init__.py:idk_atom_types)
 ]
 
 filegroup(

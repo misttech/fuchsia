@@ -64,6 +64,7 @@ def _idk_data_impl(
         api_area = api_area,
         files_map = files_map,
         additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
+        target_compatible_with = ["@platforms//os:fuchsia"],
         testonly = testonly,
         visibility = get_atom_visibility(visibility),
     )

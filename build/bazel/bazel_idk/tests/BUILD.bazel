@@ -754,6 +754,7 @@ idk_noop_atom(
     id = "sdk://test_noop_atom",
     idk_name = "test_noop_atom",
     stable = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
 )
 
 # There must be a real target corresponding to the noop atom. Due to where
@@ -772,7 +773,6 @@ idk_molecule(
         ":test-shared-library_idk",
         ":test-source-library_idk",
         ":test-static-library_idk",
-        ":test_data_atom_idk",
         ":test_shared_library_zx_idk",
         ":test_source_set_zx_idk",
         ":test_static_library_zx_idk",
@@ -780,6 +780,7 @@ idk_molecule(
     ],
 )
 
+# Contains atoms that can be built in any Fuchsia build configuration.
 idk_molecule(
     name = "test_molecule_idk",
     testonly = True,
@@ -793,6 +794,22 @@ idk_molecule(
         "//sdk/lib/stdcompat:stdcompat_idk",
         "//sdk/lib/utf-utils:utf-utils_idk",
         "//zircon/system/ulib/sync:sync-cpp_idk",
+        "//zircon/system/ulib/sync:sync_idk",
+    ],
+)
+
+# Contains atoms that can only be built in the main "PLATFORM" build.
+idk_molecule(
+    name = "main_platform_build_test_molecule_idk",
+    testonly = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    deps = [
+        ":test_data_atom_idk",
+        # Tests compatibility testing with different expectations per API level.
+        # As of F30+, this library has elements added at 28, 29, and NEXT.
+        "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_idk",
+        # This tests direct FIDL library dependencies.
+        "//sdk/fidl/fuchsia.images2:fuchsia.images2_idk",
         "//zircon/vdso/zx:zx_idk",
     ],
 )
@@ -929,14 +946,7 @@ filegroup(
     srcs = [
         # Depends on the IDK atom targets.
         ":test_molecule_idk",
-
-        # FIDL atoms can only be built at "PLATFORM" because the generated
-        # `.api` file may be different at other API levels.
-        # Tests compatibility testing with different expectations per API level.
-        # As of F30+, this library has elements added at 28, 29, and NEXT.
-        "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_idk",
-        # This tests direct FIDL library dependencies.
-        "//sdk/fidl/fuchsia.images2:fuchsia.images2_idk",
+        ":main_platform_build_test_molecule_idk",
 
         # Linking executables verifies that all deps are properly specified and
         # that FIDL bindings were generated correctly.
@@ -1076,7 +1086,6 @@ filegroup(
     srcs = [
         ":platform_dependent_source_library_idk",
         ":test-source-library_idk",
-        ":test_data_atom_idk",
         ":test_source_set_zx_idk",
         ":tests_idk",
         "//sdk/lib/magma_common:magma_common_idk",

@@ -5,8 +5,9 @@
 """Defines an IDK atom."""
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load("@fuchsia_build_info//:args.bzl", "warn_on_sdk_changes")
+load("@fuchsia_build_info//:args.bzl", "target_cpu", "warn_on_sdk_changes")
 load("//build/bazel/bazel_idk:providers.bzl", "FuchsiaIdkAtomInfo")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 load("//build/bazel/rules/cc:providers.bzl", "PrebuiltLibraryInfo")
@@ -57,6 +58,98 @@ _TYPES_NOT_REQUIRING_COMPATIBILITY = [
     "version_history",
     # LINT.ThenChange(//build/sdk/sdk_atom.gni:non_compatibility_types)
 ]
+
+# All atom types (except "none") are in one of the sets below.
+# LINT.IfChange(idk_atom_types)
+
+# Atom types that are independent of API level and CPU architecture. Excludes
+# host types.
+# They are built only once, in the main "PLATFORM" build.
+_TYPES_INDEPENDENT_OF_API_LEVEL_AND_CPU_ARCH = set([
+    "bind_library",
+    "dart_library",
+    "data",
+    "version_history",
+])
+
+# Atom types that are dependent on API level and CPU architecture but only need
+# to be included in the IDK once. Excludes host types.
+# They are built only once, in the main "PLATFORM" build.
+_TYPES_ONLY_BUILT_AT_PLATFORM_FOR_ONE_CPU_ARCH = set([
+    "documentation",  # Some docs depend on FIDL
+    "fidl_library",
+])
+
+# Atom types to be used on host platforms.
+# They are only built for the host OS.
+_HOST_TYPES = set([
+    "companion_host_tool",
+    # This one may eventually be buildable at API levels other than "PLATFORM".
+    "experimental_python_e2e_test",
+    "ffx_tool",
+    "host_tool",
+])
+
+# Atom types that are built for the API levels supported by the IDK and possibly "PLATFORM".
+# buildifier: disable=unused-variable
+_TYPES_BUILT_AT_MULTIPLE_API_LEVELS = set([
+    "cc_prebuilt_library",
+    # Although source library atoms are only explicitly included in the IDK
+    # once, they can be public dependencies of prebuilt libraries.
+    "cc_source_library",
+    "loadable_module",
+    "package",
+    "sysroot",
+])
+
+# LINT.ThenChange(build/sdk/meta/BUILD.bazel:schema_in_idk, //build/sdk/sdk_common/__init__.py:idk_atom_types)
+
+_TYPES_BUILT_ONLY_IN_MAIN_PLATFORM_BUILD = (_TYPES_INDEPENDENT_OF_API_LEVEL_AND_CPU_ARCH |
+                                            _TYPES_ONLY_BUILT_AT_PLATFORM_FOR_ONE_CPU_ARCH)
+
+_TYPES_BUILT_ONLY_AT_PLATFORM = (_TYPES_BUILT_ONLY_IN_MAIN_PLATFORM_BUILD |
+                                 _HOST_TYPES)
+
+# Supported CPU architectures for host tools.
+_SUPPORTED_HOST_CPUS = set(["arm64", "x64"])
+
+def _verify_supported_configuration_for_atom(ctx):
+    """Verifies that the atom is being built in a supported configuration based on its type.
+
+    If the atom fails verification, `fail()` is called with a message describing
+    the issue. Otherwise, the function returns without side effects. No target
+    is created.
+    """
+    type = ctx.attr.type
+
+    # Verify the appropriate `target_compatible_with` value was specified.
+    if len(ctx.attr.target_compatible_with) != 1:
+        fail("`target_compatible_with` must have exactly one element. Received `%s`" %
+             (ctx.attr.target_compatible_with))
+    if type in _HOST_TYPES:
+        if str(ctx.attr.target_compatible_with[0].label) != ("@" + HOST_OS_CONSTRAINTS[0]):
+            fail("`target_compatible_with` for host tools must be `%s`." % (HOST_OS_CONSTRAINTS))
+    elif str(ctx.attr.target_compatible_with[0].label) != "@@platforms//os:fuchsia":
+        fail("`target_compatible_with` must be `%s`." % ["@platforms//os:fuchsia"])
+
+    # Verify the atom is being built at an appropriate API level.
+    if type in _TYPES_BUILT_ONLY_AT_PLATFORM:
+        api_level = ctx.attr._current_api_level[BuildSettingInfo].value
+        if api_level != "PLATFORM":
+            fail('Atom type "%s" is only to be built at the "PLATFORM" API level, not "%s".' %
+                 (type, api_level))
+
+    # Verify the atom is being built for an appropriate CPU architecture.
+    if type in _TYPES_BUILT_ONLY_IN_MAIN_PLATFORM_BUILD:
+        current_cpu = _get_current_cpu_arch(ctx)
+        if current_cpu != target_cpu:
+            fail('Atom type "%s" is only to be built in the main "PLATFORM" build (target CPU "%s", not current CPU "%s").' %
+                 (type, target_cpu, current_cpu))
+    elif type in _HOST_TYPES:
+        current_cpu = _get_current_cpu_arch(ctx)
+        if current_cpu not in _SUPPORTED_HOST_CPUS:
+            fail('Atom type "%s" is only to be built for supported host CPU architectures ("%s"), not "%s".' %
+                 (type, _SUPPORTED_HOST_CPUS, current_cpu))
 
 def _get_current_cpu_arch(ctx):
     """Returns the CPU architecture of the current build."""
@@ -299,6 +392,8 @@ def _create_idk_atom_impl(ctx):
     if "idk" in ctx.attr.idk_name or "sdk" in ctx.attr.idk_name:
         fail('IDK atom `idk_name`s must not include "idk" or "sdk".')
 
+    _verify_supported_configuration_for_atom(ctx)
+
     # Merge additional prebuild info dictionaries if necessary.
     additional_prebuild_info = ctx.attr.additional_prebuild_info
     if ctx.attr.configurable_info:
@@ -515,10 +610,12 @@ def _idk_atom_impl(
         api_contents_map,
         atom_build_deps,
         configurable_info,
+        target_compatible_with,
         testonly,
         **kwargs):
     if type not in _TYPES_SUPPORTING_UNSTABLE_ATOMS and not stable:
-        fail("`stable` must be true unless the type ('%s') is one of %s." % (type, _TYPES_SUPPORTING_UNSTABLE_ATOMS))
+        fail("`stable` must be true unless the type ('%s') is one of %s." %
+             (type, _TYPES_SUPPORTING_UNSTABLE_ATOMS))
 
     if bool(api_contents_map) and bool(configurable_info):
         fail("`api_contents_map` and `configurable_info` must not be both set at the same time.")
@@ -569,6 +666,7 @@ def _idk_atom_impl(
         atom_build_deps = atom_build_deps,
         configurable_info = configurable_info,
         testonly = testonly,
+        target_compatible_with = target_compatible_with,
         **kwargs
     )
 
@@ -669,6 +767,9 @@ macros to handle such a target as any other IDK target.
         "api_area": attr.string(
             doc = "See _create_idk_atom().",
             mandatory = True,
+        ),
+        "target_compatible_with": attr.label_list(
+            doc = "Standard meaning.",
         ),
         "testonly": attr.bool(
             doc = "Standard meaning.",
