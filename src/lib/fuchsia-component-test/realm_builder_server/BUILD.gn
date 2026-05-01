@@ -89,7 +89,7 @@ fuchsia_unittest_package("realm_builder_server_unit_tests") {
 }
 
 fuchsia_package("pkg") {
-  package_name = "fuchsia-component-test"
+  package_name = "realm_builder_server"
   deps = [ ":realm_builder_server_component" ]
 }
 

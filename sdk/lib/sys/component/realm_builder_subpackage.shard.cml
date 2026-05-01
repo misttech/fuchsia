@@ -6,7 +6,7 @@
     children: [
         {
             name: "realm_builder_server",
-            url: "fuchsia-component-test#meta/realm_builder_server.cm",
+            url: "realm_builder_server#meta/realm_builder_server.cm",
         },
     ],
     collections: [
