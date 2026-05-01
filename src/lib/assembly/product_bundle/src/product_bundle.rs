@@ -4,7 +4,7 @@
 
 //! Representation of the product_bundle metadata.
 
-use crate::v2::{Canonicalizer, ProductBundleV2, Type};
+use crate::v2::{CanonicalizeError, Canonicalizer, ProductBundleV2, RelativizeError, Type};
 
 use anyhow::{Context, Result, anyhow, bail};
 use assembled_system::Image;
@@ -18,12 +18,71 @@ use std::ops::Deref;
 use std::process::Command;
 use zip::read::ZipArchive;
 
-fn try_load_product_bundle(r: impl BufRead) -> Result<ProductBundle> {
+#[derive(Debug, thiserror::Error)]
+pub enum ProductBundleLoadError {
+    #[error("{0} is not a directory")]
+    NotADirectory(String),
+
+    #[error("Failed to open file {0}: {1}")]
+    OpenFile(Utf8PathBuf, #[source] std::io::Error),
+
+    #[error("Failed to parse product bundle: {0}")]
+    Parse(#[from] serde_json::Error),
+
+    #[error("Product bundle v1 is no longer supported")]
+    V1NotSupported,
+
+    #[error("Canonicalization error: {0}")]
+    Canonicalization(#[from] CanonicalizeError),
+
+    #[error("Zip error: {0}")]
+    Zip(#[from] zip::result::ZipError),
+
+    #[error("File 'product_bundle.json' not found in zip archive")]
+    NotFoundInZip,
+
+    #[error("Malformed zip archive: {0}")]
+    MalformedZip(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProductBundleWriteError {
+    #[error("Failed to create file {0}: {1}")]
+    CreateFile(Utf8PathBuf, #[source] std::io::Error),
+
+    #[error("Failed to write to file: {0}")]
+    WriteFile(#[from] serde_json::Error),
+
+    #[error("Relativize paths error: {0}")]
+    RelativizePaths(#[from] RelativizeError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProductBundleExtractError {
+    #[error("System does not exist for the specified slot")]
+    SystemNotFound,
+
+    #[error("System does not contain an fxfs image")]
+    FxfsImageNotFound,
+
+    #[error("fxfs_pbtool not found in platform_tools")]
+    ToolNotFound,
+
+    #[error("Failed to run extraction tool: {0}")]
+    RunTool(#[source] std::io::Error),
+
+    #[error("Extraction tool failed with status {0}.\nstdout: {1}\nstderr: {2}")]
+    ToolFailed(std::process::ExitStatus, String, String),
+}
+
+fn try_load_product_bundle(
+    r: impl BufRead,
+) -> std::result::Result<ProductBundle, ProductBundleLoadError> {
     let helper: SerializationHelper =
-        serde_json::from_reader(r).context("parsing product bundle")?;
+        serde_json::from_reader(r).map_err(ProductBundleLoadError::Parse)?;
     match helper {
         SerializationHelper::V1 { schema_id: _ } => {
-            bail!("Product Bundle v1 is no longer supported")
+            return Err(ProductBundleLoadError::V1NotSupported);
         }
         SerializationHelper::V2(v2) => {
             let SerializationHelperVersioned::V2(data) = *v2;
@@ -40,29 +99,35 @@ pub struct ZipLoadedProductBundle {
 
 impl ZipLoadedProductBundle {
     /// Read a prdouct bundle from a zip file.
-    pub fn try_load_from(product_bundle_zip_path: impl AsRef<Utf8Path>) -> Result<Self> {
+    pub fn try_load_from(
+        product_bundle_zip_path: impl AsRef<Utf8Path>,
+    ) -> std::result::Result<Self, ProductBundleLoadError> {
         let path = product_bundle_zip_path.as_ref();
-        let file =
-            File::open(path).with_context(|| format!("opening product bundle zip: {:?}", &path))?;
-        let zip =
-            ZipArchive::new(file).with_context(|| format!("loading zip file: {:?}", &path))?;
+        let file = File::open(path)
+            .map_err(|e| ProductBundleLoadError::OpenFile(path.to_path_buf(), e))?;
+        let zip = ZipArchive::new(file).map_err(ProductBundleLoadError::Zip)?;
         Self::load_from(zip)
     }
 
     /// Load a product bundle from an already parsed ZipArchive.
-    pub fn load_from(mut zip: ZipArchive<File>) -> Result<Self> {
+    pub fn load_from(
+        mut zip: ZipArchive<File>,
+    ) -> std::result::Result<Self, ProductBundleLoadError> {
         let product_bundle_manifest_name = zip
             .file_names()
             .find(|x| x == &"product_bundle.json" || x.ends_with("/product_bundle.json"))
-            .ok_or_else(|| anyhow!("finding file 'product_bundle.json' in zip archive"))?
+            .ok_or(ProductBundleLoadError::NotFoundInZip)?
             .to_owned();
 
         let product_bundle_parent_path =
-            product_bundle_manifest_name.strip_suffix("product_bundle.json").ok_or_else(|| anyhow!("despite the product_bundle.json being found, it's path did not include it as a suffix"))?;
+            product_bundle_manifest_name.strip_suffix("product_bundle.json").ok_or_else(|| {
+                ProductBundleLoadError::MalformedZip(
+                    "product_bundle.json path missing suffix".to_string(),
+                )
+            })?;
 
-        let product_bundle_manifest = zip
-            .by_name(&product_bundle_manifest_name)
-            .with_context(|| format!("getting 'product_bundle.json' in zip archive"))?;
+        let product_bundle_manifest =
+            zip.by_name(&product_bundle_manifest_name).map_err(ProductBundleLoadError::Zip)?;
         let product_bundle_manifest = std::io::BufReader::new(product_bundle_manifest);
         // Still need to canonicalize paths as the path to the product bundle'suffix
         // parent directory may be arbitrarily deep in the zip file
@@ -70,10 +135,7 @@ impl ZipLoadedProductBundle {
             ProductBundle::V2(data) => {
                 let mut data = data;
                 let mut canonicalizer = ZipCanonicalizer::new(product_bundle_parent_path);
-                data.canonicalize_paths_with(product_bundle_parent_path, &mut canonicalizer)
-                    .with_context(|| {
-                        format!("Canonicalizing paths from {:?}", product_bundle_parent_path)
-                    })?;
+                data.canonicalize_paths_with(product_bundle_parent_path, &mut canonicalizer)?;
                 Ok(Self::new(ProductBundle::V2(data)))
             }
         }
@@ -140,20 +202,21 @@ impl LoadedProductBundle {
     /// Load a ProductBundle from a directory containing product_bundle.json
     /// on disk. This method will return a LoadedProductBundle which keeps
     /// track of where it was loaded from.
-    pub fn try_load_from(path: impl AsRef<Utf8Path>) -> Result<Self> {
+    pub fn try_load_from(
+        path: impl AsRef<Utf8Path>,
+    ) -> std::result::Result<Self, ProductBundleLoadError> {
         if !path.as_ref().is_dir() {
-            anyhow::bail!("{} is not a directory", path.as_ref().as_str());
+            return Err(ProductBundleLoadError::NotADirectory(path.as_ref().to_string()));
         }
         let product_bundle_path = path.as_ref().join("product_bundle.json");
         let file = File::open(&product_bundle_path)
-            .map_err(|e| anyhow!("{e}: {product_bundle_path:?}"))?;
+            .map_err(|e| ProductBundleLoadError::OpenFile(product_bundle_path.clone(), e))?;
         let file = std::io::BufReader::new(file);
 
         match try_load_product_bundle(file)? {
             ProductBundle::V2(data) => {
                 let mut data = data;
-                data.canonicalize_paths(path.as_ref())
-                    .with_context(|| format!("Canonicalizing paths from {:?}", path.as_ref()))?;
+                data.canonicalize_paths(path.as_ref())?;
                 Ok(LoadedProductBundle::new(ProductBundle::V2(data), path))
             }
         }
@@ -217,15 +280,22 @@ impl ProductBundle {
     pub fn try_load_from(path: impl AsRef<Utf8Path>) -> Result<Self> {
         let path = path.as_ref();
         if path.is_file() && path.extension() == Some("zip") {
-            ZipLoadedProductBundle::try_load_from(path).map(|v| v.into())
+            ZipLoadedProductBundle::try_load_from(path)
+                .map(|v| v.into())
+                .map_err(|e| anyhow::anyhow!(e))
         } else {
-            LoadedProductBundle::try_load_from(path).map(|v| v.into())
+            LoadedProductBundle::try_load_from(path)
+                .map(|v| v.into())
+                .map_err(|e| anyhow::anyhow!(e))
         }
     }
 
     /// Write a product bundle to a directory on disk at `path`.
     /// Note that this only writes the manifest file, and not the artifacts, images, blobs.
-    pub fn write(&self, path: impl AsRef<Utf8Path>) -> Result<()> {
+    pub fn write(
+        &self,
+        path: impl AsRef<Utf8Path>,
+    ) -> std::result::Result<(), ProductBundleWriteError> {
         let helper = match self {
             Self::V2(data) => {
                 let mut data = data.clone();
@@ -234,8 +304,9 @@ impl ProductBundle {
             }
         };
         let product_bundle_path = path.as_ref().join("product_bundle.json");
-        let file = File::create(product_bundle_path).context("creating product bundle file")?;
-        serde_json::to_writer_pretty(file, &helper).context("writing product bundle file")?;
+        let file = File::create(&product_bundle_path)
+            .map_err(|e| ProductBundleWriteError::CreateFile(product_bundle_path.clone(), e))?;
+        serde_json::to_writer_pretty(file, &helper)?;
         Ok(())
     }
 
@@ -335,7 +406,7 @@ impl ProductBundle {
         &self,
         slot: assembly_partitions_config::Slot,
         out_dir: impl AsRef<Utf8Path>,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), ProductBundleExtractError> {
         let ProductBundle::V2(pb) = self;
 
         let (system, platform_tools) = match slot {
@@ -344,21 +415,19 @@ impl ProductBundle {
             assembly_partitions_config::Slot::R => (&pb.system_r, &pb.platform_tools_r),
         };
 
-        let system = system
-            .as_ref()
-            .ok_or_else(|| anyhow!("System does not exist for the specified slot"))?;
+        let system = system.as_ref().ok_or(ProductBundleExtractError::SystemNotFound)?;
         let image_path = system
             .iter()
             .find_map(|image| match image {
                 Image::Fxfs(path) | Image::FxfsSparse { path, .. } => Some(path),
                 _ => None,
             })
-            .ok_or_else(|| anyhow!("System does not contain an fxfs image"))?;
+            .ok_or(ProductBundleExtractError::FxfsImageNotFound)?;
 
         let tool = platform_tools
             .iter()
             .find(|p| p.file_name() == Some("fxfs_pbtool"))
-            .ok_or_else(|| anyhow!("fxfs_pbtool not found in platform_tools"))?;
+            .ok_or(ProductBundleExtractError::ToolNotFound)?;
 
         let output = Command::new(tool)
             .arg("extract")
@@ -367,15 +436,14 @@ impl ProductBundle {
             .arg("--out")
             .arg(out_dir.as_ref())
             .output()
-            .context("Failed to run extraction tool")?;
+            .map_err(ProductBundleExtractError::RunTool)?;
 
         if !output.status.success() {
-            bail!(
-                "Extraction tool failed with status {}.\nstdout: {}\nstderr: {}",
+            return Err(ProductBundleExtractError::ToolFailed(
                 output.status,
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
+                String::from_utf8_lossy(&output.stdout).to_string(),
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ));
         }
 
         Ok(())

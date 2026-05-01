@@ -114,13 +114,14 @@ pub async fn load_product_bundle(
     log::debug!("Loading a product bundle: {:?}", bundle_path);
 
     if is_local_product_bundle(&bundle_path) {
-        return LoadedProductBundle::try_load_from(&bundle_path);
+        return LoadedProductBundle::try_load_from(&bundle_path).map_err(|e| anyhow::anyhow!(e));
     } else if bundle_path.is_relative() {
         if let Some(base_path) = env.build_dir().map(Utf8Path::from_path).flatten() {
             let base_dir_based_path: Utf8PathBuf = base_path.join(&bundle_path);
 
             if is_local_product_bundle(&base_dir_based_path) {
-                return LoadedProductBundle::try_load_from(&base_dir_based_path);
+                return LoadedProductBundle::try_load_from(&base_dir_based_path)
+                    .map_err(|e| anyhow::anyhow!(e));
             } else {
                 anyhow::bail!(
                     "Could not find product bundle in {bundle_path:?} nor {base_dir_based_path:?}"
@@ -249,7 +250,7 @@ mod tests {
         let pb = load_product_bundle(&env.context, build_dir).await;
         assert_eq!(
             pb.err().unwrap().to_string(),
-            format!("No such file or directory (os error 2): \"{build_dir}/product_bundle.json\"")
+            format!("Failed to open file {build_dir}/product_bundle.json: No such file or directory (os error 2)")
         );
 
         // If pb provided, relative and but to a file not a directory.

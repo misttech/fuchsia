@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::product_bundle::ProductBundle;
+use crate::product_bundle::{ProductBundle, ProductBundleWriteError};
 use crate::v2::{ProductBundleV2, Repository};
 
 use anyhow::{Context, Result, anyhow, ensure};
@@ -25,6 +25,45 @@ use sdk_metadata::{VirtualDevice, VirtualDeviceManifest};
 use std::collections::BTreeMap;
 use std::fs::File;
 use tempfile::TempDir;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProductBundleBuildError {
+    #[error("Failed to get release version: {0}")]
+    GetReleaseVersion(#[source] anyhow::Error),
+
+    #[error("Failed to create directory {0}: {1}")]
+    CreateDir(Utf8PathBuf, #[source] std::io::Error),
+
+    #[error("Failed to remove directory {0}: {1}")]
+    RemoveDir(Utf8PathBuf, #[source] std::io::Error),
+
+    #[error("Failed to write assembled system: {0}")]
+    WriteAssembledSystem(#[source] anyhow::Error),
+
+    #[error("Failed to write partitions: {0}")]
+    WritePartitions(#[source] anyhow::Error),
+
+    #[error("Failed to write size report: {0}")]
+    WriteSizeReport(#[source] anyhow::Error),
+
+    #[error("Failed to write OTA manifest: {0}")]
+    WriteOtaManifest(#[source] anyhow::Error),
+
+    #[error("Failed to write update package: {0}")]
+    WriteUpdatePackage(#[source] anyhow::Error),
+
+    #[error("Failed to write repositories: {0}")]
+    WriteRepositories(#[source] anyhow::Error),
+
+    #[error("Failed to write virtual devices: {0}")]
+    WriteVirtualDevices(#[source] anyhow::Error),
+
+    #[error("Failed to write product bundle: {0}")]
+    WriteProductBundle(#[from] ProductBundleWriteError),
+
+    #[error("Other error: {0}")]
+    Other(String),
+}
 
 /// Build a ProductBundle.
 pub struct ProductBundleBuilder {
@@ -142,9 +181,10 @@ impl ProductBundleBuilder {
         self,
         tools: Box<dyn ToolProvider>,
         out_dir: impl AsRef<Utf8Path>,
-    ) -> Result<ProductBundle> {
+    ) -> std::result::Result<ProductBundle, ProductBundleBuildError> {
         let product_bundle_version =
-            get_release_version(&Some(self.product_bundle_version.clone()), &None)?;
+            get_release_version(&Some(self.product_bundle_version.clone()), &None)
+                .map_err(ProductBundleBuildError::GetReleaseVersion)?;
 
         let ProductBundleBuilder {
             product_bundle_name,
@@ -164,19 +204,28 @@ impl ProductBundleBuilder {
         let out_dir = out_dir.as_ref();
         if out_dir.exists() {
             if out_dir == "" || out_dir == "/" {
-                anyhow::bail!("Avoiding deletion of an unsafe out directory: {}", &out_dir);
+                return Err(ProductBundleBuildError::Other(format!(
+                    "Avoiding deletion of an unsafe out directory: {}",
+                    &out_dir
+                )));
             }
-            std::fs::remove_dir_all(&out_dir).context("Deleting the out_dir")?;
+            std::fs::remove_dir_all(&out_dir)
+                .map_err(|e| ProductBundleBuildError::RemoveDir(out_dir.to_path_buf(), e))?;
         }
-        std::fs::create_dir_all(&out_dir).context("Creating the out_dir")?;
+        std::fs::create_dir_all(&out_dir)
+            .map_err(|e| ProductBundleBuildError::CreateDir(out_dir.to_path_buf(), e))?;
 
         // Write the systems to the `out_dir`, and extract the packages.
-        let (system_a, packages_a) = write_assembled_system(system_a, out_dir.join("system_a"))?;
-        let (system_b, _packages_b) = write_assembled_system(system_b, out_dir.join("system_b"))?;
-        let (system_r, packages_r) = write_assembled_system(system_r, out_dir.join("system_r"))?;
+        let (system_a, packages_a) = write_assembled_system(system_a, out_dir.join("system_a"))
+            .map_err(ProductBundleBuildError::WriteAssembledSystem)?;
+        let (system_b, _packages_b) = write_assembled_system(system_b, out_dir.join("system_b"))
+            .map_err(ProductBundleBuildError::WriteAssembledSystem)?;
+        let (system_r, packages_r) = write_assembled_system(system_r, out_dir.join("system_r"))
+            .map_err(ProductBundleBuildError::WriteAssembledSystem)?;
 
         // Write the partitions config to `out_dir`.
-        let partitions = write_partitions(&system_a, &system_b, &system_r, &out_dir)?;
+        let partitions = write_partitions(&system_a, &system_b, &system_r, &out_dir)
+            .map_err(ProductBundleBuildError::WritePartitions)?;
 
         // Write the gerrit image size report.
         if let Some(gerrit_size_report) = gerrit_size_report {
@@ -187,13 +236,17 @@ impl ProductBundleBuilder {
                 &system_r,
                 &product_bundle_name,
                 gerrit_size_report,
-            )?;
+            )
+            .map_err(ProductBundleBuildError::WriteSizeReport)?;
         }
 
         // Write the update package.
-        let gen_dir = TempDir::new().context("creating temporary directory")?;
-        let gen_dir_path = Utf8Path::from_path(gen_dir.path())
-            .context("checking if temporary directory is UTF-8")?;
+        let gen_dir = TempDir::new().map_err(|e| {
+            ProductBundleBuildError::Other(format!("creating temporary directory: {:?}", e))
+        })?;
+        let gen_dir_path = Utf8Path::from_path(gen_dir.path()).ok_or_else(|| {
+            ProductBundleBuildError::Other("checking if temporary directory is UTF-8".to_string())
+        })?;
         let update_package = if let Some(update_details) = update_details {
             if let Some(repository_details) = &repository_details
                 && let Some(key_path) = &update_details.ota_manifest_key_path
@@ -211,17 +264,20 @@ impl ProductBundleBuilder {
                     // files in that directory.
                     out_dir.join("repository/ota_manifest"),
                 )
-                .context("writing OTA manifest")?;
+                .map_err(ProductBundleBuildError::WriteOtaManifest)?;
             }
-            Some(write_update_package(
-                update_details,
-                &packages_a,
-                &system_a,
-                &system_r,
-                &partitions,
-                tools,
-                gen_dir_path,
-            )?)
+            Some(
+                write_update_package(
+                    update_details,
+                    &packages_a,
+                    &system_a,
+                    &system_r,
+                    &partitions,
+                    tools,
+                    gen_dir_path,
+                )
+                .map_err(ProductBundleBuildError::WriteUpdatePackage)?,
+            )
         } else {
             None
         };
@@ -231,12 +287,15 @@ impl ProductBundleBuilder {
         // the product bundle inadvertently creates the blobs directory, which dirties the product
         // bundle, causing hermeticity errors.
         let blobs_path = out_dir.join("blobs");
-        std::fs::create_dir(&blobs_path).context("Creating blobs directory")?;
+        std::fs::create_dir(&blobs_path)
+            .map_err(|e| ProductBundleBuildError::CreateDir(blobs_path.clone(), e))?;
 
         // When RBE is enabled, Bazel will skip empty directory. This will ensure
         // blobs directory still appear in the output dir.
         let ensure_file_path = blobs_path.join(".ensure-one-file");
-        std::fs::File::create(&ensure_file_path).context("Creating ensure file")?;
+        std::fs::File::create(&ensure_file_path).map_err(|e| {
+            ProductBundleBuildError::Other(format!("Creating ensure file: {:?}", e))
+        })?;
 
         // Write the repositories.
         let repositories = if let Some(repository_details) = repository_details {
@@ -248,18 +307,22 @@ impl ProductBundleBuilder {
                 blobs_path,
                 out_dir,
             )
-            .await?
+            .await
+            .map_err(ProductBundleBuildError::WriteRepositories)?
         } else {
             vec![]
         };
 
         // Write the virtual devices.
         let virtual_devices_path = if !virtual_devices.is_empty() {
-            Some(write_virtual_devices(
-                virtual_devices,
-                out_dir.join("virtual_devices"),
-                recommended_virtual_device,
-            )?)
+            Some(
+                write_virtual_devices(
+                    virtual_devices,
+                    out_dir.join("virtual_devices"),
+                    recommended_virtual_device,
+                )
+                .map_err(ProductBundleBuildError::WriteVirtualDevices)?,
+            )
         } else {
             None
         };
@@ -300,9 +363,7 @@ impl ProductBundleBuilder {
             virtual_devices_path,
             release_info,
         });
-        product_bundle
-            .write(out_dir)
-            .with_context(|| format!("Writing product bundle: {}", out_dir))?;
+        product_bundle.write(out_dir)?;
         Ok(product_bundle)
     }
 }

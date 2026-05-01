@@ -19,14 +19,13 @@
 //! to ensure that the directory remains portable (can be moved, zipped, tarred,
 //! downloaded on another machine).
 
-use anyhow::{Context, Result, anyhow};
 use assembled_system::Image;
 use assembly_partitions_config::PartitionsConfig;
 use assembly_release_info::ProductBundleReleaseInfo;
 use camino::{Utf8Path, Utf8PathBuf};
 use fuchsia_merkle::Hash;
 use fuchsia_repo::repo_client::RepoClient;
-use fuchsia_repo::repository::FileSystemRepository;
+use fuchsia_repo::repository::{Error as RepoError, FileSystemRepository};
 use pathdiff::diff_utf8_paths;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -96,6 +95,42 @@ pub struct ProductBundleV2 {
     pub virtual_devices_path: Option<Utf8PathBuf>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum V2Error {
+    #[error("Failed to create repo client: {0}")]
+    CreateRepoClient(#[source] RepoError),
+
+    #[error("Failed to update repo metadata: {0}")]
+    UpdateRepoMetadata(#[source] RepoError),
+
+    #[error("Failed to list packages: {0}")]
+    ListPackages(#[source] RepoError),
+
+    #[error("Failed to show package {0}: {1}")]
+    ShowPackage(String, #[source] anyhow::Error),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CanonicalizeError {
+    #[error("No parent for {0}")]
+    NoParent(Utf8PathBuf),
+
+    #[error("No file name for {0}")]
+    NoFileName(Utf8PathBuf),
+
+    #[error("Failed to create directory {0}: {1}")]
+    CreateDir(Utf8PathBuf, #[source] std::io::Error),
+
+    #[error("Failed to canonicalize path {0}: {1}")]
+    Canonicalize(Utf8PathBuf, #[source] std::io::Error),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RelativizeError {
+    #[error("Failed to rebase path {0} to {1}")]
+    Rebase(Utf8PathBuf, Utf8PathBuf),
+}
+
 /// A repository that holds all the packages, blobs, and keys.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -145,16 +180,18 @@ impl Repository {
     }
 
     /// Return the paths-on-host of the blobs contained in the product bundle.
-    pub async fn blobs(&self) -> Result<HashSet<Utf8PathBuf>> {
+    pub async fn blobs(&self) -> std::result::Result<HashSet<Utf8PathBuf>, V2Error> {
         let mut all_blobs = HashSet::<Utf8PathBuf>::new();
         let repo = FileSystemRepository::new(self.metadata_path.clone(), self.blobs_path.clone());
         let mut client =
-            RepoClient::from_trusted_remote(&repo).await.context("creating the repo client")?;
-        client.update().await.context("updating the repo metadata")?;
-        let packages = client.list_packages().await.context("listing packages")?;
+            RepoClient::from_trusted_remote(&repo).await.map_err(V2Error::CreateRepoClient)?;
+        client.update().await.map_err(V2Error::UpdateRepoMetadata)?;
+        let packages = client.list_packages().await.map_err(V2Error::ListPackages)?;
         for package in &packages {
-            if let Some(blobs) =
-                client.show_package(&package.name, true).await.context("showing package")?
+            if let Some(blobs) = client
+                .show_package(&package.name, true)
+                .await
+                .map_err(|e| V2Error::ShowPackage(package.name.clone(), e))?
             {
                 all_blobs.extend(
                     blobs.iter().filter_map(|e| e.hash.map(|hash| hash.to_string().into())),
@@ -183,8 +220,8 @@ pub enum Type {
 }
 
 impl FromStr for Type {
-    type Err = anyhow::Error;
-    fn from_str(value: &str) -> Result<Type, anyhow::Error> {
+    type Err = std::convert::Infallible;
+    fn from_str(value: &str) -> std::result::Result<Type, std::convert::Infallible> {
         match value.to_lowercase().as_str() {
             "flash" => Ok(Type::Flash),
             "emu" => Ok(Type::Emu),
@@ -201,7 +238,7 @@ pub(crate) trait Canonicalizer {
     fn canonicalize_path(&self, path: impl AsRef<Utf8Path>, image_types: Vec<Type>) -> Utf8PathBuf;
     fn root_path(&self) -> &Utf8PathBuf;
 
-    fn canonicalize_system(&self, system: &mut Option<Vec<Image>>) -> Result<()> {
+    fn canonicalize_system(&self, system: &mut Option<Vec<Image>>) {
         if let Some(system) = system {
             for image in system.iter_mut() {
                 let image_types = match image {
@@ -221,12 +258,10 @@ pub(crate) trait Canonicalizer {
                 );
             }
         }
-        Ok(())
     }
 
-    fn canonicalize_dir(&self, path: &Utf8Path) -> Result<Utf8PathBuf> {
-        let path = self.canonicalize_path(path, vec![Type::Update]);
-        Ok(path)
+    fn canonicalize_dir(&self, path: &Utf8Path) -> Utf8PathBuf {
+        self.canonicalize_path(path, vec![Type::Update])
     }
 }
 
@@ -263,7 +298,7 @@ impl Canonicalizer for DiskCanonicalizer {
             }
         }
     }
-    fn canonicalize_dir(&self, path: &Utf8Path) -> Result<Utf8PathBuf> {
+    fn canonicalize_dir(&self, path: &Utf8Path) -> Utf8PathBuf {
         let dir = self.product_bundle_dir.join(path);
         // Create the directory to ensure that canonicalize will work.
         if !dir.exists() {
@@ -271,8 +306,7 @@ impl Canonicalizer for DiskCanonicalizer {
                 eprintln!("Cannot create directory: {}, {:#?}", dir, e);
             }
         }
-        let path = self.canonicalize_path(path, vec![Type::Update]);
-        Ok(path)
+        self.canonicalize_path(path, vec![Type::Update])
     }
 }
 
@@ -286,7 +320,7 @@ impl ProductBundleV2 {
     pub(crate) fn canonicalize_paths(
         &mut self,
         product_bundle_dir: impl AsRef<Utf8Path>,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), CanonicalizeError> {
         let mut canonicalizer = DiskCanonicalizer::new(product_bundle_dir.as_ref());
 
         let res = self.canonicalize_paths_with(product_bundle_dir, &mut canonicalizer);
@@ -304,7 +338,7 @@ impl ProductBundleV2 {
         &mut self,
         product_bundle_dir: impl AsRef<Utf8Path>,
         canonicalizer: &mut T,
-    ) -> Result<()>
+    ) -> std::result::Result<(), CanonicalizeError>
     where
         T: Canonicalizer,
     {
@@ -322,9 +356,9 @@ impl ProductBundleV2 {
         }
 
         // Canonicalize the systems.
-        canonicalizer.canonicalize_system(&mut self.system_a)?;
-        canonicalizer.canonicalize_system(&mut self.system_b)?;
-        canonicalizer.canonicalize_system(&mut self.system_r)?;
+        canonicalizer.canonicalize_system(&mut self.system_a);
+        canonicalizer.canonicalize_system(&mut self.system_b);
+        canonicalizer.canonicalize_system(&mut self.system_r);
 
         for tool in &mut self.platform_tools_a {
             *tool = canonicalizer.canonicalize_path(&tool, vec![]);
@@ -337,19 +371,19 @@ impl ProductBundleV2 {
         }
 
         for repository in &mut self.repositories {
-            repository.metadata_path = canonicalizer.canonicalize_dir(&repository.metadata_path)?;
-            repository.blobs_path = canonicalizer.canonicalize_dir(&repository.blobs_path)?;
+            repository.metadata_path = canonicalizer.canonicalize_dir(&repository.metadata_path);
+            repository.blobs_path = canonicalizer.canonicalize_dir(&repository.blobs_path);
             if let Some(path) = &repository.root_private_key_path {
-                repository.root_private_key_path = Some(canonicalizer.canonicalize_dir(path)?);
+                repository.root_private_key_path = Some(canonicalizer.canonicalize_dir(path));
             }
             if let Some(path) = &repository.targets_private_key_path {
-                repository.targets_private_key_path = Some(canonicalizer.canonicalize_dir(path)?);
+                repository.targets_private_key_path = Some(canonicalizer.canonicalize_dir(path));
             }
             if let Some(path) = &repository.snapshot_private_key_path {
-                repository.snapshot_private_key_path = Some(canonicalizer.canonicalize_dir(path)?);
+                repository.snapshot_private_key_path = Some(canonicalizer.canonicalize_dir(path));
             }
             if let Some(path) = &repository.timestamp_private_key_path {
-                repository.timestamp_private_key_path = Some(canonicalizer.canonicalize_dir(path)?);
+                repository.timestamp_private_key_path = Some(canonicalizer.canonicalize_dir(path));
             }
         }
 
@@ -358,19 +392,23 @@ impl ProductBundleV2 {
             let virtual_devices_path = product_bundle_dir.join(path);
             let dir = virtual_devices_path
                 .parent()
-                .ok_or_else(|| anyhow!("No parent: {}", virtual_devices_path))?;
+                .ok_or_else(|| CanonicalizeError::NoParent(virtual_devices_path.clone()))?;
             let base = virtual_devices_path
                 .file_name()
-                .ok_or_else(|| anyhow!("No file name: {}", virtual_devices_path))?;
+                .ok_or_else(|| CanonicalizeError::NoFileName(virtual_devices_path.clone()))?;
 
             // Create the directory to ensure that canonicalize will work.
             if !dir.exists() {
                 std::fs::create_dir_all(&dir)
-                    .with_context(|| format!("Creating the directory: {}", dir))?;
+                    .map_err(|e| CanonicalizeError::CreateDir(dir.to_path_buf(), e))?;
             }
             // Only canonicalize the directory.
             // This prevents problems when virtual_devices_path is a symlink.
-            self.virtual_devices_path = Some(dir.canonicalize_utf8()?.join(base));
+            self.virtual_devices_path = Some(
+                dir.canonicalize_utf8()
+                    .map_err(|e| CanonicalizeError::Canonicalize(dir.to_path_buf(), e))?
+                    .join(base),
+            );
         }
 
         Ok(())
@@ -386,64 +424,67 @@ impl ProductBundleV2 {
     pub(crate) fn relativize_paths(
         &mut self,
         product_bundle_dir: impl AsRef<Utf8Path>,
-    ) -> Result<()> {
+    ) -> std::result::Result<(), RelativizeError> {
         let product_bundle_dir = product_bundle_dir.as_ref();
 
         // Relativize the partitions.
         for part in &mut self.partitions.bootstrap_partitions {
-            part.image = diff_utf8_paths(&part.image, &product_bundle_dir).context(format!(
-                "rebasing file path: {:?} to {:?}",
-                &part.image, &product_bundle_dir
-            ))?;
+            part.image = diff_utf8_paths(&part.image, &product_bundle_dir).ok_or_else(|| {
+                RelativizeError::Rebase(part.image.clone(), product_bundle_dir.to_path_buf())
+            })?;
         }
         for part in &mut self.partitions.bootloader_partitions {
-            part.image = diff_utf8_paths(&part.image, &product_bundle_dir).context(format!(
-                "rebasing file path: {:?} to {:?}",
-                &part.image, &product_bundle_dir
-            ))?;
+            part.image = diff_utf8_paths(&part.image, &product_bundle_dir).ok_or_else(|| {
+                RelativizeError::Rebase(part.image.clone(), product_bundle_dir.to_path_buf())
+            })?;
         }
         for cred in &mut self.partitions.unlock_credentials {
-            *cred = diff_utf8_paths(&cred, &product_bundle_dir)
-                .context(format!("rebasing file path: {:?} to {:?}", &cred, &product_bundle_dir))?;
+            *cred = diff_utf8_paths(&cred, &product_bundle_dir).ok_or_else(|| {
+                RelativizeError::Rebase(cred.clone(), product_bundle_dir.to_path_buf())
+            })?;
         }
 
         // Relativize the systems.
-        let relativize_system = |system: &mut Option<Vec<Image>>| -> Result<()> {
-            if let Some(system) = system {
-                for image in system.iter_mut() {
-                    let path =
-                        diff_utf8_paths(&image.source(), &product_bundle_dir).ok_or_else(|| {
-                            anyhow!(
-                                "failed to rebase the file: {} in {}",
-                                &image.source(),
-                                &product_bundle_dir
-                            )
-                        })?;
-                    image.set_source(path);
+        let relativize_system =
+            |system: &mut Option<Vec<Image>>| -> std::result::Result<(), RelativizeError> {
+                if let Some(system) = system {
+                    for image in system.iter_mut() {
+                        let path = diff_utf8_paths(&image.source(), &product_bundle_dir)
+                            .ok_or_else(|| {
+                                RelativizeError::Rebase(
+                                    image.source().to_path_buf(),
+                                    product_bundle_dir.to_path_buf(),
+                                )
+                            })?;
+                        image.set_source(path);
+                    }
                 }
-            }
-            Ok(())
-        };
+                Ok(())
+            };
         relativize_system(&mut self.system_a)?;
         relativize_system(&mut self.system_b)?;
         relativize_system(&mut self.system_r)?;
 
-        let relativize_tools = |tools: &mut Vec<Utf8PathBuf>| -> Result<()> {
-            for tool in tools.iter_mut() {
-                *tool = diff_utf8_paths(&*tool, &product_bundle_dir).ok_or_else(|| {
-                    anyhow!("failed to rebase the file: {} in {}", tool, &product_bundle_dir)
-                })?;
-            }
-            Ok(())
-        };
+        let relativize_tools =
+            |tools: &mut Vec<Utf8PathBuf>| -> std::result::Result<(), RelativizeError> {
+                for tool in tools.iter_mut() {
+                    *tool = diff_utf8_paths(&*tool, &product_bundle_dir).ok_or_else(|| {
+                        RelativizeError::Rebase(tool.clone(), product_bundle_dir.to_path_buf())
+                    })?;
+                }
+                Ok(())
+            };
         relativize_tools(&mut self.platform_tools_a)?;
         relativize_tools(&mut self.platform_tools_b)?;
         relativize_tools(&mut self.platform_tools_r)?;
 
         for repository in &mut self.repositories {
-            let relativize_dir = |path: &Utf8PathBuf| -> Result<Utf8PathBuf> {
-                diff_utf8_paths(&path, &product_bundle_dir).context("rebasing repository")
-            };
+            let relativize_dir =
+                |path: &Utf8PathBuf| -> std::result::Result<Utf8PathBuf, RelativizeError> {
+                    diff_utf8_paths(&path, &product_bundle_dir).ok_or_else(|| {
+                        RelativizeError::Rebase(path.clone(), product_bundle_dir.to_path_buf())
+                    })
+                };
             repository.metadata_path = relativize_dir(&repository.metadata_path)?;
             repository.blobs_path = relativize_dir(&repository.blobs_path)?;
             if let Some(path) = &repository.root_private_key_path {
@@ -463,7 +504,9 @@ impl ProductBundleV2 {
         // Relativize the virtual device specifications.
         if let Some(path) = &self.virtual_devices_path {
             self.virtual_devices_path =
-                Some(diff_utf8_paths(&path, &product_bundle_dir).context("rebasing file path")?);
+                Some(diff_utf8_paths(&path, &product_bundle_dir).ok_or_else(|| {
+                    RelativizeError::Rebase(path.clone(), product_bundle_dir.to_path_buf())
+                })?);
         }
 
         Ok(())

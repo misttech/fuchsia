@@ -372,7 +372,10 @@ async fn sanitized_product_bundle_create(
         builder = builder.system(recovery_system, Slot::R);
     }
 
-    let _ = builder.build(Box::new(tools), &out).await?;
+    let _ = builder
+        .build(Box::new(tools), &out)
+        .await
+        .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;
     cache.purge()?;
 
     println!(
