@@ -102,26 +102,48 @@ bool Queue::Contains(const ReportId report_id) const {
          (active_report_ && active_report_->report_id == report_id);
 }
 
-bool Queue::HasOlderAndNewerHourlyReports(const PendingReport& report) const {
-  bool has_older = active_report_->is_hourly_report && active_report_->report_id < report.report_id;
-  bool has_newer = active_report_->is_hourly_report && active_report_->report_id > report.report_id;
-
-  auto check_queue = [&report, &has_older, &has_newer](const std::deque<PendingReport>& reports) {
-    for (const PendingReport& r : reports) {
-      if (r.is_hourly_report && r.report_id < report.report_id) {
-        has_older = true;
-      }
-
-      if (r.is_hourly_report && r.report_id > report.report_id) {
-        has_newer = true;
-      }
+void Queue::PruneHourlyReports() {
+  std::vector<ReportId> hourly_reports;
+  auto add_if_hourly = [&hourly_reports](const PendingReport& report) {
+    if (report.is_hourly_report) {
+      hourly_reports.push_back(report.report_id);
     }
   };
 
-  check_queue(ready_reports_);
-  check_queue(blocked_reports_);
+  if (active_report_) {
+    add_if_hourly(*active_report_);
+  }
+  for (const PendingReport& report : ready_reports_) {
+    add_if_hourly(report);
+  }
+  for (const PendingReport& report : blocked_reports_) {
+    add_if_hourly(report);
+  }
 
-  return has_older && has_newer;
+  if (hourly_reports.size() <= 2) {
+    return;
+  }
+
+  std::sort(hourly_reports.begin(), hourly_reports.end());
+  const std::vector<ReportId> to_delete(hourly_reports.begin() + 1, hourly_reports.end() - 1);
+
+  auto erase_from = [this](std::deque<PendingReport>& reports, const ReportId id) {
+    auto it = std::find_if(reports.begin(), reports.end(),
+                           [id](const PendingReport& report) { return report.report_id == id; });
+    if (it != reports.end()) {
+      Retire(std::move(*it), RetireReason::kDelete);
+      reports.erase(it);
+    }
+  };
+
+  for (const ReportId id : to_delete) {
+    if (active_report_ && active_report_->report_id == id) {
+      active_report_->delete_post_upload = PendingReport::DeletionReason::kPruned;
+    }
+
+    erase_from(ready_reports_, id);
+    erase_from(blocked_reports_, id);
+  }
 }
 
 bool Queue::IsPeriodicUploadScheduled() const {
@@ -159,9 +181,14 @@ bool Queue::Add(Report report, FilingResultFn callback) {
     }
   }
 
-  return Add(PendingReport(std::move(report), std::move(callback)),
-             /*consider_eager_upload=*/true,
-             /*add_to_store=*/true);
+  const bool result = Add(PendingReport(std::move(report), std::move(callback)),
+                          /*consider_eager_upload=*/true,
+                          /*add_to_store=*/true);
+
+  // Hourly reports are pruned after `Add` to ensure that only 2 hourly reports are kept in the
+  // queue.
+  PruneHourlyReports();
+  return result;
 }
 
 bool Queue::Add(PendingReport pending_report, const bool consider_eager_upload,
@@ -322,11 +349,12 @@ void Queue::Upload(const bool set_network_reachable_on_success) {
             Retire(std::move(*active_report_), RetireReason::kTimedOut, FilingResult::kServerError);
             break;
           case CrashServer::UploadStatus::kFailure:
-            if (active_report_->delete_post_upload) {
+            if (active_report_->delete_post_upload ==
+                PendingReport::DeletionReason::kUserOptedOut) {
               Retire(std::move(*active_report_), RetireReason::kDelete,
                      FilingResult::kReportNotFiledUserOptedOut);
-            } else if (active_report_->is_hourly_report &&
-                       HasOlderAndNewerHourlyReports(*active_report_)) {
+            } else if (active_report_->delete_post_upload ==
+                       PendingReport::DeletionReason::kPruned) {
               Retire(std::move(*active_report_), RetireReason::kDelete);
             } else {
               // If the report isn't deleted and should be added to the store post-upload, its
@@ -500,7 +528,7 @@ void Queue::DeleteAll() {
       // The report may have been already deleted from memory after initiating upload.
       active_report_->TakeReport();
     }
-    active_report_->delete_post_upload = true;
+    active_report_->delete_post_upload = PendingReport::DeletionReason::kUserOptedOut;
   }
 
   report_store_->RemoveAll();
@@ -580,7 +608,7 @@ Queue::PendingReport::PendingReport(Report report, FilingResultFn callback)
       is_hourly_report(report.IsHourlyReport()),
       report(std::move(report)),
       callback(std::move(callback)),
-      delete_post_upload(false) {}
+      delete_post_upload(DeletionReason::kNone) {}
 
 Queue::PendingReport::PendingReport(const ReportId report_id, const std::string snapshot_uuid,
                                     const bool is_hourly_report)
@@ -589,7 +617,7 @@ Queue::PendingReport::PendingReport(const ReportId report_id, const std::string 
       is_hourly_report(is_hourly_report),
       report(std::nullopt),
       callback([](const FilingResult& result, const std::string& report_id) {}),
-      delete_post_upload(false) {}
+      delete_post_upload(DeletionReason::kNone) {}
 
 void Queue::PendingReport::SetReport(Report r) { report = std::move(r); }
 

@@ -87,9 +87,15 @@ class Queue {
     std::optional<Report> report;
     FilingResultFn callback;
 
-    // Set to true iff the report is the active report and needs to be deleted once it becomes
-    // blocked.
-    bool delete_post_upload;
+    enum class DeletionReason : std::uint8_t {
+      kNone,
+      kUserOptedOut,
+      kPruned,
+    };
+
+    // Set to a value other than kNone iff the report is the active report and needs to be deleted
+    // once it becomes blocked.
+    DeletionReason delete_post_upload;
   };
 
   // Why a report is being retired.
@@ -134,9 +140,8 @@ class Queue {
   // in |snapshot_clients_|. Returns true if the snapshot was deleted.
   bool DeleteSnapshotIfNoClients(const std::string& uuid);
 
-  // Returns true if there is both an older and a newer hourly report in the queue relative to
-  // |report|.
-  bool HasOlderAndNewerHourlyReports(const PendingReport& report) const;
+  // Removes all hourly reports from the queue except for the oldest and newest.
+  void PruneHourlyReports();
 
   // Returns the number of crash reports that use the snapshot referred to by |uuid|.
   //
