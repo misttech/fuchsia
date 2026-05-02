@@ -34,6 +34,7 @@
                 "PerfEventOpenTest.SampleIdIsValid",
                 "PerfEventOpenTest.MmapFirstRecordPageIsValid",
                 "PerfEventOpenTest.MmapMetadataPageIsValid",
+                "PerfEventOpenTest.InvalidDataTailIgnoredByKernel",
 
                 // TODO(https://fxbug.dev/436914153): This is flakey.
                 "Pty.EchoFlags",

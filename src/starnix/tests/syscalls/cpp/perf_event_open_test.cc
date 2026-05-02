@@ -588,7 +588,7 @@ TEST(PerfEventOpenTest, SampleIdIsValid) {
       int num_pages = 2;
       size_t data_size = num_pages * getpagesize();
       size_t buffer_size = getpagesize() + data_size;
-      void* address = mmap(nullptr, buffer_size, PROT_READ, MAP_SHARED, fd, 0);
+      void* address = mmap(nullptr, buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
       EXPECT_NE(address, MAP_FAILED);
 
       EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_ENABLE), -1);
@@ -615,28 +615,33 @@ TEST(PerfEventOpenTest, SampleIdIsValid) {
       int retries = 0;
       perf_event_mmap_page* metadata = (perf_event_mmap_page*)address;
 
+      // Using __u64 to match the type in perf_event_mmap_page and avoid reference binding errors.
+      std::atomic_ref<__u64> data_head(metadata->data_head);
+      std::atomic_ref<__u64> data_tail(metadata->data_tail);
+
       while (!read_samples && retries < read_retries) {
-        // Note: for the purposes of this test we are only reading the first sample.
-        // Thus we don't make use of data_head or data_tail at the moment.
-        // TODO(https://fxbug.dev/460203776): update data_head.
-        // TODO(https://fxbug.dev/448762912): update data_tail.
-        char* record_start = static_cast<char*>(address) + metadata->data_offset;
+        if (data_head.load(std::memory_order_acquire) <=
+            data_tail.load(std::memory_order_acquire)) {
+          usleep(poll_duration);
+          retries += 1;
+        } else {
+          read_samples = true;
+        }
+      }
+
+      uint64_t curr_pointer = data_tail.load(std::memory_order_acquire);
+
+      while (curr_pointer < data_head.load(std::memory_order_acquire)) {
+        char* record_start = static_cast<char*>(address) + metadata->data_offset + curr_pointer;
 
         // Verify that we got samples written by checking the first sample's metadata.
         perf_event_header* header = (perf_event_header*)record_start;
 
-        // If no sampling data, wait poll_duration to potentially collect data and retry.
-        if (!read_samples) {
-          if (header->type == 0) {
-            usleep(poll_duration);
-            retries += 1;
-            continue;
-          } else {
-            read_samples = true;
-          }
+        if (header->size == 0) {
+          break;
         }
 
-        // Otherwise, we do have at least 1 sample. Verify the first sample_id.
+        // Otherwise, we do have at least 1 sample. Verify the sample_id.
         char* record_details_start = record_start + sizeof(perf_event_header);
         struct perf_record_sample {
           uint64_t sample_id;
@@ -647,7 +652,13 @@ TEST(PerfEventOpenTest, SampleIdIsValid) {
         sample_id = record_details->sample_id;
         id = record_details->id;
         EXPECT_EQ(sample_id, id);
+
+        curr_pointer += header->size;
       }
+
+      // Update data_tail to indicate we've consumed the records.
+      data_tail.store(curr_pointer, std::memory_order_release);
+
       if (retries > 0) {
         printf("Retried reading sample data %u times\n", retries);
       }
@@ -693,6 +704,9 @@ TEST(PerfEventOpenTest, MmapMetadataPageIsValid) {
 
     // Verify metadata page has valid/reasonable info.
     // Don't need to memcopy. Just read directly.
+    // Note: While we should technically use atomic loads for all shared memory
+    // fields after mmap(), we use direct access here for simplicity since the
+    // event is not enabled yet and values are expected to be static.
     perf_event_mmap_page* metadata = (perf_event_mmap_page*)address;
     EXPECT_LT(metadata->version, (uint32_t)10);
     EXPECT_LT(metadata->compat_version, (uint32_t)10);
@@ -703,7 +717,6 @@ TEST(PerfEventOpenTest, MmapMetadataPageIsValid) {
     EXPECT_EQ(metadata->cap_user_time, (uint64_t)1);
     EXPECT_EQ(metadata->time_enabled, (uint64_t)0);
     EXPECT_EQ(metadata->time_running, (uint64_t)0);
-    // TODO(https://fxbug.dev/460203776): Update this EXPECT once data_head works.
     EXPECT_EQ(metadata->data_head, (uint64_t)0);
     EXPECT_EQ(metadata->data_tail, (uint64_t)0);
     EXPECT_EQ(metadata->data_offset, (uint64_t)getpagesize());
@@ -740,6 +753,9 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
 
     // Verify metadata page has valid/reasonable info.
     // Don't need to memcopy. Just read directly.
+    // Note: While we should technically use atomic loads for all shared memory
+    // fields after mmap(), we use direct access here for simplicity since the
+    // event is not enabled yet and values are expected to be static.
     perf_event_mmap_page* metadata = (perf_event_mmap_page*)address;
     EXPECT_LT(metadata->version, (uint32_t)10);
     EXPECT_LT(metadata->compat_version, (uint32_t)10);
@@ -750,7 +766,6 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
     EXPECT_EQ(metadata->cap_user_time, (uint64_t)1);
     EXPECT_EQ(metadata->time_enabled, (uint64_t)0);
     EXPECT_EQ(metadata->time_running, (uint64_t)0);
-    // TODO(https://fxbug.dev/460203776): Update this EXPECT once data_head works.
     EXPECT_EQ(metadata->data_head, (uint64_t)0);
     EXPECT_EQ(metadata->data_tail, (uint64_t)0);
     EXPECT_EQ(metadata->data_offset, (uint64_t)getpagesize());
@@ -758,7 +773,7 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
 
     // Start sampling.
     EXPECT_NE(syscall(__NR_ioctl, file_descriptor, PERF_EVENT_IOC_ENABLE), -1);
-    printf("This is an event - start sampling for %u ms \n", sample_duration);
+    printf("This is an event - start sampling for %u us \n", sample_duration);
     usleep(sample_duration);
 
     // End sampling.
@@ -773,6 +788,11 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
     // https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/perfetto/src/profiling/perf/event_config_unittest.cc;l=96
     bool read_samples = false;
     int retries = 0;
+
+    // Using __u64 to match the type in perf_event_mmap_page and avoid reference binding errors.
+    std::atomic_ref<__u64> data_head(metadata->data_head);
+    std::atomic_ref<__u64> data_tail(metadata->data_tail);
+
     while (!read_samples && retries < read_retries) {
       // Start reading next page, which is the first sampling data page. From there
       // you can keep iterating to read each sample. Layout:
@@ -789,29 +809,30 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
       // |  |
       // ------
 
-      // Starting address for the records page(s).
-      char* record_start =
-          static_cast<char*>(address) + metadata->data_offset + metadata->data_tail;
+      // If no sampling data, wait poll_duration to potentially collect data and retry.
+      if (!read_samples) {
+        if (data_head.load(std::memory_order_acquire) <=
+            data_tail.load(std::memory_order_acquire)) {
+          usleep(poll_duration);
+          retries += 1;
+          continue;
+        } else {
+          read_samples = true;
+        }
+      }
 
       // This is the counter that gets incremented after reading each record.
-      uint64_t curr_pointer = metadata->data_tail;
+      uint64_t curr_pointer = data_tail.load(std::memory_order_acquire);
 
-      // TODO(https://fxbug.dev/433751865): figure out why we only get 0s after a few loops.
-      // This should say `while (curr_pointer < metadata->data_head)` but we are only getting
-      // 2 samples reliably correctly (rest are 0s or misaligned). Will investigate in follow-up.
-      for (int i = 0; i < 2; i++) {
+      while (curr_pointer < data_head.load(std::memory_order_acquire)) {
+        // Starting address for the current record.
+        char* record_start = static_cast<char*>(address) + metadata->data_offset + curr_pointer;
+
         // Parse header.
         perf_event_header* header = (perf_event_header*)record_start;
 
-        // If no sampling data, wait poll_duration to potentially collect data and retry.
-        if (!read_samples) {
-          if (header->type == 0) {
-            usleep(poll_duration);
-            retries += 1;
-            break;
-          } else {
-            read_samples = true;
-          }
+        if (header->size == 0) {
+          break;
         }
 
         // Increment by sample size, so that we can read the next sample in the next iteration.
@@ -819,10 +840,6 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
         EXPECT_THAT(header->misc, testing::AnyOf(testing::Eq(PERF_RECORD_MISC_KERNEL) /* 1 */,
                                                  testing::Eq(PERF_RECORD_MISC_USER) /* 2 */));
         EXPECT_GE(header->size, (uint16_t)8);  // Size of the whole sample, INCLUDING THIS HEADER.
-
-        // Now that we know the type, we can roll past the perf_event_header
-        // and read the rest of the struct, which is different for each type.
-        curr_pointer += header->size;
 
         // Parse record details.
         char* record_details_start = record_start + sizeof(perf_event_header);
@@ -849,9 +866,6 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
         EXPECT_GE(record_details->nr, (uint64_t)1);
         EXPECT_LT(record_details->nr, (uint64_t)200);
 
-        // Advance curr_ptr by perf_record_sample (minus ips[nr]).
-        curr_pointer += sizeof(perf_record_sample);
-
         // Read the next param of perf_record_sample ips[nr]. When we created the
         // struct, we don't know the size of `ips`. So we iterate over `nr` times.
         uint64_t number_of_ips = record_details->nr;
@@ -868,16 +882,70 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
         }
 
         // Advance counter.
-        curr_pointer += ips.size_bytes();
-        // See TODO above about using curr_pointer. Just putting EXPECT here so that this will
-        // build.
-        EXPECT_GT(curr_pointer, metadata->data_tail);
+        curr_pointer += header->size;
+      }
+
+      // Update data_tail to indicate we've consumed the records.
+      data_tail.store(curr_pointer, std::memory_order_release);
+      if (read_samples) {
+        EXPECT_GT(curr_pointer, (uint64_t)0);
+        EXPECT_GT(data_head.load(std::memory_order_relaxed), (uint64_t)0);
       }
     }
     if (retries > 0) {
       printf("Retried reading sample data %u times\n", retries);
     }
     EXPECT_EQ(syscall(__NR_munmap, address, buffer_size), 0);
+  }
+}
+
+// data_tail should always be <= data_head. However, because the user is the one
+// setting data_tail after reading, the kernel cannot control whether it actually IS
+// <= data_head. Expected behavior here is to just ignore any data between data_head
+// and data_tail.
+// Currently, the kernel doesn't do anything with data_tail anyway;
+// TODO(https://fxbug.dev/448762912): complete data_tail impl in mod.rs.
+TEST(PerfEventOpenTest, InvalidDataTailIgnoredByKernel) {
+  if (test_helper::HasSysAdmin()) {
+    perf_event_attr attr = example_sampling_attr(PERF_SAMPLE_TIME);
+    int32_t fd =
+        sys_perf_event_open(&attr, example_pid, example_cpu, example_group_fd, example_flags);
+    EXPECT_NE(fd, -1);
+
+    size_t buffer_size = getpagesize() + (2 * getpagesize());
+    void* address = mmap(nullptr, buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    EXPECT_NE(address, MAP_FAILED);
+
+    perf_event_mmap_page* metadata = (perf_event_mmap_page*)address;
+    std::atomic_ref<__u64> data_head(metadata->data_head);
+    std::atomic_ref<__u64> data_tail(metadata->data_tail);
+
+    // Verify data_head is 0.
+    EXPECT_EQ(data_head.load(), (uint64_t)0);
+
+    // User sets invalid data_tail without issue.
+    data_tail.store(1, std::memory_order_release);
+
+    // Start sampling and trigger an event.
+    EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_ENABLE), -1);
+    printf("This is an event - start sampling for %u us \n", sample_duration);
+    auto start = std::chrono::steady_clock::now();
+    auto duration = std::chrono::microseconds(sample_duration);
+    int x = 0;
+    while (std::chrono::steady_clock::now() - start < duration) {
+      x++;
+      // Prevent the compiler from optimizing away this loop by pretending 'x'
+      // is used by assembly and that memory might be modified.
+      asm volatile("" : : "g"(x) : "memory");
+    }
+    EXPECT_NE(syscall(__NR_ioctl, fd, PERF_EVENT_IOC_DISABLE), -1);
+
+    // Verify that data was still written (data_head > 0), and that data_tail didn't change.
+    EXPECT_GT(data_head.load(std::memory_order_acquire), (uint64_t)0);
+    EXPECT_EQ(data_tail.load(std::memory_order_acquire), (uint64_t)1);
+
+    EXPECT_EQ(syscall(__NR_munmap, address, buffer_size), 0);
+    EXPECT_NE(syscall(__NR_close, fd), EXIT_FAILURE);
   }
 }
 
