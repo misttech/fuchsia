@@ -9,6 +9,10 @@ load(
     "idk_molecule",
 )
 load(
+    "//build/bazel/bazel_idk/private:idk_molecule.bzl",
+    "idk_all_api_level_and_cpu_combinations_molecule",
+)
+load(
     ":atom_lists.bzl",
     "ALL_CC_PREBUILT_LIBRARY_ATOMS",
     "ALL_CC_SOURCE_LIBRARY_ATOMS",
@@ -27,9 +31,9 @@ idk_molecule(
     deps = [
         ":fuchsia_idk_atoms_produced_by_main_platform_build_idk",
 
-        # TODO(https://fxbug.dev/507577175): Build these for all API level and
-        # CPU architecture combinations.
-        ":fuchsia_idk_atoms_for_each_api_level_and_cpu_idk",
+        # Atoms built for each combination of API level and CPU architecture
+        # supported by the IDK.
+        ":fuchsia_idk_atoms_for_all_api_level_and_cpu_combinations_idk",
 
         # Host tools.
         # TODO(https://fxbug.dev/507577175): Build these for both x64 and arm64.
@@ -75,6 +79,12 @@ idk_molecule(
     ],
 )
 
+# GN note: Unlike the "*.fuchsia_idk_atoms_for_each_api_level" GN molecules,
+# this target is built at "PLATFORM" for the other CPU architectures.
+# TODO(https://fxbug.dev/507577175): The main "PLATFORM" build also builds some
+# of these targets. Consider making the IDK transition include the "PLATFORM"
+# API level and target CPU for simplicity. Unlike GN sub-builds, this would not
+# require building any more targets than specifying the dependencies directly.
 idk_molecule(
     name = "fuchsia_idk_atoms_for_each_api_level_and_cpu_idk",
     allowed_in_configurations = "fuchsia",
@@ -95,6 +105,14 @@ idk_molecule(
         ],
         "//conditions:default": [],
     }),
+)
+
+idk_all_api_level_and_cpu_combinations_molecule(
+    name = "fuchsia_idk_atoms_for_all_api_level_and_cpu_combinations_idk",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    # Do not add to this list. Add to
+    # ":fuchsia_idk_atoms_for_each_api_level_and_cpu_idk" instead.
+    deps = [":fuchsia_idk_atoms_for_each_api_level_and_cpu_idk"],
 )
 
 # C/C++ code that must be provided as prebuilt libraries for each supported API

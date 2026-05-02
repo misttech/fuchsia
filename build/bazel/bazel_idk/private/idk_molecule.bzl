@@ -14,7 +14,10 @@ load(
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load(":idk_transitions.bzl", "api_level_and_cpu_combinations_transition")
 
-visibility(["//build/bazel/bazel_idk/..."])
+visibility([
+    "//build/bazel/bazel_idk/...",
+    "//sdk",
+])
 
 def _idk_molecule_common_impl(ctx, allowed_in_configurations):
     if not ctx.attr.name.endswith("_idk"):
