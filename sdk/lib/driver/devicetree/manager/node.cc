@@ -65,49 +65,49 @@ Node::Node(Node *parent, const std::string_view name, devicetree::Properties pro
   }
 }
 
-void Node::AddBindProperty(fuchsia_driver_framework::NodeProperty2 prop) {
-  node_properties_.emplace_back(std::move(prop));
+void Node::AddBindProperty(const fuchsia_driver_framework::NodeProperty2& prop) {
+  node_properties_.emplace_back(prop);
 }
 
-void Node::AddMmio(fuchsia_hardware_platform_bus::Mmio mmio) {
+void Node::AddMmio(const fuchsia_hardware_platform_bus::Mmio& mmio) {
   if (!pbus_node_.mmio()) {
     pbus_node_.mmio() = std::vector<fuchsia_hardware_platform_bus::Mmio>();
   }
-  pbus_node_.mmio()->emplace_back(std::move(mmio));
+  pbus_node_.mmio()->emplace_back(mmio);
   add_platform_device_ = true;
 }
 
-void Node::AddBti(fuchsia_hardware_platform_bus::Bti bti) {
+void Node::AddBti(const fuchsia_hardware_platform_bus::Bti& bti) {
   if (!pbus_node_.bti()) {
     pbus_node_.bti() = std::vector<fuchsia_hardware_platform_bus::Bti>();
   }
-  pbus_node_.bti()->emplace_back(std::move(bti));
+  pbus_node_.bti()->emplace_back(bti);
   add_platform_device_ = true;
 }
 
-void Node::AddIrq(fuchsia_hardware_platform_bus::Irq irq) {
+void Node::AddIrq(const fuchsia_hardware_platform_bus::Irq& irq) {
   if (!pbus_node_.irq()) {
     pbus_node_.irq() = std::vector<fuchsia_hardware_platform_bus::Irq>();
   }
-  pbus_node_.irq()->emplace_back(std::move(irq));
+  pbus_node_.irq()->emplace_back(irq);
   add_platform_device_ = true;
 }
 
-void Node::AddMetadata(fuchsia_hardware_platform_bus::Metadata metadata,
+void Node::AddMetadata(const fuchsia_hardware_platform_bus::Metadata& metadata,
                        std::optional<std::string> fidl_text) {
   if (!pbus_node_.metadata()) {
     pbus_node_.metadata() = std::vector<fuchsia_hardware_platform_bus::Metadata>();
   }
-  pbus_node_.metadata()->emplace_back(std::move(metadata));
+  pbus_node_.metadata()->emplace_back(metadata);
   metadata_text_.emplace_back(std::move(fidl_text));
   add_platform_device_ = true;
 }
 
-void Node::AddBootMetadata(fuchsia_hardware_platform_bus::BootMetadata boot_metadata) {
+void Node::AddBootMetadata(const fuchsia_hardware_platform_bus::BootMetadata& boot_metadata) {
   if (!pbus_node_.boot_metadata()) {
     pbus_node_.boot_metadata() = std::vector<fuchsia_hardware_platform_bus::BootMetadata>();
   }
-  pbus_node_.boot_metadata()->emplace_back(std::move(boot_metadata));
+  pbus_node_.boot_metadata()->emplace_back(boot_metadata);
   add_platform_device_ = true;
 }
 
@@ -115,20 +115,20 @@ void Node::AddNodeSpec(const fuchsia_driver_framework::ParentSpec2 &spec) {
   parents_.emplace_back(spec);
 }
 
-void Node::AddSmc(fuchsia_hardware_platform_bus::Smc smc) {
+void Node::AddSmc(const fuchsia_hardware_platform_bus::Smc& smc) {
   if (!pbus_node_.smc()) {
     pbus_node_.smc() = std::vector<fuchsia_hardware_platform_bus::Smc>();
   }
-  pbus_node_.smc()->emplace_back(std::move(smc));
+  pbus_node_.smc()->emplace_back(smc);
   add_platform_device_ = true;
 }
 
-void Node::AddPowerConfig(fuchsia_hardware_power::PowerElementConfiguration power_config,
+void Node::AddPowerConfig(const fuchsia_hardware_power::PowerElementConfiguration& power_config,
                           std::optional<std::string> fidl_text) {
   if (!pbus_node_.power_config()) {
     pbus_node_.power_config() = std::vector<fuchsia_hardware_power::PowerElementConfiguration>();
   }
-  pbus_node_.power_config()->emplace_back(std::move(power_config));
+  pbus_node_.power_config()->emplace_back(power_config);
   power_config_text_.emplace_back(std::move(fidl_text));
   add_platform_device_ = true;
 }

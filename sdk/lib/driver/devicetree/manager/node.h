@@ -72,30 +72,32 @@ class Node {
  public:
   explicit Node(Node* parent, std::string_view name, devicetree::Properties properties, uint32_t id,
                 NodeManager* manager);
+  virtual ~Node() = default;
 
   // Add |prop| as a bind property of the device, when it is eventually published.
-  void AddBindProperty(fuchsia_driver_framework::NodeProperty2 prop);
+  virtual void AddBindProperty(const fuchsia_driver_framework::NodeProperty2& prop);
 
-  void AddMmio(fuchsia_hardware_platform_bus::Mmio mmio);
+  virtual void AddMmio(const fuchsia_hardware_platform_bus::Mmio& mmio);
 
-  void AddBti(fuchsia_hardware_platform_bus::Bti bti);
+  virtual void AddBti(const fuchsia_hardware_platform_bus::Bti& bti);
 
-  void AddIrq(fuchsia_hardware_platform_bus::Irq irq);
+  virtual void AddIrq(const fuchsia_hardware_platform_bus::Irq& irq);
 
-  void AddMetadata(fuchsia_hardware_platform_bus::Metadata metadata,
-                   std::optional<std::string> fidl_text = std::nullopt);
+  virtual void AddMetadata(const fuchsia_hardware_platform_bus::Metadata& metadata,
+                           std::optional<std::string> fidl_text = std::nullopt);
 
-  void AddBootMetadata(fuchsia_hardware_platform_bus::BootMetadata boot_metadata);
+  virtual void AddBootMetadata(const fuchsia_hardware_platform_bus::BootMetadata& boot_metadata);
 
-  void AddNodeSpec(const fuchsia_driver_framework::ParentSpec2& spec);
+  virtual void AddNodeSpec(const fuchsia_driver_framework::ParentSpec2& spec);
 
-  void AddSmc(fuchsia_hardware_platform_bus::Smc smc);
+  virtual void AddSmc(const fuchsia_hardware_platform_bus::Smc& smc);
 
-  void AddPowerConfig(fuchsia_hardware_power::PowerElementConfiguration config,
-                      std::optional<std::string> fidl_text = std::nullopt);
+  virtual void AddPowerConfig(const fuchsia_hardware_power::PowerElementConfiguration& config,
+                              std::optional<std::string> fidl_text = std::nullopt);
 
   // Registers an iommu with the platform bus.
-  zx::result<> RegisterIommu(uint32_t iommu_id, fuchsia_hardware_platform_bus::Iommu iommu) {
+  virtual zx::result<> RegisterIommu(uint32_t iommu_id,
+                                     const fuchsia_hardware_platform_bus::Iommu& iommu) {
     return manager_->RegisterIommu(iommu_id, iommu);
   }
 
