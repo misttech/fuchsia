@@ -164,7 +164,8 @@ def _idk_cc_source_library_impl(
         implementation_deps = implementation_deps,
         includes = [include_path],
         testonly = testonly,
-        visibility = visibility,
+        # Allow access from //sdk:all_underlying_source_libraries.
+        visibility = visibility + ["//sdk:__pkg__"],
         **kwargs
     )
 

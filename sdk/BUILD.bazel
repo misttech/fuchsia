@@ -13,6 +13,10 @@ load(
     "idk_all_api_level_and_cpu_combinations_molecule",
 )
 load(
+    "//build/bazel/bazel_idk/private:idk_transitions.bzl",
+    "build_in_all_idk_api_level_and_cpu_combinations",
+)
+load(
     ":atom_lists.bzl",
     "ALL_CC_PREBUILT_LIBRARY_ATOMS",
     "ALL_CC_SOURCE_LIBRARY_ATOMS",
@@ -138,6 +142,25 @@ idk_molecule(
     deps = ALL_CC_SOURCE_LIBRARY_ATOMS,
 )
 
+# All source libraries represented by the atoms in "cc_source_libraries_idk".
+# `idk_cc_source_library*()` atoms do not depend on the underlying
+# `cc_library()` targets, so those targets are not accessible via
+# "cc_source_libraries_idk". This target provides access to all `cc_library()`
+# targets represented by "cc_source_libraries_idk" for analysis and tests.
+filegroup(
+    name = "all_underlying_cc_source_libraries",
+    testonly = True,
+    srcs = select({
+        # TODO(https://fxbug.dev/505380228): Merge these targets into the main
+        # list once sysroots are available for all CPU architectures.
+        "//build/bazel/platforms:is_fuchsia_" + target_cpu: [
+            atom.removesuffix("_idk")
+            for atom in ALL_CC_SOURCE_LIBRARY_ATOMS
+        ],
+        "//conditions:default": [],
+    }),
+)
+
 # Data atoms provided in the IDK.
 idk_molecule(
     name = "data_atoms_idk",
@@ -162,4 +185,17 @@ idk_host_tool_molecule(
     # The macro handles transitioning to the host platform.
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = NON_BUILD_HOST_TOOLS_ATOMS,
+)
+
+# Builds the source libraries represented by the atoms in
+# "cc_source_libraries_idk" for each combination of IDK buildable API level and
+# CPU architecture.
+# Bazel only compiles libraries with C++ source files, so header-only libraries
+# will not be compiled.
+build_in_all_idk_api_level_and_cpu_combinations(
+    name = "all_underlying_cc_source_libraries_in_all_api_level_and_cpu_combinations",
+    testonly = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = ["//build/bazel/rules/tests:__subpackages__"],
+    deps = [":all_underlying_cc_source_libraries"],
 )

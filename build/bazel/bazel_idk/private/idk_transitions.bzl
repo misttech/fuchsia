@@ -7,7 +7,10 @@
 load("@fuchsia_build_info//:args.bzl", "idk_buildable_api_levels", "idk_buildable_cpus", "target_cpu")
 load("//build/bazel:fuchsia_api_level.bzl", "get_integer_for_api_level")
 
-visibility(["//build/bazel/bazel_idk/tests/..."])
+visibility([
+    "//build/bazel/bazel_idk/tests/...",
+    "//sdk",
+])
 
 def _verify_is_main_platform_configuration(current_platforms, current_api_level):
     main_target_platform = "//build/bazel/platforms:fuchsia_platform_%s" % target_cpu
