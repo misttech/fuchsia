@@ -32,7 +32,7 @@ def _verify_is_main_platform_configuration_from_settings(settings):
         settings["@//build/bazel:fuchsia_api_level"],
     )
 
-def _cpu_api_level_transition_impl(settings, _attr):
+def _api_level_and_cpu_combinations_transition_impl(settings, _attr):
     _verify_is_main_platform_configuration_from_settings(settings)
 
     _platform_api_level_clang_switch = "-ffuchsia-api-level"
@@ -70,8 +70,8 @@ def _cpu_api_level_transition_impl(settings, _attr):
     return combinations
 
 # A 1:n transition to configurations for each combination of CPU architecture and API level.
-cpu_api_level_transition = transition(
-    implementation = _cpu_api_level_transition_impl,
+api_level_and_cpu_combinations_transition = transition(
+    implementation = _api_level_and_cpu_combinations_transition_impl,
     inputs = [
         "@//build/bazel:fuchsia_api_level",
         "//command_line_option:copt",
@@ -84,20 +84,24 @@ cpu_api_level_transition = transition(
     ],
 )
 
-def _build_idk_combinations_impl(ctx):
+def _build_in_all_idk_api_level_and_cpu_combinations_impl(ctx):
+    if not ctx.attr.testonly:
+        fail("This rule is only intended to be used in tests.")
+
     all_deps_depset = depset(direct = ctx.files.deps)
 
     return [
         DefaultInfo(files = all_deps_depset),
     ]
 
-# Builds the specified targets for each combination of CPU architecture and API level.
-build_idk_combinations = rule(
-    implementation = _build_idk_combinations_impl,
+# Builds the specified targets for each combination of IDK buildable API level
+# and CPU architecture.
+build_in_all_idk_api_level_and_cpu_combinations = rule(
+    implementation = _build_in_all_idk_api_level_and_cpu_combinations_impl,
     attrs = {
         "deps": attr.label_list(
-            doc = "Targets to build for each combination of CPU architecture and API level.",
-            cfg = cpu_api_level_transition,
+            doc = "Targets to build for each combination of API level and CPU architecture.",
+            cfg = api_level_and_cpu_combinations_transition,
         ),
     },
 )

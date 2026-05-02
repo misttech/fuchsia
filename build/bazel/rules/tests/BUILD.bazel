@@ -57,7 +57,7 @@ filegroup(
         ":build_only_tests_in_host_configuration",
 
         # Fuchsia tests that do not require defining the Clang API level as "PLATFORM".
-        "//build/bazel/bazel_idk/tests:build_only_tests_for_combinations",
+        "//build/bazel/bazel_idk/tests:api_level_and_cpu_combinations_build_only_tests",
     ],
     # This target is only intended to be built in Fuchsia configurations.
     # Individual test groups can use a transition to build targets in host

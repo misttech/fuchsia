@@ -12,6 +12,7 @@ load(
     "FuchsiaIdkMoleculeInfo",
 )
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
+load(":idk_transitions.bzl", "api_level_and_cpu_combinations_transition")
 
 visibility(["//build/bazel/bazel_idk/..."])
 
@@ -98,6 +99,31 @@ idk_molecule = rule(
             """,
             values = ["fuchsia", "once", "PLATFORM"],
             mandatory = True,
+        ),
+    } | COMMON_MOLECULE_ATTRS,
+)
+
+def _idk_all_api_level_and_cpu_combinations_molecule_impl(ctx):
+    return _idk_molecule_common_impl(ctx, allowed_in_configurations = "once")
+
+idk_all_api_level_and_cpu_combinations_molecule = rule(
+    doc = """Generate an IDK molecule containing molecules for each combination of IDK buildable API level and CPU architecture.
+
+    Each molecule in `deps` will be replicated for each combination of API level
+    and CPU architecture supported by the IDK build.
+
+    * `name` must end with '_idk' (unlike most other IDK macros).
+    * `target_compatible_with` must be `["@platforms//os:fuchsia"]`.
+
+    Only supported in the main "PLATFORM" Fuhsia build.
+    """,
+    implementation = _idk_all_api_level_and_cpu_combinations_molecule_impl,
+    attrs = {
+        "deps": attr.label_list(
+            doc = "Molecules to be replicated for each combination of IDK buildable API level and CPU architecture.",
+            providers = [FuchsiaIdkMoleculeInfo],
+            mandatory = True,
+            cfg = api_level_and_cpu_combinations_transition,
         ),
     } | COMMON_MOLECULE_ATTRS,
 )
