@@ -775,7 +775,7 @@ a local debugging feature and is not intended for production use.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:128
+From //zircon/kernel/params.gni:135
 
 ### check_output_dir_leaks
 
@@ -1020,7 +1020,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
@@ -1694,7 +1694,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
 }
   static = {
   clang_rt = "lib/clang/23/lib/x86_64-unknown-fuchsia/libclang_rt.lsan.a"
@@ -3829,7 +3829,7 @@ disabled.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:136
+From //zircon/kernel/params.gni:143
 
 ### enable_mdns_trace
 
@@ -4138,6 +4138,18 @@ The RSEQ backend is not yet implemented.
 
 From //src/lib/fuchsia-rcu/BUILD.gn:10
 
+### enable_rust_in_zircon
+
+Whether to use Rust in the Zircon kernel.
+
+When this flag is enabled, we use the Rust implementation of various data
+structures and algorithms in the Zircon kernel. These implementations are
+in development and not yet ready for use in production.
+
+**Current value (from the default):** `false`
+
+From //zircon/kernel/params.gni:114
+
 ### escher_test_for_glsl_spirv_mismatch
 
 If true, this enables the |SpirvNotChangedTest| to check if the precompiled
@@ -4176,7 +4188,7 @@ Propagate bandwidth and enable run queue promotion for threads making channel ca
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:116
+From //zircon/kernel/params.gni:123
 
 ### experimental_continuous_per_vmo_attribution_enabled
 
@@ -4184,7 +4196,7 @@ Add in-kernel support for querying a per-VMO populated bytes high-water mark.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:113
+From //zircon/kernel/params.gni:120
 
 ### experimental_cxx_version
 
@@ -4237,7 +4249,7 @@ when unblocking once we solve races higher in the stack.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:124
+From //zircon/kernel/params.gni:131
 
 ### experimental_thread_sampler_enabled
 
@@ -4245,7 +4257,7 @@ Include a mechanism for the kernel to sample threads and write the results to a 
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:110
+From //zircon/kernel/params.gni:117
 
 ### export_bazel_host_tests
 
