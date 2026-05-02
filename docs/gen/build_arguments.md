@@ -1015,7 +1015,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   lsan = {
@@ -1750,7 +1750,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/x86_64-unknown-linux-gnu/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
