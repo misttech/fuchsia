@@ -58,6 +58,13 @@ fuchsia_input_report::wire::DeviceDescriptor HidMouse::GetDescriptor(fidl::AnyAr
   device_info.product_id(
       static_cast<uint32_t>(fuchsia_input_report::wire::VendorGoogleProductId::kVirtioMouse));
 
+  if (!product_name_.empty()) {
+    device_info.product_name(allocator, std::string_view(product_name_));
+  }
+  if (!serial_number_.empty()) {
+    device_info.serial_number(allocator, std::string_view(serial_number_));
+  }
+
   const auto input =
       fuchsia_input_report::wire::MouseInputDescriptor::Builder(allocator)
           .buttons({allocator,

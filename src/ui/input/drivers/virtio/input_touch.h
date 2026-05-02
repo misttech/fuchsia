@@ -4,6 +4,8 @@
 #ifndef SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_TOUCH_H_
 #define SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_TOUCH_H_
 
+#include <string>
+
 #include "input_device.h"
 
 namespace virtio {
@@ -30,8 +32,12 @@ struct TouchReport {
 // scratch.
 class HidTouch : public HidDevice<TouchReport> {
  public:
-  HidTouch(virtio_input_absinfo_t x_info, virtio_input_absinfo_t y_info)
-      : x_info_(x_info), y_info_(y_info) {}
+  HidTouch(virtio_input_absinfo_t x_info, virtio_input_absinfo_t y_info, std::string product_name,
+           std::string serial_number)
+      : x_info_(x_info),
+        y_info_(y_info),
+        product_name_(std::move(product_name)),
+        serial_number_(std::move(serial_number)) {}
 
   fuchsia_input_report::wire::DeviceDescriptor GetDescriptor(fidl::AnyArena& allocator) override;
   void ReceiveEvent(virtio_input_event_t* event) override;
@@ -47,6 +53,9 @@ class HidTouch : public HidDevice<TouchReport> {
   // The index of the current finger that the driver is processing.
   // Must be [0..kMaxTouchPoints - 1] for a valid finger or -1 when no finger is being processed.
   int active_finger_index_ = -1;
+
+  std::string product_name_;
+  std::string serial_number_;
 };
 
 }  // namespace virtio

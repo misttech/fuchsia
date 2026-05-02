@@ -75,20 +75,24 @@ zx_status_t InputDevice::Init() {
   // At the moment we support mice, keyboards, and touchscreens.
   // Support for more devices should be added here.
   SelectConfig(VIRTIO_INPUT_CFG_ID_NAME, 0);
+  std::string device_name(config_.u.string, strnlen(config_.u.string, sizeof(config_.u.string)));
+  SelectConfig(VIRTIO_INPUT_CFG_ID_SERIAL, 0);
+  std::string device_serial(config_.u.string, strnlen(config_.u.string, sizeof(config_.u.string)));
+
   if ((x_info.max > 0) && (y_info.max > 0)) {
     // Touchscreen
-    zxlogf(INFO, "Detected a touchscreen device: %s", config_.u.string);
-    hid_device_ = std::make_unique<HidTouch>(x_info, y_info);
+    zxlogf(INFO, "Detected a touchscreen device: %s", device_name.c_str());
+    hid_device_ = std::make_unique<HidTouch>(x_info, y_info, device_name, device_serial);
   } else if (cfg_rel_size > 0 || cfg_abs_size > 0) {
     // Mouse
-    zxlogf(INFO, "Detected a mouse device: %s", config_.u.string);
-    hid_device_ = std::make_unique<HidMouse>();
+    zxlogf(INFO, "Detected a mouse device: %s", device_name.c_str());
+    hid_device_ = std::make_unique<HidMouse>(device_name, device_serial);
   } else if (cfg_key_size > 0) {
     // Keyboard
-    zxlogf(INFO, "Detected a keyboard device: %s", config_.u.string);
-    hid_device_ = std::make_unique<HidKeyboard>();
+    zxlogf(INFO, "Detected a keyboard device: %s", device_name.c_str());
+    hid_device_ = std::make_unique<HidKeyboard>(device_name, device_serial);
   } else {
-    zxlogf(WARNING, "Detected an unsupported device: %s", config_.u.string);
+    zxlogf(WARNING, "Detected an unsupported device: %s", device_name.c_str());
     return ZX_ERR_NOT_SUPPORTED;
   }
 

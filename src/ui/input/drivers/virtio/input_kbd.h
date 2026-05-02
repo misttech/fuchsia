@@ -4,6 +4,8 @@
 #ifndef SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_KBD_H_
 #define SRC_UI_INPUT_DRIVERS_VIRTIO_INPUT_KBD_H_
 
+#include <string>
+
 #include "input_device.h"
 
 namespace virtio {
@@ -20,12 +22,18 @@ struct KeyboardReport {
 
 class HidKeyboard : public HidDevice<KeyboardReport> {
  public:
+  HidKeyboard(std::string product_name, std::string serial_number)
+      : product_name_(std::move(product_name)), serial_number_(std::move(serial_number)) {}
+
   fuchsia_input_report::wire::DeviceDescriptor GetDescriptor(fidl::AnyArena& allocator) override;
   void ReceiveEvent(virtio_input_event_t* event) override;
 
  private:
   void AddKeypressToReport(uint16_t event_code);
   void RemoveKeypressFromReport(uint16_t event_code);
+
+  std::string product_name_;
+  std::string serial_number_;
 };
 
 }  // namespace virtio

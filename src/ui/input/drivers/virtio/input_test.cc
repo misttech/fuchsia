@@ -72,7 +72,7 @@ class VirtioInputTest : public zxtest::Test {
 TEST_F(VirtioInputTest, MultiTouchReportDescriptor) {
   virtio_input_absinfo_t x_info = {};
   virtio_input_absinfo_t y_info = {};
-  HidTouch touch(x_info, y_info);
+  HidTouch touch(x_info, y_info, std::string("test_product"), std::string("test_serial"));
 
   fidl::Arena<> allocator;
   auto descriptor = touch.GetDescriptor(allocator);
@@ -118,8 +118,9 @@ TEST_F(VirtioInputTest, MultiTouchFingerEvents) {
   virtio_input_absinfo_t y_info = {};
   y_info.min = 0;
   y_info.max = static_cast<uint16_t>(VAL_MAX);
-  async_patterns::TestDispatcherBound<HidTouch> touch{loop_.dispatcher(), std::in_place, x_info,
-                                                      y_info};
+  async_patterns::TestDispatcherBound<HidTouch> touch{
+      loop_.dispatcher(),        std::in_place, x_info, y_info, std::string{"test_product"},
+      std::string{"test_serial"}};
   auto reader = GetReader(touch);
 
   // Assert that a single finger works.
@@ -260,7 +261,7 @@ TEST_F(VirtioInputTest, MultiTouchFingerEvents) {
 }
 
 TEST_F(VirtioInputTest, MouseReportDescriptor) {
-  HidMouse hid_mouse;
+  HidMouse hid_mouse(std::string("test_product"), std::string("test_serial"));
   fidl::Arena<> allocator;
   auto descriptor = hid_mouse.GetDescriptor(allocator);
 
@@ -294,7 +295,8 @@ TEST_F(VirtioInputTest, MouseReportDescriptor) {
 }
 
 TEST_F(VirtioInputTest, MouseTest) {
-  async_patterns::TestDispatcherBound<HidMouse> hid_mouse{loop_.dispatcher(), std::in_place};
+  async_patterns::TestDispatcherBound<HidMouse> hid_mouse{
+      loop_.dispatcher(), std::in_place, std::string("test_product"), std::string("test_serial")};
   auto reader = GetReader(hid_mouse);
 
   // Send the Virtio mouse keys.
@@ -513,7 +515,7 @@ TEST_F(VirtioInputTest, MouseTest) {
 }
 
 TEST_F(VirtioInputTest, KeyboardReportDescriptor) {
-  HidKeyboard hid_keyboard;
+  HidKeyboard hid_keyboard(std::string("test_product"), std::string("test_serial"));
   fidl::Arena<> allocator;
   auto descriptor = hid_keyboard.GetDescriptor(allocator);
 
@@ -565,7 +567,8 @@ TEST_F(VirtioInputTest, KeyboardReportDescriptor) {
 }
 
 TEST_F(VirtioInputTest, KeyboardTest) {
-  async_patterns::TestDispatcherBound<HidKeyboard> hid_keyboard{loop_.dispatcher(), std::in_place};
+  async_patterns::TestDispatcherBound<HidKeyboard> hid_keyboard{
+      loop_.dispatcher(), std::in_place, std::string("test_product"), std::string("test_serial")};
   auto reader = GetReader(hid_keyboard);
 
   // Send the Virtio keys.
