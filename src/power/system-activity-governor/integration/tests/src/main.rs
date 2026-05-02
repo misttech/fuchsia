@@ -297,12 +297,17 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
     drop(suspend_lease_control);
     assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
 
+    // Retrieve realm ID from moniker.
+    let realm_id = activity_governor_moniker.split('/').next().unwrap().split(':').nth(1).unwrap();
+
     // Check that boost is active before resume.
     block_until_inspect_matches!(
         "",
         root: contains {
-            "fake-boost": contains {
-                active: true,
+            ref realm_id: contains {
+                "fake-boost": contains {
+                    active: true,
+                }
             }
         }
     );
@@ -331,8 +336,10 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
     block_until_inspect_matches!(
         "",
         root: contains {
-            "fake-boost": contains {
-                active: false,
+            ref realm_id: contains {
+                "fake-boost": contains {
+                    active: false,
+                }
             }
         }
     );

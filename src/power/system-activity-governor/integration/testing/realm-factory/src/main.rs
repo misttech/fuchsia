@@ -15,8 +15,8 @@ use fuchsia_component_test::{
 use fuchsia_inspect::Node as INode;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use log::*;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 const ACTIVITY_GOVERNOR_CHILD_NAME: &str = "system-activity-governor";
 const FAKE_BOOST_CHILD_NAME: &str = "fake-boost";
 
@@ -280,18 +280,28 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
             .await?;
     }
 
+    let realm_id = Arc::new(OnceLock::<String>::new());
+    let realm_id_clone = realm_id.clone();
     let fake_boost_ref = builder
         .add_local_child(
             FAKE_BOOST_CHILD_NAME,
             move |handles| {
+                let realm_id = realm_id_clone.clone();
                 async move {
                     let mut fs = ServiceFs::new();
                     fs.dir("svc").add_fidl_service(
                         move |stream: fcpumanager::BoostRequestStream| {
+                            let realm_id = realm_id.clone();
                             fasync::Task::local(async move {
                                 let inspector = fuchsia_inspect::component::inspector();
-                                if let Err(e) =
-                                    run_fake_boost(inspector.root().clone_weak(), stream).await
+                                let id_str = realm_id.get().expect("realm_id not set");
+                                let realm_id_str = id_str.to_string();
+                                if let Err(e) = run_fake_boost(
+                                    inspector.root().clone_weak(),
+                                    realm_id_str,
+                                    stream,
+                                )
+                                .await
                                 {
                                     warn!("FakeBoost failed: {:?}", e);
                                 }
@@ -319,14 +329,20 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
         .await?;
 
     let realm = builder.build().await?;
+    realm_id.set(realm.root.child_name().to_string()).unwrap();
     Ok(SagRealm { realm })
 }
 
-async fn run_fake_boost(node: INode, mut stream: fcpumanager::BoostRequestStream) -> Result<()> {
+async fn run_fake_boost(
+    node: INode,
+    realm_id: String,
+    mut stream: fcpumanager::BoostRequestStream,
+) -> Result<()> {
     let active = Arc::new(AtomicBool::new(false));
     let active_clone = active.clone();
 
-    let _node = node.create_lazy_child_with_thread_local("fake-boost", move || {
+    let realm_node = node.create_child(realm_id);
+    let _node = realm_node.create_lazy_child_with_thread_local("fake-boost", move || {
         let active = active_clone.clone();
         async move {
             let inspector = fuchsia_inspect::Inspector::default();
