@@ -435,6 +435,8 @@ void Gt92xxDevice::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   device_info.vendor_id(static_cast<uint32_t>(fuchsia_input_report::wire::VendorId::kGoogle));
   device_info.product_id(
       static_cast<uint32_t>(fuchsia_input_report::wire::VendorGoogleProductId::kGoodixTouchscreen));
+  device_info.manufacturer_name(allocator, "Goodix");
+  device_info.product_name(allocator, "GT92xx Touchscreen");
 
   fidl::VectorView<fuchsia_input_report::wire::ContactInputDescriptor> contacts(allocator,
                                                                                 kMaxPoints);

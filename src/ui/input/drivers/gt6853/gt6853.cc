@@ -12,6 +12,7 @@
 #include <lib/zx/profile.h>
 #include <threads.h>
 #include <zircon/threads.h>
+
 #include <cstdint>
 
 #include <ddktl/fidl.h>
@@ -163,6 +164,8 @@ void Gt6853Device::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   device_info.vendor_id(static_cast<uint32_t>(fuchsia_input_report::wire::VendorId::kGoogle));
   device_info.product_id(
       static_cast<uint32_t>(fuchsia_input_report::wire::VendorGoogleProductId::kGoodixTouchscreen));
+  device_info.manufacturer_name(allocator, "Goodix");
+  device_info.product_name(allocator, "GT6853 Touchscreen");
 
   fidl::VectorView<fuchsia_input_report::wire::ContactInputDescriptor> touch_input_contacts(
       allocator, kMaxContacts);
