@@ -407,6 +407,10 @@ void AudioRenderer::FinishPauseRamp(const std::shared_ptr<PauseRampState>& expec
 
     // Run all pending callbacks.
     for (auto& f : pause_ramp_state_->callbacks) {
+      if constexpr (kLogRendererPauseCalls) {
+        FX_LOGS(INFO) << "AudioRenderer(" << this
+                      << ")::FinishPauseRamp about to call Pause callback";
+      }
       f(ref_time, media_time);
     }
     for (auto& f : pause_ramp_state_->queued) {

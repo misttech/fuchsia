@@ -6,6 +6,7 @@
 #include <lib/fit/defer.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include <algorithm>
 #include <limits>
 
 #include <ffl/string.h>
@@ -141,13 +142,9 @@ void BaseRenderer::RecomputeMinLeadTime() {
 bool BaseRenderer::IsOperating() {
   TRACE_DURATION("audio", "BaseRenderer::IsOperating");
 
-  for (const auto& [_, packet_queue] : packet_queues_) {
-    // If the packet queue is not empty then this link _is_ operating.
-    if (!packet_queue->empty()) {
-      return true;
-    }
-  }
-  return false;
+  // If any packet queue is not empty, then this link _is_ operating.
+  return std::ranges::any_of(packet_queues_,
+                             [](const auto& pair) { return !pair.second->empty(); });
 }
 
 bool BaseRenderer::ValidateConfig() {
@@ -343,8 +340,11 @@ void BaseRenderer::SetPtsUnits(uint32_t tick_per_second_numerator,
 
   // Sanity checks to ensure that Scale() operations cannot overflow.
   // Must have at most 1 tick per nanosecond. Ticks should not have higher resolution than clocks.
+  static_assert(TimelineRate::kOverflow > 1'000'000'000,
+                "AudioCore logic expects TimelineRate::kOverflow to exceed 10^9");
   if (auto t = pts_ticks_per_sec.Scale(1, TimelineRate::RoundingMode::Ceiling);
-      t > 1'000'000'000 || t == TimelineRate::kOverflow) {
+      t > 1'000'000'000  // includes 't == TimelineRate::kOverflow' check
+  ) {
     FX_LOGS(ERROR) << "PTS ticks per second too high (" << tick_per_second_numerator << "/"
                    << tick_per_second_denominator << ")";
     return;
@@ -458,7 +458,7 @@ void BaseRenderer::SendPacketInternal(fuchsia::media::StreamPacket packet,
   }
 
   // Make sure that we don't exceed the maximum permissible frames-per-packet.
-  int64_t frame_count = packet.payload_size / frame_size;
+  int64_t frame_count = static_cast<int64_t>(packet.payload_size / frame_size);
   if (frame_count > fuchsia::media::MAX_FRAMES_PER_RENDERER_PACKET) {
     FX_LOGS(ERROR) << "Audio frame count (" << frame_count << ") exceeds maximum allowed ("
                    << fuchsia::media::MAX_FRAMES_PER_RENDERER_PACKET << ")";
@@ -544,7 +544,7 @@ void BaseRenderer::SendPacketInternal(fuchsia::media::StreamPacket packet,
             << "RENDER CONTINUITY: NO_TS packet set FLAG_DISCONTINUITY but is in time (early by "
             << ffl::String::DecRational << safety_interval_frac << " frames: ref_time "
             << safety_internal_ref.get() << " ns); applying a safe PTS of " << start_pts
-            << " (ref_time " << (deadline - safety_internal_ref).get() << ").";
+            << " (ref_time " << deadline.get() - safety_internal_ref.get() << ").";
       }
     } else if (start_pts < first_valid_frame) {
       // NO_TIMESTAMP packet is late without STREAM_PACKET_FLAG_DISCONTINUITY. This represents a
@@ -698,7 +698,7 @@ void BaseRenderer::ReportContinuityUnderflow(Fixed implied_pts, Fixed first_safe
 
 #define LOG_CONTINUITY_UNDERFLOW(where, interval)                                               \
   FX_LOGS(where) << "RENDER CONTINUITY UNDERFLOW #" << continuity_underflow_count_ << " (1/"    \
-                 << interval << "): prev packet ended at " << ffl::String::DecRational          \
+                 << (interval) << "): prev packet ended at " << ffl::String::DecRational        \
                  << implied_pts << ", but first safe PTS for this NO_TIMESTAMP packet is "      \
                  << first_safe_pts << " (ref_time " << first_safe_ref.get()                     \
                  << "). Untimestamped packet arrived late by " << continuity_gap << " frames (" \
@@ -738,7 +738,7 @@ void BaseRenderer::ReportTimestampUnderflow(Fixed packet_pts, Fixed prev_packet_
 
 #define LOG_TIMESTAMP_UNDERFLOW(where, interval)                                                \
   FX_LOGS(where) << "RENDER TIMESTAMP UNDERFLOW #" << timestamp_underflow_count_ << " (1/"      \
-                 << interval << "): prev packet ended at " << ffl::String::DecRational          \
+                 << (interval) << "): prev packet ended at " << ffl::String::DecRational        \
                  << prev_packet_end_pts << ", but PTS for this packet is " << packet_pts        \
                  << ". Packet overlaps with previous packet by "                                \
                  << Fixed(prev_packet_end_pts - packet_pts) << " frames ("                      \
@@ -935,6 +935,9 @@ void BaseRenderer::PlayInternal(zx::time reference_time, zx::time media_time,
 
   // If the user requested a callback, invoke it now.
   if (callback != nullptr) {
+    if constexpr (kLogRendererPlayCalls) {
+      FX_LOGS(INFO) << "BaseRenderer(" << this << ")::PlayInternal about to call Play callback";
+    }
     callback(reference_time.get(), media_time.get());
   }
 
@@ -958,6 +961,10 @@ void BaseRenderer::Pause(PauseCallback callback) {
   } else {
     FX_LOGS(WARNING) << "Renderer::Pause called when not playing";
     if (callback != nullptr) {
+      if constexpr (kLogRendererPauseCalls) {
+        FX_LOGS(INFO) << "BaseRenderer(" << this
+                      << ")::Pause about to call Pause callback (not Playing!)";
+      }
       // Return the previously-reported timestamp values, to preserve idempotency.
       if (pause_reference_time_.has_value() && pause_media_time_.has_value()) {
         callback(pause_reference_time_->get(), pause_media_time_->get());
@@ -999,6 +1006,9 @@ void BaseRenderer::PauseInternal(PauseCallback callback) {
   ReportStopIfStarted();
 
   if (callback != nullptr) {
+    if constexpr (kLogRendererPauseCalls) {
+      FX_LOGS(INFO) << "BaseRenderer(" << this << ")::PauseInternal about to call Pause callback";
+    }
     callback(pause_reference_time_->get(), pause_media_time_->get());
   }
 }
