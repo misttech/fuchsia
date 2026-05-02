@@ -16,6 +16,10 @@
 #include <zircon/status.h>
 #include <zircon/types.h>
 
+#include <array>
+#include <cstdint>
+#include <string>
+#include <string_view>
 #include <thread>
 
 #include <fbl/auto_lock.h>
@@ -33,6 +37,32 @@ namespace fhidbus = fuchsia_hardware_hidbus;
 
 // This driver binds on any USB device that exposes HID reports. It passes the
 // reports to the HID driver by implementing the HidBus protocol.
+
+namespace {
+
+constexpr uint16_t kLanguageEnglishUnitedStates = 0x0409;
+
+zx::result<std::string> GetUsbStringDescriptor(const ddk::UsbProtocolClient& usb,
+                                               uint8_t descriptor_id) {
+  if (descriptor_id == 0) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+  std::array<uint8_t, fuchsia_hardware_hidbus::wire::kMaxNameLength> bytes;
+  size_t actual_size = 0;
+  uint16_t actual_language_id = 0;
+  zx_status_t status =
+      usb.GetStringDescriptor(descriptor_id, kLanguageEnglishUnitedStates, &actual_language_id,
+                              bytes.data(), bytes.size(), &actual_size);
+  if (status != ZX_OK) {
+    return zx::error(status);
+  }
+  if (actual_size == 0) {
+    return zx::error(ZX_ERR_UNAVAILABLE);
+  }
+  return zx::ok(std::string(reinterpret_cast<char*>(bytes.data()), actual_size));
+}
+
+}  // namespace
 
 UsbHidbus::UsbHidbus() : fdf::DriverBase2(kDriverName) {}
 
@@ -394,6 +424,31 @@ zx::result<> UsbHidbus::Start(fdf::DriverContext context) {
   info_builder.vendor_id(le16toh(device_desc.id_vendor))
       .product_id(le16toh(device_desc.id_product))
       .version(0);
+
+  zx::result<std::string> manufacturer_result =
+      GetUsbStringDescriptor(usb_, device_desc.i_manufacturer);
+  if (manufacturer_result.is_ok()) {
+    info_builder.manufacturer_name(arena_, manufacturer_result.value());
+  } else {
+    zxlogf(WARNING, "Failed to get manufacturer name: %s",
+           zx_status_get_string(manufacturer_result.status_value()));
+  }
+
+  zx::result<std::string> product_result = GetUsbStringDescriptor(usb_, device_desc.i_product);
+  if (product_result.is_ok()) {
+    info_builder.product_name(arena_, product_result.value());
+  } else {
+    zxlogf(WARNING, "Failed to get product name: %s",
+           zx_status_get_string(product_result.status_value()));
+  }
+
+  zx::result<std::string> serial_result = GetUsbStringDescriptor(usb_, device_desc.i_serial_number);
+  if (serial_result.is_ok()) {
+    info_builder.serial_number(arena_, serial_result.value());
+  } else {
+    zxlogf(WARNING, "Failed to get serial number: %s",
+           zx_status_get_string(serial_result.status_value()));
+  }
 
   parent_req_size_ = usb_.GetRequestSize();
   status = usb::InterfaceList::Create(usb_, true, &usb_interface_list_);

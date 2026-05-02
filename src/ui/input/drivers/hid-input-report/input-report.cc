@@ -235,6 +235,16 @@ void InputReport::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
     if (result.value()->info.has_polling_rate()) {
       fidl_info.set_polling_rate(descriptor_allocator, result.value()->info.polling_rate());
     }
+    if (result.value()->info.has_manufacturer_name()) {
+      fidl_info.set_manufacturer_name(descriptor_allocator,
+                                      result.value()->info.manufacturer_name());
+    }
+    if (result.value()->info.has_product_name()) {
+      fidl_info.set_product_name(descriptor_allocator, result.value()->info.product_name());
+    }
+    if (result.value()->info.has_serial_number()) {
+      fidl_info.set_serial_number(descriptor_allocator, result.value()->info.serial_number());
+    }
   }
   descriptor.set_device_information(descriptor_allocator, fidl_info);
 
