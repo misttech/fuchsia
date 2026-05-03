@@ -18,6 +18,8 @@ DECLARE_SINGLETON_CRITICAL_MUTEX(SlabLock128);
 constinit PageSlabAllocator<128> node_slab128_ TA_GUARDED(SlabLock128::Get());
 DECLARE_SINGLETON_CRITICAL_MUTEX(SlabLock256);
 constinit PageSlabAllocator<256> node_slab256_ TA_GUARDED(SlabLock256::Get());
+DECLARE_SINGLETON_CRITICAL_MUTEX(SlabLock512);
+constinit PageSlabAllocator<512> node_slab512_ TA_GUARDED(SlabLock512::Get());
 
 }  // namespace
 
@@ -40,6 +42,10 @@ void* GlobalSlabAllocator::allocate(size_t size_align) {
     Guard<CriticalMutex> guard{SlabLock256::Get()};
     return node_slab256_.allocate_bytes();
   }
+  if (size_align == 512) {
+    Guard<CriticalMutex> guard{SlabLock512::Get()};
+    return node_slab512_.allocate_bytes();
+  }
   ZX_ASSERT(false);
   return nullptr;
 }
@@ -57,6 +63,9 @@ void GlobalSlabAllocator::deallocate(size_t size_align, void* ptr) {
   } else if (size_align == 256) {
     Guard<CriticalMutex> guard{SlabLock256::Get()};
     node_slab256_.deallocate_bytes(ptr);
+  } else if (size_align == 512) {
+    Guard<CriticalMutex> guard{SlabLock512::Get()};
+    node_slab512_.deallocate_bytes(ptr);
   } else {
     ZX_ASSERT(false);
   }

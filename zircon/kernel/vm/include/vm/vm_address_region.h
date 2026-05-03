@@ -842,9 +842,6 @@ class VmMapping final : public VmAddressRegionOrMapping {
     return FlagsRangeAtAddrLocked(offset);
   }
   uint64_t object_offset() const { return object_offset_; }
-  uint64_t mapping_subtree_max_offset() const TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return mapping_subtree_state_.max_last_offset();
-  }
 
   Lock<CriticalMutex>* object_lock() const TA_RET_CAP(object_->lock()) TA_REQ(lock()) {
     return object_->lock();
@@ -1041,15 +1038,6 @@ class VmMapping final : public VmAddressRegionOrMapping {
   // The maximum number of pages that a page fault can optimistically extend the fault to include.
   // This is defined and exposed here for the purposes of unittests.
   static constexpr uint64_t kPageFaultMaxOptimisticPages = 16;
-
-  // WAVL tree key function
-  // For use in WAVL tree code only.
-  VmObject::MappingTreeTraits::Key GetKey() const {
-    return VmObject::MappingTreeTraits::Key{
-        .offset = object_offset_,
-        .object = reinterpret_cast<uint64_t>(this),
-    };
-  }
 
   // TODO(https://fxbug.dev/42106188): Informs the mapping that a write is going to be performed to
   // the backing VMO, even if the VMO is not writable. This gives the mapping an opportunity to
@@ -1280,12 +1268,6 @@ class VmMapping final : public VmAddressRegionOrMapping {
   arch_mmu_flags_t first_region_arch_mmu_flags_ TA_GUARDED(lock()) TA_GUARDED(object_->lock());
   btree::BTree<vaddr_t, arch_mmu_flags_t> rest_protection_ranges_ TA_GUARDED(lock())
       TA_GUARDED(object_->lock());
-
-  fbl::WAVLTreeNodeState<VmMapping*> vmo_mapping_node_ TA_GUARDED(object_->lock());
-  VmMappingSubtreeState mapping_subtree_state_ TA_GUARDED(object_->lock());
-
-  friend VmObject::MappingTreeTraits;
-  friend VmMappingSubtreeState;
 
   // pointer and region of the object we are mapping.
   // The object_ cannot be marked const, as it gets reset(), but logically it is a constant value

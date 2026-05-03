@@ -30,10 +30,6 @@
 
 #define LOCAL_TRACE VM_GLOBAL_TRACE(0)
 
-fbl::WAVLTreeNodeState<VmMapping*>& VmObject::MappingTreeTraits::node_state(VmMapping& mapping) {
-  return mapping.vmo_mapping_node_;
-}
-
 VmObject::GlobalList VmObject::all_vmos_ = {};
 
 VmObject::VmObject(uint32_t options) : options_(options) { LTRACEF("%p\n", this); }
@@ -89,14 +85,19 @@ uint64_t VmObject::user_id() const {
 
 zx_status_t VmObject::AddMappingLocked(VmMapping* r) {
   canary_.Assert();
-  mapping_list_.insert(r);
+  auto result = mapping_list_.insert({r->object_offset(), r}, r);
+  if (!result) {
+    return ZX_ERR_NO_MEMORY;
+  }
   mapping_list_len_++;
   return ZX_OK;
 }
 
 void VmObject::RemoveMappingLocked(VmMapping* r) {
   canary_.Assert();
-  mapping_list_.erase(*r);
+  auto it = mapping_list_.find({r->object_offset(), r});
+  ASSERT(it);
+  mapping_list_.erase(it);
   DEBUG_ASSERT(mapping_list_len_ > 0);
   mapping_list_len_--;
 }
@@ -110,8 +111,12 @@ uint32_t VmObject::num_mappings() const {
 bool VmObject::IsMappedByUser() const {
   canary_.Assert();
   Guard<CriticalMutex> guard{lock()};
-  return ktl::any_of(mapping_list_.cbegin(), mapping_list_.cend(),
-                     [](const VmMapping& m) -> bool { return m.aspace()->is_user(); });
+  for (auto [key, mapping] : mapping_list_) {
+    if (mapping->aspace()->is_user()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 uint32_t VmObject::share_count() const {
@@ -128,8 +133,8 @@ uint32_t VmObject::share_count() const {
   uintptr_t aspaces[kAspaceBuckets];
   unsigned int num_mappings = 0;  // Number of mappings we've visited
   unsigned int num_aspaces = 0;   // Unique aspaces we've seen
-  for (const auto& m : mapping_list_) {
-    uintptr_t as = reinterpret_cast<uintptr_t>(m.aspace().get());
+  for (const auto& [key, m] : mapping_list_) {
+    uintptr_t as = reinterpret_cast<uintptr_t>(m->aspace().get());
     // Simple O(n^2) should be fine.
     for (unsigned int i = 0; i < num_aspaces; i++) {
       if (aspaces[i] == as) {
@@ -270,15 +275,19 @@ ktl::optional<ktl::pair<uint64_t, uint64_t>> VmObject::GetMaximalMappedRange() c
     return ktl::nullopt;
   }
 
-  // O(log N)
-  auto& first_mapping = mapping_list_.front();
+  auto& first_mapping = *(*mapping_list_.begin()).second;
   first_mapping.assert_object_lock();
   min_mapped = first_mapping.object_offset();
 
-  // O(1)
-  auto& root_mapping = *mapping_list_.root();
-  root_mapping.assert_object_lock();
-  max_mapped = root_mapping.mapping_subtree_max_offset() + 1;
+  mapping_list_.walk(
+      [&](VmMappingObserver::State state) -> zx_status_t {
+        max_mapped = state.max_offset;
+        return ZX_ERR_STOP;
+      },
+      [&](VmMappingObserver::State state, auto first, auto last) -> zx_status_t {
+        max_mapped = state.max_offset;
+        return ZX_ERR_STOP;
+      });
 
   return ktl::pair(min_mapped, max_mapped);
 }
@@ -289,72 +298,52 @@ void VmObject::RangeChangeUpdateMappingsLocked(uint64_t offset, uint64_t len, Ra
   DEBUG_ASSERT(IsPageRounded(offset));
   DEBUG_ASSERT(IsPageRounded(len));
 
-  const uint64_t last_offset = offset + (len - 1);
+  const uint64_t last_offset = offset + len;
 
-  // We are going to end up visited nodes in (key) order, and to achieve this walk without a stack
-  // we record the key of the nodes as we visit them. This has no effect beyond allowing us to
-  // encode a tree walk with constant storage.
-  MappingTreeTraits::Key largest_visited = MappingTreeTraits::Key::Min();
-  // Begin our search at the root of the tree.
-  MappingTree::iterator node = mapping_list_.root();
-  using Observer = VmMappingSubtreeState::Observer<VmMapping>;
-  while (node) {
-    if (MappingTree::iterator left = node.left(); left) {
-      // If the left node contains any offsets below the start of our search range, then we need
-      // to walk into it. As we do not know the min offset in the left tree we could walk the
-      // entire left side of the tree redundantly, but that is just O(log n) nodes which is fine.
-      // The largest_visited is compared against to make sure we did not already visit this
-      // node/subtree.
-      if (Observer::MaxLastOffset(left) >= offset &&
-          KeyTraits::LessThan(largest_visited, KeyTraits::GetKey(*left))) {
-        node = left;
-        continue;
-      }
-    }
-
-    // Check if this node has been visited yet. This avoids a second visit as we walk back up the
-    // tree.
-    if (KeyTraits::LessThan(largest_visited, KeyTraits::GetKey(*node))) {
-      // Node might be a viable candidate, perform the range update. The mapping will itself check
-      // for the precise intersection, if any, first and so it would be duplicate work to precisely
-      // check for overlap here.
-      VmMapping& m = *node;
-      m.assert_object_lock();
-      if (op == RangeChangeOp::Unmap) {
-        m.AspaceUnmapLockedObject(offset, len, VmMapping::UnmapOptions::kNone);
-      } else if (op == RangeChangeOp::UnmapZeroPage) {
-        m.AspaceUnmapLockedObject(offset, len, VmMapping::UnmapOptions::OnlyHasZeroPages);
-      } else if (op == RangeChangeOp::UnmapAndHarvest) {
-        m.AspaceUnmapLockedObject(offset, len, VmMapping::UnmapOptions::Harvest);
-      } else if (op == RangeChangeOp::RemoveWrite) {
-        m.AspaceRemoveWriteLockedObject(offset, len);
-      } else if (op == RangeChangeOp::DebugUnpin) {
-        m.AspaceDebugUnpinLockedObject(offset, len);
-      } else {
-        panic("Unknown RangeChangeOp %d\n", static_cast<int>(op));
-      }
-      // Record the visit.
-      largest_visited = KeyTraits::GetKey(*node);
-    }
-
-    if (MappingTree::iterator right = node.right(); right) {
-      // By WAVL tree invariant we know that every node in the right subtree has a greater (or
-      // equal) offset to the offset in this node. If the first offset of this node is already
-      // beyond the range we are updating then, since every node to the right has an even greater
-      // offset, that the right tree does not need visiting. Otherwise there might be an
-      // overlapping node, and so we search into it, as long as the max offset of the tree is
-      // within range.
-      // Similar to the left node check, the largest_visisted is just avoiding walking into the
-      // node twice.
-      if (Observer::FirstOffset(node) <= last_offset && Observer::MaxLastOffset(right) >= offset &&
-          KeyTraits::LessThan(largest_visited, KeyTraits::GetKey(*right))) {
-        node = right;
-        continue;
-      }
-    }
-    // Attempted to visit all sub-trees, return to the parent.
-    node = node.parent();
-  }
+  mapping_list_.walk(
+      [&](VmMappingObserver::State state) {
+        // If maximum offset of the subtree is below the start of our range, skip it.
+        if (state.max_offset <= offset) {
+          return ZX_ERR_NEXT;
+        }
+        // If the minimum offset of the subtree is above the end of our range then we are done.
+        if (last_offset <= state.min_offset) {
+          return ZX_ERR_STOP;
+        }
+        // Otherwise descend into the subtree.
+        return ZX_OK;
+      },
+      [&](VmMappingObserver::State state, auto first, auto last) {
+        // Before even iterating this leaf node check if anything is in range.
+        if (state.max_offset <= offset) {
+          return ZX_ERR_NEXT;
+        }
+        if (last_offset <= state.min_offset) {
+          return ZX_ERR_STOP;
+        }
+        last++;
+        for (; first != last; first++) {
+          // Node might be a viable candidate, perform the range update. The mapping will itself
+          // check for the precise intersection, if any, first and so it would be duplicate work to
+          // precisely check for overlap here.
+          const VmMapping& m = *(*first).second;
+          m.assert_object_lock();
+          if (op == RangeChangeOp::Unmap) {
+            m.AspaceUnmapLockedObject(offset, len, VmMapping::UnmapOptions::kNone);
+          } else if (op == RangeChangeOp::UnmapZeroPage) {
+            m.AspaceUnmapLockedObject(offset, len, VmMapping::UnmapOptions::OnlyHasZeroPages);
+          } else if (op == RangeChangeOp::UnmapAndHarvest) {
+            m.AspaceUnmapLockedObject(offset, len, VmMapping::UnmapOptions::Harvest);
+          } else if (op == RangeChangeOp::RemoveWrite) {
+            m.AspaceRemoveWriteLockedObject(offset, len);
+          } else if (op == RangeChangeOp::DebugUnpin) {
+            m.AspaceDebugUnpinLockedObject(offset, len);
+          } else {
+            panic("Unknown RangeChangeOp %d\n", static_cast<int>(op));
+          }
+        }
+        return ZX_ERR_NEXT;
+      });
 }
 
 // TODO(https://fxbug.dev/408878701): add option to dump by koid.
