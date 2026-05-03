@@ -9,6 +9,7 @@
 #include <lib/zx/pager.h>
 #include <lib/zx/port.h>
 #include <lib/zx/resource.h>
+#include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
 #include <limits.h>
 #include <stdio.h>

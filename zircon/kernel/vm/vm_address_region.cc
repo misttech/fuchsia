@@ -333,6 +333,11 @@ zx::result<VmAddressRegion::MapResult> VmAddressRegion::CreateVmMapping(
     return zx::error{ZX_ERR_OUT_OF_RANGE};
   }
 
+  // For physical VMOs, the mapping must be within the VMO.
+  if (vmo && !vmo->is_paged() && vmo_offset + mapping_size > vmo->size()) {
+    return zx::error{ZX_ERR_OUT_OF_RANGE};
+  }
+
   // Can't create fault-beyond-stream-size mapping of physical or contiguous VMOs. There is
   // currently no use case for this as the stream size of these VMOs is always zero, so the mapping
   // would always fault. In this case, sys_vmar_map should have returned  ZX_ERR_NOT_SUPPORTED.

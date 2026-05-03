@@ -933,6 +933,38 @@ TEST(VmoTestCase, PhysicalVmoInvalidInitialSize) {
   }
 }
 
+TEST(VmoTestCase, PhysicalVmoOobMapping) {
+  const zx::unowned_resource mmio = maybe_standalone::GetMmioResource();
+  if (!mmio->is_valid()) {
+    printf("Mmio resource not available, skipping\n");
+    return;
+  }
+
+  zx_paddr_t mmio_base;
+  size_t mmio_size;
+  {
+    const BootOptions *boot_options = maybe_standalone::GetBootOptions();
+    if (!boot_options || !boot_options->test_ram_reserve.has_value()) {
+      printf("Ram reservation not available, skipping\n");
+      return;
+    }
+    const RamReservation ram = boot_options->test_ram_reserve.value();
+    // The kernel should have filled in the value by now.
+    ASSERT_TRUE(ram.paddr.has_value());
+    mmio_base = ram.paddr.value();
+    mmio_size = ram.size;
+  }
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create_physical(*mmio, mmio_base, zx_system_get_page_size(), &vmo));
+
+  // Map should reject a mapping larger than the VMO size.
+  zx_vaddr_t vaddr;
+  EXPECT_EQ(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_MAP_RANGE, 0, vmo, 0,
+                                       zx_system_get_page_size() * 2, &vaddr),
+            ZX_ERR_OUT_OF_RANGE);
+}
+
 TEST(VmoTestCase, SizeAlign) {
   for (uint64_t s = 0; s < zx_system_get_page_size() * 4; s++) {
     zx_handle_t vmo;
