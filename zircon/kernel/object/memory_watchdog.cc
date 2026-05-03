@@ -229,8 +229,9 @@ void MemoryWatchdog::WorkerThread() {
       CountPressureEvent(mem_event_idx_);
       // Keep trying to perform eviction for as long as we are evicting non-zero pages and we remain
       // in the out of memory state.
+      uint64_t total_evicted_pages = 0;
       while (mem_event_idx_ == PressureLevel::kOutOfMemory) {
-        uint64_t evicted_pages =
+        const uint64_t evicted_pages =
             pmm_evictor()
                 ->EvictSynchronous(MB * BootOptions::Get()->oom_eviction_delta_at_oom_mb, 0,
                                    Evictor::EvictionLevel::IncludeNewest, Evictor::Output::NoPrint,
@@ -240,9 +241,13 @@ void MemoryWatchdog::WorkerThread() {
           printf("memory-pressure: found no pages to evict\n");
           break;
         }
+        total_evicted_pages += evicted_pages;
         mem_event_idx_ = CalculatePressureLevel();
       }
-      printf("memory-pressure: reclaimed to avoid OOM\n");
+      if (total_evicted_pages > 0) {
+        printf("memory-pressure: reclaimed %s to avoid OOM\n",
+               FormattedBytes(total_evicted_pages * kPageSize).c_str());
+      }
     }
 
     // Check to see if the PMM has failed any allocations.  If the PMM has ever failed to allocate
