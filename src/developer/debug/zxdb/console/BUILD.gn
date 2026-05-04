@@ -257,6 +257,7 @@ source_set("tests") {
     "commands/verb_print_unittest.cc",
     "commands/verb_ps_unittest.cc",
     "commands/verb_quit_unittest.cc",
+    "commands/verb_savedump_unittest.cc",
     "commands/verb_stack_data_unittest.cc",
     "commands/verb_stack_usage_unittest.cc",
     "commands/verb_status_unittest.cc",

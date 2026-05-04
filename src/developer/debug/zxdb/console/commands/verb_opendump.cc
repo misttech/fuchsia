@@ -8,6 +8,7 @@
 
 #include "src/developer/debug/shared/string_util.h"
 #include "src/developer/debug/zxdb/client/session.h"
+#include "src/developer/debug/zxdb/common/file_util.h"
 #include "src/developer/debug/zxdb/console/command.h"
 #include "src/developer/debug/zxdb/console/console.h"
 #include "src/developer/debug/zxdb/console/nouns.h"
@@ -90,11 +91,13 @@ void RunVerbOpendump(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context
     path = cmd.args()[0];
   }
 
-  cmd_context->GetConsoleContext()->session()->OpenMinidump(path, [cmd_context](const Err& err) {
-    if (err.has_error())
-      return cmd_context->ReportError(err);
-    cmd_context->Output("Dump loaded successfully.\n");
-  });
+  const auto& normalized_path = ExpandAndNormalizePath(path).value_or(path);
+  cmd_context->GetConsoleContext()->session()->OpenMinidump(
+      normalized_path, [cmd_context](const Err& err) {
+        if (err.has_error())
+          return cmd_context->ReportError(err);
+        cmd_context->Output("Dump loaded successfully.\n");
+      });
   cmd_context->Output("Opening dump file...\n");
 }
 

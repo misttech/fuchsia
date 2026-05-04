@@ -7,11 +7,13 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <system_error>
 
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/remote_api.h"
 #include "src/developer/debug/zxdb/client/session.h"
+#include "src/developer/debug/zxdb/common/file_util.h"
 #include "src/developer/debug/zxdb/console/command.h"
 #include "src/developer/debug/zxdb/console/command_utils.h"
 #include "src/developer/debug/zxdb/console/console.h"
@@ -34,11 +36,16 @@ const char kSaveDumpHelp[] = R"(
 //
 // Returns true on successful completion of write operation, false on failure.
 Err WriteCoreDataToFile(const std::filesystem::path& path, const std::vector<uint8_t>& core_data) {
-  if (path.has_parent_path()) {
-    if (!std::filesystem::exists(path.parent_path())) {
-      return Err(ErrType::kInput, "Path does not exist: " + path.parent_path().string());
-    }
-  } else if (std::filesystem::exists(path)) {
+  std::error_code ec;
+  // Do not include the filename in the path creation.
+  std::filesystem::create_directories(path.parent_path(), ec);
+
+  // Not an error if the complete path already exists.
+  if (ec) {
+    return Err("Failed to create directory: %s", path.c_str());
+  }
+
+  if (std::filesystem::exists(path)) {
     return Err(ErrType::kAlreadyExists, "File already exists: " + path.filename().string());
   }
 
@@ -49,6 +56,8 @@ Err WriteCoreDataToFile(const std::filesystem::path& path, const std::vector<uin
     return Err(ErrType::kGeneral, "Failed to write minidump data to file.");
   }
 
+  // Don't forget to flush!
+  f.flush();
   f.close();
 
   return Err();
@@ -62,8 +71,9 @@ void RunVerbSaveDump(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context
   }
 
   std::filesystem::path path = cmd.args()[0];
+  const auto& normalized_path = std::filesystem::path(ExpandAndNormalizePath(path).value_or(path));
 
-  if (std::filesystem::exists(path)) {
+  if (std::filesystem::exists(normalized_path)) {
     return cmd_context->ReportError(
         Err(ErrType::kAlreadyExists, "Path: " + path.string() +
                                          " already exists. Please choose a different file name "
@@ -79,8 +89,8 @@ void RunVerbSaveDump(const Command& cmd, fxl::RefPtr<CommandContext> cmd_context
   request.process_koid = cmd.target()->GetProcess()->GetKoid();
 
   cmd_context->GetConsoleContext()->session()->remote_api()->SaveMinidump(
-      request,
-      [path = path, cmd_context](const Err& err, debug_ipc::SaveMinidumpReply reply) mutable {
+      request, [path = normalized_path, cmd_context](const Err& err,
+                                                     debug_ipc::SaveMinidumpReply reply) mutable {
         if (err.has_error())
           return cmd_context->ReportError(Err("Failed to collect minidump: " + err.msg()));
 
