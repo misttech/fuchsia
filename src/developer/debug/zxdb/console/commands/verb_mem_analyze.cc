@@ -31,7 +31,7 @@ const char kMemAnalyzeHelp[] = R"(
   When no size is given, the size will be the object size if a typed expression
   is given, otherwise 20 lines will be output.
 
-  See also "stack" which is specialized more for stacks (it includes the
+  See also "stack-data" which is specialized more for stacks (it includes the
   current thread's registers), and "mem-read" to display a simple hex dump.
 
 Arguments
