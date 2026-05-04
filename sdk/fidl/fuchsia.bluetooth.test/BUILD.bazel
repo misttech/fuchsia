@@ -12,7 +12,7 @@ fidl_library(
     ],
     api_area = "Bluetooth",
     category = "partner",
-    stable = False,
+    stable = True,
     visibility = ["//visibility:public"],
     deps = [
         "//sdk/fidl/fuchsia.bluetooth",

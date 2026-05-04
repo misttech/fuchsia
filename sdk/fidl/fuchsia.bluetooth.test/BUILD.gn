@@ -40,7 +40,7 @@ fidl("fuchsia.bluetooth.test") {
   ]
   sdk_area = "Bluetooth"
   sdk_category = "partner"
-  stable = false
+  stable = true
   visibility = [ "*" ]
   public_deps = [
     "//sdk/fidl/fuchsia.bluetooth",
