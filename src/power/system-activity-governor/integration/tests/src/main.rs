@@ -278,6 +278,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
                 "1": {
                     ref fobs::RESUME_CALLBACK_PHASE_END_AT: AnyProperty,
                  },
+                 "fuchsia.inspect.Stats": contains {},
             },
             "suspend_events_stats": contains {},
             ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
@@ -410,6 +411,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
                 "13": {
                     ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
+                "fuchsia.inspect.Stats": contains {},
             },
             "suspend_events_stats": contains {},
             ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
@@ -497,6 +499,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
                 "21": {
                     ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
+                "fuchsia.inspect.Stats": contains {},
             },
             "suspend_events_stats": contains {},
             ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
@@ -569,6 +572,7 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
                 "1": {
                     ref fobs::RESUME_CALLBACK_PHASE_END_AT: AnyProperty,
                  },
+                 "fuchsia.inspect.Stats": contains {},
             },
             "suspend_events_stats": contains {},
             ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
@@ -651,6 +655,7 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
                 "13": {
                     ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
+                "fuchsia.inspect.Stats": contains {},
             },
             "suspend_events_stats": contains {},
             ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
@@ -723,6 +728,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
                 "1": {
                     ref fobs::RESUME_CALLBACK_PHASE_END_AT: AnyProperty,
                  },
+                "fuchsia.inspect.Stats": contains {},
             },
             "suspend_events_stats": contains {},
             ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
@@ -805,6 +811,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
                 "13": {
                     ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
+                "fuchsia.inspect.Stats": contains {},
             },
             "suspend_events_stats": contains {},
             ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
@@ -884,6 +891,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
                 "21": {
                    ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
+                "fuchsia.inspect.Stats": contains {},
             },
         }
     );
@@ -957,6 +965,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
                     ref fobs::WAKE_LEASE_ITEM_NAME: "test_suspend_blocker",
                     ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
+                "fuchsia.inspect.Stats": contains {},
             }
         }
     );
@@ -1032,6 +1041,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
                 "10": {
                     ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
+                "fuchsia.inspect.Stats": contains {},
             },
             "power_observability_state_recorders": contains {},
             "suspend_events_stats": contains {},
@@ -1147,6 +1157,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
                 "18": {
                    ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
+                "fuchsia.inspect.Stats": contains {},
             },
             "power_observability_state_recorders": contains {},
             "suspend_events_stats": contains {},
@@ -1220,6 +1231,7 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
                 "1": {
                     ref fobs::RESUME_CALLBACK_PHASE_END_AT: AnyProperty,
                  },
+                 "fuchsia.inspect.Stats": contains {},
             },
             "suspend_events_stats": contains {},
             ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
@@ -1775,6 +1787,7 @@ async fn test_activity_governor_take_application_activity_lease() -> Result<()> 
                     ref fobs::WAKE_LEASE_ITEM_NAME: application_activity_lease_name,
                     ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
+                "fuchsia.inspect.Stats": contains {},
             }
         }
     );
@@ -3189,6 +3202,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
                     ref fobs::WAKE_LEASE_ITEM_NAME: "hangs_after_resume",
                     ref fobs::WAKE_LEASE_ITEM_ID: 0u64,
                 },
+                "fuchsia.inspect.Stats": contains {},
             }
         }
     );
@@ -3263,6 +3277,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
                 "10": {
                     ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
+                "fuchsia.inspect.Stats": contains {},
             },
             "power_observability_state_recorders": contains {},
             "suspend_events_stats": contains {},
@@ -3361,6 +3376,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
                 "18": {
                    ref fobs::SUSPEND_ATTEMPTED_AT: AnyProperty,
                 },
+                "fuchsia.inspect.Stats": contains {},
             },
             "power_observability_state_recorders": contains {},
             "suspend_events_stats": contains {},
@@ -3720,6 +3736,9 @@ async fn test_activity_governor_captures_inspect_event_buffer_stats() -> Result<
             },
             "fuchsia.inspect.Health": contains {
                 status: "OK",
+            },
+            "suspend_events": contains {
+                "fuchsia.inspect.Stats": contains {},
             },
         }
     );

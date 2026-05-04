@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_power_observability as fobs;
+use fuchsia_inspect::stats::InspectorExt;
 use fuchsia_inspect::{ArrayProperty, LazyNode as ILazyNode, Node as INode};
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
@@ -15,6 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use strum_macros::{Display, EnumIter};
 
+// TODO(b/509625434): Convert to use value from config file
 const SUSPEND_EVENT_BUFFER_SIZE_EVENTS: usize = 6144;
 const SUSPEND_EVENT_BUFFER_SIZE_BYTES: usize = (2.5f32 * DEFAULT_VMO_SIZE_BYTES as f32) as usize; // 640K buffer
 
@@ -130,6 +132,7 @@ impl SagEventLogger {
                         .size(SUSPEND_EVENT_BUFFER_SIZE_BYTES);
                     let inspector = fuchsia_inspect::Inspector::new(lazy_inspect_config);
                     let root = inspector.root();
+                    inspector.record_lazy_stats();
 
                     // Convert internally-logged events into Inspect nodes
                     if let Some(internal_event_log) = weak_internal_log.upgrade() {
