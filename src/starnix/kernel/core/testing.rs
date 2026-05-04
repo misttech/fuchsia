@@ -20,8 +20,8 @@ use crate::task::{
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
     Anon, CacheMode, DirEntry, FdNumber, FileHandle, FileObject, FileOps, FileSystem,
-    FileSystemHandle, FileSystemOps, FileSystemOptions, FsContext, FsNode, FsNodeHandle,
-    FsNodeInfo, FsNodeOps, FsStr, Namespace, NamespaceNode, fileops_impl_nonseekable,
+    FileSystemHandle, FileSystemOps, FileSystemOptions, FsContext, FsNode, FsNodeFlags,
+    FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, Namespace, NamespaceNode, fileops_impl_nonseekable,
     fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
 use fidl_fuchsia_io as fio;
@@ -770,7 +770,7 @@ pub fn create_testfs_with_root(
 pub fn create_fs_node_for_testing(fs: &FileSystemHandle, ops: impl FsNodeOps) -> FsNodeHandle {
     let ino = fs.allocate_ino();
     let info = FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root());
-    FsNode::new_uncached(ino, ops, fs, info)
+    FsNode::new_uncached(ino, ops, fs, info, FsNodeFlags::empty())
 }
 
 pub fn create_namespace_node_for_testing(

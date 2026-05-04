@@ -13,10 +13,10 @@ use starnix_core::mm::memory::MemoryObject;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::{
     CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType, DirentSink, FileObject, FileOps,
-    FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle,
-    FsNodeInfo, FsNodeOps, FsStr, FsString, MemoryRegularFile, SeekTarget, SymlinkTarget, XattrOp,
-    XattrStorage, default_seek, fileops_impl_directory, fileops_impl_noop_sync,
-    fs_node_impl_dir_readonly, fs_node_impl_not_dir, fs_node_impl_symlink,
+    FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeFlags,
+    FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, MemoryRegularFile, SeekTarget,
+    SymlinkTarget, XattrOp, XattrStorage, default_seek, fileops_impl_directory,
+    fileops_impl_noop_sync, fs_node_impl_dir_readonly, fs_node_impl_not_dir, fs_node_impl_symlink,
     fs_node_impl_xattr_delegate,
 };
 use starnix_logging::{impossible_error, track_stub};
@@ -221,6 +221,7 @@ impl FsNodeOps for ExtDirectory {
                 ops,
                 &fs,
                 FsNodeInfo { mode, uid: owner.uid, gid: owner.gid, ..Default::default() },
+                FsNodeFlags::empty(),
             );
             child.update_info(|info| {
                 info.size = size as usize;

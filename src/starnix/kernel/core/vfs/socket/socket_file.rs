@@ -11,8 +11,8 @@ use crate::vfs::socket::{
     SocketType,
 };
 use crate::vfs::{
-    Anon, DowncastedFile, FileHandle, FileObject, FileObjectState, FileOps, FsNodeInfo,
-    fileops_impl_nonseekable, fileops_impl_noop_sync,
+    Anon, DowncastedFile, FileHandle, FileObject, FileObjectState, FileOps, FsNodeFlags,
+    FsNodeInfo, fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::{SyscallArg, SyscallResult};
@@ -51,9 +51,12 @@ impl SocketFile {
     {
         let fs = socket_fs(locked, current_task.kernel());
         let mode = mode!(IFSOCK, 0o777);
-        let node = fs.create_node_and_allocate_node_id(
-            Anon::new_for_socket(kernel_private),
+        let flags = if kernel_private { FsNodeFlags::IS_PRIVATE } else { FsNodeFlags::empty() };
+        let node = fs.create_node_with_flags(
+            None,
+            Anon::new_for_socket(),
             FsNodeInfo::new(mode, current_task.current_fscred()),
+            flags,
         );
         socket.set_fs_node(&node);
         security::socket_post_create(current_task, &socket);

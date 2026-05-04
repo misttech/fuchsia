@@ -6,7 +6,8 @@ use crate::security;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::{
     CacheMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
-    FileSystemOptions, FsNode, FsNodeInfo, FsNodeOps, FsStr, FsString, fs_node_impl_not_dir,
+    FileSystemOptions, FsNode, FsNodeFlags, FsNodeInfo, FsNodeOps, FsStr, FsString,
+    fs_node_impl_not_dir,
 };
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_types::vfs::default_statfs;
@@ -19,8 +20,6 @@ pub struct Anon {
     /// If this instance represents an `anon_inode` then `name` holds the type-name of the node,
     /// e.g. "inotify", "sync_file", "[usereventfd]", etc.
     name: Option<&'static str>,
-
-    is_private: bool,
 }
 
 impl FsNodeOps for Anon {
@@ -39,21 +38,17 @@ impl FsNodeOps for Anon {
     fn internal_name(&self, _node: &FsNode) -> Option<FsString> {
         self.name.map(|name| format!("anon_inode:{}", name).into())
     }
-
-    fn is_private(&self) -> bool {
-        self.is_private
-    }
 }
 
 impl Anon {
     /// Returns a new `Anon` instance for use in a binder device FD.
     pub fn new_for_binder_device() -> Self {
-        Self { name: None, is_private: false }
+        Self { name: None }
     }
 
     /// Returns a new `Anon` instance for use as the `FsNodeOps` of a socket.
-    pub fn new_for_socket(kernel_private: bool) -> Self {
-        Self { name: None, is_private: kernel_private }
+    pub fn new_for_socket() -> Self {
+        Self { name: None }
     }
 
     /// Returns a new anonymous file with the specified properties, and a unique `FsNode`.
@@ -69,8 +64,7 @@ impl Anon {
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let fs = anon_fs(locked, current_task.kernel());
-        let node =
-            fs.create_node_and_allocate_node_id(Anon { name: Some(name), is_private: false }, info);
+        let node = fs.create_node_and_allocate_node_id(Anon { name: Some(name) }, info);
         security::fs_node_init_anon(current_task, &node, name)?;
         Ok(FileObject::new_anonymous(locked, current_task, ops, node, flags))
     }
@@ -131,8 +125,12 @@ impl Anon {
         L: LockEqualOrBefore<FileOpsCore>,
     {
         let fs = anon_fs(locked, current_task.kernel());
-        let node =
-            fs.create_node_and_allocate_node_id(Anon { name: Some(name), is_private: true }, info);
+        let node = fs.create_node_with_flags(
+            None,
+            Anon { name: Some(name) },
+            info,
+            FsNodeFlags::IS_PRIVATE,
+        );
         security::fs_node_init_anon(current_task, &node, name)
             .expect("Private anon_inode creation cannot fail");
         FileObject::new_anonymous(locked, current_task, ops, node, flags)

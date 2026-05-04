@@ -72,9 +72,18 @@ impl Default for FsNodeLinkBehavior {
 pub type AppendLockGuard<'a> = RwQueueReadGuard<'a, FsNodeAppend>;
 pub type AppendLockWriteGuard<'a> = RwQueueWriteGuard<'a, FsNodeAppend>;
 
+bitflags! {
+    pub struct FsNodeFlags: u8 {
+        const IS_PRIVATE = 1 << 0;
+    }
+}
+
 pub struct FsNode {
     /// The inode number for this FsNode.
     pub ino: ino_t,
+
+    /// Flags for this node.
+    pub flags: FsNodeFlags,
 
     /// The FsNodeOps for this FsNode.
     ///
@@ -894,11 +903,6 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         node.ino
     }
 
-    /// Whether this node is private to the kernel/filesystem.
-    fn is_private(&self) -> bool {
-        false
-    }
-
     /// Returns the size of the file.
     fn get_size(
         &self,
@@ -1220,7 +1224,7 @@ impl FsNode {
     /// Returns true if the `fs_node` is private to the `Kernel`/`FileSystem`, in which
     /// case both MAC and DAC checks should be skipped.
     pub fn is_private(&self) -> bool {
-        self.ops().is_private()
+        self.flags.contains(FsNodeFlags::IS_PRIVATE)
     }
 
     /// Create a node without inserting it into the FileSystem node cache.
@@ -1232,9 +1236,10 @@ impl FsNode {
         ops: impl Into<Box<dyn FsNodeOps>>,
         fs: &FileSystemHandle,
         info: FsNodeInfo,
+        flags: FsNodeFlags,
     ) -> FsNodeHandle {
         let ops = ops.into();
-        FsNodeHandle::new(Self::new_internal(ino, ops, Arc::downgrade(fs), info).into())
+        FsNodeHandle::new(Self::new_internal(ino, ops, Arc::downgrade(fs), info, flags).into())
     }
 
     fn new_internal(
@@ -1242,6 +1247,7 @@ impl FsNode {
         ops: Box<dyn FsNodeOps>,
         fs: Weak<FileSystem>,
         info: FsNodeInfo,
+        flags: FsNodeFlags,
     ) -> Self {
         // Allow the FsNodeOps to populate initial info.
         let info = {
@@ -1255,6 +1261,7 @@ impl FsNode {
         {
             let result = Self {
                 ino,
+                flags,
                 ops,
                 fs,
                 info: RwLock::new(info),

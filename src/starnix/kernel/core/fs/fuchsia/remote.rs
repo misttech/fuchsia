@@ -16,8 +16,8 @@ use crate::vfs::socket::{Socket, SocketFile, ZxioBackedSocket};
 use crate::vfs::{
     Anon, AppendLockWriteGuard, CacheMode, DEFAULT_BYTES_PER_BLOCK, DirectoryEntryType, DirentSink,
     FallocMode, FileHandle, FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
-    FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, LookupVec,
-    SeekTarget, SymlinkTarget, XattrOp, XattrStorage, default_ioctl, default_seek,
+    FileSystemOptions, FsNode, FsNodeFlags, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
+    LookupVec, SeekTarget, SymlinkTarget, XattrOp, XattrStorage, default_ioctl, default_seek,
     fileops_impl_directory, fileops_impl_nonseekable, fileops_impl_noop_sync,
     fileops_impl_seekable, fs_node_impl_not_dir, fs_node_impl_symlink, fs_node_impl_xattr_delegate,
 };
@@ -398,6 +398,7 @@ impl<'a> LookupFactory<'a> {
                         owner,
                     )
                 },
+                FsNodeFlags::empty(),
             );
             if fsverity_enabled {
                 *child.fsverity.lock() = FsVerityState::FsVerity;

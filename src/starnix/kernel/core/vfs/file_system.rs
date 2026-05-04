@@ -7,7 +7,8 @@ use crate::task::{CurrentTask, Kernel};
 use crate::vfs::fs_args::MountParams;
 use crate::vfs::fs_node_cache::FsNodeCache;
 use crate::vfs::{
-    DirEntry, DirEntryHandle, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString,
+    DirEntry, DirEntryHandle, FsNode, FsNodeFlags, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr,
+    FsString,
 };
 use flyweights::FlyByteStr;
 use linked_hash_map::LinkedHashMap;
@@ -245,15 +246,26 @@ impl FileSystem {
     /// File systems that produce their own IDs for nodes should invoke this
     /// function. The ones who leave to this object to assign the IDs should
     /// call |create_node_and_allocate_node_id|.
+    pub fn create_node_with_flags(
+        self: &Arc<Self>,
+        ino: Option<ino_t>,
+        ops: impl Into<Box<dyn FsNodeOps>>,
+        info: FsNodeInfo,
+        flags: FsNodeFlags,
+    ) -> FsNodeHandle {
+        let ino = ino.unwrap_or_else(|| self.allocate_ino());
+        let node = FsNode::new_uncached(ino, ops, self, info, flags);
+        self.node_cache.insert_node(&node);
+        node
+    }
+
     pub fn create_node(
         self: &Arc<Self>,
         ino: ino_t,
         ops: impl Into<Box<dyn FsNodeOps>>,
         info: FsNodeInfo,
     ) -> FsNodeHandle {
-        let node = FsNode::new_uncached(ino, ops, self, info);
-        self.node_cache.insert_node(&node);
-        node
+        self.create_node_with_flags(Some(ino), ops, info, FsNodeFlags::empty())
     }
 
     pub fn create_node_and_allocate_node_id(
@@ -261,8 +273,7 @@ impl FileSystem {
         ops: impl Into<Box<dyn FsNodeOps>>,
         info: FsNodeInfo,
     ) -> FsNodeHandle {
-        let ino = self.allocate_ino();
-        self.create_node(ino, ops, info)
+        self.create_node_with_flags(None, ops, info, FsNodeFlags::empty())
     }
 
     /// Create a node for a directory that has no parent.
@@ -273,7 +284,7 @@ impl FileSystem {
         info: FsNodeInfo,
     ) -> FsNodeHandle {
         assert!(info.mode.is_dir());
-        let node = FsNode::new_uncached(ino, ops, self, info);
+        let node = FsNode::new_uncached(ino, ops, self, info, FsNodeFlags::empty());
         self.node_cache.insert_node(&node);
         node
     }

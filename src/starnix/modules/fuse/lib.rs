@@ -21,8 +21,8 @@ use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
     AppendLockWriteGuard, CacheMode, CheckAccessReason, DirEntry, DirEntryOps, DirectoryEntryType,
     DirentSink, FallocMode, FdNumber, FileObject, FileObjectState, FileOps, FileSystem,
-    FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo,
-    FsNodeOps, FsStr, FsString, NamespaceNode, PeekBufferSegmentsCallback, SeekTarget,
+    FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeFlags, FsNodeHandle,
+    FsNodeInfo, FsNodeOps, FsStr, FsString, NamespaceNode, PeekBufferSegmentsCallback, SeekTarget,
     SymlinkTarget, ValueOrSize, WeakFileHandle, XattrOp, default_eof_offset, default_fcntl,
     default_ioctl, default_seek, fileops_impl_nonseekable, fileops_impl_noop_sync, fs_args,
     fs_node_impl_dir_readonly,
@@ -744,7 +744,13 @@ impl FuseNode {
                     attr_valid_to_duration(entry.attr_valid, entry.attr_valid_nsec)?,
                     &fuse_node.attributes_valid_until,
                 )?;
-                Ok(FsNode::new_uncached(entry.attr.ino, fuse_node, &node.fs(), info))
+                Ok(FsNode::new_uncached(
+                    entry.attr.ino,
+                    fuse_node,
+                    &node.fs(),
+                    info,
+                    FsNodeFlags::empty(),
+                ))
             },
         )?;
         // . and .. do not get their lookup count increased.
