@@ -204,6 +204,10 @@ pub struct DataStreamInspect {
 
 #[cfg(target_os = "fuchsia")]
 impl DataStreamInspect {
+    pub fn node(&self) -> &inspect::Node {
+        &self.inspect_node
+    }
+
     pub fn start(&mut self) {
         let now = fasync::MonotonicInstant::now();
         if let Some(prop) = &self.start_time_prop {

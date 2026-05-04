@@ -1829,12 +1829,14 @@ mod tests {
                         start_time: 7_000_000i64,
                         streaming_secs: 0u64,
                         total_bytes: 0u64,
+                        timeseries_bytes: contains {},
                     },
                     outbound_stream: {
                         bytes_per_second_current: 0u64,
                         start_time: 7_000_000i64,
                         streaming_secs: 0u64,
                         total_bytes: 0u64,
+                        timeseries_bytes: contains {},
                     },
                 },
             },
@@ -1882,12 +1884,14 @@ mod tests {
                     start_time: 987_000_000i64,
                     streaming_secs: 0u64,
                     total_bytes: 0u64,
+                    timeseries_bytes: contains {},
                 },
                 outbound_stream: {
                     bytes_per_second_current: 0u64,
                     start_time: 987_000_000i64,
                     streaming_secs: 0u64,
                     total_bytes: 0u64,
+                    timeseries_bytes: contains {},
                 },
             },
         });
@@ -1908,12 +1912,14 @@ mod tests {
                     start_time: 987_000_000i64,
                     streaming_secs: 1u64,
                     total_bytes: 5u64, // Received 5 bytes from peer.
+                    timeseries_bytes: contains {},
                 },
                 outbound_stream: {
                     bytes_per_second_current: 0u64,
                     start_time: 987_000_000i64,
                     streaming_secs: 0u64,
                     total_bytes: 0u64,
+                    timeseries_bytes: contains {},
                 },
             },
         });
@@ -1934,12 +1940,14 @@ mod tests {
                     start_time: 987_000_000i64,
                     streaming_secs: 1u64,
                     total_bytes: 5u64,
+                    timeseries_bytes: contains {},
                 },
                 outbound_stream: {
                     bytes_per_second_current: 2u64, // 8 (bytes) / 3 (seconds)
                     start_time: 987_000_000i64,
                     streaming_secs: 3u64,
                     total_bytes: 8u64, // Sent 8 bytes to peer.
+                    timeseries_bytes: contains {},
                 },
             },
         });

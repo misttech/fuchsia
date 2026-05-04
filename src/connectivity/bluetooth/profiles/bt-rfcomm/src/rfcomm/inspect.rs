@@ -7,6 +7,10 @@ use fuchsia_async as fasync;
 use fuchsia_bluetooth::inspect::DataStreamInspect;
 use fuchsia_inspect::{self as inspect, Property};
 use fuchsia_inspect_derive::{AttachError, IValue, Inspect};
+use windowed_stats::experimental::inspect::{InspectSender, InspectedTimeMatrix, TimeMatrixClient};
+use windowed_stats::experimental::series::interpolation::ConstantSample;
+use windowed_stats::experimental::series::statistic::Sum;
+use windowed_stats::experimental::series::{SamplingProfile, TimeMatrix};
 
 use crate::rfcomm::session::channel::FlowControlMode;
 use crate::rfcomm::session::multiplexer::SessionParameters;
@@ -28,12 +32,42 @@ fn role_to_display_str(role: Role) -> &'static str {
 /// Tracks the data stream inspect stats for a channel.
 /// Properties are tracked in both directions: data sent to the remote entity and data
 /// received from the remote.
-#[derive(Inspect, Default)]
+#[derive(Default)]
 pub struct DuplexDataStreamInspect {
-    #[inspect(rename = "inbound_stream")]
-    pub inbound: DataStreamInspect,
-    #[inspect(rename = "outbound_stream")]
-    pub outbound: DataStreamInspect,
+    inbound: DataStreamInspect,
+    outbound: DataStreamInspect,
+
+    /// Timeseries data for the inbound data path (bytes).
+    rx_time_series: Option<InspectedTimeMatrix<u64>>,
+    /// Timeseries data for the outbound data path (bytes).
+    tx_time_series: Option<InspectedTimeMatrix<u64>>,
+}
+
+impl Inspect for &mut DuplexDataStreamInspect {
+    fn iattach(self, parent: &inspect::Node, _name: impl AsRef<str>) -> Result<(), AttachError> {
+        self.inbound.iattach(parent, "inbound_stream")?;
+        self.outbound.iattach(parent, "outbound_stream")?;
+
+        // Timeseries data is saved under the RX and TX stream nodes.
+        let rx_client = TimeMatrixClient::new(self.inbound.node().clone_weak());
+        let tx_client = TimeMatrixClient::new(self.outbound.node().clone_weak());
+
+        // A balanced sampling profile optimizes for bursty traffic resolution and memory
+        // efficiency over extended durations.
+        let rx_matrix = TimeMatrix::<Sum<u64>, ConstantSample>::new(
+            SamplingProfile::balanced(),
+            ConstantSample::new(0u64),
+        );
+        let tx_matrix = TimeMatrix::<Sum<u64>, ConstantSample>::new(
+            SamplingProfile::balanced(),
+            ConstantSample::new(0u64),
+        );
+
+        self.rx_time_series = Some(rx_client.inspect_time_matrix("timeseries_bytes", rx_matrix));
+        self.tx_time_series = Some(tx_client.inspect_time_matrix("timeseries_bytes", tx_matrix));
+
+        Ok(())
+    }
 }
 
 impl DuplexDataStreamInspect {
@@ -44,10 +78,26 @@ impl DuplexDataStreamInspect {
 
     pub fn record_inbound_transfer(&mut self, bytes: usize, at: fasync::MonotonicInstant) {
         self.inbound.record_transferred(bytes, at);
+        if let Some(matrix) = &mut self.rx_time_series {
+            matrix.fold_or_log_error(bytes as u64);
+        }
     }
 
     pub fn record_outbound_transfer(&mut self, bytes: usize, at: fasync::MonotonicInstant) {
         self.outbound.record_transferred(bytes, at);
+        if let Some(matrix) = &mut self.tx_time_series {
+            matrix.fold_or_log_error(bytes as u64);
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_time_series_for_test(
+        &mut self,
+        rx: InspectedTimeMatrix<u64>,
+        tx: InspectedTimeMatrix<u64>,
+    ) {
+        self.rx_time_series = Some(rx);
+        self.tx_time_series = Some(tx);
     }
 }
 
@@ -197,9 +247,12 @@ impl RfcommServerInspect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use assert_matches::assert_matches;
     use diagnostics_assertions::assert_data_tree;
     use fuchsia_async::DurationExt;
     use fuchsia_inspect_derive::WithInspect;
+    use windowed_stats::experimental::testing::{MockTimeMatrixClient, TimeMatrixCall};
 
     use crate::rfcomm::session::channel::Credits;
 
@@ -315,11 +368,13 @@ mod tests {
                 bytes_per_second_current: 0u64,
                 streaming_secs: 0u64,
                 total_bytes: 0u64,
+                timeseries_bytes: contains {},
             },
             outbound_stream: {
                 bytes_per_second_current: 0u64,
                 streaming_secs: 0u64,
                 total_bytes: 0u64,
+                timeseries_bytes: contains {},
             },
         });
 
@@ -331,12 +386,14 @@ mod tests {
                 start_time: 1_234_567i64,
                 streaming_secs: 0u64,
                 total_bytes: 0u64,
+                timeseries_bytes: contains {},
             },
             outbound_stream: {
                 bytes_per_second_current: 0u64,
                 start_time: 1_234_567i64,
                 streaming_secs: 0u64,
                 total_bytes: 0u64,
+                timeseries_bytes: contains {},
             },
         });
 
@@ -349,12 +406,14 @@ mod tests {
                 start_time: 1_234_567i64,
                 streaming_secs: 1u64,
                 total_bytes: 500u64,
+                timeseries_bytes: contains {},
             },
             outbound_stream: {
                 bytes_per_second_current: 0u64,
                 start_time: 1_234_567i64,
                 streaming_secs: 0u64,
                 total_bytes: 0u64,
+                timeseries_bytes: contains {},
             },
         });
 
@@ -366,11 +425,62 @@ mod tests {
                 start_time: 1_234_567i64,
                 streaming_secs: 1u64,
                 total_bytes: 500u64,
+                timeseries_bytes: contains {},
             },
             outbound_stream: {
                 bytes_per_second_current: 125u64, // 250 bytes in 2 seconds
                 start_time: 1_234_567i64,
                 streaming_secs: 2u64,
+                total_bytes: 250u64,
+                timeseries_bytes: contains {},
+            },
+        });
+    }
+
+    #[fuchsia::test]
+    fn time_series_recording() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(1_000_000));
+        let inspect = inspect::Inspector::default();
+
+        let mut stream =
+            DuplexDataStreamInspect::default().with_inspect(inspect.root(), "stream").unwrap();
+        stream.start();
+
+        let mock_client = MockTimeMatrixClient::new();
+
+        let rx_matrix = TimeMatrix::<Sum<u64>, ConstantSample>::new(
+            SamplingProfile::balanced(),
+            ConstantSample::new(0u64),
+        );
+        let tx_matrix = TimeMatrix::<Sum<u64>, ConstantSample>::new(
+            SamplingProfile::balanced(),
+            ConstantSample::new(0u64),
+        );
+
+        let mock_rx = mock_client.inspect_time_matrix("rx_test_bytes", rx_matrix);
+        let mock_tx = mock_client.inspect_time_matrix("tx_test_bytes", tx_matrix);
+        stream.set_time_series_for_test(mock_rx, mock_tx);
+
+        stream.record_inbound_transfer(500, fasync::MonotonicInstant::now());
+        exec.set_fake_time(zx::MonotonicDuration::from_seconds(1).after_now());
+        stream.record_outbound_transfer(250, fasync::MonotonicInstant::now());
+
+        let mut log = mock_client.drain_calls();
+        let rx_calls = log.drain::<u64>("rx_test_bytes");
+        let tx_calls = log.drain::<u64>("tx_test_bytes");
+
+        assert_eq!(rx_calls.len(), 1);
+        assert_matches!(rx_calls[0], TimeMatrixCall::Fold(timed) if *timed.inner() == 500);
+
+        assert_eq!(tx_calls.len(), 1);
+        assert_matches!(tx_calls[0], TimeMatrixCall::Fold(timed) if *timed.inner() == 250);
+
+        assert_data_tree!(@executor exec, inspect, root: {
+            inbound_stream: contains {
+                total_bytes: 500u64,
+            },
+            outbound_stream: contains {
                 total_bytes: 250u64,
             },
         });

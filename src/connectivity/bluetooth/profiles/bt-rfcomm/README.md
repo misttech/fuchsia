@@ -46,8 +46,13 @@ Follow the instructions in the [manual testing README](manual_testing.md).
 ## Inspect
 
 The `bt-rfcomm` component includes support for
-[component inspection](https://fuchsia.dev/fuchsia-src/development/diagnostics/inspect). To view
-the current state of the RFCOMM server, use `ffx inspect show core/bluetooth-core/bt-rfcomm`.
+[component inspection](https://fuchsia.dev/fuchsia-src/development/diagnostics/inspect).
+
+To view the current state of the RFCOMM server, use
+`ffx inspect show core/bluetooth-core/bt-rfcomm`.
+
+The timeseries data is verbose. To view the inspect hierarchy without it, use:
+`ffx --machine json inspect show 'core/bluetooth-core/bt-rfcomm' | jq 'del(.. | objects | .timeseries_bytes?)'`
 
 ### Hierarchy
 
@@ -77,11 +82,15 @@ the current state of the RFCOMM server, use `ffx inspect show core/bluetooth-cor
                   inbound_stream:
                     bytes_per_second_current
                     start_time
+                    streaming_secs
                     total_bytes
+                    timeseries_bytes
                   outbound_stream:
                     bytes_per_second_current
                     start_time
+                    streaming_secs
                     total_bytes
+                    timeseries_bytes
 ```
 
 One peer child exists in the hierarchy for each RFCOMM Session between the local endpoint and remote
