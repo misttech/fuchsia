@@ -1016,7 +1016,7 @@ ktl::pair<zx_status_t, uint> ArmArchVmAspace::UnmapPageTable(
         const paddr_t paddr = pte_addr + (cursor.vaddr_rel() & (block_size - 1));
         vm_page_t* page = paddr_to_vm_page(paddr);
         if (likely(page) && (pte & MMU_PTE_ATTR_AF)) {
-          pmm_page_queues()->MarkAccessed(page);
+          Pmm::Node().GetPageQueues()->MarkAccessed(page);
         }
       }
 

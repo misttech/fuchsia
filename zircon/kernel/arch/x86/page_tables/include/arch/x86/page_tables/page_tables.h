@@ -1204,7 +1204,7 @@ class X86PageTableImpl : public X86PageTableBase {
           const paddr_t paddr = paddr_from_pte(PageTableLevel::PT_L, pt_val);
           vm_page_t* page = paddr_to_vm_page(paddr);
           if (likely(page)) {
-            pmm_page_queues()->MarkAccessed(page);
+            Pmm::Node().GetPageQueues()->MarkAccessed(page);
           }
         }
 

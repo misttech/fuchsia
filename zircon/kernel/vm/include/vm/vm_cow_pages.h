@@ -2025,7 +2025,7 @@ class VmCowPages::LookupCursor {
   // updating. Increments the cursor.
   __ALWAYS_INLINE RequireResult CursorAsResult() TA_REQ(lock()) {
     if (mark_accessed_) {
-      pmm_page_queues()->MarkAccessed(owner_cursor_->Page());
+      Pmm::Node().GetPageQueues()->MarkAccessed(owner_cursor_->Page());
     }
     // Inform PageAsResult whether the owner is the target_, but otherwise let it calculate the
     // actual writability of the page.

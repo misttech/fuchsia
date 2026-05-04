@@ -1745,9 +1745,6 @@ bool vmo_eviction_hints_test() {
   EXPECT_EQ(0u, queue);
 
   // We should still not be able to evict first page, the AlwaysNeed hint is sticky.
-  // ASSERT_LT(reclaim(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 2u);
-  // EXPECT_TRUE(make_private_attribution_counts(kPageSize, 0) ==
-  //             vmo->GetAttributedMemoryInRange(0, kPageSize));
   ASSERT_EQ(evict_page(vmo, pages[0], 0, VmCowPages::EvictionAction::FollowHint), 0u);
 
   // We should be able to evict first page when told to override the hint.

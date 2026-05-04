@@ -3302,7 +3302,7 @@ zx_status_t VmCowPages::PrepareForWriteLocked(VmCowRange range, LazyPageRequest*
           // until the pager has a chance to respond to the DIRTY request.
           if (is_page_clean(page)) {
             AssertHeld(lock_ref());
-            pmm_page_queues()->MarkAccessed(page);
+            Pmm::Node().GetPageQueues()->MarkAccessed(page);
           }
         } else if (p->IsIntervalZero()) {
           if (p->IsIntervalStart() || p->IsIntervalSlot()) {
@@ -3682,7 +3682,7 @@ vm_page_t* VmCowPages::LookupCursor::MaybePage(bool will_write) {
   vm_page_t* page = CursorIsUsablePage(will_write) ? owner_cursor_->Page() : nullptr;
 
   if (page && mark_accessed_) {
-    pmm_page_queues()->MarkAccessed(page);
+    Pmm::Node().GetPageQueues()->MarkAccessed(page);
   }
 
   IncrementCursor();
@@ -3834,7 +3834,7 @@ zx::result<VmCowPages::LookupCursor::RequireResult> VmCowPages::LookupCursor::Re
     // Although we are not returning the page, the act of forking counts as an access, and this is
     // an access regardless of whether the final returned page should be considered accessed, so
     // ignore the mark_accessed_ check here.
-    pmm_page_queues()->MarkAccessed(owner_cursor_->Page());
+    Pmm::Node().GetPageQueues()->MarkAccessed(owner_cursor_->Page());
     if (!owner_info_.owner.locked_or(target_).is_hidden()) {
       // Directly copying the page from the owner into the target.
       return TargetAllocateCopyPageAsResult(owner_cursor_->Page(), DirtyState::Untracked, deferred,
@@ -7185,7 +7185,7 @@ ktl::optional<VmCowReclaimFailure> VmCowPages::CannotReclaimPageLocked(vm_page_t
   if (page->object.pin_count != 0) {
     // Loaned pages should never end up pinned.
     DEBUG_ASSERT(!page->is_loaned());
-    pmm_page_queues()->MarkAccessed(page);
+    Pmm::Node().GetPageQueues()->MarkAccessed(page);
     vm_reclaim_evict_fail_page_pinned.Add(1);
     return VmCowReclaimFailure::Other;
   }
@@ -7355,7 +7355,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
 
   // Now allowed to reclaim if high priority, unless being required to do so.
   if (high_priority_count_ != 0 && (eviction_action != EvictionAction::Require)) {
-    pmm_page_queues()->MarkAccessed(page);
+    Pmm::Node().GetPageQueues()->MarkAccessed(page);
     vm_reclaim_fail_vmo_high_priority.Add(1);
     return fit::error(VmCowReclaimFailure::Other);
   }
@@ -7383,7 +7383,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
     // usage. A possible approach might involve moving to a separate queue when we skip the page for
     // eviction. Pages move out of said queue when accessed, and continue aging as other pages.
     // Pages in the queue are considered for eviction pre-OOM, but ignored otherwise.
-    pmm_page_queues()->MarkAccessed(page);
+    Pmm::Node().GetPageQueues()->MarkAccessed(page);
     vm_reclaim_evict_fail_page_always_need.Add(1);
     return fit::error(VmCowReclaimFailure::Other);
   }
@@ -7458,14 +7458,14 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
       if ((paged_ref_ && (paged_backlink_locked(this)->GetMappingCachePolicyLocked() &
                           ZX_CACHE_POLICY_MASK) != ZX_CACHE_POLICY_CACHED)) {
         // To avoid this page remaining in the reclamation list we simulate an access.
-        pmm_page_queues()->MarkAccessed(page);
+        Pmm::Node().GetPageQueues()->MarkAccessed(page);
         vm_reclaim_compress_fail_uncached.Add(1);
         return fit::error(VmCowReclaimFailure::Other);
       }
 
       // Not allowed to reclaim if high priority.
       if (high_priority_count_ != 0) {
-        pmm_page_queues()->MarkAccessed(page);
+        Pmm::Node().GetPageQueues()->MarkAccessed(page);
         vm_reclaim_fail_vmo_high_priority.Add(1);
         return fit::error(VmCowReclaimFailure::Other);
       }
@@ -7661,7 +7661,7 @@ VmCowReclaimResult VmCowPages::ReclaimPage(vm_page_t* page, uint64_t offset,
   if (!page_or_marker || !page_or_marker->IsPage() || page_or_marker->Page() != page) {
     return fit::error(VmCowReclaimFailure::IncorrectPage);
   }
-  pmm_page_queues()->MarkAccessed(page);
+  Pmm::Node().GetPageQueues()->MarkAccessed(page);
   return fit::error(VmCowReclaimFailure::Other);
 }
 
@@ -8466,7 +8466,7 @@ zx::result<uint64_t> VmCowPages::ReclaimDiscardable(vm_page_t* page, uint64_t of
   if (result.is_error()) {
     // Mark the page accessed so that it's no longer a reclamation candidate. The other error path
     // above already does this inside the CanReclaimPageLocked() helper.
-    pmm_page_queues()->MarkAccessed(page);
+    Pmm::Node().GetPageQueues()->MarkAccessed(page);
   }
   return result;
 }
