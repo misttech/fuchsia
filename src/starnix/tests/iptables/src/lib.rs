@@ -110,7 +110,7 @@ impl TestRealm {
                 &fcomponent_decl::Child {
                     name: Some(name.to_string()),
                     url: Some(format!("#meta/{name}.cm")),
-                    startup: Some(fcomponent_decl::StartupMode::Eager),
+                    startup: Some(fcomponent_decl::StartupMode::Lazy),
                     ..Default::default()
                 },
                 fcomponent::CreateChildArgs {
