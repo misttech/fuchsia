@@ -60,6 +60,10 @@
 
                 // TODO: https://fxbug.dev/455799917 - Fix test setup for Starnix to match Linux.
                 "UnlabeledFsTest.CreateFileInUnlabeledFs",
+
+                // TODO: https://fxbug.dev/509488263 - Make (SE)Starnix match the (SE)Linux behavior
+                // demonstrated in this test.
+                "BpfMapCreateTestSuite/BpfMapCreateTest.Create/0",
             ],
         },
         {
