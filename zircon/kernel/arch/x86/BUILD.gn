@@ -28,15 +28,26 @@ config("abi") {
 # Don't use any FP / vector registers in kernel code.  They usually still
 # hold the user-mode values while running in kernel mode.
 config("integer-register-abi") {
-  cflags = [
-    "-msoft-float",
-    "-mno-mmx",
-    "-mno-sse",
-    "-mno-sse2",
-    "-mno-3dnow",
-    "-mno-avx",
-    "-mno-avx2",
+  cflags = [ "-msoft-float" ]
+  rust_target_features = []
+
+  disabled_features = [
+    "mmx",
+    "sse",
+    "sse2",
+    "sse3",
+    "ssse3",
+    "sse4.1",
+    "sse4.2",
+    "3dnow",
+    "avx",
+    "avx2",
   ]
+
+  foreach(feature, disabled_features) {
+    cflags += [ "-mno-$feature" ]
+    rust_target_features += [ "-$feature" ]
+  }
 
   if (is_gcc) {
     cflags += [
@@ -50,8 +61,7 @@ config("integer-register-abi") {
   # complains about some as unused at link time.
   asmflags = cflags
 
-  # TODO(https://fxbug.dev/507570739): Need equivalent rustflags!
-  rustflags = [ "--rust-is-too-dangerous-until-we-plumb-general-regs-only" ]
+  rustflags = [ "-Ctarget-feature=" + string_join(",", rust_target_features) ]
 }
 
 # Use the right thread-pointer ABI for the kernel (%gs.base, not %fs.base).
