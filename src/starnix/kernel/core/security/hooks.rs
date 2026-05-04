@@ -8,13 +8,14 @@
 use super::selinux_hooks::audit::Auditable;
 use super::{
     BinderConnectionState, BpfMapState, BpfProgState, FileObjectState, FileSystemState,
-    KernelState, PerfEventState, ResolvedElfState, common_cap, selinux_hooks, yama,
+    KernelState, PerfEventState, common_cap, selinux_hooks, yama,
 };
 use crate::bpf::map::BpfMap;
 use crate::bpf::program::Program;
 use crate::mm::{Mapping, MappingOptions, ProtectionFlags};
 use crate::perf::PerfEventFile;
 use crate::security::selinux_hooks::current_task_state;
+use crate::task::loader::ResolvedElf;
 use crate::task::{CurrentTask, Kernel, Task};
 use crate::vfs::fs_args::MountParams;
 use crate::vfs::socket::{
@@ -1074,24 +1075,6 @@ pub fn check_task_create_access(current_task: &CurrentTask) -> Result<(), Errno>
     })
 }
 
-/// Checks if exec is allowed and if so, checks permissions related to the transition
-/// (if any) from the pre-exec security context to the post-exec context.
-///
-/// Corresponds to the `bprm_creds_for_exec()` LSM hook.
-pub fn bprm_creds_for_exec(
-    current_task: &CurrentTask,
-    executable: &NamespaceNode,
-) -> Result<ResolvedElfState, Errno> {
-    track_hook_duration!("security.hooks.bprm_creds_for_exec");
-    if_selinux_else(
-        current_task,
-        |security_server| {
-            selinux_hooks::task::bprm_creds_for_exec(&security_server, current_task, executable)
-        },
-        || Ok(ResolvedElfState { sid: None, require_secure_exec: false }),
-    )
-}
-
 /// Checks if creating a socket is allowed.
 /// Corresponds to the `socket_create()` LSM hook.
 pub fn check_socket_create_access<L>(
@@ -1414,29 +1397,61 @@ pub fn check_tun_dev_create_access(current_task: &CurrentTask) -> Result<(), Err
     })
 }
 
-/// Updates the SELinux thread group state on exec.
-/// Corresponds to the `exec_binprm` function described in the SELinux Notebook.
+/// Checks if exec is allowed and if so, checks permissions related to the transition
+/// (if any) from the pre-exec security context to the post-exec context. Updates the `Credentials`
+/// in the `elf_state` with the appropriate security state.
 ///
-/// Resets state that should not be inherited during an `exec` domain transition. Then updates the
-/// current task's SID based on the security state of the resolved executable.
-pub fn exec_binprm(
+/// Corresponds to the `bprm_creds_for_exec()` LSM hook.
+pub fn bprm_creds_for_exec(
+    current_task: &CurrentTask,
+    executable: &NamespaceNode,
+    elf_state: &mut ResolvedElf,
+) -> Result<(), Errno> {
+    track_hook_duration!("security.hooks.bprm_creds_for_exec");
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::task::bprm_creds_for_exec(
+            &security_server,
+            current_task,
+            executable,
+            elf_state,
+        )
+    })
+}
+
+/// Called during `exec()`, immediately before the `elf_state.creds` are applied to the calling
+/// process.  This is typically used to apply restrictions on the calling process, such as closing
+/// file descriptors to which the new security domain will not have access.
+///
+/// Corresponds to the `bprm_committing_creds()` LSM hook.
+pub fn bprm_committing_creds(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
-    elf_security_state: &ResolvedElfState,
+    elf_state: &ResolvedElf,
 ) -> Result<(), Errno> {
-    track_hook_duration!("security.hooks.exec_binprm");
-    if_selinux_else(
-        current_task,
-        |security_server| {
-            selinux_hooks::task::exec_binprm(
-                locked,
-                security_server,
-                current_task,
-                elf_security_state,
-            )
-        },
-        || Ok(()),
-    )
+    track_hook_duration!("security.hooks.bprm_committing_creds");
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::task::bprm_committing_creds(
+            locked,
+            security_server,
+            current_task,
+            elf_state,
+        );
+        Ok(())
+    })
+}
+
+/// Called immediately after new credentials have been applied to the process during `exec()`.
+///
+/// Corresponds to the `bprm_committed_creds()` LSM hook.
+pub fn bprm_committed_creds(
+    _locked: &mut Locked<Unlocked>,
+    current_task: &CurrentTask,
+) -> Result<(), Errno> {
+    track_hook_duration!("security.hooks.bprm_committed_creds");
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::task::bprm_committed_creds(security_server, current_task);
+        Ok(())
+    })
 }
 
 /// Checks if `source` may exercise the "getsched" permission on `target`.
@@ -2271,11 +2286,10 @@ mod tests {
     async fn exec_access_allowed_for_selinux_disabled() {
         spawn_kernel_and_run(async |locked, current_task| {
             assert!(current_task.kernel().security_state.state.is_none());
-            let executable = &testing::create_test_file(locked, current_task);
-            assert_eq!(
-                bprm_creds_for_exec(current_task, executable),
-                Ok(ResolvedElfState { sid: None, require_secure_exec: false })
-            );
+            let executable = testing::create_test_file(locked, current_task);
+            let mut resolved_elf =
+                testing::make_resolved_elf(locked, current_task, executable.clone());
+            assert_eq!(bprm_creds_for_exec(current_task, &executable, &mut resolved_elf), Ok(()));
         })
         .await;
     }
@@ -2285,10 +2299,12 @@ mod tests {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
                 security_server.set_enforcing(false);
-                let executable = &testing::create_test_file(locked, current_task);
-                // Expect that access is granted, and a `SecurityId` is returned in the `ResolvedElfState`.
-                let result = bprm_creds_for_exec(current_task, executable);
-                assert!(result.expect("Exec check should succeed").sid.is_some());
+                let executable = testing::create_test_file(locked, current_task);
+                let mut resolved_elf =
+                    testing::make_resolved_elf(locked, current_task, executable.clone());
+                // Expect that access is granted.
+                let result = bprm_creds_for_exec(current_task, &executable, &mut resolved_elf);
+                assert!(result.is_ok());
             },
         )
         .await;
@@ -2297,20 +2313,23 @@ mod tests {
     #[fuchsia::test]
     async fn no_state_update_for_selinux_disabled() {
         spawn_kernel_and_run(async |locked, current_task| {
-            // Without SELinux enabled and a policy loaded, only `InitialSid` values exist
-            // in the system.
             let target_sid = InitialSid::Unlabeled.into();
-            let elf_state = ResolvedElfState { sid: Some(target_sid), require_secure_exec: false };
 
             assert!(selinux_hooks::current_task_state(current_task).current_sid != target_sid);
 
+            // Set exec_sid to cause the hook to apply a transition, to verify if it is updated or not.
+            testing::mutate_attrs_for_test(current_task, |attrs| {
+                attrs.exec_sid = Some(target_sid);
+            });
+
+            let executable = testing::create_test_file(locked, current_task);
+            let mut resolved_elf =
+                testing::make_resolved_elf(locked, current_task, executable.clone());
+
             let before_hook_sid = selinux_hooks::current_task_state(current_task).current_sid;
-            exec_binprm(locked, current_task, &elf_state).unwrap();
-            assert_eq!(
-                selinux_hooks::current_task_state(current_task).current_sid,
-                before_hook_sid
-            );
-            assert_eq!(current_task.current_creds().security_state.current_sid, before_hook_sid)
+
+            bprm_creds_for_exec(current_task, &executable, &mut resolved_elf).unwrap();
+            assert_eq!(resolved_elf.creds.security_state.current_sid, before_hook_sid);
         })
         .await;
     }
@@ -2318,14 +2337,23 @@ mod tests {
     #[fuchsia::test]
     async fn no_state_update_for_selinux_without_policy() {
         spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
-            // Without SELinux enabled and a policy loaded, only `InitialSid` values exist
-            // in the system.
             let initial_state = current_task.current_creds().security_state.clone();
             let elf_sid = InitialSid::Unlabeled.into();
-            let elf_state = ResolvedElfState { sid: Some(elf_sid), require_secure_exec: false };
+
             assert_ne!(elf_sid, selinux_hooks::current_task_state(current_task).current_sid);
-            exec_binprm(locked, current_task, &elf_state).unwrap();
-            assert_eq!(current_task.current_creds().security_state, initial_state);
+
+            // Set exec_sid to cause the hook to apply a transition, to verify if it is updated or not.
+            testing::mutate_attrs_for_test(current_task, |attrs| {
+                attrs.exec_sid = Some(elf_sid);
+            });
+
+            let executable = testing::create_test_file(locked, current_task);
+            let mut resolved_elf =
+                testing::make_resolved_elf(locked, current_task, executable.clone());
+
+            bprm_creds_for_exec(current_task, &executable, &mut resolved_elf).unwrap();
+            // Verify that the current_sid has not changed.
+            assert_eq!(resolved_elf.creds.security_state.current_sid, initial_state.current_sid);
         })
         .await;
     }
@@ -2338,11 +2366,20 @@ mod tests {
                 let elf_sid = security_server
                     .security_context_to_sid(b"u:object_r:fork_no_t:s0".into())
                     .expect("invalid security context");
-                let elf_state = ResolvedElfState { sid: Some(elf_sid), require_secure_exec: false };
+
                 assert_ne!(elf_sid, selinux_hooks::current_task_state(current_task).current_sid);
-                exec_binprm(locked, current_task, &elf_state).unwrap();
-                assert_eq!(selinux_hooks::current_task_state(current_task).current_sid, elf_sid);
-                assert_eq!(current_task.current_creds().security_state.current_sid, elf_sid);
+
+                // Set exec_sid to cause the hook to apply a transition, to verify if it is updated or not.
+                testing::mutate_attrs_for_test(current_task, |attrs| {
+                    attrs.exec_sid = Some(elf_sid);
+                });
+
+                let executable = testing::create_test_file(locked, current_task);
+                let mut resolved_elf =
+                    testing::make_resolved_elf(locked, current_task, executable.clone());
+
+                bprm_creds_for_exec(current_task, &executable, &mut resolved_elf).unwrap();
+                assert_eq!(resolved_elf.creds.security_state.current_sid, elf_sid);
             },
         )
         .await;

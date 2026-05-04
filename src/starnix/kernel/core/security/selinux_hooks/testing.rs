@@ -4,17 +4,22 @@
 
 #![cfg(test)]
 
+use crate::mm::memory::MemoryObject;
 use crate::security::SecurityServer;
 use crate::task::CurrentTask;
+use crate::task::loader::ResolvedElf;
 use crate::testing::spawn_kernel_with_selinux_and_run;
-use crate::vfs::{FsStr, NamespaceNode};
+use crate::vfs::{FileWriteGuardMode, FsStr, NamespaceNode};
 use selinux::TaskAttrs;
 use starnix_sync::{Locked, Unlocked};
+use starnix_types::arch::ArchWidth;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::file_mode::FileMode;
 use std::future::Future;
 use std::sync::Arc;
+
+use zx::{self as zx};
 
 // The default name used files used in testing.
 pub const TEST_FILE_NAME: &str = "file";
@@ -87,6 +92,7 @@ pub(in crate::security) fn create_test_executable(
 
     let mut creds = Credentials::clone(&current_task.current_creds());
     creds.security_state.fscreate_sid = Some(fscreate_sid);
+
     current_task.override_creds(creds.into(), || {
         current_task
             .fs()
@@ -109,6 +115,26 @@ pub(in crate::security) fn mutate_attrs_for_test(
     let mut creds = Credentials::clone(&current_task.current_creds());
     f(&mut creds.security_state);
     current_task.set_creds(creds)
+}
+
+pub(in crate::security) fn make_resolved_elf(
+    _locked: &mut Locked<Unlocked>,
+    current_task: &CurrentTask,
+    executable: NamespaceNode,
+) -> ResolvedElf {
+    let file_mapping = executable.into_mapping(Some(FileWriteGuardMode::ExecMapping)).unwrap();
+    let vmo = zx::Vmo::create(4096).unwrap();
+    let memory = Arc::new(MemoryObject::from(vmo));
+    ResolvedElf {
+        file: file_mapping,
+        memory,
+        interp: None,
+        argv: vec![],
+        environ: vec![],
+        creds: Credentials::clone(&current_task.current_creds()),
+        secure_exec: false,
+        arch_width: ArchWidth::Arch64,
+    }
 }
 
 #[cfg(test)]

@@ -119,9 +119,14 @@ impl TaskAttrs {
 
     /// Used to create initial state for tasks with a specified SID.
     pub fn for_sid(sid: SecurityId) -> Self {
+        Self::for_transition(sid, sid)
+    }
+
+    /// Used to create new security state when transitioning a task to a new SID.
+    pub fn for_transition(new_sid: SecurityId, old_sid: SecurityId) -> Self {
         Self {
-            current_sid: sid,
-            previous_sid: sid,
+            current_sid: new_sid,
+            previous_sid: old_sid,
             exec_sid: None,
             fscreate_sid: None,
             keycreate_sid: None,

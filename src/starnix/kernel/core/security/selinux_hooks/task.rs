@@ -8,9 +8,9 @@ use crate::security::selinux_hooks::{
     fs_node_effective_sid_and_class, fs_node_ensure_class, fs_node_set_label_with_task,
     has_file_permissions, is_internal_operation, permissions_from_flags, task_consistent_attrs,
 };
-use crate::security::{Arc, Auditable, ProcAttr, ResolvedElfState, SecurityId, SecurityServer};
-use crate::signals::QueuedSignals;
-use crate::task::{CurrentTask, Task, TaskMutableState};
+use crate::security::{Arc, Auditable, ProcAttr, SecurityId, SecurityServer};
+use crate::task::loader::ResolvedElf;
+use crate::task::{CurrentTask, Task};
 use crate::vfs::{FsNode, FsStr, NamespaceNode};
 use selinux::{
     Cap2Class, CapClass, CommonCap2Permission, CommonCapPermission, FilePermission, ForClass,
@@ -31,71 +31,21 @@ use starnix_uapi::{
     ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL, errno, error, itimerval, rlimit, timeval,
 };
 
-/// Resets file descriptor state and resource limits that should not be inherited during an `exec`
-/// domain transition. Next, updates the current task's SID based on the security state of the
-/// resolved executable. Finally, clears any signal state that should not be inherited by the
-/// post-`exec` context.
-///
-/// Corresponds to the `exec_binprm()` function described in the SELinux Notebook.
-pub(in crate::security) fn exec_binprm(
-    locked: &mut Locked<Unlocked>,
-    security_server: &Arc<SecurityServer>,
-    current_task: &CurrentTask,
-    elf_security_state: &ResolvedElfState,
-) -> Result<(), Errno> {
-    let new_sid = elf_security_state.sid.expect("SELinux enabled but missing resolved elf state");
-    let previous_sid = current_task_state(current_task).current_sid;
-
-    bprm_committing_creds(locked, security_server, current_task, previous_sid, new_sid);
-
-    // Take the write locks on:
-    // - the current task's mutable state (including pending signals)
-    // - the thread group's signal queue
-    // before updating the task's current SID. This ensures that the `bprm_committed_creds`
-    // hook only affects signals that were received under the pre-exec SID.
-    let mut task_mutable_state = current_task.write();
-    let mut thread_group_signal_queue = current_task.thread_group().pending_signals.lock();
-    {
-        if current_task.has_overridden_creds() {
-            return error!(EACCES);
-        }
-        let mut creds = Credentials::clone(&current_task.current_creds());
-        creds.security_state = TaskAttrs {
-            current_sid: new_sid,
-            previous_sid,
-            exec_sid: None,
-            fscreate_sid: None,
-            keycreate_sid: None,
-            sockcreate_sid: None,
-            internal_operation: false,
-        };
-        current_task.set_creds(creds);
-    }
-    bprm_committed_creds(
-        security_server,
-        current_task,
-        &mut thread_group_signal_queue,
-        &mut task_mutable_state,
-        previous_sid,
-        new_sid,
-    );
-
-    Ok(())
-}
-
 /// If the task SID is changing during `exec`, enforces permissions that relate to inheritance of
 /// the calling task's file descriptor access and resource limits by the callee:
 /// 1. Revoke access to any file descriptors that `current_task` is not permitted to access.
 /// 2. Reset resource limits if `current_task` is not permitted to inherit rlimits.
 ///
 /// Corresponds to the `bprm_committing_creds()` LSM hook.
-fn bprm_committing_creds(
+pub(in crate::security) fn bprm_committing_creds(
     locked: &mut Locked<Unlocked>,
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
-    previous_sid: SecurityId,
-    new_sid: SecurityId,
+    elf_state: &ResolvedElf,
 ) {
+    let new_sid = elf_state.creds.security_state.current_sid;
+    let previous_sid = elf_state.creds.security_state.previous_sid;
+    // TODO: previous_sid must equal current_task.current_creds().current_sid!
     if new_sid == previous_sid {
         return;
     }
@@ -107,25 +57,19 @@ fn bprm_committing_creds(
 /// permitted to inherit the parent task's signal state.
 ///
 /// Corresponds to the `bprm_committed_creds()` LSM hook.
-fn bprm_committed_creds(
+pub(in crate::security) fn bprm_committed_creds(
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
-    thread_group_signal_queue: &mut QueuedSignals,
-    task_mutable_state: &mut TaskMutableState,
-    previous_sid: SecurityId,
-    new_sid: SecurityId,
 ) {
+    let (previous_sid, new_sid) = {
+        let state = current_task_state(current_task);
+        (state.previous_sid, state.current_sid)
+    };
     if new_sid == previous_sid {
         return;
     }
-    maybe_reset_signal_state(
-        security_server,
-        current_task,
-        thread_group_signal_queue,
-        task_mutable_state,
-        previous_sid,
-        new_sid,
-    );
+
+    maybe_reset_signal_state(security_server, current_task, previous_sid, new_sid);
 }
 
 /// "Closes" file descriptors that `current_task` does not have permission to access by remapping
@@ -221,8 +165,6 @@ fn maybe_reset_rlimits<L>(
 fn maybe_reset_signal_state(
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
-    thread_group_signal_queue: &mut QueuedSignals,
-    task_mutable_state: &mut TaskMutableState,
     previous_sid: SecurityId,
     new_sid: SecurityId,
 ) {
@@ -257,6 +199,9 @@ fn maybe_reset_signal_state(
             )
             .unwrap_or_else(|_| panic!("unset itimer {}", timer));
     }
+
+    let mut task_mutable_state = current_task.write();
+    let mut thread_group_signal_queue = current_task.thread_group().pending_signals.lock();
 
     // Clear the task-local signal state (except for pending internal Starnix signals).
     task_mutable_state.signals_mut().reset_to_default();
@@ -365,7 +310,8 @@ pub(in crate::security) fn bprm_creds_for_exec(
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
     executable: &NamespaceNode,
-) -> Result<ResolvedElfState, Errno> {
+    elf_state: &mut ResolvedElf,
+) -> Result<(), Errno> {
     let permission_check = build_permission_check(current_task, security_server);
     let TaskAttrs { current_sid, exec_sid, .. } = *task_consistent_attrs(current_task);
 
@@ -450,8 +396,9 @@ pub(in crate::security) fn bprm_creds_for_exec(
             )?;
         }
     }
+
     // Check whether the executable should run in secure mode.
-    let require_secure_exec = current_sid != new_sid
+    let secure_exec = current_sid != new_sid
         && check_permission(
             &permission_check,
             current_task,
@@ -461,7 +408,12 @@ pub(in crate::security) fn bprm_creds_for_exec(
             audit_context,
         )
         .is_err();
-    Ok(ResolvedElfState { sid: Some(new_sid), require_secure_exec })
+
+    // Update the `elf_state`'s `Credentials` with the SELinux task attributes.
+    elf_state.creds.security_state = TaskAttrs::for_transition(new_sid, current_sid);
+    elf_state.secure_exec |= secure_exec;
+
+    Ok(())
 }
 
 /// Checks if source with `source_sid` may exercise the "getsched" permission on target with
@@ -1083,7 +1035,7 @@ pub(in crate::security) fn fs_node_init_with_task(task: &TempRef<'_, Task>, fs_n
 mod tests {
 
     use super::*;
-    use crate::security::exec_binprm;
+
     use crate::security::selinux_hooks::testing::{create_test_executable, mutate_attrs_for_test};
     use crate::security::selinux_hooks::{InitialSid, TaskAttrs, testing};
     use crate::signals::SignalInfo;
@@ -1163,10 +1115,19 @@ mod tests {
                         TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
                 });
 
+                let mut resolved_elf =
+                    testing::make_resolved_elf(locked, current_task, executable.clone());
                 assert_eq!(
-                    bprm_creds_for_exec(&security_server, &current_task, &executable),
-                    Ok(ResolvedElfState { sid: Some(exec_sid), require_secure_exec: true })
+                    bprm_creds_for_exec(
+                        &security_server,
+                        &current_task,
+                        &executable,
+                        &mut resolved_elf
+                    ),
+                    Ok(())
                 );
+                assert_eq!(resolved_elf.creds.security_state.current_sid, exec_sid);
+                assert_eq!(resolved_elf.secure_exec, true);
             },
         )
         .await;
@@ -1199,10 +1160,19 @@ mod tests {
                         TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
                 });
 
+                let mut resolved_elf =
+                    testing::make_resolved_elf(locked, current_task, executable.clone());
                 assert_eq!(
-                    bprm_creds_for_exec(&security_server, &current_task, &executable),
-                    Ok(ResolvedElfState { sid: Some(exec_sid), require_secure_exec: false })
+                    bprm_creds_for_exec(
+                        &security_server,
+                        &current_task,
+                        &executable,
+                        &mut resolved_elf
+                    ),
+                    Ok(())
                 );
+                assert_eq!(resolved_elf.creds.security_state.current_sid, exec_sid);
+                assert_eq!(resolved_elf.secure_exec, false);
             },
         )
         .await;
@@ -1235,8 +1205,15 @@ mod tests {
                         TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
                 });
 
+                let mut resolved_elf =
+                    testing::make_resolved_elf(locked, current_task, executable.clone());
                 assert_eq!(
-                    bprm_creds_for_exec(&security_server, &current_task, &executable),
+                    bprm_creds_for_exec(
+                        &security_server,
+                        &current_task,
+                        &executable,
+                        &mut resolved_elf
+                    ),
                     error!(EACCES)
                 );
             },
@@ -1272,8 +1249,15 @@ mod tests {
                         TaskAttrs { exec_sid: Some(exec_sid), ..TaskAttrs::for_sid(current_sid) };
                 });
 
+                let mut resolved_elf =
+                    testing::make_resolved_elf(locked, current_task, executable.clone());
                 assert_eq!(
-                    bprm_creds_for_exec(&security_server, &current_task, &executable),
+                    bprm_creds_for_exec(
+                        &security_server,
+                        &current_task,
+                        &executable,
+                        &mut resolved_elf
+                    ),
                     error!(EACCES)
                 );
             },
@@ -1304,10 +1288,19 @@ mod tests {
 
                 // Since the security domain is not changing, the `noatsecure` permission is not
                 // checked and secure-mode exec is not required.
+                let mut resolved_elf =
+                    testing::make_resolved_elf(locked, current_task, executable.clone());
                 assert_eq!(
-                    bprm_creds_for_exec(&security_server, &current_task, &executable),
-                    Ok(ResolvedElfState { sid: Some(current_sid), require_secure_exec: false })
+                    bprm_creds_for_exec(
+                        &security_server,
+                        &current_task,
+                        &executable,
+                        &mut resolved_elf
+                    ),
+                    Ok(())
                 );
+                assert_eq!(resolved_elf.creds.security_state.current_sid, current_sid);
+                assert_eq!(resolved_elf.secure_exec, false);
             },
         )
         .await;
@@ -1338,8 +1331,15 @@ mod tests {
 
                 // There is no `execute_no_trans` allow statement from `current_sid` to `executable_sid`,
                 // expect access denied.
+                let mut resolved_elf =
+                    testing::make_resolved_elf(locked, current_task, executable.clone());
                 assert_eq!(
-                    bprm_creds_for_exec(&security_server, &current_task, &executable),
+                    bprm_creds_for_exec(
+                        &security_server,
+                        &current_task,
+                        &executable,
+                        &mut resolved_elf
+                    ),
                     error!(EACCES)
                 );
             },
@@ -1351,39 +1351,56 @@ mod tests {
     async fn security_state_is_updated_on_exec() {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(
             |locked, current_task, security_server| {
+                let executable_security_context = b"u:object_r:executable_file_trans_t:s0";
+                let executable = testing::create_test_executable(
+                    locked,
+                    current_task,
+                    executable_security_context,
+                );
+
+                let source_sid = security_server
+                    .security_context_to_sid(b"u:object_r:exec_transition_source_t:s0".into())
+                    .expect("invalid security context");
+                let target_sid = security_server
+                    .security_context_to_sid(b"u:object_r:exec_transition_target_t:s0".into())
+                    .expect("invalid security context");
+
                 let initial_state = {
                     let mut attrs = current_task_state(current_task).clone();
                     // Set previous SID to a different value from current, to allow verification
                     // of the pre-exec "current" being moved into "previous".
+                    attrs.current_sid = source_sid;
                     attrs.previous_sid = InitialSid::Unlabeled.into();
 
                     // Set the other optional SIDs to a value, to verify that it is cleared on exec update.
                     attrs.sockcreate_sid = Some(InitialSid::Unlabeled.into());
                     attrs.fscreate_sid = Some(InitialSid::Unlabeled.into());
                     attrs.keycreate_sid = Some(InitialSid::Unlabeled.into());
+
+                    // Set exec_sid to force a transition to target_sid.
+                    attrs.exec_sid = Some(target_sid);
+
                     attrs
                 };
                 mutate_attrs_for_test(&current_task, |attrs| {
                     *attrs = initial_state.clone();
                 });
 
-                // Ensure that the ELF binary SID differs from the task's current SID before exec.
-                let elf_sid = security_server
-                    .security_context_to_sid(b"u:object_r:test_valid_t:s0".into())
-                    .expect("invalid security context");
-                assert_ne!(elf_sid, initial_state.current_sid);
+                let mut resolved_elf =
+                    testing::make_resolved_elf(locked, current_task, executable.clone());
 
-                exec_binprm(
-                    locked,
+                bprm_creds_for_exec(
+                    &security_server,
                     &current_task,
-                    &ResolvedElfState { sid: Some(elf_sid), require_secure_exec: false },
+                    &executable,
+                    &mut resolved_elf,
                 )
-                .unwrap();
+                .expect("bprm_creds_for_exec failed");
 
                 assert_eq!(
-                    *current_task_state(current_task),
+                    resolved_elf.creds.security_state,
                     TaskAttrs {
-                        current_sid: elf_sid,
+                        current_sid: target_sid,
                         exec_sid: None,
                         fscreate_sid: None,
                         keycreate_sid: None,
@@ -1444,12 +1461,17 @@ mod tests {
 
                 assert_ne!(previous_sid, new_sid);
 
-                exec_binprm(
-                    locked,
-                    &grandchild_task,
-                    &ResolvedElfState { sid: Some(new_sid), require_secure_exec: false },
-                )
-                .unwrap();
+                let executable = testing::create_test_file(locked, &grandchild_task);
+                let mut resolved_elf =
+                    testing::make_resolved_elf(locked, &grandchild_task, executable.clone());
+                resolved_elf.creds.security_state = TaskAttrs::for_transition(
+                    new_sid,
+                    grandchild_task.real_creds().security_state.current_sid,
+                );
+
+                bprm_committing_creds(locked, &security_server, &grandchild_task, &resolved_elf);
+                grandchild_task.set_creds(resolved_elf.creds.clone());
+                bprm_committed_creds(&security_server, &grandchild_task);
 
                 let post_exec_limits =
                     { grandchild_task.thread_group().limits.lock(locked).clone() };
@@ -1468,12 +1490,16 @@ mod tests {
                 // rlimits are not reset when the task SID does not change.
                 let same_domain_task = child_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
 
-                exec_binprm(
-                    locked,
-                    &same_domain_task,
-                    &ResolvedElfState { sid: Some(previous_sid), require_secure_exec: false },
-                )
-                .unwrap();
+                let mut resolved_elf =
+                    testing::make_resolved_elf(locked, &same_domain_task, executable);
+                resolved_elf.creds.security_state = TaskAttrs::for_transition(
+                    previous_sid,
+                    same_domain_task.real_creds().security_state.current_sid,
+                );
+
+                bprm_committing_creds(locked, &security_server, &same_domain_task, &resolved_elf);
+                same_domain_task.set_creds(resolved_elf.creds.clone());
+                bprm_committed_creds(&security_server, &same_domain_task);
 
                 let same_domain_limits =
                     { same_domain_task.thread_group().limits.lock(locked).clone() };
@@ -1518,12 +1544,17 @@ mod tests {
                     .security_context_to_sid(b"u:object_r:test_siginh_no_t:s0".into())
                     .expect("invalid security context");
                 assert_ne!(old_sid, new_sid);
-                exec_binprm(
-                    locked,
-                    &child_task,
-                    &ResolvedElfState { sid: Some(new_sid), require_secure_exec: false },
-                )
-                .unwrap();
+                let executable = testing::create_test_file(&mut locked, &child_task);
+                let mut resolved_elf =
+                    testing::make_resolved_elf(&mut locked, &child_task, executable);
+                resolved_elf.creds.security_state = TaskAttrs::for_transition(
+                    new_sid,
+                    child_task.real_creds().security_state.current_sid,
+                );
+
+                bprm_committing_creds(&mut locked, &security_server, &child_task, &resolved_elf);
+                child_task.set_creds(resolved_elf.creds.clone());
+                bprm_committed_creds(&security_server, &child_task);
 
                 // Check that the child task's ITIMER_REAL is now unset.
                 let post_exec_itimer_val =
@@ -1556,12 +1587,17 @@ mod tests {
                     .security_context_to_sid(b"u:object_r:test_siginh_no_t:s0".into())
                     .expect("invalid security context");
                 assert_ne!(old_sid, new_sid);
-                exec_binprm(
-                    locked,
-                    &child_task,
-                    &ResolvedElfState { sid: Some(new_sid), require_secure_exec: false },
-                )
-                .unwrap();
+                let executable = testing::create_test_file(&mut locked, &child_task);
+                let mut resolved_elf =
+                    testing::make_resolved_elf(&mut locked, &child_task, executable);
+                resolved_elf.creds.security_state = TaskAttrs::for_transition(
+                    new_sid,
+                    child_task.real_creds().security_state.current_sid,
+                );
+
+                bprm_committing_creds(&mut locked, &security_server, &child_task, &resolved_elf);
+                child_task.set_creds(resolved_elf.creds.clone());
+                bprm_committed_creds(&security_server, &child_task);
 
                 // Check that the previously pending signal has been cleared.
                 assert_eq!(child_task.read().pending_signal_count(), 0);

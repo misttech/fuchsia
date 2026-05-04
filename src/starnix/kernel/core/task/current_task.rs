@@ -1019,18 +1019,24 @@ impl CurrentTask {
         // used in the `open` call.
         executable.name.check_access(locked, self, Access::EXEC, CheckAccessReason::Exec)?;
 
-        let elf_security_state = security::bprm_creds_for_exec(self, &executable.name)?;
+        // 1. Prepare a `ResolvedElf` to hold details of the binary to be executed, its credentials,
+        //    etc.
+        // TODO: https://fxbug.dev/483368940 - Split the initial `ResolvedElf` creation from the
+        // resolution of the interpreter binary, if any.
+        let mut resolved_elf =
+            resolve_executable(locked, self, executable.clone(), path.clone(), argv, environ)?;
 
-        let resolved_elf = resolve_executable(
-            locked,
-            self,
-            executable,
-            path.clone(),
-            argv,
-            environ,
-            elf_security_state,
-        )?;
+        // 2. Allow LSMs to perform access-checks on the target `executable`, and to update the
+        //    `resolved_elf.creds` as necessary.
+        security::bprm_creds_for_exec(self, &executable.name, &mut resolved_elf)?;
 
+        // 3. Resolve details of the initial binary, whether the `executable` itself, or an
+        //    interpreter, if `executable` is a script.
+        // TODO: https://fxbug.dev/483368940 - Split the initial `ResolvedElf` creation from the
+        // resolution of the interpreter binary, if any.
+
+        // 4. Apply UID, GID and capabilities according to the attributes of the resolved binary.
+        // TODO: https://fxbug.dev/503338788 - Collate this logic into a `bprm_creds_from_file()`.
         let maybe_set_id = if self.kernel().features.enable_suid {
             resolved_elf.file.name.suid_and_sgid(&self)?
         } else {
@@ -1042,6 +1048,8 @@ impl CurrentTask {
             return error!(EINVAL);
         }
 
+        // 5. Finalize the `exec()` operation by actually updating the task state based on the
+        //    resolved details. Failures during this step are unrecoverable.
         if let Err(err) = self.finish_exec(locked, path, resolved_elf, maybe_set_id) {
             log_warn!("unrecoverable error in exec: {err:?}");
 
@@ -1063,7 +1071,7 @@ impl CurrentTask {
         &mut self,
         locked: &mut Locked<Unlocked>,
         path: CString,
-        resolved_elf: ResolvedElf,
+        mut resolved_elf: ResolvedElf,
         mut maybe_set_id: UserAndOrGroupId,
     ) -> Result<(), Errno> {
         // Now that the exec will definitely finish (or crash), notify owners of
@@ -1136,22 +1144,21 @@ impl CurrentTask {
 
             // TODO(tbodt): Check whether capability xattrs are set on the file, and grant/limit
             // capabilities accordingly.
-            let mut new_creds = Credentials::clone(&self.current_creds());
-            new_creds.exec(maybe_set_id);
+            resolved_elf.creds.exec(maybe_set_id);
 
             // TODO(https://fxbug.dev/503338788) - Migrate this (and other capabilities wrangling)
             // into a `common_cap::bprm_creds_from_file()` implementation.
             if state.no_new_privs() {
-                new_creds.cap_permitted &= self.current_creds().cap_permitted;
-                new_creds.cap_effective &= new_creds.cap_permitted;
+                resolved_elf.creds.cap_permitted &= self.current_creds().cap_permitted;
+                resolved_elf.creds.cap_effective &= resolved_elf.creds.cap_permitted;
             }
 
-            let new_creds = Arc::new(new_creds);
+            security::bprm_committing_creds(locked, self, &resolved_elf)?;
+
+            let new_creds = Arc::new(resolved_elf.creds.clone());
             writable_creds.update(new_creds.clone());
             *self.current_creds.borrow_mut() = CurrentCreds::Cached(new_creds);
         }
-
-        let security_state = resolved_elf.security_state.clone();
 
         let start_info = load_executable(self, resolved_elf, &path)?;
 
@@ -1190,7 +1197,7 @@ impl CurrentTask {
         // signal state inheritance.
         //
         // This needs to be called after closing any files marked "close-on-exec".
-        security::exec_binprm(locked, self, &security_state)?;
+        security::bprm_committed_creds(locked, self)?;
 
         self.thread_group().write().did_exec = true;
 

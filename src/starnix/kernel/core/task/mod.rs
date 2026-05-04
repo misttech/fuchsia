@@ -12,7 +12,7 @@ mod kernel;
 mod kernel_or_task;
 mod kernel_stats;
 mod kernel_threads;
-mod loader;
+pub(crate) mod loader;
 mod memory_attribution;
 pub mod net;
 mod pid_table;

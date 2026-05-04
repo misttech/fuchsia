@@ -7,7 +7,6 @@ use crate::mm::{
     DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryManager, PAGE_SIZE,
     ProtectionFlags, VMEX_RESOURCE,
 };
-use crate::security;
 use crate::task::CurrentTask;
 use crate::vdso::vdso_loader::ZX_TIME_VALUES_MEMORY;
 use crate::vfs::{FdNumber, FileHandle, FileMapping, FileWriteGuardMode};
@@ -20,6 +19,7 @@ use starnix_types::thread_start_info::ThreadStartInfo;
 use starnix_types::time::SCHEDULER_CLOCK_HZ;
 #[cfg(target_arch = "aarch64")]
 use starnix_uapi::AT_PLATFORM;
+use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
@@ -328,9 +328,10 @@ pub struct ResolvedElf {
     pub argv: Vec<CString>,
     /// The environment to initialize for the new process.
     pub environ: Vec<CString>,
-    /// Used by Linux Security Modules to store security module state for the new process.
-    pub security_state: security::ResolvedElfState,
-    /// Exec/write lock.
+    /// Used to stage Credentials for the new process.
+    pub creds: Credentials,
+    /// Set to true if credentials have changed, such that the task environment must be sanitized.
+    pub secure_exec: bool,
     /// Enum indicating the architecture width (32 or 64 bits).
     pub arch_width: ArchWidth,
 }
@@ -357,9 +358,8 @@ pub fn resolve_executable(
     path: CString,
     argv: Vec<CString>,
     environ: Vec<CString>,
-    security_state: security::ResolvedElfState,
 ) -> Result<ResolvedElf, Errno> {
-    resolve_executable_impl(locked, current_task, file, path, argv, environ, 0, security_state)
+    resolve_executable_impl(locked, current_task, file, path, argv, environ, 0)
 }
 
 /// Resolves a file into a validated executable ELF, following script interpreters to a fixed
@@ -372,7 +372,6 @@ fn resolve_executable_impl(
     argv: Vec<CString>,
     environ: Vec<CString>,
     recursion_depth: usize,
-    security_state: security::ResolvedElfState,
 ) -> Result<ResolvedElf, Errno> {
     if recursion_depth > MAX_RECURSION_DEPTH {
         return error!(ELOOP);
@@ -389,18 +388,9 @@ fn resolve_executable_impl(
         Err(_) => return error!(EINVAL),
     }?;
     if &header == HASH_BANG {
-        resolve_script(
-            locked,
-            current_task,
-            memory,
-            path,
-            argv,
-            environ,
-            recursion_depth,
-            security_state,
-        )
+        resolve_script(locked, current_task, memory, path, argv, environ, recursion_depth)
     } else {
-        resolve_elf(locked, current_task, file, memory, argv, environ, security_state)
+        resolve_elf(locked, current_task, file, memory, argv, environ)
     }
 }
 
@@ -413,7 +403,6 @@ fn resolve_script(
     argv: Vec<CString>,
     environ: Vec<CString>,
     recursion_depth: usize,
-    security_state: security::ResolvedElfState,
 ) -> Result<ResolvedElf, Errno> {
     // All VMOs have sizes in multiple of the system page size, so as long as we only read a page or
     // less, we should never read past the end of the VMO.
@@ -450,7 +439,6 @@ fn resolve_script(
         args,
         environ,
         recursion_depth + 1,
-        security_state,
     )
 }
 
@@ -501,7 +489,6 @@ fn resolve_elf(
     memory: Arc<MemoryObject>,
     argv: Vec<CString>,
     environ: Vec<CString>,
-    security_state: security::ResolvedElfState,
 ) -> Result<ResolvedElf, Errno> {
     let vmo = memory.as_vmo().ok_or_else(|| errno!(EINVAL))?;
     let elf_headers = if cfg!(target_arch = "aarch64") {
@@ -532,12 +519,13 @@ fn resolve_elf(
     };
     let file = file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
     let arch_width = get_arch_width(&elf_headers);
-    Ok(ResolvedElf { file, memory, interp, argv, environ, security_state, arch_width })
+    let creds = Credentials::clone(&current_task.current_creds());
+    let secure_exec = false;
+    Ok(ResolvedElf { file, memory, interp, argv, environ, creds, secure_exec, arch_width })
 }
 
 /// Loads a resolved ELF into memory, along with an interpreter if one is defined, and initializes
 /// the stack.
-
 pub fn load_executable(
     current_task: &CurrentTask,
     resolved_elf: ResolvedElf,
@@ -643,14 +631,12 @@ pub fn load_executable(
 
     let auxv = {
         let creds = current_task.current_creds();
-        let secure = if resolved_elf.security_state.require_secure_exec()
-            || creds.uid != creds.euid
-            || creds.gid != creds.egid
-        {
-            1
-        } else {
-            0
-        };
+        let secure =
+            if resolved_elf.secure_exec || creds.uid != creds.euid || creds.gid != creds.egid {
+                1
+            } else {
+                0
+            };
 
         let hwcap = if main_elf.arch_width.is_arch32() {
             #[cfg(target_arch = "aarch64")]
