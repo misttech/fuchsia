@@ -102,15 +102,15 @@ config("retpoline") {
     ]
   } else {
     cflags = [ "-mretpoline" ]
+    rustflags = [ "-Zretpoline" ]
     if (toolchain_environment == "kernel") {
       # The kernel proper uses its own optimized thunks, but phys and
       # multiboot can just use the compiler's safe default thunks.
       cflags += [ "-mretpoline-external-thunk" ]
+      rustflags += [ "-Zretpoline-external-thunk" ]
     }
   }
   defines = [ "KERNEL_RETPOLINE=1" ]
-
-  # TODO(https://fxbug.dev/507570739): Need equivalent rustflags.
 }
 
 # Mitigate errata in Intel Skylake family of CPUs that cause control transfer instructions to
