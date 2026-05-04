@@ -440,7 +440,7 @@ func fuchsiaLogChecks() []FailureModeCheck {
 		&stringInLogCheck{
 			// LINT.IfChange(blob_header_timeout)
 			String: "timed out waiting for http response header while downloading blob",
-			// LINT.ThenChange(/src/sys/pkg/bin/pkg-resolver/src/cache.rs:blob_header_timeout)
+			// LINT.ThenChange(/src/connectivity/policy/http-client/src/resuming_get.rs:blob_header_timeout)
 			Type:               syslogType,
 			SkipAllPassedTests: true,
 		},
