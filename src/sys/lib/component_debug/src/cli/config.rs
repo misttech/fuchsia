@@ -4,8 +4,9 @@
 
 use anyhow::Result;
 use cm_rust::{ConfigNestedValueType, ConfigValueType};
+use flex_fuchsia_component_decl as fdecl;
+use flex_fuchsia_sys2 as fsys;
 use std::str::FromStr;
-use {flex_fuchsia_component_decl as fdecl, flex_fuchsia_sys2 as fsys};
 
 use crate::cli::show::config_table_print;
 use crate::config::{UseConfigurationOrConfigField, resolve_config_decls};
@@ -258,11 +259,11 @@ mod test {
             "./my_foo",
             vec![
                 cm_rust::ConfigOverride {
-                    key: "foo".to_string(),
+                    key: "foo".into(),
                     value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(true)),
                 },
                 cm_rust::ConfigOverride {
-                    key: "bar".to_string(),
+                    key: "bar".into(),
                     value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint64(42)),
                 },
             ],

@@ -9,6 +9,9 @@ use component_events::events::{Destroyed, Event, EventStream, Started};
 use component_events::matcher::EventMatcher;
 use component_events::sequence::{EventSequence, Ordering};
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker};
+use fidl_fidl_examples_routing_echo as fecho;
+use fidl_fuchsia_component as fcomponent;
+use fuchsia_async;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::new::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
@@ -16,9 +19,6 @@ use fuchsia_component_test::new::{
 use futures::channel::mpsc;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt, select};
-use {
-    fidl_fidl_examples_routing_echo as fecho, fidl_fuchsia_component as fcomponent, fuchsia_async,
-};
 
 /// Implements a component that does two things: attempt to connect to a
 /// fidl.examples.routing.echo.Echo protocol, and also implements the same protocol.
@@ -145,7 +145,7 @@ async fn setup_test_with_extra(
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: Name::new(capability_name).unwrap(),
                 value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
-                    capability_value,
+                    capability_value.into(),
                 )),
             }))
             .await

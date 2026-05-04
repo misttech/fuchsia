@@ -2347,7 +2347,7 @@ mod tests {
                     config: Some(ConfigDecl {
                         fields: Box::from([
                             ConfigField {
-                                key: "enable_logging".to_string(),
+                                key: "enable_logging".into(),
                                 type_: ConfigValueType::Bool,
                                 mutability: ConfigMutability::default(),
                             }
@@ -2357,7 +2357,7 @@ mod tests {
                             0xCD, 0x14, 0x70, 0x9F, 0x3D, 0x4A, 0xD3, 0xE2, 0x24, 0x9A, 0x1A, 0x34,
                             0x80, 0xB4, 0x9E, 0xB9, 0x63, 0x57, 0xD6, 0xED,
                         ]),
-                        value_source: ConfigValueSource::PackagePath("fake.cvf".to_string())
+                        value_source: ConfigValueSource::PackagePath("fake.cvf".into())
                     }),
                     debug_info: None,
                 }

@@ -28,7 +28,7 @@ pub fn config_value_from_json_value(
         ConfigValueType::Int32 => ConfigValue::Single(ConfigSingleValue::Int32(val.parse_i32()?)),
         ConfigValueType::Int64 => ConfigValue::Single(ConfigSingleValue::Int64(val.parse_i64()?)),
         ConfigValueType::String { max_size } => {
-            ConfigValue::Single(ConfigSingleValue::String(val.parse_string(*max_size)?))
+            ConfigValue::Single(ConfigSingleValue::String(val.parse_string(*max_size)?.into()))
         }
         ConfigValueType::Vector { max_count, nested_type } => {
             ConfigValue::Vector(vector_value_from_json(val, max_count, nested_type)?)
@@ -84,7 +84,7 @@ fn vector_value_from_json(
         ConfigNestedValueType::Int32 => list_from_array!(Int32Vector, v => v.parse_i32()?),
         ConfigNestedValueType::Int64 => list_from_array!(Int64Vector, v => v.parse_i64()?),
         ConfigNestedValueType::String { max_size } => {
-            list_from_array!(StringVector, v => v.parse_string(*max_size)?)
+            list_from_array!(StringVector, v => v.parse_string(*max_size)?.into())
         }
     })
 }

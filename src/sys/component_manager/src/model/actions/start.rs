@@ -562,7 +562,7 @@ async fn create_config_with_capabilities(
         let Some(use_config) = ::routing::config::get_use_config_from_key(&field.key, decl) else {
             return Err(StartActionError::StructuredConfigError {
                 moniker: component.moniker.clone(),
-                err: StructuredConfigError::KeyNotFound { key: field.key.clone() },
+                err: StructuredConfigError::KeyNotFound { key: field.key.to_string() },
             });
         };
         let value = match ::routing::config::route_config_value(use_config, component).await {
@@ -570,7 +570,7 @@ async fn create_config_with_capabilities(
             Ok(None) => {
                 return Err(StartActionError::StructuredConfigError {
                     moniker: component.moniker.clone(),
-                    err: StructuredConfigError::KeyNotFound { key: field.key.clone() },
+                    err: StructuredConfigError::KeyNotFound { key: field.key.to_string() },
                 });
             }
             Err(err) => {
@@ -641,7 +641,7 @@ async fn update_config_fields(
         if !field.value.matches_type(&value) {
             return Err(StartActionError::StructuredConfigError {
                 moniker: component.moniker.clone(),
-                err: StructuredConfigError::ValueMismatch { key: field.key.clone() },
+                err: StructuredConfigError::ValueMismatch { key: field.key.to_string() },
             });
         }
         field.value = value;

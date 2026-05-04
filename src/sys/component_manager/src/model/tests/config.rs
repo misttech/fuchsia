@@ -50,7 +50,7 @@ mod tests {
                             mutability: Default::default(),
                         }]),
                         checksum: cm_rust::ConfigChecksum::Sha256([0; 32]),
-                        value_source: cm_rust::ConfigValueSource::PackagePath("myfile".to_string()),
+                        value_source: cm_rust::ConfigValueSource::PackagePath("myfile".into()),
                     })
                     .build(),
             ),
@@ -70,7 +70,7 @@ mod tests {
         assert_eq!(
             config.fields,
             vec![config_encoder::ConfigField {
-                key: "my_config".to_string(),
+                key: "my_config".into(),
                 value: good_value.into(),
                 mutability: Default::default(),
             }]
@@ -92,7 +92,7 @@ mod tests {
                             mutability: Default::default(),
                         }]),
                         checksum: cm_rust::ConfigChecksum::Sha256([0; 32]),
-                        value_source: cm_rust::ConfigValueSource::PackagePath("myfile".to_string()),
+                        value_source: cm_rust::ConfigValueSource::PackagePath("myfile".into()),
                     })
                     .build(),
             ),
@@ -114,7 +114,7 @@ mod tests {
         assert_eq!(
             config.fields,
             vec![config_encoder::ConfigField {
-                key: "my_config".to_string(),
+                key: "my_config".into(),
                 value: package_value.into(),
                 mutability: Default::default(),
             }]
@@ -156,7 +156,7 @@ mod tests {
                             },
                         ]),
                         checksum: cm_rust::ConfigChecksum::Sha256([0; 32]),
-                        value_source: cm_rust::ConfigValueSource::PackagePath("myfile".to_string()),
+                        value_source: cm_rust::ConfigValueSource::PackagePath("myfile".into()),
                     })
                     .build(),
             ),
@@ -180,12 +180,12 @@ mod tests {
             &*config.fields,
             &[
                 config_encoder::ConfigField {
-                    key: "from_resolver".to_string(),
+                    key: "from_resolver".into(),
                     value: package_value.into(),
                     mutability: Default::default(),
                 },
                 config_encoder::ConfigField {
-                    key: "from_cap".to_string(),
+                    key: "from_cap".into(),
                     value: cap_value.into(),
                     mutability: Default::default(),
                 }

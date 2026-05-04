@@ -6,6 +6,17 @@ use crate::mocks;
 use anyhow::*;
 use cm_rust::{CapabilityDecl, DictionaryDecl};
 use component_id_index::Index;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_diagnostics as fdiagnostics;
+use fidl_fuchsia_hardware_power_statecontrol as fpower;
+use fidl_fuchsia_inspect as finspect;
+use fidl_fuchsia_logger as flogger;
+use fidl_fuchsia_metrics as fmetrics;
+use fidl_fuchsia_metrics_test as fmetrics_test;
+use fidl_fuchsia_mockrebootcontroller as fmockrebootcontroller;
+use fidl_fuchsia_samplertestcontroller as fsamplertestcontroller;
+use fidl_test_sampler as ftest;
+use flyweights::FlyStr;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
@@ -15,14 +26,6 @@ use futures::channel::mpsc;
 use futures::lock::Mutex;
 use sampler_config::assembly::{ComponentIdInfoList, ProjectTemplate};
 use std::sync::Arc;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_diagnostics as fdiagnostics,
-    fidl_fuchsia_hardware_power_statecontrol as fpower, fidl_fuchsia_inspect as finspect,
-    fidl_fuchsia_logger as flogger, fidl_fuchsia_metrics as fmetrics,
-    fidl_fuchsia_metrics_test as fmetrics_test,
-    fidl_fuchsia_mockrebootcontroller as fmockrebootcontroller,
-    fidl_fuchsia_samplertestcontroller as fsamplertestcontroller, fidl_test_sampler as ftest,
-};
 
 const FAKE_COBALT_URL: &str = "#meta/fake_cobalt.cm";
 const SINGLE_COUNTER_URL: &str = "#meta/single_counter_test_component.cm";
@@ -82,7 +85,10 @@ pub async fn create_realm(options: ftest::RealmOptions) -> Result<RealmInstance,
         .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
             name: PROJECT_CONFIGS_CAPABILITY.parse()?,
             value: cm_rust::ConfigValue::Vector(cm_rust::ConfigVectorValue::StringVector(
-                load_configs(mocks::fake_index()).into(),
+                load_configs(mocks::fake_index())
+                    .into_iter()
+                    .map(FlyStr::new)
+                    .collect::<Box<[FlyStr]>>(),
             )),
         }))
         .await?;

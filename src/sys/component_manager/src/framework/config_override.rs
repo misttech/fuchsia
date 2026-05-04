@@ -81,7 +81,7 @@ async fn set_structured_config(
         config
             .fields
             .iter()
-            .find(|f| *f.key == field.key)
+            .find(|f| *f.key == *field.key)
             .ok_or(fsys::ConfigOverrideError::KeyNotFound)?;
         instance.context.add_config_developer_override(moniker.clone(), field).await;
     }
@@ -176,7 +176,7 @@ mod tests {
                 .set_structured_config(
                     "./has_config",
                     &[cm_rust::ConfigOverride {
-                        key: String::from("bogus_key"),
+                        key: "bogus_key".into(),
                         value: ConfigValue::Single(ConfigSingleValue::Bool(true))
                     }
                     .native_into_fidl()]
@@ -191,7 +191,7 @@ mod tests {
                 .set_structured_config(
                     "./has_config",
                     &[cm_rust::ConfigOverride {
-                        key: String::from("my_field"),
+                        key: "my_field".into(),
                         value: ConfigValue::Single(ConfigSingleValue::Bool(false))
                     }
                     .native_into_fidl()]
@@ -227,7 +227,7 @@ mod tests {
             .set_structured_config(
                 "./a",
                 &[cm_rust::ConfigOverride {
-                    key: String::from("my_field"),
+                    key: "my_field".into(),
                     value: ConfigValue::Single(ConfigSingleValue::Bool(false)),
                 }
                 .native_into_fidl()],

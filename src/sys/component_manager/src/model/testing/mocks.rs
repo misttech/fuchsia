@@ -13,9 +13,14 @@ use cm_rust::{ComponentDecl, ConfigValuesData};
 use directed_graph::DirectedGraph;
 use fidl::endpoints::{Proxy, RequestStream, ServerEnd};
 use fidl::epitaph::ChannelEpitaphExt;
+use fidl_fuchsia_component_runner as fcrunner;
 use fidl_fuchsia_component_runner::{
     ComponentDiagnostics, ComponentTasks, Task as DiagnosticsTask,
 };
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fprocess;
+use flyweights::FlyStr;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex as SyncMutex;
 use futures::channel::oneshot;
 use futures::future::{AbortHandle, Abortable};
@@ -30,10 +35,6 @@ use vfs::file::vmo::read_only;
 use vfs::pseudo_directory;
 use vfs::service::endpoint;
 use zx::{self as zx, AsHandleRef, HandleBased, Koid};
-use {
-    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio,
-    fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
-};
 
 #[cfg(not(feature = "src_model_tests"))]
 use {crate::model::program::Program, fidl::endpoints::create_endpoints};
@@ -46,7 +47,7 @@ pub struct MockResolver {
 #[derive(Debug, Default)]
 struct MockResolverInner {
     components: HashMap<String, ComponentDecl>,
-    configs: HashMap<String, ConfigValuesData>,
+    configs: HashMap<FlyStr, ConfigValuesData>,
     blockers: HashMap<String, Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
 }
 
@@ -79,7 +80,7 @@ impl MockResolver {
                     cm_rust::ConfigValueSource::PackagePath(path) => Some(
                         guard
                             .configs
-                            .get(path)
+                            .get(&FlyStr::new(path))
                             .ok_or_else(|| {
                                 ResolverError::manifest_invalid(format_err!(
                                     "config values not provided"
@@ -125,7 +126,7 @@ impl MockResolver {
     }
 
     pub fn add_config_values(&self, path: &str, values: ConfigValuesData) {
-        self.inner.lock().configs.insert(path.to_string(), values);
+        self.inner.lock().configs.insert(path.into(), values);
     }
 
     pub async fn add_blocker(

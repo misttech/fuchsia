@@ -6,17 +6,19 @@ use cm_rust::{CapabilityDecl, DictionaryDecl};
 use diagnostics_data::Severity;
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_archivist_test::*;
+use fidl_fuchsia_boot as fboot;
+use fidl_fuchsia_diagnostics as fdiagnostics;
+use fidl_fuchsia_diagnostics_host as fdiagnostics_host;
+use fidl_fuchsia_inspect as finspect;
 use fidl_fuchsia_inspect::InspectSinkMarker;
+use fidl_fuchsia_logger as flogger;
 use fidl_fuchsia_logger::LogSinkMarker;
+use fidl_fuchsia_tracing_provider as ftracing;
+use flyweights::FlyStr;
 use fuchsia_component_test::{
     Capability, ChildOptions, RealmBuilder, RealmBuilderParams, RealmInstance, Ref, Route,
 };
 use log::warn;
-use {
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_diagnostics as fdiagnostics,
-    fidl_fuchsia_diagnostics_host as fdiagnostics_host, fidl_fuchsia_inspect as finspect,
-    fidl_fuchsia_logger as flogger, fidl_fuchsia_tracing_provider as ftracing,
-};
 
 const ARCHIVIST_URL: &str = "#meta/archivist.cm";
 const PUPPET_URL: &str = "puppet#meta/puppet.cm";
@@ -59,7 +61,8 @@ impl ArchivistRealmFactory {
                 value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
                     config
                         .pipelines_path
-                        .unwrap_or_else(|| "/pkg/data/config/pipelines/default".to_string()),
+                        .unwrap_or_else(|| "/pkg/data/config/pipelines/default".into())
+                        .into(),
                 )),
             }))
             .await?;
@@ -82,7 +85,8 @@ impl ArchivistRealmFactory {
                         let severity = Severity::from(*log_severity);
                         Some(format!("{moniker}:{severity}"))
                     })
-                    .collect()
+                    .map(FlyStr::new)
+                    .collect::<Box<[FlyStr]>>()
             })
             .unwrap_or_default();
         builder

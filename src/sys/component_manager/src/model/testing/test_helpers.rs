@@ -584,7 +584,7 @@ pub fn new_config_decl() -> (ConfigDecl, ConfigValuesData, ConfigChecksum) {
     ]);
     let config = ConfigDecl {
         fields: Box::from([ConfigField {
-            key: "my_field".to_string(),
+            key: "my_field".into(),
             type_: ConfigValueType::Bool,
             mutability: Default::default(),
         }]),

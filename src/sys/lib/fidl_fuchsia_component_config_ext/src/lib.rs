@@ -104,7 +104,7 @@ macro_rules! config_decl {
         let mut fields = vec![];
         $(
             fields.push(cm_rust::ConfigField {
-                key: stringify!($key).to_string(),
+                key: stringify!($key).into(),
                 type_: $crate::config_ty!($($type_toks)+ ),
                 mutability: Default::default(),
             });
@@ -112,7 +112,7 @@ macro_rules! config_decl {
         cm_rust::ConfigDecl {
             fields: fields.into(),
             checksum: $checksum,
-            value_source: cm_rust::ConfigValueSource::PackagePath("fake.cvf".to_string()),
+            value_source: cm_rust::ConfigValueSource::PackagePath("fake.cvf".into()),
         }
     }};
 }

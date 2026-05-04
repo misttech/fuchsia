@@ -13,6 +13,7 @@ use cm_rust::{
 };
 use dynfidl::{BasicField, Field, Structure, VectorField};
 use fidl_fuchsia_component_decl as fdecl;
+use flyweights::FlyStr;
 use thiserror::Error;
 
 /// The resolved configuration for a component.
@@ -52,7 +53,7 @@ impl ConfigFields {
         if let Some(overrides) = parent_overrides {
             for key in overrides.iter().map(|o| &o.key) {
                 if !decl.fields.iter().any(|f| &f.key == key) {
-                    return Err(ResolutionError::FieldDoesNotExist { key: key.to_owned() });
+                    return Err(ResolutionError::FieldDoesNotExist { key: key.clone() });
                 }
             }
         }
@@ -127,7 +128,7 @@ impl ConfigFields {
                 }
                 ConfigValue::Single(ConfigSingleValue::String(s)) => {
                     // TODO(https://fxbug.dev/42169377) improve string representation too
-                    structure.field(Field::Vector(VectorField::UInt8Vector(s.into_bytes())))
+                    structure.field(Field::Vector(VectorField::UInt8Vector(s.as_bytes().to_vec())))
                 }
                 ConfigValue::Vector(ConfigVectorValue::BoolVector(b)) => {
                     structure.field(Field::Vector(VectorField::BoolVector(b.into())))
@@ -160,7 +161,7 @@ impl ConfigFields {
                     structure.field(Field::Vector(
                         // TODO(https://fxbug.dev/42169377) improve string representation too
                         VectorField::UInt8VectorVector(
-                            IntoIterator::into_iter(s).map(|s| s.into_bytes()).collect(),
+                            IntoIterator::into_iter(s).map(|s| s.as_bytes().to_vec()).collect(),
                         ),
                     ))
                 }
@@ -187,7 +188,7 @@ impl Into<fdecl::ResolvedConfig> for ConfigFields {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ConfigField {
     /// The configuration field's key.
-    pub key: String,
+    pub key: FlyStr,
 
     /// The configuration field's value.
     pub value: ConfigValue,
@@ -255,7 +256,7 @@ impl ConfigField {
                         return Err(ValueError::TypeMismatch {
                             expected: format!("{:?}", other_ty),
                             received: format!("{:?}", other_list),
-                        })
+                        });
                     }
                 };
 
@@ -277,28 +278,35 @@ impl ConfigField {
 
 impl Into<fdecl::ResolvedConfigField> for ConfigField {
     fn into(self) -> fdecl::ResolvedConfigField {
-        fdecl::ResolvedConfigField { key: self.key, value: self.value.native_into_fidl() }
+        fdecl::ResolvedConfigField {
+            key: self.key.to_string(),
+            value: self.value.native_into_fidl(),
+        }
     }
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
 #[allow(missing_docs)]
 pub enum ResolutionError {
-    #[error("Checksums in declaration and value file do not match. Expected {expected:04x?}, received {received:04x?}")]
+    #[error(
+        "Checksums in declaration and value file do not match. Expected {expected:04x?}, received {received:04x?}"
+    )]
     ChecksumFailure { expected: ConfigChecksum, received: ConfigChecksum },
 
-    #[error("Value file has a different number of values ({received}) than declaration has fields ({expected}).")]
+    #[error(
+        "Value file has a different number of values ({received}) than declaration has fields ({expected})."
+    )]
     WrongNumberOfValues { expected: usize, received: usize },
 
     #[error("Provided a value for `{key}` which is not in the component's configuration schema.")]
-    FieldDoesNotExist { key: String },
+    FieldDoesNotExist { key: FlyStr },
 
     #[error("Provided an override which is not mutable in the component's configuration schema.")]
-    FieldIsNotMutable { key: String },
+    FieldIsNotMutable { key: FlyStr },
 
     #[error("Received invalid value for `{key}`:\n\t{source}")]
     InvalidValue {
-        key: String,
+        key: FlyStr,
         #[source]
         source: ValueError,
     },
@@ -394,102 +402,102 @@ mod tests {
             ConfigFields {
                 fields: vec![
                     ConfigField {
-                        key: "my_flag".to_string(),
+                        key: "my_flag".into(),
                         value: Single(Bool(false)),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_uint8".to_string(),
+                        key: "my_uint8".into(),
                         value: Single(Uint8(255)),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_uint16".to_string(),
+                        key: "my_uint16".into(),
                         value: Single(Uint16(65535)),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_uint32".to_string(),
+                        key: "my_uint32".into(),
                         value: Single(Uint32(4000000000)),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_uint64".to_string(),
+                        key: "my_uint64".into(),
                         value: Single(Uint64(8000000000)),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_int8".to_string(),
+                        key: "my_int8".into(),
                         value: Single(Int8(-127)),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_int16".to_string(),
+                        key: "my_int16".into(),
                         value: Single(Int16(-32766)),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_int32".to_string(),
+                        key: "my_int32".into(),
                         value: Single(Int32(-2000000000)),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_int64".to_string(),
+                        key: "my_int64".into(),
                         value: Single(Int64(-4000000000)),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_string".to_string(),
+                        key: "my_string".into(),
                         value: Single(String("hello, world!".into())),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_vector_of_flag".to_string(),
+                        key: "my_vector_of_flag".into(),
                         value: Vector(BoolVector(Box::from([true, false]))),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_vector_of_uint8".to_string(),
+                        key: "my_vector_of_uint8".into(),
                         value: Vector(Uint8Vector(Box::from([1, 2, 3]))),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_vector_of_uint16".to_string(),
+                        key: "my_vector_of_uint16".into(),
                         value: Vector(Uint16Vector(Box::from([2, 3, 4]))),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_vector_of_uint32".to_string(),
+                        key: "my_vector_of_uint32".into(),
                         value: Vector(Uint32Vector(Box::from([3, 4, 5]))),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_vector_of_uint64".to_string(),
+                        key: "my_vector_of_uint64".into(),
                         value: Vector(Uint64Vector(Box::from([4, 5, 6]))),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_vector_of_int8".to_string(),
+                        key: "my_vector_of_int8".into(),
                         value: Vector(Int8Vector(Box::from([-1, -2, 3]))),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_vector_of_int16".to_string(),
+                        key: "my_vector_of_int16".into(),
                         value: Vector(Int16Vector(Box::from([-2, -3, 4]))),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_vector_of_int32".to_string(),
+                        key: "my_vector_of_int32".into(),
                         value: Vector(Int32Vector(Box::from([-3, -4, 5]))),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_vector_of_int64".to_string(),
+                        key: "my_vector_of_int64".into(),
                         value: Vector(Int64Vector(Box::from([-4, -5, 6]))),
                         mutability: Default::default(),
                     },
                     ConfigField {
-                        key: "my_vector_of_string".to_string(),
+                        key: "my_vector_of_string".into(),
                         value: Vector(StringVector(Box::from(["valid".into(), "valid".into()]))),
                         mutability: Default::default(),
                     },
@@ -595,7 +603,7 @@ mod tests {
         assert_eq!(
             ConfigFields::resolve(&decl, specs, None).unwrap_err(),
             ResolutionError::InvalidValue {
-                key: "foo".to_string(),
+                key: "foo".into(),
                 source: ValueError::StringTooLong { max: 10, actual: 13 },
             }
         );
@@ -614,7 +622,7 @@ mod tests {
         assert_eq!(
             ConfigFields::resolve(&decl, specs, None).unwrap_err(),
             ResolutionError::InvalidValue {
-                key: "foo".to_string(),
+                key: "foo".into(),
                 source: ValueError::VectorTooLong { max: 2, actual: 3 },
             }
         );
@@ -636,7 +644,7 @@ mod tests {
         assert_eq!(
             ConfigFields::resolve(&decl, specs, None).unwrap_err(),
             ResolutionError::InvalidValue {
-                key: "foo".to_string(),
+                key: "foo".into(),
                 source: ValueError::VectorElementInvalid {
                     offset: 1,
                     source: Box::new(ValueError::StringTooLong { max: 5, actual: 7 })
@@ -647,8 +655,8 @@ mod tests {
 
     #[test]
     fn parent_overrides_take_precedence() {
-        let overridden_key = "my_flag".to_string();
-        let defaulted_key = "my_other_flag".to_string();
+        let overridden_key = FlyStr::new("my_flag");
+        let defaulted_key = FlyStr::new("my_other_flag");
         let decl = cm_rust::ConfigDecl {
             fields: Box::from([
                 cm_rust::ConfigField {
@@ -657,13 +665,13 @@ mod tests {
                     mutability: ConfigMutability::PARENT,
                 },
                 cm_rust::ConfigField {
-                    key: defaulted_key.clone(),
+                    key: defaulted_key.clone().into(),
                     type_: cm_rust::ConfigValueType::Bool,
                     mutability: ConfigMutability::empty(),
                 },
             ]),
             checksum: ConfigChecksum::Sha256([0; 32]),
-            value_source: cm_rust::ConfigValueSource::PackagePath("fake.cvf".to_string()),
+            value_source: cm_rust::ConfigValueSource::PackagePath("fake.cvf".into()),
         };
 
         let packaged = values_data![
@@ -673,20 +681,22 @@ mod tests {
         ];
 
         let expected_value = Single(Bool(true));
-        let overrides =
-            vec![ConfigOverride { key: overridden_key.clone(), value: expected_value.clone() }];
+        let overrides = vec![ConfigOverride {
+            key: overridden_key.clone().into(),
+            value: expected_value.clone(),
+        }];
 
         assert_eq!(
             ConfigFields::resolve(&decl, packaged, Some(&overrides)).unwrap(),
             ConfigFields {
                 fields: vec![
                     ConfigField {
-                        key: overridden_key.clone(),
+                        key: overridden_key.clone().into(),
                         value: expected_value,
                         mutability: ConfigMutability::PARENT,
                     },
                     ConfigField {
-                        key: defaulted_key.clone(),
+                        key: defaulted_key.into(),
                         value: Single(Bool(false)),
                         mutability: ConfigMutability::empty(),
                     },
@@ -700,12 +710,12 @@ mod tests {
     fn overrides_must_match_declared_fields() {
         let decl = cm_rust::ConfigDecl {
             fields: Box::from([cm_rust::ConfigField {
-                key: "my_flag".to_string(),
+                key: FlyStr::new("my_flag"),
                 type_: cm_rust::ConfigValueType::Bool,
                 mutability: ConfigMutability::PARENT,
             }]),
             checksum: ConfigChecksum::Sha256([0; 32]),
-            value_source: cm_rust::ConfigValueSource::PackagePath("fake.cvf".to_string()),
+            value_source: cm_rust::ConfigValueSource::PackagePath("fake.cvf".into()),
         };
 
         let packaged = values_data![
@@ -713,10 +723,12 @@ mod tests {
             Single(Bool(false)),
         ];
 
-        let overridden_key = "not_my_flag".to_string();
+        let overridden_key = FlyStr::new("not_my_flag");
         let expected_value = Single(Bool(true));
-        let overrides =
-            vec![ConfigOverride { key: overridden_key.clone(), value: expected_value.clone() }];
+        let overrides = vec![ConfigOverride {
+            key: overridden_key.clone().into(),
+            value: expected_value.clone(),
+        }];
 
         assert_eq!(
             ConfigFields::resolve(&decl, packaged, Some(&overrides)).unwrap_err(),
@@ -726,24 +738,24 @@ mod tests {
 
     #[test]
     fn overrides_must_be_for_mutable_by_parent_fields() {
-        let overridden_key = "my_flag".to_string();
-        let defaulted_key = "my_other_flag".to_string();
+        let overridden_key = FlyStr::new("my_flag");
+        let defaulted_key = FlyStr::new("my_other_flag");
         let decl = cm_rust::ConfigDecl {
             fields: Box::from([
                 cm_rust::ConfigField {
-                    key: overridden_key.clone(),
+                    key: overridden_key.clone().into(),
                     type_: cm_rust::ConfigValueType::Bool,
                     mutability: ConfigMutability::empty(),
                 },
                 // this field having parent mutability should not allow the other field to mutate
                 cm_rust::ConfigField {
-                    key: defaulted_key.clone(),
+                    key: defaulted_key.clone().into(),
                     type_: cm_rust::ConfigValueType::Bool,
                     mutability: ConfigMutability::PARENT,
                 },
             ]),
             checksum: ConfigChecksum::Sha256([0; 32]),
-            value_source: cm_rust::ConfigValueSource::PackagePath("fake.cvf".to_string()),
+            value_source: cm_rust::ConfigValueSource::PackagePath("fake.cvf".into()),
         };
 
         let packaged = values_data![
@@ -763,15 +775,15 @@ mod tests {
 
     #[test]
     fn overrides_must_match_declared_type_exactly() {
-        let overridden_key = "my_flag".to_string();
+        let overridden_key = FlyStr::new("my_flag");
         let decl = cm_rust::ConfigDecl {
             fields: Box::from([cm_rust::ConfigField {
-                key: overridden_key.clone(),
+                key: overridden_key.clone().into(),
                 type_: cm_rust::ConfigValueType::Bool,
                 mutability: ConfigMutability::PARENT,
             }]),
             checksum: ConfigChecksum::Sha256([0; 32]),
-            value_source: cm_rust::ConfigValueSource::PackagePath("fake.cvf".to_string()),
+            value_source: cm_rust::ConfigValueSource::PackagePath("fake.cvf".into()),
         };
 
         let packaged = values_data![
@@ -780,12 +792,12 @@ mod tests {
         ];
 
         let overrides =
-            vec![ConfigOverride { key: overridden_key.clone(), value: Single(Uint8(1)) }];
+            vec![ConfigOverride { key: overridden_key.clone().into(), value: Single(Uint8(1)) }];
 
         assert_eq!(
             ConfigFields::resolve(&decl, packaged, Some(&overrides)).unwrap_err(),
             ResolutionError::InvalidValue {
-                key: overridden_key.clone(),
+                key: overridden_key.into(),
                 source: ValueError::TypeMismatch {
                     expected: "Bool".to_string(),
                     received: "Single(Uint8(1))".to_string()
@@ -799,7 +811,7 @@ mod tests {
             #[test]
             fn $test_name() {
                 let decl = ConfigFieldDecl {
-                    key: "test_key".to_string(),
+                    key: "test_key".into(),
                     type_: fidl_fuchsia_component_config_ext::config_ty!($($ty_toks)*),
                     mutability: Default::default(),
                 };
@@ -814,7 +826,7 @@ mod tests {
                     Single(Int16(1)),
                     Single(Int32(1)),
                     Single(Int64(1)),
-                    Single(String("".to_string())),
+                    Single(String("".into())),
                     Vector(BoolVector(Box::from([]))),
                     Vector(Uint8Vector(Box::from([]))),
                     Vector(Uint16Vector(Box::from([]))),

@@ -74,7 +74,7 @@ fn json_value_from_config_value(v: cm_rust::ConfigValue) -> serde_json::Value {
             cm_rust::ConfigSingleValue::Int16(n) => serde_json::Value::Number(n.into()),
             cm_rust::ConfigSingleValue::Int32(n) => serde_json::Value::Number(n.into()),
             cm_rust::ConfigSingleValue::Int64(n) => serde_json::Value::Number(n.into()),
-            cm_rust::ConfigSingleValue::String(s) => serde_json::Value::String(s),
+            cm_rust::ConfigSingleValue::String(s) => serde_json::Value::String(s.to_string()),
         },
         cm_rust::ConfigValue::Vector(v) => match v {
             cm_rust::ConfigVectorValue::BoolVector(bv) => serde_json::Value::Array(
@@ -105,7 +105,9 @@ fn json_value_from_config_value(v: cm_rust::ConfigValue) -> serde_json::Value {
                 IntoIterator::into_iter(nv).map(|n| serde_json::Value::Number(n.into())).collect(),
             ),
             cm_rust::ConfigVectorValue::StringVector(sv) => serde_json::Value::Array(
-                IntoIterator::into_iter(sv).map(|s| serde_json::Value::String(s)).collect(),
+                IntoIterator::into_iter(sv)
+                    .map(|s| serde_json::Value::String(s.to_string()))
+                    .collect(),
             ),
         },
     }

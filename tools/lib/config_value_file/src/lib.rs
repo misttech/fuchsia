@@ -10,7 +10,7 @@
 
 pub mod field;
 
-use crate::field::{config_value_from_json_value, FieldError};
+use crate::field::{FieldError, config_value_from_json_value};
 use cm_rust::{ConfigDecl, ConfigValueSpec, ConfigValuesData};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
@@ -27,10 +27,10 @@ pub fn populate_value_file(
         .iter()
         .map(|field| {
             let json_value = json_values
-                .remove(&field.key)
-                .ok_or_else(|| FileError::MissingValue { key: field.key.clone() })?;
+                .remove(field.key.as_str())
+                .ok_or_else(|| FileError::MissingValue { key: field.key.to_string() })?;
             let value = config_value_from_json_value(&json_value, &field.type_)
-                .map_err(|reason| FileError::InvalidField { key: field.key.clone(), reason })?;
+                .map_err(|reason| FileError::InvalidField { key: field.key.to_string(), reason })?;
             Ok(ConfigValueSpec { value })
         })
         .collect::<Result<Box<[ConfigValueSpec]>, _>>()?;

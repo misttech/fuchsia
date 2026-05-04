@@ -4,6 +4,7 @@
 
 use cm_rust_derive::FidlDecl;
 use fidl_fuchsia_component_decl as fdecl;
+use flyweights::FlyStr;
 use from_enum::FromEnum;
 use std::fmt;
 use std::hash::Hash;
@@ -12,6 +13,18 @@ use crate::{FidlIntoNative, NativeIntoFidl};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+impl FidlIntoNative<FlyStr> for String {
+    fn fidl_into_native(self) -> FlyStr {
+        FlyStr::new(&self)
+    }
+}
+
+impl NativeIntoFidl<String> for FlyStr {
+    fn native_into_fidl(self) -> String {
+        self.to_string()
+    }
+}
 
 #[derive(FidlDecl, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
@@ -61,14 +74,14 @@ impl ConfigValue {
 
 impl From<&str> for ConfigValue {
     fn from(value: &str) -> Self {
-        ConfigValue::Single(value.to_string().into())
+        ConfigValue::Single(ConfigSingleValue::String(FlyStr::new(value)))
     }
 }
 
 impl From<Vec<&str>> for ConfigValue {
     fn from(value: Vec<&str>) -> Self {
-        let value: Box<[_]> = value.into_iter().map(|s| s.to_string()).collect();
-        ConfigValue::Vector(value.into())
+        let value: Box<[FlyStr]> = value.into_iter().map(FlyStr::new).collect();
+        ConfigValue::Vector(ConfigVectorValue::StringVector(value))
     }
 }
 
@@ -76,7 +89,8 @@ impl From<Vec<&str>> for ConfigValue {
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[fidl_decl(fidl_table = "fdecl::ConfigOverride")]
 pub struct ConfigOverride {
-    pub key: String,
+    // NB: Name would make more sense here but it imposes a strictness that breaks clients
+    pub key: FlyStr,
     pub value: ConfigValue,
 }
 
@@ -106,7 +120,7 @@ pub struct ConfigSourceCapabilities {}
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[fidl_decl(fidl_union = "fdecl::ConfigValueSource")]
 pub enum ConfigValueSource {
-    PackagePath(String),
+    PackagePath(FlyStr),
     #[cfg(fuchsia_api_level_at_least = "HEAD")]
     Capabilities(ConfigSourceCapabilities),
 }
@@ -115,7 +129,7 @@ pub enum ConfigValueSource {
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[fidl_decl(fidl_table = "fdecl::ConfigField")]
 pub struct ConfigField {
-    pub key: String,
+    pub key: FlyStr,
     pub type_: ConfigValueType,
 
     // This field will not be present in compiled manifests which predate F12.
@@ -254,6 +268,12 @@ impl fmt::Display for ConfigValue {
     }
 }
 
+impl From<String> for ConfigSingleValue {
+    fn from(s: String) -> Self {
+        Self::String(FlyStr::new(&s))
+    }
+}
+
 #[derive(FromEnum, FidlDecl, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[fidl_decl(fidl_union = "fdecl::ConfigSingleValue")]
@@ -267,7 +287,7 @@ pub enum ConfigSingleValue {
     Int16(i16),
     Int32(i32),
     Int64(i64),
-    String(String),
+    String(FlyStr),
 }
 
 impl ConfigSingleValue {
@@ -306,6 +326,13 @@ impl fmt::Display for ConfigSingleValue {
     }
 }
 
+impl From<Box<[String]>> for ConfigVectorValue {
+    fn from(v: Box<[String]>) -> Self {
+        let fly_v: Box<[FlyStr]> = v.into_vec().into_iter().map(|s| FlyStr::new(&s)).collect();
+        Self::StringVector(fly_v)
+    }
+}
+
 #[derive(FromEnum, FidlDecl, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[fidl_decl(fidl_union = "fdecl::ConfigVectorValue")]
@@ -319,7 +346,7 @@ pub enum ConfigVectorValue {
     Int16Vector(Box<[i16]>),
     Int32Vector(Box<[i32]>),
     Int64Vector(Box<[i64]>),
-    StringVector(Box<[String]>),
+    StringVector(Box<[FlyStr]>),
 }
 
 impl From<Vec<bool>> for ConfigVectorValue {
@@ -378,7 +405,8 @@ impl From<Vec<i64>> for ConfigVectorValue {
 
 impl From<Vec<String>> for ConfigVectorValue {
     fn from(v: Vec<String>) -> Self {
-        Self::StringVector(v.into())
+        let shared_v: Box<[FlyStr]> = v.into_iter().map(|s| FlyStr::new(&s)).collect();
+        Self::StringVector(shared_v)
     }
 }
 

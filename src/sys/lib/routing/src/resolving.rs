@@ -1217,7 +1217,7 @@ mod tests {
                 },
                 cm_rust::ConfigValueSpec {
                     value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
-                        "hello!".to_string(),
+                        "hello!".into(),
                     )),
                 },
                 cm_rust::ConfigValueSpec {
@@ -1227,7 +1227,7 @@ mod tests {
                 },
                 cm_rust::ConfigValueSpec {
                     value: cm_rust::ConfigValue::Vector(cm_rust::ConfigVectorValue::StringVector(
-                        Box::from(["hello!".to_string(), "world!".to_string()]),
+                        Box::from(["hello!".into(), "world!".into()]),
                     )),
                 },
             ]),

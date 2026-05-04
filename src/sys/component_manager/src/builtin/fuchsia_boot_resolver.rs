@@ -770,10 +770,10 @@ mod tests {
             config: Some(
                 cm_rust::ConfigDecl {
                     value_source: cm_rust::ConfigValueSource::PackagePath(
-                        "meta/has_config.cvf".to_string(),
+                        "meta/has_config.cvf".into(),
                     ),
                     fields: Box::from([cm_rust::ConfigField {
-                        key: "foo".to_string(),
+                        key: "foo".into(),
                         type_: cm_rust::ConfigValueType::String { max_size: 100 },
                         mutability: Default::default(),
                     }]),
@@ -786,7 +786,7 @@ mod tests {
         let values_data = fdecl::ConfigValuesData {
             values: Some(vec![fdecl::ConfigValueSpec {
                 value: Some(fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::String(
-                    "hello, world!".to_string(),
+                    "hello, world!".into(),
                 ))),
                 ..Default::default()
             }]),
@@ -817,9 +817,9 @@ mod tests {
             config_encoder::ConfigFields::resolve(&config_decl, config_values, None).unwrap();
         let expected_fields = config_encoder::ConfigFields {
             fields: vec![config_encoder::ConfigField {
-                key: "foo".to_string(),
+                key: "foo".into(),
                 value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
-                    "hello, world!".to_string(),
+                    "hello, world!".into(),
                 )),
                 mutability: Default::default(),
             }],
@@ -834,10 +834,10 @@ mod tests {
             config: Some(
                 cm_rust::ConfigDecl {
                     value_source: cm_rust::ConfigValueSource::PackagePath(
-                        "meta/has_config.cvf".to_string(),
+                        "meta/has_config.cvf".into(),
                     ),
                     fields: Box::from([cm_rust::ConfigField {
-                        key: "foo".to_string(),
+                        key: "foo".into(),
                         type_: cm_rust::ConfigValueType::String { max_size: 100 },
                         mutability: Default::default(),
                     }]),

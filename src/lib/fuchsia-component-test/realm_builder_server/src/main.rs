@@ -996,7 +996,7 @@ impl Realm {
         Err(RealmBuilderError::NoSuchConfigField {
             name,
             key,
-            present: config.fields.iter().map(|f| f.key.clone()).collect::<Vec<_>>(),
+            present: config.fields.iter().map(|f| f.key.to_string()).collect::<Vec<String>>(),
         })
     }
 

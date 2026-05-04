@@ -28,6 +28,7 @@ rustc_library("rust") {
     "//src/sys/lib/cm_types",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
+    "//third_party/rust_crates:flyweights",
     "//third_party/rust_crates:futures",
   ]
   name = "fuchsia_driver_test"
@@ -61,6 +62,7 @@ rustc_library("rust_no_driver_manager") {
     "//src/sys/lib/cm_types",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
+    "//third_party/rust_crates:flyweights",
     "//third_party/rust_crates:futures",
   ]
   name = "fuchsia_driver_test"

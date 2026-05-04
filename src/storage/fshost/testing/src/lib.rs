@@ -40,7 +40,7 @@ impl IntoValueSpec for u64 {
 impl IntoValueSpec for String {
     fn into_value_spec(self) -> cm_rust::ConfigValueSpec {
         cm_rust::ConfigValueSpec {
-            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(self)),
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(self.into())),
         }
     }
 }

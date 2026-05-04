@@ -8,6 +8,7 @@ use ::diagnostics::routing::RoutingErrors;
 use ::routing::policy::GlobalPolicyChecker;
 use cm_config::{AbiRevisionPolicy, RuntimeConfig};
 use errors::ModelError;
+use flyweights::FlyStr;
 use fuchsia_inspect::Inspector;
 use fuchsia_sync::Mutex;
 use moniker::Moniker;
@@ -23,7 +24,7 @@ pub struct ModelContext {
     policy_checker: GlobalPolicyChecker,
     runtime_config: Arc<RuntimeConfig>,
     instance_registry: Arc<InstanceRegistry>,
-    config_developer_overrides: Mutex<HashMap<Moniker, HashMap<String, cm_rust::ConfigValue>>>,
+    config_developer_overrides: Mutex<HashMap<Moniker, HashMap<FlyStr, cm_rust::ConfigValue>>>,
     pub scope_factory: Box<dyn Fn() -> ExecutionScope + Send + Sync + 'static>,
     remote_capabilities: Arc<RemotedRuntimeCapabilities>,
     #[cfg(test)]
@@ -144,7 +145,7 @@ impl ModelContext {
     pub async fn get_config_developer_overrides(
         &self,
         moniker: &Moniker,
-    ) -> HashMap<String, cm_rust::ConfigValue> {
+    ) -> HashMap<FlyStr, cm_rust::ConfigValue> {
         self.config_developer_overrides.lock().get(&moniker).cloned().unwrap_or_else(HashMap::new)
     }
 

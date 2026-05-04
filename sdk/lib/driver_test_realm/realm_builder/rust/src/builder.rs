@@ -6,6 +6,13 @@ use anyhow::{Context as _, Result};
 use fidl::HandleBased;
 
 use cm_rust::FidlIntoNative;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_test as ftest;
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_io as fio;
+use flyweights::FlyStr;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, ChildRef, CollectionRef, LocalComponentHandles, RealmBuilder,
@@ -14,11 +21,6 @@ use fuchsia_component_test::{
 use futures::{StreamExt, TryStreamExt};
 use std::sync::Arc;
 use zx::AsHandleRef;
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_test as ftest,
-    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_test as fdt,
-    fidl_fuchsia_io as fio, fuchsia_async as fasync,
-};
 
 fn clone(
     dir: &fio::DirectoryProxy,
@@ -449,7 +451,7 @@ impl DriverTestRealmBuilder for RealmBuilder {
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: "fuchsia.driver.testrealm.BoardName".parse()?,
                 value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
-                    args.board_name.unwrap_or_default(),
+                    args.board_name.unwrap_or_default().into(),
                 )),
             }))
             .await?;
@@ -458,7 +460,7 @@ impl DriverTestRealmBuilder for RealmBuilder {
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: "fuchsia.driver.testrealm.PlatformVid".parse()?,
                 value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
-                    args.platform_vid.map(|v| v.to_string()).unwrap_or_default(),
+                    args.platform_vid.map(|v| v.to_string()).unwrap_or_default().into(),
                 )),
             }))
             .await?;
@@ -467,7 +469,7 @@ impl DriverTestRealmBuilder for RealmBuilder {
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: "fuchsia.driver.testrealm.PlatformPid".parse()?,
                 value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
-                    args.platform_pid.map(|v| v.to_string()).unwrap_or_default(),
+                    args.platform_pid.map(|v| v.to_string()).unwrap_or_default().into(),
                 )),
             }))
             .await?;
@@ -477,7 +479,7 @@ impl DriverTestRealmBuilder for RealmBuilder {
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: "fuchsia.driver.BindEager".parse()?,
                 value: cm_rust::ConfigValue::Vector(cm_rust::ConfigVectorValue::StringVector(
-                    bind_eager.into(),
+                    bind_eager.into_iter().map(FlyStr::new).collect::<Box<[_]>>(),
                 )),
             }))
             .await?;
@@ -487,7 +489,7 @@ impl DriverTestRealmBuilder for RealmBuilder {
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: "fuchsia.driver.DisabledDrivers".parse()?,
                 value: cm_rust::ConfigValue::Vector(cm_rust::ConfigVectorValue::StringVector(
-                    driver_disable.into(),
+                    driver_disable.into_iter().map(FlyStr::new).collect::<Box<[_]>>(),
                 )),
             }))
             .await?;
@@ -516,7 +518,7 @@ impl DriverTestRealmBuilder for RealmBuilder {
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: "fuchsia.driver.manager.RootDriver".parse()?,
                 value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::String(
-                    root_driver,
+                    root_driver.into(),
                 )),
             }))
             .await?;
@@ -530,7 +532,9 @@ impl DriverTestRealmBuilder for RealmBuilder {
                     .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                         name: "fuchsia.platform.bus.SoftwareDeviceNames".parse()?,
                         value: cm_rust::ConfigValue::Vector(
-                            cm_rust::ConfigVectorValue::StringVector(names.into()),
+                            cm_rust::ConfigVectorValue::StringVector(
+                                names.into_iter().map(FlyStr::new).collect::<Box<[_]>>(),
+                            ),
                         ),
                     }))
                     .await?;

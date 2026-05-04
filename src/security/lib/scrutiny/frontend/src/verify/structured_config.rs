@@ -5,6 +5,7 @@
 use anyhow::{Context as _, Result};
 use config_encoder::{ConfigField, ConfigFields};
 use config_value_file::field::config_value_from_json_value;
+use flyweights::FlyStr;
 use scrutiny_collection::model::DataModel;
 use scrutiny_collection::v2_component_model::V2ComponentModel;
 use serde::{Deserialize, Serialize};
@@ -45,7 +46,7 @@ pub struct ExtractStructuredConfigResponse {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ComponentConfig {
     #[serde(flatten)]
-    pub fields: BTreeMap<String, serde_json::Value>,
+    pub fields: BTreeMap<FlyStr, serde_json::Value>,
 }
 
 impl From<ConfigFields> for ComponentConfig {
@@ -76,7 +77,7 @@ fn config_value_to_json_value(value: cm_rust::ConfigValue) -> serde_json::Value 
             ConfigSingleValue::Int16(n) => n.into(),
             ConfigSingleValue::Int32(n) => n.into(),
             ConfigSingleValue::Int64(n) => n.into(),
-            ConfigSingleValue::String(s) => s.into(),
+            ConfigSingleValue::String(s) => s.as_str().into(),
         },
         ConfigValue::Vector(vv) => match vv {
             ConfigVectorValue::BoolVector(bv) => Vec::<_>::from(bv).into(),
@@ -88,7 +89,10 @@ fn config_value_to_json_value(value: cm_rust::ConfigValue) -> serde_json::Value 
             ConfigVectorValue::Int16Vector(nv) => Vec::<_>::from(nv).into(),
             ConfigVectorValue::Int32Vector(nv) => Vec::<_>::from(nv).into(),
             ConfigVectorValue::Int64Vector(nv) => Vec::<_>::from(nv).into(),
-            ConfigVectorValue::StringVector(sv) => Vec::<_>::from(sv).into(),
+            ConfigVectorValue::StringVector(sv) => {
+                let vec_of_strings: Vec<String> = sv.iter().map(|s| s.to_string()).collect();
+                vec_of_strings.into()
+            }
         },
     }
 }
@@ -231,7 +235,7 @@ impl FieldPolicy {
         // has an expected value according to the policy.
         if !field.mutability.is_empty() {
             errors.push(VerifyConfigError::MutableWithPolicy {
-                field: field.key.clone(),
+                field: field.key.to_string(),
                 mutability: field.mutability,
             });
         }
@@ -244,7 +248,7 @@ impl FieldPolicy {
             Ok(expected) => {
                 if expected != field.value {
                     errors.push(VerifyConfigError::ValueMismatch {
-                        field: field.key.clone(),
+                        field: field.key.to_string(),
                         expected,
                         observed: field.value.clone(),
                     });
@@ -252,7 +256,7 @@ impl FieldPolicy {
             }
             Err(e) => {
                 errors.push(VerifyConfigError::TypeMismatch {
-                    field: field.key.clone(),
+                    field: field.key.to_string(),
                     error: e.to_string(),
                 });
             }
@@ -305,7 +309,9 @@ pub enum VerifyConfigError {
     },
     #[error("`{field}` has a different value ({observed}) than expected ({expected}).")]
     ValueMismatch { field: String, expected: cm_rust::ConfigValue, observed: cm_rust::ConfigValue },
-    #[error("`{field}` has an expected value in the policy which could be overridden at runtime by {mutability:?}.")]
+    #[error(
+        "`{field}` has an expected value in the policy which could be overridden at runtime by {mutability:?}."
+    )]
     MutableWithPolicy { field: String, mutability: cm_rust::ConfigMutability },
 }
 
@@ -334,7 +340,7 @@ mod tests {
                 checksum: ConfigChecksum::Sha256([0u8; 32]),
                 fields: vec![
                     ConfigField {
-                        key: "a".to_string(),
+                        key: "a".into(),
                         value: ConfigValue::Single(ConfigSingleValue::Uint8(5)),
                         mutability: cm_rust::ConfigMutability::empty(),
                     }
@@ -362,12 +368,12 @@ mod tests {
                 checksum: ConfigChecksum::Sha256([0u8; 32]),
                 fields: vec![
                     ConfigField {
-                        key: "a".to_string(),
+                        key: "a".into(),
                         value: ConfigValue::Single(ConfigSingleValue::Uint8(5)),
                         mutability: cm_rust::ConfigMutability::empty(),
                     },
                     ConfigField {
-                        key: "b".to_string(),
+                        key: "b".into(),
                         value: ConfigValue::Single(ConfigSingleValue::Uint8(10)),
                         mutability: cm_rust::ConfigMutability::empty(),
                     },
@@ -395,7 +401,7 @@ mod tests {
                 checksum: ConfigChecksum::Sha256([0u8; 32]),
                 fields: vec![
                     ConfigField {
-                        key: "a".to_string(),
+                        key: "a".into(),
                         value: ConfigValue::Single(ConfigSingleValue::Uint8(10)),
                         mutability: cm_rust::ConfigMutability::empty(),
                     }
@@ -407,7 +413,7 @@ mod tests {
         assert_eq!(
             res["fuchsia-pkg://foo"][0],
             VerifyConfigError::ValueMismatch {
-                field: "a".to_string(),
+                field: "a".into(),
                 expected: ConfigValue::Single(ConfigSingleValue::Uint8(5)),
                 observed: ConfigValue::Single(ConfigSingleValue::Uint8(10)),
             }
@@ -433,7 +439,7 @@ mod tests {
                 checksum: ConfigChecksum::Sha256([0u8; 32]),
                 fields: vec![
                     ConfigField {
-                        key: "a".to_string(),
+                        key: "a".into(),
                         value: ConfigValue::Single(ConfigSingleValue::Uint8(10)),
                         mutability: cm_rust::ConfigMutability::empty(),
                     }
@@ -445,7 +451,7 @@ mod tests {
         assert_eq!(
             res["fuchsia-pkg://foo"][0],
             VerifyConfigError::ValueMismatch {
-                field: "a".to_string(),
+                field: "a".into(),
                 expected: ConfigValue::Single(ConfigSingleValue::Uint8(5)),
                 observed: ConfigValue::Single(ConfigSingleValue::Uint8(10)),
             }
@@ -473,7 +479,7 @@ mod tests {
                 checksum: ConfigChecksum::Sha256([0u8; 32]),
                 fields: vec![
                     ConfigField {
-                        key: "a".to_string(),
+                        key: "a".into(),
                         value: ConfigValue::Single(ConfigSingleValue::Uint8(10)),
                         mutability: cm_rust::ConfigMutability::empty(),
                     }
@@ -601,8 +607,8 @@ mod tests {
                 checksum: ConfigChecksum::Sha256([0u8; 32]),
                 fields: vec![
                     ConfigField {
-                        key: "a".to_string(),
-                        value: ConfigValue::Single(ConfigSingleValue::String("not an int".to_string())),
+                        key: "a".into(),
+                        value: ConfigValue::Single(ConfigSingleValue::String("not an int".into())),
                         mutability: cm_rust::ConfigMutability::empty(),
                     }
                 ],
@@ -634,7 +640,7 @@ mod tests {
                 checksum: ConfigChecksum::Sha256([0u8; 32]),
                 fields: vec![
                     ConfigField {
-                        key: "a".to_string(),
+                        key: "a".into(),
                         value: ConfigValue::Single(ConfigSingleValue::Uint8(5)),
                         mutability: cm_rust::ConfigMutability::PARENT,
                     }
