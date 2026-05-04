@@ -580,3 +580,5 @@ toc:
     path: /docs/contribute/governance/rfcs/0280_vmo_reference_and_slice_attribution.md
   - title: "RFC-0281: Architectural Exceptions and Job Debugger Exception Channels"
     path: /docs/contribute/governance/rfcs/0281_architectural_exceptions_and_job_debugger_exception_channels.md
+  - title: "RFC-0282: Zircon membarrier API"
+    path: /docs/contribute/governance/rfcs/0282_zircon_membarrier.md

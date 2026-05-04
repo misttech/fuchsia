@@ -3704,3 +3704,16 @@
   reviewers: ['mcgrathr@google.com', 'maniscalco@google.com', 'lindkvist@google.com', 'jamesr@google.com']
   submitted: '2026-04-21'
   reviewed: '2026-04-21'
+
+- name: 'RFC-0282'
+  title: 'Zircon membarrier API'
+  short_description: 'Zircon API for issuing membarriers'
+  authors: ['jamesr@google.com']
+  file: '0282_zircon_membarrier.md'
+  area: ['Zircon', 'Starnix']
+  issue: ['297526152']
+  gerrit_change_id: ['1368770']
+  status: 'Accepted'
+  reviewers: ['travisg@google.com', 'maniscalco@google.com','mcgrathr@google.com']
+  submitted: '2025-09-12'
+  reviewed: '2026-05-04'
