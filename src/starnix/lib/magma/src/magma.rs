@@ -7,9 +7,10 @@
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 pub const MAGMA_DEVICE_NAMESPACE: &[u8; 1] = b"\0";
-pub const MAGMA_API_VERSION: u32 = 10;
+pub const MAGMA_API_VERSION: u32 = 14;
 pub const MAGMA_VENDOR_ID_MALI: u32 = 5045;
 pub const MAGMA_VENDOR_ID_INTEL: u32 = 32902;
+pub type magma_log_severity_t = i8;
 pub type magma_query_t = u64;
 pub type magma_status_t = i32;
 pub type magma_cache_operation_t = u32;
@@ -760,10 +761,6 @@ pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_VIRT_CONNECTION_GET_IMAGE_INFO
     virtio_magma_ctrl_type = 4168;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_CREATE_CONTEXT2:
     virtio_magma_ctrl_type = 4188;
-pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_INTERNAL_RELEASE_HANDLE: virtio_magma_ctrl_type =
-    4172;
-pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_INTERNAL_MAP: virtio_magma_ctrl_type = 4173;
-pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_INTERNAL_UNMAP: virtio_magma_ctrl_type = 4174;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_IMPORT: virtio_magma_ctrl_type = 8238;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_RELEASE: virtio_magma_ctrl_type = 8239;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_ENUMERATE_DEVICES: virtio_magma_ctrl_type = 8240;
@@ -842,10 +839,6 @@ pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_VIRT_CONNECTION_GET_IMAGE_INF
     virtio_magma_ctrl_type = 8264;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_CREATE_CONTEXT2:
     virtio_magma_ctrl_type = 8284;
-pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_INTERNAL_RELEASE_HANDLE: virtio_magma_ctrl_type =
-    8268;
-pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_INTERNAL_MAP: virtio_magma_ctrl_type = 8269;
-pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_INTERNAL_UNMAP: virtio_magma_ctrl_type = 8270;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_ERR_UNIMPLEMENTED: virtio_magma_ctrl_type =
     12289;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_ERR_INTERNAL: virtio_magma_ctrl_type = 12290;
@@ -1663,48 +1656,3 @@ pub struct virtio_magma_connection_create_context2_resp {
 }
 pub type virtio_magma_connection_create_context2_resp_t =
     virtio_magma_connection_create_context2_resp;
-#[repr(C, packed)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtio_magma_internal_release_handle_ctrl {
-    pub hdr: virtio_magma_ctrl_hdr_t,
-    pub handle: u32,
-}
-pub type virtio_magma_internal_release_handle_ctrl_t = virtio_magma_internal_release_handle_ctrl;
-#[repr(C, packed)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtio_magma_internal_release_handle_resp {
-    pub hdr: virtio_magma_ctrl_hdr_t,
-    pub result_return: u64,
-}
-pub type virtio_magma_internal_release_handle_resp_t = virtio_magma_internal_release_handle_resp;
-#[repr(C, packed)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtio_magma_internal_map_ctrl {
-    pub hdr: virtio_magma_ctrl_hdr_t,
-    pub buffer: u32,
-    pub length: u64,
-}
-pub type virtio_magma_internal_map_ctrl_t = virtio_magma_internal_map_ctrl;
-#[repr(C, packed)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtio_magma_internal_map_resp {
-    pub hdr: virtio_magma_ctrl_hdr_t,
-    pub address_out: u64,
-    pub result_return: u64,
-}
-pub type virtio_magma_internal_map_resp_t = virtio_magma_internal_map_resp;
-#[repr(C, packed)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtio_magma_internal_unmap_ctrl {
-    pub hdr: virtio_magma_ctrl_hdr_t,
-    pub buffer: u32,
-    pub address: u64,
-}
-pub type virtio_magma_internal_unmap_ctrl_t = virtio_magma_internal_unmap_ctrl;
-#[repr(C, packed)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtio_magma_internal_unmap_resp {
-    pub hdr: virtio_magma_ctrl_hdr_t,
-    pub result_return: u64,
-}
-pub type virtio_magma_internal_unmap_resp_t = virtio_magma_internal_unmap_resp;

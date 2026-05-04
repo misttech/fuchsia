@@ -254,8 +254,7 @@ where
         UserRef::<virtmagma_command_descriptor>::new(control.descriptor.into());
     let command_descriptor = current_task.read_object(virtmagma_command_descriptor_addr)?;
 
-    // Read the virtmagma-internal struct that contains the counts and flags for the magma command
-    // descriptor.
+    // Read the struct that contains the counts and flags for the magma command descriptor.
     let wire_descriptor: WireDescriptor =
         current_task.read_object(UserAddress::from(command_descriptor.descriptor).into())?;
 
