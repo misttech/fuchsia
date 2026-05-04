@@ -6,6 +6,10 @@ use crate::event::{self, Handler};
 use crate::netdevice_helper;
 use crate::wlancfg_helper::{NetworkConfigBuilder, start_ap_and_wait_for_confirmation};
 use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
+use fidl_fuchsia_driver_test as fidl_driver_test;
+use fidl_fuchsia_wlan_policy as fidl_policy;
+use fidl_fuchsia_wlan_tap as wlantap;
+use fidl_test_wlan_realm as fidl_realm;
 use fuchsia_async::{DurationExt, MonotonicInstant, TimeoutExt, Timer};
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at};
 use futures::channel::oneshot;
@@ -21,10 +25,6 @@ use std::task::{Context, Poll};
 use test_realm_helpers::tracing::Tracing;
 use wlan_common::test_utils::ExpectWithin;
 use wlantap_client::Wlantap;
-use {
-    fidl_fuchsia_driver_test as fidl_driver_test, fidl_fuchsia_wlan_policy as fidl_policy,
-    fidl_fuchsia_wlan_tap as wlantap, fidl_test_wlan_realm as fidl_realm,
-};
 
 /// Percent of a timeout duration past which we log a warning.
 const TIMEOUT_WARN_THRESHOLD: f64 = 0.8;
@@ -176,23 +176,36 @@ where
     F: Future + Unpin,
 {
     type Output = (F::Output, EventStream);
-    /// Any events that accumulated in the |event_stream| since last poll will be passed to
-    /// |event_handler| before the |main_future| is polled
+    /// Polls the |event_stream| and invokes the |handler| for each event until |future| is ready.
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let helper = &mut *self;
         let stream = helper.event_stream.as_mut().unwrap();
-        while let Poll::Ready(optional_result) = stream.poll_next_unpin(cx) {
-            let event = optional_result
-                .expect("Unexpected end of the WlantapPhy event stream")
-                .expect("WlantapPhy event stream returned an error");
-            helper.handler.call(&mut (), &event);
-        }
-        match helper.future.poll_unpin(cx) {
-            Poll::Pending => {
-                debug!("Main future poll response is pending. Waiting for completion.");
-                Poll::Pending
+        loop {
+            // Always poll for completion of the main future before processing
+            // the next event in the stream. This gives priority to the main
+            // future to avoid silently dropping events that should be processed
+            // by the next phase of a test. For example, every test begins with
+            // a phase that waits for the arrival of the `WlanSoftmacStart`
+            // event and should process exactly that one event from the stream
+            // and return `Poll::Ready`.
+            if let Poll::Ready(x) = helper.future.poll_unpin(cx) {
+                return Poll::Ready((x, helper.event_stream.take().unwrap()));
             }
-            Poll::Ready(x) => Poll::Ready((x, helper.event_stream.take().unwrap())),
+
+            match stream.poll_next_unpin(cx) {
+                Poll::Ready(optional_result) => {
+                    let event = optional_result
+                        .expect("Unexpected end of the WlantapPhy event stream")
+                        .expect("WlantapPhy event stream returned an error");
+                    helper.handler.call(&mut (), &event);
+                }
+                Poll::Pending => {
+                    debug!(
+                        "Main future poll response is pending and there are no events to process."
+                    );
+                    return Poll::Pending;
+                }
+            }
         }
     }
 }
@@ -400,8 +413,17 @@ impl Drop for TestHelper {
         // Drop the event stream so the WlantapPhyProxy can be converted
         // back into a channel. Conversion from a proxy into a channel fails
         // otherwise.
-        let event_stream = self.event_stream.take();
-        drop(event_stream);
+        if let Some(mut stream) = self.event_stream.take() {
+            // Create a no-op waker to synchronously poll and drain
+            // any ready events left in the channel before teardown.
+            let waker = futures::task::noop_waker();
+            let mut cx = futures::task::Context::from_waker(&waker);
+            while let std::task::Poll::Ready(Some(result)) = stream.poll_next_unpin(&mut cx) {
+                if let Ok(event) = result {
+                    warn!("Draining unhandled event during teardown: {:?}", event);
+                }
+            }
+        }
 
         let sync_proxy = wlantap::WlantapPhySynchronousProxy::new(
             // Arc::into_inner() should succeed in a properly constructed test. Using a WlantapPhyProxy
