@@ -1,0 +1,17 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+[toolchain]
+channel = "stable"
+components = [
+  "clippy",
+  "rustfmt",
+  "rust-analyzer",
+  "rust-src",
+  "rust-std",
+]
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-apple-darwin",
+  "thumbv7em-none-eabihf"
+]
