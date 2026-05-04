@@ -414,11 +414,11 @@ group("cipher-0.4.4") {
 }
 
 group("clap") {
-  public_deps = [ ":clap-v4_6_0" ]
+  public_deps = [ ":clap-v4_6_1" ]
 }
 
-group("clap-4.6.0") {
-  public_deps = [ ":clap-v4_6_0" ]
+group("clap-4.6.1") {
+  public_deps = [ ":clap-v4_6_1" ]
 }
 
 group("cmac") {
@@ -5633,18 +5633,18 @@ rustc_library("clap-v2_34_0") {
   applicable_licenses = [ ":clap-v2_34_0.license" ]
 }
 
-license("clap-v4_6_0.license") {
+license("clap-v4_6_1.license") {
   public_package_name = "clap"
   license_files = [
-    "//third_party/rust_crates/vendor/clap-4.6.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/clap-4.6.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/clap-4.6.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/clap-4.6.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("clap-v4_6_0") {
+rustc_library("clap-v4_6_1") {
   crate_name = "clap"
-  source_root = "//third_party/rust_crates/vendor/clap-4.6.0/src/lib.rs"
-  output_name = "clap-2ff01e815b2aa0cd"
+  source_root = "//third_party/rust_crates/vendor/clap-4.6.1/src/lib.rs"
+  output_name = "clap-ccc7982e6e3f7a31"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -5652,14 +5652,14 @@ rustc_library("clap-v4_6_0") {
 
   deps = []
   deps += [ ":clap_builder-v4_6_0" ]
-  deps += [ ":clap_derive-v4_6_0($host_toolchain)" ]
+  deps += [ ":clap_derive-v4_6_1($host_toolchain)" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2ff01e815b2aa0cd",
-    "-Cextra-filename=-2ff01e815b2aa0cd",
+    "-Cmetadata=ccc7982e6e3f7a31",
+    "-Cextra-filename=-ccc7982e6e3f7a31",
     "--cfg=feature=\"derive\"",
     "--cfg=feature=\"error-context\"",
     "--cfg=feature=\"help\"",
@@ -5670,7 +5670,7 @@ rustc_library("clap-v4_6_0") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":clap-v4_6_0.license" ]
+  applicable_licenses = [ ":clap-v4_6_1.license" ]
 }
 
 license("clap_builder-v4_6_0.license") {
@@ -5713,18 +5713,18 @@ rustc_library("clap_builder-v4_6_0") {
   applicable_licenses = [ ":clap_builder-v4_6_0.license" ]
 }
 
-license("clap_derive-v4_6_0.license") {
+license("clap_derive-v4_6_1.license") {
   public_package_name = "clap_derive"
   license_files = [
-    "//third_party/rust_crates/vendor/clap_derive-4.6.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/clap_derive-4.6.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/clap_derive-4.6.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/clap_derive-4.6.1/LICENSE-MIT",
   ]
 }
 
-rustc_macro("clap_derive-v4_6_0") {
+rustc_macro("clap_derive-v4_6_1") {
   crate_name = "clap_derive"
-  source_root = "//third_party/rust_crates/vendor/clap_derive-4.6.0/src/lib.rs"
-  output_name = "clap_derive-72278cf6a8e85e38"
+  source_root = "//third_party/rust_crates/vendor/clap_derive-4.6.1/src/lib.rs"
+  output_name = "clap_derive-ae8c8da2ff5d36bf"
   edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
@@ -5740,14 +5740,14 @@ rustc_macro("clap_derive-v4_6_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=72278cf6a8e85e38",
-    "-Cextra-filename=-72278cf6a8e85e38",
+    "-Cmetadata=ae8c8da2ff5d36bf",
+    "-Cextra-filename=-ae8c8da2ff5d36bf",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":clap_derive-v4_6_0.license" ]
+  applicable_licenses = [ ":clap_derive-v4_6_1.license" ]
 }
 
 license("clap_lex-v1_1_0.license") {
