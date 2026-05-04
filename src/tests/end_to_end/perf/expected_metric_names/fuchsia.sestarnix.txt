@@ -1,1 +1,7 @@
 fuchsia.sestarnix: load_policy
+fuchsia.sestarnix: security_context_to_sid_simple
+fuchsia.sestarnix: security_context_to_sid_c0_c255
+fuchsia.sestarnix: sid_to_security_context_simple
+fuchsia.sestarnix: sid_to_security_context_c0_c255
+fuchsia.sestarnix: compute_access_decision_simple
+fuchsia.sestarnix: compute_access_decision_c0_c255

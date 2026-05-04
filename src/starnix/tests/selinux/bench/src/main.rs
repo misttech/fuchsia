@@ -8,6 +8,65 @@ use criterion::{Benchmark, Criterion};
 use fuchsia_criterion::FuchsiaCriterion;
 use std::time::Duration;
 
+const POLICY_BYTES: &[u8] = include_bytes!("../../../../lib/selinux/testdata/policies/emulator");
+
+fn load_policy_bench() -> Benchmark {
+    Benchmark::new("load_policy", move |b| {
+        b.iter(|| {
+            let server = selinux::SecurityServer::new_default();
+            let _ = server.load_policy(POLICY_BYTES.to_vec());
+        })
+    })
+}
+
+fn security_context_to_sid_bench(
+    name_suffix: &'static str,
+    context_bytes: &'static [u8],
+) -> Benchmark {
+    let server = selinux::SecurityServer::new_default();
+    let _ = server.load_policy(POLICY_BYTES.to_vec()).unwrap();
+
+    let server_clone = server.clone();
+    Benchmark::new(format!("security_context_to_sid_{}", name_suffix), move |b| {
+        b.iter(|| {
+            let _ = server_clone.security_context_to_sid(context_bytes.into()).unwrap();
+        })
+    })
+}
+
+fn sid_to_security_context_bench(
+    name_suffix: &'static str,
+    context_bytes: &'static [u8],
+) -> Benchmark {
+    let server = selinux::SecurityServer::new_default();
+    let _ = server.load_policy(POLICY_BYTES.to_vec()).unwrap();
+    let sid = server.security_context_to_sid(context_bytes.into()).unwrap();
+
+    let server_clone = server.clone();
+    Benchmark::new(format!("sid_to_security_context_{}", name_suffix), move |b| {
+        b.iter(|| {
+            let _ = server_clone.sid_to_security_context(sid).unwrap();
+        })
+    })
+}
+
+fn compute_access_decision_bench(
+    name_suffix: &'static str,
+    context_bytes: &'static [u8],
+) -> Benchmark {
+    let server = selinux::SecurityServer::new_default();
+    let _ = server.load_policy(POLICY_BYTES.to_vec()).unwrap();
+    let sid = server.security_context_to_sid(context_bytes.into()).unwrap();
+    let class_id = server.class_id_by_name("process").unwrap();
+
+    let server_clone = server.clone();
+    Benchmark::new(format!("compute_access_decision_{}", name_suffix), move |b| {
+        b.iter(|| {
+            let _ = server_clone.compute_access_decision_raw(sid, sid, class_id);
+        })
+    })
+}
+
 fn main() {
     // List of benchmark programs is passed as the argument list from the
     // component manifest. The arguments passed by the test executor are
@@ -32,14 +91,20 @@ fn main() {
         .measurement_time(Duration::from_secs(3))
         .sample_size(10);
 
-    // load_policy
-    const POLICY_BYTES: &[u8] =
-        include_bytes!("../../../../lib/selinux/testdata/policies/emulator");
-    let bench_load = Benchmark::new("load_policy", move |b| {
-        b.iter(|| {
-            let server = selinux::SecurityServer::new_default();
-            let _ = server.load_policy(POLICY_BYTES.to_vec());
-        })
-    });
-    c.bench("fuchsia.sestarnix", bench_load);
+    c.bench("fuchsia.sestarnix", load_policy_bench());
+    c.bench("fuchsia.sestarnix", security_context_to_sid_bench("simple", b"u:r:kernel:s0"));
+    c.bench(
+        "fuchsia.sestarnix",
+        security_context_to_sid_bench("c0_c255", b"u:r:kernel:s0:c0.c255"),
+    );
+    c.bench("fuchsia.sestarnix", sid_to_security_context_bench("simple", b"u:r:kernel:s0"));
+    c.bench(
+        "fuchsia.sestarnix",
+        sid_to_security_context_bench("c0_c255", b"u:r:kernel:s0:c0.c255"),
+    );
+    c.bench("fuchsia.sestarnix", compute_access_decision_bench("simple", b"u:r:kernel:s0"));
+    c.bench(
+        "fuchsia.sestarnix",
+        compute_access_decision_bench("c0_c255", b"u:r:kernel:s0:c0.c255"),
+    );
 }
