@@ -15,6 +15,8 @@ BT_FILE_DEPS=(
     "build/force_clean/force_clean_if_needed.py"
     "build/scripts/top_build_wrap.sh"
     "tools/devshell/lib/vars.sh"
+    "tools/devshell/lib/is_invoked_by_agent.sh"
+    "tools/devshell/lib/agents.txt"
     "tools/devshell/build"
     "tools/devshell/jq.fx"
     "tools/devshell/lib/build_api_client.sh"

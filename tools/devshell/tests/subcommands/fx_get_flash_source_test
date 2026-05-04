@@ -16,6 +16,8 @@ BT_FILE_DEPS=(
   "tools/devshell/lib/fx-optional-features.sh"
   "tools/devshell/lib/fx-cmd-locator.sh"
   "tools/devshell/lib/vars.sh"
+  "tools/devshell/lib/is_invoked_by_agent.sh"
+  "tools/devshell/lib/agents.txt"
   "tools/devshell/lib/platform.sh"
   "tools/devshell/lib/generate-ssh-config.sh"
 )

@@ -2,8 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-const AGENTS_ENV_VARS: &[&str] =
-    &["ANTIGRAVITY_AGENT", "GEMINI_CLI", "ANTIGRAVITY_EDITOR_APP_ROOT"];
+use std::sync::LazyLock;
+
+static AGENTS_ENV_VARS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
+    include_str!("../../../../../../tools/devshell/lib/agents.txt")
+        .lines()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect()
+});
 
 pub trait EnvironmentSource {
     fn has_var(&self, key: &str) -> bool;
@@ -49,6 +56,11 @@ mod tests {
 
         let mut vars = HashMap::new();
         vars.insert("GEMINI_CLI".into(), "1".into());
+        let env = FakeEnv { vars };
+        assert!(is_invoked_by_agent(&env));
+
+        let mut vars = HashMap::new();
+        vars.insert("ANTIGRAVITY_EDITOR_APP_ROOT".into(), "1".into());
         let env = FakeEnv { vars };
         assert!(is_invoked_by_agent(&env));
     }
