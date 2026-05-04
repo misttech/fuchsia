@@ -333,6 +333,165 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_add_dependency() -> Result<()> {
+        let mut executor = fasync::TestExecutor::new();
+        let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
+
+        let topology: TopologyProxy = realm.root.connect_to_protocol_at_exposed_dir()?;
+
+        // Create Required element.
+        let required_token = zx::Event::create();
+        let (required_runner_client, required_runner_server) =
+            create_endpoints::<ElementRunnerMarker>();
+        let mut required_runner = required_runner_server.into_stream();
+        let (required_control, required_control_server) = create_proxy::<ElementControlMarker>();
+
+        executor.run_singlethreaded(async {
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("Required".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1, 2]),
+                    element_control: Some(required_control_server),
+                    element_runner: Some(required_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+
+            required_control
+                .register_dependency_token(
+                    required_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+        });
+
+        let required_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            required_control.open_status_channel(server).unwrap();
+            client
+        };
+
+        // Create Dependent element.
+        let (dependent_runner_client, dependent_runner_server) =
+            create_endpoints::<ElementRunnerMarker>();
+        let mut dependent_runner = dependent_runner_server.into_stream();
+        let (dependent_lessor, dependent_lessor_server) = create_proxy::<LessorMarker>();
+        let (dependent_control, dependent_control_server) = create_proxy::<ElementControlMarker>();
+
+        executor.run_singlethreaded(async {
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("Dependent".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1, 2]),
+                    lessor_channel: Some(dependent_lessor_server),
+                    element_control: Some(dependent_control_server),
+                    element_runner: Some(dependent_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+        });
+
+        let dependent_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            dependent_control.open_status_channel(server).unwrap();
+            client
+        };
+
+        // Initialize levels to 0.
+        executor.run_singlethreaded(async {
+            let req_current =
+                assert_set_level_required_eq_and_return_responder(required_runner.try_next(), 0)
+                    .await;
+            let dep_current =
+                assert_set_level_required_eq_and_return_responder(dependent_runner.try_next(), 0)
+                    .await;
+            req_current.send().unwrap();
+            dep_current.send().unwrap();
+
+            assert_eq!(required_status.watch_power_level().await.unwrap(), Ok(0));
+            assert_eq!(dependent_status.watch_power_level().await.unwrap(), Ok(0));
+        });
+
+        // Lease Dependent at 1.
+        let lease = executor.run_singlethreaded(async {
+            let lease = dependent_lessor.lease(1).await.unwrap().unwrap().into_proxy();
+            (assert_set_level_required_eq_and_return_responder(dependent_runner.try_next(), 1)
+                .await)
+                .send()
+                .unwrap();
+            assert_eq!(dependent_status.watch_power_level().await.unwrap(), Ok(1));
+            assert_eq!(
+                lease.watch_status(LeaseStatus::Unknown).await.unwrap(),
+                LeaseStatus::Satisfied
+            );
+            lease
+        });
+
+        // The lease's status should remain Satisfied throughout this process.
+        let mut lease_status_fut = Box::pin(lease.watch_status(LeaseStatus::Satisfied));
+
+        // Case 1: Unused Dependency.
+        // Add dependency that WILL NOT be used: Dependent at 2 requires Required at 2.
+        // Since Dependent is only at 1, this should not raise Required's level from 0.
+        executor.run_singlethreaded(async {
+            dependent_control
+                .add_dependency(
+                    2,
+                    required_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                    &[2],
+                )
+                .await
+                .unwrap()
+                .unwrap();
+        });
+
+        // Verify Required level is still 0.
+        let mut required_runner_next = required_runner.try_next();
+        assert!(executor.run_until_stalled(&mut required_runner_next).is_pending());
+
+        // Verify lease status has not changed from Satisfied.
+        assert!(executor.run_until_stalled(&mut lease_status_fut).is_pending());
+
+        // Case 2: Used Dependency.
+        // Now, add dependency that WILL be used: Dependent at 1 requires Required at 1.
+        // Since Dependent is already at level 1, this dependency becomes ACTIVE immediately!
+        let mut add_dep_fut = Box::pin(dependent_control.add_dependency(
+            1,
+            required_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            &[1],
+        ));
+
+        // add_dependency call should be blocked because it is waiting for Required to go to 1.
+        assert!(executor.run_until_stalled(&mut add_dep_fut).is_pending());
+
+        // Verify Required increases to 1.
+        executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(required_runner.try_next(), 1)
+                .await
+                .send()
+                .unwrap();
+            assert_eq!(required_status.watch_power_level().await.unwrap(), Ok(1));
+        });
+
+        // Now add_dep_fut should complete!
+        executor.run_singlethreaded(async {
+            add_dep_fut.await.unwrap().unwrap();
+        });
+
+        // Verify lease status has not changed from Satisfied.
+        assert!(executor.run_until_stalled(&mut lease_status_fut).is_pending());
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
     fn test_topology_lease_wait_for_satisfied() -> Result<()> {
         let mut executor = fasync::TestExecutor::new();
         let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;

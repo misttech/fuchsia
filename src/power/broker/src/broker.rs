@@ -834,26 +834,7 @@ impl Broker {
         self.update_required_level(id, minimum_level, &mut inspect_writer);
 
         for dependency in level_dependencies {
-            let requires_token = dependency.requires_token.into();
-            let Some(requires_cred) = self.lookup_credentials(&requires_token) else {
-                // Clean up by removing the element we just added.
-                inspect_writer.commit(&mut self.catalog.topology);
-                self.remove_element(&id);
-                return Err(AddElementError::NotAuthorized);
-            };
-            let requires_element_id = requires_cred.get_element();
-            let requires_level = dependency
-                .requires_level_by_preference
-                .iter()
-                .find_map(|l| self.get_level_index(requires_element_id, &l))
-                .ok_or(AddElementError::Invalid)?;
-            if let Err(err) = self.add_dependency(
-                id,
-                dependency.dependent_level,
-                requires_token,
-                requires_level.level,
-                &mut inspect_writer,
-            ) {
+            if let Err(err) = self.add_dependency(id, dependency, &mut inspect_writer) {
                 // Clean up by removing the element we just added.
                 inspect_writer.commit(&mut self.catalog.topology);
                 self.remove_element(&id);
@@ -863,7 +844,7 @@ impl Broker {
                     ModifyDependencyError::NotFound(_) => AddElementError::Invalid,
                     ModifyDependencyError::NotAuthorized => AddElementError::NotAuthorized,
                 });
-            };
+            }
         }
         inspect_writer.commit(&mut self.catalog.topology);
         Ok(id)
@@ -911,42 +892,152 @@ impl Broker {
         self.catalog.topology.get_level_index(element_id, level)
     }
 
+    /// Checks authorization and looks up the required element ID and level for a dependency.
+    fn lookup_dependency_requires(
+        &self,
+        dependency: &fpb::LevelDependency,
+    ) -> Result<(ElementID, IndexedPowerLevel), ModifyDependencyError> {
+        let Some(requires_cred) = self.lookup_credentials(&Token::from(&dependency.requires_token))
+        else {
+            return Err(ModifyDependencyError::NotAuthorized);
+        };
+        if !requires_cred.contains(Permissions::MODIFY_DEPENDENT) {
+            return Err(ModifyDependencyError::NotAuthorized);
+        }
+        let requires_element_id = requires_cred.get_element();
+
+        let requires_level = dependency
+            .requires_level_by_preference
+            .iter()
+            .find_map(|l| self.catalog.topology.get_level_index(requires_element_id.clone(), l))
+            .ok_or(ModifyDependencyError::Invalid)?
+            .clone();
+
+        Ok((requires_element_id, requires_level))
+    }
+
+    /// Prepares to add a dependency by acquiring a provisional lease if needed.
+    /// Returns the Lease if a provisional lease was acquired.
+    pub fn prepare_add_dependency(
+        &mut self,
+        element_id: ElementID,
+        dependency: &fpb::LevelDependency,
+    ) -> Result<Option<Lease>, ModifyDependencyError> {
+        let (requires_element_id, requires_level) = self.lookup_dependency_requires(dependency)?;
+
+        let current_required = self.get_required_level(&element_id);
+        let dep_level_idx = self.get_level_index(element_id, &dependency.dependent_level);
+
+        let need_provisional_lease =
+            dep_level_idx.map(|dep| current_required.satisfies(dep.clone())).unwrap_or(false);
+
+        let provisional_lease = if need_provisional_lease {
+            let lease_token = zx::Event::create();
+            let lease_koid = lease_token.koid().unwrap();
+            let lease = self
+                .acquire_lease(requires_element_id.clone(), requires_level, lease_koid)
+                .unwrap();
+            Some(lease)
+        } else {
+            None
+        };
+
+        Ok(provisional_lease)
+    }
+
     /// Checks authorization from requires_token, and if valid, adds a dependency to the Topology.
     pub fn add_dependency<I>(
         &mut self,
         element_id: ElementID,
-        dependent_level: fpb::PowerLevel,
-        requires_token: Token,
-        requires_level: fpb::PowerLevel,
+        dependency: fpb::LevelDependency,
         inspect_writer: &mut I,
     ) -> Result<(), ModifyDependencyError>
     where
         I: InspectAddDependency,
     {
-        let Some(requires_cred) = self.lookup_credentials(&requires_token) else {
-            return Err(ModifyDependencyError::NotAuthorized);
-        };
+        let (requires_element_id, requires_level) = self.lookup_dependency_requires(&dependency)?;
         let dependent_level = self
             .catalog
             .topology
-            .get_level_index(element_id, &dependent_level)
+            .get_level_index(element_id, &dependency.dependent_level)
             .ok_or(ModifyDependencyError::Invalid)?;
-        let requires_level = self
-            .catalog
-            .topology
-            .get_level_index(requires_cred.get_element(), &requires_level)
-            .ok_or(ModifyDependencyError::Invalid)?;
-        let dependency = Dependency {
+        let dep = Dependency {
             dependent: ElementLevel { element_id: element_id, level: *dependent_level },
             requires: ElementLevel {
-                element_id: requires_cred.get_element().clone(),
-                level: *requires_level,
+                element_id: requires_element_id.clone(),
+                level: requires_level,
             },
         };
-        if !requires_cred.contains(Permissions::MODIFY_DEPENDENT) {
-            return Err(ModifyDependencyError::NotAuthorized);
+        self.catalog.topology.add_dependency(&dep, inspect_writer)?;
+        self.update_leases_for_dependency(dep);
+        Ok(())
+    }
+
+    pub fn update_leases_for_dependency(&mut self, dependency: Dependency) {
+        let dependent_level = dependency.dependent.level;
+        let dependent_id = dependency.dependent.element_id;
+
+        let mut leases_to_update = HashSet::new();
+
+        if let Some(claim_ids) =
+            self.catalog.claims.pending.claims_by_required_element_id.get(&dependent_id)
+        {
+            for claim_id in claim_ids {
+                if let Some(claim) = self.catalog.claims.pending.claims.get(claim_id) {
+                    if claim.requires().level >= dependent_level {
+                        leases_to_update.insert(claim.lease_id);
+                    }
+                }
+            }
         }
-        self.catalog.topology.add_dependency(&dependency, inspect_writer)
+
+        if let Some(claim_ids) =
+            self.catalog.claims.activated.claims_by_required_element_id.get(&dependent_id)
+        {
+            for claim_id in claim_ids {
+                if let Some(claim) = self.catalog.claims.activated.claims.get(claim_id) {
+                    if claim.requires().level >= dependent_level {
+                        leases_to_update.insert(claim.lease_id);
+                    }
+                }
+            }
+        }
+
+        let mut all_new_claims = Vec::new();
+        for lease_id in &leases_to_update {
+            let mut new_dependencies =
+                self.catalog.topology.all_direct_and_indirect_dependencies(&dependency.requires);
+            new_dependencies.push(dependency.clone());
+
+            let mut claims_created = Vec::new();
+            for dep in new_dependencies {
+                let exists =
+                    self.catalog.claims.pending.for_lease(*lease_id).any(|c| c.dependency == dep)
+                        || self
+                            .catalog
+                            .claims
+                            .activated
+                            .for_lease(*lease_id)
+                            .any(|c| c.dependency == dep);
+
+                if !exists {
+                    let claim = self.catalog.add_claim(dep, *lease_id);
+                    claims_created.push(claim);
+                }
+            }
+
+            let essential_claims = self.catalog.filter_out_redundant_claims(claims_created);
+            for claim in &essential_claims {
+                self.catalog.claims.pending.add(claim.clone());
+                all_new_claims.push(claim.clone());
+            }
+        }
+
+        self.activate_claims_if_dependencies_satisfied(all_new_claims);
+
+        for lease_id in leases_to_update {
+            self.update_lease_status(lease_id);
+        }
     }
 }
 
@@ -2744,18 +2835,14 @@ mod tests {
                 }],
             )
             .expect("add_element failed");
-        broker
-            .add_dependency(
-                parent,
-                ON.level,
-                grandparent_token
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("dup failed")
-                    .into(),
-                ON.level,
-                &mut EagerInspectWriter,
-            )
-            .expect("add_dependency failed");
+        let dep = fpb::LevelDependency {
+            dependent_level: ON.level,
+            requires_token: grandparent_token
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .expect("dup failed"),
+            requires_level_by_preference: vec![ON.level],
+        };
+        broker.add_dependency(parent, dep, &mut EagerInspectWriter).expect("add_dependency failed");
         let mut broker_status = BrokerStatusMatcher::new();
 
         // All elements should start with required level OFF.
@@ -4404,5 +4491,108 @@ mod tests {
         // B and C's required levels should remain OFF.
         assert_eq!(broker.get_required_level(&element_b), Some(OFF));
         assert_eq!(broker.get_required_level(&element_c), Some(OFF));
+    }
+
+    #[fuchsia::test]
+    fn test_update_leases_for_dependency_active() {
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+
+        let element_a = broker
+            .add_element("A", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
+            .expect("add_element failed");
+        let element_b = broker
+            .add_element("B", OFF.level, BINARY_POWER_LEVELS.to_vec(), vec![])
+            .expect("add_element failed");
+
+        // Create a lease for A at ON and verify that A's required level is now ON.
+        let lease =
+            broker.acquire_lease(element_a, ON, zx::Koid::from_raw(1)).expect("acquire failed");
+        assert_eq!(broker.get_required_level(&element_a), Some(ON));
+
+        // Update current level to ON and verify the lease is satisfied.
+        broker.update_current_level(element_a, ON);
+        assert_eq!(broker.get_lease_status(lease.id), Some(LeaseStatus::Satisfied));
+        let pending_claims: Vec<_> = broker.catalog.claims.pending.for_lease(lease.id).collect();
+        assert_eq!(pending_claims.len(), 0);
+        let activated_claims: Vec<_> =
+            broker.catalog.claims.activated.for_lease(lease.id).collect();
+        assert_eq!(activated_claims.len(), 1);
+        let claim_a = activated_claims[0];
+        assert_eq!(claim_a.dependency.requires.element_id, element_a);
+        assert_eq!(claim_a.dependency.requires.level, ON);
+
+        // Now add a dependency: A at ON requires B at ON.
+        let dependency = Dependency {
+            dependent: ElementLevel { element_id: element_a, level: ON },
+            requires: ElementLevel { element_id: element_b, level: ON },
+        };
+        broker.update_leases_for_dependency(dependency.clone());
+
+        // Verify that a claim for B at ON is added to the lease (and no other claims were added).
+        let pending_claims: Vec<_> = broker.catalog.claims.pending.for_lease(lease.id).collect();
+        assert_eq!(pending_claims.len(), 0);
+        let activated_claims: Vec<_> =
+            broker.catalog.claims.activated.for_lease(lease.id).collect();
+        assert_eq!(activated_claims.len(), 2);
+
+        // One claim should be for A at ON and one for B at ON.
+        let found_a = activated_claims.iter().any(|c| {
+            c.dependency.requires.element_id == element_a && c.dependency.requires.level == ON
+        });
+        let found_b = activated_claims.iter().any(|c| c.dependency == dependency);
+        assert!(found_a, "Claim for A at ON not found in activated claims");
+        assert!(found_b, "Claim for B at ON not found in activated claims");
+    }
+
+    #[fuchsia::test]
+    fn test_update_leases_for_dependency_unaffected() {
+        let inspect = fuchsia_inspect::Inspector::default();
+        let mut broker = Broker::new(inspect.root().create_child("test"));
+
+        let levels = vec![0, 1, 2];
+        let level_0 = IndexedPowerLevel { level: 0, index: 0 };
+        let level_1 = IndexedPowerLevel { level: 1, index: 1 };
+        let level_2 = IndexedPowerLevel { level: 2, index: 2 };
+
+        let element_a = broker
+            .add_element("A", level_0.level, levels.clone(), vec![])
+            .expect("add_element failed");
+        let element_b = broker
+            .add_element("B", level_0.level, levels.clone(), vec![])
+            .expect("add_element failed");
+
+        // Create a lease for A at 1.
+        let lease = broker
+            .acquire_lease(element_a, level_1, zx::Koid::from_raw(1))
+            .expect("acquire failed");
+
+        // There should be only one claim for A at 1.
+        let pending_claims: Vec<_> = broker.catalog.claims.pending.for_lease(lease.id).collect();
+        let activated_claims: Vec<_> =
+            broker.catalog.claims.activated.for_lease(lease.id).collect();
+        let all_claims: Vec<_> =
+            pending_claims.into_iter().chain(activated_claims.into_iter()).collect();
+        assert_eq!(all_claims.len(), 1);
+        assert_eq!(all_claims[0].dependency.requires.element_id, element_a);
+        assert_eq!(all_claims[0].dependency.requires.level, level_1);
+
+        // Now add dependency: A at 2 requires B at 1.
+        // Since A is only leased at 1, the lease should not be affected.
+        let dependency = Dependency {
+            dependent: ElementLevel { element_id: element_a, level: level_2 },
+            requires: ElementLevel { element_id: element_b, level: level_1 },
+        };
+        broker.update_leases_for_dependency(dependency);
+
+        // Verify that NO new claim is added.
+        let pending_claims: Vec<_> = broker.catalog.claims.pending.for_lease(lease.id).collect();
+        let activated_claims: Vec<_> =
+            broker.catalog.claims.activated.for_lease(lease.id).collect();
+        let all_claims: Vec<_> =
+            pending_claims.into_iter().chain(activated_claims.into_iter()).collect();
+        assert_eq!(all_claims.len(), 1);
+        assert_eq!(all_claims[0].dependency.requires.element_id, element_a);
+        assert_eq!(all_claims[0].dependency.requires.level, level_1);
     }
 }

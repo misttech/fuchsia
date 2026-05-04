@@ -210,6 +210,13 @@ open protocol ElementControl {
     flexible UnregisterDependencyToken(resource struct {
         token DependencyToken;
     }) -> () error UnregisterDependencyTokenError;
+
+    /// Add a new dependency to an existing element.
+    /// If any open leases would incorporate this dependency, the required
+    /// element and any transitively required elements must complete all
+    /// necessary transitions (via ElementRunner.SetLevel calls) before this
+    /// method will return.
+    flexible AddDependency(LevelDependency) -> () error ModifyDependencyError;
 };
 
 /// The runner or operator of an element.

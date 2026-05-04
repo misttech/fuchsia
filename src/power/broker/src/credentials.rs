@@ -37,12 +37,25 @@ impl Credential {
 
 #[derive(Debug)]
 pub struct Token {
-    token: DependencyToken,
+    pub token: DependencyToken,
 }
 
 impl From<DependencyToken> for Token {
     fn from(token: DependencyToken) -> Self {
         Token { token }
+    }
+}
+
+impl From<&DependencyToken> for Token {
+    fn from(token: &DependencyToken) -> Self {
+        use zx::HandleBased;
+        Token { token: token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap() }
+    }
+}
+
+impl Into<DependencyToken> for Token {
+    fn into(self) -> DependencyToken {
+        self.token
     }
 }
 
@@ -85,10 +98,7 @@ impl Registry {
     }
 
     pub fn lookup(&self, token: &Token) -> Option<Credential> {
-        let Some(koid) = token.koid() else {
-            log::debug!("could not get koid for {:?}", token);
-            return None;
-        };
+        let koid = token.koid()?;
         self.get_credential_by_koid(&koid)
     }
 
@@ -214,7 +224,7 @@ mod tests {
         use zx::HandleBased;
         let token_kryptonite_dup =
             token_kryptonite.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed");
-        let credential = registry.lookup(&token_kryptonite_dup.into()).unwrap();
+        let credential = registry.lookup(&Token::from(&token_kryptonite_dup)).unwrap();
         assert_eq!(
             credential.id,
             token_kryptonite.as_handle_ref().basic_info().expect("basic_info failed").koid
@@ -225,7 +235,7 @@ mod tests {
 
         let unregistered = registry.unregister(&credential);
         assert_eq!(unregistered, Some(credential.clone()));
-        let lookup_not_found = registry.lookup(&token_kryptonite.into());
+        let lookup_not_found = registry.lookup(&Token::from(&token_kryptonite));
         assert_eq!(lookup_not_found, None);
 
         let extra_unregister = registry.unregister(&credential);

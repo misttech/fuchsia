@@ -291,6 +291,52 @@ impl BrokerSvc {
                 );
                 responder.send(res.map_err(Into::into)).context("send failed")
             }
+            ElementControlRequest::AddDependency {
+                dependent_level,
+                requires_token,
+                requires_level_by_preference,
+                responder,
+            } => {
+                fuchsia_trace::duration!(c"power-broker", c"ElementControl::AddDependency");
+                log::debug!(
+                    "{debug_info}: AddDependency({dependent_level:?}, {requires_token:?}, {requires_level_by_preference:?})"
+                );
+
+                let dep = fpb::LevelDependency {
+                    dependent_level,
+                    requires_token,
+                    requires_level_by_preference,
+                };
+                let provisional_lease_id =
+                    match self.broker.borrow_mut().prepare_add_dependency(element_id, &dep) {
+                        Ok(res) => res.map(|l| l.id),
+                        Err(err) => {
+                            responder.send(Err(err.into())).context("send failed")?;
+                            return Ok(());
+                        }
+                    };
+
+                if let Some(lease_id) = provisional_lease_id {
+                    let mut rx = self.broker.borrow_mut().watch_lease_status(lease_id);
+                    while let Some(status) = rx.next().await {
+                        if status == Some(LeaseStatus::Satisfied) {
+                            break;
+                        }
+                    }
+                }
+                let res = self.broker.borrow_mut().add_dependency(
+                    element_id,
+                    dep,
+                    &mut crate::inspect::EagerInspectWriter,
+                );
+
+                // Drop provisional lease (if one was taken).
+                if let Some(lease_id) = provisional_lease_id {
+                    self.broker.borrow_mut().drop_lease(lease_id).expect("drop failed");
+                }
+                responder.send(res.map_err(Into::into)).context("send failed")?;
+                Ok(())
+            }
             ElementControlRequest::_UnknownMethod { ordinal, .. } => {
                 log::warn!("{debug_info}: Received unknown ElementControlRequest: {ordinal}");
                 todo!()
