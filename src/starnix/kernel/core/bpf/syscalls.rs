@@ -398,32 +398,23 @@ pub fn sys_bpf(
         // Pin an eBPF program or map referred by the specified bpf_fd to the provided pathname on
         // the filesystem.
         bpf_cmd_BPF_OBJ_PIN => {
-            let result = (|| {
-                let pin_attr: bpf_attr__bindgen_ty_5 =
-                    read_attr(current_task, attr_addr, attr_size)?;
-                log_trace!("BPF_OBJ_PIN {:?}", pin_attr);
-                security::check_bpf_access(current_task, cmd, &pin_attr, attr_size)?;
-                let bpf_fd = FdNumber::from_raw(pin_attr.bpf_fd as i32);
-                let object = get_bpf_object(current_task, bpf_fd)?;
-                let path_addr =
-                    UserCString::new(current_task, UserAddress::from(pin_attr.pathname));
-                let pathname = current_task.read_path(path_addr)?;
-                let (parent, basename) = current_task.lookup_parent_at(
-                    locked,
-                    &mut LookupContext::default(),
-                    FdNumber::AT_FDCWD,
-                    pathname.as_ref(),
-                )?;
-                let bpf_dir =
-                    parent.entry.node.downcast_ops::<BpfFsDir>().ok_or_else(|| errno!(EINVAL))?;
-                bpf_dir.register_pin(locked, current_task, &parent, basename, object)?;
-                Ok(SUCCESS)
-            })();
-            // Log the error to aid debugging https://fxbug.dev/476409330.
-            if result.is_err() {
-                log_error!("BPF_OBJ_PIN failed: {:?}", result);
-            }
-            result
+            let pin_attr: bpf_attr__bindgen_ty_5 = read_attr(current_task, attr_addr, attr_size)?;
+            log_trace!("BPF_OBJ_PIN {:?}", pin_attr);
+            security::check_bpf_access(current_task, cmd, &pin_attr, attr_size)?;
+            let bpf_fd = FdNumber::from_raw(pin_attr.bpf_fd as i32);
+            let object = get_bpf_object(current_task, bpf_fd)?;
+            let path_addr = UserCString::new(current_task, UserAddress::from(pin_attr.pathname));
+            let pathname = current_task.read_path(path_addr)?;
+            let (parent, basename) = current_task.lookup_parent_at(
+                locked,
+                &mut LookupContext::default(),
+                FdNumber::AT_FDCWD,
+                pathname.as_ref(),
+            )?;
+            let bpf_dir =
+                parent.entry.node.downcast_ops::<BpfFsDir>().ok_or_else(|| errno!(EINVAL))?;
+            bpf_dir.register_pin(locked, current_task, &parent, basename, object)?;
+            Ok(SUCCESS)
         }
 
         // Open a file descriptor for the eBPF object pinned to the specified pathname.
