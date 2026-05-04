@@ -116,12 +116,12 @@ filegroup(
     srcs = [
         ":long_build_only_tests_requiring_api_level",
 
-        # The source libraries represented by the atoms in
-        # "//sdk:cc_source_libraries_idk" are not built by the IDK targets, so
-        # build them here for each combination of API level and CPU architecture.
+        # Some libraries represented by atoms are not built with the IDK atom
+        # targets, so build them here for each combination of API level and CPU
+        # architecture.
         # Note: The GN build does not explicitly build these targets like this.
         # Note: Header-only libraries are not compiled.
-        "//sdk:all_underlying_cc_source_libraries_in_all_api_level_and_cpu_combinations",
+        "//sdk:all_underlying_libraries_not_built_with_atoms_in_all_api_level_and_cpu_combinations",
 
         # Compile, generate the atom, and run compatibility tests for all FIDL
         # libraries in all categories.
