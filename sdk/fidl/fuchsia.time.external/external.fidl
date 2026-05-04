@@ -20,6 +20,7 @@
 library fuchsia.time.external;
 
 using zx;
+using fuchsia.inspect;
 
 /// A protocol which defines common methods for all time sources. Should not be
 /// implemented directly.
@@ -66,7 +67,9 @@ closed protocol PullSource {
     ///
     /// The time source should escrow its Inspect data to allow it to be
     /// retrieved after the component has stopped.
-    strict Shutdown() -> () error EscrowError;
+    strict Shutdown() -> (resource struct {
+        escrow_token fuchsia.inspect.EscrowToken;
+    }) error EscrowError;
 };
 
 /// A protocol for time sources that produce time samples on a schedule that it

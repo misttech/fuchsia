@@ -11,6 +11,7 @@ fidl_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//sdk/fidl/fuchsia.inspect",
         "//zircon/vdso/zx",
     ],
 )
