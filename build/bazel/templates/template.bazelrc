@@ -129,6 +129,11 @@ build --@io_bazel_rules_go//go/config:pure=True
 # to be changed to `--incompatible_exclude_starlark_flags_from_exec_config`.
 common --experimental_exclude_starlark_flags_from_exec_config
 
+# Do not propagate defines to the exec config by default.
+# Explicitly propagate `EXECUTOR`, which is used in remote builds.
+common --experimental_exclude_defines_from_exec_config
+common --experimental_propagate_custom_flag=EXECUTOR
+
 # Name subdirectories of `bazel-out/` based on the associated platform.
 # For example, use `fuchsia_x64-opt` instead of `k8-opt`.
 # This also separates x64 `--config=fuchsia` output from `--config=host` because
