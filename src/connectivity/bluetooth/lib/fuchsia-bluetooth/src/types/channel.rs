@@ -1,23 +1,28 @@
-// Copyright 2020 The Fuchsia Authors. All rights reserved.
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_bluetooth as fidl_bt;
 use fidl_fuchsia_bluetooth_bredr as bredr;
-use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::sink::Sink;
 use futures::stream::{FusedStream, Stream};
-use futures::{Future, TryFutureExt, ready};
-use log::{error, warn};
-use std::collections::VecDeque;
+use futures::{Future, StreamExt};
+use log::warn;
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use zx;
 
 use crate::error::Error;
+
+pub mod socket;
+
+// TODO(b/414410187): Add mod for FIDL client/server.
+
+use socket::SocketConnection;
 
 /// The Channel mode in use for a L2CAP channel.
 #[derive(PartialEq, Debug, Clone)]
@@ -87,13 +92,45 @@ impl From<ChannelMode> for fidl_bt::ChannelMode {
     }
 }
 
-/// A data channel to a remote Peer. Channels are the primary data transfer mechanism for
-/// Bluetooth profiles and protocols.
-/// Channel currently implements Deref<Target = Socket> to easily access the underlying
-/// socket, and also implements AsyncWrite using a forwarding implementation.
+pub enum ConnectionBackendType {
+    Socket,
+    FidlClient,
+    FidlServer,
+}
+
+/// A trait representing a Bluetooth data connection.
+/// Concrete implementations handle the specific transport mechanism (e.g., socket or FIDL protocol)
+/// while fulfilling the `Sink` and `Stream` contracts for data transfer.
+pub trait Connection:
+    Stream<Item = Result<Vec<u8>, zx::Status>>
+    + Sink<Vec<u8>, Error = zx::Status>
+    + Send
+    + Sync
+    + std::fmt::Debug
+    + Unpin
+{
+    /// Returns a future that resolves when the connection is closed.
+    fn closed<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), zx::Status>> + 'a>>;
+
+    /// Returns the type of the connection backend.
+    fn connection_type(&self) -> ConnectionBackendType;
+
+    /// Writes data to the connection. This is a non-blocking fast path.
+    /// Returns `SHOULD_WAIT` if the buffer is full.
+    fn write(&self, bytes: &[u8]) -> Result<usize, zx::Status>;
+
+    /// Returns true if the connection is currently closed.
+    fn is_closed(&self) -> bool;
+
+    /// Consumes the connection and returns a partially filled FIDL channel
+    /// containing the transport (e.g., socket handle) if applicable.
+    fn into_fidl_channel(self: Box<Self>) -> Result<bredr::Channel, zx::Status>;
+}
+
+/// A wrapper for Bluetooth channel. Profiles interact with this struct.
 #[derive(Debug)]
 pub struct Channel {
-    socket: fasync::Socket,
+    pub(crate) connection: Box<dyn Connection>,
     mode: ChannelMode,
     max_tx_size: usize,
     flush_timeout: Arc<Mutex<Option<zx::MonotonicDuration>>>,
@@ -101,21 +138,15 @@ pub struct Channel {
     l2cap_parameters_ext: Option<bredr::L2capParametersExtProxy>,
     audio_offload_ext: Option<bredr::AudioOffloadExtProxy>,
     terminated: bool,
-    send_buffer: VecDeque<Vec<u8>>,
 }
 
 impl Channel {
-    const MAX_QUEUED_PACKETS: usize = 32;
-    /// Attempt to make a Channel from a zircon socket and a Maximum TX size received out of band.
-    /// Returns Err(status) if there is an error.
-    pub fn from_socket(socket: zx::Socket, max_tx_size: usize) -> Result<Self, zx::Status> {
-        Ok(Self::from_socket_infallible(socket, max_tx_size))
-    }
+    pub const DEFAULT_MAX_TX: usize = 672;
 
-    /// Make a Channel from a zircon socket and a Maximum TX size received out of band.
-    pub fn from_socket_infallible(socket: zx::Socket, max_tx_size: usize) -> Self {
-        Channel {
-            socket: fasync::Socket::from_socket(socket),
+    pub fn from_socket(socket: zx::Socket, max_tx_size: usize) -> Result<Self, zx::Status> {
+        let connection = Box::new(SocketConnection::new(socket));
+        Ok(Channel {
+            connection,
             mode: ChannelMode::Basic,
             max_tx_size,
             flush_timeout: Arc::new(Mutex::new(None)),
@@ -123,22 +154,17 @@ impl Channel {
             l2cap_parameters_ext: None,
             audio_offload_ext: None,
             terminated: false,
-            send_buffer: VecDeque::with_capacity(Self::MAX_QUEUED_PACKETS),
-        }
+        })
     }
 
-    /// The default max tx size is the default MTU size for L2CAP minus the channel header content.
-    /// See the Bluetooth Core Specification, Vol 3, Part A, Sec 5.1
-    pub const DEFAULT_MAX_TX: usize = 672;
+    pub fn from_socket_infallible(socket: zx::Socket, max_tx_size: usize) -> Self {
+        Self::from_socket(socket, max_tx_size).unwrap()
+    }
 
-    /// Makes a pair of channels which are connected to each other, used commonly for testing.
-    /// The max_tx_size is set to `Channel::DEFAULT_MAX_TX`.
     pub fn create() -> (Self, Self) {
         Self::create_with_max_tx(Self::DEFAULT_MAX_TX)
     }
 
-    /// Make a pair of channels which are connected to each other, used commonly for testing.
-    /// The maximum transmittable unit is taken from `max_tx_size`.
     pub fn create_with_max_tx(max_tx_size: usize) -> (Self, Self) {
         let (remote, local) = zx::Socket::create_datagram();
         (
@@ -147,8 +173,6 @@ impl Channel {
         )
     }
 
-    /// The maximum transmittable size of a packet, in bytes.
-    /// Trying to send packets larger than this may cause the channel to be closed.
     pub fn max_tx_size(&self) -> usize {
         self.max_tx_size
     }
@@ -161,8 +185,18 @@ impl Channel {
         self.flush_timeout.lock().clone()
     }
 
-    /// Returns a future which will set the audio priority of the channel.
-    /// The future will return Err if setting the priority is not supported.
+    pub fn closed<'a>(&'a self) -> impl Future<Output = Result<(), zx::Status>> + 'a {
+        self.connection.closed()
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.connection.is_closed()
+    }
+
+    pub fn write(&self, bytes: &[u8]) -> Result<usize, zx::Status> {
+        self.connection.write(bytes)
+    }
+
     pub fn set_audio_priority(
         &self,
         dir: A2dpDirection,
@@ -179,12 +213,6 @@ impl Channel {
         }
     }
 
-    /// Attempt to set the flush timeout for this channel.
-    /// If the timeout is not already set within 1ms of `duration`, we attempt to set it using the
-    /// L2cap parameter extension.
-    /// `duration` can be infinite to set packets flushable without a timeout.
-    /// Returns a future that when polled will set the flush timeout and return the new timeout,
-    /// or return an error setting the parameter is not supported.
     pub fn set_flush_timeout(
         &self,
         duration: Option<zx::MonotonicDuration>,
@@ -213,130 +241,25 @@ impl Channel {
         }
     }
 
-    /// Get a copy of the Audio Offload Proxy for this channel, if it exists
     pub fn audio_offload(&self) -> Option<bredr::AudioOffloadExtProxy> {
         self.audio_offload_ext.clone()
-    }
-
-    pub fn closed<'a>(&'a self) -> impl Future<Output = Result<(), zx::Status>> + 'a {
-        let close_signals = zx::Signals::SOCKET_PEER_CLOSED;
-        let close_wait = fasync::OnSignals::new(&self.socket, close_signals);
-        close_wait.map_ok(|_o| ())
-    }
-
-    pub fn is_closed<'a>(&'a self) -> bool {
-        self.socket.is_closed()
-    }
-
-    /// Write to the channel.  This will return zx::Status::SHOULD_WAIT if the
-    /// the channel is too full.
-    /// Prefer using the channel via Sink for asynchronous operations.
-    // TODO(b/499061686): remove to prefer async write.
-    pub fn write(&self, bytes: &[u8]) -> Result<usize, zx::Status> {
-        self.socket.as_ref().write(bytes)
-    }
-}
-
-impl TryFrom<fidl_fuchsia_bluetooth_bredr::Channel> for Channel {
-    type Error = zx::Status;
-
-    fn try_from(fidl: bredr::Channel) -> Result<Self, Self::Error> {
-        let channel = match fidl.channel_mode.unwrap_or(fidl_bt::ChannelMode::Basic).try_into() {
-            Err(e) => {
-                warn!("Unsupported channel mode type: {e:?}");
-                return Err(zx::Status::INTERNAL);
-            }
-            Ok(c) => c,
-        };
-
-        Ok(Self {
-            socket: fasync::Socket::from_socket(fidl.socket.ok_or(zx::Status::INVALID_ARGS)?),
-            mode: channel,
-            max_tx_size: fidl.max_tx_sdu_size.ok_or(zx::Status::INVALID_ARGS)? as usize,
-            flush_timeout: Arc::new(Mutex::new(
-                fidl.flush_timeout.map(zx::MonotonicDuration::from_nanos),
-            )),
-            audio_direction_ext: fidl.ext_direction.map(|e| e.into_proxy()),
-            l2cap_parameters_ext: fidl.ext_l2cap.map(|e| e.into_proxy()),
-            audio_offload_ext: fidl.ext_audio_offload.map(|c| c.into_proxy()),
-            terminated: false,
-            send_buffer: VecDeque::with_capacity(Self::MAX_QUEUED_PACKETS),
-        })
-    }
-}
-
-impl TryFrom<Channel> for bredr::Channel {
-    type Error = Error;
-
-    fn try_from(channel: Channel) -> Result<Self, Self::Error> {
-        let socket = channel.socket.into_zx_socket();
-        let ext_direction = channel
-            .audio_direction_ext
-            .map(|proxy| {
-                let chan = proxy.into_channel()?;
-                Ok(ClientEnd::new(chan.into()))
-            })
-            .transpose()
-            .map_err(|_: bredr::AudioDirectionExtProxy| {
-                Error::profile("AudioDirection proxy in use")
-            })?;
-        let ext_l2cap = channel
-            .l2cap_parameters_ext
-            .map(|proxy| {
-                let chan = proxy.into_channel()?;
-                Ok(ClientEnd::new(chan.into()))
-            })
-            .transpose()
-            .map_err(|_: bredr::L2capParametersExtProxy| {
-                Error::profile("l2cap parameters proxy in use")
-            })?;
-        let ext_audio_offload = channel
-            .audio_offload_ext
-            .map(|proxy| {
-                let chan = proxy.into_channel()?;
-                Ok(ClientEnd::new(chan.into()))
-            })
-            .transpose()
-            .map_err(|_: bredr::AudioOffloadExtProxy| {
-                Error::profile("audio offload proxy in use")
-            })?;
-        let flush_timeout = channel.flush_timeout.lock().map(zx::MonotonicDuration::into_nanos);
-        Ok(bredr::Channel {
-            socket: Some(socket),
-            channel_mode: Some(channel.mode.into()),
-            max_tx_sdu_size: Some(channel.max_tx_size as u16),
-            ext_direction,
-            flush_timeout,
-            ext_l2cap,
-            ext_audio_offload,
-            ..Default::default()
-        })
     }
 }
 
 impl Stream for Channel {
     type Item = Result<Vec<u8>, zx::Status>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        if self.terminated {
-            panic!("Channel polled after terminated");
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        if this.terminated {
+            warn!("Stream was polled after termination");
+            return Poll::Ready(None);
         }
-
-        let mut res = Vec::<u8>::new();
-        loop {
-            break match self.socket.poll_datagram(cx, &mut res) {
-                // TODO(https://fxbug.dev/42072274): Sometimes sockets return spirious 0 byte packets when polled.
-                // Try again.
-                Poll::Ready(Ok(0)) => continue,
-                Poll::Ready(Ok(_size)) => Poll::Ready(Some(Ok(res))),
-                Poll::Ready(Err(zx::Status::PEER_CLOSED)) => {
-                    self.terminated = true;
-                    Poll::Ready(None)
-                }
-                Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
-                Poll::Pending => Poll::Pending,
-            };
+        let res = this.connection.poll_next_unpin(cx);
+        if let Poll::Ready(None) = res {
+            this.terminated = true;
         }
+        res
     }
 }
 
@@ -346,382 +269,104 @@ impl FusedStream for Channel {
     }
 }
 
-// Trait implementations for Channel.
-
 impl Sink<Vec<u8>> for Channel {
     type Error = zx::Status;
 
-    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // Try to flush to make progress, but ignore pending results.
-        let _ = Sink::poll_flush(self.as_mut(), cx)?;
-
-        if self.send_buffer.len() >= Channel::MAX_QUEUED_PACKETS {
-            return Poll::Pending;
-        }
-        Poll::Ready(Ok(()))
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Pin::new(&mut *self.get_mut().connection).poll_ready(cx)
     }
 
     fn start_send(self: Pin<&mut Self>, item: Vec<u8>) -> Result<(), Self::Error> {
-        self.get_mut().send_buffer.push_back(item);
-        Ok(())
+        Pin::new(&mut *self.get_mut().connection).start_send(item)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let this = self.get_mut();
-        use futures::io::AsyncWrite;
-        while let Some(item) = this.send_buffer.front() {
-            let res = Pin::new(&mut this.socket).poll_write(cx, item).map_err(zx::Status::from);
-            match res {
-                Poll::Ready(Ok(size)) => {
-                    if size == item.len() {
-                        let _ = this.send_buffer.pop_front();
-                    } else {
-                        error!(
-                            "Partial write in Channel::Sink::poll_flush: wrote {} bytes of {} byte packet.",
-                            size,
-                            item.len()
-                        );
-                        let item = this.send_buffer.front_mut().unwrap();
-                        *item = item.split_off(size);
-                    }
-                }
-                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                Poll::Pending => return Poll::Pending,
-            }
-        }
-        Pin::new(&mut this.socket).poll_flush(cx).map_err(zx::Status::from)
+        Pin::new(&mut *self.get_mut().connection).poll_flush(cx)
     }
 
-    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        ready!(Sink::poll_flush(self.as_mut(), cx))?;
-        let this = self.get_mut();
-        use futures::io::AsyncWrite as _;
-        Pin::new(&mut this.socket).poll_close(cx).map_err(zx::Status::from)
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Pin::new(&mut *self.get_mut().connection).poll_close(cx)
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use fidl::endpoints::create_request_stream;
-    use futures::{SinkExt, StreamExt};
-    use std::pin::pin;
+impl TryFrom<Channel> for bredr::Channel {
+    type Error = Error;
 
-    #[test]
-    fn test_channel_create_and_write() {
-        let mut exec = fasync::TestExecutor::new();
-        let (mut recv, mut send) = Channel::create();
+    fn try_from(channel: Channel) -> Result<Self, Self::Error> {
+        let mut fidl_channel = channel
+            .connection
+            .into_fidl_channel()
+            .map_err(|e| Error::profile(format!("Failed to convert to FIDL channel: {e:?}")))?;
 
-        let heart: &[u8] = &[0xF0, 0x9F, 0x92, 0x96];
-        let mut send_fut = send.send(heart.to_vec());
-        assert!(exec.run_until_stalled(&mut send_fut).is_ready());
+        fidl_channel.channel_mode = Some(channel.mode.into());
+        fidl_channel.max_tx_sdu_size = Some(channel.max_tx_size as u16);
 
-        let mut recv_fut = recv.next();
-        match exec.run_until_stalled(&mut recv_fut) {
-            Poll::Ready(Some(Ok(bytes))) => {
-                assert_eq!(heart, &bytes);
+        let flush_timeout = channel.flush_timeout.lock().clone();
+        fidl_channel.flush_timeout = flush_timeout.map(zx::MonotonicDuration::into_nanos);
+
+        fidl_channel.ext_direction = channel
+            .audio_direction_ext
+            .map(|proxy| {
+                let chan = proxy.into_channel()?;
+                Ok(ClientEnd::new(chan.into()))
+            })
+            .transpose()
+            .map_err(|_: bredr::AudioDirectionExtProxy| {
+                Error::profile("AudioDirection proxy in use")
+            })?;
+
+        fidl_channel.ext_l2cap = channel
+            .l2cap_parameters_ext
+            .map(|proxy| {
+                let chan = proxy.into_channel()?;
+                Ok(ClientEnd::new(chan.into()))
+            })
+            .transpose()
+            .map_err(|_: bredr::L2capParametersExtProxy| {
+                Error::profile("l2cap parameters proxy in use")
+            })?;
+
+        fidl_channel.ext_audio_offload = channel
+            .audio_offload_ext
+            .map(|proxy| {
+                let chan = proxy.into_channel()?;
+                Ok(ClientEnd::new(chan.into()))
+            })
+            .transpose()
+            .map_err(|_: bredr::AudioOffloadExtProxy| {
+                Error::profile("audio offload proxy in use")
+            })?;
+
+        Ok(fidl_channel)
+    }
+}
+
+impl TryFrom<fidl_fuchsia_bluetooth_bredr::Channel> for Channel {
+    type Error = zx::Status;
+
+    fn try_from(fidl: bredr::Channel) -> Result<Self, Self::Error> {
+        let mode = match fidl.channel_mode.unwrap_or(fidl_bt::ChannelMode::Basic).try_into() {
+            Err(e) => {
+                warn!("Unsupported channel mode type: {e:?}");
+                return Err(zx::Status::INTERNAL);
             }
-            x => panic!("Expected Some(Ok(bytes)) from the stream, got {x:?}"),
-        };
-    }
-
-    #[test]
-    fn test_channel_from_fidl() {
-        let _exec = fasync::TestExecutor::new();
-        let empty = bredr::Channel::default();
-        assert!(Channel::try_from(empty).is_err());
-
-        let (remote, _local) = zx::Socket::create_datagram();
-
-        let okay = bredr::Channel {
-            socket: Some(remote),
-            channel_mode: Some(fidl_bt::ChannelMode::Basic),
-            max_tx_sdu_size: Some(1004),
-            ..Default::default()
+            Ok(c) => c,
         };
 
-        let chan = Channel::try_from(okay).expect("okay channel to be converted");
+        let socket = fidl.socket.ok_or(zx::Status::INVALID_ARGS)?;
+        let connection = Box::new(SocketConnection::new(socket));
 
-        assert_eq!(1004, chan.max_tx_size());
-        assert_eq!(&ChannelMode::Basic, chan.channel_mode());
-    }
-
-    #[test]
-    fn test_channel_closed() {
-        let mut exec = fasync::TestExecutor::new();
-
-        let (recv, send) = Channel::create();
-
-        let closed_fut = recv.closed();
-        let mut closed_fut = pin!(closed_fut);
-
-        assert!(exec.run_until_stalled(&mut closed_fut).is_pending());
-        assert!(!recv.is_closed());
-
-        drop(send);
-
-        assert!(exec.run_until_stalled(&mut closed_fut).is_ready());
-        assert!(recv.is_closed());
-    }
-
-    #[test]
-    fn test_direction_ext() {
-        let mut exec = fasync::TestExecutor::new();
-
-        let (remote, _local) = zx::Socket::create_datagram();
-        let no_ext = bredr::Channel {
-            socket: Some(remote),
-            channel_mode: Some(fidl_bt::ChannelMode::Basic),
-            max_tx_sdu_size: Some(1004),
-            ..Default::default()
-        };
-        let channel = Channel::try_from(no_ext).unwrap();
-
-        assert!(
-            exec.run_singlethreaded(channel.set_audio_priority(A2dpDirection::Normal)).is_err()
-        );
-        assert!(exec.run_singlethreaded(channel.set_audio_priority(A2dpDirection::Sink)).is_err());
-
-        let (remote, _local) = zx::Socket::create_datagram();
-        let (client_end, mut direction_request_stream) =
-            create_request_stream::<bredr::AudioDirectionExtMarker>();
-        let ext = bredr::Channel {
-            socket: Some(remote),
-            channel_mode: Some(fidl_bt::ChannelMode::Basic),
-            max_tx_sdu_size: Some(1004),
-            ext_direction: Some(client_end),
-            ..Default::default()
-        };
-
-        let channel = Channel::try_from(ext).unwrap();
-
-        let audio_direction_fut = channel.set_audio_priority(A2dpDirection::Normal);
-        let mut audio_direction_fut = pin!(audio_direction_fut);
-
-        assert!(exec.run_until_stalled(&mut audio_direction_fut).is_pending());
-
-        match exec.run_until_stalled(&mut direction_request_stream.next()) {
-            Poll::Ready(Some(Ok(bredr::AudioDirectionExtRequest::SetPriority {
-                priority,
-                responder,
-            }))) => {
-                assert_eq!(bredr::A2dpDirectionPriority::Normal, priority);
-                responder.send(Ok(())).expect("response to send cleanly");
-            }
-            x => panic!("Expected a item to be ready on the request stream, got {:?}", x),
-        };
-
-        match exec.run_until_stalled(&mut audio_direction_fut) {
-            Poll::Ready(Ok(())) => {}
-            _x => panic!("Expected ok result from audio direction response"),
-        };
-
-        let audio_direction_fut = channel.set_audio_priority(A2dpDirection::Sink);
-        let mut audio_direction_fut = pin!(audio_direction_fut);
-
-        assert!(exec.run_until_stalled(&mut audio_direction_fut).is_pending());
-
-        match exec.run_until_stalled(&mut direction_request_stream.next()) {
-            Poll::Ready(Some(Ok(bredr::AudioDirectionExtRequest::SetPriority {
-                priority,
-                responder,
-            }))) => {
-                assert_eq!(bredr::A2dpDirectionPriority::Sink, priority);
-                responder
-                    .send(Err(fidl_fuchsia_bluetooth::ErrorCode::Failed))
-                    .expect("response to send cleanly");
-            }
-            x => panic!("Expected a item to be ready on the request stream, got {:?}", x),
-        };
-
-        match exec.run_until_stalled(&mut audio_direction_fut) {
-            Poll::Ready(Err(_)) => {}
-            _x => panic!("Expected error result from audio direction response"),
-        };
-    }
-
-    #[test]
-    fn test_flush_timeout() {
-        let mut exec = fasync::TestExecutor::new();
-
-        let (remote, _local) = zx::Socket::create_datagram();
-        let no_ext = bredr::Channel {
-            socket: Some(remote),
-            channel_mode: Some(fidl_bt::ChannelMode::Basic),
-            max_tx_sdu_size: Some(1004),
-            flush_timeout: Some(50_000_000), // 50 milliseconds
-            ..Default::default()
-        };
-        let channel = Channel::try_from(no_ext).unwrap();
-
-        assert_eq!(Some(zx::MonotonicDuration::from_millis(50)), channel.flush_timeout());
-
-        // Within 2 milliseconds, doesn't change.
-        let res = exec.run_singlethreaded(
-            channel.set_flush_timeout(Some(zx::MonotonicDuration::from_millis(49))),
-        );
-        assert_eq!(Some(zx::MonotonicDuration::from_millis(50)), res.expect("shouldn't error"));
-        let res = exec.run_singlethreaded(
-            channel.set_flush_timeout(Some(zx::MonotonicDuration::from_millis(51))),
-        );
-        assert_eq!(Some(zx::MonotonicDuration::from_millis(50)), res.expect("shouldn't error"));
-
-        assert!(
-            exec.run_singlethreaded(
-                channel.set_flush_timeout(Some(zx::MonotonicDuration::from_millis(200)))
-            )
-            .is_err()
-        );
-        assert!(exec.run_singlethreaded(channel.set_flush_timeout(None)).is_err());
-
-        let (remote, _local) = zx::Socket::create_datagram();
-        let (client_end, mut l2cap_request_stream) =
-            create_request_stream::<bredr::L2capParametersExtMarker>();
-        let ext = bredr::Channel {
-            socket: Some(remote),
-            channel_mode: Some(fidl_bt::ChannelMode::Basic),
-            max_tx_sdu_size: Some(1004),
-            flush_timeout: None,
-            ext_l2cap: Some(client_end),
-            ..Default::default()
-        };
-
-        let channel = Channel::try_from(ext).unwrap();
-
-        {
-            let flush_timeout_fut = channel.set_flush_timeout(None);
-            let mut flush_timeout_fut = pin!(flush_timeout_fut);
-
-            // Requesting no change returns right away with no change.
-            match exec.run_until_stalled(&mut flush_timeout_fut) {
-                Poll::Ready(Ok(None)) => {}
-                x => panic!("Expected no flush timeout to not stall, got {:?}", x),
-            }
-        }
-
-        let req_duration = zx::MonotonicDuration::from_millis(42);
-
-        {
-            let flush_timeout_fut = channel.set_flush_timeout(Some(req_duration));
-            let mut flush_timeout_fut = pin!(flush_timeout_fut);
-
-            assert!(exec.run_until_stalled(&mut flush_timeout_fut).is_pending());
-
-            match exec.run_until_stalled(&mut l2cap_request_stream.next()) {
-                Poll::Ready(Some(Ok(bredr::L2capParametersExtRequest::RequestParameters {
-                    request,
-                    responder,
-                }))) => {
-                    assert_eq!(Some(req_duration.into_nanos()), request.flush_timeout);
-                    // Send a different response
-                    let params = fidl_bt::ChannelParameters {
-                        flush_timeout: Some(50_000_000), // 50ms
-                        ..Default::default()
-                    };
-                    responder.send(&params).expect("response to send cleanly");
-                }
-                x => panic!("Expected a item to be ready on the request stream, got {:?}", x),
-            };
-
-            match exec.run_until_stalled(&mut flush_timeout_fut) {
-                Poll::Ready(Ok(Some(duration))) => {
-                    assert_eq!(zx::MonotonicDuration::from_millis(50), duration)
-                }
-                x => panic!("Expected ready result from params response, got {:?}", x),
-            };
-        }
-
-        // Channel should have recorded the new flush timeout.
-        assert_eq!(Some(zx::MonotonicDuration::from_millis(50)), channel.flush_timeout());
-    }
-
-    #[test]
-    fn test_audio_offload() {
-        let _exec = fasync::TestExecutor::new();
-
-        let (remote, _local) = zx::Socket::create_datagram();
-        let no_ext = bredr::Channel {
-            socket: Some(remote),
-            channel_mode: Some(fidl_bt::ChannelMode::Basic),
-            max_tx_sdu_size: Some(1004),
-            ..Default::default()
-        };
-        let channel = Channel::try_from(no_ext).unwrap();
-
-        assert!(channel.audio_offload().is_none());
-
-        let (remote, _local) = zx::Socket::create_datagram();
-        let (client_end, mut _audio_offload_ext_req_stream) =
-            create_request_stream::<bredr::AudioOffloadExtMarker>();
-        let ext = bredr::Channel {
-            socket: Some(remote),
-            channel_mode: Some(fidl_bt::ChannelMode::Basic),
-            max_tx_sdu_size: Some(1004),
-            ext_audio_offload: Some(client_end),
-            ..Default::default()
-        };
-
-        let channel = Channel::try_from(ext).unwrap();
-
-        let offload_ext = channel.audio_offload();
-        assert!(offload_ext.is_some());
-        // We can get the audio offload multiple times without dropping
-        assert!(channel.audio_offload().is_some());
-        // And with dropping
-        drop(offload_ext);
-        assert!(channel.audio_offload().is_some());
-    }
-
-    #[test]
-    fn channel_sink() {
-        let mut exec = fasync::TestExecutor::new();
-        let (mut recv, mut send) = Channel::create();
-
-        let data = vec![0x01, 0x02, 0x03, 0x04];
-        let mut send_fut = send.send(data.clone());
-
-        // The send should complete immediately as the socket has space.
-        match exec.run_until_stalled(&mut send_fut) {
-            Poll::Ready(Ok(())) => {}
-            x => panic!("Expected Ready(Ok(())), got {:?}", x),
-        }
-
-        let mut recv_fut = recv.next();
-        match exec.run_until_stalled(&mut recv_fut) {
-            Poll::Ready(Some(Ok(bytes))) => assert_eq!(data, bytes),
-            x => panic!("Expected successful read, got {x:?}"),
-        }
-    }
-
-    #[test]
-    fn channel_stream() {
-        let mut exec = fasync::TestExecutor::new();
-        let (mut recv, send) = Channel::create();
-
-        let mut stream_fut = recv.next();
-
-        assert!(exec.run_until_stalled(&mut stream_fut).is_pending());
-
-        let heart: &[u8] = &[0xF0, 0x9F, 0x92, 0x96];
-        assert_eq!(heart.len(), send.write(heart).expect("should write successfully"));
-
-        match exec.run_until_stalled(&mut stream_fut) {
-            Poll::Ready(Some(Ok(bytes))) => {
-                assert_eq!(heart.to_vec(), bytes);
-            }
-            x => panic!("Expected Some(Ok(bytes)) from the stream, got {x:?}"),
-        };
-
-        // After the sender is dropped, the stream should terminate.
-        drop(send);
-
-        let mut stream_fut = recv.next();
-        match exec.run_until_stalled(&mut stream_fut) {
-            Poll::Ready(None) => {}
-            x => panic!("Expected None from the stream after close, got {x:?}"),
-        }
-
-        // It should continue to report terminated.
-        assert!(recv.is_terminated());
+        Ok(Self {
+            connection,
+            mode,
+            max_tx_size: fidl.max_tx_sdu_size.ok_or(zx::Status::INVALID_ARGS)? as usize,
+            flush_timeout: Arc::new(Mutex::new(
+                fidl.flush_timeout.map(zx::MonotonicDuration::from_nanos),
+            )),
+            audio_direction_ext: fidl.ext_direction.map(|e| e.into_proxy()),
+            l2cap_parameters_ext: fidl.ext_l2cap.map(|e| e.into_proxy()),
+            audio_offload_ext: fidl.ext_audio_offload.map(|c| c.into_proxy()),
+            terminated: false,
+        })
     }
 }
