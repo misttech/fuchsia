@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_VM_ADDRESS_REGION_H_
 
 #include <assert.h>
+#include <lib/btree.h>
 #include <lib/crypto/prng.h>
 #include <lib/fit/function.h>
 #include <lib/zircon-internal/thread_annotations.h>
@@ -22,7 +23,7 @@
 #include <ffl/saturating_arithmetic.h>
 #include <ktl/limits.h>
 #include <ktl/optional.h>
-#include <vm/vm_address_region_subtree_state.h>
+#include <vm/vm_address_region_observer.h>
 #include <vm/vm_aspace.h>
 #include <vm/vm_cow_pages.h>
 #include <vm/vm_object.h>
@@ -97,9 +98,7 @@ class MultiPageRequest;
 // DEAD, then the VmAddressRegion is invalid and has no meaning.
 //
 // All VmAddressRegion and VmMapping state is protected by the aspace lock.
-class VmAddressRegionOrMapping
-    : public fbl::WAVLTreeContainable<fbl::RefPtr<VmAddressRegionOrMapping>>,
-      public fbl::RefCounted<VmAddressRegionOrMapping> {
+class VmAddressRegionOrMapping : public fbl::RefCounted<VmAddressRegionOrMapping> {
  public:
   // If a VMO-mapping, unmap all pages and remove dependency on vm object it has a ref to.
   // Otherwise recursively destroy child VMARs and transition to the DEAD state.
@@ -126,10 +125,6 @@ class VmAddressRegionOrMapping
       fbl::RefPtr<VmAddressRegionOrMapping>* region_or_map);
   static fbl::RefPtr<VmMapping> downcast_as_vm_mapping(
       fbl::RefPtr<VmAddressRegionOrMapping>* region_or_map);
-
-  // WAVL tree key function
-  // For use in WAVL tree code only.
-  vaddr_t GetKey() const { return base_; }
 
   // Dump debug info
   virtual void DumpLocked(uint depth, bool verbose) const TA_REQ(lock()) = 0;
@@ -158,12 +153,6 @@ class VmAddressRegionOrMapping
     HIGH,
   };
 
-  // Subtree state for augmented binary search tree operations.
-  VmAddressRegionSubtreeState& subtree_state_locked() TA_REQ(lock()) { return subtree_state_; }
-  const VmAddressRegionSubtreeState& subtree_state_locked() const TA_REQ(lock()) {
-    return subtree_state_;
-  }
-
   // Returns true if the instance is alive and reporting information that
   // reflects the address space layout. |aspace()->lock()| must be held.
   bool IsAliveLocked() const TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
@@ -173,7 +162,6 @@ class VmAddressRegionOrMapping
 
  private:
   fbl::Canary<fbl::magic("VMRM")> canary_;
-  VmAddressRegionSubtreeState subtree_state_ TA_GUARDED(lock());
   const bool is_mapping_;
 
  protected:
@@ -185,10 +173,6 @@ class VmAddressRegionOrMapping
   // destructor, should only be invoked from RefPtr
   virtual ~VmAddressRegionOrMapping();
   friend fbl::RefPtr<VmAddressRegionOrMapping>;
-
-  bool in_subregion_tree() const {
-    return fbl::WAVLTreeContainable<fbl::RefPtr<VmAddressRegionOrMapping>>::InContainer();
-  }
 
   enum class LifeCycleState : uint8_t {
     // Initial state: if NOT_READY, then do not invoke Destroy() in the
@@ -276,40 +260,52 @@ class VmAddressRegionOrMapping
 
 // A list of regions ordered by virtual address. Templated to allow for test code to avoid needing
 // to instantiate 'real' VmAddressRegionOrMapping instances.
+// TODO(https://fxbug.dev/503042881): The RegionList API is quite object reference focused, instead
+// of iterator focused, and this leads to a lot of theoretically redundant 'find' operations on the
+// btree. These APIs, and the VMAR logic using them, should be re-designed to be more iterator
+// based.
 template <typename T = VmAddressRegionOrMapping>
 class RegionList final {
  public:
-  using KeyType = vaddr_t;
   using PtrType = fbl::RefPtr<T>;
-  using KeyTraits =
-      fbl::DefaultKeyedObjectTraits<vaddr_t,
-                                    typename fbl::internal::ContainerPtrTraits<PtrType>::ValueType>;
-  using TagType = fbl::DefaultObjectTag;
-  using NodeTraits = fbl::DefaultWAVLTreeTraits<PtrType, TagType>;
-  using Observer = VmAddressRegionSubtreeState::Observer<T>;
-  using ChildList =
-      fbl::WAVLTree<KeyType, PtrType, KeyTraits, TagType, fbl::SizeOrder::N, NodeTraits, Observer>;
+  using ChildList = btree::BTree<vaddr_t, PtrType, VmAddressRegionObserver>;
+
+  RegionList() = default;
 
   // Remove *region* from the list, returns the removed region.
-  fbl::RefPtr<T> RemoveRegion(T* region) { return regions_.erase(*region); }
+  void RemoveRegion(T* region) {
+    auto it = regions_.find(region->base());
+    ASSERT(it.IsValid());
+    regions_.erase(it);
+  }
 
   // Request the region to the left or right of the given region.
-  typename ChildList::iterator LeftOf(T* region) { return --regions_.make_iterator(*region); }
-  typename ChildList::iterator RightOf(T* region) { return ++regions_.make_iterator(*region); }
-  typename ChildList::const_iterator Root() const { return regions_.root(); }
+  ChildList::iterator LeftOf(T* region) {
+    auto it = regions_.find(region->base());
+    DEBUG_ASSERT(it.IsValid());
+    it--;
+    return it;
+  }
+  ChildList::iterator RightOf(T* region) {
+    auto it = regions_.find(region->base());
+    DEBUG_ASSERT(it.IsValid());
+    it++;
+    return it;
+  }
 
   // Insert *region* to the region list. On failure the region list is unmodified.
   zx_status_t InsertRegion(fbl::RefPtr<T> region) {
-    regions_.insert(region);
-    return ZX_OK;
+    const vaddr_t base = region->base();
+    return regions_.insert(base, ktl::move(region)).IsValid() ? ZX_OK : ZX_ERR_NO_MEMORY;
   }
 
   // Replaces the target region with a new region at the same address. Unlike insertion this cannot
   // fail.
-  void ReplaceRegion(T* target, fbl::RefPtr<T> region) {
-    ASSERT(target->base() == region->base());
-    regions_.erase(*target);
-    regions_.insert(region);
+  void ReplaceRegion(T* prev, fbl::RefPtr<T> region) {
+    ASSERT(prev->base() == region->base());
+    auto it = regions_.find(prev->base());
+    ASSERT(it.IsValid());
+    regions_.update(it, ktl::move(region));
   }
 
   // Use a static template to allow for returning a const and non-const pointer depending on the
@@ -322,17 +318,18 @@ class RegionList final {
     if (!itr.IsValid()) {
       return nullptr;
     }
+    auto region = (*itr).second;
     // Subregion size should never be zero unless during unmapping which should never overlap with
     // this operation.
-    DEBUG_ASSERT(itr->size() > 0);
+    DEBUG_ASSERT(region->size() > 0);
     vaddr_t region_end;
-    bool overflowed = add_overflow(itr->base(), itr->size() - 1, &region_end);
+    bool overflowed = add_overflow(region->base(), region->size() - 1, &region_end);
     ASSERT(!overflowed);
-    if (itr->base() > addr || addr > region_end) {
+    if (region->base() > addr || addr > region_end) {
       return nullptr;
     }
 
-    return &*itr;
+    return region;
   }
 
   // Find the region that covers addr, returns nullptr if not found.
@@ -350,7 +347,8 @@ class RegionList final {
     if (!itr.IsValid()) {
       itr = self->regions_.begin();
     } else {
-      if (base >= itr->base() && base - itr->base() >= itr->size()) {
+      const T* region = (*itr).second;
+      if (base >= region->base() && base - region->base() >= region->size()) {
         // If *base* isn't in this region, ignore it.
         ++itr;
       }
@@ -360,15 +358,13 @@ class RegionList final {
 
   // Find the region that contains |base|, or if that doesn't exist, the first region that contains
   // an address greater than |base|.
-  typename ChildList::iterator IncludeOrHigher(vaddr_t base) { return IncludeOrHigher(this, base); }
-  typename ChildList::const_iterator IncludeOrHigher(vaddr_t base) const {
+  ChildList::iterator IncludeOrHigher(vaddr_t base) { return IncludeOrHigher(this, base); }
+  ChildList::const_iterator IncludeOrHigher(vaddr_t base) const {
     return IncludeOrHigher(this, base);
   }
 
-  typename ChildList::iterator UpperBound(vaddr_t base) { return regions_.upper_bound(base); }
-  typename ChildList::const_iterator UpperBound(vaddr_t base) const {
-    return regions_.upper_bound(base);
-  }
+  ChildList::iterator UpperBound(vaddr_t base) { return regions_.upper_bound(base); }
+  ChildList::const_iterator UpperBound(vaddr_t base) const { return regions_.upper_bound(base); }
 
   // Check whether it would be valid to create a child in the range [base, base+size).
   bool IsRangeAvailable(vaddr_t base, size_t size) const {
@@ -382,8 +378,9 @@ class RegionList final {
     auto next = prev--;
 
     if (prev.IsValid()) {
+      const T* p = (*prev).second;
       vaddr_t prev_last_byte;
-      if (add_overflow(prev->base(), prev->size() - 1, &prev_last_byte)) {
+      if (add_overflow(p->base(), p->size() - 1, &prev_last_byte)) {
         return false;
       }
       if (prev_last_byte >= base) {
@@ -391,12 +388,13 @@ class RegionList final {
       }
     }
 
-    if (next.IsValid() && next != regions_.end()) {
+    if (next.IsValid()) {
+      const T* n = (*next).second;
       vaddr_t last_byte;
       if (add_overflow(base, size - 1, &last_byte)) {
         return false;
       }
-      if (next->base() <= last_byte) {
+      if (n->base() <= last_byte) {
         return false;
       }
     }
@@ -450,113 +448,120 @@ class RegionList final {
     // Track the number of candidate spots encountered.
     size_t candidate_spot_count = 0;
 
-    // See if there is a suitable gap between the start of the parent region and the first
-    // subregion, or within the range of the parent region if there are no subregions.
-    {
-      const size_t gap_size =
-          regions_.is_empty() ? parent_size : Observer::MinFirstByte(regions_.root()) - parent_base;
-      const AlignedRange aligned_gap = align_range(parent_base, gap_size);
-      if (aligned_gap.base >= upper_limit) {
-        return fit::error(FindSpotAtIndexFailed{candidate_spot_count});
-      }
-      const size_t spot_count = spots_in_range(aligned_gap.base, aligned_gap.size);
-      candidate_spot_count += spot_count;
-      if (target_index < spot_count) {
-        return fit::ok(aligned_gap.base + (target_index << align_pow2));
-      }
-      target_index -= spot_count;
-    }
+    // As we iterate through regions we remember the end of the last allocated region as the start
+    // of a potential gap.
+    vaddr_t next_gap_start = parent_base;
+    // Because an allocation can end at the very top of the 64-bit address space the calculation of
+    // the logical start of the next gap (end + 1) could overflow. To assist with debug validation
+    // we track this overflow explicitly.
+    bool next_gap_overflow = false;
+    // When we do find something record it here. Use UINT64_MAX, which can never be a valid base
+    // address, to track the difference between the walk terminating early with success, or
+    // completing with success (and hence not yet having a spot).
+    vaddr_t spot = UINT64_MAX;
 
-    // Traverse the tree to the leftmost gap that satisfies the required entropy, alignment, size,
-    // and upper limit, skipping over gaps that are too small to consider. Keep track of the highest
-    // address already visited to prune paths during traversal.
-    vaddr_t already_visited = 0;
-    auto node = regions_.root();
-    while (node) {
-      // Consider this node if there is a suitable gap in the left or right subtrees, including the
-      // gaps between this node and its subtrees.
-      if (Observer::MaxGap(node) >= size) {
-        // First consider the left subtree, considering earlier addresses first to maximize page
-        // table compactness. When entropy is zero (i.e. target_index is 0) this results in a first
-        // fit search.
-        if (auto left = node.left(); left) {
-          //  Descend to the left subtree if it has a sufficient gap and its range has not been
-          //  visited.
-          if (Observer::MaxGap(left) >= size && Observer::MaxLastByte(left) > already_visited) {
-            node = left;
-            continue;
-          }
-
-          // The left subtree doesn't contain a sufficent gap. See if the gap between the current
-          // node and the end of the left subtree is sufficient.
-          const vaddr_t gap_base = Observer::MaxLastByte(left) + 1;
-          const size_t gap_size =
-              Observer::Gap(Observer::MaxLastByte(left), Observer::FirstByte(node));
-          const AlignedRange aligned_gap = align_range(gap_base, gap_size);
-          if (aligned_gap.base >= upper_limit) {
-            return fit::error(FindSpotAtIndexFailed{candidate_spot_count});
-          }
-          const size_t spot_count = spots_in_range(aligned_gap.base, aligned_gap.size);
-          candidate_spot_count += spot_count;
-          if (target_index < spot_count) {
-            return fit::ok(aligned_gap.base + (target_index << align_pow2));
-          }
-          target_index -= spot_count;
-        }
-
-        // If a sufficient gap is not found in the left subtree, consider the right subtree.
-        if (auto right = node.right(); right) {
-          // See if the gap between the current node and the start of the right subtree is
-          // sufficient.
-          const vaddr_t gap_base = Observer::LastByte(node) + 1;
-          const size_t gap_size =
-              Observer::Gap(Observer::LastByte(node), Observer::MinFirstByte(right));
-          const AlignedRange aligned_gap = align_range(gap_base, gap_size);
-          if (aligned_gap.base >= upper_limit) {
-            return fit::error(FindSpotAtIndexFailed{candidate_spot_count});
-          }
-          const size_t spot_count = spots_in_range(aligned_gap.base, aligned_gap.size);
-          candidate_spot_count += spot_count;
-          if (target_index < spot_count) {
-            return fit::ok(aligned_gap.base + (target_index << align_pow2));
-          }
-          target_index -= spot_count;
-
-          // The gap with the current node is not sufficient. Descend to the right if it has a
-          // sufficient gap and its range has not been visited.
-          if (Observer::MaxGap(right) >= size && Observer::MaxLastByte(right) > already_visited) {
-            node = right;
-            continue;
-          }
-        }
-      }
-
-      // This subtree has been fully visited. Set the partition point to the end of this subtree and
-      // ascend to the parent node to continue traversal. If this was the left child of the parent,
-      // only the right child will be considered. If this was the right child, visiting the parent
-      // is done and will proceed to its parent and so forth. If this node was the root, the
-      // traversal is complete and a spot at the target index was not found.
-      already_visited = Observer::MaxLastByte(node);
-      node = node.parent();
-    }
-
-    // See if there is a suitable gap between the end of the last subregion and the end of the
-    // parent.
-    if (auto root = regions_.root()) {
-      const vaddr_t gap_base = ffl::SaturateAddAs<vaddr_t>(Observer::MaxLastByte(root), 1);
-      const size_t gap_size = parent_size - (gap_base - parent_base);
+    // Helper to process a gap and count our spots. Returns true if a spot was found.
+    auto record_gap = [&](vaddr_t gap_base, size_t gap_size) -> bool {
       const AlignedRange aligned_gap = align_range(gap_base, gap_size);
       if (aligned_gap.base >= upper_limit) {
-        return fit::error(FindSpotAtIndexFailed{candidate_spot_count});
+        return false;
       }
       const size_t spot_count = spots_in_range(aligned_gap.base, aligned_gap.size);
       candidate_spot_count += spot_count;
       if (target_index < spot_count) {
-        return fit::ok(aligned_gap.base + (target_index << align_pow2));
+        spot = aligned_gap.base + (target_index << align_pow2);
+        return true;
       }
       target_index -= spot_count;
-    }
+      return false;
+    };
 
+    // Lambda passed to the walker for handling an intermediate btree node.
+    auto examine_subtree = [&](VmAddressRegionObserver::State state) -> zx_status_t {
+      if (next_gap_start < state.min_addr()) {
+        if (record_gap(next_gap_start, state.min_addr() - next_gap_start)) {
+          return ZX_ERR_STOP;
+        }
+      }
+      if (state.min_addr() >= upper_limit) {
+        return ZX_ERR_OUT_OF_RANGE;
+      }
+      if (auto max_gap = state.max_gap(); max_gap && *max_gap < size) {
+        // max_addr is inclusive, but already_visited is exclusive, so we add 1. Should this
+        // overflow then that means we have reached the end of the possible address space and will
+        // be handled when we check for trailing gaps at the end.
+        next_gap_overflow = add_overflow(state.max_addr, 1, &next_gap_start);
+        // This subtree has no gaps that would fit, so skip the entire subtree with ZX_ERR_NEXT.
+        return ZX_ERR_NEXT;
+      }
+      // Set already_visited to the start of the subtree as we are about to descend into it and we
+      // previously processed any gap up to min_addr.
+      next_gap_start = state.min_addr();
+      return ZX_OK;
+    };
+
+    // Lambda passed to the walker for handling leaf btree nodes.
+    auto examine_leaf = [&](VmAddressRegionObserver::State state, auto first,
+                            auto last) -> zx_status_t {
+      if (next_gap_start < state.min_addr()) {
+        if (record_gap(next_gap_start, state.min_addr() - next_gap_start)) {
+          return ZX_ERR_STOP;
+        }
+      }
+      if (state.min_addr() >= upper_limit) {
+        return ZX_ERR_OUT_OF_RANGE;
+      }
+      // No matter what happens, we will have processed till max_addr + 1. See examine_subtree for
+      // why explanation of +1 and overflow.
+      next_gap_overflow = add_overflow(state.max_addr, 1, &next_gap_start);
+      if (auto max_gap = state.max_gap(); max_gap && *max_gap < size) {
+        // No gaps in this leaf node what would fit, can skip the iteration and go to the next node.
+        return ZX_ERR_NEXT;
+      }
+      auto prev = first;
+      // The provided iterators are inclusive, so increment last to simplify our loop.
+      last++;
+      for (first++; first != last; first++) {
+        vaddr_t gap_start = (*prev).second->base() + (*prev).second->size();
+        vaddr_t gap_end = (*first).second->base();
+        if (gap_start < gap_end) {
+          if (record_gap(gap_start, gap_end - gap_start)) {
+            // Location found, can cease walking.
+            return ZX_ERR_STOP;
+          }
+        }
+        prev = first;
+      }
+      // Continue to the next node.
+      return ZX_ERR_NEXT;
+    };
+
+    // Walk the btree examining the augmented state to optimally skip irrelevant subtrees.
+    zx_status_t status = regions_.walk(examine_subtree, examine_leaf);
+    if (status != ZX_OK && status != ZX_ERR_OUT_OF_RANGE) {
+      return fit::error(FindSpotAtIndexFailed{candidate_spot_count});
+    }
+    // Check if we already found a spot or if we need to consider any trailing gap.
+    if (spot != UINT64_MAX) {
+      return fit::success{spot};
+    }
+    if (unlikely(next_gap_overflow)) {
+      vaddr_t parent_top;
+      // The next gap should only overflow if the parent region is the end of the 64-bit address
+      // space. There should also, therefore, not actually be any gap.
+      ASSERT(add_overflow(parent_base, parent_size, &parent_top));
+      ASSERT(parent_top == next_gap_start);
+    } else {
+      // Any potential remaining gap has not wrapped, but the parent could still be at the end of
+      // address space, so operate on its max_byte and not its top to avoid overflow.
+      const vaddr_t parent_max_byte = parent_base + (parent_size - 1);
+      if (next_gap_start <= parent_max_byte) {
+        const size_t remaining_size = parent_max_byte - next_gap_start + 1;
+        if (record_gap(next_gap_start, remaining_size)) {
+          return fit::success{spot};
+        }
+      }
+    }
     return fit::error(FindSpotAtIndexFailed{candidate_spot_count});
   }
 
@@ -617,22 +622,19 @@ class RegionList final {
   // Returns whether the region list is empty.
   bool IsEmpty() const { return regions_.is_empty(); }
 
-  // Returns the iterator points to the first element of the list.
-  T& front() { return regions_.front(); }
+  // Returns the first element of the list.
+  T& front() {
+    DEBUG_ASSERT(!IsEmpty());
+    return *(*regions_.begin()).second;
+  }
 
-  typename ChildList::iterator begin() { return regions_.begin(); }
+  ChildList::iterator begin() { return regions_.begin(); }
+  ChildList::const_iterator begin() const { return regions_.begin(); }
 
-  typename ChildList::const_iterator begin() const { return regions_.begin(); }
+  ChildList::iterator end() { return regions_.end(); }
+  ChildList::const_iterator end() const { return regions_.end(); }
 
-  typename ChildList::const_iterator cbegin() const { return regions_.cbegin(); }
-
-  typename ChildList::iterator end() { return regions_.end(); }
-
-  typename ChildList::const_iterator end() const { return regions_.end(); }
-
-  typename ChildList::const_iterator cend() const { return regions_.cend(); }
-
-  size_t size_slow() const { return regions_.size_slow(); }
+  size_t size_slow() const { return regions_.calculate_utilization_slow().stored_values; }
 
  private:
   // list of memory regions, indexed by base address.

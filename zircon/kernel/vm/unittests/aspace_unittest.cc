@@ -2280,8 +2280,7 @@ static bool vm_kernel_region_test() {
 
 class TestRegionList;
 
-class TestRegion : public fbl::RefCounted<TestRegion>,
-                   public fbl::WAVLTreeContainable<fbl::RefPtr<TestRegion>> {
+class TestRegion : public fbl::RefCounted<TestRegion> {
  public:
   TestRegion(vaddr_t base, size_t size, TestRegionList const& list)
       : list_(list), base_(base), size_(size) {}
@@ -2289,7 +2288,6 @@ class TestRegion : public fbl::RefCounted<TestRegion>,
 
   vaddr_t base() const { return base_; }
   size_t size() const { return size_; }
-  vaddr_t GetKey() const { return base(); }
 
   vaddr_t base_locked() const { return base_; }
   size_t size_locked() const { return size_; }
@@ -2297,16 +2295,12 @@ class TestRegion : public fbl::RefCounted<TestRegion>,
   Lock<CriticalMutex>* lock() const;
   Lock<CriticalMutex>& lock_ref() const;
 
-  VmAddressRegionSubtreeState& subtree_state_locked() { return subtree_state_; }
-  const VmAddressRegionSubtreeState& subtree_state_locked() const { return subtree_state_; }
-
  private:
   friend class TestRegionList;
   // Simulates aspace for templated code
   TestRegionList const& list_;
   vaddr_t base_;
   size_t size_;
-  VmAddressRegionSubtreeState subtree_state_;
 };
 
 class TestRegionList : public fbl::RefCounted<TestRegionList> {
@@ -2464,13 +2458,13 @@ static bool region_list_include_or_higher_test() {
 
   auto itr = regions->IncludeOrHigher(base + 1);
   EXPECT_TRUE(itr.IsValid());
-  EXPECT_EQ(base + 0x1000, itr->base());
-  EXPECT_EQ((size_t)0x1000, itr->size());
+  EXPECT_EQ(base + 0x1000, (*itr).second->base());
+  EXPECT_EQ((size_t)0x1000, (*itr).second->size());
 
   itr = regions->IncludeOrHigher(base + 0x1001);
   EXPECT_TRUE(itr.IsValid());
-  EXPECT_EQ(base + 0x1000, itr->base());
-  EXPECT_EQ((size_t)0x1000, itr->size());
+  EXPECT_EQ(base + 0x1000, (*itr).second->base());
+  EXPECT_EQ((size_t)0x1000, (*itr).second->size());
 
   itr = regions->IncludeOrHigher(base + 0x2000);
   EXPECT_FALSE(itr.IsValid());
@@ -2489,8 +2483,8 @@ static bool region_list_upper_bound_test() {
 
   auto itr = regions->UpperBound(base + 0xFFF);
   EXPECT_TRUE(itr.IsValid());
-  EXPECT_EQ(base + 0x1000, itr->base());
-  EXPECT_EQ((size_t)0x1000, itr->size());
+  EXPECT_EQ(base + 0x1000, (*itr).second->base());
+  EXPECT_EQ((size_t)0x1000, (*itr).second->size());
 
   itr = regions->UpperBound(base + 0x1000);
   EXPECT_FALSE(itr.IsValid());

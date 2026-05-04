@@ -445,7 +445,6 @@ zx_status_t VmAddressRegion::DestroyLocked() {
     } else {
       // All children are destroyed, so now destroy the current node.
       if (cur->parent_) {
-        DEBUG_ASSERT(cur->in_subregion_tree());
         AssertHeld(cur->parent_->lock_ref());
         AssertHeld(cur->parent_->region_lock_ref());
         cur->parent_->subregions_.RemoveRegion(cur.get());
@@ -640,23 +639,12 @@ void VmAddressRegion::DumpLocked(uint depth, bool verbose) const {
   for (uint i = 0; i < depth; ++i) {
     printf("  ");
   }
-  size_t max_gap = 0;
-  vaddr_t min_first_byte = 0;
-  vaddr_t max_last_byte = 0;
-  if (auto root = subregions_.Root()) {
-    AssertHeld(root->lock_ref());
-    max_gap = root->subtree_state_locked().max_gap();
-    min_first_byte = root->subtree_state_locked().min_first_byte();
-    max_last_byte = root->subtree_state_locked().max_last_byte();
-  }
-  printf("vmar %p [%#" PRIxPTR " %#" PRIxPTR
-         "] sz %#zx ref %d state %d '%s' subregions %zu max_gap %#" PRIx64 " [%#" PRIxPTR
-         " %#" PRIxPTR "]\n",
+  printf("vmar %p [%#" PRIxPTR " %#" PRIxPTR "] sz %#zx ref %d state %d '%s' subregions %zu\n",
          this, base_, base_ + (size_ - 1), size_, ref_count_debug(), (int)state_, name_,
-         subregions_.size_slow(), max_gap, min_first_byte, max_last_byte);
+         subregions_.size_slow());
   for (const auto& child : subregions_) {
-    AssertHeld(child.lock_ref());
-    child.DumpLocked(depth + 1, verbose);
+    AssertHeld(child.second->lock_ref());
+    child.second->DumpLocked(depth + 1, verbose);
   }
 }
 
@@ -673,8 +661,8 @@ zx_status_t VmAddressRegion::Activate() {
   // sure we do not intersect with it.
   auto candidate = parent_->subregions_.IncludeOrHigher(base_);
   if (candidate != parent_->subregions_.end()) {
-    AssertHeld(candidate->lock_ref());
-    ASSERT(candidate->base() >= base_ + size_);
+    AssertHeld((*candidate).second->lock_ref());
+    ASSERT((*candidate).second->base() >= base_ + size_);
   }
 
   zx_status_t status =
@@ -897,45 +885,51 @@ zx_status_t VmAddressRegion::UnmapInternalLocked(vaddr_t base, size_t size,
     return ZX_ERR_ACCESS_DENIED;
   }
 
-  // The last byte of the current unmap range.
   vaddr_t end_addr_byte = 0;
   DEBUG_ASSERT(size > 0);
   bool overflowed = add_overflow(base, size - 1, &end_addr_byte);
   ASSERT(!overflowed);
-  auto end = subregions_.UpperBound(end_addr_byte);
-  auto begin = subregions_.IncludeOrHigher(base);
 
   // Check if we're partially spanning a subregion, or aren't allowed to
   // destroy regions and are spanning a region, and bail if we are.
-  for (auto itr = begin; itr != end; ++itr) {
+  for (auto itr = subregions_.IncludeOrHigher(base);
+       itr.IsValid() && (*itr).second->base() <= end_addr_byte; ++itr) {
     vaddr_t itr_end_byte = 0;
-    AssertHeld((itr->lock_ref()));
-    DEBUG_ASSERT(itr->size() > 0);
-    overflowed = add_overflow(itr->base(), itr->size() - 1, &itr_end_byte);
+    AssertHeld((*itr).second->lock_ref());
+    DEBUG_ASSERT((*itr).second->size() > 0);
+    overflowed = add_overflow((*itr).second->base(), (*itr).second->size() - 1, &itr_end_byte);
     ASSERT(!overflowed);
-    if (!itr->is_mapping() &&
-        (!can_destroy_regions || itr->base() < base || itr_end_byte > end_addr_byte)) {
+    if (!(*itr).second->is_mapping() &&
+        (!can_destroy_regions || (*itr).second->base() < base || itr_end_byte > end_addr_byte)) {
       return ZX_ERR_INVALID_ARGS;
     }
   }
 
-  for (auto itr = begin; itr != end;) {
-    // Create a copy of the iterator so we can increment it as we may destroy the currently pointed
-    // at object.
-    auto curr = itr++;
-    AssertHeld(curr->lock_ref());
-    AssertHeld(curr->region_lock_ref());
+  while (true) {
+    // TODO(https://fxbug.dev/503042881): Every deletion invalidates our iterator, hence we have to
+    // lookup a new one every time.
+    auto itr = subregions_.IncludeOrHigher(base);
+    if (!itr.IsValid() || (*itr).second->base() > end_addr_byte) {
+      break;
+    }
+
+    auto curr_region = (*itr).second;
+    AssertHeld(curr_region->lock_ref());
+    AssertHeld(curr_region->region_lock_ref());
 
     vaddr_t unmap_base = 0;
     size_t unmap_size = 0;
-    [[maybe_unused]] bool intersects =
-        GetIntersect(base, size, curr->base(), curr->size(), &unmap_base, &unmap_size);
+    [[maybe_unused]] bool intersects = GetIntersect(base, size, curr_region->base(),
+                                                    curr_region->size(), &unmap_base, &unmap_size);
     DEBUG_ASSERT(intersects);
-    if (unmap_base == curr->base() && unmap_size == curr->size()) {
-      [[maybe_unused]] zx_status_t status = curr->DestroyLocked();
-      DEBUG_ASSERT(status == ZX_OK);
+    if (unmap_base == curr_region->base() && unmap_size == curr_region->size()) {
+      zx_status_t status = curr_region->DestroyLocked();
+      if (status != ZX_OK) {
+        DEBUG_ASSERT(status == ZX_ERR_NO_MEMORY);
+        return status;
+      }
     } else {
-      VmMapping* mapping = curr->as_vm_mapping_ptr();
+      VmMapping* mapping = curr_region->as_vm_mapping_ptr();
       // Already validated in the loop above that the only kind of region we can partially span is
       // a mapping.
       ASSERT(mapping);
@@ -1126,11 +1120,11 @@ zx_status_t VmAddressRegion::AllocSpotLockedRegion(size_t size, uint8_t align_po
   ASSERT(before_iter == subregions_locked_region().end() || before_iter.IsValid());
   const VmAddressRegionOrMapping* before = nullptr;
   if (before_iter.IsValid()) {
-    before = &(*before_iter);
+    before = (*before_iter).second;
   }
   const VmAddressRegionOrMapping* after = nullptr;
   if (after_iter.IsValid()) {
-    after = &(*after_iter);
+    after = (*after_iter).second;
   }
   if (auto va = CheckGapLockedRegion(before, after, alloc_spot, align, size, 0, arch_mmu_flags)) {
     *spot = *va;

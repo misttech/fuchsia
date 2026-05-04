@@ -50,6 +50,5 @@ VmAddressRegionOrMapping::~VmAddressRegionOrMapping() {
     Destroy();
   }
 
-  DEBUG_ASSERT(!this->in_subregion_tree());
   DEBUG_ASSERT(memory_priority_ == MemoryPriority::DEFAULT);
 }

@@ -60,8 +60,9 @@ class VmAddressRegionEnumerator {
       // resuming works we may end up with a min_addr_ that is partially in a vmar, either
       // because the vmars were modified while paused or because we need to resume at a
       // mapping part way into a vmar.
-      ASSERT(!itr_.IsValid() || itr_->is_mapping() ||
-             (itr_->base() >= min_addr && itr_->base() + itr_->size() <= max_addr));
+      ASSERT(!itr_.IsValid() || (*itr_).second->is_mapping() ||
+             ((*itr_).second->base() >= min_addr &&
+              (*itr_).second->base() + (*itr_).second->size() <= max_addr));
     }
   }
 
@@ -78,16 +79,16 @@ class VmAddressRegionEnumerator {
     ASSERT(!state_.paused_);
     ktl::optional<NextResult> ret = ktl::nullopt;
     while (!ret && itr_.IsValid()) {
-      AssertHeld(itr_->lock_ref());
-      if (itr_->base() >= max_addr_)
+      AssertHeld((*itr_).second->lock_ref());
+      if ((*itr_).second->base() >= max_addr_)
         break;
 
       auto curr = itr_++;
-      AssertHeld(curr->lock_ref());
-      DEBUG_ASSERT(curr->IsAliveLocked());
-      maybe_const<VmAddressRegion>* up = curr->parent_;
+      AssertHeld((*curr).second->lock_ref());
+      DEBUG_ASSERT((*curr).second->IsAliveLocked());
+      maybe_const<VmAddressRegion>* up = (*curr).second->parent_;
 
-      if (auto* mapping = curr->as_vm_mapping_ptr(); mapping) {
+      if (auto* mapping = (*curr).second->as_vm_mapping_ptr(); mapping) {
         DEBUG_ASSERT(mapping != nullptr);
         AssertHeld(mapping->lock_ref());
         // If the mapping is entirely before |min_addr|, do not run on_mapping.
@@ -108,7 +109,7 @@ class VmAddressRegionEnumerator {
         }
 
       } else {
-        auto* vmar = curr->as_vm_address_region_ptr();
+        auto* vmar = (*curr).second->as_vm_address_region_ptr();
         DEBUG_ASSERT(vmar != nullptr);
         AssertHeld(vmar->lock_ref());
         // Yield the vmar if its base is greater than or equal to our min. As we only yield vmars if
@@ -138,7 +139,7 @@ class VmAddressRegionEnumerator {
         // If we are at a depth greater than the minimum, and have reached
         // the end of a sub-VMAR range, we ascend and continue iteration.
         do {
-          itr_ = up->subregions_locked().UpperBound(curr->base());
+          itr_ = up->subregions_locked().UpperBound((*curr).second->base());
           if (itr_.IsValid()) {
             break;
           }
@@ -160,7 +161,7 @@ class VmAddressRegionEnumerator {
     ASSERT(!state_.paused_);
     // Save information of the next iteration we should return.
     if (itr_.IsValid()) {
-      AssertHeld(itr_->lock_ref());
+      AssertHeld((*itr_).second->lock_ref());
       // itr_ represents the next item that needs to be checked / yielded after we |resume|. We
       // know that everything up to itr_ has already been yielded, so if |itr_| becomes invalid
       // between now and |resume| we know the following:
@@ -173,8 +174,9 @@ class VmAddressRegionEnumerator {
       //     obligated to return it and can skip.
       // For these reasons we prepare our |next_offset_| to be the end of the current |itr_|,
       // meaning that if itr_ is deleted the next object to be yielded is whatever starts after it.
-      state_.next_offset_ = itr_->base() + itr_->size();
-      state_.region_or_mapping_ = itr_.CopyPointer();
+      state_.next_offset_ = (*itr_).second->base() + (*itr_).second->size();
+      state_.region_or_mapping_ = fbl::RefPtr<VmAddressRegionOrMapping>(
+          const_cast<VmAddressRegionOrMapping*>((*itr_).second));
     } else {
       state_.next_offset_ = max_addr_;
       state_.region_or_mapping_ = nullptr;
@@ -186,15 +188,19 @@ class VmAddressRegionEnumerator {
   void resume() TA_REQ(vmar_.lock()) {
     ASSERT(state_.paused_);
     if (state_.region_or_mapping_) {
-      AssertHeld(itr_->lock_ref());
-      if (!itr_->IsAliveLocked()) {
+      AssertHeld(state_.region_or_mapping_->lock_ref());
+      if (!state_.region_or_mapping_->IsAliveLocked()) {
         // Generate a new iterator that starts at the right offset, but back at the top. The next
         // call to next() will walk back down if necessary to find the next mapping / VMAR.
         min_addr_ = state_.next_offset_;
         itr_ = vmar_.subregions_locked().IncludeOrHigher(min_addr_);
         depth_ = kStartDepth;
       } else {
-        DEBUG_ASSERT(&*itr_ == &*state_.region_or_mapping_);
+        ASSERT(state_.region_or_mapping_->parent_);
+        AssertHeld(state_.region_or_mapping_->parent_->lock_ref());
+        itr_ = state_.region_or_mapping_->parent_->subregions_locked().IncludeOrHigher(
+            state_.region_or_mapping_->base());
+        DEBUG_ASSERT((*itr_).second == state_.region_or_mapping_.get());
       }
       // Free the refptr. Note that the actual destructors of VmAddressRegionOrMapping objects
       // themselves do very little, so we are safe to potential invoke the destructor here.

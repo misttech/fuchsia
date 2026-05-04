@@ -1605,10 +1605,10 @@ void VmMapping::TryMergeNeighborsLocked() {
   // Find our two merge candidates.
   fbl::RefPtr<VmMapping> left, right;
   if (auto left_candidate = parent_->subregions_.LeftOf(this); left_candidate.IsValid()) {
-    left = left_candidate->as_vm_mapping();
+    left = (*left_candidate).second->as_vm_mapping();
   }
   if (auto right_candidate = parent_->subregions_.RightOf(this); right_candidate.IsValid()) {
-    right = right_candidate->as_vm_mapping();
+    right = (*right_candidate).second->as_vm_mapping();
   }
 
   // Attempt to merge with each candidate. Any successful merge will produce a new mapping and
