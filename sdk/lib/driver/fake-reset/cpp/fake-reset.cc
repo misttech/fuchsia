@@ -18,6 +18,11 @@ bool FakeReset::take_toggled() {
   return toggled;
 }
 
+void FakeReset::Toggle(ToggleCompleter::Sync& completer) {
+  toggled_ = true;
+  completer.Reply(zx::ok());
+}
+
 void FakeReset::ToggleWithTimeout(ToggleWithTimeoutRequestView request,
                                   ToggleWithTimeoutCompleter::Sync& completer) {
   toggled_ = true;

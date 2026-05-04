@@ -22,6 +22,7 @@ class FakeReset : public fidl::testing::WireTestBase<fuchsia_hardware_reset::Res
   bool take_toggled();
 
  private:
+  void Toggle(ToggleCompleter::Sync& completer) override;
   void ToggleWithTimeout(ToggleWithTimeoutRequestView request,
                          ToggleWithTimeoutCompleter::Sync& completer) override;
 
