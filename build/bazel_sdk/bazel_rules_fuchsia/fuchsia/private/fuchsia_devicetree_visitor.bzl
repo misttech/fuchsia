@@ -23,10 +23,23 @@ def fuchsia_devicetree_visitor(name, output_name = None, additional_linker_input
 
     cc_library(
         name = lib_name,
+        visibility = visibility,
         **kwargs
     )
     additional_linker_inputs = kwargs.pop("additional_linker_inputs", [])
     user_link_flags = kwargs.pop("user_link_flags", [])
+
+    static_kwargs = dict(kwargs)
+    static_defines = static_kwargs.get("defines", [])
+    if "FDF_DEVICETREE_STATIC_VISITOR" not in static_defines:
+        static_defines.append("FDF_DEVICETREE_STATIC_VISITOR")
+    static_kwargs["defines"] = static_defines
+
+    cc_library(
+        name = "{}_static".format(name),
+        visibility = visibility,
+        **static_kwargs
+    )
 
     # Compute the label of the linker script.
     #

@@ -35,6 +35,7 @@ fuchsia_cc_driver(
     linkshared = True,
     output_name = "example-board",
     deps = [
+        "//sdk/lib/driver/devicetree/examples/example-visitor2:example-visitor2_static",
         "@fuchsia_sdk//bind/fuchsia.platform:fuchsia.platform_cc",
         "@fuchsia_sdk//fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",

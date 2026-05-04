@@ -10,6 +10,11 @@ namespace example {
 
 zx::result<> ExampleDriverVisitor::DriverVisit(fdf_devicetree::Node& node,
                                                const devicetree::PropertyDecoder& decoder) {
+  fuchsia_hardware_platform_bus::Metadata metadata{{
+      .id = "example-metadata",
+      .data = std::vector<uint8_t>{1, 2, 3, 4},
+  }};
+  node.AddMetadata(std::move(metadata));
   return zx::ok();
 }
 

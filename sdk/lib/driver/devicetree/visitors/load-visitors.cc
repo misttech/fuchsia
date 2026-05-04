@@ -28,6 +28,12 @@ zx::result<std::unique_ptr<VisitorRegistry>> LoadVisitors(
     return status.take_error();
   }
 
+  status = GlobalVisitorRegistry::Instance().RegisterAll(*visitors);
+  if (status.is_error()) {
+    fdf::error("Failed to register static visitors: {}", status.status_string());
+    return status.take_error();
+  }
+
   std::unordered_set modules = fdf_internal::GetModules(symbols);
 
   for (const auto& module_name : modules) {

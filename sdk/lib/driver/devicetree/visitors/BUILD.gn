@@ -80,9 +80,11 @@ sdk_source_set("multivisitor") {
 sdk_source_set("registration") {
   sdk_name = "devicetree-registration"
   category = "internal"
+  sources = [ "registration.cc" ]
   public = [ "registration.h" ]
   include_base = "//sdk"
   public_deps = [
+    ":registry",
     "//sdk/lib/driver/devicetree/manager:headers",
     "//sdk/lib/driver/logging/cpp",
   ]
@@ -119,4 +121,8 @@ sdk_source_set("common-types") {
 
   public = [ "common-types.h" ]
   public_deps = [ "//zircon/kernel/lib/devicetree" ]
+}
+
+config("static_visitor_config") {
+  defines = [ "FDF_DEVICETREE_STATIC_VISITOR" ]
 }

@@ -44,8 +44,7 @@ zx::result<> LoadVisitorsHost(VisitorRegistry& registry,
       return status.take_error();
     }
   }
-
-  return zx::ok();
+  return GlobalVisitorRegistry::Instance().RegisterAll(registry);
 }
 
 }  // namespace fdf_devicetree

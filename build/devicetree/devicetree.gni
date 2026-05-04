@@ -467,7 +467,36 @@ template("devicetree") {
 template("devicetree_parsed") {
   assert(defined(invoker.dtb), "dtb must be defined for $target_name")
   assert(defined(invoker.golden), "golden must be defined for $target_name")
-  assert(defined(invoker.visitors), "visitors must be defined for $target_name")
+  assert(defined(invoker.visitors) || defined(invoker.static_visitors),
+         "visitors or static_visitors must be defined for $target_name")
+
+  if (defined(invoker.static_visitors) && defined(invoker.visitors)) {
+    foreach(v, invoker.static_visitors) {
+      assert(filter_include(invoker.visitors, [ v ]) == [],
+             "Visitor $v cannot be both static and dynamic in $target_name")
+    }
+  }
+
+  dump_parsed_tool = "${target_name}.dumper"
+  if (defined(invoker.static_visitors)) {
+    not_needed(invoker, [ "static_visitors" ])
+  }
+  if (is_host) {
+    executable(dump_parsed_tool) {
+      forward_variables_from(invoker, [ "testonly" ])
+      visibility = [ ":*" ]
+      deps = [ "//sdk/lib/driver/devicetree/manager/dump-parsed" ]
+      if (defined(invoker.static_visitors)) {
+        foreach(visitor, invoker.static_visitors) {
+          _visitor_label = get_label_info(visitor, "label_no_toolchain")
+          deps += [ "${_visitor_label}.static" ]
+        }
+        configs +=
+            [ "//sdk/lib/driver/devicetree/visitors:static_visitor_config" ]
+      }
+      libs = [ "dl" ]
+    }
+  }
 
   generation_target = "${target_name}.gen"
   parsed_output = "$target_gen_dir/$target_name.dt.parsed"
@@ -479,8 +508,7 @@ template("devicetree_parsed") {
                              "public_deps",
                              "testonly",
                            ])
-    tool =
-        "//sdk/lib/driver/devicetree/manager/dump-parsed:devicetree-dump-parsed"
+    tool = ":$dump_parsed_tool"
 
     inputs = [ invoker.dtb ]
 
@@ -493,20 +521,22 @@ template("devicetree_parsed") {
       rebase_path(parsed_output, root_build_dir),
     ]
 
-    foreach(visitor_label, invoker.visitors) {
-      # Visitors must be built for the host toolchain.
-      _visitor = get_label_info(visitor_label, "label_no_toolchain")
-      _visitor += "($host_toolchain)"
+    if (defined(invoker.visitors)) {
+      foreach(visitor_label, invoker.visitors) {
+        # Visitors must be built for the host toolchain.
+        _visitor = get_label_info(visitor_label, "label_no_toolchain")
+        _visitor += "($host_toolchain)"
 
-      _dir = get_label_info(_visitor, "root_out_dir")
-      _name = get_label_info(_visitor, "name")
-      _path = "$_dir/${_name}.so"
-      inputs += [ _path ]
-      deps += [ _visitor ]
-      args += [
-        "--visitor",
-        rebase_path(_path, root_build_dir),
-      ]
+        _dir = get_label_info(_visitor, "root_out_dir")
+        _name = get_label_info(_visitor, "name")
+        _path = "$_dir/${_name}.so"
+        inputs += [ _path ]
+        deps += [ _visitor ]
+        args += [
+          "--visitor",
+          rebase_path(_path, root_build_dir),
+        ]
+      }
     }
 
     outputs = [ parsed_output ]

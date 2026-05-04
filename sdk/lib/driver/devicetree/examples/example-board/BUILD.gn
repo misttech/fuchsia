@@ -28,8 +28,9 @@ bazel_input_file("test-dtb") {
 
 devicetree_parsed("example-board-parsed") {
   dtb = "$target_out_dir/example-board.dtb"
-  golden = "dts/example-board-parsed.golden"
-  visitors = [ "//sdk/lib/driver/devicetree/examples/example-visitor" ]
+  golden = "dts/example-board.dt.parsed"
+  static_visitors = [ "//sdk/lib/driver/devicetree/examples/example-visitor" ]
+  visitors = [ "//sdk/lib/driver/devicetree/examples/example-visitor2" ]
   deps = [ ":example-board" ]
 }
 

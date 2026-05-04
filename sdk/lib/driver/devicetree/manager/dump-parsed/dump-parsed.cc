@@ -8,6 +8,7 @@
 #include <lib/driver/devicetree/manager/publisher-host.h>
 #include <lib/driver/devicetree/visitors/default/default.h>
 #include <lib/driver/devicetree/visitors/load-visitors-host.h>
+#include <lib/driver/devicetree/visitors/registration.h>
 #include <lib/driver/devicetree/visitors/registry.h>
 #include <lib/driver/logging/cpp/logger.h>
 

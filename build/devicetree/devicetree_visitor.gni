@@ -81,6 +81,23 @@ template("devicetree_visitor") {
     }
   }
 
+  source_set("${target_name}.static") {
+    forward_variables_from(invoker,
+                           [
+                             "sources",
+                             "deps",
+                             "public_deps",
+                             "testonly",
+                           ])
+    if (defined(invoker.non_sdk_deps)) {
+      if (!defined(deps)) {
+        deps = []
+      }
+      deps += invoker.non_sdk_deps
+    }
+    configs += [ "//sdk/lib/driver/devicetree/visitors:static_visitor_config" ]
+  }
+
   # TODO(https://fxbug.dev/494446193): Remove this once all visitors are migrated to
   # support static libraries.
   if (defined(invoker.enable_sdk_source_set) && invoker.enable_sdk_source_set) {

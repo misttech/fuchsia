@@ -17,6 +17,14 @@ platform_bus_nodes {
         length = 0x1000001000004000
       }
     }
+    metadata {
+      id = "example-metadata-2"
+      data = [ <binary> size: 5 bytes ]
+    }
+    metadata {
+      id = "example-metadata"
+      data = [ <binary> size: 4 bytes ]
+    }
     property { fuchsia.devicetree.FIRST_COMPATIBLE = "fuchsia,sample-device" }
   }
 

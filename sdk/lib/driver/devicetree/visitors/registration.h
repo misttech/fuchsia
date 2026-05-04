@@ -6,9 +6,28 @@
 #define LIB_DRIVER_DEVICETREE_VISITORS_REGISTRATION_H_
 
 #include <lib/driver/devicetree/manager/visitor.h>
+#include <lib/driver/devicetree/visitors/registry.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 #include <memory>
+#include <vector>
+
+namespace fdf_devicetree {
+
+class GlobalVisitorRegistry {
+ public:
+  static GlobalVisitorRegistry& Instance();
+
+  void Register(std::unique_ptr<Visitor> visitor);
+  std::vector<std::unique_ptr<Visitor>> TakeVisitors();
+
+  zx::result<> RegisterAll(VisitorRegistry& registry);
+
+ private:
+  std::vector<std::unique_ptr<Visitor>> visitors_;
+};
+
+}  // namespace fdf_devicetree
 
 // The |VisitorRegistration| is the ABI for visitors to expose themselves to
 // the Devicetree Visitor Framework. The visitor is loaded in as a shared
@@ -42,11 +61,27 @@ struct VisitorRegistration {
   extern "C" const VisitorRegistration __devicetree_visitor_registration__ __EXPORT \
   DEVICETREE_VISITOR_REGISTRATION_V1(create_visitor)
 
+#if defined(FDF_DEVICETREE_STATIC_VISITOR)
+
+#define REGISTER_DEVICETREE_VISITOR(visitor_class)                              \
+  namespace {                                                                   \
+  __attribute__((constructor)) static void _fdf_devicetree_register_visitor() { \
+    ::fdf_devicetree::GlobalVisitorRegistry::Instance().Register(               \
+        std::make_unique<visitor_class>());                                     \
+  }                                                                             \
+  }                                                                             \
+  static_assert(true, "")
+
+#else
+
 #define REGISTER_DEVICETREE_VISITOR(visitor_class)                          \
   EXPORT_DEVICETREE_VISITOR_REGISTRATION_V1(                                \
       [](fdf::Logger* logger) -> std::unique_ptr<fdf_devicetree::Visitor> { \
         fdf::Logger::SetGlobalInstance(logger);                             \
         return std::make_unique<visitor_class>();                           \
-      })
+      });                                                                   \
+  static_assert(true, "")
+
+#endif
 
 #endif  // LIB_DRIVER_DEVICETREE_VISITORS_REGISTRATION_H_
