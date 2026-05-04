@@ -26,6 +26,7 @@ bazel2gn_verification_targets = [
   "//sdk/lib/memory_barriers:verify_bazel2gn",
   "//sdk/lib/stdcompat:verify_bazel2gn",
   "//sdk/lib/utf-utils:verify_bazel2gn",
+  "//sdk/lib/zxio:verify_bazel2gn",
   "//sdk/rust/zx-status:verify_bazel2gn",
   "//sdk/rust/zx-types:verify_bazel2gn",
   "//src/connectivity/network/netstack/udp_serde:verify_bazel2gn",

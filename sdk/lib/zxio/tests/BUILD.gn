@@ -57,6 +57,7 @@ test("zxio") {
     "//sdk/lib/zxio",
     "//sdk/lib/zxio:create_with_type",
     "//sdk/lib/zxio:inception",
+    "//sdk/lib/zxio:zxio_private_headers",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest:zxtest-streams",

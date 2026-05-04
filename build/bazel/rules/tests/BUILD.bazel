@@ -74,6 +74,7 @@ build_with_platform_api_level(
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         "//build/bazel/bazel_idk/tests:build_only_tests",
+        "//sdk/lib/zxio",
     ],
 )
 
