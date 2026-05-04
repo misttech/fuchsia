@@ -7,6 +7,7 @@ if (is_fuchsia) {
     testonly = true
     public_deps = [
       "far:hermetic_tests",
+      "null-update-checker:hermetic_tests",
       "pkg-cache:hermetic_tests",
       "pkg-cache-as-base-resolver:hermetic_tests",
       "pkg-resolver:hermetic_tests",

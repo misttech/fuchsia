@@ -40,6 +40,7 @@ rustc_library("detect-stall") {
     "//src/diagnostics/persistence/*",
     "//src/lib/fuchsia-component/*",
     "//src/sys/component_manager/tests/*",
+    "//src/sys/pkg/bin/null-update-checker:*",
     "//src/sys/pkg/bin/system-update-committer:*",
   ]
 }

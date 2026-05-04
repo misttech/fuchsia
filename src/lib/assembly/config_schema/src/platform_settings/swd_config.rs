@@ -60,6 +60,8 @@ pub enum UpdateChecker {
     OmahaClient(#[walk_paths] OtaConfigs),
     /// “platform” version of an updater
     SystemUpdateChecker,
+    /// The product provides its own update checker that it connects directly to system-updater.
+    ProductProvided,
 }
 
 /// Defines the behavior of the system-update-committer package when update

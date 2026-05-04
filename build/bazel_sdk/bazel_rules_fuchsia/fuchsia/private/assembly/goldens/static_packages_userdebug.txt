@@ -73,6 +73,7 @@ mdns
 ?network-device
 ?network-socket-proxy
 ?network-tun
+?null-update-checker
 ?omaha-client
 pkg-resolver
 ?pkg-shell-commands

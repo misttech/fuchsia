@@ -30,6 +30,7 @@ group("delivery_type") {
     "//src/devices/bin/driver-index:*",
     "//src/diagnostics/persistence/*",
     "//src/sys/component_manager/tests/*",
+    "//src/sys/pkg/bin/null-update-checker/*",
     "//src/sys/pkg/bin/system-update-committer/*",
   ]
 }

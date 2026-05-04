@@ -241,6 +241,7 @@ platform_aib_names =
       "display_drivers_base",
 
       # SWD (Software Delivery)
+      "product_provided_update_checker",
       "omaha_client",
       "system_update_configurator",
 

@@ -209,6 +209,9 @@ impl SwdSubsystemConfig {
             UpdateChecker::SystemUpdateChecker => {
                 builder.platform_bundle("system_update_checker")?;
             }
+            UpdateChecker::ProductProvided => {
+                builder.platform_bundle("product_provided_update_checker")?;
+            }
         }
         Ok(())
     }
