@@ -60,7 +60,7 @@ macro_rules! ffx_error {
         $crate::FfxError::Error($crate::macro_deps::anyhow::anyhow!($error_message), 1)
     }};
     ($fmt:expr, $($arg:tt)*) => {
-        $crate::ffx_error!(format!($fmt, $($arg)*));
+        $crate::ffx_error!(format!($fmt, $($arg)*))
     };
 }
 
@@ -70,7 +70,7 @@ macro_rules! ffx_error_with_code {
         $crate::FfxError::Error($crate::macro_deps::anyhow::anyhow!($error_message), $error_code)
     }};
     ($error_code:expr, $fmt:expr, $($arg:tt)*) => {
-        $crate::ffx_error_with_code!($error_code, format!($fmt, $($arg)*));
+        $crate::ffx_error_with_code!($error_code, format!($fmt, $($arg)*))
     };
 }
 
