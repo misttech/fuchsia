@@ -31,6 +31,16 @@ class Security(enum.StrEnum):
     WEP = "wep"
 
 
+class WifiMode(enum.StrEnum):
+    """The Wi-Fi standard/mode to operate in."""
+
+    HT = "HT"  # 802.11n
+    VHT = "VHT"  # 802.11ac
+    HE = "HE"  # 802.11ax
+    EHT = "EHT"  # 802.11be
+    NOHT = "NOHT"  # Disables 802.11n/ac/ax/be
+
+
 @dataclasses.dataclass(frozen=True)
 class BssChannel:
     """Represents a Wi-Fi channel configuration.
@@ -50,21 +60,15 @@ class BssChannel:
     band: Band
     number: int
     bandwidth: Literal[20, 40, 80, 160, 320]
-    mode: Literal["HT", "VHT", "HE", "EHT", "NOHT"] = "HE"
+    mode: WifiMode = WifiMode.HE
 
     def __post_init__(self) -> None:
-        valid_modes = ["HT", "VHT", "HE", "EHT", "NOHT"]
-        if self.mode not in valid_modes:
-            raise ValueError(
-                f"Invalid mode: {self.mode}. Must be one of {valid_modes}"
-            )
-
         valid_bandwidths = {
-            "HT": [20, 40],
-            "VHT": [20, 40, 80, 160],
-            "HE": [20, 40, 80, 160],
-            "EHT": [20, 40, 80, 160, 320],
-            "NOHT": [20],
+            WifiMode.HT: [20, 40],
+            WifiMode.VHT: [20, 40, 80, 160],
+            WifiMode.HE: [20, 40, 80, 160],
+            WifiMode.EHT: [20, 40, 80, 160, 320],
+            WifiMode.NOHT: [20],
         }
 
         if self.bandwidth not in valid_bandwidths[self.mode]:
@@ -111,6 +115,29 @@ class BssSettings:
         return f"bss_{safe_name}"
 
 
+@dataclasses.dataclass(frozen=True)
+class CapabilitySelection:
+    """Defines the selection of Wi-Fi capabilities."""
+
+    mode: Literal["DEFAULT", "DISABLED", "CUSTOM"]
+    capabilities: list[str] = dataclasses.field(default_factory=list)
+
+    @classmethod
+    def DEFAULT(cls) -> "CapabilitySelection":
+        """Use OpenWrt system defaults."""
+        return cls(mode="DEFAULT")
+
+    @classmethod
+    def DISABLED(cls) -> "CapabilitySelection":
+        """Explicitly disable all capabilities."""
+        return cls(mode="DISABLED")
+
+    @classmethod
+    def CUSTOM(cls, capabilities: list[str]) -> "CapabilitySelection":
+        """Provide a custom list of capabilities to enable."""
+        return cls(mode="CUSTOM", capabilities=capabilities)
+
+
 # TODO(https://fxbug.dev/489258440): Make channel required param and provide easy way to use
 # default 2g/5g channels.
 @dataclasses.dataclass
@@ -121,11 +148,16 @@ class RadioConfig:
         channel: The specific channel within the band
         bss_settings: The settings for all additional bss
         country: The country code for the radio (default: "US")
+        n_capabilities: Selection of 802.11n capabilities.
+        ac_capabilities: Selection of 802.11ac capabilities.
+        mode: The Wi-Fi mode (HT, VHT, HE, EHT)
     """
 
     channel: BssChannel
     bss_settings: list[BssSettings] | None = None
     country: str = "US"
+    n_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT()
+    ac_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT()
 
     @classmethod
     def generate(
@@ -133,6 +165,8 @@ class RadioConfig:
         channel: BssChannel,
         bss_settings: list[BssSettings] | None = None,
         country: str = "US",
+        n_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT(),
+        ac_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT(),
     ) -> "RadioConfig":
         """Creates a RadioConfig object with the specified channel and BSS settings.
 
@@ -140,6 +174,8 @@ class RadioConfig:
             channel: The Wi-Fi channel configuration.
             bss_settings: Optional list of additional BSS settings.
             country: The country code for the radio.
+            n_capabilities: Selection of 802.11n capabilities.
+            ac_capabilities: Selection of 802.11ac capabilities.
 
         Returns:
             A RadioConfig object.
@@ -151,6 +187,8 @@ class RadioConfig:
             channel=channel,
             bss_settings=bss_settings,
             country=country,
+            n_capabilities=n_capabilities,
+            ac_capabilities=ac_capabilities,
         )
 
 

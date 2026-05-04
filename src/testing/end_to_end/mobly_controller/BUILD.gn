@@ -31,6 +31,7 @@ python_library("mobly_controller_no_testonly") {
     "openwrt_access_point/lib/__init__.py",
     "openwrt_access_point/lib/access_point_config.py",
     "openwrt_access_point/lib/access_point_config_mapper.py",
+    "openwrt_access_point/lib/capabilities.py",
     "openwrt_access_point/lib/dhcp_config.py",
     "openwrt_access_point/lib/dhcp_controller.py",
   ]
