@@ -6,7 +6,7 @@ pub mod args;
 
 use crate::subcommands::node::common;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use args::ShowNodeCommand;
 use flex_fuchsia_driver_development as fdd;
 use flex_fuchsia_driver_framework as fdf;
@@ -58,10 +58,22 @@ pub struct NodeOffer {
 pub async fn get_node_details(
     cmd: &ShowNodeCommand,
     driver_development_proxy: &fdd::ManagerProxy,
-) -> Result<NodeDetails> {
+) -> Result<Vec<NodeDetails>> {
     let nodes = fuchsia_driver_dev::get_device_info(driver_development_proxy, &[], false).await?;
-    let node = common::get_single_node_from_query(&cmd.query, nodes).await?;
+    let matching_nodes = common::get_nodes_from_query(&cmd.query, nodes).await?;
 
+    if matching_nodes.is_empty() {
+        bail!("No matching node found for query {:?}.", cmd.query);
+    }
+
+    let mut details_list = Vec::new();
+    for node in matching_nodes {
+        details_list.push(make_node_details(node));
+    }
+    Ok(details_list)
+}
+
+fn make_node_details(node: fdd::NodeInfo) -> NodeDetails {
     // No style for machine output
     let (state, owner) =
         common::get_state_and_owner(node.quarantined, &node.bound_driver_url, false);
@@ -160,7 +172,7 @@ pub async fn get_node_details(
         })
         .collect();
 
-    Ok(NodeDetails {
+    NodeDetails {
         name: name.to_string(),
         moniker,
         owner,
@@ -172,7 +184,7 @@ pub async fn get_node_details(
         properties,
         offers,
         topological_path: node.topological_path.unwrap_or_default(),
-    })
+    }
 }
 
 pub async fn show_node(
@@ -181,10 +193,20 @@ pub async fn show_node(
     driver_development_proxy: fdd::ManagerProxy,
 ) -> Result<()> {
     let nodes = fuchsia_driver_dev::get_device_info(&driver_development_proxy, &[], false).await?;
-    let node = common::get_single_node_from_query(&cmd.query, nodes).await?;
+    let matching_nodes = common::get_nodes_from_query(&cmd.query, nodes).await?;
+
+    if matching_nodes.is_empty() {
+        bail!("No matching node found for query {:?}.", cmd.query);
+    }
 
     let with_style = termion::is_tty(&std::io::stdout());
-    print_table(node, with_style, writer)?;
+
+    for (i, node) in matching_nodes.into_iter().enumerate() {
+        if i > 0 {
+            writeln!(writer, "\n--------------------------------------------------\n")?;
+        }
+        print_table(node, with_style, writer)?;
+    }
 
     Ok(())
 }

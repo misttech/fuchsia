@@ -15,7 +15,7 @@
     }
   ],
   "notes": [
-    "This command supports partial matches over the node moniker and driver URL.\n    If the query matches more than one node, the user will be prompted to be more specific.\n    "
+    "This command supports partial matches over the node moniker and driver URL.\n    If the query matches more than one node, all matching nodes will be shown.\n    "
   ],
   "commands": [],
   "positionals": [

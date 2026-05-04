@@ -14,7 +14,7 @@ use argh::{ArgsInfo, FromArgs};
     $ driver node show dev.sys.my_node
     ",
     note = "This command supports partial matches over the node moniker and driver URL.
-    If the query matches more than one node, the user will be prompted to be more specific.
+    If the query matches more than one node, all matching nodes will be shown.
     ",
     error_code(1, "Failed to connect to the driver development service")
 )]
