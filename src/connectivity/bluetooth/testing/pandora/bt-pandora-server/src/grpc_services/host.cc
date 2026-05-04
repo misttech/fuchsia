@@ -178,7 +178,15 @@ Status HostService::Advertise(::grpc::ServerContext* context,
     const pandora::DataTypes& req_data = request->data();
 
     if (req_data.le_discoverability_mode() == pandora::DiscoverabilityMode::DISCOVERABLE_GENERAL) {
-      set_discoverability(true);
+      fuchsia_bluetooth_affordances::HostControllerSetDiscoverabilityRequest
+          set_discoverability_request;
+      set_discoverability_request.discoverable() = true;
+      auto result = host_controller_client_->SetDiscoverability(set_discoverability_request);
+      if (result.is_error()) {
+        return Status(StatusCode::INTERNAL,
+                      "fuchsia.bluetooth.affordances.HostController/SetDiscoverability error: " +
+                          result.error_value().FormatDescription());
+      }
     }
     if (req_data.include_complete_local_name() || req_data.include_shortened_local_name()) {
       data.name() = "sapphire";
@@ -318,11 +326,18 @@ Status HostService::Inquiry(::grpc::ServerContext* context,
 Status HostService::SetDiscoverabilityMode(::grpc::ServerContext* context,
                                            const ::pandora::SetDiscoverabilityModeRequest* request,
                                            ::google::protobuf::Empty* response) {
-  if (set_discoverability(request->mode() != ::pandora::DiscoverabilityMode::NOT_DISCOVERABLE) !=
-      ZX_OK) {
-    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  fuchsia_bluetooth_affordances::HostControllerSetDiscoverabilityRequest
+      set_discoverability_request;
+  set_discoverability_request.discoverable() =
+      request->mode() != ::pandora::DiscoverabilityMode::NOT_DISCOVERABLE;
+  auto result = host_controller_client_->SetDiscoverability(set_discoverability_request);
+  if (result.is_error()) {
+    return Status(StatusCode::INTERNAL,
+                  "fuchsia.bluetooth.affordances.HostController/SetDiscoverability error: " +
+                      result.error_value().FormatDescription());
   }
-  return {/*OK*/};
+
+  return Status::OK;
 }
 
 Status HostService::SetConnectabilityMode(::grpc::ServerContext* context,
