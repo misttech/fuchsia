@@ -25,10 +25,23 @@ impl PnoScanLogger {
         Self { cobalt_proxy, enabled_at: None, has_scan_results: false }
     }
 
-    pub async fn handle_pno_scan_enabled(&mut self) {
+    pub async fn handle_pno_scan_enabled(&mut self, is_connected: bool) {
         if self.enabled_at.is_none() {
             self.enabled_at = Some(fasync::BootInstant::now());
             self.has_scan_results = false;
+
+            if is_connected {
+                let metric_events = vec![MetricEvent {
+                    metric_id: metrics::PNO_SCAN_ENABLED_WHILE_CONNECTED_METRIC_ID,
+                    event_codes: vec![],
+                    payload: MetricEventPayload::Count(1),
+                }];
+                log_cobalt_batch!(
+                    self.cobalt_proxy,
+                    &metric_events,
+                    "pno_scan_enabled_while_connected"
+                );
+            }
         } else {
             // It is unexpected that PNO scans are enabled and then enabled again prior to a
             // cancellation of the first request.  The accounting surrounding PNO scan enablement
@@ -141,7 +154,7 @@ mod tests {
         let mut logger = PnoScanLogger::new(test_helper.cobalt_proxy.clone());
 
         {
-            let mut test_fut = pin!(logger.handle_pno_scan_enabled());
+            let mut test_fut = pin!(logger.handle_pno_scan_enabled(false));
             assert_eq!(
                 test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
                 Poll::Ready(())
@@ -150,7 +163,7 @@ mod tests {
 
         // Call again to trigger collision
         {
-            let mut test_fut = pin!(logger.handle_pno_scan_enabled());
+            let mut test_fut = pin!(logger.handle_pno_scan_enabled(false));
             assert_eq!(
                 test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
                 Poll::Ready(())
@@ -163,13 +176,32 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_pno_scan_enabled_while_connected() {
+        let mut test_helper = setup_test();
+        let mut logger = PnoScanLogger::new(test_helper.cobalt_proxy.clone());
+
+        {
+            let mut test_fut = pin!(logger.handle_pno_scan_enabled(true));
+            assert_eq!(
+                test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+                Poll::Ready(())
+            );
+        }
+
+        let metrics =
+            test_helper.get_logged_metrics(metrics::PNO_SCAN_ENABLED_WHILE_CONNECTED_METRIC_ID);
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].payload, MetricEventPayload::Count(1));
+    }
+
+    #[fuchsia::test]
     fn test_pno_scan_results_received_metrics() {
         let mut test_helper = setup_test();
         let mut logger = PnoScanLogger::new(test_helper.cobalt_proxy.clone());
 
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000));
         {
-            let mut test_fut = pin!(logger.handle_pno_scan_enabled());
+            let mut test_fut = pin!(logger.handle_pno_scan_enabled(false));
             assert_eq!(
                 test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
                 Poll::Ready(())
@@ -198,7 +230,7 @@ mod tests {
 
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000));
         {
-            let mut test_fut = pin!(logger.handle_pno_scan_enabled());
+            let mut test_fut = pin!(logger.handle_pno_scan_enabled(false));
             assert_eq!(
                 test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
                 Poll::Ready(())
@@ -243,7 +275,7 @@ mod tests {
 
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000));
         {
-            let mut test_fut = pin!(logger.handle_pno_scan_enabled());
+            let mut test_fut = pin!(logger.handle_pno_scan_enabled(false));
             assert_eq!(
                 test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
                 Poll::Ready(())
@@ -300,7 +332,7 @@ mod tests {
 
         test_helper.exec.set_fake_time(fasync::MonotonicInstant::from_nanos(10_000_000));
         {
-            let mut test_fut = pin!(logger.handle_pno_scan_enabled());
+            let mut test_fut = pin!(logger.handle_pno_scan_enabled(false));
             assert_eq!(
                 test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
                 Poll::Ready(())

@@ -306,7 +306,8 @@ pub fn serve_telemetry(
                             connect_disconnect.handle_pno_scan_failure().await;
                         }
                         PnoScanEnabled => {
-                            pno_scan_logger.handle_pno_scan_enabled().await;
+                            let is_connected = connect_disconnect.is_connected();
+                            pno_scan_logger.handle_pno_scan_enabled(is_connected).await;
                         }
                         PnoScanResultsReceived => {
                             pno_scan_logger.handle_pno_scan_results_received().await;
