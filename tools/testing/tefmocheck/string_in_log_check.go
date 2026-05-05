@@ -603,6 +603,16 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			Type:        serialLogType,
 			AlwaysFlake: true,
 		},
+		// For https://fxbug.dev/42085023. This tracks boot test failures where
+		// the success string shows up in the serial log but we fail to read it.
+		&stringInLogCheck{
+			String: "Boot-test-successful!",
+			Type:   serialLogType,
+			// This failure mode is likely to be infra-related.
+			InfraFailure:       true,
+			SkipAllPassedTests: true,
+			AlwaysFlake:        true,
+		},
 		// For https://fxbug.dev/507033785
 		&stringInLogCheck{
 			String:                "BACKTRACE REQUEST: process android.hardware.contexthub-ser",
@@ -672,23 +682,6 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			&stringInLogCheck{String: "double fault, halting", Type: lt},
 			// This string can show up in some boot tests.
 			&stringInLogCheck{String: "entering panic shell loop", Type: lt, ExceptStrings: []string{"Boot-test-successful!"}},
-			// For https://fxbug.dev/42085023. These should track all boot test failures
-			// where either the success string shows up in one of the logs but we fail
-			// to read it, or the test times out before the success string gets written.
-			&stringInLogCheck{
-				String: "Boot-test-successful!",
-				Type:   lt,
-				// This failure mode is likely to be infra-related.
-				InfraFailure:       true,
-				SkipAllPassedTests: true,
-				AlwaysFlake:        true,
-				ExceptBlocks: []*logBlock{
-					// LINT.IfChange(seriallistener_timed_out_exception)
-					{startString: "seriallistener FATAL: timed out before success string", endString: "was read from serial"},
-					// LINT.ThenChange(/tools/testing/seriallistener/cmd/main.go:timed_out)
-					{startString: "seriallistener DEBUG: Matcher(", endString: "bytes read before cancellation"},
-				},
-			},
 			&stringInLogCheck{
 				// LINT.IfChange(seriallistener_timed_out)
 				String: "seriallistener FATAL: timed out before success string",

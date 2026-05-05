@@ -105,9 +105,7 @@ ReadLoop:
 	}
 	// If we time out, it is helpful to see the last bytes processed.
 	logger.Debugf(ctx, "Matcher(%q): last %d bytes read before cancellation: %q", successString, n, b[:n])
-	// LINT.IfChange(timed_out)
 	return fmt.Errorf("timed out before success string %q was read from serial", successString)
-	// LINT.ThenChange(/tools/testing/tefmocheck/string_in_log_check.go:seriallistener_timed_out,/tools/testing/tefmocheck/string_in_log_check.go:seriallistener_timed_out_exception)
 }
 
 func main() {
