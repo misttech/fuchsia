@@ -12,6 +12,7 @@
 
 #include <memory>
 
+#include "lib/syslog/cpp/log_settings.h"
 #include "src/developer/memory/metrics/capture.h"
 #include "src/developer/memory/monitor/imminent_oom_observer.h"
 #include "src/developer/memory/monitor/monitor.h"
@@ -35,6 +36,11 @@ std::optional<fidl::Client<fuchsia_hardware_ram_metrics::Device>> GetRamDevice(
 
 int main(int argc, const char** argv) {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+
+  // TODO(https://fxbug.dev/508683746): Remove this once no longer needed.
+  fuchsia_logging::LogSettingsBuilder log_settings;
+  log_settings.WithTags({"memory_monitor"});
+  log_settings.BuildAndInitialize();
   FX_LOGS(DEBUG) << argv[0] << ": starting";
 
   trace::TraceProviderWithFdio trace_provider(loop.dispatcher(), monitor::Monitor::kTraceName);
