@@ -316,7 +316,9 @@ zx_status_t PagerDispatcher::QueryPagerVmoStats(fbl::RefPtr<VmObject> vmo, uint3
     if (copy_result.status == ZX_OK) {
       break;
     }
-    DEBUG_ASSERT(copy_result.fault_info.has_value());
+    if (!copy_result.fault_info.has_value()) {
+      return copy_result.status;
+    }
     zx_status_t fault_status =
         Thread::Current::SoftFault(copy_result.fault_info->pf_va, copy_result.fault_info->pf_flags);
     if (fault_status != ZX_OK) {

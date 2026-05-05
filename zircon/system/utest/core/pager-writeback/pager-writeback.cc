@@ -7752,6 +7752,25 @@ TEST(PagerWriteback, InvalidQuery) {
   ASSERT_EQ(ZX_ERR_ACCESS_DENIED, zx_pager_query_vmo_stats(pager.get(), vmo.get(), 0, nullptr, 0));
 }
 
+// Regression test for https://fxbug.dev/504723239.
+TEST(PagerWriteback, QueryVmoStatsInvalidPointer) {
+  zx::pager pager;
+  ASSERT_OK(zx::pager::create(0, &pager));
+
+  zx::port port;
+  ASSERT_OK(zx::port::create(0, &port));
+
+  zx::vmo vmo;
+  ASSERT_OK(pager.create_vmo(0, port, 0, 4096, &vmo));
+
+  // Pass an invalid non-canonical / kernel address as the buffer. This should not cause the kernel
+  // to crash.
+  zx_status_t status = zx_pager_query_vmo_stats(pager.get(), vmo.get(), 0,
+                                                reinterpret_cast<void*>(0xffffffffffffffff),
+                                                sizeof(zx_pager_vmo_stats_t));
+  EXPECT_NE(ZX_OK, status);
+}
+
 // Tests that attempt to exercise the early termination of the query dirty ranges loop to avoid
 // redundantly calculating an additional range prior to terminating if the user did not provide a
 // large enough buffer.
