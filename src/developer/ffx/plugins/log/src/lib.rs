@@ -87,11 +87,6 @@ pub async fn log_impl(
     rcs_connector: Connector<RemoteControlProxyHolder>,
     include_timestamp: bool,
 ) -> Result<(), LogError> {
-    let color_config: bool = ctx.get(ffx_config::keys::LOG_CMD_COLOR).unwrap_or(true);
-    if !color_config || ctx.is_strict() {
-        cmd.no_color = true;
-    }
-
     if !cmd.noprefer_url_component_name {
         cmd.prefer_url_component_name = true;
     }
