@@ -405,4 +405,41 @@ mod test {
             ]
         )
     }
+
+    #[fuchsia::test]
+    async fn test_from_local_product_bundle_path_traversal() {
+        use std::io::Write;
+        use zip::CompressionMethod;
+        use zip::write::FileOptions;
+
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let zip_path = tmp_dir.path().join("traversal.zip");
+
+        let file = File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = FileOptions::default().compression_method(CompressionMethod::Stored);
+
+        let target_file_name = "ffx_fastboot_manifest_test_traversal_target.txt";
+        let traversal_path = format!("../{}", target_file_name);
+
+        zip.start_file(traversal_path, options).unwrap();
+        zip.write_all(b"malicious content").unwrap();
+        zip.finish().unwrap();
+
+        let messenger = tokio::sync::mpsc::channel(1).0;
+        let (_state, mut interface) = ffx_fastboot_interface::test::setup();
+        let cmd = ManifestParams::default();
+
+        let result = from_local_product_bundle(&messenger, zip_path, &mut interface, cmd).await;
+
+        // This needs to be an error as there is no product_bundle.json
+        assert!(result.is_err());
+
+        let escaped_path = std::env::temp_dir().join(target_file_name);
+        let escaped_exists = escaped_path.exists();
+        if escaped_exists {
+            std::fs::remove_file(&escaped_path).unwrap();
+        }
+        assert!(!escaped_exists, "File escaped to {}", escaped_path.display());
+    }
 }
