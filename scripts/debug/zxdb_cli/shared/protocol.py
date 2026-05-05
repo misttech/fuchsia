@@ -33,6 +33,21 @@ class ThreadsRequest(BaseRequest):
     command: str = "threads"
 
 
+# TODO(https://fxbug.dev/509557630): Implement process-wide continue.
+@dataclasses.dataclass(kw_only=True)
+class ContinueRequest(BaseRequest):
+    thread_id: int
+    single_thread: bool | None = None
+    command: str = "continue"
+
+
+# TODO(https://fxbug.dev/509557630): Implement process-wide pause.
+@dataclasses.dataclass(kw_only=True)
+class PauseRequest(BaseRequest):
+    thread_id: int
+    command: str = "pause"
+
+
 @dataclasses.dataclass
 class ThreadInfo:
     id: int
@@ -69,6 +84,18 @@ def make_request(data: dict[str, Any]) -> BaseRequest:
         return AttachRequest(filter=filter)
     elif command == "threads":
         return ThreadsRequest()
+    elif command == "pause":
+        thread_id = data.get("thread_id")
+        if thread_id is None:
+            raise ValueError("Thread ID must be specified for pause")
+        return PauseRequest(thread_id=thread_id)
+    elif command == "continue":
+        thread_id = data.get("thread_id")
+        if thread_id is None:
+            raise ValueError("Thread ID must be specified for continue")
+        return ContinueRequest(
+            thread_id=thread_id, single_thread=data.get("single_thread")
+        )
     else:
         raise ValueError("Unknown command")
 

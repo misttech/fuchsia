@@ -71,7 +71,25 @@ stopping the daemon.
    {"success": true, "body": {"threads": [{"id": 1, "name": "main"}, {"id": 2, "name": "worker"}]}}
    ```
 
-4. **Stop the daemon**:
+4. **Pause a thread**:
+   ```bash
+   fx debug cli pause 1
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"success": true}}
+   ```
+
+5. **Resume a thread**:
+   ```bash
+   fx debug cli continue 1
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"success": true}}
+   ```
+
+6. **Stop the daemon**:
    ```bash
    fx debug cli stop
    ```

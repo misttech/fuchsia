@@ -2,11 +2,19 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import asyncio
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from daemon.daemon import CommandHandlerRegistry, Daemon
-from shared.protocol import AttachRequest, BaseRequest, Response, ThreadsRequest
+from shared.protocol import (
+    AttachRequest,
+    BaseRequest,
+    ContinueRequest,
+    PauseRequest,
+    Response,
+    ThreadsRequest,
+)
 
 
 class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
@@ -78,6 +86,50 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(resp.success)
         self.assertIn("Not connected", resp.message or "")
 
+    @patch("daemon.daemon.DapClient")
+    async def test_handle_continue(self, mock_dap_client_class: Mock) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        mock_dap_client.continue_thread = AsyncMock(
+            return_value={"success": True}
+        )
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        resp = await daemon.handle_continue(ContinueRequest(thread_id=1))
+
+        self.assertTrue(resp.success)
+        mock_dap_client.continue_thread.assert_called_once()
+
+    @patch("daemon.daemon.DapClient")
+    async def test_handle_pause_sync(self, mock_dap_client_class: Mock) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+
+        mock_dap_client.pause_thread = AsyncMock(return_value={"success": True})
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        async def trigger_stopped() -> None:
+            await asyncio.sleep(0.1)
+            daemon.event_waiter.notify_thread_stop(
+                1,
+                {
+                    "type": "event",
+                    "event": "stopped",
+                    "body": {"reason": "pause"},
+                },
+            )
+
+        loop = asyncio.get_event_loop()
+        loop.create_task(trigger_stopped())
+
+        resp = await daemon.handle_pause(PauseRequest(thread_id=1))
+
+        self.assertTrue(resp.success)
+        mock_dap_client.pause_thread.assert_called_once()
+
     def test_threads_registration(self) -> None:
         daemon = Daemon(port=15678)
         self.assertIn("threads", daemon.registry.handlers)
@@ -98,7 +150,14 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
 
-        resp = await daemon.handle_threads(ThreadsRequest())
+        with patch("daemon.daemon.dataclass_to_dict") as mock_dict:
+            mock_dict.return_value = {
+                "threads": [
+                    {"id": 1, "name": "main"},
+                    {"id": 2, "name": "worker"},
+                ]
+            }
+            resp = await daemon.handle_threads(ThreadsRequest())
 
         self.assertTrue(resp.success)
         assert resp.body is not None

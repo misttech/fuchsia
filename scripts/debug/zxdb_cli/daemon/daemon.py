@@ -12,10 +12,13 @@ from typing import Any, Final, TypeVar, cast, final
 from async_utils.command import AsyncCommand
 from ffx_cmd.lib import FfxCmd
 from pydap.client import DapClient
+from pydap.models import ContinueArguments, PauseArguments, dataclass_to_dict
 from shared.protocol import (
     AttachRequest,
     BaseRequest,
+    ContinueRequest,
     GetStateRequest,
+    PauseRequest,
     Response,
     StopRequest,
     ThreadsRequest,
@@ -55,6 +58,41 @@ class CommandHandlerRegistry:
         return Response(success=False, message=f"Unknown command: {command}")
 
 
+class DapEventWaiter:
+    """Manages futures for tasks waiting for specific DAP events."""
+
+    def __init__(self) -> None:
+        self._waiters: dict[
+            tuple[str, int], list[asyncio.Future[dict[str, Any]]]
+        ] = {}
+
+    def register_thread_stop(
+        self, thread_id: int
+    ) -> asyncio.Future[dict[str, Any]]:
+        fut = asyncio.get_running_loop().create_future()
+        key = ("stopped", thread_id)
+        self._waiters.setdefault(key, []).append(fut)
+        return fut
+
+    def unregister_thread_stop(
+        self, thread_id: int, fut: asyncio.Future[dict[str, Any]]
+    ) -> None:
+        key = ("stopped", thread_id)
+        if key in self._waiters:
+            if fut in self._waiters[key]:
+                self._waiters[key].remove(fut)
+            if not self._waiters[key]:
+                del self._waiters[key]
+
+    def notify_thread_stop(self, thread_id: int, event: dict[str, Any]) -> None:
+        key = ("stopped", thread_id)
+        if key in self._waiters:
+            for fut in self._waiters[key]:
+                if not fut.done():
+                    fut.set_result(event)
+            del self._waiters[key]
+
+
 @final
 class Daemon:
     def __init__(
@@ -65,6 +103,8 @@ class Daemon:
         self.background_tasks: set[asyncio.Task[None]] = set()
         self.active_handlers: set[asyncio.Task[Any]] = set()
         self.event_queue: asyncio.Queue[Any] = asyncio.Queue()
+        self.event_waiter = DapEventWaiter()
+        self.stopped_threads: set[int] = set()
         self.stop_event = asyncio.Event()
         self.zxdb_writer: asyncio.StreamWriter | None = None
         self.zxdb_reader: asyncio.StreamReader | None = None
@@ -85,6 +125,14 @@ class Daemon:
         self.registry.register(
             "threads",
             self.handle_threads,
+        )
+        self.registry.register(
+            "continue",
+            self.handle_continue,
+        )
+        self.registry.register(
+            "pause",
+            self.handle_pause,
         )
 
     async def handle_stop(self, _req: StopRequest) -> Response:
@@ -136,8 +184,6 @@ class Daemon:
                 success=False, message="Not connected to zxdb DAP server"
             )
 
-        from pydap.models import dataclass_to_dict
-
         try:
             resp = await self.dap_client.threads(self.zxdb_writer)
             return Response(success=True, body=dataclass_to_dict(resp))
@@ -145,6 +191,48 @@ class Daemon:
             return Response(
                 success=False, message=f"Failed to get threads: {e}"
             )
+
+    async def handle_continue(self, req: ContinueRequest) -> Response:
+        if not self.zxdb_writer:
+            return Response(
+                success=False, message="Not connected to zxdb DAP server"
+            )
+
+        args = ContinueArguments(
+            threadId=req.thread_id, singleThread=req.single_thread
+        )
+
+        try:
+            resp = await self.dap_client.continue_thread(self.zxdb_writer, args)
+            return Response(success=True, body=resp)
+        except Exception as e:
+            return Response(success=False, message=f"Failed to continue: {e}")
+
+    async def handle_pause(self, req: PauseRequest) -> Response:
+        if not self.zxdb_writer:
+            return Response(
+                success=False, message="Not connected to zxdb DAP server"
+            )
+
+        args = PauseArguments(threadId=req.thread_id)
+
+        fut = self.event_waiter.register_thread_stop(req.thread_id)
+
+        try:
+            resp = await self.dap_client.pause_thread(self.zxdb_writer, args)
+
+            try:
+                await asyncio.wait_for(fut, timeout=5.0)
+            except asyncio.TimeoutError:
+                print(
+                    "Warning: Timed out waiting for stopped event after pause"
+                )
+
+            return Response(success=True, body=resp)
+        except Exception as e:
+            return Response(success=False, message=f"Failed to pause: {e}")
+        finally:
+            self.event_waiter.unregister_thread_stop(req.thread_id, fut)
 
     async def run(self) -> int:
         if UDS_PATH.exists():
@@ -237,6 +325,8 @@ class Daemon:
             )
         )
 
+        self.background_tasks.add(asyncio.create_task(self._process_events()))
+
         # Initialize DAP
         from pydap.models import InitializeArguments
 
@@ -293,3 +383,13 @@ class Daemon:
             self.active_handlers.remove(current_task)
             writer.close()
             await writer.wait_closed()
+
+    async def _process_events(self) -> None:
+        while True:
+            event = await self.event_queue.get()
+            if event.get("event") == "stopped":
+                thread_id = event.get("body", {}).get("threadId")
+                self.event_waiter.notify_thread_stop(thread_id, event)
+            elif event.get("event") == "continued":
+                thread_id = event.get("body", {}).get("threadId")
+                self.stopped_threads.discard(thread_id)

@@ -31,6 +31,20 @@ async def main(args: list[str]) -> int:
     attach_parser.add_argument("filter", help="Process name or ID to attach to")
     subparsers.add_parser("threads", help="Get list of threads")
 
+    continue_parser = subparsers.add_parser("continue", help="Resume execution")
+    continue_parser.add_argument(
+        "thread_id", type=int, help="Thread ID to resume"
+    )
+    continue_parser.add_argument(
+        "--single-thread",
+        action="store_true",
+        default=None,
+        help="Resume only the specified thread",
+    )
+
+    pause_parser = subparsers.add_parser("pause", help="Interrupt execution")
+    pause_parser.add_argument("thread_id", type=int, help="Thread ID to pause")
+
     parsed_args = parser.parse_args(args)
 
     if parsed_args.command == "start":
