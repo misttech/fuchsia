@@ -69,6 +69,16 @@ SecurityService::SecurityService(async_dispatcher_t* dispatcher) {
   fidl::BindServer(dispatcher, std::move(pairing_delegate_server_end),
                    std::make_unique<PairingDelegateImpl>(m_pairing_event_, &pairing_stream_,
                                                          pairing_event_queue_));
+
+  // Connect to fuchsia.bluetooth.affordances.PeerController
+  zx::result peer_controller_client_end =
+      component::Connect<fuchsia_bluetooth_affordances::PeerController>();
+  if (peer_controller_client_end.is_ok()) {
+    peer_controller_client_.Bind(std::move(*peer_controller_client_end));
+  } else {
+    FX_LOGS(ERROR) << "Error connecting to PeerController service: "
+                   << peer_controller_client_end.status_string();
+  }
 }
 
 ::grpc::Status SecurityService::OnPairing(
@@ -99,8 +109,8 @@ SecurityService::SecurityService(async_dispatcher_t* dispatcher) {
     return Status(StatusCode::UNIMPLEMENTED, "Only implemented LE pairing security so far");
   }
 
-  uint32_t pairing_level;
-  bool bondable = true;
+  fuchsia_bluetooth_sys::PairingSecurityLevel pairing_level;
+  fuchsia_bluetooth_sys::BondableMode bondable = fuchsia_bluetooth_sys::BondableMode::kBondable;
   switch (request->le()) {
     case pandora::LE_LEVEL1: {
       return Status(StatusCode::INVALID_ARGUMENT, "LE pairing with no security is not supported");
@@ -109,15 +119,15 @@ SecurityService::SecurityService(async_dispatcher_t* dispatcher) {
       // TODO(https://fxbug.dev/396500079): This security level is only used in one MMI, in which
       // case the pairing is to be completed in non-bondable mode. Ideally we should not rely on
       // this assumption here.
-      bondable = false;
+      bondable = fuchsia_bluetooth_sys::BondableMode::kNonBondable;
 
       // Encrypted unauthenticated
-      pairing_level = 1;
+      pairing_level = fuchsia_bluetooth_sys::PairingSecurityLevel::kEncrypted;
       break;
     }
     case pandora::LE_LEVEL3: {
       // Encrypted authenticated
-      pairing_level = 2;
+      pairing_level = fuchsia_bluetooth_sys::PairingSecurityLevel::kAuthenticated;
       break;
     }
     case pandora::LE_LEVEL4: {
@@ -129,10 +139,26 @@ SecurityService::SecurityService(async_dispatcher_t* dispatcher) {
     }
   }
 
-  pair(std::strtoul(request->connection().cookie().value().c_str(), nullptr, /*base=*/10),
-       pairing_level, bondable);
+  uint64_t peer_id =
+      std::strtoul(request->connection().cookie().value().c_str(), nullptr, /*base=*/10);
+  fuchsia_bluetooth_affordances::PeerSelector selector;
+  selector.id() = fuchsia_bluetooth::PeerId{peer_id};
 
-  return {/*OK*/};
+  fuchsia_bluetooth_sys::PairingOptions options;
+  options.le_security_level() = pairing_level;
+  options.bondable_mode() = bondable;
+
+  fuchsia_bluetooth_affordances::PeerControllerPairRequest pair_request;
+  pair_request.selector() = selector;
+  pair_request.options() = options;
+  auto pair_result = peer_controller_client_->Pair(pair_request);
+  if (pair_result.is_error()) {
+    return Status(StatusCode::INTERNAL,
+                  "fuchsia.bluetooth.affordances.PeerController/Pair error: " +
+                      pair_result.error_value().FormatDescription());
+  }
+
+  return Status::OK;
 }
 
 ::grpc::Status SecurityService::WaitSecurity(::grpc::ServerContext* context,

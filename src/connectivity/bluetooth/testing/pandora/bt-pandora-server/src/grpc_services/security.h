@@ -5,6 +5,7 @@
 #ifndef SRC_CONNECTIVITY_BLUETOOTH_TESTING_PANDORA_BT_PANDORA_SERVER_SRC_GRPC_SERVICES_SECURITY_H_
 #define SRC_CONNECTIVITY_BLUETOOTH_TESTING_PANDORA_BT_PANDORA_SERVER_SRC_GRPC_SERVICES_SECURITY_H_
 
+#include <fidl/fuchsia.bluetooth.affordances/cpp/fidl.h>
 #include <fidl/fuchsia.bluetooth.sys/cpp/fidl.h>
 
 #include "third_party/github.com/google/bt-test-interfaces/src/pandora/security.grpc.pb.h"
@@ -61,6 +62,7 @@ class SecurityService : public pandora::Security::Service {
   };
 
   fidl::SyncClient<fuchsia_bluetooth_sys::Pairing> pairing_client_;
+  fidl::SyncClient<fuchsia_bluetooth_affordances::PeerController> peer_controller_client_;
 
   std::mutex m_pairing_event_;
   // If this stream is non-null, it means a Security.OnPairing bidirectional stream is active.

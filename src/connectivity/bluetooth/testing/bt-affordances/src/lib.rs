@@ -9,7 +9,6 @@ use fidl_fuchsia_bluetooth_gatt2::{
     AttributePermissions, Characteristic, CharacteristicPropertyBits, Handle, SecurityRequirements,
     ServiceHandle,
 };
-use fidl_fuchsia_bluetooth_sys::{BondableMode, PairingOptions, PairingSecurityLevel};
 use fuchsia_async::LocalExecutor;
 use fuchsia_bt_test_affordances::WorkThread;
 use fuchsia_sync::Mutex;
@@ -197,29 +196,6 @@ pub extern "C" fn disconnect_peer(peer_id: u64) -> i32 {
 
     if let Err(err) = block_on(STATE.worker.disconnect_peer(peer_id)) {
         eprintln!("disconnect_peer encountered error: {err}");
-        return zx::Status::INTERNAL.into_raw();
-    }
-    zx::Status::OK.into_raw()
-}
-
-/// Initiate pairing with peer with given identifier.
-///
-/// `le_security_level` is only relevant for LE pairing. Specify 1 for Encrypted or 2 for
-/// Authenticated. All other values are interpreted as unset, defaulting to Authenticated. See
-/// fuchsia.bluetooth.sys/PairingOptions for details.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[unsafe(no_mangle)]
-pub extern "C" fn pair(peer_id: u64, le_security_level: u32, bondable: bool) -> i32 {
-    let peer_id = PeerId { value: peer_id };
-
-    let mut options = PairingOptions::default();
-    options.le_security_level = PairingSecurityLevel::from_primitive(le_security_level);
-    options.bondable_mode =
-        bondable.then_some(BondableMode::Bondable).or(Some(BondableMode::NonBondable));
-
-    if let Err(err) = block_on(STATE.worker.pair(peer_id, options)) {
-        eprintln!("pair encountered error: {err}");
         return zx::Status::INTERNAL.into_raw();
     }
     zx::Status::OK.into_raw()
