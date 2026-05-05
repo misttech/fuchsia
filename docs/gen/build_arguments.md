@@ -1014,7 +1014,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
 }
 }
@@ -1024,7 +1024,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -2324,7 +2324,7 @@ Controls whether to promote warnings to errors.
 
 **Current value (from the default):** `true`
 
-From //build/config/BUILD.gn:28
+From //build/config/BUILD.gn:29
 
 ### developer_test_labels
 
@@ -4236,7 +4236,7 @@ will be able to load any ELF binaries produced by this build.
 
 **Current value (from the default):** `4096`
 
-From //build/config/fuchsia/BUILD.gn:37
+From //build/config/fuchsia/BUILD.gn:38
 
 ### experimental_force_enable_new_wakeup_accounting
 
@@ -5238,7 +5238,7 @@ memory profile.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/switch/BUILD.gn:20
+From //zircon/kernel/switch/BUILD.gn:21
 
 ### kernel_no_userabi
 
