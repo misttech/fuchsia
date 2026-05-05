@@ -163,16 +163,24 @@ pub fn convert_roam_result_indication(
     ind: fidl_fullmac::WlanFullmacImplIfcRoamResultIndRequest,
 ) -> Result<fidl_mlme::RoamResultIndication> {
     Ok(fidl_mlme::RoamResultIndication {
-        selected_bssid: ind.selected_bssid.context("missing selected_bss_id")?,
-        status_code: ind.status_code.context("missing status code")?,
+        selected_bssid: ind
+            .selected_bssid
+            .context("malformed roam result indication: missing selected_bssid")?,
+        status_code: ind
+            .status_code
+            .context("malformed roam result indication: missing status_code")?,
         original_association_maintained: ind
             .original_association_maintained
-            .context("missing original_association_maintained")?,
+            .context("malformed roam result indication: missing original_association_maintained")?,
         target_bss_authenticated: ind
             .target_bss_authenticated
-            .context("missing target_bss_authenticated")?,
-        association_id: ind.association_id.context("missing association_id")?,
-        association_ies: ind.association_ies.context("missing association_ies")?,
+            .context("malformed roam result indication: missing target_bss_authenticated")?,
+        association_id: ind
+            .association_id
+            .context("malformed roam result indication: missing association_id")?,
+        association_ies: ind
+            .association_ies
+            .context("malformed roam result indication: missing association_ies")?,
     })
 }
 
