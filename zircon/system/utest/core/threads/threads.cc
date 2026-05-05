@@ -8,6 +8,7 @@
 #include <lib/test-exceptions/exception-catcher.h>
 #include <lib/test-exceptions/exception-handling.h>
 #include <lib/zx/clock.h>
+#include <lib/zx/debuglog.h>
 #include <lib/zx/event.h>
 #include <lib/zx/handle.h>
 #include <lib/zx/process.h>
@@ -2265,9 +2266,7 @@ TEST(Threads, StartRegsNoncanonicalTp) {
   ASSERT_EQ(zx_thread_start_regs(thread.get(), 0, 0, 0, 0, non_canonical_fsbase, 0),
             ZX_ERR_INVALID_ARGS);
 }
-#endif
 
-#if defined(__x86_64__)
 TEST(Threads, DebugRegistersWatchpointSyscallPanicRepro) {
   // Create a VMO we are going to ask the kernel to read from.
   zx::vmo vmo;
@@ -2334,6 +2333,67 @@ TEST(Threads, DebugRegistersWatchpointSyscallPanicRepro) {
   exception.reset();
 
   t.join();
+}
+
+TEST(Threads, WatchpointSyscallPanic) {
+  zx::debuglog dlog;
+  ASSERT_OK(zx::debuglog::create(zx::resource(), 0, &dlog));
+
+  const size_t page_size = zx_system_get_page_size();
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(page_size, 0, &vmo));
+  zx_vaddr_t addr;
+  ASSERT_OK(
+      zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0, page_size, &addr));
+
+  zx::vmo stack_vmo;
+  ASSERT_OK(zx::vmo::create(page_size, 0, &stack_vmo));
+  zx_vaddr_t stack_addr;
+  ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, stack_vmo, 0,
+                                       page_size, &stack_addr));
+  zx_vaddr_t sp = stack_addr + page_size;
+
+  sp -= 8;
+  *reinterpret_cast<zx_vaddr_t*>(sp) = reinterpret_cast<zx_vaddr_t>(&zx_thread_exit);
+
+  zx::thread thread;
+  ASSERT_OK(zx::thread::create(*zx::process::self(), "watchpoint-thread", 17, 0, &thread));
+
+  zx::suspend_token suspend_token;
+  ASSERT_OK(thread.suspend(&suspend_token));
+
+  zx_vaddr_t pc = reinterpret_cast<zx_vaddr_t>(&zx_debuglog_write);
+  ASSERT_OK(thread.start(pc, sp, 0, 0));
+
+  zx_signals_t observed;
+  ASSERT_OK(thread.wait_one(ZX_THREAD_SUSPENDED, zx::time::infinite(), &observed));
+
+  zx_thread_state_general_regs_t gregs;
+  ASSERT_OK(thread.read_state(ZX_THREAD_STATE_GENERAL_REGS, &gregs, sizeof(gregs)));
+
+  gregs.rdi = dlog.get();
+  gregs.rsi = 0;
+  gregs.rdx = addr;
+  gregs.rcx = 1;
+
+  ASSERT_OK(thread.write_state(ZX_THREAD_STATE_GENERAL_REGS, &gregs, sizeof(gregs)));
+
+  zx_thread_state_debug_regs_t dregs;
+  memset(&dregs, 0, sizeof(dregs));
+
+  dregs.dr[0] = addr;
+  dregs.dr7 = DR7_ZERO_MASK | 1ul | (3ul << 16) | (3ul << 18);
+  dregs.dr6 = DR6_ZERO_MASK | (1ul << 14);  // Set BS bit
+
+  ASSERT_OK(thread.write_state(ZX_THREAD_STATE_DEBUG_REGS, &dregs, sizeof(dregs)));
+
+  suspend_token.reset();
+
+  zx::nanosleep(zx::deadline_after(zx::sec(1)));
+
+  zx_task_kill(thread.get());
+  thread.wait_one(ZX_THREAD_TERMINATED, zx::time::infinite(), nullptr);
 }
 #endif
 

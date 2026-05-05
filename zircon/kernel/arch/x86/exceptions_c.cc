@@ -221,11 +221,9 @@ static void x86_debug_handler(iframe_t* frame) {
   if (!is_from_user(frame)) {
     // The only way the kernel should have taken a breakpoint is specifically for a memory access,
     // it should not have been possible to make it single step or perform any other action.
-    ASSERT(!X86_DBG_STATUS_BD_GET(thread->arch().debug_state.dr6));
-    ASSERT(!X86_DBG_STATUS_BS_GET(thread->arch().debug_state.dr6));
-    ASSERT(!X86_DBG_STATUS_BT_GET(thread->arch().debug_state.dr6));
-    // Since we do not support debugging the kernel we simply ignore the breakpoint and resume
-    // execution.
+    // Unfortunately we cannot check for this since although DR6 is updated by the hardware, it does
+    // not clear bits for actions that have not happened, and so the user could have (since the
+    // last handled debug exception) manually set bits in DR6.
     return;
   }
 
