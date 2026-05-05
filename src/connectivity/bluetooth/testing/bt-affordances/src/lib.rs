@@ -187,20 +187,6 @@ pub unsafe extern "C" fn uuid_from_string(uuid_str: *const core::ffi::c_char) ->
     }
 }
 
-/// Disconnect all logical links (BR/EDR & LE) to peer with given identifier.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[unsafe(no_mangle)]
-pub extern "C" fn disconnect_peer(peer_id: u64) -> i32 {
-    let peer_id = PeerId { value: peer_id };
-
-    if let Err(err) = block_on(STATE.worker.disconnect_peer(peer_id)) {
-        eprintln!("disconnect_peer encountered error: {err}");
-        return zx::Status::INTERNAL.into_raw();
-    }
-    zx::Status::OK.into_raw()
-}
-
 /// Connect an L2CAP channel on a specific PSM to an already-connected peer. Calling this again will
 /// result in the channel being closed after the new channel is opened.
 ///
