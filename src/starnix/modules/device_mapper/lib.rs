@@ -363,6 +363,9 @@ impl FileOps for DmDeviceFile {
                         bytes_read += read;
                         verify_read(&buffer, args, offset - start)?;
                     }
+                    TargetType::Error => {
+                        return error!(EIO);
+                    }
                 }
             }
             let read = data.write_all(buffer.data())?;
@@ -403,6 +406,9 @@ impl FileOps for DmDeviceFile {
                     length,
                     prot,
                 ),
+                TargetType::Error => {
+                    error!(EIO)
+                }
             }
         } else {
             error!(EINVAL)
@@ -553,7 +559,8 @@ impl DeviceMapper {
 
 #[derive(Debug, Clone)]
 enum TargetType {
-    Verity(VerityTargetParams),
+    Verity(Box<VerityTargetParams>),
+    Error,
 }
 
 #[derive(Debug, Clone)]
@@ -742,14 +749,15 @@ fn parse_parameter_string(
             )?;
             debug_assert!(bytes_read == leaf_nodes_size as usize);
 
-            Ok(TargetType::Verity(VerityTargetParams {
+            Ok(TargetType::Verity(Box::new(VerityTargetParams {
                 base_args: base_args,
                 optional_args: optional_args,
                 block_device,
                 hash_device: buffer.into(),
                 corrupted: false,
-            }))
+            })))
         }
+        "error" => Ok(TargetType::Error),
         _ => error!(ENOTSUP),
     }
 }
@@ -1099,6 +1107,9 @@ impl FileOps for DeviceMapper {
                                     }
                                     current_task.write_memory(data_addr, args_bytes.as_slice())?;
                                 }
+                                TargetType::Error => {
+                                    // Error target has no parameters.
+                                }
                             }
                         } else if flags.contains(DeviceMapperFlags::IMA_MEASUREMENT) {
                             // Linux 6.6.15 does not currently support IMA for dm-verity.
@@ -1122,6 +1133,9 @@ impl FileOps for DeviceMapper {
                                     }
                                     current_task
                                         .write_memory(data_addr, status_bytes.as_slice())?;
+                                }
+                                TargetType::Error => {
+                                    // Status for error target is not used much but we can provide something.
                                 }
                             }
                         }
