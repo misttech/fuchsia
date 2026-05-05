@@ -938,6 +938,11 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self._temp_dir = tempfile.TemporaryDirectory()
         self._env = _make_exec_env(self._temp_dir.name, "")
+        self._ssh_key_file = os.path.join(
+            self._temp_dir.name, "fuchsia_ed25519"
+        )
+        with open(self._ssh_key_file, "w") as f:
+            f.write("placeholder key")
         return super().setUp()
 
     def tearDown(self) -> None:
@@ -952,7 +957,7 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
             self._make_command_output("127.0.0.1:6000"),
             self._make_command_output("foo-bar"),
             # config get ssh.priv
-            self._make_command_output("/foo/path"),
+            self._make_command_output(self._ssh_key_file),
         ]
         device_env = await execution.get_device_environment_from_exec_env(
             self._env
@@ -962,7 +967,7 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
                 "address": "127.0.0.1",
                 "port": "6000",
                 "name": "foo-bar",
-                "private_key_path": "/foo/path",
+                "private_key_path": self._ssh_key_file,
             },
             vars(device_env),
         )
@@ -975,7 +980,7 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
             self._make_command_output("[::1]:6000"),
             self._make_command_output("foo-bar"),
             # config get ssh.priv
-            self._make_command_output("/foo/path"),
+            self._make_command_output(self._ssh_key_file),
         ]
         device_env = await execution.get_device_environment_from_exec_env(
             self._env
@@ -985,7 +990,7 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
                 "address": "[::1]",
                 "port": "6000",
                 "name": "foo-bar",
-                "private_key_path": "/foo/path",
+                "private_key_path": self._ssh_key_file,
             },
             vars(device_env),
         )
@@ -998,13 +1003,10 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
             self._make_command_output("", return_code=1),
         ]
 
-        try:
-            device_env = await execution.get_device_environment_from_exec_env(
-                self._env
-            )
-            self.assertTrue(False, f"Should have failed, got {device_env}")
-        except execution.DeviceConfigError as e:
-            self.assertRegex(str(e), "Failed to get the ssh address")
+        with self.assertRaisesRegex(
+            execution.DeviceConfigError, "Failed to get the ssh address"
+        ):
+            await execution.get_device_environment_from_exec_env(self._env)
 
     @mock.patch("execution.run_command")
     async def test_get_device_environment_bad_ip_format(
@@ -1014,13 +1016,11 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
             self._make_command_output("foo"),
         ]
 
-        try:
-            device_env = await execution.get_device_environment_from_exec_env(
-                self._env
-            )
-            self.assertTrue(False, f"Should have failed, got {device_env}")
-        except execution.DeviceConfigError as e:
-            self.assertRegex(str(e), "Could not parse")
+        with self.assertRaisesRegex(
+            execution.DeviceConfigError,
+            "Could not parse target address: foo. Expected 'ip:port' format.",
+        ):
+            await execution.get_device_environment_from_exec_env(self._env)
 
     @mock.patch("execution.run_command")
     async def test_get_device_environment_no_target_name(
@@ -1031,13 +1031,27 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
             self._make_command_output("", return_code=1),
         ]
 
-        try:
-            device_env = await execution.get_device_environment_from_exec_env(
-                self._env
-            )
-            self.assertTrue(False, f"Should have failed, got {device_env}")
-        except execution.DeviceConfigError as e:
-            self.assertRegex(str(e), "Failed to get the target name")
+        with self.assertRaisesRegex(
+            execution.DeviceConfigError,
+            "Failed to get the target name. Please ensure you have set a default target using 'fx set-device'. See 'fx set-device --help' for more details on target resolution.",
+        ):
+            await execution.get_device_environment_from_exec_env(self._env)
+
+    @mock.patch("execution.run_command")
+    async def test_get_device_environment_ssh_key_not_found(
+        self, command_patch: mock.AsyncMock
+    ) -> None:
+        command_patch.side_effect = [
+            self._make_command_output("127.0.0.1:6000"),
+            self._make_command_output("foo-bar"),
+            self._make_command_output("/nonexistent/path"),
+        ]
+
+        with self.assertRaisesRegex(
+            execution.DeviceConfigError,
+            "Path returned by 'ssh.priv' does not exist",
+        ):
+            await execution.get_device_environment_from_exec_env(self._env)
 
     async def test_test_execution_gets_env_from_flags(self) -> None:
         """Test TestExecution wrapper uses the environment provided by flags"""

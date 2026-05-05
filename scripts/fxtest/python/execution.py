@@ -789,7 +789,9 @@ async def get_device_environment_from_exec_env(
 
     last_colon_index = ssh_output.stdout.rfind(":")
     if last_colon_index == -1:
-        raise DeviceConfigError(f"Could not parse: {ssh_output.stdout}")
+        raise DeviceConfigError(
+            f"Could not parse target address: {ssh_output.stdout}. Expected 'ip:port' format."
+        )
     ip = ssh_output.stdout[0:last_colon_index].strip()
     port = ssh_output.stdout[last_colon_index + 1 :].strip()
 
@@ -798,7 +800,9 @@ async def get_device_environment_from_exec_env(
         recorder=recorder,
     )
     if not target_output or target_output.return_code != 0:
-        raise DeviceConfigError("Failed to get the target name")
+        raise DeviceConfigError(
+            "Failed to get the target name. Please ensure you have set a default target using 'fx set-device'. See 'fx set-device --help' for more details on target resolution."
+        )
     target_name = target_output.stdout.strip()
 
     # get the configured private key. Ideally, the private key usage
@@ -818,10 +822,17 @@ async def get_device_environment_from_exec_env(
         msg = "No return information"
         if ssh_key_output:
             msg = ssh_key_output.stderr
-        raise DeviceConfigError(f"Failed to get private ssh key: {msg}")
+        raise DeviceConfigError(
+            f"Failed to get private ssh key: {msg}. Please check your ffx configuration by running 'ffx config get ssh.priv' or 'ffx config env'."
+        )
     ssh_path = ssh_key_output.stdout.strip()
     # remove any double quotes around the path
     ssh_path = ssh_path.replace('"', "")
+
+    if not os.path.exists(ssh_path):
+        raise DeviceConfigError(
+            f"Path returned by 'ssh.priv' does not exist: {ssh_path}. Please check your ffx configuration by running 'ffx config get ssh.priv'. You can also check where config files are located by running 'ffx config env'."
+        )
 
     return environment.DeviceEnvironment(
         address=ip, port=port, name=target_name, private_key_path=ssh_path
