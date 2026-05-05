@@ -33,7 +33,8 @@ const std::vector<uint32_t> FakeComposite::kDefaultDaiNumberOfChannelsSet2{
     kDefaultDaiNumberOfChannels2,
 };
 const std::vector<fha::DaiSampleFormat> FakeComposite::kDefaultDaiSampleFormatSet{
-    kDefaultDaiSampleFormat};
+    kDefaultDaiSampleFormat,
+};
 const std::vector<fha::DaiSampleFormat> FakeComposite::kDefaultDaiSampleFormatSet2{
     kDefaultDaiSampleFormat,
     kDefaultDaiSampleFormat2,
@@ -82,7 +83,8 @@ const fha::DaiSupportedFormats FakeComposite::kDefaultDaiFormatSet2{{
 
 // DaiFormatSets that are returned by the driver.
 const std::vector<fha::DaiSupportedFormats> FakeComposite::kDefaultDaiFormatSets{
-    kDefaultDaiFormatSet};
+    kDefaultDaiFormatSet,
+};
 const std::vector<fha::DaiSupportedFormats> FakeComposite::kDefaultDaiFormatSets2{
     kDefaultDaiFormatSet2,
 };
@@ -252,14 +254,16 @@ const fha::SupportedFormats2 FakeComposite::kDefaultPsFormatSet2 =
 const fha::SupportedFormats2 FakeComposite::kDefaultPsFormatSet3 =
     fha::SupportedFormats2::WithPcmSupportedFormats(kDefaultPcmRingBufferFormatSet3);
 
-const fuchsia_audio::Format FakeComposite::kDefaultPsFormat1{
-    {.sample_type = fuchsia_audio::SampleType::kInt16,
-     .channel_count = 1,
-     .frames_per_second = 48000}};
-const fuchsia_audio::Format FakeComposite::kDefaultPsFormat2{
-    {.sample_type = fuchsia_audio::SampleType::kFloat32,
-     .channel_count = 1,
-     .frames_per_second = 44100}};
+const fuchsia_audio::Format FakeComposite::kDefaultPsFormat1{{
+    .sample_type = fuchsia_audio::SampleType::kInt16,
+    .channel_count = 1,
+    .frames_per_second = 48000,
+}};
+const fuchsia_audio::Format FakeComposite::kDefaultPsFormat2{{
+    .sample_type = fuchsia_audio::SampleType::kFloat32,
+    .channel_count = 1,
+    .frames_per_second = 44100,
+}};
 const fha::Encoding FakeComposite::kDefaultPsFormat3{{
     .decoded_channel_count = 1,
     .decoded_frame_rate = 44100,
@@ -319,20 +323,6 @@ const std::unordered_map<ElementId, std::vector<fha::SupportedFormats2>>
 // Individual elements
 const std::string FakeComposite::kSourceDaiElementDescription =
     "DaiInterconnect source element description";
-const std::string FakeComposite::kDestDaiElementDescription =
-    "DaiInterconnect destination element description";
-const std::string FakeComposite::kSourceRbElementDescription =
-    "RingBuffer source element description";
-const std::string FakeComposite::kSourcePsElementDescription =
-    "PacketStream source element description";
-const std::string FakeComposite::kDestRbElementDescription =
-    "RingBuffer destination element description";
-const std::string FakeComposite::kDestPsElementDescription =
-    "PacketStream destination element description";
-const std::string FakeComposite::kSourceDualSupportPsElementDescription =
-    "PacketStream dual format-type source element description";
-const std::string FakeComposite::kMuteElementDescription = "Mute element description";
-
 const fhasp::Element FakeComposite::kSourceDaiElement{{
     .id = kSourceDaiElementId,
     .type = fhasp::ElementType::kDaiInterconnect,
@@ -343,6 +333,29 @@ const fhasp::Element FakeComposite::kSourceDaiElement{{
     .can_stop = true,
     .can_bypass = false,
 }};
+
+const std::string FakeComposite::kSourceRbElementDescription =
+    "RingBuffer source element description";
+const fhasp::Element FakeComposite::kSourceRbElement{{
+    .id = kSourceRbElementId,
+    .type = fhasp::ElementType::kRingBuffer,
+    .description = kSourceRbElementDescription,
+    .can_stop = false,
+    .can_bypass = false,
+}};
+
+const std::string FakeComposite::kSourcePsElementDescription =
+    "PacketStream source element description";
+const fhasp::Element FakeComposite::kSourcePsElement{{
+    .id = kSourcePsElementId,
+    .type = fhasp::ElementType::kPacketStream,
+    .description = kSourcePsElementDescription,
+    .can_stop = false,
+    .can_bypass = false,
+}};
+
+const std::string FakeComposite::kDestDaiElementDescription =
+    "DaiInterconnect destination element description";
 const fhasp::Element FakeComposite::kDestDaiElement{{
     .id = kDestDaiElementId,
     .type = fhasp::ElementType::kDaiInterconnect,
@@ -353,20 +366,9 @@ const fhasp::Element FakeComposite::kDestDaiElement{{
     .can_stop = true,
     .can_bypass = false,
 }};
-const fhasp::Element FakeComposite::kSourceRbElement{{
-    .id = kSourceRbElementId,
-    .type = fhasp::ElementType::kRingBuffer,
-    .description = kSourceRbElementDescription,
-    .can_stop = false,
-    .can_bypass = false,
-}};
-const fhasp::Element FakeComposite::kSourcePsElement{{
-    .id = kSourcePsElementId,
-    .type = fhasp::ElementType::kPacketStream,
-    .description = kSourcePsElementDescription,
-    .can_stop = false,
-    .can_bypass = false,
-}};
+
+const std::string FakeComposite::kDestRbElementDescription =
+    "RingBuffer destination element description";
 const fhasp::Element FakeComposite::kDestRbElement{{
     .id = kDestRbElementId,
     .type = fhasp::ElementType::kRingBuffer,
@@ -374,6 +376,9 @@ const fhasp::Element FakeComposite::kDestRbElement{{
     .can_stop = false,
     .can_bypass = false,
 }};
+
+const std::string FakeComposite::kDestPsElementDescription =
+    "PacketStream destination element description";
 const fhasp::Element FakeComposite::kDestPsElement{{
     .id = kDestPsElementId,
     .type = fhasp::ElementType::kPacketStream,
@@ -381,6 +386,9 @@ const fhasp::Element FakeComposite::kDestPsElement{{
     .can_stop = false,
     .can_bypass = false,
 }};
+
+const std::string FakeComposite::kSourceDualSupportPsElementDescription =
+    "PacketStream dual format-type source element description";
 const fhasp::Element FakeComposite::kSourceDualSupportPsElement{{
     .id = kSourceDualSupportPsElementId,
     .type = fhasp::ElementType::kPacketStream,
@@ -388,6 +396,8 @@ const fhasp::Element FakeComposite::kSourceDualSupportPsElement{{
     .can_stop = false,
     .can_bypass = false,
 }};
+
+const std::string FakeComposite::kMuteElementDescription = "Mute element description";
 const fhasp::Element FakeComposite::kMuteElement{{
     .id = kMuteElementId,
     .type = fhasp::ElementType::kMute,
@@ -398,10 +408,6 @@ const fhasp::Element FakeComposite::kMuteElement{{
 
 // ElementStates - note that the two Dai elements have vendor_specific_data that can be queried.
 const zx::duration FakeComposite::kSourceDaiElementProcessingDelay = zx::nsec(0);
-const zx::duration FakeComposite::kDestDaiElementProcessingDelay = zx::nsec(123);
-const zx::duration FakeComposite::kSourceRbElementProcessingDelay = zx::nsec(42);
-const zx::duration FakeComposite::kSourcePsElementProcessingDelay = zx::nsec(68);
-const zx::duration FakeComposite::kSourceDualSupportPsElementProcessingDelay = zx::nsec(75);
 const fhasp::ElementState FakeComposite::kSourceDaiElementInitState{{
     .type_specific = fhasp::TypeSpecificElementState::WithDaiInterconnect({{
         .plug_state = fhasp::PlugState{{
@@ -425,6 +431,22 @@ const fhasp::ElementState FakeComposite::kSourceDaiElementInitState{{
     .bypassed = false,
     .processing_delay = kSourceDaiElementProcessingDelay.get(),
 }};
+
+const zx::duration FakeComposite::kSourceRbElementProcessingDelay = zx::nsec(42);
+const fhasp::ElementState FakeComposite::kSourceRbElementInitState{{
+    .started = true,
+    .bypassed = false,
+    .processing_delay = kSourceRbElementProcessingDelay.get(),
+}};
+
+const zx::duration FakeComposite::kSourcePsElementProcessingDelay = zx::nsec(68);
+const fhasp::ElementState FakeComposite::kSourcePsElementInitState{{
+    .started = true,
+    .bypassed = false,
+    .processing_delay = kSourcePsElementProcessingDelay.get(),
+}};
+
+const zx::duration FakeComposite::kDestDaiElementProcessingDelay = zx::nsec(123);
 const fhasp::ElementState FakeComposite::kDestDaiElementInitState{{
     .type_specific = fhasp::TypeSpecificElementState::WithDaiInterconnect({{
         .plug_state = fhasp::PlugState{{
@@ -449,28 +471,23 @@ const fhasp::ElementState FakeComposite::kDestDaiElementInitState{{
     .bypassed = false,
     .processing_delay = kDestDaiElementProcessingDelay.get(),
 }};
-const fhasp::ElementState FakeComposite::kSourceRbElementInitState{{
-    .started = true,
-    .bypassed = false,
-    .processing_delay = kSourceRbElementProcessingDelay.get(),
-}};
-const fhasp::ElementState FakeComposite::kSourcePsElementInitState{{
-    .started = true,
-    .bypassed = false,
-    .processing_delay = kSourcePsElementProcessingDelay.get(),
-}};
+
 const fhasp::ElementState FakeComposite::kDestRbElementInitState{{
     .started = true,
     .bypassed = false,
 }};
+
 const fhasp::ElementState FakeComposite::kDestPsElementInitState{{
     .started = true,
     .bypassed = false,
 }};
+
+const zx::duration FakeComposite::kSourceDualSupportPsElementProcessingDelay = zx::nsec(75);
 const fhasp::ElementState FakeComposite::kSourceDualSupportPsElementInitState{{
     .started = true,
     .bypassed = false,
 }};
+
 const fhasp::ElementState FakeComposite::kMuteElementInitState{{
     .started = true,
     .bypassed = true,
@@ -479,10 +496,10 @@ const fhasp::ElementState FakeComposite::kMuteElementInitState{{
 // Element set
 const std::vector<fhasp::Element> FakeComposite::kElements{{
     kSourceDaiElement,
-    kDestDaiElement,
     kSourceRbElement,
     kSourcePsElement,
     kSourceDualSupportPsElement,
+    kDestDaiElement,
     kDestRbElement,
     kDestPsElement,
     kMuteElement,
@@ -523,47 +540,68 @@ const fhasp::EdgePair FakeComposite::kTopologyMuteToDaiEdgePair{{
 // Individual topologies
 const fhasp::Topology FakeComposite::kInputOnlyTopology{{
     .id = kInputOnlyTopologyId,
-    .processing_elements_edge_pairs = {{
-        kTopologyInputEdgePair,
-    }},
+    .processing_elements_edge_pairs =
+        {
+            {
+                kTopologyInputEdgePair,
+            },
+        },
 }};
 const fhasp::Topology FakeComposite::kPacketStreamCaptureTopology{{
     .id = kPacketStreamCaptureTopologyId,
-    .processing_elements_edge_pairs = {{
-        kTopologyPsCaptureEdgePair,
-    }},
+    .processing_elements_edge_pairs =
+        {
+            {
+                kTopologyPsCaptureEdgePair,
+            },
+        },
 }};
 const fhasp::Topology FakeComposite::kFullDuplexTopology{{
     .id = kFullDuplexTopologyId,
-    .processing_elements_edge_pairs = {{
-        kTopologyInputEdgePair,
-        kTopologyOutputEdgePair,
-    }},
+    .processing_elements_edge_pairs =
+        {
+            {
+                kTopologyInputEdgePair,
+                kTopologyOutputEdgePair,
+            },
+        },
 }};
 const fhasp::Topology FakeComposite::kOutputOnlyTopology{{
     .id = kOutputOnlyTopologyId,
-    .processing_elements_edge_pairs = {{
-        kTopologyOutputEdgePair,
-    }},
+    .processing_elements_edge_pairs =
+        {
+            {
+                kTopologyOutputEdgePair,
+            },
+        },
 }};
 const fhasp::Topology FakeComposite::kPacketStreamOutputTopology{{
     .id = kPacketStreamOutputTopologyId,
-    .processing_elements_edge_pairs = {{
-        kTopologyPsOutputEdgePair,
-    }},
+    .processing_elements_edge_pairs =
+        {
+            {
+                kTopologyPsOutputEdgePair,
+            },
+        },
 }};
 const fhasp::Topology FakeComposite::kSourceDualSupportPsOutputTopology{{
     .id = kSourceDualSupportPsOutputTopologyId,
-    .processing_elements_edge_pairs = {{
-        kTopologySourceDualSupportPsOutputEdgePair,
-    }},
+    .processing_elements_edge_pairs =
+        {
+            {
+                kTopologySourceDualSupportPsOutputEdgePair,
+            },
+        },
 }};
 const fhasp::Topology FakeComposite::kOutputWithMuteTopology{{
     .id = kOutputWithMuteTopologyId,
-    .processing_elements_edge_pairs = {{
-        kTopologyRbToMuteEdgePair,
-        kTopologyMuteToDaiEdgePair,
-    }},
+    .processing_elements_edge_pairs =
+        {
+            {
+                kTopologyRbToMuteEdgePair,
+                kTopologyMuteToDaiEdgePair,
+            },
+        },
 }};
 
 // Topology set

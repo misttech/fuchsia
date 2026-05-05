@@ -31,9 +31,9 @@ bool ElementStateMatchesSettableElementState(
     fuchsia_hardware_audio_signalprocessing::SettableElementState settable_state) {
   return
       // started must match
-      (state.started() == settable_state.started()) &&
+      state.started() == settable_state.started() &&
       // bypassed must match
-      (state.bypassed() == settable_state.bypassed()) &&
+      state.bypassed() == settable_state.bypassed() &&
       // type_specific must match ...
       (
           // ... whether it is dynamics ...
@@ -69,7 +69,7 @@ bool ElementStateMatchesSettableElementState(
            state.type_specific()->vendor_specific().value() ==
                settable_state.type_specific()->vendor_specific().value())) &&
       // vendor_specific_data must match
-      (state.vendor_specific_data() == settable_state.vendor_specific_data());
+      state.vendor_specific_data() == settable_state.vendor_specific_data();
 }
 
 bool FormatIsSupported(const fha::Format2& format,
@@ -332,7 +332,7 @@ void FakeComposite::on_ps_unbind(FakeCompositePacketStream* fake_packet_stream,
 void FakeComposite::RingBufferWasDropped(ElementId element_id) {
   ADR_LOG_METHOD(kLogFakeComposite) << "element_id " << element_id;
 
-  ring_buffer_bindings_.erase((element_id));
+  ring_buffer_bindings_.erase(element_id);
   ring_buffers_.erase(element_id);
 }
 
@@ -341,7 +341,7 @@ void FakeComposite::RingBufferWasDropped(ElementId element_id) {
 void FakeComposite::PacketStreamWasDropped(ElementId element_id) {
   ADR_LOG_METHOD(kLogFakeComposite) << "element_id " << element_id;
 
-  packet_stream_bindings_.erase((element_id));
+  packet_stream_bindings_.erase(element_id);
   packet_streams_.erase(element_id);
 }
 
@@ -367,27 +367,6 @@ void FakeComposite::SetupElementsMap() {
       },
   });
   elements_.insert({
-      kDestDaiElementId,
-      FakeElementRecord{
-          .element = kDestDaiElement,
-          .state = kDestDaiElementInitState,
-      },
-  });
-  elements_.insert({
-      kDestRbElementId,
-      FakeElementRecord{
-          .element = kDestRbElement,
-          .state = kDestRbElementInitState,
-      },
-  });
-  elements_.insert({
-      kDestPsElementId,
-      FakeElementRecord{
-          .element = kDestPsElement,
-          .state = kDestPsElementInitState,
-      },
-  });
-  elements_.insert({
       kSourceRbElementId,
       FakeElementRecord{
           .element = kSourceRbElement,
@@ -409,6 +388,27 @@ void FakeComposite::SetupElementsMap() {
       },
   });
   elements_.insert({
+      kDestDaiElementId,
+      FakeElementRecord{
+          .element = kDestDaiElement,
+          .state = kDestDaiElementInitState,
+      },
+  });
+  elements_.insert({
+      kDestRbElementId,
+      FakeElementRecord{
+          .element = kDestRbElement,
+          .state = kDestRbElementInitState,
+      },
+  });
+  elements_.insert({
+      kDestPsElementId,
+      FakeElementRecord{
+          .element = kDestPsElement,
+          .state = kDestPsElementInitState,
+      },
+  });
+  elements_.insert({
       kMuteElementId,
       FakeElementRecord{
           .element = kMuteElement,
@@ -417,21 +417,21 @@ void FakeComposite::SetupElementsMap() {
   });
 
   ASSERT_TRUE(elements_.at(kSourceDaiElementId).state_has_changed);
-  ASSERT_TRUE(elements_.at(kDestDaiElementId).state_has_changed);
-  ASSERT_TRUE(elements_.at(kDestRbElementId).state_has_changed);
-  ASSERT_TRUE(elements_.at(kDestPsElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kSourceRbElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kSourcePsElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kSourceDualSupportPsElementId).state_has_changed);
+  ASSERT_TRUE(elements_.at(kDestDaiElementId).state_has_changed);
+  ASSERT_TRUE(elements_.at(kDestRbElementId).state_has_changed);
+  ASSERT_TRUE(elements_.at(kDestPsElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kMuteElementId).state_has_changed);
 
   ASSERT_FALSE(elements_.at(kSourceDaiElementId).watch_completer.has_value());
-  ASSERT_FALSE(elements_.at(kDestDaiElementId).watch_completer.has_value());
-  ASSERT_FALSE(elements_.at(kDestRbElementId).watch_completer.has_value());
-  ASSERT_FALSE(elements_.at(kDestPsElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kSourceRbElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kSourcePsElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kSourceDualSupportPsElementId).watch_completer.has_value());
+  ASSERT_FALSE(elements_.at(kDestDaiElementId).watch_completer.has_value());
+  ASSERT_FALSE(elements_.at(kDestRbElementId).watch_completer.has_value());
+  ASSERT_FALSE(elements_.at(kDestPsElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kMuteElementId).watch_completer.has_value());
 }
 
@@ -909,7 +909,7 @@ void FakeComposite::SetDaiFormat(SetDaiFormatRequest& request,
 
 // Return our static element list.
 void FakeComposite::GetElements(GetElementsCompleter::Sync& completer) {
-  ADR_LOG_METHOD(kLogFakeComposite);
+  ADR_LOG_METHOD(kLogFakeCompositeSignalProcessing);
 
   // If we've been instructed to be unresponsive, pend the completer - indefinitely.
   if (!responsive()) {
@@ -922,7 +922,7 @@ void FakeComposite::GetElements(GetElementsCompleter::Sync& completer) {
 
 // Return our static topology list.
 void FakeComposite::GetTopologies(GetTopologiesCompleter::Sync& completer) {
-  ADR_LOG_METHOD(kLogFakeComposite);
+  ADR_LOG_METHOD(kLogFakeCompositeSignalProcessing);
 
   // If we've been instructed to be unresponsive, pend the completer - indefinitely.
   if (!responsive()) {
@@ -936,7 +936,7 @@ void FakeComposite::GetTopologies(GetTopologiesCompleter::Sync& completer) {
 void FakeComposite::WatchElementState(WatchElementStateRequest& request,
                                       WatchElementStateCompleter::Sync& completer) {
   auto element_id = request.processing_element_id();
-  ADR_LOG_METHOD(kLogFakeComposite) << "(" << element_id << ")";
+  ADR_LOG_METHOD(kLogFakeCompositeSignalProcessing) << "(" << element_id << ")";
 
   // If we've been instructed to be unresponsive, pend the completer - indefinitely.
   if (!responsive()) {
@@ -966,7 +966,7 @@ void FakeComposite::WatchElementState(WatchElementStateRequest& request,
 void FakeComposite::SetElementState(SetElementStateRequest& request,
                                     SetElementStateCompleter::Sync& completer) {
   auto element_id = request.processing_element_id();
-  ADR_LOG_METHOD(kLogFakeComposite) << "(" << element_id << ")";
+  ADR_LOG_METHOD(kLogFakeCompositeSignalProcessing) << "(" << element_id << ")";
 
   // If we've been instructed to be unresponsive, pend the completer - indefinitely.
   if (!responsive()) {
@@ -1018,7 +1018,7 @@ void FakeComposite::SetElementState(SetElementStateRequest& request,
 }
 
 void FakeComposite::InjectElementStateChange(ElementId element_id, fhasp::ElementState new_state) {
-  ADR_LOG_METHOD(kLogFakeComposite) << "(" << element_id << ")";
+  ADR_LOG_METHOD(kLogFakeCompositeSignalProcessing) << "(" << element_id << ")";
   auto match = elements_.find(element_id);
   ASSERT_NE(match, elements_.end());
   auto& element = match->second;
@@ -1039,20 +1039,19 @@ void FakeComposite::MaybeCompleteWatchElementState(FakeElementRecord& element_re
 
     element_record.state_has_changed = false;
 
-    ADR_LOG_STATIC(kLogFakeComposite)
+    ADR_LOG_STATIC(kLogFakeCompositeSignalProcessing)
         << "About to complete WatchElementState for element_id " << *element_record.element.id();
     completer.Reply(element_record.state);
   } else {
-    ADR_LOG_STATIC(kLogFakeComposite)
+    ADR_LOG_STATIC(kLogFakeCompositeSignalProcessing)
         << "Not completing WatchElementState for element_id " << *element_record.element.id();
   }
 }
 
 void FakeComposite::WatchTopology(WatchTopologyCompleter::Sync& completer) {
-  ADR_LOG_METHOD(kLogFakeComposite);
-
   // If we've been instructed to be unresponsive, pend the completer - indefinitely.
   if (!responsive()) {
+    ADR_LOG_METHOD(kLogFakeCompositeSignalProcessing) << "will not respond";
     watch_topology_completers_.emplace_back(completer.ToAsync());
     return;
   }
@@ -1062,6 +1061,7 @@ void FakeComposite::WatchTopology(WatchTopologyCompleter::Sync& completer) {
     completer.Close(ZX_ERR_BAD_STATE);
     return;
   }
+  ADR_LOG_METHOD(kLogFakeCompositeSignalProcessing);
 
   watch_topology_completers_.emplace_back(completer.ToAsync());
 
@@ -1070,7 +1070,7 @@ void FakeComposite::WatchTopology(WatchTopologyCompleter::Sync& completer) {
 
 void FakeComposite::SetTopology(SetTopologyRequest& request,
                                 SetTopologyCompleter::Sync& completer) {
-  ADR_LOG_METHOD(kLogFakeComposite) << "(id: " << request.topology_id() << ")";
+  ADR_LOG_METHOD(kLogFakeCompositeSignalProcessing) << "(id: " << request.topology_id() << ")";
 
   // If we've been instructed to be unresponsive, pend the completer - indefinitely.
   if (!responsive()) {
@@ -1092,7 +1092,7 @@ void FakeComposite::SetTopology(SetTopologyRequest& request,
   }
 
   if (topology_id_.has_value() && *topology_id_ == request.topology_id()) {
-    ADR_LOG_METHOD(kLogFakeComposite)
+    ADR_LOG_METHOD(kLogFakeCompositeSignalProcessing)
         << "topology was already set to " << request.topology_id() << ": no change";
   } else {
     topology_id_ = request.topology_id();
@@ -1101,6 +1101,38 @@ void FakeComposite::SetTopology(SetTopologyRequest& request,
     MaybeCompleteWatchTopology();
   }
   completer.Reply(fit::ok());
+}
+
+// Inject std::nullopt to simulate "no topology", such as at power-up or after Reset().
+void FakeComposite::InjectTopologyChange(std::optional<TopologyId> topology_id) {
+  ADR_LOG_METHOD(kLogFakeCompositeSignalProcessing)
+      << "id " << (topology_id.has_value() ? std::to_string(*topology_id) : "(none)");
+  topology_has_changed_ = topology_id.has_value();
+
+  if (topology_has_changed_) {
+    topology_id_ = topology_id;
+
+    if (responsive()) {
+      MaybeCompleteWatchTopology();
+    }
+  } else {
+    topology_id_.reset();  // A new `SetTopology` call must be made
+  }
+}
+
+void FakeComposite::MaybeCompleteWatchTopology() {
+  if (topology_id_.has_value() && topology_has_changed_ && !watch_topology_completers_.empty()) {
+    auto completer = std::move(watch_topology_completers_.front());
+    watch_topology_completers_.clear();
+
+    topology_has_changed_ = false;
+
+    ADR_LOG_METHOD(kLogFakeCompositeSignalProcessing)
+        << "About to complete WatchTopology with topology_id " << *topology_id_;
+    completer.Reply(*topology_id_);
+  } else {
+    ADR_LOG_METHOD(kLogFakeCompositeSignalProcessing) << "Not completing WatchTopology";
+  }
 }
 
 void FakeComposite::handle_unknown_method(
@@ -1125,36 +1157,6 @@ void FakeComposite::handle_unknown_method(
     return;
   }
   completer.Close(ZX_ERR_NOT_SUPPORTED);
-}
-
-// Inject std::nullopt to simulate "no topology", such as at power-up or after Reset().
-void FakeComposite::InjectTopologyChange(std::optional<TopologyId> topology_id) {
-  topology_has_changed_ = topology_id.has_value();
-
-  if (topology_has_changed_) {
-    topology_id_ = topology_id;
-
-    if (responsive()) {
-      MaybeCompleteWatchTopology();
-    }
-  } else {
-    topology_id_.reset();  // A new `SetTopology` call must be made
-  }
-}
-
-void FakeComposite::MaybeCompleteWatchTopology() {
-  if (topology_id_.has_value() && topology_has_changed_ && !watch_topology_completers_.empty()) {
-    auto completer = std::move(watch_topology_completers_.front());
-    watch_topology_completers_.clear();
-
-    topology_has_changed_ = false;
-
-    ADR_LOG_STATIC(kLogFakeComposite)
-        << "About to complete WatchTopology with topology_id " << *topology_id_;
-    completer.Reply(*topology_id_);
-  } else {
-    ADR_LOG_STATIC(kLogFakeComposite) << "Not completing WatchTopology";
-  }
 }
 
 uint64_t FakeComposite::RingBufferActiveChannelsBitmask(ElementId element_id) const {

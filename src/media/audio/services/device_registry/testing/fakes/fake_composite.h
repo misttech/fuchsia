@@ -219,48 +219,57 @@ class FakeComposite final
   static constexpr ElementId kMaxElementId = kMuteElementId;
 
   static const std::string kSourceDaiElementDescription;
-  static const std::string kDestDaiElementDescription;
-  static const std::string kSourceRbElementDescription;
-  static const std::string kDestRbElementDescription;
-  static const std::string kSourcePsElementDescription;
-  static const std::string kDestPsElementDescription;
-  static const std::string kSourceDualSupportPsElementDescription;
-  static const std::string kMuteElementDescription;
-
   static const fuchsia_hardware_audio_signalprocessing::Element kSourceDaiElement;
-  static const fuchsia_hardware_audio_signalprocessing::Element kDestRbElement;
-  static const fuchsia_hardware_audio_signalprocessing::Element kDestPsElement;
-  static const fuchsia_hardware_audio_signalprocessing::Element kSourceRbElement;
-  static const fuchsia_hardware_audio_signalprocessing::Element kSourcePsElement;
-  static const fuchsia_hardware_audio_signalprocessing::Element kSourceDualSupportPsElement;
-  static const fuchsia_hardware_audio_signalprocessing::Element kDestDaiElement;
-  static const fuchsia_hardware_audio_signalprocessing::Element kMuteElement;
   static const zx::duration kSourceDaiElementProcessingDelay;
-  static const zx::duration kSourceRbElementProcessingDelay;
-  static const zx::duration kSourcePsElementProcessingDelay;
-  static const zx::duration kSourceDualSupportPsElementProcessingDelay;
-  static const zx::duration kDestDaiElementProcessingDelay;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kSourceDaiElementInitState;
-  static const fuchsia_hardware_audio_signalprocessing::ElementState kDestRbElementInitState;
-  static const fuchsia_hardware_audio_signalprocessing::ElementState kDestPsElementInitState;
+
+  static const std::string kSourceRbElementDescription;
+  static const fuchsia_hardware_audio_signalprocessing::Element kSourceRbElement;
+  static const zx::duration kSourceRbElementProcessingDelay;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kSourceRbElementInitState;
+
+  static const std::string kSourcePsElementDescription;
+  static const fuchsia_hardware_audio_signalprocessing::Element kSourcePsElement;
+  static const zx::duration kSourcePsElementProcessingDelay;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kSourcePsElementInitState;
+
+  static const std::string kSourceDualSupportPsElementDescription;
+  static const fuchsia_hardware_audio_signalprocessing::Element kSourceDualSupportPsElement;
+  static const zx::duration kSourceDualSupportPsElementProcessingDelay;
   static const fuchsia_hardware_audio_signalprocessing::ElementState
       kSourceDualSupportPsElementInitState;
+
+  static const std::string kDestDaiElementDescription;
+  static const fuchsia_hardware_audio_signalprocessing::Element kDestDaiElement;
+  static const zx::duration kDestDaiElementProcessingDelay;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kDestDaiElementInitState;
+
+  static const std::string kDestRbElementDescription;
+  static const fuchsia_hardware_audio_signalprocessing::Element kDestRbElement;
+  static const fuchsia_hardware_audio_signalprocessing::ElementState kDestRbElementInitState;
+
+  static const std::string kDestPsElementDescription;
+  static const fuchsia_hardware_audio_signalprocessing::Element kDestPsElement;
+  static const fuchsia_hardware_audio_signalprocessing::ElementState kDestPsElementInitState;
+
+  static const std::string kMuteElementDescription;
+  static const fuchsia_hardware_audio_signalprocessing::Element kMuteElement;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kMuteElementInitState;
+
   static const std::vector<fuchsia_hardware_audio_signalprocessing::Element> kElements;
 
   // For min/max checks based on ranges, keep this range contiguous.
-  static constexpr TopologyId kInputOnlyTopologyId = 10;
-  static constexpr TopologyId kPacketStreamCaptureTopologyId = 11;
-  static constexpr TopologyId kFullDuplexTopologyId = 12;
-  static constexpr TopologyId kOutputOnlyTopologyId = 13;
-  static constexpr TopologyId kPacketStreamOutputTopologyId = 14;
-  static constexpr TopologyId kOutputWithMuteTopologyId = 15;
-  static constexpr TopologyId kSourceDualSupportPsOutputTopologyId = 16;
-  static constexpr TopologyId kMinTopologyId = kInputOnlyTopologyId;
-  static constexpr TopologyId kMaxTopologyId = kSourceDualSupportPsOutputTopologyId;
+  static constexpr TopologyId kStartTopologyId = 10;
+  static constexpr TopologyId kInputOnlyTopologyId = kStartTopologyId;
+  static constexpr TopologyId kPacketStreamCaptureTopologyId = kInputOnlyTopologyId + 1;
+  static constexpr TopologyId kFullDuplexTopologyId = kPacketStreamCaptureTopologyId + 1;
+  static constexpr TopologyId kOutputOnlyTopologyId = kFullDuplexTopologyId + 1;
+  static constexpr TopologyId kPacketStreamOutputTopologyId = kOutputOnlyTopologyId + 1;
+  static constexpr TopologyId kOutputWithMuteTopologyId = kPacketStreamOutputTopologyId + 1;
+  static constexpr TopologyId kSourceDualSupportPsOutputTopologyId = kOutputWithMuteTopologyId + 1;
+  static constexpr TopologyId kEndTopologyId = kSourceDualSupportPsOutputTopologyId + 1;
+  static constexpr TopologyId kDefaultTopologyId = kFullDuplexTopologyId;
+  static constexpr TopologyId kSubsequentTopologyId = kInputOnlyTopologyId;
 
   static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyInputEdgePair;
   static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyPsCaptureEdgePair;
@@ -346,7 +355,7 @@ class FakeComposite final
                        fuchsia_hardware_audio_signalprocessing::ElementType element_type) const {
     for (auto& element_iter : elements_) {
       if (element_iter.first == element_id) {
-        return (element_iter.second.element.type() == element_type);
+        return element_iter.second.element.type() == element_type;
       }
     }
     return false;  // We didn't find the element.
@@ -365,20 +374,6 @@ class FakeComposite final
 
   bool PacketStreamStarted(ElementId element_id) const;
   zx::time PacketStreamMonoStartTime(ElementId element_id) const;
-
- private:
-  friend FakeCompositeRingBuffer;
-  friend FakeCompositePacketStream;
-
-  static constexpr std::string_view kClassName = "FakeComposite";
-
-  struct FakeElementRecord {
-    fuchsia_hardware_audio_signalprocessing::Element element;
-    fuchsia_hardware_audio_signalprocessing::ElementState state;
-    bool state_has_changed = true;  // immediately complete the first WatchElementState request
-    std::optional<WatchElementStateCompleter::Async> watch_completer;
-  };
-  void SetupElementsMap();
 
   // fuchsia_hardware_audio::Composite implementation
   void Reset(ResetCompleter::Sync& completer) override;
@@ -418,6 +413,20 @@ class FakeComposite final
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_audio::Composite> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) final;
+
+ private:
+  friend FakeCompositeRingBuffer;
+  friend FakeCompositePacketStream;
+
+  static constexpr std::string_view kClassName = "FakeComposite";
+
+  struct FakeElementRecord {
+    fuchsia_hardware_audio_signalprocessing::Element element;
+    fuchsia_hardware_audio_signalprocessing::ElementState state;
+    bool state_has_changed = true;  // immediately complete the first WatchElementState request
+    std::optional<WatchElementStateCompleter::Async> watch_completer;
+  };
+  void SetupElementsMap();
 
   // Internal implementation methods/members
   static bool DaiFormatIsSupported(ElementId element_id,
@@ -461,7 +470,7 @@ class FakeComposite final
   std::vector<GetTopologiesCompleter::Async> get_topologies_completers_;
   std::vector<WatchTopologyCompleter::Async> watch_topology_completers_;
   std::vector<SetTopologyCompleter::Async> set_topology_completers_;
-  std::optional<TopologyId> topology_id_ = kFullDuplexTopologyId;
+  std::optional<TopologyId> topology_id_ = kDefaultTopologyId;
   bool topology_has_changed_ = true;
 
   std::unordered_map<ElementId, size_t> ring_buffer_allocation_sizes_;

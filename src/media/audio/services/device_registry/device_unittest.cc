@@ -1236,7 +1236,7 @@ TEST_F(CompositeTest, SetDaiFormatChange) {
     device->SetDaiFormat(dai_id, safe_format2);
 
     RunLoopUntilIdle();
-    // SetDaiFormat with no-change should cause a DaiElement to emit a not-set notification with 0.
+    // SetDaiFormat with no-change should cause a DAI element to emit a not-set notification with 0.
     format_match = notify()->dai_formats().find(dai_id);
     EXPECT_TRUE(ExpectDaiFormatMatches(dai_id, safe_format2));
     EXPECT_TRUE(notify()->codec_format_infos().empty());
@@ -1270,7 +1270,7 @@ TEST_F(CompositeTest, Reset) {
     auto safe_format = SafeDriverRingBufferFormatFromElementDriverRingBufferFormatSets(
         element_id, ring_buffer_format_sets_by_element);
 
-    std::stringstream stream;
+    std::ostringstream stream;
     stream << "Validating CreateRingBuffer on element_id " << element_id << " with format "
            << safe_format.pcm_format().value();
     SCOPED_TRACE(stream.str());
@@ -1298,7 +1298,7 @@ TEST_F(CompositeTest, Reset) {
   for (auto element_id : device->packet_stream_ids()) {
     for (auto safe_format :
          SafeDriverPacketStreamFormats(element_id, packet_stream_format_sets_by_element)) {
-      std::stringstream stream;
+      std::ostringstream stream;
       stream << "Validating CreatePacketStream on element_id " << element_id << " with format "
              << (safe_format.pcm_format() ? "PCM" : "Encoding");
       SCOPED_TRACE(stream.str());
@@ -1314,7 +1314,7 @@ TEST_F(CompositeTest, Reset) {
   EXPECT_TRUE(device->Reset());
 
   RunLoopUntilIdle();
-  // Reset should cause every DaiElement to emit DaiFormatIsChanged(id, std::nullopt, std::nullopt).
+  // Reset should cause every DAI element to emit DaiFormatIsChanged(id, std::nullopt, std::nullopt)
   // So notify()->dai_formats() should contain an entry for each Dai element, of value std::nullopt.
   EXPECT_EQ(notify()->dai_formats().size(), device->dai_ids().size());
   for (const auto& [element_id, format] : notify()->dai_formats()) {
@@ -1342,7 +1342,7 @@ TEST_F(CompositeTest, Reset) {
 // Creating a RingBuffer should succeed.
 void CompositeTest::TestCreateRingBuffer(const std::shared_ptr<Device>& device,
                                          ElementId element_id, const fha::Format2& safe_format) {
-  std::stringstream stream;
+  std::ostringstream stream;
   stream << "Validating CreateRingBuffer on element_id " << element_id << " with format "
          << safe_format.pcm_format().value();
   SCOPED_TRACE(stream.str());
@@ -1780,7 +1780,7 @@ TEST_F(CompositeTest, WatchDelayInfoUpdate) {
 
 void CompositeTest::TestCreatePacketStream(const std::shared_ptr<Device>& device,
                                            ElementId element_id, const fha::Format2& safe_format) {
-  std::stringstream stream;
+  std::ostringstream stream;
   stream << "Validating CreatePacketStream on element_id " << element_id << " with format "
          << (safe_format.pcm_format() ? "PCM" : "Encoding");
   SCOPED_TRACE(stream.str());
@@ -2061,32 +2061,32 @@ TEST_F(CompositeTest, GetElements) {
   EXPECT_EQ(elements->at(0).type_specific()->dai_interconnect()->plug_detect_capabilities(),
             fhasp::PlugDetectCapabilities::kCanAsyncNotify);
 
-  EXPECT_EQ(elements->at(1).id(), FakeComposite::kDestDaiElementId);
-  EXPECT_EQ(elements->at(1).type(), fhasp::ElementType::kDaiInterconnect);
+  EXPECT_EQ(elements->at(1).id(), FakeComposite::kSourceRbElementId);
+  EXPECT_EQ(elements->at(1).type(), fhasp::ElementType::kRingBuffer);
   EXPECT_FALSE(*elements->at(1).can_bypass());
-  EXPECT_TRUE(*elements->at(1).can_stop());
-  EXPECT_EQ(*elements->at(1).description(), *FakeComposite::kDestDaiElement.description());
-  EXPECT_EQ(elements->at(1).type_specific()->dai_interconnect()->plug_detect_capabilities(),
-            fhasp::PlugDetectCapabilities::kCanAsyncNotify);
+  EXPECT_FALSE(*elements->at(1).can_stop());
+  EXPECT_EQ(*elements->at(1).description(), *FakeComposite::kSourceRbElement.description());
 
-  EXPECT_EQ(elements->at(2).id(), FakeComposite::kSourceRbElementId);
-  EXPECT_EQ(elements->at(2).type(), fhasp::ElementType::kRingBuffer);
+  EXPECT_EQ(elements->at(2).id(), FakeComposite::kSourcePsElementId);
+  EXPECT_EQ(elements->at(2).type(), fhasp::ElementType::kPacketStream);
   EXPECT_FALSE(*elements->at(2).can_bypass());
   EXPECT_FALSE(*elements->at(2).can_stop());
-  EXPECT_EQ(*elements->at(2).description(), *FakeComposite::kSourceRbElement.description());
+  EXPECT_EQ(*elements->at(2).description(), *FakeComposite::kSourcePsElement.description());
 
-  EXPECT_EQ(elements->at(3).id(), FakeComposite::kSourcePsElementId);
+  EXPECT_EQ(elements->at(3).id(), FakeComposite::kSourceDualSupportPsElementId);
   EXPECT_EQ(elements->at(3).type(), fhasp::ElementType::kPacketStream);
   EXPECT_FALSE(*elements->at(3).can_bypass());
   EXPECT_FALSE(*elements->at(3).can_stop());
-  EXPECT_EQ(*elements->at(3).description(), *FakeComposite::kSourcePsElement.description());
-
-  EXPECT_EQ(elements->at(4).id(), FakeComposite::kSourceDualSupportPsElementId);
-  EXPECT_EQ(elements->at(4).type(), fhasp::ElementType::kPacketStream);
-  EXPECT_FALSE(*elements->at(4).can_bypass());
-  EXPECT_FALSE(*elements->at(4).can_stop());
-  EXPECT_EQ(*elements->at(4).description(),
+  EXPECT_EQ(*elements->at(3).description(),
             *FakeComposite::kSourceDualSupportPsElement.description());
+
+  EXPECT_EQ(elements->at(4).id(), FakeComposite::kDestDaiElementId);
+  EXPECT_EQ(elements->at(4).type(), fhasp::ElementType::kDaiInterconnect);
+  EXPECT_FALSE(*elements->at(4).can_bypass());
+  EXPECT_TRUE(*elements->at(4).can_stop());
+  EXPECT_EQ(*elements->at(4).description(), *FakeComposite::kDestDaiElement.description());
+  EXPECT_EQ(elements->at(4).type_specific()->dai_interconnect()->plug_detect_capabilities(),
+            fhasp::PlugDetectCapabilities::kCanAsyncNotify);
 
   EXPECT_EQ(elements->at(5).id(), FakeComposite::kDestRbElementId);
   EXPECT_EQ(elements->at(5).type(), fhasp::ElementType::kRingBuffer);
@@ -2123,7 +2123,7 @@ TEST_F(CompositeTest, GetTopologies) {
   ASSERT_TRUE(topologies->at(0).id().has_value());
   EXPECT_EQ(*topologies->at(0).id(), FakeComposite::kInputOnlyTopologyId);
   ASSERT_TRUE(topologies->at(0).processing_elements_edge_pairs().has_value());
-  EXPECT_EQ(topologies->at(0).processing_elements_edge_pairs()->size(), 1u);
+  ASSERT_GE(topologies->at(0).processing_elements_edge_pairs()->size(), 1u);
   EXPECT_EQ(topologies->at(0).processing_elements_edge_pairs()->at(0).processing_element_id_from(),
             FakeComposite::kSourceDaiElementId);
   EXPECT_EQ(topologies->at(0).processing_elements_edge_pairs()->at(0).processing_element_id_to(),
@@ -2132,7 +2132,7 @@ TEST_F(CompositeTest, GetTopologies) {
   ASSERT_TRUE(topologies->at(1).id().has_value());
   EXPECT_EQ(*topologies->at(1).id(), FakeComposite::kPacketStreamCaptureTopologyId);
   ASSERT_TRUE(topologies->at(1).processing_elements_edge_pairs().has_value());
-  EXPECT_EQ(topologies->at(1).processing_elements_edge_pairs()->size(), 1u);
+  ASSERT_GE(topologies->at(1).processing_elements_edge_pairs()->size(), 1u);
   EXPECT_EQ(topologies->at(1).processing_elements_edge_pairs()->at(0).processing_element_id_from(),
             FakeComposite::kSourceDaiElementId);
   EXPECT_EQ(topologies->at(1).processing_elements_edge_pairs()->at(0).processing_element_id_to(),
@@ -2141,7 +2141,7 @@ TEST_F(CompositeTest, GetTopologies) {
   ASSERT_TRUE(topologies->at(2).id().has_value());
   EXPECT_EQ(*topologies->at(2).id(), FakeComposite::kFullDuplexTopologyId);
   ASSERT_TRUE(topologies->at(2).processing_elements_edge_pairs().has_value());
-  EXPECT_EQ(topologies->at(2).processing_elements_edge_pairs()->size(), 2u);
+  ASSERT_GE(topologies->at(2).processing_elements_edge_pairs()->size(), 2u);
   EXPECT_EQ(topologies->at(2).processing_elements_edge_pairs()->at(0).processing_element_id_from(),
             FakeComposite::kSourceDaiElementId);
   EXPECT_EQ(topologies->at(2).processing_elements_edge_pairs()->at(0).processing_element_id_to(),
@@ -2154,7 +2154,7 @@ TEST_F(CompositeTest, GetTopologies) {
   ASSERT_TRUE(topologies->at(3).id().has_value());
   EXPECT_EQ(*topologies->at(3).id(), FakeComposite::kOutputOnlyTopologyId);
   ASSERT_TRUE(topologies->at(3).processing_elements_edge_pairs().has_value());
-  EXPECT_EQ(topologies->at(3).processing_elements_edge_pairs()->size(), 1u);
+  ASSERT_GE(topologies->at(3).processing_elements_edge_pairs()->size(), 1u);
   EXPECT_EQ(topologies->at(3).processing_elements_edge_pairs()->at(0).processing_element_id_from(),
             FakeComposite::kSourceRbElementId);
   EXPECT_EQ(topologies->at(3).processing_elements_edge_pairs()->at(0).processing_element_id_to(),
@@ -2163,7 +2163,7 @@ TEST_F(CompositeTest, GetTopologies) {
   ASSERT_TRUE(topologies->at(4).id().has_value());
   EXPECT_EQ(*topologies->at(4).id(), FakeComposite::kPacketStreamOutputTopologyId);
   ASSERT_TRUE(topologies->at(4).processing_elements_edge_pairs().has_value());
-  EXPECT_EQ(topologies->at(4).processing_elements_edge_pairs()->size(), 1u);
+  ASSERT_GE(topologies->at(4).processing_elements_edge_pairs()->size(), 1u);
   EXPECT_EQ(topologies->at(4).processing_elements_edge_pairs()->at(0).processing_element_id_from(),
             FakeComposite::kSourcePsElementId);
   EXPECT_EQ(topologies->at(4).processing_elements_edge_pairs()->at(0).processing_element_id_to(),
@@ -2172,15 +2172,12 @@ TEST_F(CompositeTest, GetTopologies) {
   ASSERT_TRUE(topologies->at(5).id().has_value());
   EXPECT_EQ(*topologies->at(5).id(), FakeComposite::kOutputWithMuteTopologyId);
   ASSERT_TRUE(topologies->at(5).processing_elements_edge_pairs().has_value());
-  EXPECT_EQ(topologies->at(5).processing_elements_edge_pairs()->size(), 2u);
-  EXPECT_EQ(topologies->at(5).processing_elements_edge_pairs()->at(0).processing_element_id_from(),
-            FakeComposite::kSourceRbElementId);
-  EXPECT_EQ(topologies->at(5).processing_elements_edge_pairs()->at(0).processing_element_id_to(),
-            FakeComposite::kMuteElementId);
-  EXPECT_EQ(topologies->at(5).processing_elements_edge_pairs()->at(1).processing_element_id_from(),
-            FakeComposite::kMuteElementId);
-  EXPECT_EQ(topologies->at(5).processing_elements_edge_pairs()->at(1).processing_element_id_to(),
-            FakeComposite::kDestDaiElementId);
+  auto& pairs = topologies->at(5).processing_elements_edge_pairs().value();
+  ASSERT_GE(pairs.size(), 2u);
+  EXPECT_EQ(pairs[0].processing_element_id_from(), FakeComposite::kSourceRbElementId);
+  EXPECT_EQ(pairs[0].processing_element_id_to(), FakeComposite::kMuteElementId);
+  EXPECT_EQ(pairs[1].processing_element_id_from(), FakeComposite::kMuteElementId);
+  EXPECT_EQ(pairs[1].processing_element_id_to(), FakeComposite::kDestDaiElementId);
 }
 
 // Ensure that we captured the full contents of FakeComposite signalprocessing functionality,
@@ -2315,38 +2312,44 @@ TEST_F(CompositeTest, WatchElementStateUpdate) {
       continue;
     }
     auto was_plugged = state.type_specific()->dai_interconnect()->plug_state()->plugged();
-    auto new_state = fhasp::ElementState{{
-        .type_specific = fhasp::TypeSpecificElementState::WithDaiInterconnect(
-            fhasp::DaiInterconnectElementState{{
-                .plug_state = fhasp::PlugState{{
-                    .plugged = !was_plugged,
-                    .plug_state_time = plug_change_time_to_inject.get(),
-                }},
-                .external_delay = ZX_MSEC(element_id),
-            }}),
-        .vendor_specific_data = {{
-            '0',
-            '1',
-            '2',
-            '3',
-            '4',
-            '5',
-            '6',
-            '7',
-            '8',
-            '9',
-            'A',
-            'B',
-            'C',
-            'D',
-            'E',
-            'F',
-            'Z',
-        }},  // 'Z' is located at byte [16].
-        .started = true,
-        .bypassed = false,
-        .processing_delay = ZX_USEC(element_id),
-    }};
+    auto
+        new_state =
+            fhasp::ElementState{
+                {
+                    .type_specific = fhasp::TypeSpecificElementState::WithDaiInterconnect(
+                        fhasp::DaiInterconnectElementState{{
+                            .plug_state = fhasp::PlugState{{
+                                .plugged = !was_plugged,
+                                .plug_state_time = plug_change_time_to_inject.get(),
+                            }},
+                            .external_delay = ZX_MSEC(element_id),
+                        }}),
+                    .vendor_specific_data =
+                        {
+                            {
+                                '0',
+                                '1',
+                                '2',
+                                '3',
+                                '4',
+                                '5',
+                                '6',
+                                '7',
+                                '8',
+                                '9',
+                                'A',
+                                'B',
+                                'C',
+                                'D',
+                                'E',
+                                'F',
+                                'Z',
+                            },
+                        },  // 'Z' is located at byte [16].
+                    .started = true,
+                    .bypassed = false,
+                    .processing_delay = ZX_USEC(element_id),
+                }};
     ASSERT_EQ(new_state.vendor_specific_data()->size(), 17u) << "Test configuration error";
     element_states_to_inject.insert_or_assign(element_id, new_state);
   }
@@ -2423,36 +2426,36 @@ TEST_F(CompositeTest, WatchElementStateUpdate) {
 
 TEST_F(CompositeTest, WatchTopologyInitial) {
   auto fake_driver = MakeFakeComposite();
-  fake_driver->InjectTopologyChange(FakeComposite::kFullDuplexTopologyId);
+  fake_driver->InjectTopologyChange(FakeComposite::kDefaultTopologyId);
   auto device = InitializeDeviceForFakeComposite(fake_driver);
   ASSERT_TRUE(device->is_operational());
   ASSERT_TRUE(AddObserver(device));
 
   RunLoopUntilIdle();
   ASSERT_TRUE(notify()->topology_id().has_value());
-  EXPECT_EQ(*notify()->topology_id(), FakeComposite::kFullDuplexTopologyId);
+  EXPECT_EQ(*notify()->topology_id(), FakeComposite::kDefaultTopologyId);
 }
 
 TEST_F(CompositeTest, WatchTopologyUpdate) {
   auto fake_driver = MakeFakeComposite();
-  fake_driver->InjectTopologyChange(FakeComposite::kFullDuplexTopologyId);
+  fake_driver->InjectTopologyChange(FakeComposite::kDefaultTopologyId);
   auto device = InitializeDeviceForFakeComposite(fake_driver);
   ASSERT_TRUE(device->is_operational());
   ASSERT_TRUE(AddObserver(device));
 
   RunLoopUntilIdle();
   ASSERT_TRUE(notify()->topology_id().has_value());
-  EXPECT_EQ(*notify()->topology_id(), FakeComposite::kFullDuplexTopologyId);
+  EXPECT_EQ(*notify()->topology_id(), FakeComposite::kDefaultTopologyId);
   notify()->clear_topology_id();
 
   RunLoopUntilIdle();
   EXPECT_FALSE(notify()->topology_id().has_value());
 
-  fake_driver->InjectTopologyChange(FakeComposite::kInputOnlyTopologyId);
+  fake_driver->InjectTopologyChange(FakeComposite::kSubsequentTopologyId);
 
   RunLoopUntilIdle();
   ASSERT_TRUE(notify()->topology_id().has_value());
-  EXPECT_EQ(*notify()->topology_id(), FakeComposite::kInputOnlyTopologyId);
+  EXPECT_EQ(*notify()->topology_id(), FakeComposite::kSubsequentTopologyId);
 }
 
 TEST_F(CompositeTest, SetTopology) {

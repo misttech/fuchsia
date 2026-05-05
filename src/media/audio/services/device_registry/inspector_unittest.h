@@ -246,6 +246,22 @@ class InspectorTest : public AudioDeviceRegistryServerTestBase {
   std::shared_ptr<FidlThread> server_thread_;
 };
 
+class InspectorServerTest : public InspectorTest {
+  static inline const std::string kClassName = "InspectorServerTest";
+};
+
+class InspectorDaiTest : public InspectorTest {
+  static inline const std::string kClassName = "InspectorDaiTest";
+};
+
+class InspectorRingBufferTest : public InspectorTest {
+  static inline const std::string kClassName = "InspectorRingBufferTest";
+};
+
+class InspectorPacketStreamTest : public InspectorTest {
+  static inline const std::string kClassName = "InspectorPacketStreamTest";
+};
+
 }  // namespace media_audio
 
 #endif  // SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_INSPECTOR_UNITTEST_H_

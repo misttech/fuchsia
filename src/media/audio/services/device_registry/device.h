@@ -545,7 +545,7 @@ class Device : public std::enable_shared_from_this<Device> {
 
   bool dai_format_sets_retrieved_ = false;
   std::vector<fuchsia_audio_device::ElementDaiFormatSet> element_dai_format_sets_;
-  std::unordered_map<ElementId, std::shared_ptr<DaiElement>> dai_element_inspect_nodes_;
+  std::unordered_map<ElementId, std::shared_ptr<DaiElement>> dai_inspect_nodes_;
   std::unordered_map<ElementId, fuchsia_hardware_audio::DaiFormat> composite_dai_formats_;
 
   bool ring_buffer_format_sets_retrieved_ = false;
@@ -663,43 +663,43 @@ inline void Device::FidlOpenErrorHandler<ProtocolT>::handle_unknown_event(
 inline std::ostream& operator<<(std::ostream& out, Device::State device_state) {
   switch (device_state) {
     case Device::State::Error:
-      return (out << "Error");
+      return out << "Error";
     case Device::State::Initializing:
-      return (out << "Initializing");
+      return out << "Initializing";
     case Device::State::Initialized:
-      return (out << "Initialized");
+      return out << "Initialized";
     default:
-      return (out << "<unknown enum>");
+      return out << "<unknown enum>";
   }
 }
 
 inline std::ostream& operator<<(std::ostream& out, Device::RingBufferState ring_buffer_state) {
   switch (ring_buffer_state) {
     case Device::RingBufferState::NotCreated:
-      return (out << "NotCreated");
+      return out << "NotCreated";
     case Device::RingBufferState::Creating:
-      return (out << "Creating");
+      return out << "Creating";
     case Device::RingBufferState::Stopped:
-      return (out << "Stopped");
+      return out << "Stopped";
     case Device::RingBufferState::Started:
-      return (out << "Started");
+      return out << "Started";
     default:
-      return (out << "<unknown enum>");
+      return out << "<unknown enum>";
   }
 }
 
 inline std::ostream& operator<<(std::ostream& out, Device::PacketStreamState packet_stream_state) {
   switch (packet_stream_state) {
     case Device::PacketStreamState::NotCreated:
-      return (out << "NotCreated");
+      return out << "NotCreated";
     case Device::PacketStreamState::Creating:
-      return (out << "Creating");
+      return out << "Creating";
     case Device::PacketStreamState::Stopped:
-      return (out << "Stopped");
+      return out << "Stopped";
     case Device::PacketStreamState::Started:
-      return (out << "Started");
+      return out << "Started";
     default:
-      return (out << "<unknown enum>");
+      return out << "<unknown enum>";
   }
 }
 

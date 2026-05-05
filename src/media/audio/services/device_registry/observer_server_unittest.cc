@@ -117,7 +117,7 @@ class ObserverServerCompositeTest : public ObserverServerTest {
  protected:
   static inline const std::string kClassName = "ObserverServerCompositeTest";
   std::shared_ptr<FakeComposite> CreateAndEnableDriverWithDefaults(
-      std::optional<TopologyId> topology_id = FakeComposite::kFullDuplexTopologyId) {
+      std::optional<TopologyId> topology_id = FakeComposite::kDefaultTopologyId) {
     auto fake_driver = CreateFakeComposite();
     if (topology_id) {
       fake_driver->InjectTopologyChange(*topology_id);

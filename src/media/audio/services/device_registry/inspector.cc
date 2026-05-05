@@ -38,9 +38,9 @@ void RecordPcmFormat(inspect::Node& node, fuchsia_audio::SampleType sample_type,
   node.RecordUint(kChannelCount, channel_count);
   node.RecordUint(kFramesPerSecond, frames_per_second);
 
-  std::ostringstream ss;
-  ss << sample_type;
-  node.RecordString(kSampleFormat, ss.str());
+  std::ostringstream stream;
+  stream << sample_type;
+  node.RecordString(kSampleFormat, stream.str());
 }
 
 ///////////////////////////////////////
@@ -108,7 +108,7 @@ void RingBufferInspectInstance::RecordStartTime(const zx::time& started_at) {
 void RingBufferInspectInstance::RecordStopTime(const zx::time& stopped_at) {
   ADR_LOG_METHOD(kTraceInspector) << kStoppedAt << stopped_at.get();
   if (!running_intervals_.empty()) {
-    (*running_intervals_.rbegin())->RecordStopTime(stopped_at);
+    running_intervals_.back()->RecordStopTime(stopped_at);
   }
 }
 
@@ -162,9 +162,9 @@ void RecordSupportedPcmFormatSets(
         parent_node.CreateStringArray(kSampleFormat, sample_types.size());
     auto& sample_format_arr = pcm_format_set.sample_formats;
     for (auto j = 0u; j < sample_types.size(); ++j) {
-      std::stringstream ss;
-      ss << sample_types[j];
-      sample_format_arr.Set(j, ss.str());
+      std::ostringstream stream;
+      stream << sample_types[j];
+      sample_format_arr.Set(j, stream.str());
     }
 
     const auto& frame_rates = *format_sets[i].frame_rates();
@@ -216,9 +216,9 @@ void RecordSupportedEncodingSets(
       const auto& types = *encodings[i].encoding_types();
       encoding_set.encoding_types = parent_node.CreateStringArray(kEncodingType, types.size());
       for (auto j = 0u; j < types.size(); ++j) {
-        std::stringstream ss;
-        ss << types[j];
-        encoding_set.encoding_types.Set(j, ss.str());
+        std::ostringstream stream;
+        stream << types[j];
+        encoding_set.encoding_types.Set(j, stream.str());
       }
     }
 
@@ -300,7 +300,7 @@ void PacketStreamInspectInstance::RecordStartTime(const zx::time& started_at) {
 void PacketStreamInspectInstance::RecordStopTime(const zx::time& stopped_at) {
   ADR_LOG_METHOD(kTraceInspector) << kStoppedAt << stopped_at.get();
   if (!running_intervals_.empty()) {
-    (*running_intervals_.rbegin())->RecordStopTime(stopped_at);
+    running_intervals_.back()->RecordStopTime(stopped_at);
   }
 }
 
@@ -310,18 +310,18 @@ void PacketStreamInspectInstance::RecordBuffer(
   ADR_LOG_METHOD(kTraceInspector);
   buffer_node_ = packet_stream_instance_node_.CreateChild(kBufferProps);
 
-  std::stringstream ss;
-  if ((buffer_type & fha::BufferType::kClientOwned) == fha::BufferType::kClientOwned) {
-    ss << "|CLIENT_OWNED";
+  std::ostringstream stream;
+  if (buffer_type & fha::BufferType::kClientOwned) {
+    stream << "|CLIENT_OWNED";
   }
-  if ((buffer_type & fha::BufferType::kDriverOwned) == fha::BufferType::kDriverOwned) {
-    ss << "|DRIVER_OWNED";
+  if (buffer_type & fha::BufferType::kDriverOwned) {
+    stream << "|DRIVER_OWNED";
   }
-  if ((buffer_type & fha::BufferType::kInline) == fha::BufferType::kInline) {
-    ss << "|INLINE";
+  if (buffer_type & fha::BufferType::kInline) {
+    stream << "|INLINE";
   }
-  auto type_str = ss.str();
-  buffer_node_.RecordString(kBufferType, type_str.empty() ? "NONE" : type_str.substr(1));
+  auto type_str = stream.str();
+  buffer_node_.RecordString(kBufferType, type_str.empty() ? "<none>" : type_str.substr(1));
 
   if (!vmo_infos.empty()) {
     vmo_infos_node_ = buffer_node_.CreateChild(kVmoInfos);
@@ -361,9 +361,9 @@ void PacketStreamInspectInstance::RecordFormat(
     }
 
     if (enc.encoding_type()) {
-      std::stringstream ss;
-      ss << *enc.encoding_type();
-      format_node_.RecordString(kEncodingType, ss.str());
+      std::ostringstream stream;
+      stream << *enc.encoding_type();
+      format_node_.RecordString(kEncodingType, stream.str());
     }
   } else {
     format_node_.RecordUint("unknown_union_tag", static_cast<uint32_t>(format.Which()));
@@ -507,18 +507,18 @@ void DaiElement::RecordSupportedFormatSets(
     dai_format_set.dai_format_set_sample_formats =
         dai_format_set.dai_format_set_node.CreateStringArray(kSampleFormat, sample_formats.size());
     for (auto j = 0u; j < sample_formats.size(); ++j) {
-      std::stringstream ss;
-      ss << sample_formats[j];
-      dai_format_set.dai_format_set_sample_formats.Set(j, ss.str());
+      std::ostringstream stream;
+      stream << sample_formats[j];
+      dai_format_set.dai_format_set_sample_formats.Set(j, stream.str());
     }
 
     const auto& frame_formats = format_sets[i].frame_formats();
     dai_format_set.dai_format_set_frame_formats =
         dai_format_set.dai_format_set_node.CreateStringArray(kFrameFormat, frame_formats.size());
     for (auto j = 0u; j < frame_formats.size(); ++j) {
-      std::stringstream ss;
-      ss << frame_formats[j];
-      dai_format_set.dai_format_set_frame_formats.Set(j, ss.str());
+      std::ostringstream stream;
+      stream << frame_formats[j];
+      dai_format_set.dai_format_set_frame_formats.Set(j, stream.str());
     }
 
     const auto& frame_rates = format_sets[i].frame_rates();
@@ -555,7 +555,7 @@ void DaiElement::RecordSetDaiFormat(const zx::time& set_at,
   format_node_.RecordUint(kChannelBitmask, dai_format.channels_to_use_bitmask());
   format_node_.RecordUint(kFramesPerSecond, dai_format.frame_rate());
 
-  std::stringstream format_stream;
+  std::ostringstream format_stream;
   format_stream << dai_format.frame_format();
   format_node_.RecordString(kFrameFormat, format_stream.str());
 
@@ -572,7 +572,7 @@ DeviceInspectInstance::DeviceInspectInstance(inspect::Node device_node, std::str
                                              const zx::time& added_at, const std::string& added_by)
     : device_node_(std::move(device_node)), name_(std::move(device_name)) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "'";
-  std::stringstream device_type_ss;
+  std::ostringstream device_type_ss;
   device_node_.RecordInt(kAddedAt, added_at.get());
   device_node_.RecordString(kAddedBy, added_by);
 
@@ -673,16 +673,14 @@ std::shared_ptr<PacketStreamElement> DeviceInspectInstance::RecordPacketStreamEl
 void DeviceInspectInstance::RecordRingBufferSupportedFormatSets(
     ElementId element_id, const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
-  auto found =
-      std::ranges::find_if(ring_buffer_elements_.begin(), ring_buffer_elements_.end(),
-                           [element_id](const std::shared_ptr<RingBufferElement>& rb_element) {
-                             return (rb_element->element_id() == element_id);
-                           });
+  auto found = std::ranges::find_if(ring_buffer_elements_, [element_id](const auto& rb_ptr) {
+    return (rb_ptr->element_id() == element_id);
+  });
   if (found == ring_buffer_elements_.end()) {
-    ADR_WARN_OBJECT() << "Cannot record supported format sets: RB element_id " << element_id
+    ADR_WARN_OBJECT() << "Cannot record supported format sets: RingBuffer element_id " << element_id
                       << " not found";
   } else {
-    (*found)->RecordSupportedFormatSets(format_sets);
+    found->get()->RecordSupportedFormatSets(format_sets);
   }
 }
 
@@ -692,45 +690,43 @@ void DeviceInspectInstance::RecordPacketStreamSupportedFormatSets(
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
   auto found =
       std::ranges::find_if(packet_stream_elements_.begin(), packet_stream_elements_.end(),
-                           [element_id](const std::shared_ptr<PacketStreamElement>& ps_element) {
-                             return (ps_element->element_id() == element_id);
+                           [element_id](const std::shared_ptr<PacketStreamElement>& ps_ptr) {
+                             return (ps_ptr->element_id() == element_id);
                            });
   if (found == packet_stream_elements_.end()) {
-    ADR_WARN_OBJECT() << "Cannot record supported format sets: PS element_id " << element_id
-                      << " not found";
+    ADR_WARN_OBJECT() << "Cannot record supported format sets: PacketStreamElement element_id "
+                      << element_id << " not found";
   } else {
-    (*found)->RecordSupportedFormatSets(format_sets);
+    found->get()->RecordSupportedFormatSets(format_sets);
   }
 }
 
 std::shared_ptr<RingBufferInspectInstance> DeviceInspectInstance::RecordRingBufferInstance(
     ElementId element_id, const zx::time& created_at) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
-  auto found = std::find_if(ring_buffer_elements_.begin(), ring_buffer_elements_.end(),
-                            [element_id](const std::shared_ptr<RingBufferElement>& rb_element) {
-                              return (rb_element->element_id() == element_id);
-                            });
+  auto found = std::ranges::find_if(ring_buffer_elements_, [element_id](const auto& rb_ptr) {
+    return (rb_ptr->element_id() == element_id);
+  });
   if (found == ring_buffer_elements_.end()) {
-    ADR_WARN_OBJECT() << "Cannot create RB inspect instance: element_id " << element_id
+    ADR_WARN_OBJECT() << "Cannot create RingBuffer inspect instance: element_id " << element_id
                       << " not found";
     return nullptr;
   }
-  return (*found)->RecordRingBufferInstance(created_at);
+  return found->get()->RecordRingBufferInstance(created_at);
 }
 
 std::shared_ptr<PacketStreamInspectInstance> DeviceInspectInstance::RecordPacketStreamInstance(
     ElementId element_id, const zx::time& created_at) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
-  auto found = std::find_if(packet_stream_elements_.begin(), packet_stream_elements_.end(),
-                            [element_id](const std::shared_ptr<PacketStreamElement>& ps_element) {
-                              return (ps_element->element_id() == element_id);
-                            });
+  auto found = std::ranges::find_if(packet_stream_elements_, [element_id](const auto& ps_ptr) {
+    return (ps_ptr->element_id() == element_id);
+  });
   if (found == packet_stream_elements_.end()) {
-    ADR_WARN_OBJECT() << "Cannot create PS inspect instance: element_id " << element_id
-                      << " not found";
+    ADR_WARN_OBJECT() << "Cannot create PacketStreamElement inspect instance: element_id "
+                      << element_id << " not found";
     return nullptr;
   }
-  return (*found)->RecordPacketStreamInstance(created_at);
+  return found->get()->RecordPacketStreamInstance(created_at);
 }
 
 void DeviceInspectInstance::RecordCommandTimeout(const std::string& cmd_tag,

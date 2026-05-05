@@ -6,8 +6,11 @@
 #define SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_LOGGING_H_
 
 #include <fidl/fuchsia.audio.device/cpp/common_types.h>
+#include <fidl/fuchsia.audio.device/cpp/natural_types.h>
 #include <fidl/fuchsia.audio/cpp/common_types.h>
+#include <fidl/fuchsia.audio/cpp/natural_types.h>
 #include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/common_types.h>
+#include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/natural_types.h>
 #include <fidl/fuchsia.hardware.audio/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/time.h>
@@ -48,7 +51,6 @@ inline constexpr bool kLogDeviceAddErrorRemove = true;
 inline constexpr bool kLogDeviceInfo = false;
 inline constexpr bool kLogDriverCommandTimeouts = false;
 
-inline constexpr bool kTraceInspector = false;
 inline constexpr bool kLogObjectLifetimes = false;
 inline constexpr bool kLogObjectCounts = false;
 
@@ -62,6 +64,8 @@ inline constexpr bool kLogDeviceMethods = false;
 inline constexpr bool kLogNotifyMethods = false;
 inline constexpr bool kLogRingBufferMethods = false;
 inline constexpr bool kLogPacketStreamMethods = false;
+
+inline constexpr bool kTraceInspector = false;
 
 // Device methods that directly interact with driver FIDL
 inline constexpr bool kLogCodecFidlCalls = false;
@@ -174,37 +178,124 @@ void LogObjectCounts();
 
 // TODO(https://fxbug.dev/327533694): consider using fostr formatters for these.
 
+// fuchsia_audio_device types
+inline std::ostream& operator<<(
+    std::ostream& out, const std::optional<fuchsia_audio_device::DeviceType>& device_type) {
+  if (device_type.has_value()) {
+    switch (*device_type) {
+      case fuchsia_audio_device::DeviceType::kCodec:
+        return out << "CODEC";
+      case fuchsia_audio_device::DeviceType::kComposite:
+        return out << "COMPOSITE";
+      default:
+        return out << "[UNKNOWN]";
+    }
+  }
+  return out << "<none> (non-compliant)";
+}
+
+inline std::ostream& operator<<(
+    std::ostream& out,
+    const std::optional<fuchsia_audio_device::PlugDetectCapabilities>& plug_caps) {
+  if (plug_caps.has_value()) {
+    switch (*plug_caps) {
+      case fuchsia_audio_device::PlugDetectCapabilities::kHardwired:
+        return out << "HARDWIRED";
+      case fuchsia_audio_device::PlugDetectCapabilities::kPluggable:
+        return out << "PLUGGABLE";
+      default:
+        return out << "OTHER (unknown enum)";
+    }
+  }
+  return out << "<none>";
+}
+
+inline std::ostream& operator<<(std::ostream& out,
+                                const fuchsia_audio_device::PlugState& plug_state) {
+  switch (plug_state) {
+    case fuchsia_audio_device::PlugState::kPlugged:
+      return out << "PLUGGED";
+    case fuchsia_audio_device::PlugState::kUnplugged:
+      return out << "UNPLUGGED";
+    default:
+      return out << "OTHER (unknown enum)";
+  }
+}
+
+inline std::ostream& operator<<(std::ostream& out,
+                                const fuchsia_audio_device::ControlSetDaiFormatError& error) {
+  switch (error) {
+    case fuchsia_audio_device::ControlSetDaiFormatError::kDeviceError:
+      return out << "DEVICE_ERROR";
+    case fuchsia_audio_device::ControlSetDaiFormatError::kWrongDeviceType:
+      return out << "WRONG_DEVICE_TYPE";
+    case fuchsia_audio_device::ControlSetDaiFormatError::kAlreadyPending:
+      return out << "ALREADY_PENDING";
+    case fuchsia_audio_device::ControlSetDaiFormatError::kInvalidElementId:
+      return out << "INVALID_ELEMENT_ID";
+    case fuchsia_audio_device::ControlSetDaiFormatError::kInvalidDaiFormat:
+      return out << "INVALID_DAI_FORMAT";
+    case fuchsia_audio_device::ControlSetDaiFormatError::kFormatMismatch:
+      return out << "FORMAT_MISMATCH";
+    case fuchsia_audio_device::ControlSetDaiFormatError::kOther:
+      return out << "OTHER";
+    default:
+      return out << "[UNKNOWN]";
+  }
+}
+
+// fuchsia_audio types
+inline std::ostream& operator<<(std::ostream& out, const fuchsia_audio::SampleType& sample_type) {
+  switch (sample_type) {
+    case fuchsia_audio::SampleType::kUint8:
+      return out << "UINT_8";
+    case fuchsia_audio::SampleType::kInt16:
+      return out << "INT_16";
+    case fuchsia_audio::SampleType::kInt32:
+      return out << "INT_32";
+    case fuchsia_audio::SampleType::kFloat32:
+      return out << "FLOAT_32";
+    case fuchsia_audio::SampleType::kFloat64:
+      return out << "FLOAT_64";
+    default:
+      return out << "UNKNOWN";
+  }
+}
+
 // fuchsia_hardware_audio types
 inline std::ostream& operator<<(std::ostream& out,
                                 const fuchsia_hardware_audio::SampleFormat& rb_sample_format) {
   switch (rb_sample_format) {
     case fuchsia_hardware_audio::SampleFormat::kPcmSigned:
-      return (out << "PCM_SIGNED");
+      return out << "PCM_SIGNED";
     case fuchsia_hardware_audio::SampleFormat::kPcmUnsigned:
-      return (out << "PCM_UNSIGNED");
+      return out << "PCM_UNSIGNED";
     case fuchsia_hardware_audio::SampleFormat::kPcmFloat:
-      return (out << "PCM_FLOAT");
+      return out << "PCM_FLOAT";
   }
 }
+
+inline std::ostream& operator<<(std::ostream& out,
+                                const fuchsia_hardware_audio::PcmFormat& pcm_format) {
+  return out << "[" << static_cast<uint16_t>(pcm_format.number_of_channels()) << "-channel, "
+             << pcm_format.sample_format() << ", "
+             << static_cast<uint16_t>(pcm_format.bytes_per_sample()) << " bytes/sample, "
+             << static_cast<uint16_t>(pcm_format.valid_bits_per_sample())
+             << " valid bits per sample, " << pcm_format.frame_rate() << " Hz]";
+}
+
 inline std::ostream& operator<<(std::ostream& out,
                                 const fuchsia_hardware_audio::EncodingType& encoding_type) {
   switch (encoding_type) {
     case fuchsia_hardware_audio::EncodingType::kAac:
-      return (out << "AAC");
+      return out << "AAC";
     case fuchsia_hardware_audio::EncodingType::kSbc:
-      return (out << "SBC");
+      return out << "SBC";
     default:
-      return (out << "OTHER (unknown enum)");
+      return out << "OTHER (unknown enum)";
   }
 }
-inline std::ostream& operator<<(std::ostream& out,
-                                const fuchsia_hardware_audio::PcmFormat& pcm_format) {
-  return (out << "[" << static_cast<uint16_t>(pcm_format.number_of_channels()) << "-channel, "
-              << pcm_format.sample_format() << ", "
-              << static_cast<uint16_t>(pcm_format.bytes_per_sample()) << " bytes/sample, "
-              << static_cast<uint16_t>(pcm_format.valid_bits_per_sample())
-              << " valid bits per sample, " << pcm_format.frame_rate() << " Hz]");
-}
+
 inline std::ostream& operator<<(std::ostream& out,
                                 const fuchsia_hardware_audio::Encoding& encoding) {
   if (encoding.encoding_type().has_value()) {
@@ -229,15 +320,7 @@ inline std::ostream& operator<<(std::ostream& out,
   }
   return out;
 }
-inline std::ostream& operator<<(std::ostream& out,
-                                const fuchsia_hardware_audio::PlugDetectCapabilities& plug_caps) {
-  switch (plug_caps) {
-    case fuchsia_hardware_audio::PlugDetectCapabilities::kHardwired:
-      return (out << "HARDWIRED");
-    case fuchsia_hardware_audio::PlugDetectCapabilities::kCanAsyncNotify:
-      return (out << "CAN_ASYNC_NOTIFY");
-  }
-}
+
 inline std::ostream& operator<<(std::ostream& out,
                                 const fuchsia_hardware_audio::BufferType& buffer_type) {
   bool first = true;
@@ -262,38 +345,50 @@ inline std::ostream& operator<<(std::ostream& out,
   out << "}";
   return out;
 }
+
+inline std::ostream& operator<<(std::ostream& out,
+                                const fuchsia_hardware_audio::PlugDetectCapabilities& plug_caps) {
+  switch (plug_caps) {
+    case fuchsia_hardware_audio::PlugDetectCapabilities::kHardwired:
+      return out << "HARDWIRED";
+    case fuchsia_hardware_audio::PlugDetectCapabilities::kCanAsyncNotify:
+      return out << "CAN_ASYNC_NOTIFY";
+  }
+}
+
 inline std::ostream& operator<<(std::ostream& out,
                                 const fuchsia_hardware_audio::DaiSampleFormat& dai_sample_format) {
   switch (dai_sample_format) {
     case fuchsia_hardware_audio::DaiSampleFormat::kPdm:
-      return (out << "PDM");
+      return out << "PDM";
     case fuchsia_hardware_audio::DaiSampleFormat::kPcmSigned:
-      return (out << "PCM SIGNED");
+      return out << "PCM SIGNED";
     case fuchsia_hardware_audio::DaiSampleFormat::kPcmUnsigned:
-      return (out << "PCM UNSIGNED");
+      return out << "PCM UNSIGNED";
     case fuchsia_hardware_audio::DaiSampleFormat::kPcmFloat:
-      return (out << "PCM FLOAT");
+      return out << "PCM FLOAT";
     default:
-      return (out << "OTHER (unknown enum)");
+      return out << "OTHER (unknown enum)";
   }
 }
+
 inline std::ostream& operator<<(std::ostream& out,
                                 const fuchsia_hardware_audio::DaiFrameFormat& dai_frame_format) {
   if (!dai_frame_format.frame_format_custom().has_value() &&
       !dai_frame_format.frame_format_standard().has_value()) {
-    return (out << "FrameFormat UNKNOWN union value");
+    return out << "FrameFormat UNKNOWN union value";
   }
 
   if (dai_frame_format.Which() == fuchsia_hardware_audio::DaiFrameFormat::Tag::kFrameFormatCustom) {
-    return (out << "FrameFormatCustom(left_justified "
-                << dai_frame_format.frame_format_custom()->left_justified() << ", sclk_on_raising "
-                << dai_frame_format.frame_format_custom()->sclk_on_raising()
-                << ", frame_sync_sclks_offset "
-                << static_cast<int16_t>(
-                       dai_frame_format.frame_format_custom()->frame_sync_sclks_offset()))
-           << ", frame_sync_size "
-           << static_cast<uint16_t>(dai_frame_format.frame_format_custom()->frame_sync_size())
-           << ")";
+    return out << "FrameFormatCustom(left_justified "
+               << dai_frame_format.frame_format_custom()->left_justified() << ", sclk_on_raising "
+               << dai_frame_format.frame_format_custom()->sclk_on_raising()
+               << ", frame_sync_sclks_offset "
+               << static_cast<int16_t>(
+                      dai_frame_format.frame_format_custom()->frame_sync_sclks_offset())
+               << ", frame_sync_size "
+               << static_cast<uint16_t>(dai_frame_format.frame_format_custom()->frame_sync_size())
+               << ")";
   }
 
   if (dai_frame_format.Which() ==
@@ -301,63 +396,166 @@ inline std::ostream& operator<<(std::ostream& out,
     out << "FrameFormatStandard::";
     switch (dai_frame_format.frame_format_standard().value()) {
       case fuchsia_hardware_audio::DaiFrameFormatStandard::kNone:
-        return (out << "NONE");
+        return out << "NONE";
       case fuchsia_hardware_audio::DaiFrameFormatStandard::kI2S:
-        return (out << "I2S");
+        return out << "I2S";
       case fuchsia_hardware_audio::DaiFrameFormatStandard::kStereoLeft:
-        return (out << "STEREO_LEFT");
+        return out << "STEREO_LEFT";
       case fuchsia_hardware_audio::DaiFrameFormatStandard::kStereoRight:
-        return (out << "STEREO_RIGHT");
+        return out << "STEREO_RIGHT";
       case fuchsia_hardware_audio::DaiFrameFormatStandard::kTdm1:
-        return (out << "TDM1");
+        return out << "TDM1";
       case fuchsia_hardware_audio::DaiFrameFormatStandard::kTdm2:
-        return (out << "TDM2");
+        return out << "TDM2";
       case fuchsia_hardware_audio::DaiFrameFormatStandard::kTdm3:
-        return (out << "TDM3");
+        return out << "TDM3";
       default:
-        return (out << "OTHER (unknown enum)");
+        return out << "OTHER (unknown enum)";
     }
   }
 
-  return (out << "FrameFormat UNKNOWN union tag");
+  return out << "FrameFormat UNKNOWN union tag";
 }
 
+// fuchsia_hardware_audio_signalprocessing types
 inline std::ostream& operator<<(
     std::ostream& out,
     const std::optional<fuchsia_hardware_audio_signalprocessing::ElementType>& element_type) {
   if (element_type.has_value()) {
     switch (*element_type) {
       case fuchsia_hardware_audio_signalprocessing::ElementType::kVendorSpecific:
-        return (out << "VENDOR_SPECIFIC");
+        return out << "VENDOR_SPECIFIC";
       case fuchsia_hardware_audio_signalprocessing::ElementType::kConnectionPoint:
-        return (out << "CONNECTION_POINT");
+        return out << "CONNECTION_POINT";
       case fuchsia_hardware_audio_signalprocessing::ElementType::kGain:
-        return (out << "GAIN");
+        return out << "GAIN";
       case fuchsia_hardware_audio_signalprocessing::ElementType::kAutomaticGainControl:
-        return (out << "AUTOMATIC_GAIN_CONTROL");
+        return out << "AUTOMATIC_GAIN_CONTROL";
       case fuchsia_hardware_audio_signalprocessing::ElementType::kAutomaticGainLimiter:
-        return (out << "AUTOMATIC_GAIN_LIMITER");
+        return out << "AUTOMATIC_GAIN_LIMITER";
       case fuchsia_hardware_audio_signalprocessing::ElementType::kDynamics:
-        return (out << "DYNAMICS");
+        return out << "DYNAMICS";
       case fuchsia_hardware_audio_signalprocessing::ElementType::kMute:
-        return (out << "MUTE");
+        return out << "MUTE";
       case fuchsia_hardware_audio_signalprocessing::ElementType::kDelay:
-        return (out << "DELAY");
+        return out << "DELAY";
       case fuchsia_hardware_audio_signalprocessing::ElementType::kEqualizer:
-        return (out << "EQUALIZER");
+        return out << "EQUALIZER";
       case fuchsia_hardware_audio_signalprocessing::ElementType::kSampleRateConversion:
-        return (out << "SAMPLE_RATE_CONVERSION");
+        return out << "SAMPLE_RATE_CONVERSION";
       case fuchsia_hardware_audio_signalprocessing::ElementType::kRingBuffer:
-        return (out << "RING_BUFFER");
+        return out << "RING_BUFFER";
       case fuchsia_hardware_audio_signalprocessing::ElementType::kDaiInterconnect:
-        return (out << "DAI_INTERCONNECT");
+        return out << "DAI_INTERCONNECT";
       case fuchsia_hardware_audio_signalprocessing::ElementType::kPacketStream:
-        return (out << "PACKET_STREAM");
+        return out << "PACKET_STREAM";
       default:
-        return (out << "OTHER (unknown enum)");
+        return out << "OTHER (unknown enum)";
     }
   }
-  return (out << "<none> (non-compliant)");
+  return out << "<none> (non-compliant)";
+}
+
+// DaiInterconnect fields
+inline std::ostream& operator<<(
+    std::ostream& out,
+    const std::optional<fuchsia_hardware_audio_signalprocessing::DaiInterconnect>&
+        dai_interconnect) {
+  if (!dai_interconnect.has_value()) {
+    return out << "<none>";
+  }
+  out << "DAI_INTERCONNECT ";
+  if (dai_interconnect->plug_detect_capabilities().has_value()) {
+    switch (*dai_interconnect->plug_detect_capabilities()) {
+      case fuchsia_hardware_audio_signalprocessing::PlugDetectCapabilities::kHardwired:
+        return out << "HARDWIRED";
+      case fuchsia_hardware_audio_signalprocessing::PlugDetectCapabilities::kCanAsyncNotify:
+        return out << "PLUGGABLE";
+      default:
+        return out << "OTHER (unknown PlugDetectCapabilities enum)";
+    }
+  }
+  return out << "<none plug_caps>";
+}
+
+inline std::ostream& operator<<(
+    std::ostream& out,
+    const std::optional<fuchsia_hardware_audio_signalprocessing::PlugDetectCapabilities>&
+        plug_caps) {
+  if (!plug_caps.has_value()) {
+    return out << "<none> (non-compliant)";
+  }
+  switch (plug_caps.value()) {
+    case fuchsia_hardware_audio_signalprocessing::PlugDetectCapabilities::kHardwired:
+      return out << "HARDWIRED";
+    case fuchsia_hardware_audio_signalprocessing::PlugDetectCapabilities::kCanAsyncNotify:
+      return out << "CAN_ASYNC_NOTIFY";
+    default:
+      return out << "UNKNOWN enum";
+  }
+}
+
+// Dynamics fields
+inline std::ostream& operator<<(
+    std::ostream& out,
+    const fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls& controls) {
+  bool first = true;
+  out << "{ ";
+  if (controls & fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls::kKneeWidth) {
+    out << "KNEE_WIDTH ";
+    first = false;
+  }
+  if (controls & fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls::kAttack) {
+    if (!first)
+      out << "| ";
+    out << "ATTACK ";
+    first = false;
+  }
+  if (controls & fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls::kRelease) {
+    if (!first)
+      out << "| ";
+    out << "RELEASE ";
+    first = false;
+  }
+  if (controls & fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls::kOutputGain) {
+    if (!first)
+      out << "| ";
+    out << "OUTPUT_GAIN ";
+    first = false;
+  }
+  if (controls & fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls::kInputGain) {
+    if (!first)
+      out << "| ";
+    out << "INPUT_GAIN ";
+    first = false;
+  }
+  if (controls & fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls::kLookahead) {
+    if (!first)
+      out << "| ";
+    out << "LOOKAHEAD ";
+    first = false;
+  }
+  if (controls & fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls::kLevelType) {
+    if (!first)
+      out << "| ";
+    out << "LEVEL_TYPE ";
+    first = false;
+  }
+  if (controls &
+      fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls::kLinkedChannels) {
+    if (!first)
+      out << "| ";
+    out << "LINKED_CHANNELS ";
+    first = false;
+  }
+  if (controls &
+      fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls::kThresholdType) {
+    if (!first)
+      out << "| ";
+    out << "THRESHOLD_TYPE ";
+  }
+  out << "}";
+  return out;
 }
 
 inline std::ostream& operator<<(
@@ -366,14 +564,14 @@ inline std::ostream& operator<<(
   if (threshold_type.has_value()) {
     switch (*threshold_type) {
       case fuchsia_hardware_audio_signalprocessing::ThresholdType::kAbove:
-        return (out << "ABOVE");
+        return out << "ABOVE";
       case fuchsia_hardware_audio_signalprocessing::ThresholdType::kBelow:
-        return (out << "BELOW");
+        return out << "BELOW";
       default:
-        return (out << "OTHER (unknown enum)");
+        return out << "OTHER (unknown enum)";
     }
   }
-  return (out << "<none> (non-compliant)");
+  return out << "<none> (non-compliant)";
 }
 
 inline std::ostream& operator<<(
@@ -382,14 +580,77 @@ inline std::ostream& operator<<(
   if (level_type.has_value()) {
     switch (*level_type) {
       case fuchsia_hardware_audio_signalprocessing::LevelType::kPeak:
-        return (out << "PEAK");
+        return out << "PEAK";
       case fuchsia_hardware_audio_signalprocessing::LevelType::kRms:
-        return (out << "RMS");
+        return out << "RMS";
       default:
-        return (out << "OTHER (unknown enum)");
+        return out << "OTHER (unknown enum)";
     }
   }
-  return (out << "<none>");
+  return out << "<none>";
+}
+
+// Equalizer fields
+inline std::ostream& operator<<(
+    std::ostream& out,
+    const fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls& controls) {
+  bool first = true;
+  out << "{ ";
+  if (controls &
+      fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls::kCanControlFrequency) {
+    out << "CAN_CONTROL_FREQUENCY ";
+    first = false;
+  }
+  if (controls &
+      fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls::kCanControlQ) {
+    if (!first)
+      out << "| ";
+    out << "CAN_CONTROL_Q ";
+    first = false;
+  }
+  if (controls &
+      fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls::kSupportsTypePeak) {
+    if (!first)
+      out << "| ";
+    out << "SUPPORTS_TYPE_PEAK ";
+    first = false;
+  }
+  if (controls &
+      fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls::kSupportsTypeNotch) {
+    if (!first)
+      out << "| ";
+    out << "SUPPORTS_TYPE_NOTCH ";
+    first = false;
+  }
+  if (controls &
+      fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls::kSupportsTypeLowCut) {
+    if (!first)
+      out << "| ";
+    out << "SUPPORTS_TYPE_LOW_CUT ";
+    first = false;
+  }
+  if (controls &
+      fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls::kSupportsTypeHighCut) {
+    if (!first)
+      out << "| ";
+    out << "SUPPORTS_TYPE_HIGH_CUT ";
+    first = false;
+  }
+  if (controls &
+      fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls::kSupportsTypeLowShelf) {
+    if (!first)
+      out << "| ";
+    out << "SUPPORTS_TYPE_LOW_SHELF ";
+    first = false;
+  }
+  if (controls &
+      fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls::kSupportsTypeHighShelf) {
+    if (!first)
+      out << "| ";
+    out << "SUPPORTS_TYPE_HIGH_SHELF ";
+  }
+  out << "}";
+  return out;
 }
 
 inline std::ostream& operator<<(
@@ -398,38 +659,39 @@ inline std::ostream& operator<<(
   if (eq_band_type.has_value()) {
     switch (*eq_band_type) {
       case fuchsia_hardware_audio_signalprocessing::EqualizerBandType::kPeak:
-        return (out << "PEAK");
+        return out << "PEAK";
       case fuchsia_hardware_audio_signalprocessing::EqualizerBandType::kNotch:
-        return (out << "NOTCH");
+        return out << "NOTCH";
       case fuchsia_hardware_audio_signalprocessing::EqualizerBandType::kHighShelf:
-        return (out << "HIGH_SHELF");
+        return out << "HIGH_SHELF";
       case fuchsia_hardware_audio_signalprocessing::EqualizerBandType::kLowShelf:
-        return (out << "LOW_SHELF");
+        return out << "LOW_SHELF";
       case fuchsia_hardware_audio_signalprocessing::EqualizerBandType::kHighCut:
-        return (out << "HIGH_CUT");
+        return out << "HIGH_CUT";
       case fuchsia_hardware_audio_signalprocessing::EqualizerBandType::kLowCut:
-        return (out << "LOW_CUT");
+        return out << "LOW_CUT";
       default:
-        return (out << "OTHER (unknown enum)");
+        return out << "OTHER (unknown enum)";
     }
   }
-  return (out << "<none>");
+  return out << "<none>";
 }
 
+// Gain fields
 inline std::ostream& operator<<(
     std::ostream& out,
     const std::optional<fuchsia_hardware_audio_signalprocessing::GainType>& gain_type) {
   if (gain_type.has_value()) {
     switch (*gain_type) {
       case fuchsia_hardware_audio_signalprocessing::GainType::kDecibels:
-        return (out << "DECIBELS");
+        return out << "DECIBELS";
       case fuchsia_hardware_audio_signalprocessing::GainType::kPercent:
-        return (out << "PERCENT");
+        return out << "PERCENT";
       default:
-        return (out << "OTHER (unknown enum)");
+        return out << "OTHER (unknown enum)";
     }
   }
-  return (out << "<none>");
+  return out << "<none>";
 }
 
 inline std::ostream& operator<<(
@@ -438,117 +700,16 @@ inline std::ostream& operator<<(
   if (gain_domain.has_value()) {
     switch (*gain_domain) {
       case fuchsia_hardware_audio_signalprocessing::GainDomain::kDigital:
-        return (out << "DIGITAL");
+        return out << "DIGITAL";
       case fuchsia_hardware_audio_signalprocessing::GainDomain::kAnalog:
-        return (out << "ANALOG");
+        return out << "ANALOG";
       case fuchsia_hardware_audio_signalprocessing::GainDomain::kMixed:
-        return (out << "MIXED");
+        return out << "MIXED";
       default:
-        return (out << "OTHER (unknown enum)");
+        return out << "OTHER (unknown enum)";
     }
   }
-  return (out << "<none>");
-}
-
-inline std::ostream& operator<<(
-    std::ostream& out,
-    const std::optional<fuchsia_hardware_audio_signalprocessing::DaiInterconnect>&
-        dai_interconnect) {
-  if (!dai_interconnect.has_value()) {
-    return (out << "<none>");
-  }
-  out << "DAI_INTERCONNECT ";
-  if (dai_interconnect->plug_detect_capabilities().has_value()) {
-    switch (*dai_interconnect->plug_detect_capabilities()) {
-      case fuchsia_hardware_audio_signalprocessing::PlugDetectCapabilities::kHardwired:
-        return (out << "HARDWIRED");
-      case fuchsia_hardware_audio_signalprocessing::PlugDetectCapabilities::kCanAsyncNotify:
-        return (out << "PLUGGABLE");
-      default:
-        return (out << "OTHER (unknown PlugDetectCapabilities enum)");
-    }
-  }
-  return (out << "<none plug_caps>");
-}
-
-inline std::ostream& operator<<(std::ostream& out, const fuchsia_audio::SampleType& sample_type) {
-  switch (sample_type) {
-    case fuchsia_audio::SampleType::kUint8:
-      return (out << "UINT_8");
-    case fuchsia_audio::SampleType::kInt16:
-      return (out << "INT_16");
-    case fuchsia_audio::SampleType::kInt32:
-      return (out << "INT_32");
-    case fuchsia_audio::SampleType::kFloat32:
-      return (out << "FLOAT_32");
-    case fuchsia_audio::SampleType::kFloat64:
-      return (out << "FLOAT_64");
-    default:
-      return (out << "UNKNOWN");
-  }
-}
-
-// fuchsia_audio_device types
-inline std::ostream& operator<<(
-    std::ostream& out, const std::optional<fuchsia_audio_device::DeviceType>& device_type) {
-  if (device_type.has_value()) {
-    switch (*device_type) {
-      case fuchsia_audio_device::DeviceType::kCodec:
-        return (out << "CODEC");
-      case fuchsia_audio_device::DeviceType::kComposite:
-        return (out << "COMPOSITE");
-      default:
-        return (out << "[UNKNOWN]");
-    }
-  }
-  return (out << "<none> (non-compliant)");
-}
-inline std::ostream& operator<<(std::ostream& out,
-                                const fuchsia_audio_device::ControlSetDaiFormatError& error) {
-  switch (error) {
-    case fuchsia_audio_device::ControlSetDaiFormatError::kDeviceError:
-      return (out << "DEVICE_ERROR");
-    case fuchsia_audio_device::ControlSetDaiFormatError::kWrongDeviceType:
-      return (out << "WRONG_DEVICE_TYPE");
-    case fuchsia_audio_device::ControlSetDaiFormatError::kAlreadyPending:
-      return (out << "ALREADY_PENDING");
-    case fuchsia_audio_device::ControlSetDaiFormatError::kInvalidElementId:
-      return (out << "INVALID_ELEMENT_ID");
-    case fuchsia_audio_device::ControlSetDaiFormatError::kInvalidDaiFormat:
-      return (out << "INVALID_DAI_FORMAT");
-    case fuchsia_audio_device::ControlSetDaiFormatError::kFormatMismatch:
-      return (out << "FORMAT_MISMATCH");
-    case fuchsia_audio_device::ControlSetDaiFormatError::kOther:
-      return (out << "OTHER");
-    default:
-      return (out << "[UNKNOWN]");
-  }
-}
-inline std::ostream& operator<<(
-    std::ostream& out,
-    const std::optional<fuchsia_audio_device::PlugDetectCapabilities>& plug_caps) {
-  if (plug_caps.has_value()) {
-    switch (*plug_caps) {
-      case fuchsia_audio_device::PlugDetectCapabilities::kHardwired:
-        return (out << "HARDWIRED");
-      case fuchsia_audio_device::PlugDetectCapabilities::kPluggable:
-        return (out << "PLUGGABLE");
-      default:
-        return (out << "OTHER (unknown enum)");
-    }
-  }
-  return (out << "<none>");
-}
-inline std::ostream& operator<<(std::ostream& out,
-                                const fuchsia_audio_device::PlugState& plug_state) {
-  switch (plug_state) {
-    case fuchsia_audio_device::PlugState::kPlugged:
-      return (out << "PLUGGED");
-    case fuchsia_audio_device::PlugState::kUnplugged:
-      return (out << "UNPLUGGED");
-    default:
-      return (out << "OTHER (unknown enum)");
-  }
+  return out << "<none>";
 }
 
 inline std::string to_string(std::optional<bool> selector, const std::string& true_str,

@@ -121,7 +121,7 @@ class CompositeWarningTest : public CompositeTest {
                                    fad::ControlCreateRingBufferError expected_error,
                                    const fha::Format2& format,
                                    uint32_t requested_ring_buffer_bytes = 1024) {
-    std::stringstream stream;
+    std::ostringstream stream;
     stream << "Validating CreateRingBuffer on element_id " << element_id << " with format "
            << format.pcm_format().value();
     SCOPED_TRACE(stream.str());

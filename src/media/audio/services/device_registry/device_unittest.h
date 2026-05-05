@@ -332,7 +332,7 @@ class DeviceTestBase : public gtest::TestLoopFixture {
   static uint8_t ExpectFormatMatch(const std::shared_ptr<Device>& device, ElementId element_id,
                                    fuchsia_audio::SampleType sample_type, uint32_t channel_count,
                                    uint32_t rate) {
-    std::stringstream stream;
+    std::ostringstream stream;
     stream << "Expected format match: [" << sample_type << " " << channel_count << "-channel "
            << rate << " hz]";
     SCOPED_TRACE(stream.str());
@@ -349,7 +349,7 @@ class DeviceTestBase : public gtest::TestLoopFixture {
   static void ExpectNoFormatMatch(const std::shared_ptr<Device>& device, ElementId element_id,
                                   fuchsia_audio::SampleType sample_type, uint32_t channel_count,
                                   uint32_t rate) {
-    std::stringstream stream;
+    std::ostringstream stream;
     stream << "Unexpected format match: [" << sample_type << " " << channel_count << "-channel "
            << rate << " hz]";
     SCOPED_TRACE(stream.str());

@@ -11,6 +11,7 @@ namespace media_audio {
 
 inline constexpr bool kLogFakeCodec = false;
 inline constexpr bool kLogFakeComposite = false;
+inline constexpr bool kLogFakeCompositeSignalProcessing = false;
 inline constexpr bool kLogFakeCompositePacketStream = false;
 inline constexpr bool kLogFakeCompositeRingBuffer = false;
 
