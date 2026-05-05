@@ -14,6 +14,18 @@ using fuchsia_bluetooth_sys::PairingMethod;
 using grpc::Status;
 using grpc::StatusCode;
 
+SecurityStorageService::SecurityStorageService(async_dispatcher_t* dispatcher) {
+  // Connect to fuchsia.bluetooth.affordances.PeerController
+  zx::result peer_controller_client_end =
+      component::Connect<fuchsia_bluetooth_affordances::PeerController>();
+  if (peer_controller_client_end.is_ok()) {
+    peer_controller_client_.Bind(std::move(*peer_controller_client_end));
+  } else {
+    FX_LOGS(ERROR) << "Error connecting to PeerController service: "
+                   << peer_controller_client_end.status_string();
+  }
+}
+
 Status SecurityStorageService::IsBonded(::grpc::ServerContext* context,
                                         const ::pandora::IsBondedRequest* request,
                                         ::google::protobuf::BoolValue* response) {
@@ -34,11 +46,16 @@ Status SecurityStorageService::DeleteBond(::grpc::ServerContext* context,
   }
 
   uint64_t peer_id = get_peer_id(address.c_str());
-  if (peer_id && forget_peer(peer_id) != ZX_OK) {
-    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  fuchsia_bluetooth_affordances::PeerSelector selector;
+  selector.id() = fuchsia_bluetooth::PeerId{peer_id};
+  auto forget_peer_result = peer_controller_client_->ForgetPeer(selector);
+  if (forget_peer_result.is_error()) {
+    return Status(StatusCode::INTERNAL,
+                  "fuchsia.bluetooth.affordances.PeerController/ForgetPeer error: " +
+                      forget_peer_result.error_value().FormatDescription());
   }
 
-  return {/*OK*/};
+  return Status::OK;
 }
 
 SecurityService::SecurityService(async_dispatcher_t* dispatcher) {

@@ -81,11 +81,6 @@ UuidBytes uuid_from_string(const char *uuid_str);
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 int32_t disconnect_peer(uint64_t peer_id);
 
-/// Remove all bonding information and disconnect peer with given identifier, if found.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-int32_t forget_peer(uint64_t peer_id);
-
 /// Connect an L2CAP channel on a specific PSM to an already-connected peer. Calling this again will
 /// result in the channel being closed after the new channel is opened.
 ///

@@ -201,20 +201,6 @@ pub extern "C" fn disconnect_peer(peer_id: u64) -> i32 {
     zx::Status::OK.into_raw()
 }
 
-/// Remove all bonding information and disconnect peer with given identifier, if found.
-///
-/// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[unsafe(no_mangle)]
-pub extern "C" fn forget_peer(peer_id: u64) -> i32 {
-    let peer_id = PeerId { value: peer_id };
-
-    if let Err(err) = block_on(STATE.worker.forget_peer(peer_id)) {
-        eprintln!("forget_peer encountered error: {err:?}");
-        return zx::Status::INTERNAL.into_raw();
-    }
-    zx::Status::OK.into_raw()
-}
-
 /// Connect an L2CAP channel on a specific PSM to an already-connected peer. Calling this again will
 /// result in the channel being closed after the new channel is opened.
 ///

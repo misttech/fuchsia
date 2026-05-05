@@ -11,12 +11,18 @@
 #include "third_party/github.com/google/bt-test-interfaces/src/pandora/security.grpc.pb.h"
 
 class SecurityStorageService : public pandora::SecurityStorage::Service {
+ public:
+  explicit SecurityStorageService(async_dispatcher_t* dispatcher);
+
   ::grpc::Status IsBonded(::grpc::ServerContext* context, const ::pandora::IsBondedRequest* request,
                           ::google::protobuf::BoolValue* response) override;
 
   ::grpc::Status DeleteBond(::grpc::ServerContext* context,
                             const ::pandora::DeleteBondRequest* request,
                             ::google::protobuf::Empty* response) override;
+
+ private:
+  fidl::SyncClient<fuchsia_bluetooth_affordances::PeerController> peer_controller_client_;
 };
 
 class SecurityService : public pandora::Security::Service {
