@@ -201,8 +201,10 @@ impl EmulatorEngine for FemuEngine {
         self.data.get_emulator_configuration_mut()
     }
 
-    async fn screenshot(&mut self, _path: &Path) -> Result<()> {
-        Err(fho::user_error!("Screenshot not implemented for FEMU yet."))
+    async fn screenshot(&mut self, output_path: &Path) -> Result<()> {
+        let absolute_path = crate::qemu_based::make_absolute_path(output_path)?;
+        crate::qemu_based::check_screenshot_preconditions(self, &absolute_path);
+        self.capture_screenshot_console(&absolute_path).await
     }
 
     async fn save_to_disk(&self) -> Result<()> {
@@ -214,6 +216,18 @@ impl EmulatorEngine for FemuEngine {
                 .map_err(|e| anyhow::Error::from(e))?,
         )
         .map_err(|e| bug!("Error saving instance to disk: {e}"))
+    }
+}
+
+impl FemuEngine {
+    /// Captures a screenshot using Android Console (telnet) screenrecord command.
+    async fn capture_screenshot_console(&self, _absolute_path: &Path) -> Result<()> {
+        // TODO(https://fxbug.dev/492401744): Implement FEMU screenshot capture via Android Console.
+        // 1. Discover the Android Console port (defaulting to 5554).
+        // 2. Read ~/.emulator_console_auth_token and authenticate with 'auth <token>'.
+        // 3. Execute 'screenrecord screenshot <temp_path>' command.
+        // 4. Move or copy the resulting PNG file to the final destination.
+        Err(fho::user_error!("Screenshot capture logic for FEMU is not yet implemented."))
     }
 }
 

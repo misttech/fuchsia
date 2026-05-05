@@ -41,6 +41,37 @@ use std::{env, str};
 use tempfile::NamedTempFile;
 use vbmeta::{Descriptor, HashDescriptor, Key, Salt, VBMeta};
 
+pub(crate) fn make_absolute_path(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
+        Ok(path.to_path_buf())
+    } else {
+        std::env::current_dir()
+            .map_err(|e| bug!("Failed to get current directory: {e}"))
+            .map(|cwd| cwd.join(path))
+    }
+}
+
+pub(crate) fn check_screenshot_preconditions(engine: &dyn EmulatorEngine, absolute_path: &Path) {
+    assert!(
+        engine.engine_state() == EngineState::Running,
+        "Engine must be running (Current state: {:?})",
+        engine.engine_state()
+    );
+    let config = engine.emu_config();
+    assert!(!config.runtime.headless, "Screenshots are not supported in headless mode.");
+    assert!(
+        config.device.screen.width > 0 && config.device.screen.height > 0,
+        "The emulator virtual display has an invalid resolution ({}x{}).",
+        config.device.screen.width,
+        config.device.screen.height
+    );
+    assert!(absolute_path.is_absolute(), "Path must be absolute ({:?})", absolute_path);
+    assert!(!absolute_path.exists(), "Output path must not exist ({:?})", absolute_path);
+    if let Some(parent) = absolute_path.parent() {
+        assert!(parent.is_dir(), "Parent path must be a directory ({:?})", parent);
+    }
+}
+
 pub(crate) fn get_host_tool(context: &EnvironmentContext, name: &str) -> Result<PathBuf> {
     // Attempts to get a host tool from the SDK manifest. If it fails, falls
     // back to attempting to derive the path to the host tool binary by simply checking
@@ -2171,5 +2202,89 @@ mod tests {
         Ok(())
 
         // TCP with other state.
+    }
+
+    #[fuchsia::test]
+    fn test_make_absolute_path_for_absolute_path() {
+        const ABSOLUTE_PATH: &str = "/tmp/test.png";
+        assert!(!cfg!(windows));
+        let path = Path::new(ABSOLUTE_PATH);
+        assert_eq!(make_absolute_path(path).unwrap(), PathBuf::from(ABSOLUTE_PATH));
+    }
+
+    #[fuchsia::test]
+    fn test_make_absolute_path_for_relative_path() {
+        const RELATIVE_PATH: &str = "test.png";
+        let relative_path = Path::new(RELATIVE_PATH);
+        let expected_absolute_path = std::env::current_dir().unwrap().join(relative_path);
+        assert_eq!(make_absolute_path(relative_path).unwrap(), expected_absolute_path);
+    }
+
+    #[fuchsia::test]
+    #[should_panic(expected = "Engine must be running")]
+    fn test_check_screenshot_preconditions_not_running() {
+        const ABSOLUTE_PATH: &str = "/tmp/test.png";
+        let mut config = EmulatorConfiguration::default();
+        config.device.screen.width = 100;
+        config.device.screen.height = 100;
+        let data = EmulatorInstanceData::new(config, EngineType::Qemu, EngineState::Staged);
+        let env = ffx_config::test_init().unwrap();
+        let engine =
+            crate::QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()));
+        check_screenshot_preconditions(&engine, Path::new(ABSOLUTE_PATH));
+    }
+
+    #[fuchsia::test]
+    #[should_panic(expected = "Screenshots are not supported in headless mode")]
+    fn test_check_screenshot_preconditions_no_display() {
+        const NON_EXISTENT_PATH: &str = "/tmp/nonexistent.png";
+        let mut config = EmulatorConfiguration::default();
+        config.runtime.headless = true;
+        let mut data = EmulatorInstanceData::new(config, EngineType::Qemu, EngineState::Running);
+        // Set the emulator PID to a fake ID so that `get_engine_state()` returns Running.
+        let fake_emulator_pid = std::process::id();
+        data.set_pid(fake_emulator_pid);
+        let env = ffx_config::test_init().unwrap();
+        let engine =
+            crate::QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()));
+        check_screenshot_preconditions(&engine, Path::new(NON_EXISTENT_PATH));
+    }
+
+    #[fuchsia::test]
+    #[should_panic(expected = "The emulator virtual display has an invalid resolution")]
+    fn test_check_screenshot_preconditions_invalid_resolution() {
+        const NON_EXISTENT_PATH: &str = "/tmp/nonexistent.png";
+        let mut config = EmulatorConfiguration::default();
+        config.device.screen.width = 0;
+        config.device.screen.height = 0;
+        let mut data = EmulatorInstanceData::new(config, EngineType::Qemu, EngineState::Running);
+        // Set the emulator PID to a fake ID so that `get_engine_state()` returns Running.
+        let fake_emulator_pid = std::process::id();
+        data.set_pid(fake_emulator_pid);
+        let env = ffx_config::test_init().unwrap();
+        let engine =
+            crate::QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()));
+        check_screenshot_preconditions(&engine, Path::new(NON_EXISTENT_PATH));
+    }
+
+    #[fuchsia::test]
+    #[should_panic(expected = "Output path must not exist")]
+    fn test_check_screenshot_preconditions_file_exists() {
+        const EXISTING_PATH: &str = "existing.png";
+        let temp = tempdir().unwrap();
+        let file_path = temp.path().join(EXISTING_PATH);
+        std::fs::write(&file_path, "data").unwrap();
+
+        let mut config = EmulatorConfiguration::default();
+        config.device.screen.width = 100;
+        config.device.screen.height = 100;
+        let mut data = EmulatorInstanceData::new(config, EngineType::Qemu, EngineState::Running);
+        // Set the emulator PID to a fake ID so that `get_engine_state()` returns Running.
+        let fake_emulator_pid = std::process::id();
+        data.set_pid(fake_emulator_pid);
+        let env = ffx_config::test_init().unwrap();
+        let engine =
+            crate::QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()));
+        check_screenshot_preconditions(&engine, &file_path);
     }
 }

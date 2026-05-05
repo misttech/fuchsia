@@ -231,8 +231,10 @@ impl EmulatorEngine for QemuEngine {
         self.data.get_emulator_configuration_mut()
     }
 
-    async fn screenshot(&mut self, _path: &Path) -> Result<()> {
-        Err(fho::user_error!("Screenshot not implemented for QEMU yet."))
+    async fn screenshot(&mut self, output_path: &Path) -> Result<()> {
+        let absolute_path = crate::qemu_based::make_absolute_path(output_path)?;
+        crate::qemu_based::check_screenshot_preconditions(self, &absolute_path);
+        self.capture_screenshot_qmp(&absolute_path).await
     }
 
     async fn save_to_disk(&self) -> Result<()> {
@@ -244,6 +246,19 @@ impl EmulatorEngine for QemuEngine {
                 .unwrap_or_else(|_| panic!("instance directory for {}", self.data.get_name())),
         )
         .map_err(|e| bug!("Error saving instance to disk: {e}"))
+    }
+}
+
+impl QemuEngine {
+    /// Captures a screenshot using QEMU's QMP screendump command.
+    async fn capture_screenshot_qmp(&self, _absolute_path: &Path) -> Result<()> {
+        // TODO(https://fxbug.dev/492401744): Implement QMP screenshot capture.
+        // 1. Connect to QMP via Unix Socket (MACHINE_CONSOLE).
+        // 2. Execute 'qmp_capabilities' to initialize the session.
+        // 3. Send 'screendump' command with a temporary PPM file path.
+        // 4. Parse the resulting PPM P6 data and encode it as PNG using the 'png' crate.
+        // 5. Clean up the temporary PPM file.
+        Err(fho::user_error!("Screenshot capture logic for QEMU is not yet implemented."))
     }
 }
 
