@@ -3239,7 +3239,7 @@ impl MemoryManager {
         // Set the highest address that `mmap` will assign to the allocations that don't ask for a
         // specific address, subject to ASLR adjustment.
         let mmap_top = stack_origin
-            .checked_sub(generate_random_offset_for_aslr(arch_width))
+            .checked_sub(MAX_STACK_SIZE + generate_random_offset_for_aslr(arch_width))
             .ok_or_else(|| errno!(EINVAL))?;
 
         Ok(Arc::new(MemoryManager {
