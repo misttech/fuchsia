@@ -21,14 +21,23 @@
 
 use std::collections::VecDeque;
 
+use thiserror::Error;
+
+/// Error returned when a write is larger than the buffer capacity.
+#[derive(Error, Debug, PartialEq)]
+#[error("write size is larger than buffer size")]
+pub struct WriteTooLarge;
+
 /// Chunked ring buffer.
 ///
-/// The buffer is divided into chunks of at least `chunk_size` as declared
-/// at time of construction. When making room for a write into the buffer,
-/// entire chunks are discarded until there is sufficient room. A smaller
-/// chunk size has the advantage of higher utilization of the space in the
-/// ring buffer in exchange for more memory used keeping track of chunk
-/// boundaries and more work done when discarding chunks. Conversely a
+/// A ring buffer which is logically split into chunks where each chunk is
+/// at least `chunk_size`. A transaction API is provided if the caller needs
+/// to make multiple writes that must not be split across chunks. Chunks are
+/// discarded in their entirety when needed to make space.
+///
+/// A smaller chunk size has the advantage of higher utilization of the space
+/// in the ring buffer in exchange for more memory used keeping track of
+/// chunk boundaries and more work done when discarding chunks. Conversely a
 /// larger chunk size means that utilization of the buffer space has higher
 /// variance, but less memory is needed and discards are less often. Users
 /// should choose a chunk size appropriate for their use case.
@@ -81,31 +90,17 @@ impl RingBuffer {
             (&self.buf[head..], &self.buf[..self.tail])
         }
     }
-}
 
-impl std::io::Write for RingBuffer {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.write_vectored(&[std::io::IoSlice::new(buf)])
+    /// Start a transaction that groups a series of writes.
+    pub fn start_transaction(&mut self) -> Transaction<'_> {
+        Transaction::new(self)
     }
 
-    /// Write vectored data to the ring buffer.
-    ///
-    /// All data passed in a single call to `write_vectored` is considered
-    /// a single "item" and will be stored in one chunk (never split when
-    /// discarding).
-    fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
-        let total_len: usize = bufs.iter().map(|b| b.len()).sum();
-        if total_len == 0 {
-            return Ok(0);
-        }
-        if total_len > self.buf.len() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "write is larger than buffer size",
-            ));
-        }
-
-        while self.len() + total_len > self.buf.len() {
+    // NB: This function is a helper for the public write functions, and
+    // assumes things like `slice` being non-empty and that it fits in
+    // the buffer.
+    fn write_inner(&mut self, slice: &[u8]) {
+        while self.len() + slice.len() > self.buf.len() {
             let _ = self.boundary_indices.pop_front();
             if self.boundary_indices.is_empty() {
                 break;
@@ -115,53 +110,109 @@ impl std::io::Write for RingBuffer {
             self.boundary_indices.push_back(self.tail);
         }
 
-        for slice in bufs {
-            let slice = slice.as_ref();
-            if self.tail + slice.len() >= self.buf.len() {
-                let remaining = self.buf.len() - self.tail;
-                assert!(remaining > 0);
-                self.buf[self.tail..self.tail + remaining].copy_from_slice(&slice[..remaining]);
-                let data_remaining = slice.len() - remaining;
-                if data_remaining > 0 {
-                    self.buf[..data_remaining].copy_from_slice(&slice[remaining..]);
-                }
-                self.tail = data_remaining;
-            } else {
-                self.buf[self.tail..self.tail + slice.len()].copy_from_slice(&slice);
-                self.tail += slice.len();
+        if self.tail + slice.len() >= self.buf.len() {
+            let remaining = self.buf.len() - self.tail;
+            assert!(remaining > 0);
+            self.buf[self.tail..self.tail + remaining].copy_from_slice(&slice[..remaining]);
+            let data_remaining = slice.len() - remaining;
+            if data_remaining > 0 {
+                self.buf[..data_remaining].copy_from_slice(&slice[remaining..]);
             }
-        }
-
-        let penultimate = self
-            .boundary_indices
-            .back()
-            .expect("boundary indices must contain at least one element");
-        let bytes = if *penultimate == self.tail {
-            self.buf.len()
+            self.tail = data_remaining;
         } else {
-            self.bytes_between(*penultimate, self.tail)
-        };
-        if bytes >= self.chunk_size {
-            self.boundary_indices.push_back(self.tail);
+            self.buf[self.tail..self.tail + slice.len()].copy_from_slice(&slice);
+            self.tail += slice.len();
         }
-        Ok(total_len)
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn maybe_chunk(&mut self) {
+        let Some(penultimate) = self.boundary_indices.back() else {
+            return;
+        };
+        // The buffer is full, there is no point in recording a boundary
+        // because it will just duplicate the existing value in
+        // `boundary_indices`.
+        if *penultimate == self.tail {
+            return;
+        }
+        if self.bytes_between(*penultimate, self.tail) >= self.chunk_size {
+            self.boundary_indices.push_back(self.tail);
+        }
+    }
+
+    /// Writes `slice` to the buffer and records a chunk if it is large enough.
+    pub fn write(&mut self, slice: &[u8]) -> Result<(), WriteTooLarge> {
+        let mut transaction = self.start_transaction();
+        transaction.write(slice)?;
+        transaction.commit();
         Ok(())
+    }
+
+    fn rollback(&mut self, start: usize) {
+        if self.head() == start {
+            self.boundary_indices.clear();
+        }
+        self.tail = start;
+    }
+}
+
+/// A transaction which consists of a series of writes that can be committed
+/// or rolled back.
+pub struct Transaction<'a> {
+    buffer: &'a mut RingBuffer,
+    start: usize,
+    written: usize,
+    completed: bool,
+}
+
+impl<'a> Transaction<'a> {
+    /// Create a new transaction.
+    pub fn new(buffer: &'a mut RingBuffer) -> Self {
+        let start = buffer.tail;
+        Self { buffer, start, written: 0, completed: false }
+    }
+
+    /// Perform a write.
+    pub fn write(&mut self, bytes: &[u8]) -> Result<(), WriteTooLarge> {
+        if bytes.len() == 0 {
+            return Ok(());
+        }
+
+        if self.written + bytes.len() > self.buffer.buf.len() {
+            return Err(WriteTooLarge);
+        }
+
+        self.buffer.write_inner(bytes);
+        self.written += bytes.len();
+        Ok(())
+    }
+
+    /// Commit the transaction by recording a chunk.
+    pub fn commit(mut self) {
+        self.buffer.maybe_chunk();
+        self.completed = true;
+    }
+}
+
+impl<'a> Drop for Transaction<'a> {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.buffer.rollback(self.start);
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+
+    use test_case::test_case;
 
     #[test]
     fn test_write_no_wrap() {
         let mut cb = RingBuffer::new(8, 4);
         const DATA: &[u8] = b"hello";
-        cb.write_all(DATA).unwrap();
+        cb.write(DATA).unwrap();
 
         assert_eq!(cb.boundary_indices, VecDeque::from([0, 5]));
         let (v1, v2) = cb.get_view();
@@ -172,18 +223,16 @@ mod tests {
     #[test]
     fn test_write_wrap() {
         let mut cb = RingBuffer::new(8, 4);
-        assert_eq!(
-            cb.write_vectored(&[std::io::IoSlice::new(b"foo"), std::io::IoSlice::new(b"bar")])
-                .unwrap(),
-            6
-        );
+        let mut tx = cb.start_transaction();
+        tx.write(b"foo").unwrap();
+        tx.write(b"bar").unwrap();
+        tx.commit();
         assert_eq!(cb.boundary_indices, VecDeque::from([0, 6]));
 
-        assert_eq!(
-            cb.write_vectored(&[std::io::IoSlice::new(b"baz"), std::io::IoSlice::new(b"qux")])
-                .unwrap(),
-            6
-        );
+        let mut tx = cb.start_transaction();
+        tx.write(b"baz").unwrap();
+        tx.write(b"qux").unwrap();
+        tx.commit();
         assert_eq!(cb.boundary_indices, VecDeque::from([6, 4]));
 
         let (v1, v2) = cb.get_view();
@@ -191,19 +240,19 @@ mod tests {
         assert_eq!(v2, b"zqux");
     }
 
-    #[test]
-    fn test_write_exact_fill() {
-        let mut cb = RingBuffer::new(8, 4);
-        cb.write_all(b"12345678").unwrap();
-        assert_eq!(cb.boundary_indices, VecDeque::from([0, 0]));
-
+    #[test_case(8; "chunk_size_equals_buffer_size")]
+    #[test_case(4; "chunk_size_half_of_buffer_size")]
+    fn test_write_exact_fill(chunk_size: usize) {
+        let mut cb = RingBuffer::new(8, chunk_size);
+        cb.write(b"12345678").unwrap();
+        assert_eq!(cb.boundary_indices, VecDeque::from([0]));
         assert_eq!(cb.tail, 0);
 
         let (v1, v2) = cb.get_view();
         assert_eq!(v1, b"12345678");
         assert_eq!(v2, &[]);
 
-        cb.write_all(b"9").unwrap();
+        cb.write(b"9").unwrap();
         let (v1, v2) = cb.get_view();
         assert_eq!(v1, b"9");
         assert_eq!(v2, &[]);
@@ -214,10 +263,10 @@ mod tests {
         const CHUNK_SIZE: usize = 4;
         let mut cb = RingBuffer::new(8, CHUNK_SIZE);
         for i in 1u8..4 {
-            cb.write_all(&[i]).unwrap();
+            cb.write(&[i]).unwrap();
             assert_eq!(cb.boundary_indices, VecDeque::from([0]));
         }
-        cb.write_all(&[4]).unwrap();
+        cb.write(&[4]).unwrap();
         assert_eq!(cb.boundary_indices, VecDeque::from([0, CHUNK_SIZE]));
 
         let (v1, v2) = cb.get_view();
@@ -228,24 +277,10 @@ mod tests {
     #[test]
     fn test_zero_chunk_size_zero_writes() {
         let mut cb = RingBuffer::new(8, 0);
-        // Call methods we actually needed to implement instead of write_all
-        // which checks for zero-length writes themselves.
-        assert_eq!(cb.write(b"").unwrap(), 0);
+        cb.write(b"").unwrap();
         assert_eq!(cb.boundary_indices, VecDeque::new());
         let (v1, v2) = cb.get_view();
         assert_eq!(v1, &[]);
-        assert_eq!(v2, &[]);
-    }
-
-    #[test]
-    fn test_chunk_size_equals_buffer_size_fill_and_overwrite() {
-        let mut cb = RingBuffer::new(8, 8);
-
-        cb.write_all(b"12345678").unwrap();
-        cb.write_all(b"9").unwrap();
-
-        let (v1, v2) = cb.get_view();
-        assert_eq!(v1, b"9");
         assert_eq!(v2, &[]);
     }
 
@@ -255,15 +290,39 @@ mod tests {
         let mut cb = RingBuffer::new(N, 0);
 
         for i in 1u8..=4 {
-            cb.write_all(&[i]).unwrap();
+            cb.write(&[i]).unwrap();
         }
 
-        cb.write_all(&[5]).unwrap();
+        cb.write(&[5]).unwrap();
         let (v1, v2) = cb.get_view();
         assert_eq!([v1, v2].concat(), vec![2, 3, 4, 5]);
 
-        cb.write_all(&[6]).unwrap();
+        cb.write(&[6]).unwrap();
         let (v1, v2) = cb.get_view();
         assert_eq!([v1, v2].concat(), vec![3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn test_transaction_rollback_on_drop() {
+        let mut cb = RingBuffer::new(8, 4);
+        cb.write(b"ab").unwrap();
+        {
+            let mut tx = cb.start_transaction();
+            tx.write(b"cd").unwrap();
+            tx.write(b"ef").unwrap();
+            // Transaction is dropped here.
+        }
+
+        let (v1, v2) = cb.get_view();
+        assert_eq!(v1, b"ab");
+        assert_eq!(v2, &[]);
+    }
+
+    #[test]
+    fn test_transaction_too_large() {
+        let mut cb = RingBuffer::new(8, 4);
+        let mut tx = cb.start_transaction();
+        tx.write(b"12345678").unwrap();
+        assert_eq!(tx.write(b"9"), Err(WriteTooLarge));
     }
 }
