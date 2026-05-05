@@ -82,6 +82,8 @@ def closest_match(
     min_dist = float("inf")
 
     for command in commands:
+        if command == cmd:
+            continue
         dist = calculate_dl_edit_distance(cmd, command)
         if dist <= max_distance and dist < min_dist:
             min_dist = dist
