@@ -22,7 +22,10 @@
     ],
     use: [
         {
-            protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
+            protocol: [
+                "fuchsia.component.sandbox.CapabilityStore",
+                "fuchsia.metrics.MetricEventLoggerFactory",
+            ],
             from: "parent",
         },
         {
@@ -41,6 +44,9 @@
         },
     ],
     config: {
+        // If 'true', use a fake sampler that returns a constant time sample.
+        use_fake_sampler: { type: "bool" },
+
         // The endpoint URL for querying time information. The HTTPS time source
         // uses the time reported in HTTPS responses to estimate current time.
         // None of the other approaches such as NTP are acceptable for Fuchsia

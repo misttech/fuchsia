@@ -14,6 +14,7 @@ use fidl_fuchsia_time_external::{
 use futures::TryStreamExt;
 use futures::lock::Mutex;
 use log::warn;
+use std::sync::Arc;
 
 /// An |UpdateAlgorithm| trait produces time samples on demand.
 #[async_trait]
@@ -95,6 +96,7 @@ impl<UA: UpdateAlgorithm> PullSource<UA> {
     pub async fn handle_requests_for_stream(
         &self,
         mut request_stream: PullSourceRequestStream,
+        inspect_controller: Arc<Mutex<Option<inspect_runtime::PublishedInspectController>>>,
     ) -> Result<(), Error> {
         while let Some(request) = request_stream.try_next().await? {
             match request {
@@ -110,9 +112,34 @@ impl<UA: UpdateAlgorithm> PullSource<UA> {
                 PullSourceRequest::UpdateDeviceProperties { properties, .. } => {
                     self.update_algorithm.update_device_properties(properties).await;
                 }
-                PullSourceRequest::Shutdown { responder: _, .. } => {
-                    // TODO: b/367743262 - handle shutdown request
-                    warn!("receive shutdown request");
+                PullSourceRequest::Shutdown { responder } => {
+                    let mut controller_lock = inspect_controller.lock().await;
+                    if let Some(controller) = controller_lock.take() {
+                        let options = inspect_runtime::EscrowOptions::default();
+                        match controller.escrow_frozen(options).await {
+                            Ok(token) => {
+                                if let Err(e) = responder.send(Ok(token)) {
+                                    warn!("Failed to send shutdown response: {:?}", e);
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to escrow frozen Inspect controller: {:?}", e);
+                                if let Err(e) = responder
+                                    .send(Err(ftexternal::EscrowError::EscrowInspectFailed))
+                                {
+                                    warn!("Failed to send shutdown error response: {:?}", e);
+                                }
+                            }
+                        }
+                    } else {
+                        warn!("Inspect controller already taken or None during shutdown");
+                        if let Err(e) =
+                            responder.send(Err(ftexternal::EscrowError::EscrowNoInspectController))
+                        {
+                            warn!("Failed to send shutdown error response: {:?}", e);
+                        }
+                    }
+                    return Ok(());
                 }
             }
         }
@@ -189,7 +216,9 @@ mod test {
             let (proxy, stream) = create_proxy_and_stream::<PullSourceMarker>();
             let server = fasync::Task::spawn({
                 let test_source = Arc::clone(&test_source);
-                async move { test_source.handle_requests_for_stream(stream).await }
+                async move {
+                    test_source.handle_requests_for_stream(stream, Arc::new(Mutex::new(None))).await
+                }
             });
             (TestHarness { test_source, _server: server }, proxy)
         }

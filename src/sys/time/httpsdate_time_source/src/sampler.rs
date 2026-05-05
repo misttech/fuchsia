@@ -347,6 +347,7 @@ mod test {
 
     fn make_test_config() -> Config {
         Config {
+            use_fake_sampler: false,
             https_timeout: zx::BootDuration::from_seconds(10),
             standard_deviation_bound_percentage: 30,
             first_rtt_time_factor: 5,

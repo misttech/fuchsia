@@ -363,6 +363,7 @@ mod test {
         .into_iter()
         .collect();
         Config {
+            use_fake_sampler: false,
             https_timeout: zx::BootDuration::from_seconds(10),
             standard_deviation_bound_percentage: 30,
             first_rtt_time_factor: 5,

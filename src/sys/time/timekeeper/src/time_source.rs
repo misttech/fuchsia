@@ -16,8 +16,10 @@ use fidl_fuchsia_time_external::{
 };
 use fuchsia_component::client;
 use fuchsia_runtime::UtcInstant;
+use fuchsia_sync::Mutex;
 use futures::stream::Stream;
 use futures::{FutureExt, TryFutureExt};
+use inspect_runtime::EscrowToken;
 use log::debug;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -287,7 +289,7 @@ impl Into<BoxedPushSource> for TimeSourceLauncher {
 }
 impl Into<BoxedPullSource> for TimeSourceLauncher {
     fn into(self) -> BoxedPullSource {
-        Box::new(PullSourceImpl { launcher: self })
+        Box::new(PullSourceImpl { launcher: self, tokens: Mutex::new(None) })
     }
 }
 
@@ -341,6 +343,7 @@ impl PushSource for PushSourceImpl {
 #[derive(Debug)]
 pub struct PullSourceImpl {
     launcher: TimeSourceLauncher,
+    tokens: Mutex<Option<EscrowToken>>,
 }
 
 impl PullSourceImpl {
@@ -358,6 +361,16 @@ impl PullSourceImpl {
             .map_err(|e| format_err!("Error obtaining time sample: {:?}", e))?
             .try_into()
     }
+
+    async fn shutdown(&self, directory: &DirectoryProxy) -> Result<EscrowToken, Error> {
+        let proxy =
+            client::connect_to_protocol_at_dir_root::<ftexternal::PullSourceMarker>(directory)
+                .context("failed to connect to the fuchsia.time.external.PullSource")?;
+        proxy
+            .shutdown()
+            .await?
+            .map_err(|e| format_err!("Error obtaining time escrow token: {:?}", e))
+    }
 }
 
 #[async_trait]
@@ -365,19 +378,29 @@ impl PullSource for PullSourceImpl {
     /// Attempts to start the timesource component and request a time sample. Component is
     /// unloaded after sample is returned in order to free system resources.
     async fn sample(&self, urgency: &Urgency) -> Result<Sample, Error> {
+        // Drop current token if we have one, so Archivist can clean up old data.
+        let _ = self.tokens.lock().take();
+
         let directory = self.launcher.launch().await?;
         // Don't check for errors here to ensure `destroy()` is called.
         let sample = self.sample_from_dir(&directory, urgency).await;
+
+        match self.shutdown(&directory).await {
+            Ok(token) => {
+                *self.tokens.lock() = Some(token);
+            }
+            Err(e) => {
+                log::warn!("Failed to shutdown and escrow: {:?}", e);
+            }
+        }
+
         self.launcher.destroy().await?;
         sample
     }
 }
 
 #[cfg(test)]
-use {
-    fuchsia_sync::Mutex,
-    futures::{StreamExt, stream},
-};
+use futures::{StreamExt, stream};
 
 /// A time source that immediately produces a collections of events supplied at construction.
 /// The time source may be launched multiple times and will return a different collection of events

@@ -141,6 +141,7 @@ impl DefineSubsystemConfiguration<TimekeeperConfig> for TimekeeperSubsystem {
         // Refer to //src/sys/time/httpsdate_time_source/meta/service.cml
         // for details.
         time_source_config_builder
+            .field("use_fake_sampler", false)?
             .field("https_timeout_sec", 10)?
             .field("standard_deviation_bound_percentage", 30)?
             .field("first_rtt_time_factor", 5)?

@@ -234,6 +234,7 @@ group("archivist-for-embedding-bundle") {
     "//src/lib/syslog/go:*",
     "//src/sys/component_manager/tests/*",
     "//src/sys/test_manager:*",
+    "//src/sys/time/httpsdate_time_source/tests:*",
   ]
   deps = [
     ":archivist-embedded-config",

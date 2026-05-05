@@ -9,24 +9,31 @@ mod diagnostics;
 mod httpsdate;
 mod sampler;
 
+use crate::datatypes::HttpsSample;
 use crate::diagnostics::{
     CobaltDiagnostics, CompositeDiagnostics, Diagnostics, InspectDiagnostics,
 };
 use crate::httpsdate::{HttpsDateUpdateAlgorithm, RetryStrategy};
 use crate::sampler::{HttpsSampler, HttpsSamplerImpl};
 use anyhow::{Context, Error};
+use async_trait::async_trait;
 use fidl_fuchsia_net_interfaces::StateMarker;
 use fidl_fuchsia_time_external::{
     PullSourceRequestStream, PushSourceRequestStream, Status, Urgency,
 };
 use fuchsia_component::server::{ServiceFs, ServiceObj};
+use fuchsia_runtime::{UtcDuration, UtcInstant};
+use futures::future::BoxFuture;
+use httpdate_hyper::HttpsDateError;
 
 use futures::future::{Future, join};
+use futures::lock::Mutex;
 use futures::{FutureExt, StreamExt};
 use log::warn;
 use pull_source::PullSource;
 use push_source::PushSource;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Retry strategy used while polling for time.
 const RETRY_STRATEGY: RetryStrategy = RetryStrategy {
@@ -40,6 +47,8 @@ const RETRY_STRATEGY: RetryStrategy = RetryStrategy {
 
 /// HttpsDate config, populated from build-time generated structured config.
 pub struct Config {
+    /// True if the time source should use a fake sampler instead of network calls.
+    use_fake_sampler: bool,
     // The amount of time to wait for a HTTPs timeout for sampling.
     // Looks like it could be boot duration, to ensure that requests fail fast
     // when sampling is much delayed.
@@ -83,6 +92,7 @@ impl From<httpsdate_config::Config> for Config {
         .into_iter()
         .collect();
         Config {
+            use_fake_sampler: source.use_fake_sampler,
             https_timeout: zx::BootDuration::from_seconds(source.https_timeout_sec.into()),
             standard_deviation_bound_percentage: source.standard_deviation_bound_percentage,
             first_rtt_time_factor: source.first_rtt_time_factor,
@@ -160,6 +170,7 @@ pub struct PullServer<
     N: Future<Output = Result<(), Error>> + Send,
 > {
     pull_source: PullSource<HttpsDateUpdateAlgorithm<'a, S, D, N>>,
+    inspect_controller: Arc<Mutex<Option<inspect_runtime::PublishedInspectController>>>,
 }
 
 impl<'a, S, D, N> PullServer<'a, S, D, N>
@@ -173,6 +184,7 @@ where
         sampler: S,
         internet_reachable: N,
         config: &'a Config,
+        inspect_controller: Arc<Mutex<Option<inspect_runtime::PublishedInspectController>>>,
     ) -> Result<Self, Error> {
         let update_algorithm = HttpsDateUpdateAlgorithm::new(
             RETRY_STRATEGY,
@@ -183,7 +195,7 @@ where
         );
         let pull_source = PullSource::new(update_algorithm)?;
 
-        Ok(PullServer { pull_source })
+        Ok(PullServer { pull_source, inspect_controller })
     }
 
     /// Start serving `PullSource` FIDL API.
@@ -194,7 +206,11 @@ where
         fs.dir("svc").add_fidl_service(|stream: PullSourceRequestStream| stream);
         Ok(fs
             .for_each_concurrent(None, |stream| {
-                handle_pull_source_request(stream, &self.pull_source)
+                handle_pull_source_request(
+                    stream,
+                    &self.pull_source,
+                    Arc::clone(&self.inspect_controller),
+                )
             })
             .map(|_| Ok(())))
     }
@@ -204,9 +220,10 @@ where
 async fn handle_pull_source_request<T: pull_source::UpdateAlgorithm>(
     stream: PullSourceRequestStream,
     pull_source: &PullSource<T>,
+    inspect_controller: Arc<Mutex<Option<inspect_runtime::PublishedInspectController>>>,
 ) {
     pull_source
-        .handle_requests_for_stream(stream)
+        .handle_requests_for_stream(stream, inspect_controller)
         .await
         .unwrap_or_else(|e| warn!("Error handling PullSource stream: {:?}", e));
 }
@@ -217,23 +234,20 @@ async fn serve<S, D, N>(
     sampler: S,
     diagnostics: D,
     internet_reachable: N,
+    inspect_controller: Arc<Mutex<Option<inspect_runtime::PublishedInspectController>>>,
 ) -> Result<(), Error>
 where
     S: HttpsSampler + Send + Sync,
     D: Diagnostics,
     N: Future<Output = Result<(), Error>> + Send,
 {
-    let _inspect_server_task = inspect_runtime::publish(
-        fuchsia_inspect::component::inspector(),
-        inspect_runtime::PublishOptions::default(),
-    );
-
     if config.use_pull_api {
         let mut fs = ServiceFs::new();
 
         fs.take_and_serve_directory_handle()?;
 
-        let server = PullServer::new(diagnostics, sampler, internet_reachable, config)?;
+        let server =
+            PullServer::new(diagnostics, sampler, internet_reachable, config, inspect_controller)?;
         let result = server.serve(&mut fs)?.await;
         result
     } else {
@@ -247,8 +261,41 @@ where
     }
 }
 
+#[derive(Clone, Debug)]
+struct FakeHttpsSampler {}
+
+impl FakeHttpsSampler {
+    fn new() -> Self {
+        Self {}
+    }
+}
+
+#[async_trait]
+impl HttpsSampler for FakeHttpsSampler {
+    async fn produce_sample(
+        &self,
+        _num_polls: usize,
+    ) -> Result<BoxFuture<'_, HttpsSample>, HttpsDateError> {
+        let sample = HttpsSample {
+            utc: UtcInstant::from_nanos(1000000000),
+            reference: zx::BootInstant::from_nanos(1000000000),
+            standard_deviation: UtcDuration::from_nanos(1000000),
+            final_bound_size: UtcDuration::from_nanos(2000000),
+            polls: vec![],
+        };
+        Ok(futures::future::ready(sample).boxed())
+    }
+}
+
 #[fuchsia::main(logging_tags=["time", "source"])]
 async fn main() -> Result<(), Error> {
+    if let Some(_dict) = fuchsia_runtime::take_startup_handle(fuchsia_runtime::HandleInfo::new(
+        fuchsia_runtime::HandleType::EscrowedDictionary,
+        0,
+    )) {
+        // Ignore the dictionary and let it drop to clear old VMOs.
+    }
+
     let config = httpsdate_config::Config::take_from_startup_handle();
     let time_source_url = config.time_source_endpoint_url.clone();
 
@@ -263,8 +310,6 @@ async fn main() -> Result<(), Error> {
     let (cobalt, cobalt_sender_fut) = CobaltDiagnostics::new();
     let diagnostics = CompositeDiagnostics::new(inspect, cobalt);
 
-    let sampler = HttpsSamplerImpl::new(time_source_url.parse()?, &config);
-
     let interface_state_service = fuchsia_component::client::connect_to_protocol::<StateMarker>()
         .context("failed to connect to fuchsia.net.interfaces/State")?;
     let internet_reachable = fidl_fuchsia_net_interfaces_ext::wait_for_reachability::<
@@ -278,8 +323,25 @@ async fn main() -> Result<(), Error> {
     )
     .map(|r| r.context("reachability status stream error"));
 
-    let serve_fut = serve(&config, sampler, diagnostics, internet_reachable);
+    let inspect_controller =
+        inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default())
+            .expect("failed to publish inspect");
+    let inspect_controller = Arc::new(Mutex::new(Some(inspect_controller)));
 
-    let (update_res, _) = join(serve_fut, cobalt_sender_fut).await;
+    let serve_fut = if config.use_fake_sampler {
+        serve(&config, FakeHttpsSampler::new(), diagnostics, internet_reachable, inspect_controller)
+            .boxed()
+    } else {
+        serve(
+            &config,
+            HttpsSamplerImpl::new(time_source_url.parse()?, &config),
+            diagnostics,
+            internet_reachable,
+            inspect_controller,
+        )
+        .boxed()
+    };
+
+    let (update_res, _) = futures::future::join(serve_fut, cobalt_sender_fut).await;
     update_res
 }

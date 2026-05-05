@@ -97,5 +97,8 @@ fuchsia_package("httpsdate-time-source-pull") {
 
 group("tests") {
   testonly = true
-  deps = [ ":httpsdate-time-source-tests" ]
+  deps = [
+    ":httpsdate-time-source-tests",
+    "tests",
+  ]
 }

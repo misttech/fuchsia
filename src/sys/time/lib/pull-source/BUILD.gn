@@ -19,6 +19,7 @@ rustc_library("pull-source") {
   deps = [
     "//sdk/fidl/fuchsia.time.external:fuchsia.time.external_rust",
     "//sdk/rust/zx",
+    "//src/lib/diagnostics/inspect/runtime/rust",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
