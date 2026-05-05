@@ -6,11 +6,4 @@
 // to unblock the toolchain.
 #![recursion_limit = "256"]
 
-// TODO(https://fxbug.dev/377364505) Remove and fix lints once compiler roll
-// https://fxbug.dev/370540341 lands.
-pub mod constants;
-#[allow(dead_code)]
-mod fuchsia;
-use self::fuchsia::*;
-
-pub use self::fuchsia::testing::*;
+pub use fxfs_platform_testing::fuchsia::testing::*;

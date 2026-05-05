@@ -8,7 +8,7 @@ use attribution_processing::{
 };
 use std::collections::HashMap;
 
-use fxfs_platform::constants::{BLOB_NAME_HASH_LENGTH, BLOB_NAME_PREFIX};
+use fxfs_platform_constants::{BLOB_NAME_HASH_LENGTH, BLOB_NAME_PREFIX};
 
 /// Annotator for resources using information from the assembled system.
 ///

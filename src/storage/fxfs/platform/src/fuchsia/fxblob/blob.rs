@@ -35,8 +35,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use storage_device::buffer;
 use zx::{HandleBased, Status};
 
-pub const BLOCK_SIZE: u64 = fuchsia_merkle::BLOCK_SIZE as u64;
-
 // When the top bit of the open count is set, it means the file has been deleted and when the count
 // drops to zero, it will be tombstoned.  Once it has dropped to zero, it cannot be opened again
 // (assertions will fire).
@@ -611,6 +609,7 @@ mod tests {
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
 
+    const BLOCK_SIZE: u64 = fuchsia_merkle::BLOCK_SIZE as u64;
     const CHUNK_SIZE: usize = 32 * 1024;
 
     #[fasync::run(10, test)]

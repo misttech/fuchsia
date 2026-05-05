@@ -5,7 +5,8 @@
 // TODO(https://fxbug.dev/439053417): Investigate why the recursion limit was bumped to unblock the toolchain.
 #![recursion_limit = "256"]
 
-pub mod constants;
+pub use fxfs_platform_constants as constants;
+
 #[cfg(target_os = "fuchsia")]
 pub mod fuchsia;
 

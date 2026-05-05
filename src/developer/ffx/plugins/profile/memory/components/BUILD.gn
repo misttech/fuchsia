@@ -30,7 +30,7 @@ ffx_plugin("ffx_profile_memory_components") {
     "//src/lib/fdomain/client",
     "//src/lib/fidl/rust/fidl",
     "//src/performance/memory/attribution/processing",
-    "//src/storage/fxfs/platform",
+    "//src/storage/fxfs/platform:constants",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:chrono",
