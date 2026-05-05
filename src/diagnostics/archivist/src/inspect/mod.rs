@@ -787,6 +787,7 @@ mod tests {
             batch_timeout_sec: BATCH_RETRIEVAL_TIMEOUT_SECONDS,
             aggregated_content_limit_bytes: None,
             maximum_concurrent_snapshots_per_reader: 4,
+            subscribe_to_manifest: false,
         };
 
         let trace_id = ftrace::Id::random();

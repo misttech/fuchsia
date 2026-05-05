@@ -7,19 +7,9 @@ use diagnostics_log_encoding::parse::ParseError;
 use diagnostics_message::error::MessageError;
 use diagnostics_message::ffi::{CPPArray, LogMessage};
 use diagnostics_message::{self as message, MonikerWithUrl};
-use std::collections::HashMap;
 use std::ffi::CString;
 use std::os::raw::c_char;
 use thiserror::Error;
-
-const BASE_TAG_SHIFT: u32 = 16;
-const BASE_TAG_MASK: u64 = 0x7FFF_FFFF;
-const MANIFEST_SHIFT: u32 = 47;
-const MANIFEST_MASK: u64 = 1u64 << MANIFEST_SHIFT;
-
-const fn is_manifest(header: u64) -> bool {
-    (header & MANIFEST_MASK) != 0
-}
 
 /// # Safety
 ///
@@ -153,37 +143,33 @@ unsafe fn fuchsia_decode_log_messages_to_struct_internal(
 ) -> Result<LogMessages<'static>, DecodeError> {
     let mut state = Box::new(ManagedState { allocator: Bump::new(), message_array: vec![] });
     let buf = unsafe { std::slice::from_raw_parts(msg, size) };
-    let mut current_slice: &[u8] = buf;
-    let mut tag_map: std::collections::HashMap<u32, (String, String)> =
-        std::collections::HashMap::new();
-
+    let mut current_slice = buf.as_ref();
     loop {
-        if current_slice.len() < 8 {
-            if current_slice.is_empty() {
-                break;
-            } else {
-                return Err(diagnostics_log_encoding::parse::ParseError::InvalidHeader.into());
-            }
-        }
         let (data, remaining) = if expect_extended_attribution {
-            parse_extended_record(&state, current_slice, &mut tag_map)?
-        } else {
-            let (input, remaining_after_parse) =
-                diagnostics_log_encoding::parse::parse_record(current_slice)?;
-            let data = diagnostics_message::ffi::build_logs_data(input, None, unsafe {
+            message::ffi::ffi_from_extended_record(
+                current_slice,
                 // SAFETY: The returned LogMessage must NOT outlive the bump allocator.
                 // This is ensured by the allocator living in the heap-allocated ManagedState
                 // struct which frees the LogMessages first when dropped, before allowing the bump
                 // allocator itself to be freed.
-                &*(&state.allocator as *const Bump)
-            })?
-            .build();
-            (Some(data), remaining_after_parse)
+                unsafe { &*(&state.allocator as *const Bump) },
+            )?
+        } else {
+            let (_, remaining_after_parse) =
+                diagnostics_log_encoding::parse::parse_record(current_slice)?;
+            let record_len = current_slice.len() - remaining_after_parse.len();
+            let record_slice = &current_slice[..record_len];
+            let (data, _) = message::ffi::ffi_from_extended_record(
+                record_slice,
+                // SAFETY: The returned LogMessage must NOT outlive the bump allocator.
+                // This is ensured by the allocator living in the heap-allocated ManagedState
+                // struct which frees the LogMessages first when dropped, before allowing the bump
+                // allocator itself to be freed.
+                unsafe { &*(&state.allocator as *const Bump) },
+            )?;
+            (data, remaining_after_parse)
         };
-
-        if let Some(data) = data {
-            state.message_array.push(data as *mut LogMessage<'static>);
-        }
+        state.message_array.push(data as *mut LogMessage<'static>);
         if remaining.is_empty() {
             break;
         }
@@ -194,54 +180,6 @@ unsafe fn fuchsia_decode_log_messages_to_struct_internal(
         messages: (&state.message_array).into(),
         state: Box::into_raw(state),
         error_str: std::ptr::null_mut(),
-    })
-}
-
-fn parse_extended_record<'a>(
-    state: &Box<ManagedState<'a>>,
-    current_slice: &'a [u8],
-    tag_map: &mut HashMap<u32, (String, String)>,
-) -> Result<(Option<&'a mut LogMessage<'a>>, &'a [u8]), DecodeError> {
-    let header_bytes: [u8; 8] = current_slice[0..8].try_into().unwrap();
-    let header_val = u64::from_le_bytes(header_bytes);
-    let base_tag = ((header_val >> BASE_TAG_SHIFT) & BASE_TAG_MASK) as u32;
-    let is_manifest = is_manifest(header_val);
-    let (input, remaining_after_parse) =
-        diagnostics_log_encoding::parse::parse_record(current_slice)?;
-    Ok(if is_manifest {
-        let mut moniker = None;
-        let mut url = None;
-        for arg in &input.arguments {
-            if arg.name() == "moniker" {
-                if let diagnostics_log_encoding::Value::Text(v) = arg.value() {
-                    moniker = Some(v.to_string());
-                }
-            } else if arg.name() == "url" {
-                if let diagnostics_log_encoding::Value::Text(v) = arg.value() {
-                    url = Some(v.to_string());
-                }
-            }
-        }
-        if let (Some(m), Some(u)) = (moniker, url) {
-            tag_map.insert(base_tag, (m, u));
-        }
-        (None, remaining_after_parse)
-    } else {
-        let metadata =
-            tag_map.get(&base_tag).map(|(m, u)| diagnostics_message::ffi::ExtendedMetadata {
-                moniker: m.as_str(),
-                url: u.as_str(),
-                rolled_out_logs: 0,
-            });
-        let data = diagnostics_message::ffi::build_logs_data(input, metadata, unsafe {
-            // SAFETY: The returned LogMessage must NOT outlive the bump allocator.
-            // This is ensured by the allocator living in the heap-allocated ManagedState
-            // struct which frees the LogMessages first when dropped, before allowing the bump
-            // allocator itself to be freed.
-            &*(&state.allocator as *const Bump)
-        })?
-        .build();
-        (Some(data), remaining_after_parse)
     })
 }
 

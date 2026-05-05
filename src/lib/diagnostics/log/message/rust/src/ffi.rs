@@ -13,10 +13,10 @@ use zx::BootInstant;
 
 pub use crate::constants::*;
 
-pub struct ExtendedMetadata<'a> {
-    pub moniker: &'a str,
-    pub url: &'a str,
-    pub rolled_out_logs: u64,
+struct ExtendedMetadata<'a> {
+    moniker: &'a str,
+    url: &'a str,
+    rolled_out_logs: u64,
 }
 
 /// Array for FFI purposes between C++ and Rust.
@@ -189,7 +189,7 @@ impl<'a> CPPLogMessageBuilder<'a> {
         self
     }
 
-    pub fn build(self) -> &'a mut LogMessage<'a> {
+    fn build(self) -> &'a mut LogMessage<'a> {
         let allocator = self.allocator;
         let builder = allocator.alloc(self);
 
@@ -293,7 +293,7 @@ impl<'a> CPPLogMessageBuilderBuilder<'a> {
     }
 }
 
-pub fn build_logs_data<'a>(
+fn build_logs_data<'a>(
     input: Record<'a>,
     source: Option<ExtendedMetadata<'_>>,
     allocator: &'a Bump,

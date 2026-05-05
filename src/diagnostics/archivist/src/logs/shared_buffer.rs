@@ -10,14 +10,9 @@ use crate::identity::ComponentIdentity;
 use crate::logs::repository::ARCHIVIST_MONIKER;
 use crate::logs::stats::{LogStreamStats, SaturationCurve};
 use derivative::Derivative;
-use diagnostics_log_encoding::encode::{
-    Encoder, EncoderOpts, EncodingError, ResizableBuffer, add_dropped_count,
-};
-use diagnostics_log_encoding::{
-    Argument, Header, LOG_CONTROL_BIT, Record, TRACING_FORMAT_LOG_RECORD_TYPE,
-};
+use diagnostics_log_encoding::encode::add_dropped_count;
+use diagnostics_log_encoding::{Header, TRACING_FORMAT_LOG_RECORD_TYPE};
 use fidl_fuchsia_diagnostics::{ComponentSelector, StreamMode};
-use fidl_fuchsia_diagnostics_types::Severity;
 use fidl_fuchsia_logger::MAX_DATAGRAM_LEN_BYTES;
 use fuchsia_async as fasync;
 use fuchsia_async::condition::{Condition, ConditionGuard};
@@ -27,12 +22,11 @@ use futures::channel::oneshot;
 use log::debug;
 use ring_buffer::{self, RingBuffer, ring_buffer_record_len};
 use std::collections::VecDeque;
-use std::io::Cursor;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut, Range};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
-use zerocopy::{FromBytes, IntoBytes};
+use zerocopy::FromBytes;
 
 // Aim to keep 25% of the buffer free. This is expressed as a fraction: numerator / denominator.
 const SPACE_THRESHOLD_NUMERATOR: usize = 1;
@@ -54,28 +48,6 @@ fn calculate_real_size_given_desired_capacity(capacity: usize) -> usize {
     (capacity * SPACE_THRESHOLD_DENOMINATOR
         / (SPACE_THRESHOLD_DENOMINATOR - SPACE_THRESHOLD_NUMERATOR))
         .next_multiple_of(page_size)
-}
-
-pub fn encode_rolled_out(tag: u64, count: u64) -> Result<Vec<u8>, EncodingError> {
-    let mut encoder =
-        Encoder::new(Cursor::new(ResizableBuffer::from(Vec::new())), EncoderOpts::default());
-    let record = Record {
-        timestamp: zx::BootInstant::from_nanos(0),
-        severity: Severity::Info.into_primitive(),
-        arguments: vec![Argument::new(
-            "rolled_out",
-            diagnostics_log_encoding::Value::UnsignedInt(count),
-        )],
-    };
-    encoder.write_record(record)?;
-
-    let mut buffer = encoder.take().into_inner().into_inner();
-    if buffer.len() >= 8 {
-        let mut header = Header::read_from_bytes(&buffer[0..8]).unwrap();
-        header.set_tag((tag as u32) | LOG_CONTROL_BIT);
-        buffer[0..8].copy_from_slice(header.as_bytes());
-    }
-    Ok(buffer)
 }
 
 const IOB_PEER_CLOSED_KEY_BASE: u64 = 0x8000_0000_0000_0000;

@@ -45,29 +45,28 @@ int RustStrcmp(CPPArray<uint8_t> rust_string, const char* c_str) {
 TEST(LogDecoder, DecodesArchivistArguments) {
   constexpr char kTestMoniker[] = "some_moniker";
   constexpr char kTestUrl[] = "fuchsia-pkg://fuchsia.com/test#test.cm";
+  fuchsia_logging::LogBufferBuilder builder(fuchsia_logging::LogSeverity::Info);
+  auto buffer = builder.WithMsg("test message").WithFile("test_file", 42).Build();
+  std::span<const uint8_t> span = buffer.EndRecord();
+  std::vector<uint8_t> new_buffer(span.size() + 4 + 4 + 8 + ((sizeof(kTestMoniker) - 1 + 7) & ~7) +
+                                  ((sizeof(kTestUrl) - 1 + 7) & ~7));
+  memcpy(new_buffer.data(), span.data(), span.size());
+  size_t current_offset = span.size();
+  uint32_t moniker_len = sizeof(kTestMoniker) - 1;
+  uint32_t url_len = sizeof(kTestUrl) - 1;
+  uint64_t rolled_out_logs = 1;
+  memcpy(new_buffer.data() + current_offset, &moniker_len, 4);
+  current_offset += 4;
+  memcpy(new_buffer.data() + current_offset, &url_len, 4);
+  current_offset += 4;
+  memcpy(new_buffer.data() + current_offset, &rolled_out_logs, 8);
+  current_offset += 8;
+  memcpy(new_buffer.data() + current_offset, kTestMoniker, moniker_len);
+  current_offset += (moniker_len + 7) & ~7;
+  memcpy(new_buffer.data() + current_offset, kTestUrl, url_len);
+  current_offset += (url_len + 7) & ~7;
 
-  // 1. Build Manifest Record
-  fuchsia_logging::LogBufferBuilder manifest_builder(fuchsia_logging::LogSeverity::Info);
-  auto manifest_buffer = manifest_builder.Build();
-  manifest_buffer.WriteKeyValue("moniker", kTestMoniker);
-  manifest_buffer.WriteKeyValue("url", kTestUrl);
-  std::span<const uint8_t> manifest_span = manifest_buffer.EndRecord();
-
-  // 2. Build Log Record
-  fuchsia_logging::LogBufferBuilder log_builder(fuchsia_logging::LogSeverity::Info);
-  auto log_buffer = log_builder.WithMsg("test message").WithFile("test_file", 42).Build();
-  std::span<const uint8_t> log_span = log_buffer.EndRecord();
-
-  // 3. Concatenate and Flip Bit
-  std::vector<uint8_t> new_buffer(manifest_span.size() + log_span.size());
-  memcpy(new_buffer.data(), manifest_span.data(), manifest_span.size());
-  memcpy(new_buffer.data() + manifest_span.size(), log_span.data(), log_span.size());
-
-  // Flip LOG_CONTROL_BIT (bit 47) in header of first record
-  uint64_t* header_ptr = reinterpret_cast<uint64_t*>(new_buffer.data());
-  *header_ptr |= (1ULL << 47);
-
-  auto messages = fuchsia_decode_log_messages_to_struct(new_buffer.data(), new_buffer.size(), true);
+  auto messages = fuchsia_decode_log_messages_to_struct(new_buffer.data(), current_offset, true);
   ASSERT_EQ(messages.messages.len, static_cast<size_t>(1));
   ASSERT_EQ(messages.messages.ptr[0]->tags.len, static_cast<size_t>(1));
   EXPECT_EQ(RustStrcmp(messages.messages.ptr[0]->tags.ptr[0], kTestMoniker), 0);

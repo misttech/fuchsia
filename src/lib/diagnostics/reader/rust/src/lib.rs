@@ -11,6 +11,8 @@ use async_stream::stream;
 use diagnostics_data::{DiagnosticsData, LogsData};
 #[cfg(fuchsia_api_level_less_than = "HEAD")]
 use diagnostics_message as _;
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+use diagnostics_message::from_extended_record;
 use fidl_fuchsia_diagnostics::{
     ArchiveAccessorMarker, ArchiveAccessorProxy, BatchIteratorMarker, BatchIteratorProxy,
     ClientSelectorConfiguration, Format, FormattedContent, PerformanceConfiguration, ReaderError,
@@ -87,14 +89,6 @@ pub enum Error {
     /// Failed to read vmo from the response
     #[error("Failed to read vmo from the response")]
     ReadVmo(#[source] zx::Status),
-
-    /// Parser got stuck or failed to advance
-    #[error("Parser got stuck or failed to advance")]
-    ParserStuck,
-    /// Failed to acquire mutex
-    #[cfg(fuchsia_api_level_at_least = "HEAD")]
-    #[error("Failed to acquire mutex")]
-    MutexError,
 }
 
 /// An inspect tree selector for a component.
@@ -635,9 +629,7 @@ where
 fn drain_batch_iterator_for_logs(
     iterator: Arc<BatchIteratorProxy>,
 ) -> impl Stream<Item = Result<LogsData, Error>> {
-    #[cfg(fuchsia_api_level_at_least = "HEAD")]
-    let parser = Arc::new(std::sync::Mutex::new(diagnostics_message::MessageParser::new()));
-    stream_batch::<LogsData>(iterator, move |formatted_content| match formatted_content {
+    stream_batch::<LogsData>(iterator, |formatted_content| match formatted_content {
         FormattedContent::Json(data) => {
             let mut buf = vec![0; data.size as usize];
             data.vmo.read(&mut buf, 0).map_err(Error::ReadVmo)?;
@@ -647,19 +639,12 @@ fn drain_batch_iterator_for_logs(
         FormattedContent::Fxt(vmo) => {
             let mut buf = vec![0; vmo.get_content_size().expect("Always returns Ok") as usize];
             vmo.read(&mut buf, 0).map_err(Error::ReadVmo)?;
-            let mut current_slice: &[u8] = &buf;
+            let mut current_slice: &[u8] = buf.as_ref();
             let mut items = vec![];
-            let mut parser = parser.lock().map_err(|_| Error::MutexError)?;
-
             while !current_slice.is_empty() {
-                match parser.parse_next(current_slice) {
-                    Ok((maybe_data, remaining)) => {
-                        if remaining.len() == current_slice.len() {
-                            return Err(Error::ParserStuck);
-                        }
-                        if let Some(data) = maybe_data {
-                            items.push(data);
-                        }
+                match from_extended_record(current_slice) {
+                    Ok((data, remaining)) => {
+                        items.push(data);
                         current_slice = remaining;
                     }
                     Err(_) => {

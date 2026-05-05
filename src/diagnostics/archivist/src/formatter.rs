@@ -3,24 +3,20 @@
 // found in the LICENSE file.
 use crate::diagnostics::BatchIteratorConnectionStats;
 use crate::error::AccessorError;
+use crate::logs::servers::{ExtendRecordOpts, extend_fxt_record};
 use crate::logs::shared_buffer::FxtMessage;
-use diagnostics_log_encoding::encode::{Encoder, EncoderOpts, EncodingError, ResizableBuffer};
-use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, Record};
 use fidl_fuchsia_diagnostics::{
     DataType, Format, FormattedContent, MAXIMUM_ENTRIES_PER_BATCH, StreamMode,
 };
 
-use fidl_fuchsia_diagnostics_types::Severity;
 use fuchsia_async as fasync;
 use futures::{Stream, StreamExt};
-use log::{error, warn};
+use log::warn;
 use pin_project::pin_project;
 use serde::Serialize;
-use std::io::Cursor;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, ready};
-use zerocopy::{FromBytes, IntoBytes};
 use zx;
 
 static SERIALIZED_DATA_VMO_NAME: zx::Name = zx::Name::new_lossy("archivist-serialized-data");
@@ -412,85 +408,8 @@ impl<T: PacketFormat> Stream for PacketSerializer<T> {
 pub struct FxtPacketFormat<I> {
     #[pin]
     pub stream: I,
+    pub subscribe_to_manifest: bool,
     pub sent_tags: std::collections::HashMap<u64, Arc<crate::identity::ComponentIdentity>>,
-}
-
-use thiserror::Error;
-
-#[derive(Error, Debug)]
-pub enum FxtEncodeError {
-    #[error(transparent)]
-    UnknownError(#[from] anyhow::Error),
-    #[error(transparent)]
-    EncodeError(#[from] EncodingError),
-    #[error("FXT size error")]
-    SizeError,
-}
-
-impl<I: Stream<Item = FxtMessage>> FxtPacketFormat<I> {
-    fn try_write_item(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buffer: &mut Vec<u8>,
-    ) -> Result<Poll<Option<usize>>, FxtEncodeError> {
-        let this = self.project();
-        let Poll::Ready(maybe_item) = this.stream.poll_next(cx) else { return Ok(Poll::Pending) };
-
-        Ok(if let Some(item) = maybe_item {
-            let tag = item.tag();
-            let identity = item.component_identity();
-            let send_manifest = match this.sent_tags.entry(tag) {
-                std::collections::hash_map::Entry::Vacant(e) => {
-                    e.insert(Arc::clone(identity));
-                    true
-                }
-                std::collections::hash_map::Entry::Occupied(mut e) => {
-                    if !Arc::ptr_eq(e.get(), identity) && **e.get() != **identity {
-                        e.insert(Arc::clone(identity));
-                        true
-                    } else {
-                        false
-                    }
-                }
-            };
-
-            if send_manifest {
-                let mut encoder = Encoder::new(
-                    Cursor::new(ResizableBuffer::from(Vec::new())),
-                    EncoderOpts::default(),
-                );
-                let record = Record {
-                    timestamp: zx::BootInstant::from_nanos(0),
-                    severity: Severity::Info.into_primitive(),
-                    arguments: vec![
-                        Argument::other("moniker", identity.moniker.to_string()),
-                        Argument::other("url", identity.url.as_str()),
-                    ],
-                };
-                encoder.write_record(record)?;
-                let mut manifest_buffer = encoder.take().into_inner().into_inner();
-                if manifest_buffer.len() >= 8 {
-                    let mut header = Header::read_from_bytes(&manifest_buffer[0..8])
-                        .map_err(|_| FxtEncodeError::SizeError)?;
-                    header.set_tag((tag as u32) | LOG_CONTROL_BIT);
-                    manifest_buffer[0..8].copy_from_slice(header.as_bytes());
-                }
-                buffer.extend_from_slice(&manifest_buffer);
-            }
-
-            if item.dropped() > 0 {
-                let rolled_out_buffer =
-                    crate::logs::shared_buffer::encode_rolled_out(tag, item.dropped())
-                        .map_err(FxtEncodeError::EncodeError)?;
-                buffer.extend_from_slice(&rolled_out_buffer);
-            }
-
-            buffer.extend_from_slice(item.data());
-            Poll::Ready(Some(0))
-        } else {
-            Poll::Ready(None)
-        })
-    }
 }
 
 impl<I: Stream<Item = FxtMessage>> PacketFormat for FxtPacketFormat<I> {
@@ -502,22 +421,94 @@ impl<I: Stream<Item = FxtMessage>> PacketFormat for FxtPacketFormat<I> {
         _first: bool,
         buffer: &mut Vec<u8>,
     ) -> Poll<Option<usize>> {
-        self.try_write_item(cx, buffer)
-            .map_err(|err| {
-                error!("Failed to serialize item {err:?}");
-            })
-            .unwrap_or(Poll::Ready(None))
+        let this = self.project();
+        if let Some(item) = ready!(this.stream.poll_next(cx)) {
+            if *this.subscribe_to_manifest {
+                let tag = item.tag();
+                let identity = item.component_identity();
+                let send_manifest = match this.sent_tags.entry(tag) {
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(Arc::clone(identity));
+                        true
+                    }
+                    std::collections::hash_map::Entry::Occupied(mut e) => {
+                        if !Arc::ptr_eq(e.get(), identity) && **e.get() != **identity {
+                            e.insert(Arc::clone(identity));
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                };
+
+                if send_manifest {
+                    use diagnostics_log_encoding::encode::{Encoder, EncoderOpts, ResizableBuffer};
+                    use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, Record};
+                    use fidl_fuchsia_diagnostics_types::Severity;
+                    use std::io::Cursor;
+                    use zerocopy::{FromBytes, IntoBytes};
+
+                    let mut encoder = Encoder::new(
+                        Cursor::new(ResizableBuffer::from(Vec::new())),
+                        EncoderOpts::default(),
+                    );
+                    let record = Record {
+                        timestamp: zx::BootInstant::from_nanos(0),
+                        severity: Severity::Info.into_primitive(),
+                        arguments: vec![
+                            Argument::other("moniker", identity.moniker.to_string()),
+                            Argument::other("url", identity.url.as_str()),
+                        ],
+                    };
+                    encoder.write_record(record).unwrap();
+                    let mut manifest_buffer = encoder.take().into_inner().into_inner();
+                    if manifest_buffer.len() >= 8 {
+                        let mut header = Header::read_from_bytes(&manifest_buffer[0..8]).unwrap();
+                        header.set_tag((tag as u32) | LOG_CONTROL_BIT);
+                        manifest_buffer[0..8].copy_from_slice(header.as_bytes());
+                    }
+                    buffer.extend_from_slice(&manifest_buffer);
+                }
+            }
+
+            buffer.extend_from_slice(item.data());
+
+            // if we are subscribing to the manifest, don't inject metadata into every record
+            extend_fxt_record(
+                item.component_identity(),
+                item.dropped(),
+                &ExtendRecordOpts {
+                    component_url: !*this.subscribe_to_manifest,
+                    moniker: !*this.subscribe_to_manifest,
+                    rolled_out: !*this.subscribe_to_manifest,
+                    subscribe_to_manifest: false,
+                },
+                buffer,
+            );
+            Poll::Ready(Some(0))
+        } else {
+            Poll::Ready(None)
+        }
     }
 }
 
 pub type FxtPacketSerializer<I> = PacketSerializer<FxtPacketFormat<I>>;
 
 impl<I> FxtPacketSerializer<I> {
-    pub fn new(stats: Arc<BatchIteratorConnectionStats>, max_packet_size: u64, items: I) -> Self {
+    pub fn new(
+        stats: Arc<BatchIteratorConnectionStats>,
+        max_packet_size: u64,
+        items: I,
+        subscribe_to_manifest: bool,
+    ) -> Self {
         Self::with_format(
             Some(stats),
             max_packet_size,
-            FxtPacketFormat { stream: items, sent_tags: std::collections::HashMap::new() },
+            FxtPacketFormat {
+                stream: items,
+                subscribe_to_manifest,
+                sent_tags: std::collections::HashMap::new(),
+            },
         )
     }
 }
@@ -827,7 +818,7 @@ mod tests {
 
         // Test with subscribe_to_manifest = true
         let packets: Vec<_> =
-            FxtPacketSerializer::new(Arc::clone(&test_stats), 1024 * 1024, iter(inputs))
+            FxtPacketSerializer::new(Arc::clone(&test_stats), 1024 * 1024, iter(inputs), true)
                 .collect::<Vec<_>>()
                 .await
                 .into_iter()
