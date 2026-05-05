@@ -38,8 +38,7 @@ if (toolchain_environment == "kernel.phys" ||
     asmflags = cflags
     ldflags = cflags
 
-    # TODO(https://fxbug.dev/507570739): Need equivalent rustflags!
-    rustflags = [ "--rust-is-too-dangerous-until-we-plumb-ffixed-x20" ]
+    rustflags = [ "-Ctarget-feature=+reserve-x20" ]
   }
 
   # Use the right thread-pointer ABI for the kernel (TPIDR_EL1).  This affects
