@@ -308,10 +308,6 @@ pub struct LogCommand {
     #[argh(switch)]
     pub prefer_url_component_name: bool,
 
-    /// if enabled, do not prefer using the component URL for the component name over the moniker.
-    #[argh(switch)]
-    pub noprefer_url_component_name: bool,
-
     /// hide the moniker field from output (does not exclude any log messages)
     #[argh(switch)]
     pub hide_moniker: bool,
@@ -394,7 +390,6 @@ impl Default for LogCommand {
             set_severity: vec![],
             show_full_moniker: false,
             prefer_url_component_name: false,
-            noprefer_url_component_name: false,
             hide_moniker: false,
             pid: None,
             tid: None,
