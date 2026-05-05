@@ -243,7 +243,7 @@ async fn suspend_job(kernel_job: &zx::Job) -> Result<Vec<zx::NullableHandle>, Er
                 if let Ok(thread) = process.get_child(&thread_koid, zx::Rights::SAME_RIGHTS) {
                     match thread
                         .wait_one(
-                            zx::Signals::THREAD_SUSPENDED,
+                            zx::Signals::THREAD_SUSPENDED | zx::Signals::THREAD_TERMINATED,
                             zx::MonotonicInstant::after(zx::MonotonicDuration::INFINITE),
                         )
                         .to_result()
