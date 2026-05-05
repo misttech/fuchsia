@@ -13,6 +13,7 @@
 #include <zircon/assert.h>
 
 #include <algorithm>
+#include <concepts>
 #include <functional>
 #include <optional>
 #include <type_traits>
@@ -26,8 +27,22 @@
 namespace zbitl {
 
 // Forward declaration; defined in image.h.
-template <typename Storage>
+template <WritableStorageApi Storage>
 class Image;
+
+// This is a helper concept for the return value of the callback passed to
+// zbitl::View<...>::CopyStorageItem().
+template <typename T>
+concept ViewCopyStorageScratchAllocatorResultApi = requires(T result) {
+  // It must be some fit::result<std::string_view, ...> type.
+  typename T::value_type;
+  requires std::same_as<fit::result<std::string_view, typename T::value_type>, T>;
+
+  // The value type is a movable, smart-pointer-like type.
+  requires std::movable<typename T::value_type>;
+
+  { result.value().get() } -> std::convertible_to<void*>;
+};
 
 /// The zbitl::View class provides functionality for processing ZBI items in various
 /// storage formats.
@@ -95,10 +110,10 @@ class Image;
 /// before destruction then both the original and the copy need to be checked
 /// before their respective destructions.  A moved-from zbitl::View can always
 /// be destroyed without checking.
-template <typename Storage>
+template <StorageApi Storage>
 class View {
  public:
-  using Traits = ExtendedStorageTraits<Storage>;
+  using Traits = StorageTraits<Storage>;
   using storage_type = Storage;
 
   View() = default;
@@ -165,7 +180,8 @@ class View {
     }
 
    private:
-    using TraitsHeader = typename Traits::template LocalizedReadResult<zbi_header_t>;
+    using TraitsHeader = decltype(ReadSparseDataFromStorage<zbi_header_t>(
+        std::declval<storage_type&>(), 0))::value_type;
     static constexpr bool kCopy = std::is_same_v<TraitsHeader, zbi_header_t>;
     static constexpr bool kReference =
         std::is_same_v<TraitsHeader, std::reference_wrapper<const zbi_header_t>>;
@@ -173,7 +189,7 @@ class View {
                   "zbitl::StorageTraits specialization's Header function returns wrong type");
 
     friend View;
-    template <typename ImageStorage>
+    template <WritableStorageApi ImageStorage>
     friend class Image;
 
     using HeaderStorage = std::conditional_t<kCopy, zbi_header_t, const zbi_header_t*>;
@@ -195,7 +211,7 @@ class View {
   /// and copy-assignable.  It's expected to have "view"-style semantics,
   /// i.e. be small and not own any storage itself but only refer to storage
   /// owned by the Storage object.
-  using payload_type = typename Traits::payload_type;
+  using payload_type = Traits::payload_type;
 
   /// The element type is a trivial struct morally equivalent to
   /// std::pair<header_type, payload_type>.  Both member types are
@@ -211,12 +227,12 @@ class View {
   /// the error.  Errors arising from Storage access also provide an error
   /// value defined via StorageTraits; see <lib/zbitl/storage-traits.h>.
   struct Error {
-    static auto storage_error_string(typename Traits::error_type error) {
+    static auto storage_error_string(Traits::error_type error) {
       return Traits::error_string(error);
     }
 
     /// A string constant describing the error.
-    std::string_view zbi_error{};
+    std::string_view zbi_error;
 
     /// This is the offset into the storage object at which an error occurred.
     /// This is zero for problems with the overall container, which begin()
@@ -238,15 +254,15 @@ class View {
   template <typename CopyStorage>
   struct CopyError {
     using WriteTraits = StorageTraits<std::decay_t<CopyStorage>>;
-    using WriteError = typename WriteTraits::error_type;
-    using ReadError = typename Traits::error_type;
+    using WriteError = WriteTraits::error_type;
+    using ReadError = Traits::error_type;
 
     static auto read_error_string(ReadError error) { return Traits::error_string(error); }
 
     static auto write_error_string(WriteError error) { return WriteTraits::error_string(error); }
 
     /// A string constant describing the error.
-    std::string_view zbi_error{};
+    std::string_view zbi_error;
 
     /// This is the offset into the storage object at which a read error
     /// occurred. This field is expected to be unset in the case of a write
@@ -358,7 +374,7 @@ class View {
 
    private:
     // Private fields accessed by Image<Storage>::Append().
-    template <typename ImageStorage>
+    template <WritableStorageApi ImageStorage>
     friend class Image;
 
     uint32_t next_item_offset() const { return offset_ + AlignedItemLength(*value_.header); }
@@ -551,7 +567,7 @@ class View {
   // doesn't support mutation.
   fit::result<typename Traits::error_type> EditHeader(const iterator& item,
                                                       const zbi_header_t& header)
-    requires(Traits::CanWrite())
+    requires StorageTraitsWriteApi<Traits, Storage>
   {
     item.Assert(__func__);
     if (auto result = WriteHeader(header, item.item_offset(), item.value_.header->length);
@@ -565,7 +581,7 @@ class View {
   // operator*() consistent with the new header if it worked.  For kReference
   // storage types, the change is reflected intrinsically.
   fit::result<typename Traits::error_type> EditHeader(iterator& item, const zbi_header_t& header)
-    requires(Traits::CanWrite())
+    requires StorageTraitsWriteApi<Traits, Storage>
   {
     item.Assert(__func__);
     auto result = WriteHeader(header, item.item_offset(), item.value_.header->length);
@@ -629,49 +645,62 @@ class View {
   template <typename CopyStorage>
   fit::result<CopyError<std::decay_t<CopyStorage>>> Copy(CopyStorage&& to, uint32_t offset,
                                                          uint32_t length, uint32_t to_offset = 0) {
-    using CopyTraits = typename View<std::decay_t<CopyStorage>>::Traits;
+    using CopyTraits = View<std::decay_t<CopyStorage>>::Traits;
     using ErrorType = CopyError<std::decay_t<CopyStorage>>;
 
     if (size_t size = size_bytes(); length > size || offset > size - length) {
-      return fit::error{ErrorType{.zbi_error = "offset + length exceeds ZBI size"}};
+      return fit::error{
+          ErrorType{.zbi_error = "offset + length exceeds ZBI size"},
+      };
     } else if (to_offset + length < std::max(to_offset, length)) {
-      return fit::error{ErrorType{.zbi_error = "to_offset + length overflows"}};
+      return fit::error{
+          ErrorType{.zbi_error = "to_offset + length overflows"},
+      };
     }
 
     if (auto result = CopyTraits::EnsureCapacity(to, to_offset + length); result.is_error()) {
-      return fit::error{ErrorType{
-          .zbi_error = "cannot increase capacity",
-          .write_offset = to_offset + length,
-          .write_error = std::move(result).error_value(),
-      }};
+      return fit::error{
+          ErrorType{
+              .zbi_error = "cannot increase capacity",
+              .write_offset = to_offset + length,
+              .write_error = std::move(result).error_value(),
+          },
+      };
     }
 
     auto payload = Traits::Payload(storage(), offset, length);
     if (payload.is_error()) {
-      return fit::error{ErrorType{
-          .zbi_error = "cannot translate ZBI offset to storage",
-          .read_offset = offset,
-          .read_error = std::move(std::move(payload).error_value()),
-      }};
+      return fit::error{
+          ErrorType{
+              .zbi_error = "cannot translate ZBI offset to storage",
+              .read_offset = offset,
+              .read_error = std::move(std::move(payload).error_value()),
+          },
+      };
     }
-    if constexpr (Traits::CanUnbufferedRead() && CopyTraits::CanUnbufferedWrite()) {
+    if constexpr (StorageTraitsUnbufferedReadApi<Traits, Storage> &&
+                  StorageTraitsUnbufferedWriteApi<CopyTraits, CopyStorage>) {
       // Combine buffered reading with mapped writing to do it all at once.
       auto mapped = CopyTraits::Write(to, to_offset, length);
       if (mapped.is_error()) {
         // No read error detected because a "write" error was detected first.
-        return fit::error{ErrorType{
-            .zbi_error = "cannot write to destination storage",
-            .write_offset = to_offset,
-            .write_error = std::move(mapped).error_value(),
-        }};
+        return fit::error{
+            ErrorType{
+                .zbi_error = "cannot write to destination storage",
+                .write_offset = to_offset,
+                .write_error = std::move(mapped).error_value(),
+            },
+        };
       }
       auto result = Traits::Read(storage(), payload.value(), mapped.value(), length);
       if (result.is_error()) {
-        return fit::error{ErrorType{
-            .zbi_error = "cannot read from source storage",
-            .read_offset = offset,
-            .read_error = std::move(result).error_value(),
-        }};
+        return fit::error{
+            ErrorType{
+                .zbi_error = "cannot read from source storage",
+                .read_offset = offset,
+                .read_error = std::move(result).error_value(),
+            },
+        };
       }
       // No read error, no write error.
       return fit::ok();
@@ -686,18 +715,22 @@ class View {
       };
       auto result = Read(payload.value(), length, write);
       if (result.is_error()) {
-        return fit::error{ErrorType{
-            .zbi_error = "cannot read from source storage",
-            .read_offset = offset,
-            .read_error = std::move(std::move(result).error_value()),
-        }};
+        return fit::error{
+            ErrorType{
+                .zbi_error = "cannot read from source storage",
+                .read_offset = offset,
+                .read_error = std::move(std::move(result).error_value()),
+            },
+        };
       }
       if (auto write_result = std::move(result).value(); write_result.is_error()) {
-        return fit::error{ErrorType{
-            .zbi_error = "cannot write to destination storage",
-            .write_offset = to_offset,
-            .write_error = std::move(write_result).error_value(),
-        }};
+        return fit::error{
+            ErrorType{
+                .zbi_error = "cannot write to destination storage",
+                .write_offset = to_offset,
+                .write_error = std::move(write_result).error_value(),
+            },
+        };
       }
       return fit::ok();
     }
@@ -711,48 +744,49 @@ class View {
   // the unowned VMO storage types yield zx::vmo as the owning equivalent
   // storage type.  If the optional `to_offset` argument is nonzero, the new
   // storage starts with that many zero bytes before the copied data.
-  template <typename T = Traits,  // SFINAE check for Traits::Create method.
-            typename CreateStorage = std::decay_t<typename T::template CreateResult<>>>
-  fit::result<CopyError<CreateStorage>, CreateStorage> Copy(uint32_t offset, uint32_t length,
-                                                            uint32_t to_offset = 0) {
+  auto Copy(uint32_t offset, uint32_t length, uint32_t to_offset = 0)
+    requires StorageTraitsCreateApi<Traits, Storage>
+  {
+    // This type can't be instantiated if the constraints requires constraint
+    // isn't met, so it can't be directly in the declaration.
+    using Result = fit::result<  //
+        CopyError<StorageTraitsCreateStorageType<Storage>>,
+        StorageTraitsCreateStorageType<Storage>>;
     auto copy = CopyWithSlop(offset, length, to_offset,
                              [to_offset](uint32_t slop) { return slop == to_offset; });
     if (copy.is_error()) {
-      return std::move(copy).take_error();
+      return Result{std::move(copy).take_error()};
     }
     auto [new_storage, slop] = std::move(copy).value();
     ZX_DEBUG_ASSERT(slop == to_offset);
-    return fit::ok(std::move(new_storage));
+    return Result{fit::ok(std::move(new_storage))};
   }
 
   // Copy a single item's payload into supplied storage.
-  template <typename CopyStorage>
+  template <WritableStorageApi CopyStorage>
   fit::result<CopyError<std::decay_t<CopyStorage>>> CopyRawItem(CopyStorage&& to,
                                                                 const iterator& it) {
     return Copy(std::forward<CopyStorage>(to), it.payload_offset(), (*it).header->length);
   }
 
   // Copy a single item's payload into newly-created storage.
-  template <  // SFINAE check for Traits::Create method.
-      typename T = Traits,
-      typename CreateStorage = std::decay_t<typename T::template CreateResult<>>>
-  fit::result<CopyError<CreateStorage>, CreateStorage> CopyRawItem(const iterator& it) {
+  auto CopyRawItem(const iterator& it)
+    requires StorageTraitsCreateApi<Traits, Storage>
+  {
     return Copy(it.payload_offset(), (*it).header->length);
   }
 
   // Copy a single item's header and payload into supplied storage.
-  template <typename CopyStorage>
-  fit::result<CopyError<std::decay_t<CopyStorage>>> CopyRawItemWithHeader(CopyStorage&& to,
-                                                                          const iterator& it) {
+  template <WritableStorageApi CopyStorage>
+  auto CopyRawItemWithHeader(CopyStorage&& to, const iterator& it) {
     return Copy(std::forward<CopyStorage>(to), it.item_offset(),
                 sizeof(zbi_header_t) + (*it).header->length);
   }
 
   // Copy a single item's header and payload into newly-created storage.
-  template <  // SFINAE check for Traits::Create method.
-      typename T = Traits,
-      typename CreateStorage = std::decay_t<typename T::template CreateResult<>>>
-  fit::result<CopyError<CreateStorage>, CreateStorage> CopyRawItemWithHeader(const iterator& it) {
+  auto CopyRawItemWithHeader(const iterator& it)
+    requires StorageTraitsCreateApi<Traits, Storage>
+  {
     return Copy(it.item_offset(), sizeof(zbi_header_t) + (*it).header->length);
   }
 
@@ -772,10 +806,11 @@ class View {
   //
   // zbitl::decompress:DefaultAllocator is a default-constructible class that
   // can serve as `scratch`.  The overloads below with fewer arguments use it.
-  template <typename CopyStorage, typename ScratchAllocator>
-  fit::result<CopyError<std::decay_t<CopyStorage>>> CopyStorageItem(CopyStorage&& to,
-                                                                    const iterator& it,
-                                                                    ScratchAllocator&& scratch) {
+  template <WritableStorageApi CopyStorage, std::invocable<size_t> ScratchAllocator>
+    requires ViewCopyStorageScratchAllocatorResultApi<
+        std::invoke_result_t<ScratchAllocator, size_t>>
+  fit::result<CopyError<std::decay_t<CopyStorage>>> CopyStorageItem(  //
+      CopyStorage&& to, const iterator& it, ScratchAllocator&& scratch) {
     if (auto compressed = IsCompressedStorage(*(*it).header)) {
       return DecompressStorage(std::forward<CopyStorage>(to), it,
                                std::forward<ScratchAllocator>(scratch));
@@ -783,31 +818,39 @@ class View {
     return CopyRawItem(std::forward<CopyStorage>(to), it);
   }
 
-  template <typename ScratchAllocator, typename T = Traits,
-            typename CreateStorage = std::decay_t<typename T::template CreateResult<>>>
-  fit::result<CopyError<CreateStorage>, CreateStorage> CopyStorageItem(const iterator& it,
-                                                                       ScratchAllocator&& scratch) {
+  template <typename ScratchAllocator>
+  auto CopyStorageItem(const iterator& it, ScratchAllocator&& scratch)
+    requires StorageTraitsCreateApi<Traits, Storage>
+  {
+    using CreateStorage = StorageTraitsCreateStorageType<Storage>;
     using ErrorType = CopyError<CreateStorage>;
+    using Result = fit::result<ErrorType, CreateStorage>;
 
-    if (auto compressed = IsCompressedStorage(*(*it).header)) {
-      // Create new storage to decompress the payload into.
-      auto to = Traits::Create(storage(), *compressed, 0);
-      if (to.is_error()) {
-        // No read error because a "write" error happened first.
-        return fit::error{ErrorType{
-            .zbi_error = "cannot create storage",
-            .write_offset = 0,
-            .write_error = std::move(to).error_value(),
-        }};
-      }
-      auto to_storage = std::move(to).value();
-      if (auto result = DecompressStorage(to_storage, it, std::forward<ScratchAllocator>(scratch));
-          result.is_error()) {
-        return result.take_error();
-      }
-      return fit::ok(std::move(to_storage));
+    auto compressed = IsCompressedStorage(*(*it).header);
+    if (!compressed) {
+      return CopyRawItem(it);
     }
-    return CopyRawItem(it);
+
+    // Create new storage to decompress the payload into.
+    auto to = Traits::Create(storage(), *compressed, 0);
+    if (to.is_error()) {
+      // No read error because a "write" error happened first.
+      return Result{
+          fit::error{
+              ErrorType{
+                  .zbi_error = "cannot create storage",
+                  .write_offset = 0,
+                  .write_error = std::move(to).error_value(),
+              },
+          },
+      };
+    }
+    auto to_storage = std::move(to).value();
+    auto result = DecompressStorage(to_storage, it, std::forward<ScratchAllocator>(scratch));
+    if (result.is_error()) {
+      return Result{result.take_error()};
+    }
+    return Result{fit::ok(std::move(to_storage))};
   }
 
   // These overloads have the effect of default arguments for the allocator
@@ -821,7 +864,7 @@ class View {
   }
 
   auto CopyStorageItem(const iterator& it)
-    requires(Traits::CanCreate())
+    requires StorageTraitsCreateApi<Traits, Storage>
   {
     return CopyStorageItem(it, decompress::DefaultAllocator);
   }
@@ -852,12 +895,13 @@ class View {
 
   // Copy the subrange `[first,last)` of the ZBI into newly-created storage.
   // The storage will contain a new ZBI container with only those items.
-  template <typename T = Traits,
-            typename CreateStorage = std::decay_t<typename T::template CreateResult<>>>
-  fit::result<CopyError<CreateStorage>, CreateStorage> Copy(const iterator& first,
-                                                            const iterator& last) {
+  auto Copy(const iterator& first, const iterator& last)
+    requires StorageTraitsCreateApi<Traits, Storage>
+  {
+    using CreateStorage = StorageTraitsCreateStorageType<Storage>;
     using CopyTraits = StorageTraits<CreateStorage>;
     using ErrorType = CopyError<CreateStorage>;
+    using Result = fit::result<ErrorType, CreateStorage>;
 
     auto [offset, length] = RangeBounds(first, last);
 
@@ -873,7 +917,7 @@ class View {
     };
     auto copy = CopyWithSlop(offset, length, sizeof(zbi_header_t), slopcheck);
     if (copy.is_error()) {
-      return std::move(copy).take_error();
+      return Result{std::move(copy).take_error()};
     }
     auto [new_storage, slop] = std::move(copy).value();
 
@@ -889,11 +933,15 @@ class View {
       ByteView out{reinterpret_cast<const std::byte*>(&hdr), sizeof(hdr)};
       uint32_t to_offset = sizeof(zbi_header_t);
       if (auto result = CopyTraits::Write(new_storage, to_offset, out); result.is_error()) {
-        return fit::error{ErrorType{
-            .zbi_error = "cannot write discard item",
-            .write_offset = to_offset,
-            .write_error = std::move(result).error_value(),
-        }};
+        return Result{
+            fit::error{
+                ErrorType{
+                    .zbi_error = "cannot write discard item",
+                    .write_offset = to_offset,
+                    .write_error = std::move(result).error_value(),
+                },
+            },
+        };
       }
       length += sizeof(zbi_header_t) + hdr.length;
     }
@@ -901,40 +949,31 @@ class View {
     // Write the new container header.
     const zbi_header_t hdr = ContainerHeader(length);
     ByteView out{reinterpret_cast<const std::byte*>(&hdr), sizeof(hdr)};
-    if (auto result = CopyTraits::Write(new_storage, 0, out); result.is_error()) {
-      return fit::error{ErrorType{
-          .zbi_error = "cannot write container header",
-          .write_offset = 0,
-          .write_error = std::move(result).error_value(),
-      }};
+    auto result = CopyTraits::Write(new_storage, 0, out);
+    if (result.is_error()) {
+      return Result{
+          fit::error{
+              ErrorType{
+                  .zbi_error = "cannot write container header",
+                  .write_offset = 0,
+                  .write_error = std::move(result).error_value(),
+              },
+          },
+      };
     }
 
-    return fit::ok(std::move(new_storage));
-  }
-
-  // This is public mostly just for tests to assert on it.
-  template <typename CopyStorage = Storage>
-  static constexpr bool CanZeroCopy() {
-    // Reading directly into buffer has no extra copies for a receiver that can
-    // do unbuffered writes.
-    using CopyTraits = typename View<std::decay_t<CopyStorage>>::Traits;
-    return Traits::template CanOneShotRead<std::byte, /*LowLocality=*/false>() ||
-           (Traits::CanUnbufferedRead() && CopyTraits::CanUnbufferedWrite());
+    return Result{fit::ok(std::move(new_storage))};
   }
 
  protected:
   // Fetches the container header.
-  static fit::result<typename Traits::error_type,
-                     typename Traits::template LocalizedReadResult<zbi_header_t>>
-  ReadContainerHeader(Storage& storage) {
-    return Traits::template LocalizedRead<zbi_header_t>(storage, 0);
+  static auto ReadContainerHeader(Storage& storage) {
+    return ReadSparseDataFromStorage<zbi_header_t>(storage, 0);
   }
 
   // Fetches an item header at a given offset.
-  static fit::result<typename Traits::error_type,
-                     typename Traits::template LocalizedReadResult<zbi_header_t>>
-  ReadItemHeader(Storage& storage, uint32_t offset) {
-    return Traits::template LocalizedRead<zbi_header_t>(storage, offset);
+  static auto ReadItemHeader(Storage& storage, uint32_t offset) {
+    return ReadSparseDataFromStorage<zbi_header_t>(storage, offset);
   }
 
   // WriteHeader sanitizes and optionally updates the length of a provided
@@ -975,78 +1014,89 @@ class View {
   }
 
   template <typename Callback>
-  auto Read(payload_type payload, uint32_t length, Callback&& callback)
-      -> fit::result<typename Traits::error_type, decltype(callback(ByteView{}))> {
-    if constexpr (Traits::template CanOneShotRead<std::byte, /*LowLocality=*/false>()) {
-      if (auto result = Traits::template Read<std::byte, false>(storage(), payload, length);
-          result.is_error()) {
-        return result.take_error();
-      } else {
-        return fit::ok(callback(result.value()));
-      }
-    } else {
-      return Traits::Read(storage(), payload, length, std::forward<Callback>(callback));
-    }
+    requires StorageTraitsBufferedReadApi<Traits, Storage>
+  auto Read(payload_type payload, uint32_t length, Callback&& callback) {
+    return Traits::Read(storage(), payload, length, std::forward<Callback>(callback));
   }
 
-  template <typename SlopCheck,
-            // SFINAE check for Traits::Create method.
-            typename T = Traits,
-            typename CreateStorage = std::decay_t<typename T::template CreateResult<>>>
-  fit::result<CopyError<CreateStorage>, std::pair<CreateStorage, uint32_t>> CopyWithSlop(
-      uint32_t offset, uint32_t length, uint32_t to_offset, SlopCheck&& slopcheck) {
+  template <std::invocable<ByteView> Callback>
+    requires(!StorageTraitsBufferedReadApi<Traits, Storage> &&
+             StorageTraitsOneShotReadApi<Traits, Storage, std::byte, false>)
+  auto Read(payload_type payload, uint32_t length, Callback&& callback)
+      -> fit::result<typename Traits::error_type, std::invoke_result_t<Callback, ByteView>> {
+    auto result =
+        Traits::template Read<std::byte, /*LowLocality=*/false>(storage(), payload, length);
+    if (result.is_error()) {
+      return result.take_error();
+    }
+    return fit::ok(callback(result.value()));
+  }
+
+  template <StorageTraitsCloneSlopCheckApi SlopCheck>
+  auto CopyWithSlop(uint32_t offset, uint32_t length, uint32_t to_offset, SlopCheck&& slopcheck)
+    requires StorageTraitsCreateApi<Traits, Storage>
+  {
+    using CreateStorage = StorageTraitsCreateStorageType<Storage>;
     using ErrorType = CopyError<CreateStorage>;
+    using Result = fit::result<ErrorType, std::pair<CreateStorage, uint32_t>>;
 
     if (size_t size = size_bytes(); length > size || offset > size - length) {
-      return fit::error{ErrorType{.zbi_error = "offset + length exceeds ZBI size"}};
-    } else if (to_offset + length < std::max(to_offset, length)) {
-      return fit::error{ErrorType{.zbi_error = "to_offset + length overflows"}};
+      return Result{
+          fit::error{
+              ErrorType{.zbi_error = "offset + length exceeds ZBI size"},
+          },
+      };
+    }
+    if (to_offset + length < std::max(to_offset, length)) {
+      return Result{
+          fit::error{
+              ErrorType{.zbi_error = "to_offset + length overflows"},
+          },
+      };
     }
 
-    if (auto result = Clone(offset, length, to_offset, std::forward<SlopCheck>(slopcheck));
-        result.is_error()) {
-      return fit::error{ErrorType{
-          .zbi_error = "cannot read from storage",
-          .read_offset = offset,
-          .read_error = std::move(result).error_value(),
-      }};
-    } else if (result.value()) {
-      // Clone did the job!
-      return fit::ok(std::move(*std::move(result).value()));
+    if constexpr (StorageTraitsCloneApi<Traits, Storage, SlopCheck>) {
+      auto result = Traits::Clone(storage(), offset, length, to_offset,  //
+                                  std::forward<SlopCheck>(slopcheck));
+      if (result.is_error()) {
+        return Result{
+            fit::error{
+                ErrorType{
+                    .zbi_error = "cannot read from storage",
+                    .read_offset = offset,
+                    .read_error = std::move(result).error_value(),
+                },
+            },
+        };
+      }
+      if (result.value()) {  // Clone did the job!
+        return Result{fit::ok(std::move(*std::move(result).value()))};
+      }
     }
 
     // Fall back to Create and copy via Read and Write.
-    if (auto result = Traits::Create(storage(), to_offset + length, to_offset); result.is_error()) {
-      return fit::error{ErrorType{
-          .zbi_error = "cannot create storage",
-          .read_offset = offset,
-          .read_error = std::move(result).error_value(),
-      }};
-    } else {
-      auto copy = std::move(result).value();
-      static_assert(std::is_convertible_v<typename StorageTraits<decltype(copy)>::error_type,
-                                          typename Traits::error_type>,
-                    "StorageTraits::Create yields type with incompatible error_type");
-      auto copy_result = Copy(copy, offset, length, to_offset);
-      if (copy_result.is_error()) {
-        return std::move(copy_result).take_error();
-      }
-      return fit::ok(std::make_pair(std::move(copy), uint32_t{to_offset}));
+    auto result = Traits::Create(storage(), to_offset + length, to_offset);
+    if (result.is_error()) {
+      return Result{
+          fit::error{
+              ErrorType{
+                  .zbi_error = "cannot create storage",
+                  .read_offset = offset,
+                  .read_error = std::move(result).error_value(),
+              },
+          },
+      };
     }
-  }
 
-  template <typename SlopCheck, typename T = Traits>
-  fit::result<typename Traits::error_type, typename T::template CloneResult<>> Clone(
-      uint32_t offset, uint32_t length, uint32_t to_offset, SlopCheck&& slopcheck) {
-    return Traits::Clone(storage(), offset, length, to_offset, std::forward<SlopCheck>(slopcheck));
-  }
-
-  // This overload is only used if SFINAE detected no Traits::Clone method.
-  template <typename T = Traits,  // SFINAE check for Traits::Create method.
-            typename CreateStorage = std::decay_t<typename T::template CreateResult<>>>
-  fit::result<typename Traits::error_type, std::optional<std::pair<CreateStorage, uint32_t>>> Clone(
-      ...) {
-    return fit::ok(std::nullopt);  // Can't do it.
+    auto copy = std::move(result).value();
+    static_assert(std::convertible_to<typename Traits::error_type,
+                                      typename StorageTraits<decltype(copy)>::error_type>,
+                  "StorageTraits::Create yields type with incompatible error_type");
+    auto copy_result = Copy(copy, offset, length, to_offset);
+    if (copy_result.is_error()) {
+      return Result{std::move(copy_result).take_error()};
+    }
+    return Result{fit::ok(std::make_pair(std::move(copy), to_offset))};
   }
 
   // Returns [offset, length] in the storage to cover the given item range.
@@ -1076,8 +1126,8 @@ class View {
                                                                       const iterator& it,
                                                                       ScratchAllocator&& scratch) {
     using ErrorType = CopyError<std::decay_t<CopyStorage>>;
-    using ToTraits = typename View<std::decay_t<CopyStorage>>::Traits;
-    constexpr bool bufferless_output = ToTraits::CanUnbufferedWrite();
+    using ToTraits = View<std::decay_t<CopyStorage>>::Traits;
+    constexpr bool bufferless_output = StorageTraitsUnbufferedWriteApi<ToTraits, CopyStorage>;
 
     const auto [header, payload] = *it;
     const uint32_t compressed_size = header->length;
@@ -1101,17 +1151,19 @@ class View {
     constexpr std::string_view kZbiErrorCorruptedOrBadData =
         "bad or corrupted data: uncompressed length not as expected";
 
-    if constexpr (Traits::template CanOneShotRead<std::byte, /*LowLocality=*/false>()) {
+    if constexpr (StorageTraitsOneShotReadApi<Traits, Storage, std::byte, /*LowLocality=*/false>) {
       // All the data is on hand in one shot.  Fetch it first.
       ByteView compressed_data;
       if (auto result =
               Traits::template Read<std::byte, false>(storage(), payload, compressed_size);
           result.is_error()) {
-        return fit::error{ErrorType{
-            .zbi_error = "cannot read compressed payload",
-            .read_offset = it.item_offset(),
-            .read_error = std::move(result).error_value(),
-        }};
+        return fit::error{
+            ErrorType{
+                .zbi_error = "cannot read compressed payload",
+                .read_offset = it.item_offset(),
+                .read_error = std::move(result).error_value(),
+            },
+        };
       } else {
         compressed_data = result.value();
       }
@@ -1123,11 +1175,13 @@ class View {
         auto mapped = ToTraits::Write(to, 0, uncompressed_size);
         if (mapped.is_error()) {
           // Read succeeded, but write failed.
-          return fit::error{ErrorType{
-              .zbi_error = "cannot write to storage in-place",
-              .write_offset = 0,
-              .write_error = std::move(mapped).error_value(),
-          }};
+          return fit::error{
+              ErrorType{
+                  .zbi_error = "cannot write to storage in-place",
+                  .write_offset = 0,
+                  .write_error = std::move(mapped).error_value(),
+              },
+          };
         }
         const auto uncompressed_data = static_cast<std::byte*>(mapped.value());
 
@@ -1159,11 +1213,13 @@ class View {
             // Flush the output buffer to the storage.
             if (auto write = ToTraits::Write(to, outoffset, out); write.is_error()) {
               // Read succeeded, but write failed.
-              return fit::error{ErrorType{
-                  .zbi_error = "cannot write to storage",
-                  .write_offset = outoffset,
-                  .write_error = std::move(write).error_value(),
-              }};
+              return fit::error{
+                  ErrorType{
+                      .zbi_error = "cannot write to storage",
+                      .write_offset = outoffset,
+                      .write_error = std::move(write).error_value(),
+                  },
+              };
             }
             outoffset += static_cast<uint32_t>(out.size());
           }
@@ -1182,11 +1238,13 @@ class View {
         auto mapped = ToTraits::Write(to, 0, uncompressed_size);
         if (mapped.is_error()) {
           // Read succeeded, but write failed.
-          return fit::error{ErrorType{
-              .zbi_error = "cannot write to storage in-place",
-              .write_offset = 0,
-              .write_error = std::move(mapped).error_value(),
-          }};
+          return fit::error{
+              ErrorType{
+                  .zbi_error = "cannot write to storage in-place",
+                  .write_offset = 0,
+                  .write_error = std::move(mapped).error_value(),
+              },
+          };
         }
 
         outptr = static_cast<std::byte*>(mapped.value());
@@ -1249,11 +1307,13 @@ class View {
 
       auto result = Traits::Read(storage(), payload, compressed_size, read_chunk);
       if (result.is_error()) {
-        return fit::error{ErrorType{
-            .zbi_error = "cannot read compressed payload",
-            .read_offset = it.item_offset(),
-            .read_error = std::move(result).error_value(),
-        }};
+        return fit::error{
+            ErrorType{
+                .zbi_error = "cannot read compressed payload",
+                .read_offset = it.item_offset(),
+                .read_error = std::move(result).error_value(),
+            },
+        };
       }
 
       auto read_chunk_result = std::move(result).value();

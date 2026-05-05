@@ -130,7 +130,7 @@ struct TestAllocator {
 
 template <typename TestTraits>
 inline void TestDefaultConstructedView() {
-  using Storage = typename TestTraits::storage_type;
+  using Storage = TestTraits::storage_type;
   static_assert(std::is_default_constructible_v<Storage>,
                 "this test case only applies to default-constructible storage types");
 
@@ -335,11 +335,11 @@ inline size_t OneShotDecompressionScratchSize() {
 
 template <typename TestTraits>
 void TestCopyCreation(TestDataZbiType type, ItemCopyMode mode) {
-  using CreationTraits = typename TestTraits::creation_traits;
-  using Storage = typename TestTraits::storage_type;
-  using CreationStorage = typename CreationTraits::storage_type;
+  using CreationTraits = TestTraits::creation_traits;
+  using Storage = TestTraits::storage_type;
+  using CreationStorage = CreationTraits::storage_type;
 
-  static_assert(zbitl::View<Storage>::template CanZeroCopy<CreationStorage>() ==
+  static_assert(zbitl::ZeroCopyStorageApi<Storage, CreationStorage> ==
                 kExpectZeroCopying<TestTraits, CreationTraits>);
 
   files::ScopedTempDir dir;
@@ -435,7 +435,7 @@ void TestCopyCreation(TestDataZbiType type, ItemCopyMode mode) {
 // is done under-the-hood by the other copy-creation tests.
 template <typename TestTraits>
 void TestCopyCreationByByteRange(TestDataZbiType type) {
-  using CreationTestTraits = typename TestTraits::creation_traits;
+  using CreationTestTraits = TestTraits::creation_traits;
 
   files::ScopedTempDir dir;
 
@@ -479,7 +479,7 @@ void TestCopyCreationByByteRange(TestDataZbiType type) {
 
 template <typename TestTraits>
 void TestCopyCreationByIteratorRange(TestDataZbiType type) {
-  using CreationTestTraits = typename TestTraits::creation_traits;
+  using CreationTestTraits = TestTraits::creation_traits;
 
   files::ScopedTempDir dir;
 
@@ -596,7 +596,7 @@ void TestCopyingIntoSmallStorage() {
   ASSERT_NO_FATAL_FAILURE(SrcTestTraits::Create(std::move(fd), size, &src_context));
   zbitl::View view(src_context.TakeStorage());
 
-  auto [header, payload] = *(view.begin());
+  auto [header, payload] = *view.begin();
 
   typename DestTestTraits::Context dest_context;
   ASSERT_NO_FATAL_FAILURE(DestTestTraits::Create((header->length) / 2, &dest_context));
@@ -654,10 +654,10 @@ void TestCopyingIntoSmallStorage() {
 
 template <typename SrcTestTraits, typename DestTestTraits>
 void TestCopying(TestDataZbiType type, ItemCopyMode mode) {
-  using SrcStorage = typename SrcTestTraits::storage_type;
-  using DestStorage = typename DestTestTraits::storage_type;
+  using SrcStorage = SrcTestTraits::storage_type;
+  using DestStorage = DestTestTraits::storage_type;
 
-  static_assert(zbitl::View<SrcStorage>::template CanZeroCopy<DestStorage>() ==
+  static_assert(zbitl::ZeroCopyStorageApi<SrcStorage, DestStorage> ==
                 kExpectZeroCopying<SrcTestTraits, DestTestTraits>);
 
   files::ScopedTempDir dir;

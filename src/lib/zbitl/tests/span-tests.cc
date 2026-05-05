@@ -5,24 +5,11 @@
 #include "span-tests.h"
 
 #include <string>
-#include <tuple>
 
 #include "bootfs-tests.h"
 #include "tests.h"
 
 namespace {
-
-struct EmptyTupleTestTraits {
-  using storage_type = std::tuple<>;
-
-  static constexpr bool kDefaultConstructedViewHasStorageError = true;
-};
-
-// The DefaultConstructed case is the only one that std::tuple<> passes since
-// every other case requires readable storage.
-TEST(ZbitlViewEmptyTupleTests, DefaultConstructed) {
-  ASSERT_NO_FATAL_FAILURE(TestDefaultConstructedView<EmptyTupleTestTraits>());
-}
 
 TEST(ZbitlViewByteSpanTests, CreateFromBogusZbi) {
   ASSERT_NO_FATAL_FAILURE(TestViewFromBogusZbi<ByteSpanTestTraits>());

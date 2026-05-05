@@ -18,16 +18,13 @@
 #include <ktl/utility.h>
 #include <phys/arch/early-boot.h>
 
-// Defined below.
-class EarlyBootZbiBytes;
+// EarlyBootZbi represents a data ZBI in early ZBI boot when caches might be
+// left disabled, during which access is guaranteed to be coherent with any
+// disabled cache state. EarlyBootZbi is stateful and should be passed by
+// reference are moved before calling InitMemory(), at which point an instance
+// should be consumed with the class no longer being used past that point.
 
-// Represents a data ZBI in early ZBI boot when caches might be left disabled,
-// during which access is guaranteed to be coherent with any disabled cache
-// state. EarlyBootZbi is stateful and should be passed by reference are moved
-// before calling InitMemory(), at which point an instance should be consumed
-// with the class no longer being used past that point.
-using EarlyBootZbi = zbitl::View<EarlyBootZbiBytes*>;
-
+// EarlyBootZbi is zbitl::View<EarlyBootZbiBytes*>.  This is its storage type.
 class EarlyBootZbiBytes {
  public:
   constexpr EarlyBootZbiBytes() = default;
@@ -139,5 +136,7 @@ struct zbitl::StorageTraits<EarlyBootZbiBytes*> {
     return ByteTraits::Read<U, LowLocality>(zbi->bytes_, payload.bytes_, length);
   }
 };
+
+using EarlyBootZbi = zbitl::View<EarlyBootZbiBytes*>;
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_EARLY_BOOT_H_

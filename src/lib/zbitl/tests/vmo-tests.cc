@@ -41,7 +41,11 @@ void ExpectVmoIsNotCloned(const zx::vmo& vmo) {
 
 template <typename TestTraits>
 void TestCloning() {
-  using CreationTestTraits = typename TestTraits::creation_traits;
+  using CreationTestTraits = TestTraits::creation_traits;
+
+  using storage_type = TestTraits::storage_type;
+  using Traits = zbitl::StorageTraits<storage_type>;
+  static_assert(zbitl::StorageTraitsCloneApi<Traits, storage_type, bool(uint32_t)>);
 
   files::ScopedTempDir dir;
 
@@ -204,7 +208,7 @@ void TestCloning() {
       zbi_header_t dest2_header = *((*created_second).header);
 
       EXPECT_EQ(static_cast<uint32_t>(ZBI_TYPE_DISCARD), dest1_header.type);
-      constexpr uint32_t kExpectedDiscardSize = kSecondItemSize - 2 * sizeof(zbi_header_t);
+      constexpr uint32_t kExpectedDiscardSize = kSecondItemSize - (2 * sizeof(zbi_header_t));
       ASSERT_EQ(kExpectedDiscardSize, dest1_header.length);
       Bytes contents;
       ASSERT_NO_FATAL_FAILURE(CreationTestTraits::Read(created_view.storage(), dest1_payload,
@@ -226,7 +230,7 @@ void TestCloning() {
 
 template <typename TestTraits>
 void TestLargeFileDecompression() {
-  using CreationTestTraits = typename TestTraits::creation_traits;
+  using CreationTestTraits = TestTraits::creation_traits;
 
   static constexpr uint32_t kLargeZstdCompressedSize = 16397;
   static constexpr uint32_t kLargeZstdUncompressedSize = 16384;
@@ -279,7 +283,7 @@ void TestLargeFileDecompression() {
 
 template <typename TestTraits>
 void TestInheritedResizability() {
-  using CreationTestTraits = typename TestTraits::creation_traits;
+  using CreationTestTraits = TestTraits::creation_traits;
 
   // Resizable if parent was resizable.
   {

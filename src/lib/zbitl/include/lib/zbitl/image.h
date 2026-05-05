@@ -14,7 +14,7 @@
 namespace zbitl {
 
 /// Image provides a modifiable "view" into a ZBI.
-template <typename Storage>
+template <WritableStorageApi Storage>
 class Image : public View<Storage> {
  public:
   using typename View<Storage>::Error;
@@ -22,16 +22,14 @@ class Image : public View<Storage> {
   using typename View<Storage>::iterator;
   using typename View<Storage>::header_type;
 
-  static_assert(Traits::CanWrite(), "zbitl::Image requires writable storage");
-
-  // Copy/move-constructible or constructible from a Storage argument, like View.
+  // Copyable/movable or constructible from a Storage argument, like View.
   using View<Storage>::View;
 
   // Also copy/move-constructible from the View counterpart type.
   // This permits implicit conversion from View<Storage> to Image<Storage>.
   // The inverse is already implicit in the subclass relationship.
-  Image(const View<Storage>& other) : View<Storage>(other) {}
-  Image(View<Storage>&& other) : View<Storage>(std::move(other)) {}
+  explicit(false) Image(const View<Storage>& other) : View<Storage>(other) {}
+  explicit(false) Image(View<Storage>&& other) : View<Storage>(std::move(other)) {}
 
   // Updates the underlying storage to hold an empty ZBI. It is valid to call
   // this method even if the underlying storage does not already represent a
@@ -79,7 +77,12 @@ class Image : public View<Storage> {
 
     if (auto result = this->WriteHeader(new_header, new_item_offset); result.is_error()) {
       return fit::error{
-          Error{"cannot write item header", new_item_offset, std::move(result.error_value())}};
+          Error{
+              "cannot write item header",
+              new_item_offset,
+              std::move(result.error_value()),
+          },
+      };
     }
 
     uint32_t padding_size = AlignedPayloadLength(new_header.length) - new_header.length;
@@ -103,7 +106,12 @@ class Image : public View<Storage> {
     // instead of the raw value.
     if (auto result = this->ReadItemHeader(this->storage(), new_item_offset); result.is_error()) {
       return fit::error{
-          Error{"cannot read header", new_item_offset, std::move(result.error_value())}};
+          Error{
+              "cannot read header",
+              new_item_offset,
+              std::move(result.error_value()),
+          },
+      };
     } else {
       it.value_.header = header_type(std::move(result).value());
     }
@@ -147,7 +155,12 @@ class Image : public View<Storage> {
       if (auto write_result = Traits::Write(this->storage(), offset, data);
           write_result.is_error()) {
         return fit::error{
-            Error{"cannot write payload", offset, std::move(write_result.error_value())}};
+            Error{
+                "cannot write payload",
+                offset,
+                std::move(write_result.error_value()),
+            },
+        };
       }
     }
     return fit::ok();
@@ -158,7 +171,7 @@ class Image : public View<Storage> {
   template <typename ViewIterator>
   using ViewType = std::decay_t<decltype(std::declval<ViewIterator>().view())>;
   template <typename ViewIterator>
-  using ExtendError = typename ViewType<ViewIterator>::template CopyError<Storage>;
+  using ExtendError = ViewType<ViewIterator>::template CopyError<Storage>;
 
   // Extends the underlying ZBI by the items corresponding to an iterator range
   // another View. As this operation is inherently a copy from that view, a
@@ -201,11 +214,13 @@ class Image : public View<Storage> {
     uint32_t new_size = size + tail_size;
     if (auto result = ResetContainer(new_size); result.is_error()) {
       auto error = std::move(result).error_value();
-      return fit::error{ErrorType{
-          .zbi_error = error.zbi_error,
-          .write_offset = new_size,
-          .write_error = std::move(error.storage_error),
-      }};
+      return fit::error{
+          ErrorType{
+              .zbi_error = error.zbi_error,
+              .write_offset = new_size,
+              .write_error = std::move(error.storage_error),
+          },
+      };
     }
 
     return view.Copy(this->storage(), first.item_offset(), tail_size, size);
@@ -228,11 +243,13 @@ class Image : public View<Storage> {
 
     const uint32_t offset = item.item_offset();
     if (auto result = this->WriteHeader(*item->header, offset, new_length); result.is_error()) {
-      return fit::error{Error{
-          "cannot write item header",
-          offset,
-          std::move(result.error_value()),
-      }};
+      return fit::error{
+          Error{
+              "cannot write item header",
+              offset,
+              std::move(result.error_value()),
+          },
+      };
     }
 
     if (auto result = ResetContainer(item.payload_offset() + AlignedPayloadLength(new_length));
@@ -261,11 +278,13 @@ class Image : public View<Storage> {
     ZX_DEBUG_ASSERT(new_size % ZBI_ALIGNMENT == 0);
 
     if (auto result = Traits::EnsureCapacity(this->storage(), new_size); result.is_error()) {
-      return fit::error{Error{
-          "cannot ensure sufficient capacity",
-          new_size,
-          std::move(result.error_value()),
-      }};
+      return fit::error{
+          Error{
+              "cannot ensure sufficient capacity",
+              new_size,
+              std::move(result.error_value()),
+          },
+      };
     }
     if (auto result =
             this->WriteHeader(ContainerHeader(new_size - uint32_t{sizeof(zbi_header_t)}), 0);

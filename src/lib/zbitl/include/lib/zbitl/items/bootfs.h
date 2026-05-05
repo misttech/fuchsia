@@ -31,13 +31,11 @@ class BootfsView;  // Defined below.
 
 /// Bootfs owns the storage backing a BOOTFS payload and is used to mint
 /// views into the filesystem through BootfsView.
-template <typename Storage>
+template <StorageApi Storage>
 class Bootfs {
- private:
-  using Traits = ExtendedStorageTraits<Storage>;
-
  public:
   using storage_type = Storage;
+  using Traits = StorageTraits<storage_type>;
   using View = BootfsView<storage_type>;
 
   struct Error {
@@ -48,17 +46,17 @@ class Bootfs {
     static constexpr auto storage_error_string = &Traits::error_string;
 
     /// A string constant describing the error.
-    std::string_view reason{};
+    std::string_view reason;
 
     /// The name of the file associated with the error, empty if the error lies
     /// with the overall BOOTFS directory.
-    std::string_view filename{};
+    std::string_view filename;
 
     /// This reflects the underlying error from accessing the Storage object,
     /// if any.  If storage_error.has_value() is false, then the error is in
     /// the format of the contents of the BOOTFS, not in accessing the
     /// contents.
-    std::optional<typename Traits::error_type> storage_error{};
+    std::optional<typename Traits::error_type> storage_error;
 
     /// The offset into storage to the directory entry header at which this
     /// error occurred - or zero when the error lies with the overall BOOTFS
@@ -80,83 +78,45 @@ class Bootfs {
   static fit::result<Error, Bootfs> Create(storage_type storage) {
     using namespace std::literals;
 
-    constexpr auto to_error = [](std::string_view reason,
-                                 std::optional<typename Traits::error_type> storage_error =
-                                     std::nullopt) -> Error {
-      return {.reason = reason, .storage_error = std::move(storage_error)};
-    };
-
     uint32_t capacity = 0;
     if (auto result = Traits::Capacity(storage); result.is_error()) {
-      return fit::error{
-          to_error("cannot determine storage capacity"sv, std::move(result.error_value()))};
+      return ToError("cannot determine storage capacity"sv, std::move(result.error_value()));
     } else {
       capacity = std::move(result).value();
     }
 
     if (capacity < sizeof(zbi_bootfs_header_t)) {
-      return fit::error{to_error("storage smaller than BOOTFS header size (truncated?)"sv)};
+      return ToError("storage smaller than BOOTFS header size (truncated?)"sv);
     }
 
     uint32_t dirsize = 0;
-    if (auto result = Traits::template LocalizedRead<zbi_bootfs_header_t>(storage, 0);
+    if (auto result = ReadSparseDataFromStorage<zbi_bootfs_header_t>(storage, 0);
         result.is_error()) {
-      return fit::error{
-          to_error("failed to read BOOTFS dirsize"sv, std::move(result.error_value()))};
+      return ToError("failed to read BOOTFS directory"sv, std::move(result.error_value()));
     } else {
       const zbi_bootfs_header_t& header = result.value();
       if (header.magic != ZBI_BOOTFS_MAGIC) {
-        return fit::error{to_error("bad BOOTFS header"sv)};
+        return ToError("bad BOOTFS header"sv);
       }
       dirsize = header.dirsize;
     }
 
     if (capacity < dirsize || capacity - dirsize < sizeof(zbi_bootfs_header_t)) {
-      return fit::error{to_error("directory exceeds capacity (truncated?)")};
+      return ToError("directory exceeds capacity (truncated?)");
     }
 
-    typename Traits::payload_type dir_payload;
-    if (auto result = Traits::Payload(storage, sizeof(zbi_bootfs_header_t), dirsize);
-        result.is_error()) {
-      return fit::error{to_error("failed to create payload object for BOOTFS directory"sv,
-                                 std::move(result.error_value()))};
-    } else {
-      dir_payload = std::move(result).value();
+    auto payload = Traits::Payload(storage, sizeof(zbi_bootfs_header_t), dirsize);
+    if (payload.is_error()) {
+      return ToError("failed to create payload object for BOOTFS directory"sv,
+                     std::move(payload.error_value()));
     }
 
-    constexpr std::string_view kErrDirentsRead = "failed to read BOOTFS directory entries";
-    Dirents dirents;
-    if constexpr (kCanOneShotRead) {
-      auto result = Traits::template Read<std::byte, false>(storage, dir_payload, dirsize);
-      if (result.is_error()) {
-        return fit::error{to_error(kErrDirentsRead, std::move(result.error_value()))};
-      }
-      dirents = std::move(result).value();
-      ZX_DEBUG_ASSERT(dirents.size() == dirsize);
-    } else {
-      fbl::AllocChecker ac;
-      dirents = fbl::MakeArray<std::byte>(&ac, dirsize);
-      if (!ac.check()) {
-        return fit::error{to_error("failed to allocate directory: out of memory"sv)};
-      }
-      if constexpr (Traits::CanUnbufferedRead()) {
-        if (auto result = Traits::Read(storage, dir_payload, dirents.data(), dirsize);
-            result.is_error()) {
-          return fit::error{to_error(kErrDirentsRead, std::move(result.error_value()))};
-        }
-      } else {
-        size_t bytes_read = 0;
-        auto read = [unwritten = AsSpan<std::byte>(storage)](auto bytes) mutable {
-          memcpy(unwritten.data(), bytes.data(), bytes.size());
-          unwritten = unwritten.subspan(bytes.size());
-        };
-        if (auto result = Traits::Read(storage, dir_payload, dirsize, read); result.is_error()) {
-          return fit::error{to_error(kErrDirentsRead, std::move(result.error_value()))};
-        }
-        ZX_DEBUG_ASSERT(bytes_read == dirsize);
-      }
+    auto dirents = ReadDirents(storage, *payload, dirsize);
+    if (dirents.is_error()) {
+      return dirents.take_error();
     }
-    return fit::ok(Bootfs(std::move(storage), std::move(dirents), capacity));
+
+    return fit::ok(Bootfs(std::move(storage), *std::move(dirents), capacity));
   }
 
   /// Trivial accessors for the underlying Storage object.
@@ -170,11 +130,85 @@ class Bootfs {
   }
 
  private:
+  using payload_type = Traits::payload_type;
+
   friend View;
 
-  static constexpr bool kCanOneShotRead = Traits::template CanOneShotRead<std::byte, false>();
-  using Dirents =
-      std::conditional_t<kCanOneShotRead, std::span<const std::byte>, fbl::Array<std::byte>>;
+  static constexpr std::string_view kErrDirentsRead = "failed to read BOOTFS directory entries";
+
+  static constexpr fit::error<Error> ToError(
+      std::string_view reason,
+      std::optional<typename Traits::error_type> storage_error = std::nullopt) {
+    return fit::error{
+        Error{
+            .reason = reason,
+            .storage_error = std::move(storage_error),
+        },
+    };
+  }
+
+  // With the one-shot read, the whole payload can be used with no allocation.
+  static fit::result<Error, ByteView> ReadDirents(  //
+      storage_type& storage, const payload_type& payload, uint32_t dirsize)
+    requires StorageTraitsOneShotReadApi<Traits, storage_type, std::byte, false>
+  {
+    auto result = Traits::template Read<std::byte, false>(storage, payload, dirsize);
+    if (result.is_error()) {
+      return ToError(kErrDirentsRead, std::move(result.error_value()));
+    }
+    ZX_DEBUG_ASSERT(result->size() == dirsize);
+    return fit::ok(*result);
+  }
+
+  // When allocation is required, there are two ways to fill the buffer.
+  static fit::result<Error, fbl::Array<std::byte>> ReadDirents(  //
+      storage_type& storage, const payload_type& payload, uint32_t dirsize)
+    requires(!StorageTraitsOneShotReadApi<Traits, storage_type, std::byte, false>)
+  {
+    using namespace std::literals;
+
+    fbl::AllocChecker ac;
+    auto dirents = fbl::MakeArray<std::byte>(&ac, dirsize);
+    if (!ac.check()) {
+      return ToError("failed to allocate directory: out of memory"sv);
+    }
+
+    auto result = ReadDirentsIntoBuffer(storage, payload, std::span{dirents});
+    if (result.is_error()) {
+      return ToError(kErrDirentsRead, std::move(result.error_value()));
+    }
+
+    return fit::ok(std::move(dirents));
+  }
+
+  static fit::result<typename Traits::error_type> ReadDirentsIntoBuffer(  //
+      storage_type& storage, const payload_type& payload, std::span<std::byte> buffer)
+    requires StorageTraitsUnbufferedReadApi<Traits, Storage>
+  {
+    return Traits::Read(storage, payload, buffer.data(), static_cast<uint32_t>(buffer.size()));
+  }
+
+  static fit::result<typename Traits::error_type> ReadDirentsIntoBuffer(  //
+      storage_type& storage, const payload_type& payload, std::span<std::byte> buffer)
+    requires(StorageTraitsBufferedReadApi<Traits, Storage> &&
+             !StorageTraitsUnbufferedReadApi<Traits, Storage>)
+  {
+    size_t bytes_read = 0;
+    auto read = [unwritten = AsSpan<std::byte>(storage)](auto bytes) mutable {
+      memcpy(unwritten.data(), bytes.data(), bytes.size());
+      unwritten = unwritten.subspan(bytes.size());
+    };
+    auto result = Traits::Read(storage, payload, buffer.size(), read);
+    if (result.is_ok()) {
+      ZX_DEBUG_ASSERT(bytes_read == buffer.size());
+    }
+    return result;
+  }
+
+  // The type that holds the directory entries depends on which ReadDirents
+  // overload is selected for the storage_type.
+  using Dirents = decltype(ReadDirents(  //
+      std::declval<storage_type&>(), std::declval<payload_type>(), 0))::value_type;
 
   Bootfs(storage_type storage, Dirents dirents, uint32_t capacity)
       : storage_(std::move(storage)), dirents_(std::move(dirents)), capacity_(capacity) {}
@@ -531,7 +565,7 @@ class BootfsView {
 
  private:
   // For use of Create().
-  template <typename StorageType>
+  template <StorageApi StorageType>
   friend class Bootfs;
 
   struct Unused {};
