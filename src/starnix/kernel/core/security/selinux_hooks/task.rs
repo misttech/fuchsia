@@ -45,7 +45,7 @@ pub(in crate::security) fn bprm_committing_creds(
 ) {
     let new_sid = elf_state.creds.security_state.current_sid;
     let previous_sid = elf_state.creds.security_state.previous_sid;
-    // TODO: previous_sid must equal current_task.current_creds().current_sid!
+    debug_assert!(previous_sid == current_task.current_creds().security_state.current_sid);
     if new_sid == previous_sid {
         return;
     }
@@ -200,6 +200,14 @@ fn maybe_reset_signal_state(
             .unwrap_or_else(|_| panic!("unset itimer {}", timer));
     }
 
+    // If another process dispatches a signal to this one mid-`exec()` then it is always possible
+    // for it to be received before the credentials are committed (in which case it should be
+    // cleared), or afterward (in which case it need not be cleared).  It's therefore acceptable to
+    // take the signal queues' locks here, rather than holding them across the credentials commit.
+    // Fatal signals (notably `SIGKILL`) should not be cleared on domain transitions, since the
+    // process is already doomed and should still terminate rather than returning to userspace once
+    // the `exec()` is complete.
+    // TODO: https://fxbug.dev/509895244 - Preserve queued fatal signals.
     let mut task_mutable_state = current_task.write();
     let mut thread_group_signal_queue = current_task.thread_group().pending_signals.lock();
 
