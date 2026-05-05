@@ -100,7 +100,7 @@ pub fn serve_telemetry(
                     processor.log_default_network_lost();
                 }
                 TelemetryEvent::NetworkChanged(metadata) => {
-                    processor.log_network_changed(metadata);
+                    processor.log_network_changed(metadata, &client);
                 }
             }
         }
