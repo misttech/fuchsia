@@ -669,12 +669,9 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   using AttributionCounts = VmObject::AttributionCounts;
   AttributionCounts GetAttributedMemoryInRangeLocked(VmCowRange range) const TA_REQ(lock());
 
-  // TODO(sagebarreda@): consider refactoring eviction out of reclamation so it can be called
-  // instead of using reclamation with `Require`.
   enum class EvictionAction : uint8_t {
     FollowHint,
     IgnoreHint,
-    Require,
   };
 
   // Asks the VMO to attempt to reclaim the specified page. There are a few possible outcomes:
@@ -827,11 +824,10 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   VmCowReclaimResult ReclaimRangeForEviction(uint64_t offset, size_t length,
                                              EvictionAction eviction_action);
 
-  // Evict a specific page. Unlike ReclaimPage this wrapper can assume it just needs to evict,
-  // and has no requirements on updating any reclamation lists. Exposed for the physical page
-  // provider to reclaim loaned pages. Is also used as an internal helper by ReclaimPage.
-  VmCowReclaimResult ReclaimPageForEviction(vm_page_t* page, uint64_t offset,
-                                            EvictionAction eviction_action);
+  // Evict a specific loaned page for the use case of reclaiming loaned pages by the physical page
+  // provider. Unlike ReclaimPage this function can assume it just needs to evict, and has no
+  // requirements on updating any reclamation lists.
+  zx_status_t EvictLoanedPage(vm_page_t* page, uint64_t offset);
 
   // Potentially transitions from Alive->Dead if the cow pages is unreachable (i.e. has no
   // paged_ref_ and no children). Used by the VmObjectPaged when it unlinks the paged_ref_, but

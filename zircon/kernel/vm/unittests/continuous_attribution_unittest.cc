@@ -519,9 +519,7 @@ bool continuous_attribution_tracker_reclaim_page() {
 
   EXPECT_EQ(1u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
-  ASSERT_TRUE(vmo->DebugGetCowPages()
-                  ->ReclaimPageForEviction(committed_page, 0, VmCowPages::EvictionAction::Require)
-                  .is_ok());
+  ASSERT_OK(vmo->DebugGetCowPages()->EvictLoanedPage(committed_page, 0));
 
   EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());
 
@@ -558,7 +556,7 @@ bool continuous_attribution_tracker_zero_page_compression() {
   ASSERT_OK(compressor.get().Arm());
 
   ASSERT_TRUE(vmo->DebugGetCowPages()
-                  ->ReclaimPage(page, 0, VmCowPages::EvictionAction::Require, &compressor.get())
+                  ->ReclaimPage(page, 0, VmCowPages::EvictionAction::FollowHint, &compressor.get())
                   .is_ok());
 
   EXPECT_EQ(0u, vmo->DebugGetCowPages()->DebugGetPopulatedSlotsCount());

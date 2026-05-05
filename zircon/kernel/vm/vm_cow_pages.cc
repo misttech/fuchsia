@@ -55,7 +55,6 @@ KCOUNTER(vm_reclaim_fail_no_reclamation_strategy, "vm.reclaim.fail.no_reclamatio
 KCOUNTER(vm_reclaim_fail_discardable, "vm.reclaim.fail.discardable")
 KCOUNTER(vm_reclaim_fail_vmo_high_priority, "vm.reclaim.fail.vmo.high_priority")
 
-KCOUNTER(vm_reclaim_evict_single, "vm.reclaim.evict_single")
 KCOUNTER(vm_reclaim_evict_range, "vm.reclaim.evict_range")
 KCOUNTER(vm_reclaim_evict_range_fail, "vm.reclaim.evict_range.fail")
 KCOUNTER(vm_reclaim_evict_fail_range_accessed, "vm.reclaim.evict.fail.range_accessed")
@@ -77,6 +76,8 @@ KCOUNTER(vm_vmo_compress_zero_slot, "vm.vmo.compress.marker")
 KCOUNTER(vm_reclaim_compress_race, "vm.reclaim.compress.race")
 KCOUNTER(vm_reclaim_compress_fail_page_accessed, "vm.reclaim.compress.fail.page_accessed")
 KCOUNTER(vm_reclaim_compress_fail_uncached, "vm.reclaim.compress.fail.uncached")
+
+KCOUNTER(vm_reclaim_unloan_page, "vm.reclaim_unloan_page")
 
 template <typename T>
 uint32_t GetShareCount(T p) {
@@ -7119,7 +7120,6 @@ VmCowReclaimResult VmCowPages::ReclaimRangeForEviction(uint64_t offset, size_t l
   canary_.Assert();
 
   DEBUG_ASSERT(can_evict());
-  DEBUG_ASSERT(eviction_action != EvictionAction::Require);
 
   __UNINITIALIZED DeferredOps deferred(this);
   Guard<CriticalMutex> guard{AssertOrderedLock, lock(), lock_order()};
@@ -7252,8 +7252,7 @@ VmCowReclaimResult VmCowPages::ReclaimRangeForEviction(uint64_t offset, size_t l
   });
 }
 
-VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t offset,
-                                                      EvictionAction eviction_action) {
+zx_status_t VmCowPages::EvictLoanedPage(vm_page_t* page, uint64_t offset) {
   canary_.Assert();
   // Without a page source to bring the page back in we cannot even think about eviction.
   DEBUG_ASSERT(can_evict());
@@ -7263,63 +7262,23 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
 
   const VmPageOrMarker* page_or_marker = page_list_.Lookup(offset);
   if (auto reason = CannotReclaimPageLocked(page, page_or_marker)) {
-    return fit::error(reason.value());
+    return ZX_ERR_NOT_SUPPORTED;
   }
+
+  if (!page->is_loaned()) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  // Loaned pages should never be dirty.
+  DEBUG_ASSERT(!is_page_dirty(page));
 
   // High priority VMOs cannot have loaned pages.
-  DEBUG_ASSERT(!page->is_loaned() || high_priority_count_ == 0);
+  DEBUG_ASSERT(high_priority_count_ == 0);
 
-  // Since CanReclaimPageLocked() succeeded, we know that this page is owned by us at the provided
-  // offset. So it should be safe to call MarkAccessed() on the page if reclamation fails, provided
-  // we don't drop the lock.
-
-  // Now allowed to reclaim if high priority, unless being required to do so.
-  if (high_priority_count_ != 0 && (eviction_action != EvictionAction::Require)) {
-    Pmm::Node().GetPageQueues()->MarkAccessed(page);
-    vm_reclaim_fail_vmo_high_priority.Add(1);
-    return fit::error(VmCowReclaimFailure::Other);
-  }
   DEBUG_ASSERT(is_page_dirty_tracked(page));
 
-  // We cannot evict the page unless it is clean. If the page is dirty, it will already have been
-  // moved to the dirty page queue.
-  if (!is_page_clean(page)) {
-    DEBUG_ASSERT(pmm_page_queues()->DebugPageIsPagerBackedDirty(page));
-    DEBUG_ASSERT(!page->is_loaned());
-    vm_reclaim_evict_fail_page_dirty.Add(1);
-    return fit::error(VmCowReclaimFailure::Other);
-  }
-
-  // Do not evict if the |always_need| hint is set, unless we are told to ignore the eviction hint.
-  if (page->object.always_need == 1 && eviction_action == EvictionAction::FollowHint) {
-    DEBUG_ASSERT(!page->is_loaned());
-    // We still need to move the page from the tail of the LRU page queue(s) so that the eviction
-    // loop can make progress. Since this page is always needed, move it out of the way and into the
-    // MRU queue. Do this here while we hold the lock, instead of at the callsite.
-    //
-    // TODO(rashaeqbal): Since we're essentially simulating an access here, this page may not
-    // qualify for eviction if we do decide to override the hint soon after (i.e. if an OOM follows
-    // shortly after). Investigate adding a separate queue once we have some more data around hints
-    // usage. A possible approach might involve moving to a separate queue when we skip the page for
-    // eviction. Pages move out of said queue when accessed, and continue aging as other pages.
-    // Pages in the queue are considered for eviction pre-OOM, but ignored otherwise.
-    Pmm::Node().GetPageQueues()->MarkAccessed(page);
-    vm_reclaim_evict_fail_page_always_need.Add(1);
-    return fit::error(VmCowReclaimFailure::Other);
-  }
-
   // Remove any mappings to this page before we remove it.
-  uint8_t old_queue = page->object.get_page_queue_ref().load(ktl::memory_order_relaxed);
-  RangeChangeUpdateLocked(VmCowRange(offset, kPageSize), RangeChangeOp::UnmapAndHarvest, &deferred);
-  const uint8_t new_queue = page->object.get_page_queue_ref().load(ktl::memory_order_relaxed);
-  // If queue has changed, the accessed bit will have been set by the unmap.
-  // Page has been accessed, don't evict.
-  // TODO(https://fxbug.dev/412464435): don't unmap & return accessed status to avoid checking page
-  // queues.
-  if ((old_queue != new_queue) && (eviction_action != EvictionAction::Require)) {
-    vm_reclaim_evict_fail_page_accessed.Add(1);
-    return fit::error(VmCowReclaimFailure::EvictAccessed);
-  }
+  RangeChangeUpdateLocked(VmCowRange(offset, kPageSize), RangeChangeOp::Unmap, &deferred);
 
   char vmo_name[ZX_MAX_NAME_LEN] __UNINITIALIZED = "\0";
   // Lambda so that vmo_name is only filled out if tracing is enabled.
@@ -7330,7 +7289,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
     }
     return vmo_name;
   };
-  VM_KTRACE_INSTANT(1, "evict_page", ("vmo_id", paged_ref_ ? paged_ref_->user_id() : 0),
+  VM_KTRACE_INSTANT(1, "evict_loaned_page", ("vmo_id", paged_ref_ ? paged_ref_->user_id() : 0),
                     ("offset", offset), ("vmo_name", get_vmo_name()));
 
   // Use RemovePage over just writing to page_or_marker so that the page list has the opportunity
@@ -7338,15 +7297,11 @@ VmCowReclaimResult VmCowPages::ReclaimPageForEviction(vm_page_t* page, uint64_t 
   vm_page_t* p = page_list_.RemoveContent(offset).ReleasePage();
   continuous_attribution_tracker_.Decrement(1);
   DEBUG_ASSERT(p == page);
-  const bool loaned = page->is_loaned();
   RemovePageLocked(page, deferred);
 
-  vm_reclaim_evict_single.Add(1);
-  reclamation_event_count_++;
   CONTINUOUS_ATTRIBUTION_VALIDATION_ASSERT(DebugValidateContinuousAttribution());
-  return fit::ok(VmCowReclaimSuccess{.type = VmCowReclaimSuccess::Type::Evict,
-                                     .num_pages = loaned ? 0u : 1u,
-                                     .num_loaned_pages = loaned ? 1u : 0u});
+  vm_reclaim_unloan_page.Add(1);
+  return ZX_OK;
 }
 
 VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64_t offset,
@@ -7536,14 +7491,6 @@ VmCowReclaimResult VmCowPages::ReclaimPage(vm_page_t* page, uint64_t offset,
 
   // See if we can reclaim by eviction.
   if (can_evict()) {
-    // The EvictionAction::Require hint is used when a specific page is required to be evicted. This
-    // is used in the physical page borrower case.
-    // TODO(https://fxbug.dev/502706880): refactor this as as the reclamation code is diverging from
-    // the physical page provider case.
-    if (hint_action == EvictionAction::Require) {
-      return ReclaimPageForEviction(page, offset, hint_action);
-    }
-
     // Evict pages in aligned batches of 16, which will correspond to a single VmPageListNode.
     constexpr size_t eviction_length = 16 * kPageSize;
     offset = ROUNDDOWN(offset, eviction_length);
