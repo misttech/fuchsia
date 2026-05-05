@@ -53,10 +53,12 @@ compatibility.
 For collections or structures that allocate memory:
 - Do not use the standard Rust `alloc` crate directly in kernel mode, as it
   panics on OOM.
-- Use the `kalloc` crate which provides `alloc` and `dealloc` functions
-  returning `Option`.
+- Use the fallible allocation functions provided by `kalloc` to ensure OOM
+  conditions are handled without panicking.
 - `kalloc` delegates to kernel `malloc`/`free` in kernel mode and standard
   `alloc` in userspace/tests.
+- Use `kalloc::Box` for fallible allocation of sized types and slices when
+  ownership management is needed.
 
 ### 3. Zero-Dependency Core (`zr`)
 
@@ -70,9 +72,8 @@ To verify that Rust implementations are compatible with C++:
 - Example: A C++ function that takes a pointer to a Rust-created object and
   calls a C++ method on it to verify state.
 
-## Examples
+### 5. Unsafe Code and SAFETY Comments
 
-Refer to the following recent implementations for reference:
-- `fbl::Canary`: Demonstrates layout matching and const generics.
-- `fbl::String`: Demonstrates manual reference counting and fallible allocation.
-- `fbl::RingBuffer`: Demonstrates porting a complex data structure.
+When using `unsafe` blocks, always add a `// SAFETY:` comment explaining why the
+block is safe. This is especially important when porting C++ code where memory
+safety depends on invariants not checked by the compiler.

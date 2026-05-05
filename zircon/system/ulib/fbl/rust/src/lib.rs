@@ -6,10 +6,10 @@
 
 #![no_std]
 
-use zr as _;
-
 mod canary;
 mod ring_buffer;
+mod vector;
 
 pub use canary::{Canary, magic};
 pub use ring_buffer::RingBuffer;
+pub use vector::Vector;
