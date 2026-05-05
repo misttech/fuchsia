@@ -21,41 +21,35 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
 
-type IsolateDir struct {
-	path string
-}
+var _ FFXToolImpl = (*ffxDaemon)(nil)
 
-func NewIsolateDir(path string) IsolateDir {
-	return IsolateDir{path: path}
-}
-
-type FFXTool struct {
+type ffxDaemon struct {
 	ffxToolPath         string
 	isolateDir          IsolateDir
 	supportsPackageBlob *bool
 }
 
-func NewFFXTool(ffxToolPath string, isolateDir IsolateDir) (*FFXTool, error) {
+func newFfxDaemon(ffxToolPath string, isolateDir IsolateDir) (*ffxDaemon, error) {
 	if _, err := os.Stat(ffxToolPath); err != nil {
 		return nil, fmt.Errorf("error accessing %v: %w", ffxToolPath, err)
 	}
 
-	return &FFXTool{
+	return &ffxDaemon{
 		ffxToolPath:         ffxToolPath,
 		isolateDir:          isolateDir,
 		supportsPackageBlob: nil,
 	}, nil
 }
 
-func (f *FFXTool) IsolateDir() IsolateDir {
+func (f *ffxDaemon) IsolateDir() IsolateDir {
 	return f.isolateDir
 }
 
-func (f *FFXTool) ClearIsolateDir() {
+func (f *ffxDaemon) ClearIsolateDir() {
 	os.RemoveAll(f.IsolateDir().path)
 }
 
-func (f *FFXTool) StopDaemon(ctx context.Context) error {
+func (f *ffxDaemon) StopDaemon(ctx context.Context) error {
 	// TODO(https://fxbug.dev/415899721): We put a time
 	// limit because the command fails when run inside an nsjail.
 	// Remove when bug is fixed.
@@ -64,29 +58,7 @@ func (f *FFXTool) StopDaemon(ctx context.Context) error {
 	return err
 }
 
-// TargetAddress represents a single address for a target.
-// It corresponds to ffx's enum JsonTargetAddress.
-type TargetAddress struct {
-	Type    string `json:"type"`
-	IP      string `json:"ip,omitempty"`       // for Type == "Ip"
-	SSHPort uint16 `json:"ssh_port,omitempty"` // for Type == "Ip"
-	CID     uint32 `json:"cid,omitempty"`      // for Type == "VSock" or "Usb"
-}
-
-// Target represents a single Fuchsia device/emulator.
-// It corresponds to the Rust struct JsonTarget.
-type TargetEntry struct {
-	NodeName    string          `json:"nodename"`
-	RCSState    string          `json:"rcs_state"` // "Y" or "N"
-	Serial      string          `json:"serial"`
-	TargetType  string          `json:"target_type"`  // board/product, like "core.x64" or "Unknown"
-	TargetState string          `json:"target_state"` // e.g., "Product", "Fastboot", "Zedboot"
-	Addresses   []TargetAddress `json:"addresses"`
-	IsDefault   bool            `json:"is_default"`
-	IsManual    bool            `json:"is_manual"`
-}
-
-func (f *FFXTool) TargetList(ctx context.Context) ([]TargetEntry, error) {
+func (f *ffxDaemon) TargetList(ctx context.Context) ([]TargetEntry, error) {
 	args := []string{
 		"--direct",
 		"--machine",
@@ -112,12 +84,7 @@ func (f *FFXTool) TargetList(ctx context.Context) ([]TargetEntry, error) {
 	return entries, nil
 }
 
-// GetDisambiguatedTarget is like TargetList, but returns exactly one target, enforcing the
-// following rules:
-// 1. Return the target if only one is found.
-// 2. Return the default target if it is set.
-// 3. Return the first target in the list if multiple targets are found, sorted by target name.
-func (f *FFXTool) GetDisambiguatedTarget(ctx context.Context) (TargetEntry, error) {
+func (f *ffxDaemon) GetDisambiguatedTarget(ctx context.Context) (TargetEntry, error) {
 	targets, err := f.TargetList(ctx)
 	if err != nil {
 		return TargetEntry{}, err
@@ -138,7 +105,7 @@ func (f *FFXTool) GetDisambiguatedTarget(ctx context.Context) (TargetEntry, erro
 	}), nil
 }
 
-func (f *FFXTool) TargetListForNode(ctx context.Context, nodeName string) ([]TargetEntry, error) {
+func (f *ffxDaemon) TargetListForNode(ctx context.Context, nodeName string) ([]TargetEntry, error) {
 	entries, err := f.TargetList(ctx)
 	if err != nil {
 		return []TargetEntry{}, err
@@ -155,7 +122,7 @@ func (f *FFXTool) TargetListForNode(ctx context.Context, nodeName string) ([]Tar
 	return matchingTargets, nil
 }
 
-func (f *FFXTool) WaitForTarget(ctx context.Context, address string) (TargetEntry, error) {
+func (f *ffxDaemon) WaitForTarget(ctx context.Context, address string) (TargetEntry, error) {
 	for attempt := 0; attempt < 10; attempt++ {
 		entries, err := f.TargetList(ctx)
 		if err != nil {
@@ -175,7 +142,7 @@ func (f *FFXTool) WaitForTarget(ctx context.Context, address string) (TargetEntr
 	return TargetEntry{}, fmt.Errorf("no target found for address %v", address)
 }
 
-func (f *FFXTool) TargetGetSshAddress(ctx context.Context, target string) (string, error) {
+func (f *ffxDaemon) TargetGetSshAddress(ctx context.Context, target string) (string, error) {
 	args := []string{
 		"--direct",
 		"--target",
@@ -196,7 +163,7 @@ func (f *FFXTool) TargetGetSshAddress(ctx context.Context, target string) (strin
 	return strings.TrimSpace(string(stdout)), nil
 }
 
-func (f *FFXTool) SupportsZedbootDiscovery(ctx context.Context) (bool, error) {
+func (f *ffxDaemon) SupportsZedbootDiscovery(ctx context.Context) (bool, error) {
 	// Check if ffx is configured to resolve devices in zedboot.
 	args := []string{
 		"config",
@@ -224,13 +191,13 @@ func (f *FFXTool) SupportsZedbootDiscovery(ctx context.Context) (bool, error) {
 	return false, nil
 }
 
-func (f *FFXTool) TargetAdd(ctx context.Context, target string) error {
+func (f *ffxDaemon) TargetAdd(ctx context.Context, target string) error {
 	args := []string{"target", "add", "--nowait", target}
 	_, err := f.runFFXCmd(ctx, args...)
 	return err
 }
 
-func (f *FFXTool) TargetGetSshTime(ctx context.Context, target string) (time.Duration, error) {
+func (f *ffxDaemon) TargetGetSshTime(ctx context.Context, target string) (time.Duration, error) {
 	args := []string{
 		"--target",
 		target,
@@ -260,7 +227,7 @@ func (f *FFXTool) TargetGetSshTime(ctx context.Context, target string) (time.Dur
 	return monotonicTime, nil
 }
 
-func (f *FFXTool) TargetUpdateChannelSet(ctx context.Context, target string, channel string) error {
+func (f *ffxDaemon) TargetUpdateChannelSet(ctx context.Context, target string, channel string) error {
 	args := []string{
 		"--target",
 		target,
@@ -275,7 +242,7 @@ func (f *FFXTool) TargetUpdateChannelSet(ctx context.Context, target string, cha
 	return err
 }
 
-func (f *FFXTool) TargetUpdateCheckNowMonitor(ctx context.Context, target string) ([]byte, error) {
+func (f *ffxDaemon) TargetUpdateCheckNowMonitor(ctx context.Context, target string) ([]byte, error) {
 	args := []string{
 		"--target",
 		target,
@@ -288,7 +255,7 @@ func (f *FFXTool) TargetUpdateCheckNowMonitor(ctx context.Context, target string
 	return f.runFFXCmd(ctx, args...)
 }
 
-func (f *FFXTool) TargetUpdateForceInstallNoReboot(ctx context.Context, target string, url string) error {
+func (f *ffxDaemon) TargetUpdateForceInstallNoReboot(ctx context.Context, target string, url string) error {
 	args := []string{
 		"--direct",
 		"--target",
@@ -304,11 +271,12 @@ func (f *FFXTool) TargetUpdateForceInstallNoReboot(ctx context.Context, target s
 	_, err := f.runFFXCmd(ctx, args...)
 	return err
 }
-func (f *FFXTool) Flasher() *Flasher {
+
+func (f *ffxDaemon) Flasher() *Flasher {
 	return newFlasher(f)
 }
 
-func (f *FFXTool) runFFXCmd(ctx context.Context, args ...string) ([]byte, error) {
+func (f *ffxDaemon) runFFXCmd(ctx context.Context, args ...string) ([]byte, error) {
 	path, err := exec.LookPath(f.ffxToolPath)
 	if err != nil {
 		return []byte{}, err
@@ -346,7 +314,7 @@ func (f *FFXTool) runFFXCmd(ctx context.Context, args ...string) ([]byte, error)
 	return stdout, cmdRet
 }
 
-func (f *FFXTool) RepositoryCreate(ctx context.Context, repoDir, keysDir string) error {
+func (f *ffxDaemon) RepositoryCreate(ctx context.Context, repoDir, keysDir string) error {
 	args := []string{
 		"--config", "ffx_repository=true",
 		"repository",
@@ -359,7 +327,7 @@ func (f *FFXTool) RepositoryCreate(ctx context.Context, repoDir, keysDir string)
 	return err
 }
 
-func (f *FFXTool) RepositoryPublish(ctx context.Context, repoDir string, packageManifests []string, additionalArgs ...string) error {
+func (f *ffxDaemon) RepositoryPublish(ctx context.Context, repoDir string, packageManifests []string, additionalArgs ...string) error {
 	args := []string{
 		"repository",
 		"publish",
@@ -376,7 +344,7 @@ func (f *FFXTool) RepositoryPublish(ctx context.Context, repoDir string, package
 	return err
 }
 
-func (f *FFXTool) SupportsPackageBlob(ctx context.Context) bool {
+func (f *ffxDaemon) SupportsPackageBlob(ctx context.Context) bool {
 	if f.supportsPackageBlob == nil {
 		_, err := f.runFFXCmd(ctx, "package", "blob", "--help")
 		supportsPackageBlob := err == nil
@@ -385,7 +353,7 @@ func (f *FFXTool) SupportsPackageBlob(ctx context.Context) bool {
 	return *f.supportsPackageBlob
 }
 
-func (f *FFXTool) DecompressBlobs(ctx context.Context, delivery_blobs []string, out_dir string) error {
+func (f *ffxDaemon) DecompressBlobs(ctx context.Context, delivery_blobs []string, out_dir string) error {
 	args := []string{
 		"package",
 		"blob",
@@ -399,7 +367,7 @@ func (f *FFXTool) DecompressBlobs(ctx context.Context, delivery_blobs []string, 
 	return err
 }
 
-func (f *FFXTool) RegisterPackageRepository(ctx context.Context, repo_url string) error {
+func (f *ffxDaemon) RegisterPackageRepository(ctx context.Context, repo_url string) error {
 	args := []string{
 		"target",
 		"repository",
@@ -412,7 +380,7 @@ func (f *FFXTool) RegisterPackageRepository(ctx context.Context, repo_url string
 	return err
 }
 
-func (f *FFXTool) TargetGetLastRebootReason(ctx context.Context, target string) (string, error) {
+func (f *ffxDaemon) TargetGetLastRebootReason(ctx context.Context, target string) (string, error) {
 	args := []string{
 		"--direct",
 		"--target", target,

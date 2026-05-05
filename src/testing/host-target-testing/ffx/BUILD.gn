@@ -14,8 +14,9 @@ if (is_host) {
       "//tools/lib/logger",
     ]
     sources = [
-      "ffx.go",
+      "ffx_daemon.go",
       "ffx_test.go",
+      "ffxtool.go",
       "flasher.go",
       "flasher_test.go",
     ]

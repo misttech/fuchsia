@@ -12,7 +12,7 @@ import (
 )
 
 type Flasher struct {
-	ffx               *FFXTool
+	ffx               FFXToolImpl
 	sshPublicKey      ssh.PublicKey
 	target            string
 	manifestPath      string
@@ -22,7 +22,7 @@ type Flasher struct {
 // NewFlasher constructs a new flasher that uses `ffx` as the FFXTool used
 // to flash a device using flash.json located at `path`. Also accepts a
 // number of optional parameters.
-func newFlasher(ffx *FFXTool) *Flasher {
+func newFlasher(ffx FFXToolImpl) *Flasher {
 	return &Flasher{
 		ffx: ffx,
 	}
