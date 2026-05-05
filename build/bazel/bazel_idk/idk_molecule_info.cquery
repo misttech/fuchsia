@@ -13,25 +13,25 @@ def format(target):
 
     lines = []
 
-    lines = [ molecule_info.label.name + " contains the following atoms (including indirectly):" ]
+    lines = [molecule_info.label.name + " contains the following atoms (including indirectly):"]
     lines += ["\t" + x.label.name for x in molecule_info.atoms_depset.to_list()]
 
-    lines += [ molecule_info.label.name + " directly depends on:" ]
+    lines += [molecule_info.label.name + " directly depends on:"]
     element_lines = []
 
     for dep in molecule_info.deps:
         p = providers(dep)
 
-        element_info =  p.get("//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkAtomInfo")
+        element_info = p.get("//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkAtomInfo")
         if element_info:
-            element_lines += [ "Atom: " + element_info.label.name ]
+            element_lines += ["Atom: " + element_info.label.name]
             continue
 
-        element_info =  p.get("//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkMoleculeInfo")
+        element_info = p.get("//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkMoleculeInfo")
         if element_info:
-            element_lines += [ "Molecule: " + element_info.label.name ]
+            element_lines += ["Molecule: " + element_info.label.name]
             continue
 
-        element_lines += [ "ERROR: Unknown element type." ]
+        element_lines += ["ERROR: Unknown element type."]
 
     return "\n".join(lines) + "\n\t" + "\n\t".join(sorted(element_lines))

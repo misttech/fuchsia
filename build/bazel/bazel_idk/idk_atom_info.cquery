@@ -45,7 +45,6 @@ def _format(target):
     if "sources" in atom_info.additional_prebuild_info:
         lines += ["sources: " + str(atom_info.additional_prebuild_info["sources"])]
 
-
     # Indent all lines except the first.
     return "\n\t".join(lines)
 

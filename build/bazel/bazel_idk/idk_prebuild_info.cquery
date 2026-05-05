@@ -59,16 +59,16 @@ def _generate_prebuild_info_for_all_atoms(target):
     # If the `target` is an atom, include it in the output.
     provider = p.get("//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkAtomInfo")
     if provider:
-      atom_targets.append(target)
+        atom_targets.append(target)
     else:
-      provider = p.get("//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkMoleculeInfo")
+        provider = p.get("//build/bazel/bazel_idk:providers.bzl%FuchsiaIdkMoleculeInfo")
 
     # In either case, include all atom dependencies.
     atom_targets += provider.atoms_depset.to_list()
 
     infos = []
     for atom in atom_targets:
-      infos.append(json.encode_indent(_generate_prebuild_info_for_atom(atom), indent = "  "))
+        infos.append(json.encode_indent(_generate_prebuild_info_for_atom(atom), indent = "  "))
 
     return infos
 

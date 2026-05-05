@@ -14,6 +14,7 @@ def _get_starlark_files(ctx):
         "*.bzl",
         "*.bazel",
         "*.bzlmod",
+        "*.cquery",
         "!/third_party/**",
     ]))
 
