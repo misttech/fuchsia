@@ -208,7 +208,10 @@ class Printer {
   void DecreaseIndent() { indent_ -= 2; }
 
  protected:
-  virtual void RealPrint(const char* format, va_list argptr) { vprintf(format, argptr); }
+  virtual void RealPrint(const char* format, va_list argptr) {
+    vprintf(format, argptr);
+    fflush(stdout);
+  }
   size_t indent_ = 0;
 };
 
