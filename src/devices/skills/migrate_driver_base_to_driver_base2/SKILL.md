@@ -83,7 +83,11 @@ zx::result<> Start(fdf::DriverContext context) override {
 ### Handle Incoming Namespace
 
 If you need to access the incoming namespace after the `Start` method
-completes, you must take ownership of it from the context.
+completes, you must take ownership of it from the context. Make sure that
+this is the last call to the context where it might need to use this
+incoming namespace for its own purposes. For example `CreateInspector`
+requires accessing the namespace, so it must be called before taking away
+the incoming namespace.
 
 > [!NOTE]
 > Some SDK APIs (like `compat::DeviceServer::Initialize` or `compat::ConnectBanjo`) still require a `std::shared_ptr<fdf::Namespace>`. You can create one by converting the unique pointer returned by `context.take_incoming()`:
