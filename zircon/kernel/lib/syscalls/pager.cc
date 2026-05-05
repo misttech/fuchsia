@@ -107,12 +107,6 @@ zx_status_t sys_pager_create_vmo(zx_handle_t pager, uint32_t options, zx_handle_
 
   VmObjectDispatcher::CreateStats stats = parse_result.value();
 
-  // The initial stream size should not end up larger than the vmo size, as this is a state that
-  // cannot exist.
-  if (size > stats.size) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
   fbl::RefPtr<VmObjectPaged> vmo;
   status = VmObjectPaged::CreateExternal(ktl::move(src), stats.flags, stats.size, &vmo);
   if (status != ZX_OK) {

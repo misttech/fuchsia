@@ -3047,6 +3047,14 @@ TEST(VmoTestCase, VmoUnbounded) {
   clone.reset();
 }
 
+// Regression test for https://fxbug.dev/506441830
+TEST(VmoTestCase, CreateVmoUnboundedInvalidStreamSize) {
+  zx::vmo vmo;
+  // The initial stream size of an unbounded vmo must be within the vmo size, and attempting to set
+  // an overly large one shouldn't trigger a kernel panic.
+  EXPECT_EQ(zx::vmo::create(UINT64_MAX, ZX_VMO_UNBOUNDED, &vmo), ZX_ERR_OUT_OF_RANGE);
+}
+
 // Helper function which will map the passed VMO & cause a read to write permission fault on the
 // first two pages. Passed VMO must be at least two pages in length.
 void ProtectToWriteTestHelper(zx::vmo *vmo, const size_t len) {

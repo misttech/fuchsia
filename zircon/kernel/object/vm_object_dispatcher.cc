@@ -58,6 +58,12 @@ zx::result<VmObjectDispatcher::CreateStats> VmObjectDispatcher::parse_create_sys
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
+  // The initial stream size should not end up larger than the vmo size, as this is a state that
+  // cannot exist.
+  if (size > res.size) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
+
   return zx::ok(res);
 }
 

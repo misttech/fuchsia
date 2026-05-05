@@ -4361,7 +4361,7 @@ TEST(Pager, CreateVmoUnboundedInvalidStreamSize) {
   // an overly large one shouldn't trigger a kernel panic.
   zx_status_t status = zx_pager_create_vmo(pager.get(), ZX_VMO_UNBOUNDED, port.get(), 0x1234,
                                            0xFFFFFFFFFFFFFFFF, vmo.reset_and_get_address());
-  EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(status, ZX_ERR_OUT_OF_RANGE);
 }
 
 // This is a regression test for https://fxbug.dev/498512247 that attempts to trigger a
