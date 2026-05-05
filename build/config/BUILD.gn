@@ -11,6 +11,7 @@ import("//build/config/compiler.gni")
 import("//build/config/enable_frame_pointers.gni")
 import("//build/config/fuchsia_cxx_version.gni")
 import("//build/config/linker.gni")
+import("//build/config/linker_config.gni")
 import("//build/config/lto/config.gni")
 import("//build/toolchain/ccache.gni")
 import("//build/toolchain/concurrent_jobs.gni")
@@ -68,14 +69,13 @@ foreach(cxx_version, fuchsia_sdk_cxx_supported_versions) {
   }
 }
 
-config("color_diagnostics") {
+linker_config("color_diagnostics") {
   # GCC correctly defaults this from the terminal, so leave it alone.
   if (!is_gcc) {
     cflags = [ "-fcolor-diagnostics" ]
     asmflags = cflags
     ldflags = cflags
-
-    ldflags += [ "-Wl,--color-diagnostics" ]
+    linker_flags = [ "--color-diagnostics" ]
   }
 }
 
@@ -309,7 +309,7 @@ config("toolchain_version_stamp") {
   }
 }
 
-config("relative_paths") {
+linker_config("relative_paths") {
   if (is_gcc) {
     # Relativize paths without leaking the build output directory in debug info.
     # Note: with multiple prefix map options, the mappings are checked in
@@ -350,16 +350,16 @@ config("relative_paths") {
   ldflags = cflags
 
   if (is_pecoff) {
-    ldflags += [
+    linker_flags = [
       # This embeds just "name.pdb" in the binary instead of the absolute
       # path to the PDB file.
-      "-Wl,/pdbaltpath:%_PDB%",
+      "/pdbaltpath:%_PDB%",
 
       # This embeds a fake Windows-style absolute path rather than the real
       # build-time absolute path in the PDB file.  Windows apparently
       # requires an absolute path here, so we use an arbitrary fake one for
       # reproducibility.
-      "-Wl,/pdbsourcepath:c:\\src",
+      "/pdbsourcepath:c:\\src",
     ]
   }
 
@@ -418,28 +418,28 @@ config("default_include_dirs") {
 }
 
 variant("linker_gc") {
-  configs = [ ":linker_gc.compiler" ]
+  configs = [
+    ":linker_gc.compiler",
+    ":linker_gc.linker",
+  ]
+}
+
+linker_config("linker_gc.linker") {
+  visibility = [ ":*" ]
 
   # These are the link-time flags to take advantage of the code generation
   # flags in config("linker_gc.compiler").
   if (is_pecoff) {
-    ldflags = [ "-Wl,/opt:ref" ]
+    linker_flags = [ "/opt:ref" ]
   } else {
-    ldflags = [ "-Wl,--gc-sections" ]
-
-    # rustc driver invokes LLD directly when targeting Fuchsia, so we need to
-    # use the linker spelling of this flag, whereas on other targets rustc
-    # invokes Clang so we use the same spelling as for C/C++.
-    if (is_fuchsia) {
-      rustflags = [ "-Clink-arg=--gc-sections" ]
-    } else {
-      rustflags = [ "-Clink-arg=-Wl,--gc-sections" ]
-    }
+    linker_flags = [ "--gc-sections" ]
   }
 }
 
 # These are the code-generation flags.
 config("linker_gc.compiler") {
+  visibility = [ ":*" ]
+
   cflags = [
     "-fdata-sections",
     "-ffunction-sections",
@@ -456,11 +456,11 @@ config("default_linker_gc") {
   configs = [ ":linker_gc" ]
 }
 
-config("linker_string_merging") {
+linker_config("linker_string_merging") {
   if (is_pecoff) {
-    ldflags = [ "-Wl,/opt:lldtailmerge" ]
+    linker_flags = [ "/opt:lldtailmerge" ]
   } else {
-    ldflags = [ "-Wl,-O2" ]
+    linker_flags = [ "-O2" ]
   }
 }
 
@@ -644,9 +644,9 @@ config("compress_debuginfo") {
   }
 }
 
-config("default_debuginfo") {
+linker_config("default_debuginfo") {
   cflags = []
-  ldflags = []
+  linker_flags = []
   configs = [ ":debuginfo_${debuginfo}" ]
   if (is_dwarf) {
     configs += [
@@ -666,7 +666,7 @@ config("default_debuginfo") {
   } else if (debuginfo != "none" && is_pecoff) {
     # TODO(https://fxbug.dev/42132853): This produces the .pdb file, but it doesn't seem
     # to get the DWARF data out of the main output file.
-    ldflags += [ "-Wl,/debug:full" ]
+    linker_flags += [ "/debug:full" ]
   }
 }
 
@@ -1289,8 +1289,8 @@ config("symbol_visibility_hidden") {
   }
 }
 
-config("symbol_no_undefined") {
-  ldflags = [ "-Wl,--no-undefined" ]
+linker_config("symbol_no_undefined") {
+  linker_flags = [ "--no-undefined" ]
 }
 
 config("shared_library_config") {
@@ -1313,7 +1313,7 @@ config("default_libs") {
   configs = []
 }
 
-config("werror") {
+linker_config("werror") {
   if (!use_ccache) {
     cflags = [
       "-Werror",
@@ -1324,7 +1324,7 @@ config("werror") {
     cflags += asmflags
 
     if (is_pecoff) {
-      ldflags = [ "-Wl,/WX" ]
+      linker_flags = [ "/WX" ]
     }
 
     # New versions of C++ often include new deprecations, so treat them as
@@ -1390,13 +1390,13 @@ config("no_profile") {
   ]
 }
 
-config("icf") {
+linker_config("icf") {
   # This changes C/C++ semantics and might be incompatible with third-party
   # code that relies on function pointers comparison.
   if (is_pecoff) {
-    ldflags = [ "-Wl,/opt:icf=all" ]
+    linker_flags = [ "/opt:icf=all" ]
   } else if (linker == "gold" || linker == "lld") {
-    ldflags = [ "-Wl,--icf=all" ]
+    linker_flags = [ "--icf=all" ]
   }
 }
 
@@ -1642,14 +1642,6 @@ config("standalone") {
 }
 
 # Enable LLD's balanced partitioning for ordering function sections.
-config("bp-compression-sort") {
-  ldflags = [ "-Wl,--bp-compression-sort=function" ]
-
-  rust_linkarg = "-Clink-arg="
-  if (!is_fuchsia) {
-    # On non-Fuchsia platforms, rustc calls clang, which calls lld.
-    rust_linkarg += "-Wl,"
-  }
-
-  rustflags = [ "${rust_linkarg}--bp-compression-sort=function" ]
+linker_config("bp-compression-sort") {
+  linker_flags = [ "--bp-compression-sort=function" ]
 }

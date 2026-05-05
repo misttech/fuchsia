@@ -4,6 +4,7 @@
 
 import("//build/config/clang/clang.gni")
 import("//build/config/clang/clang_target_toolchain_info.gni")
+import("//build/config/linker_config.gni")
 import("//build/config/profile/config.gni")
 import("//build/toolchain/variant.gni")
 
@@ -69,16 +70,13 @@ _has_compiler_abi = toolchain_variant.tags + [ "no-compiler-abi" ] -
                     [ "no-compiler-abi" ] == toolchain_variant.tags
 _fuchsia_prebuilt_runtime = _has_compiler_abi && is_fuchsia && !is_kernel
 
-config("variant-libprefix") {
+linker_config("variant-libprefix") {
   visibility = [ ":*" ]
 
   # Even specialized environments that don't use the prebuilt runtime still
   # expect to use the libprefix-based placement of shared libraries.
   if (is_fuchsia && !is_kernel) {
-    dynamic_linker_flags =
-        "-dynamic-linker=${toolchain_variant.libprefix}ld.so.1"
-    ldflags = [ "-Wl,$dynamic_linker_flags" ]
-    rustflags = [ "-Clink-arg=$dynamic_linker_flags" ]
+    linker_flags = [ "-dynamic-linker=${toolchain_variant.libprefix}ld.so.1" ]
   }
 }
 

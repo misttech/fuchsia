@@ -9,6 +9,7 @@ import("//build/config/clang/clang_target_toolchain_info.gni")
 import("//build/config/current_target_tuple.gni")
 import("//build/config/fuchsia/target_api_level.gni")
 import("//build/config/fuchsia/zircon_asserts.gni")
+import("//build/config/linker_config.gni")
 import("//build/config/sanitizers/sanitizer_default_options.gni")
 import("//build/config/sysroot.gni")
 import("//build/icu/third_party_icu_headers.gni")
@@ -57,7 +58,7 @@ config("ccache") {
   asmflags = cflags
 }
 
-config("compiler") {
+linker_config("compiler") {
   configs = [
     ":compiler_sysroot",
     ":compiler_target",
@@ -70,9 +71,9 @@ config("compiler") {
     configs += [ ":ccache" ]
   }
 
-  ldflags = []
-  if (build_id_format != "") {
-    ldflags += [ "-Wl,--build-id=$build_id_format" ]
+  linker_flags = []
+  if (build_id_format != "" && !is_pecoff) {
+    linker_flags += [ "--build-id=$build_id_format" ]
   }
 
   if (support_rust) {
@@ -160,13 +161,10 @@ config("compiler_fuchsia_api_level") {
   }
 }
 
-config("max-page-size") {
+linker_config("max-page-size") {
   default_size = experimental_elf_page_size == default_elf_page_size
   if (!default_size || is_gcc) {
-    ldflags = [ "-Wl,-z,max-page-size=$experimental_elf_page_size" ]
-  }
-  if (!default_size && support_rust) {
-    rustflags = [ "-Clink-args=-zmax-page-size=$experimental_elf_page_size" ]
+    linker_flags = [ "-zmax-page-size=$experimental_elf_page_size" ]
   }
 }
 
@@ -280,7 +278,7 @@ if (is_fuchsia) {
 
 # NOTE: This config's label is hard-coded in //build/config/BUILDCONFIG.gn
 # so don't rename it without updating that file too!
-config("static-pie-config") {
+linker_config("static-pie-config") {
   cflags = [
     "-fno-sanitize=all",
     "-fno-stack-protector",
@@ -288,8 +286,8 @@ config("static-pie-config") {
   ldflags = [
     "-nostdlib",
     "-nostartfiles",
-    "-Wl,-no-dynamic-linker",
   ]
+  linker_flags = [ "-no-dynamic-linker" ]
 }
 
 group("maybe_scudo_default_options") {

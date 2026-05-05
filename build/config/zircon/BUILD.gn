@@ -8,7 +8,9 @@ import("//build/config/clang/clang.gni")
 import("//build/config/clang/crash_diagnostics.gni")
 import("//build/config/compiler.gni")
 import("//build/config/linker.gni")
+import("//build/config/linker_config.gni")
 import("//build/config/zircon/levels.gni")
+import("//build/toolchain/rbe.gni")
 import("//build/toolchain/variant.gni")
 
 # NOTE: This file provides the GN configs used by Zircon toolchains
@@ -21,7 +23,7 @@ import("//build/toolchain/variant.gni")
 #  - All code paths related to |is_host| has been removed (the Zircon toolchain
 #    are never used to build host binaries).
 
-config("compiler") {
+linker_config("compiler") {
   # Per CPU targeting policy we always target the baseline when building the
   # kernel, rather than using board_configs. This is done to reduce binary
   # diversity. See: TODO RFC LINK HERE
@@ -31,6 +33,7 @@ config("compiler") {
   cflags_cc = []
   defines = []
   ldflags = []
+  linker_flags = []
 
   # NOTE: This config should only be used with Zircon-specific toolchains
   # but this BUILD.gn file is also included from non-Zircon ones. To
@@ -99,7 +102,7 @@ config("compiler") {
   if (is_fuchsia) {
     configs += [ "//build/config/fuchsia:max-page-size" ]
 
-    ldflags += [ "-Wl,-z,start-stop-visibility=hidden" ]
+    linker_flags += [ "-zstart-stop-visibility=hidden" ]
 
     if (is_gcc) {
       # This is predefined by Clang --target=*-fuchsia.
@@ -108,33 +111,33 @@ config("compiler") {
 
       # These are done by default in the Clang toolchain.
       cflags += [ "-fasynchronous-unwind-tables" ]
-      ldflags += [
-        "-Wl,--build-id",
-        "-Wl,--hash-style=gnu",
-        "-Wl,-z,combreloc",
-        "-Wl,-z,relro",
-        "-Wl,-z,now",
-        "-Wl,-z,text",
+      linker_flags += [
+        "--build-id",
+        "--hash-style=gnu",
+        "-zcombreloc",
+        "-zrelro",
+        "-znow",
+        "-ztext",
       ]
 
       if (!is_kernel) {
-        ldflags += [ "-Wl,--eh-frame-hdr" ]
+        linker_flags += [ "--eh-frame-hdr" ]
       }
 
       if (linker == "") {
         # This is the default in both LLD and Gold, but not in BFD.
         # However, Gold doesn't even have the switch.
-        ldflags += [ "-Wl,-z,separate-code" ]
+        linker_flags += [ "-zseparate-code" ]
       }
 
       # This is the default in LLD, available in BFD, but not in Gold.
       if (linker == "") {
-        ldflags += [ "-Wl,-z,pack-relative-relocs" ]
+        linker_flags += [ "-zpack-relative-relocs" ]
       }
 
       # In the Clang toolchain assembly files with no explicit marker don't
       # cause the presumption of executable stack as they do in GCC.
-      ldflags += [ "-Wl,-z,noexecstack" ]
+      linker_flags += [ "-znoexecstack" ]
 
       if (current_cpu == "arm64") {
         # x18 is reserved in the Fuchsia ABI so it can be used
@@ -161,7 +164,7 @@ config("compiler") {
     # TODO(https://fxbug.dev/496585236): Remove when Clang's UEFI target
     # translates the -mno-incremental-linker-compatible switch to /Brepro
     # for the underlying linker.
-    ldflags += [ "-Wl,/Brepro" ]
+    linker_flags += [ "/Brepro" ]
   }
 
   lib_dirs = zircon_toolchain.lib_dirs
@@ -171,7 +174,7 @@ config("compiler") {
   ldflags += compiler_flags
 
   if (is_fuchsia && build_id_format != "") {
-    ldflags += [ "-Wl,--build-id=$build_id_format" ]
+    linker_flags += [ "--build-id=$build_id_format" ]
   }
 }
 
@@ -281,20 +284,26 @@ variant("user-link") {
 }
 
 variant("user-executable") {
-  # This prevents the default dynamic linker from being embedded.  Other deps
-  # can still set PT_INTERP either via link inputs with a `.interp` section, or
-  # ldflags that come later with an explicit `-Wl,-dynamic-linker=...`.
-  ldflags = [ "-Wl,--no-dynamic-linker" ]
+  configs = [ ":no-dynamic-linker" ]
+
+  # crt1 and libc will come via explicit link dependencies if at all.
+  ldflags = [
+    "-nostartfiles",
+    "-nolibc",
+  ]
+  rustflags = [ "-Cdefault-linker-libraries=no" ]
+
   if (is_gcc) {
     # This is already the default in Clang for Fuchsia targets.
     ldflags += [ "-pie" ]
   }
+}
 
-  # crt1 and libc will come via explicit link dependencies if at all.
-  ldflags += [
-    "-nostartfiles",
-    "-nolibc",
-  ]
+# This prevents the default dynamic linker from being embedded.  Other deps
+# can still set PT_INTERP either via link inputs with a `.interp` section, or
+# ldflags that come later with an explicit `-Wl,-dynamic-linker=...`.
+linker_config("no-dynamic-linker") {
+  linker_flags = [ "--no-dynamic-linker" ]
 }
 
 config("integer-paranoia") {
@@ -360,10 +369,18 @@ variant("static-pie-compile") {
 }
 
 variant("static-pie-link") {
-  ldflags = [
-    "-Wl,-pie",
-    "-Wl,--no-dynamic-linker",
+  configs = [
+    ":link-pie",
+    ":no-dynamic-linker",
   ]
+}
+
+linker_config("link-pie") {
+  linker_flags = [ "--pie" ]
+}
+
+linker_config("link-no-pie") {
+  linker_flags = [ "--no-pie" ]
 }
 
 # Disallow C++ static initializers in functions that require runtime init.
@@ -377,16 +394,14 @@ config("forbid-guard-variables") {
 }
 
 # This is used by hermetic_code_blob() in hermetic_code_blob.gni.
-config("hermetic-code-blob") {
+linker_config("hermetic-code-blob") {
   inputs = [ "hermetic-code-blob.ld" ]
 
   # Use a custom linker script rather than the default PIE layout.
-  ldflags = [ "-Wl,-T," + rebase_path(inputs[0], root_build_dir) ]
+  linker_flags = [ "-T" + rebase_path(inputs[0], root_build_dir) ]
 
-  # lld defaults to PIE, while the GNU linkers do not.
-  if (!is_gcc) {
-    ldflags += [ "-Wl,--no-pie" ]
-  }
+  ldflags = []
+  rustflags = [ "-Cdefault-linker-libraries=no" ]
 
   # Don't add any additional sections or dependencies.
   configs = [ ":no-synthetic-sections" ]
@@ -408,30 +423,44 @@ config("hermetic-code-blob") {
       ]
     }
   }
+
+  # lld defaults to PIE, while the GNU linkers do not.
+  if (!is_gcc) {
+    configs += [ ":link-no-pie" ]
+  }
 }
 
-config("no-synthetic-sections") {
+linker_config("no-synthetic-sections") {
   # These may be necessary to override earlier explicit switches passed by
   # //build/config:compiler and its dependencies, e.g. when using -r.
-  ldflags = [
-    "-Wl,--build-id=none",  # Don't generate .note.gnu.build-id section.
-    "-Wl,--no-eh-frame-hdr",  # Don't generate .eh_frame_hdr section.
-    "-Wl,--no-dynamic-linker",  # Don't generate .interp section.
+  linker_flags = [
+    "--build-id=none",  # Don't generate .note.gnu.build-id section.
+    "--no-eh-frame-hdr",  # Don't generate .eh_frame_hdr section.
+    "--no-dynamic-linker",  # Don't generate .interp section.
   ]
 }
 
 # This is used by the basic_executable() for an hermetic partial link step.
-config("hermetic_source_set.config") {
+linker_config("hermetic_source_set.config") {
   # The partial link with --gc-sections will drop some sections that should
   # survive (while not directly referenced) into the outer link to be
   # implicitly referenced later, e.g. via a generated .eh_frame_hdr.
-  inputs = [ "//build/toolchain/hermetic_source_set.ld" ]
   ldflags = [
     "-r",
     "-static",
-    "-Wl,-T," + rebase_path(inputs[0], root_build_dir),
   ]
+  rustflags = [ "-Clink-arg=-r" ]
+
+  inputs = [ "//build/toolchain/hermetic_source_set.ld" ]
+  linker_flags = [ "-T" + rebase_path(inputs[0], root_build_dir) ]
+
+  if (link_rbe_enable) {
+    # TODO: (https://fxbug.dev/509665308): This is working around an RBE
+    # wrapper bug.  Even though it's in the GN inputs and directly on the
+    # command line, it doesn't notice the -T file as a remote input.
+    ldflags += [ "--remote-inputs=" + rebase_path(inputs[0], root_build_dir) ]
+  }
 
   # TODO(https://fxbug.dev/445786243): work around reloc rewriting bug in lld
-  ldflags += [ "-Wl,--discard-none" ]
+  linker_flags += [ "--discard-none" ]
 }
