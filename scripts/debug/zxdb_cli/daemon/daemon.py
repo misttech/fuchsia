@@ -3,16 +3,22 @@
 # found in the LICENSE file.
 
 import asyncio
+import contextlib
 import os
 import signal
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Generator
 from pathlib import Path
 from typing import Any, Final, TypeVar, cast, final
 
 from async_utils.command import AsyncCommand
 from ffx_cmd.lib import FfxCmd
 from pydap.client import DapClient
-from pydap.models import ContinueArguments, PauseArguments, dataclass_to_dict
+from pydap.models import (
+    ContinueArguments,
+    PauseArguments,
+    StackTraceArguments,
+    dataclass_to_dict,
+)
 from shared.protocol import (
     AttachRequest,
     BaseRequest,
@@ -20,6 +26,7 @@ from shared.protocol import (
     GetStateRequest,
     PauseRequest,
     Response,
+    StackTraceRequest,
     StopRequest,
     ThreadsRequest,
     deserialize_request,
@@ -92,6 +99,17 @@ class DapEventWaiter:
                     fut.set_result(event)
             del self._waiters[key]
 
+    @contextlib.contextmanager
+    def wait_for_thread_stop(
+        self, thread_id: int
+    ) -> Generator[asyncio.Future[dict[str, Any]], None, None]:
+        """Context manager to automatically register and unregister a waiter."""
+        fut = self.register_thread_stop(thread_id)
+        try:
+            yield fut
+        finally:
+            self.unregister_thread_stop(thread_id, fut)
+
 
 @final
 class Daemon:
@@ -121,7 +139,6 @@ class Daemon:
             "attach",
             self.handle_attach,
         )
-
         self.registry.register(
             "threads",
             self.handle_threads,
@@ -134,6 +151,35 @@ class Daemon:
             "pause",
             self.handle_pause,
         )
+        self.registry.register(
+            "stackTrace",
+            self.handle_stack_trace,
+        )
+
+    # TODO(https://fxbug.dev/509967647): This should be part of a thread object abstraction that
+    # we're keeping track of.
+    async def ensure_stopped(self, thread_id: int) -> None:
+        """Ensures the thread is stopped. Returns immediately if it is,
+
+        otherwise pauses it and waits for the stopped event.
+        """
+        if thread_id in self.stopped_threads:
+            return
+
+        if not self.zxdb_writer:
+            raise Exception("Not connected to zxdb DAP server")
+
+        with self.event_waiter.wait_for_thread_stop(thread_id) as fut:
+            await self.dap_client.pause_thread(
+                self.zxdb_writer, PauseArguments(threadId=thread_id)
+            )
+            try:
+                await asyncio.wait_for(fut, timeout=10.0)
+                return
+            except asyncio.TimeoutError:
+                raise Exception(
+                    f"Timed out waiting for thread {thread_id} to stop"
+                )
 
     async def handle_stop(self, _req: StopRequest) -> Response:
         self.stop_event.set()
@@ -214,25 +260,34 @@ class Daemon:
                 success=False, message="Not connected to zxdb DAP server"
             )
 
-        args = PauseArguments(threadId=req.thread_id)
-
-        fut = self.event_waiter.register_thread_stop(req.thread_id)
-
         try:
-            resp = await self.dap_client.pause_thread(self.zxdb_writer, args)
-
-            try:
-                await asyncio.wait_for(fut, timeout=5.0)
-            except asyncio.TimeoutError:
-                print(
-                    "Warning: Timed out waiting for stopped event after pause"
-                )
-
-            return Response(success=True, body=resp)
+            await self.ensure_stopped(req.thread_id)
+            return Response(success=True)
         except Exception as e:
             return Response(success=False, message=f"Failed to pause: {e}")
-        finally:
-            self.event_waiter.unregister_thread_stop(req.thread_id, fut)
+
+    async def handle_stack_trace(self, req: StackTraceRequest) -> Response:
+        if not self.zxdb_writer:
+            return Response(
+                success=False, message="Not connected to zxdb DAP server"
+            )
+
+        try:
+            await self.ensure_stopped(req.thread_id)
+
+            # Now thread is paused, get stack trace
+            stack_resp = await self.dap_client.stack_trace(
+                self.zxdb_writer,
+                StackTraceArguments(
+                    threadId=req.thread_id,
+                ),
+            )
+
+            return Response(success=True, body=dataclass_to_dict(stack_resp))
+        except Exception as e:
+            return Response(
+                success=False, message=f"Failed to get stack trace: {e}"
+            )
 
     async def run(self) -> int:
         if UDS_PATH.exists():
@@ -389,6 +444,7 @@ class Daemon:
             event = await self.event_queue.get()
             if event.get("event") == "stopped":
                 thread_id = event.get("body", {}).get("threadId")
+                self.stopped_threads.add(thread_id)
                 self.event_waiter.notify_thread_stop(thread_id, event)
             elif event.get("event") == "continued":
                 thread_id = event.get("body", {}).get("threadId")

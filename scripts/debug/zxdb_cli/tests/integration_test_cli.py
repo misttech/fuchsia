@@ -3,9 +3,11 @@
 # found in the LICENSE file.
 
 import asyncio
+import contextlib
 import json
 import subprocess
 import unittest
+from io import StringIO
 
 from cli.cli import main
 from daemon.daemon import UDS_PATH
@@ -99,6 +101,37 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
                             "success": True,
                             "command": "continue",
                             "body": {"allThreadsContinued": True},
+                        }
+                        resp_body = json.dumps(resp).encode("utf-8")
+                        resp_header = (
+                            f"Content-Length: {len(resp_body)}\r\n\r\n".encode(
+                                "utf-8"
+                            )
+                        )
+                        writer.write(resp_header + resp_body)
+                        await writer.drain()
+                    elif req.get("command") == "stackTrace":
+                        resp = {
+                            "seq": req["seq"],
+                            "type": "response",
+                            "request_seq": req["seq"],
+                            "success": True,
+                            "command": "stackTrace",
+                            "body": {
+                                "stackFrames": [
+                                    {
+                                        "id": 1,
+                                        "name": "main",
+                                        "source": {
+                                            "name": "main.cc",
+                                            "path": "/path/to/main.cc",
+                                        },
+                                        "line": 10,
+                                        "column": 1,
+                                    }
+                                ],
+                                "totalFrames": 1,
+                            },
                         }
                         resp_body = json.dumps(resp).encode("utf-8")
                         resp_header = (
@@ -216,6 +249,66 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             # Test Continue
             exit_code = await main(["continue", "1"])
             self.assertEqual(exit_code, 0)
+
+            # Stop via CLI
+            exit_code = await main(["stop"])
+            self.assertEqual(exit_code, 0)
+
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+                proc.wait()
+
+    async def test_stack_trace(self) -> None:
+        # Find an open port
+        temp_server = await asyncio.start_server(
+            lambda r, w: None, "127.0.0.1", 0
+        )
+        port = temp_server.sockets[0].getsockname()[1]
+        temp_server.close()
+        await temp_server.wait_closed()
+
+        # Start dummy DAP server
+        self.fake_dap_server = await self.start_fake_dap_server(port)
+
+        # Start Daemon manually
+        fx_cmd = FxCmd()
+        cmd = fx_cmd.command_line(
+            "zxdb-daemon",
+            "--port",
+            str(port),
+            "--connect-to-existing",
+        )
+
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        try:
+            # Wait for socket to appear
+            for _ in range(10):
+                if UDS_PATH.exists():
+                    break
+                await asyncio.sleep(0.5)
+            self.assertTrue(UDS_PATH.exists(), "Socket file was not created")
+
+            f = StringIO()
+            with contextlib.redirect_stdout(f):
+                exit_code = await main(["stackTrace", "1"])
+            self.assertEqual(exit_code, 0)
+
+            output = f.getvalue()
+            output_json = json.loads(output)
+            self.assertTrue(output_json.get("success"))
+
+            # Verify stack frame
+            body = output_json.get("body")
+            self.assertIsNotNone(body)
+            frames = body.get("stackFrames")
+            self.assertEqual(len(frames), 1)
+            self.assertEqual(frames[0]["name"], "main")
 
             # Stop via CLI
             exit_code = await main(["stop"])

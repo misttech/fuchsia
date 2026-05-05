@@ -45,6 +45,14 @@ async def main(args: list[str]) -> int:
     pause_parser = subparsers.add_parser("pause", help="Interrupt execution")
     pause_parser.add_argument("thread_id", type=int, help="Thread ID to pause")
 
+    stack_trace_parser = subparsers.add_parser(
+        "stackTrace",
+        help="Get stack trace of a thread. This will automatically pause the given thread when called.",
+    )
+    stack_trace_parser.add_argument(
+        "thread_id", type=int, help="Thread ID to get stack trace for"
+    )
+
     parsed_args = parser.parse_args(args)
 
     if parsed_args.command == "start":

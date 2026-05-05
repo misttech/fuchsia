@@ -89,7 +89,16 @@ stopping the daemon.
    {"success": true, "body": {"success": true}}
    ```
 
-6. **Stop the daemon**:
+6. **Get stack trace**:
+   ```bash
+   fx debug cli stackTrace 1
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"stackFrames": [{"id": 0, "name": "main", "line": 42}]}}
+   ```
+
+7. **Stop the daemon**:
    ```bash
    fx debug cli stop
    ```

@@ -48,6 +48,12 @@ class PauseRequest(BaseRequest):
     command: str = "pause"
 
 
+@dataclasses.dataclass(kw_only=True)
+class StackTraceRequest(BaseRequest):
+    thread_id: int
+    command: str = "stackTrace"
+
+
 @dataclasses.dataclass
 class ThreadInfo:
     id: int
@@ -96,6 +102,11 @@ def make_request(data: dict[str, Any]) -> BaseRequest:
         return ContinueRequest(
             thread_id=thread_id, single_thread=data.get("single_thread")
         )
+    elif command == "stackTrace":
+        thread_id = data.get("thread_id")
+        if thread_id is None:
+            raise ValueError("Thread ID must be specified for stackTrace")
+        return StackTraceRequest(thread_id=thread_id)
     else:
         raise ValueError("Unknown command")
 
