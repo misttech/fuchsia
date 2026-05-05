@@ -763,6 +763,38 @@ func (f *FFXInstance) RunAndGetOutput(ctx context.Context, args ...string) (stri
 	return strings.TrimSpace(s), err
 }
 
+// GetLastRebootReason returns the last reboot reason of the associated target.
+func (f *FFXInstance) GetLastRebootReason(ctx context.Context) (string, error) {
+	if f.target == "" {
+		return "", fmt.Errorf("no target is set")
+	}
+
+	if strings.Contains(f.target, "%qemu") {
+		return "", fmt.Errorf("getting reboot reason is not supported on emulator targets (b/496577711)")
+	}
+
+	stdout, err := f.RunAndGetOutput(ctx, "--target", f.target, "--machine", "json", "target", "show")
+	if err != nil {
+		return "", fmt.Errorf("ffx target show failed: %w", err)
+	}
+
+	var showInfo struct {
+		Target struct {
+			LastRebootReason *string `json:"last_reboot_reason"`
+		} `json:"target"`
+	}
+
+	if err := json.Unmarshal([]byte(stdout), &showInfo); err != nil {
+		return "", fmt.Errorf("failed to unmarshal ffx target show output: %w", err)
+	}
+
+	if showInfo.Target.LastRebootReason != nil {
+		return *showInfo.Target.LastRebootReason, nil
+	}
+
+	return "", fmt.Errorf("no last reboot reason found in ffx target show output")
+}
+
 // RunWithTargetOutputAndTimeout runs ffx with the associated target, stdout redirected to the
 // provided writer, and the specified timeout.
 func (f *FFXInstance) RunWithTargetOutputAndTimeout(ctx context.Context, output io.Writer, timeout time.Duration, args ...string) error {
