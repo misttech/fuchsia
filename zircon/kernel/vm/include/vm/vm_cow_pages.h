@@ -738,14 +738,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // see VmObject::DebugLookupDepth
   uint32_t DebugLookupDepthLocked() const TA_REQ(lock());
 
-  // VMO_VALIDATION
-  bool DebugValidatePageSharingLocked() const TA_REQ(lock());
-  bool DebugValidateBacklinksLocked() const TA_REQ(lock());
-  // Calls DebugValidatePageSharesLocked on this and every parent in the chain, returning true if
-  // all return true. Also calls DebugValidateBacklinksLocked on every node in the hierarchy.
-  bool DebugValidateHierarchyLocked() TA_REQ(lock());
-  bool DebugValidateZeroIntervalsLocked() const TA_REQ(lock());
-
   // Slow validation of the continuously tracked populated slots count.
   //
   // Returns true if the tracked populated slots count equals the number of pages, references, and
@@ -758,9 +750,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // ZX_OK.
   zx_status_t DebugForEachDescendant(
       fit::inline_function<zx_status_t(VmCowPages* cow, uint depth)>);
-
-  // VMO_FRUGAL_VALIDATION
-  bool DebugValidateVmoPageBorrowingLocked() const TA_REQ(lock());
 
   using RangeChangeOp = VmObject::RangeChangeOp;
   // Applies the specific operation to all mappings in the given range. The mappings for the current
