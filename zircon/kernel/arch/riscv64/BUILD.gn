@@ -59,8 +59,7 @@ if (toolchain_base_environment == "kernel") {
     asmflags = cflags
     ldflags = cflags
 
-    # TODO(https://fxbug.dev/507570739): Need equivalent rustflags!
-    rustflags = [ "--rust-is-too-dangerous-until-we-plumb-ffixed-x27" ]
+    rustflags = [ "-Ctarget-feature=+reserve-x27" ]
   }
 
   # This is used pervasively throughout the kernel on riscv64.
