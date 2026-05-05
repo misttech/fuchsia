@@ -11,6 +11,7 @@ use component_debug_fdomain::doctor::validate_routes;
 use ffx_component::rcs::{
     connect_to_lifecycle_controller_f, connect_to_realm_query_f, connect_to_route_validator_f,
 };
+use ffx_component::server::{DefaultPackageServerRunner, maybe_start_server};
 use ffx_component_run_args::RunComponentCommand;
 use ffx_config::EnvironmentContext;
 use ffx_core::macro_deps::errors::ffx_error;
@@ -30,6 +31,17 @@ async fn cmd_impl(
     mut writer: MachineWriter<LogEntry>,
     connector: target_connector::Connector<RemoteControlProxyHolder>,
 ) -> Result<(), anyhow::Error> {
+    let process_dir: Option<std::path::PathBuf> = ctx.get("repository.process_dir").ok();
+    let _guard = if let Some(process_dir) = process_dir {
+        let runner = DefaultPackageServerRunner { process_dir };
+        maybe_start_server(&runner, ctx.build_dir(), Some(&*rcs_proxy), Some(&args.url)).await?
+    } else {
+        eprintln!(
+            "Warning: repository.process_dir not set in config. Skipping ephemeral package server start."
+        );
+        None
+    };
+
     let rcs_proxy_clone = rcs_proxy.clone();
     let lifecycle_controller_factory = move || {
         let rcs_proxy_clone = rcs_proxy_clone.clone();

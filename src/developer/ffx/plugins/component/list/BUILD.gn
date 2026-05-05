@@ -22,7 +22,6 @@ ffx_plugin("ffx_component_list") {
   ]
   test_deps = [
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
-    "//src/developer/ffx/lib/rcs:lib",
     "//src/diagnostics/iquery/test_support:iquery_test_support",
     "//src/lib/fdomain/client",
     "//src/lib/fdomain/local",
@@ -34,6 +33,9 @@ ffx_plugin("ffx_component_list") {
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:serde_json",
   ]
+  if (is_host) {
+    test_deps += [ "//src/developer/ffx/lib/rcs:lib" ]
+  }
 
   args_deps = [
     "//src/developer/ffx/core:lib",
