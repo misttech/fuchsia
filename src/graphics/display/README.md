@@ -9,6 +9,9 @@ many terms needed to understand display code, and is a good background reading.
 The [Display configuration states][display-config-states] document covers some
 important terms used throughout the stack.
 
+The [Principles for modern register definitions][display-register-definitions]
+document summarizes the conventions adopted by display drivers.
+
 ## Stack overview
 
 ### The FIDL interface for display clients
@@ -108,6 +111,7 @@ reviews.
 [dfv2-migration]: /docs/development/drivers/migration/migrate-from-dfv1-to-dfv2.md
 [display-config-states]: docs/config-states.md
 [display-hardware-overview]: docs/hardware.md
+[display-register-definitions]: docs/register-definitions.md
 [display-coordinator-fidl]: /sdk/fidl/fuchsia.hardware.display/coordinator.fidl
 [display-engine-fidl]: /sdk/fidl/fuchsia.hardware.display.engine/engine.fidl
 [fuchsia-system-interface]: /docs/concepts/packages/system.md
