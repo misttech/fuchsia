@@ -463,7 +463,7 @@ impl Mount {
 
     /// Returns the mount flags for the `FileSystem` of this `Mount`.
     fn fs_flags(&self) -> FileSystemFlags {
-        self.fs.options.flags
+        self.fs.options.flags.load(Ordering::Relaxed)
     }
 
     /// Updates the `Mount` with the per-mount flags specified in `flags`, while preserving the
@@ -506,6 +506,15 @@ impl Mount {
     /// Returns the name of the fs.
     pub fn fs_name(&self) -> &'static FsStr {
         self.fs.name()
+    }
+
+    /// Reconfigures the flags for the `FileSystem` backing this mount point.
+    pub fn reconfigure_fs(
+        &self,
+        current_task: &CurrentTask,
+        flags: FileSystemFlags,
+    ) -> Result<(), Errno> {
+        self.fs.update_flags(current_task, flags)
     }
 
     state_accessor!(Mount, state, Arc<Mount>);

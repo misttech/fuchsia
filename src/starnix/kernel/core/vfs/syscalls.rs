@@ -42,7 +42,7 @@ use starnix_uapi::errors::{
 use starnix_uapi::file_lease::FileLeaseType;
 use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::inotify_mask::InotifyMask;
-use starnix_uapi::mount_flags::{FileSystemFlags, MountFlags};
+use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::personality::PersonalityFlags;
 use starnix_uapi::resource_limits::Resource;
@@ -1978,23 +1978,18 @@ fn do_mount_remount(
     let mount_options =
         security::sb_eat_lsm_opts(current_task.kernel(), &mut MountParams::parse(data.as_ref())?)?;
 
+    // From <https://man7.org/linux/man-pages/man2/mount.2.html>
+    //
+    //   Since Linux 2.6.26, the MS_REMOUNT flag can be used with MS_BIND
+    //   to modify only the per-mount-point flags.  This is particularly
+    //   useful for setting or clearing the "read-only" flag on a mount
+    //   without changing the underlying filesystem.
     if !flags.contains(MountFlags::BIND) {
         security::sb_remount(current_task, &mount, mount_options)?;
-
-        // From <https://man7.org/linux/man-pages/man2/mount.2.html>
-        //
-        //   Since Linux 2.6.26, the MS_REMOUNT flag can be used with MS_BIND
-        //   to modify only the per-mount-point flags.  This is particularly
-        //   useful for setting or clearing the "read-only" flag on a mount
-        //   without changing the underlying filesystem.
-        track_stub!(TODO("https://fxbug.dev/322875215"), "MS_REMOUNT: Updating superblock flags");
+        mount.reconfigure_fs(current_task, flags.file_system_flags())?;
     }
 
-    let mut updated_flags = flags & MountFlags::CHANGEABLE_WITH_REMOUNT;
-    // TODO: https://fxbug.dev/322875215 - Support non-bind remount and remove this.
-    if target.entry.node.fs().options.flags.contains(FileSystemFlags::RDONLY) {
-        updated_flags |= MountFlags::RDONLY;
-    }
+    let updated_flags = flags & MountFlags::CHANGEABLE_WITH_REMOUNT;
     mount.update_flags(updated_flags.mountpoint_flags());
 
     Ok(())
@@ -2074,7 +2069,7 @@ fn do_mount_create(
 
     let options = FileSystemOptions {
         source: source.into(),
-        flags: flags.file_system_flags(),
+        flags: flags.file_system_flags().into(),
         params: MountParams::parse(data.as_ref())?,
     };
 

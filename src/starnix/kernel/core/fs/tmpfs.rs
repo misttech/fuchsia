@@ -723,7 +723,7 @@ mod test {
                 &kernel,
                 FileSystemOptions {
                     source: Default::default(),
-                    flags: FileSystemFlags::empty(),
+                    flags: FileSystemFlags::empty().into(),
                     params: MountParams::parse(b"mode=0123,uid=42,gid=84".into())
                         .expect("parsed correctly"),
                 },

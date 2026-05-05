@@ -31,6 +31,7 @@ use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error, from_status_like_fdio, off_t, statfs};
 use std::io::Read;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use syncio::{zxio_node_attr_has_t, zxio_node_attributes_t};
 use zx::{
     HandleBased, {self as zx},
@@ -76,7 +77,7 @@ impl RemoteBundle {
         locked: &mut Locked<L>,
         kernel: &Kernel,
         base: &fio::DirectorySynchronousProxy,
-        mut options: FileSystemOptions,
+        options: FileSystemOptions,
         rights: fio::Flags,
     ) -> Result<FileSystemHandle, Error>
     where
@@ -112,7 +113,7 @@ impl RemoteBundle {
         );
 
         if !rights.contains(fio::PERM_WRITABLE) {
-            options.flags |= FileSystemFlags::RDONLY;
+            options.flags.fetch_or(FileSystemFlags::RDONLY, Ordering::Relaxed);
         }
 
         let fs = FileSystem::new(
@@ -172,9 +173,14 @@ impl FileSystemOps for RemoteBundle {
     fn name(&self) -> &'static FsStr {
         "remote_bundle".into()
     }
-
-    fn is_readonly(&self) -> bool {
-        true
+    fn update_flags(
+        &self,
+        fs: &FileSystem,
+        _current_task: &CurrentTask,
+        flags: FileSystemFlags,
+    ) -> Result<(), Errno> {
+        fs.options.flags.store(flags | FileSystemFlags::RDONLY, Ordering::Relaxed);
+        Ok(())
     }
 }
 

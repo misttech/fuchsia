@@ -22,10 +22,11 @@ use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
-use starnix_uapi::mount_flags::FileSystemFlags;
+use starnix_uapi::mount_flags::{AtomicFileSystemFlags, FileSystemFlags};
 use starnix_uapi::{error, ino_t, statfs};
 use std::collections::HashSet;
 use std::ops::Range;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock, Weak};
 
 /// A file system that can be mounted in a namespace.
@@ -80,14 +81,24 @@ impl std::fmt::Debug for FileSystem {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct FileSystemOptions {
     /// The source string passed as the first argument to mount(), e.g. a block device.
     pub source: FlyByteStr,
     /// Flags kept per-superblock.
-    pub flags: FileSystemFlags,
+    pub flags: AtomicFileSystemFlags,
     /// Filesystem options passed as the last argument to mount().
     pub params: MountParams,
+}
+
+impl Clone for FileSystemOptions {
+    fn clone(&self) -> Self {
+        Self {
+            source: self.source.clone(),
+            flags: self.flags.load(Ordering::Relaxed).into(),
+            params: self.params.clone(),
+        }
+    }
 }
 
 impl FileSystemOptions {
@@ -145,14 +156,6 @@ impl FileSystem {
 
         let mount_options = security::sb_eat_lsm_opts(&kernel, &mut options.params)?;
         let security_state = security::file_system_init_security(&mount_options, &ops)?;
-
-        // TODO: https://fxbug.dev/322875215 - Remove this workaround once non-bind MS_REMOUNT is
-        // implemented.
-        if !ops.is_readonly() {
-            // Preserve the old behaviour, that only the per-mount MS_RDONLY flag took effect, by
-            // removing it from the `MountFlags` stored with the `FileSystem`.
-            options.flags &= !FileSystemFlags::RDONLY;
-        }
 
         let file_system = Arc::new(FileSystem {
             kernel: kernel.weak_self.clone(),
@@ -480,6 +483,17 @@ impl FileSystem {
     pub fn crypt_service(&self) -> Option<Arc<CryptService>> {
         self.ops.crypt_service()
     }
+
+    /// Reconfigures the MountFlags associated with the filesystem with the specified `flags`.
+    /// Filesystems may customize `FsNodeOps::update_flags()` to take action (e.g. flushing dirty
+    /// files when transitioning from read-write to read-only), or to reject reconfiguration.
+    pub fn update_flags(
+        &self,
+        current_task: &CurrentTask,
+        flags: FileSystemFlags,
+    ) -> Result<(), Errno> {
+        self.ops.update_flags(self, current_task, flags)
+    }
 }
 
 /// The filesystem-implementation-specific data for FileSystem.
@@ -503,6 +517,20 @@ pub trait FileSystemOps: AsAny + Send + Sync + 'static {
         _fs: &FileSystem,
         _current_task: &CurrentTask,
     ) -> Result<statfs, Errno>;
+
+    /// Reconfigure the filesystem with the given flags.
+    ///
+    /// This is called during a remount operation (MS_REMOUNT), to allow the filesystem to update
+    /// internal resources as necessary to support the new flags.
+    fn update_flags(
+        &self,
+        fs: &FileSystem,
+        _current_task: &CurrentTask,
+        new_flags: FileSystemFlags,
+    ) -> Result<(), Errno> {
+        fs.options.flags.store(new_flags, Ordering::Relaxed);
+        Ok(())
+    }
 
     fn name(&self) -> &'static FsStr;
 
@@ -581,14 +609,6 @@ pub trait FileSystemOps: AsAny + Send + Sync + 'static {
         _current_task: &CurrentTask,
     ) -> Result<(), Errno> {
         Ok(())
-    }
-
-    /// Returns true if the `FileSystemOps` is intrinsically read-only, as is the case for
-    /// "remote_bundle", or the "remotefs" mounts to read-only directories.
-    // TODO: https://fxbug.dev/322875215 - Remove this workaround once non-bind MS_REMOUNT is
-    // implemented.
-    fn is_readonly(&self) -> bool {
-        false
     }
 }
 

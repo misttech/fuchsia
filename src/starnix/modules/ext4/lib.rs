@@ -29,6 +29,7 @@ use starnix_uapi::mount_flags::FileSystemFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{EXT4_SUPER_MAGIC, errno, error, ino_t, off_t, statfs};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use zx::HandleBased;
 
 mod pager;
@@ -69,7 +70,7 @@ impl ExtFilesystem {
     ) -> Result<FileSystemHandle, Errno> {
         let mut open_flags = OpenFlags::RDWR;
         let mut prot_flags = ProtectionFlags::READ | ProtectionFlags::WRITE | ProtectionFlags::EXEC;
-        if options.flags.contains(FileSystemFlags::RDONLY) {
+        if options.flags.load(Ordering::Relaxed).contains(FileSystemFlags::RDONLY) {
             open_flags = OpenFlags::RDONLY;
             prot_flags ^= ProtectionFlags::WRITE;
         }

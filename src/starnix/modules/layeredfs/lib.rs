@@ -18,6 +18,7 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, ino_t, off_t, statfs};
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 struct LayeredMountAction {
     path: FsString,
@@ -193,8 +194,16 @@ impl FileSystemOps for LayeredFileSystemOps {
     fn name(&self) -> &'static FsStr {
         self.fs.base_fs.name()
     }
-    fn is_readonly(&self) -> bool {
-        self.fs.base_fs.options.flags & FileSystemFlags::RDONLY == FileSystemFlags::RDONLY
+    fn update_flags(
+        &self,
+        fs: &FileSystem,
+        current_task: &CurrentTask,
+        new_flags: FileSystemFlags,
+    ) -> Result<(), Errno> {
+        self.fs.base_fs.update_flags(current_task, new_flags)?;
+        let flags = self.fs.base_fs.options.flags.load(Ordering::Relaxed);
+        fs.options.flags.store(flags, Ordering::Relaxed);
+        Ok(())
     }
 }
 

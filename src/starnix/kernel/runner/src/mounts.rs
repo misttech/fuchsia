@@ -91,7 +91,11 @@ impl MountSpec {
 
         Ok((
             MountSpec { fs_type: fs_type.into(), mount_point: mount_point.into(), flags },
-            FileSystemOptions { source: fs_src.into(), flags: flags.file_system_flags(), params },
+            FileSystemOptions {
+                source: fs_src.into(),
+                flags: flags.file_system_flags().into(),
+                params,
+            },
         ))
     }
 

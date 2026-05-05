@@ -88,14 +88,14 @@ pub fn new_remote_fs(
         .map_err(|_| errno!(EINVAL, "source path is not utf8"))?;
     let mut create_flags =
         fio::PERM_READABLE | fio::Flags::FLAG_MAYBE_CREATE | fio::Flags::PROTOCOL_DIRECTORY;
-    if !options.flags.contains(FileSystemFlags::RDONLY) {
+    if !options.flags.load(Ordering::Relaxed).contains(FileSystemFlags::RDONLY) {
         create_flags |= fio::PERM_WRITABLE;
     }
     let (root_proxy, subdir) = kernel.open_ns_dir(requested_path, create_flags)?;
 
     let subdir = if subdir.is_empty() { ".".to_string() } else { subdir };
     let mut open_rights = fio::PERM_READABLE;
-    if !options.flags.contains(FileSystemFlags::RDONLY) {
+    if !options.flags.load(Ordering::Relaxed).contains(FileSystemFlags::RDONLY) {
         open_rights |= fio::PERM_WRITABLE;
     }
     let mut subdir_options = options;
@@ -275,8 +275,17 @@ impl FileSystemOps for RemoteFs {
         true
     }
 
-    fn is_readonly(&self) -> bool {
-        !self.root_rights.contains(fio::PERM_WRITABLE)
+    fn update_flags(
+        &self,
+        fs: &FileSystem,
+        _current_task: &CurrentTask,
+        mut flags: FileSystemFlags,
+    ) -> Result<(), Errno> {
+        if !self.root_rights.contains(fio::PERM_WRITABLE) {
+            flags |= FileSystemFlags::RDONLY;
+        }
+        fs.options.flags.store(flags, Ordering::Relaxed);
+        Ok(())
     }
 }
 
@@ -536,7 +545,7 @@ impl RemoteFs {
         locked: &mut Locked<L>,
         kernel: &Kernel,
         root: zx::Channel,
-        mut options: FileSystemOptions,
+        options: FileSystemOptions,
         rights: fio::Flags,
     ) -> Result<FileSystemHandle, Errno>
     where
@@ -545,7 +554,7 @@ impl RemoteFs {
         let (remotefs, root_node, info, node_id) = RemoteFs::new(root, rights)?;
 
         if !rights.contains(fio::PERM_WRITABLE) {
-            options.flags |= FileSystemFlags::RDONLY;
+            options.flags.fetch_or(FileSystemFlags::RDONLY, Ordering::Relaxed);
         }
         let use_remote_ids = remotefs.use_remote_ids;
         let fs = FileSystem::new(
@@ -3616,7 +3625,7 @@ mod test {
                     client,
                     FileSystemOptions {
                         source: FlyByteStr::new(b"/"),
-                        flags: FileSystemFlags::empty(),
+                        flags: FileSystemFlags::empty().into(),
                         ..Default::default()
                     },
                     fio::PERM_READABLE | fio::PERM_WRITABLE,
@@ -3674,7 +3683,7 @@ mod test {
                 client2,
                 FileSystemOptions {
                     source: FlyByteStr::new(b"/"),
-                    flags: FileSystemFlags::empty(),
+                    flags: FileSystemFlags::empty().into(),
                     ..Default::default()
                 },
                 fio::PERM_READABLE | fio::PERM_WRITABLE,

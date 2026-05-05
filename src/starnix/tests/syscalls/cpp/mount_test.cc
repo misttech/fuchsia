@@ -851,7 +851,7 @@ TEST_F(ProcMountsTest, MountAdded) {
   EXPECT_THAT(read_mounts(), UnorderedElementsAreArray(before_mounts));
 }
 
-TEST_F(ProcMountsTest, RemountBindReadonlyFlagInheritance) {
+TEST_F(ProcMountsTest, RemountBindReadOnlyFlagInheritance) {
   // TODO(https://fxbug.dev/317285180) don't skip on baseline
   if (!test_helper::HasSysAdmin()) {
     GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
