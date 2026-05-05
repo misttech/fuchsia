@@ -70,13 +70,13 @@ class DwSpiEnvironment : public fdf_testing::Environment {
     }
 
     if (zx::result<> result = to_driver_vfs.AddService<fuchsia_hardware_clock::Service>(
-            clock_ssi_.CreateInstanceHandler(), "clock-ssi");
+            clock_bus_.CreateInstanceHandler(), "clock-bus");
         result.is_error()) {
       return result.take_error();
     }
 
     if (zx::result<> result = to_driver_vfs.AddService<fuchsia_hardware_clock::Service>(
-            clock_pclk_.CreateInstanceHandler(), "clock-pclk");
+            clock_registers_.CreateInstanceHandler(), "clock-registers");
         result.is_error()) {
       return result.take_error();
     }
@@ -91,8 +91,8 @@ class DwSpiEnvironment : public fdf_testing::Environment {
   }
 
   fdf_fake::FakePowerDomain& power_domain() { return power_domain_; }
-  fdf_fake::FakeClock& clock_ssi() { return clock_ssi_; }
-  fdf_fake::FakeClock& clock_pclk() { return clock_pclk_; }
+  fdf_fake::FakeClock& clock_bus() { return clock_bus_; }
+  fdf_fake::FakeClock& clock_registers() { return clock_registers_; }
   fdf_fake::FakeReset& reset() { return reset_; }
 
   std::span<uint32_t> mmio() const {
@@ -106,8 +106,8 @@ class DwSpiEnvironment : public fdf_testing::Environment {
 
   fdf_fake::FakePDev pdev_;
   fdf_fake::FakePowerDomain power_domain_;
-  fdf_fake::FakeClock clock_ssi_{fdf::Dispatcher::GetCurrent()->async_dispatcher()};
-  fdf_fake::FakeClock clock_pclk_{fdf::Dispatcher::GetCurrent()->async_dispatcher()};
+  fdf_fake::FakeClock clock_bus_{fdf::Dispatcher::GetCurrent()->async_dispatcher()};
+  fdf_fake::FakeClock clock_registers_{fdf::Dispatcher::GetCurrent()->async_dispatcher()};
   fdf_fake::FakeReset reset_;
   zx::vmo mmio_vmo_;
   fzl::VmoMapper mapped_mmio_;
@@ -146,9 +146,9 @@ TEST_F(DwSpiTest, StartStop) {
   EXPECT_TRUE(driver_test().RunInEnvironmentTypeContext<bool>(
       [](DwSpiEnvironment& env) { return env.power_domain().is_enabled(); }));
   EXPECT_TRUE(driver_test().RunInEnvironmentTypeContext<bool>(
-      [](DwSpiEnvironment& env) { return env.clock_ssi().enabled(); }));
+      [](DwSpiEnvironment& env) { return env.clock_bus().enabled(); }));
   EXPECT_TRUE(driver_test().RunInEnvironmentTypeContext<bool>(
-      [](DwSpiEnvironment& env) { return env.clock_pclk().enabled(); }));
+      [](DwSpiEnvironment& env) { return env.clock_registers().enabled(); }));
   EXPECT_TRUE(driver_test().RunInEnvironmentTypeContext<bool>(
       [](DwSpiEnvironment& env) { return env.reset().take_toggled(); }));
 
