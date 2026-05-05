@@ -8,8 +8,9 @@ using fuchsia.hardware.usb.descriptor;
 
 alias VmoId = uint64;
 
-/// Arbitrary limit on the max transfer size of Requests by embedding data (see Buffer::data).
-const MAX_TRANSFER_SIZE uint32 = 300;
+/// Limit on the max transfer size of Requests by embedding data (see Buffer::data).
+/// Set to 1024 to accommodate typical SuperSpeed USB packet payloads.
+const MAX_TRANSFER_SIZE uint32 = 1024;
 
 /// Data buffer. There are two supported ways data may be conveyed, corresponding to the two
 /// members of the Buffer union:
