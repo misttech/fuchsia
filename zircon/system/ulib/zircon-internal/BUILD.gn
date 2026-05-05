@@ -14,6 +14,7 @@ if (!is_kernel) {
     deps = [
       ":zircon-internal-tests",
       ":zircon-internal-unittests($host_toolchain)",
+      "rust:tests",
     ]
   }
 
