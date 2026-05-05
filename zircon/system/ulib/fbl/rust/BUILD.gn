@@ -12,6 +12,7 @@ rustc_library("fbl") {
   sources = [
     "src/array.rs",
     "src/canary.rs",
+    "src/conditional_select_nospec.rs",
     "src/lib.rs",
     "src/ring_buffer.rs",
     "src/vector.rs",
