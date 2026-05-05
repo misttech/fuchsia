@@ -110,9 +110,9 @@ class __OWNER(T) Vector {
   // move semantics only
   DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(Vector);
 
-  constexpr Vector() : ptr_(nullptr), size_(0U), capacity_(0U) {}
+  constexpr Vector() : ptr_(nullptr), capacity_(0U), size_(0U) {}
 
-  Vector(Vector&& other) : ptr_(nullptr), size_(other.size_), capacity_(other.capacity_) {
+  Vector(Vector&& other) : ptr_(nullptr), capacity_(other.capacity_), size_(other.size_) {
     ptr_ = other.release();
   }
 
@@ -121,8 +121,8 @@ class __OWNER(T) Vector {
       : ptr_(init.size() != 0U
                  ? reinterpret_cast<T*>(AllocatorTraits::Allocate(init.size() * sizeof(T)))
                  : nullptr),
-        size_(init.size()),
-        capacity_(size_) {
+        capacity_(init.size()),
+        size_(capacity_) {
     T* out = ptr_;
     for (const T* in = init.begin(); in != init.end(); ++in, ++out) {
       new (out) T(*in);
@@ -131,8 +131,8 @@ class __OWNER(T) Vector {
 #endif
 
   Vector& operator=(Vector&& o) {
-    auto size = o.size_;
     auto capacity = o.capacity_;
+    auto size = o.size_;
     reset(o.release(), size, capacity);
     return *this;
   }
@@ -167,14 +167,14 @@ class __OWNER(T) Vector {
     T* t = ptr_;
     ptr_ = other.ptr_;
     other.ptr_ = t;
-    size_t size = size_;
     size_t capacity = capacity_;
+    size_t size = size_;
 
-    size_ = other.size_;
     capacity_ = other.capacity_;
+    size_ = other.size_;
 
-    other.size_ = size;
     other.capacity_ = capacity;
+    other.size_ = size;
   }
 
   void push_back(T&& value, AllocChecker* ac) { push_back_internal(std::move(value), ac); }
@@ -443,8 +443,8 @@ class __OWNER(T) Vector {
   T* release() {
     T* t = ptr_;
     ptr_ = nullptr;
-    size_ = 0;
     capacity_ = 0;
+    size_ = 0;
     return t;
   }
 
@@ -530,8 +530,8 @@ class __OWNER(T) Vector {
   }
 
   T* ptr_;
-  size_t size_;
   size_t capacity_;
+  size_t size_;
 
   static constexpr size_t kCapacityMinimum = 16;
   static constexpr size_t kCapacityGrowthFactor = 2;
