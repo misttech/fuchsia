@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{Error as IOError, Read, Write};
 use std::os::fd::AsFd as _;
 use std::sync::Arc;
-use zx::{MonotonicInstant, Signals, Socket, Status};
+use zx::{MonotonicInstant, Signals, Socket, Status, StatusExt};
 
 pub struct BlockingSocket {
     // Holding a reference to File so it lives as long as the associated socket. If the FD is closed
@@ -21,24 +21,27 @@ pub struct BlockingSocket {
 
 impl Read for BlockingSocket {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, IOError> {
-        if self.socket.outstanding_read_bytes()? == 0 {
+        if self.socket.outstanding_read_bytes().map_err(|s| s.into_io_error())? == 0 {
             let wait_sigs = Signals::SOCKET_READABLE | Signals::SOCKET_PEER_CLOSED;
-            let signals =
-                self.socket.wait_one(wait_sigs, MonotonicInstant::INFINITE).to_result()?;
+            let signals = self
+                .socket
+                .wait_one(wait_sigs, MonotonicInstant::INFINITE)
+                .to_result()
+                .map_err(|s| s.into_io_error())?;
             if signals.contains(Signals::SOCKET_PEER_CLOSED) {
-                return Err(Status::PEER_CLOSED.into());
+                return Err(Status::PEER_CLOSED.into_io_error());
             }
         }
         self.socket.read(buf).or_else(|status| match status {
             Status::SHOULD_WAIT => Ok(0),
-            _ => Err(status.into()),
+            _ => Err(status.into_io_error()),
         })
     }
 }
 
 impl Write for BlockingSocket {
     fn write(&mut self, buf: &[u8]) -> Result<usize, IOError> {
-        self.socket.write(buf).map_err(Into::into)
+        self.socket.write(buf).map_err(|s| s.into_io_error())
     }
 
     fn flush(&mut self) -> Result<(), IOError> {

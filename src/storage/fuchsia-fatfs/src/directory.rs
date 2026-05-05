@@ -205,7 +205,7 @@ impl FatDirectory {
         }
         let dir = self.borrow_dir(fs)?;
         for entry in dir.iter().into_iter() {
-            let entry = entry?;
+            let entry = entry.map_err(fatfs_error_to_status)?;
             if entry.eq_name(name) {
                 return Ok(Some(entry));
             }
@@ -276,7 +276,7 @@ impl FatDirectory {
             match cur_entry {
                 FatNode::Dir(entry) => {
                     let name = path.next().unwrap();
-                    validate_filename(name)?;
+                    validate_filename(name).map_err(fatfs_error_to_status)?;
                     cur_entry = entry.clone().open_child(name, child_flags, closer)?;
                 }
                 FatNode::File(_) => {
@@ -303,7 +303,7 @@ impl FatDirectory {
             match current_entry {
                 FatNode::Dir(entry) => {
                     let name = path.next().unwrap();
-                    validate_filename(name)?;
+                    validate_filename(name).map_err(fatfs_error_to_status)?;
                     current_entry = entry.clone().open3_child(name, child_flags, closer)?;
                 }
                 FatNode::File(_) => {
@@ -1000,7 +1000,8 @@ impl Directory for FatDirectory {
                     })
                     .transpose()
             })
-            .collect::<std::io::Result<Vec<_>>>()?;
+            .collect::<std::io::Result<Vec<_>>>()
+            .map_err(fatfs_error_to_status)?;
 
         // If it's the root directory, we need to synthesize a "." entry if appropriate.
         if self.data.read().parent.is_none() && filter(".") {

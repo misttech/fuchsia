@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon stream objects.
 
 use crate::{
-    AsHandleRef, HandleBased, HandleRef, NullableHandle, Property, PropertyQuery, Status, Vmo, ok,
-    sys,
+    AsHandleRef, HandleBased, HandleRef, NullableHandle, Property, PropertyQuery, Status,
+    StatusExt, Vmo, ok, sys,
 };
 use bitflags::bitflags;
 use std::io::SeekFrom;
@@ -282,7 +282,8 @@ impl std::io::Read for Stream {
         let mut iovec = [sys::zx_iovec_t { buffer: buf.as_mut_ptr(), capacity: buf.len() }];
         // SAFETY: The buffer in `iovec` comes from a mutable slice so we know it's safe to pass it
         // to `readv`.
-        Ok(unsafe { self.readv(StreamReadOptions::empty(), &mut iovec) }?)
+        Ok(unsafe { self.readv(StreamReadOptions::empty(), &mut iovec) }
+            .map_err(|s| s.into_io_error())?)
     }
 
     fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut<'_>]) -> std::io::Result<usize> {
@@ -292,19 +293,20 @@ impl std::io::Read for Stream {
         };
         // SAFETY: `IoSliceMut` can only be constructed from a mutable slice so we know it's safe to
         // pass to `readv`.
-        Ok(unsafe { self.readv(StreamReadOptions::empty(), &mut iovecs) }?)
+        Ok(unsafe { self.readv(StreamReadOptions::empty(), &mut iovecs) }
+            .map_err(|s| s.into_io_error())?)
     }
 }
 
 impl std::io::Seek for Stream {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
-        Ok(Self::seek(&self, pos)? as u64)
+        Ok(Self::seek(&self, pos).map_err(|s| s.into_io_error())? as u64)
     }
 }
 
 impl std::io::Write for Stream {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        Ok(Self::write(&self, StreamWriteOptions::empty(), buf)?)
+        Ok(Self::write(&self, StreamWriteOptions::empty(), buf).map_err(|s| s.into_io_error())?)
     }
 
     fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
@@ -312,7 +314,7 @@ impl std::io::Write for Stream {
         let iovecs = unsafe {
             std::slice::from_raw_parts(bufs.as_ptr().cast::<sys::zx_iovec_t>(), bufs.len())
         };
-        Ok(self.writev(StreamWriteOptions::empty(), &iovecs)?)
+        Ok(self.writev(StreamWriteOptions::empty(), &iovecs).map_err(|s| s.into_io_error())?)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {

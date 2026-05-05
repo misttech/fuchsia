@@ -16,6 +16,7 @@ CORE_DEPS = [
   "//src/lib/fuchsia-async",
   "//src/lib/fuchsia-sync",
   "//sdk/rust/zx-status",
+  "//sdk/rust/zx-status-ext",
   "//third_party/rust_crates:anyhow",
   "//third_party/rust_crates:async-lock",
   "//third_party/rust_crates:crc",

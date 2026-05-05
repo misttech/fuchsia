@@ -991,18 +991,21 @@ impl<K: AllocKind> Seek for Buffer<K> {
         let pos = match pos {
             SeekFrom::Start(pos) => pos,
             SeekFrom::End(offset) => {
-                let end = i64::try_from(self.cap())
-                    .map_err(|TryFromIntError { .. }| zx::Status::OUT_OF_RANGE)?;
+                let end = i64::try_from(self.cap()).map_err(|TryFromIntError { .. }| {
+                    std::io::Error::from(std::io::ErrorKind::InvalidInput)
+                })?;
                 u64::try_from(end.wrapping_add(offset)).unwrap()
             }
             SeekFrom::Current(offset) => {
-                let current = i64::try_from(self.pos)
-                    .map_err(|TryFromIntError { .. }| zx::Status::OUT_OF_RANGE)?;
+                let current = i64::try_from(self.pos).map_err(|TryFromIntError { .. }| {
+                    std::io::Error::from(std::io::ErrorKind::InvalidInput)
+                })?;
                 u64::try_from(current.wrapping_add(offset)).unwrap()
             }
         };
-        self.pos =
-            usize::try_from(pos).map_err(|TryFromIntError { .. }| zx::Status::OUT_OF_RANGE)?;
+        self.pos = usize::try_from(pos).map_err(|TryFromIntError { .. }| {
+            std::io::Error::from(std::io::ErrorKind::InvalidInput)
+        })?;
         Ok(pos)
     }
 }

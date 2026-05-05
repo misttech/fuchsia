@@ -15,6 +15,7 @@ use std::fmt;
 use std::pin::Pin;
 use std::task::Poll;
 use zx::{self as zx, AsHandleRef};
+use zx_status_ext::StatusExt;
 
 /// An I/O object representing a `Socket`.
 pub struct Socket(RWHandle<zx::Socket, SocketRWHandleSpec>);
@@ -185,7 +186,7 @@ impl AsyncRead for Socket {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        self.poll_read_ref(cx, buf).map_err(Into::into)
+        self.poll_read_ref(cx, buf).map_err(|s| s.into_io_error())
     }
 }
 
@@ -195,7 +196,7 @@ impl AsyncWrite for Socket {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        self.poll_write_ref(cx, buf).map_err(Into::into)
+        self.poll_write_ref(cx, buf).map_err(|s| s.into_io_error())
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -215,7 +216,7 @@ impl AsyncRead for &Socket {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        self.poll_read_ref(cx, buf).map_err(Into::into)
+        self.poll_read_ref(cx, buf).map_err(|s| s.into_io_error())
     }
 }
 
@@ -225,7 +226,7 @@ impl AsyncWrite for &Socket {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        self.poll_write_ref(cx, buf).map_err(Into::into)
+        self.poll_write_ref(cx, buf).map_err(|s| s.into_io_error())
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {

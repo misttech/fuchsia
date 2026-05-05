@@ -23,6 +23,7 @@ use vfs::file::{File, FileIo, FileLike, FileOptions, SyncMode};
 use vfs::node::Node;
 use vfs::path::Path as VfsPath;
 use zx_status::Status;
+use zx_status_ext::IoErrorKindExt;
 
 /// Convert a Rust [`std::fs::Metadata`] to a [`fio::NodeAttributes2`] FIDL struct.
 fn metadata_to_node_attributes2(
@@ -122,7 +123,8 @@ impl File for HostFile {
             .append(options.is_append)
             .read(true)
             .write(writable)
-            .open(&self.path)?;
+            .open(&self.path)
+            .map_err(|e| e.kind().to_status())?;
 
         *self.file.lock().unwrap() = Some(file);
 
@@ -132,12 +134,12 @@ impl File for HostFile {
     async fn truncate(&self, length: u64) -> Result<(), Status> {
         let file = self.file.lock().unwrap();
         let file = file.as_ref().ok_or(Status::NOT_CONNECTED)?;
-        file.set_len(length)?;
+        file.set_len(length).map_err(|e| e.kind().to_status())?;
         Ok(())
     }
 
     async fn get_size(&self) -> Result<u64, Status> {
-        Ok(std::fs::metadata(&self.path)?.size())
+        Ok(std::fs::metadata(&self.path).map_err(|e| e.kind().to_status())?.size())
     }
 
     async fn update_attributes(
@@ -161,7 +163,7 @@ impl File for HostFile {
     async fn sync(&self, _mode: SyncMode) -> Result<(), Status> {
         let file = self.file.lock().unwrap();
         let file = file.as_ref().ok_or(Status::NOT_CONNECTED)?;
-        file.sync_all()?;
+        file.sync_all().map_err(|e| e.kind().to_status())?;
         Ok(())
     }
 }
@@ -171,25 +173,26 @@ impl FileIo for HostFile {
         let mut file = self.file.lock().unwrap();
         let file = file.as_mut().ok_or(Status::NOT_CONNECTED)?;
 
-        file.seek(std::io::SeekFrom::Start(offset))?;
-        Ok(file.read(buffer).map(|x| x.try_into().unwrap())?)
+        file.seek(std::io::SeekFrom::Start(offset)).map_err(|e| e.kind().to_status())?;
+        Ok(file.read(buffer).map(|x| x.try_into().unwrap()).map_err(|e| e.kind().to_status())?)
     }
 
     async fn write_at(&self, offset: u64, content: &[u8]) -> Result<u64, Status> {
         let mut file = self.file.lock().unwrap();
         let file = file.as_mut().ok_or(Status::NOT_CONNECTED)?;
 
-        file.seek(std::io::SeekFrom::Start(offset))?;
-        Ok(file.write(content).map(|x| x.try_into().unwrap())?)
+        file.seek(std::io::SeekFrom::Start(offset)).map_err(|e| e.kind().to_status())?;
+        Ok(file.write(content).map(|x| x.try_into().unwrap()).map_err(|e| e.kind().to_status())?)
     }
 
     async fn append(&self, content: &[u8]) -> Result<(u64, u64), Status> {
         let mut file = self.file.lock().unwrap();
         let file = file.as_mut().ok_or(Status::NOT_CONNECTED)?;
 
-        file.seek(std::io::SeekFrom::End(0))?;
-        let wrote = file.write(content).map(|x| x.try_into().unwrap())?;
-        let offset = file.stream_position()?;
+        file.seek(std::io::SeekFrom::End(0)).map_err(|e| e.kind().to_status())?;
+        let wrote =
+            file.write(content).map(|x| x.try_into().unwrap()).map_err(|e| e.kind().to_status())?;
+        let offset = file.stream_position().map_err(|e| e.kind().to_status())?;
         Ok((wrote, offset))
     }
 }
@@ -200,7 +203,7 @@ impl Node for HostFile {
         _requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, Status> {
         Ok(metadata_to_node_attributes2(
-            std::fs::metadata(&self.path)?,
+            std::fs::metadata(&self.path).map_err(|e| e.kind().to_status())?,
             fio::Operations::READ_BYTES | fio::Operations::WRITE_BYTES,
         ))
     }
@@ -274,7 +277,7 @@ impl Node for HostDirectory {
         _requested_attributes: fio::NodeAttributesQuery,
     ) -> Result<fio::NodeAttributes2, Status> {
         Ok(metadata_to_node_attributes2(
-            std::fs::metadata(&self.0)?,
+            std::fs::metadata(&self.0).map_err(|e| e.kind().to_status())?,
             fio::Operations::GET_ATTRIBUTES
                 | fio::Operations::UPDATE_ATTRIBUTES
                 | fio::Operations::ENUMERATE
@@ -329,10 +332,10 @@ impl Directory for HostDirectory {
             return Ok((TraversalPosition::End, sink.seal()));
         }
 
-        let mut iter = std::fs::read_dir(&self.0)?;
+        let mut iter = std::fs::read_dir(&self.0).map_err(|e| e.kind().to_status())?;
         let mut count = 0;
         let mut found = false;
-        while let Some(entry) = iter.next().transpose()? {
+        while let Some(entry) = iter.next().transpose().map_err(|e| e.kind().to_status())? {
             if let TraversalPosition::Index(idx) = pos {
                 if count < *idx {
                     count += 1;
@@ -349,7 +352,7 @@ impl Directory for HostDirectory {
                     continue;
                 }
             }
-            let ty = file_type_to_dirent_type(entry.file_type()?);
+            let ty = file_type_to_dirent_type(entry.file_type().map_err(|e| e.kind().to_status())?);
             let entry = EntryInfo::new(entry.ino(), ty);
             match sink.append(&entry, name) {
                 dirents_sink::AppendResult::Ok(sink_out) => sink = sink_out,
@@ -406,11 +409,11 @@ impl MutableDirectory for HostDirectory {
     async fn unlink(self: Arc<Self>, name: &str, must_be_directory: bool) -> Result<(), Status> {
         let path = self.0.join(name);
         if path.is_dir() {
-            std::fs::remove_dir(path)?;
+            std::fs::remove_dir(path).map_err(|e| e.kind().to_status())?;
         } else if must_be_directory {
             return Err(Status::NOT_DIR);
         } else {
-            std::fs::remove_file(path)?;
+            std::fs::remove_file(path).map_err(|e| e.kind().to_status())?;
         }
         Ok(())
     }

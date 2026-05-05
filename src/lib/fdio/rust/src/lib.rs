@@ -687,7 +687,7 @@ impl Namespace {
         channel: zx::Channel,
     ) -> Result<(), zx::Status> {
         let &Self { ns } = self;
-        let path = CString::new(path)?;
+        let path = CString::new(path).map_err(|_| zx::Status::INVALID_ARGS)?;
         let path = path.as_ptr();
         let flags = flags.bits();
 
@@ -708,7 +708,7 @@ impl Namespace {
         channel: fidl::endpoints::ClientEnd<fio::DirectoryMarker>,
     ) -> Result<(), zx::Status> {
         let &Self { ns } = self;
-        let path = CString::new(path)?;
+        let path = CString::new(path).map_err(|_| zx::Status::INVALID_ARGS)?;
         let path = path.as_ptr();
 
         // The channel is always consumed.
@@ -724,7 +724,7 @@ impl Namespace {
     /// This corresponds with fdio_ns_unbind in C.
     pub fn unbind(&self, path: &str) -> Result<(), zx::Status> {
         let &Self { ns } = self;
-        let path = CString::new(path)?;
+        let path = CString::new(path).map_err(|_| zx::Status::INVALID_ARGS)?;
         let path = path.as_ptr();
         let status = unsafe { fdio_sys::fdio_ns_unbind(ns, path) };
         zx::Status::ok(status)

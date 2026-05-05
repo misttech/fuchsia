@@ -14,7 +14,6 @@ use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use zx;
 
 use crate::error::Error;
 

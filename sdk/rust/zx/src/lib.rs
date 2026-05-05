@@ -99,6 +99,7 @@ pub use self::vmar::*;
 pub use self::vmo::*;
 pub use self::wait::*;
 pub use zx_status::*;
+pub use zx_status_ext::*;
 
 /// Prelude containing common utility traits.
 /// Designed for use like `use zx::prelude::*;`

@@ -16,6 +16,7 @@ use std::ops::Deref;
 use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::io::FromRawFd as _;
 use std::pin::Pin;
+use zx_status_ext::StatusExt;
 
 /// An I/O object representing a TCP socket listening for incoming connections.
 ///
@@ -73,7 +74,7 @@ impl TcpListener {
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<(TcpStream, SocketAddr)>> {
-        ready!(EventedFd::poll_readable(&self.0, cx))?;
+        ready!(EventedFd::poll_readable(&self.0, cx)).map_err(|s| s.into_io_error())?;
         match self.0.as_ref().accept() {
             Err(e) => {
                 if e.kind() == io::ErrorKind::WouldBlock {
@@ -296,7 +297,7 @@ impl Future for TcpConnector {
                 stream.need_write(cx);
                 return Poll::Pending;
             }
-            let () = ready!(stream.poll_writable(cx)?);
+            let () = ready!(stream.poll_writable(cx)).map_err(|s| s.into_io_error())?;
             let () = match stream.as_ref().take_error() {
                 Ok(None) => Ok(()),
                 Ok(Some(err)) | Err(err) => Err(err),

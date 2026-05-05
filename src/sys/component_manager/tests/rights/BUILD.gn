@@ -50,6 +50,7 @@ rustc_binary("use_dir_rights_bin") {
   source_root = "use_dir_rights.rs"
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/rust/zx",
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",

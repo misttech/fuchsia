@@ -4,13 +4,15 @@
 
 use fdomain_client::Client;
 use fdomain_client::fidl::{ProtocolMarker, Proxy};
+use fdomain_fuchsia_developer_remotecontrol as rcs;
+use fdomain_fuchsia_io as fio;
 use fidl_fuchsia_developer_remotecontrol_connector::ConnectorMarker;
 use fuchsia_component::client::connect_to_protocol;
 use futures::stream::Stream;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll, ready};
-use {fdomain_fuchsia_developer_remotecontrol as rcs, fdomain_fuchsia_io as fio};
+use zx_status_ext::StatusExt;
 
 /// An FDomain client transport that works over a Fuchsia socket. Uses 32-bit
 /// little endian frame sizes before each frame per the documentation of the
@@ -36,7 +38,7 @@ impl fdomain_client::FDomainTransport for SocketTransport {
 
         while !self.out_buf.is_empty() {
             let res = ready!(self.socket.poll_write_ref(ctx, &self.out_buf))
-                .map_err(|x| Some(x.into()))?;
+                .map_err(|x| Some(x.into_io_error()))?;
             if res == 0 {
                 return Poll::Ready(Err(None));
             }
@@ -71,7 +73,7 @@ impl Stream for SocketTransport {
                     if e == fidl::Status::PEER_CLOSED {
                         return Poll::Ready(None);
                     } else {
-                        return Poll::Ready(Some(Err(e.into())));
+                        return Poll::Ready(Some(Err(e.into_io_error())));
                     }
                 }
                 Poll::Pending => {

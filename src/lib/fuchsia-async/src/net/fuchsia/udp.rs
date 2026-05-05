@@ -13,6 +13,7 @@ use std::net::{self, SocketAddr};
 use std::ops::Deref;
 use std::os::fd::{AsRawFd, RawFd};
 use std::pin::Pin;
+use zx_status_ext::StatusExt;
 
 fn new_socket_address_conversion_error() -> std::io::Error {
     io::Error::other("socket address is not IPv4 or IPv6")
@@ -171,7 +172,7 @@ impl DatagramSocket {
         buf: &mut [u8],
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<(usize, socket2::SockAddr)>> {
-        ready!(EventedFd::poll_readable(&self.0, cx))?;
+        ready!(EventedFd::poll_readable(&self.0, cx)).map_err(|s| s.into_io_error())?;
         // SAFETY: socket2::Socket::recv_from takes a `&mut [MaybeUninit<u8>]`, so it's necessary to
         // type-pun `&mut [u8]`. This is safe because the bytes are known to be initialized, and
         // MaybeUninit's layout is guaranteed to be equivalent to its wrapped type.
@@ -221,7 +222,7 @@ impl DatagramSocket {
 
     /// Attempt to send a datagram via the socket without blocking.
     pub fn async_send(&self, buf: &[u8], cx: &mut Context<'_>) -> Poll<io::Result<usize>> {
-        ready!(EventedFd::poll_writable(&self.0, cx))?;
+        ready!(EventedFd::poll_writable(&self.0, cx)).map_err(|s| s.into_io_error())?;
         self.send_result_to_poll_result(self.0.as_ref().send(buf), cx)
     }
 
@@ -233,7 +234,7 @@ impl DatagramSocket {
         addr: &socket2::SockAddr,
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<usize>> {
-        ready!(EventedFd::poll_writable(&self.0, cx))?;
+        ready!(EventedFd::poll_writable(&self.0, cx)).map_err(|s| s.into_io_error())?;
         self.send_result_to_poll_result(self.0.as_ref().send_to(buf, addr), cx)
     }
 
@@ -254,7 +255,7 @@ impl DatagramSocket {
         addr: &socket2::SockAddr,
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<usize>> {
-        ready!(EventedFd::poll_writable(&self.0, cx))?;
+        ready!(EventedFd::poll_writable(&self.0, cx)).map_err(|s| s.into_io_error())?;
         self.send_result_to_poll_result(self.0.as_ref().send_to_vectored(bufs, addr), cx)
     }
 

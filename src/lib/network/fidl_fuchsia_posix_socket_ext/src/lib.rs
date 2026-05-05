@@ -7,6 +7,7 @@
 
 use fidl_fuchsia_posix_socket as fposix_socket;
 use fidl_fuchsia_posix_socket_packet as fpacket;
+use zx::StatusExt;
 
 /// Creates a datagram socket using the given provider.
 pub async fn datagram_socket(
@@ -20,11 +21,11 @@ pub async fn datagram_socket(
             result.map_err(|errno| std::io::Error::from_raw_os_error(errno.into_primitive()))?;
         let fd = match response {
             fposix_socket::ProviderDatagramSocketResponse::DatagramSocket(client_end) => {
-                fdio::create_fd(client_end.into()).map_err(zx::Status::into_io_error)
+                fdio::create_fd(client_end.into()).map_err(|status| status.into_io_error())
             }
             fposix_socket::ProviderDatagramSocketResponse::SynchronousDatagramSocket(
                 client_end,
-            ) => fdio::create_fd(client_end.into()).map_err(zx::Status::into_io_error),
+            ) => fdio::create_fd(client_end.into()).map_err(|status| status.into_io_error()),
         }?;
         Ok(fd.into())
     }
@@ -46,10 +47,10 @@ pub async fn datagram_socket_with_options(
         let fd = match response {
             fposix_socket::ProviderDatagramSocketWithOptionsResponse::DatagramSocket(
                 client_end,
-            ) => fdio::create_fd(client_end.into()).map_err(zx::Status::into_io_error),
+            ) => fdio::create_fd(client_end.into()).map_err(|status| status.into_io_error()),
             fposix_socket::ProviderDatagramSocketWithOptionsResponse::SynchronousDatagramSocket(
                 client_end,
-            ) => fdio::create_fd(client_end.into()).map_err(zx::Status::into_io_error),
+            ) => fdio::create_fd(client_end.into()).map_err(|status| status.into_io_error()),
         }?;
         Ok(fd.into())
     }
@@ -65,7 +66,7 @@ pub async fn packet_socket(
     Ok(async move {
         let client_end =
             result.map_err(|errno| std::io::Error::from_raw_os_error(errno.into_primitive()))?;
-        Ok(fdio::create_fd(client_end.into()).map_err(zx::Status::into_io_error)?.into())
+        Ok(fdio::create_fd(client_end.into()).map_err(|status| status.into_io_error())?.into())
     }
     .await)
 }

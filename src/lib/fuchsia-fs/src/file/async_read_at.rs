@@ -15,6 +15,7 @@ use std::io;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use zx_status_ext::StatusExt;
 
 /// Trait for reading at a given offset asynchronously.
 /// This is basically `futures::io::AsyncRead` with an extra offset.

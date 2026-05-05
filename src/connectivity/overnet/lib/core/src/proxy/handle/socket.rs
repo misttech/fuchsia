@@ -14,6 +14,7 @@ use futures::ready;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use zx_status;
+use zx_status_ext::IoErrorKindExt;
 
 pub(crate) struct Socket {
     socket: AsyncSocket,
@@ -81,7 +82,8 @@ impl<'a> IO<'a> for SocketReader<'a> {
             msg.0.resize(MIN_READ_LEN, 0u8);
         }
         let read_result = (|| {
-            let n = ready!(Pin::new(&mut &socket.socket).poll_read(fut_ctx, &mut msg.0))?;
+            let n = ready!(Pin::new(&mut &socket.socket).poll_read(fut_ctx, &mut msg.0))
+                .map_err(|e| e.kind().to_status())?;
             if n == 0 {
                 return Poll::Ready(Err(zx_status::Status::PEER_CLOSED));
             }
@@ -107,7 +109,8 @@ impl IO<'_> for SocketWriter {
         fut_ctx: &mut Context<'_>,
     ) -> Poll<Result<(), zx_status::Status>> {
         while !msg.0.is_empty() {
-            let n = ready!(Pin::new(&mut &socket.socket).poll_write(fut_ctx, &msg.0))?;
+            let n = ready!(Pin::new(&mut &socket.socket).poll_write(fut_ctx, &msg.0))
+                .map_err(|e| e.kind().to_status())?;
             msg.0.drain(..n);
         }
         Poll::Ready(Ok(()))

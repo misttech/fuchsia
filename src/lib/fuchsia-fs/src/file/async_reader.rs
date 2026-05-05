@@ -10,6 +10,7 @@ use std::convert::TryInto as _;
 use std::future::Future as _;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use zx_status_ext::StatusExt;
 
 use flex_client::fidl::Proxy as _;
 
@@ -138,7 +139,7 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::future::poll_fn;
     use futures::io::AsyncReadExt as _;
-    use futures::{join, StreamExt as _, TryStreamExt as _};
+    use futures::{StreamExt as _, TryStreamExt as _, join};
     use std::convert::TryFrom as _;
     use tempfile::TempDir;
 

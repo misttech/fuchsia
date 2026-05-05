@@ -23,6 +23,7 @@ use std::convert::TryFrom as _;
 use std::net::SocketAddr;
 use std::num::TryFromIntError;
 use std::sync::{Arc, LazyLock};
+use zx::StatusExt;
 
 pub fn new_root_cert_store() -> Arc<RootCertStore> {
     // It can be expensive to parse the certs, so cache them
@@ -263,7 +264,7 @@ pub(crate) fn stream_socket<T: ProviderConnector>(
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
         .map_err(|e| std::io::Error::from_raw_os_error(e.into_primitive()))?;
 
-    Ok(fdio::create_fd(sock.into())?.into())
+    Ok(fdio::create_fd(sock.into()).map_err(|s| s.into_io_error())?.into())
 }
 
 #[cfg(test)]

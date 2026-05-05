@@ -11,6 +11,7 @@ rustc_test("fdomain-connection-test-bin") {
   deps = [
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain",
+    "//sdk/rust/zx-status-ext",
     "//src/developer/remote-control/fidl:fuchsia.developer.remotecontrol.connector_rust",
     "//src/lib/fdomain/client",
     "//src/lib/fidl/rust/fidl",

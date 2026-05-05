@@ -34,6 +34,7 @@ rustc_library("fuchsia-bluetooth") {
   if (is_fuchsia) {
     deps += [
       "//sdk/rust/zx",
+      "//sdk/rust/zx-status-ext",
       "//src/lib/diagnostics/inspect/contrib/rust",
       "//src/lib/diagnostics/inspect/derive",
       "//src/lib/diagnostics/inspect/rust",

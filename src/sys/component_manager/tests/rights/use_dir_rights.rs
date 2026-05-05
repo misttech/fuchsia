@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use fidl_fidl_test_components as ftest;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt, TryStreamExt};
 use std::io;
-use {fidl_fidl_test_components as ftest, fidl_fuchsia_io as fio, fuchsia_async as fasync};
+use zx::StatusExt;
 
 /// Contains all the information required to verify that a particular path contains some set of
 /// rights.
@@ -36,7 +39,7 @@ impl RightsTestCase {
 
     /// Verifies that the rights are correctly implemented for the type.
     fn verify(&self) -> io::Result<()> {
-        fdio::open_fd(self.path, self.rights)?;
+        fdio::open_fd(self.path, self.rights).map_err(|s| s.into_io_error())?;
         for invalid_right in self.unavailable_rights() {
             if let Ok(_) = fdio::open_fd(self.path, invalid_right) {
                 return Err(io::Error::other(format!(

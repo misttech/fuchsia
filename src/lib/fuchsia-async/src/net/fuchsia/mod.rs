@@ -21,6 +21,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::Poll;
 use std::{fmt, mem};
+use zx_status_ext::StatusExt;
 
 use crate::runtime::{EHandle, PacketReceiver, ReceiverRegistration};
 
@@ -264,7 +265,7 @@ impl<T: AsRawFd + Read> AsyncRead for EventedFd<T> {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<Result<usize, io::Error>> {
-        ready!(EventedFd::poll_readable(&*self, cx))?;
+        ready!(EventedFd::poll_readable(&*self, cx)).map_err(|s| s.into_io_error())?;
         let res = (*self).as_mut().read(buf);
         if let Err(e) = &res
             && e.kind() == io::ErrorKind::WouldBlock
@@ -284,7 +285,7 @@ impl<T: AsRawFd + Write> AsyncWrite for EventedFd<T> {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        ready!(EventedFd::poll_writable(&*self, cx))?;
+        ready!(EventedFd::poll_writable(&*self, cx)).map_err(|s| s.into_io_error())?;
         let res = (*self).as_mut().write(buf);
         if let Err(e) = &res
             && e.kind() == io::ErrorKind::WouldBlock
@@ -316,7 +317,7 @@ where
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<Result<usize, io::Error>> {
-        ready!(EventedFd::poll_readable(*self, cx))?;
+        ready!(EventedFd::poll_readable(*self, cx)).map_err(|s| s.into_io_error())?;
         let res = (*self).as_ref().read(buf);
         if let Err(e) = &res
             && e.kind() == io::ErrorKind::WouldBlock
@@ -338,7 +339,7 @@ where
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        ready!(EventedFd::poll_writable(*self, cx))?;
+        ready!(EventedFd::poll_writable(*self, cx)).map_err(|s| s.into_io_error())?;
         let res = (*self).as_ref().write(buf);
         if let Err(e) = &res
             && e.kind() == io::ErrorKind::WouldBlock

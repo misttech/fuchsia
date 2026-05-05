@@ -16,6 +16,7 @@ use lowpan_driver_common::{AsyncConditionWait, Driver as LowpanDriver};
 use openthread::ot::SrpServerLeaseInfo;
 use otsys::OT_BORDER_AGENT_MAX_EPHEMERAL_KEY_TIMEOUT;
 use std::net::Ipv6Addr;
+use zx::IoErrorKindExt;
 
 const EPSKC_PORT: u16 = 61632;
 const ROUTER_ID_OFFSET: u8 = 10;
@@ -554,7 +555,7 @@ where
         let mut inbound_buffer: Vec<u8> = Vec::new();
 
         client_socket.read_datagram(&mut inbound_buffer).now_or_never();
-        client_socket.write_all(cmd.as_bytes()).await?;
+        client_socket.write_all(cmd.as_bytes()).await.map_err(|e| e.kind().to_status())?;
         let fut = async {
             loop {
                 client_socket.read_datagram(&mut inbound_buffer).await?;

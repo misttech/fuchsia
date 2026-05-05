@@ -9,7 +9,7 @@ use once_cell::sync::OnceCell;
 use serde_json::Value;
 use std::fs::read_dir;
 use std::path::{Path, PathBuf};
-use zx::{Status, Vmo};
+use zx::{IoErrorKindExt, Status, Vmo};
 
 pub mod macros {
     pub use crate::{fx_err_and_bail, parse_arg, with_line};
@@ -124,8 +124,8 @@ where
 }
 
 pub fn find_file(dir: &Path, pattern: &str) -> Result<PathBuf, Status> {
-    for entry in read_dir(dir)? {
-        let path = entry?.path();
+    for entry in read_dir(dir).map_err(|e| e.kind().to_status())? {
+        let path = entry.map_err(|e| e.kind().to_status())?.path();
         if path.ends_with(pattern) {
             return Ok(path);
         }

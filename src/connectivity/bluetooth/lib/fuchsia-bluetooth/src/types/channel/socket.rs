@@ -11,7 +11,7 @@ use log::error;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use zx;
+use zx_status_ext::IoErrorKindExt;
 
 use super::{Connection, ConnectionBackendType};
 
@@ -100,7 +100,8 @@ impl Sink<Vec<u8>> for SocketConnection {
         let this = self.get_mut();
         use futures::io::AsyncWrite;
         while let Some(item) = this.send_buffer.front() {
-            let res = Pin::new(&mut this.socket).poll_write(cx, item).map_err(zx::Status::from);
+            let res =
+                Pin::new(&mut this.socket).poll_write(cx, item).map_err(|e| e.kind().to_status());
             match res {
                 Poll::Ready(Ok(size)) => {
                     if size == item.len() {
@@ -119,14 +120,14 @@ impl Sink<Vec<u8>> for SocketConnection {
                 Poll::Pending => return Poll::Pending,
             }
         }
-        Pin::new(&mut this.socket).poll_flush(cx).map_err(zx::Status::from)
+        Pin::new(&mut this.socket).poll_flush(cx).map_err(|e| e.kind().to_status())
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         ready!(Sink::poll_flush(self.as_mut(), cx))?;
         let this = self.get_mut();
         use futures::io::AsyncWrite as _;
-        Pin::new(&mut this.socket).poll_close(cx).map_err(zx::Status::from)
+        Pin::new(&mut this.socket).poll_close(cx).map_err(|e| e.kind().to_status())
     }
 }
 

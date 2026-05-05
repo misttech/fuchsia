@@ -70,6 +70,7 @@ rustc_library(
     }),
     with_host_unit_tests = True,
     deps = [
+        "//sdk/rust/zx-status-ext",
         "//src/lib/fuchsia-sync",
         "//third_party/rust_crates/vendor:futures",
         "//third_party/rust_crates/vendor:pin-project-lite",

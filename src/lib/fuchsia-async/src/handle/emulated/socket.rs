@@ -12,6 +12,7 @@ use futures::ready;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use zx_status;
+use zx_status_ext::StatusExt;
 
 /// An I/O object representing a `Socket`.
 pub struct Socket {
@@ -134,7 +135,7 @@ impl AsyncWrite for Socket {
         _cx: &mut std::task::Context<'_>,
         bytes: &[u8],
     ) -> Poll<Result<usize, std::io::Error>> {
-        Poll::Ready(self.socket.write(bytes).map_err(|e| e.into()))
+        Poll::Ready(self.socket.write(bytes).map_err(|e| e.into_io_error()))
     }
 
     fn poll_flush(
@@ -164,7 +165,7 @@ impl AsyncRead for Socket {
                 assert_ne!(x, 0);
                 Poll::Ready(Ok(x))
             }
-            Err(x) => Poll::Ready(Err(x.into())),
+            Err(x) => Poll::Ready(Err(x.into_io_error())),
         }
     }
 }
@@ -175,7 +176,7 @@ impl AsyncWrite for &'_ Socket {
         _cx: &mut std::task::Context<'_>,
         bytes: &[u8],
     ) -> Poll<Result<usize, std::io::Error>> {
-        Poll::Ready(self.socket.write(bytes).map_err(|e| e.into()))
+        Poll::Ready(self.socket.write(bytes).map_err(|e| e.into_io_error()))
     }
 
     fn poll_flush(
@@ -205,7 +206,7 @@ impl AsyncRead for &'_ Socket {
                 assert_ne!(x, 0);
                 Poll::Ready(Ok(x))
             }
-            Err(x) => Poll::Ready(Err(x.into())),
+            Err(x) => Poll::Ready(Err(x.into_io_error())),
         }
     }
 }

@@ -4,8 +4,9 @@
 
 //! Type-safe bindings for Zircon status.
 
-use std::ffi::NulError;
-use std::{error, fmt, io};
+#![no_std]
+
+use core::fmt;
 use zx_types as sys;
 
 // Creates associated constants of TypeName of the form
@@ -33,12 +34,12 @@ macro_rules! assoc_values {
             }
         }
 
-        impl ::std::fmt::Debug for $typename {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        impl ::core::fmt::Debug for $typename {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 f.write_str(concat!(stringify!($typename), "("))?;
                 match self.assoc_const_name() {
                     Some(name) => f.write_str(&name)?,
-                    None => ::std::fmt::Debug::fmt(&self.0, f)?,
+                    None => ::core::fmt::Debug::fmt(&self.0, f)?,
                 }
                 f.write_str(")")
             }
@@ -249,76 +250,8 @@ assoc_values!(Status, [
 // LINT.ThenChange(//zircon/vdso/errors.fidl)
 
 impl Status {
-    pub fn into_io_error(self) -> io::Error {
-        self.into()
-    }
-
     pub fn from_result(res: Result<(), Self>) -> Self {
         res.into()
-    }
-}
-
-impl From<io::ErrorKind> for Status {
-    fn from(kind: io::ErrorKind) -> Self {
-        use std::io::ErrorKind::*;
-        match kind {
-            NotFound => Status::NOT_FOUND,
-            PermissionDenied => Status::ACCESS_DENIED,
-            ConnectionRefused => Status::IO_REFUSED,
-            ConnectionAborted => Status::PEER_CLOSED,
-            AddrInUse => Status::ALREADY_BOUND,
-            AddrNotAvailable => Status::UNAVAILABLE,
-            BrokenPipe => Status::PEER_CLOSED,
-            AlreadyExists => Status::ALREADY_EXISTS,
-            WouldBlock => Status::SHOULD_WAIT,
-            InvalidInput => Status::INVALID_ARGS,
-            TimedOut => Status::TIMED_OUT,
-            Interrupted => Status::INTERRUPTED_RETRY,
-            UnexpectedEof | WriteZero | ConnectionReset | NotConnected | Other | _ => Status::IO,
-        }
-    }
-}
-
-impl From<Status> for io::ErrorKind {
-    fn from(status: Status) -> io::ErrorKind {
-        use std::io::ErrorKind::*;
-        match status {
-            Status::INTERRUPTED_RETRY => Interrupted,
-            Status::BAD_HANDLE => BrokenPipe,
-            Status::TIMED_OUT => TimedOut,
-            Status::SHOULD_WAIT => WouldBlock,
-            Status::PEER_CLOSED => ConnectionAborted,
-            Status::NOT_FOUND => NotFound,
-            Status::ALREADY_EXISTS => AlreadyExists,
-            Status::ALREADY_BOUND => AlreadyExists,
-            Status::UNAVAILABLE => AddrNotAvailable,
-            Status::ACCESS_DENIED => PermissionDenied,
-            Status::IO_REFUSED => ConnectionRefused,
-            Status::IO_DATA_INTEGRITY => InvalidData,
-
-            Status::BAD_PATH | Status::INVALID_ARGS | Status::OUT_OF_RANGE | Status::WRONG_TYPE => {
-                InvalidInput
-            }
-
-            Status::OK
-            | Status::NEXT
-            | Status::STOP
-            | Status::NO_SPACE
-            | Status::FILE_BIG
-            | Status::NOT_FILE
-            | Status::NOT_DIR
-            | Status::IO_DATA_LOSS
-            | Status::IO
-            | Status::CANCELED
-            | Status::BAD_STATE
-            | Status::BUFFER_TOO_SMALL
-            | Status::BAD_SYSCALL
-            | Status::INTERNAL
-            | Status::NOT_SUPPORTED
-            | Status::NO_RESOURCES
-            | Status::NO_MEMORY
-            | _ => Other,
-        }
     }
 }
 
@@ -331,25 +264,7 @@ impl fmt::Display for Status {
     }
 }
 
-impl error::Error for Status {}
-
-impl From<io::Error> for Status {
-    fn from(err: io::Error) -> Status {
-        err.kind().into()
-    }
-}
-
-impl From<Status> for io::Error {
-    fn from(status: Status) -> io::Error {
-        io::Error::from(io::ErrorKind::from(status))
-    }
-}
-
-impl From<NulError> for Status {
-    fn from(_error: NulError) -> Status {
-        Status::INVALID_ARGS
-    }
-}
+impl core::error::Error for Status {}
 
 impl From<Result<(), Status>> for Status {
     fn from(res: Result<(), Status>) -> Status {
@@ -368,6 +283,7 @@ impl From<Status> for Result<(), Status> {
 
 #[cfg(test)]
 mod test {
+    extern crate std;
     use super::Status;
 
     #[test]
@@ -379,7 +295,7 @@ mod test {
             ("Status(-5050)", Status(-5050)),
         ];
         for &(expected, value) in &cases {
-            assert_eq!(expected, format!("{:?}", value));
+            assert_eq!(expected, std::format!("{:?}", value));
         }
     }
 

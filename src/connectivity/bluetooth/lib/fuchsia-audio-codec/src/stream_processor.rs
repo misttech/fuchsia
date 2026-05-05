@@ -19,6 +19,7 @@ use std::collections::{HashSet, VecDeque};
 use std::mem;
 use std::pin::Pin;
 use std::sync::Arc;
+use zx::StatusExt;
 
 use crate::buffer_collection_constraints::buffer_collection_constraints_default;
 use crate::sysmem_allocator::{BufferName, SysmemAllocatedBuffers, SysmemAllocation};
@@ -577,7 +578,7 @@ impl StreamProcessor {
                 if space_left as usize > left_to_write {
                     let write_buf = &bytes[bytes_idx..];
                     let write_len = write_buf.len();
-                    buffer_vmo.write(write_buf, size)?;
+                    buffer_vmo.write(write_buf, size).map_err(|s| s.into_io_error())?;
                     bytes_idx += write_len;
                     write.input_cursor = Some((idx, size + write_len as u64));
                     assert!(bytes.len() == bytes_idx);
@@ -586,7 +587,7 @@ impl StreamProcessor {
                 let end_idx = bytes_idx + space_left as usize;
                 let write_buf = &bytes[bytes_idx..end_idx];
                 let write_len = write_buf.len();
-                buffer_vmo.write(write_buf, size)?;
+                buffer_vmo.write(write_buf, size).map_err(|s| s.into_io_error())?;
                 bytes_idx += write_len;
                 // this buffer is done, ship it!
                 assert_eq!(size + write_len as u64, write.input_packet_size);
