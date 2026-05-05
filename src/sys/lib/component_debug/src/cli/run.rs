@@ -211,9 +211,16 @@ pub async fn run_cmd<W: std::io::Write>(
     }
 
     writeln!(writer, "Resolving component instance...")?;
-    resolve_instance(&lifecycle_controller, &moniker)
-        .await
-        .map_err(|e| format_resolve_error(&moniker, e))?;
+    if let Err(e) = resolve_instance(&lifecycle_controller, &moniker).await {
+        writeln!(writer, "Cleaning up component instance...")?;
+        if let Err(de) =
+            destroy_instance_in_collection(&lifecycle_controller, &parent, collection, child_name)
+                .await
+        {
+            writeln!(writer, "Warning: Failed to clean up component instance: {:?}", de)?;
+        }
+        return Err(format_resolve_error(&moniker, e));
+    }
 
     writeln!(writer, "Starting component instance...")?;
     let start_args = fcomponent::StartChildArgs { numbered_handles, ..Default::default() };
@@ -595,6 +602,103 @@ mod test {
         )
         .await;
         response.unwrap();
+        Ok(())
+    }
+
+    fn setup_fake_lifecycle_controller_resolve_fail_cleanup(
+        expected_parent_moniker: &'static str,
+        expected_collection: &'static str,
+        expected_name: &'static str,
+        expected_url: &'static str,
+        expected_moniker: &'static str,
+        destroy_sender: futures::channel::oneshot::Sender<()>,
+    ) -> fsys::LifecycleControllerProxy {
+        let (lifecycle_controller, mut stream) =
+            create_proxy_and_stream::<fsys::LifecycleControllerMarker>();
+        fuchsia_async::Task::local(async move {
+            let req = stream.try_next().await.unwrap().unwrap();
+            match req {
+                fsys::LifecycleControllerRequest::CreateInstance {
+                    parent_moniker,
+                    collection,
+                    decl,
+                    responder,
+                    ..
+                } => {
+                    assert_eq!(
+                        Moniker::parse_str(expected_parent_moniker),
+                        Moniker::parse_str(&parent_moniker)
+                    );
+                    assert_eq!(expected_collection, collection.name);
+                    assert_eq!(expected_name, decl.name.unwrap());
+                    assert_eq!(expected_url, decl.url.unwrap());
+                    responder.send(Ok(())).unwrap();
+                }
+                _ => panic!("Unexpected Lifecycle Controller request: {:?}", req),
+            }
+
+            let req = stream.try_next().await.unwrap().unwrap();
+            match req {
+                fsys::LifecycleControllerRequest::ResolveInstance { moniker, responder } => {
+                    assert_eq!(Moniker::parse_str(expected_moniker), Moniker::parse_str(&moniker));
+                    responder.send(Err(fsys::ResolveError::PackageNotFound)).unwrap();
+                }
+                _ => panic!("Unexpected Lifecycle Controller request: {:?}", req),
+            }
+
+            let req = stream.try_next().await.unwrap().unwrap();
+            match req {
+                fsys::LifecycleControllerRequest::DestroyInstance {
+                    parent_moniker,
+                    child,
+                    responder,
+                } => {
+                    assert_eq!(
+                        Moniker::parse_str(expected_parent_moniker),
+                        Moniker::parse_str(&parent_moniker)
+                    );
+                    assert_eq!(expected_name, child.name);
+                    assert_eq!(expected_collection, child.collection.unwrap());
+                    responder.send(Ok(())).unwrap();
+                    let _ = destroy_sender.send(());
+                }
+                _ => panic!("Unexpected Lifecycle Controller request: {:?}", req),
+            }
+        })
+        .detach();
+        lifecycle_controller
+    }
+
+    #[fuchsia_async::run_singlethreaded(test)]
+    async fn test_resolve_fail_cleanup() -> Result<()> {
+        let mut output = Vec::new();
+        let (destroy_sender, mut destroy_receiver) = futures::channel::oneshot::channel::<()>();
+
+        let lifecycle_controller = setup_fake_lifecycle_controller_resolve_fail_cleanup(
+            "/core",
+            "ffx-laboratory",
+            "test",
+            "fuchsia-pkg://fuchsia.com/test#meta/test.cm",
+            "/core/ffx-laboratory:test",
+            destroy_sender,
+        );
+        let response = run_cmd(
+            "/core/ffx-laboratory:test".try_into().unwrap(),
+            "fuchsia-pkg://fuchsia.com/test#meta/test.cm".try_into().unwrap(),
+            false,
+            false,
+            vec![],
+            move || {
+                let lifecycle_controller = lifecycle_controller.clone();
+                async move { Ok(lifecycle_controller) }.boxed()
+            },
+            &mut output,
+        )
+        .await;
+
+        assert!(response.is_err());
+        // Verify that destroy was called by checking the channel
+        assert!(destroy_receiver.try_recv().unwrap().is_some());
         Ok(())
     }
 }
