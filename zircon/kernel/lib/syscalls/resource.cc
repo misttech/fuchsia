@@ -59,7 +59,7 @@ zx_status_t sys_resource_create(zx_handle_t parent_rsrc, uint32_t options, uint6
 
   // Validate the parent resource the same way we would validate any
   // resource usage in another syscall.
-  if (validate_ranged_resource(parent, kind, base, size) != ZX_OK) {
+  if (validate_ranged_resource(parent, kind, base, size, StrictMmioRangeValidation::Yes) != ZX_OK) {
     return ZX_ERR_ACCESS_DENIED;
   }
 

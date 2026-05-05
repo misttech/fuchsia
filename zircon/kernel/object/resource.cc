@@ -69,7 +69,8 @@ zx_status_t validate_resource_kind_base(zx_handle_t handle, zx_rsrc_kind_t kind,
 }
 
 zx_status_t validate_ranged_resource(fbl::RefPtr<ResourceDispatcher> resource, zx_rsrc_kind_t kind,
-                                     uintptr_t base, size_t size) {
+                                     uintptr_t base, size_t size,
+                                     StrictMmioRangeValidation strict_validation) {
   // Root gets access to almost everything, but there are still resource ranges
   // it is not permitted to mint. For example:
   //
@@ -85,9 +86,22 @@ zx_status_t validate_ranged_resource(fbl::RefPtr<ResourceDispatcher> resource, z
   // which touches any disallowed ranges.
   //
   if (resource->get_kind() == ZX_RSRC_KIND_ROOT || resource->IsRangedRoot(kind)) {
-    if (!root_resource_filter_can_access_region(base, size, kind)) {
+    // If we are creating an MMIO resource from one of the root resources, make
+    // sure that range being requested does not share a page with any of the
+    // kernel reserved regions.
+    //
+    uint64_t effective_base = base;
+    size_t effective_size = size;
+
+    if (kind == ZX_RSRC_KIND_MMIO) {
+      effective_base = RoundDownPageSize(base);
+      effective_size = RoundUpPageSize((base - effective_base) + size);
+    }
+
+    if (!root_resource_filter_can_access_region(effective_base, effective_size, kind)) {
       return ZX_ERR_ACCESS_DENIED;
     }
+
     return ZX_OK;
   }
 
@@ -97,12 +111,14 @@ zx_status_t validate_ranged_resource(fbl::RefPtr<ResourceDispatcher> resource, z
 
   uint64_t rbase = resource->get_base();
   size_t rsize = resource->get_size();
+  uint64_t aligned_rbase = rbase;
+  size_t aligned_rsize = rsize;
+
   // In the specific case of MMIO, everything is rounded to kPageSize units
   // because it's the smallest unit we can operate at with the MMU.
   if (resource->get_kind() == ZX_RSRC_KIND_MMIO) {
-    const uint64_t aligned_rbase = RoundDownPageSize(rbase);
-    rsize = RoundUpPageSize((rbase - aligned_rbase) + rsize);
-    rbase = aligned_rbase;
+    aligned_rbase = RoundDownPageSize(rbase);
+    aligned_rsize = RoundUpPageSize((rbase - aligned_rbase) + rsize);
   }
   LTRACEF("req [base %#lx size %#lx] and resource [base %#lx size %#lx]\n", base, size, rbase,
           rsize);
@@ -119,7 +135,11 @@ zx_status_t validate_ranged_resource(fbl::RefPtr<ResourceDispatcher> resource, z
   // the resource's address space  allocation.
   uintptr_t ibase;
   size_t isize;
-  if (!GetIntersect(base, size, rbase, rsize, &ibase, &isize) || isize != size || ibase != base) {
+  const bool intersection_result =
+      (strict_validation == StrictMmioRangeValidation::No)
+          ? GetIntersect(base, size, aligned_rbase, aligned_rsize, &ibase, &isize)
+          : GetIntersect(base, size, rbase, rsize, &ibase, &isize);
+  if (!intersection_result || isize != size || ibase != base) {
     return ZX_ERR_OUT_OF_RANGE;
   }
 
@@ -137,7 +157,7 @@ zx_status_t validate_ranged_resource(fbl::RefPtr<ResourceDispatcher> resource, z
 // ++ ZX_ERR_OUT_OF_RANGE: The range specified by |base| and |Len| is not granted by this
 // resource.
 zx_status_t validate_ranged_resource(zx_handle_t handle, zx_rsrc_kind_t kind, uintptr_t base,
-                                     size_t size) {
+                                     size_t size, StrictMmioRangeValidation strict_validation) {
   auto up = ProcessDispatcher::GetCurrent();
   fbl::RefPtr<ResourceDispatcher> resource;
   auto status = up->handle_table().GetDispatcher(*up, handle, &resource);
@@ -145,5 +165,5 @@ zx_status_t validate_ranged_resource(zx_handle_t handle, zx_rsrc_kind_t kind, ui
     return status;
   }
 
-  return validate_ranged_resource(resource, kind, base, size);
+  return validate_ranged_resource(resource, kind, base, size, strict_validation);
 }
