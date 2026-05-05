@@ -71,7 +71,7 @@ async fn rename_with_insufficient_rights() {
             .await
             .expect("rename failed");
         assert!(status.is_err());
-        assert_eq!(status.err().unwrap(), zx::Status::BAD_HANDLE.into_raw());
+        assert_eq!(status.err().unwrap(), zx::Status::ACCESS_DENIED.into_raw());
     }
 }
 

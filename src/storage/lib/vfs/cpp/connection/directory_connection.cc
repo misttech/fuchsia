@@ -426,7 +426,7 @@ void DirectoryConnection::Rename(RenameRequestView request, RenameCompleter::Syn
   // TODO(https://fxbug.dev/346585458): This operation should require the MODIFY_DIRECTORY right
   // instead of the WRITE_BYTES right.
   if (!(rights() & fuchsia_io::Rights::kWriteBytes)) {
-    completer.ReplyError(ZX_ERR_BAD_HANDLE);
+    completer.ReplyError(ZX_ERR_ACCESS_DENIED);
     return;
   }
   auto fs = vfs();

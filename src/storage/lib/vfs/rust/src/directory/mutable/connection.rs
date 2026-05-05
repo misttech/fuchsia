@@ -200,7 +200,7 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
         dst: String,
     ) -> Result<(), Status> {
         if !self.base.options.rights.contains(fio::Rights::MODIFY_DIRECTORY) {
-            return Err(Status::BAD_HANDLE);
+            return Err(Status::ACCESS_DENIED);
         }
 
         let src = Path::validate_and_split(src)?;
