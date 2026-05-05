@@ -75,11 +75,7 @@ config("thread-pointer-abi") {
     cflags = [ "-mcmodel=kernel" ]
     asmflags = cflags
     ldflags = cflags
-
-    # TODO(https://fxbug.dev/507570739): Need equivalent rustflags.  As this
-    # only affects stack-protector and safe-stack, a workaround would be
-    # rustflags plumbing to ensure both are disabled in every function.
-    rustflags = [ "--rust-is-too-dangerous-until-we-plumb-stack-protector" ]
+    rustflags = [ "-Ccode-model=kernel" ]
   }
 }
 

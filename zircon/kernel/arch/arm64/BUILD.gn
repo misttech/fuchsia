@@ -49,11 +49,7 @@ if (toolchain_environment == "kernel.phys" ||
     cflags = [ "-mtp=el1" ]
     asmflags = cflags
     ldflags = cflags
-
-    # TODO(https://fxbug.dev/507570739): Need equivalent rustflags.  As this
-    # only affects stack-protector, a workaround would be rustflags plumbing to
-    # ensure stack-protector is disabled in every function.
-    rustflags = [ "--rust-is-too-dangerous-until-we-plumb-stack-protector" ]
+    rustflags = [ "-Ctarget-feature=+tpidr-el1" ]
   }
 
   # This is used pervasively throughout the kernel on arm64.
