@@ -20,9 +20,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "toml_datetime",
+    package_name = "toml",
     package_url = "https://github.com/toml-rs/toml",
-    package_version = "0.7.5+spec-1.1.0",
+    package_version = "1.1.2+spec-1.1.0",
 )
 
 license(
@@ -35,7 +35,7 @@ license(
 )
 
 rust_library(
-    name = "toml_datetime",
+    name = "toml",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -53,18 +53,20 @@ rust_library(
         ],
     ),
     crate_features = [
-        "alloc",
         "default",
+        "display",
+        "parse",
+        "serde",
         "std",
     ],
     crate_root = "src/lib.rs",
-    edition = "2021",
+    edition = "2024",
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=toml_datetime",
+        "crate-name=toml",
         "manual",
         "noclippy",
         "norustfmt",
@@ -77,5 +79,13 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.7.5+spec-1.1.0",
+    version = "1.1.2+spec-1.1.0",
+    deps = [
+        "//third_party/rust_crates/vendor/serde_core-1.0.228:serde_core",
+        "//third_party/rust_crates/vendor/serde_spanned-1.1.1:serde_spanned",
+        "//third_party/rust_crates/vendor/toml_datetime-1.1.1-spec-1.1.0:toml_datetime",
+        "//third_party/rust_crates/vendor/toml_parser-1.1.2-spec-1.1.0:toml_parser",
+        "//third_party/rust_crates/vendor/toml_writer-1.1.1-spec-1.1.0:toml_writer",
+        "//third_party/rust_crates/vendor/winnow-1.0.1:winnow",
+    ],
 )

@@ -81,8 +81,8 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/indexmap-2.13.0:indexmap",
         "//third_party/rust_crates/vendor/toml_datetime-0.7.5-spec-1.1.0:toml_datetime",
-        "//third_party/rust_crates/vendor/toml_parser-1.0.6-spec-1.1.0:toml_parser",
-        "//third_party/rust_crates/vendor/toml_writer-1.0.6-spec-1.1.0:toml_writer",
+        "//third_party/rust_crates/vendor/toml_parser-1.1.2-spec-1.1.0:toml_parser",
+        "//third_party/rust_crates/vendor/toml_writer-1.1.1-spec-1.1.0:toml_writer",
         "//third_party/rust_crates/vendor/winnow-0.7.13:winnow",
     ],
 )
