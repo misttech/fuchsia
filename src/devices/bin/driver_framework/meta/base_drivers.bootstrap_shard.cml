@@ -171,6 +171,7 @@
                 "fuchsia.hardware.trippoint.DebugService",
                 "fuchsia.hardware.trippoint.Service",
                 "fuchsia.hardware.usb.peripheral.Service",
+                "fuchsia.input.report.Service",
                 "fuchsia.power.battery.ChargerService",
                 "fuchsia.power.battery.InfoService",
             ],
