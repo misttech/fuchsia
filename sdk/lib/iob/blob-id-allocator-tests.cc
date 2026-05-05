@@ -276,3 +276,31 @@ TEST(IobBlobIdAllocatorTests, Find) {
 }
 
 }  // namespace
+
+// Regression test: Verifies that a header with next_id that causes integer
+// overflow in index_end() is correctly rejected, preventing OOB memory access.
+TEST(BlobIdAllocatorTest, OverflowingNextIdIsInvalid) {
+  constexpr size_t kRegionSize = 4096;
+  alignas(8) std::byte bytes[kRegionSize] = {};
+
+  iob::BlobIdAllocator allocator({bytes, kRegionSize});
+  allocator.Init();
+
+  // Corrupt next_id to the overflow-triggering value.
+  // next_id = 0x20000000 causes: (uint32_t)(8 + 0x20000000*8) = 8 (wraps!)
+  auto* raw = reinterpret_cast<uint32_t*>(bytes);
+  cpp20::atomic_ref<uint32_t> ref{*raw};
+  ref.store(0x20000000u, std::memory_order_relaxed);
+
+  // All public API calls must safely fail with kInvalidHeader.
+  EXPECT_TRUE(allocator.RemainingBytes().is_error());
+
+  std::byte blob_data[8] = {};
+  auto result = allocator.Allocate({blob_data, sizeof(blob_data)});
+  ASSERT_TRUE(result.is_error());
+  EXPECT_EQ(result.error_value(), iob::BlobIdAllocator::AllocateError::kInvalidHeader);
+
+  auto blob_result = allocator.GetBlob(0);
+  ASSERT_TRUE(blob_result.is_error());
+  EXPECT_EQ(blob_result.error_value(), iob::BlobIdAllocator::BlobError::kInvalidHeader);
+}

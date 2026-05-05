@@ -399,13 +399,26 @@ class BlobIdAllocator {
 
  private:
   struct alignas(8) Header {
-    constexpr uint32_t index_end() const {
-      return static_cast<uint32_t>(sizeof(Header) + next_id * sizeof(Index));
+    // Returns the byte offset just past the last bookkeeping index, or
+    // fit::failed() if the computation would overflow a uint32_t.
+    constexpr fit::result<fit::failed, uint32_t> index_end() const {
+      // Guard against integer overflow: next_id * sizeof(Index) must not
+      // exceed UINT32_MAX - sizeof(Header). Without this check, a corrupted
+      // next_id (e.g., 0x20000000) causes the result to silently wrap around,
+      // bypassing IsValid() and enabling out-of-bounds access via GetIndex().
+      constexpr uint32_t kMaxNextId =
+          (std::numeric_limits<uint32_t>::max() - sizeof(Header)) / sizeof(Index);
+      if (next_id > kMaxNextId) [[unlikely]] {
+        return fit::failed();
+      }
+      return fit::ok(
+          static_cast<uint32_t>(sizeof(Header) + next_id * sizeof(Index)));
     }
 
     // See AllocateError::kInvalidHeader.
     constexpr bool IsValid(size_t length) const {
-      return index_end() <= blob_head && blob_head <= length;
+      fit::result end = index_end();
+      return end.is_ok() && end.value() <= blob_head && blob_head <= length;
     }
 
     // Returns the remaining number of available bytes in the region, given the
@@ -415,7 +428,8 @@ class BlobIdAllocator {
       if (!IsValid(length)) [[unlikely]] {
         return fit::failed();
       }
-      return fit::ok(blob_head - index_end());
+      // IsValid() already verified that index_end() is ok.
+      return fit::ok(blob_head - index_end().value());
     }
 
     uint32_t next_id;
@@ -456,10 +470,14 @@ class BlobIdAllocator {
   }
 
   cpp20::atomic_ref<Index> GetIndex(uint32_t id) {
-    return cpp20::atomic_ref{*reinterpret_cast<Index*>(&bytes_[(id + 1) * sizeof(Index)])};
+    size_t offset = static_cast<size_t>(id + 1) * sizeof(Index);
+    ZX_DEBUG_ASSERT(offset + sizeof(Index) <= bytes_.size());
+    return cpp20::atomic_ref{*reinterpret_cast<Index*>(&bytes_[offset])};
   }
   cpp20::atomic_ref<const Index> GetIndex(uint32_t id) const {
-    return cpp20::atomic_ref{*reinterpret_cast<const Index*>(&bytes_[(id + 1) * sizeof(Index)])};
+    size_t offset = static_cast<size_t>(id + 1) * sizeof(Index);
+    ZX_DEBUG_ASSERT(offset + sizeof(Index) <= bytes_.size());
+    return cpp20::atomic_ref{*reinterpret_cast<const Index*>(&bytes_[offset])};
   }
 
   cpp20::span<std::byte> bytes_;
