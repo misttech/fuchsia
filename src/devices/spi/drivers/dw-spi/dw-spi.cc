@@ -185,18 +185,10 @@ zx::result<> DwSpiDriver::Start(fdf::DriverContext context) {
   }
 
   // Get MMIO synchronously
-  auto mmio_params = pdev->GetMmio(0);
-  if (mmio_params.is_error()) {
-    fdf::error("Failed to get MMIO: {}", mmio_params.status_string());
-    return mmio_params.take_error();
-  }
-
-  zx::result mmio_buffer =
-      fdf::MmioBuffer::Create(mmio_params->offset, mmio_params->size, std::move(mmio_params->vmo),
-                              ZX_CACHE_POLICY_UNCACHED_DEVICE);
-  if (mmio_buffer.is_error()) {
-    fdf::error("Failed to map MMIO: {}", zx_status_get_string(mmio_buffer.error_value()));
-    return zx::error(mmio_buffer.error_value());
+  auto mmio = pdev->MapMmio(0);
+  if (mmio.is_error()) {
+    fdf::error("Failed to get MMIO: {}", mmio.status_string());
+    return mmio.take_error();
   }
 
   // Get Interrupt synchronously
@@ -206,7 +198,7 @@ zx::result<> DwSpiDriver::Start(fdf::DriverContext context) {
     return irq_result.take_error();
   }
 
-  device_ = std::make_unique<DwSpi>(std::move(*mmio_buffer), std::move(irq_result.value()));
+  device_ = std::make_unique<DwSpi>(*std::move(mmio), std::move(irq_result.value()));
   device_->InitRegisters();
 
   fdf::info("dw-spi driver initialized successfully");

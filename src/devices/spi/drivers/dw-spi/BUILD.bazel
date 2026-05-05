@@ -84,7 +84,12 @@ fuchsia_cc_test(
     ],
     deps = [
         ":common",
+        "//zircon/system/ulib/fzl",
         "@com_google_googletest//:gtest_main",
+        "@fuchsia_sdk//pkg/driver_fake_clock_cpp",
+        "@fuchsia_sdk//pkg/driver_fake_platform_device_cpp",
+        "@fuchsia_sdk//pkg/driver_fake_powerdomain_cpp",
+        "@fuchsia_sdk//pkg/driver_fake_reset_cpp",
         "@fuchsia_sdk//pkg/driver_testing_cpp",
         "@fuchsia_sdk//pkg/zx",
     ],
