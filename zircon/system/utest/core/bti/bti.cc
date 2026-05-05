@@ -438,9 +438,6 @@ TEST(Bti, PinTooManyAddresses) {
             ZX_ERR_INVALID_ARGS);
 }
 
-// TODO(https://fxbug.dev/42133919): Re-enable this test when enforcement of the "no pinning
-// while there are quarantined pages" rule has been turned on in the kernel.
-#if 0
 TEST(Bti, QuarantineDisallowsPin) {
   zx::iommu iommu;
   zx::bti bti;
@@ -461,7 +458,7 @@ TEST(Bti, QuarantineDisallowsPin) {
   // Create and pin a VMO, then allow the pinned VMO to leak while still pinned.
   // Its pages will be added to the quarantine list for the BTI.
   constexpr uint64_t kPageCount = 4;
-  constexpr uint64_t kVmoSize = zx_system_get_page_size() * kPageCount;
+  const uint64_t kVmoSize = zx_system_get_page_size() * kPageCount;
   zx_paddr_t paddrs[kPageCount];
   {
     zx::vmo vmo;
@@ -494,6 +491,5 @@ TEST(Bti, QuarantineDisallowsPin) {
     EXPECT_OK(pmt.unpin());
   }
 }
-#endif
 
 }  // namespace

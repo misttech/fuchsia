@@ -70,7 +70,8 @@ class StubPmt final : public Pmt, public fbl::DoublyLinkedListable<fbl::RefPtr<S
 
   // Check to make sure that the pin/map request is valid, and if so, transition
   // to the Active state and add ourselves to our owner's active PMT list.
-  zx_status_t Map(uint32_t perms, RequireContiguousMapping req_contig);
+  zx_status_t Map(uint32_t perms, RequireContiguousMapping req_contig)
+    TA_EXCL(owner_->get_collection_lock());
 
   // Unconditionally release the pinned VMO we are holding.  It is illegal to
   // perform this operation more than once, or to do so with interrupts off or
