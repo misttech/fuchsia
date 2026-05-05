@@ -1560,7 +1560,8 @@ zx_status_t UsbPeripheral::SetDefaultConfig(std::vector<FunctionDescriptor>& fun
 UsbFunction& UsbPeripheral::GetFunction(size_t index) {
   TRACE_DURATION("usb-peripheral", __func__, "index", index);
 
-  ZX_ASSERT_MSG(index < functions_.size(), "Function %lu does not exist", index);
+  ZX_ASSERT_MSG(index < functions_.size(), "Function %lu does not exist (functions_.size() = %lu)",
+                index, functions_.size());
   auto& function = functions_[index];
   ZX_ASSERT(function != nullptr);
   return *function;
