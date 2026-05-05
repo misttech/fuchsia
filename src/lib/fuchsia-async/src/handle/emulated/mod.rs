@@ -76,24 +76,30 @@ impl<'a> HandleRef<'a> {
     /// Duplicate this handle. The new handle will have the given `rights`, which must be a subset
     /// of the rights the existing handle has.
     pub fn duplicate(&self, mut rights: Rights) -> Result<Handle, Status> {
-        let mut new_entry =
-            HANDLE_TABLE.lock().get(&self.raw_handle()).cloned().ok_or(Status::BAD_HANDLE)?;
+        let mut table = HANDLE_TABLE.lock();
+        let entry = table.get(&self.raw_handle()).ok_or(Status::BAD_HANDLE)?;
+
         if rights == Rights::SAME_RIGHTS {
-            rights = new_entry.rights;
+            rights = entry.rights;
         }
 
-        if !new_entry.rights.contains(rights) {
-            return Err(Status::INVALID_ARGS);
+        if !entry.rights.contains(rights) || !entry.rights.contains(Rights::DUPLICATE) {
+            return Err(if !entry.rights.contains(Rights::DUPLICATE) {
+                Status::ACCESS_DENIED
+            } else {
+                Status::INVALID_ARGS
+            });
         }
-        if !new_entry.rights.contains(Rights::DUPLICATE) {
-            return Err(Status::ACCESS_DENIED);
-        }
+
+        let mut new_entry = entry.clone();
         new_entry.rights = rights;
-        let new_handle = alloc_handle();
-        let side = new_entry.side;
-        new_entry.object.lock().increment_open_count(side);
-        let _ = HANDLE_TABLE.lock().insert(new_handle, new_entry);
-        Ok(Handle(new_handle))
+
+        new_entry.object.lock().increment_open_count(new_entry.side);
+
+        let new_handle_id = alloc_handle();
+        table.insert(new_handle_id, new_entry);
+
+        Ok(Handle(new_handle_id))
     }
 
     /// Signal an object
