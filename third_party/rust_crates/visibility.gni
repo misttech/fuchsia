@@ -137,7 +137,11 @@ zeroize_visibility = [
   # This is an allowlist of targets that use the `zeroize` Rust crate.
   #
   # At this time only Android KeyMint is allowed to use it.
+  # Unfortunately we can't be more specific without exposing internal paths under vendor/.
+
+  # TODO(https://fxbug.dev/507443343): delete the fuchsia.git entry once migration to vendor/ is done.
   "//third_party/android/platform/system/keymint:*",
+  "//vendor/*:*",
 ]
 
 openssl_visibility = [
@@ -153,7 +157,11 @@ openssl_visibility = [
   # This is an allowlist of targets that use the `openssl` Rust crate.
   #
   # At this time only Android KeyMint is allowed to use it.
+  # Unfortunately we can't be more specific without exposing internal paths under vendor/.
+
+  # TODO(https://fxbug.dev/507443343): delete the fuchsia.git entry once migration to vendor/ is done.
   "//third_party/android/platform/system/keymint:*",
+  "//vendor/*:*",
 ]
 
 bincode_visibility = [
