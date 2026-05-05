@@ -187,7 +187,13 @@ zx_status_t StubPmt::Map(uint32_t perms, RequireContiguousMapping req_contig) {
   const uint64_t vmo_size = pinned_vmo_.size();
 
   DEBUG_ASSERT(pinned_vmo_.vmo() != nullptr);
-  auto cleanup = fit::defer([this]() { pinned_vmo_.reset(); });
+  auto cleanup = fit::defer([this]() {
+    {
+      Guard<SpinLock, IrqSave> guard(&owner_->get_collection_lock());
+      this->set_state(StubPmt::State::kReleased);
+    }
+    this->ReleaseQuarantinedVmo();
+  });
 
   if (!IsPageRounded(vmo_offset) || vmo_size == 0) {
     return ZX_ERR_INVALID_ARGS;

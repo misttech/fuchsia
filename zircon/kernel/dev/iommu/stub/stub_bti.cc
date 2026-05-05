@@ -50,20 +50,10 @@ zx::result<fbl::RefPtr<Pmt>> StubBti::Map(PinnedVmObject pinned_vmo, uint32_t pe
   }
 
   if (const zx_status_t map_status = new_pmt->Map(perms, req_contig); map_status != ZX_OK) {
-    // Looks like we failed the map call.  We are going to destruct on the way
-    // out of this method, so immediately release the pinned VMO and set the
-    // StubPmt state to kReleased so that we pass all of our debug checks during
-    // destruction.
-    //
-    // Note: we don't _actually_ need to hold the BTI collection lock when doing
-    // this.  We just created this StubPmt on this thread, and no other thread
-    // has had a chance to see it yet.  Therefore, we cannot be racing with any
-    // other threads who might be attempting to mutate the state_ field.
-    [&]() TA_NO_THREAD_SAFETY_ANALYSIS {
-      DEBUG_ASSERT(new_pmt->state() == StubPmt::State::kInitial);
-      new_pmt->set_state(StubPmt::State::kReleased);
-    }();
-    new_pmt->ReleaseQuarantinedVmo();
+    // Looks like we failed the map call.  The failed call to map should have
+    // already released the pinned vmo and set our state to Released so that we
+    // pass our destructor asserts as we unwind. All we need to do here is
+    // unwind.
     return zx::error(map_status);
   }
 

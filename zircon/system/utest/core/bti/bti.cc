@@ -449,7 +449,6 @@ TEST(Bti, QuarantineDisallowsPin) {
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-
   ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
@@ -489,6 +488,97 @@ TEST(Bti, QuarantineDisallowsPin) {
     EXPECT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
     EXPECT_OK(bti.pin(ZX_BTI_PERM_READ, vmo, 0, kVmoSize, paddrs, kPageCount, &pmt));
     EXPECT_OK(pmt.unpin());
+  }
+}
+
+// Test that various combinations of invalid arguments all fail with
+// ZX_ERR_INVALID_ARGS.  This test also serves as a regression test for
+// https://fxbug.dev/507926838
+TEST(Bti, InvalidPinArgs) {
+  zx::iommu iommu;
+  zx::bti bti;
+  zx_iommu_desc_stub_t desc;
+
+  zx::unowned_resource system_resource = standalone::GetSystemResource();
+  zx::result<zx::resource> result =
+      standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_IOMMU_BASE);
+  ASSERT_OK(result.status_value());
+  zx::resource iommu_resource = std::move(result.value());
+
+  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
+                            iommu.reset_and_get_address()),
+            ZX_OK);
+  ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
+
+  constexpr uint64_t kPageCount = 4;
+  const uint64_t kPageSize = zx_system_get_page_size();
+  const uint64_t kVmoSize = zx_system_get_page_size() * kPageCount;
+  zx_paddr_t paddrs[kPageCount];
+
+  // Invalid argument flag.  Combine a valid flag, with a flag that is undefined
+  // (bit 31).
+  {
+    constexpr uint32_t kInvalidFlag = ZX_BTI_PERM_READ | (uint32_t{1} << 31);
+    zx::vmo vmo;
+    zx::pmt pmt;
+    EXPECT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
+    EXPECT_STATUS(ZX_ERR_INVALID_ARGS,
+                  bti.pin(kInvalidFlag, vmo, 0, kVmoSize, paddrs, kPageCount, &pmt));
+  }
+
+  // Zero options.  Passing a zero for our options is invalid as it does not
+  // specify at least one valid access flag (read, write, execute).
+  {
+    constexpr uint32_t kZeroFlag = 0;
+    zx::vmo vmo;
+    zx::pmt pmt;
+    EXPECT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
+    EXPECT_STATUS(ZX_ERR_INVALID_ARGS,
+                  bti.pin(kZeroFlag, vmo, 0, kVmoSize, paddrs, kPageCount, &pmt));
+  }
+
+  // Demand contiguous with non-contiguous VMO.  When using a Stub IOMMU, it is
+  // an error to demand a contiguous pin when the VMO being supplied is not
+  // explicitly contiguous.
+  {
+    constexpr uint32_t kContigFlag = ZX_BTI_CONTIGUOUS | ZX_BTI_PERM_READ;
+    zx::vmo vmo;
+    zx::pmt pmt;
+    EXPECT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
+    EXPECT_STATUS(ZX_ERR_INVALID_ARGS,
+                  bti.pin(kContigFlag, vmo, 0, kVmoSize, paddrs, kPageCount, &pmt));
+  }
+
+  // Unaligned VMO offset.  When pinning VMOs, all offsets must be a multiple of
+  // page size.
+  {
+    constexpr uint32_t kInvalidOffset = 13;
+    zx::vmo vmo;
+    zx::pmt pmt;
+    EXPECT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
+    EXPECT_STATUS(ZX_ERR_INVALID_ARGS, bti.pin(ZX_BTI_PERM_READ, vmo, kInvalidOffset, kPageSize,
+                                               paddrs, kPageCount, &pmt));
+  }
+
+  // Invalid non-zero size.  The size of a pin operation needs to be a multiple
+  // of page size.
+  {
+    constexpr uint32_t kInvalidSize = 13;
+    zx::vmo vmo;
+    zx::pmt pmt;
+    EXPECT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
+    EXPECT_STATUS(ZX_ERR_INVALID_ARGS,
+                  bti.pin(ZX_BTI_PERM_READ, vmo, 0, kInvalidSize, paddrs, kPageCount, &pmt));
+  }
+
+  // Invalid zero size.  The minimum that a user can pin is one page.  Zero
+  // should be explicitly rejected.
+  {
+    zx::vmo vmo;
+    zx::pmt pmt;
+    EXPECT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
+    EXPECT_STATUS(ZX_ERR_INVALID_ARGS,
+                  bti.pin(ZX_BTI_PERM_READ, vmo, 0, 0, paddrs, kPageCount, &pmt));
   }
 }
 
