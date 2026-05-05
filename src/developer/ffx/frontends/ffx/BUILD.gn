@@ -77,10 +77,13 @@ _ffx_e2e_config = [
   "--config",
   "sdk.root=.",
   "--config",
+  "ffx.subtool-manifest=\"\"",
+  "--config",
   "ffx.subtool-search-paths=host-tools",
 ]
 
 host_test("ffx-e2e-without-target") {
+  visibility += [ "//:*" ]
   binary_path = "$root_out_dir/ffx"
   args = _ffx_e2e_config + [
            "self-test",
@@ -88,7 +91,10 @@ host_test("ffx-e2e-without-target") {
            "false",
          ]
 
-  deps = [ ":ffx_bin" ]
+  deps = [
+    ":ffx_bin",
+    "//src/developer/ffx/plugins/self-test:ffx_selftest_tool",
+  ]
   data_deps = [
     "//src/developer/ffx:suite_test_data",
     "//src/developer/ffx/plugins/self-test:ffx_selftest_tool_test_data",
@@ -96,11 +102,13 @@ host_test("ffx-e2e-without-target") {
 }
 
 host_test("ffx-e2e-with-target") {
+  visibility += [ "//:*" ]
   binary_path = "$root_out_dir/ffx"
   args = _ffx_e2e_config + [ "self-test" ]
 
   deps = [
     ":ffx_bin",
+    "//src/developer/ffx/plugins/self-test:ffx_selftest_tool",
 
     # Required by the test_debug_limbo in `ffx self-test`.
     # We cannot add it to the dependency of `ffx self-test` plugin because that will make
