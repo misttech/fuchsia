@@ -12,7 +12,8 @@ use log::info;
 use session_manager_config::Config;
 use session_manager_lib::session_manager::SessionManager;
 
-#[fuchsia::main]
+// TODO(https://fxbug.dev/508683746): Remove tag once fixed.
+#[fuchsia::main(logging_tags = ["session-manager"])]
 async fn main() -> Result<(), Error> {
     let mut fs = ServiceFs::new_local();
     let inspector = fuchsia_inspect::component::inspector();
