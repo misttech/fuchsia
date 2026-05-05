@@ -10,6 +10,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("fbl") {
   edition = "2024"
   sources = [
+    "src/array.rs",
     "src/canary.rs",
     "src/lib.rs",
     "src/ring_buffer.rs",
