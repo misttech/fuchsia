@@ -262,6 +262,8 @@ zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
       fdf::error("Failed to set default config: {}", zx_status_get_string(status));
       return zx::error(status);
     }
+  } else {
+    fdf::warn("No functions found in config");
   }
 
   usb_monitor_.Start();
@@ -424,6 +426,10 @@ bool UsbPeripheral::AllFunctionsRegistered() const {
   std::stringstream pending_ss;
   bool first_registered = true;
   bool first_pending = true;
+
+  if (functions_.empty()) {
+    return false;
+  }
 
   for (const auto& config : configurations_) {
     for (auto function_index : config.functions) {
@@ -1362,6 +1368,7 @@ void UsbPeripheral::SetConfiguration(SetConfigurationRequestView request,
   {
     fbl::AutoLock _(&lock_);
     if (state_ != DeviceState::kNoConfiguration) {
+      fdf::error("Cannot set configuration while functions are bound");
       completer.ReplyError(ZX_ERR_ALREADY_BOUND);
       return;
     }
@@ -1379,6 +1386,7 @@ void UsbPeripheral::SetConfiguration(SetConfigurationRequestView request,
   for (auto& func_descs : request->config_descriptors) {
     auto& descriptor = configurations_.emplace_back(index);
     if (func_descs.size() == 0) {
+      fdf::error("Cannot set configuration with no functions");
       completer.ReplyError(ZX_ERR_INVALID_ARGS);
       return;
     }
