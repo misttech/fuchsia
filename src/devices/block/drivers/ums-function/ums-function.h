@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_UMS_FUNCTION_UMS_FUNCTION_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_UMS_FUNCTION_UMS_FUNCTION_H_
 
+#include <endian.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -17,8 +18,6 @@
 #include <string>
 #include <utility>
 
-#include <fbl/condition_variable.h>
-#include <fbl/mutex.h>
 #include <usb-endpoint/usb-endpoint-client.h>
 #include <usb/descriptors.h>
 #include <usb/request-fidl.h>
@@ -64,43 +63,39 @@ class UmsFunction : public fdf::DriverBase,
   };
   friend struct std::formatter<DataState>;
 
-  void RequestQueueLocked(usb::FidlRequest* req) __TA_REQUIRES(mtx_);
+  void RequestQueue(usb::FidlRequest* req);
   void InEpCallback(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
   void OutEpCallback(std::vector<fuchsia_hardware_usb_endpoint::Completion> completion);
-  bool IsReadyForShutdown() const { return !active_.load() && pending_request_count_.load() == 0; }
 
   zx::result<> ConfigureEndpoint(const usb_endpoint_info_descriptor_t& desc);
 
   // Main driver initialization.
   zx_status_t Init();
 
-  void QueueDataLocked(usb::FidlRequest* req) __TA_REQUIRES(mtx_);
-  void QueueCswLocked(uint8_t status, bool also_cbw = true) __TA_REQUIRES(mtx_);
-  void ContinueTransferLocked() __TA_REQUIRES(mtx_);
-  void StartTransferLocked(DataState state, uint32_t transfer_bytes, uint64_t lba = 0)
-      __TA_REQUIRES(mtx_);
-  zx::result<> CancelAllLocked(usb::EndpointClient<UmsFunction>& ep) __TA_REQUIRES(mtx_);
+  void QueueData(usb::FidlRequest* req);
+  void QueueCsw(uint8_t status, bool also_cbw = true);
+  void ContinueTransfer();
+  void StartTransfer(DataState state, uint32_t transfer_bytes, uint64_t lba = 0);
+  zx::result<> CancelAll(usb::EndpointClient<UmsFunction>& ep);
 
-  void HandleInquiryLocked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
-  void HandleTestUnitReadyLocked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
-  void HandleRequestSenseLocked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
-  void HandleReadCapacity10Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
-  void HandleReadCapacity16Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
-  void HandleModeSense6Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
-  void HandleRead10Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
-  void HandleRead12Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
-  void HandleRead16Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
-  void HandleWrite10Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
-  void HandleWrite12Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
-  void HandleWrite16Locked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
-  void HandleUnmapLocked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
+  void HandleInquiry(ums_cbw_t* cbw);
+  void HandleTestUnitReady(ums_cbw_t* cbw);
+  void HandleRequestSense(ums_cbw_t* cbw);
+  void HandleReadCapacity10(ums_cbw_t* cbw);
+  void HandleReadCapacity16(ums_cbw_t* cbw);
+  void HandleModeSense6(ums_cbw_t* cbw);
+  void HandleRead10(ums_cbw_t* cbw);
+  void HandleRead12(ums_cbw_t* cbw);
+  void HandleRead16(ums_cbw_t* cbw);
+  void HandleWrite10(ums_cbw_t* cbw);
+  void HandleWrite12(ums_cbw_t* cbw);
+  void HandleWrite16(ums_cbw_t* cbw);
+  void HandleUnmap(ums_cbw_t* cbw);
 
-  void HandleCbwLocked(ums_cbw_t* cbw) __TA_REQUIRES(mtx_);
-  void CbwCompleteLocked() __TA_REQUIRES(mtx_);
-  void CswCompleteLocked() __TA_REQUIRES(mtx_);
-  void DataCompleteLocked() __TA_REQUIRES(mtx_);
-
-  int WorkerLoop();
+  void HandleCbw(ums_cbw_t* cbw);
+  void CbwComplete(fuchsia_hardware_usb_endpoint::Completion completion);
+  void CswComplete(fuchsia_hardware_usb_endpoint::Completion completion);
+  void DataComplete(fuchsia_hardware_usb_endpoint::Completion completion);
 
   bool IsInData() const { return current_cbw_.bmCBWFlags & USB_DIR_IN; }
   bool IsOutData() const { return !IsInData(); }
@@ -110,20 +105,15 @@ class UmsFunction : public fdf::DriverBase,
   bool configured_ = false;
 
   std::optional<usb::FidlRequest> cbw_req_;
-  std::optional<fuchsia_hardware_usb_endpoint::Completion> cbw_req_complete_ __TA_GUARDED(mtx_);
-  bool cbw_in_flight_ __TA_GUARDED(mtx_) = false;
   uint64_t cbw_vmo_id_;
 
   std::optional<usb::FidlRequest> data_in_req_;
   std::optional<usb::FidlRequest> data_out_req_;
-  std::optional<fuchsia_hardware_usb_endpoint::Completion> data_req_complete_ __TA_GUARDED(mtx_);
-  bool data_in_flight_ __TA_GUARDED(mtx_) = false;
 
   std::optional<usb::FidlRequest> csw_req_;
-  std::optional<fuchsia_hardware_usb_endpoint::Completion> csw_req_complete_ __TA_GUARDED(mtx_);
-  bool csw_in_flight_ __TA_GUARDED(mtx_) = false;
+  bool csw_in_flight_ = false;
   uint64_t csw_vmo_id_;
-  std::queue<uint8_t> csw_q_ __TA_GUARDED(mtx_);
+  std::queue<uint8_t> csw_q_;
 
   // Command status wrapper (csw) and in-data to host.
   usb::EndpointClient<UmsFunction> in_ep_{usb::EndpointType::BULK, this,
@@ -134,6 +124,44 @@ class UmsFunction : public fdf::DriverBase,
                                            std::mem_fn(&UmsFunction::OutEpCallback)};
 
   fdf::SynchronizedDispatcher dispatcher_;
+
+  struct Config {
+    usb_interface_info_descriptor_t intf;
+    usb_endpoint_info_descriptor_t out_ep;
+    usb_endpoint_info_descriptor_t in_ep;
+  };
+  static inline Config config_ = {
+      .intf =
+          {
+              .b_length = sizeof(usb_interface_info_descriptor_t),
+              .b_descriptor_type = USB_DT_INTERFACE,
+              //      .b_interface_number set later
+              .b_alternate_setting = 0,
+              .b_num_endpoints = 2,
+              .b_interface_class = USB_CLASS_MSC,
+              .b_interface_sub_class = USB_SUBCLASS_MSC_SCSI,
+              .b_interface_protocol = USB_PROTOCOL_MSC_BULK_ONLY,
+              .i_interface = 0,
+          },
+      .out_ep =
+          {
+              .b_length = sizeof(usb_endpoint_info_descriptor_t),
+              .b_descriptor_type = USB_DT_ENDPOINT,
+              //      .b_endpoint_address set later
+              .bm_attributes = USB_ENDPOINT_BULK,
+              .w_max_packet_size = htole16(UmsFunction::kBulkMaxPacket),
+              .b_interval = 0,
+          },
+      .in_ep =
+          {
+              .b_length = sizeof(usb_endpoint_info_descriptor_t),
+              .b_descriptor_type = USB_DT_ENDPOINT,
+              //      .b_endpoint_address set later
+              .bm_attributes = USB_ENDPOINT_BULK,
+              .w_max_packet_size = htole16(UmsFunction::kBulkMaxPacket),
+              .b_interval = 0,
+          },
+  };
 
   // vmo for backing storage
   static zx::vmo vmo_;
@@ -150,13 +178,9 @@ class UmsFunction : public fdf::DriverBase,
   zx_off_t data_offset_ = 0;
   size_t data_remaining_ = 0;
 
-  uint8_t bulk_out_addr_;
-  uint8_t bulk_in_addr_;
-  thrd_t thread_;
   std::atomic_bool active_;
-  fbl::Mutex mtx_;
-  fbl::ConditionVariable condvar_ __TA_GUARDED(mtx_);
   std::atomic_int pending_request_count_ = 0;
+  std::optional<fdf::PrepareStopCompleter> prepare_stop_completer_;
 };
 
 }  // namespace ums
