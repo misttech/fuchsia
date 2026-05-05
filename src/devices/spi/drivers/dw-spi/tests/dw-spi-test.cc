@@ -4,6 +4,7 @@
 
 #include "../dw-spi.h"
 
+#include <fidl/fuchsia.hardware.spiimpl/cpp/driver/fidl.h>
 #include <lib/driver/fake-clock/cpp/fake-clock.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/fake-powerdomain/cpp/fake-powerdomain.h>
@@ -164,6 +165,27 @@ TEST_F(DwSpiTest, StartStop) {
 
   // Verify IMR
   EXPECT_EQ(mmio()[DW_SPI_IMR / 4], 0u);
+}
+
+TEST_F(DwSpiTest, ChildNodeAdded) {
+  driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
+    EXPECT_NE(node.children().find("dw-spi"), node.children().cend());
+  });
+}
+
+TEST_F(DwSpiTest, GetChipSelectCount) {
+  zx::result client_end = driver_test().Connect<fuchsia_hardware_spiimpl::Service::Device>();
+  ASSERT_TRUE(client_end.is_ok());
+
+  fdf::Client spiimpl(std::move(client_end.value()), fdf::Dispatcher::GetCurrent()->get());
+
+  spiimpl->GetChipSelectCount().ThenExactlyOnce(
+      [&](fdf::Result<fuchsia_hardware_spiimpl::SpiImpl::GetChipSelectCount>& result) {
+        ASSERT_TRUE(result.is_ok());
+        EXPECT_EQ(result.value().count(), 1u);
+        driver_test().runtime().Quit();
+      });
+  driver_test().runtime().Run();
 }
 
 }  // namespace
