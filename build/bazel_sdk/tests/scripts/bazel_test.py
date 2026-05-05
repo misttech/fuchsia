@@ -55,6 +55,7 @@ _INPUT_MODE_IDK = "idk"
 
 _CANONICAL_FUCHSIA_SDK_REPO_NAME = "rules_fuchsia++fuchsia_sdk_ext+fuchsia_sdk"
 _CANONICAL_IN_TREE_IDK_REPO_NAME = "+fuchsia_idk+fuchsia_in_tree_idk"
+_CANONICAL_RULES_FUCHSIA_REPO_NAME = "rules_fuchsia+"
 
 # Maps from apparent repo names to canonical repo names.
 _APPARENT_REPO_NAME_TO_CANONICAL = {
@@ -307,6 +308,7 @@ class BazelRepositoryMap(object):
     def __init__(
         self,
         fuchsia_source_dir: Path,
+        rules_fuchsia_dir: Path,
         explicit_fuchsia_sdk: T.Optional[Path],
         explicit_fuchsia_in_tree_idk: T.Optional[Path],
         workspace_dir: Path,
@@ -327,6 +329,8 @@ class BazelRepositoryMap(object):
             self._overrides[
                 _CANONICAL_IN_TREE_IDK_REPO_NAME
             ] = explicit_fuchsia_in_tree_idk.resolve()
+
+        self._overrides[_CANONICAL_RULES_FUCHSIA_REPO_NAME] = rules_fuchsia_dir
 
         _bazel_vendor_dir = fuchsia_source_dir / "third_party" / "bazel_vendor"
 
@@ -349,8 +353,7 @@ class BazelRepositoryMap(object):
             "com_google_googletest": fuchsia_source_dir
             / "third_party/googletest/src",
             "com_google_protobuf": fuchsia_source_dir / "third_party/protobuf",
-            "rules_fuchsia": fuchsia_source_dir
-            / "build/bazel_sdk/bazel_rules_fuchsia",
+            "rules_fuchsia": rules_fuchsia_dir,
             "zlib": fuchsia_source_dir / "third_party/zlib",
             "prebuilt_python": self.IGNORED_REPO,
             "fuchsia_clang": self.IGNORED_REPO,
@@ -438,7 +441,9 @@ class BazelRepositoryMap(object):
         if repo_name:
             external_repo_dir = self._output_base / "external" / repo_name
             final_path = external_repo_dir / target_path
-            assert final_path.exists(), f"File '{final_path}' does not exist."
+            assert (
+                final_path.exists()
+            ), f"When resolving {bazel_path}: File '{final_path}' does not exist."
             return final_path.resolve()
 
         # This should not happen, but print an error message pointing to this
@@ -479,6 +484,11 @@ def main() -> int:
         "--fuchsia_build_dir",
         type=Path,
         help="Specify Fuchsia build directory (default is auto-detected).",
+    )
+    parser.add_argument(
+        "--rules_fuchsia_dir",
+        type=Path,
+        help="Specify @rules_fuchsia directory (default is auto-detected).",
     )
     parser.add_argument(
         "--in_tree_fuchsia_sdk",
@@ -623,6 +633,14 @@ def main() -> int:
     fuchsia_build_dir = args.fuchsia_build_dir
     if fuchsia_build_dir is None:
         fuchsia_build_dir = _find_fuchsia_build_dir(fuchsia_source_dir)
+
+    rules_fuchsia_dir = args.rules_fuchsia_dir
+    if rules_fuchsia_dir is None:
+        rules_fuchsia_dir = (
+            fuchsia_source_dir / "build/bazel_sdk/bazel_rules_fuchsia"
+        )
+
+    rules_fuchsia_dir = rules_fuchsia_dir.resolve()
 
     def check_fuchsia_build_dir(
         print_error: T.Optional[T.Callable[[str], T.Any]] = None,
@@ -889,6 +907,7 @@ def main() -> int:
 
     bazel_repo_map = BazelRepositoryMap(
         fuchsia_source_dir=fuchsia_source_dir,
+        rules_fuchsia_dir=rules_fuchsia_dir,
         explicit_fuchsia_sdk=explicit_fuchsia_sdk,
         explicit_fuchsia_in_tree_idk=explicit_fuchsia_in_tree_idk,
         workspace_dir=workspace_dir,

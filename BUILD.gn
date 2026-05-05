@@ -394,20 +394,41 @@ build_api_module("bazel_sdk_info") {
 build_api_module("rules_fuchsia_info") {
   testonly = true
   data_keys = [ "rules_fuchsia_info" ]
-  deps = [ ":rules_fuchsia_info.metadata" ]
+  deps = [ ":rules_fuchsia.export" ]
 }
 
-group("rules_fuchsia_info.metadata") {
-  testonly = true
-  visibility = [ ":rules_fuchsia_info" ]
+# An action to generate the final version of rules_fuchsia to be used OOT
+# This ensures that the content of @fuchsia_rules_common is stored under
+# @rules_fuchsia/fuchsia_rules_common, and changes all instances of
+# '@rules_fuchsia_common//' to '//fuchsia_rules_common/' in the final
+# Bazel files, making the result self-contained.
+action("rules_fuchsia.export") {
+  script = "//build/bazel/scripts/export_rules_fuchsia.py"
+  _output_dir = "$target_out_dir/$target_name"
+  _stamp = "$target_out_dir/$target_name.stamp"
+  _depfile = "$target_out_dir/$target_name.d"
+  outputs = [ _stamp ]
+  depfile = _depfile
+  args = [
+    "--fuchsia-dir",
+    rebase_path("//", root_build_dir),
+    "--output-dir",
+    rebase_path(_output_dir, root_build_dir),
+    "--depfile",
+    rebase_path(_depfile, root_build_dir),
+    "--stamp",
+    rebase_path(_stamp, root_build_dir),
+  ]
   metadata = {
     rules_fuchsia_info = [
       {
-        location =
-            rebase_path("//build/bazel_sdk/bazel_rules_fuchsia", root_build_dir)
+        location = rebase_path(_output_dir, root_build_dir)
       },
     ]
   }
+
+  # This creates a directory whose content cannot be determined before the build.
+  hermetic_deps = false
 }
 
 # Describes the location of Bazel build events log files

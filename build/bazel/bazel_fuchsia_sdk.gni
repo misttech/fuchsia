@@ -32,7 +32,13 @@ template("generate_fuchsia_bazel_sdk") {
   _output_dir = "${target_out_dir}/${_output_name}"
   _buildifier_tool =
       "//prebuilt/third_party/buildifier/${host_os}-${host_cpu}/buildifier"
-  _bazel_rules_fuchsia_dir = "//build/bazel_sdk/bazel_rules_fuchsia"
+
+  # Use the final version of @rules_fuchsia that can be used OOT.
+  _bazel_rules_fuchsia_dep = "//:rules_fuchsia.export"
+  _bazel_rules_fuchsia_dir =
+      get_label_info(_bazel_rules_fuchsia_dep, "target_out_dir") + "/" +
+      get_label_info(_bazel_rules_fuchsia_dep, "name")
+
   action(target_name) {
     script = "//build/bazel/bazel_sdk/idk_to_bazel_sdk.py"
     outputs = [
@@ -41,7 +47,7 @@ template("generate_fuchsia_bazel_sdk") {
     ]
     inputs = [
       _buildifier_tool,
-      "${_bazel_rules_fuchsia_dir}/fuchsia/workspace/sdk_templates/generate_sdk_build_rules.bzl",
+      "//build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/sdk_templates/generate_sdk_build_rules.bzl",
     ]
     depfile = "$target_out_dir/$target_name.d"
     args = [
@@ -57,7 +63,10 @@ template("generate_fuchsia_bazel_sdk") {
       rebase_path(depfile, root_build_dir),
     ]
 
-    deps = [ invoker.idk_export_target ]
+    deps = [
+      _bazel_rules_fuchsia_dep,
+      invoker.idk_export_target,
+    ]
     hermetic_deps = false
 
     metadata = {
@@ -116,6 +125,15 @@ template("generate_fuchsia_bazel_sdk") {
 #       GN label of target used to generate the directory pointed to by
 #       `fuchsia_sdk_dir`, if provided.
 #
+#    rules_fuchsia_target: (optional)
+#       GN label of a target that generates a @rules_fuchsia directory to use.
+#       Default is //:rules_fuchsia.export.
+#
+#    rules_fuchsia_dir: (optional)
+#       If rules_fuchsia_target is provided, this can be used to pass the path of
+#       the directory created by that target. Default is its
+#       $target_out_dir/$target_name otherwise.
+#
 #    output_base: (optional)
 #       GN path to a Bazel output_base directory to use to run the
 #       test suite. Its content will be shared by all CPU architectures.
@@ -155,6 +173,19 @@ template("run_fuchsia_bazel_sdk_tests") {
     }
     assert(defined(invoker.fuchsia_sdk_target),
            "fuchsia_sdk_path requires fuchsia_sdk_target to be defined!")
+  }
+
+  if (defined(invoker.rules_fuchsia_target)) {
+    _rules_fuchsia_target = invoker.rules_fuchsia_target
+  } else {
+    _rules_fuchsia_target = "//:rules_fuchsia.export"
+  }
+  if (defined(invoker.rules_fuchsia_dir)) {
+    _rules_fuchsia_dir = invoker.rules_fuchsia_dir
+  } else {
+    _rules_fuchsia_dir =
+        get_label_info(_rules_fuchsia_target, "target_out_dir") + "/" +
+        get_label_info(_rules_fuchsia_target, "name")
   }
 
   if (defined(invoker.target_cpus)) {
@@ -198,6 +229,8 @@ template("run_fuchsia_bazel_sdk_tests") {
       args = [
         "--verbose",
         "--fuchsia_source_dir=" + rebase_path("//", root_build_dir),
+        "--rules_fuchsia_dir=" +
+            rebase_path(_rules_fuchsia_dir, root_build_dir),
         "--output_base=" + rebase_path(_output_base, root_build_dir),
         "--output_user_root=" + rebase_path(_output_user_root, root_build_dir),
         "--target_cpu=${_target_cpu}",
@@ -207,7 +240,7 @@ template("run_fuchsia_bazel_sdk_tests") {
         "--quiet",
       ]
 
-      deps = []
+      deps = [ _rules_fuchsia_target ]
 
       _remote_build = enable_bazel_remote_rbe
       _remote_build_strategy = bazel_rbe_exec_strategy

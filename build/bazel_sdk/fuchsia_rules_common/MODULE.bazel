@@ -1,0 +1,4 @@
+module(
+    name = "fuchsia_rules_common",
+    version = "1",
+)

@@ -18,6 +18,18 @@ bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "rules_python", version = "0.36.0")
 bazel_dep(name = "rules_cc", version = "0.0.9")
 
+# BEGIN_FUCHSIA_IN_TREE_ONLY
+# The following definition is only required in-tree, and will be
+# removed from the exported @rules_fuchsia directory, which instead
+# relies on an explicit //fuchsia_rules_common/ package. See
+# //:rules_fuchsia.export in fuchsia.git.
+bazel_dep(name = "fuchsia_rules_common", version = "0")
+local_path_override(
+    module_name = "fuchsia_rules_common",
+    path = "../fuchsia_rules_common",
+)
+# END_FUCHSIA_IN_TREE_ONLY
+
 # Declare the fuchsia sdk
 fuchsia_sdk_ext = use_extension("//fuchsia/workspace:fuchsia_sdk_repository.bzl", "fuchsia_sdk_ext")
 use_repo(fuchsia_sdk_ext, "fuchsia_sdk", "fuchsia_sdk_toolchain_decl")

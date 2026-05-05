@@ -119,6 +119,12 @@ local_path_override(
     path = "third_party/googletest/src",
 )
 
+bazel_dep(name = "fuchsia_rules_common", version = "")
+local_path_override(
+    module_name = "fuchsia_rules_common",
+    path = "build/bazel_sdk/fuchsia_rules_common",
+)
+
 bazel_dep(name = "rules_fuchsia", version = "", repo_name = "rules_fuchsia")
 local_path_override(
     module_name = "rules_fuchsia",
