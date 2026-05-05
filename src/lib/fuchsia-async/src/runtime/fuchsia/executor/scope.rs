@@ -498,7 +498,7 @@ impl ScopeHandle {
     ///
     /// Note that unlike [`Scope::close`], this does not return a future that
     /// waits for all tasks to complete. This could lead to resource leaks
-    /// because it is not uncommon to access a TaskGroup from a task running on
+    /// because it is not uncommon to access a Scope from a task running on
     /// the scope itself. If such a task were to await a future returned by this
     /// method it would suspend forever waiting for itself to complete.
     pub fn close(&self) {

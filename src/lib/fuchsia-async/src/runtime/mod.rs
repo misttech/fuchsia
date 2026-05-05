@@ -23,9 +23,6 @@ pub use implementation::executor::{
 pub use implementation::task::{CancelableJoinHandle, JoinHandle, Task, unblock, yield_now};
 pub use implementation::timer::Timer;
 
-mod task_group;
-pub use task_group::*;
-
 pub mod epoch;
 
 // Fuchsia specific exports.

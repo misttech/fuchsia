@@ -4,7 +4,7 @@
 
 use fidl_diagnostics_validate as validate;
 use fidl_diagnostics_validate_deprecated as validate_deprecated;
-use fuchsia_async::TaskGroup;
+use fuchsia_async::Scope;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::{Inspector, InspectorConfig};
@@ -136,7 +136,7 @@ async fn run_service(mut incoming: validate::InspectPuppetRequestStream) {
         return;
     };
 
-    let mut running_inspect_servers = TaskGroup::new();
+    let running_inspect_servers = Scope::new();
 
     while let Ok(Some(event)) = incoming.try_next().await {
         match event {
@@ -146,7 +146,7 @@ async fn run_service(mut incoming: validate::InspectPuppetRequestStream) {
                     .await
                     .expect("puppet did not respond");
 
-                running_inspect_servers.spawn(
+                let _ = running_inspect_servers.spawn(
                     inspect_runtime::publish(
                         &Inspector::new(
                             InspectorConfig::default().vmo(

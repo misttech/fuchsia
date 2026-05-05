@@ -111,6 +111,11 @@ impl Scope {
         }
     }
 
+    /// Waits for all tasks in the scope to complete.
+    pub async fn join(self) {
+        self.inner.on_no_tasks().await;
+    }
+
     /// Detach the scope, allowing its tasks to continue running in the
     /// background.
     pub fn detach(self) {

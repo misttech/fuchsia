@@ -38,7 +38,7 @@ pub async fn run_http_server() -> Result<(), Error> {
     log::info!("Setting up http server for authorized_keys");
     let addr = SocketAddr::from((std::net::Ipv6Addr::UNSPECIFIED, 9797));
     let listener = fasync::net::TcpListener::bind(&addr)?;
-    let mut task_group = fasync::TaskGroup::new();
+    let scope = fasync::Scope::new();
     let mut stream = listener.accept_stream();
     log::info!("Trying to load file from /data/ssh/authorized_keys");
     let response =
@@ -52,7 +52,7 @@ pub async fn run_http_server() -> Result<(), Error> {
     while let Some(r) = stream.try_next().await? {
         let (mut sock, _addr) = r;
         let response_clone = response.clone();
-        task_group.spawn(async move {
+        scope.spawn(async move {
             let mut buf = [0u8; 1024];
             let response = match sock.read(&mut buf).await {
                 Ok(n) => match verify_raw_http_request(&buf, n) {
@@ -70,7 +70,7 @@ pub async fn run_http_server() -> Result<(), Error> {
             }
         });
     }
-    task_group.join().await;
+    scope.join().await;
     log::info!("Closing server");
     Ok(())
 }

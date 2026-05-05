@@ -27,7 +27,7 @@ async fn main() {
     let dictionary = Dictionary::new().await;
 
     // Add 3 Echo servers to the dictionary
-    let mut receiver_tasks = fasync::TaskGroup::new();
+    let receiver_tasks = fasync::Scope::new();
     for i in 1..=3 {
         let (connector, receiver) = Connector::new().await;
         dictionary.insert(&&format!("fidl.examples.routing.echo.Echo-{i}"), connector).await;
@@ -62,9 +62,9 @@ async fn main() {
 
 // [START receiver]
 async fn handle_echo_receiver(index: u64, mut receiver: ConnectorReceiver) {
-    let mut task_group = fasync::TaskGroup::new();
+    let scope = fasync::Scope::new();
     while let Some(channel) = receiver.next().await {
-        task_group.spawn(async move {
+        scope.spawn(async move {
             let server_end = endpoints::ServerEnd::<EchoMarker>::new(channel.into());
             run_echo_server(index, server_end.into_stream()).await;
         });

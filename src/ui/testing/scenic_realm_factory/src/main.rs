@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
-use cm_rust::FidlIntoNative;
+use cm_rust::{self, FidlIntoNative};
 use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_scheduler::RoleManagerMarker;
 use fidl_fuchsia_ui_composition::{
@@ -19,15 +19,15 @@ use fidl_fuchsia_ui_observation_scope::RegistryMarker as ScopedObservationRegist
 use fidl_fuchsia_ui_observation_test::RegistryMarker as ObservationRegistryMarker;
 use fidl_fuchsia_ui_pointer_augment::LocalHitMarker;
 use fidl_fuchsia_ui_pointerinjector::RegistryMarker as PointerInjectorRegistryMarker;
+use fidl_fuchsia_ui_test_context as ui_test_context;
 use fidl_fuchsia_ui_views::ViewRefInstalledMarker;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, RealmBuilder, RealmBuilderParams, RealmInstance, Ref, Route,
 };
 use futures::{StreamExt, TryStreamExt};
-use {
-    cm_rust, fidl_fuchsia_ui_test_context as ui_test_context, fuchsia_async as fasync, zx_status,
-};
+use zx_status;
 
 /// All FIDL services that are exposed by this component's ServiceFs.
 enum Service {
@@ -52,7 +52,7 @@ async fn run_realm_factory_server(stream: ui_test_context::ScenicRealmFactoryReq
     stream
         .try_for_each_concurrent(None, |request| async {
             log::debug!("received a request: {:?}", &request);
-            let mut task_group = fasync::TaskGroup::new();
+            let scope = fasync::Scope::new();
             match request {
                 ui_test_context::ScenicRealmFactoryRequest::CreateRealm { payload, responder } => {
                     let realm_server = payload.realm_server.expect("missing realm_server");
@@ -69,7 +69,7 @@ async fn run_realm_factory_server(stream: ui_test_context::ScenicRealmFactoryReq
                     .await;
 
                     let request_stream = realm_server.into_stream();
-                    task_group.spawn(async move {
+                    scope.spawn(async move {
                         realm_proxy::service::serve(realm, request_stream)
                             .await
                             .expect("invalid realm proxy server");
@@ -86,7 +86,7 @@ async fn run_realm_factory_server(stream: ui_test_context::ScenicRealmFactoryReq
                 }
             }
 
-            task_group.join().await;
+            scope.join().await;
             Ok(())
         })
         .await

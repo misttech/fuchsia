@@ -9,6 +9,10 @@ use fidl_fuchsia_input_report::{
     ConsumerControlInputReport, ContactInputReport, DeviceInformation, InputReport,
     KeyboardInputReport, MouseInputReport, TouchInputReport,
 };
+use fidl_fuchsia_math as math;
+use fidl_fuchsia_power_system as fps;
+use fidl_fuchsia_time_alarms as fta;
+use fidl_fuchsia_ui_display_singleton as display_info;
 use fidl_fuchsia_ui_input::KeyboardReport;
 use fidl_fuchsia_ui_test_input::{
     CoordinateUnit, KeyboardMarker, KeyboardRequest, KeyboardRequestStream,
@@ -20,6 +24,7 @@ use fidl_fuchsia_ui_test_input::{
     RegistryRegisterTouchScreenAndGetDeviceInfoResponse, RegistryRequest, RegistryRequestStream,
     TouchScreenMarker, TouchScreenRequest, TouchScreenRequestStream,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_trace::Scope;
 use futures::stream::FuturesUnordered;
@@ -29,10 +34,6 @@ use keymaps::usages::{Usages, hid_usage_to_input3_key};
 use log::{error, info, warn};
 use std::time::Duration;
 use zx::{self, HandleBased};
-use {
-    fidl_fuchsia_math as math, fidl_fuchsia_power_system as fps, fidl_fuchsia_time_alarms as fta,
-    fidl_fuchsia_ui_display_singleton as display_info, fuchsia_async as fasync,
-};
 
 mod input_device;
 mod input_device_registry;
@@ -140,7 +141,7 @@ fn convert_keyboard_report_to_keys(report: &KeyboardReport) -> Vec<Key> {
 
 async fn register_touch_screen(
     mut registry: input_device_registry::InputDeviceRegistry,
-    task_group: &mut fasync::TaskGroup,
+    scope: &fasync::Scope,
     device_server_end: fidl::endpoints::ServerEnd<TouchScreenMarker>,
     got_input_reports_reader: AsyncEvent,
     min_x: i64,
@@ -154,7 +155,7 @@ async fn register_touch_screen(
         .expect("failed to create fake touchscreen device");
     let device_id = device.device_id;
 
-    task_group.spawn(async move {
+    scope.spawn(async move {
         handle_touchscreen_request_stream(device, device_server_end.into_stream()).await;
     });
 
@@ -167,7 +168,7 @@ async fn register_touch_screen(
 
 async fn register_media_button(
     mut registry: input_device_registry::InputDeviceRegistry,
-    task_group: &mut fasync::TaskGroup,
+    scope: &fasync::Scope,
     device_server_end: fidl::endpoints::ServerEnd<MediaButtonsDeviceMarker>,
     got_input_reports_reader: AsyncEvent,
 ) -> input_device::DeviceId {
@@ -179,7 +180,7 @@ async fn register_media_button(
 
     let activity_governor = connect_to_protocol::<fps::ActivityGovernorMarker>().ok();
     let wake_alarm_proxy = connect_to_protocol::<fta::WakeAlarmsMarker>().ok();
-    task_group.spawn(async move {
+    scope.spawn(async move {
         handle_media_buttons_device_request_stream(
             device,
             device_server_end.into_stream(),
@@ -198,14 +199,14 @@ async fn register_media_button(
 
 async fn register_keyboard(
     mut registry: input_device_registry::InputDeviceRegistry,
-    task_group: &mut fasync::TaskGroup,
+    scope: &fasync::Scope,
     device_server_end: fidl::endpoints::ServerEnd<KeyboardMarker>,
     got_input_reports_reader: AsyncEvent,
 ) -> input_device::DeviceId {
     let device = registry.add_keyboard_device().await.expect("failed to create fake keyboard");
     let device_id = device.device_id;
 
-    task_group.spawn(async move {
+    scope.spawn(async move {
         handle_keyboard_request_stream(device, device_server_end.into_stream()).await;
     });
 
@@ -218,14 +219,14 @@ async fn register_keyboard(
 
 async fn register_mouse(
     mut registry: input_device_registry::InputDeviceRegistry,
-    task_group: &mut fasync::TaskGroup,
+    scope: &fasync::Scope,
     device_server_end: fidl::endpoints::ServerEnd<MouseMarker>,
     got_input_reports_reader: AsyncEvent,
 ) -> input_device::DeviceId {
     let device = registry.add_mouse_device().await.expect("failed to create fake mouse");
     let device_id = device.device_id;
 
-    task_group.spawn(async move {
+    scope.spawn(async move {
         handle_mouse_request_stream(device, device_server_end.into_stream()).await;
     });
 
@@ -248,7 +249,7 @@ pub async fn handle_registry_request_stream(request_stream: RegistryRequestStrea
                 input_device_registry,
                 got_input_reports_reader.clone(),
             );
-            let mut task_group = fasync::TaskGroup::new();
+            let scope = fasync::Scope::new();
 
             match request {
                 RegistryRequest::RegisterTouchScreen { payload, responder, .. } => {
@@ -289,7 +290,7 @@ pub async fn handle_registry_request_stream(request_stream: RegistryRequestStrea
 
                     register_touch_screen(
                         registry,
-                        &mut task_group,
+                        &scope,
                         device,
                         got_input_reports_reader,
                         min_x,
@@ -341,7 +342,7 @@ pub async fn handle_registry_request_stream(request_stream: RegistryRequestStrea
 
                     let device_id = register_touch_screen(
                         registry,
-                        &mut task_group,
+                        &scope,
                         device,
                         got_input_reports_reader,
                         min_x,
@@ -364,13 +365,7 @@ pub async fn handle_registry_request_stream(request_stream: RegistryRequestStrea
                         .device
                         .expect("no media buttons device provided in registration request");
 
-                    register_media_button(
-                        registry,
-                        &mut task_group,
-                        device,
-                        got_input_reports_reader,
-                    )
-                    .await;
+                    register_media_button(registry, &scope, device, got_input_reports_reader).await;
 
                     responder
                         .send()
@@ -386,13 +381,9 @@ pub async fn handle_registry_request_stream(request_stream: RegistryRequestStrea
                         .device
                         .expect("no media buttons device provided in registration request");
 
-                    let device_id = register_media_button(
-                        registry,
-                        &mut task_group,
-                        device,
-                        got_input_reports_reader,
-                    )
-                    .await;
+                    let device_id =
+                        register_media_button(registry, &scope, device, got_input_reports_reader)
+                            .await;
 
                     responder.send(RegistryRegisterMediaButtonsDeviceAndGetDeviceInfoResponse {
                         device_id: Some(device_id),
@@ -407,8 +398,7 @@ pub async fn handle_registry_request_stream(request_stream: RegistryRequestStrea
                         .device
                         .expect("no keyboard device provided in registration request");
 
-                    register_keyboard(registry, &mut task_group, device, got_input_reports_reader)
-                        .await;
+                    register_keyboard(registry, &scope, device, got_input_reports_reader).await;
 
                     responder.send().expect("Failed to respond to RegisterKeyboard request");
                 }
@@ -420,13 +410,8 @@ pub async fn handle_registry_request_stream(request_stream: RegistryRequestStrea
                         .device
                         .expect("no keyboard device provided in registration request");
 
-                    let device_id = register_keyboard(
-                        registry,
-                        &mut task_group,
-                        device,
-                        got_input_reports_reader,
-                    )
-                    .await;
+                    let device_id =
+                        register_keyboard(registry, &scope, device, got_input_reports_reader).await;
 
                     responder
                         .send(RegistryRegisterKeyboardAndGetDeviceInfoResponse {
@@ -439,8 +424,7 @@ pub async fn handle_registry_request_stream(request_stream: RegistryRequestStrea
                     info!("register mouse device");
                     let device = payload.device.expect("no mouse provided in registration request");
 
-                    register_mouse(registry, &mut task_group, device, got_input_reports_reader)
-                        .await;
+                    register_mouse(registry, &scope, device, got_input_reports_reader).await;
 
                     responder.send().expect("Failed to respond to RegisterMouse request");
                 }
@@ -449,8 +433,7 @@ pub async fn handle_registry_request_stream(request_stream: RegistryRequestStrea
                     let device = payload.device.expect("no mouse provided in registration request");
 
                     let device_id =
-                        register_mouse(registry, &mut task_group, device, got_input_reports_reader)
-                            .await;
+                        register_mouse(registry, &scope, device, got_input_reports_reader).await;
 
                     responder
                         .send(RegistryRegisterMouseAndGetDeviceInfoResponse {
@@ -461,7 +444,7 @@ pub async fn handle_registry_request_stream(request_stream: RegistryRequestStrea
                 }
             }
 
-            task_group.join().await;
+            scope.join().await;
             Ok(())
         })
         .await

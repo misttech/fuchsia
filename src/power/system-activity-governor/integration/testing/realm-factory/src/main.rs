@@ -40,24 +40,24 @@ async fn serve_realm_factory(stream: RealmFactoryRequestStream) {
 }
 
 async fn handle_request_stream(mut stream: RealmFactoryRequestStream) -> Result<()> {
-    let mut task_group = fasync::TaskGroup::new();
+    let scope = fasync::Scope::new();
     while let Ok(Some(request)) = stream.try_next().await {
         match request {
             RealmFactoryRequest::CreateRealm { realm_server, responder } => {
                 let realm = create_realm(RealmOptions::default()).await?;
                 responder.send(Ok(&realm.moniker()))?;
-                task_group.spawn(realm.serve(realm_server));
+                scope.spawn(realm.serve(realm_server));
             }
             RealmFactoryRequest::CreateRealmExt { options, realm_server, responder } => {
                 let realm = create_realm(options).await?;
                 responder.send(Ok(&realm.moniker()))?;
-                task_group.spawn(realm.serve(realm_server));
+                scope.spawn(realm.serve(realm_server));
             }
             RealmFactoryRequest::_UnknownMethod { .. } => unreachable!(),
         }
     }
 
-    task_group.join().await;
+    scope.join().await;
     Ok(())
 }
 

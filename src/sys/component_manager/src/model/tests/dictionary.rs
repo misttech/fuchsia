@@ -288,12 +288,12 @@ async fn test_dictionary_from_program() {
 
     // Serve the Echo protocol from the Receiver.
     let _receiver_task = fasync::Task::spawn(async move {
-        let mut task_group = fasync::TaskGroup::new();
+        let scope = fasync::Scope::new();
         while let Some(channel) = receiver.next().await {
             let channel: ServerEnd<EchoMarker> = channel.into();
-            task_group.spawn(OutDir::echo_protocol_fn(channel.into_stream()));
+            scope.spawn(OutDir::echo_protocol_fn(channel.into_stream()));
         }
-        task_group.join().await
+        scope.join().await
     });
 
     // Serve the Router protocol from the root's out dir. Its implementation calls Dictionary/Clone

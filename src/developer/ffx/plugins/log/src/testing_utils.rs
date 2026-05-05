@@ -296,7 +296,7 @@ fn serve_instance_iterator(
 fn setup_fake_rcs(client: &Arc<fdomain_client::Client>, state: Rc<State>) -> RemoteControlProxy {
     let (proxy, mut stream) = client.create_proxy_and_stream::<RemoteControlMarker>();
     fasync::Task::local(async move {
-        let mut task_group = fasync::TaskGroup::new();
+        let scope = fasync::Scope::new();
         while let Ok(Some(req)) = stream.try_next().await {
             match req {
                 RemoteControlRequest::EchoString { value, responder } => {
@@ -311,7 +311,7 @@ fn setup_fake_rcs(client: &Arc<fdomain_client::Client>, state: Rc<State>) -> Rem
                 } => {
                     assert_eq!(capability_set, rcs_fdomain::OpenDirType::NamespaceDir);
                     let state_clone = state.clone();
-                    task_group.local(async move {
+                    scope.spawn_local(async move {
                         handle_open_capability(
                             &moniker,
                             &capability_name,
@@ -343,7 +343,7 @@ fn setup_fake_rcs(client: &Arc<fdomain_client::Client>, state: Rc<State>) -> Rem
                 _ => panic!("unexpected request: {:?}", req),
             }
         }
-        task_group.join().await;
+        scope.join().await;
     })
     .detach();
     proxy

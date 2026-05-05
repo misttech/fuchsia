@@ -36,11 +36,11 @@ pub(crate) struct DictInner {
     pub(crate) not_found: Option<Box<dyn Fn(&str) -> () + 'static + Send + Sync>>,
 
     /// Tasks that serve the Dictionary protocol. This is an `Option` because dictionaries are not
-    /// necessarily used in async contexts but a TaskGroup will fail construction if there is no
+    /// necessarily used in async contexts but a Scope will fail construction if there is no
     /// async executor.
     #[cfg(target_os = "fuchsia")]
     #[derivative(Debug = "ignore")]
-    task_group: Option<fasync::TaskGroup>,
+    task_group: Option<fasync::Scope>,
 
     /// Functions that will be invoked whenever the contents of this dictionary changes.
     #[derivative(Debug = "ignore")]
@@ -251,8 +251,8 @@ impl Dictionary {
 
 impl DictInner {
     #[cfg(target_os = "fuchsia")]
-    pub(crate) fn tasks(&mut self) -> &mut fasync::TaskGroup {
-        self.task_group.get_or_insert_with(|| fasync::TaskGroup::new())
+    pub(crate) fn tasks(&mut self) -> &mut fasync::Scope {
+        self.task_group.get_or_insert_with(|| fasync::Scope::new())
     }
 }
 

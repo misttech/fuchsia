@@ -224,7 +224,7 @@ struct State {
     events: HashMap<Event, oneshot::Sender<()>>,
     used_ports: HashMap<Cid, port::Tracker>,
     listeners: HashMap<Addr, Listener>,
-    tasks: fasync::TaskGroup,
+    tasks: fasync::Scope,
 }
 
 impl State {
@@ -278,7 +278,7 @@ impl Vsock {
             events: HashMap::new(),
             used_ports: HashMap::new(),
             listeners: HashMap::new(),
-            tasks: fasync::TaskGroup::new(),
+            tasks: fasync::Scope::new(),
         };
 
         let service = Vsock(Rc::new(RefCell::new(service)));
@@ -309,7 +309,7 @@ impl Vsock {
     ) -> Result<(), Error> {
         let acceptor = acceptor.into_proxy();
         let stream = self.listen_port(local_port)?;
-        self.borrow_mut().tasks.local(
+        self.borrow_mut().tasks.spawn_local(
             self.clone()
                 .run_connection_listener(stream, acceptor)
                 .unwrap_or_else(|err| log::warn!("Error {} running connection listener", err)),
@@ -325,7 +325,7 @@ impl Vsock {
     ) -> Result<(), Error> {
         let stream = listener.into_stream();
         self.bind_port(port.clone())?;
-        self.borrow_mut().tasks.local(
+        self.borrow_mut().tasks.spawn_local(
             self.clone()
                 .run_connection_listener2(stream, port)
                 .unwrap_or_else(|err| log::warn!("Error {} running connection listener", err)),
@@ -547,7 +547,7 @@ impl Vsock {
             let data = con.data;
             let con = con.con.into_stream();
             let shutdown_event = self.send_response(&addr, data)?.await?;
-            self.borrow_mut().tasks.local(
+            self.borrow_mut().tasks.spawn_local(
                 self.clone()
                     .run_connection(addr.clone(), shutdown_event, con, None)
                     .map_err(|err| log::warn!("Error {} whilst running connection", err))
@@ -617,7 +617,7 @@ impl Vsock {
                         let data = con.data;
                         let con = con.con.into_stream();
                         let shutdown_event = self.send_response(&addr, data)?.await?;
-                        self.borrow_mut().tasks.local(
+                        self.borrow_mut().tasks.spawn_local(
                             self.clone()
                                 .run_connection(addr, shutdown_event, con, None)
                                 .map_err(|err| {
@@ -660,7 +660,7 @@ impl Vsock {
             response_event = response_event.fuse() => response_event?,
         }
 
-        self.borrow_mut().tasks.local(
+        self.borrow_mut().tasks.spawn_local(
             self.clone()
                 .run_connection(addr, shutdown_event, con, Some(port))
                 .unwrap_or_else(|err| log::warn!("Error {} whilst running connection", err)),
@@ -760,7 +760,7 @@ impl State {
                 let addr = addr::Vsock::from(addr);
                 let reset = |state: &mut State| {
                     let task = state.send_rst(&addr).map(|_| ());
-                    state.tasks.local(task);
+                    state.tasks.spawn_local(task);
                 };
                 match self.listeners.get(&Addr(addr.remote_cid, addr.local_port)) {
                     Some(Listener::Bound) => {

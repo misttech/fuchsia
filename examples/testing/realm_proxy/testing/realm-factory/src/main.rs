@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, Result};
+use fidl_fidl_examples_routing_echo as fecho;
 use fidl_test_echoserver::{RealmFactoryRequest, RealmFactoryRequestStream, RealmOptions};
+use fuchsia_async as fasync;
 use fuchsia_component::runtime::{Connector, Dictionary};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::{StreamExt, TryStreamExt};
 use log::*;
-use {fidl_fidl_examples_routing_echo as fecho, fuchsia_async as fasync};
 
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
@@ -21,7 +22,7 @@ async fn main() -> Result<(), Error> {
 }
 
 async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
-    let mut task_group = fasync::TaskGroup::new();
+    let scope = fasync::Scope::new();
     let result: Result<(), Error> = async move {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
@@ -51,7 +52,7 @@ async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
                     output_dictionary.insert("reverse-echo", connector).await;
 
                     // Serve the mixed-in capability.
-                    task_group.spawn(async move {
+                    scope.spawn(async move {
                         let _realm = realm;
                         let _ = realm_proxy::service::handle_receiver::<fecho::EchoMarker, _, _>(
                             receiver,
@@ -69,7 +70,7 @@ async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
             }
         }
 
-        task_group.join().await;
+        scope.join().await;
         Ok(())
     }
     .await;

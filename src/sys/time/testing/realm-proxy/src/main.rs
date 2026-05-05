@@ -6,15 +6,15 @@ mod realm_factory;
 
 use anyhow::{Context, Result};
 use fidl::endpoints::{self, ClientEnd, ControlHandle, Proxy};
+use fidl_fuchsia_metrics_test as ffmt;
+use fidl_test_time_realm as fttr;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use std::sync::Arc;
 use timekeeper_integration_lib::{PushSourcePuppet, RtcUpdates};
-use {
-    fidl_fuchsia_metrics_test as ffmt, fidl_test_time_realm as fttr, fuchsia_async as fasync,
-    zx_status,
-};
+use zx_status;
 
 use fidl_fuchsia_testing as _; // TODO: fmil - Figure out why this is needed.
 
@@ -119,7 +119,7 @@ where
 /// Returns a function that blocks and serves a standard Realm Factory.
 fn serve_realm_factory(mut stream: fttr::RealmFactoryRequestStream) -> BoxFuture<'static, ()> {
     async move {
-        let mut task_group = fasync::TaskGroup::new();
+        let scope = fasync::Scope::new();
         let result: Result<()> = async move {
             while let Ok(Some(request)) = stream.try_next().await {
                 log::trace!("received a request: {:?}", &request);
@@ -146,7 +146,7 @@ fn serve_realm_factory(mut stream: fttr::RealmFactoryRequestStream) -> BoxFuture
 
                         let (push_source_puppet_client_end, push_source_request_stream) =
                             endpoints::create_request_stream();
-                        task_group.spawn(async move {
+                        scope.spawn(async move {
                             serve_push_puppet(push_source_puppet, push_source_request_stream)
                                 .await
                                 .expect("serve_push_puppet should not return an error");
@@ -154,14 +154,14 @@ fn serve_realm_factory(mut stream: fttr::RealmFactoryRequestStream) -> BoxFuture
 
                         // Needs to be served by the test fixture.
                         let (rtc_updates, rtc_updates_stream) = endpoints::create_request_stream();
-                        task_group.spawn(async move {
+                        scope.spawn(async move {
                             serve_rtc_updates(local_rtc_updates, rtc_updates_stream)
                                 .await
                                 .expect("serve_rtc_updates should not return an error");
                         });
 
                         let realm_request_stream = realm_server.into_stream();
-                        task_group.spawn(async move {
+                        scope.spawn(async move {
                             realm_proxy::service::serve(realm, realm_request_stream)
                                 .await
                                 .expect("realm_proxy::service::serve should not return an error");
@@ -186,7 +186,7 @@ fn serve_realm_factory(mut stream: fttr::RealmFactoryRequestStream) -> BoxFuture
             }
 
             log::debug!("waiting for the realms to complete");
-            task_group.join().await;
+            scope.join().await;
             Ok(())
         }
         .await;

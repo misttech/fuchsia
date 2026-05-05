@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_async::TaskGroup;
+use fuchsia_async::Scope;
 use fuchsia_inspect::*;
 use futures::prelude::*;
 use inspect_runtime::PublishOptions;
@@ -11,7 +11,7 @@ use inspect_test_component_config_bindings::Config;
 #[fuchsia::main]
 async fn main() {
     let config = Config::take_from_startup_handle();
-    let mut trees = TaskGroup::new();
+    let trees = Scope::new();
     for i in 0..config.publish_n_trees {
         trees.spawn(launch_inspect_tree(i));
     }

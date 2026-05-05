@@ -943,14 +943,14 @@ async fn create_child_with_dict() {
 
     // Serve the `fidl.examples.routing.echo.Echo` protocol on the receiver.
     let _task = fasync::Task::spawn(async move {
-        let mut tasks = fasync::TaskGroup::new();
+        let scope = fasync::Scope::new();
         loop {
             let Some(channel) = receiver.receive().await else {
                 return;
             };
             let server_end = ServerEnd::<echo::EchoMarker>::new(channel);
             let stream: echo::EchoRequestStream = server_end.into_stream();
-            tasks.spawn(async move {
+            scope.spawn(async move {
                 EchoProtocol::serve(stream).await.expect("failed to serve Echo");
             });
         }

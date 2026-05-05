@@ -7,16 +7,16 @@
 //! protocol. This lets us test a dictionary that is a composite of dynamic and static routes.
 
 use fidl::endpoints;
+use fidl_fidl_examples_routing_echo as fecho;
+use fidl_fidl_test_components as ftest;
+use fidl_fuchsia_component_runtime as fruntime;
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component::runtime::{Connector, ConnectorReceiver, Dictionary};
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt, TryStreamExt};
 use log::info;
 use vfs::file::vmo::read_only;
-use {
-    fidl_fidl_examples_routing_echo as fecho, fidl_fidl_test_components as ftest,
-    fidl_fuchsia_component_runtime as fruntime, fuchsia_async as fasync,
-};
 
 enum IncomingRequest {
     Router(fruntime::DictionaryRouterRequestStream),
@@ -110,9 +110,9 @@ async fn run_trigger_service(echo_str: &str, mut stream: ftest::TriggerRequestSt
 }
 
 async fn handle_receiver(mut receiver: ConnectorReceiver) {
-    let mut task_group = fasync::TaskGroup::new();
+    let scope = fasync::Scope::new();
     while let Some(channel) = receiver.next().await {
-        task_group.spawn(async move {
+        scope.spawn(async move {
             let server_end = endpoints::ServerEnd::<ftest::TriggerMarker>::new(channel.into());
             run_trigger_service("Triggered d", server_end.into_stream()).await;
         });

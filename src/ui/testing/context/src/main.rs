@@ -6,21 +6,23 @@ use anyhow::Error;
 use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_logger::LogSinkMarker;
 use fidl_fuchsia_scheduler::RoleManagerMarker;
+use fidl_fuchsia_sysmem as fsysmem;
+use fidl_fuchsia_sysmem2 as fsysmem2;
 use fidl_fuchsia_tracing_provider::RegistryMarker;
 use fidl_fuchsia_ui_composition::FlatlandMarker;
 use fidl_fuchsia_ui_display_singleton::InfoMarker;
 use fidl_fuchsia_ui_focus::FocusChainListenerRegistryMarker;
 use fidl_fuchsia_ui_input3::KeyboardMarker;
 use fidl_fuchsia_ui_policy::DeviceListenerRegistryMarker;
+use fidl_fuchsia_ui_test_context as ui_test_context;
+use fidl_fuchsia_ui_test_input as ui_input;
+use fidl_fuchsia_ui_test_scene as test_scene;
 use fidl_fuchsia_vulkan_loader::LoaderMarker;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::{StreamExt, TryStreamExt};
-use {
-    fidl_fuchsia_sysmem as fsysmem, fidl_fuchsia_sysmem2 as fsysmem2,
-    fidl_fuchsia_ui_test_context as ui_test_context, fidl_fuchsia_ui_test_input as ui_input,
-    fidl_fuchsia_ui_test_scene as test_scene, fuchsia_async as fasync, zx_status,
-};
+use zx_status;
 
 // TODO(https://fxbug.dev/42069041): Use subpackages here.
 const TEST_UI_STACK: &str = "ui";
@@ -49,7 +51,7 @@ async fn run_realm_factory_server(stream: ui_test_context::RealmFactoryRequestSt
     stream
         .try_for_each_concurrent(None, |request| async {
             log::debug!("received a request: {:?}", &request);
-            let mut task_group = fasync::TaskGroup::new();
+            let scope = fasync::Scope::new();
             match request {
                 ui_test_context::RealmFactoryRequest::CreateRealm { payload, responder } => {
                     let realm_server = payload.realm_server.expect("missing realm_server");
@@ -60,7 +62,7 @@ async fn run_realm_factory_server(stream: ui_test_context::RealmFactoryRequestSt
                             .await;
 
                     let request_stream = realm_server.into_stream();
-                    task_group.spawn(async move {
+                    scope.spawn(async move {
                         realm_proxy::service::serve(realm, request_stream)
                             .await
                             .expect("invalid realm proxy server");
@@ -74,7 +76,7 @@ async fn run_realm_factory_server(stream: ui_test_context::RealmFactoryRequestSt
                 }
             }
 
-            task_group.join().await;
+            scope.join().await;
             Ok(())
         })
         .await

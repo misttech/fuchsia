@@ -5,6 +5,13 @@
 use assert_matches::assert_matches;
 use cm_rust::{ComponentDecl, FidlIntoNative, push_box};
 use fidl::endpoints::{ProtocolMarker, Proxy, ServerEnd, create_proxy};
+use fidl_fidl_examples_routing_echo as fecho;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fcdecl;
+use fidl_fuchsia_component_runtime as fruntime;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fprocess;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use fuchsia_component::runtime;
 use fuchsia_component_test::{
@@ -20,11 +27,6 @@ use test_case::test_case;
 use vfs::file::vmo::read_only;
 use vfs::pseudo_directory;
 use zx::HandleBased;
-use {
-    fidl_fidl_examples_routing_echo as fecho, fidl_fuchsia_component as fcomponent,
-    fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_component_runtime as fruntime,
-    fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
-};
 
 const COLLECTION_NAME: &'static str = "col";
 const STATIC_CHILD_NAME: &'static str = "static_child";
@@ -442,14 +444,12 @@ async fn start_with_dict() {
     let (connector, mut receiver) =
         runtime::Connector::new_with_proxy(capabilities_proxy.clone()).await;
 
-    // Serve the `fidl.examples.routing.echo.Echo` protocol on the Sender.
-    let task_group = Mutex::new(fasync::TaskGroup::new());
+    let scope = fasync::Scope::new();
     let _task = fasync::Task::spawn(async move {
         loop {
             match receiver.next().await {
                 Some(channel) => {
-                    let mut task_group = task_group.lock();
-                    task_group.spawn(async move {
+                    scope.spawn(async move {
                         let server_end = ServerEnd::<fecho::EchoMarker>::new(channel);
                         let mut stream = server_end.into_stream();
                         while let Some(fecho::EchoRequest::EchoString { value, responder }) =

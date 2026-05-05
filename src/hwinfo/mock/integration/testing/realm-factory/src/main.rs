@@ -4,15 +4,15 @@
 
 use anyhow::{Error, Result};
 use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker};
+use fidl_fuchsia_hwinfo as fhwinfo;
+use fidl_fuchsia_hwinfo_mock as fhwinfo_mock;
 use fidl_test_mock::{RealmFactoryRequest, RealmFactoryRequestStream, RealmOptions};
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::{StreamExt, TryStreamExt};
 use log::*;
-use {
-    fidl_fuchsia_hwinfo as fhwinfo, fidl_fuchsia_hwinfo_mock as fhwinfo_mock,
-    fuchsia_async as fasync, zx_status,
-};
+use zx_status;
 
 #[fuchsia::main(logging = true)]
 async fn main() -> Result<(), Error> {
@@ -26,7 +26,7 @@ async fn main() -> Result<(), Error> {
 }
 
 async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
-    let mut task_group = fasync::TaskGroup::new();
+    let scope = fasync::Scope::new();
     let result: Result<(), Error> = async move {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
@@ -37,14 +37,14 @@ async fn serve_realm_factory(mut stream: RealmFactoryRequestStream) {
                 RealmFactoryRequest::CreateRealm { options, realm_server, responder } => {
                     let realm = create_realm(options).await?;
                     let request_stream = realm_server.into_stream();
-                    task_group.spawn(async move {
+                    scope.spawn(async move {
                         realm_proxy::service::serve(realm, request_stream).await.unwrap();
                     });
                     responder.send(Ok(()))?;
                 }
             }
         }
-        task_group.join().await;
+        scope.join().await;
         Ok(())
     }
     .await;

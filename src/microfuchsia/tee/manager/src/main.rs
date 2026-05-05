@@ -6,13 +6,14 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Context, Error};
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_tee::ApplicationRequestStream;
+use fuchsia_async as fasync;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_dir_root};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_tee_manager_config::TAConfig;
 use futures::prelude::*;
 use tee_internal::Error as TeeError;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 struct TAConnectRequest {
     uuid: String,
@@ -169,19 +170,21 @@ async fn main() -> Result<(), Error> {
 
     let _ = fs.take_and_serve_directory_handle()?;
 
-    let mut application_task_group = fasync::TaskGroup::new();
+    let application_scope = fasync::Scope::new();
 
     while let Some(request) = fs.next().await {
         match configs.get(&request.uuid) {
-            Some(config) => application_task_group
-                .spawn(fasync::Task::spawn(run_application(request, config.clone()))),
+            Some(config) => {
+                let _ = application_scope
+                    .spawn(fasync::Task::spawn(run_application(request, config.clone())));
+            }
             None => {
-                log::warn!("Received connection request for unknown UUID {:?}", request.uuid)
+                log::warn!("Received connection request for unknown UUID {:?}", request.uuid);
             }
         }
     }
 
-    application_task_group.join().await;
+    application_scope.join().await;
 
     Ok(())
 }

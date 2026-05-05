@@ -232,7 +232,7 @@ mod tests {
     #[cfg(fuchsia_api_level_less_than = "HEAD")]
     #[fuchsia::test]
     async fn namespace_create() {
-        let mut tasks = fasync::TaskGroup::new();
+        let tasks = fasync::Scope::new();
         let root = new_root().await;
         let (namespace_proxy, _task) = namespace(&root).await;
 
@@ -313,7 +313,7 @@ mod tests {
     #[cfg(fuchsia_api_level_at_least = "HEAD")]
     #[fuchsia::test]
     async fn namespace_create() {
-        let mut tasks = fasync::TaskGroup::new();
+        let tasks = fasync::Scope::new();
         let root = new_root().await;
         let (namespace_proxy, _task) = namespace(&root).await;
 
@@ -373,7 +373,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn namespace_create_err_shadow() {
-        let mut tasks = fasync::TaskGroup::new();
+        let tasks = fasync::Scope::new();
         let root = new_root().await;
         let (namespace_proxy, _task) = namespace(&root).await;
 

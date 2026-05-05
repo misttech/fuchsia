@@ -78,7 +78,7 @@ fn swap_ports(addr: &Addr) -> Addr {
 struct Inner {
     callbacks: Option<CallbacksProxy>,
     pending_requests: HashMap<Port, VecDeque<zx::Socket>>,
-    proxy_tasks: fasync::TaskGroup,
+    proxy_tasks: fasync::Scope,
 }
 
 impl Inner {
@@ -142,7 +142,7 @@ impl Inner {
             return Err(zx::Status::NO_RESOURCES);
         };
 
-        self.proxy_tasks.local(proxy_data(socket, data));
+        self.proxy_tasks.spawn_local(proxy_data(socket, data));
         let addr = swap_ports(&addr);
         callbacks.response(&addr).map_err(|_| zx::Status::INTERNAL)?;
         Ok(())
@@ -157,7 +157,7 @@ impl LoopbackDevice {
         LoopbackDevice(Rc::new(RefCell::new(Inner {
             callbacks: None,
             pending_requests: HashMap::new(),
-            proxy_tasks: fasync::TaskGroup::new(),
+            proxy_tasks: fasync::Scope::new(),
         })))
     }
 

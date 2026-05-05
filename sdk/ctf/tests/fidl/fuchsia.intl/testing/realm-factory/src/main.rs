@@ -3,11 +3,14 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, Result};
+use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_inspect::InspectSinkMarker;
 use fidl_fuchsia_intl::PropertyProviderMarker;
 use fidl_fuchsia_intl_test::*;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_settings::IntlMarker;
 use fidl_fuchsia_stash::StoreMarker;
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component::runtime::Dictionary;
 use fuchsia_component::server::ServiceFs;
@@ -18,7 +21,6 @@ use futures::{StreamExt, TryStreamExt};
 use log::*;
 use vfs::file::vmo::read_only;
 use vfs::pseudo_directory;
-use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 #[fuchsia::main]
 async fn main() -> Result<(), Error> {
@@ -38,7 +40,7 @@ async fn serve_realm_factory(stream: RealmFactoryRequestStream) {
 async fn handle_request_stream(mut stream: RealmFactoryRequestStream) -> Result<()> {
     let mut realms = vec![];
     let id_gen = sandbox::CapabilityIdGenerator::new();
-    let mut task_group = fasync::TaskGroup::new();
+    let scope = fasync::Scope::new();
     let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>().unwrap();
     while let Ok(Some(request)) = stream.try_next().await {
         match request {
@@ -70,7 +72,7 @@ async fn handle_request_stream(mut stream: RealmFactoryRequestStream) -> Result<
             RealmFactoryRequest::CreateRealm { options, realm_server, responder } => {
                 let realm = create_realm(options).await?;
                 let request_stream = realm_server.into_stream();
-                task_group.spawn(async move {
+                scope.spawn(async move {
                     realm_proxy::service::serve(realm, request_stream).await.unwrap();
                 });
                 responder.send(Ok(()))?;
@@ -80,7 +82,7 @@ async fn handle_request_stream(mut stream: RealmFactoryRequestStream) -> Result<
         }
     }
 
-    task_group.join().await;
+    scope.join().await;
     Ok(())
 }
 

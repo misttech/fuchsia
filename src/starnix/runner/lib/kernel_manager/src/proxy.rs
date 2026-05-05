@@ -54,7 +54,7 @@ pub fn run_proxy_thread(
         }
         let mut executor = fasync::LocalExecutor::default();
         executor.run_singlethreaded(async move {
-            let mut tasks = fasync::TaskGroup::new();
+            let tasks = fasync::Scope::new();
             let bounce_bytes = Rc::new(RefCell::new(
                 [MaybeUninit::uninit(); zx::sys::ZX_CHANNEL_MAX_MSG_BYTES as usize],
             ));
@@ -64,7 +64,7 @@ pub fn run_proxy_thread(
             while let Ok((proxy, events)) = new_proxies.recv().await {
                 let bytes_clone = bounce_bytes.clone();
                 let handles_clone = bounce_handles.clone();
-                tasks.local(start_proxy(proxy, events, bytes_clone, handles_clone));
+                tasks.spawn_local(start_proxy(proxy, events, bytes_clone, handles_clone));
             }
         });
     });

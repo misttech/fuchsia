@@ -4,15 +4,17 @@
 
 use anyhow::{Error, Result};
 use fidl::endpoints::ControlHandle;
+use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_element::ManagerMarker;
 use fidl_fuchsia_element_test::*;
 use fidl_fuchsia_testing_harness::RealmProxy_RequestStream;
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::{StreamExt, TryStreamExt};
 use log::error;
-use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync, zx_status};
+use zx_status;
 
 enum IncomingService {
     RealmFactory(RealmFactoryRequestStream),
@@ -49,7 +51,7 @@ async fn serve_realm_factory(service: IncomingService) {
 }
 
 async fn handle_request_stream(mut stream: RealmFactoryRequestStream) -> Result<()> {
-    let mut task_group = fasync::TaskGroup::new();
+    let scope = fasync::Scope::new();
     let mut realms = vec![];
     let id_gen = sandbox::CapabilityIdGenerator::new();
     let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>().unwrap();
@@ -58,7 +60,7 @@ async fn handle_request_stream(mut stream: RealmFactoryRequestStream) -> Result<
             RealmFactoryRequest::CreateRealm { options, realm_server, responder } => {
                 let realm = create_realm(options).await?;
                 let request_stream = realm_server.into_stream();
-                task_group.spawn(async move {
+                scope.spawn(async move {
                     realm_proxy::service::serve(realm, request_stream).await.unwrap();
                 });
                 responder.send(Ok(()))?;
@@ -88,7 +90,7 @@ async fn handle_request_stream(mut stream: RealmFactoryRequestStream) -> Result<
         }
     }
 
-    task_group.join().await;
+    scope.join().await;
     Ok(())
 }
 

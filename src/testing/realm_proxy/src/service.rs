@@ -4,12 +4,13 @@
 
 use anyhow::{Error, Result};
 use fidl::endpoints;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_testing_harness::{OperationError, RealmProxy_Request, RealmProxy_RequestStream};
+use fuchsia_async as fasync;
 use fuchsia_component::runtime::ConnectorReceiver;
 use fuchsia_component_test::RealmInstance;
 use futures::{Future, StreamExt};
 use log::{debug, error, warn};
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 // RealmProxy mediates a test suite's access to the services in a test realm.
 pub trait RealmProxy {
@@ -226,13 +227,14 @@ where
     Fut: Future<Output = ()> + Send,
     F: Fn(T::RequestStream) -> Fut + Send + Sync + Copy + 'static,
 {
-    let mut task_group = fasync::TaskGroup::new();
+    let scope = fasync::Scope::new();
     while let Some(channel) = receiver.next().await {
-        task_group.spawn(async move {
+        scope.spawn(async move {
             let server_end = endpoints::ServerEnd::<T>::new(channel.into());
             let stream: T::RequestStream = server_end.into_stream();
             request_stream_handler(stream).await;
         });
     }
+    scope.join().await;
     Ok(())
 }
