@@ -18,6 +18,10 @@ instead, and this .bzl will be removed.
 """
 
 load(
+    "@fuchsia_rules_common//assembly:providers.bzl",
+    _FuchsiaProductConfigInfo = "FuchsiaProductConfigInfo",
+)
+load(
     "//fuchsia/private:fuchsia_api_level.bzl",
     _FUCHSIA_API_LEVEL_TARGET = "FUCHSIA_API_LEVEL_TARGET",
     _FuchsiaAPILevelInfo = "FuchsiaAPILevelInfo",
@@ -62,7 +66,6 @@ load(
     _FuchsiaBoardInputBundleInfo = "FuchsiaBoardInputBundleInfo",
     _FuchsiaBoardInputBundleSetInfo = "FuchsiaBoardInputBundleSetInfo",
     _FuchsiaPartitionsConfigInfo = "FuchsiaPartitionsConfigInfo",
-    _FuchsiaProductConfigInfo = "FuchsiaProductConfigInfo",
     _FuchsiaVirtualDeviceInfo = "FuchsiaVirtualDeviceInfo",
 )
 

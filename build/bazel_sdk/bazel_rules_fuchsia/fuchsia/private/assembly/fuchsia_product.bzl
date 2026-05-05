@@ -4,6 +4,7 @@
 
 """Rule for assembling a Fuchsia product."""
 
+load("@fuchsia_rules_common//assembly:providers.bzl", "FuchsiaProductConfigInfo")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:ffx_tool.bzl", "get_ffx_assembly_args", "get_ffx_assembly_inputs")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
@@ -14,7 +15,6 @@ load(
     "FuchsiaBoardConfigInfo",
     "FuchsiaPlatformArtifactsInfo",
     "FuchsiaProductAssemblyInfo",
-    "FuchsiaProductConfigInfo",
     "FuchsiaProductImageInfo",
 )
 load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS")

@@ -24,15 +24,6 @@ FuchsiaConfigDataInfo = provider(
     },
 )
 
-FuchsiaProductConfigInfo = provider(
-    doc = "A product-info used to containing the product_config.json and deps.",
-    fields = {
-        "directory": "Directory of the product config container",
-        "build_type": "The build type of the product.",
-        "build_id_dirs": "Directories containing the debug symbols",
-    },
-)
-
 FuchsiaProductInputBundleInfo = provider(
     doc = "A product input bundle info used to contain the product input bundle directory",
     fields = {

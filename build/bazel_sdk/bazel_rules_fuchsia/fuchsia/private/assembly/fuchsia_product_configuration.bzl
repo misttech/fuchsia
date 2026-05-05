@@ -6,6 +6,7 @@
 
 # buildifier: disable=module-docstring
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+load("@fuchsia_rules_common//assembly:providers.bzl", "FuchsiaProductConfigInfo")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:fuchsia_package.bzl", "get_driver_component_manifests")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
@@ -14,7 +15,6 @@ load(
     ":providers.bzl",
     "FuchsiaAssembledPackageInfo",
     "FuchsiaOmahaOtaConfigInfo",
-    "FuchsiaProductConfigInfo",
     "FuchsiaProductInputBundleInfo",
     "FuchsiaStarnixContainerInfo",
 )
