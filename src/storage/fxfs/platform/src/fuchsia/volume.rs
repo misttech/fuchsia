@@ -696,9 +696,12 @@ impl FxVolume {
                         // NB: For now, we only expect these calls in a regular (non-blob) volume.
                         // Hard-code the type for simplicity; attempts to call on a blob volume will
                         // get an error.
-                        .get_owner(parent_directory_token)
+                        .get_owner_and_rights(parent_directory_token)
                         .and_then(|dir| {
-                            dir.ok_or(zx::Status::BAD_HANDLE).and_then(|dir| {
+                            dir.ok_or(zx::Status::BAD_HANDLE).and_then(|(dir, rights)| {
+                                if !rights.contains(fio::Rights::MODIFY_DIRECTORY) {
+                                    return Err(zx::Status::BAD_HANDLE);
+                                }
                                 dir.into_any()
                                     .downcast::<FxDirectory>()
                                     .map_err(|_| zx::Status::BAD_HANDLE)

@@ -994,11 +994,15 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             return Err(Status::ACCESS_DENIED);
         }
 
-        let target_parent = self
+        let (target_parent, target_rights) = self
             .scope
             .token_registry()
-            .get_owner(target_parent_token.into())?
+            .get_owner_and_rights(target_parent_token.into())?
             .ok_or(Err(Status::NOT_FOUND))?;
+
+        if !target_rights.contains(fio::Rights::MODIFY_DIRECTORY) {
+            return Err(Status::ACCESS_DENIED);
+        }
 
         self.file.clone().link_into(target_parent, target_name).await
     }

@@ -257,11 +257,15 @@ impl<T: Symlink> Connection<T> {
     ) -> Result<(), Status> {
         let target_name = parse_name(target_name).map_err(|_| Status::INVALID_ARGS)?;
 
-        let target_parent = self
+        let (target_parent, target_rights) = self
             .scope
             .token_registry()
-            .get_owner(target_parent_token.into())?
+            .get_owner_and_rights(target_parent_token.into())?
             .ok_or(Err(Status::NOT_FOUND))?;
+
+        if !target_rights.contains(fio::Rights::MODIFY_DIRECTORY) {
+            return Err(Status::ACCESS_DENIED);
+        }
 
         self.symlink.clone().link_into(target_parent, target_name).await
     }

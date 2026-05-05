@@ -6,6 +6,7 @@
 
 use crate::directory::entry_container::MutableDirectory;
 use fidl::{Event, HandleBased, NullableHandle, Rights};
+use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use pin_project::{pin_project, pinned_drop};
 use std::collections::hash_map::{Entry, HashMap};
@@ -78,18 +79,19 @@ impl TokenRegistry {
 
     /// Returns the information provided by get_node_and_flags for the given token.  Returns None if
     /// no such token exists (perhaps because the owner has been dropped).
-    pub fn get_owner(
+    pub fn get_owner_and_rights(
         &self,
         token: NullableHandle,
-    ) -> Result<Option<Arc<dyn MutableDirectory>>, Status> {
+    ) -> Result<Option<(Arc<dyn MutableDirectory>, fio::Rights)>, Status> {
         let koid = token.koid()?;
         let this = self.inner.lock();
 
         match this.token_to_owner.get(&koid) {
-            Some(owner) => {
+            Some(owner_ptr) => {
                 // SAFETY: This is safe because Tokenizable's drop will ensure that unregister is
                 // called to avoid any dangling pointers.
-                Ok(Some(unsafe { (**owner).get_node() }))
+                let owner = unsafe { &**owner_ptr };
+                Ok(Some((owner.get_node(), owner.get_rights())))
             }
             None => Ok(None),
         }
@@ -107,11 +109,14 @@ impl TokenRegistry {
 }
 
 pub trait TokenInterface: 'static {
-    /// Returns the node and flags that correspond with this token.  This information is returned by
-    /// the `get_owner` method.  For now this always returns Arc<dyn MutableDirectory> but it should
-    /// be possible to change this so that files can be represented in future if and when the need
+    /// Returns the node that corresponds with this token.  This information is returned by the
+    /// `get_owner` method.  For now this always returns Arc<dyn MutableDirectory> but it should be
+    /// possible to change this so that files can be represented in future if and when the need
     /// arises.
     fn get_node(&self) -> Arc<dyn MutableDirectory>;
+
+    /// Returns the rights of the connection this token is associated with.
+    fn get_rights(&self) -> fio::Rights;
 
     /// Returns the token registry.
     fn token_registry(&self) -> &TokenRegistry;
@@ -158,13 +163,15 @@ mod tests {
     use self::mocks::{MockChannel, MockDirectory};
     use super::{DEFAULT_TOKEN_RIGHTS, TokenRegistry, Tokenizable};
     use fidl::{HandleBased, Rights};
+    use fidl_fuchsia_io as fio;
     use futures::pin_mut;
     use std::sync::Arc;
 
     #[test]
     fn client_register_same_token() {
         let registry = Arc::new(TokenRegistry::new());
-        let client = Tokenizable(MockChannel(registry.clone(), MockDirectory::new()));
+        let client =
+            Tokenizable(MockChannel(registry.clone(), MockDirectory::new(), fio::Rights::empty()));
         pin_mut!(client);
 
         let token1 = TokenRegistry::get_token(client.as_ref()).unwrap();
@@ -178,7 +185,8 @@ mod tests {
     #[test]
     fn token_rights() {
         let registry = Arc::new(TokenRegistry::new());
-        let client = Tokenizable(MockChannel(registry.clone(), MockDirectory::new()));
+        let client =
+            Tokenizable(MockChannel(registry.clone(), MockDirectory::new(), fio::Rights::empty()));
         pin_mut!(client);
 
         let token = TokenRegistry::get_token(client.as_ref()).unwrap();
@@ -191,20 +199,25 @@ mod tests {
         let registry = Arc::new(TokenRegistry::new());
 
         let token = {
-            let client = Tokenizable(MockChannel(registry.clone(), MockDirectory::new()));
+            let client = Tokenizable(MockChannel(
+                registry.clone(),
+                MockDirectory::new(),
+                fio::Rights::READ_BYTES,
+            ));
             pin_mut!(client);
 
             let token = TokenRegistry::get_token(client.as_ref()).unwrap();
 
             {
-                let res = registry
-                    .get_owner(token.duplicate_handle(Rights::SAME_RIGHTS).unwrap())
+                let (res, rights) = registry
+                    .get_owner_and_rights(token.duplicate_handle(Rights::SAME_RIGHTS).unwrap())
                     .unwrap()
                     .unwrap();
                 // Note this ugly cast in place of `Arc::ptr_eq(&client, &res)` here is to ensure we
                 // don't compare vtable pointers, which are not strictly guaranteed to be the same
                 // across casts done in different code generation units at compilation time.
                 assert_eq!(Arc::as_ptr(&client.1) as *const (), Arc::as_ptr(&res) as *const ());
+                assert_eq!(rights, fio::Rights::READ_BYTES)
             }
 
             token
@@ -212,7 +225,7 @@ mod tests {
 
         assert!(
             registry
-                .get_owner(token.duplicate_handle(Rights::SAME_RIGHTS).unwrap())
+                .get_owner_and_rights(token.duplicate_handle(Rights::SAME_RIGHTS).unwrap())
                 .unwrap()
                 .is_none(),
             "`registry.get_owner() is not `None` after an connection dropped."
@@ -224,7 +237,11 @@ mod tests {
         let registry = Arc::new(TokenRegistry::new());
 
         let token = {
-            let client = Tokenizable(MockChannel(registry.clone(), MockDirectory::new()));
+            let client = Tokenizable(MockChannel(
+                registry.clone(),
+                MockDirectory::new(),
+                fio::Rights::empty(),
+            ));
             pin_mut!(client);
 
             let token = TokenRegistry::get_token(client.as_ref()).unwrap();
@@ -242,7 +259,7 @@ mod tests {
 
         assert!(
             registry
-                .get_owner(token.duplicate_handle(Rights::SAME_RIGHTS).unwrap())
+                .get_owner_and_rights(token.duplicate_handle(Rights::SAME_RIGHTS).unwrap())
                 .unwrap()
                 .is_none(),
             "`registry.get_owner() is not `None` after connection dropped."
@@ -263,11 +280,19 @@ mod tests {
         use std::sync::Arc;
         use zx_status::Status;
 
-        pub(super) struct MockChannel(pub Arc<TokenRegistry>, pub Arc<MockDirectory>);
+        pub(super) struct MockChannel(
+            pub Arc<TokenRegistry>,
+            pub Arc<MockDirectory>,
+            pub fio::Rights,
+        );
 
         impl TokenInterface for MockChannel {
             fn get_node(&self) -> Arc<dyn MutableDirectory> {
                 self.1.clone()
+            }
+
+            fn get_rights(&self) -> fio::Rights {
+                self.2
             }
 
             fn token_registry(&self) -> &TokenRegistry {

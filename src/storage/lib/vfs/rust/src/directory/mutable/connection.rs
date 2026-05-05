@@ -185,8 +185,10 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
     }
 
     fn handle_get_token(this: Pin<&Tokenizable<Self>>) -> Result<NullableHandle, Status> {
-        // GetToken exists to support linking, so we must make sure the connection has the
-        // permission to modify the directory.
+        // TODO(https://fxbug.dev/503041342): The current GetToken method on directory requires
+        // specific rights to get the token in the first place. The new GetToken on Node will
+        // require no rights to get a token, but instead enforced on use of the token. When the old
+        // one is deleted this method (and therefore this check) will be deleted too.
         if !this.base.options.rights.contains(fio::Rights::MODIFY_DIRECTORY) {
             return Err(Status::BAD_HANDLE);
         }
@@ -210,10 +212,16 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
             return Err(Status::INVALID_ARGS);
         }
 
-        let dst_parent = match self.base.scope.token_registry().get_owner(dst_parent_token)? {
-            None => return Err(Status::NOT_FOUND),
-            Some(entry) => entry,
-        };
+        let (dst_parent, dst_rights) = self
+            .base
+            .scope
+            .token_registry()
+            .get_owner_and_rights(dst_parent_token)?
+            .ok_or(Err(Status::NOT_FOUND))?;
+
+        if !dst_rights.contains(fio::Rights::MODIFY_DIRECTORY) {
+            return Err(Status::ACCESS_DENIED);
+        }
 
         dst_parent.clone().rename(self.base.directory.clone(), src, dst).await
     }
@@ -257,6 +265,10 @@ impl<DirectoryType: MutableDirectory> RequestHandler
 impl<DirectoryType: MutableDirectory> TokenInterface for MutableConnection<DirectoryType> {
     fn get_node(&self) -> Arc<dyn MutableDirectory> {
         self.base.directory.clone()
+    }
+
+    fn get_rights(&self) -> fio::Rights {
+        self.base.options.rights
     }
 
     fn token_registry(&self) -> &TokenRegistry {

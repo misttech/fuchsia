@@ -475,18 +475,20 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
 
         // To avoid rights escalation, we must make sure that the connection to the source directory
         // has the maximal set of file rights.  We do not check for EXECUTE because mutable
-        // filesystems that support link don't currently support EXECUTE rights.  The target rights
-        // are verified by virtue of the fact that it is not possible to get a token without the
-        // MODIFY_DIRECTORY right (see `MutableConnection::handle_get_token`).
+        // filesystems that support link don't currently support EXECUTE rights.
         if !self.options.rights.contains(fio::RW_STAR_DIR) {
             return Err(Status::BAD_HANDLE);
         }
 
-        let target_parent = self
+        let (target_parent, target_rights) = self
             .scope
             .token_registry()
-            .get_owner(target_parent_token)?
+            .get_owner_and_rights(target_parent_token)?
             .ok_or(Err(Status::NOT_FOUND))?;
+
+        if !target_rights.contains(fio::Rights::MODIFY_DIRECTORY) {
+            return Err(Status::BAD_HANDLE);
+        }
 
         target_parent.link(target_name, self.directory.clone().into_any(), source_name).await
     }
