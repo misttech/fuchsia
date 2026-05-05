@@ -10,10 +10,9 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 
 use fidl_next_codec::Chunk;
-
-use crate::concurrency::future::AtomicWaker;
-use crate::concurrency::sync::atomic::{AtomicBool, Ordering};
-use crate::concurrency::sync::{Arc, mpsc};
+use fuchsia_loom::future::AtomicWaker;
+use fuchsia_loom::sync::atomic::{AtomicBool, Ordering};
+use fuchsia_loom::sync::{Arc, mpsc};
 
 use crate::{NonBlockingTransport, Transport};
 

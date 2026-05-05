@@ -12,9 +12,9 @@ use core::task::{Context, Poll, ready};
 
 use fidl_constants::EPITAPH_ORDINAL;
 use fidl_next_codec::{AsDecoder as _, DecoderExt as _, Encode, EncodeError, EncoderExt, Wire};
+use fuchsia_loom::sync::{Arc, Mutex};
 use pin_project::{pin_project, pinned_drop};
 
-use crate::concurrency::sync::{Arc, Mutex};
 use crate::endpoints::connection::{Connection, SendFutureState};
 use crate::endpoints::lockers::{LockerError, Lockers};
 use crate::wire::{Epitaph, MessageHeader};

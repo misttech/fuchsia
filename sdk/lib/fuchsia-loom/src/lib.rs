@@ -2,27 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![allow(unused)]
-
 // These macros apply `#[cfg]`s to each item, avoid repeating the same config
 // settings, and cut down on the line noise.
 
-#[cfg(feature = "loom")]
+#[cfg(loom)]
+pub use ::loom;
+
+#[cfg(loom)]
 macro_rules! loom {
     ($($tt:tt)*) => { $($tt)* }
 }
 
-#[cfg(not(feature = "loom"))]
+#[cfg(not(loom))]
 macro_rules! loom {
     ($($tt:tt)*) => {};
 }
 
-#[cfg(feature = "loom")]
+#[cfg(loom)]
 macro_rules! not_loom {
     ($($tt:tt)*) => {};
 }
 
-#[cfg(not(feature = "loom"))]
+#[cfg(not(loom))]
 macro_rules! not_loom {
     ($($tt:tt)*) => { $($tt)* }
 }

@@ -9,13 +9,13 @@ use core::task::{Context, Poll, Waker};
 use fidl_constants::EPITAPH_ORDINAL;
 
 use fidl_next_codec::{EncodeError, EncoderExt as _};
+use fuchsia_loom::cell::UnsafeCell;
+use fuchsia_loom::future::AtomicWaker;
+use fuchsia_loom::hint::unreachable_unchecked;
+use fuchsia_loom::sync::Mutex;
+use fuchsia_loom::sync::atomic::{AtomicUsize, Ordering};
 use pin_project::pin_project;
 
-use crate::concurrency::cell::UnsafeCell;
-use crate::concurrency::future::AtomicWaker;
-use crate::concurrency::hint::unreachable_unchecked;
-use crate::concurrency::sync::Mutex;
-use crate::concurrency::sync::atomic::{AtomicUsize, Ordering};
 use crate::wire::{Epitaph, MessageHeader};
 use crate::{Flexibility, NonBlockingTransport, ProtocolError, Transport};
 

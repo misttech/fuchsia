@@ -9,8 +9,8 @@ use fidl_next_codec::{
     Constrained, Decode, DecodeError, Encode, EncodeError, FromWire, FromWireRef, IntoNatural,
     Slot, ValidationError, Wire, munge,
 };
+use fuchsia_loom::hint::unreachable_unchecked;
 
-use crate::concurrency::hint::unreachable_unchecked;
 use crate::wire;
 
 /// An internal framework error.

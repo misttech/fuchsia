@@ -2,16 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![cfg(feature = "loom")]
-
 use fidl_next_codec::AsDecoderExt as _;
-use fidl_next_protocol_loom::mpsc::Mpsc;
-use fidl_next_protocol_loom::{
+use fidl_next_protocol::mpsc::Mpsc;
+use fidl_next_protocol::{
     Body, Client, ClientDispatcher, ClientHandler, Flexibility, ProtocolError, Responder,
     ServerDispatcher, ServerHandler, Transport,
 };
-use loom::future::block_on;
-use loom::thread::spawn;
+use fuchsia_loom::loom::future::block_on;
+use fuchsia_loom::loom::thread::spawn;
 
 struct IgnoreEvents;
 
@@ -26,8 +24,8 @@ impl<T: Transport> ClientHandler<T> for IgnoreEvents {
     }
 }
 
-fn loom() -> loom::model::Builder {
-    let mut builder = loom::model::Builder::new();
+fn loom() -> fuchsia_loom::loom::model::Builder {
+    let mut builder = fuchsia_loom::loom::model::Builder::new();
     builder.preemption_bound = Some(1);
     builder
 }

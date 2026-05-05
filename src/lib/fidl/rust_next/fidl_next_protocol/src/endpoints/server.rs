@@ -14,10 +14,10 @@ use core::task::{Context, Poll};
 use fidl_next_codec::{
     AsDecoder as _, DecoderExt as _, Encode, EncodeError, EncoderExt as _, Wire,
 };
+use fuchsia_loom::sync::Arc;
+use fuchsia_loom::sync::atomic::{AtomicI64, Ordering};
 use pin_project::pin_project;
 
-use crate::concurrency::sync::Arc;
-use crate::concurrency::sync::atomic::{AtomicI64, Ordering};
 use crate::endpoints::connection::{Connection, SendFutureOutput, SendFutureState};
 use crate::wire::MessageHeader;
 use crate::{Body, Flexibility, NonBlockingTransport, ProtocolError, SendFuture, Transport};
