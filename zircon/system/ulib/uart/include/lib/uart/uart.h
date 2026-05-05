@@ -41,7 +41,11 @@ namespace uart {
 
 // Config type for stub drivers, such that certain operations may be defined
 // against them.
-struct StubConfig {};
+struct StubConfig {
+  // This isn't an empty type just so it will be a zbitl::PayloadData type like
+  // all the real ones are.
+  uint64_t do_not_use = 0;
+};
 
 // Tagged configuration type, used to represent the configuration of `Driver` even if multiple types
 // of driver have the same `config_type`.

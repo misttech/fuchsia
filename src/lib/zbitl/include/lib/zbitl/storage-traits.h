@@ -14,6 +14,7 @@
 #include <functional>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -27,20 +28,20 @@ using ByteView = std::span<const std::byte>;
 constexpr size_t kStorageAlignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__;
 
 template <typename T>
-concept PayloadCompatibleStorage = requires { alignof(T) <= kStorageAlignment; };
+concept PayloadCompatibleStorage = alignof(T) <= kStorageAlignment;
 
+// These are types that might appropriately be used in ZBI item payloads.
 template <typename T>
-constexpr bool is_pod_v = std::is_trivial_v<T> && std::is_standard_layout_v<T>;
-
-template <typename T>
-constexpr bool is_uniquely_representable_pod_v =
-    is_pod_v<T> && std::has_unique_object_representations_v<T>;
+concept PayloadData =  //
+    alignof(T) <= ZBI_ALIGNMENT && std::is_standard_layout_v<T> &&
+    std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> &&
+    std::has_unique_object_representations_v<T>;
 
 // It is expected that `payload` is `kStorageAlignment`-aligned in the
 // following AsSpan methods (see StorageTraits below), along with `T` itself.
 // This ensures that `payload` is `alignof(T)`-aligned as well, which in
 // particular means that it is safe to reinterpret a `U*` as a `T*`.
-template <PayloadCompatibleStorage T, typename U>
+template <PayloadCompatibleStorage T, PayloadData U>
 inline std::span<T> AsSpan(U* payload, size_t len) {
   if constexpr (sizeof(U) % sizeof(T) != 0) {
     ZX_ASSERT(len * sizeof(U) % sizeof(T) == 0);
@@ -48,25 +49,32 @@ inline std::span<T> AsSpan(U* payload, size_t len) {
   return {reinterpret_cast<T*>(payload), (len * sizeof(U)) / sizeof(T)};
 }
 
-template <typename T, typename U>
-inline std::span<T> AsSpan(const U& payload) {
-  static_assert(is_uniquely_representable_pod_v<std::decay_t<T>>);
-  if constexpr (is_pod_v<std::decay_t<U>>) {
-    return AsSpan<T>(&payload, 1);
-  } else {
-    return AsSpan<T>(std::data(payload), std::size(payload));
-  }
+template <typename T, std::ranges::contiguous_range R>
+inline std::span<T> AsSpan(R&& payload) {
+  return AsSpan<T>(std::ranges::data(payload), std::ranges::size(payload));
 }
 
-inline ByteView AsBytes(const void* payload, size_t len) {
+// **NOTE:** This takes any pointer type, but the size is always in bytes.
+// Consider using std::as_bytes(std::span{payload, count}) for a count of
+// pointee objects instead.
+inline ByteView AsBytes(const PayloadData auto* payload, size_t len) {
   return {reinterpret_cast<const std::byte*>(payload), len};
 }
 
-inline ByteView AsBytes(std::string_view sv) { return AsBytes(sv.data(), sv.size()); }
-
-template <typename T>
-inline ByteView AsBytes(const T& payload) {
+template <std::ranges::contiguous_range R>
+  requires(PayloadData<std::ranges::range_value_t<R>>)
+inline ByteView AsBytes(R&& payload) {
   return AsSpan<const std::byte>(payload);
+}
+
+inline ByteView AsBytes(std::string_view sv) { return std::as_bytes(std::span{sv}); }
+
+// **NOTE:** Use with caution!  This takes the address of the argument passed
+// by reference.  It should only be used as part of a complete expression that
+// is consuming the ByteView so there can never be dangling pointers to a
+// temporary object.
+inline ByteView AsBytes(const PayloadData auto& payload) {
+  return std::as_bytes(std::span{&payload, 1});
 }
 
 /// The zbitl::StorageTraits template must be specialized for each type used as
@@ -296,11 +304,9 @@ class ExtendedStorageTraits : public StorageTraits<Storage> {
       ExtendedStorageTraits::template CanOneShotRead<Data, /*LowLocality=*/true>(),
       std::reference_wrapper<const Data>, Data>;
 
-  template <typename Data>
+  template <PayloadData Data>
   [[gnu::always_inline]] static fit::result<error_type, LocalizedReadResult<Data>> LocalizedRead(
       Storage& storage, uint32_t offset) {
-    static_assert(is_uniquely_representable_pod_v<Data>);
-
     payload_type payload;
     if (auto result = Base::Payload(storage, offset, sizeof(Data)); result.is_error()) {
       return result.take_error();

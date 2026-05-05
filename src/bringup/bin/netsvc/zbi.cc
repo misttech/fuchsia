@@ -58,8 +58,8 @@ zx_status_t netboot_prepare_zbi(zx::vmo zbi_in, std::string_view cmdline, zx::vm
 
   zbitl::Image data_img(zx::unowned_vmo{*data_zbi});
   if (!cmdline.empty()) {
-    auto append_result = data_img.Append(zbi_header_t{.type = ZBI_TYPE_CMDLINE},
-                                         zbitl::AsBytes(cmdline.data(), cmdline.size()));
+    auto append_result =
+        data_img.Append(zbi_header_t{.type = ZBI_TYPE_CMDLINE}, zbitl::AsBytes(cmdline));
     if (append_result.is_error()) {
       printf("netbootloader: failed to append command line: ");
       PrintViewError(append_result.error_value());

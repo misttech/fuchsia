@@ -75,11 +75,9 @@ class SingleItem : public ItemBase {
 };
 
 // This defines a simple item with a payload stored directly in this object.
-template <typename Payload, uint32_t Type, uint32_t Extra = 0>
+template <zbitl::PayloadData Payload, uint32_t Type, uint32_t Extra = 0>
 class SingleOptionalItem : public ItemBase {
  public:
-  static_assert(zbitl::is_uniquely_representable_pod_v<Payload>);
-
   constexpr size_t size_bytes() const { return payload_ ? ItemSize(sizeof(*payload_)) : 0; }
 
   constexpr SingleOptionalItem& set_payload(const Payload& payload) {
@@ -126,12 +124,10 @@ class SingleOptionalItem : public ItemBase {
 // installs a value.  The ItemHeader overload corresponding to the type of the
 // argument to set_payload will be used to produce the ZBI item.  set_payload
 // with no arguments resets it to initial state so no item is produced.
-template <class Item, typename... Payload>
+template <class Item, zbitl::PayloadData... Payload>
 class SingleVariantItemBase : public ItemBase {
  public:
   using AnyPayload = std::variant<Payload...>;
-
-  static_assert((zbitl::is_uniquely_representable_pod_v<Payload> && ...));
 
   constexpr size_t size_bytes() const { return SizeBytes(payload_); }
 
