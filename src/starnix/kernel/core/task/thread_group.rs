@@ -590,7 +590,90 @@ impl Releasable for ZombieProcess {
 }
 
 impl ThreadGroup {
+    /// Creates a ThreadGroup for a regular userspace process.
     pub fn new<L>(
+        locked: &mut Locked<L>,
+        kernel: Arc<Kernel>,
+        process: zx::Process,
+        root_vmar: zx::Vmar,
+        parent: Option<ThreadGroupWriteGuard<'_>>,
+        leader: pid_t,
+        exit_signal: Option<Signal>,
+        process_group: Arc<ProcessGroup>,
+        signal_actions: Arc<SignalActions>,
+    ) -> Arc<ThreadGroup>
+    where
+        L: LockBefore<ProcessGroupState>,
+    {
+        debug_assert!(!process.is_invalid());
+        debug_assert!(!root_vmar.is_invalid());
+        Self::new_internal(
+            locked,
+            kernel,
+            process,
+            root_vmar,
+            parent,
+            leader,
+            exit_signal,
+            process_group,
+            signal_actions,
+        )
+    }
+
+    /// Creates a ThreadGroup for a kernel system task (e.g., kthreadd).
+    pub fn for_system<L>(
+        locked: &mut Locked<L>,
+        kernel: Arc<Kernel>,
+        leader: pid_t,
+        process_group: Arc<ProcessGroup>,
+    ) -> Arc<ThreadGroup>
+    where
+        L: LockBefore<ProcessGroupState>,
+    {
+        Self::new_internal(
+            locked,
+            kernel,
+            zx::Process::invalid(),
+            zx::Vmar::invalid(),
+            None,
+            leader,
+            Some(SIGCHLD),
+            process_group,
+            SignalActions::default(),
+        )
+    }
+
+    /// Creates a ThreadGroup suitable for use in tests.
+    ///
+    /// This function performs the minimal setup necessary to produce a valid `ThreadGroup`
+    /// instance. It uses an invalid handle for the root VMAR, sets no parent, and uses
+    /// default signal actions with `SIGCHLD` as the exit signal.
+    ///
+    /// This should only be used in tests where a full process environment is not required.
+    pub fn for_test<L>(
+        locked: &mut Locked<L>,
+        kernel: Arc<Kernel>,
+        process: zx::Process,
+        leader: pid_t,
+        process_group: Arc<ProcessGroup>,
+    ) -> Arc<ThreadGroup>
+    where
+        L: LockBefore<ProcessGroupState>,
+    {
+        Self::new_internal(
+            locked,
+            kernel,
+            process,
+            zx::Vmar::invalid(),
+            None,
+            leader,
+            Some(SIGCHLD),
+            process_group,
+            SignalActions::default(),
+        )
+    }
+
+    fn new_internal<L>(
         locked: &mut Locked<L>,
         kernel: Arc<Kernel>,
         process: zx::Process,

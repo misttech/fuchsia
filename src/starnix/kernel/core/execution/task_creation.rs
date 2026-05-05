@@ -277,16 +277,11 @@ where
         TaskCommand::new(b"kthreadd"),
         fs,
         |locked, pid, process_group| {
-            let thread_group = ThreadGroup::new(
+            let thread_group = ThreadGroup::for_system(
                 locked.cast_locked::<TaskRelease>(),
                 kernel.clone(),
-                zx::Process::invalid(),
-                zx::Vmar::invalid(),
-                None,
                 pid,
-                Some(SIGCHLD),
                 process_group,
-                SignalActions::default(),
             );
             Ok(TaskInfo { thread: None, thread_group, memory_manager: None }.into())
         },

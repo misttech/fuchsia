@@ -1131,7 +1131,6 @@ mod tests {
     use starnix_uapi::file_mode::mode;
     use starnix_uapi::mount_flags::MountpointFlags;
     use starnix_uapi::restricted_aspace::RESTRICTED_ASPACE_RANGE;
-    use starnix_uapi::signals::SIGCHLD;
     use std::collections::BTreeMap;
     use std::ffi::CString;
     use std::sync::LazyLock;
@@ -1153,7 +1152,6 @@ mod tests {
         }
     }
     use starnix_core::execution::{TaskInfo, create_task};
-    use starnix_core::signals::SignalActions;
 
     /// Setup and run a test against the remote binder. The closure that is passed to this function
     /// will be called with a binder proxy that can be used to access the remote binder.
@@ -1189,16 +1187,12 @@ mod tests {
                             let process = fuchsia_runtime::process_self()
                                 .duplicate(zx::Rights::SAME_RIGHTS)
                                 .expect("process");
-                            let thread_group = ThreadGroup::new(
+                            let thread_group = ThreadGroup::for_test(
                                 locked,
                                 kernel.clone(),
                                 process,
-                                zx::Vmar::invalid(),
-                                None,
                                 pid,
-                                Some(SIGCHLD),
                                 process_group,
-                                SignalActions::default(),
                             );
                             Ok(TaskInfo { thread: None, thread_group, memory_manager }.into())
                         },
