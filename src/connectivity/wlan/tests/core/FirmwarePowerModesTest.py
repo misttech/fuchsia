@@ -30,7 +30,7 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from common.utils.ies import read_ssid
 from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
-from mobly import test_runner
+from mobly import signals, test_runner
 from mobly.asserts import assert_equal, assert_true, fail
 from mobly_controller.openwrt_access_point import OpenWrtAP
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
@@ -82,6 +82,10 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
                 security=DeprecatedSecurity(
                     security_mode=DeprecatedSecurityMode.OPEN
                 ),
+            )
+        else:
+            raise signals.TestAbortClass(
+                "No access point configured for this test."
             )
 
         ps_resp = await self.test_kit.device_monitor.set_power_save_mode(
@@ -187,12 +191,17 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
             ap_address = utils.get_addr(
                 self.test_kit.access_point.ssh, ap_test_interface
             )
-            try:
-                ping_result = self.ping(ap_address)
-                logger.info(f"Ping succeeded: {ping_result}")
-            except Exception as e:
-                logger.error(f"{e}")
-                fail(f"Ping failed.")
+        else:
+            raise signals.TestAbortClass(
+                "No access point configured for this test."
+            )
+
+        try:
+            ping_result = self.ping(ap_address)
+            logger.info(f"Ping succeeded: {ping_result}")
+        except Exception as e:
+            logger.error(f"{e}")
+            fail(f"Ping failed.")
 
 
 if __name__ == "__main__":
