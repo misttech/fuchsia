@@ -605,6 +605,26 @@ impl BaseNode {
             |info| Ok(info.read()),
         )
     }
+
+    fn update_attributes(&self, info: &FsNodeInfo, has: zxio_node_attr_has_t) -> Result<(), Errno> {
+        // Omit updating creation_time. By definition, there shouldn't be a change in creation_time.
+        will_dirty(&[self], || {
+            let res = self.io.attr_set(fio::MutableNodeAttributes {
+                modification_time: has
+                    .modification_time
+                    .then_some(info.time_modify.into_nanos() as u64),
+                access_time: has.access_time.then_some(info.time_access.into_nanos() as u64),
+                mode: has.mode.then_some(info.mode.bits()),
+                uid: has.uid.then_some(info.uid),
+                gid: has.gid.then_some(info.gid),
+                rdev: has.rdev.then_some(info.rdev.bits()),
+                casefold: has.casefold.then_some(info.casefold),
+                wrapping_key_id: if has.wrapping_key_id { info.wrapping_key_id } else { None },
+                ..Default::default()
+            });
+            res.map_err(|status| from_status_like_fdio!(status))
+        })
+    }
 }
 
 impl<'a> TryFrom<&'a FsNode> for &'a BaseNode {
@@ -1283,25 +1303,9 @@ impl FsNodeOps for RemoteNode {
         info: &FsNodeInfo,
         has: zxio_node_attr_has_t,
     ) -> Result<(), Errno> {
-        // Omit updating creation_time. By definition, there shouldn't be a change in creation_time.
-        will_dirty(&[&self.node], || {
-            self.node
-                .io
-                .attr_set(fio::MutableNodeAttributes {
-                    modification_time: has
-                        .modification_time
-                        .then_some(info.time_modify.into_nanos() as u64),
-                    access_time: has.access_time.then_some(info.time_access.into_nanos() as u64),
-                    mode: has.mode.then_some(info.mode.bits()),
-                    uid: has.uid.then_some(info.uid),
-                    gid: has.gid.then_some(info.gid),
-                    rdev: has.rdev.then_some(info.rdev.bits()),
-                    casefold: has.casefold.then_some(info.casefold),
-                    wrapping_key_id: if has.wrapping_key_id { info.wrapping_key_id } else { None },
-                    ..Default::default()
-                })
-                .map_err(|status| from_status_like_fdio!(status))
-        })
+        // Attributes of regular remote nodes (files, directory) are valid to update.
+        // Their metadata is stored and managed by the underlying Fuchsia filesystem.
+        self.node.update_attributes(info, has)
     }
 
     fn unlink(
@@ -1552,6 +1556,19 @@ impl FsNodeOps for RemoteSpecialNode {
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
         unreachable!("Special nodes cannot be opened.");
+    }
+
+    fn update_attributes(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _node: &FsNode,
+        _current_task: &CurrentTask,
+        info: &FsNodeInfo,
+        has: zxio_node_attr_has_t,
+    ) -> Result<(), Errno> {
+        // Attributes of special remote nodes (sockets, devices, etc.) are valid to update.
+        // Their metadata is stored and managed by the underlying Fuchsia filesystem.
+        self.node.update_attributes(info, has)
     }
 }
 

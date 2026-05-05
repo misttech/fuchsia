@@ -10,9 +10,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/mount.h>
+#include <sys/socket.h>
 #include <sys/statfs.h>
 #include <sys/statvfs.h>
 #include <sys/sysmacros.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -722,6 +724,60 @@ TEST_F(MountTest, RemotefsRelativePath) {
   ASSERT_THAT(mount(".", dir.c_str(), "remotefs", MS_RDONLY, nullptr), SyscallFailsWithErrno(2));
   ASSERT_THAT(mount("/", dir.c_str(), "remotefs", MS_RDONLY, nullptr), SyscallFailsWithErrno(2));
   ASSERT_THAT(mount("", dir.c_str(), "remotefs", MS_RDONLY, nullptr), SyscallFailsWithErrno(2));
+}
+
+// Verifies that permissions changed via `chmod` on a special file (like a socket) in a remote
+// filesystem persist across mounts. This addresses an issue where such changes were only stored
+// in-memory and lost when the node was re-read from the backing store after a cache clear.
+TEST_F(MountTest, RemotefsSocketPermissionsPersist) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "MountTest.RemotefsSocketPermissionsPersist cannot be run on Linux, skipping.";
+  }
+
+  ASSERT_SUCCESS(MakeDir("remotefs_mount"));
+  auto mount_dir = TestPath("remotefs_mount");
+  ASSERT_THAT(mount("/data", mount_dir.c_str(), "remotefs", MS_SYNCHRONOUS, nullptr),
+              SyscallSucceeds());
+
+  std::string socket_path = mount_dir + "/test_socket";
+
+  // Create a UNIX domain socket.
+  fbl::unique_fd sock(socket(AF_UNIX, SOCK_STREAM, 0));
+  ASSERT_TRUE(sock.is_valid());
+
+  struct sockaddr_un addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
+
+  ASSERT_THAT(bind(sock.get(), (struct sockaddr *)&addr, sizeof(addr)), SyscallSucceeds());
+
+  // Verify file exists and is a socket.
+  struct stat st;
+  ASSERT_THAT(stat(socket_path.c_str(), &st), SyscallSucceeds());
+  ASSERT_TRUE(S_ISSOCK(st.st_mode));
+
+  // Change permissions to 0777.
+  ASSERT_THAT(chmod(socket_path.c_str(), 0777), SyscallSucceeds());
+
+  // Verify permissions in-memory.
+  ASSERT_THAT(stat(socket_path.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(static_cast<int>(st.st_mode & 0777), 0777);
+
+  // Unmount to clear cache.
+  ASSERT_THAT(umount(mount_dir.c_str()), SyscallSucceeds());
+
+  // Mount again.
+  ASSERT_THAT(mount("/data", mount_dir.c_str(), "remotefs", MS_SYNCHRONOUS, nullptr),
+              SyscallSucceeds());
+
+  // Verify permissions again after re-fetch from remote filesystem.
+  ASSERT_THAT(stat(socket_path.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(static_cast<int>(st.st_mode & 0777), 0777);
+
+  // Clean up.
+  unlink(socket_path.c_str());
+  ASSERT_THAT(umount(mount_dir.c_str()), SyscallSucceeds());
 }
 
 class ProcMountsTest : public ProcTestBase {
