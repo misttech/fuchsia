@@ -2100,12 +2100,40 @@ TEST_F(CompositeTest, GetElements) {
   EXPECT_FALSE(*elements->at(6).can_stop());
   EXPECT_EQ(*elements->at(6).description(), *FakeComposite::kDestPsElement.description());
 
-  EXPECT_EQ(elements->at(7).id(), FakeComposite::kMuteElementId);
-  EXPECT_EQ(elements->at(7).type(), fhasp::ElementType::kMute);
+  EXPECT_EQ(elements->at(7).id(), FakeComposite::kVendorSpecificElementId);
+  EXPECT_EQ(elements->at(7).type(), fhasp::ElementType::kVendorSpecific);
   EXPECT_TRUE(*elements->at(7).can_bypass());
   EXPECT_FALSE(*elements->at(7).can_stop());
-  EXPECT_EQ(*elements->at(7).description(), *FakeComposite::kMuteElement.description());
-  EXPECT_FALSE(elements->at(7).type_specific().has_value());
+  EXPECT_EQ(*elements->at(7).description(), *FakeComposite::kVendorSpecificElement.description());
+  EXPECT_TRUE(elements->at(7).type_specific().has_value());
+
+  EXPECT_EQ(elements->at(8).id(), FakeComposite::kDynamicsElementId);
+  EXPECT_EQ(elements->at(8).type(), fhasp::ElementType::kDynamics);
+  EXPECT_TRUE(*elements->at(8).can_bypass());
+  EXPECT_TRUE(*elements->at(8).can_stop());
+  EXPECT_EQ(*elements->at(8).description(), *FakeComposite::kDynamicsElement.description());
+  EXPECT_TRUE(elements->at(8).type_specific().has_value());
+
+  EXPECT_EQ(elements->at(9).id(), FakeComposite::kEqualizerElementId);
+  EXPECT_EQ(elements->at(9).type(), fhasp::ElementType::kEqualizer);
+  EXPECT_TRUE(*elements->at(9).can_bypass());
+  EXPECT_TRUE(*elements->at(9).can_stop());
+  EXPECT_EQ(*elements->at(9).description(), *FakeComposite::kEqualizerElement.description());
+  EXPECT_TRUE(elements->at(9).type_specific().has_value());
+
+  EXPECT_EQ(elements->at(10).id(), FakeComposite::kGainElementId);
+  EXPECT_EQ(elements->at(10).type(), fhasp::ElementType::kGain);
+  EXPECT_TRUE(*elements->at(10).can_bypass());
+  EXPECT_FALSE(*elements->at(10).can_stop());
+  EXPECT_EQ(*elements->at(10).description(), *FakeComposite::kGainElement.description());
+  EXPECT_TRUE(elements->at(10).type_specific().has_value());
+
+  EXPECT_EQ(elements->at(11).id(), FakeComposite::kMuteElementId);
+  EXPECT_EQ(elements->at(11).type(), fhasp::ElementType::kMute);
+  EXPECT_TRUE(*elements->at(11).can_bypass());
+  EXPECT_FALSE(*elements->at(11).can_stop());
+  EXPECT_EQ(*elements->at(11).description(), *FakeComposite::kMuteElement.description());
+  EXPECT_FALSE(elements->at(11).type_specific().has_value());
 }
 
 // Ensure that we captured the full contents of FakeComposite signalprocessing functionality,
@@ -2170,14 +2198,22 @@ TEST_F(CompositeTest, GetTopologies) {
             FakeComposite::kDestDaiElementId);
 
   ASSERT_TRUE(topologies->at(5).id().has_value());
-  EXPECT_EQ(*topologies->at(5).id(), FakeComposite::kOutputWithMuteTopologyId);
+  EXPECT_EQ(*topologies->at(5).id(), FakeComposite::kOutputWithProcessingTopologyId);
   ASSERT_TRUE(topologies->at(5).processing_elements_edge_pairs().has_value());
   auto& pairs = topologies->at(5).processing_elements_edge_pairs().value();
-  ASSERT_GE(pairs.size(), 2u);
+  ASSERT_GE(pairs.size(), 6u);
   EXPECT_EQ(pairs[0].processing_element_id_from(), FakeComposite::kSourceRbElementId);
-  EXPECT_EQ(pairs[0].processing_element_id_to(), FakeComposite::kMuteElementId);
-  EXPECT_EQ(pairs[1].processing_element_id_from(), FakeComposite::kMuteElementId);
-  EXPECT_EQ(pairs[1].processing_element_id_to(), FakeComposite::kDestDaiElementId);
+  EXPECT_EQ(pairs[0].processing_element_id_to(), FakeComposite::kVendorSpecificElementId);
+  EXPECT_EQ(pairs[1].processing_element_id_from(), FakeComposite::kVendorSpecificElementId);
+  EXPECT_EQ(pairs[1].processing_element_id_to(), FakeComposite::kDynamicsElementId);
+  EXPECT_EQ(pairs[2].processing_element_id_from(), FakeComposite::kDynamicsElementId);
+  EXPECT_EQ(pairs[2].processing_element_id_to(), FakeComposite::kEqualizerElementId);
+  EXPECT_EQ(pairs[3].processing_element_id_from(), FakeComposite::kEqualizerElementId);
+  EXPECT_EQ(pairs[3].processing_element_id_to(), FakeComposite::kGainElementId);
+  EXPECT_EQ(pairs[4].processing_element_id_from(), FakeComposite::kGainElementId);
+  EXPECT_EQ(pairs[4].processing_element_id_to(), FakeComposite::kMuteElementId);
+  EXPECT_EQ(pairs[5].processing_element_id_from(), FakeComposite::kMuteElementId);
+  EXPECT_EQ(pairs[5].processing_element_id_to(), FakeComposite::kDestDaiElementId);
 }
 
 // Ensure that we captured the full contents of FakeComposite signalprocessing functionality,

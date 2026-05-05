@@ -409,6 +409,34 @@ void FakeComposite::SetupElementsMap() {
       },
   });
   elements_.insert({
+      kVendorSpecificElementId,
+      FakeElementRecord{
+          .element = kVendorSpecificElement,
+          .state = kVendorSpecificElementInitState,
+      },
+  });
+  elements_.insert({
+      kDynamicsElementId,
+      FakeElementRecord{
+          .element = kDynamicsElement,
+          .state = kDynamicsElementInitState,
+      },
+  });
+  elements_.insert({
+      kEqualizerElementId,
+      FakeElementRecord{
+          .element = kEqualizerElement,
+          .state = kEqualizerElementInitState,
+      },
+  });
+  elements_.insert({
+      kGainElementId,
+      FakeElementRecord{
+          .element = kGainElement,
+          .state = kGainElementInitState,
+      },
+  });
+  elements_.insert({
       kMuteElementId,
       FakeElementRecord{
           .element = kMuteElement,
@@ -423,6 +451,10 @@ void FakeComposite::SetupElementsMap() {
   ASSERT_TRUE(elements_.at(kDestDaiElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kDestRbElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kDestPsElementId).state_has_changed);
+  ASSERT_TRUE(elements_.at(kVendorSpecificElementId).state_has_changed);
+  ASSERT_TRUE(elements_.at(kDynamicsElementId).state_has_changed);
+  ASSERT_TRUE(elements_.at(kEqualizerElementId).state_has_changed);
+  ASSERT_TRUE(elements_.at(kGainElementId).state_has_changed);
   ASSERT_TRUE(elements_.at(kMuteElementId).state_has_changed);
 
   ASSERT_FALSE(elements_.at(kSourceDaiElementId).watch_completer.has_value());
@@ -432,9 +464,12 @@ void FakeComposite::SetupElementsMap() {
   ASSERT_FALSE(elements_.at(kDestDaiElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kDestRbElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kDestPsElementId).watch_completer.has_value());
+  ASSERT_FALSE(elements_.at(kVendorSpecificElementId).watch_completer.has_value());
+  ASSERT_FALSE(elements_.at(kDynamicsElementId).watch_completer.has_value());
+  ASSERT_FALSE(elements_.at(kEqualizerElementId).watch_completer.has_value());
+  ASSERT_FALSE(elements_.at(kGainElementId).watch_completer.has_value());
   ASSERT_FALSE(elements_.at(kMuteElementId).watch_completer.has_value());
 }
-
 void FakeComposite::GetHealthState(GetHealthStateCompleter::Sync& completer) {
   if (!responsive()) {
     get_health_state_completers_.emplace_back(completer.ToAsync());  // Just pend it; never respond.

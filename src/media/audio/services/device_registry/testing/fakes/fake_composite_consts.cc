@@ -397,6 +397,105 @@ const fhasp::Element FakeComposite::kSourceDualSupportPsElement{{
     .can_bypass = false,
 }};
 
+const std::string FakeComposite::kVendorSpecificElementDescription =
+    "Vendor specific element description";
+const fhasp::Element FakeComposite::kVendorSpecificElement{{
+    .id = kVendorSpecificElementId,
+    .type = fhasp::ElementType::kVendorSpecific,
+    .type_specific = fhasp::TypeSpecificElement::WithVendorSpecific(fhasp::VendorSpecific{}),
+    .description = kVendorSpecificElementDescription,
+    .can_stop = false,
+    .can_bypass = true,
+}};
+
+const std::string FakeComposite::kDynamicsElementDescription = "Dynamics element description";
+const fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls
+    FakeComposite::kDynamicsSupportedControls =
+        fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls::kKneeWidth |
+        fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls::kAttack |
+        fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls::kRelease |
+        fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls::kOutputGain;
+const fhasp::Element FakeComposite::kDynamicsElement = []() {
+  std::vector<fhasp::DynamicsBand> bands;
+
+  fhasp::DynamicsBand band1;
+  band1.id(FakeComposite::kDynamicsBandId1);
+  bands.push_back(std::move(band1));
+
+  fhasp::DynamicsBand band2;
+  band2.id(FakeComposite::kDynamicsBandId2);
+  bands.push_back(std::move(band2));
+
+  fhasp::Dynamics dynamics;
+  dynamics.bands(std::move(bands));
+  dynamics.supported_controls(FakeComposite::kDynamicsSupportedControls);
+
+  return fhasp::Element{{
+      .id = kDynamicsElementId,
+      .type = fhasp::ElementType::kDynamics,
+      .type_specific = fhasp::TypeSpecificElement::WithDynamics(std::move(dynamics)),
+      .description = kDynamicsElementDescription,
+      .can_stop = true,
+      .can_bypass = true,
+  }};
+}();
+
+const std::string FakeComposite::kEqualizerElementDescription = "Equalizer element description";
+const fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls
+    FakeComposite::kEqualizerSupportedControls =
+        fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls::kCanControlFrequency |
+        fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls::kCanControlQ |
+        fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls::kSupportsTypePeak |
+        fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls::kSupportsTypeNotch;
+const fhasp::Element FakeComposite::kEqualizerElement = []() {
+  std::vector<fhasp::EqualizerBand> bands;
+
+  fhasp::EqualizerBand band1;
+  band1.id(FakeComposite::kEqualizerBandId1);
+  bands.push_back(std::move(band1));
+
+  fhasp::EqualizerBand band2;
+  band2.id(FakeComposite::kEqualizerBandId2);
+  bands.push_back(std::move(band2));
+
+  fhasp::Equalizer equalizer;
+  equalizer.bands(std::move(bands));
+  equalizer.supported_controls(FakeComposite::kEqualizerSupportedControls);
+  equalizer.can_disable_bands(true);
+  equalizer.min_frequency(FakeComposite::kEqualizerMinFrequency);
+  equalizer.max_frequency(FakeComposite::kEqualizerMaxFrequency);
+  equalizer.max_q(FakeComposite::kEqualizerMaxQ);
+  equalizer.min_gain_db(FakeComposite::kEqualizerMinGainDb);
+  equalizer.max_gain_db(FakeComposite::kEqualizerMaxGainDb);
+
+  return fhasp::Element{{
+      .id = kEqualizerElementId,
+      .type = fhasp::ElementType::kEqualizer,
+      .type_specific = fhasp::TypeSpecificElement::WithEqualizer(std::move(equalizer)),
+      .description = kEqualizerElementDescription,
+      .can_stop = true,
+      .can_bypass = true,
+  }};
+}();
+
+const std::string FakeComposite::kGainElementDescription = "Gain element description";
+const fhasp::GainType FakeComposite::kGainType = fhasp::GainType::kDecibels;
+const fhasp::GainDomain FakeComposite::kGainDomain = fhasp::GainDomain::kAnalog;
+const fhasp::Element FakeComposite::kGainElement{{
+    .id = kGainElementId,
+    .type = fhasp::ElementType::kGain,
+    .type_specific = fhasp::TypeSpecificElement::WithGain(fhasp::Gain{{
+        .type = FakeComposite::kGainType,
+        .domain = FakeComposite::kGainDomain,
+        .min_gain = FakeComposite::kGainMin,
+        .max_gain = FakeComposite::kGainMax,
+        .min_gain_step = FakeComposite::kGainStep,
+    }}),
+    .description = kGainElementDescription,
+    .can_stop = false,
+    .can_bypass = true,
+}};
+
 const std::string FakeComposite::kMuteElementDescription = "Mute element description";
 const fhasp::Element FakeComposite::kMuteElement{{
     .id = kMuteElementId,
@@ -488,6 +587,82 @@ const fhasp::ElementState FakeComposite::kSourceDualSupportPsElementInitState{{
     .bypassed = false,
 }};
 
+const fhasp::ElementState FakeComposite::kVendorSpecificElementInitState{{
+    .type_specific = fhasp::TypeSpecificElementState::WithVendorSpecific({}),
+    .vendor_specific_data = std::vector<uint8_t>{1, 2, 3, 4, 5, 6, 7, 8},
+    .started = true,
+    .bypassed = true,
+}};
+
+const fhasp::ElementState FakeComposite::kDynamicsElementInitState = []() {
+  std::vector<fhasp::DynamicsBandState> band_states;
+
+  fhasp::DynamicsBandState bs1;
+  bs1.id(FakeComposite::kDynamicsBandId1);
+  bs1.min_frequency(0);
+  bs1.max_frequency(20000);
+  bs1.threshold_db(0.0f);
+  bs1.threshold_type(fhasp::ThresholdType::kAbove);
+  bs1.ratio(1.0f);
+  band_states.push_back(std::move(bs1));
+
+  fhasp::DynamicsBandState bs2;
+  bs2.id(FakeComposite::kDynamicsBandId2);
+  bs2.min_frequency(1000);
+  bs2.max_frequency(5000);
+  bs2.threshold_db(-10.0f);
+  bs2.threshold_type(fhasp::ThresholdType::kBelow);
+  bs2.ratio(2.0f);
+  band_states.push_back(std::move(bs2));
+
+  fhasp::DynamicsElementState des;
+  des.band_states(std::move(band_states));
+
+  return fhasp::ElementState{{
+      .type_specific = fhasp::TypeSpecificElementState::WithDynamics(std::move(des)),
+      .started = false,
+      .bypassed = false,
+  }};
+}();
+
+const fhasp::ElementState FakeComposite::kEqualizerElementInitState = []() {
+  std::vector<fhasp::EqualizerBandState> band_states;
+
+  fhasp::EqualizerBandState bs1;
+  bs1.id(FakeComposite::kEqualizerBandId1);
+  bs1.type(fhasp::EqualizerBandType::kLowShelf);
+  bs1.frequency(500);
+  bs1.q(1.0f);
+  bs1.gain_db(-6.0f);
+  bs1.enabled(true);
+  band_states.push_back(std::move(bs1));
+
+  fhasp::EqualizerBandState bs2;
+  bs2.id(FakeComposite::kEqualizerBandId2);
+  bs2.type(fhasp::EqualizerBandType::kNotch);
+  bs2.frequency(1000);
+  bs2.q(10.0f);
+  bs2.enabled(true);
+  band_states.push_back(std::move(bs2));
+
+  fhasp::EqualizerElementState ees;
+  ees.band_states(std::move(band_states));
+
+  return fhasp::ElementState{{
+      .type_specific = fhasp::TypeSpecificElementState::WithEqualizer(std::move(ees)),
+      .started = false,
+      .bypassed = true,
+  }};
+}();
+
+const fhasp::ElementState FakeComposite::kGainElementInitState{{
+    .type_specific = fhasp::TypeSpecificElementState::WithGain({{
+        .gain = 0.0,
+    }}),
+    .started = true,
+    .bypassed = false,
+}};
+
 const fhasp::ElementState FakeComposite::kMuteElementInitState{{
     .started = true,
     .bypassed = true,
@@ -502,6 +677,10 @@ const std::vector<fhasp::Element> FakeComposite::kElements{{
     kDestDaiElement,
     kDestRbElement,
     kDestPsElement,
+    kVendorSpecificElement,
+    kDynamicsElement,
+    kEqualizerElement,
+    kGainElement,
     kMuteElement,
 }};
 
@@ -528,8 +707,24 @@ const fhasp::EdgePair FakeComposite::kTopologySourceDualSupportPsOutputEdgePair{
     .processing_element_id_from = kSourceDualSupportPsElementId,
     .processing_element_id_to = kDestDaiElementId,
 }};
-const fhasp::EdgePair FakeComposite::kTopologyRbToMuteEdgePair{{
+const fhasp::EdgePair FakeComposite::kTopologyRbToVendorSpecificEdgePair{{
     .processing_element_id_from = kSourceRbElementId,
+    .processing_element_id_to = kVendorSpecificElementId,
+}};
+const fhasp::EdgePair FakeComposite::kTopologyVendorSpecificToDynamicsEdgePair{{
+    .processing_element_id_from = kVendorSpecificElementId,
+    .processing_element_id_to = kDynamicsElementId,
+}};
+const fhasp::EdgePair FakeComposite::kTopologyDynamicsToEqualizerEdgePair{{
+    .processing_element_id_from = kDynamicsElementId,
+    .processing_element_id_to = kEqualizerElementId,
+}};
+const fhasp::EdgePair FakeComposite::kTopologyEqualizerToGainEdgePair{{
+    .processing_element_id_from = kEqualizerElementId,
+    .processing_element_id_to = kGainElementId,
+}};
+const fhasp::EdgePair FakeComposite::kTopologyGainToMuteEdgePair{{
+    .processing_element_id_from = kGainElementId,
     .processing_element_id_to = kMuteElementId,
 }};
 const fhasp::EdgePair FakeComposite::kTopologyMuteToDaiEdgePair{{
@@ -593,12 +788,16 @@ const fhasp::Topology FakeComposite::kSourceDualSupportPsOutputTopology{{
             },
         },
 }};
-const fhasp::Topology FakeComposite::kOutputWithMuteTopology{{
-    .id = kOutputWithMuteTopologyId,
+const fhasp::Topology FakeComposite::kOutputWithProcessingTopology{{
+    .id = kOutputWithProcessingTopologyId,
     .processing_elements_edge_pairs =
         {
             {
-                kTopologyRbToMuteEdgePair,
+                kTopologyRbToVendorSpecificEdgePair,
+                kTopologyVendorSpecificToDynamicsEdgePair,
+                kTopologyDynamicsToEqualizerEdgePair,
+                kTopologyEqualizerToGainEdgePair,
+                kTopologyGainToMuteEdgePair,
                 kTopologyMuteToDaiEdgePair,
             },
         },
@@ -611,7 +810,7 @@ const std::vector<fhasp::Topology> FakeComposite::kTopologies{{
     kFullDuplexTopology,
     kOutputOnlyTopology,
     kPacketStreamOutputTopology,
-    kOutputWithMuteTopology,
+    kOutputWithProcessingTopology,
     kSourceDualSupportPsOutputTopology,
 }};
 

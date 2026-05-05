@@ -213,8 +213,11 @@ class FakeComposite final
   static constexpr ElementId kMinPacketStreamElementId = kDestPsElementId;
   static constexpr ElementId kMaxPacketStreamElementId = kSourceDualSupportPsElementId;
 
-  static constexpr ElementId kMuteElementId = 7;
-
+  static constexpr ElementId kVendorSpecificElementId = 7;
+  static constexpr ElementId kDynamicsElementId = 8;
+  static constexpr ElementId kEqualizerElementId = 9;
+  static constexpr ElementId kGainElementId = 10;
+  static constexpr ElementId kMuteElementId = 11;
   static constexpr ElementId kMinElementId = kSourceDaiElementId;
   static constexpr ElementId kMaxElementId = kMuteElementId;
 
@@ -252,6 +255,41 @@ class FakeComposite final
   static const fuchsia_hardware_audio_signalprocessing::Element kDestPsElement;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kDestPsElementInitState;
 
+  static const std::string kVendorSpecificElementDescription;
+  static const fuchsia_hardware_audio_signalprocessing::Element kVendorSpecificElement;
+  static const fuchsia_hardware_audio_signalprocessing::ElementState
+      kVendorSpecificElementInitState;
+
+  static const std::string kDynamicsElementDescription;
+  static constexpr uint64_t kDynamicsBandId1 = 42;
+  static constexpr uint64_t kDynamicsBandId2 = 68;
+  static const fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls
+      kDynamicsSupportedControls;
+  static const fuchsia_hardware_audio_signalprocessing::Element kDynamicsElement;
+  static const fuchsia_hardware_audio_signalprocessing::ElementState kDynamicsElementInitState;
+
+  static const std::string kEqualizerElementDescription;
+  static constexpr uint64_t kEqualizerBandId1 = 10;
+  static constexpr uint64_t kEqualizerBandId2 = 20;
+  static const fuchsia_hardware_audio_signalprocessing::EqualizerSupportedControls
+      kEqualizerSupportedControls;
+  static constexpr uint32_t kEqualizerMinFrequency = 20;
+  static constexpr uint32_t kEqualizerMaxFrequency = 20000;
+  static constexpr float kEqualizerMaxQ = 5.0f;
+  static constexpr float kEqualizerMinGainDb = -20.0f;
+  static constexpr float kEqualizerMaxGainDb = 20.0f;
+  static const fuchsia_hardware_audio_signalprocessing::Element kEqualizerElement;
+  static const fuchsia_hardware_audio_signalprocessing::ElementState kEqualizerElementInitState;
+
+  static const std::string kGainElementDescription;
+  static const fuchsia_hardware_audio_signalprocessing::GainType kGainType;
+  static const fuchsia_hardware_audio_signalprocessing::GainDomain kGainDomain;
+  static constexpr float kGainMin = -84.0f;
+  static constexpr float kGainMax = 12.0f;
+  static constexpr float kGainStep = 0.25f;
+  static const fuchsia_hardware_audio_signalprocessing::Element kGainElement;
+  static const fuchsia_hardware_audio_signalprocessing::ElementState kGainElementInitState;
+
   static const std::string kMuteElementDescription;
   static const fuchsia_hardware_audio_signalprocessing::Element kMuteElement;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kMuteElementInitState;
@@ -265,8 +303,9 @@ class FakeComposite final
   static constexpr TopologyId kFullDuplexTopologyId = kPacketStreamCaptureTopologyId + 1;
   static constexpr TopologyId kOutputOnlyTopologyId = kFullDuplexTopologyId + 1;
   static constexpr TopologyId kPacketStreamOutputTopologyId = kOutputOnlyTopologyId + 1;
-  static constexpr TopologyId kOutputWithMuteTopologyId = kPacketStreamOutputTopologyId + 1;
-  static constexpr TopologyId kSourceDualSupportPsOutputTopologyId = kOutputWithMuteTopologyId + 1;
+  static constexpr TopologyId kOutputWithProcessingTopologyId = kPacketStreamOutputTopologyId + 1;
+  static constexpr TopologyId kSourceDualSupportPsOutputTopologyId =
+      kOutputWithProcessingTopologyId + 1;
   static constexpr TopologyId kEndTopologyId = kSourceDualSupportPsOutputTopologyId + 1;
   static constexpr TopologyId kDefaultTopologyId = kFullDuplexTopologyId;
   static constexpr TopologyId kSubsequentTopologyId = kInputOnlyTopologyId;
@@ -275,7 +314,14 @@ class FakeComposite final
   static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyPsCaptureEdgePair;
   static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyOutputEdgePair;
   static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyPsOutputEdgePair;
-  static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyRbToMuteEdgePair;
+  static const fuchsia_hardware_audio_signalprocessing::EdgePair
+      kTopologyRbToVendorSpecificEdgePair;
+  static const fuchsia_hardware_audio_signalprocessing::EdgePair
+      kTopologyVendorSpecificToDynamicsEdgePair;
+  static const fuchsia_hardware_audio_signalprocessing::EdgePair
+      kTopologyDynamicsToEqualizerEdgePair;
+  static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyEqualizerToGainEdgePair;
+  static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyGainToMuteEdgePair;
   static const fuchsia_hardware_audio_signalprocessing::EdgePair kTopologyMuteToDaiEdgePair;
   static const fuchsia_hardware_audio_signalprocessing::EdgePair
       kTopologySourceDualSupportPsOutputEdgePair;
@@ -284,7 +330,7 @@ class FakeComposite final
   static const fuchsia_hardware_audio_signalprocessing::Topology kFullDuplexTopology;
   static const fuchsia_hardware_audio_signalprocessing::Topology kOutputOnlyTopology;
   static const fuchsia_hardware_audio_signalprocessing::Topology kPacketStreamOutputTopology;
-  static const fuchsia_hardware_audio_signalprocessing::Topology kOutputWithMuteTopology;
+  static const fuchsia_hardware_audio_signalprocessing::Topology kOutputWithProcessingTopology;
   static const fuchsia_hardware_audio_signalprocessing::Topology kSourceDualSupportPsOutputTopology;
   static const std::vector<fuchsia_hardware_audio_signalprocessing::Topology> kTopologies;
 
