@@ -4,6 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/config/linker_config.gni")
 import("//build/toolchain/variant.gni")
 import("//build/zircon/zircon_cpu.gni")
 import("//zircon/kernel/params.gni")
@@ -21,15 +22,8 @@ declare_args() {
 }
 
 # For any standalone static binary.
-config("standalone") {
+linker_config("standalone") {
   cflags = [ "-ffreestanding" ]
-
-  if (!is_gcc && current_os == "fuchsia") {
-    # In the Fuchsia-target toolchains there's no way to prevent the
-    # compiler driver from passing -pie, so negate it.  BFD ld doesn't
-    # have --no-pie, but arm64-elf-gcc doesn't pass -pie either.
-    ldflags = [ "-Wl,--no-pie" ]
-  }
 
   configs = [
     "//build/config:no_exceptions",
@@ -47,6 +41,7 @@ config("standalone") {
 # know the right idioms for that and look into if there's anything we should do
 # here to enforce that they've been used rigorously.
 config("static-pic-link") {
+  rustflags = [ "-Cdefault-linker-libraries=no" ]
   ldflags = [
     "-nostdlib",
     "-static",
@@ -350,18 +345,17 @@ if (is_kernel) {
     got_tolerance = 0
   }
 
-  config("kernel.config") {
+  linker_config("kernel.config") {
     visibility = [ "//zircon/kernel/bin/*" ]
 
     inputs = [ "//zircon/kernel/kernel.ld" ]
-
-    ldflags = [ "-Wl,-T," + rebase_path(inputs[0], root_build_dir) ]
+    linker_flags = [ "-T" + rebase_path(inputs[0], root_build_dir) ]
 
     # TODO(https://fxbug.dev/379891035): There is still kASan-related start.S
     # bootstrap logic for x86 not yet moved into physboot.
     if (current_cpu != "x64") {
       # PhysbootHandoff is the entrypoint symbol.
-      ldflags += [ "-Wl,--defsym,PhysbootHandoff=lk_main" ]
+      linker_flags += [ "--defsym=PhysbootHandoff=lk_main" ]
     }
 
     assignments = kernel_defines + [
@@ -375,7 +369,7 @@ if (is_kernel) {
                     "KERNEL_BASE_ADDRESS=0",
                   ]
     foreach(assignment, assignments) {
-      ldflags += [ "-Wl,-defsym,$assignment" ]
+      linker_flags += [ "-defsym=$assignment" ]
     }
 
     configs = [
