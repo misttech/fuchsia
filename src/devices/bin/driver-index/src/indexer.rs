@@ -8,7 +8,11 @@ use crate::match_common::{node_to_device_property, node_to_device_property_no_au
 use crate::resolved_driver::{DriverPackageType, ResolvedDriver};
 use bind::interpreter::decode_bind_rules::DecodedRules;
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_index as fdi;
 use fidl_fuchsia_pkg_ext::BlobId;
+use fuchsia_async as fasync;
 use futures::StreamExt;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -16,10 +20,6 @@ use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::str::FromStr;
 use zx::Status;
-use {
-    fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_driver_framework as fdf,
-    fidl_fuchsia_driver_index as fdi, fuchsia_async as fasync,
-};
 
 #[derive(Default)]
 pub enum BaseRepo {
@@ -308,12 +308,16 @@ impl Indexer {
             (0, 1) => Ok(fallback.pop().unwrap().1),
             (0, 0) => Err(Status::NOT_FOUND.into_raw()),
             (0, _) => {
-                log::error!("Failed to match driver: Encountered unsupported behavior: Zero non-fallback drivers and more than one fallback drivers were matched");
+                log::error!(
+                    "Failed to match driver: Encountered unsupported behavior: Zero non-fallback drivers and more than one fallback drivers were matched"
+                );
                 log::error!("Fallback drivers {:#?}", fallback);
                 Err(Status::NOT_SUPPORTED.into_raw())
             }
             _ => {
-                log::error!("Failed to match driver: Encountered unsupported behavior: Multiple non-fallback drivers were matched");
+                log::error!(
+                    "Failed to match driver: Encountered unsupported behavior: Multiple non-fallback drivers were matched"
+                );
                 log::error!("Drivers {:#?}", non_fallback);
                 Err(Status::NOT_SUPPORTED.into_raw())
             }

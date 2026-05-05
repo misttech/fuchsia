@@ -1,0 +1,85 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+import("//build/devicetree/devicetree.gni")
+import("//build/drivers.gni")
+
+group("tests") {
+  testonly = true
+  deps = [ ":devicetree-evaluation-test" ]
+}
+
+devicetree("test-device") {
+  sources = [ "dts/test-device.dts" ]
+  golden = "dts/test-device.golden.dts"
+}
+
+resource("test-dtb-resource") {
+  sources = [ "$target_out_dir/test-device.dtb" ]
+  outputs = [ "test-data/test-device.dtb" ]
+  deps = [ ":test-device" ]
+}
+
+driver_bind_rules("fake-board-bind") {
+  rules = "fake-board.bind"
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
+    "//src/devices/bind/fuchsia.test.platform",
+  ]
+}
+
+fuchsia_cc_driver("fake-board-driver") {
+  output_name = "fake-board"
+  sources = [
+    "fake-board.cc",
+    "fake-board.h",
+  ]
+  deps = [
+    ":fake-board-bind",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/devicetree/manager",
+    "//sdk/lib/driver/devicetree/visitors:load-visitors",
+    "//sdk/lib/driver/logging/cpp",
+    "//src/devices/lib/driver:driver_runtime",
+  ]
+}
+
+fuchsia_driver_component("fake-board-component") {
+  component_name = "fake-board"
+  manifest = "meta/fake-board.cml"
+  deps = [ ":fake-board-driver" ]
+  info = "meta/fake-board-info.json"
+}
+
+executable("test-bin") {
+  testonly = true
+  sources = [ "integration-test.cc" ]
+  deps = [
+    "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/async-loop:async-loop-default",
+    "//sdk/lib/driver/devicetree/testing:board-test-helper",
+    "//src/lib/fxl/test:gtest_main",
+    "//zircon/system/ulib/ddk-platform-defs",
+  ]
+}
+
+fuchsia_unittest_component("test-component") {
+  manifest = "meta/test.cml"
+  deps = [ ":test-bin" ]
+}
+
+fuchsia_test_package("devicetree-evaluation-test") {
+  test_components = [ ":test-component" ]
+  deps = [
+    ":fake-board-component",
+    ":test-dtb-resource",
+    "//src/lib/fuchsia-component-test/realm_builder_server:realm_builder_server_component",
+  ]
+  subpackages = [ "//sdk/lib/driver_test_realm:package" ]
+  test_specs = {
+    environments = []
+  }
+}

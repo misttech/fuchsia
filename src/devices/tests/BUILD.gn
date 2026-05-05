@@ -54,6 +54,7 @@ group("drivers") {
     "ddk-firmware-test:ddk-firmware-test-driver",
     "ddk-lifecycle:ddk-lifecycle-test-driver-component",
     "ddk-topology-test:ddk-topology-test-driver",
+    "devicetree:fake-board-component",
     "driver-inspect-test:inspect-test-driver",
     "driver-multiname-test:parent_device_component",
     "driver-runtime:child",
