@@ -9,20 +9,19 @@ using fuchsia.devicetree;
 using fuchsia.hardware.clock;
 using fuchsia.hardware.reset;
 using fuchsia.hardware.powerdomain;
-using fuchsia.gpio;
 
 primary parent "pdev" {
   fuchsia.devicetree.FIRST_COMPATIBLE == "google,spi";
 }
 
-parent "clock-bus" {
+parent "clock-ssi" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.clock.NAME == "bus";
+  fuchsia.clock.NAME == "ssi_clk";
 }
 
-parent "clock-registers" {
+parent "clock-pclk" {
   fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
-  fuchsia.clock.NAME == "registers";
+  fuchsia.clock.NAME == "pclk";
 }
 
 parent "reset" {
@@ -31,8 +30,4 @@ parent "reset" {
 
 parent "power-domain" {
   fuchsia.hardware.powerdomain.Service == fuchsia.hardware.powerdomain.Service.ZirconTransport;
-}
-
-optional parent "gpio-init" {
-  fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
