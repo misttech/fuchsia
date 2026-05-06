@@ -20,7 +20,6 @@ rustc_binary("blackout-fvm-minfs-random-op-bin") {
     "//src/storage/crypt/policy",
     "//src/storage/crypt/zxcrypt",
     "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_rust",
-    "//src/storage/lib/block_client/rust",
     "//src/storage/lib/fs_management/rust:fs_management",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
@@ -28,7 +27,6 @@ rustc_binary("blackout-fvm-minfs-random-op-bin") {
     "//third_party/rust_crates:rand",
   ]
   data_deps = [
-    ":golden",
     "//src/storage/fvm:fvm-component",
     "//src/storage/minfs/bin:minfs-component",
   ]
@@ -44,9 +42,4 @@ fuchsia_component("blackout-fvm-minfs-random-op-component") {
 fuchsia_package("blackout-fvm-minfs-random-op") {
   testonly = true
   deps = [ ":blackout-fvm-minfs-random-op-component" ]
-}
-
-resource("golden") {
-  sources = [ "golden-fvm.blk" ]
-  outputs = [ "data/golden-fvm.blk" ]
 }

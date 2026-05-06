@@ -6,20 +6,13 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use blackout_target::random_op::{Op, generate_load};
 use blackout_target::{Test, TestServer, find_partition, set_up_partition};
-use block_client::{BlockClient as _, BufferSlice, RemoteBlockClient};
 use crypt_policy::Policy;
 use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions};
 use fs_management::filesystem::Filesystem;
 use fs_management::{DATA_TYPE_GUID, Fvm};
 use rand::Rng;
-use std::fs::File;
-use std::io::Read;
 use std::sync::Arc;
 use zxcrypt_crypt::with_crypt_service;
-
-// We don't support formatting FVM in the fvm2 server, so for simplicity, flash an empty image into
-// the partition instead of reformatting.
-const GOLDEN_IMAGE_PATH: &str = "/pkg/data/golden-fvm.blk";
 
 struct OpSampler;
 
@@ -47,21 +40,10 @@ impl Test for FvmMinfsTest {
         _seed: u64,
     ) -> Result<()> {
         log::info!(device_label:%; "setting up");
-        let mut file = File::open(GOLDEN_IMAGE_PATH)?;
-        let mut contents = Vec::new();
-        file.read_to_end(&mut contents)?;
         let block_connector =
             set_up_partition(device_label).await.context("Failed to set up partition")?;
-        {
-            // Format FVM by flashing the golden image
-            let client =
-                RemoteBlockClient::new(block_connector.connect_block()?.into_proxy()).await?;
-            client
-                .write_at(BufferSlice::Memory(&contents[..]), 0)
-                .await
-                .context("Failed to flash FVM")?;
-        }
-        let fvm = Filesystem::from_boxed_config(block_connector, Box::new(Fvm::default()));
+        let mut fvm = Filesystem::from_boxed_config(block_connector, Box::new(Fvm::default()));
+        fvm.format().await.context("Failed to format FVM")?;
         let fs = fvm.serve_multi_volume().await.context("Failed to serve FVM")?;
         let minfs_vol = with_crypt_service(Policy::Null, |crypt| {
             fs.create_volume(
