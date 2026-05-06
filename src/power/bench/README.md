@@ -54,3 +54,25 @@ implementations of the same function for fidl proxy creation and benchmarks.
 After completing, the tests will print the name of the
 [catapult_json](https://github.com/catapult-project/catapult/blob/main/docs/histogram-set-json-format.md)
 output file containing the benchmark results.
+
+## Tracing the benchmarks
+
+To take traces of the benchmarks, use the end-to-end wrapper, which runs the
+benchmarks via a Lacewing wrapper. For example:
+
+1. `fx set` and build
+
+    ```
+    fx set workbench_eng.x64 --release --with-test //src/tests/end_to_end/power_framework:tests
+    fx build
+    ```
+
+2. Start an emulator and server using the same steps as in the previous section.
+
+3. Run the test, collecting artifacts including the `.fxt` and `.json` trace
+   files in a timestamped subdirectory of `test_artifacts`.
+
+    ```
+    mkdir -p test_artifacts
+    fx test --e2e power_framework_benchmarks --outdir test_artifacts --timestamp-artifacts
+    ```

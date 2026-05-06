@@ -7,22 +7,23 @@ import os
 
 import fuchsia_base_test
 from mobly import test_runner
-from trace_processing import trace_importing, trace_model
+from trace_processing import trace_importing
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class PowerBenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
+    """Runs Power Framework benchmarks with trace collection."""
+
     async def test_integration_testcase(self) -> None:
         _LOGGER.info("Running power framework benchmarks Lacewing test...")
-        # The power-framework-bench-integration runs the benchmark for
-        # Takewakelease
-        # Toggle levels
+
         host_output_path = self.test_case_path
         async with self.dut.tracing.trace_session(
             categories=[
                 "kernel:sched",
                 "kernel:meta",
+                "power",
                 "power-broker",
             ],
             buffer_size=36,
@@ -35,12 +36,12 @@ class PowerBenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
                 ffx_test_args=[
                     "--realm",
                     "/core/testing/system-tests",
-                    "--test-filter",
-                    "*test_topologytestdaemon_toggle",
+                    "--parallel",
+                    "1",
                 ],
                 test_component_args=[
                     "--repeat",
-                    "400",
+                    "100",
                 ],
                 capture_output=False,
             )
@@ -49,41 +50,6 @@ class PowerBenchmarksTest(fuchsia_base_test.FuchsiaBaseTest):
             os.path.join(host_output_path, "trace.fxt")
         )
         _LOGGER.info("Json Trace file name: %s", json_trace_file)
-        model: trace_model.Model = trace_importing.create_model_from_file_path(
-            json_trace_file
-        )
-
-        # TODO: b/357447550 - we need something similar for trace processing
-        #     and upload
-        """
-        trace_results = power.PowerMetricsProcessor().process_metrics(model)
-
-        metrics.TestCaseResult.write_fuchsiaperf_json(
-            results=trace_results,
-            test_suite="Manual",
-            output_path=pathlib.Path(args.output_path),
-        )
-
-        fuchsiaperf_data = [
-            {
-                "test_suite": "fuchsia.power.framework",
-                "label": "ToggleLease",
-                "values": [1.015],
-                "unit": "ms",
-            },
-            {
-                "test_suite": "fuchsia.power.framework",
-                "label": "TakeWakeLease",
-                "values": [0.750],
-                "unit": "ms",
-            },
-        ]
-        test_perf_file = os.path.join(self.log_path, "test.fuchsiaperf.json")
-        with open(test_perf_file, "w") as f:
-            json.dump(fuchsiaperf_data, f, indent=4)
-
-        publish.publish_fuchsiaperf([test_perf_file], ...)
-        """
 
 
 if __name__ == "__main__":
