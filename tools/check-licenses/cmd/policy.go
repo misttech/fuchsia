@@ -25,11 +25,12 @@ type PolicyCommand struct {
 func (*PolicyCommand) Name() string     { return "policy" }
 func (*PolicyCommand) Synopsis() string { return "Manage policy exceptions." }
 func (*PolicyCommand) Usage() string {
-	return `policy add <CheckName> <projectPath>:
-  Adds a policy exception for the given project path.
+	return `policy add <CheckName> <targetPath>:
+  Adds a policy exception for the given project or file path.
 
   Examples:
     fx check-licenses policy add AllProjectsMustHaveALicense vendor/foo
+    fx check-licenses policy add AllLicenseTextsMustBeRecognized third_party/bar/LICENSE
 
 `
 }
@@ -40,14 +41,14 @@ func (p *PolicyCommand) SetFlags(f *flag.FlagSet) {
 
 func (p *PolicyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	if f.NArg() != 3 || f.Arg(0) != "add" {
-		fmt.Fprintln(os.Stderr, "Usage: fx check-licenses policy add <CheckName> <projectPath>")
+		fmt.Fprintln(os.Stderr, "Usage: fx check-licenses policy add <CheckName> <targetPath>")
 		return subcommands.ExitUsageError
 	}
 
 	checkName := f.Arg(1)
-	projectPath := filepath.Clean(f.Arg(2))
+	targetPath := filepath.Clean(f.Arg(2))
 
-	if err := AddPolicyException(p.fuchsiaDir, checkName, projectPath); err != nil {
+	if err := AddPolicyException(p.fuchsiaDir, checkName, targetPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
 	}
@@ -55,8 +56,8 @@ func (p *PolicyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 	return subcommands.ExitSuccess
 }
 
-// AddPolicyException adds a policy exception for a given project path.
-func AddPolicyException(fuchsiaDir, checkName, projectPath string) error {
+// AddPolicyException adds a policy exception for a given project or file path.
+func AddPolicyException(fuchsiaDir, checkName, targetPath string) error {
 	if fuchsiaDir == "" {
 		fuchsiaDir = "."
 	}
@@ -66,26 +67,26 @@ func AddPolicyException(fuchsiaDir, checkName, projectPath string) error {
 	}
 
 	// Resolve to absolute path first (handles relative to CWD)
-	absProjectPath, err := filepath.Abs(projectPath)
+	absTargetPath, err := filepath.Abs(targetPath)
 	if err != nil {
-		return fmt.Errorf("failed to get absolute path for %s: %w", projectPath, err)
+		return fmt.Errorf("failed to get absolute path for %s: %w", targetPath, err)
 	}
 
-	// Make sure the project path is relative to FuchsiaDir
-	rel, err := filepath.Rel(fuchsiaDir, absProjectPath)
+	// Make sure the target path is relative to FuchsiaDir
+	rel, err := filepath.Rel(fuchsiaDir, absTargetPath)
 	if err != nil || strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("project path %s must be inside fuchsia root %s", projectPath, fuchsiaDir)
+		return fmt.Errorf("target path %s must be inside fuchsia root %s", targetPath, fuchsiaDir)
 	}
-	projectPath = rel
+	targetPath = rel
 
-	// Check if this project already has an exception
+	// Check if this target already has an exception
 	builder := v2config.NewBuilder(fuchsiaDir)
 	if err := builder.Assemble(); err != nil {
 		return fmt.Errorf("failed to assemble config: %w", err)
 	}
 	if list, ok := builder.Config.PolicyExceptions[checkName]; ok {
-		if _, exists := list[projectPath]; exists {
-			fmt.Printf("Project '%s' already has a policy exception for '%s'. Nothing to do.\n", projectPath, checkName)
+		if _, exists := list[targetPath]; exists {
+			fmt.Printf("Path '%s' already has a policy exception for '%s'. Nothing to do.\n", targetPath, checkName)
 			return nil
 		}
 	}
@@ -93,8 +94,8 @@ func AddPolicyException(fuchsiaDir, checkName, projectPath string) error {
 	// Determine if this is a private project
 	isPrivate := false
 	if builder.Config != nil {
-		isPrivate = builder.Config.IsPrivateProject(projectPath)
-	} else if strings.HasPrefix(projectPath, "vendor/") {
+		isPrivate = builder.Config.IsPrivateProject(targetPath)
+	} else if strings.HasPrefix(targetPath, "vendor/") {
 		isPrivate = true
 	}
 
@@ -107,8 +108,8 @@ func AddPolicyException(fuchsiaDir, checkName, projectPath string) error {
 		return fmt.Errorf("failed to create config directory %s: %w", configDir, err)
 	}
 
-	// We'll write to a file named after the project base name
-	baseName := filepath.Base(projectPath)
+	// We'll write to a file named after the target base name
+	baseName := filepath.Base(targetPath)
 	if baseName == "." || baseName == "/" {
 		baseName = "root"
 	}
@@ -128,7 +129,7 @@ func AddPolicyException(fuchsiaDir, checkName, projectPath string) error {
 	entry := v2config.AllowlistEntry{
 		Bug:         "TODO: File bug with TQ-OSRB",
 		Description: "Auto-generated exception",
-		Paths:       []string{projectPath},
+		Paths:       []string{targetPath},
 	}
 	cfg.PolicyExceptions[checkName] = append(cfg.PolicyExceptions[checkName], entry)
 
@@ -144,11 +145,11 @@ func AddPolicyException(fuchsiaDir, checkName, projectPath string) error {
 	}
 
 	fmt.Printf("✅ Added Policy Exception:\n")
-	fmt.Printf("  - Check:   %s\n", checkName)
-	fmt.Printf("  - Project: %s\n", projectPath)
-	fmt.Printf("  - File:    %s\n\n", destFile)
+	fmt.Printf("  - Check:  %s\n", checkName)
+	fmt.Printf("  - Target: %s\n", targetPath)
+	fmt.Printf("  - File:   %s\n\n", destFile)
 	fmt.Printf("ACTION REQUIRED:\n")
-	fmt.Printf("You must file a bug with the TQ-OSRB component explaining why this project needs a policy exception.\n")
+	fmt.Printf("You must file a bug with the TQ-OSRB component explaining why this path needs a policy exception.\n")
 	fmt.Printf("Once filed, update the 'bug' field in %s with the bug number.\n", destFile)
 
 	return nil
