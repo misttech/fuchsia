@@ -172,14 +172,32 @@ impl<T: ?Sized, A: Allocator> Box<T, A> {
     /// Consumes the `Box`, returning a mutable reference to `T`.
     ///
     /// The memory will be leaked, and never deallocated.
+    ///
+    /// # Note
+    ///
+    /// The allocator `A` is also leaked. This is intentional and matches the
+    /// behavior of `std::boxed::Box::leak`, ensuring that a stateful allocator
+    /// remains valid as long as the leaked reference.
     pub fn leak<'a>(self) -> &'a mut T
     where
         A: 'a,
     {
-        let ptr = self.ptr.as_ptr();
-        core::mem::forget(self);
-        // SAFETY: `self.ptr` is valid for `'a` because we forget `self` and never deallocate.
+        let (ptr, allocator) = self.into_raw_with_allocator();
+        core::mem::forget(allocator);
+        // SAFETY: `ptr` is valid for `'a` because we leaked the memory and the allocator.
         unsafe { &mut *ptr }
+    }
+
+    /// Consumes the `Box`, returning a raw pointer and the allocator.
+    ///
+    /// The memory will be leaked, and never deallocated unless reconstructed.
+    pub fn into_raw_with_allocator(self) -> (*mut T, A) {
+        let me = core::mem::ManuallyDrop::new(self);
+        let ptr = me.ptr.as_ptr();
+        // SAFETY: We are moving the allocator out of `me`, and `me` is ManuallyDrop
+        // so its Drop implementation (which would deallocate) will not run.
+        let allocator = unsafe { core::ptr::read(&me.allocator) };
+        (ptr, allocator)
     }
 }
 
@@ -206,6 +224,13 @@ impl<T: ?Sized> Box<T, DefaultAllocator> {
     ///   Consider using `NonNull::dangling()` to obtain such a pointer.
     pub const unsafe fn from_non_null(ptr: NonNull<T>) -> Self {
         unsafe { Self::from_non_null_in(ptr, DefaultAllocator) }
+    }
+
+    /// Consumes the `Box`, returning a raw pointer.
+    ///
+    /// The memory will be leaked, and never deallocated unless reconstructed.
+    pub fn into_raw(self) -> *mut T {
+        self.leak()
     }
 }
 
@@ -265,9 +290,8 @@ impl<T, A: Allocator> Box<[MaybeUninit<T>], A> {
     ///
     /// The caller must guarantee that the values are initialized.
     pub unsafe fn assume_init(self) -> Box<[T], A> {
-        let allocator = self.allocator.clone();
-        let reference = self.leak();
-        let ptr = reference as *mut [core::mem::MaybeUninit<T>] as *mut [T];
+        let (ptr, allocator) = self.into_raw_with_allocator();
+        let ptr = ptr as *mut [core::mem::MaybeUninit<T>] as *mut [T];
         // SAFETY: The caller must guarantee that the values are initialized.
         unsafe { Box::from_raw_in(ptr, allocator) }
     }
@@ -359,11 +383,9 @@ impl<T, A: Allocator> Box<MaybeUninit<T>, A> {
     ///
     /// The caller must guarantee that the value is initialized.
     pub unsafe fn assume_init(self) -> Box<T, A> {
-        let allocator = self.allocator.clone();
-        let reference = self.leak();
-        let ptr = NonNull::from_ref(reference).cast::<T>();
+        let (ptr, allocator) = self.into_raw_with_allocator();
         // SAFETY: The caller must guarantee that the value is initialized.
-        unsafe { Box::from_non_null_in(ptr, allocator) }
+        unsafe { Box::from_raw_in(ptr as *mut T, allocator) }
     }
 }
 
@@ -608,6 +630,32 @@ mod tests {
         // Reconstruct the box to avoid leaking memory in tests.
         let b = unsafe { Box::from_raw(reference as *mut u32) };
         assert_eq!(*b, 100);
+    }
+
+    #[test]
+    fn test_box_into_raw() {
+        let b = Box::try_new(42u32).unwrap();
+        let ptr = Box::into_raw(b);
+        assert_eq!(unsafe { *ptr }, 42);
+        unsafe {
+            *ptr = 100;
+        }
+        assert_eq!(unsafe { *ptr }, 100);
+
+        // Reconstruct the box to avoid leaking memory in tests.
+        let b = unsafe { Box::from_raw(ptr) };
+        assert_eq!(*b, 100);
+    }
+
+    #[test]
+    fn test_box_into_raw_with_allocator() {
+        let b = Box::try_new(42u32).unwrap();
+        let (ptr, allocator) = b.into_raw_with_allocator();
+        assert_eq!(unsafe { *ptr }, 42);
+
+        // Reconstruct the box to avoid leaking memory in tests.
+        let b = unsafe { Box::from_raw_in(ptr, allocator) };
+        assert_eq!(*b, 42);
     }
 
     #[test]

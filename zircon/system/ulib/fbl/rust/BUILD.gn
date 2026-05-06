@@ -14,6 +14,7 @@ rustc_library("fbl") {
     "src/canary.rs",
     "src/conditional_select_nospec.rs",
     "src/confine_array_index.rs",
+    "src/inline_array.rs",
     "src/lib.rs",
     "src/ring_buffer.rs",
     "src/vector.rs",
