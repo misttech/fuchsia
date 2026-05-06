@@ -99,7 +99,7 @@ wrapped_command=("$@")
 
 buildminder_wrap_options=(
   --buildminder "$buildminder"
-  --mode "integrated"  # integrated-mode still WIP
+  --mode "integrated"
 )
 
 # Handle log dir.

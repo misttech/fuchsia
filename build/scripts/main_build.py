@@ -58,11 +58,13 @@ class FuchsiaBuildConfig(object):
       rbe: if True, build uses RBE
       resultstore: if True, build uploads status and metadata to ResultStore
       profile: if True, collect system profile during build
+      tui: if True, enable terminal UI for monitoring build
     """
 
     rbe: bool | None
     resultstore: bool
     profile: bool
+    tui: bool
     verbose: bool
     dry_run: bool
     status: bool = True
@@ -73,6 +75,7 @@ class FuchsiaBuildConfig(object):
             rbe=args.rbe,
             resultstore=args.resultstore,
             profile=args.profile,
+            tui=args.tui,
             verbose=args.verbose,
             dry_run=args.dry_run,
             status=args.status,
@@ -510,11 +513,21 @@ class BuildCommandExecution(object):
         # will skip the actual build execution. This allows for high-fidelity
         # verification of the entire wrapper orchestration stack.
 
-        # Run the command in a new process group to allow sending signals to it
-        # and its descendants.
-        process = subprocess.Popen(
-            self.full_command, env=self.env, preexec_fn=os.setpgrp
-        )
+        # If the TUI is enabled, we MUST NOT use a separate process group,
+        # otherwise the TUI will be suspended when it tries to interact with
+        # the terminal (SIGTTIN/SIGTTOU).
+        use_separate_pgrp = not config.tui
+
+        # Note: We use subprocess.Popen and wait() instead of os.execv()
+        # (execve) because we need the Python process to stay alive to:
+        # 1. Maintain the build lock (BuildLock context manager).
+        # 2. Perform cleanup of temporary files (self.cleanup_files).
+        # 3. Handle signal forwarding to the child process group.
+        kwargs: dict[str, Any] = {"env": self.env}
+        if use_separate_pgrp:
+            kwargs["preexec_fn"] = os.setpgrp
+
+        process = subprocess.Popen(self.full_command, **kwargs)
 
         # Forward signals like SIGINT, SIGHUP, SIGTERM to the subprocess group
         # while it is running.
@@ -549,6 +562,9 @@ def top_build_command_prefix(
 
     if context.config.dry_run:
         top_cmd.append("--dry-run")
+
+    if context.config.tui:
+        top_cmd.append("--tui")
 
     if context.rbe_enabled:
         top_cmd.append("--rbe")
@@ -829,6 +845,9 @@ def _main_arg_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--profile", type=str_to_bool, nargs="?", const=True)
     parser.add_argument("--no-profile", action="store_false", dest="profile")
+
+    parser.add_argument("--tui", type=str_to_bool, nargs="?", const=True)
+    parser.add_argument("--no-tui", action="store_false", dest="tui")
 
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--dry-run", action="store_true")

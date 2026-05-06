@@ -5,6 +5,7 @@
 
 import contextlib
 import io
+import os
 import pathlib
 import signal
 import unittest
@@ -58,6 +59,7 @@ class MainBuildTestBase(unittest.TestCase):
             "rbe": False,
             "resultstore": False,
             "profile": False,
+            "tui": False,
             "verbose": False,
             "dry_run": False,
             "status": True,
@@ -201,7 +203,7 @@ class BuildInvocationTest(MainBuildTestBase):
                 new_callable=mock.PropertyMock,
                 return_value=True,
             ):
-                with mock.patch("os.getlogin", side_effect=OSError()):
+                with mock.patch.object(os, "getlogin", side_effect=OSError()):
                     with self.assertRaises(
                         main_build.BuildConfigurationError
                     ) as cm:
@@ -222,6 +224,7 @@ class BuildCommandExecutionTest(unittest.TestCase):
             rbe=False,
             resultstore=False,
             profile=False,
+            tui=False,
             verbose=False,
             dry_run=False,
         )
@@ -276,6 +279,7 @@ class BuildCommandExecutionTest(unittest.TestCase):
             rbe=False,
             resultstore=False,
             profile=False,
+            tui=False,
             verbose=False,
             dry_run=True,
         )
@@ -466,6 +470,13 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
                 self.assertIn("--reproxy-cfg", prefix)
                 self.assertIn("--resultstore", prefix)
 
+    def test_tui(self) -> None:
+        context = self.create_context(tui=True)
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            prefix = main_build.top_build_command_prefix(invocation)
+            self.assertIn("--tui", prefix)
+
 
 class InjectNinjaArgsTest(MainBuildTestBase):
     def test_injection(self) -> None:
@@ -565,6 +576,7 @@ class MainFunctionTest(MainBuildTestBase):
         )
         self.assertIsNone(args.rbe)
         self.assertIsNone(args.resultstore)
+        self.assertIsNone(args.tui)
         self.assertFalse(args.verbose)
         self.assertTrue(args.status)
 
@@ -634,7 +646,64 @@ class MainFunctionTest(MainBuildTestBase):
 
 class BuildCommandSignalTest(MainBuildTestBase):
     @mock.patch("main_build.subprocess.Popen")
-    def test_signal_forwarding(self, mock_popen: mock.Mock) -> None:
+    def test_signal_forwarding_no_tui(self, mock_popen: mock.Mock) -> None:
+        """Verify that without TUI, we use a separate process group."""
+        context = self.create_context(tui=False)
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+
+        exec_info = main_build.BuildCommandExecution(
+            full_command=["sleep", "10"],
+            env={},
+            invocation=invocation,
+        )
+
+        mock_process = mock.Mock()
+        mock_process.pid = 5678
+        mock_popen.return_value = mock_process
+
+        with mock.patch.object(
+            signal_utils, "wait_and_forward_signals"
+        ) as mock_wait:
+            mock_wait.return_value = 0
+            _ = exec_info._run_without_locking()
+
+            mock_popen.assert_called_once()
+            kwargs = mock_popen.call_args.kwargs
+            self.assertEqual(kwargs.get("preexec_fn"), os.setpgrp)
+            mock_wait.assert_called_once_with(mock_process, verbose=False)
+
+    @mock.patch("main_build.subprocess.Popen")
+    def test_signal_forwarding_with_tui(self, mock_popen: mock.Mock) -> None:
+        """Verify that with TUI, we do NOT use a separate process group."""
+        context = self.create_context(tui=True)
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+
+        exec_info = main_build.BuildCommandExecution(
+            full_command=["sleep", "10"],
+            env={},
+            invocation=invocation,
+        )
+
+        mock_process = mock.Mock()
+        mock_process.pid = 5678
+        mock_popen.return_value = mock_process
+
+        with mock.patch.object(
+            signal_utils, "wait_and_forward_signals"
+        ) as mock_wait:
+            mock_wait.return_value = 0
+            _ = exec_info._run_without_locking()
+
+            mock_popen.assert_called_once()
+            kwargs = mock_popen.call_args.kwargs
+            self.assertNotIn("preexec_fn", kwargs)
+            mock_wait.assert_called_once_with(mock_process, verbose=False)
+
+    @mock.patch("main_build.subprocess.Popen")
+    def test_wait_resilience_to_interrupt(self, mock_popen: mock.Mock) -> None:
+        """Verify that wait() resilience is handled by wait_and_forward_signals."""
         context = self.create_context()
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
@@ -647,9 +716,10 @@ class BuildCommandSignalTest(MainBuildTestBase):
 
         mock_process = mock.Mock()
         mock_process.pid = 5678
-        mock_process.wait.return_value = 0
         mock_popen.return_value = mock_process
 
+        # We actually test wait_and_forward_signals resilience in signal_utils_test.py,
+        # but here we ensure that main_build calls it.
         with mock.patch.object(
             signal_utils, "wait_and_forward_signals"
         ) as mock_wait:

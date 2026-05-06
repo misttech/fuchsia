@@ -125,9 +125,15 @@ rsproxy_options=()
 # Select config based on LOAS type.
 # FX_BUILD_LOAS_TYPE is set by 'fx build' to either "restricted" or
 # "unrestricted", and influences authentication method.
-# Infra builds don't set this, but instead pass environment variables
-# that will override the cfg values.
-loas_type="${FX_BUILD_LOAS_TYPE:-"$loas_type"}"
+#
+# If loas_type was set by a command-line option (e.g. 'skip' for TUI),
+# it must take precedence. This is essential for the TUI because it uses
+# an insecure local connection; if we use a credentialed LOAS type,
+# gRPC will refuse to send credentials over the insecure transport,
+# causing a deadlock.
+if [[ "$loas_type" == "auto" ]]; then
+  loas_type="${FX_BUILD_LOAS_TYPE:-"auto"}"
+fi
 [[ "$loas_type" != "auto" ]] || {
   # Detect "restricted" or "unrestricted"
   loas_type="$("$check_loas_script" | tail -n 1)" || {

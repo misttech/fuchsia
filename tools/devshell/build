@@ -107,6 +107,8 @@
 ##                            to build. This does *not* enable Ninja --verbose flag,
 ##                            use '-- --verbose' to do that.
 ##
+##   --experimental-tui       Enable terminal UI for monitoring build.
+##
 ##   --host                   When building with Ninja, an alias for --toolchain=host.
 ##                            When building with Bazel, an alias for --config=host
 ##
@@ -409,6 +411,10 @@ function main {
 
       --verbose)
         verbose=true
+        ;;
+
+      --experimental-tui)
+        TUI_ENABLED=1
         ;;
 
       -q|--quiet)

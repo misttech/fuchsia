@@ -1160,6 +1160,7 @@ function fx-run-build-command {
     "--rbe=$(fx-rbe-enabled && echo true || echo false)"
     "--resultstore=${RESULTSTORE_ENABLED}"
     "--profile=${BUILD_PROFILE_ENABLED}"
+    "--tui=${TUI_ENABLED:-0}"
   )
   if [[ "${print_full_cmd}" == "true" ]]; then
     args+=("--verbose")

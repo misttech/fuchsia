@@ -9,7 +9,7 @@
 #   --rbe : enable RBE using reproxy
 #   --resultstore : enable uploading build metadata to ResultStore service
 #   --profile : enable system profiling during build
-#   --experimental-tui : enable terminal UI for monitoring build
+#   --tui : enable terminal UI for monitoring build
 
 set -euo pipefail
 
@@ -63,7 +63,7 @@ options:
   --pre-build-uploads : configure-time invocation artifacts to upload
   --post-build-uploads : end-of-build invocation artifacts to upload
 
-  --experimental-tui : enable terminal UI for monitoring build
+  --tui : enable terminal UI for monitoring build
 
   The wrapped build command follows --.
 EOF
@@ -140,7 +140,7 @@ do
     --post-build-uploads=*) post_build_uploads="$optarg" ;;
     --post-build-uploads) prev_opt=post_build_uploads ;;
 
-    --experimental-tui) tui=1 ;;
+    --tui) tui=1 ;;
 
     # Stop option processing.
     --) shift; break ;;
@@ -339,25 +339,39 @@ then
   )
 fi
 
+# Both ResultStore and the TUI use rsproxy.
 maybe_resultstore_wrap=()
-if [[ "$enable_resultstore" == 1 ]]
+if [[ "$enable_resultstore" == 1 || "$tui" == 1 ]]
 then
-  debug "ResultStore enabled."
+  if [[ "$enable_resultstore" == 1 ]]
+  then debug "ResultStore uploads enabled, using rsproxy."
+  fi
+  if [[ "$tui" == 1 ]]
+  then debug "TUI enabled, using rsproxy."
+  fi
   readonly rsproxy_logdir="$log_dir/rsproxy_logs"
 
   rsproxy_options=()
 
-  for f in "${pre_build_uploads[@]}"
-  do rsproxy_options+=( --pre_build_uploads "$f" )
-  done
+  rsproxy_loas_type_arg=( "${loas_type_arg[@]}" )
+  if [[ "$enable_resultstore" == 1 ]]
+  then
+    for f in "${pre_build_uploads[@]}"
+    do rsproxy_options+=( --pre_build_uploads "$f" )
+    done
 
-  for f in "${post_build_uploads[@]}"
-  do rsproxy_options+=( --post_build_uploads "$f" )
-  done
+    for f in "${post_build_uploads[@]}"
+    do rsproxy_options+=( --post_build_uploads "$f" )
+    done
+  else
+    # Use skip authentication and skip fuchsia-specific config
+    # when only enabling for the TUI.
+    rsproxy_loas_type_arg=( --loas-type skip )
+  fi
 
   maybe_resultstore_wrap=(
     "$rsproxy_wrapper"
-    "${loas_type_arg[@]}"
+    "${rsproxy_loas_type_arg[@]}"
     --log-dir "$rsproxy_logdir"
     "${rsproxy_options[@]}"
     --
