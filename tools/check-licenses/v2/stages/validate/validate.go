@@ -94,7 +94,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 							CheckName: "AllLicenseTextsMustBeRecognized",
 							Project:   cf.ProjectRoot,
 							FilePath:  cf.Path,
-							Issue:     "Unrecognized license text: no SPDX ID could be matched",
+							Issue:     fmt.Sprintf("Unrecognized license text: no SPDX ID could be matched. If this file is an exception, allow it by running:\n    fx check-licenses policy add AllLicenseTextsMustBeRecognized %s", relPath),
 						}
 						select {
 						case <-ctx.Done():
@@ -146,7 +146,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 								CheckName: "AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders",
 								Project:   cf.ProjectRoot,
 								FilePath:  cf.Path,
-								Issue:     "Missing Fuchsia copyright header in first-party source file",
+								Issue:     fmt.Sprintf("Missing Fuchsia copyright header in first-party source file. Fix this automatically by running:\n    fx check-licenses copyright %s", relPath),
 							}
 							select {
 							case <-ctx.Done():
@@ -170,10 +170,10 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 
 					if needsApproval {
 						allowed := false
+						relProjRoot, _ := filepath.Rel(v.FuchsiaDir, cf.ProjectRoot)
 						if list, ok := v.AllowedLicenses[match.SPDXID]; ok {
 							// The python migration script grouped allowed licenses by the ProjectRoot or relative file path.
 							// To be safe, we check both the specific file and its project boundary.
-							relProjRoot, _ := filepath.Rel(v.FuchsiaDir, cf.ProjectRoot)
 							if _, ok1 := list[relPath]; ok1 {
 								allowed = true
 							} else if _, ok2 := list[relProjRoot]; ok2 {
@@ -193,7 +193,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 								LicenseID: match.SPDXID,
 								Project:   cf.ProjectRoot,
 								FilePath:  cf.Path,
-								Issue:     fmt.Sprintf("File was not approved to use license pattern %s (Type: %s)", match.SPDXID, match.MatchType),
+								Issue:     fmt.Sprintf("File was not approved to use license pattern %s (Type: %s). To allow this project to use this license, run:\n    fx check-licenses allowlist add %s %s", match.SPDXID, match.MatchType, match.SPDXID, relProjRoot),
 							}
 							select {
 							case <-ctx.Done():

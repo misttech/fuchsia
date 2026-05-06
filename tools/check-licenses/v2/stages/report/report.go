@@ -111,7 +111,7 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 				CheckName: "AllProjectsMustHaveALicense",
 				Project:   proj,
 				FilePath:  "",
-				Issue:     "Project has no recognized license files",
+				Issue:     fmt.Sprintf("Project has no recognized license files. Every third-party project must contain a license file. If this project is an exception, allow it by running:\n    fx check-licenses policy add AllProjectsMustHaveALicense %s", relProjRoot),
 			})
 		}
 	}
