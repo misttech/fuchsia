@@ -289,9 +289,7 @@ async fn gather_update_show(channel_control: ChannelControlProxy) -> Result<Upda
 mod tests {
     use super::*;
     use fdomain_fuchsia_buildinfo::{BuildInfo, ProviderRequest};
-    use fdomain_fuchsia_developer_remotecontrol::{
-        IdentifyHostResponse, RemoteControlProxy, RemoteControlRequest,
-    };
+
     use fdomain_fuchsia_feedback::{
         DeviceIdProviderRequest, LastReboot, LastRebootInfoProviderRequest, RebootReason,
     };
@@ -456,7 +454,11 @@ mod tests {
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },
             fho_env,
-            rcs_proxy: setup_fake_rcs_server(Arc::clone(&client)).into(),
+            rcs_proxy: testing_lib::setup_fake_rcs(
+                Arc::clone(&client),
+                testing_lib::FakeRcsConfig::default(),
+            )
+            .into(),
             target_proxy: setup_fake_target_server(),
             channel_control_proxy: setup_fake_channel_control_server(Arc::clone(&client)),
             board_proxy: setup_fake_board_server(Arc::clone(&client)),
@@ -567,19 +569,6 @@ mod tests {
         assert_eq!(result.colorway, Some("fake_colorway".to_string()));
     }
 
-    fn setup_fake_rcs_server(client: Arc<fdomain_client::Client>) -> RemoteControlProxy {
-        fake_proxy(client, move |req| match req {
-            RemoteControlRequest::IdentifyHost { responder } => {
-                let response = IdentifyHostResponse {
-                    nodename: Some(String::from("fake_fuchsia_device")),
-                    ..Default::default()
-                };
-                responder.send(Ok(&response)).unwrap();
-            }
-            _ => unreachable!(),
-        })
-    }
-
     fn setup_fake_channel_control_server(
         client: Arc<fdomain_client::Client>,
     ) -> ChannelControlProxy {
@@ -624,7 +613,11 @@ mod tests {
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },
             fho_env,
-            rcs_proxy: setup_fake_rcs_server(Arc::clone(&client)).into(),
+            rcs_proxy: testing_lib::setup_fake_rcs(
+                Arc::clone(&client),
+                testing_lib::FakeRcsConfig::default(),
+            )
+            .into(),
             target_proxy: setup_fake_target_server(),
             channel_control_proxy: setup_fake_channel_control_server(Arc::clone(&client)),
             board_proxy: setup_fake_board_server(Arc::clone(&client)),
@@ -673,7 +666,11 @@ mod tests {
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },
             fho_env,
-            rcs_proxy: setup_fake_rcs_server(Arc::clone(&client)).into(),
+            rcs_proxy: testing_lib::setup_fake_rcs(
+                Arc::clone(&client),
+                testing_lib::FakeRcsConfig::default(),
+            )
+            .into(),
             target_proxy: setup_fake_target_server(),
             channel_control_proxy: setup_fake_channel_control_server(Arc::clone(&client)),
             board_proxy: setup_fake_board_server(Arc::clone(&client)),

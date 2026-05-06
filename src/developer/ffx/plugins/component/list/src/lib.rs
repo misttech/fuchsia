@@ -58,65 +58,23 @@ mod test {
 
     use anyhow::Result;
     use component_debug_fdomain::realm::ResolvedInfo;
-    use fdomain_client::fidl::ServerEnd;
-    use fdomain_fuchsia_developer_remotecontrol::{
-        RemoteControlMarker, RemoteControlProxy, RemoteControlRequest,
-    };
+
     use ffx_component_list_args::ComponentListCommand;
     use ffx_writer::{Format, TestBuffers};
     use fho::FfxMain;
-    use futures::TryStreamExt;
+
     use moniker::Moniker;
     use pretty_assertions::assert_eq;
     use serde_json::json;
-    use std::rc::Rc;
-    use std::sync::Arc;
-
-    pub fn setup_fake_rcs(
-        components: Vec<&str>,
-        client: Arc<fdomain_client::Client>,
-    ) -> RemoteControlProxy {
-        let mut mock_realm_query_builder = iquery_test_support::MockRealmQueryBuilder::prefilled();
-        for c in components {
-            mock_realm_query_builder =
-                mock_realm_query_builder.when(c).moniker(format!("{c}").as_ref()).add();
-        }
-
-        let mock_realm_query = mock_realm_query_builder.build();
-        let (proxy, mut stream) = client.create_proxy_and_stream::<RemoteControlMarker>();
-        fuchsia_async::Task::local(async move {
-            let _client = client;
-            let querier = Rc::new(mock_realm_query);
-            while let Ok(Some(req)) = stream.try_next().await {
-                match req {
-                    RemoteControlRequest::ConnectCapability {
-                        moniker,
-                        capability_set,
-                        capability_name,
-                        server_channel,
-                        responder,
-                    } => {
-                        assert_eq!(moniker, "toolbox");
-                        assert_eq!(capability_set, rcs::OpenDirType::NamespaceDir);
-                        assert_eq!(capability_name, "svc/fuchsia.sys2.RealmQuery.root");
-                        let querier = Rc::clone(&querier);
-                        fuchsia_async::Task::local(querier.serve_f(ServerEnd::new(server_channel)))
-                            .detach();
-                        responder.send(Ok(())).unwrap();
-                    }
-                    e @ _ => unreachable!("Not implemented: {:?}", e),
-                }
-            }
-        })
-        .detach();
-        proxy
-    }
 
     #[fuchsia::test]
     async fn test_schema() -> Result<()> {
         let client = fdomain_local::local_client_empty();
         let cmd = ComponentListCommand { filter: None, verbose: false };
-        let tool = ListTool { cmd, rcs: setup_fake_rcs(vec![], client).into() };
+        let tool = ListTool {
+            cmd,
+            rcs: testing_lib::setup_fake_rcs(client, testing_lib::FakeRcsConfig::default()).into(),
+        };
         let buffers = TestBuffers::default();
 
         let writer = <ListTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);

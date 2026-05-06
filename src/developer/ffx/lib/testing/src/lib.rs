@@ -52,3 +52,10 @@ pub async fn connect_to_early_boot_profile(
     )
     .await?)
 }
+
+#[cfg(feature = "fdomain")]
+pub mod fake_rcs;
+#[cfg(feature = "fdomain")]
+pub use fake_rcs::FakeRcsConfig;
+#[cfg(feature = "fdomain")]
+pub use fake_rcs::setup_fake_rcs;

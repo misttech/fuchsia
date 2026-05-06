@@ -7,7 +7,7 @@ use diagnostics_data::{
     DiagnosticsHierarchy, InspectData, InspectDataBuilder, InspectHandleName, Property, Timestamp,
 };
 use errors as _;
-use fdomain_fuchsia_developer_remotecontrol::{RemoteControlProxy, RemoteControlRequest};
+use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fdomain_fuchsia_diagnostics::{
     ClientSelectorConfiguration, DataType, Format, StreamMode, StreamParameters,
 };
@@ -99,38 +99,13 @@ pub fn setup_fake_rcs(
     client: Arc<fdomain_client::Client>,
     components: Vec<&str>,
 ) -> RemoteControlProxy {
-    let mut mock_realm_query_builder = iquery_test_support::MockRealmQueryBuilder::prefilled();
-    for c in components {
-        mock_realm_query_builder =
-            mock_realm_query_builder.when(c).moniker(format!("{c}").as_ref()).add();
-    }
-
-    let mock_realm_query = Rc::new(mock_realm_query_builder.build());
-    let proxy =
-        target_holders::fdomain::fake_proxy::<RemoteControlProxy>(client.clone(), move |req| {
-            let querier = Rc::clone(&mock_realm_query);
-            match req {
-                RemoteControlRequest::ConnectCapability {
-                    moniker,
-                    capability_set,
-                    capability_name,
-                    server_channel,
-                    responder,
-                } => {
-                    assert_eq!(moniker, "toolbox");
-                    assert_eq!(capability_set, rcs_fdomain::OpenDirType::NamespaceDir);
-                    assert_eq!(capability_name, "svc/fuchsia.sys2.RealmQuery.root");
-                    let querier = Rc::clone(&querier);
-                    fuchsia_async::Task::local(
-                        querier.serve_f(fdomain_client::fidl::ServerEnd::new(server_channel)),
-                    )
-                    .detach();
-                    responder.send(Ok(())).unwrap();
-                }
-                _ => unreachable!("Not implemented"),
-            }
-        });
-    proxy
+    let config = testing_lib::FakeRcsConfig {
+        components: components.iter().map(|s| s.to_string()).collect(),
+        identify_host_response: None,
+        capability_handlers: std::collections::HashMap::new(),
+        identify_host_handler: None,
+    };
+    testing_lib::setup_fake_rcs(client, config)
 }
 
 pub fn make_inspect_with_length(moniker: &str, timestamp: i64, len: usize) -> InspectData {

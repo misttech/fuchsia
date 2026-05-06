@@ -33,10 +33,10 @@ ffx_plugin("ffx_target_show") {
     "//third_party/rust_crates:termion",
   ]
   test_deps = [
-    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
     "//sdk/fidl/fuchsia.intl:fuchsia.intl_rust_fdomain",
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//src/connectivity/lib/net-declare",
+    "//src/developer/ffx/lib/testing:lib_fdomain",
     "//src/lib/fdomain/client",
     "//src/lib/fdomain/local",
     "//src/lib/fuchsia",

@@ -19,10 +19,17 @@ template("testing_lib") {
 
     visibility = [
       ":*",
+      "//src/developer/ffx/plugins/component/*",
+      "//src/developer/ffx/plugins/inspect/*",
+      "//src/developer/ffx/plugins/log/*",
+      "//src/developer/ffx/plugins/target/*",
       "//src/developer/ffx/plugins/test/*",
     ]
 
-    sources = [ "src/lib.rs" ]
+    sources = [
+      "src/fake_rcs.rs",
+      "src/lib.rs",
+    ]
     deps = [ "//third_party/rust_crates:anyhow" ] + invoker.deps
 
     features = []
@@ -44,9 +51,14 @@ testing_lib("lib") {
 testing_lib("lib_fdomain") {
   with_unit_tests = false
   deps = [
+    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain_flex",
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust_fdomain_flex",
     "//src/developer/ffx/lib/rcs:lib_fdomain",
+    "//src/developer/ffx/lib/target/holders:lib",
+    "//src/diagnostics/iquery/test_support:iquery_test_support",
+    "//src/lib/fdomain/client",
+    "//src/lib/fuchsia-async",
   ]
   features = [ "fdomain" ]
 }

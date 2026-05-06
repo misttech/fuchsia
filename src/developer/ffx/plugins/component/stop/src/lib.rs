@@ -40,86 +40,103 @@ impl FfxMain for StopTool {
 mod test {
     use super::*;
     use fdomain_client::fidl::ServerEnd;
-    use fdomain_fuchsia_developer_remotecontrol::{RemoteControlMarker, RemoteControlRequest};
+
     use fdomain_fuchsia_sys2 as fsys_f;
     use ffx_writer::TestBuffers;
     use futures::TryStreamExt;
-    use std::sync::Arc;
-
-    fn setup_fake_rcs(
-        client: Arc<fdomain_client::Client>,
-        expected_moniker: String,
-    ) -> fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy {
-        let (proxy, mut stream) = client.create_proxy_and_stream::<RemoteControlMarker>();
-        let client_clone = client.clone();
-        fuchsia_async::Task::local(async move {
-            let client = client_clone;
-            while let Ok(Some(req)) = stream.try_next().await {
-                match req {
-                    RemoteControlRequest::ConnectCapability {
-                        moniker: _,
-                        capability_set: _,
-                        capability_name,
-                        server_channel,
-                        responder,
-                    } => {
-                        if capability_name == "svc/fuchsia.sys2.RealmQuery.root" {
-                            // Mock RealmQuery
-                            let mut rq_stream = ServerEnd::<fsys_f::RealmQueryMarker>::new(server_channel).into_stream();
-                            let client_rq = client.clone();
-                            fuchsia_async::Task::local(async move {
-                                while let Ok(Some(rq_req)) = rq_stream.try_next().await {
-                                    match rq_req {
-                                        fsys_f::RealmQueryRequest::GetAllInstances { responder } => {
-                                            let (client_end, mut iterator_stream) = client_rq.create_request_stream::<fsys_f::InstanceIteratorMarker>();
-                                            fuchsia_async::Task::local(async move {
-                                                if let Ok(Some(fsys_f::InstanceIteratorRequest::Next { responder })) = iterator_stream.try_next().await {
-                                                    responder.send(&[fsys_f::Instance {
-                                                        moniker: Some("core/test".to_string()),
-                                                        url: Some("fuchsia-pkg://fuchsia.com/test#meta/test.cml".to_string()),
-                                                        ..Default::default()
-                                                    }]).unwrap();
-                                                }
-                                                if let Ok(Some(fsys_f::InstanceIteratorRequest::Next { responder })) = iterator_stream.try_next().await {
-                                                    responder.send(&[]).unwrap();
-                                                }
-                                            }).detach();
-                                            responder.send(Ok(client_end)).unwrap();
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }).detach();
-                        } else if capability_name == "svc/fuchsia.sys2.LifecycleController.root" {
-                             // Mock LifecycleController
-                            let mut lc_stream = ServerEnd::<fsys_f::LifecycleControllerMarker>::new(server_channel).into_stream();
-                             let expected_moniker_clone = expected_moniker.clone();
-                             fuchsia_async::Task::local(async move {
-                                while let Ok(Some(lc_req)) = lc_stream.try_next().await {
-                                    match lc_req {
-                                        fsys_f::LifecycleControllerRequest::StopInstance { moniker, responder, .. } => {
-                                            assert_eq!(moniker, expected_moniker_clone);
-                                            responder.send(Ok(())).unwrap();
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }).detach();
-                        }
-                        responder.send(Ok(())).unwrap();
-                    }
-                    _ => panic!("Unexpected request"),
-                }
-            }
-        }).detach();
-        proxy
-    }
 
     #[fuchsia::test]
     async fn test_stop() -> anyhow::Result<()> {
         let client = fdomain_local::local_client_empty();
         let moniker = "core/test".to_string();
-        let rcs = setup_fake_rcs(client, moniker.clone());
+
+        let mut capability_handlers = std::collections::HashMap::new();
+
+        // Handler for RealmQuery
+        let client_clone = client.clone();
+        capability_handlers.insert(
+            "svc/fuchsia.sys2.RealmQuery.root".to_string(),
+            Box::new(move |server_channel| {
+                let client = client_clone.clone();
+                let mut rq_stream =
+                    ServerEnd::<fsys_f::RealmQueryMarker>::new(server_channel).into_stream();
+                fuchsia_async::Task::local(async move {
+                    while let Ok(Some(rq_req)) = rq_stream.try_next().await {
+                        match rq_req {
+                            fsys_f::RealmQueryRequest::GetAllInstances { responder } => {
+                                let (client_end, mut iterator_stream) =
+                                    client
+                                        .create_request_stream::<fsys_f::InstanceIteratorMarker>();
+                                fuchsia_async::Task::local(async move {
+                                    if let Ok(Some(fsys_f::InstanceIteratorRequest::Next {
+                                        responder,
+                                    })) = iterator_stream.try_next().await
+                                    {
+                                        responder
+                                            .send(&[fsys_f::Instance {
+                                                moniker: Some("core/test".to_string()),
+                                                url: Some(
+                                                    "fuchsia-pkg://fuchsia.com/test#meta/test.cml"
+                                                        .to_string(),
+                                                ),
+                                                ..Default::default()
+                                            }])
+                                            .unwrap();
+                                    }
+                                    if let Ok(Some(fsys_f::InstanceIteratorRequest::Next {
+                                        responder,
+                                    })) = iterator_stream.try_next().await
+                                    {
+                                        responder.send(&[]).unwrap();
+                                    }
+                                })
+                                .detach();
+                                responder.send(Ok(client_end)).unwrap();
+                            }
+                            _ => {}
+                        }
+                    }
+                })
+                .detach();
+            }) as Box<dyn Fn(fdomain_client::Channel) + 'static>,
+        );
+
+        // Handler for LifecycleController
+        let moniker_clone = moniker.clone();
+        capability_handlers.insert(
+            "svc/fuchsia.sys2.LifecycleController.root".to_string(),
+            Box::new(move |server_channel| {
+                let mut lc_stream =
+                    ServerEnd::<fsys_f::LifecycleControllerMarker>::new(server_channel)
+                        .into_stream();
+                let expected_moniker = moniker_clone.clone();
+                fuchsia_async::Task::local(async move {
+                    while let Ok(Some(lc_req)) = lc_stream.try_next().await {
+                        match lc_req {
+                            fsys_f::LifecycleControllerRequest::StopInstance {
+                                moniker,
+                                responder,
+                                ..
+                            } => {
+                                assert_eq!(moniker, expected_moniker);
+                                responder.send(Ok(())).unwrap();
+                            }
+                            _ => {}
+                        }
+                    }
+                })
+                .detach();
+            }) as Box<dyn Fn(fdomain_client::Channel) + 'static>,
+        );
+
+        let config = testing_lib::FakeRcsConfig {
+            components: vec![],
+            identify_host_handler: None,
+            identify_host_response: None,
+            capability_handlers,
+        };
+
+        let rcs = testing_lib::setup_fake_rcs(client.clone(), config);
 
         let tool = StopTool { cmd: ComponentStopCommand { query: moniker }, rcs: rcs.into() };
 

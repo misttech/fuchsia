@@ -5,10 +5,7 @@
 use diagnostics_data::{BuilderArgs, LogsData, LogsDataBuilder, Severity, Timestamp};
 use fdomain_client::AsHandleRef as _;
 use fdomain_client::fidl::DiscoverableProtocolMarker as _;
-use fdomain_fuchsia_developer_remotecontrol::{
-    IdentifyHostError, IdentifyHostResponse, RemoteControlMarker, RemoteControlProxy,
-    RemoteControlRequest,
-};
+
 use fdomain_fuchsia_diagnostics::{
     LogInterestSelector, LogSettingsMarker, LogSettingsRequest, LogSettingsRequestStream,
     StreamMode,
@@ -21,7 +18,7 @@ use ffx_config::EnvironmentContext;
 use fho::{FhoEnvironment, TryFromEnv};
 use fuchsia_async as fasync;
 use futures::channel::{mpsc, oneshot};
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt};
 use log_command_fdomain::parse_utc_time;
 use moniker::Moniker;
 use std::cell::RefCell;
@@ -147,7 +144,115 @@ impl TestEnvironment {
             remote_factory_closure_f: Box::new(move || {
                 let state = state_clone.clone();
                 let client = Arc::clone(&client);
-                Box::pin(async move { Ok(setup_fake_rcs(&client, state)) })
+                Box::pin(async move {
+                    let mut capability_handlers = std::collections::HashMap::new();
+
+                    let state_clone = state.clone();
+                    capability_handlers.insert(
+                        format!("svc/{}", ArchiveAccessorMarker::PROTOCOL_NAME),
+                        Box::new(move |channel| {
+                            let state = state_clone.clone();
+                            let stream =
+                                fdomain_client::fidl::ServerEnd::<ArchiveAccessorMarker>::from(
+                                    channel,
+                                )
+                                .into_stream();
+                            fasync::Task::local(async move {
+                                handle_archive_accessor(stream, state).await;
+                            })
+                            .detach();
+                        })
+                            as Box<dyn Fn(fdomain_client::Channel) + 'static>,
+                    );
+
+                    let state_clone = state.clone();
+                    capability_handlers.insert(
+                        format!("svc/{}", LogSettingsMarker::PROTOCOL_NAME),
+                        Box::new(move |channel| {
+                            let state = state_clone.clone();
+                            let stream =
+                                fdomain_client::fidl::ServerEnd::<LogSettingsMarker>::from(channel)
+                                    .into_stream();
+                            fasync::Task::local(async move {
+                                handle_log_settings(stream, state).await;
+                            })
+                            .detach();
+                        })
+                            as Box<dyn Fn(fdomain_client::Channel) + 'static>,
+                    );
+
+                    let state_clone = state.clone();
+                    let serve_rq = move |channel: fdomain_client::Channel| {
+                        let state = state_clone.clone();
+                        let server_end = fdomain_client::fidl::ServerEnd::from(channel);
+                        let instances = state
+                            .instances
+                            .iter()
+                            .map(|moniker| fsys::Instance {
+                                moniker: Some(moniker.to_string()),
+                                url: Some("fuchsia-pkg://test".into()),
+                                ..Default::default()
+                            })
+                            .collect();
+                        fasync::Task::local(async move {
+                            handle_realm_query(instances, server_end).await;
+                        })
+                        .detach();
+                    };
+
+                    let state_clone2 = state.clone();
+                    let serve_rq2 = move |channel: fdomain_client::Channel| {
+                        let state = state_clone2.clone();
+                        let server_end = fdomain_client::fidl::ServerEnd::from(channel);
+                        let instances = state
+                            .instances
+                            .iter()
+                            .map(|moniker| fsys::Instance {
+                                moniker: Some(moniker.to_string()),
+                                url: Some("fuchsia-pkg://test".into()),
+                                ..Default::default()
+                            })
+                            .collect();
+                        fuchsia_async::Task::local(async move {
+                            handle_realm_query(instances, server_end).await;
+                        })
+                        .detach();
+                    };
+
+                    capability_handlers
+                        .insert("svc/fuchsia.sys2.RealmQuery.root".to_string(), Box::new(serve_rq));
+                    capability_handlers.insert(
+                        format!("svc/{}", fsys::RealmQueryMarker::PROTOCOL_NAME),
+                        Box::new(serve_rq2),
+                    );
+
+                    let state_clone = state.clone();
+                    let identify_host_handler = std::rc::Rc::new(move |responder: fdomain_fuchsia_developer_remotecontrol::RemoteControlIdentifyHostResponder| {
+                        let hang_device_connection = state_clone.mutable.borrow().hang_device_connection;
+                        let fail_device_connection = state_clone.mutable.borrow().fail_device_connection;
+                        if hang_device_connection {
+                            // Hang indefinitely!
+                        } else if fail_device_connection {
+                            responder.send(Err(fdomain_fuchsia_developer_remotecontrol::IdentifyHostError::ProxyConnectionFailed)).unwrap();
+                        } else {
+                            responder.send(Ok(&fdomain_fuchsia_developer_remotecontrol::IdentifyHostResponse {
+                                nodename: Some(NODENAME.into()),
+                                boot_timestamp_nanos: Some(state_clone.mutable.borrow().boot_timestamp),
+                                boot_id: state_clone.mutable.borrow().boot_id,
+                                ..Default::default()
+                            })).unwrap();
+                        }
+                    });
+
+                    let config = testing_lib::FakeRcsConfig {
+                        components: vec![],
+                        identify_host_response: None,
+                        capability_handlers,
+                        identify_host_handler: Some(identify_host_handler),
+                    };
+
+                    Ok(testing_lib::setup_fake_rcs(client.clone(), config))
+                })
             }),
             ..Default::default()
         };
@@ -291,112 +396,6 @@ fn serve_instance_iterator(
     })
     .detach();
     client
-}
-
-fn setup_fake_rcs(client: &Arc<fdomain_client::Client>, state: Rc<State>) -> RemoteControlProxy {
-    let (proxy, mut stream) = client.create_proxy_and_stream::<RemoteControlMarker>();
-    fasync::Task::local(async move {
-        let scope = fasync::Scope::new();
-        while let Ok(Some(req)) = stream.try_next().await {
-            match req {
-                RemoteControlRequest::EchoString { value, responder } => {
-                    responder.send(value.as_ref()).expect("should send");
-                }
-                RemoteControlRequest::ConnectCapability {
-                    moniker,
-                    capability_set,
-                    capability_name,
-                    server_channel,
-                    responder,
-                } => {
-                    assert_eq!(capability_set, rcs_fdomain::OpenDirType::NamespaceDir);
-                    let state_clone = state.clone();
-                    scope.spawn_local(async move {
-                        handle_open_capability(
-                            &moniker,
-                            &capability_name,
-                            server_channel,
-                            state_clone,
-                        )
-                        .await
-                    });
-                    responder.send(Ok(())).unwrap();
-                }
-                RemoteControlRequest::IdentifyHost { responder } => {
-                    let hang_device_connection = state.mutable.borrow().hang_device_connection;
-                    let fail_device_connection = state.mutable.borrow().fail_device_connection;
-                    if hang_device_connection {
-                        // Hang indefinitely to test timeout!
-                    } else if fail_device_connection {
-                        responder.send(Err(IdentifyHostError::ProxyConnectionFailed)).unwrap();
-                    } else {
-                        responder
-                            .send(Ok(&IdentifyHostResponse {
-                                nodename: Some(NODENAME.into()),
-                                boot_timestamp_nanos: Some(state.mutable.borrow().boot_timestamp),
-                                boot_id: state.mutable.borrow().boot_id,
-                                ..Default::default()
-                            }))
-                            .unwrap();
-                    }
-                }
-                _ => panic!("unexpected request: {:?}", req),
-            }
-        }
-        scope.join().await;
-    })
-    .detach();
-    proxy
-}
-
-async fn handle_open_capability(
-    moniker: &str,
-    capability_name: &str,
-    channel: fdomain_client::Channel,
-    state: Rc<State>,
-) {
-    let Some(capability_name) = capability_name.strip_prefix("svc/") else {
-        panic!("Expected a protocol starting with svc/. Got: {capability_name}");
-    };
-    match capability_name {
-        ArchiveAccessorMarker::PROTOCOL_NAME => {
-            assert_eq!(moniker, rcs_fdomain::toolbox::MONIKER);
-            handle_archive_accessor(
-                fdomain_client::fidl::ServerEnd::<ArchiveAccessorMarker>::from(channel)
-                    .into_stream(),
-                state,
-            )
-            .await;
-        }
-        LogSettingsMarker::PROTOCOL_NAME => {
-            assert_eq!(moniker, rcs_fdomain::toolbox::MONIKER);
-            handle_log_settings(
-                fdomain_client::fidl::ServerEnd::<LogSettingsMarker>::from(channel).into_stream(),
-                state,
-            )
-            .await;
-        }
-        "fuchsia.sys2.RealmQuery.root" | fsys::RealmQueryMarker::PROTOCOL_NAME => {
-            assert_eq!(moniker, "toolbox");
-            let server_end = fdomain_client::fidl::ServerEnd::from(channel);
-            handle_realm_query(
-                state
-                    .instances
-                    .iter()
-                    .map(|moniker| fsys::Instance {
-                        moniker: Some(moniker.to_string()),
-                        url: Some("fuchsia-pkg://test".into()),
-                        ..Default::default()
-                    })
-                    .collect(),
-                server_end,
-            )
-            .await;
-        }
-        other => {
-            unreachable!("Attempted to connect to {other:?}");
-        }
-    }
 }
 
 async fn handle_archive_accessor(mut stream: ArchiveAccessorRequestStream, state: Rc<State>) {
