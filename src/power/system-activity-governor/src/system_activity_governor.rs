@@ -11,6 +11,7 @@ use async_trait::async_trait;
 use async_utils::hanging_get::server::{HangingGet, Publisher};
 use fidl::endpoints::{Proxy, ServerEnd, create_endpoints};
 use fidl_fuchsia_feedback as ffeedback;
+use fidl_fuchsia_hardware_power_statecontrol as fstatecontrol;
 use fidl_fuchsia_power_broker as fbroker;
 use fidl_fuchsia_power_cpu_manager as fcpumanager;
 use fidl_fuchsia_power_observability as fobs;
@@ -252,7 +253,7 @@ struct LeaseManager {
     /// A shared receiver that is set when the system is about to suspend.
     before_suspend_notifier: Rc<RefCell<Option<futures::future::Shared<oneshot::Receiver<()>>>>>,
     /// Sender for crash reports.
-    report_sender: futures::channel::mpsc::UnboundedSender<ffeedback::CrashReport>,
+    report_sender: futures::channel::mpsc::UnboundedSender<CrashReportMessage>,
 }
 
 impl LeaseManager {
@@ -267,7 +268,7 @@ impl LeaseManager {
             RefCell<Option<futures::future::Shared<oneshot::Receiver<()>>>>,
         >,
         max_wake_leases_to_log: usize,
-        report_sender: futures::channel::mpsc::UnboundedSender<ffeedback::CrashReport>,
+        report_sender: futures::channel::mpsc::UnboundedSender<CrashReportMessage>,
     ) -> Self {
         let active_wake_leases = Rc::new(RefCell::new(BTreeMap::<u64, Rc<ActiveWakeLease>>::new()));
         let active_wake_leases_clone = active_wake_leases.clone();
@@ -399,7 +400,8 @@ impl LeaseManager {
                         is_fatal: Some(false),
                         ..Default::default()
                     };
-                    if let Err(e) = self.report_sender.unbounded_send(report) {
+                    let message = CrashReportMessage { report, reboot_reason: None };
+                    if let Err(e) = self.report_sender.unbounded_send(message) {
                         log::warn!("Failed to send crash report to channel: {:?}", e);
                     }
                 }
@@ -713,6 +715,13 @@ impl NoSuspendDetector {
     }
 }
 
+/// Message sent to report crash and optionally trigger reboot.
+struct CrashReportMessage {
+    report: ffeedback::CrashReport,
+    /// Reason to initiate reboot. If None, we don't reboot.
+    reboot_reason: Option<fstatecontrol::ShutdownReason>,
+}
+
 /// SystemActivityGovernor runs the server for fuchsia.power.suspend and fuchsia.power.system FIDL
 /// APIs.
 pub struct SystemActivityGovernor {
@@ -775,8 +784,9 @@ pub struct SystemActivityGovernor {
     _suspend_blockers_node: LazyNode,
     before_suspend_notifier: Rc<RefCell<Option<futures::future::Shared<oneshot::Receiver<()>>>>>,
     stuck_warning_timeout: fasync::MonotonicDuration,
-    report_sender: futures::channel::mpsc::UnboundedSender<ffeedback::CrashReport>,
+    report_sender: futures::channel::mpsc::UnboundedSender<CrashReportMessage>,
     loop_detector: Option<std::rc::Rc<NoSuspendDetector>>,
+    reboot_on_stalled_suspend_blocker: bool,
 }
 
 impl SystemActivityGovernor {
@@ -792,16 +802,40 @@ impl SystemActivityGovernor {
         boost_proxy: fcpumanager::BoostProxy,
         use_suspender: bool,
         max_active_wake_leases_to_log: usize,
+        admin_proxy: Option<fstatecontrol::AdminProxy>,
+        reboot_on_stalled_suspend_blocker: bool,
     ) -> Result<Rc<Self>> {
         let (report_sender, mut report_receiver) =
-            futures::channel::mpsc::unbounded::<ffeedback::CrashReport>();
+            futures::channel::mpsc::unbounded::<CrashReportMessage>();
         let crash_reporter_clone = crash_reporter.clone();
+        let admin_proxy_clone = admin_proxy.clone();
         fasync::Task::local(async move {
-            while let Some(report) = report_receiver.next().await {
-                match crash_reporter_clone.file_report(report).await {
+            while let Some(message) = report_receiver.next().await {
+                match crash_reporter_clone.file_report(message.report).await {
                     Ok(Ok(result)) => log::info!("Crash report filed: {:?}", result),
                     Ok(Err(e)) => log::warn!("Failed to file crash report: {:?}", e),
                     Err(e) => log::warn!("Failed to call FileReport: {:?}", e),
+                }
+                let Some(reason) = message.reboot_reason else {
+                    continue;
+                };
+                let Some(admin) = admin_proxy_clone.as_ref() else {
+                    continue;
+                };
+                log::info!("Initiating reboot due to stuck suspend/resume watchdog firing...");
+                let options = fstatecontrol::ShutdownOptions {
+                    action: Some(fstatecontrol::ShutdownAction::Reboot),
+                    reasons: Some(vec![reason]),
+                    ..Default::default()
+                };
+                match admin.shutdown(&options).await {
+                    Ok(Ok(())) => {
+                        log::info!("Shutdown/Reboot requested successfully")
+                    }
+                    Ok(Err(e)) => {
+                        log::error!("Shutdown/Reboot failed: {:?}", e)
+                    }
+                    Err(e) => log::error!("Failed to call Shutdown: {:?}", e),
                 }
             }
         })
@@ -970,6 +1004,7 @@ impl SystemActivityGovernor {
             cpu_manager,
             boot_control,
             element_power_level_names,
+            reboot_on_stalled_suspend_blocker,
             es_activation_after_resume_signal: Rc::new(RefCell::new(async_lock::OnceCell::new())),
             resume_control_lease: Rc::new(RefCell::new(None)),
             boost_token: Rc::new(RefCell::new(None)),
@@ -1611,6 +1646,7 @@ impl SystemActivityGovernor {
 
         let timeout = self.stuck_warning_timeout;
         let report_sender = self.report_sender.clone();
+        let reboot_on_stalled_suspend_blocker = self.reboot_on_stalled_suspend_blocker;
         // Queue a task to warn if the entire suspend or resume operation gets stuck and file crash
         // report.
         let _outer_warn_task = fasync::Task::local(async move {
@@ -1626,9 +1662,15 @@ impl SystemActivityGovernor {
                 ..Default::default()
             };
 
-            log::info!("Sending crash report request for stuck {phase} phase");
-            if let Err(e) = report_sender.unbounded_send(report) {
-                log::warn!("Failed to send crash report request: {:?}", e);
+            log::info!("Sending crash report and optional reboot request for stuck {phase} phase");
+            let reboot_reason = if reboot_on_stalled_suspend_blocker {
+                Some(fstatecontrol::ShutdownReason::SuspensionFailure)
+            } else {
+                None
+            };
+            let message = CrashReportMessage { report, reboot_reason };
+            if let Err(e) = report_sender.unbounded_send(message) {
+                log::warn!("Failed to send crash report and reboot request: {:?}", e);
             }
 
             for count in 1.. {

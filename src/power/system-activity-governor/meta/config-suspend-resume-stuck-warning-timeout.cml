@@ -8,10 +8,19 @@
             type: "uint32",
             value: 60,
         },
+        {
+            config: "fuchsia.power.RebootOnStalledSuspendBlocker",
+            type: "bool",
+            value: false,
+        },
     ],
     expose: [
         {
             config: "fuchsia.power.SuspendResumeStuckWarningTimeout",
+            from: "self",
+        },
+        {
+            config: "fuchsia.power.RebootOnStalledSuspendBlocker",
             from: "self",
         },
     ],

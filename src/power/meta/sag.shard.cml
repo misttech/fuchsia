@@ -40,6 +40,12 @@
             to: "#system-activity-governor",
         },
         {
+            config: [ "fuchsia.power.RebootOnStalledSuspendBlocker" ],
+            from: "parent",
+            to: "#system-activity-governor",
+            availability: "optional",
+        },
+        {
             config: [ "fuchsia.power.SuspendResumeStuckWarningTimeout" ],
             from: "parent",
             to: "#system-activity-governor",
@@ -51,7 +57,10 @@
             to: [ "#system-activity-governor" ],
         },
         {
-            protocol: [ "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister" ],
+            protocol: [
+                "fuchsia.hardware.power.statecontrol.Admin",
+                "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
+            ],
             from: "#shutdown_shim",
             to: "#system-activity-governor",
         },

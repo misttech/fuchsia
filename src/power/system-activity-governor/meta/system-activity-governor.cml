@@ -30,6 +30,7 @@
     use: [
         {
             protocol: [
+                "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
                 "fuchsia.power.broker.Topology",
                 "fuchsia.scheduler.RoleManager",
@@ -87,6 +88,16 @@
             default: 60,
         },
         {
+            config: "fuchsia.power.RebootOnStalledSuspendBlocker",
+
+            // Whether to reboot the system on suspend/resume failure.
+            from: "parent",
+            key: "reboot_on_stalled_suspend_blocker",
+            type: "bool",
+            availability: "optional",
+            default: true,
+        },
+        {
             config: "fuchsia.power.MaxActiveWakeLeasesToLog",
 
             // Sets the maximum number of active wake leases that will be logged to SAG's Inspect.
@@ -103,6 +114,11 @@
         },
         {
             config: [ "fuchsia.power.SuspendResumeStuckWarningTimeout" ],
+            from: "void",
+            availability: "optional",
+        },
+        {
+            config: [ "fuchsia.power.RebootOnStalledSuspendBlocker" ],
             from: "void",
             availability: "optional",
         },

@@ -248,6 +248,7 @@ async fn main() -> Result<()> {
 
     let use_suspender = config.use_suspender;
     let stuck_warning_timeout = config.suspend_resume_stuck_warning_timeout;
+    let reboot_on_stalled_suspend_blocker = config.reboot_on_stalled_suspend_blocker;
     let front_end_clone = front_end.clone();
     let inspector_clone = inspector.clone();
     let max_active_wake_leases_to_log = config.max_active_wake_leases_to_log as usize;
@@ -260,8 +261,21 @@ async fn main() -> Result<()> {
         let boost_proxy = boost_proxy.clone();
         let inspect_root = inspector_clone.root().clone_weak();
         let use_suspender = use_suspender;
+        let reboot_on_stalled_suspend_blocker = reboot_on_stalled_suspend_blocker;
         async move {
             log::info!("Creating activity governor server...");
+
+            let admin_proxy = if reboot_on_stalled_suspend_blocker {
+                match connect_to_protocol::<fstatecontrol::AdminMarker>() {
+                    Ok(p) => Some(p),
+                    Err(e) => {
+                        log::error!("Failed to connect to statecontrol::Admin: {:?}", e);
+                        None
+                    }
+                }
+            } else {
+                None
+            };
 
             front_end
                 .create_sag(
@@ -276,6 +290,8 @@ async fn main() -> Result<()> {
                     boost_proxy,
                     use_suspender,
                     max_active_wake_leases_to_log,
+                    admin_proxy,
+                    reboot_on_stalled_suspend_blocker,
                 )
                 .await
         }

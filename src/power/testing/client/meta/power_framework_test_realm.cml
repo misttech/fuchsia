@@ -47,6 +47,12 @@
             from: "#fake-shutdown-shim",
             to: "#test-system-activity-governor",
         },
+        {
+            config: "fuchsia.power.RebootOnStalledSuspendBlocker",
+            from: "void",
+            to: "#test-system-activity-governor",
+            availability: "optional",
+        },
     ],
     expose: [
         {

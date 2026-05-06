@@ -81,6 +81,8 @@ async fn create_power_realm<'a>(
     const CONFIG_NO_SUSPENDING_TOKEN_CONFIG: &str = "fuchsia.power.WaitForSuspendingToken";
     const CONFIG_SUSPEND_RESUME_STUCK_WARNING_TIMEOUT_CONFIG: &str =
         "fuchsia.power.SuspendResumeStuckWarningTimeout";
+    const CONFIG_REBOOT_ON_SUSPEND_STUCK_CONFIG: &str =
+        "fuchsia.power.RebootOnStalledSuspendBlocker";
 
     fn suspender_dep() -> fnetemul::Capability {
         fnetemul::Capability::ChildDep(fnetemul::ChildDep {
@@ -149,6 +151,13 @@ async fn create_power_realm<'a>(
                 name: Some(CONFIG_USE_SUSPENDER_NAME.to_string()),
                 capability: Some(fnetemul::ExposedCapability::Configuration(
                     CONFIG_SUSPEND_RESUME_STUCK_WARNING_TIMEOUT_CONFIG.to_string(),
+                )),
+                ..Default::default()
+            }),
+            fnetemul::Capability::ChildDep(fnetemul::ChildDep {
+                name: Some(CONFIG_USE_SUSPENDER_NAME.to_string()),
+                capability: Some(fnetemul::ExposedCapability::Configuration(
+                    CONFIG_REBOOT_ON_SUSPEND_STUCK_CONFIG.to_string(),
                 )),
                 ..Default::default()
             }),

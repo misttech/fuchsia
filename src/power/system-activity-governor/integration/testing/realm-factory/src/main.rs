@@ -87,6 +87,8 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
     let wait_for_suspending_token = options.wait_for_suspending_token.unwrap_or(false);
     let use_suspender = options.use_suspender.unwrap_or(true);
     let stuck_warning_timeout_seconds = options.stuck_warning_timeout_seconds.unwrap_or(60);
+    let reboot_on_stalled_suspend_blocker =
+        options.reboot_on_stalled_suspend_blocker.unwrap_or(false);
 
     let builder = RealmBuilder::new().await?;
 
@@ -152,6 +154,17 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
         .add_route(
             Route::new()
                 .capability(Capability::protocol_by_name(
+                    "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
+                ))
+                .from(&fake_shutdown_shim)
+                .to(Ref::parent()),
+        )
+        .await?;
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol_by_name(
                     "fuchsia.hardware.power.statecontrol.Admin",
                 ))
                 .from(&fake_shutdown_shim)
@@ -165,6 +178,17 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
             Route::new()
                 .capability(Capability::protocol_by_name(
                     "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
+                ))
+                .from(&fake_shutdown_shim)
+                .to(&component_ref),
+        )
+        .await?;
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::protocol_by_name(
+                    "fuchsia.hardware.power.statecontrol.Admin",
                 ))
                 .from(&fake_shutdown_shim)
                 .to(&component_ref),
@@ -231,6 +255,24 @@ async fn create_realm(options: RealmOptions) -> Result<SagRealm, Error> {
             Route::new()
                 .capability(Capability::configuration(
                     "fuchsia.power.SuspendResumeStuckWarningTimeout",
+                ))
+                .from(Ref::self_())
+                .to(&component_ref),
+        )
+        .await?;
+
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.power.RebootOnStalledSuspendBlocker".parse()?,
+            value: reboot_on_stalled_suspend_blocker.into(),
+        }))
+        .await?;
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration(
+                    "fuchsia.power.RebootOnStalledSuspendBlocker",
                 ))
                 .from(Ref::self_())
                 .to(&component_ref),

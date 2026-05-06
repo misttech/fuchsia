@@ -19,5 +19,11 @@
             from: "#config-no-suspender",
             to: [ "#test-system-activity-governor" ],
         },
+        {
+            config: "fuchsia.power.RebootOnStalledSuspendBlocker",
+            from: "void",
+            to: [ "#test-system-activity-governor" ],
+            availability: "optional",
+        },
     ],
 }

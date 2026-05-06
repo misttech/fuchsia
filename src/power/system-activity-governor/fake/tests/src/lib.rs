@@ -98,6 +98,26 @@ async fn create_test_env() -> TestEnv {
         .unwrap();
 
     builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.power.RebootOnStalledSuspendBlocker".parse().unwrap(),
+            value: false.into(),
+        }))
+        .await
+        .unwrap();
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration(
+                    "fuchsia.power.RebootOnStalledSuspendBlocker",
+                ))
+                .from(Ref::self_())
+                .to(&component_ref),
+        )
+        .await
+        .unwrap();
+
+    builder
         .add_route(
             Route::new()
                 .capability(Capability::configuration("fuchsia.power.WaitForSuspendingToken"))

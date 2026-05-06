@@ -25,6 +25,10 @@ type RealmOptions = resource table {
     /// Specifies the timeout in seconds for the suspend/resume watchdog.
     /// Defaults to 60 seconds if not specified.
     4: stuck_warning_timeout_seconds uint32;
+
+    /// Specifies whether SAG will trigger a reboot when a suspend/resume
+    /// hang is detected. Defaults to false.
+    5: reboot_on_stalled_suspend_blocker bool;
 };
 
 @discoverable

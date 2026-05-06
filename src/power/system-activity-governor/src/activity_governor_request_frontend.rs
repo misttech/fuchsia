@@ -187,6 +187,8 @@ impl ActivityGovernorRequestFrontend {
         boost_proxy: fcpumanager::BoostProxy,
         use_suspender: bool,
         max_active_wake_leases_to_log: usize,
+        admin_proxy: Option<fidl_fuchsia_hardware_power_statecontrol::AdminProxy>,
+        reboot_on_stalled_suspend_blocker: bool,
     ) -> Result<()> {
         log::info!("Creating activity governor server from frontend...");
         let sag = SystemActivityGovernor::new(
@@ -201,6 +203,8 @@ impl ActivityGovernorRequestFrontend {
             boost_proxy,
             use_suspender,
             max_active_wake_leases_to_log,
+            admin_proxy,
+            reboot_on_stalled_suspend_blocker,
         )
         .await?;
 

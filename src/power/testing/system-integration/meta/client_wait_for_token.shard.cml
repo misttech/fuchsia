@@ -15,5 +15,11 @@
             from: "#config-wait-for-token",
             to: "#system-activity-governor",
         },
+        {
+            config: "fuchsia.power.RebootOnStalledSuspendBlocker",
+            from: "void",
+            to: "#system-activity-governor",
+            availability: "optional",
+        },
     ],
 }
