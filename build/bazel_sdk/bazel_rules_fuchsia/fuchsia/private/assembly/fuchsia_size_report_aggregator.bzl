@@ -4,8 +4,8 @@
 
 """Rule for aggregating size reports."""
 
+load("@fuchsia_rules_common//:local_actions.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 load(":providers.bzl", "FuchsiaSizeCheckerInfo")
-load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 
 def _fuchsia_size_report_aggregator_impl(ctx):
     size_budgets = [

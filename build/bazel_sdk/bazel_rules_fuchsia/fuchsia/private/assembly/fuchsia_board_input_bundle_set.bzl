@@ -5,10 +5,11 @@
 """Rules for defining assembly board input bundle set."""
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+load("@fuchsia_rules_common//:local_actions.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(":providers.bzl", "FuchsiaBoardInputBundleInfo", "FuchsiaBoardInputBundleSetInfo")
-load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS", "select_root_dir_with_file")
+load(":utils.bzl", "select_root_dir_with_file")
 
 def _fuchsia_board_input_bundle_set_impl(ctx):
     sdk = get_fuchsia_sdk_toolchain(ctx)

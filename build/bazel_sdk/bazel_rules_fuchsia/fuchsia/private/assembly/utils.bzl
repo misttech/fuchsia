@@ -6,13 +6,10 @@
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
-load("//fuchsia/private:utils.bzl", _LOCAL_ONLY_ACTION_KWARGS = "LOCAL_ONLY_ACTION_KWARGS")
 load(
     ":providers.bzl",
     "FuchsiaAssembledPackageInfo",
 )
-
-LOCAL_ONLY_ACTION_KWARGS = _LOCAL_ONLY_ACTION_KWARGS
 
 def select_root_dir_with_file(files, file):
     """Finds the top-most directory that has a direct file with the name `file`

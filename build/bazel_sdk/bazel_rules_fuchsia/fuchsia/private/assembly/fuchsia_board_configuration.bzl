@@ -5,6 +5,7 @@
 """Rules for defining assembly board configuration."""
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+load("@fuchsia_rules_common//:local_actions.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(
     "//fuchsia/private/licenses:common.bzl",
@@ -20,7 +21,6 @@ load(
 )
 load(
     ":utils.bzl",
-    "LOCAL_ONLY_ACTION_KWARGS",
     "extract_labels",
     "replace_labels_with_files",
     "select_root_dir_with_file",

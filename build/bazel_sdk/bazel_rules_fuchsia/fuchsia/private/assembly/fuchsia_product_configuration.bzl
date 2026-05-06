@@ -6,6 +6,7 @@
 
 # buildifier: disable=module-docstring
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+load("@fuchsia_rules_common//:local_actions.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 load("@fuchsia_rules_common//assembly:providers.bzl", "FuchsiaProductConfigInfo")
 load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load("@fuchsia_rules_common//packages:utils.bzl", "get_driver_component_manifests")
@@ -18,7 +19,7 @@ load(
     "FuchsiaProductInputBundleInfo",
     "FuchsiaStarnixContainerInfo",
 )
-load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS", "collect_package_file_deps", "create_pkg_detail", "extract_labels", "replace_labels_with_files", "select_root_dir_with_file")
+load(":utils.bzl", "collect_package_file_deps", "create_pkg_detail", "extract_labels", "replace_labels_with_files", "select_root_dir_with_file")
 
 # Define build types
 BUILD_TYPES = struct(

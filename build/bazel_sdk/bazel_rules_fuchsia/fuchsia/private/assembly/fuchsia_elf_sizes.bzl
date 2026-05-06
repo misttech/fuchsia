@@ -4,10 +4,10 @@
 
 """Rule for creating a ELF sizes summary file for a Fuchsia image."""
 
+load("@fuchsia_rules_common//:local_actions.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(":providers.bzl", "FuchsiaProductAssemblyInfo")
-load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 
 def _fuchsia_elf_sizes_impl(ctx):
     zbi = get_fuchsia_sdk_toolchain(ctx).zbi

@@ -4,6 +4,7 @@
 
 """Rule that creates a product bundle for flashing, emulating, or updating a Fuchsia product to a target device."""
 
+load("@fuchsia_rules_common//:local_actions.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:ffx_tool.bzl", "get_ffx_product_args", "get_ffx_product_inputs", "get_ffx_scrutiny_args", "get_ffx_scrutiny_inputs")
 load(
@@ -33,7 +34,6 @@ load(
     "FuchsiaSizeCheckerInfo",
     "FuchsiaVirtualDeviceInfo",
 )
-load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 
 DELIVERY_BLOB_TYPE = struct(
     UNCOMPRESSED = "0",

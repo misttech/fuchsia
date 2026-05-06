@@ -6,6 +6,7 @@
 filegroup(
     name = "bzl_srcs",
     srcs = [
+        "local_actions.bzl",
         "//assembly:bzl_srcs",
         "//packages:bzl_srcs",
     ],

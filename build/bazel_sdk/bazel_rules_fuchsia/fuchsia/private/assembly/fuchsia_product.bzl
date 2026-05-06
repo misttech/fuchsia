@@ -4,6 +4,7 @@
 
 """Rule for assembling a Fuchsia product."""
 
+load("@fuchsia_rules_common//:local_actions.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 load("@fuchsia_rules_common//assembly:providers.bzl", "FuchsiaProductConfigInfo")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:ffx_tool.bzl", "get_ffx_assembly_args", "get_ffx_assembly_inputs")
@@ -17,7 +18,6 @@ load(
     "FuchsiaProductAssemblyInfo",
     "FuchsiaProductImageInfo",
 )
-load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 
 def _match_assembly_pattern_string(label, pattern):
     package = label.package
