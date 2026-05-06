@@ -252,7 +252,7 @@ impl WalkPaths for PostProcessingScript {
         for (relative_path, path) in &mut self.inputs {
             let parent = relative_path
                 .parent()
-                .ok_or_else(|| anyhow!("Failed to get parent directory for: {}", &relative_path))?;
+                .ok_or_else(|| anyhow!("Failed to get parent directory for: {}", relative_path))?;
             let destination = dest.join(parent);
 
             // If we find a source that matches the `board_script_path`,

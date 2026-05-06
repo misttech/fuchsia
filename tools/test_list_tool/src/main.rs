@@ -379,7 +379,7 @@ fn write_depfile(
     }
     #[allow(clippy::format_collect, reason = "mass allow for https://fxbug.dev/381896734")]
     let contents =
-        format!("{}: {}\n", output, &inputs.iter().map(|i| format!(" {}", i)).collect::<String>(),);
+        format!("{}: {}\n", output, inputs.iter().map(|i| format!(" {}", i)).collect::<String>(),);
     if let Some(depfile_dir) = depfile.parent() {
         std::fs::create_dir_all(depfile_dir)
             .with_context(|| format!("Creating directory for depfile: {}", depfile))?;
@@ -465,7 +465,7 @@ fn run_tool() -> Result<(), Error> {
                 if res.is_err() {
                     return Err(format_err!(
                         "error finding meta.far file in package manifest {}: {:?}",
-                        &pkg_manifest,
+                        pkg_manifest,
                         res.unwrap_err()
                     ));
                 }
@@ -481,7 +481,7 @@ fn run_tool() -> Result<(), Error> {
                 ) {
                     return Err(format_err!(
                         "error processing manifest for package URL {}: {:?}",
-                        &pkg_url,
+                        pkg_url,
                         e
                     ));
                 }

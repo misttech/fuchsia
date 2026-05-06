@@ -142,9 +142,9 @@ pub fn construct_vbmeta(
     {
         let vbmeta_path = outdir.as_ref().join(format!("{}.vbmeta", vbmeta_config.name));
         std::fs::write(&vbmeta_path, vbmeta.as_bytes())
-            .with_context(|| format!("writing vbmeta: {}", &vbmeta_path))?;
+            .with_context(|| format!("writing vbmeta: {}", vbmeta_path))?;
         let vbmeta_path_relative = path_relative_from_current_dir(&vbmeta_path)
-            .with_context(|| format!("calculating relative path for: {}", &vbmeta_path))?;
+            .with_context(|| format!("calculating relative path for: {}", vbmeta_path))?;
 
         if vbmeta_config.style == VBMetaStyle::VBMetaSystem {
             Ok(ConstructedVBMeta::VBMetaSystem(vbmeta_path_relative))
@@ -164,7 +164,7 @@ pub fn construct_vbmeta(
         vbmeta.append_as_footer(&boot_shim, &new_boot_shim)?;
 
         let new_boot_shim_relative = path_relative_from_current_dir(&new_boot_shim)
-            .with_context(|| format!("calculating relative path for: {}", &new_boot_shim))?;
+            .with_context(|| format!("calculating relative path for: {}", new_boot_shim))?;
         Ok(ConstructedVBMeta::QemuKernelWithFooter(new_boot_shim_relative))
     }
 }
@@ -190,7 +190,7 @@ fn descriptors_for_fuchsia<FSP: FilesystemProvider>(
     if let Some(bp) = base_package {
         descriptors.push(Descriptor::KernelCmdline(KernelCmdlineDescriptor::new(
             0,
-            format!("{}={}", BASE_MERKLE_CMDLINE_KEY, &bp.merkle),
+            format!("{}={}", BASE_MERKLE_CMDLINE_KEY, bp.merkle),
         )));
     }
 

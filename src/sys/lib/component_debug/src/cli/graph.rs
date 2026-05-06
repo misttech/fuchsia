@@ -183,9 +183,9 @@ fn construct_codesearch_url(component_url: &str) -> String {
     let name_with_dashes = name_with_filetype.replace("_", "-");
 
     let query = if name_with_underscores == name_with_dashes {
-        format!("f:{}", &name_with_underscores)
+        format!("f:{}", name_with_underscores)
     } else {
-        format!("f:{}|{}", &name_with_underscores, &name_with_dashes)
+        format!("f:{}|{}", name_with_underscores, name_with_dashes)
     };
 
     let mut code_search_url = Url::parse("https://cs.opensource.google/search").unwrap();
@@ -232,7 +232,7 @@ pub fn create_dot_graph(instances: Vec<Instance>, orientation: GraphOrientation)
         writeln!(
             output,
             r#"    "{}" [ label = "{}" {} {} ]"#,
-            &moniker, &label, &running_attrs, &url_attrs
+            moniker, label, running_attrs, url_attrs
         )
         .unwrap();
 
@@ -240,7 +240,7 @@ pub fn create_dot_graph(instances: Vec<Instance>, orientation: GraphOrientation)
         if let Some(parent_moniker) = instance.moniker.parent() {
             if let Some(parent) = instances.iter().find(|i| i.moniker == parent_moniker) {
                 // Connect parent to component
-                writeln!(output, r#"    "{}" -> "{}""#, &parent.moniker.to_string(), &moniker)
+                writeln!(output, r#"    "{}" -> "{}""#, parent.moniker, moniker)
                     .unwrap();
             }
         }

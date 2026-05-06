@@ -168,7 +168,7 @@ impl Peer {
         }
         debug!("tx_stats_map populated. size: {}", peer.tx_stats_map.len());
         if peer.tx_stats_map.is_empty() {
-            error!("No usable rates for peer {}", &peer.addr);
+            error!("No usable rates for peer {}", peer.addr);
             return Err(zx::Status::INTERNAL);
         }
 
@@ -505,7 +505,7 @@ impl<T: TimerManager> MinstrelRateSelector<T> {
             Some(bssid) => bssid.into(),
         };
         if self.peer_map.contains_key(&bssid) {
-            error!("Attempted to add peer {} twice.", &bssid);
+            error!("Attempted to add peer {} twice.", bssid);
         } else {
             let mut peer = Peer::from_assoc_cfg(assoc_cfg)?;
             if self.peer_map.is_empty() {

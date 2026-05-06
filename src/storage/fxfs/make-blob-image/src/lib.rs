@@ -352,9 +352,9 @@ impl BlobToInstall {
     ) -> Result<Self, Error> {
         let mut data = Vec::new();
         std::fs::File::open(&path)
-            .with_context(|| format!("Unable to open `{:?}'", &path))?
+            .with_context(|| format!("Unable to open `{:?}'", path))?
             .read_to_end(&mut data)
-            .with_context(|| format!("Unable to read contents of `{:?}'", &path))?;
+            .with_context(|| format!("Unable to read contents of `{:?}'", path))?;
         let blob = Self::new(data, fs_block_size, compression_algorithm)?;
         Ok(Self { source: Some(path), ..blob })
     }

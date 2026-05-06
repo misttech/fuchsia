@@ -478,7 +478,7 @@ impl ElfRunner {
             Err(e) if main_process_critical => {
                 panic!(
                     "failed to launch component with a critical process ({:?}): {:?}",
-                    &resolved_url, e
+                    resolved_url, e
                 )
             }
             x => x,

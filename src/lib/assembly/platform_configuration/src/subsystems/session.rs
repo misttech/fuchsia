@@ -49,7 +49,7 @@ impl
         ) {
             (FeatureSetLevel::Standard, Some(config)) => {
                 let config_url = AbsoluteComponentUrl::parse(&config.url)
-                    .with_context(|| format!("valid session URLs given by session.url must start with `fuchsia-pkg://`, got `{}`", &config.url))?
+                    .with_context(|| format!("valid session URLs given by session.url must start with `fuchsia-pkg://`, got `{}`", config.url))?
                     .to_string();
                 if let Some(element) = &config.initial_element {
                     (
@@ -62,7 +62,7 @@ impl
                             ConfigValueType::String { max_size: 256 },
                             AbsoluteComponentUrl::parse(&element.url)
                                 .with_context(|| {
-                                    format!("valid initial element URLs given by session.initial_element.url must start with `fuchsia-pkg://`, got `{}`", &element.url)
+                                    format!("valid initial element URLs given by session.initial_element.url must start with `fuchsia-pkg://`, got `{}`", element.url)
                                 })?
                                 .to_string()
                                 .into(),

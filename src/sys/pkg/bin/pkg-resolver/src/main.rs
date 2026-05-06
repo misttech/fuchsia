@@ -233,7 +233,7 @@ async fn main_inner_async(startup_time: Instant) -> Result<(), Error> {
         )
         .await
         .map_err(|e| {
-            error!("failed to create EagerPackageManager: {:#}", &e);
+            error!("failed to create EagerPackageManager: {:#}", e);
         })
         .ok()
         .map(AsyncRwLock::new),

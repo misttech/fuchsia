@@ -121,7 +121,7 @@ impl GenerateBuildArchive {
 
         // Ensure the `out_dir` exists.
         std::fs::create_dir_all(&self.out_dir)
-            .with_context(|| format!("Creating the out_dir: {}", &self.out_dir))?;
+            .with_context(|| format!("Creating the out_dir: {}", self.out_dir))?;
 
         // Collect the Images with the final destinations to add to an images manifest later.
         let mut images = vec![];
@@ -140,7 +140,7 @@ impl GenerateBuildArchive {
             let filename = part
                 .image
                 .file_name()
-                .context(format!("Misformatted bootstrap partition: {}", &part.image))?;
+                .context(format!("Misformatted bootstrap partition: {}", part.image))?;
             copy_artifact(&part.image, filename)?;
         }
         for part in &mut product_bundle.partitions.bootloader_partitions {
@@ -159,7 +159,7 @@ impl GenerateBuildArchive {
         }
         for cred in &mut product_bundle.partitions.unlock_credentials {
             let filename =
-                cred.file_name().context(format!("Misformatted credential: {}", &cred))?;
+                cred.file_name().context(format!("Misformatted credential: {}", cred))?;
             copy_artifact(&cred, filename)?;
         }
 

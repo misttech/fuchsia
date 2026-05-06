@@ -216,7 +216,7 @@ async fn serve_device_control(
             Ok(_) => println!("Request succeeded."),
             Err(e) => {
                 let error_msg = format!("Request {request_name} failed with error {e} \n");
-                println!("{}", &error_msg);
+                println!("{}", error_msg);
             }
         }
     }

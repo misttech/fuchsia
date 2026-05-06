@@ -247,7 +247,7 @@ async fn publish_service(
             );
             debug!(
                 tag = tag;
-                "publication: {:?}", &publication
+                "publication: {:?}", publication
             );
 
             // Due to https://fxbug.dev/42182233, the publication responder channel will close

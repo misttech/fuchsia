@@ -304,7 +304,7 @@ impl super::Station for ApSme {
     type Event = Event;
 
     fn on_mlme_event(&mut self, event: MlmeEvent) {
-        debug!("received MLME event: {:?}", &event);
+        debug!("received MLME event: {:?}", event);
         self.state = self.state.take().map(|state| match state {
             State::Idle(_) => {
                 warn!("received MlmeEvent while ApSme is idle {:?}", mlme_event_name(&event));

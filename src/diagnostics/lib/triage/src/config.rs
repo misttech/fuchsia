@@ -245,8 +245,8 @@ impl ParseResult {
 
     pub fn all_selectors(&self) -> Vec<String> {
         let mut result = Vec::new();
-        for (_, metric_set) in self.metrics.iter() {
-            for (_, value_source) in metric_set.iter() {
+        for metric_set in self.metrics.values() {
+            for value_source in metric_set.values() {
                 if let Metric::Selector(selectors) = &value_source.metric {
                     for selector in selectors {
                         result.push(selector.full_selector.to_owned());
@@ -262,14 +262,14 @@ impl ParseResult {
     }
 
     pub fn reset_state(&self) {
-        for (_, metric_set) in self.metrics.iter() {
-            for (_, value_source) in metric_set.iter() {
+        for metric_set in self.metrics.values() {
+            for value_source in metric_set.values() {
                 *value_source.cached_value.borrow_mut() = None;
             }
         }
 
-        for (_, action_set) in self.actions.iter() {
-            for (_, action) in action_set.iter() {
+        for action_set in self.actions.values() {
+            for action in action_set.values() {
                 match action {
                     Action::Alert(alert) => {
                         *alert.trigger.cached_value.borrow_mut() = None;

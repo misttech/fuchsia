@@ -61,7 +61,7 @@ pub fn get_categories() -> HashMap<String, HashSet<String>> {
     let err_msg = format!(
         "Couldn't parse clippy-driver help output:\nstdout: {}\nstderr:{}\n",
         stdout,
-        &String::from_utf8_lossy(&output.stderr)
+        String::from_utf8_lossy(&output.stderr)
     );
     lines.find(|s| s.starts_with("Lint groups provided by rustc")).expect(&err_msg);
     // Skip the expected header from table

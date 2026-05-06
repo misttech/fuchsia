@@ -106,7 +106,7 @@ impl<S: Spawn> LowpanService<S> {
             .take_event_stream()
             .for_each(|_| futures::future::ready(()))
             .inspect(move |_: &()| {
-                info!("Removing device {:?}", &name);
+                info!("Removing device {:?}", name);
 
                 devices.lock().remove(&name);
                 devices_factory.lock().remove(&name);

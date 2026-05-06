@@ -524,7 +524,7 @@ impl BuiltinEnvironment {
                             root_input_builder.add_namespace_protocol(&cm_rust::ProtocolDecl {
                                 name: cm_types::BoundedName::new(&entry.name).unwrap(),
                                 source_path: Some(
-                                    cm_types::Path::new(format!("/parent-offered/{}", &entry.name))
+                                    cm_types::Path::new(format!("/parent-offered/{}", entry.name))
                                         .unwrap(),
                                 ),
                                 delivery: cm_types::DeliveryType::Immediate,

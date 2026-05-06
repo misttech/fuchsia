@@ -175,10 +175,10 @@ impl ProductAssembly {
 
         builder
             .add_bundle(&self.kernel_aib)
-            .with_context(|| format!("Adding kernel ({})", &self.kernel_aib))?;
+            .with_context(|| format!("Adding kernel ({})", self.kernel_aib))?;
         builder
             .add_bundle(&self.boot_shim_aib)
-            .with_context(|| format!("Adding boot shim ({})", &self.boot_shim_aib))?;
+            .with_context(|| format!("Adding boot shim ({})", self.boot_shim_aib))?;
 
         // Parse the board's Board Input Bundles, if it has them, and merge their
         // configuration fields into that of the board_config struct.
@@ -267,7 +267,7 @@ impl ProductAssembly {
             // Add the product's Product Input Bundles, if it has them.
             for bundle in self.product_config.product_input_bundles.values() {
                 builder.add_product_input_bundle(bundle).with_context(|| {
-                    format!("Adding product input bundle: {}", &bundle.release_info.name)
+                    format!("Adding product input bundle: {}", bundle.release_info.name)
                 })?;
             }
         }

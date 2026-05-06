@@ -406,7 +406,7 @@ impl Indexer {
         resolver: &fresolution::ResolverProxy,
     ) -> Result<(), i32> {
         let component_url = cm_types::Url::new(&driver_url).map_err(|e| {
-            log::error!("Couldn't parse driver url: {}: error: {}", &driver_url, e);
+            log::error!("Couldn't parse driver url: {}: error: {}", driver_url, e);
             Status::ADDRESS_UNREACHABLE.into_raw()
         })?;
         for boot_driver in self.boot_repo.borrow().iter() {

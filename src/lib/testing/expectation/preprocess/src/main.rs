@@ -142,7 +142,7 @@ fn push_expectations(
                 assert!(
                     /* newly_inserted= */ ancestors.insert(expectations_file_path.clone()),
                     "detected a dependency cycle including {}",
-                    &expectations_file_path.display()
+                    expectations_file_path.display()
                 );
                 push_expectations(
                     root_build_dir,

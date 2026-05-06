@@ -201,7 +201,7 @@ pub fn attribute_query(input: proc_macro::TokenStream) -> proc_macro::TokenStrea
     use std::str::FromStr;
     proc_macro::TokenStream::from_str(&format!(
         "fio::NodeAttributesQuery::{}",
-        &input.to_string().to_uppercase()
+        input.to_string().to_uppercase()
     ))
     .unwrap()
 }

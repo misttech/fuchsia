@@ -124,8 +124,8 @@ impl ShellCommandsBuilder {
 
             let file_name = &binary_path
                 .file_name()
-                .ok_or_else(|| anyhow::anyhow!("Unable to acquire filename {}", &binary_path))?;
-            let target_path = format!("bin/{}", &file_name.to_string());
+                .ok_or_else(|| anyhow::anyhow!("Unable to acquire filename {}", binary_path))?;
+            let target_path = format!("bin/{}", file_name);
             package_builder.add_contents_as_blob(
                 &target_path,
                 &shebang,

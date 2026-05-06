@@ -37,7 +37,7 @@ pub async fn set_order_impl<W: std::io::Write>(
     writeln!(
         writer,
         "Move window at position {} to position {} in the current session",
-        &cmd.old_position, &cmd.new_position
+        cmd.old_position, cmd.new_position
     )?;
     manager_proxy
         .set_order(cmd.old_position, cmd.new_position)

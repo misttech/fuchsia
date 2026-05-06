@@ -31,7 +31,7 @@ where
     for selector in selectors {
         seq.serialize_element(&format!(
             "{PREFIX}{}",
-            &selectors::selector_to_string(selector, selectors::SelectorDisplayOptions::default())
+            selectors::selector_to_string(selector, selectors::SelectorDisplayOptions::default())
                 .map_err(serde::ser::Error::custom)?
         ))?;
     }

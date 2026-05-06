@@ -74,7 +74,7 @@ fn symlink_old_to_new(analytics_folder: &PathBuf, old_analytics_folder: &PathBuf
             Err(e) => log::error!(
                 "Could not create parent of old analytics directory for symlinking: {:?},{:?},{:?}",
                 analytics_folder,
-                &old_parent,
+                old_parent,
                 e
             ),
         }
@@ -118,7 +118,7 @@ fn copy_old_to_new(
     }
     for entry in read_dir(old_analytics_folder).map_err(AnalyticsError::Io)? {
         let entry = entry.map_err(AnalyticsError::Io)?;
-        log::trace!("Copying file: {:?}", &entry.path());
+        log::trace!("Copying file: {:?}", entry.path());
         copy(entry.path(), new_analytics_folder.as_path().join(entry.file_name()))
             .map_err(AnalyticsError::Io)?;
     }

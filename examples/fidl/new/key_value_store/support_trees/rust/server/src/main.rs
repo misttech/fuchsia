@@ -57,7 +57,7 @@ fn write_item(
         }
         Entry::Vacant(entry) => {
             // [START diff_3]
-            let key = format!("{}{}", &path, entry.key());
+            let key = format!("{}{}", path, entry.key());
             match attempt.value {
                 // Null entries are allowed.
                 None => {

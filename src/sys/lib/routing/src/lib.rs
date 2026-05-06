@@ -43,7 +43,7 @@ pub struct SandboxPath {
 
 impl SandboxPath {
     pub fn resolver(scheme: &str) -> Self {
-        Self { path: format!("component_input/environment/resolvers/{}", &scheme) }
+        Self { path: format!("component_input/environment/resolvers/{}", scheme) }
     }
 
     pub fn used_path(target_path: &impl IterablePath) -> Self {

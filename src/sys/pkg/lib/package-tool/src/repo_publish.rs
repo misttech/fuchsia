@@ -106,7 +106,7 @@ async fn lock_repository(dir: &Utf8Path) -> Result<Lockfile> {
         let lock_path = lock_path.clone();
         async move {
             fasync::Timer::new(fasync::MonotonicDuration::from_secs(30)).await;
-            warn!("Obtaining a lock at {} not complete after 30s", &lock_path.to_string());
+            warn!("Obtaining a lock at {} not complete after 30s", lock_path);
         }
     });
 

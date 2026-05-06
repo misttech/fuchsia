@@ -99,7 +99,7 @@ impl SizeValidator {
         for (file_name, size_value) in args_map.into_iter() {
             if size_value.is_null() {
                 return Err(ValidatorError::InvalidValidatorArgs {
-                    cause: format_err!("Size or min/max missing for {} file", &file_name),
+                    cause: format_err!("Size or min/max missing for {} file", file_name),
                 });
             }
 
@@ -110,7 +110,7 @@ impl SizeValidator {
                         Some(obj) => SizeConstraint::from_map(obj),
                         None => Err(format_err!(
                             "Expected size value for {} to be a JSON object",
-                            &file_name
+                            file_name
                         )),
                     },
                     |v| Ok(SizeConstraint::from_size(v)),

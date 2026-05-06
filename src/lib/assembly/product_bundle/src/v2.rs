@@ -289,7 +289,7 @@ impl Canonicalizer for DiskCanonicalizer {
         match product_bundle_path.canonicalize_utf8() {
             Ok(p) => p,
             Err(e) => {
-                log::debug!("Cannot canonicalize {}: {e}", &path.as_ref());
+                log::debug!("Cannot canonicalize {}: {e}", path.as_ref());
                 for image_type in &image_types {
                     let mut ns = self.not_supported.borrow_mut();
                     ns.insert(image_type.clone());

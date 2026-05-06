@@ -82,7 +82,7 @@ impl ProductConfig {
                     .ok_or_else(|| {
                         anyhow::anyhow!(
                             "finding starnix base package '{}' in product input bundles",
-                            &container.base
+                            container.base
                         )
                     })?
                     .clone();

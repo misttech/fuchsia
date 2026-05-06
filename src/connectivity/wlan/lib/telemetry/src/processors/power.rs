@@ -67,7 +67,7 @@ impl PowerLogger {
     }
 
     pub async fn handle_suspend_imminent(&self) {
-        for (_iface_id, iface_power_level) in self.iface_power_states.lock().await.iter() {
+        for iface_power_level in self.iface_power_states.lock().await.values() {
             use metrics::PowerLevelAtSuspendMetricDimensionPowerLevel as dim;
             log_cobalt!(
                 self.cobalt_proxy,

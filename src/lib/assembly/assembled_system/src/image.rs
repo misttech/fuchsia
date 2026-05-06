@@ -347,7 +347,7 @@ impl BlobfsContents {
         let (blobs, subpackages) = package_manifest.into_blobs_and_subpackages();
         for blob in blobs {
             let path = if let Some(subpackage) = &subpackage_name {
-                format!("{}/{}", subpackage, &blob.path)
+                format!("{}/{}", subpackage, blob.path)
             } else {
                 blob.path.to_string()
             };

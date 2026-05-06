@@ -485,7 +485,7 @@ impl<T: FakeClockObserver> FakeClock<T> {
         stop_point: StopPoint,
         eventpair: zx::EventPair,
     ) -> Result<(), zx::Status> {
-        trace!("setting stop point: {:?}", &stop_point);
+        trace!("setting stop point: {:?}", stop_point);
         match self.registered_stop_points.entry(stop_point) {
             hash_map::Entry::Occupied(mut occupied) => {
                 match occupied

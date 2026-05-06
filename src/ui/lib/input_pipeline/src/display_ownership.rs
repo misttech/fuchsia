@@ -174,7 +174,7 @@ impl DisplayOwnership {
             .as_handle_ref()
             .wait_one(*ANY_DISPLAY_EVENT, MonotonicInstant::INFINITE_PAST)
             .expect("unable to set the initial display state");
-        log::debug!("setting initial display ownership to: {:?}", &initial_state);
+        log::debug!("setting initial display ownership to: {:?}", initial_state);
         let initial_ownership: Ownership = initial_state.into();
         let ownership = Rc::new(RefCell::new(initial_ownership.clone()));
 
@@ -189,7 +189,7 @@ impl DisplayOwnership {
                         break;
                     }
                     Ok(signals) => {
-                        log::debug!("setting display ownership to: {:?}", &signals);
+                        log::debug!("setting display ownership to: {:?}", signals);
                         ownership_sender.unbounded_send(signals.into()).unwrap();
                         ownership_clone = signals.into();
                     }

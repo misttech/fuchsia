@@ -74,7 +74,7 @@ pub fn construct_base_package(
     let base_package = File::open(&base_package_path).context("Failed to open the base package")?;
     let base_merkle = fuchsia_merkle::root_from_reader(base_package)
         .context("Failed to calculate the base merkle")?;
-    info!("Base merkle: {}", &base_merkle);
+    info!("Base merkle: {}", base_merkle);
 
     // Write the merkle to a file.
     let merkle_path = gendir.join("base.merkle");

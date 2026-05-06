@@ -599,8 +599,8 @@ impl KeyboardBinding {
                                 InputPipelineErrorMetricDimensionEvent::KeyboardFailedToSendKeyboardEvent,
                                 std::format!(
                                     "Failed to send KeyboardEvent for key: {:?}, event_type: {:?}: {:?}",
-                                    &key,
-                                    &event_type,
+                                    key,
+                                    event_type,
                                     error));
                         }
                         _ => {

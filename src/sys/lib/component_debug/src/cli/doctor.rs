@@ -16,7 +16,7 @@ pub async fn doctor_cmd_print<W: std::io::Write>(
     mut writer: W,
 ) -> Result<()> {
     let moniker = get_cml_moniker_from_query(&query, &realm_query).await?;
-    writeln!(writer, "Moniker: {}", &moniker)?;
+    writeln!(writer, "Moniker: {}", moniker)?;
 
     let reports = validate_routes(&route_validator, &moniker).await?;
     write_result_table(&moniker, &reports, writer)?;

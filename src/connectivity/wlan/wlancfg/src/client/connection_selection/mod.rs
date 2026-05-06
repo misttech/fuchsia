@@ -635,7 +635,7 @@ fn merge_config_and_scan_data(
             None => {
                 error!(
                     "Failed to create authenticator for bss candidate {:?} (SSID: {:?}). Removing from candidates.",
-                    bss.bssid, &network_config.ssid
+                    bss.bssid, network_config.ssid
                 );
                 continue;
             }

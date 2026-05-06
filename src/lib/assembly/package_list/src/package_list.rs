@@ -252,7 +252,7 @@ impl WritablePackageList for PackageSetMap {
         )
         .map_err(|e| anyhow!("Failed to create package url: {}", e))?;
         let package_set_type =
-            package_set_type.context(format!("No package set type given for {}", &url))?;
+            package_set_type.context(format!("No package set type given for {}", url))?;
         let (u, h) = url.into_unpinned_and_hash();
         let map = self.packages.entry(package_set_type).or_insert_with(BTreeMap::new);
         if map.contains_key(&u) {

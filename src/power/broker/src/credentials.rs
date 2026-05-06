@@ -122,7 +122,7 @@ impl Registry {
             element: element.clone(),
             permissions: credential_to_register.permissions,
         };
-        log::debug!("registered credential: {:?}", &credential);
+        log::debug!("registered credential: {:?}", credential);
         self.credentials.insert(id, credential);
         Ok(())
     }
@@ -139,7 +139,7 @@ impl Registry {
                 {
                     by_element_entry.retain(|cid| cid != id);
                 } else {
-                    log::error!("missing {:?} in credential_ids_by_element", &credential.element);
+                    log::error!("missing {:?} in credential_ids_by_element", credential.element);
                 };
                 Some(credential)
             } else {

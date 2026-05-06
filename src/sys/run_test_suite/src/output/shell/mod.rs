@@ -301,7 +301,7 @@ impl<W: 'static + Write + Send + Sync> Reporter for ShellReporter<W> {
                     )?,
                 }
                 if let Some(restricted_logs) = &entity_entry.restricted_logs {
-                    writeln!(writer, "\nTest {} produced unexpected high-severity logs:", &name)?;
+                    writeln!(writer, "\nTest {} produced unexpected high-severity logs:", name)?;
                     writeln!(writer, "----------------xxxxx----------------")?;
                     writer.write_all(restricted_logs.lock().as_slice())?;
                     writeln!(writer, "\n----------------xxxxx----------------")?;
@@ -312,12 +312,12 @@ impl<W: 'static + Write + Send + Sync> Reporter for ShellReporter<W> {
                 }
                 match outcome {
                     ReportedOutcome::Cancelled => {
-                        writeln!(writer, "{} was cancelled before completion.", &name)?
+                        writeln!(writer, "{} was cancelled before completion.", name)?
                     }
                     ReportedOutcome::DidNotFinish => {
-                        writeln!(writer, "{} did not complete successfully.", &name)?
+                        writeln!(writer, "{} did not complete successfully.", name)?
                     }
-                    other => writeln!(writer, "{} completed with result: {}", &name, other)?,
+                    other => writeln!(writer, "{} completed with result: {}", name, other)?,
                 }
             }
             EntityId::Case { .. } => (),

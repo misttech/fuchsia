@@ -34,7 +34,7 @@ pub async fn focus_impl<W: std::io::Write>(
     cmd: WMFocusCommand,
     writer: &mut W,
 ) -> Result<()> {
-    writeln!(writer, "Focus on window previously at position: {}", &cmd.position)?;
+    writeln!(writer, "Focus on window previously at position: {}", cmd.position)?;
     manager_proxy.focus(cmd.position).await.map_err(|err| format_err!("{:?}", err))
 }
 

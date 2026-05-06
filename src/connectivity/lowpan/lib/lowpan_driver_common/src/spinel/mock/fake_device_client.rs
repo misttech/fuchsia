@@ -209,7 +209,7 @@ impl FakeSpinelDevice {
         if let Some(value) = properties.get(&prop) {
             // Dumb remove.
             let value = Vec::<Vec<u8>>::try_unpack_from_slice(value)
-                .unwrap_or_else(|_| panic!("bad list encoding for {:?}: {:?}", prop, &value))
+                .unwrap_or_else(|_| panic!("bad list encoding for {:?}: {:?}", prop, value))
                 .into_iter()
                 .filter(|x| !x.starts_with(new_value))
                 .collect::<Vec<Vec<u8>>>()

@@ -379,7 +379,7 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
         if result.is_err() {
             metrics_logger.log_error(
                 InputPipelineErrorMetricDimensionEvent::InputDeviceGetInputReportsReaderError,
-                std::format!("error on GetInputReportsReader: {:?}", &result),
+                std::format!("error on GetInputReportsReader: {:?}", result),
             );
             return; // TODO(https://fxbug.dev/42131965): signal error
         }

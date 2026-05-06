@@ -215,7 +215,7 @@ impl PlatformBacking {
             let prefix;
             match lookup_result {
                 Ok(fidl_fuchsia_net_name::LookupResult { addresses: Some(ip_vec), .. }) => {
-                    info!("processed dns response, result: {:?}", &ip_vec);
+                    info!("processed dns response, result: {:?}", ip_vec);
                     match process_ail_dns_lookup_result(ip_vec) {
                         Ok(prefix_output) => {
                             prefix = prefix_output;

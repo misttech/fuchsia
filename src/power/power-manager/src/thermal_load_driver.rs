@@ -250,7 +250,7 @@ impl ThermalLoadDriver {
                     Err(e) => {
                         error!(
                             "Failed to get updated temperature for {} (err = {})",
-                            &sensor_name, e
+                            sensor_name, e
                         );
                         continue;
                     }

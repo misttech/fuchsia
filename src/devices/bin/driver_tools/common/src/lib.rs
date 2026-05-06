@@ -355,7 +355,7 @@ pub async fn get_driver_by_device(
         Some(ref driver_filter) => {
             get_driver_by_filter(driver_filter, driver_development_proxy).await
         }
-        _ => Err(anyhow!("Did not find driver for device {}", &device_topo_path)),
+        _ => Err(anyhow!("Did not find driver for device {}", device_topo_path)),
     }
 }
 

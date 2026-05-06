@@ -35,7 +35,7 @@ pub async fn remove_impl<W: std::io::Write>(
     cmd: SessionRemoveCommand,
     writer: &mut W,
 ) -> Result<()> {
-    writeln!(writer, "Remove {} from the current session", &cmd.name)?;
+    writeln!(writer, "Remove {} from the current session", cmd.name)?;
 
     manager_proxy.remove_element(&cmd.name).await?.map_err(|err| format_err!("{:?}", err))?;
 

@@ -143,7 +143,7 @@ impl ArtifactReader for FileArtifactReader {
             // Read-in and decompress delivery blobs
             DeliveryBlobType::Type1 => {
                 let raw_blob_contents = fs::read(&absolute_path_string).map_err(|err| {
-                    anyhow!("Artifact read failed ({}): {}", &absolute_path_string, err)
+                    anyhow!("Artifact read failed ({}): {}", absolute_path_string, err)
                 })?;
                 let decompressed_contents = delivery_blob::decompress(&raw_blob_contents)?;
                 Box::new(std::io::Cursor::new(decompressed_contents))
@@ -167,7 +167,7 @@ impl ArtifactReader for FileArtifactReader {
 
         // First read in the blob
         let raw_blob_contents = fs::read(&absolute_path_string)
-            .map_err(|err| anyhow!("Artifact read failed ({}): {}", &absolute_path_string, err))?;
+            .map_err(|err| anyhow!("Artifact read failed ({}): {}", absolute_path_string, err))?;
 
         Ok(match self.delivery_blob_type {
             // Decompress delivery blobs

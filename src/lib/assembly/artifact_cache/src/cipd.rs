@@ -103,7 +103,7 @@ fn list_packages_with_cipd(
     }
 
     let ls_file = std::fs::File::open(&ls_path)
-        .with_context(|| format!("Failed to open ls file: {:?}", &ls_path))?;
+        .with_context(|| format!("Failed to open ls file: {:?}", ls_path))?;
     let ls: Ls = serde_json::from_reader(ls_file).context("Failed to parse ls JSON from CIPD")?;
 
     let packages =
@@ -153,7 +153,7 @@ fn list_shortest_tags_for_package(
     }
 
     let instances_file = std::fs::File::open(&instances_path)
-        .context(format!("Failed to open instances file: {:?}", &instances_path))?;
+        .context(format!("Failed to open instances file: {:?}", instances_path))?;
     let instances: Instances = serde_json::from_reader(instances_file)
         .context("Failed to parse instances JSON from CIPD")?;
 
@@ -180,7 +180,7 @@ fn list_shortest_tags_for_package(
         }
 
         let instance_file = std::fs::File::open(&instance_path)
-            .context(format!("Failed to open instance file: {:?}", &instance_path))?;
+            .context(format!("Failed to open instance file: {:?}", instance_path))?;
         let describe: Describe = serde_json::from_reader(instance_file)
             .context("Failed to parse instance JSON from CIPD")?;
         if let Some(shortest_tag) =
@@ -201,16 +201,16 @@ pub fn download(
     // Prepare the output directory.
     let artifact_name = destination
         .file_name()
-        .with_context(|| format!("Artifact path does not have a file name: {}", &destination))?
+        .with_context(|| format!("Artifact path does not have a file name: {}", destination))?
         .to_string();
     let artifact_dir = destination
         .parent()
-        .with_context(|| format!("Artifact path does not have a parent: {}", &destination))?;
+        .with_context(|| format!("Artifact path does not have a parent: {}", destination))?;
     std::fs::create_dir_all(&artifact_dir).map_err(|e| anyhow!(e))?;
 
     // Write the ensure file.
-    let ensure_contents = format!("{} {}", &package.path, &package.tag);
-    let ensure_path = artifact_dir.join(format!("{}.ensure", &artifact_name));
+    let ensure_contents = format!("{} {}", package.path, package.tag);
+    let ensure_path = artifact_dir.join(format!("{}.ensure", artifact_name));
     std::fs::write(&ensure_path, &ensure_contents).map_err(|e| anyhow!(e))?;
 
     println!("Downloading: {}", package);
@@ -231,7 +231,7 @@ pub fn download(
     let child_output = child.wait_with_output().context("Waiting for cipd to finish")?;
     if !child_output.status.success() {
         return Err(
-            anyhow!("Failed to download CIPD package: {}@{}", &package.path, &package.tag).into()
+            anyhow!("Failed to download CIPD package: {}@{}", package.path, package.tag).into()
         );
     }
     return Ok(());

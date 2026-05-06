@@ -274,8 +274,8 @@ impl ImageAssemblyConfigBuilder {
         if !bundle.is_allowed_in(&self.feature_set_level, &self.build_type) {
             bail!(
                 "Product is using Fuchsia '{:?}' feature set level and '{:?}' build type, but attempted to include a feature that is only allowed on: {:?}",
-                &self.feature_set_level,
-                &self.build_type,
+                self.feature_set_level,
+                self.build_type,
                 bundle.allowed_in
             );
         }
@@ -319,7 +319,7 @@ impl ImageAssemblyConfigBuilder {
             let driver_package_type = match driver_details.set {
                 PackageSet::Base => DriverPackageType::Base,
                 PackageSet::Bootfs => DriverPackageType::Boot,
-                _ => bail!("Unsupported driver package set type {:?}", &driver_details.set),
+                _ => bail!("Unsupported driver package set type {:?}", driver_details.set),
             };
 
             let package_url =
@@ -407,7 +407,7 @@ impl ImageAssemblyConfigBuilder {
             let driver_package_type = match &set {
                 PackageSet::Base => DriverPackageType::Base,
                 PackageSet::Bootfs => DriverPackageType::Boot,
-                _ => bail!("Unsupported board package set type {:?}", &set),
+                _ => bail!("Unsupported board package set type {:?}", set),
             };
 
             self.add_package_from_path(&package, PackageOrigin::Board, &set)?;
@@ -495,7 +495,7 @@ impl ImageAssemblyConfigBuilder {
             _ => {
                 bail!(
                     "If any of 'vendor_id', 'product_id', or 'revision' are set, all must be provided: {:?}",
-                    &board_config.hardware_info
+                    board_config.hardware_info
                 );
             }
         };
@@ -686,7 +686,7 @@ impl ImageAssemblyConfigBuilder {
             // Load the PackageManifest from the given path, in order to get the
             // package name.
             let manifest = PackageManifest::try_load_from(&entry.manifest)
-                .with_context(|| format!("parsing {} as a package manifest", &entry.manifest))?;
+                .with_context(|| format!("parsing {} as a package manifest", entry.manifest))?;
 
             // Add the package to the set of packages in the assembly.
             let mapped_to_package_set = self.add_package_from_path(
@@ -985,7 +985,7 @@ impl ImageAssemblyConfigBuilder {
             let package_name = package_builder.name.to_owned();
             let package_manifest_path = package_builder
                 .build(cmc_tool.as_ref(), outdir)
-                .with_context(|| format!("building compiled package {}", &package_name))?;
+                .with_context(|| format!("building compiled package {}", package_name))?;
 
             match package_manifest_path {
                 (p, PackageSet::Base) => {
@@ -1084,7 +1084,7 @@ impl ImageAssemblyConfigBuilder {
             for (package_url, driver_details) in boot_drivers.entries {
                 driver_manifest_builder
                     .add_driver(driver_details, &package_url)
-                    .with_context(|| format!("adding driver {}", &package_url))?;
+                    .with_context(|| format!("adding driver {}", package_url))?;
             }
 
             configuration_capabilities.try_insert_unique(
@@ -1097,7 +1097,7 @@ impl ImageAssemblyConfigBuilder {
             for (package_url, driver_details) in base_drivers.entries {
                 driver_manifest_builder
                     .add_driver(driver_details, &package_url)
-                    .with_context(|| format!("adding driver {}", &package_url))?;
+                    .with_context(|| format!("adding driver {}", package_url))?;
             }
 
             configuration_capabilities.try_insert_unique(

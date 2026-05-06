@@ -401,10 +401,10 @@ fn extend_dict_with_dictionary<C: ComponentInstanceInterface + 'static>(
     }
     if let Some(dict) = declared_dict {
         let prev = declared_dictionaries.insert_capability(&decl.name, dict.into());
-        assert!(prev.is_none(), "failed to insert {}: preexisting value", &decl.name);
+        assert!(prev.is_none(), "failed to insert {}: preexisting value", decl.name);
     }
     let prev = program_output_dict.insert_capability(&decl.name, router.into());
-    assert!(prev.is_none(), "failed to insert {}: preexisting value", &decl.name);
+    assert!(prev.is_none(), "failed to insert {}: preexisting value", decl.name);
 }
 
 /// Makes a router that always returns the given dictionary.

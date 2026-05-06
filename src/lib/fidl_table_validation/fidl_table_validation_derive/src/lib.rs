@@ -213,7 +213,7 @@ impl FidlField {
     }
 
     fn src_ident(&self) -> Ident {
-        Ident::new(&format!("src_{}", &self.ident), Span::call_site())
+        Ident::new(&format!("src_{}", self.ident), Span::call_site())
     }
 
     fn generate_try_from(&self, missing_field_error_type: &Ident) -> TokenStream {

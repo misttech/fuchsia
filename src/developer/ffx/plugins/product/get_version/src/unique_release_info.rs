@@ -72,7 +72,7 @@ impl UniqueReleaseInfo {
         let name_to_sanitize = if artifact_type == "product_bundle" {
             name.clone()
         } else {
-            format!("{}_{}", artifact_type, &name)
+            format!("{}_{}", artifact_type, name)
         };
         let name_sanitized = sanitize_for_mos_apis(&name_to_sanitize);
         let version_sanitized = sanitize_for_mos_apis(&version);

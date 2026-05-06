@@ -48,12 +48,12 @@ impl OffsetString {
             if let Some(span) = endpoints.next() {
                 let span_int = span.parse::<u32>()?;
                 if span_int < 1 {
-                    return Err(format_err!("Range is too small: {}", &segment));
+                    return Err(format_err!("Range is too small: {}", segment));
                 }
 
                 // Too many plus signs
                 if endpoints.next().is_some() {
-                    return Err(format_err!("Invalid segment: {}", &segment));
+                    return Err(format_err!("Invalid segment: {}", segment));
                 }
             }
 

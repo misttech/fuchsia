@@ -165,7 +165,7 @@ pub fn render<W: io::Write>(fidl: Model, output: &mut W) -> Result<()> {
         .with_context(|| "while registering the file template")?;
     renderer
         .render_to_write("fidl", &fidl, output)
-        .with_context(|| format!("while rendering content: {:?}", &fidl))?;
+        .with_context(|| format!("while rendering content: {:?}", fidl))?;
     Ok(())
 }
 

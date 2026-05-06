@@ -516,7 +516,7 @@ pub struct DeclField {
 
 impl fmt::Display for DeclField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.{}", &self.decl, &self.field)
+        write!(f, "{}.{}", self.decl, self.field)
     }
 }
 

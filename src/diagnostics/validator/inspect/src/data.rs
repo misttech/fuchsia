@@ -197,7 +197,7 @@ struct FormattedEntries {
 
 impl Property {
     fn to_string(&self, prefix: &str) -> String {
-        format!("{}{}: {:?}", prefix, self.name, &self.payload)
+        format!("{}{}: {:?}", prefix, self.name, self.payload)
     }
 
     /// Formats this property and any additional properties and nodes it may contain (in the case

@@ -83,7 +83,7 @@ impl StarnixContainerGenerator {
 
         let image_outdir = outdir.join(name);
         std::fs::create_dir_all(&image_outdir)
-            .with_context(|| format!("Preparing directory for image files: {}", &image_outdir))?;
+            .with_context(|| format!("Preparing directory for image files: {}", image_outdir))?;
         let image_files = ext4_extract(image_path.as_str(), image_outdir.as_str()).with_context(
             || format!("Failed to extract EXT4 image from {}. Please ensure the file is a valid EXT4 filesystem image.", image_path),
         )?;
@@ -91,7 +91,7 @@ impl StarnixContainerGenerator {
             let dst = format!("data/{}/{}", name, dst);
             builder
                 .add_file_as_blob(dst, &src)
-                .with_context(|| format!("Adding blob from file: {}", &src))?;
+                .with_context(|| format!("Adding blob from file: {}", src))?;
         }
 
         Ok(image_files)
@@ -109,7 +109,7 @@ impl StarnixContainerGenerator {
 
         let image_outdir = outdir.join(name);
         std::fs::create_dir_all(&image_outdir)
-            .with_context(|| format!("Preparing directory for image files: {}", &image_outdir))?;
+            .with_context(|| format!("Preparing directory for image files: {}", image_outdir))?;
 
         let mut writer = rb::Writer::new(
             &image_outdir,
@@ -196,7 +196,7 @@ impl StarnixContainerGenerator {
             let dst = format!("data/{}/{}", name, dst);
             builder
                 .add_file_as_blob(dst, &src)
-                .with_context(|| format!("Adding blob from file: {}", &src))?;
+                .with_context(|| format!("Adding blob from file: {}", src))?;
         }
 
         Ok(image_files)
@@ -278,7 +278,7 @@ impl StarnixContainerGenerator {
         // Initialize ODM filesystem.
         let odm_outdir = self.outdir.join("odm");
         std::fs::create_dir_all(&odm_outdir)
-            .with_context(|| format!("Preparing directory for ODM files: {}", &odm_outdir))?;
+            .with_context(|| format!("Preparing directory for ODM files: {}", odm_outdir))?;
         let mut odm_writer = Writer::new(&odm_outdir, |path| {
             // Mimic the SELinux labeling patterns defined for "/odm" in AOSP.
             let label: &[u8] = if path.len() == 0 {
@@ -304,7 +304,7 @@ impl StarnixContainerGenerator {
                 let name: RelativePackageUrl = manifest.name().to_owned().into();
                 builder
                     .add_subpackage(&name, manifest.hash(), hal.into())
-                    .with_context(|| format!("Adding subpackage from manifest: {}", &hal))?;
+                    .with_context(|| format!("Adding subpackage from manifest: {}", hal))?;
             }
 
             let hal_package_name = manifest.name().to_string();
@@ -366,7 +366,7 @@ impl StarnixContainerGenerator {
             let dst = format!("data/odm/{}", dst);
             builder
                 .add_file_as_blob(dst, &src)
-                .with_context(|| format!("Adding blob from file: {}", &src))?;
+                .with_context(|| format!("Adding blob from file: {}", src))?;
             deps.add_output(src.clone());
         }
 
@@ -393,7 +393,7 @@ impl StarnixContainerGenerator {
 impl StarnixContainerRepackager {
     pub fn build(self, deps: &mut Depfile) -> Result<Utf8PathBuf> {
         let new_base_package_manifest = PackageManifest::try_load_from(&self.base)
-            .with_context(|| format!("Reading new base package: {}", &self.base))?;
+            .with_context(|| format!("Reading new base package: {}", self.base))?;
 
         let container_manifest = PackageManifest::try_load_from(&self.container_manifest_path)
             .with_context(|| {

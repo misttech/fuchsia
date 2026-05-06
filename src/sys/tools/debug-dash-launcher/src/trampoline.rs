@@ -192,7 +192,7 @@ async fn create_trampolines(
     for pkg_dir in pkg_dirs {
         match &pkg_dir.resource {
             Some(res) => {
-                let contents = format!("#!resolve {}#{}\n", &pkg_dir.url, res);
+                let contents = format!("#!resolve {}#{}\n", pkg_dir.url, res);
                 let mut binary_name =
                     res.split('/').next_back().ok_or(LauncherError::BadUrl)?.to_string();
                 if rename_log && binary_name == "log" {
@@ -221,7 +221,7 @@ async fn create_trampolines(
                 let mut pkg_trampolines = BTreeSet::new();
                 for entry in entries {
                     if entry.kind == fio::DirentType::File {
-                        let contents = format!("#!resolve {}#bin/{}\n", &pkg_dir.url, entry.name);
+                        let contents = format!("#!resolve {}#bin/{}\n", pkg_dir.url, entry.name);
                         let mut binary_name = entry.name;
                         if rename_log && binary_name == "log" {
                             binary_name = "__log_real".to_string();

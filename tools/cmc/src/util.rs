@@ -31,7 +31,7 @@ pub(crate) fn write_depfile(
         let depfile_contents = format!(
             "{}:{}\n",
             output_path.display(),
-            &inputs.iter().map(|i| format!(" {}", i.display())).collect::<String>()
+            inputs.iter().map(|i| format!(" {}", i.display())).collect::<String>()
         );
         fs::OpenOptions::new()
             .create(true)

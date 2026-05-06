@@ -212,7 +212,7 @@ impl KeyboardService {
         focused_view: ViewRef,
         event_time: zx::MonotonicInstant,
     ) {
-        log::debug!("focus change to view: {:?}, at timestamp: {:?}", &focused_view, &event_time);
+        log::debug!("focus change to view: {:?}, at timestamp: {:?}", focused_view, event_time);
         self.handle_focus_lost(event_time).await;
         self.update_focused_view(focused_view.clone()).await;
         self.handle_client_focused(focused_view, event_time).await;

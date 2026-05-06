@@ -1490,7 +1490,7 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(&format!(
                     "OutgoingDirConnector {{ moniker: {}, path: {}, flags: {:?} }}",
-                    &self.moniker,
+                    self.moniker,
                     self.path.as_ref(),
                     self.flags
                 ))

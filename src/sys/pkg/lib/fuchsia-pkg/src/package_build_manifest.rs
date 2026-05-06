@@ -78,7 +78,7 @@ impl PackageBuildManifest {
                 }
             }
         }
-        for (resource_path, _) in far_contents.iter() {
+        for resource_path in far_contents.keys() {
             if !resource_path.starts_with("meta/") {
                 return Err(PackageBuildManifestError::FarContentNotInMetaDirectory {
                     path: resource_path.to_string(),

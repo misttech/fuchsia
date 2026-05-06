@@ -112,11 +112,11 @@ impl Routable<Dictionary> for UseDictionaryRouter {
                             "{}: unable to add {key} from source {} to merged dictionary for path \
                             {} because the dictionary already contains an item with the same name \
                             from source {}",
-                            &self.moniker,
+                            self.moniker,
                             try_get_router_source(&capability, target.clone())
                                 .await
                                 .unwrap_or_else(|| "<unknown>".to_string()),
-                            &self.path,
+                            self.path,
                             try_get_router_source(&preexisting_value, target.clone())
                                 .await
                                 .unwrap_or_else(|| "<unknown>".to_string()),

@@ -64,7 +64,7 @@ impl Listener {
         log_listener: ClientEnd<LogListenerSafeMarker>,
         options: Option<Box<LogFilterOptions>>,
     ) -> Result<Self, ListenerError> {
-        debug!("New listener with options {:?}", &options);
+        debug!("New listener with options {:?}", options);
         Ok(Self {
             status: Status::Fine,
             listener: log_listener.into_proxy(),

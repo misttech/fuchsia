@@ -30,9 +30,9 @@ impl PreSigningController {
         golden_files_dir: String,
     ) -> Result<PreSigningResponse> {
         let policy_str = read_to_string(&policy_path)
-            .context(format!("Failed to read policy file from {:?}", &policy_path))?;
+            .context(format!("Failed to read policy file from {:?}", policy_path))?;
         let policy: build_checks::BuildCheckSpec = serde_json5::from_str(&policy_str)
-            .context(format!("Failed to parse policy file from {:?}", &policy_path))?;
+            .context(format!("Failed to parse policy file from {:?}", policy_path))?;
 
         let boot_config_model = model
             .get::<AdditionalBootConfigCollection>()

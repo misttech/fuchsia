@@ -230,7 +230,7 @@ impl notify::EventHandler for FastbootFileHandler {
                         log::warn!("triggered by {p:?}");
                         match File::open(&p) {
                             Err(e) => {
-                                log::error!("Error opening fastboot devices file: {:?}: {}", &p, e);
+                                log::error!("Error opening fastboot devices file: {:?}: {}", p, e);
                             }
                             Ok(file) => {
                                 let lines = BufReader::new(file).lines();
@@ -261,7 +261,7 @@ impl notify::EventHandler for FastbootFileHandler {
                                                     .map_err(|e| {
                                                         log::error!(
                                                     "Error sending fastboot event: {:?} {e:?}",
-                                                    &p
+                                                    p
                                                 )
                                                     });
                                                 self.seen_devices.insert(device);
@@ -283,7 +283,7 @@ impl notify::EventHandler for FastbootFileHandler {
                                 .fastboot_file_tx
                                 .try_send(FastbootEvent::Lost(device.clone()))
                                 .map_err(|e| {
-                                    log::error!("Error sending fastbodt event: {:?} {e:?}", &p)
+                                    log::error!("Error sending fastbodt event: {:?} {e:?}", p)
                                 });
                         }
                         self.seen_devices.clear();

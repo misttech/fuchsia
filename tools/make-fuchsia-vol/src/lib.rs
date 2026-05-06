@@ -672,7 +672,7 @@ fn check_args(args: &mut TopLevel) -> Result<(), Error> {
                 dependencies.iter().map(|dep| dep.as_str()).collect::<Vec<_>>().join(" ")
             ),
         )
-        .context(format!("Failed to write {}", &depfile))?;
+        .context(format!("Failed to write {}", depfile))?;
     }
 
     Ok(())

@@ -55,7 +55,7 @@ impl GenerateProductDescription {
         let out_dir =
             self.out_file.parent().expect("product description file must have a parent directory.");
         std::fs::create_dir_all(&out_dir)
-            .with_context(|| format!("Creating the out_dir: {}", &out_dir))?;
+            .with_context(|| format!("Creating the out_dir: {}", out_dir))?;
 
         let description = ProductDescription::V1(ProductDescriptionV1 {
             product_name: product_bundle.product_name.to_string(),

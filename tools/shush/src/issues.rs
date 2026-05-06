@@ -93,7 +93,7 @@ impl<'a> IssueTemplate<'a> {
         if let Some(name) = l.name.strip_prefix("clippy::") {
             format!(
                 "- [{name}]({}) on [line {}]({})",
-                &(lints_url + name),
+                (lints_url + name),
                 l.span.start.line,
                 cs_url
             )

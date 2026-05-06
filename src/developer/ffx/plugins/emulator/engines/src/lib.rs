@@ -267,6 +267,6 @@ pub(crate) fn finalize_port_mapping(emu_config: &mut EmulatorConfiguration) -> R
             }
         }
     }
-    log::debug!("Port map finalized: {:?}\n", &emu_config.host.port_map);
+    log::debug!("Port map finalized: {:?}\n", emu_config.host.port_map);
     Ok(())
 }

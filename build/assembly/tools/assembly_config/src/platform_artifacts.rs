@@ -39,7 +39,7 @@ pub fn new(args: &PlatformArtifactsArgs) -> Result<()> {
     for bundle in bundles {
         let dest = args.output.join(bundle.path.file_name().context("getting file name")?);
         link_or_copy(&bundle.path, &dest)
-            .with_context(|| format!("copying aib: {}", &bundle.name))?;
+            .with_context(|| format!("copying aib: {}", bundle.name))?;
 
         deps.push(bundle.path.join("assembly_config.json"));
         names.push(bundle.name);

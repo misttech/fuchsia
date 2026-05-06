@@ -71,7 +71,7 @@ fn write_item(
             Err(WriteError::AlreadyExists)
         }
         Entry::Vacant(entry) => {
-            let key = format!("{}{}", &path, entry.key());
+            let key = format!("{}{}", path, entry.key());
             match &attempt.value {
                 // Null entries are allowed.
                 None => {

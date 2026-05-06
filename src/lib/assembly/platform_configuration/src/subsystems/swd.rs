@@ -89,7 +89,7 @@ impl DefineSubsystemConfiguration<SwdConfig> for SwdSubsystemConfig {
         for tuf_config in &subsystem_config.tuf_config_paths {
             let path: Utf8PathBuf = tuf_config.clone();
             let filename = path.file_name().ok_or_else(|| {
-                anyhow!("Failed to get the filename from the tuf config: {}", &tuf_config)
+                anyhow!("Failed to get the filename from the tuf config: {}", tuf_config)
             })?;
             builder.package("pkg-resolver").config_data(FileEntry {
                 source: tuf_config.clone(),

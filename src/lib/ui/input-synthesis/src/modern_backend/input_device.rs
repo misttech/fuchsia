@@ -313,13 +313,13 @@ impl InputDevice {
                 // background task.  InputDevice::flush() exists, but this is unlikely
                 // to be called in tests, and it may get called way too late, after
                 // an error in this background task already caused some other error.
-                panic!("InputDevice got an error while reading request: {:?}", &e);
+                panic!("InputDevice got an error while reading request: {:?}", e);
             }
             _ => {
                 // See the previous branch.
                 panic!(
                     "InputDevice::handle_device_request does not support this request: {:?}",
-                    &request
+                    request
                 );
             }
         }
@@ -352,7 +352,7 @@ impl InputDevice {
             .iter()
             .map(|&usage| {
                 Key::from_primitive(usage)
-                    .ok_or_else(|| anyhow::anyhow!("could not convert to input::Key: {}", &usage))
+                    .ok_or_else(|| anyhow::anyhow!("could not convert to input::Key: {}", usage))
             })
             .collect()
     }

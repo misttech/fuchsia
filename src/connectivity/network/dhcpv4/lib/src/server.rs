@@ -624,7 +624,7 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
                         DhcpOption::RenewalTimeValue(v) => *v,
                         v => panic!(
                             "options repo contains code-value mismatch: key={:?} value={:?}",
-                            &OptionCode::RenewalTimeValue,
+                            OptionCode::RenewalTimeValue,
                             v
                         ),
                     }
@@ -634,7 +634,7 @@ impl<DS: DataStore, TS: SystemTimeSource> Server<DS, TS> {
                         DhcpOption::RebindingTimeValue(v) => *v,
                         v => panic!(
                             "options repo contains code-value mismatch: key={:?} value={:?}",
-                            &OptionCode::RenewalTimeValue,
+                            OptionCode::RenewalTimeValue,
                             v
                         ),
                     },

@@ -175,8 +175,8 @@ fn format_annotation(previous_key: &String, new_key: &String, new_value: &String
         let indentation: String = (0..idx).map(|_| "    ").collect();
         let end_of_key = new_key_vec.len() - 1 == idx;
         let line = match end_of_key {
-            false => format!("{}{}\n", indentation, &new_key_vec[idx]),
-            true => format!("{}{}: {}\n", indentation, &new_key_vec[idx], new_value),
+            false => format!("{}{}\n", indentation, new_key_vec[idx]),
+            true => format!("{}{}: {}\n", indentation, new_key_vec[idx], new_value),
         };
         output.push_str(&line);
     }

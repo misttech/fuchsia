@@ -237,10 +237,10 @@ struct TimeSourceDetails {
 fn new_time_source(use_pull: bool, details: &TimeSourceDetails, is_monitor: bool) -> TimeSource {
     let launcher = TimeSourceLauncher::new(&details.url, &details.name, is_monitor);
     if use_pull {
-        info!("time source {} uses pull", &details.name);
+        info!("time source {} uses pull", details.name);
         TimeSource::Pull(launcher.into())
     } else {
-        info!("time source {} uses push", &details.name);
+        info!("time source {} uses push", details.name);
         TimeSource::Push(launcher.into())
     }
 }
@@ -277,7 +277,7 @@ async fn main() -> Result<()> {
     let config: Arc<Config> = Arc::new(structured_config.into());
 
     // If we don't get this, timekeeper probably didn't even start.
-    debug!("starting timekeeper: config: {:?}", &config);
+    debug!("starting timekeeper: config: {:?}", config);
 
     info!("retrieving UTC clock handle");
     let time_maintainer =
@@ -439,7 +439,7 @@ async fn main() -> Result<()> {
         // proceeding and exit if it is failed to be found.
         alarms::connect_to_hrtimer_async()
             .await
-            .inspect_err(|e| error!("could not connect to hrtimer: {}", &e))
+            .inspect_err(|e| error!("could not connect to hrtimer: {}", e))
             .map(|proxy| {
                 Rc::new(alarms::Loop::new(
                     scope.to_handle(),
@@ -478,7 +478,7 @@ async fn main() -> Result<()> {
             let mut monitor = reachability::Monitor::new(cmd);
             fasync::Task::local(async move {
                 if let Err(result) = monitor.serve(proxy).await {
-                    error!("error on fuchsia.net.reachability/Monitor: {:?}", &result);
+                    error!("error on fuchsia.net.reachability/Monitor: {:?}", result);
                 }
             })
             .detach();
@@ -712,11 +712,11 @@ async fn maintain_utc<R: Rtc, D: 'static>(
         let b1 = *backstop + UtcDuration::from_nanos(1);
         let mono = zx::BootInstant::get();
         info!("starting the UTC clock from backstop time, to handle legacy programs");
-        debug!("`- synthetic (backstop+1): {:?}, reference (monotonic): {:?}", &b1, &mono);
+        debug!("`- synthetic (backstop+1): {:?}, reference (monotonic): {:?}", b1, mono);
         if let Err(status) =
             primary.clock.update(UtcClockUpdate::builder().absolute_value(mono, b1))
         {
-            warn!("failed to start UTC clock from backstop time: {}", &status);
+            warn!("failed to start UTC clock from backstop time: {}", status);
             // If we got here, the UTC clock is not started yet. We might have better luck with
             // time sources, provided that we have network access.
         } else {

@@ -449,7 +449,7 @@ impl LeaseManager {
             None => {
                 log::info!(
                     "Acquisition of wake lease '{}' temporarily blocked by suspend attempt",
-                    &name
+                    name
                 );
                 self.suspend_block_manager.get_blocker().await
             }
@@ -509,7 +509,7 @@ impl LeaseManager {
                 if dropped_before_complete {
                     log::debug!(
                         "Wake lease '{}' dropped before BeforeSuspend completed, skipping power broker lease request",
-                        &name);
+                        name);
                     sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
                     active_wake_leases.borrow_mut().remove(&lease_id);
                     return;

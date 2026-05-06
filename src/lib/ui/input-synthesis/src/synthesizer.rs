@@ -204,9 +204,9 @@ impl TimedKeyEvent {
             fn into(self) -> TimedKeyEvent {
                 TimedKeyEvent::new(
                     input::Key::from_primitive(self.key)
-                        .unwrap_or_else(|| panic!("Key::from_primitive failed on: {:?}", &self)),
+                        .unwrap_or_else(|| panic!("Key::from_primitive failed on: {:?}", self)),
                     input3::KeyEventType::from_primitive(self.type_).unwrap_or_else(|| {
-                        panic!("KeyEventType::from_primitive failed on: {:?}", &self)
+                        panic!("KeyEventType::from_primitive failed on: {:?}", self)
                     }),
                     Duration::from_millis(self.duration_millis),
                 )

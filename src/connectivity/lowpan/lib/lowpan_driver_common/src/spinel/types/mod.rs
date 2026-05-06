@@ -146,14 +146,14 @@ impl<'a> std::fmt::Debug for SpinelFrameRef<'a> {
             | Cmd::PropValueRemoved => {
                 match SpinelPropValueRef::try_unpack_from_slice(self.payload) {
                     Ok(SpinelPropValueRef { prop, value }) if prop == Prop::LastStatus => {
-                        write!(f, " {:?}", &prop)?;
+                        write!(f, " {:?}", prop)?;
                         match Status::try_unpack_from_slice(value) {
                             Ok(x) => write!(f, " {x:?}")?,
                             Err(e) => write!(f, " {e:?}")?,
                         }
                     }
                     Ok(SpinelPropValueRef { prop, value }) if prop == Prop::NcpVersion => {
-                        write!(f, " {:?}", &prop)?;
+                        write!(f, " {:?}", prop)?;
                         match String::try_unpack_from_slice(value) {
                             Ok(x) => write!(f, " {x:?}")?,
                             Err(e) => write!(f, " {e:?}")?,
@@ -166,13 +166,13 @@ impl<'a> std::fmt::Debug for SpinelFrameRef<'a> {
                         ]
                         .contains(&prop) =>
                     {
-                        write!(f, " {:?}", &prop)?;
+                        write!(f, " {:?}", prop)?;
                         match NetworkPacket::try_unpack_from_slice(value) {
                             Ok(x) => write!(f, " {x:?}")?,
                             Err(e) => write!(f, " {e:?}")?,
                         }
                     }
-                    Ok(x) => write!(f, " {:?} {}", &x.prop, hex::encode(x.value))?,
+                    Ok(x) => write!(f, " {:?} {}", x.prop, hex::encode(x.value))?,
                     Err(e) => write!(f, " {e:?}")?,
                 }
             }

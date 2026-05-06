@@ -214,7 +214,7 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
             } else {
                 for file in files {
                     let filename = file.file_name().ok_or_else(|| {
-                        anyhow!("Failed to get filename for archivist pipeline: {}", &file)
+                        anyhow!("Failed to get filename for archivist pipeline: {}", file)
                     })?;
                     pipelines.entry(FileEntry {
                         source: file.clone(),
@@ -261,7 +261,7 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
                 destination: BootfsDestination::ComponentIdIndex,
                 source: index_path.clone(),
             })
-            .with_context(|| format!("Adding bootfs file {}", &index_path))?;
+            .with_context(|| format!("Adding bootfs file {}", index_path))?;
 
         let default_sampler_config: MergedSamplerConfig =
             read_config(context.get_resource("default_sampler_config.json5"))?;

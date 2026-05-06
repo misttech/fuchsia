@@ -415,7 +415,7 @@ impl PhyManagerApi for PhyManager {
     }
 
     fn on_iface_removed(&mut self, iface_id: u16) {
-        for (_, phy_info) in self.phys.iter_mut() {
+        for phy_info in self.phys.values_mut() {
             // The presence or absence of the interface in the PhyManager internal records is
             // irrelevant.  Simply remove any reference to the removed interface ID to ensure that
             // it is not used for future operations.
@@ -782,7 +782,7 @@ impl PhyManagerApi for PhyManager {
         if self.recovery_enabled {
             match summary.action {
                 RecoveryAction::PhyRecovery(PhyRecoveryOperation::DestroyIface { iface_id }) => {
-                    for (_, phy_container) in self.phys.iter_mut() {
+                    for phy_container in self.phys.values_mut() {
                         if phy_container.ap_ifaces.remove(&iface_id) {
                             #[allow(
                                 clippy::redundant_pattern_matching,

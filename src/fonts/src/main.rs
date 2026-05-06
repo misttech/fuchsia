@@ -70,15 +70,15 @@ async fn main() -> Result<()> {
         DEFAULT_CACHE_CAPACITY_BYTES,
         inspector().root(),
     );
-    debug!("Building service with manifest(s) {:?}", &font_manifest_paths);
+    debug!("Building service with manifest(s) {:?}", font_manifest_paths);
     for path in &font_manifest_paths {
         service_builder.add_manifest_from_file(path);
     }
     let service = service_builder.build().await.map_err(|err| {
-        error!("Failed to build service with manifest(s) {:?}: {:#?}", &font_manifest_paths, &err);
+        error!("Failed to build service with manifest(s) {:?}: {:#?}", font_manifest_paths, err);
         err
     })?;
-    debug!("Built service with manifest(s) {:?}", &font_manifest_paths);
+    debug!("Built service with manifest(s) {:?}", font_manifest_paths);
 
     debug!("Adding FIDL services");
     let mut fs = ServiceFs::new();
@@ -117,14 +117,14 @@ fn select_manifests_for_test(
     let manifest_str = manifest_from_config.as_os_str();
     if manifest_str.len() != 0 {
         if !check_files || manifest_from_config.is_file() {
-            info!("Adding manifest file: {}", &manifest_from_config.display());
+            info!("Adding manifest file: {}", manifest_from_config.display());
             manifest_paths.push(manifest_from_config);
         } else {
             // A file name was specified in the structured config, but that file
             // could not be found. This is most likely not expected.
             warn!(
                 "Structured config requested font manifest that was not found: {}",
-                &manifest_from_config.display()
+                manifest_from_config.display()
             );
         }
     }

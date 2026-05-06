@@ -46,19 +46,19 @@ fn main() -> Result<()> {
 
     let mut output_types_file =
         File::create(&args.output_types) // Create or truncate file.
-            .with_context(|| format!("Unable to open output file {:?}", &args.output_types))?;
-    info!("Writing generated AT type definitions to {:?} ", &args.output_types);
+            .with_context(|| format!("Unable to open output file {:?}", args.output_types))?;
+    info!("Writing generated AT type definitions to {:?} ", args.output_types);
 
     let mut output_translate_file =
         File::create(&args.output_translate) // Create or truncate file.
-            .with_context(|| format!("Unable to open output file {:?}", &args.output_translate))?;
-    info!("Writing generated AT translation code to {:?} ", &args.output_translate);
+            .with_context(|| format!("Unable to open output file {:?}", args.output_translate))?;
+    info!("Writing generated AT translation code to {:?} ", args.output_translate);
 
     codegen::codegen(&mut output_types_file, &mut output_translate_file, &parsed_definitions)?;
 
     info!(
         "Successfully wrote generated AT code to {:?} and {:?}",
-        &args.output_types, &args.output_translate,
+        args.output_types, args.output_translate,
     );
 
     Ok(())
@@ -66,18 +66,18 @@ fn main() -> Result<()> {
 
 fn parse_definition_file(file: &PathBuf) -> Result<Vec<definition::Definition>> {
     let mut input_file =
-        File::open(&file).with_context(|| format!("Unable to open input file {:?}", &file))?;
-    info!("Reading AT defintions from {:?} ", &file);
+        File::open(&file).with_context(|| format!("Unable to open input file {:?}", file))?;
+    info!("Reading AT defintions from {:?} ", file);
 
     let mut input_file_contents = String::new();
     let read_bytes = input_file
         .read_to_string(&mut input_file_contents)
-        .with_context(|| format!("Unable to read input file {:?}", &file))?;
-    info!("Successfully read {:} bytes from AT defintions file {:?} ", read_bytes, &file);
+        .with_context(|| format!("Unable to read input file {:?}", file))?;
+    info!("Successfully read {:} bytes from AT defintions file {:?} ", read_bytes, file);
 
     let parsed_definition = parser::parse(&input_file_contents)
-        .with_context(|| format!("Unable to parse input file {:?}", &file))?;
-    info!("Successfully parsed AT definitions from {:?} ", &file);
+        .with_context(|| format!("Unable to parse input file {:?}", file))?;
+    info!("Successfully parsed AT definitions from {:?} ", file);
 
     info!(""); // Blank line between files in log output.
 

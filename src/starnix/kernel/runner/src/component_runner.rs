@@ -182,7 +182,7 @@ pub async fn start_component(
                                     mount_options.as_ref(),
                                 )
                                 .with_context(|| {
-                                    format!("failed to mount_remote on path {}", &dir_path)
+                                    format!("failed to mount_remote on path {}", dir_path)
                                 })?;
                         }
                         _ => {

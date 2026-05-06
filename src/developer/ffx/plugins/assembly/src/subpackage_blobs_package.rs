@@ -48,7 +48,7 @@ pub fn construct_subpackage_blobs_package(
         .context("Failed to open the subpackage blobs package")?;
     let subpackage_blobs_merkle = fuchsia_merkle::root_from_reader(subpackage_blobs_package)
         .context("Failed to calculate the subpackage blobs merkle")?;
-    info!("SubpackageBlobs merkle: {}", &subpackage_blobs_merkle);
+    info!("SubpackageBlobs merkle: {}", subpackage_blobs_merkle);
 
     Ok(SubpackageBlobsPackage { manifest: build_results.manifest })
 }

@@ -56,8 +56,8 @@ impl Config {
     where
         T: DiscoverableProtocolMarker,
     {
-        let config_data_file = format!("/config/data/{}.config", &T::PROTOCOL_NAME);
-        log::info!("Loading {}", &config_data_file);
+        let config_data_file = format!("/config/data/{}.config", T::PROTOCOL_NAME);
+        log::info!("Loading {}", config_data_file);
         Config::load_file(&config_data_file)
     }
 
@@ -70,7 +70,7 @@ impl Config {
             if file.validators.is_empty() {
                 log::warn!(
                     "Entry {:?} must have at least one validator to be processed, skipping",
-                    &file.path
+                    file.path
                 );
                 continue;
             }
@@ -93,7 +93,7 @@ impl Config {
                 Some(old_dest) => {
                     log::warn!(
                         "Entry {:?} already mapped to destination {:?}, ignoring mapping to {:?}",
-                        &file.path,
+                        file.path,
                         old_dest,
                         dest
                     );

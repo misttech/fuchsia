@@ -126,7 +126,7 @@ pub fn generate_manifest(
     if verbose {
         let non_fallback_typefaces: Vec<v2::TypefaceId> =
             db.iter_non_fallback_typefaces().sorted().collect();
-        eprintln!("Non-fallback typefaces:\n{:#?}", &non_fallback_typefaces);
+        eprintln!("Non-fallback typefaces:\n{:#?}", non_fallback_typefaces);
     }
 
     if errors.is_empty() {

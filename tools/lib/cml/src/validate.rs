@@ -1387,7 +1387,7 @@ which is almost certainly a mistake: {}",
                     return Err(Error::validate_contexts(
                         format!(
                             "Duplicate runners registered under name \"{}\": \"{}\" and \"{}\".",
-                            target_name, &reg.runner.value, prev_runner
+                            target_name, reg.runner.value, prev_runner
                         ),
                         vec![prev_origin.clone(), name_origin.clone()],
                     ));
@@ -1401,14 +1401,14 @@ which is almost certainly a mistake: {}",
                     return Err(Error::validate_context(
                         format!(
                             "Runner \"{}\" is not defined in the root \"runners\" section",
-                            &reg.runner.value
+                            reg.runner.value
                         ),
                         Some(reg.runner.origin.clone()),
                     ));
                 }
 
                 self.validate_component_child_ref(
-                    &format!("\"{}\" runner source", &reg.runner.value),
+                    &format!("\"{}\" runner source", reg.runner.value),
                     &AnyRef::from(&reg.from.value),
                     Some(&reg.from.origin),
                 )?;
@@ -1426,14 +1426,14 @@ which is almost certainly a mistake: {}",
                     return Err(Error::validate_contexts(
                         format!(
                             "scheme \"{}\" for resolver \"{}\" is already registered to \"{}\".",
-                            &reg.scheme.value, &reg.resolver.value, prev_resolver
+                            reg.scheme.value, reg.resolver.value, prev_resolver
                         ),
                         vec![prev_origin.clone(), reg.scheme.origin.clone()],
                     ));
                 }
 
                 self.validate_component_child_ref(
-                    &format!("\"{}\" resolver source", &reg.resolver.value),
+                    &format!("\"{}\" resolver source", reg.resolver.value),
                     &AnyRef::from(&reg.from.value),
                     Some(&reg.from.origin),
                 )?;

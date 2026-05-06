@@ -228,7 +228,7 @@ impl MetricsState {
         if self.status == MetricsStatus::NewUser {
             // record usage of the app on disk, but, stay 'NewUser' to prevent collection on first usage.
             if let Err(e) = write_app_status(&self.metrics_dir, &self.app_name, true) {
-                eprintln!("Could not write app file,  {}, {:}", &self.app_name, e);
+                eprintln!("Could not write app file,  {}, {:}", self.app_name, e);
             }
             return;
         }
@@ -236,7 +236,7 @@ impl MetricsState {
         if let Err(_e) = read_app_status(&self.metrics_dir, &self.app_name) {
             self.status = MetricsStatus::NewToTool;
             if let Err(e) = write_app_status(&self.metrics_dir, &self.app_name, true) {
-                eprintln!("Could not write app file,  {}, {:}", &self.app_name, e);
+                eprintln!("Could not write app file,  {}, {:}", self.app_name, e);
             }
         }
     }

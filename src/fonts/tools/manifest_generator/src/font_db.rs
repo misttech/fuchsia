@@ -236,7 +236,7 @@ impl FontDb {
         &self
             .typeface_to_metadata
             .get(&key)
-            .ok_or_else(|| format_err!("No code points for {:?}", &key))
+            .ok_or_else(|| format_err!("No code points for {:?}", key))
             .unwrap()
     }
 

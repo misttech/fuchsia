@@ -59,7 +59,7 @@ pub async fn cmd_package_archive_create(cmd: PackageArchiveCreateCommand) -> Res
             dep_paths.insert(subpackage.manifest_path.clone());
 
             let subpackage_manifest = PackageManifest::try_load_from(&subpackage.manifest_path)
-                .with_context(|| format!("opening {}", &subpackage.manifest_path))?;
+                .with_context(|| format!("opening {}", subpackage.manifest_path))?;
 
             // Gathering subpackage blobs.
             for subpackage_blob in subpackage_manifest.blobs() {

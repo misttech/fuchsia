@@ -393,7 +393,7 @@ impl Pty {
     }
 
     pub fn handle_server_close(&mut self) {
-        for (_, client) in self.clients.iter_mut() {
+        for client in self.clients.values_mut() {
             let _ = client.event.signal_peer(
                 zx::Signals::from_bits_truncate(DeviceSignal::WRITABLE.bits()),
                 zx::Signals::from_bits_truncate(DeviceSignal::HANGUP.bits()),

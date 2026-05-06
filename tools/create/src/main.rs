@@ -367,8 +367,8 @@ impl TemplateArgs {
                 .strip_prefix(&fuchsia_root)
                 .map_err(|_| {
                     anyhow!(
-                        "current working directory ({:?}) must be a descendant of FUCHSIA_DIR ({:?})", &absolute_project_path,
-                        &fuchsia_root
+                        "current working directory ({:?}) must be a descendant of FUCHSIA_DIR ({:?})", absolute_project_path,
+                        fuchsia_root
                     )
                 })?
                 .to_path_buf()
@@ -385,7 +385,7 @@ impl TemplateArgs {
             project_name: create_args.project_path.project_name.clone(),
             project_path: project_path
                 .to_str()
-                .ok_or_else(|| anyhow!("invalid path {:?}", &project_path))?
+                .ok_or_else(|| anyhow!("invalid path {:?}", project_path))?
                 .to_string(),
             project_type: create_args.project_template()?,
         })

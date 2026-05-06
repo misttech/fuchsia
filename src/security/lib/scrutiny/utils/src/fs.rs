@@ -47,7 +47,7 @@ pub fn tempdir<P: AsRef<Path>>(root: Option<P>) -> Result<TemporaryDirectory> {
                 format!("scrutiny-tmp-{}-{}", *PID, NEXT_DIR_ID.fetch_add(1, Ordering::SeqCst));
             let directory_path = root.as_ref().join(&directory_name);
             create_dir_all(&directory_path).map_err(|err| {
-                anyhow!("Failed to create temporary directory at {:?}: {}", &directory_path, err)
+                anyhow!("Failed to create temporary directory at {:?}: {}", directory_path, err)
             })?;
             Ok(TemporaryDirectory::ManagedDir(directory_path))
         }

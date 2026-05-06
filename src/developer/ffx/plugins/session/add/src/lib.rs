@@ -45,7 +45,7 @@ pub async fn add_impl<W: std::io::Write>(
     ctrl_c_signal: impl Future<Output = ()>,
     writer: &mut W,
 ) -> Result<()> {
-    writeln!(writer, "Add {} to the current session", &cmd.url)?;
+    writeln!(writer, "Add {} to the current session", cmd.url)?;
     let (_controller_client, controller_server) = if cmd.interactive {
         let (client, server) = manager_proxy.domain().create_endpoints::<ControllerMarker>();
         let client: ControllerProxy = client.into_proxy();

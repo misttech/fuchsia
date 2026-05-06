@@ -245,7 +245,7 @@ impl Backlight {
 
     fn make_scheduled_updates_task(&self, delay: zx::MonotonicDuration) -> fasync::Task<()> {
         let time = fasync::MonotonicInstant::after(delay);
-        log::trace!("Setting timer for {:?}", &time);
+        log::trace!("Setting timer for {:?}", time);
         let timer = fasync::Timer::new(time);
         let self_ = self.clone();
         let fut = async move {
@@ -282,7 +282,7 @@ impl Backlight {
 
                 log::debug!(
                     "Processing scheduled updates after timer. Most recent state: {:?}",
-                    &power_state
+                    power_state
                 );
 
                 match power_state {
@@ -309,7 +309,7 @@ impl Backlight {
                             // Even if a backlight command fails for some reason, we need to treat
                             // the backlight as on. Subsequent commands should still work.
                             *power_state_guard = PowerState::BothOn;
-                            log::debug!("Sending result for pending change {:?}", &pending_change);
+                            log::debug!("Sending result for pending change {:?}", pending_change);
                             if let Err(e) = pending_change.future_handle.send(result) {
                                 log::warn!("Failed to send result for pending change: {:#?}", e);
                             } else if !turned_on {
@@ -371,7 +371,7 @@ impl DisplayPower {
         } else {
             PowerState::BothOff
         };
-        log::info!("Initial power state: {:?}", &initial_state);
+        log::info!("Initial power state: {:?}", initial_state);
 
         Ok(DisplayPower {
             proxy: display_power_proxy,
@@ -397,7 +397,7 @@ impl DisplayPower {
             })
             .with_context(|| format!("Failed to turn {on_off} display"))
             .map_err(|e| {
-                log::error!("{:#?}", &e);
+                log::error!("{:#?}", e);
                 e
             })?;
         log::info!("Turned DDIC power {}", on_off);

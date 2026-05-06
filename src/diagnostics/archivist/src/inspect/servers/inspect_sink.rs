@@ -323,7 +323,7 @@ mod tests {
 
         /// Drops all published proxies, stops the InspectSink server, and waits for it to complete.
         async fn stop_all(&mut self) {
-            for (_, component) in self.components.iter_mut() {
+            for component in self.components.values_mut() {
                 component.proxy = None;
             }
             self.scope.take().unwrap().close().await;

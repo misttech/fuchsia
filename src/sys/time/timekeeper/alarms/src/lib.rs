@@ -1203,7 +1203,7 @@ async fn wake_timer_loop(
                     debug!(
                         "[{}] wake_timer_loop: bogus lease {:?}",
                         line!(),
-                        &keep_alive.koid().unwrap()
+                        keep_alive.koid().unwrap()
                     );
 
                     {
@@ -1395,7 +1395,7 @@ async fn wake_timer_loop(
                 let (_dummy_lease, peer) = zx::EventPair::create();
                 debug!(
                     "bogus lease: {:?} fidl error [{}:{}]",
-                    &peer.koid().unwrap(),
+                    peer.koid().unwrap(),
                     file!(),
                     line!()
                 );
@@ -1437,7 +1437,7 @@ async fn wake_timer_loop(
                 let (_dummy_lease, peer) = zx::EventPair::create();
                 debug!(
                     "bogus lease: {:?} driver error. [{}:{}]",
-                    &peer.koid().unwrap(),
+                    peer.koid().unwrap(),
                     file!(),
                     line!()
                 );
@@ -1533,7 +1533,7 @@ async fn wake_timer_loop(
             // time.
             trace::duration!("timekeeper", "inspect");
             let now_formatted = format_timer(now.into());
-            debug!("wake_timer_loop: now:                             {}", &now_formatted);
+            debug!("wake_timer_loop: now:                             {}", now_formatted);
             now_formatted_prop.set(&now_formatted);
 
             let pending_timers_count: u64 =
@@ -1542,7 +1542,7 @@ async fn wake_timer_loop(
             pending_timers_count_prop.set(pending_timers_count);
 
             let pending_timers = format!("{}", timers);
-            debug!("wake_timer_loop: currently pending timers:        \n\t{}", &timers);
+            debug!("wake_timer_loop: currently pending timers:        \n\t{}", timers);
             pending_timers_prop.set(&pending_timers);
 
             let current_deadline: String = hrtimer_status
@@ -1558,7 +1558,7 @@ async fn wake_timer_loop(
                 .unwrap_or_else(|| "(none)".into());
             debug!(
                 "wake_timer_loop: remaining duration until alarm:  {}",
-                &remaining_duration_until_alarm
+                remaining_duration_until_alarm
             );
             remaining_until_alarm_prop.set(&remaining_duration_until_alarm);
             debug!("---");

@@ -1183,7 +1183,7 @@ impl Realm {
                 ftest::Capability::Storage(ftest::Storage {
                     name: Some(storage_name.clone()),
                     as_: Some(storage_name.clone()),
-                    path: Some(format!("/{}", &storage_name)),
+                    path: Some(format!("/{}", storage_name)),
                     availability: Some(fcdecl::Availability::Required),
                     ..Default::default()
                 }),

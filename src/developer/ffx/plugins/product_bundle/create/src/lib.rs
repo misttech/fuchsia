@@ -307,7 +307,7 @@ async fn sanitized_product_bundle_create(
         .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;
 
     writer
-        .line(format!("Assembling into {} ...", &out))
+        .line(format!("Assembling into {} ...", out))
         .map_err(|e| ArtifactError::new(anyhow::anyhow!("{}", e)))?;
     let tools = PlatformToolProvider::new(assembly.platform_path.clone());
     let should_configure_example =

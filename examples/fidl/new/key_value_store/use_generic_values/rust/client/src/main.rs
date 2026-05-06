@@ -28,12 +28,12 @@ async fn write_next_item(
     req.options = Some(options);
 
     // Fill in the `Item` we will be attempting to write.
-    println!("WriteItem request sent: key: {}, value: {:?}", &key, &value);
+    println!("WriteItem request sent: key: {}, value: {:?}", key, value);
     req.attempt = Some(Item { key: key.to_string(), value: value });
 
     // Send and async `WriteItem` request to the server.
     match store.write_item(&req).await.context("Error sending request")? {
-        Ok(value) => println!("WriteItem response received: {:?}", &value),
+        Ok(value) => println!("WriteItem response received: {:?}", value),
         Err(err) => println!("WriteItem Error: {}", err.into_primitive()),
     }
     Ok(())

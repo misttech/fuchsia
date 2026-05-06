@@ -163,7 +163,7 @@ pub async fn copy_cmd<W: std::io::Write>(
 
         match result {
             Ok(_) => continue,
-            Err(e) => bail!("Copy from {} to {} failed: {}", &source_path, &destination_path, e),
+            Err(e) => bail!("Copy from {} to {} failed: {}", source_path, destination_path, e),
         };
     }
 

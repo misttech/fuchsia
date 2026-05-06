@@ -206,7 +206,7 @@ impl ProductBundleBuilder {
             if out_dir == "" || out_dir == "/" {
                 return Err(ProductBundleBuildError::Other(format!(
                     "Avoiding deletion of an unsafe out directory: {}",
-                    &out_dir
+                    out_dir
                 )));
             }
             std::fs::remove_dir_all(&out_dir)
@@ -382,7 +382,7 @@ fn write_partitions(
     for system in [system_a, system_b, system_r] {
         if let Some(path) = partitions_from_system(system.as_ref()) {
             let another_config = PartitionsConfig::from_dir(&path)
-                .with_context(|| format!("Parsing partitions config: {}", &path))?;
+                .with_context(|| format!("Parsing partitions config: {}", path))?;
 
             match &chosen_partitions {
                 // No chosen partitions yet, so just save it.
@@ -692,9 +692,9 @@ fn write_virtual_devices(
     // Write the manifest into the directory.
     let manifest_path = out_dir.join("manifest.json");
     let manifest_file = File::create(&manifest_path)
-        .with_context(|| format!("Creating virtual device manifest: {}", &manifest_path))?;
+        .with_context(|| format!("Creating virtual device manifest: {}", manifest_path))?;
     serde_json::to_writer(manifest_file, &manifest)
-        .with_context(|| format!("Writing virtual device manifest: {}", &manifest_path))?;
+        .with_context(|| format!("Writing virtual device manifest: {}", manifest_path))?;
 
     Ok(manifest_path)
 }

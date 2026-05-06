@@ -511,7 +511,7 @@ pub fn convert_protocol<'a>(
         methods.insert(
             pm.ordinal,
             convert_method(pm, &context)
-                .with_context(|| format!("Method {}.{}", &p.name, &pm.name))?,
+                .with_context(|| format!("Method {}.{}", p.name, pm.name))?,
         );
     }
 

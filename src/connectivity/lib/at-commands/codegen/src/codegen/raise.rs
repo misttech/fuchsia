@@ -443,7 +443,7 @@ fn codegen_argument_vec_extraction<W: io::Write>(
     for arg in arg_vec {
         match &arg.typ {
             Type::PossiblyOptionType(typ) => {
-                let option_name = format!("{}_option", &arg.name);
+                let option_name = format!("{}_option", arg.name);
                 write_indented!(sink, indent, "let {} = arg_vec.get({});\n", option_name, i)?;
                 codegen_extract_possibly_option(sink, indent, &option_name, &arg.name, &typ)?
             }

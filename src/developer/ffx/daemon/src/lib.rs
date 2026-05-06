@@ -269,7 +269,7 @@ pub async fn run_daemon(context: &EnvironmentContext) -> Result<std::process::Ch
         .env("RUST_BACKTRACE", "full");
     cmd.args(daemon_args(context).await?.as_slice());
 
-    log::info!("Starting new ffx daemon from {:?}", &cmd.get_program());
+    log::info!("Starting new ffx daemon from {:?}", cmd.get_program());
     let child = cmd.spawn().context("running daemon start")?;
     Ok(child)
 }

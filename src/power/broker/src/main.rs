@@ -74,7 +74,7 @@ impl BrokerSvc {
         stream
             .map(|result| result.context("failed request"))
             .try_for_each(|request| async {
-                let debug_info = format!("Lessor<{}:{}>", &element_name, element_id);
+                let debug_info = format!("Lessor<{}:{}>", element_name, element_id);
                 match request {
                     LessorRequest::Lease { level, responder } => {
                         fuchsia_trace::duration!(c"power-broker", c"Lessor::Lease");
@@ -151,7 +151,7 @@ impl BrokerSvc {
                         log::debug!(
                             "WatchStatus({:?}, {:?})",
                             lease_id,
-                            &last_status
+                            last_status
                         );
                         let mut receiver = {
                             let mut broker = self.broker.borrow_mut();
@@ -160,7 +160,7 @@ impl BrokerSvc {
                         while let Some(next) = receiver.next().await {
                             log::debug!(
                                 "receiver.next = {:?}, last_status = {:?}",
-                                &next,
+                                next,
                                 last_status
                             );
                             let status = next.unwrap_or(LeaseStatus::Unknown);
@@ -171,7 +171,7 @@ impl BrokerSvc {
                                 continue;
                             } else {
                                 log::debug!(
-                                    "WatchStatus: sending new status: {:?}", &status,
+                                    "WatchStatus: sending new status: {:?}", status,
                                 );
                                 return responder.send(status).context("send failed");
                             }
@@ -257,7 +257,7 @@ impl BrokerSvc {
         element_name: String,
         request: ElementControlRequest,
     ) -> Result<(), Error> {
-        let debug_info = format!("ElementControl<{}:{}>", &element_name, element_id);
+        let debug_info = format!("ElementControl<{}:{}>", element_name, element_id);
         match request {
             ElementControlRequest::OpenStatusChannel { status_channel, .. } => {
                 fuchsia_trace::duration!(c"power-broker", c"ElementControl::OpenStatusChannel");
@@ -469,7 +469,7 @@ impl BrokerSvc {
                 match request {
                     TopologyRequest::AddElement { payload, responder } => {
                         fuchsia_trace::duration!(c"power-broker", c"Topology::AddElement");
-                        log::debug!("AddElement({:?})", &payload);
+                        log::debug!("AddElement({:?})", payload);
                         let Ok((
                             element_name,
                             initial_current_level,
@@ -634,7 +634,7 @@ impl BrokerSvc {
                     }
                     TopologyRequest::Lease { payload, responder } => {
                         fuchsia_trace::duration!(c"power-broker", c"Topology::Lease");
-                        log::debug!("Lease({:?})", &payload);
+                        log::debug!("Lease({:?})", payload);
                         let Ok((
                             lease_token,
                             lease_name,
@@ -709,7 +709,7 @@ impl ElementRunnerHandler {
         let element_id = self.element_id;
         let element_name = self.element_name.clone();
         let debug_info =
-            format!("ElementRunnerHandler<{}:{}>", &self.element_name, &self.element_id);
+            format!("ElementRunnerHandler<{}:{}>", self.element_name, self.element_id);
         // Use a shutdown event to ensure any in progress level transition handshakes are completed
         // before terminating the task.
         let mut shutdown = self.shutdown.wait_or_dropped();
@@ -816,7 +816,7 @@ impl StatusChannelHandler {
     fn start(&mut self, mut stream: StatusRequestStream, subscriber: CurrentLevelSubscriber) {
         let element_id = self.element_id;
         let mut shutdown = self.shutdown.wait_or_dropped();
-        log::debug!("Starting new StatusChannelHandler for {:?}", &self.element_id);
+        log::debug!("Starting new StatusChannelHandler for {:?}", self.element_id);
         Task::local(async move {
             let subscriber = subscriber;
             loop {

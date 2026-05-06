@@ -194,7 +194,7 @@ impl<D: Diagnostics, M: ReferenceTimeProvider> PushSourceManager<D, M> {
                 }
                 TimeSourceEvent::Sample(sample) => match self.validate_sample(&sample) {
                     Ok(arrival) => {
-                        debug!("sample arrival: {:?}", &sample);
+                        debug!("sample arrival: {:?}", sample);
                         // The current API leaves the potential for a race condition between a
                         // source declaring itself OK and sending the first sample. Since the
                         // non-OK states describe reasons a time source is incapable of sending

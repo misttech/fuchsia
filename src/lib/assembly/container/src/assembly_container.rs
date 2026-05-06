@@ -165,7 +165,7 @@ pub trait AssemblyContainer {
                 FileType::PackageManifest => {
                     let new_path = package_copier.add_package_from_manifest_path(&path)?;
                     let new_path = diff_paths(&new_path, dir.as_ref()).ok_or_else(|| {
-                        anyhow!("Failed to make the path relative: {}", &new_path)
+                        anyhow!("Failed to make the path relative: {}", new_path)
                     })?;
                     *path = Utf8PathBuf::try_from(new_path)?;
                 }
@@ -184,7 +184,7 @@ pub trait AssemblyContainer {
                     }
                     let name = path
                         .file_name()
-                        .ok_or_else(|| anyhow!("Path is missing a filename: {}", &path))?;
+                        .ok_or_else(|| anyhow!("Path is missing a filename: {}", path))?;
 
                     // Copy the file to the right place and ensure that we don't copy two files to
                     // the same location.
@@ -193,12 +193,12 @@ pub trait AssemblyContainer {
                     if !outputs.insert(absolute_path.clone()) {
                         bail!(
                             "Two files in the container will clobber each other at destination: {}",
-                            &absolute_path
+                            absolute_path
                         );
                     }
                     std::fs::create_dir_all(&absolute_dir)?;
                     assembly_util::fast_copy(&path, &absolute_path)
-                        .with_context(|| format!("Copying file: {}", &path))?;
+                        .with_context(|| format!("Copying file: {}", path))?;
 
                     // Replace the path with the relative path.
                     // We always want to write the paths to disk as relative.

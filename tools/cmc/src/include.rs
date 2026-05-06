@@ -110,7 +110,7 @@ pub(crate) fn check_includes(
             return Err(Error::Validate {
                 err: format!(
                     "{:?} must include {:?}.\nFor more details, see {}",
-                    &file, &expected, CHECK_INCLUDES_URL
+                    file, expected, CHECK_INCLUDES_URL
                 ),
                 filename: file.to_str().map(String::from),
             });

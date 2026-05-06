@@ -936,7 +936,7 @@ fn enter_mode<I: IpExt, CC: GmpTypeLayout<I, BC>, BC: GmpBindingsContext>(
                     gmp.timers.cancel(bindings_ctx, &TimerIdInner::V1Compat),
                     Some((_, ()))
                 );
-                info!("GMP({}) enter mode {:?}", I::NAME, &gmp.mode);
+                info!("GMP({}) enter mode {:?}", I::NAME, gmp.mode);
             }
             return;
         }

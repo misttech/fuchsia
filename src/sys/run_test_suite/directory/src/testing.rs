@@ -307,7 +307,7 @@ fn assert_artifacts(
                 assert_eq!(
                     actual_entries, expected_entries,
                     "Expected files {:?} in directory artifact, got {:?}",
-                    &expected_entries, &actual_entries
+                    expected_entries, actual_entries
                 );
                 for (name, assertion) in files {
                     assert_file(
@@ -380,7 +380,7 @@ impl ExpectedDirectory {
             assert_eq!(
                 &owned_expected, actual,
                 "Mismatch in contents of file {}. Expected: '{}', actual:'{}'",
-                owned_name, &owned_expected, actual
+                owned_name, owned_expected, actual
             )
         })
     }

@@ -151,7 +151,7 @@ pub unsafe extern "C" fn intl_lookup_new(
         let cstr = unsafe { ffi::CStr::from_ptr(*raw) }.to_str();
         match cstr {
             Err(e) => {
-                error!("intl::intl_lookup_new::c_str: {:?}", &e);
+                error!("intl::intl_lookup_new::c_str: {:?}", e);
                 let ls: LookupStatus = e.into();
                 unsafe { *status = ls as i8 };
                 return std::ptr::null::<Lookup>();
@@ -166,7 +166,7 @@ pub unsafe extern "C" fn intl_lookup_new(
     match lookup_or {
         Ok(lookup) => Box::into_raw(Box::new(lookup)),
         Err(e) => {
-            error!("intl::intl_lookup_new: {:?}", &e);
+            error!("intl::intl_lookup_new: {:?}", e);
             let ls: LookupStatus = e.into();
             unsafe { *status = ls as i8 };
             std::ptr::null::<Lookup>()
@@ -300,14 +300,14 @@ impl Lookup {
             locale_dir_path.push(locale.as_ref());
 
             let locale_dir = std::fs::read_dir(&locale_dir_path)
-                .with_context(|| format!("while reading {:?}", &locale_dir_path))?;
+                .with_context(|| format!("while reading {:?}", locale_dir_path))?;
             for entry in locale_dir {
                 let path = entry?.path();
                 let file = fs::File::open(&path)
-                    .with_context(|| format!("while trying to open {:?}", &path))?;
+                    .with_context(|| format!("while trying to open {:?}", path))?;
                 let file = io::BufReader::new(file);
                 let model = model::Model::from_json_reader(file)
-                    .with_context(|| format!("while reading {:?}", &path))?;
+                    .with_context(|| format!("while reading {:?}", path))?;
                 catalog.add(model)?;
             }
         }
@@ -349,7 +349,7 @@ impl Lookup {
             let (maybe_accepted_locale, accept_result) = uloc::accept_language(
                 vec![
                     uloc::ULoc::try_from(*locale)
-                        .with_context(|| format!("could not parse as locale: {:}", &locale))?,
+                        .with_context(|| format!("could not parse as locale: {:}", locale))?,
                 ],
                 supported_locales.clone(),
             )?;
@@ -362,8 +362,8 @@ impl Lookup {
                     None => {
                         return Err(anyhow::anyhow!(
                             "no matching locale found for: requested: {:?}, supported: {:?}",
-                            &locale,
-                            &supported_locales
+                            locale,
+                            supported_locales
                         ));
                     }
                     Some(loc) => {
@@ -376,8 +376,8 @@ impl Lookup {
         if requested_locales.is_empty() {
             return Err(anyhow::anyhow!(
                 "no matching locale found for: requested: {:?}, supported: {:?}",
-                &requested,
-                &supported_locales
+                requested,
+                supported_locales
             ));
         }
         Ok(Lookup { requested: requested_locales, catalog, icu_data })
@@ -420,7 +420,7 @@ impl Lookup {
         Ok(self
             .string(id)?
             .to_str()
-            .with_context(|| format!("str(): while looking up id: {}", &id))?)
+            .with_context(|| format!("str(): while looking up id: {}", id))?)
     }
 }
 

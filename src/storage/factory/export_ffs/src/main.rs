@@ -31,7 +31,7 @@ async fn main() -> Result<(), Error> {
 
     // open block device
     let proxy = fuchsia_component::client::connect_to_protocol_at_path::<BlockMarker>(&device)
-        .with_context(|| format!("failed to open {}", &device))?;
+        .with_context(|| format!("failed to open {}", device))?;
     let channel = proxy
         .into_channel()
         .map_err(|_: BlockProxy| anyhow::anyhow!("failed to get block channel"))?;
@@ -39,7 +39,7 @@ async fn main() -> Result<(), Error> {
 
     // call the exporter
     let () = export_directory(&dir, client_end).await.with_context(|| {
-        format!("failed to export '{}' to block device '{}'", &directory, &device)
+        format!("failed to export '{}' to block device '{}'", directory, device)
     })?;
 
     Ok(())

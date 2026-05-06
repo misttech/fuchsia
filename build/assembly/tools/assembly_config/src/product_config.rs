@@ -70,7 +70,7 @@ pub fn new(args: &ProductArgs) -> Result<()> {
                 .with_context(|| {
                     format!(
                         "finding starnix base package '{}' in product input bundles",
-                        &container.base
+                        container.base
                     )
                 })?
                 .clone();
@@ -163,7 +163,7 @@ pub fn extract_package(args: &ExtractProductPackageArgs) -> Result<()> {
     if let Some(package_manifest_path) = config.find_package_in_product(&args.package_name) {
         let manifest =
             PackageManifest::try_load_from(&package_manifest_path).with_context(|| {
-                format!("Loading package manifest to extract: {}", &package_manifest_path)
+                format!("Loading package manifest to extract: {}", package_manifest_path)
             })?;
 
         if args.depfile.is_some() {
@@ -195,14 +195,14 @@ pub fn extract_package(args: &ExtractProductPackageArgs) -> Result<()> {
         }
 
         let mut builder = PackageBuilder::from_manifest(manifest, &args.outdir)
-            .with_context(|| format!("Loading package to extract: {}", &args.package_name))?;
+            .with_context(|| format!("Loading package to extract: {}", args.package_name))?;
 
         let metafar_path =
             args.output_package_manifest.parent().context("Invalid outdir")?.join("meta.far");
         builder.manifest_path(args.output_package_manifest.clone());
         builder
             .build(&args.outdir, &metafar_path)
-            .with_context(|| format!("Writing out extracted package: {}", &args.package_name))?;
+            .with_context(|| format!("Writing out extracted package: {}", args.package_name))?;
 
         if let Some(depfile_path) = &args.depfile {
             deps.add_outputs(
@@ -219,7 +219,7 @@ pub fn extract_package(args: &ExtractProductPackageArgs) -> Result<()> {
             deps.write_to(depfile_path)?;
         }
     } else {
-        anyhow::bail!("Could not find package to extract: {}", &args.package_name);
+        anyhow::bail!("Could not find package to extract: {}", args.package_name);
     }
 
     Ok(())

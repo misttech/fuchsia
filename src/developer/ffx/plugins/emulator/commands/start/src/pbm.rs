@@ -62,7 +62,7 @@ pub(crate) async fn make_configs(
                     arch @ _ => bail!("CPU architecture {} is currently unsupported with (U)EFI", arch),
                 }).map_err(|e| bug!("cannot locate ovmf code in SDK: {e}"))?;
 
-            log::info!("Found ovmf code at {:?}", &emu_config.guest.ovmf_code);
+            log::info!("Found ovmf code at {:?}", emu_config.guest.ovmf_code);
 
             // Non-fatal error since infra may not always supply the file if it is not needed for the
             // tests being run.

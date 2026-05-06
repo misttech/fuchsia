@@ -1599,7 +1599,7 @@ impl Target {
                 log::debug!(
                     "Target {:?} state {:?} => {:?} due to expired state after {:?}.",
                     self,
-                    &current_state,
+                    current_state,
                     new_state,
                     expire_duration
                 );

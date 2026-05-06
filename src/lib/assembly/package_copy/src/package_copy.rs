@@ -247,7 +247,7 @@ impl PackageCopier {
         builder.build().write_with_relative_paths(&destination_path).with_context(|| {
             format!(
                 "Writing relocated package manifest for {} to: {}",
-                internal_name, &destination_path
+                internal_name, destination_path
             )
         })?;
         Ok(())

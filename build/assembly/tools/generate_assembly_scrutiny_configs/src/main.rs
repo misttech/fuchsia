@@ -188,7 +188,7 @@ fn main() -> Result<()> {
         let aib_path = platform_artifacts.get_bundle(aib_name);
         let aib_dir = aib_path
             .parent()
-            .ok_or_else(|| anyhow!("Failed to get parent directory of AIB: {}", &aib_path))?;
+            .ok_or_else(|| anyhow!("Failed to get parent directory of AIB: {}", aib_path))?;
         let aib = AssemblyInputBundle::from_dir(aib_dir).unwrap();
 
         // Experimental AIBs are not included in the scrutiny goldens.
@@ -207,7 +207,7 @@ fn main() -> Result<()> {
 
         let aib_dir = aib_path
             .parent()
-            .ok_or_else(|| anyhow!("Failed to get parent directory of AIB: {}", &aib_path))?;
+            .ok_or_else(|| anyhow!("Failed to get parent directory of AIB: {}", aib_path))?;
 
         // The AIB contents are required if they are required in Standard and Utility.
         let required = aib.required_to_be_in(&FeatureSetLevel::Standard, &args.build_type)

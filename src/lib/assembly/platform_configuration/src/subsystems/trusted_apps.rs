@@ -37,7 +37,7 @@ impl DefineSubsystemConfiguration<(&Vec<ProductTrustedApp>, FilesystemImageMode)
         for c in trusted_apps.iter() {
             let url = if *image_mode == FilesystemImageMode::NoImage {
                 let url = fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl::parse(&c.component_url)
-                    .with_context(|| format!("Parsing: {}", &c.component_url))?;
+                    .with_context(|| format!("Parsing: {}", c.component_url))?;
                 fuchsia_url::boot::AbsoluteComponentUrl::new(
                     Some(
                         fuchsia_url::Path::try_from(url.path()).with_context(|| {

@@ -576,8 +576,8 @@ impl ConfigurationBuilder for ConfigurationBuilderImpl {
         let bundle_name = {
             let (revision, commit_id) = ICU_CONFIG_INFO
                 .resolve_revision(&icu_config.revision)
-                .with_context(|| format!("while resolving revision: {}", &icu_config.revision))?;
-            format!("{}.icu_{}_{}", name, &revision, commit_id)
+                .with_context(|| format!("while resolving revision: {}", icu_config.revision))?;
+            format!("{}.icu_{}_{}", name, revision, commit_id)
         };
         self.platform_bundle(&bundle_name)?;
         Ok(())

@@ -57,6 +57,6 @@ async fn method_to_fidl(method_id: MethodId, args: Value, sl4f: Arc<Sl4f>) -> Re
     } else if sl4f.has_proxy_facade(&method_id.facade) {
         sl4f.handle_proxy_request(method_id.facade, method_id.method, args).await
     } else {
-        Err(Sl4fError::new(&format!("Invalid FIDL method type {:?}", &method_id.facade)).into())
+        Err(Sl4fError::new(&format!("Invalid FIDL method type {:?}", method_id.facade)).into())
     }
 }

@@ -690,12 +690,12 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
                     // Used as a test-only hook.
                     if let Some(ref mut test_signaler) = self.sample_test_signaler {
                         if let Err(ref e) = test_signaler.send(()).await {
-                            warn!("could not acknowledge error on test_signaler: {:?}",  &e);
+                            warn!("could not acknowledge error on test_signaler: {:?}",  e);
                         }
                     }
                 },
                 command = receiver.next() => {
-                    debug!("received command: {:?}", &command);
+                    debug!("received command: {:?}", command);
 
                     match command {
                         Some(Command::Connectivity { http_available }) => {
@@ -778,7 +778,7 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
                     // The signaller will send a message when the channel is closed too.
                     if let Some(ref mut test_signaler) = self.command_test_signaler {
                         if let Err(ref e) = test_signaler.send(()).await {
-                            warn!("could not acknowledge error on test_signaler: {:?}",  &e);
+                            warn!("could not acknowledge error on test_signaler: {:?}",  e);
                         }
                     }
                 },

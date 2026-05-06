@@ -420,7 +420,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         let mut resize_command = Command::new(fvm_tool);
 
         resize_command.arg(&dest_path).arg("extend").arg("--length").arg(target_size.to_string());
-        log::debug!("FVM Running command to resize: {:?}", &resize_command);
+        log::debug!("FVM Running command to resize: {:?}", resize_command);
 
         let resize_result = resize_command.output().map_err(|e| bug!("{e}"))?;
 
@@ -619,7 +619,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                 bug!("Failed trying to clone stdout for the emulator process: {e}.")
             })?;
             emulator_cmd.stdout(stdout).stderr(stderr);
-            eprintln!("Logging to {:?}", &self.emu_config().host.log);
+            eprintln!("Logging to {:?}", self.emu_config().host.log);
         }
 
         // If using TAP, check for an upscript to run.

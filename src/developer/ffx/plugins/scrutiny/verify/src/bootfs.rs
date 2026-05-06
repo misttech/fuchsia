@@ -57,7 +57,7 @@ pub async fn verify(cmd: &Command, recovery: bool) -> Result<HashSet<PathBuf>> {
             }
             println!(
                 "\nIf you intended to change the bootfs contents, please acknowledge it by updating {:?} with the added or removed lines",
-                &cmd.golden[0],
+                cmd.golden[0],
             );
             println!("{}", SOFT_TRANSITION_MSG);
             Err(anyhow!("bootfs file mismatch"))
@@ -98,7 +98,7 @@ pub async fn verify(cmd: &Command, recovery: bool) -> Result<HashSet<PathBuf>> {
             }
             println!(
                 "\nIf you intended to change the bootfs contents, please acknowledge it by updating {:?} with the added or removed lines.",
-                &cmd.golden_packages[0],
+                cmd.golden_packages[0],
             );
             println!("{}", SOFT_TRANSITION_MSG);
             Err(anyhow!("bootfs package index mismatch"))

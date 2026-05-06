@@ -45,7 +45,7 @@ impl std::fmt::Display for Revision {
         match self {
             Revision::Default => write!(f, "default"),
             Revision::Latest => write!(f, "latest"),
-            Revision::CommitId(id) => write!(f, "commit_id({})", &id),
+            Revision::CommitId(id) => write!(f, "commit_id({})", id),
         }
     }
 }

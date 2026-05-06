@@ -428,7 +428,7 @@ impl InputPipeline {
             if let Err(e) = self.pipeline_sender.unbounded_send(input_event) {
                 metrics_logger_clone.log_error(
                     InputPipelineErrorMetricDimensionEvent::InputPipelineCouldNotForwardEventFromDriver,
-                    std::format!("could not forward event from driver: {:?}", &e));
+                    std::format!("could not forward event from driver: {:?}", e));
             }
         }
 
@@ -669,7 +669,7 @@ impl InputPipeline {
 
                     for event in events_in_group {
                         if event.handled == input_device::Handled::No {
-                            log::warn!("unhandled input event: {:?}", &event);
+                            log::warn!("unhandled input event: {:?}", event);
                         }
                         if let Some(trace_id) = event.trace_id {
                             fuchsia_trace::flow_end!(

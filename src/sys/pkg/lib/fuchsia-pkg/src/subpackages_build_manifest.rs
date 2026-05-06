@@ -29,12 +29,12 @@ impl SubpackagesBuildManifest {
         for entry in &self.0.entries {
             // Read the merkle from the package manifest.
             let manifest = PackageManifest::try_load_from(&entry.package_manifest_file)
-                .with_context(|| format!("reading {}", &entry.package_manifest_file))?;
+                .with_context(|| format!("reading {}", entry.package_manifest_file))?;
             let meta_far_blob = manifest
                 .blobs()
                 .iter()
                 .find(|b| b.path == "meta/")
-                .with_context(|| format!("finding meta/in {}", &entry.package_manifest_file))?;
+                .with_context(|| format!("finding meta/in {}", entry.package_manifest_file))?;
 
             // Read the name from the package manifest, but override with the name if provided.
             let url = match &entry.kind {

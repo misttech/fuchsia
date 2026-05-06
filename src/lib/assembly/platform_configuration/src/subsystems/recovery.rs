@@ -198,10 +198,10 @@ fn configure_bootfs_recovery(
     let cml_name = "bootfs_recovery.cml";
     let cml_path = gendir.join(cml_name);
     let mut cml_file = std::fs::File::create(&cml_path)
-        .with_context(|| format!("Creating cml file: {}", &cml_path))?;
+        .with_context(|| format!("Creating cml file: {}", cml_path))?;
     cml_file
         .write_all(cml.as_bytes())
-        .with_context(|| format!("Writing cml file: {}", &cml_path))?;
+        .with_context(|| format!("Writing cml file: {}", cml_path))?;
     let components = vec![CompiledComponentDefinition {
         component_name: "bootstrap".into(),
         shards: vec![cml_path],

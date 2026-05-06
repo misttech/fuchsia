@@ -100,7 +100,7 @@ impl PackageManifest {
             Box::new(meta_far_blob),
         );
 
-        for (_merkle_key, blob_info) in all_blobs.iter() {
+        for blob_info in all_blobs.values() {
             let source_path = root_dir.join(&blob_info.source_path);
 
             let blob_file = File::open(&source_path).map_err(|err| {
@@ -249,7 +249,7 @@ impl PackageManifest {
             let sub_package_manifest =
                 Self::from_blobs_dir(blobs_dir_root, delivery_blob_type, hash, out_manifest_dir)?;
 
-            let source_pathbuf = out_manifest_dir.join(format!("{}_package_manifest.json", &hash));
+            let source_pathbuf = out_manifest_dir.join(format!("{}_package_manifest.json", hash));
             let source_path = source_pathbuf.as_path();
 
             let relative_path = Utf8Path::from_path(source_path).unwrap();

@@ -16,7 +16,7 @@ pub async fn route_cmd_print<W: std::io::Write>(
 ) -> Result<()> {
     let moniker = get_cml_moniker_from_query(&target_moniker, &realm_query).await?;
 
-    writeln!(writer, "Moniker: {}", &moniker)?;
+    writeln!(writer, "Moniker: {}", moniker)?;
 
     let targets = route_targets_from_filter(filter)?;
     let reports = route::route(&route_validator, moniker, targets).await?;

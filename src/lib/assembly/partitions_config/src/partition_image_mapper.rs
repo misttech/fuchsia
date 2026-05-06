@@ -171,14 +171,14 @@ impl PartitionImageMapper {
                     // that the contents of the image are equal.
                     if let Some(existing) = slot_entry.insert(image_type, path.clone()) {
                         let existing_digest = try_digest(&existing)
-                            .with_context(|| format!("Hashing existing dtbo: {}", &existing))?;
+                            .with_context(|| format!("Hashing existing dtbo: {}", existing))?;
                         let new_digest = try_digest(path)
                             .with_context(|| format!("Hashing new dtbo: {}", path))?;
                         if existing_digest != new_digest {
                             bail!(
                                 "Two different dtbo images were mapped to the same partition\nprevious: {}\nnew: {}",
-                                &existing,
-                                &path
+                                existing,
+                                path
                             );
                         }
                     }
@@ -249,7 +249,7 @@ impl PartitionImageMapper {
             let PartitionAndImage { partition, path } = mapping;
             if let (Some(size), name) = (partition.size(), partition.name()) {
                 let metadata = std::fs::metadata(&path)
-                    .with_context(|| format!("Getting image metadata: {}", &path))?;
+                    .with_context(|| format!("Getting image metadata: {}", path))?;
                 let measured_size = metadata.len();
                 report.insert(format!("{}-{}", prefix, name), json!(measured_size));
                 report.insert(format!("{}-{}.budget", prefix, name), json!(size));

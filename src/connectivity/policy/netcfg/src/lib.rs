@@ -2013,7 +2013,7 @@ impl<'a> NetCfg<'a> {
                     debug!(
                         "ignoring interface watcher event because provisioning \
                     is delegated for this interface: {:?}",
-                        &update_result
+                        update_result
                     );
                     return Ok(());
                 }
@@ -2733,7 +2733,7 @@ impl<'a> NetCfg<'a> {
         );
         info!(
             "interface with name {:?} will have {:?} provisioning",
-            &interface_name, provisioning_action
+            interface_name, provisioning_action
         );
 
         let ProvisioningAction { provisioning, netstack_managed_routes_designation } =

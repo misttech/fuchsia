@@ -526,7 +526,7 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
                             // Because this function is a discovery loop, we retry automatically
                             // and we eventually bind once the avahi service successfully registers
                             // the address.
-                            log::debug!("mdns: failed to bind {}: {}", &addr, err);
+                            log::debug!("mdns: failed to bind {}: {}", addr, err);
                             None
                         }
                     })
@@ -624,7 +624,7 @@ fn make_target<B: SplitByteSlice + Copy>(
                             port: ssh_port,
                         }));
                     }
-                    log::debug!("emulator mdns txt {:?} {:?}", &txt_lines, record.domain);
+                    log::debug!("emulator mdns txt {:?} {:?}", txt_lines, record.domain);
                 } else {
                     log::debug!("no data in txt record {:?}", record.domain);
                 }
@@ -838,7 +838,7 @@ async fn query_recv_loop(
     let mut recv = recv_loop(sock.clone(), mdns_protocol, checker).boxed().fuse();
     let mut query = query_loop(sock.clone(), interval, mdns_port).boxed().fuse();
 
-    log::debug!("mdns: started query socket {}", &addr);
+    log::debug!("mdns: started query socket {}", addr);
 
     futures::select!(
         _ = recv => {
@@ -858,7 +858,7 @@ async fn query_recv_loop(
             drop(a)
         }
     }
-    log::debug!("mdns: shut down query socket {}", &addr);
+    log::debug!("mdns: shut down query socket {}", addr);
 }
 
 // Exclude any mdns packets received where the source address of the packet does not appear in any

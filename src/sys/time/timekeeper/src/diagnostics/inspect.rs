@@ -277,7 +277,7 @@ impl TimeSourceNode {
 
     /// Records a change in status of the time source.
     pub fn status(&mut self, status: Status) {
-        self.status.set(&format!("{:?}", &status));
+        self.status.set(&format!("{:?}", status));
         self.status_change.set(reference_time());
     }
 
@@ -290,7 +290,7 @@ impl TimeSourceNode {
                 let _ = field.add(1);
             }
             None => {
-                let property = self.node.create_uint(&format!("failure_count_{:?}", &error), 1);
+                let property = self.node.create_uint(&format!("failure_count_{:?}", error), 1);
                 self.failure_counters.insert(error, property);
             }
         }
@@ -303,7 +303,7 @@ impl TimeSourceNode {
                 let _ = field.add(1);
             }
             None => {
-                let property = self.node.create_uint(&format!("rejection_count_{:?}", &error), 1);
+                let property = self.node.create_uint(&format!("rejection_count_{:?}", error), 1);
                 self.rejection_counters.insert(error, property);
             }
         }
@@ -383,7 +383,7 @@ impl TrackNode {
                 let _ = field.add(1);
             }
             None => {
-                let prop = self.node.create_uint(&format!("frequency_discard_{:?}", &reason), 1);
+                let prop = self.node.create_uint(&format!("frequency_discard_{:?}", reason), 1);
                 self.frequency_discard_counters.insert(reason, prop);
             }
         }

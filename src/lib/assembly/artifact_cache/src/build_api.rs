@@ -74,13 +74,13 @@ pub fn get_default_platform(build_dir: Option<&Utf8PathBuf>) -> Result<Artifact,
         .context("--platform is required outside a fuchsia checkout")?;
     let build_api = build_dir.join("platform_artifacts.json");
     let build_api_file =
-        std::fs::File::open(&build_api).with_context(|| format!("Opening: {}", &build_api))?;
+        std::fs::File::open(&build_api).with_context(|| format!("Opening: {}", build_api))?;
     let platform_artifacts: Vec<PlatformBuildApiEntry> = serde_json::from_reader(build_api_file)
-        .with_context(|| format!("Parsing: {}", &build_api))?;
+        .with_context(|| format!("Parsing: {}", build_api))?;
     let platform_artifacts = platform_artifacts
         .first()
         .context("searching for platform artifacts")
-        .with_context(|| format!("searching build api: {}", &build_api))?;
+        .with_context(|| format!("searching build api: {}", build_api))?;
     let platform_artifacts_path = build_dir.join(&platform_artifacts.path);
     Ok(Artifact::Local(platform_artifacts_path))
 }
@@ -91,9 +91,9 @@ fn read_build_api(
 ) -> Result<Vec<BuildApiEntry>> {
     let build_api_path = build_dir.join(build_api.as_ref());
     let build_api_file = std::fs::File::open(&build_api_path)
-        .with_context(|| format!("Opening: {}", &build_api_path))?;
+        .with_context(|| format!("Opening: {}", build_api_path))?;
     let build_api_entries: Vec<BuildApiEntry> = serde_json::from_reader(build_api_file)
-        .with_context(|| format!("Parsing: {}", &build_api_path))?;
+        .with_context(|| format!("Parsing: {}", build_api_path))?;
     Ok(build_api_entries)
 }
 

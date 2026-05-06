@@ -592,7 +592,7 @@ where
                     None => None,
                 };
                 if channel_cfg.is_none() {
-                    warn!("Channel {} not found in known channels", &channel);
+                    warn!("Channel {} not found in known channels", channel);
                 }
                 let appid = match channel_cfg {
                     Some(ref cfg) => cfg.appid.clone(),

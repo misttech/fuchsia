@@ -132,9 +132,9 @@ impl PbGetArtifactsTool {
         for part in &mut product_bundle.partitions.bootloader_partitions {
             let path = self.compute_path(&part.image)?;
             let bootloader_string = if part.partition_type == "" {
-                format!("firmware:{}", &path)
+                format!("firmware:{}", path)
             } else {
-                format!("firmware_{}:{}", part.partition_type, &path)
+                format!("firmware_{}:{}", part.partition_type, path)
             };
 
             artifacts.push(bootloader_string);

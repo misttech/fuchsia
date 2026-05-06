@@ -315,7 +315,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             }
             FsverityState::Started | FsverityState::Pending(_) => Err(anyhow!(
                 "Enable verity has not yet completed, fsverity state: {:?}",
-                &*fsverity_state
+                *fsverity_state
             )),
             FsverityState::Some(metadata) => {
                 let hasher = metadata.get_hasher_for_block_size(block_size);

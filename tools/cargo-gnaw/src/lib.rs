@@ -337,7 +337,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
     }
     let _ = cmd.other_options([String::from("--frozen")]);
     let metadata = cmd.exec().with_context(|| {
-        format!("while running cargo metadata: supplied cargo binary: {:?}", &opt.cargo)
+        format!("while running cargo metadata: supplied cargo binary: {:?}", opt.cargo)
     })?;
 
     // read out custom gn commands from the toml file
@@ -413,7 +413,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                                 cfg.map(|c| c.tests).unwrap_or(false),
                             )
                             .with_context(|| {
-                                format!("while writing top level rule for package: {}", &dep.pkg)
+                                format!("while writing top level rule for package: {}", dep.pkg)
                             })
                             .context("writing top level rule")?;
 
@@ -426,7 +426,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                                 cfg.and_then(|cfg| cfg.testonly).unwrap_or(false),
                             )
                             .with_context(|| {
-                                format!("while writing alias rule for package: {}", &dep.pkg)
+                                format!("while writing alias rule for package: {}", dep.pkg)
                             })
                             .context("writing alias rule")?;
 
@@ -439,7 +439,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                                 .with_context(|| {
                                     format!(
                                         "while writing top level rule for package: {}",
-                                        &dep.pkg
+                                        dep.pkg
                                     )
                                 })
                                 .context("writing Fuchsia SDK metadata for top level rule")?;
@@ -607,7 +607,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                                 bin_cargo_target,
                                 pkg_name,
                                 pkg_version,
-                                &bin_cfg.output_name,
+                                bin_cfg.output_name,
                                 old_options.binary_name,
                             );
                         }

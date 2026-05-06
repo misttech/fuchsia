@@ -353,7 +353,7 @@ pub fn device_list_untagged(
 ) -> Result<()> {
     let list_result = list::ListResult::from(devices);
     writer
-        .machine_or_else(&list_result, || format!("{}", &list_result))
+        .machine_or_else(&list_result, || format!("{}", list_result))
         .bug_context("Failed to write result")
 }
 

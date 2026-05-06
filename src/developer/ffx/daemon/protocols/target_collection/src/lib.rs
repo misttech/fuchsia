@@ -673,10 +673,10 @@ impl FidlProtocol for TargetCollectionProtocol {
                                 if tc2.remove_target(id.clone()) {
                                     log::info!(
                                         "Successfully removed emulator instance ['{}']",
-                                        &id
+                                        id
                                     );
                                 } else {
-                                    log::error!("Unable to remove emulator instance ['{}']", &id);
+                                    log::error!("Unable to remove emulator instance ['{}']", id);
                                 };
                             }
                         }

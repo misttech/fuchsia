@@ -230,7 +230,7 @@ where
             "duplicate key: '{}', found while inserting value: '{}', the previous value was: '{}'",
             self.key(),
             self.new_value(),
-            &self.previous_value()
+            self.previous_value()
         )
     }
 }

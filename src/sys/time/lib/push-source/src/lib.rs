@@ -137,7 +137,7 @@ impl PushSourceInternal {
 
     /// Push a new update to all existing clients.
     pub async fn push_update(&mut self, update: Update) {
-        log::debug!("push_update: received update: {:?}", &update);
+        log::debug!("push_update: received update: {:?}", update);
         match &update {
             Update::Sample(sample) => self.latest_sample = Some(Arc::clone(&sample)),
             Update::Status(status) => self.latest_status = *status,

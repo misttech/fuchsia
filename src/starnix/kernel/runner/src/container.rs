@@ -702,7 +702,7 @@ async fn create_container(
         time_adjustment_proxy,
         device_tree,
     )
-    .with_source_context(|| format!("creating Kernel: {}", &start_info.program.name))?;
+    .with_source_context(|| format!("creating Kernel: {}", start_info.program.name))?;
     let (fs_context, feature_mounts) = create_fs_context(
         kernel.kthreads.unlocked_for_async().deref_mut(),
         &kernel,
@@ -793,7 +793,7 @@ async fn create_container(
             argv[0].as_bytes().into(),
             OpenFlags::RDONLY,
         )
-        .with_source_context(|| format!("opening init: {:?}", &argv[0]))?;
+        .with_source_context(|| format!("opening init: {:?}", argv[0]))?;
 
     let initial_name = if start_info.program.init.is_empty() {
         TaskCommand::default()
@@ -832,7 +832,7 @@ async fn create_container(
         Arc::clone(&fs_context),
         &rlimits,
     )
-    .with_source_context(|| format!("creating init task: {:?}", &start_info.program.init))?;
+    .with_source_context(|| format!("creating init task: {:?}", start_info.program.init))?;
 
     execute_task_with_prerun_result(
         kernel.kthreads.unlocked_for_async().deref_mut(),
@@ -975,7 +975,7 @@ fn mount_filesystems(
     let _ = mounts_iter.next();
     for mount_spec in mounts_iter {
         let action = MountAction::from_spec(locked, system_task, pkg_dir_proxy, mount_spec)
-            .with_source_context(|| format!("creating filesystem from spec: {}", &mount_spec))?;
+            .with_source_context(|| format!("creating filesystem from spec: {}", mount_spec))?;
         let mount_point = system_task
             .lookup_path_from_root(locked, action.path.as_ref())
             .with_source_context(|| format!("lookup path from root: {}", action.path))?;

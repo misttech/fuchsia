@@ -420,7 +420,7 @@ impl UpdatePackageBuilder {
                 firmware.insert(
                     firmware_type.clone(),
                     ImageMetadata::for_path(&source, url.clone(), destination.clone())
-                        .with_context(|| format!("Failed to read/hash {:?}", &source))?,
+                        .with_context(|| format!("Failed to read/hash {:?}", source))?,
                 );
             }
 

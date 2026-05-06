@@ -884,7 +884,7 @@ impl ComponentInstance {
                 InstanceState::Started(_, _) => {
                     error!(
                         "component {} was started while it was stopping or shutting down, this should be impossible",
-                        &self.moniker
+                        self.moniker
                     );
                     return Err(StopActionError::ComponentStartedDuringShutdown);
                 }

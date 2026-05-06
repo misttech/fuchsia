@@ -208,12 +208,12 @@ impl InputDevice {
                 }
             }
             Err(e) => {
-                panic!("failed to read `InputReportsReader` request: {:?}", &e);
+                panic!("failed to read `InputReportsReader` request: {:?}", e);
             }
             _ => {
                 panic!(
                     "InputDevice::handle_device_request does not support this request: {:?}",
-                    &request
+                    request
                 );
             }
         }

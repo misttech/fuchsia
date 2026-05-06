@@ -287,7 +287,7 @@ pub async fn run_wellknown_ota(
                 .context("Failed to create OTA env")?;
             println!(
                 "recovery-ota: Starting TUF OTA on channel '{}' against version '{}'",
-                &channel, &version
+                channel, version
             );
             ota_env.do_ota(&channel, &version).await
         }
@@ -296,7 +296,7 @@ pub async fn run_wellknown_ota(
             // Check for testing override
             println!(
                 "recovery-ota: trying Omaha OTA on channel '{}' against version '{}', with service URL '{}' and app id '{}'",
-                &channel, &version, &service_url, &app_id
+                channel, version, service_url, app_id
             );
 
             let ota_env = OtaEnvBuilder::new(outgoing_dir)
@@ -317,7 +317,7 @@ pub async fn run_wellknown_ota(
 
             println!(
                 "recovery-ota: Starting Omaha OTA on channel '{}' against version '{}'",
-                &channel, &version
+                channel, version
             );
             let res = ota_env?.do_ota(&channel, &version).await;
             println!("recovery-ota: OTA result: {:?}", res);

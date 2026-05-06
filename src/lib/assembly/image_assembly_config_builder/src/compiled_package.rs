@@ -72,7 +72,7 @@ impl CompiledPackageBuilder {
         if name != self.name {
             bail!(
                 "Builder name '{}' does not match CompiledPackageDefinition name '{name}'",
-                &self.name
+                self.name
             );
         }
 
@@ -124,8 +124,8 @@ impl CompiledPackageBuilder {
                 .map_err(|shard| {
                     anyhow!(
                         "Duplicate component shard found for {}/meta/{}.cm: {} \n          {}\n        and\n          {}",
-                        &self.name,
-                        &component_name,
+                        self.name,
+                        component_name,
                         shard.key(),
                         shard.previous_value(),
                         shard.new_value(),
@@ -197,7 +197,7 @@ impl CompiledPackageBuilder {
         let package_manifest_path = outdir.join("package_manifest.json");
         package_builder.manifest_path(&package_manifest_path);
         package_builder.manifest_blobs_relative_to(RelativeTo::File);
-        let metafar_path = outdir.join(format!("{}.far", &self.name));
+        let metafar_path = outdir.join(format!("{}.far", self.name));
         package_builder.build(&outdir, metafar_path).context("building package")?;
 
         Ok(package_manifest_path)

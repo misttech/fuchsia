@@ -118,7 +118,7 @@ pub enum ServerError {
 
 impl ServerError {
     pub fn close(self, control: BatchIteratorControlHandle) {
-        warn!("Closing BatchIterator: {}", &self);
+        warn!("Closing BatchIterator: {}", self);
         let epitaph = match self {
             ServerError::MissingDataType | ServerError::DataTooBig => ZxStatus::INVALID_ARGS,
             ServerError::EmptySelectors

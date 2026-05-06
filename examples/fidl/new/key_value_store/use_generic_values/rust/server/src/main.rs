@@ -33,7 +33,7 @@ fn sum<T: Add + Add<Output = T> + Copy>(operands: [T; 2]) -> T {
 /// response.
 fn write(inserting: Value, mut entry: OccupiedEntry<'_, String, Value>) -> Value {
     entry.insert(inserting.clone());
-    println!("Wrote key: {}, value: {:?}", entry.key(), &inserting);
+    println!("Wrote key: {}, value: {:?}", entry.key(), inserting);
     inserting
 }
 
@@ -65,7 +65,7 @@ fn write_item(
                     }
                     Value::String(old) => {
                         if let Value::String(new) = attempt.value {
-                            return Ok(write(Value::String(format!("{}{}", old, &new)), entry));
+                            return Ok(write(Value::String(format!("{}{}", old, new)), entry));
                         }
                     }
                     Value::Uint64(old) => {
@@ -104,7 +104,7 @@ fn write_item(
             Err(WriteError::AlreadyExists)
         }
         Entry::Vacant(entry) => {
-            println!("Wrote key: {}, value: {:?}", entry.key(), &attempt.value);
+            println!("Wrote key: {}, value: {:?}", entry.key(), attempt.value);
             entry.insert(attempt.value.clone());
             Ok(attempt.value)
         }

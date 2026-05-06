@@ -97,12 +97,12 @@ where
                 if self.driver_state.lock().is_active_and_ready() {
                     // If this happens while we are active and ready then we
                     // are out of sync and will need a reset.
-                    error!("Error while processing {:?}: {:?}", event_copy, &err);
+                    error!("Error while processing {:?}: {:?}", event_copy, err);
                     Err(err)
                 } else {
                     // If this happens while we aren't active and ready then
                     // that is somewhat expected and we can continue after logging.
-                    warn!("Error while processing {:?}: {:?}", event_copy, &err);
+                    warn!("Error while processing {:?}: {:?}", event_copy, err);
                     Ok(())
                 }
             })

@@ -238,14 +238,14 @@ impl Registry {
             // Don't swallow the root cause of the error without a trace. It may
             // be impossible to correlate resulting error to its root cause
             // otherwise.
-            error!("URL parse error: url={}: {}", &component_url, e);
+            error!("URL parse error: url={}: {}", component_url, e);
             fresolution::ResolverError::Internal
         })?;
         let component_decls_guard = self.component_decls.lock().await;
         if let Some(resolvable_component) = component_decls_guard.get(&parsed_url).cloned() {
             Self::load_absolute_url(component_url, resolvable_component).await.map_err(|e| {
                 // See similar above.
-                error!("URL resolution error for: url={}: {}", &component_url, e);
+                error!("URL resolution error for: url={}: {}", component_url, e);
                 fresolution::ResolverError::Internal
             })
         } else {

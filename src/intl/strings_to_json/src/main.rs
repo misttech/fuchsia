@@ -88,14 +88,14 @@ fn run(args: Args) -> Result<(), Error> {
     let source_reader = parser::Instance::reader(file_gaggle.source_strings_file);
     let mut source_parser = parser::Instance::new(args.verbose);
     let source_dictionary = source_parser.parse(source_reader).with_context(|| {
-        format!("while parsing source dictionary: {:?}", &args.source_strings_file)
+        format!("while parsing source dictionary: {:?}", args.source_strings_file)
     })?;
 
     // Repetitive, but allows us to avoid copying dictionaries, which could be large.
     let target_reader = parser::Instance::reader(file_gaggle.target_strings_file);
     let mut target_parser = parser::Instance::new(args.verbose);
     let target_dictionary = target_parser.parse(target_reader).with_context(|| {
-        format!("while parsing target dictionary: {:?}", &args.target_strings_file)
+        format!("while parsing target dictionary: {:?}", args.target_strings_file)
     })?;
 
     let model = json::model_from_dictionaries(

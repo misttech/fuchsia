@@ -189,7 +189,7 @@ impl Server {
         while let Some(PropertyManagerRequest::SetProfile { intl_profile, responder }) =
             stream.try_next().await.context("Error running property manager server")?
         {
-            debug!("Received profile set request: {:#?}", &intl_profile);
+            debug!("Received profile set request: {:#?}", intl_profile);
             let changed = self.set_profile(intl_profile);
             responder.send().context("Error sending response")?;
             debug!("Sent profile set response");

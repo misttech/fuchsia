@@ -169,7 +169,7 @@ where
         &self,
         request: fonts::TypefaceRequest,
     ) -> Result<fonts::TypefaceResponse, Error> {
-        debug!("match_request: {:?}", &TypefaceRequestFormatter(&request));
+        debug!("match_request: {:?}", TypefaceRequestFormatter(&request));
 
         let (typeface, request) =
             if let Some(postscript_name) = query_field!(request, postscript_name) {
@@ -200,16 +200,16 @@ where
         if typeface_response.is_none() && self.is_internal_build {
             // Skip logging this too often.
             let mut guard = self.rate_limited_logs.borrow_mut();
-            let formatter_str = format!("{:?}", &TypefaceRequestFormatter(&request));
+            let formatter_str = format!("{:?}", TypefaceRequestFormatter(&request));
             if !guard.contains_key(&formatter_str) {
-                warn!("Unfulfilled request {}", &formatter_str);
+                warn!("Unfulfilled request {}", formatter_str);
                 guard.insert(formatter_str, ());
             }
         }
 
         let typeface_response = typeface_response.unwrap_or_else(fonts::TypefaceResponse::default);
 
-        debug!("Response: {:?}", &TypefaceResponseFormatter(&typeface_response));
+        debug!("Response: {:?}", TypefaceResponseFormatter(&typeface_response));
 
         // Note that not finding a typeface is not an error, as long as the query was legal.
         Ok(typeface_response)

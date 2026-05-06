@@ -577,7 +577,7 @@ async fn main() -> Result<(), Error> {
     let _status = test_avrcp_svc.get_controller_for_target(&device_id.into(), t_server).await?;
     eprintln!(
         "Test controller obtained to device \"{device}\" AVRCP remote target service",
-        device = &device_id,
+        device = device_id,
     );
 
     // Create a channel for our Request<TestBrowseController> to live
@@ -587,7 +587,7 @@ async fn main() -> Result<(), Error> {
         test_avrcp_svc.get_browse_controller_for_target(&device_id.into(), tb_server).await?;
     eprintln!(
         "Test browse controller obtained to device \"{device}\" AVRCP remote target service",
-        device = &device_id,
+        device = device_id,
     );
 
     // Connect to avrcp controller service.
@@ -601,7 +601,7 @@ async fn main() -> Result<(), Error> {
     let _status = avrcp_svc.get_controller_for_target(&device_id.into(), c_server).await?;
     eprintln!(
         "Controller obtained to device \"{device}\" AVRCP remote target service",
-        device = &device_id,
+        device = device_id,
     );
 
     // Create a channel for our Request<Controller> to live
@@ -610,7 +610,7 @@ async fn main() -> Result<(), Error> {
     let _status = avrcp_svc.get_browse_controller_for_target(&device_id.into(), bc_server).await?;
     eprintln!(
         "Browse controller obtained to device \"{device}\" AVRCP remote target service",
-        device = &device_id,
+        device = device_id,
     );
 
     // setup repl

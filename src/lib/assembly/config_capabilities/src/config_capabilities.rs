@@ -116,7 +116,7 @@ pub fn build_config_capability_package(
     capabilities: CapabilityNamedMap,
     outdir: &Utf8Path,
 ) -> Result<(Utf8PathBuf, PackageManifest)> {
-    std::fs::create_dir_all(&outdir).with_context(|| format!("creating directory {}", &outdir))?;
+    std::fs::create_dir_all(&outdir).with_context(|| format!("creating directory {}", outdir))?;
 
     // Config capability packages built by assembly are never produced by
     // assembly tools from one Fuchsia release and then read by binaries from

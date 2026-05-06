@@ -166,7 +166,7 @@ impl<'a> MultiFvmBuilder<'a> {
         match &output {
             FvmOutput::Standard(config) => {
                 let fvm_tool = tools.get_tool("fvm")?;
-                let path = self.gendir.join(format!("{}.blk", &config.name));
+                let path = self.gendir.join(format!("{}.blk", config.name));
                 let fvm_type = FvmType::Standard {
                     resize_image_file_to_fit: config.resize_image_file_to_fit,
                     truncate_to_length: config.truncate_to_length,
@@ -182,7 +182,7 @@ impl<'a> MultiFvmBuilder<'a> {
                 for filesystem_name in &config.filesystems {
                     let fs = self
                         .get_filesystem(tools, filesystem_name)
-                        .with_context(|| format!("Including filesystem: {}", &filesystem_name))?;
+                        .with_context(|| format!("Including filesystem: {}", filesystem_name))?;
                     builder.filesystem(fs);
                 }
                 builder.build()?;
@@ -204,7 +204,7 @@ impl<'a> MultiFvmBuilder<'a> {
             }
             FvmOutput::Sparse(config) => {
                 let fvm_tool = tools.get_tool("fvm")?;
-                let path = self.gendir.join(format!("{}.blk", &config.name));
+                let path = self.gendir.join(format!("{}.blk", config.name));
                 let fvm_type = FvmType::Sparse { max_disk_size: config.max_disk_size };
                 let compress = true;
                 let mut builder = FvmBuilder::new(
@@ -230,7 +230,7 @@ impl<'a> MultiFvmBuilder<'a> {
             }
             FvmOutput::Nand(config) => {
                 // First, build the sparse FVM.
-                let sparse_tmp_name = format!("{}.tmp", &config.name);
+                let sparse_tmp_name = format!("{}.tmp", config.name);
                 let sparse_output = FvmOutput::Sparse(SparseFvm {
                     name: sparse_tmp_name.clone(),
                     filesystems: config.filesystems.clone(),
@@ -241,8 +241,8 @@ impl<'a> MultiFvmBuilder<'a> {
 
                 // Second, prepare it for NAND.
                 let tool = tools.get_tool("fvm")?;
-                let sparse_output = self.gendir.join(format!("{}.blk", &sparse_tmp_name));
-                let output = self.gendir.join(format!("{}.blk", &config.name));
+                let sparse_output = self.gendir.join(format!("{}.blk", sparse_tmp_name));
+                let output = self.gendir.join(format!("{}.blk", config.name));
                 let compression = if config.compress { Some("lz4".to_string()) } else { None };
                 let builder = NandFvmBuilder {
                     tool,

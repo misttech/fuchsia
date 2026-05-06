@@ -68,7 +68,7 @@ impl ImeState {
             .with_context(|| {
                 format!(
                     "ImeState::forward_event: error sending state update to ImeClient: {:?}",
-                    &keyboard_event
+                    keyboard_event
                 )
             })?;
         Ok(())

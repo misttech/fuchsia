@@ -72,7 +72,7 @@ fn gen_output(parent_node: &LedgerViewNode, with_color: bool, indent_level: usiz
         "{}[{}] {}\n",
         INDENT_STR.repeat(indent_level),
         parent_node.outcome.format(with_color),
-        &parent_node.data
+        parent_node.data
     );
 
     for child_node in &parent_node.children {

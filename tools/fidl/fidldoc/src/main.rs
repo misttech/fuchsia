@@ -120,7 +120,7 @@ fn run(opt: Opt) -> Result<(), Error> {
     };
     info!("Using config file from {}", fidl_config_file.display());
     let fidl_config = read_fidldoc_config(&fidl_config_file)
-        .with_context(|| format!("Error parsing {}", &fidl_config_file.display()))?;
+        .with_context(|| format!("Error parsing {}", fidl_config_file.display()))?;
 
     create_output_dir(opt.merge, &output_path)
         .with_context(|| format!("Unable to create output directory {}", output_path.display()))?;
@@ -163,7 +163,7 @@ fn run(opt: Opt) -> Result<(), Error> {
         .expect("Unable to write FIDL reference files");
 
     if !opt.silent {
-        println!("Generated documentation at {}", &output_path_string);
+        println!("Generated documentation at {}", output_path_string);
     }
     Ok(())
 }
@@ -229,8 +229,8 @@ fn render_fidl_library(
     let template = select_template(&template_type, &output_path)
         .with_context(|| format!("Unable to instantiate template {:?}", template_type));
     match template?.render_library(&package, &fidl_doc) {
-        Err(why) => error!("Unable to render library {}: {:?}", &package, why),
-        Ok(()) => info!("Generated library documentation for {}", &package),
+        Err(why) => error!("Unable to render library {}: {:?}", package, why),
+        Ok(()) => info!("Generated library documentation for {}", package),
     }
 
     Ok(())

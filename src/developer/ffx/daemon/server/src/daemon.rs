@@ -737,7 +737,7 @@ impl Daemon {
                     }
                 }
                 add_daemon_metrics_event(
-                    format!("connect_to_protocol: {}", &name_for_analytics).as_str(),
+                    format!("connect_to_protocol: {}", name_for_analytics).as_str(),
                 )
                 .await;
             }

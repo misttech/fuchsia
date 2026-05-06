@@ -139,10 +139,10 @@ impl Loader {
                 if let Some(p) = tzdata_dir_path {
                     let for_path = fs::File::open(p)
                         .map_err(|e| Error::Fail(format_err!("io error: {}", e)))
-                        .with_context(|| format!("error while opening: {:?}", &tzdata_dir_path))?;
+                        .with_context(|| format!("error while opening: {:?}", tzdata_dir_path))?;
                     let meta = for_path
                         .metadata()
-                        .with_context(|| format!("while getting metadata for: {:?}", &p))?;
+                        .with_context(|| format!("while getting metadata for: {:?}", p))?;
                     if !meta.is_dir() {
                         return Err(Error::Fail(format_err!("not a directory: {}", p)));
                     }
@@ -173,7 +173,7 @@ impl Loader {
             Some(tz_revision_file_path) => {
                 let expected_revision_id = std::fs::read_to_string(tz_revision_file_path)
                     .with_context(|| {
-                        format!("could not read file: {:?}", &tz_revision_file_path)
+                        format!("could not read file: {:?}", tz_revision_file_path)
                     })?;
                 if !(MIN_TZ_REVISION_ID_LENGTH..=MAX_TZ_REVISION_ID_LENGTH)
                     .contains(&expected_revision_id.len())
@@ -191,7 +191,7 @@ impl Loader {
                 }
 
                 let actual_revision_id = ucal::get_tz_data_version().with_context(|| {
-                    format!("while getting data version from: {:?}", &tz_revision_file_path)
+                    format!("while getting data version from: {:?}", tz_revision_file_path)
                 })?;
                 if expected_revision_id != actual_revision_id {
                     return Err(Error::Status(

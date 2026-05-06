@@ -44,7 +44,7 @@ impl Watch<Arc<RepositoryConfig>> for InspectableRepositoryConfigWatcher {
             config.mirrors().iter().enumerate().for_each(|(i, mirror_config)| {
                 n.record_child(i.to_string(), |n| {
                     n.record_string("mirror_url", format!("{}", mirror_config.mirror_url()));
-                    n.record_string("subscribe", format!("{:?}", &mirror_config.subscribe()));
+                    n.record_string("subscribe", format!("{:?}", mirror_config.subscribe()));
                     n.record_string(
                         "blob_mirror_url",
                         format!("{}", mirror_config.blob_mirror_url()),

@@ -100,7 +100,7 @@ pub trait ComponentInstanceInterface: Sized + Send + Sync {
                 ExtendedInstanceInterface::AboveRoot(_) => panic!(
                     "the current component ({}) must be root, but it's not a prefix for {}",
                     current.moniker(),
-                    &target_moniker
+                    target_moniker
                 ),
                 ExtendedInstanceInterface::Component(parent) => current = parent,
             }

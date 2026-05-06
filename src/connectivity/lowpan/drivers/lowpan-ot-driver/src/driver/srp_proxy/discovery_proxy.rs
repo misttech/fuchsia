@@ -537,16 +537,16 @@ impl DiscoveryProxy {
                     if ot_ip_addresses.is_empty() {
                         warn!(
                             tag = "srp_discovery_proxy";
-                            "Unable to resolve {:?} to an IPv6 address.", &name_local_domain
+                            "Unable to resolve {:?} to an IPv6 address.", name_local_domain
                         );
                         debug!(
                             tag = "srp_discovery_proxy";
-                            "Full list for {:?} was {:?}", &name_local_domain, addresses
+                            "Full list for {:?} was {:?}", name_local_domain, addresses
                         );
                     } else {
                         debug!(
                             tag = "srp_discovery_proxy";
-                            "Resolved {:?} to {:?}", &name_local_domain, ot_ip_addresses
+                            "Resolved {:?} to {:?}", name_local_domain, ot_ip_addresses
                         );
                     }
 

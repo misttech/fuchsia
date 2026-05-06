@@ -391,7 +391,7 @@ impl<T: DeviceStateSpec, BT: DeviceLayerTypes> PartialEq<BaseDeviceId<T, BT>>
 impl<T: DeviceStateSpec, BT: DeviceLayerTypes> Debug for BaseWeakDeviceId<T, BT> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { cookie } = self;
-        write!(f, "Weak{}({:?})", T::DEBUG_TYPE, &cookie.bindings_id)
+        write!(f, "Weak{}({:?})", T::DEBUG_TYPE, cookie.bindings_id)
     }
 }
 
@@ -479,7 +479,7 @@ impl<T: DeviceStateSpec, BT: DeviceLayerTypes> Ord for BaseDeviceId<T, BT> {
 impl<T: DeviceStateSpec, BT: DeviceLayerTypes> Debug for BaseDeviceId<T, BT> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { rc } = self;
-        write!(f, "{}({:?})", T::DEBUG_TYPE, &rc.weak_cookie.bindings_id)
+        write!(f, "{}({:?})", T::DEBUG_TYPE, rc.weak_cookie.bindings_id)
     }
 }
 
@@ -534,7 +534,7 @@ pub struct BasePrimaryDeviceId<T: DeviceStateSpec, BT: DeviceLayerTypes> {
 impl<T: DeviceStateSpec, BT: DeviceLayerTypes> Debug for BasePrimaryDeviceId<T, BT> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self { rc } = self;
-        write!(f, "Primary{}({:?})", T::DEBUG_TYPE, &rc.weak_cookie.bindings_id)
+        write!(f, "Primary{}({:?})", T::DEBUG_TYPE, rc.weak_cookie.bindings_id)
     }
 }
 

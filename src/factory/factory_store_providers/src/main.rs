@@ -51,7 +51,7 @@ async fn parse_bootfs<'a>(vmo: zx::Vmo) -> Arc<directory::immutable::Simple> {
     match BootfsParser::create_from_vmo(vmo) {
         Ok(parser) => parser.iter().for_each(|result| match result {
             Ok(entry) => {
-                log::info!("Found {} in factory bootfs", &entry.name);
+                log::info!("Found {} in factory bootfs", entry.name);
 
                 let name = entry.name;
                 let path_parts: Vec<&str> = name.split("/").collect();
@@ -116,7 +116,7 @@ async fn create_dir_from_context<'a>(
         let contents = match read_file_from_proxy(dir, path).await {
             Ok(contents) => contents,
             Err(_) => {
-                log::error!("Failed to find {}, skipping", &path);
+                log::error!("Failed to find {}, skipping", path);
                 continue;
             }
         };
@@ -126,7 +126,7 @@ async fn create_dir_from_context<'a>(
 
         for validator_context in &context.validator_contexts {
             if validator_context.paths_to_validate.contains(path) {
-                log::info!("Validating {} with {} validator", &path, &validator_context.name);
+                log::info!("Validating {} with {} validator", path, validator_context.name);
                 if let Err(err) = validator_context.validator.validate(&path, &contents[..]) {
                     log::error!("{}", err);
                     failed_validation = true;
@@ -144,7 +144,7 @@ async fn create_dir_from_context<'a>(
                 log::error!("Failed to add file {} to directory: {}", dest, err);
             });
         } else if !validated {
-            log::error!("{} was never validated, ignored", &path);
+            log::error!("{} was never validated, ignored", path);
         }
     }
 

@@ -47,7 +47,7 @@ pub fn model_from_dictionaries(
         match target_dictionary.get(name) {
             None => {
                 if replace_with_warning {
-                    messages.insert(message_id, format!("UNTRANSLATED({})", &message));
+                    messages.insert(message_id, format!("UNTRANSLATED({})", message));
                 } else {
                     return Err(anyhow::anyhow!(
                         "not found: translation for\n\tname: '{}'\n\tmessage: '{}'",

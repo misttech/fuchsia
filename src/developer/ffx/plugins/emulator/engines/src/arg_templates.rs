@@ -210,7 +210,7 @@ pub fn process_flag_template(emu_config: &EmulatorConfiguration) -> Result<FlagD
     let template_text = if let Some(template_path) = &emu_config.runtime.template {
         std::fs::read_to_string(template_path).context(format!(
             "couldn't locate template file from path {:?}",
-            &emu_config.runtime.template
+            emu_config.runtime.template
         ))?
     } else {
         if emu_config.guest.is_efi() || emu_config.guest.is_gpt {

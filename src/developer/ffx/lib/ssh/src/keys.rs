@@ -1113,7 +1113,7 @@ fn read_public_key_from_private_string(
     if element != AUTH_MAGIC {
         return Err(SshKeyInternalError {
             kind: SshKeyErrorKind::BadKeyFormat,
-            message: format!("Invalid private key header {:?}", &element),
+            message: format!("Invalid private key header {:?}", element),
         });
     }
 
@@ -1122,14 +1122,14 @@ fn read_public_key_from_private_string(
     if "none" != str::from_utf8(&element)? {
         return Err(SshKeyInternalError {
             kind: SshKeyErrorKind::BadKeyFormat,
-            message: format!("Invalid private key header, expected 'none' {:?}", &element),
+            message: format!("Invalid private key header, expected 'none' {:?}", element),
         });
     }
     element = read_cstring(&mut buf)?;
     if "none" != str::from_utf8(&element)? {
         return Err(SshKeyInternalError {
             kind: SshKeyErrorKind::BadKeyFormat,
-            message: format!("Invalid private key header, expected 'none' {:?}", &element),
+            message: format!("Invalid private key header, expected 'none' {:?}", element),
         });
     }
     let mut u32_bytes = [0u8; 4];
@@ -1137,7 +1137,7 @@ fn read_public_key_from_private_string(
     if u32::from_be_bytes(u32_bytes) != 0 {
         return Err(SshKeyInternalError {
             kind: SshKeyErrorKind::BadKeyFormat,
-            message: format!("Invalid private key header, expected 0, got {:?}", &u32_bytes),
+            message: format!("Invalid private key header, expected 0, got {:?}", u32_bytes),
         });
     }
 
@@ -1146,7 +1146,7 @@ fn read_public_key_from_private_string(
     if u32::from_be_bytes(u32_bytes) != 1 {
         return Err(SshKeyInternalError {
             kind: SshKeyErrorKind::BadKeyFormat,
-            message: format!("Invalid private key count, expected 1, got {:?}", &u32_bytes),
+            message: format!("Invalid private key count, expected 1, got {:?}", u32_bytes),
         });
     }
 

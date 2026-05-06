@@ -81,7 +81,7 @@ impl PartitionsConfig {
                 match filetype {
                     FileType::Unknown => {
                         let bytes = std::fs::read(&path)
-                            .with_context(|| format!("Reading contents of {}", &path))?;
+                            .with_context(|| format!("Reading contents of {}", path))?;
                         let digest = digest::digest(&digest::SHA256, &bytes);
                         let digest_string = hex::encode(digest.as_ref());
                         *path = digest_string.into();

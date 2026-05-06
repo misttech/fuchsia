@@ -169,7 +169,7 @@ impl ImeHandler {
         assert!(
             key_event.timestamp.is_some(),
             "dispatch_key: got a key_event without a timestamp: {:?}",
-            &key_event
+            key_event
         );
         match self.key_event_injector.inject(&key_event).await {
             Err(err) => self.metrics_logger.log_error(

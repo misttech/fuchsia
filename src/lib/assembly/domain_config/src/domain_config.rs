@@ -30,7 +30,7 @@ impl DomainConfigPackage {
     pub fn build(self, outdir: impl AsRef<Utf8Path>) -> Result<(Utf8PathBuf, PackageManifest)> {
         let outdir = outdir.as_ref();
         std::fs::create_dir_all(&outdir)
-            .with_context(|| format!("creating directory {}", &outdir))?;
+            .with_context(|| format!("creating directory {}", outdir))?;
 
         // Domain config packages are never produced by assembly tools from one
         // Fuchsia release and then read by binaries from another Fuchsia
@@ -105,7 +105,7 @@ impl DomainConfigPackage {
             let out_data = cml::translate::compile(&cml, cml::CompileOptions::default())
                 .with_context(|| format!("compiling domain config routes"))?;
 
-            let cm_name = format!("{}.cm", &self.config.name);
+            let cm_name = format!("{}.cm", self.config.name);
             let cm_path = outdir.join(&cm_name);
             let mut cm_file = std::fs::File::create(&cm_path)
                 .with_context(|| format!("creating domain config routes: {cm_path}"))?;
@@ -121,7 +121,7 @@ impl DomainConfigPackage {
 
         let manifest = builder
             .build(&outdir, metafar_path)
-            .with_context(|| format!("building domain config package: {}", &self.config.name))?;
+            .with_context(|| format!("building domain config package: {}", self.config.name))?;
 
         Ok((manifest_path, manifest))
     }

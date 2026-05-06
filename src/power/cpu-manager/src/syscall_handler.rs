@@ -143,10 +143,10 @@ impl SyscallHandler {
             let verbose_string = format!(
                 "{}: zx_system_set_performance_info returned error: {}",
                 self.name(),
-                &error_string
+                error_string
             );
-            log::error!("{}", &verbose_string);
-            return Err(format_err!("{}", &verbose_string).into());
+            log::error!("{}", verbose_string);
+            return Err(format_err!("{}", verbose_string).into());
         }
 
         Ok(MessageReturn::SetCpuPerformanceInfo)
@@ -180,10 +180,10 @@ impl SyscallHandler {
             let verbose_string = format!(
                 "{}: zx_system_set_processor_power_domain returned error: {}",
                 self.name(),
-                &error_string
+                error_string
             );
-            log::error!("{}", &verbose_string);
-            return Err(format_err!("{}", &verbose_string).into());
+            log::error!("{}", verbose_string);
+            return Err(format_err!("{}", verbose_string).into());
         }
 
         Ok(MessageReturn::SetProcessorPowerDomain)
@@ -203,10 +203,10 @@ impl SyscallHandler {
             let verbose_string = format!(
                 "{}: zx_system_set_processor_power_state returned error: {}",
                 self.name(),
-                &error_string
+                error_string
             );
-            log::error!("{}", &verbose_string);
-            return Err(format_err!("{}", &verbose_string).into());
+            log::error!("{}", verbose_string);
+            return Err(format_err!("{}", verbose_string).into());
         }
 
         Ok(MessageReturn::SetProcessorPowerState)

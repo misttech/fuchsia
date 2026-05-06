@@ -119,8 +119,8 @@ fn process_path_str(input_path: String, column_width: usize, is_duplicate: bool)
     if path_str.len() > (column_width - 3) {
         let mut v: Vec<String> =
             textwrap::wrap(&path_str, column_width - 5).iter().map(|x| x.to_string()).collect();
-        let first_line = format!("   {0: <1$}", &v[0], column_width - 3);
-        let last_line = format!("{0: <1$}", &v[v.len() - 1], column_width - 5);
+        let first_line = format!("   {0: <1$}", v[0], column_width - 3);
+        let last_line = format!("{0: <1$}", v[v.len() - 1], column_width - 5);
         let len = v.len();
         v[0] = first_line;
         v[len - 1] = last_line;

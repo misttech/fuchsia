@@ -824,7 +824,7 @@ impl TargetCollection {
         match ret {
             Some(target) if target.is_enabled() => {
                 if !target.is_host_pipe_running() {
-                    log::debug!("Reconnecting to {:?}", &target.addrs());
+                    log::debug!("Reconnecting to {:?}", target.addrs());
                     target.run_host_pipe(overnet_node);
                 }
                 true

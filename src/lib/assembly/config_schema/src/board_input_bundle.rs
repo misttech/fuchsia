@@ -136,7 +136,7 @@ impl FromStr for IncludeInBuildType {
             "all" => Ok(Self::All),
             "eng" => Ok(Self::Eng),
             "user_and_userdebug" => Ok(Self::UserAndUserdebug),
-            _ => Err(anyhow!("Cannot parse --include-in from string: {}", &s)),
+            _ => Err(anyhow!("Cannot parse --include-in from string: {}", s)),
         }
     }
 }

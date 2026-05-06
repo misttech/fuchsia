@@ -161,7 +161,7 @@ impl notify::EventHandler for EmulatorWatcherHandler {
                                 .map_err(|e| {
                                     log::error!(
                                         "Error sending emulator instance event: {:?} {e:?}",
-                                        &p
+                                        p
                                     )
                                 });
                         }
@@ -179,7 +179,7 @@ impl notify::EventHandler for EmulatorWatcherHandler {
                                 Remove(RemoveKind::Folder),
                             ))
                             .map_err(|e| {
-                                log::error!("Error sending emulator instance event: {:?} {e:?}", &p)
+                                log::error!("Error sending emulator instance event: {:?} {e:?}", p)
                             });
                     }
                 }
@@ -227,7 +227,7 @@ impl EmulatorWatcher {
                         }
                         Ok(EngineOption::DoesNotExist(_)) => {
                             // This usually
-                            log::trace!("Emulator instance:{:?} does not exist.", &instance_name);
+                            log::trace!("Emulator instance:{:?} does not exist.", instance_name);
                             // Only remove if the kind is Remove. It is possible to get
                             // DoesNotExist if the json file for the instance is not written completely.
                             if kind == Remove(RemoveKind::Folder) {
@@ -275,8 +275,8 @@ impl EmulatorWatcher {
         if instance.is_running() {
             log::debug!(
                 "Making target from {} using ssh port {:?}",
-                &instance.get_name(),
-                &instance.get_ssh_port()
+                instance.get_name(),
+                instance.get_ssh_port()
             );
             Self::make_target(&instance)
         } else {

@@ -186,7 +186,7 @@ impl BluetoothHandler {
                         break;
                     },
                     Err(e) => {
-                        log::error!("failed to watch fuchsia.media.sessions2.SessionsWatcher: {:?}", &e);
+                        log::error!("failed to watch fuchsia.media.sessions2.SessionsWatcher: {:?}", e);
                         break;
                     },
                 }

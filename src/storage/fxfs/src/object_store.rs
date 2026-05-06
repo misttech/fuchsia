@@ -2148,7 +2148,7 @@ impl ObjectStore {
             if let LockState::Unlocked { .. } = &*lock_state {
                 *lock_state = LockState::Locking;
             } else {
-                panic!("Unexpected lock state: {:?}", &*lock_state);
+                panic!("Unexpected lock state: {:?}", *lock_state);
             }
         }
 

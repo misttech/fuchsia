@@ -226,7 +226,7 @@ impl StatusCommand {
     fn report_interface_error<E: ToString>(&self, name: &str, err: E) {
         match self.format {
             StatusFormat::Standard => {
-                println!("{}", &name);
+                println!("{}", name);
                 println!("\terror: {:?}", err.to_string());
             }
             StatusFormat::CSV => {

@@ -338,7 +338,7 @@ impl<'a> MetricState<'a> {
     /// Forcefully evaluate all [Metric]s to populate the cached values.
     pub fn evaluate_all_metrics(&self) {
         for (namespace, metrics) in self.metrics.iter() {
-            for (name, _value_source) in metrics.iter() {
+            for name in metrics.keys() {
                 self.evaluate_variable(namespace, &VariableName::new(name.clone()));
             }
         }

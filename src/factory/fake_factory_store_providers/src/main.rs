@@ -38,12 +38,12 @@ fn start_test_dir(config_path: &str) -> fio::DirectoryProxy {
     let files: HashMap<String, String> = match File::open(&config_path) {
         Ok(file) => from_reader(file).unwrap(),
         Err(err) => {
-            log::warn!("publishing empty directory for {} due to error: {:?}", &config_path, err);
+            log::warn!("publishing empty directory for {} due to error: {:?}", config_path, err);
             HashMap::new()
         }
     };
 
-    log::info!("Files from {}: {:?}", &config_path, files);
+    log::info!("Files from {}: {:?}", config_path, files);
 
     let mut tree = TreeBuilder::empty_dir();
 

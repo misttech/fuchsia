@@ -269,7 +269,7 @@ impl Partition {
 
         let proxy =
             fuchsia_component::client::connect_to_protocol_at_path::<BlockMarker>(&self.src)
-                .with_context(|| format!("Connecting to block device {}", &self.src))?;
+                .with_context(|| format!("Connecting to block device {}", self.src))?;
         let block_device = RemoteBlockClient::new(proxy).await?;
         let vmo_id = block_device.attach_vmo(&vmo).await?;
 

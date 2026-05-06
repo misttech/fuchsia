@@ -165,7 +165,7 @@ where
         }
 
         let (bucket, path) = split_gs_url(&base_url).context("Splitting gs URL.")?;
-        let prefix = format!("{}/{}", &path, &prefix);
+        let prefix = format!("{}/{}", path, prefix);
         if let Some(version) = get_latest_version(bucket, &prefix, auth, ui, &client).await? {
             result.push(format!("{}/{}", base_url, version));
         } else {

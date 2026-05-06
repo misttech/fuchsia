@@ -58,7 +58,7 @@ impl ComponentBuilder {
         let Self { name, manifest_shards, cmc_features } = self;
         // Write all generated files in a subdir with the name of the package.
         let outdir = outdir.as_ref().join(&name);
-        let cmlfile = outdir.join(format!("{}.cml", &name));
+        let cmlfile = outdir.join(format!("{}.cml", name));
         let mut args = vec!["merge".to_owned(), "--output".to_owned(), cmlfile.to_string()];
 
         args.extend(manifest_shards.iter().map(Utf8PathBuf::to_string));
@@ -67,7 +67,7 @@ impl ComponentBuilder {
             .run(&args)
             .with_context(|| format!("Failed to run cmc merge with shards {args:?}"))?;
 
-        let cmfile = outdir.join(format!("{}.cm", &name));
+        let cmfile = outdir.join(format!("{}.cm", name));
 
         let mut args = vec![
             "compile".into(),

@@ -202,7 +202,7 @@ async fn exec_env<W: Write>(
                 writeln!(
                     writer,
                     "{}",
-                    &ctx.load().context("Loading environment file")?.display(&g.level)
+                    ctx.load().context("Loading environment file")?.display(&g.level)
                 )?;
                 Ok(())
             }
@@ -211,7 +211,7 @@ async fn exec_env<W: Write>(
             writeln!(
                 writer,
                 "{}",
-                &ctx.load().context("Loading environment file")?.display(&None)
+                ctx.load().context("Loading environment file")?.display(&None)
             )?;
             Ok(())
         }

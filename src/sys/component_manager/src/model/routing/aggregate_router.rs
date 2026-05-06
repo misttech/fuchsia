@@ -133,7 +133,7 @@ impl AggregateRouter {
             for service_entry in dir_entries {
                 instances.push(ServiceInstance {
                     instance_name: service_entry.name.clone(),
-                    child_name: format!("{}", &service_entry.source_id),
+                    child_name: format!("{}", service_entry.source_id),
                     child_instance_name: Name::new(service_entry.service_instance.clone()).unwrap(),
                 });
             }

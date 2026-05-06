@@ -33,16 +33,16 @@ pub async fn delete(storage_admin: StorageAdminProxy, path: String) -> Result<()
 
     let path_str = match remote_path.relative_path.to_str() {
         Some(p) => p,
-        None => return Err(anyhow!("error parsing `{}`", &remote_path.relative_path.display())),
+        None => return Err(anyhow!("error parsing `{}`", remote_path.relative_path.display())),
     };
 
     if !storage_dir.exists(&path_str).await? {
-        return Err(anyhow!("file does not exist: {}", &path_str));
+        return Err(anyhow!("file does not exist: {}", path_str));
     }
 
     storage_dir.remove(&path_str).await?;
 
-    println!("Deleted {}", &path_str);
+    println!("Deleted {}", path_str);
     Ok(())
 }
 

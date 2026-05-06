@@ -51,7 +51,7 @@ impl<T: Display> Debug for DisplayAsDebug<T> {
 
 fn main() {
     let paths: Paths = argh::from_env();
-    eprintln!("paths: {:?}", &paths);
+    eprintln!("paths: {:?}", paths);
 
     // Shared library setup for Linux and Mac.  Systems will ignore the settings
     // that don't apply to them.
@@ -241,7 +241,7 @@ fn main() {
         }
         args.extend(extra_args);
         gnaw_lib::run(&args)
-            .with_context(|| format!("error running gnaw with args: {:?}\n\t", &args))?;
+            .with_context(|| format!("error running gnaw with args: {:?}\n\t", args))?;
         let output = std::fs::read_to_string(&output)
             .with_context(|| format!("while reading tempfile: {}", output.display()))
             .expect("tempfile read success");
@@ -254,7 +254,7 @@ fn main() {
             &test.options.extra_args,
             test.options.output_sdk_metadata,
         )
-        .with_context(|| format!("\n\ttest was: {:?}", &test))
+        .with_context(|| format!("\n\ttest was: {:?}", test))
         .expect("gnaw_lib::run should succeed");
 
         let test_base_dir = PathBuf::from(&paths.test_base_dir);
@@ -262,7 +262,7 @@ fn main() {
             test_base_dir.join(test.golden_expected_filename.iter().collect::<PathBuf>());
         let expected = std::fs::read_to_string(expected_path.to_string_lossy().to_string())
             .with_context(|| {
-                format!("while reading expected: {:?}", &test.golden_expected_filename)
+                format!("while reading expected: {:?}", test.golden_expected_filename)
             })
             .expect("expected file read success");
         assert_eq!(

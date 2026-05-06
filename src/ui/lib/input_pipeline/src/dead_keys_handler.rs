@@ -96,7 +96,7 @@ impl fmt::Display for StoredEvent {
     // Implement a compact [Display], as the device descriptor is not
     // normally very interesting to see.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "event: {:?}, event_time: {:?}", &self.event, &self.event_time)
+        write!(f, "event: {:?}, event_time: {:?}", self.event, self.event_time)
     }
 }
 
@@ -384,9 +384,9 @@ impl DeadKeysHandler {
                 let event = StoredEvent { event, device_descriptor, event_time, trace_id };
                 // Separated into two statements to ensure the logs are not truncated.
                 log::debug!("state: {:?}", self.state.borrow());
-                log::debug!("event: {}", &event);
+                log::debug!("event: {}", event);
                 let result = self.process_keyboard_event(event);
-                log::debug!("result: {:?}", &result);
+                log::debug!("result: {:?}", result);
                 result
             }
 
@@ -585,7 +585,7 @@ impl DeadKeysHandler {
                             });
                             return composed_event.into();
                         } else {
-                            log::debug!("compose failed for: {}\n", &event);
+                            log::debug!("compose failed for: {}\n", event);
                             // FAIL!
                             // Composition failed, what now?  We would need to
                             // emit TWO characters - one for the now-defunct

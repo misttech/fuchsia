@@ -169,7 +169,7 @@ impl StationaryMonitor {
         // Updated fields for tracking roam scan decisions and initiated roam search.
         self.connection_data.previous_roam_scan_data.time = fasync::MonotonicInstant::now();
         self.connection_data.previous_roam_scan_data.rssi = rssi;
-        info!("Initiating roam search for roam reasons: {:?}", &roam_reasons);
+        info!("Initiating roam search for roam reasons: {:?}", roam_reasons);
 
         RoamTriggerDataOutcome::RoamSearch {
             // Stationary monitor uses active roam scans to prioritize shorter scan times over power

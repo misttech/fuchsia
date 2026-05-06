@@ -364,7 +364,7 @@ where
                             _ => {
                                 return Err(format_err!(
                                     "Impossible asset location: {:?}",
-                                    &manifest_asset
+                                    manifest_asset
                                 ));
                             }
                         }

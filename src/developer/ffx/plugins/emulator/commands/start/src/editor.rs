@@ -44,7 +44,7 @@ pub(crate) fn edit_configuration(emu_config: &mut EmulatorConfiguration) -> Resu
     let status = Command::new(&editor)
         .arg(&file_path)
         .status()
-        .context(format!("Something went wrong launching the editor {}.", &editor))?;
+        .context(format!("Something went wrong launching the editor {}.", editor))?;
 
     // Bail if the editor was cancelled or encountered an error.
     if !status.success() {

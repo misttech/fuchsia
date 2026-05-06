@@ -76,7 +76,7 @@ impl Matcher for ConfigMatcher {
         device: &mut dyn Device,
         _env: &mut dyn Environment,
     ) -> Result<Option<DeviceTag>, Error> {
-        log::info!("publishing device to /block/{}", &self.name);
+        log::info!("publishing device to /block/{}", self.name);
         self.publisher.take().unwrap().publish(device)?;
         Ok(None)
     }

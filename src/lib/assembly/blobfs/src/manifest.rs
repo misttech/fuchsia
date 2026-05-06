@@ -46,7 +46,7 @@ impl BlobManifest {
             File::open(&path).context(format!("Adding file: {}", path.as_ref().display()))?;
         let merkle = fuchsia_merkle::root_from_reader(file).context(format!(
             "Failed to calculate the merkle for file: {}",
-            &path.as_ref().display()
+            path.as_ref().display()
         ))?;
         self.add_file_with_merkle(path, merkle);
         Ok(())

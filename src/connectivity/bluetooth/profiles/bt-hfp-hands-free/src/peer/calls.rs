@@ -449,7 +449,7 @@ impl Call {
 impl fmt::Debug for Call {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Call")
-            .field("peer_id", &format!("{:}", &self.peer_id))
+            .field("peer_id", &format!("{:}", self.peer_id))
             .field("call_index", &self.call_index)
             .field("state", &self.state)
             .field("number", &self.number)

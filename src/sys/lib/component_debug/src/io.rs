@@ -346,7 +346,7 @@ impl Directory for RemoteDirectory {
                     _ => {
                         return Err(anyhow!(
                             "Unsupported entry type for file {}: {:?}",
-                            &filename,
+                            filename,
                             e.kind,
                         ));
                     }

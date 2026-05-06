@@ -211,7 +211,7 @@ impl MOSClient {
         let body_str = String::from_utf8_lossy(&body_bytes).to_string();
 
         if !status.is_success() {
-            bail!("https post request failed, status {}: {}", status, &body_str);
+            bail!("https post request failed, status {}: {}", status, body_str);
         }
         Ok(body_str)
     }
@@ -227,7 +227,7 @@ impl MOSClient {
         let body_str = String::from_utf8_lossy(&body_bytes).to_string();
 
         if !status.is_success() {
-            bail!("https get request failed, status {}: {}", status, &body_str);
+            bail!("https get request failed, status {}: {}", status, body_str);
         }
         Ok(body_str)
     }

@@ -236,7 +236,7 @@ fn run(opt: Opt) -> Result<()> {
         command_summary,
     )?;
 
-    info!("Generated documentation at dir: {}", &output_path.display());
+    info!("Generated documentation at dir: {}", output_path.display());
 
     if let Some(tardir) = opt.archive_path {
         // First check if depfile is needed as well since this will probably be invoked
@@ -521,7 +521,7 @@ fn help_output_for(tool: &Path, subcommands: &Vec<&String>) -> Result<Vec<String
         .args(&*subcommands)
         .arg("--help")
         .output()
-        .context(format!("Command failed for {:?} {subcommands:?}", &tool.display()))
+        .context(format!("Command failed for {:?} {subcommands:?}", tool.display()))
         .expect("get output");
 
     let stdout = output.stdout;

@@ -25,8 +25,8 @@ pub(crate) fn add_build_type_config_data(
     };
     let gendir = context.get_gendir().context(format!("Getting gendir for {package} subsystem"))?;
     let filepath = gendir.join(format!("{package}_build_type"));
-    let mut file = File::create(&filepath).with_context(|| format!("Opening {}", &filepath))?;
-    file.write_all(build_type.as_bytes()).with_context(|| format!("Writing {}", &filepath))?;
+    let mut file = File::create(&filepath).with_context(|| format!("Opening {}", filepath))?;
+    file.write_all(build_type.as_bytes()).with_context(|| format!("Writing {}", filepath))?;
     builder
         .package(package)
         .config_data(FileEntry { source: filepath, destination: "build/type".into() })?;

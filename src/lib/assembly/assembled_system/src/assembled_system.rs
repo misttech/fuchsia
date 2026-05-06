@@ -285,7 +285,7 @@ impl AssembledSystem {
     fn relativize(mut self, reference: impl AsRef<Utf8Path>) -> Result<Self> {
         self.walk_paths(&mut |path: &mut Utf8PathBuf, _dest: Utf8PathBuf, _filetype: FileType| {
             let new_path = diff_paths(&path, reference.as_ref())
-                .ok_or_else(|| anyhow!("Failed to make the path relative: {}", &path))?;
+                .ok_or_else(|| anyhow!("Failed to make the path relative: {}", path))?;
             *path = Utf8PathBuf::try_from(new_path)?;
             Ok(())
         })

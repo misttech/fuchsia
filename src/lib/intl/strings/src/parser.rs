@@ -167,7 +167,7 @@ impl Instance {
                 self.state = State::Done;
             }
             XmlEvent::Whitespace { .. } => { /* ignore whitespace */ }
-            _ => return Err(anyhow!("unimplemented state: {:?}, token: {:?}", &self.state, &e)),
+            _ => return Err(anyhow!("unimplemented state: {:?}, token: {:?}", self.state, e)),
         }
         Ok(())
     }
@@ -177,12 +177,12 @@ impl Instance {
         match e {
             XmlEvent::StartElement { ref name, .. } => {
                 if name.local_name != "resources" {
-                    return Err(anyhow!("expected StartElement(resources), got: {:?}", &e));
+                    return Err(anyhow!("expected StartElement(resources), got: {:?}", e));
                 }
                 self.state = State::Resources;
             }
             XmlEvent::Comment { .. } => {}
-            _ => return Err(anyhow!("unimplemented state: {:?}, token: {:?}", &self.state, &e)),
+            _ => return Err(anyhow!("unimplemented state: {:?}, token: {:?}", self.state, e)),
         }
         Ok(())
     }
@@ -211,18 +211,18 @@ impl Instance {
                         text: "".to_string(),
                     };
                 } else {
-                    return Err(anyhow!("expected StartElement(string), got: {:?}", &e));
+                    return Err(anyhow!("expected StartElement(string), got: {:?}", e));
                 }
             }
             XmlEvent::EndElement { ref name, .. } => {
                 if name.local_name != "resources" {
-                    return Err(anyhow!("expected EndElement(resources), got: {:?}", &e));
+                    return Err(anyhow!("expected EndElement(resources), got: {:?}", e));
                 }
                 self.state = State::Init;
             }
             XmlEvent::Comment { .. } => {}
             XmlEvent::Whitespace { .. } => { /* ignore whitespace */ }
-            _ => return Err(anyhow!("expected StartElement(string), got: {:?}", &e)),
+            _ => return Err(anyhow!("expected StartElement(string), got: {:?}", e)),
         }
         Ok(())
     }
@@ -236,7 +236,7 @@ impl Instance {
                 // Needs a better way to compare namespace and element.
                 let ns = name.namespace.clone();
                 if name.local_name != "g" && ns.unwrap_or_else(|| "".to_string()) != "xliff" {
-                    return Err(anyhow!("unexpected StartElement({:?})", &e));
+                    return Err(anyhow!("unexpected StartElement({:?})", e));
                 }
                 // xliff:g is starting
                 self.state = State::XliffG { name: token_name, text };
@@ -248,7 +248,7 @@ impl Instance {
             }
             XmlEvent::EndElement { ref name, .. } => {
                 if name.local_name != "string" {
-                    return Err(anyhow!("expected EndElement(string), got: {:?}", &e));
+                    return Err(anyhow!("expected EndElement(string), got: {:?}", e));
                 }
                 if self.messages.contains_key(&token_name) {
                     return Err(anyhow!("duplicate string with name: {}", token_name));
@@ -256,7 +256,7 @@ impl Instance {
                 if !validate_token_name(&token_name, self.verbose) {
                     return Err(anyhow!(
                         "name is not acceptable: '{}', does not match: {}",
-                        &token_name,
+                        token_name,
                         RAW_REGEX_STRING
                     ));
                 }
@@ -265,7 +265,7 @@ impl Instance {
             }
             XmlEvent::Whitespace { .. } => { /* ignore whitespace */ }
             XmlEvent::Comment { .. } => {}
-            _ => return Err(anyhow!("unimplemented state: {:?}, token: {:?}", &self.state, &e)),
+            _ => return Err(anyhow!("unimplemented state: {:?}, token: {:?}", self.state, e)),
         }
         Ok(())
     }
@@ -275,7 +275,7 @@ impl Instance {
     fn xliffg(&mut self, token_name: String, text: String, e: XmlEvent) -> Result<()> {
         match e {
             XmlEvent::StartElement { ref name, .. } => {
-                return Err(anyhow!("unexpected StartElement({:?})", &name));
+                return Err(anyhow!("unexpected StartElement({:?})", name));
             }
             XmlEvent::Characters(chars) => {
                 // There are probably more ways in which we can get characters, like cdata
@@ -285,13 +285,13 @@ impl Instance {
             XmlEvent::EndElement { ref name, .. } => {
                 let ns = name.namespace.clone();
                 if name.local_name != "g" && ns.unwrap_or_else(|| "".to_string()) != "xliff" {
-                    return Err(anyhow!("expected EndElement(xliff:g), got: {:?}", &e));
+                    return Err(anyhow!("expected EndElement(xliff:g), got: {:?}", e));
                 }
                 self.state = State::String { name: token_name, text };
             }
             XmlEvent::Whitespace { .. } => { /* ignore whitespace */ }
             XmlEvent::Comment { .. } => {}
-            _ => return Err(anyhow!("unimplemented state: {:?}, token: {:?}", &self.state, &e)),
+            _ => return Err(anyhow!("unimplemented state: {:?}, token: {:?}", self.state, e)),
         }
         Ok(())
     }

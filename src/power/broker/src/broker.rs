@@ -174,7 +174,7 @@ impl Broker {
         if credential.get_element() != element_id {
             log::debug!(
                 "unregister_dependency_token: token is registered to {:?}, not {:?}",
-                &credential.get_element(),
+                credential.get_element(),
                 element_id,
             );
             return Err(UnregisterDependencyTokenError::NotAuthorized);
@@ -330,7 +330,7 @@ impl Broker {
             // Update the status of all leases whose claims were satisfied.
             log::debug!(
                 "update_current_level({element_id}): leases_to_check_if_satisfied = {:?}",
-                &leases_to_check_if_satisfied
+                leases_to_check_if_satisfied
             );
             for lease_id in leases_to_check_if_satisfied {
                 self.update_lease_status(lease_id);
@@ -716,7 +716,7 @@ impl Broker {
                     current level of {:?} = {:?}, {:?} required",
                         dep.requires.element_id,
                         self.get_current_level(&dep.requires.element_id),
-                        &dep.requires.level
+                        dep.requires.level
                     );
                     return false;
                 }
@@ -1343,13 +1343,13 @@ impl Catalog {
         if let Some(element) = self.topology.get_element(&lease.underlying_element_id) {
             self.topology.inspect().on_drop_lease(&element, &lease);
         }
-        log::debug!("dropping lease({:?})", &lease);
+        log::debug!("dropping lease({:?})", lease);
         // Pending claims should be dropped immediately.
         let pending_claims: Vec<ClaimID> =
             self.claims.pending.for_lease(lease.id).map(|c| c.id).collect::<Vec<_>>();
         for claim_id in pending_claims {
             if let Some(removed) = self.claims.pending.remove(claim_id) {
-                log::debug!("removing pending claim: {:?}", &removed);
+                log::debug!("removing pending claim: {:?}", removed);
             } else {
                 log::error!("cannot remove pending claim: not found: {}", claim_id);
             }
