@@ -75,6 +75,7 @@ mdns
 ?network-tun
 ?null-update-checker
 ?omaha-client
+?paver
 pkg-resolver
 ?pkg-shell-commands
 ?pkgctl

@@ -374,8 +374,6 @@
         },
         {
             protocol: [
-                "fuchsia.paver.Paver",
-
                 // TODO(https://fxbug.dev/389134835): Remove the initiator
                 // capability.
                 "fuchsia.power.CollaborativeRebootInitiator",
@@ -383,6 +381,11 @@
                 "fuchsia.update.verify.HealthVerification",
             ],
             from: "parent",
+            to: "#system-update",
+        },
+        {
+            protocol: "fuchsia.paver.Paver",
+            from: "#paver",
             to: "#system-update",
         },
         {

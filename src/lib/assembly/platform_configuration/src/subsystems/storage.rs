@@ -41,6 +41,19 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         {
             builder.platform_bundle("paver_legacy")?;
         }
+        // `paver` goes in the base package set on builds that have it, which saves memory compared
+        // to bootfs because bootfs always keeps its blobs resident in memory. This means that
+        // paver's position in the component topology differs between bootstrap and higher feature
+        // sets.
+        match *context.feature_set_level {
+            FeatureSetLevel::Embeddable => {
+                // Embeddable doesn't support paving.
+            }
+            FeatureSetLevel::Bootstrap => builder.platform_bundle("paver_shards_bootstrap")?,
+            FeatureSetLevel::Utility | FeatureSetLevel::Standard => {
+                builder.platform_bundle("paver_shards_core")?;
+            }
+        }
 
         // Include fuchsia.fshost/Recovery capabilities if this configuration supports recovery
         // (e.g. userspace fastboot or FDR), or if we are including partitioning tools that require

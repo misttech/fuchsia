@@ -65,6 +65,7 @@ forensics
 ?network-tun
 ?null-update-checker
 ?omaha-client
+?paver
 pkg-resolver
 ?radar-proxy-without-injector
 ?reachability

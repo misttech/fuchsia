@@ -14,10 +14,14 @@
             protocol: [
                 "fuchsia.fshost.Admin",
                 "fuchsia.hardware.power.statecontrol.Admin",
-                "fuchsia.paver.Paver",
             ],
             from: "parent",
             to: [ "#fastboot-usb" ],
+        },
+        {
+            protocol: "fuchsia.paver.Paver",
+            from: "#paver",
+            to: "#system_recovery",
         },
         {
             protocol: "fuchsia.buildinfo.Provider",

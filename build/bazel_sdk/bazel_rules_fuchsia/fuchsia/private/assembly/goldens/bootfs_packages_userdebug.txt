@@ -44,7 +44,6 @@ kernel-args-forwarder
 ?netdevice-migration
 ?netsvc
 ?network-device
-?paver
 pkg-cache
 platform-bus
 ?power

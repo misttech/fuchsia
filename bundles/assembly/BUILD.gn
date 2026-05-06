@@ -211,7 +211,6 @@ assembly_input_bundle("bootstrap") {
   }
 
   bootstrap_shards = [
-    "//src/bringup/bin/paver/meta/paver.bootstrap_shard.cml",
     "//src/bringup/bin/kernel-args-forwarder/meta/kernel_args_forwarder.bootstrap_shard.cml",
     "//src/bringup/bin/sysinfo/meta/sysinfo.shard.cml",
     "//src/sysmem/server/meta/sysmem.bootstrap_shard.cml",
@@ -939,7 +938,18 @@ assembly_input_bundle("kernel_debug_broker_user") {
 
 # Legacy AIB for migration purposes.
 assembly_input_bundle("paver_legacy") {
-  bootfs_packages = [ "//src/bringup/bin/paver:package" ]
+  bootfs_or_base_packages = [ "//src/bringup/bin/paver:package" ]
+}
+
+assembly_input_bundle("paver_shards_bootstrap") {
+  bootstrap_shards =
+      [ "//src/bringup/bin/paver/meta/paver.bootstrap_shard.cml" ]
+  root_shards = [ "//src/bringup/bin/paver/meta/paver.bootfs.root_shard.cml" ]
+}
+
+assembly_input_bundle("paver_shards_core") {
+  core_shards = [ "//src/bringup/bin/paver/meta/paver.core_shard.cml" ]
+  root_shards = [ "//src/bringup/bin/paver/meta/paver.base.root_shard.cml" ]
 }
 
 # The console AIB is included by all eng and userdebug products, and can be

@@ -582,6 +582,7 @@
                     "/core/factory_reset",
                     "/core/ffx-laboratory:**",
                     "/core/oemcrypto",
+                    "/core/paver",
                     "/core/playready-cdm",
                     "/core/pre-migration-service",
                     "/core/reverse-migration",

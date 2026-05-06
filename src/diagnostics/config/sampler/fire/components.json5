@@ -610,7 +610,7 @@
     {
         id: 258,
         label: "Paver Service",
-        moniker: "bootstrap/paver",
+        moniker: "core/paver",
     },
     {
         id: 259,

@@ -185,6 +185,7 @@
             protocol: [
                 "fuchsia.fshost.Recovery",
                 "fuchsia.fxfs.FileBackedVolumeProvider",
+                "fuchsia.storage.partitions.PartitionsAdmin",
                 "fuchsia.storage.partitions.PartitionsManager",
             ],
             from: "#fshost",

@@ -37,7 +37,6 @@ i2c
 kernel-args-forwarder
 ?memfs
 ?minfs
-?paver
 pkg-cache
 platform-bus
 ?power

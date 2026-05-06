@@ -24,7 +24,7 @@ group("bazel_inputs") {
 }
 
 board_input_bundle("main_bundle") {
-  bootfs_packages = [ "//src/bringup/bin/paver:package-vim3" ]
+  bootfs_or_base_packages = [ "//src/bringup/bin/paver:package-vim3" ]
   drivers = [
     {
       package_target =

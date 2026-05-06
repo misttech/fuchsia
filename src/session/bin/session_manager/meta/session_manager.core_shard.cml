@@ -262,7 +262,6 @@
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
                 "fuchsia.kernel.VmexResource",
-                "fuchsia.paver.Paver",
                 "fuchsia.power.button.Monitor",
                 "fuchsia.power.CollaborativeRebootInitiator",
                 "fuchsia.power.profile.Watcher",
@@ -273,6 +272,11 @@
                 "fuchsia.thermal.SensorManager",
             ],
             from: "parent",
+            to: "#session-manager",
+        },
+        {
+            protocol: "fuchsia.paver.Paver",
+            from: "#paver",
             to: "#session-manager",
         },
         {

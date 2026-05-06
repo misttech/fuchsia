@@ -359,9 +359,8 @@
         },
         {
             protocol: "fuchsia.paver.Paver",
-            from: "#paver",
+            from: "parent",
             to: "#console-launcher",
-            source_availability: "unknown",
         },
         {
             protocol: [

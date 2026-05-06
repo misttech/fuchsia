@@ -29,10 +29,7 @@
             to: "#system-update",
         },
         {
-            protocol: [
-                "fuchsia.hardware.power.statecontrol.Admin",
-                "fuchsia.paver.Paver",
-            ],
+            protocol: [ "fuchsia.hardware.power.statecontrol.Admin" ],
             from: "parent",
             to: "#system-update",
         },

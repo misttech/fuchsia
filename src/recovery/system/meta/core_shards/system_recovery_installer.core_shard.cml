@@ -18,10 +18,14 @@
             protocol: [
                 "fuchsia.boot.Arguments",
                 "fuchsia.hardware.power.statecontrol.Admin",
-                "fuchsia.paver.Paver",
                 "fuchsia.sysinfo.SysInfo",
             ],
             from: "parent",
+            to: "#system_recovery",
+        },
+        {
+            protocol: "fuchsia.paver.Paver",
+            from: "#paver",
             to: "#system_recovery",
         },
         {

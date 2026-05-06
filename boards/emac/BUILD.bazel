@@ -34,7 +34,7 @@ fuchsia_board_input_bundle(
 
 fuchsia_board_input_bundle(
     name = "paver",
-    bootfs_packages = ["//src/bringup/bin/paver:package-vim3"],
+    bootfs_or_base_packages = ["//src/bringup/bin/paver:package-vim3"],
     version = build_info_version,
 )
 

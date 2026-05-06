@@ -157,6 +157,10 @@
             from: "#shutdown_shim",
         },
         {
+            protocol: "fuchsia.system.state.SystemStateTransition",
+            from: "#shutdown_shim",
+        },
+        {
             service: "fuchsia.power.broker.ElementInfoProviderService",
             from: "#system-activity-governor",
             source_availability: "unknown",

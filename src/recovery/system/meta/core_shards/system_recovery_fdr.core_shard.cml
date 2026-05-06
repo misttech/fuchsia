@@ -15,8 +15,8 @@
     ],
     offer: [
         {
-            protocol: [ "fuchsia.paver.Paver" ],
-            from: "parent",
+            protocol: "fuchsia.paver.Paver",
+            from: "#paver",
             to: "#system_recovery",
         },
         {

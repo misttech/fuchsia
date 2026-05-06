@@ -160,13 +160,17 @@
             protocol: [
                 "fuchsia.device.NameProvider",
                 "fuchsia.hardware.power.statecontrol.Admin",
-                "fuchsia.paver.Paver",
                 "fuchsia.sys2.LifecycleController.root",
                 "fuchsia.sys2.RealmQuery.root",
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",
             ],
             from: "parent",
+            to: "#sl4f",
+        },
+        {
+            protocol: "fuchsia.paver.Paver",
+            from: "#paver",
             to: "#sl4f",
         },
         {
