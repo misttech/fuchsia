@@ -140,12 +140,9 @@ class OpenWrtAP:
             self.ssh.run(
                 f"uci set wireless.{radio}.channel='{radio_config.channel.number}'"
             )
-            if radio_config.channel.mode == "NOHT":
-                self.ssh.run(f"uci set wireless.{radio}.htmode='NOHT'")
-            else:
-                self.ssh.run(
-                    f"uci set wireless.{radio}.htmode='{radio_config.channel.mode}{radio_config.channel.bandwidth}'"
-                )
+            self.ssh.run(
+                f"uci set wireless.{radio}.htmode='{radio_config.channel.phy_mode.uci_htmode}'"
+            )
             n_sel = radio_config.n_capabilities
             ac_sel = radio_config.ac_capabilities
 
@@ -177,6 +174,11 @@ class OpenWrtAP:
             if str(radio_config.channel.number) in ["12", "13", "14"]:
                 country = "AU"
             self.ssh.run(f"uci set wireless.{radio}.country='{country}'")
+
+            if radio_config.require_mode:
+                self.ssh.run(
+                    f"uci set wireless.{radio}.require_mode='{radio_config.require_mode}'"
+                )
             if radio_config.bss_settings:
                 for bss in radio_config.bss_settings:
                     self._configure_bss(bss, radio)

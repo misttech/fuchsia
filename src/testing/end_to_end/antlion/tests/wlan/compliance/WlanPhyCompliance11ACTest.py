@@ -29,7 +29,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     CapabilitySelection,
     RadioConfig,
     Security,
-    WifiMode,
+    VhtMode,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
@@ -102,7 +102,7 @@ SECURITY_MODES: list[Security] = [Security.NONE, Security.WPA2]
 @dataclass
 class TestParams:
     security_mode: Security
-    vht_bandwidth_mhz: Literal[20, 40, 80, 160, 320]
+    vht_bandwidth_mhz: Literal[20, 40, 80, 160]
     # TODO(http://b/290396383): Type AP capabilities as enums
     n_capabilities: list[Any]
     ac_capabilities: list[Any]
@@ -220,10 +220,9 @@ class WlanPhyCompliance11ACTest(base_test.WifiBaseTest):
                 radios=[
                     RadioConfig.generate(
                         channel=BssChannel(
-                            Band.BAND_5G,
-                            36,
-                            settings.vht_bandwidth_mhz,
-                            mode=WifiMode.VHT,
+                            band=Band.BAND_5G,
+                            number=36,
+                            phy_mode=VhtMode(bw=settings.vht_bandwidth_mhz),
                         ),
                         bss_settings=[
                             BssSettings(

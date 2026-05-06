@@ -26,6 +26,8 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     Band,
     BssChannel,
     BssSettings,
+    EhtMode,
+    HeMode,
     RadioConfig,
     Security,
 )
@@ -157,10 +159,17 @@ class RegulatoryComplianceTest(base_test.WifiBaseTest):
             band = Band.BAND_2G if channel <= MAX_2_4_CHANNEL else Band.BAND_5G
             bw_literal = cast(Literal[20, 40, 80, 160, 320], channel_bandwidth)
 
+            if bw_literal == 320:
+                phy_mode = EhtMode(bw=320)
+            else:
+                phy_mode = HeMode(bw=bw_literal)  # type: ignore
+
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        channel=BssChannel(band, channel, bw_literal),
+                        channel=BssChannel(
+                            band=band, number=channel, phy_mode=phy_mode
+                        ),
                         bss_settings=[
                             BssSettings(
                                 ssid=ssid,

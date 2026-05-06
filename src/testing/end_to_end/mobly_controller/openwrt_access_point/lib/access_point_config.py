@@ -7,7 +7,7 @@ import enum
 import random
 import re
 import string
-from typing import Literal
+from typing import Literal, Optional, Protocol, TypeAlias
 
 
 class Band(enum.StrEnum):
@@ -31,55 +31,145 @@ class Security(enum.StrEnum):
     WEP = "wep"
 
 
-class WifiMode(enum.StrEnum):
-    """The Wi-Fi standard/mode to operate in."""
+Bandwidth: TypeAlias = Literal[20, 40, 80, 160, 320]
+WifiModeStr: TypeAlias = Literal["HT", "VHT", "HE", "EHT", "NOHT"]
 
-    HT = "HT"  # 802.11n
-    VHT = "VHT"  # 802.11ac
-    HE = "HE"  # 802.11ax
-    EHT = "EHT"  # 802.11be
-    NOHT = "NOHT"  # Disables 802.11n/ac/ax/be
+
+class PhyMode(Protocol):
+    """Protocol to abstract Wi-Fi modes and their associated bandwidth settings."""
+
+    @property
+    def mode_str(self) -> WifiModeStr:
+        """Returns the base Wi-Fi standard string."""
+        ...
+
+    @property
+    def bandwidth(self) -> Bandwidth:
+        """Returns the channel bandwidth in MHz."""
+        ...
+
+    @property
+    def uci_htmode(self) -> str:
+        """Returns the string used for OpenWrt's wireless 'htmode' setting."""
+        ...
+
+
+@dataclasses.dataclass(frozen=True)
+class LegacyMode:
+    """802.11a/b/g (No HT) implementation."""
+
+    @property
+    def mode_str(self) -> WifiModeStr:
+        return "NOHT"
+
+    @property
+    def bandwidth(self) -> Bandwidth:
+        return 20
+
+    @property
+    def uci_htmode(self) -> str:
+        return "NOHT"
+
+
+@dataclasses.dataclass(frozen=True)
+class HtMode:
+    """802.11n (HT) implementation, handling optional extension channels."""
+
+    bw: Literal[20, 40]
+    extension: Optional[Literal["+", "-"]] = None
+
+    def __post_init__(self) -> None:
+        if self.bw == 40 and not self.extension:
+            raise ValueError("HT40 requires extension channel (+ or -)")
+
+    @property
+    def mode_str(self) -> WifiModeStr:
+        return "HT"
+
+    @property
+    def bandwidth(self) -> Bandwidth:
+        return self.bw
+
+    @property
+    def uci_htmode(self) -> str:
+        ext = self.extension or ""
+        return f"HT{self.bw}{ext}"
+
+
+@dataclasses.dataclass(frozen=True)
+class VhtMode:
+    """802.11ac (VHT) implementation."""
+
+    bw: Literal[20, 40, 80, 160]
+
+    @property
+    def mode_str(self) -> WifiModeStr:
+        return "VHT"
+
+    @property
+    def bandwidth(self) -> Bandwidth:
+        return self.bw
+
+    @property
+    def uci_htmode(self) -> str:
+        return f"VHT{self.bw}"
+
+
+@dataclasses.dataclass(frozen=True)
+class HeMode:
+    """802.11ax (HE) implementation."""
+
+    bw: Literal[20, 40, 80, 160]
+
+    @property
+    def mode_str(self) -> WifiModeStr:
+        return "HE"
+
+    @property
+    def bandwidth(self) -> Bandwidth:
+        return self.bw
+
+    @property
+    def uci_htmode(self) -> str:
+        return f"HE{self.bw}"
+
+
+@dataclasses.dataclass(frozen=True)
+class EhtMode:
+    """802.11be (EHT) implementation."""
+
+    bw: Literal[20, 40, 80, 160, 320]
+
+    @property
+    def mode_str(self) -> WifiModeStr:
+        return "EHT"
+
+    @property
+    def bandwidth(self) -> Bandwidth:
+        return self.bw
+
+    @property
+    def uci_htmode(self) -> str:
+        return f"EHT{self.bw}"
 
 
 @dataclasses.dataclass(frozen=True)
 class BssChannel:
-    """Represents a Wi-Fi channel configuration.
+    """Represents a Wi-Fi channel configuration using the PhyMode protocol.
 
     Attributes:
-        band: The Wi-Fi frequency band
-        number: The channel number
-        bandwidth: The channel bandwidth (20, 40, 80, 160, 320)
-        mode: The Wi-Fi mode
-            HT: High Throughput (802.11n)
-            VHT: Very High Throughput (802.11ac)
-            HE: High Efficiency (802.11ax / Wi-Fi 6)
-            EHT: Extremely High Throughput (802.11be / Wi-Fi 7)
-            NOHT: Disables 802.11n/ac/ax/be
+        band: The Wi-Fi frequency band (e.g., 2G, 5G).
+        number: The primary channel number.
+        phy_mode: An implementation of PhyMode.
     """
 
     band: Band
     number: int
-    bandwidth: Literal[20, 40, 80, 160, 320]
-    mode: WifiMode = WifiMode.HE
-
-    def __post_init__(self) -> None:
-        valid_bandwidths = {
-            WifiMode.HT: [20, 40],
-            WifiMode.VHT: [20, 40, 80, 160],
-            WifiMode.HE: [20, 40, 80, 160],
-            WifiMode.EHT: [20, 40, 80, 160, 320],
-            WifiMode.NOHT: [20],
-        }
-
-        if self.bandwidth not in valid_bandwidths[self.mode]:
-            raise ValueError(
-                f"Invalid bandwidth {self.bandwidth} for mode {self.mode}. "
-                f"Must be one of {valid_bandwidths[self.mode]}"
-            )
+    phy_mode: PhyMode
 
 
-DEFAULT_2G_CHANNEL = BssChannel(Band.BAND_2G, 1, 20)
-DEFAULT_5G_CHANNEL = BssChannel(Band.BAND_5G, 36, 40)
+DEFAULT_2G_CHANNEL = BssChannel(Band.BAND_2G, 1, HtMode(bw=40, extension="+"))
+DEFAULT_5G_CHANNEL = BssChannel(Band.BAND_5G, 36, VhtMode(bw=80))
 
 
 @dataclasses.dataclass
@@ -150,7 +240,11 @@ class RadioConfig:
         country: The country code for the radio (default: "US")
         n_capabilities: Selection of 802.11n capabilities.
         ac_capabilities: Selection of 802.11ac capabilities.
-        mode: The Wi-Fi mode (HT, VHT, HE, EHT)
+        require_mode: Forces the radio to operate in a specific 802.11 mode.
+            Corresponds to the 'require_mode' option in OpenWrt's wireless
+            configuration. Useful for testing scenarios that need to ensure
+            the AP is only advertising/allowing clients of a specific standard
+            (e.g., 'n' for 802.11n, 'ac' for 802.11ac, 'ax' for 802.11ax).
     """
 
     channel: BssChannel
@@ -158,6 +252,7 @@ class RadioConfig:
     country: str = "US"
     n_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT()
     ac_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT()
+    require_mode: Literal["n", "ac", "ax", None] = None
 
     @classmethod
     def generate(
@@ -167,6 +262,7 @@ class RadioConfig:
         country: str = "US",
         n_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT(),
         ac_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT(),
+        require_mode: Literal["n", "ac", "ax", None] = None,
     ) -> "RadioConfig":
         """Creates a RadioConfig object with the specified channel and BSS settings.
 
@@ -176,6 +272,7 @@ class RadioConfig:
             country: The country code for the radio.
             n_capabilities: Selection of 802.11n capabilities.
             ac_capabilities: Selection of 802.11ac capabilities.
+            require_mode: UCI require_mode value.
 
         Returns:
             A RadioConfig object.
@@ -189,6 +286,7 @@ class RadioConfig:
             country=country,
             n_capabilities=n_capabilities,
             ac_capabilities=ac_capabilities,
+            require_mode=require_mode,
         )
 
 

@@ -53,6 +53,9 @@ class AccessPointConfigMapper:
             capabilities.N_CAPABILITY_MAX_AMSDU_7935: hostapd_constants.N_CAPABILITY_MAX_AMSDU_7935,
             capabilities.N_CAPABILITY_HT40_PLUS: hostapd_constants.N_CAPABILITY_HT40_PLUS,
             capabilities.N_CAPABILITY_HT20: hostapd_constants.N_CAPABILITY_HT20,
+            capabilities.N_CAPABILITY_40_INTOLERANT: hostapd_constants.N_CAPABILITY_40_INTOLERANT,
+            capabilities.N_CAPABILITY_SMPS_STATIC: hostapd_constants.N_CAPABILITY_SMPS_STATIC,
+            capabilities.N_CAPABILITY_DSSS_CCK_40: hostapd_constants.N_CAPABILITY_DSSS_CCK_40,
         }
         return mapping.get(cap, cap)
 

@@ -5,20 +5,36 @@
 # found in the LICENSE file.
 
 import itertools
-import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
-from antlion import utils
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_config, hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
-from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
+from antlion.controllers.ap_lib.hostapd_security import (
+    SecurityMode as DeprecatedSecurityMode,
+)
 from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 from mobly.records import TestResultRecord
+from mobly_controller.openwrt_access_point.lib import capabilities
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    AccessPointConfig,
+    Band,
+    BssChannel,
+    BssSettings,
+    CapabilitySelection,
+    HtMode,
+    RadioConfig,
+    Security,
+)
+from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper as ConfigMapper,
+)
 
 FREQUENCY_24: str = "2.4GHz"
 FREQUENCY_5: str = "5GHz"
@@ -31,15 +47,20 @@ N_MODE = [
     hostapd_constants.Mode.MODE_11N_PURE,
     hostapd_constants.Mode.MODE_11N_MIXED,
 ]
-LDPC = [hostapd_constants.N_CAPABILITY_LDPC, ""]
-TX_STBC = [hostapd_constants.N_CAPABILITY_TX_STBC, ""]
-RX_STBC = [hostapd_constants.N_CAPABILITY_RX_STBC1, ""]
-SGI_20 = [hostapd_constants.N_CAPABILITY_SGI20, ""]
-SGI_40 = [hostapd_constants.N_CAPABILITY_SGI40, ""]
-DSSS_CCK = [hostapd_constants.N_CAPABILITY_DSSS_CCK_40, ""]
-INTOLERANT_40 = [hostapd_constants.N_CAPABILITY_40_INTOLERANT, ""]
-MAX_AMPDU_7935 = [hostapd_constants.N_CAPABILITY_MAX_AMSDU_7935, ""]
-SMPS = [hostapd_constants.N_CAPABILITY_SMPS_STATIC, ""]
+LDPC = [capabilities.N_CAPABILITY_LDPC, ""]
+TX_STBC = [capabilities.N_CAPABILITY_TX_STBC, ""]
+RX_STBC = [capabilities.N_CAPABILITY_RX_STBC1, ""]
+SGI_20 = [capabilities.N_CAPABILITY_SHORT_GI_20, ""]
+SGI_40 = [capabilities.N_CAPABILITY_SHORT_GI_40, ""]
+DSSS_CCK = [capabilities.N_CAPABILITY_DSSS_CCK_40, ""]
+INTOLERANT_40 = [capabilities.N_CAPABILITY_40_INTOLERANT, ""]
+MAX_AMPDU_7935 = [capabilities.N_CAPABILITY_MAX_AMSDU_7935, ""]
+SMPS = [capabilities.N_CAPABILITY_SMPS_STATIC, ""]
+
+KNOWN_UNSUPPORTED_CAPABILITIES = {
+    capabilities.N_CAPABILITY_40_INTOLERANT,
+    capabilities.N_CAPABILITY_SMPS_STATIC,
+}
 
 
 @dataclass
@@ -47,7 +68,7 @@ class TestParams:
     frequency: str
     chbw: str
     n_mode: str
-    security: SecurityMode
+    security: Security
     # TODO(http://b/290396383): Type AP capabilities as enums
     n_capabilities: list[Any]
 
@@ -60,7 +81,8 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
     * One Access Point
     """
 
-    access_point: AccessPoint
+    access_point: AccessPoint | None = None
+    openwrt_ap: Any | None = None
 
     def __init__(self, config: TestRunConfig) -> None:
         super().__init__(config)
@@ -83,8 +105,13 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
 
         def generate_test_name(test: TestParams) -> str:
             ret = []
+            mapped_caps = [
+                ConfigMapper.to_hostapd_n_cap(c)
+                for c in test.n_capabilities
+                if c
+            ]
             for cap in hostapd_constants.N_CAPABILITIES_MAPPING.keys():
-                if cap in test.n_capabilities:
+                if cap in mapped_caps:
                     ret.append(
                         hostapd_constants.N_CAPABILITIES_MAPPING[cap]
                         .replace("[", "_")
@@ -97,7 +124,9 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                 chbw = "HT40Upper"
             else:
                 chbw = test.chbw
-            return f"test_11n_{test.frequency}_{chbw}_{test.security}_{test.n_mode}{''.join(ret)}"
+            # Maintain legacy naming for BUILD.gn filters
+            security_name = "open" if test.security == Security.NONE else "wpa2"
+            return f"test_11n_{test.frequency}_{chbw}_{security_name}_{test.n_mode}{''.join(ret)}"
 
         self.generate_tests(
             test_logic=self.setup_and_connect,
@@ -108,18 +137,19 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
     def setup_class(self) -> None:
         super().setup_class()
 
-        if len(self.access_points) < 1:
-            logging.error("At least one access point is required for this test")
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point = self.access_points[0]
+        else:
             raise signals.TestAbortClass(
                 "At least one access point is required"
             )
 
         self.dut = self.get_dut(AssociationMode.POLICY)
 
-        if len(self.access_points) == 0:
-            raise signals.TestAbortClass("Requires at least one access point")
-        self.access_point = self.access_points[0]
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
     def setup_test(self) -> None:
         if hasattr(self, "android_devices"):
@@ -137,25 +167,22 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
         self.dut.disconnect()
         self.dut.reset_wifi()
         self.download_logs()
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
     def on_fail(self, record: TestResultRecord) -> None:
         super().on_fail(record)
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
     def setup_and_connect(self, test: TestParams) -> None:
         """Start hostapd and associate the DUT.
 
         Args:
-               ap_settings: A dictionary of hostapd constant n_capabilities.
+               test: Test parameters
         """
-        ssid = utils.rand_ascii_str(20)
-        security_profile = Security()
+        ssid = AccessPointConfig.random_string(20)
         password: str | None = None
-        n_capabilities = []
-        for n_capability in test.n_capabilities:
-            if n_capability in hostapd_constants.N_CAPABILITIES_MAPPING.keys():
-                n_capabilities.append(n_capability)
 
         if test.chbw == "HT20" or test.chbw == "HT40+":
             if test.frequency == "2.4GHz":
@@ -163,7 +190,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
             elif test.frequency == "5GHz":
                 channel = 36
             else:
-                raise ValueError(f"Invalid frequence: {test.frequency}")
+                raise ValueError(f"Invalid frequency: {test.frequency}")
 
         elif test.chbw == "HT40-":
             if test.frequency == "2.4GHz":
@@ -172,50 +199,125 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                 channel = 60
             else:
                 raise ValueError(f"Invalid frequency: {test.frequency}")
-
         else:
             raise ValueError(f"Invalid channel bandwidth: {test.chbw}")
 
-        if test.chbw == "HT40-" or test.chbw == "HT40+":
-            if hostapd_config.ht40_plus_allowed(channel):
-                extended_channel = hostapd_constants.N_CAPABILITY_HT40_PLUS
-            elif hostapd_config.ht40_minus_allowed(channel):
-                extended_channel = hostapd_constants.N_CAPABILITY_HT40_MINUS
-            else:
-                raise ValueError(f"Invalid channel: {channel}")
-            n_capabilities.append(extended_channel)
+        if test.security == Security.WPA2:
+            password = AccessPointConfig.random_string(20)
 
-        if test.security is SecurityMode.WPA2:
-            security_profile = Security(
-                security_mode=SecurityMode.WPA2,
-                password=generate_random_password(length=20),
-                wpa_cipher="CCMP",
-                wpa2_cipher="CCMP",
+        if self.openwrt_ap:
+            band = Band.BAND_2G if test.frequency == "2.4GHz" else Band.BAND_5G
+            bandwidth: Literal[20, 40] = 40 if "HT40" in test.chbw else 20
+
+            extension_channel: Literal["+", "-", None] = None
+            if test.chbw == CHANNEL_BANDWIDTH_40_UPPER:
+                extension_channel = "+"
+            elif test.chbw == CHANNEL_BANDWIDTH_40_LOWER:
+                extension_channel = "-"
+
+            for cap in test.n_capabilities:
+                if cap in KNOWN_UNSUPPORTED_CAPABILITIES:
+                    raise signals.TestSkip(
+                        f"Skipping test because capability '{cap}' is unsupported on OpenWrt"
+                    )
+
+            n_caps = [cap for cap in test.n_capabilities if cap]
+
+            require_mode: Literal["n", "ac", None] = None
+            if test.n_mode == hostapd_constants.Mode.MODE_11N_PURE.value:
+                require_mode = "n"
+            elif test.n_mode == hostapd_constants.Mode.MODE_11AC_PURE.value:
+                require_mode = "ac"
+
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        channel=BssChannel(
+                            band=band,
+                            number=channel,
+                            phy_mode=HtMode(
+                                bw=bandwidth, extension=extension_channel
+                            ),
+                        ),
+                        bss_settings=[
+                            BssSettings(
+                                ssid=ssid,
+                                security=test.security,
+                                password=password,
+                            )
+                        ],
+                        n_capabilities=CapabilitySelection.CUSTOM(n_caps),
+                        require_mode=require_mode,
+                    )
+                ]
             )
-            password = security_profile.password
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=band)
 
-        if test.n_mode not in N_MODE:
-            raise ValueError(f"Invalid n-mode: {test.n_mode}")
+            asserts.assert_true(
+                self.dut.associate(
+                    ssid,
+                    target_pwd=password,
+                    target_security=ConfigMapper.to_hostapd_security(
+                        test.security
+                    ),
+                ),
+                "Failed to connect.",
+            )
+        elif self.access_point:
+            security_profile = DeprecatedSecurity()
+            n_capabilities = []
+            for cap in test.n_capabilities:
+                if not cap:
+                    continue
+                mapped_cap = ConfigMapper.to_hostapd_n_cap(cap)
+                if (
+                    mapped_cap
+                    in hostapd_constants.N_CAPABILITIES_MAPPING.keys()
+                ):
+                    n_capabilities.append(mapped_cap)
 
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="whirlwind",
-            mode=test.n_mode,
-            channel=channel,
-            n_capabilities=n_capabilities,
-            ac_capabilities=[],
-            force_wmm=True,
-            ssid=ssid,
-            security=security_profile,
-        )
-        asserts.assert_true(
-            self.dut.associate(
-                ssid,
-                target_pwd=password,
-                target_security=test.security,
-            ),
-            "Failed to connect.",
-        )
+            if test.chbw == "HT40-" or test.chbw == "HT40+":
+                if hostapd_config.ht40_plus_allowed(channel):
+                    extended_channel = hostapd_constants.N_CAPABILITY_HT40_PLUS
+                elif hostapd_config.ht40_minus_allowed(channel):
+                    extended_channel = hostapd_constants.N_CAPABILITY_HT40_MINUS
+                else:
+                    raise ValueError(f"Invalid channel: {channel}")
+                n_capabilities.append(extended_channel)
+
+            if test.security == Security.WPA2:
+                security_profile = DeprecatedSecurity(
+                    security_mode=DeprecatedSecurityMode.WPA2,
+                    password=password,
+                    wpa_cipher="CCMP",
+                    wpa2_cipher="CCMP",
+                )
+
+            if test.n_mode not in N_MODE:
+                raise ValueError(f"Invalid n-mode: {test.n_mode}")
+
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="whirlwind",
+                mode=test.n_mode,
+                channel=channel,
+                n_capabilities=n_capabilities,
+                ac_capabilities=[],
+                force_wmm=True,
+                ssid=ssid,
+                security=security_profile,
+            )
+            asserts.assert_true(
+                self.dut.associate(
+                    ssid,
+                    target_pwd=password,
+                    target_security=ConfigMapper.to_hostapd_security(
+                        test.security
+                    ),
+                ),
+                "Failed to connect.",
+            )
 
     def _generate_24_HT20_test_args(self) -> list[tuple[TestParams]]:
         test_args: list[tuple[TestParams]] = []
@@ -235,7 +337,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_24,
                         chbw=CHANNEL_BANDWIDTH_20,
                         n_mode=combination[0],
-                        security=SecurityMode.OPEN,
+                        security=Security.NONE,
                         n_capabilities=list(combination[1:]),
                     ),
                 )
@@ -260,7 +362,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_24,
                         chbw=CHANNEL_BANDWIDTH_40_LOWER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=SecurityMode.OPEN,
+                        security=Security.NONE,
                         n_capabilities=list(combination),
                     ),
                 )
@@ -285,7 +387,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_24,
                         chbw=CHANNEL_BANDWIDTH_40_UPPER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=SecurityMode.OPEN,
+                        security=Security.NONE,
                         n_capabilities=list(combination),
                     ),
                 )
@@ -309,7 +411,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_5,
                         chbw=CHANNEL_BANDWIDTH_20,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=SecurityMode.OPEN,
+                        security=Security.NONE,
                         n_capabilities=list(combination),
                     ),
                 )
@@ -334,7 +436,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_5,
                         chbw=CHANNEL_BANDWIDTH_40_LOWER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=SecurityMode.OPEN,
+                        security=Security.NONE,
                         n_capabilities=list(combination),
                     ),
                 )
@@ -360,7 +462,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_5,
                         chbw=CHANNEL_BANDWIDTH_40_UPPER,
                         n_mode=combination[0],
-                        security=SecurityMode.OPEN,
+                        security=Security.NONE,
                         n_capabilities=list(combination[1:]),
                     ),
                 )
@@ -384,7 +486,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_24,
                         chbw=CHANNEL_BANDWIDTH_20,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=SecurityMode.WPA2,
+                        security=Security.WPA2,
                         n_capabilities=list(combination),
                     ),
                 )
@@ -409,7 +511,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_24,
                         chbw=CHANNEL_BANDWIDTH_40_LOWER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=SecurityMode.WPA2,
+                        security=Security.WPA2,
                         n_capabilities=list(combination),
                     ),
                 )
@@ -434,7 +536,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_24,
                         chbw=CHANNEL_BANDWIDTH_40_UPPER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=SecurityMode.WPA2,
+                        security=Security.WPA2,
                         n_capabilities=list(combination),
                     ),
                 )
@@ -458,7 +560,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_5,
                         chbw=CHANNEL_BANDWIDTH_20,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=SecurityMode.WPA2,
+                        security=Security.WPA2,
                         n_capabilities=list(combination),
                     ),
                 )
@@ -483,7 +585,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_5,
                         chbw=CHANNEL_BANDWIDTH_40_LOWER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=SecurityMode.WPA2,
+                        security=Security.WPA2,
                         n_capabilities=list(combination),
                     ),
                 )
@@ -508,7 +610,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_5,
                         chbw=CHANNEL_BANDWIDTH_40_UPPER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=SecurityMode.WPA2,
+                        security=Security.WPA2,
                         n_capabilities=list(combination),
                     ),
                 )
