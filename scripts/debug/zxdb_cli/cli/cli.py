@@ -4,6 +4,7 @@
 
 import argparse
 import asyncio
+import json
 import subprocess
 import sys
 import time
@@ -11,7 +12,13 @@ from pathlib import Path
 from typing import Final
 
 from fx_cmd.lib import FxCmd
-from shared.protocol import BaseRequest, make_request, serialize
+from shared.protocol import (
+    BaseRequest,
+    StartRequest,
+    deserialize_request,
+    make_request,
+    serialize,
+)
 
 # TODO(https://fxbug.dev/504962182): Replace this with something more appropriate.
 UDS_PATH: Final[Path] = Path("/tmp/fx-debug-daemon.sock")
@@ -19,7 +26,8 @@ UDS_PATH: Final[Path] = Path("/tmp/fx-debug-daemon.sock")
 
 async def main(args: list[str]) -> int:
     parser = argparse.ArgumentParser(description="fx debug cli")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument("--json", help="JSON request string")
+    subparsers = parser.add_subparsers(dest="command", required=False)
 
     start_parser = subparsers.add_parser("start", help="Start the daemon")
     start_parser.add_argument(
@@ -55,11 +63,30 @@ async def main(args: list[str]) -> int:
 
     parsed_args = parser.parse_args(args)
 
-    if parsed_args.command == "start":
+    if parsed_args.json and parsed_args.command:
+        print("Error: --json and command are mutually exclusive")
+        return 1
+
+    if not parsed_args.json and not parsed_args.command:
+        print("Error: Either --json or a command must be provided")
+        return 1
+
+    req: BaseRequest | None = None
+    if parsed_args.json:
+        try:
+            req = deserialize_request(parsed_args.json)
+            if isinstance(req, StartRequest):
+                return await start_daemon(req.port)
+        except json.JSONDecodeError as e:
+            print(f"Error: Invalid JSON: {e}")
+            return 1
+        except ValueError as e:
+            print(f"Error: {e}")
+            return 1
+    elif parsed_args.command == "start":
         return await start_daemon(parsed_args.port)
     elif parsed_args.command:
         try:
-            # Convert parsed_args to a dict
             args_dict = vars(parsed_args)
             req = make_request(args_dict)
             return await send_command(req)
@@ -67,7 +94,9 @@ async def main(args: list[str]) -> int:
             print(f"Error: {e}")
             return 1
 
-    return 0
+    assert req is not None
+    assert isinstance(req, BaseRequest)
+    return await send_command(req)
 
 
 async def start_daemon(port: int | None) -> int:

@@ -107,6 +107,75 @@ stopping the daemon.
    {"success": true, "message": "Daemon stopping", "body": null}
    ```
 
+#### JSON CLI Usage (With JSON)
+
+For programmatic environments or agents, the same operations can be invoked via JSON payloads using the `--json` flag.
+
+1. **Start the daemon**:
+   ```bash
+   fx debug cli --json '{"command": "start"}'
+   ```
+   Output:
+   ```
+   Spawning daemon...
+   Daemon is ready.
+   ```
+
+2. **Attach to a process**:
+   ```bash
+   fx debug cli --json '{"command": "attach", "filter": "cobalt.cm"}'
+   ```
+   Output:
+   ```
+   {"success": true, "message": "", "body": {"success": true}}
+   ```
+
+3. **Query threads**:
+   ```bash
+   fx debug cli --json '{"command": "threads"}'
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"threads": [{"id": 1, "name": "main"}, {"id": 2, "name": "worker"}]}}
+   ```
+
+4. **Pause a thread**:
+   ```bash
+   fx debug cli --json '{"command": "pause", "thread_id": 1}'
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"success": true}}
+   ```
+
+5. **Resume a thread**:
+   ```bash
+   fx debug cli --json '{"command": "continue", "thread_id": 1}'
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"success": true}}
+   ```
+
+6. **Get stack trace**:
+   ```bash
+   fx debug cli --json '{"command": "stackTrace", "thread_id": 1}'
+   ```
+   Output:
+   ```
+   {"success": true, "body": {"stackFrames": [{"id": 0, "name": "main", "line": 42}]}}
+   ```
+
+7. **Stop the daemon**:
+   ```bash
+   fx debug cli --json '{"command": "stop"}'
+   ```
+   Output:
+   ```
+   {"success": true, "message": "Daemon stopping", "body": null}
+   ```
+
+
 ## Technical Architecture
 
 The system is built around two primary components: a long-lived background

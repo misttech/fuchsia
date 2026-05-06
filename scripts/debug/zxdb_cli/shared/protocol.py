@@ -13,6 +13,12 @@ class BaseRequest:
 
 
 @dataclasses.dataclass(kw_only=True)
+class StartRequest(BaseRequest):
+    port: int | None = None
+    command: str = "start"
+
+
+@dataclasses.dataclass(kw_only=True)
 class StopRequest(BaseRequest):
     command: str = "stop"
 
@@ -79,7 +85,9 @@ def serialize(obj: BaseRequest | Response) -> str:
 
 def make_request(data: dict[str, Any]) -> BaseRequest:
     command = data.get("command")
-    if command == "stop":
+    if command == "start":
+        return StartRequest(port=data.get("port"))
+    elif command == "stop":
         return StopRequest()
     elif command == "get-state":
         return GetStateRequest()
