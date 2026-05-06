@@ -5,19 +5,11 @@
 #ifndef SRC_DEVICES_SPI_DRIVERS_DW_SPI_DW_SPI_H_
 #define SRC_DEVICES_SPI_DRIVERS_DW_SPI_DW_SPI_H_
 
-#include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <fidl/fuchsia.hardware.spiimpl/cpp/driver/wire.h>
 #include <lib/driver/component/cpp/driver_base2.h>
-#include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/mmio/cpp/mmio.h>
-#include <lib/driver/platform-device/cpp/pdev.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/result.h>
-
-#include <optional>
-#include <queue>
-
-#include "registers.h"
 
 namespace dw_spi {
 
@@ -27,6 +19,8 @@ class DwSpi : public fdf::WireServer<fuchsia_hardware_spiimpl::SpiImpl> {
       : mmio_(std::move(mmio)), interrupt_(std::move(interrupt)) {}
 
   void InitRegisters();
+
+  void Serve(fdf::ServerEnd<fuchsia_hardware_spiimpl::SpiImpl> request);
 
   // SpiImpl interface
   void GetChipSelectCount(fdf::Arena& arena,
@@ -81,6 +75,7 @@ class DwSpi : public fdf::WireServer<fuchsia_hardware_spiimpl::SpiImpl> {
 
   fdf::MmioBuffer mmio_;
   zx::interrupt interrupt_;
+  fdf::ServerBindingGroup<fuchsia_hardware_spiimpl::SpiImpl> bindings_;
 };
 
 class DwSpiDriver : public fdf::DriverBase2 {
@@ -95,6 +90,7 @@ class DwSpiDriver : public fdf::DriverBase2 {
  private:
   std::shared_ptr<fdf::Namespace> incoming_;
   std::unique_ptr<DwSpi> device_;
+  fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
 };
 
 }  // namespace dw_spi
