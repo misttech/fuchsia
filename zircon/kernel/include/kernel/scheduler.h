@@ -366,7 +366,7 @@ class Scheduler {
   // scheduling parameters (start time, finish time, time slice remaining) in
   // both |target| and |upstream| as needed because of the split operation.
   template <typename UpstreamType, typename TargetType>
-  static void SplitNodeFromPiGraph(const UpstreamType& upstream, TargetType& target)
+  static void SplitNodeFromPiGraph(UpstreamType& upstream, TargetType& target)
       TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(upstream),
              ChainLockable::GetLock(target), preempt_disabled_token);
 

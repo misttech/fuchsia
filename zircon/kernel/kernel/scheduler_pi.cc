@@ -489,7 +489,7 @@ template <typename UpstreamType, typename TargetType>
 class SplitNodeFromPiGraphOp
     : public Scheduler::PiOperation<SplitNodeFromPiGraphOp<UpstreamType, TargetType>, TargetType> {
  public:
-  SplitNodeFromPiGraphOp(const UpstreamType& upstream, TargetType& target)
+  SplitNodeFromPiGraphOp(UpstreamType& upstream, TargetType& target)
       TA_REQ(upstream.get_lock(), target.get_lock())
       : Base{target}, upstream_{upstream} {}
 
@@ -652,7 +652,7 @@ class SplitNodeFromPiGraphOp
   using Base::GetTimeSliceUsedNs;
   using Base::target_;
 
-  const UpstreamType& upstream_;
+  UpstreamType& upstream_;
 };
 
 }  // namespace
@@ -882,7 +882,7 @@ void Scheduler::JoinNodeToPiGraph(const UpstreamType& upstream, TargetType& targ
 }
 
 template <typename UpstreamType, typename TargetType>
-void Scheduler::SplitNodeFromPiGraph(const UpstreamType& upstream, TargetType& target) {
+void Scheduler::SplitNodeFromPiGraph(UpstreamType& upstream, TargetType& target) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_pi: split");
   SplitNodeFromPiGraphOp op{upstream, target};
   op.DoOperation();
@@ -897,7 +897,7 @@ template void Scheduler::JoinNodeToPiGraph(const OwnedWaitQueue&, Thread&, Force
 template void Scheduler::JoinNodeToPiGraph(const OwnedWaitQueue&, OwnedWaitQueue&,
                                            ForceInheritance);
 
-template void Scheduler::SplitNodeFromPiGraph(const Thread&, Thread&);
-template void Scheduler::SplitNodeFromPiGraph(const Thread&, OwnedWaitQueue&);
-template void Scheduler::SplitNodeFromPiGraph(const OwnedWaitQueue&, Thread&);
-template void Scheduler::SplitNodeFromPiGraph(const OwnedWaitQueue&, OwnedWaitQueue&);
+template void Scheduler::SplitNodeFromPiGraph(Thread&, Thread&);
+template void Scheduler::SplitNodeFromPiGraph(Thread&, OwnedWaitQueue&);
+template void Scheduler::SplitNodeFromPiGraph(OwnedWaitQueue&, Thread&);
+template void Scheduler::SplitNodeFromPiGraph(OwnedWaitQueue&, OwnedWaitQueue&);
