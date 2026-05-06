@@ -4,7 +4,6 @@
 
 """Common product configuration rules and macros."""
 
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load(
     "@fuchsia_rules_common//:local_actions.bzl",
     "LOCAL_ONLY_ACTION_KWARGS",
@@ -37,18 +36,84 @@ BUILD_TYPES = struct(
     USER_DEBUG = "userdebug",
 )
 
-def _collect_debug_symbols(dep):
-    if FuchsiaPackageInfo in dep:
-        return getattr(dep[FuchsiaPackageInfo], "build_id_dirs", [])
-    return getattr(dep[FuchsiaAssembledPackageInfo], "build_id_dirs", [])
+COMMON_PRODUCT_ASSEMBLY_ATTRIBUTES = {
+    "product_config": attr.string(
+        doc = "Raw json config. Used as a base template for the config.",
+        default = "{}",
+    ),
+    "product_config_labels": attr.label_keyed_string_dict(
+        doc = "Map of labels in the raw json config to LABEL(label) strings. Labels in the raw json config are replaced by file paths identified by their corresponding values in this dict.",
+        allow_files = True,
+        default = {},
+    ),
+    "bootfs_packages": attr.label_list(
+        doc = "Fuchsia packages to be included in bootfs.",
+        providers = [
+            [FuchsiaAssembledPackageInfo],
+            [FuchsiaPackageInfo],
+        ],
+        default = [],
+    ),
+    "base_packages": attr.label_list(
+        doc = "Fuchsia packages to be included in base.",
+        providers = [
+            [FuchsiaAssembledPackageInfo],
+            [FuchsiaPackageInfo],
+        ],
+        default = [],
+    ),
+    "cache_packages": attr.label_list(
+        doc = "Fuchsia packages to be included in cache.",
+        providers = [
+            [FuchsiaAssembledPackageInfo],
+            [FuchsiaPackageInfo],
+        ],
+        default = [],
+    ),
+    "base_driver_packages": attr.label_list(
+        doc = "Base-driver packages to include in product.",
+        providers = [FuchsiaPackageInfo],
+        default = [],
+    ),
+    "product_input_bundles": attr.label_list(
+        doc = "Product input bundles to include.",
+        providers = [FuchsiaProductInputBundleInfo],
+        default = [],
+    ),
+    "ota_configuration": attr.label(
+        doc = "OTA configuration to include in the product. Only for use with products that use Omaha.",
+        providers = [FuchsiaOmahaOtaConfigInfo],
+    ),
+    "version": attr.string(
+        doc = "Release version of this board.",
+        default = "__unset",
+    ),
+    "version_file": attr.label(
+        doc = "Path to a file containing the current release version.",
+        allow_single_file = True,
+    ),
+    "repo": attr.string(
+        doc = "Name of the release repository. Overrides _release_repository_flag when set.",
+    ),
+    "deps": attr.label_list(
+        doc = "Additional dependencies that must be built before this target is built.",
+        default = [],
+    ),
+    "starnix_containers": attr.label_list(
+        doc = "Starnix container generation fields needed",
+        providers = [FuchsiaStarnixContainerInfo],
+        default = [],
+    ),
+}
 
-def common_product_configuration_impl(ctx, assembly_config_binary, bootfs_files_package = None):
+def common_product_configuration_impl(ctx, assembly_config_binary, bootfs_files_package = None, repo_name = ""):
     """Common implementation for product configuration rules.
 
     Args:
         ctx: The context of the rule.
         assembly_config_binary: The path for the assembly_config tool.
         bootfs_files_package: FuchsiaPackageInfo provider instance for a package containing bootfs files.
+        repo_name: The name of the repository that the product's packages will be published to.
 
     Returns:
         A list of providers for the rule.
@@ -171,13 +236,8 @@ def common_product_configuration_impl(ctx, assembly_config_binary, bootfs_files_
         product_config_dir.path,
     ]
 
-    if ctx.attr.repo:
-        repo = ctx.attr.repo
-    else:
-        repo = ctx.attr._release_repository_flag[BuildSettingInfo].value
-
-    if repo:
-        args += ["--repo", repo]
+    if repo_name:
+        args += ["--repo", repo_name]
 
     if ctx.attr.version != "__unset":
         args += ["--version", ctx.attr.version]
@@ -207,6 +267,11 @@ def common_product_configuration_impl(ctx, assembly_config_binary, bootfs_files_
             build_id_dirs = build_id_dirs,
         ),
     ]
+
+def _collect_debug_symbols(dep):
+    if FuchsiaPackageInfo in dep:
+        return getattr(dep[FuchsiaPackageInfo], "build_id_dirs", [])
+    return getattr(dep[FuchsiaAssembledPackageInfo], "build_id_dirs", [])
 
 def _create_pkg_detail(dep):
     """Creates a dictionary with package details from a dependency.

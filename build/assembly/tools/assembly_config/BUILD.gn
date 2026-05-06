@@ -4,6 +4,7 @@
 
 assert(is_host, "This tool is only applicable on the host toolchain")
 
+import("//build/bazel/bazel_inputs.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/sdk/sdk_host_tool.gni")
 
@@ -52,4 +53,9 @@ sdk_host_tool("assembly_config_sdk") {
   category = "partner"
   output_name = "assembly_config"
   deps = [ ":assembly_config" ]
+}
+
+bazel_input_file("bazel_input") {
+  generator = ":assembly_config"
+  outputs = [ "${root_out_dir}/assembly_config" ]
 }

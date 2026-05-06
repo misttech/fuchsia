@@ -5,20 +5,27 @@
 """Rule for declaring a Fuchsia product configuration."""
 
 # buildifier: disable=module-docstring
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@fuchsia_rules_common//:local_actions.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 load("@fuchsia_rules_common//assembly:json_utils.bzl", "extract_labels")
-load("@fuchsia_rules_common//assembly:product_configuration.bzl", "BUILD_TYPES", "common_product_configuration_impl")
+load(
+    "@fuchsia_rules_common//assembly:product_configuration.bzl",
+    "BUILD_TYPES",
+    "COMMON_PRODUCT_ASSEMBLY_ATTRIBUTES",
+    "common_product_configuration_impl",
+)
 load(
     "@fuchsia_rules_common//assembly:providers.bzl",
-    "FuchsiaAssembledPackageInfo",
-    "FuchsiaOmahaOtaConfigInfo",
     "FuchsiaProductConfigInfo",
     "FuchsiaProductInputBundleInfo",
-    "FuchsiaStarnixContainerInfo",
 )
 load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
-load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
+load(
+    "//fuchsia/private:fuchsia_toolchains.bzl",
+    "FUCHSIA_TOOLCHAIN_DEFINITION",
+    "get_fuchsia_sdk_toolchain",
+)
 load(":utils.bzl", "select_root_dir_with_file")
 
 # Define input device types option
@@ -33,7 +40,13 @@ INPUT_DEVICE_TYPE = struct(
 def _fuchsia_product_configuration_impl(ctx):
     sdk = get_fuchsia_sdk_toolchain(ctx)
 
-    return common_product_configuration_impl(ctx, sdk.assembly_config)
+    if ctx.attr.repo:
+        repo_name = ctx.attr.repo
+    else:
+        repo_name = ctx.attr._release_repository_flag[BuildSettingInfo].value
+
+    # Use the common product assembly implementation from @fuchsia_rules_common
+    return common_product_configuration_impl(ctx, sdk.assembly_config, repo_name = repo_name)
 
 def _fuchsia_prebuilt_product_configuration_impl(ctx):
     directory = select_root_dir_with_file(ctx.files.files, "product_configuration.json")
@@ -66,77 +79,11 @@ _fuchsia_product_configuration = rule(
     doc = """Generates a product configuration file.""",
     implementation = _fuchsia_product_configuration_impl,
     toolchains = [FUCHSIA_TOOLCHAIN_DEFINITION],
-    attrs = {
-        "product_config": attr.string(
-            doc = "Raw json config. Used as a base template for the config.",
-            default = "{}",
-        ),
-        "product_config_labels": attr.label_keyed_string_dict(
-            doc = "Map of labels in the raw json config to LABEL(label) strings. Labels in the raw json config are replaced by file paths identified by their corresponding values in this dict.",
-            allow_files = True,
-            default = {},
-        ),
-        "bootfs_packages": attr.label_list(
-            doc = "Fuchsia packages to be included in bootfs.",
-            providers = [
-                [FuchsiaAssembledPackageInfo],
-                [FuchsiaPackageInfo],
-            ],
-            default = [],
-        ),
-        "base_packages": attr.label_list(
-            doc = "Fuchsia packages to be included in base.",
-            providers = [
-                [FuchsiaAssembledPackageInfo],
-                [FuchsiaPackageInfo],
-            ],
-            default = [],
-        ),
-        "cache_packages": attr.label_list(
-            doc = "Fuchsia packages to be included in cache.",
-            providers = [
-                [FuchsiaAssembledPackageInfo],
-                [FuchsiaPackageInfo],
-            ],
-            default = [],
-        ),
-        "base_driver_packages": attr.label_list(
-            doc = "Base-driver packages to include in product.",
-            providers = [FuchsiaPackageInfo],
-            default = [],
-        ),
-        "product_input_bundles": attr.label_list(
-            doc = "Product input bundles to include.",
-            providers = [FuchsiaProductInputBundleInfo],
-            default = [],
-        ),
-        "ota_configuration": attr.label(
-            doc = "OTA configuration to include in the product. Only for use with products that use Omaha.",
-            providers = [FuchsiaOmahaOtaConfigInfo],
-        ),
-        "version": attr.string(
-            doc = "Release version of this board.",
-            default = "__unset",
-        ),
-        "version_file": attr.label(
-            doc = "Path to a file containing the current release version.",
-            allow_single_file = True,
-        ),
-        "repo": attr.string(
-            doc = "Name of the release repository. Overrides _release_repository_flag when set.",
-        ),
+    # Use the common product assembly attributes from @fuchsia_rules_common
+    attrs = COMMON_PRODUCT_ASSEMBLY_ATTRIBUTES | {
         "_release_repository_flag": attr.label(
             doc = "String flag used to set the name of the release repository.",
             default = "@rules_fuchsia//fuchsia/flags:fuchsia_release_repository",
-        ),
-        "deps": attr.label_list(
-            doc = "Additional dependencies that must be built before this target is built.",
-            default = [],
-        ),
-        "starnix_containers": attr.label_list(
-            doc = "Starnix container generation fields needed",
-            providers = [FuchsiaStarnixContainerInfo],
-            default = [],
         ),
     } | COMPATIBILITY.HOST_ATTRS,
 )

@@ -187,7 +187,10 @@ template("bazel_product_bundle") {
   }
 
   # The bazel inputs for all of the bazel actions described by this template.
-  _bazel_inputs = []
+  _bazel_inputs = [
+    # The assembly config tool used by internal (non-sdk) Bazel targets.
+    "//build/assembly/tools/assembly_config:bazel_input($host_toolchain)",
+  ]
 
   # See if there are any developer overrides enabled for this target, and
   # if so, pass them to assembly.
