@@ -454,13 +454,6 @@ linker_config("hermetic_source_set.config") {
   inputs = [ "//build/toolchain/hermetic_source_set.ld" ]
   linker_flags = [ "-T" + rebase_path(inputs[0], root_build_dir) ]
 
-  if (link_rbe_enable) {
-    # TODO: (https://fxbug.dev/509665308): This is working around an RBE
-    # wrapper bug.  Even though it's in the GN inputs and directly on the
-    # command line, it doesn't notice the -T file as a remote input.
-    ldflags += [ "--remote-inputs=" + rebase_path(inputs[0], root_build_dir) ]
-  }
-
   # TODO(https://fxbug.dev/445786243): work around reloc rewriting bug in lld
   linker_flags += [ "--discard-none" ]
 }
