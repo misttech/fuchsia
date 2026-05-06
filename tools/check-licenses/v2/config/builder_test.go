@@ -165,7 +165,9 @@ func TestBuilder_LoadManifests(t *testing.T) {
 		{"third_party/acpica", false},
 		{"prebuilt/third_party/clang", false},
 		{"prebuilt/media/firmware/amlogic-decoder", true},
+		{"prebuilt/media/firmware/amlogic-decoder/firmware.bin", true},
 		{"vendor/third_party/eigen3", true},
+		{"vendor/third_party/eigen3/LICENSE", true},
 		{"unknown/project", false},
 	}
 

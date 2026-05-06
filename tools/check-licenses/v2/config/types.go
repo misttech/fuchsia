@@ -65,15 +65,17 @@ type MasterConfig struct {
 func (c *MasterConfig) IsPrivateProject(projectPath string) bool {
 	projectPath = filepath.Clean(projectPath)
 
-	// 1. Check if marked private from integration folder
-	if c.ManifestPrivateProjects[projectPath] {
-		return true
-	}
-
-	// 2. Check manifest name prefix
-	if name, ok := c.ManifestProjectNames[projectPath]; ok {
-		if strings.HasPrefix(name, "fuchsia_internal/") {
+	for p := projectPath; p != "." && p != "/"; p = filepath.Dir(p) {
+		// 1. Check if marked private from integration folder
+		if c.ManifestPrivateProjects[p] {
 			return true
+		}
+
+		// 2. Check manifest name prefix
+		if name, ok := c.ManifestProjectNames[p]; ok {
+			if strings.HasPrefix(name, "fuchsia_internal/") {
+				return true
+			}
 		}
 	}
 
