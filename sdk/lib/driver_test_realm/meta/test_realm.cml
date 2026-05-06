@@ -152,6 +152,7 @@
         },
         {
             config: [
+                "fuchsia.driver.usb.peripheral",
                 "fuchsia.power.SuspendEnabled",
                 "fuchsia.usb.PeripheralConfig.Functions",
             ],
@@ -261,6 +262,7 @@
             from: "#fake-resolver",
             to: "#driver-index",
         },
+
         // These protocols are not actually used but exist to increase the lifetime
         // of components. The capabilities are named after their place in the topology.
         // We cannot use a single service due to the lack of service merging.
