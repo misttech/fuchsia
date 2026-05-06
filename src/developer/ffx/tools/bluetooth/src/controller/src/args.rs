@@ -4,6 +4,7 @@
 
 use argh::{ArgsInfo, FromArgs};
 use ffx_core::ffx_command;
+use fuchsia_bluetooth::types::HostId;
 
 #[path = "local_name/args.rs"]
 pub mod local_name;
@@ -30,6 +31,7 @@ pub struct ControllerCommand {
 pub enum ControllerSubCommand {
     Show(ShowCommand),
     List(ListCommand),
+    Set(SetCommand),
     LocalName(local_name::LocalNameCommand),
     DeviceClass(device_class::DeviceClassCommand),
 }
@@ -52,3 +54,16 @@ pub struct ShowCommand {}
     example = "ffx bluetooth controller list"
 )]
 pub struct ListCommand {}
+
+/// ffx bluetooth controller set
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "set",
+    description = "Set the active Bluetooth controller.",
+    example = "ffx bluetooth controller set <id>"
+)]
+pub struct SetCommand {
+    #[argh(positional)]
+    pub id: HostId,
+}

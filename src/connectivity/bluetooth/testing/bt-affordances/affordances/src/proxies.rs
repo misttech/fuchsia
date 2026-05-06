@@ -26,6 +26,7 @@ pub(crate) struct Proxies {
     pub(crate) gatt_server_proxy: Server_Proxy,
     pub(crate) peripheral_proxy: PrivilegedPeripheralProxy,
     pub(crate) pairing_proxy: PairingProxy,
+    pub(crate) host_watcher_proxy: HostWatcherProxy,
     pub(crate) host_watcher_stream: HangingGetStream<HostWatcherProxy, Vec<HostInfo>>,
     pub(crate) peer_watcher_stream: HangingGetStream<AccessProxy, (Vec<Peer>, Vec<PeerId>)>,
     pub(crate) discovery_session: Mutex<Option<ProcedureTokenProxy>>,
@@ -49,10 +50,9 @@ impl Proxies {
         let gatt_server_proxy = connect_to_protocol::<Server_Marker>()?;
         let peripheral_proxy = connect_to_protocol::<PrivilegedPeripheralMarker>()?;
         let pairing_proxy = connect_to_protocol::<PairingMarker>()?;
-        let host_watcher_stream = HangingGetStream::new_with_fn_ptr(
-            connect_to_protocol::<HostWatcherMarker>()?,
-            HostWatcherProxy::watch,
-        );
+        let host_watcher_proxy = connect_to_protocol::<HostWatcherMarker>()?;
+        let host_watcher_stream =
+            HangingGetStream::new_with_fn_ptr(host_watcher_proxy.clone(), HostWatcherProxy::watch);
         let peer_watcher_stream =
             HangingGetStream::new_with_fn_ptr(access_proxy.clone(), AccessProxy::watch_peers);
 
@@ -63,6 +63,7 @@ impl Proxies {
             gatt_server_proxy,
             peripheral_proxy,
             pairing_proxy,
+            host_watcher_proxy,
             host_watcher_stream,
             peer_watcher_stream,
             discovery_session: Mutex::new(None),

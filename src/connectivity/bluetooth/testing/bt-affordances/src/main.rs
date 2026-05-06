@@ -6,7 +6,7 @@ use anyhow::{Context, Error};
 use fidl_fuchsia_bluetooth_affordances::{
     HostControllerRequest, HostControllerRequestStream, HostControllerSetDeviceClassRequest,
     HostControllerSetDiscoverabilityRequest, HostControllerStartPairingDelegateRequest,
-    PeerControllerPairRequest, PeerControllerRequest, PeerControllerRequestStream,
+    HostSelector, PeerControllerPairRequest, PeerControllerRequest, PeerControllerRequestStream,
     PeerControllerSetDiscoveryRequest, PeerSelector, PeripheralControllerAdvertiseRequest,
     PeripheralControllerAdvertiseResponse, PeripheralControllerRequest,
     PeripheralControllerRequestStream,
@@ -28,8 +28,19 @@ macro_rules! selector_to_peer_id {
         match $selector {
             PeerSelector { id: Some(id), .. } => id,
             _ => {
-                $responder
-                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
+                $responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
+                return Ok(());
+            }
+        }
+    };
+}
+
+macro_rules! selector_to_host_id {
+    ($method:expr, $selector:expr, $responder:expr) => {
+        match $selector {
+            HostSelector { id: Some(id), .. } => id,
+            _ => {
+                $responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
                 return Ok(());
             }
         }
@@ -86,8 +97,7 @@ async fn handle_single_peer_request(
                 selector: Some(selector), options: Some(options), ..
             } = payload
             else {
-                responder
-                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
+                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
                 return Ok(());
             };
             let id = selector_to_peer_id!("Pair", selector, responder);
@@ -116,8 +126,7 @@ async fn handle_single_peer_request(
         PeerControllerRequest::SetDiscovery { payload, responder } => {
             let PeerControllerSetDiscoveryRequest { discovery: Some(discovery), .. } = payload
             else {
-                responder
-                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
+                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
                 return Ok(());
             };
             match worker.set_discovery(discovery).await {
@@ -171,8 +180,7 @@ async fn handle_single_host_request(
                 discoverable: Some(discoverable), ..
             } = payload
             else {
-                responder
-                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
+                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
                 return Ok(());
             };
             match worker.set_discoverability(discoverable).await {
@@ -185,14 +193,25 @@ async fn handle_single_host_request(
                 }
             }
         }
+        HostControllerRequest::SetActiveHost { payload, responder } => {
+            let id = selector_to_host_id!("SetActiveHost", payload, responder);
+            match worker.set_active_host(id).await {
+                Ok(_) => {
+                    responder.send(Ok(()))?;
+                }
+                Err(err) => {
+                    error!("SetActiveHost encountered error: {err}");
+                    responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::Internal))?;
+                }
+            }
+        }
         HostControllerRequest::SetLocalName { payload, responder } => {
             let fidl_fuchsia_bluetooth_affordances::HostControllerSetLocalNameRequest {
                 name: Some(name),
                 ..
             } = payload
             else {
-                responder
-                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
+                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
                 return Ok(());
             };
             match worker.set_local_name(name).await {
@@ -212,8 +231,7 @@ async fn handle_single_host_request(
                 ..
             } = payload
             else {
-                responder
-                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
+                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
                 return Ok(());
             };
             match worker.start_pairing_delegate(input_capability, output_capability).await {
@@ -277,8 +295,7 @@ async fn handle_single_peripheral_request(
                 ..
             } = payload
             else {
-                responder
-                    .send(Err(fidl_fuchsia_bluetooth_affordances::Error::InvalidParameters))?;
+                responder.send(Err(fidl_fuchsia_bluetooth_affordances::Error::MissingParameters))?;
                 return Ok(());
             };
             let timeout = std::time::Duration::from_secs(timeout);

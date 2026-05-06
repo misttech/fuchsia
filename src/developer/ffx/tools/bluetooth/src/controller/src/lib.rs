@@ -4,13 +4,14 @@
 
 use ::async_trait::async_trait;
 use ::fho::{AvailabilityFlag, FfxMain, FfxTool, Result};
-use fdomain_fuchsia_bluetooth_affordances::HostControllerProxy;
+use fdomain_fuchsia_bluetooth::HostId as FidlHostId;
+use fdomain_fuchsia_bluetooth_affordances::{HostControllerProxy, HostSelector};
 use ffx_writer::{SimpleWriter, ToolIO as _};
 use target_holders::fdomain::toolbox;
 
 use ffx_bluetooth_controller_args::{ControllerCommand, ControllerSubCommand};
 
-use fuchsia_bluetooth::types::{HostInfo, addresses_to_custom_string};
+use fuchsia_bluetooth::types::{HostId, HostInfo, addresses_to_custom_string};
 use prettytable::format::FormatBuilder;
 use prettytable::{Table, cell, row};
 
@@ -45,6 +46,11 @@ impl FfxMain for ControllerTool {
             ControllerSubCommand::List(ref _cmd) => {
                 writer.line(get_hosts_list(&hosts).unwrap())?;
             }
+            // ffx bluetooth controller set
+            ControllerSubCommand::Set(ref cmd) => {
+                self.set_active_host(cmd.id).await?;
+                writer.line(format!("Active host set to {}", cmd.id))?;
+            }
             // ffx bluetooth controller local-name
             ControllerSubCommand::LocalName(ref cmd) => {
                 local_name::handle_local_name(&self, cmd, &mut writer, &hosts).await?;
@@ -76,6 +82,21 @@ impl ControllerTool {
             .into_iter()
             .map(|host| HostInfo::try_from(host).expect("Failed to convert between Host types"))
             .collect())
+    }
+
+    async fn set_active_host(&self, host_id: HostId) -> Result<()> {
+        let fidl_host_id: FidlHostId = host_id.into();
+        let selector = HostSelector { id: Some(fidl_host_id), ..Default::default() };
+        Ok(self
+            .host_controller
+            .set_active_host(&selector)
+            .await
+            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
+            .map_err(|err| {
+                fho::Error::Unexpected(anyhow::anyhow!(
+                    "fuchsia.bluetooth.affordances.HostController error: {err:?}"
+                ))
+            })?)
     }
 }
 

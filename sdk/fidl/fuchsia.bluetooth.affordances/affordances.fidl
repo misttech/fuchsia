@@ -15,14 +15,20 @@ type Error = strict enum {
     INTERNAL = 1;
     /// Operation timed out.
     TIMEOUT = 2;
-    /// Invalid parameters. This usually means that one or more required fields were not set.
-    INVALID_PARAMETERS = 3;
+    /// One or more required parameters are not set.
+    MISSING_PARAMETERS = 3;
 };
 
 /// Defines how to find a peer to perform an operation on. At least one field must be present.
 type PeerSelector = table {
     /// The ID of the peer to act on.
     1: id bt.PeerId;
+};
+
+/// Defines how to find a host to perform an operation on. At least one field must be present.
+type HostSelector = table {
+    /// The ID of the host to act on.
+    1: id bt.HostId;
 };
 
 @discoverable
@@ -85,6 +91,11 @@ open protocol HostController {
         /// Required. Set to true if making discoverable or false if revoking discoverability.
         1: discoverable bool;
     }) -> () error Error;
+
+    /// Set the active host.
+    ///
+    /// * error Returns `INTERNAL` if the operation failed (check logs).
+    flexible SetActiveHost(HostSelector) -> () error Error;
 
     /// Set the active host's local name.
     ///

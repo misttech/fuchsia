@@ -34,6 +34,7 @@ ffx_plugin("ffx_bluetooth_controller") {
   ]
   args_deps = [
     "//sdk/fidl/fuchsia.bluetooth:fuchsia.bluetooth_rust_fdomain",
+    "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
     "//src/developer/ffx/core:lib",
     "//third_party/rust_crates:argh",
   ]
