@@ -88,7 +88,7 @@ impl<T> Queue<T> {
 }
 
 /// Maximum amount to read for an async socket read.
-const ASYNC_READ_BUFSIZE: u64 = 40960;
+const ASYNC_READ_BUFSIZE: u64 = 65536;
 
 /// Wraps the various FIDL Event types that can be produced by an FDomain
 #[derive(Debug)]
