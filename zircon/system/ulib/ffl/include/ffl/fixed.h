@@ -63,9 +63,13 @@ class Fixed {
   // long as the underling integer member |value_| is initialized before use.
   constexpr Fixed() = default;
 
-  // Fixed is copy constructible and assignable.
+  // Fixed is copy constructible and copy assignable.
   constexpr Fixed(const Fixed&) = default;
-  constexpr Fixed& operator=(const Fixed&) = default;
+
+  // All assignment operators are intentionally lvalue reference qualified to
+  // prevent assignments to temporaries, which can create surprising behavior
+  // compared to plain integers and result in silent data loss.
+  constexpr Fixed& operator=(const Fixed&) & = default;
 
   // Explicit conversion from an integer value. The value is saturated to fit
   // within the integer precision defined by Format::IntegerBits.
@@ -88,8 +92,12 @@ class Fixed {
   // Assignment from an intermediate expression. The value is rounded and
   // saturated to fit within the precision and resolution of this type, if
   // necessary.
+  //
+  // All assignment operators are intentionally lvalue reference qualified to
+  // prevent assignments to temporaries, which can create surprising behavior
+  // compared to plain integers and result in silent data loss.
   template <Operation Op, typename... Args>
-  constexpr Fixed& operator=(Expression<Op, Args...> expression) {
+  constexpr Fixed& operator=(Expression<Op, Args...> expression) & {
     return *this = Fixed{expression};
   }
 
@@ -97,7 +105,11 @@ class Fixed {
   constexpr Fixed(Value<Format> value) : value_{Format::Saturate(value)} {}
 
   // Assignment from an intermediate value of the same format.
-  constexpr Fixed& operator=(Value<Format> value) { return *this = Fixed{value}; }
+  //
+  // All assignment operators are intentionally lvalue reference qualified to
+  // prevent assignments to temporaries, which can create surprising behavior
+  // compared to plain integers and result in silent data loss.
+  constexpr Fixed& operator=(Value<Format> value) & { return *this = Fixed{value}; }
 
   // Returns the raw fixed-point value as the underling integer type.
   constexpr Integer raw_value() const { return value_; }
@@ -187,23 +199,27 @@ class Fixed {
   constexpr bool operator!=(Fixed other) const { return value_ != other.value_; }
 
   // Compound assignment operators.
+  //
+  // All assignment operators are intentionally lvalue reference qualified to
+  // prevent assignments to temporaries, which can create surprising behavior
+  // compared to plain integers and result in silent data loss.
   template <typename T, typename Enabled = EnableIfUnaryExpression<T>>
-  constexpr Fixed& operator+=(T expression) {
+  constexpr Fixed& operator+=(T expression) & {
     *this = *this + expression;
     return *this;
   }
   template <typename T, typename Enabled = EnableIfUnaryExpression<T>>
-  constexpr Fixed& operator-=(T expression) {
+  constexpr Fixed& operator-=(T expression) & {
     *this = *this - expression;
     return *this;
   }
   template <typename T, typename Enabled = EnableIfUnaryExpression<T>>
-  constexpr Fixed& operator*=(T expression) {
+  constexpr Fixed& operator*=(T expression) & {
     *this = *this * expression;
     return *this;
   }
   template <typename T, typename Enabled = EnableIfUnaryExpression<T>>
-  constexpr Fixed& operator/=(T expression) {
+  constexpr Fixed& operator/=(T expression) & {
     *this = *this / expression;
     return *this;
   }

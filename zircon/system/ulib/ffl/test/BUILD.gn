@@ -22,6 +22,7 @@ test("ffl") {
     }
   }
   sources = [
+    "assignment_tests.cc",
     "exponential_average_tests.cc",
     "ffl_tests.cc",
   ]
