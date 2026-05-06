@@ -243,6 +243,7 @@ template("rustc_cdylib") {
   }
 
   group(target_name) {
+    forward_variables_from(invoker, [ "testonly" ])
     public_deps = [
       ":$header_target",
       ":$rustc_target",
