@@ -4,45 +4,22 @@
 
 import("//build/rust/rustc_library.gni")
 
-template("ffx_optional_moniker_lib") {
-  rustc_library(target_name) {
-    name = "ffx_optional_moniker"
-    version = "0.1.0"
-    edition = "2024"
+rustc_library("ffx_optional_moniker") {
+  version = "0.1.0"
+  edition = "2024"
 
-    deps = [
-             "//src/developer/ffx/command/error:lib",
-             "//src/developer/ffx/lib/fho:lib",
-             "//src/developer/ffx/lib/target/holders:lib",
-             "//third_party/rust_crates:async-trait",
-             "//third_party/rust_crates:log",
-           ] + invoker.deps
-
-    sources = [ "src/lib.rs" ]
-
-    features = []
-    if (defined(invoker.features)) {
-      features += invoker.features
-    }
-
-    configs += [ "//build/config/rust/lints:clippy_warn_all" ]
-  }
-}
-
-ffx_optional_moniker_lib("ffx_optional_moniker") {
-  deps = [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_flex",
-    "//src/developer/ffx/lib/rcs:lib",
-    "//src/lib/fdomain/client:flex_fidl",
-  ]
-}
-
-ffx_optional_moniker_lib("ffx_optional_moniker_fdomain") {
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain_flex",
+    "//src/developer/ffx/command/error:lib",
+    "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/rcs:lib_fdomain",
+    "//src/developer/ffx/lib/target/holders:lib",
     "//src/lib/fdomain/client:flex_fdomain",
+    "//third_party/rust_crates:async-trait",
+    "//third_party/rust_crates:log",
   ]
 
-  features = [ "fdomain" ]
+  sources = [ "src/lib.rs" ]
+
+  configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }

@@ -21,7 +21,7 @@ ffx_plugin("ffx_profile_memory") {
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/writer:lib",
-    "//src/developer/ffx/plugins/audio/ffx_optional_moniker:ffx_optional_moniker_fdomain",
+    "//src/developer/ffx/plugins/audio/ffx_optional_moniker",
     "//src/developer/ffx/plugins/profile/memory/components:ffx_profile_memory_components",
     "//src/developer/ffx/plugins/profile/memory/components:ffx_profile_memory_components_args",
     "//src/lib/fdomain/client",
