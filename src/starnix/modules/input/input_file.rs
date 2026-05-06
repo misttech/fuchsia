@@ -511,27 +511,22 @@ impl InputFile {
         if let Some(inspect) = &self.inspect_status {
             inspect.count_fd_read_calls();
         }
-        let (events, should_notify) = {
+        let events = {
             let mut inner = self.inner.lock();
             let num_events = inner.events.len();
             let limit = std::cmp::min(limit, num_events);
-            let should_notify = num_events > limit;
-            if should_notify {
+            if num_events > limit {
                 log_info!(
-                    "There was only space in the given buffer to read {} of the {} queued events. Sending a notification to prompt another read.",
+                    "There was only space in the given buffer to read {} of the {} queued events.",
                     limit,
                     num_events
                 );
             }
-            let events = inner.events.drain(..limit).collect();
-            (events, should_notify)
+            inner.events.drain(..limit).collect()
         };
-        if should_notify {
-            if let Some(inspect) = &self.inspect_status {
-                inspect.count_fd_notify_calls();
-            }
-            self.waiters.notify_fd_events(FdEvents::POLLIN);
-        }
+        // We do not notify if the buffer was not enough to read all events.
+        // `query_events` will still return `FdEvents::POLLIN` if there are remaining events,
+        // so the caller can continue reading or poll again.
         events
     }
 }
@@ -899,5 +894,52 @@ impl<const NUM_BYTES: usize> BitSet<{ NUM_BYTES }> {
         let byte = bitnum / 8;
         let bit = bitnum % 8;
         self.bytes[byte] |= 1 << bit;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn test_read_events_no_notify_when_buffer_full() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let node = inspector.root();
+        let input_file = InputFile::new_touch(
+            uapi::input_id { bustype: 0, vendor: 0, product: 0, version: 0 },
+            100,
+            100,
+            node,
+        );
+
+        // Add some events.
+        let event1 = uapi::input_event {
+            type_: uapi::EV_KEY as u16,
+            code: 1,
+            value: 1,
+            ..Default::default()
+        };
+        let event2 = uapi::input_event {
+            type_: uapi::EV_KEY as u16,
+            code: 2,
+            value: 1,
+            ..Default::default()
+        };
+        input_file.add_events(vec![event1, event2]);
+
+        // Verify that adding events triggered a notification.
+        let notify_count =
+            input_file.inspect_status.as_ref().unwrap().fd_notify_count.load(Ordering::Relaxed);
+        assert_eq!(notify_count, 1);
+
+        // Read with a limit of 1.
+        let events = input_file.read_events(1);
+        assert_eq!(events.len(), 1);
+
+        // Verify that no additional notification was sent despite more events remaining.
+        let notify_count =
+            input_file.inspect_status.as_ref().unwrap().fd_notify_count.load(Ordering::Relaxed);
+        assert_eq!(notify_count, 1);
     }
 }
