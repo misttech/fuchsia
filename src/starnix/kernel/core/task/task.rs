@@ -190,13 +190,21 @@ impl From<uapi::arch32::robust_list_head> for RobustListHead {
 }
 
 pub struct TaskMutableState {
-    /// The mutable live state of the task.
-    ///
-    /// This is `None` for zombie tasks.
-    pub live: Option<TaskMutableLiveState>,
-
     // See https://man7.org/linux/man-pages/man2/set_tid_address.2.html
     pub clear_child_tid: UserRef<tid_t>,
+
+    /// Signal handler related state. This is grouped together for when atomicity is needed during
+    /// signal sending and delivery.
+    signals: SignalState,
+
+    /// Internal signals that have a higher priority than a regular signal.
+    ///
+    /// Storing in a separate queue outside of `SignalState` ensures the internal signals will
+    /// never be ignored or masked when dequeuing. Higher priority ensures that no user signals
+    /// will jump the queue, e.g. ptrace, which delays the delivery.
+    ///
+    /// This design is not about observable consequence, but about convenient implementation.
+    kernel_signals: VecDeque<KernelSignal>,
 
     /// The exit status that this task exited with.
     exit_status: Option<ExitStatus>,
@@ -257,26 +265,6 @@ pub struct TaskMutableState {
 }
 
 impl TaskMutableState {
-    /// Returns the [`TaskMutableLiveState`] for the [`TaskMutableState`].
-    ///
-    /// # Panics
-    ///
-    /// Calling `live()` on a [`TaskMutableState`] which has no live state (i.e. zombie tasks)
-    /// panics.
-    pub fn live(&self) -> &TaskMutableLiveState {
-        self.live.as_ref().expect("Operation requires TaskMutableLiveState")
-    }
-
-    /// Returns the mutable [`TaskMutableLiveState`] for the [`TaskMutableState`].
-    ///
-    /// # Panics
-    ///
-    /// Calling `live_mut()` on a [`TaskMutableState`] which has no live state (i.e. zombie tasks)
-    /// panics.
-    pub fn live_mut(&mut self) -> &mut TaskMutableLiveState {
-        self.live.as_mut().expect("Operation requires TaskMutableLiveState")
-    }
-
     pub fn no_new_privs(&self) -> bool {
         self.no_new_privs
     }
@@ -357,63 +345,62 @@ impl TaskMutableState {
 
     /// Returns the task's currently active signal mask.
     pub fn signal_mask(&self) -> SigSet {
-        self.live().signals.mask()
+        self.signals.mask()
     }
 
     /// Returns true if `signal` is currently blocked by this task's signal mask.
     pub fn is_signal_masked(&self, signal: Signal) -> bool {
-        self.live().signals.mask().has_signal(signal)
+        self.signals.mask().has_signal(signal)
     }
 
     /// Returns true if `signal` is blocked by the saved signal mask.
     ///
     /// Note that the current signal mask may still not be blocking the signal.
     pub fn is_signal_masked_by_saved_mask(&self, signal: Signal) -> bool {
-        self.live().signals.saved_mask().is_some_and(|mask| mask.has_signal(signal))
+        self.signals.saved_mask().is_some_and(|mask| mask.has_signal(signal))
     }
 
     /// Removes the currently active, temporary, signal mask and restores the
     /// previously active signal mask.
     pub fn restore_signal_mask(&mut self) {
-        self.live_mut().signals.restore_mask();
+        self.signals.restore_mask();
     }
 
     /// Returns true if the task's current `RunState` is blocked.
     pub fn is_blocked(&self) -> bool {
-        self.live().signals.run_state.is_blocked()
+        self.signals.run_state.is_blocked()
     }
 
     /// Sets the task's `RunState` to `run_state`.
     pub fn set_run_state(&mut self, run_state: RunState) {
-        self.live_mut().signals.run_state = run_state;
+        self.signals.run_state = run_state;
     }
 
     pub fn run_state(&self) -> RunState {
-        self.live().signals.run_state.clone()
+        self.signals.run_state.clone()
     }
 
     pub fn on_signal_stack(&self, stack_pointer_register: u64) -> bool {
-        self.live()
-            .signals
+        self.signals
             .alt_stack
             .map(|signal_stack| sigaltstack_contains_pointer(&signal_stack, stack_pointer_register))
             .unwrap_or(false)
     }
 
     pub fn set_sigaltstack(&mut self, stack: Option<sigaltstack>) {
-        self.live_mut().signals.alt_stack = stack;
+        self.signals.alt_stack = stack;
     }
 
     pub fn sigaltstack(&self) -> Option<sigaltstack> {
-        self.live().signals.alt_stack
+        self.signals.alt_stack
     }
 
     pub fn wait_on_signal(&mut self, waiter: &Waiter) {
-        self.live_mut().signals.signal_wait.wait_async(waiter);
+        self.signals.signal_wait.wait_async(waiter);
     }
 
     pub fn signals_mut(&mut self) -> &mut SignalState {
-        &mut self.live_mut().signals
+        &mut self.signals
     }
 
     pub fn wait_on_signal_fd_events(
@@ -422,11 +409,11 @@ impl TaskMutableState {
         mask: SigSet,
         handler: EventHandler,
     ) -> WaitCanceler {
-        self.live().signals.signal_wait.wait_async_signal_mask(waiter, mask, handler)
+        self.signals.signal_wait.wait_async_signal_mask(waiter, mask, handler)
     }
 
     pub fn notify_signal_waiters(&self, signal: &Signal) {
-        self.live().signals.signal_wait.notify_signal(signal);
+        self.signals.signal_wait.notify_signal(signal);
     }
 
     /// Thaw the task if has been frozen
@@ -442,7 +429,7 @@ impl TaskMutableState {
 
     #[cfg(test)]
     pub fn kernel_signals_for_test(&self) -> &VecDeque<KernelSignal> {
-        &self.live().kernel_signals
+        &self.kernel_signals
     }
 }
 
@@ -486,8 +473,8 @@ impl TaskMutableState<Base = Task> {
 
     /// Enqueues a signal at the back of the task's signal queue.
     pub fn enqueue_signal(&mut self, signal: SignalInfo) {
-        self.live_mut().signals.enqueue(signal);
-        self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.live().signals.is_any_pending());
+        self.signals.enqueue(signal);
+        self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
     }
 
     /// Enqueues the signal, allowing the signal to skip straight to the front of the task's queue.
@@ -497,32 +484,32 @@ impl TaskMutableState<Base = Task> {
     /// Note that this will not guarantee that the signal is dequeued before any process-directed
     /// signals.
     pub fn enqueue_signal_front(&mut self, signal: SignalInfo) {
-        self.live_mut().signals.enqueue(signal);
-        self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.live().signals.is_any_pending());
+        self.signals.enqueue(signal);
+        self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
     }
 
     /// Sets the current signal mask of the task.
     pub fn set_signal_mask(&mut self, mask: SigSet) {
-        self.live_mut().signals.set_mask(mask);
-        self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.live().signals.is_any_pending());
+        self.signals.set_mask(mask);
+        self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
     }
 
     /// Sets a temporary signal mask for the task.
     ///
     /// This mask should be removed by a matching call to `restore_signal_mask`.
     pub fn set_temporary_signal_mask(&mut self, mask: SigSet) {
-        self.live_mut().signals.set_temporary_mask(mask);
-        self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.live().signals.is_any_pending());
+        self.signals.set_temporary_mask(mask);
+        self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
     }
 
     /// Returns the number of pending signals for this task, without considering the signal mask.
     pub fn pending_signal_count(&self) -> usize {
-        self.live().signals.num_queued() + self.base.thread_group().num_signals_queued()
+        self.signals.num_queued() + self.base.thread_group().num_signals_queued()
     }
 
     /// Returns `true` if `signal` is pending for this task, without considering the signal mask.
     pub fn has_signal_pending(&self, signal: Signal) -> bool {
-        self.live().signals.has_queued(signal) || self.base.thread_group().has_signal_queued(signal)
+        self.signals.has_queued(signal) || self.base.thread_group().has_signal_queued(signal)
     }
 
     // Prepare a SignalInfo to be sent to the tracer, if any.
@@ -616,18 +603,18 @@ impl TaskMutableState<Base = Task> {
     /// The set of pending signals for the task, including the signals pending for the thread
     /// group.
     pub fn pending_signals(&self) -> SigSet {
-        self.live().signals.pending() | self.base.thread_group().get_pending_signals()
+        self.signals.pending() | self.base.thread_group().get_pending_signals()
     }
 
     /// The set of pending signals for the task specifically, not including the signals pending
     /// for the thread group.
     pub fn task_specific_pending_signals(&self) -> SigSet {
-        self.live().signals.pending()
+        self.signals.pending()
     }
 
     /// Returns true if any currently pending signal is allowed by `mask`.
     pub fn is_any_signal_allowed_by_mask(&self, mask: SigSet) -> bool {
-        self.live().signals.is_any_allowed_by_mask(mask)
+        self.signals.is_any_allowed_by_mask(mask)
             || self.base.thread_group().is_any_signal_allowed_by_mask(mask)
     }
 
@@ -635,7 +622,7 @@ impl TaskMutableState<Base = Task> {
     /// signal mask into account.
     pub fn is_any_signal_pending(&self) -> bool {
         let mask = self.signal_mask();
-        self.live().signals.is_any_pending()
+        self.signals.is_any_pending()
             || self.base.thread_group().is_any_signal_allowed_by_mask(mask)
     }
 
@@ -647,8 +634,8 @@ impl TaskMutableState<Base = Task> {
         if let Some(signal) = self.base.thread_group().take_next_signal_where(&predicate) {
             Some(signal)
         } else {
-            let s = self.live_mut().signals.take_next_where(&predicate);
-            self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.live().signals.is_any_pending());
+            let s = self.signals.take_next_where(&predicate);
+            self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
             s
         }
     }
@@ -683,7 +670,7 @@ impl TaskMutableState<Base = Task> {
 
     /// Enqueues an internal signal at the back of the task's kernel signal queue.
     pub fn enqueue_kernel_signal(&mut self, signal: KernelSignal) {
-        self.live_mut().kernel_signals.push_back(signal);
+        self.kernel_signals.push_back(signal);
         self.set_flags(TaskFlags::KERNEL_SIGNALS_AVAILABLE, true);
     }
 
@@ -691,8 +678,8 @@ impl TaskMutableState<Base = Task> {
     ///
     /// Returns `None` if there are no signals pending.
     pub fn take_kernel_signal(&mut self) -> Option<KernelSignal> {
-        let signal = self.live_mut().kernel_signals.pop_front();
-        if self.live().kernel_signals.is_empty() {
+        let signal = self.kernel_signals.pop_front();
+        if self.kernel_signals.is_empty() {
             self.set_flags(TaskFlags::KERNEL_SIGNALS_AVAILABLE, false);
         }
         signal
@@ -700,32 +687,15 @@ impl TaskMutableState<Base = Task> {
 
     #[cfg(test)]
     pub fn queued_signal_count(&self, signal: Signal) -> usize {
-        self.live().signals.queued_count(signal)
+        self.signals.queued_count(signal)
             + self.base.thread_group().pending_signals.lock().queued_count(signal)
     }
 }
 
-/// The mutate state of a [`Task`] that is only relevant while the task is alive.
+/// The live state of a task.
 ///
-/// See also: [`TaskMutableState`], [`TaskLiveState`]
-pub struct TaskMutableLiveState {
-    /// Signal handler related state. This is grouped together for when atomicity is needed during
-    /// signal sending and delivery.
-    signals: SignalState,
-
-    /// Internal signals that have a higher priority than a regular signal.
-    ///
-    /// Storing in a separate queue outside of `SignalState` ensures the internal signals will
-    /// never be ignored or masked when dequeuing. Higher priority ensures that no user signals
-    /// will jump the queue, e.g. ptrace, which delays the delivery.
-    ///
-    /// This design is not about observable consequence, but about convenient implementation.
-    kernel_signals: VecDeque<KernelSignal>,
-}
-
-/// The state of a [`Task`] that is only relevant while the task is alive.
-///
-/// See also: [`TaskMutableLiveState`]
+/// This structure contains the state of a task that is only relevant while the task is alive. It
+/// is dropped when the task enters the zombie state.
 pub struct TaskLiveState {
     /// A handle to the underlying Zircon thread object.
     ///
@@ -1143,11 +1113,9 @@ impl Task {
                 stop_state: AtomicStopState::new(StopState::Awake),
                 flags: AtomicTaskFlags::new(TaskFlags::empty()),
                 mutable_state: RwLock::new(TaskMutableState {
-                    live: Some(TaskMutableLiveState {
-                        signals: SignalState::with_mask(signal_mask),
-                        kernel_signals,
-                    }),
                     clear_child_tid: UserRef::default(),
+                    signals: SignalState::with_mask(signal_mask),
+                    kernel_signals,
                     exit_status: None,
                     scheduler_state,
                     uts_ns,
@@ -1425,7 +1393,7 @@ impl Task {
             return;
         };
 
-        self.read().live().signals.run_state.wake();
+        self.read().signals.run_state.wake();
         if let Some(thread) = live.thread.read().as_ref() {
             #[allow(
                 clippy::undocumented_unsafe_blocks,
@@ -1501,7 +1469,7 @@ impl Task {
         let status = self.read();
         if status.exit_status.is_some() {
             TaskStateCode::Zombie
-        } else if status.live().signals.run_state.is_blocked() {
+        } else if status.signals.run_state.is_blocked() {
             let stop_state = self.load_stopped();
             if stop_state.ptrace_only() && stop_state.is_stopped() {
                 TaskStateCode::TracingStop
