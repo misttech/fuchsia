@@ -67,9 +67,15 @@ Attached Process
 Done.
 ```
 
-If you don't care about the output of a command, you don't need to specify any
-matching lines. You can write the next `[zxdb]` command, and the previous
-command will be allowed to finish immediately.
+Commands in zxdb run _asynchronously_ - there is no notion of "chaining"
+commands in the zxdb console such that they run sequentially one after the other
+or synchronously. Even if you don't care about the output of a command, you must
+specify the expected output to match against. This is to ensure that the
+previous command completes before starting the next one.
+
+One way to capture the expected output is to perform the sequence of commands
+you want in the zxdb console yourself, and then copy the entire session into a
+file and modify accordingly.
 
 If the commands have any dependencies, this might lead to flaky results. For example:
 
@@ -80,7 +86,8 @@ Created Breakpoint 1 @ $main
 Launched Process 1 state=Running koid=?? name=async_rust_multithreaded.cm component=async_rust_multithreaded.cm
 🛑
 [zxdb] until foo
-# This might lead to flaky results
+# This might lead to flaky results - `thread` might run before the thread has
+# stopped on "foo".
 [zxdb] thread
 ```
 
@@ -93,6 +100,7 @@ The result from `thread` could be either
 🛑 on bp 1 async_rust_multithreaded::main() • async_rust_multithreaded.rs:7
 [zxdb] until foo
 [zxdb] thread
+# `thread` wins the race, then the debugger prints the `until` output.
   # state               koid name
 ▶ 1 Blocked (Futex) 24769196 initial-thread
   2 Blocked (Port)  24769684 executor_worker
@@ -125,9 +133,6 @@ or
   3 Suspended           24775980 executor_worker
 ```
 
-You can reproduce it by manually entering the commands very fast or use the script runner.
-
-It's because the `until` and `thread` commands are running concurrently.
 To avoid flakiness, it's recommended to use a pause symbol (🛑) as an expected output. For example:
 
 ```zxdb
