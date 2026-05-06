@@ -31,6 +31,9 @@ pub use remote_control_proxy::{RemoteControlProxyHolder, fake_async_proxy, fake_
 pub use ssh_addr::SshAddrHolder;
 pub use target_info_query::TargetInfoQueryHolder;
 pub use target_proxy::TargetProxyHolder;
+pub use with_moniker::{
+    ExposedDirectoryConnector, OptionalProtocolConnector, exposed_dir, optional_moniker,
+};
 
 const DEFAULT_PROXY_TIMEOUT: Duration = Duration::from_secs(15);
 

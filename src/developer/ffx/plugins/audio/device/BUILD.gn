@@ -33,7 +33,6 @@ ffx_plugin("ffx_audio_device") {
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/developer/ffx/plugins/audio/common:ffx_audio_common",
-    "//src/developer/ffx/plugins/audio/ffx_optional_moniker",
     "//src/lib/fdomain/client",
     "//src/lib/fidl/rust/fidl",
     "//src/media/audio/lib/rust:fuchsia_audio_fdomain",

@@ -20,7 +20,6 @@ use errors::ffx_bail;
 use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_memory_attribution_plugin as attribution_plugin;
 use fdomain_fuchsia_memory_inspection::CollectorProxy;
-use ffx_optional_moniker::optional_moniker;
 use ffx_profile_memory_args::{Backend, MemoryCommand};
 use ffx_profile_memory_components::{ComponentProfileResult, MemoryComponentsTool, PluginOutput};
 use ffx_profile_memory_components_args::ComponentsCommand;
@@ -30,6 +29,7 @@ use futures::AsyncReadExt;
 use plugin_output::ProfileMemoryOutput;
 use std::io::Write;
 use std::time::Duration;
+use target_holders::optional_moniker;
 
 /// Adapts the output of ffx profile component `ComponentProfileResult` with this plugin's output
 /// writer.

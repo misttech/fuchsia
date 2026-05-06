@@ -18,7 +18,6 @@ use fdomain_fuchsia_io as fio;
 use fdomain_fuchsia_media as fmedia;
 use ffx_audio_device_args::{DeviceCommand, RecordCommand, SetCommand, SetSubCommand, SubCommand};
 use ffx_command_error::{Result, user_error};
-use ffx_optional_moniker::{exposed_dir, optional_moniker};
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxContext, FfxMain, FfxTool};
 use fuchsia_audio_fdomain::Registry;
@@ -27,6 +26,7 @@ use futures::{AsyncWrite, FutureExt};
 use serde::Serialize;
 use std::io::{Read, Write};
 use target_holders::fdomain::moniker;
+use target_holders::{exposed_dir, optional_moniker};
 use zx_status::Status;
 
 mod connect;

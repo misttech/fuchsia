@@ -15,6 +15,7 @@ rustc_library("lib") {
   deps = [
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust",
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_fdomain_flex",
     "//src/developer/ffx/command/error:lib",
     "//src/developer/ffx/core:lib",
     "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
@@ -34,6 +35,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
   ]
 
   sources = [
