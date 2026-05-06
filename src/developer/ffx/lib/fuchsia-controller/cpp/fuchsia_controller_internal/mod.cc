@@ -208,6 +208,21 @@ FuchsiaControllerState *get_module_state() {
   return reinterpret_cast<FuchsiaControllerState *>(PyModule_GetState(mod));
 }
 
+// Returns new reference.
+PyObject *str_from_scratch(mod::FuchsiaControllerState *state) {
+  uint64_t error_len = *reinterpret_cast<uint64_t *>(state->ERR_SCRATCH);
+  auto str_obj = PyUnicode_FromStringAndSize(state->ERR_SCRATCH + sizeof(uint64_t),
+                                             static_cast<Py_ssize_t>(error_len));
+  // If this is null this will return an internal error about allocating the string.
+  if (str_obj == nullptr) {
+    PyErr_Clear();
+    PyErr_SetString(PyExc_RuntimeError,
+                    "Internal error: unable to allocate error string from buffer. This is a bug");
+    return nullptr;
+  }
+  return str_obj;
+}
+
 void set_python_exception(fc_status_t err) {
   auto state = get_module_state();
   switch (err) {
@@ -237,20 +252,33 @@ void set_python_exception(fc_status_t err) {
     // These errors are only surfaced from internal failures, which means the
     // Rust error that created this exception is surfaced.
     case FC_ERR_PROTOCOL:
-    case FC_ERR_INTERNAL:
-    case FC_ERR_TRANSPORT: {
-      uint64_t error_len = *reinterpret_cast<uint64_t *>(state->ERR_SCRATCH);
-      auto str_obj = PyUnicode_FromStringAndSize(state->ERR_SCRATCH + sizeof(uint64_t),
-                                                 static_cast<Py_ssize_t>(error_len));
-      // If this is null this will return an internal error about allocating the string.
+    case FC_ERR_TRANSPORT:
+    case FC_ERR_INTERNAL: {
+      auto str_obj = str_from_scratch(state);
       if (str_obj == nullptr) {
-        PyErr_Clear();
-        PyErr_SetString(
-            PyExc_RuntimeError,
-            "Internal error: unable to allocate error string from buffer. This is a bug");
         return;
       }
-      PyErr_SetObject(PyExc_RuntimeError, str_obj);
+      switch (err) {
+        case FC_ERR_TRANSPORT:
+        case FC_ERR_PROTOCOL: {
+          PyObject *tuple = PyTuple_New(2);
+          if (tuple == nullptr) {
+            std::ostringstream ss;
+            ss << "Failed to allocate Tuple in %s" << __func__;
+            auto out = ss.str();
+            PyErr_SetString(PyExc_RuntimeError, out.c_str());
+            return;
+          }
+          PyTuple_SetItem(tuple, 0, PyLong_FromLong(err));
+          PyTuple_SetItem(tuple, 1, str_obj);
+          PyErr_SetObject(reinterpret_cast<PyObject *>(error::FcTransportStatusType), tuple);
+          Py_XDECREF(tuple);
+          break;
+        }
+        default:
+          PyErr_SetObject(PyExc_RuntimeError, str_obj);
+          break;
+      }
       Py_XDECREF(str_obj);
       break;
     }

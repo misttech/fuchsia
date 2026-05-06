@@ -181,7 +181,9 @@ impl std::fmt::Display for Error {
             Self::FDomain(e) => write_fdomain_error(e, f),
             Self::Protocol(e) => write!(f, "Protocol error: {e}"),
             Self::Transport(Some(e)) => write!(f, "Transport error: {e}"),
-            Self::Transport(None) => write!(f, "Connection to the device has been lost"),
+            Self::Transport(None) => {
+                write!(f, "Transport error: Connection to the device has been lost")
+            }
             Self::ConnectionMismatch => {
                 write!(
                     f,
