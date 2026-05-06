@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/zbitl/checking.h>
+#include <lib/zbitl/error-string.h>
 #include <lib/zbitl/view.h>
 
 #include <span>
@@ -11,11 +12,12 @@
 
 // Meant for fit::result<std::string_view>.
 #define EXPECT_IS_OK(result) \
-  EXPECT_TRUE(result.is_ok()) << "unexpected error: " << result.error_value().data()
-#define EXPECT_IS_ERROR(result) EXPECT_TRUE(result.is_error())
+  EXPECT_TRUE((result).is_ok()) << "unexpected error: " << (result).error_value()
+#define EXPECT_IS_ERROR(result) EXPECT_TRUE((result).is_error())
 // Meant for fit::result<zbitl::View::Error>.
-#define EXPECT_VIEW_IS_OK(result) \
-  EXPECT_TRUE(result.is_ok()) << "unexpected error: " << result.error_value().zbi_error
+#define EXPECT_VIEW_IS_OK(result)                       \
+  EXPECT_TRUE((result).is_ok()) << "unexpected error: " \
+                                << zbitl::ViewErrorString((result).error_value())
 
 namespace {
 
@@ -61,7 +63,7 @@ inline void CheckTwoItemZbi(uint32_t type1, uint32_t type2, bool expect_ok) {
   zbitl::View<ByteView> zbi(bytes);
   auto result = zbitl::CheckBootable(zbi, kKernelType);
   if (expect_ok) {
-    EXPECT_IS_OK(result);
+    EXPECT_VIEW_IS_OK(result);
   } else {
     EXPECT_IS_ERROR(result);
   }

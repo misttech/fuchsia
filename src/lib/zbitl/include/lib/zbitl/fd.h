@@ -66,10 +66,11 @@ class StorageTraits<fbl::unique_fd> {
                                         bool (*)(void*, ByteView), void*);
 };
 
-/// zbitl::View<const fbl::unique_fd&> is an unmovable, uncopyable type that
-/// refers to a fbl::unique_fd it does not own.
+/// zbitl::View<std::reference_wrapper<const fbl::unique_fd>> refers to a
+/// fbl::unique_fd it does not own.
 template <>
-struct StorageTraits<const fbl::unique_fd&> : public StorageTraits<fbl::unique_fd> {};
+struct StorageTraits<std::reference_wrapper<const fbl::unique_fd>>
+    : public StorageTraits<fbl::unique_fd> {};
 
 }  // namespace zbitl
 

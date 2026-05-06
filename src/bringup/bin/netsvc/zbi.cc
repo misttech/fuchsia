@@ -18,16 +18,14 @@ zx_status_t netboot_prepare_zbi(zx::vmo zbi_in, std::string_view cmdline, zx::vm
     return ZX_ERR_INVALID_ARGS;
   }
 
-  zbitl::View view(std::move(zbi_in));
-
-  if (auto result = zbitl::CheckBootable(view); result.is_error()) {
-    std::string_view error = result.error_value();
-    printf("netbootloader: ZBI is not bootable : %.*s", static_cast<int>(error.size()),
-           error.data());
-    view.ignore_error();
+  if (auto result = zbitl::CheckBootable(zbitl::View{zbi_in.borrow()}); result.is_error()) {
+    printf("netbootloader: ZBI is not bootable:");
+    zbitl::PrintViewError(result.error_value());
+    printf("\n");
     return ZX_ERR_INTERNAL;
   }
 
+  zbitl::View view(std::move(zbi_in));
   auto first = view.begin();
   auto second = std::next(first);
   if (auto result = view.take_error(); result.is_error()) {

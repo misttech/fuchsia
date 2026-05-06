@@ -21,7 +21,7 @@ fit::result<std::string_view> CheckContainerHeader(const zbi_header_t& header);
 
 // Modify a header so that it passes checks.  This can be used to mint new
 // items from a designated initializer that omits uninteresting bits.
-inline constexpr zbi_header_t SanitizeHeader(zbi_header_t header) {
+constexpr zbi_header_t SanitizeHeader(zbi_header_t header) {
   header.magic = ZBI_ITEM_MAGIC;
   header.flags |= ZBI_FLAGS_VERSION;
   if (!(header.flags & ZBI_FLAGS_CRC32)) {
@@ -38,44 +38,46 @@ inline constexpr zbi_header_t SanitizeHeader(zbi_header_t header) {
 /// be found.  But this function's return value only indicates if the items
 /// that were scanned before any errors were encountered added up to a complete
 /// ZBI (regardless of whether there were additional items with errors).
-template <typename Zbi>
-fit::result<std::string_view> CheckBootable(Zbi&& zbi, uint32_t kernel_type
+template <class Zbi>
+constexpr fit::result<typename Zbi::Error> CheckBootable(  //
+    Zbi zbi, uint32_t kernel_type
 #ifdef __aarch64__
-                                                       = ZBI_TYPE_KERNEL_ARM64
+             = ZBI_TYPE_KERNEL_ARM64
 #elif defined(__riscv)
-                                                       = ZBI_TYPE_KERNEL_RISCV64
-#elif defined(__x86_64__)
-                                                       = ZBI_TYPE_KERNEL_X64
-
+             = ZBI_TYPE_KERNEL_RISCV64
+#elif defined(__x86_64__) || defined(__i386__)
+             = ZBI_TYPE_KERNEL_X64
 #endif
 ) {
-  enum {
-    kKernelAbsent,
-    kKernelFirst,
-    kKernelLater,
-  } kernel = kKernelAbsent;
-  bool empty = true;
-  for (auto [header, payload] : zbi) {
-    if (header->type == kernel_type) {
-      kernel = empty ? kKernelFirst : kKernelLater;
-      empty = false;
-      break;
-    }
-    empty = false;
+  using Error = Zbi::Error;
+
+  const auto first = zbi.begin();
+  auto it = first;
+  while (it != zbi.end() && it->header->type != kernel_type) {
+    ++it;
   }
 
-  if (empty) {
-    return fit::error("empty ZBI");
+  // Any error before seeing a kernel item is a problem.  Once the kernel
+  // item is found, the rest of the ZBI isn't checked for iterability.
+  if (auto result = zbi.take_error(); result.is_error()) {
+    return result.take_error();
   }
-  switch (kernel) {
-    case kKernelAbsent:
-      return fit::error("no kernel item found");
-    case kKernelLater:
-      return fit::error("kernel item out of order: must be first");
-    case kKernelFirst:
-      return fit::ok();
+
+  if (it == zbi.end()) {
+    // No kernel item found.  Why?
+    if (it == first) {
+      return fit::error{Error{.zbi_error = "empty ZBI"}};
+    }
+    return fit::error{Error{.zbi_error = "no kernel item found"}};
   }
-  ZX_ASSERT_MSG(false, "unreachable");
+
+  if (it != first) {
+    return fit::error{
+        Error{.zbi_error = "kernel item out of order: must be first"},
+    };
+  }
+
+  return fit::ok();
 }
 
 }  // namespace zbitl

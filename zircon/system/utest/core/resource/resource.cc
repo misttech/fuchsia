@@ -5,6 +5,7 @@
 #include <lib/standalone-test/standalone.h>
 #include <lib/zbi-format/kernel.h>
 #include <lib/zbi-format/zbi.h>
+#include <lib/zbitl/item.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/pager.h>
 #include <lib/zx/port.h>
@@ -489,4 +490,32 @@ TEST(Resource, MexecPayloadTooSmall) {
 
   // If we reach here, it didn't crash!
   EXPECT_NE(ZX_OK, status);
+}
+
+// Regression test for https://fxbug.dev/507415559
+TEST(Resource, MexecEmptyZbi) {
+  // This test requires the MEXEC resource.
+  zx::unowned_resource system_resource = get_system();
+  if (!system_resource->is_valid()) {
+    ZXTEST_SKIP("System resource not available");
+  }
+
+  zx::resource mexec_resource;
+  if (zx_status_t status =
+          zx::resource::create(*system_resource, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_MEXEC_BASE, 1,
+                               nullptr, 0, &mexec_resource);
+      status != ZX_OK) {
+    ZXTEST_SKIP("MEXEC resource not available");
+  }
+
+  zx::vmo kernel_vmo, bootimage_vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &kernel_vmo));
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &bootimage_vmo));
+
+  // Valid container, but no kernel item.
+  const zbi_header_t header = zbitl::ContainerHeader(0);
+  ASSERT_OK(kernel_vmo.write(&header, 0, sizeof(header)));
+
+  EXPECT_EQ(ZX_ERR_IO_DATA_INTEGRITY,
+            zx_system_mexec(mexec_resource.get(), kernel_vmo.get(), bootimage_vmo.get()));
 }

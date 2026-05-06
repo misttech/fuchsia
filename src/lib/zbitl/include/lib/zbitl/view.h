@@ -141,9 +141,9 @@ class View {
 
   ~View() {
     ZX_ASSERT_MSG(!std::holds_alternative<Error>(error_),
-                  "zbitl::View destroyed after error without check");
+                  ": zbitl::View destroyed after error without check");
     ZX_ASSERT_MSG(!std::holds_alternative<NoError>(error_),
-                  "zbtil::View destroyed after successful iteration without check");
+                  ": zbitl::View destroyed after successful iteration without check");
   }
 
   /// The header is represented by an opaque type that can be dereferenced as

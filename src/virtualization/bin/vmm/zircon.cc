@@ -30,7 +30,6 @@
 
 #include "src/virtualization/bin/vmm/bits.h"
 #include "src/virtualization/bin/vmm/dev_mem.h"
-#include "src/virtualization/bin/vmm/guest.h"
 #include "src/virtualization/bin/vmm/memory.h"
 #include "src/virtualization/bin/vmm/zbi.h"
 
@@ -122,11 +121,14 @@ zx_status_t read_unified_zbi(fbl::unique_fd zbi_fd, const uintptr_t kernel_zbi_o
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  zbitl::View view(std::move(zbi_fd));
-  if (auto result = zbitl::CheckBootable(view); result.is_error()) {
-    FX_LOGS(ERROR) << "Unbootable ZBI: " << result.error_value();
+  if (auto result =
+          zbitl::CheckBootable(zbitl::View<std::reference_wrapper<const fbl::unique_fd>>{zbi_fd});
+      result.is_error()) {
+    FX_LOGS(ERROR) << "Unbootable ZBI: " << zbitl::ViewErrorString(result.error_value());
     return ZX_ERR_IO;
   }
+
+  zbitl::View view(std::move(zbi_fd));
   auto first = view.begin();
   auto second = std::next(first);
   size_t kernel_zbi_size = second.item_offset();

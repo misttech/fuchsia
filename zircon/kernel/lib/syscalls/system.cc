@@ -348,7 +348,7 @@ NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vm
 
   paddr_t new_kernel_addr;
   size_t new_kernel_len;
-  result = vmo_coalesce_pages(kernel_vmo, 0, &new_kernel_addr, NULL, &new_kernel_len);
+  result = vmo_coalesce_pages(kernel_vmo, 0, &new_kernel_addr, nullptr, &new_kernel_len);
   if (result != ZX_OK) {
     return result;
   }
@@ -387,7 +387,7 @@ NO_ASAN zx_status_t sys_system_mexec(zx_handle_t resource, zx_handle_t kernel_vm
   if (BootOptions::Get()->mexec_force_high_ramdisk ||
       Intersects(final_bootimage_addr, bootimage_len, KernelPhysicalLoadAddress(),
                  kernel_image_end)) {
-    const size_t page_count = bootimage_len / kPageSize + 1;
+    const size_t page_count = (bootimage_len / kPageSize) + 1;
     fbl::AllocChecker ac;
     ktl::unique_ptr<paddr_t[]> paddrs(new (&ac) paddr_t[page_count]);
     ASSERT(ac.check());
