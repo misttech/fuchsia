@@ -12,6 +12,9 @@ import("//build/toolchain/default_tools.gni")
 import("//build/toolchain/rbe.gni")
 import("//build/toolchain/rbe_toolchain_vars.gni")
 import("//build/toolchain/restat.gni")
+import("//build/toolchain/rust_toolchain_vars.gni")
+
+assert(defined(rust_toolchain_vars))
 
 # Defines a Clang-based toolchain.
 #
@@ -159,24 +162,13 @@ template("clang_toolchain") {
       _rust_concurrent_jobs = concurrent_jobs.local
     }
 
-    if (rustc_timeout > 0 || ice_detection) {
-      _rust_command_prefix += [
-        rebase_path("//build/rust/rustc_wrapper.sh", root_build_dir),
-        "--timeout",
-        "$rustc_timeout",
-      ]
-      if (ice_detection) {
-        _rust_command_prefix += [ "--check-ice" ]
-      }
-      _rust_command_prefix += [ "--" ]
-    }
+    _rust_command_prefix += rust_toolchain_vars.rust_command_prefix
 
     # Set all tools to defaults
     cc = "${prefix}/clang"
     cxx = "${prefix}/clang++"
     ar = "${prefix}/llvm-ar"
     ld = cxx
-    rustc = "${rebased_rustc_prefix}/bin/rustc"
 
     # if (rust_rbe_enable) {
     #   verify_depfile = false
@@ -521,27 +513,31 @@ template("clang_toolchain") {
                                "rust_link_remote_dump_syms_prefix",
                              ])
       forward_variables_from(_rust_concurrent_jobs, "*")
+      forward_variables_from(rust_toolchain_vars.tool_vars, [ "*" ])
 
       restat = restat_rust
       command_launcher = string_replace(string_join(" ", _rust_launcher),
                                         "{{DEPFILE}}",
                                         depfile)
-      command += string_join(" ", _rust_command_prefix) + " "
 
-      ld_location_env = ""
-      link_map_args = ""
-      if (invoker.toolchain_os == "fuchsia") {
-        # On Fuchsia, lld is directly used to perform linking
-        link_map_args = "-Clink-args=--Map=\"{{UNSTRIPPED_OUTFILE}}.map\""
-      } else {
-        # On host, clang seems to be used to perform linking
-        link_map_args = "-Clink-args=-Wl,--Map=\"{{UNSTRIPPED_OUTFILE}}.map\""
+      link_map_arg = "-Clink-args="
+      if (invoker.toolchain_os != "fuchsia") {
+        # On Fuchsia, lld is directly used to perform linking.
+        # Elsewhere, the C compiler driver is used to perform linking.
+        link_map_arg += "-Wl,"
       }
+      link_map_arg += "--Map=\"{{UNSTRIPPED_OUTFILE}}.map\""
 
-      # TODO(https://fxbug.dev/42124325): Replacement for rustenv
-      command += "{{rustenv}}${ld_location_env} RUST_BACKTRACE=1 $rustc --color=always --crate-name={{crate_name}} {{source}}"
-      command += " --crate-type={{crate_type}} --emit=dep-info=$depfile,link{{EMIT_RMETA}} -Zdep-info-omit-d-target $link_map_args {{rustflags}}"
-      command += " -o \"{{UNSTRIPPED_OUTFILE}}\""
+      command +=
+          string_join(" ",
+                      _rust_command_prefix + [
+                            "--emit=dep-info=$depfile,link{{EMIT_RMETA}}",
+                            "-Zdep-info-omit-d-target",
+                            link_map_arg,
+                            "{{rustflags}}",
+                            "-o",
+                            "\"{{UNSTRIPPED_OUTFILE}}\"",
+                          ])
       if (rustc_use_response_files) {
         rspfile = outfile + ".rsp"
         rspfile_content = "{{rustdeps}} {{externs}}"
@@ -576,8 +572,6 @@ template("clang_toolchain") {
       command = string_replace(command,
                                "{{REMOTE_DUMP_SYMS_PREFIX}}",
                                _remote_dump_syms_prefix)
-
-      rust_sysroot = "$rebased_rustc_prefix"
     }
 
     # Compute common values for "rust_dylib" and "rust_cdylib".
@@ -618,7 +612,6 @@ template("clang_toolchain") {
     tool("rust_bin") {
       description = "RUST {{output}}"
       default_output_dir = "{{root_out_dir}}"
-      rust_sysroot = "$rebased_rustc_prefix"
 
       forward_variables_from(_rust_link_common, "*", [ "outputs" ])
 
@@ -667,6 +660,8 @@ template("clang_toolchain") {
 
     tool("rust_rlib") {
       forward_variables_from(_rust_concurrent_jobs, "*")
+      forward_variables_from(rust_toolchain_vars.tool_vars, [ "*" ])
+
       rmeta = "{{output_dir}}/lib{{target_output_name}}.rmeta"
       rlib = "{{output_dir}}/lib{{target_output_name}}{{output_extension}}"
       depfile = "$rlib.d"
@@ -675,11 +670,15 @@ template("clang_toolchain") {
       command_launcher = string_replace(string_join(" ", _rust_launcher),
                                         "{{DEPFILE}}",
                                         depfile)
-      command = string_join(" ", _rust_command_prefix) + " "
 
-      # TODO(https://fxbug.dev/42124325): Replacement for rustenv
-      command += "{{rustenv}} RUST_BACKTRACE=1 $rustc --color=always --crate-name={{crate_name}} {{source}}"
-      command += " --crate-type={{crate_type}} --emit=dep-info=${depfile},link,metadata=${rmeta} -Zdep-info-omit-d-target {{rustflags}}"
+      command =
+          string_join(" ",
+                      _rust_command_prefix + [
+                            "--emit=dep-info=$depfile,link,metadata=${rmeta}",
+                            "-Zdep-info-omit-d-target",
+                            "{{rustflags}}",
+                          ])
+
       if (!rust_rbe_download_rlibs) {  # download everything except the rlib
         command += " --remote-flag=--download_outputs=false"
       }
@@ -704,11 +703,12 @@ template("clang_toolchain") {
 
       default_output_dir = "{{target_out_dir}}"
       default_output_extension = ".rlib"
-      rust_sysroot = "$rebased_rustc_prefix"
     }
 
     tool("rust_staticlib") {
       forward_variables_from(_rust_concurrent_jobs, "*")
+      forward_variables_from(rust_toolchain_vars.tool_vars, [ "*" ])
+
       _main_output = "{{output_dir}}/{{target_output_name}}{{output_extension}}"
       depfile = "$_main_output.d"
 
@@ -719,12 +719,17 @@ template("clang_toolchain") {
       command_launcher = string_replace(string_join(" ", _rust_launcher),
                                         "{{DEPFILE}}",
                                         depfile)
-      command = string_join(" ", _rust_command_prefix) + " "
 
-      # TODO(https://fxbug.dev/42124325): Replacement for rustenv
-      command += "{{rustenv}} RUST_BACKTRACE=1 $rustc --color=always --crate-name={{crate_name}} {{source}}"
-      command += " --crate-type={{crate_type}} --emit=dep-info=${depfile},link,metadata=${rmeta} -Zdep-info-omit-d-target {{rustflags}}"
-      command += " -o $_main_output "
+      command =
+          string_join(" ",
+                      _rust_command_prefix + [
+                            "--emit=dep-info=$depfile,link,metadata=${rmeta}",
+                            "-Zdep-info-omit-d-target",
+                            "{{rustflags}}",
+                            "-o",
+                            _main_output,
+                          ])
+
       if (rustc_use_response_files) {
         rspfile = "$_main_output.rsp"
         rspfile_content = "{{rustdeps}} {{externs}}"
@@ -746,7 +751,6 @@ template("clang_toolchain") {
       default_output_dir = "{{target_out_dir}}"
       default_output_extension = ".a"
       output_prefix = "lib"
-      rust_sysroot = "$rebased_rustc_prefix"
     }
 
     tool("rust_cdylib") {
@@ -775,6 +779,8 @@ template("clang_toolchain") {
 
     tool("rust_macro") {
       forward_variables_from(_rust_concurrent_jobs, "*")
+      forward_variables_from(rust_toolchain_vars.tool_vars, [ "*" ])
+
       _main_output = "{{output_dir}}/{{target_output_name}}{{output_extension}}"
       depfile = "$_main_output.d"
 
@@ -784,12 +790,19 @@ template("clang_toolchain") {
       command_launcher = string_replace(string_join(" ", _rust_launcher),
                                         "{{DEPFILE}}",
                                         depfile)
-      command = string_join(" ", _rust_command_prefix) + " "
 
-      # TODO(https://fxbug.dev/42124325): Replacement for rustenv
-      command += "{{rustenv}} RUST_BACKTRACE=1 $rustc --color=always --crate-name={{crate_name}} {{source}} "
-      command += " --crate-type={{crate_type}} --emit=dep-info=${depfile},link,metadata=${rmeta} -Zdep-info-omit-d-target {{rustflags}}"
-      command += " -o $_main_output --extern proc_macro"
+      command =
+          string_join(" ",
+                      _rust_command_prefix + [
+                            "--emit=dep-info=$depfile,link,metadata=${rmeta}",
+                            "-Zdep-info-omit-d-target",
+                            "{{rustflags}}",
+                            "-o",
+                            _main_output,
+                            "--extern",
+                            "proc_macro",
+                          ])
+
       if (rustc_use_response_files) {
         rspfile = "$_main_output.rsp"
         rspfile_content = "{{rustdeps}} {{externs}}"
@@ -811,7 +824,6 @@ template("clang_toolchain") {
       default_output_dir = "{{root_out_dir}}"
       default_output_extension = _dylib_extension
       output_prefix = "lib"
-      rust_sysroot = "$rebased_rustc_prefix"
     }
 
     tool("alink") {
