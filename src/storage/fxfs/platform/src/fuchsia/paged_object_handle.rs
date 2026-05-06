@@ -879,6 +879,13 @@ impl PagedObjectHandle {
                 .context("batch add_to_transaction failed")?;
             transaction.commit().await.context("Failed to commit transaction")?;
             flush_state.did_flush_pages(batch.dirty_pages());
+
+            // We need to ensure that all page-ins complete before we finish marking the pages as
+            // clean. Otherwise the kernel could evict it and allow a page-in to resupply it with
+            // stale data. This ensures that any eviction and re-supply comes from a page-in that
+            // started after the data was updated and will find up-to-date data.
+            Pager::page_in_barrier().await;
+
             if first_batch {
                 self.inner.lock().end_flush();
             }
@@ -898,8 +905,6 @@ impl PagedObjectHandle {
         truncate_guard: &TruncateGuard<'a>,
         flush_type: FlushType,
     ) -> Result<(), Error> {
-        Pager::page_in_barrier().await;
-
         let pending_shrink = {
             let mut inner = self.inner.lock();
             // Before setting `flushing` to true, double check that a flush is actually required
