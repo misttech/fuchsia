@@ -446,7 +446,7 @@ mod tests {
     use futures::FutureExt as _;
     use gpt::{Gpt, Guid, PartitionInfo};
     use std::sync::Arc;
-    use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
+    use test_vmo_backed_block_server::VmoBackedServer;
 
     async fn setup_server(
         block_size: u32,
@@ -454,7 +454,9 @@ mod tests {
         partitions: Vec<PartitionInfo>,
     ) -> Arc<VmoBackedServer> {
         let vmo = zx::Vmo::create(block_size as u64 * block_count).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
+        let server = Arc::new(
+            VmoBackedServer::from_vmo(512, vmo).expect("Failed to create VmoBackedServer"),
+        );
         {
             let (block_client, block_server) =
                 fidl::endpoints::create_proxy::<fblock::BlockMarker>();

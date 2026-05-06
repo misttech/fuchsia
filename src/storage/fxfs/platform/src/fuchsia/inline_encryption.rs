@@ -26,10 +26,8 @@ mod tests {
     use std::sync::{Arc, Weak};
     use storage_device::DeviceHolder;
     use storage_device::block_device::BlockDevice;
+    use test_vmo_backed_block_server::VmoBackedServer;
     use vfs::node::Node;
-    use vmo_backed_block_server::{
-        InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt,
-    };
 
     const TEST_UUID: [u8; 16] =
         [73, 142, 230, 48, 132, 165, 68, 97, 141, 247, 22, 242, 153, 171, 153, 38];
@@ -44,13 +42,8 @@ mod tests {
     impl TestFixture {
         async fn new(inline_crypto_enabled: bool, barriers_enabled: bool) -> Self {
             let block_server = Arc::new(
-                VmoBackedServerOptions {
-                    block_size: TEST_DEVICE_BLOCK_SIZE,
-                    initial_contents: InitialContents::FromCapacity(393216),
-                    ..Default::default()
-                }
-                .build()
-                .expect("build from VmoBackedServerOptions failed"),
+                VmoBackedServer::new(393216, TEST_DEVICE_BLOCK_SIZE, &[])
+                    .expect("Failed to create VmoBackedServer"),
             );
 
             let filesystem = FxFilesystemBuilder::new()

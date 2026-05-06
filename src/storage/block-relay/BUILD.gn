@@ -85,7 +85,7 @@ rustc_test("block_relay_integration_test") {
     "//src/storage/fshost/testing",
     "//src/storage/gpt/rust:gpt",
     "//src/storage/lib/block_client/rust:block-client",
-    "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/block_server/vmo_backed",
     "//src/storage/lib/ramdevice_client/rust",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",

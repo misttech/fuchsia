@@ -180,7 +180,7 @@ mod tests {
     use fidl_fuchsia_storage_block::BlockMarker;
     use futures::{FutureExt, select};
     use std::pin::pin;
-    use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
+    use vmo_backed_block_server::VmoBackedServer;
 
     async fn get_detected_disk_format(
         content: &[u8],
@@ -189,7 +189,8 @@ mod tests {
     ) -> Result<DiskFormat, Error> {
         let (proxy, stream) = create_proxy_and_stream::<BlockMarker>();
 
-        let fake_server = VmoBackedServer::new(block_count, block_size, content);
+        let fake_server = VmoBackedServer::new(block_count, block_size, content)
+            .expect("Failed to create VmoBackedServer");
         let mut request_handler = pin!(fake_server.serve(stream).fuse());
 
         select! {
@@ -222,10 +223,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn detect_disk_format_too_small() {
-        assert_eq!(
-            get_detected_disk_format(&Vec::new(), 1, 512).await.unwrap(),
-            DiskFormat::Unknown
-        );
+        assert_eq!(get_detected_disk_format(&[], 1, 512).await.unwrap(), DiskFormat::Unknown);
     }
 
     #[fuchsia::test]

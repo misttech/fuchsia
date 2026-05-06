@@ -21,9 +21,12 @@ use fidl_fuchsia_fxfs::{
     DebugMarker, DebugRequestStream, VolumeInstallerMarker, VolumeInstallerRequest,
     VolumeInstallerRequestStream,
 };
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_memory_attribution as fattribution;
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
 use fidl_fuchsia_storage_block::BlockMarker;
 use fs_inspect::{FsInspect, FsInspectTree, InfoData, UsageData};
+use fuchsia_async as fasync;
 use fuchsia_component_client::connect_to_protocol;
 use futures::TryStreamExt;
 use futures::lock::Mutex;
@@ -40,10 +43,6 @@ use storage_device::DeviceHolder;
 use storage_device::block_device::BlockDevice;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution,
-    fuchsia_async as fasync,
-};
 
 const FXFS_INFO_NAME: &'static str = "fxfs";
 
@@ -581,7 +580,9 @@ mod tests {
     use fidl_fuchsia_fs_startup::{
         CreateOptions, MountOptions, StartOptions, StartupMarker, VolumesMarker,
     };
+    use fidl_fuchsia_io as fio;
     use fidl_fuchsia_process_lifecycle::{LifecycleMarker, LifecycleProxy};
+    use fuchsia_async as fasync;
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::directory::readdir;
     use futures::future::{BoxFuture, FusedFuture, FutureExt};
@@ -593,23 +594,14 @@ mod tests {
     use std::sync::Arc;
     use storage_device::DeviceHolder;
     use storage_device::block_device::BlockDevice;
-    use vmo_backed_block_server::{
-        InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt,
-    };
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
+    use test_vmo_backed_block_server::VmoBackedServer;
 
     async fn run_test(
         callback: impl Fn(&fio::DirectoryProxy, LifecycleProxy) -> BoxFuture<'static, ()>,
     ) -> (Pin<Box<impl FusedFuture>>, Arc<VmoBackedServer>) {
         const BLOCK_SIZE: u32 = 512;
         let block_server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: BLOCK_SIZE,
-                initial_contents: InitialContents::FromCapacity(BLOCK_SIZE as u64 * 16384),
-                ..Default::default()
-            }
-            .build()
-            .expect("build failed"),
+            VmoBackedServer::new(16384, BLOCK_SIZE, &[]).expect("Failed to create VmoBackedServer"),
         );
 
         {

@@ -333,11 +333,13 @@ mod tests {
 
     use super::*;
     use ext4_lib::readers::BlockDeviceReader;
-    use std::fs;
+    use fidl_fuchsia_storage_block as fblock;
+    use fuchsia_async as fasync;
     use std::path::Path;
     use test_case::test_case;
-    use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
-    use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
+    use test_vmo_backed_block_server::VmoBackedServer;
+
+    const BLOCK_SIZE: u32 = 512;
 
     #[fuchsia::test]
     async fn test_read() {
@@ -505,26 +507,13 @@ mod tests {
     async fn test_rw_file() {
         // Create a device that is Ext4 formatted.
         // This image only contains 1 file "file1".
-        let data = fs::read("/pkg/data/1file.img").expect("failed to read file");
-        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
-        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
-        let server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: 512,
-                initial_contents: InitialContents::FromVmo(vmo),
-                ..Default::default()
-            }
-            .build()
-            .expect("build from VmoBackedServerOptions failed"),
-        );
+        let server = VmoBackedServer::from_file(BLOCK_SIZE, "/pkg/data/1file.img");
 
-        let server_clone = server.clone();
         let (block_client_end1, block_server_end1) =
             fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
         std::thread::spawn(move || {
             let mut executor = fasync::TestExecutor::new();
-            let _task =
-                executor.run_singlethreaded(server_clone.serve(block_server_end1.into_stream()));
+            let _task = executor.run_singlethreaded(server.serve(block_server_end1.into_stream()));
         });
         let processor = Arc::new(Ext4Processor::new(
             Arc::new(
@@ -571,26 +560,13 @@ mod tests {
     #[test_case(false; "read write file")]
     #[fuchsia::test]
     async fn test_read_past_end_of_file(read_only: bool) {
-        let data = fs::read("/pkg/data/1file.img").expect("failed to read file");
-        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
-        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
-        let server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: 512,
-                initial_contents: InitialContents::FromVmo(vmo),
-                ..Default::default()
-            }
-            .build()
-            .expect("build from VmoBackedServerOptions failed"),
-        );
+        let server = VmoBackedServer::from_file(BLOCK_SIZE, "/pkg/data/1file.img");
 
-        let server_clone = server.clone();
         let (block_client_end1, block_server_end1) =
             fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
         std::thread::spawn(move || {
             let mut executor = fasync::TestExecutor::new();
-            let _task =
-                executor.run_singlethreaded(server_clone.serve(block_server_end1.into_stream()));
+            let _task = executor.run_singlethreaded(server.serve(block_server_end1.into_stream()));
         });
         let processor = Arc::new(Ext4Processor::new(
             Arc::new(
@@ -658,26 +634,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_writing_past_eof_fails() {
-        let data = fs::read("/pkg/data/1file.img").expect("failed to read file");
-        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
-        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
-        let server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: 512,
-                initial_contents: InitialContents::FromVmo(vmo),
-                ..Default::default()
-            }
-            .build()
-            .expect("build from VmoBackedServerOptions failed"),
-        );
+        let server = VmoBackedServer::from_file(BLOCK_SIZE, "/pkg/data/1file.img");
 
-        let server_clone = server.clone();
         let (block_client_end1, block_server_end1) =
             fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
         std::thread::spawn(move || {
             let mut executor = fasync::TestExecutor::new();
-            let _task =
-                executor.run_singlethreaded(server_clone.serve(block_server_end1.into_stream()));
+            let _task = executor.run_singlethreaded(server.serve(block_server_end1.into_stream()));
         });
         let processor = Arc::new(Ext4Processor::new(
             Arc::new(

@@ -27,7 +27,7 @@ rustc_binary("bin") {
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
     "//src/storage/fxfs/platform",
     "//src/storage/fxfs/test-fxfs/fidl/fuchsia.test.fxfs:fuchsia.test.fxfs_rust",
-    "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/block_server/vmo_backed:test_vmo_backed_block_server",
     "//src/storage/lib/storage_device",
     "//src/storage/lib/vfs/rust:vfs_static",
     "//third_party/rust_crates:anyhow",

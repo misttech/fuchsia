@@ -14,7 +14,6 @@ rustc_binary("bin") {
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
-    "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/runtime/rust",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fidl/rust/fidl",
@@ -22,11 +21,12 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-runtime",
     "//src/storage/ext4/lib/parser",
-    "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/block_server/vmo_backed:test_vmo_backed_block_server",
     "//src/storage/lib/vfs/rust:vfs",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:log",
   ]
+  visibility = [ ":*" ]
 }
 
 fuchsia_component("server") {

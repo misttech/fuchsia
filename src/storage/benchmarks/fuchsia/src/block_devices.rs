@@ -339,7 +339,7 @@ mod tests {
     use fs_management::Gpt;
     use ramdevice_client::{RamdiskClient, RamdiskClientBuilder};
     use std::sync::Arc;
-    use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
+    use vmo_backed_block_server::VmoBackedServer;
 
     const BLOCK_SIZE: u64 = 4 * 1024;
     const BLOCK_COUNT: u64 = 1024;
@@ -419,10 +419,11 @@ mod tests {
 
     async fn init_gpt(block_size: u32, block_count: u64) -> zx::Vmo {
         let vmo = zx::Vmo::create(block_size as u64 * block_count).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(
+        let server = VmoBackedServer::from_vmo(
             block_size,
             vmo.create_child(zx::VmoChildOptions::REFERENCE, 0, 0).unwrap(),
-        ));
+        )
+        .expect("Failed to create VmoBackedServer");
         let (client, server_end) =
             fidl::endpoints::create_proxy::<fidl_fuchsia_storage_block::BlockMarker>();
 

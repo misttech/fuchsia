@@ -25,7 +25,7 @@ use mock_reboot::MockRebootService;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use vfs::execution_scope::ExecutionScope;
-use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
+use vmo_backed_block_server::VmoBackedServer;
 use zerocopy::IntoBytes as _;
 
 struct TestEnvBuilder {
@@ -63,7 +63,7 @@ impl TestEnvBuilder {
 
         let msg: BootloaderMessageRaw =
             BootloaderMessage::with_args(&self.recovery_args).try_into().unwrap();
-        let vmo_server = Arc::new(VmoBackedServer::new(8, 512, msg.as_bytes()));
+        let vmo_server = Arc::new(VmoBackedServer::new(8, 512, msg.as_bytes()).unwrap());
 
         let mount_called = Arc::new(AtomicU32::new(0));
         let mock_fshost_mount_called = Arc::clone(&mount_called);

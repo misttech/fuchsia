@@ -2267,8 +2267,8 @@ mod tests {
     use std::collections::HashSet;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-    use vmo_backed_block_server::{
-        InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
+    use test_vmo_backed_block_server::{
+        InitialContents, Observer, VmoBackedServer, VmoBackedServerOptions, WriteAction, WriteCache,
     };
 
     struct Fixture {
@@ -2283,11 +2283,14 @@ mod tests {
     impl Fixture {
         async fn new(extra_space: u64) -> Self {
             let contents = std::fs::read("/pkg/data/golden-fvm.blk").unwrap();
-            let fake_server = Arc::new(VmoBackedServer::new(
-                (contents.len() as u64 + extra_space) / BLOCK_SIZE as u64,
-                BLOCK_SIZE,
-                &contents,
-            ));
+            let fake_server = Arc::new(
+                VmoBackedServer::new(
+                    (contents.len() as u64 + extra_space) / BLOCK_SIZE as u64,
+                    BLOCK_SIZE,
+                    &contents,
+                )
+                .expect("Failed to create VmoBackedServer"),
+            );
             Self::from_fake_server(fake_server).await
         }
 
@@ -2343,7 +2346,10 @@ mod tests {
     async fn test_format_and_mount() {
         let block_size: u32 = 512;
         let block_count: u64 = 102400; // 50MB
-        let fake_server = Arc::new(VmoBackedServer::new(block_count, block_size, &[]));
+        let fake_server = Arc::new(
+            VmoBackedServer::new(block_count, block_size, &[])
+                .expect("Failed to create VmoBackedServer"),
+        );
 
         let (outgoing_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         let component = Arc::new(Component::new());
@@ -2418,7 +2424,9 @@ mod tests {
         let vmo_dup = zx::Vmo::from(vmo_dup);
 
         vmo.set_size(initial_block_count * block_size as u64).unwrap();
-        let fake_server = Arc::new(VmoBackedServer::from_vmo(block_size, vmo));
+        let fake_server = Arc::new(
+            VmoBackedServer::from_vmo(block_size, vmo).expect("Failed to create VmoBackedServer"),
+        );
 
         let (outgoing_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         let component = Arc::new(Component::new());
@@ -2446,7 +2454,10 @@ mod tests {
         vmo_dup.set_size(final_block_count * block_size as u64).unwrap();
 
         // Remount with larger disk
-        let fake_server = Arc::new(VmoBackedServer::from_vmo(block_size, vmo_dup));
+        let fake_server = Arc::new(
+            VmoBackedServer::from_vmo(block_size, vmo_dup)
+                .expect("Failed to create VmoBackedServer"),
+        );
         let (outgoing_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         let component = Arc::new(Component::new());
 
@@ -2537,7 +2548,9 @@ mod tests {
         let vmo_dup = zx::Vmo::from(vmo_dup);
 
         vmo.set_size(initial_block_count * block_size as u64).unwrap();
-        let fake_server = Arc::new(VmoBackedServer::from_vmo(block_size, vmo));
+        let fake_server = Arc::new(
+            VmoBackedServer::from_vmo(block_size, vmo).expect("Failed to create VmoBackedServer"),
+        );
 
         let (outgoing_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         let component = Arc::new(Component::new());
@@ -2591,7 +2604,8 @@ mod tests {
         // Grow disk
         vmo_dup.set_size(final_block_count * block_size as u64).unwrap();
 
-        let fake_server = Arc::new(VmoBackedServer::from_vmo(block_size, vmo_dup));
+        let fake_server = VmoBackedServer::from_vmo(block_size, vmo_dup)
+            .expect("Failed to create VmoBackedServer");
         let (block_client_client_end, block_server) =
             fidl::endpoints::create_request_stream::<BlockMarker>();
         fasync::Task::spawn(async move {
@@ -2630,15 +2644,15 @@ mod tests {
         let vmo_dup = zx::Vmo::from(vmo_dup);
 
         vmo.set_size(initial_block_count * block_size as u64).unwrap();
-        let fake_server = Arc::new(VmoBackedServer::from_vmo(block_size, vmo));
+        let fake_server =
+            VmoBackedServer::from_vmo(block_size, vmo).expect("Failed to create VmoBackedServer");
 
         let (outgoing_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         let component = Arc::new(Component::new());
 
-        let fake_server_clone = fake_server.clone();
         let (block_client, block_server) = fidl::endpoints::create_request_stream::<BlockMarker>();
         fasync::Task::spawn(async move {
-            let _ = fake_server_clone.serve(block_server.cast_stream()).await;
+            let _ = fake_server.serve(block_server.cast_stream()).await;
         })
         .detach();
 
@@ -2658,14 +2672,14 @@ mod tests {
         vmo_dup.set_size(final_block_count * block_size as u64).unwrap();
 
         // Remount with larger disk
-        let fake_server = Arc::new(VmoBackedServer::from_vmo(block_size, vmo_dup));
+        let fake_server = VmoBackedServer::from_vmo(block_size, vmo_dup)
+            .expect("Failed to create VmoBackedServer");
         let (outgoing_dir, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         let component = Arc::new(Component::new());
 
-        let fake_server_clone = fake_server.clone();
         let (block_client, block_server) = fidl::endpoints::create_request_stream::<BlockMarker>();
         fasync::Task::spawn(async move {
-            let _ = fake_server_clone.serve(block_server.cast_stream()).await;
+            let _ = fake_server.serve(block_server.cast_stream()).await;
         })
         .detach();
 
@@ -3647,9 +3661,9 @@ mod tests {
     async fn test_force_access_passed_through() {
         let expect_force_access = Arc::new(AtomicBool::new(false));
 
-        struct Observer(Arc<AtomicBool>);
+        struct ForceAccessObserver(Arc<AtomicBool>);
 
-        impl vmo_backed_block_server::Observer for Observer {
+        impl Observer for ForceAccessObserver {
             fn write(
                 &self,
                 _device_block_offset: u64,
@@ -3657,12 +3671,12 @@ mod tests {
                 _vmo: &Arc<zx::Vmo>,
                 _vmo_offset: u64,
                 opts: WriteOptions,
-            ) -> vmo_backed_block_server::WriteAction {
+            ) -> WriteAction {
                 assert_eq!(
                     opts.flags.contains(WriteFlags::FORCE_ACCESS),
                     self.0.load(Ordering::Relaxed)
                 );
-                vmo_backed_block_server::WriteAction::Write
+                WriteAction::Write
             }
         }
 
@@ -3671,7 +3685,7 @@ mod tests {
             VmoBackedServerOptions {
                 block_size: BLOCK_SIZE,
                 initial_contents: InitialContents::FromBuffer(&contents),
-                observer: Some(Box::new(Observer(expect_force_access.clone()))),
+                observer: Some(Box::new(ForceAccessObserver(expect_force_access.clone()))),
                 info: DeviceInfo::Block(BlockInfo {
                     device_flags: fblock::DeviceFlag::FUA_SUPPORT,
                     ..Default::default()
@@ -3722,10 +3736,10 @@ mod tests {
     async fn test_flush_after_metadata_write() {
         let flush_called = Arc::new(AtomicU64::new(0));
 
-        struct Observer(Arc<AtomicU64>);
+        struct FlushObserver(Arc<AtomicU64>);
 
-        impl vmo_backed_block_server::Observer for Observer {
-            fn flush(&self, _writes: Option<&mut vmo_backed_block_server::WriteCache>) {
+        impl Observer for FlushObserver {
+            fn flush(&self, _writes: Option<&mut WriteCache>) {
                 self.0.fetch_add(1, Ordering::Relaxed);
             }
         }
@@ -3738,7 +3752,7 @@ mod tests {
                     (contents.len() as u64 + SLICE_SIZE) / BLOCK_SIZE as u64,
                     &contents,
                 ),
-                observer: Some(Box::new(Observer(flush_called.clone()))),
+                observer: Some(Box::new(FlushObserver(flush_called.clone()))),
                 ..Default::default()
             }
             .build()
@@ -3918,9 +3932,9 @@ mod tests {
     async fn test_trim() {
         let trim_called = Arc::new(AtomicBool::new(false));
 
-        struct Observer(Arc<AtomicBool>);
+        struct TrimObserver(Arc<AtomicBool>);
 
-        impl vmo_backed_block_server::Observer for Observer {
+        impl Observer for TrimObserver {
             fn trim(&self, _device_block_offset: u64, _block_count: u32) {
                 self.0.store(true, Ordering::Relaxed)
             }
@@ -3931,7 +3945,7 @@ mod tests {
             VmoBackedServerOptions {
                 block_size: BLOCK_SIZE,
                 initial_contents: InitialContents::FromBuffer(&contents),
-                observer: Some(Box::new(Observer(trim_called.clone()))),
+                observer: Some(Box::new(TrimObserver(trim_called.clone()))),
                 ..Default::default()
             }
             .build()

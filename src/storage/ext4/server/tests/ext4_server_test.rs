@@ -11,11 +11,11 @@ use futures::FutureExt as _;
 use maplit::hashmap;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::io::{Read as _, Seek as _};
 use std::sync::Arc;
-use std::{fs, io};
 use test_case::test_case;
-use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
+use test_vmo_backed_block_server::VmoBackedServer;
+
+const BLOCK_SIZE: u32 = 512;
 
 async fn create_realm(
     server: Arc<VmoBackedServer>,
@@ -119,19 +119,9 @@ async fn ext4_server_mounts_block_device_from_namespace(
     ext4_path: &str,
     file_hashes: HashMap<String, String>,
 ) -> Result<(), Error> {
-    let mut file_buf = io::BufReader::new(fs::File::open(ext4_path)?);
-    let size = file_buf.seek(io::SeekFrom::End(0))?;
-    file_buf.seek(io::SeekFrom::Start(0))?;
+    let server = Arc::new(VmoBackedServer::from_file(BLOCK_SIZE, ext4_path));
 
-    let mut temp_buf = vec![0u8; size as usize];
-    {
-        file_buf.read_exact(&mut temp_buf)?;
-    }
-    let vmo = zx::Vmo::create(size)?;
-    vmo.write(&temp_buf, 0)?;
-    let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-
-    let realm = create_realm(server.clone(), false).await?;
+    let realm = create_realm(server, false).await?;
 
     let fs_root = fuchsia_fs::directory::open_directory(
         realm.root.get_exposed_dir(),
@@ -163,19 +153,8 @@ async fn ext4_readonly_server_mounts_block_device(
     ext4_path: &str,
     file_hashes: HashMap<String, String>,
 ) -> Result<(), Error> {
-    let mut file_buf = io::BufReader::new(fs::File::open(ext4_path)?);
-    let size = file_buf.seek(io::SeekFrom::End(0))?;
-    file_buf.seek(io::SeekFrom::Start(0))?;
-
-    let mut temp_buf = vec![0u8; size as usize];
-    {
-        file_buf.read_exact(&mut temp_buf)?;
-    }
-    let vmo = zx::Vmo::create(size)?;
-    vmo.write(&temp_buf, 0)?;
-    let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-
-    let realm = create_realm(server.clone(), true).await?;
+    let server = Arc::new(VmoBackedServer::from_file(BLOCK_SIZE, ext4_path));
+    let realm = create_realm(server, true).await?;
 
     let fs_root = fuchsia_fs::directory::open_directory(
         realm.root.get_exposed_dir(),
@@ -206,17 +185,7 @@ async fn ext4_server_overwrites_persist(
     ext4_path: &str,
     file_paths: Vec<String>,
 ) -> Result<(), Error> {
-    let mut file_buf = io::BufReader::new(fs::File::open(ext4_path)?);
-    let size = file_buf.seek(io::SeekFrom::End(0))?;
-    file_buf.seek(io::SeekFrom::Start(0))?;
-
-    let mut temp_buf = vec![0u8; size as usize];
-    {
-        file_buf.read_exact(&mut temp_buf)?;
-    }
-    let vmo = zx::Vmo::create(size)?;
-    vmo.write(&temp_buf, 0)?;
-    let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
+    let server = Arc::new(VmoBackedServer::from_file(BLOCK_SIZE, ext4_path));
 
     {
         let realm = create_realm(server.clone(), false).await?;
@@ -311,18 +280,8 @@ async fn ext4_server_overwrites_persist(
 
 #[fuchsia::test]
 async fn test_truncate_does_not_persist() -> Result<(), Error> {
-    let mut file_buf = io::BufReader::new(fs::File::open("/pkg/data/1file.img")?);
-    let size = file_buf.seek(io::SeekFrom::End(0))?;
-    file_buf.seek(io::SeekFrom::Start(0))?;
-    let file_path = "file1".to_string();
-
-    let mut temp_buf = vec![0u8; size as usize];
-    {
-        file_buf.read_exact(&mut temp_buf)?;
-    }
-    let vmo = zx::Vmo::create(size)?;
-    vmo.write(&temp_buf, 0)?;
-    let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
+    let server = Arc::new(VmoBackedServer::from_file(BLOCK_SIZE, "/pkg/data/1file.img"));
+    let file_path = "file1";
 
     let original_content;
     {

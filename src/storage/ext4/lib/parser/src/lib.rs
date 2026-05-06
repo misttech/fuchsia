@@ -120,8 +120,10 @@ mod tests {
     use fuchsia_fs::file::{WriteError, read_to_string, write};
     use std::fs;
     use std::sync::Arc;
-    use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
+    use test_vmo_backed_block_server::VmoBackedServer;
     use zx::{HandleBased, Status, Vmo};
+
+    const BLOCK_SIZE: u32 = 512;
 
     #[fuchsia::test]
     fn image_too_small() {
@@ -243,18 +245,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_constructing_writeable_fs_and_writing_to_allocated_region() {
         // Create a device that is Ext4 formatted.
-        let data = fs::read("/pkg/data/nest.img").expect("failed to read file");
-        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
-        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
-        let server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: 512,
-                initial_contents: InitialContents::FromVmo(vmo),
-                ..Default::default()
-            }
-            .build()
-            .expect("build from VmoBackedServerOptions failed"),
-        );
+        let server = Arc::new(VmoBackedServer::from_file(BLOCK_SIZE, "/pkg/data/nest.img"));
 
         let server_clone = server.clone();
         let (block_client_end1, block_server_end1) =
@@ -336,18 +327,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_writing_past_eof_fails() {
-        let data = fs::read("/pkg/data/nest.img").expect("failed to read file");
-        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
-        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
-        let server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: 512,
-                initial_contents: InitialContents::FromVmo(vmo),
-                ..Default::default()
-            }
-            .build()
-            .expect("build from VmoBackedServerOptions failed"),
-        );
+        let server = Arc::new(VmoBackedServer::from_file(BLOCK_SIZE, "/pkg/data/nest.img"));
 
         let server_clone = server.clone();
         let (block_client_end1, block_server_end1) =
@@ -437,23 +417,14 @@ mod tests {
         // Clone VMO to observe underlying changes made by the server.
         let vmo_clone = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("failed to clone vmo");
 
-        let server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: 512,
-                initial_contents: InitialContents::FromVmo(vmo),
-                ..Default::default()
-            }
-            .build()
-            .expect("build from VmoBackedServerOptions failed"),
-        );
+        let server =
+            VmoBackedServer::from_vmo(BLOCK_SIZE, vmo).expect("Failed to create VmoBackedServer");
 
-        let server_clone = server.clone();
         let (block_client_end, block_server_end) =
             fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
         std::thread::spawn(move || {
             let mut executor = fasync::TestExecutor::new();
-            let _task =
-                executor.run_singlethreaded(server_clone.serve(block_server_end.into_stream()));
+            let _task = executor.run_singlethreaded(server.serve(block_server_end.into_stream()));
         });
 
         // Write to the allocated extent of this file.
@@ -514,26 +485,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_metrics_of_fs_with_multiple_files() {
-        let data = fs::read("/pkg/data/nest.img").expect("failed to read file");
-        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
-        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
-        let server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: 512,
-                initial_contents: InitialContents::FromVmo(vmo),
-                ..Default::default()
-            }
-            .build()
-            .expect("build from VmoBackedServerOptions failed"),
-        );
+        let server = VmoBackedServer::from_file(BLOCK_SIZE, "/pkg/data/nest.img");
 
-        let server_clone = server.clone();
         let (block_client_end, block_server_end) =
             fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
         std::thread::spawn(move || {
             let mut executor = fasync::TestExecutor::new();
-            let _task =
-                executor.run_singlethreaded(server_clone.serve(block_server_end.into_stream()));
+            let _task = executor.run_singlethreaded(server.serve(block_server_end.into_stream()));
         });
 
         let inspector = fuchsia_inspect::Inspector::default();
@@ -622,26 +580,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_truncate_and_write() {
-        let data = fs::read("/pkg/data/1file.img").expect("failed to read file");
-        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
-        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
-        let server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: 512,
-                initial_contents: InitialContents::FromVmo(vmo),
-                ..Default::default()
-            }
-            .build()
-            .expect("build from VmoBackedServerOptions failed"),
-        );
+        let server = VmoBackedServer::from_file(BLOCK_SIZE, "/pkg/data/1file.img");
 
-        let server_clone = server.clone();
         let (block_client_end, block_server_end) =
             fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
         std::thread::spawn(move || {
             let mut executor = fasync::TestExecutor::new();
-            let _task =
-                executor.run_singlethreaded(server_clone.serve(block_server_end.into_stream()));
+            let _task = executor.run_singlethreaded(server.serve(block_server_end.into_stream()));
         });
 
         let inspector = fuchsia_inspect::Inspector::default();

@@ -20,7 +20,7 @@ use fuchsia_component_test::{Capability, RealmBuilder, Ref, Route};
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use futures::FutureExt as _;
 use ramdevice_client::RamdiskClientBuilder;
-use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
+use vmo_backed_block_server::VmoBackedServer;
 use zx::HandleBased as _;
 
 const BLOCK_SIZE: u64 = 512;
@@ -32,13 +32,7 @@ async fn format_gpt_vmo(partitions: Vec<gpt::PartitionInfo>) -> Result<zx::Vmo, 
     let vmo_clone = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
     let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
     let server = fasync::Task::spawn(async move {
-        let block_server = VmoBackedServerOptions {
-            initial_contents: InitialContents::FromVmo(vmo_clone),
-            block_size: BLOCK_SIZE as u32,
-            ..Default::default()
-        }
-        .build()
-        .unwrap();
+        let block_server = VmoBackedServer::from_vmo(BLOCK_SIZE as u32, vmo_clone).unwrap();
         block_server.serve(stream).await.unwrap();
     });
 

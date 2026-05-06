@@ -515,32 +515,34 @@ mod tests {
     use std::ops::Range;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use vmo_backed_block_server::{
-        InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
+    use test_vmo_backed_block_server::{
+        InitialContents, Observer, VmoBackedServer, VmoBackedServerOptions, WriteAction, WriteCache,
     };
     use zx::HandleBased;
 
+    async fn connect_to_server(
+        server: VmoBackedServer,
+    ) -> (Arc<RemoteBlockClient>, fasync::Task<()>) {
+        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
+        let task =
+            fasync::Task::spawn(
+                async move { server.serve(server_end.into_stream()).await.unwrap() },
+            );
+        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        (client, task)
+    }
+
     #[fuchsia::test]
     async fn load_unformatted_gpt() {
-        let vmo = zx::Vmo::create(4096).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(8, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::open(client).await.expect_err("load should fail");
     }
 
     #[fuchsia::test]
     async fn load_formatted_empty_gpt() {
-        let vmo = zx::Vmo::create(4096).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(8, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(client.clone(), vec![]).await.expect("format failed");
         Gpt::open(client).await.expect("load should succeed");
     }
@@ -551,13 +553,8 @@ mod tests {
         const PART_INSTANCE_GUID: [u8; 16] = [2u8; 16];
         const PART_NAME: &str = "part";
 
-        let vmo = zx::Vmo::create(6 * 4096).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(4096, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(6, 4096, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![PartitionInfo {
@@ -587,13 +584,8 @@ mod tests {
             [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31];
         const PART_NAME: &str = "part";
 
-        let vmo = zx::Vmo::create(4096).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(8, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![PartitionInfo {
@@ -625,13 +617,8 @@ mod tests {
         const PART_1_NAME: &str = "part1";
         const PART_2_NAME: &str = "part2";
 
-        let vmo = zx::Vmo::create(8192).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(16, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![
@@ -677,13 +664,8 @@ mod tests {
         const PART_INSTANCE_GUID: [u8; 16] = [2u8; 16];
         const PART_NAME: &str = "part\0extrastuff";
 
-        let vmo = zx::Vmo::create(4096).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(8, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![PartitionInfo {
@@ -709,13 +691,8 @@ mod tests {
         const PART_INSTANCE_GUID: [u8; 16] = [2u8; 16];
         const PART_NAME: &str = "";
 
-        let vmo = zx::Vmo::create(4096).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(8, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![PartitionInfo {
@@ -742,14 +719,8 @@ mod tests {
         const PART_1_NAME: &str = "part1";
         const PART_2_NAME: &str = "part2";
 
-        let vmo = zx::Vmo::create(8192).unwrap();
-
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(16, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![
@@ -799,14 +770,8 @@ mod tests {
         const PART_1_NAME: &str = "part1";
         const PART_2_NAME: &str = "part2";
 
-        let vmo = zx::Vmo::create(8192).unwrap();
-
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(16, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![
@@ -850,13 +815,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn drop_transaction() {
-        let vmo = zx::Vmo::create(8192).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(16, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(client.clone(), vec![]).await.expect("format failed");
         let manager = Gpt::open(client).await.expect("load should succeed");
         {
@@ -869,13 +829,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn commit_empty_transaction() {
-        let vmo = zx::Vmo::create(8192).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(16, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(client.clone(), vec![]).await.expect("format failed");
         let mut manager = Gpt::open(client).await.expect("load should succeed");
         let transaction = manager.create_transaction().unwrap();
@@ -898,13 +853,8 @@ mod tests {
         const PART_1_NAME: &str = "part1";
         const PART_2_NAME: &str = "part2";
 
-        let vmo = zx::Vmo::create(8192).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(16, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![PartitionInfo {
@@ -958,13 +908,8 @@ mod tests {
         const PART_INSTANCE_GUID: [u8; 16] = [2u8; 16];
         const PART_NAME: &str = "part1";
 
-        let vmo = zx::Vmo::create(8192).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(16, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![PartitionInfo {
@@ -1001,13 +946,8 @@ mod tests {
         const PART_1_NAME: &str = "part1";
         const PART_2_NAME: &str = "part2";
 
-        let vmo = zx::Vmo::create(8192).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(16, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![PartitionInfo {
@@ -1056,13 +996,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn grow_partition_table_in_transaction() {
-        let vmo = zx::Vmo::create(1024 * 1024).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server =
+            VmoBackedServer::new(2048, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![PartitionInfo {
@@ -1108,7 +1044,6 @@ mod tests {
 
     #[fuchsia::test]
     async fn shrink_partition_table_in_transaction() {
-        let vmo = zx::Vmo::create(1024 * 1024).unwrap();
         let mut partitions = vec![];
         for i in 0..128 {
             partitions.push(PartitionInfo {
@@ -1120,12 +1055,9 @@ mod tests {
                 flags: 0,
             });
         }
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server =
+            VmoBackedServer::new(2048, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(client.clone(), partitions).await.expect("format failed");
         let mut manager = Gpt::open(client).await.expect("load should succeed");
         assert_eq!(manager.header().num_parts, 128);
@@ -1151,13 +1083,8 @@ mod tests {
         const PART_INSTANCE_GUID: [u8; 16] = [2u8; 16];
         const PART_NAME: &str = "part1";
 
-        let vmo = zx::Vmo::create(8192).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(16, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![PartitionInfo {
@@ -1203,7 +1130,7 @@ mod tests {
         discard_range: Range<u64>,
     }
 
-    impl vmo_backed_block_server::Observer for DiscardingObserver {
+    impl Observer for DiscardingObserver {
         fn write(
             &self,
             device_block_offset: u64,
@@ -1211,15 +1138,15 @@ mod tests {
             _vmo: &Arc<zx::Vmo>,
             _vmo_offset: u64,
             _opts: block_server::WriteOptions,
-        ) -> vmo_backed_block_server::WriteAction {
+        ) -> WriteAction {
             let write_range = (device_block_offset * self.block_size)
                 ..(device_block_offset + block_count as u64) * self.block_size;
             if write_range.end <= self.discard_range.start
                 || write_range.start >= self.discard_range.end
             {
-                vmo_backed_block_server::WriteAction::Write
+                WriteAction::Write
             } else {
-                vmo_backed_block_server::WriteAction::Discard
+                WriteAction::Discard
             }
         }
     }
@@ -1233,24 +1160,18 @@ mod tests {
         const PART_2_NAME: &str = "part2";
 
         let vmo = zx::Vmo::create(8192).unwrap();
-        let server = Arc::new(
-            VmoBackedServerOptions {
-                initial_contents: InitialContents::FromVmo(vmo),
+        let server = VmoBackedServerOptions {
+            initial_contents: InitialContents::FromVmo(vmo),
+            block_size: 512,
+            observer: Some(Box::new(DiscardingObserver {
+                discard_range: 1024..1536,
                 block_size: 512,
-                observer: Some(Box::new(DiscardingObserver {
-                    discard_range: 1024..1536,
-                    block_size: 512,
-                })),
-                ..Default::default()
-            }
-            .build()
-            .unwrap(),
-        );
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+            })),
+            ..Default::default()
+        }
+        .build()
+        .unwrap();
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![PartitionInfo {
@@ -1303,11 +1224,9 @@ mod tests {
         let vmo = zx::Vmo::create(8192).unwrap();
         let vmo_dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         {
-            let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-            let server = Arc::new(VmoBackedServer::from_vmo(512, vmo_dup));
-            let _task =
-                fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-            let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+            let server =
+                VmoBackedServer::from_vmo(512, vmo_dup).expect("Failed to create VmoBackedServer");
+            let (client, _task) = connect_to_server(server).await;
             Gpt::format(
                 client.clone(),
                 vec![PartitionInfo {
@@ -1322,23 +1241,18 @@ mod tests {
             .await
             .expect("format failed");
         }
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-        let server = Arc::new(
-            VmoBackedServerOptions {
-                initial_contents: InitialContents::FromVmo(vmo),
+        let server = VmoBackedServerOptions {
+            initial_contents: InitialContents::FromVmo(vmo),
+            block_size: 512,
+            observer: Some(Box::new(DiscardingObserver {
+                discard_range: 0..2048,
                 block_size: 512,
-                observer: Some(Box::new(DiscardingObserver {
-                    discard_range: 0..2048,
-                    block_size: 512,
-                })),
-                ..Default::default()
-            }
-            .build()
-            .unwrap(),
-        );
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+            })),
+            ..Default::default()
+        }
+        .build()
+        .unwrap();
+        let (client, _task) = connect_to_server(server).await;
 
         let mut manager = Gpt::open(client).await.expect("load should succeed");
         let mut transaction = manager.create_transaction().unwrap();
@@ -1374,11 +1288,9 @@ mod tests {
         let vmo = zx::Vmo::create(8192).unwrap();
         let vmo_dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         {
-            let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-            let server = Arc::new(VmoBackedServer::from_vmo(512, vmo_dup));
-            let _task =
-                fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-            let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+            let server =
+                VmoBackedServer::from_vmo(512, vmo_dup).expect("Failed to create VmoBackedServer");
+            let (client, _task) = connect_to_server(server).await;
             Gpt::format(
                 client.clone(),
                 vec![PartitionInfo {
@@ -1393,23 +1305,18 @@ mod tests {
             .await
             .expect("format failed");
         }
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-        let server = Arc::new(
-            VmoBackedServerOptions {
-                initial_contents: InitialContents::FromVmo(vmo),
+        let server = VmoBackedServerOptions {
+            initial_contents: InitialContents::FromVmo(vmo),
+            block_size: 512,
+            observer: Some(Box::new(DiscardingObserver {
+                discard_range: 0..7680,
                 block_size: 512,
-                observer: Some(Box::new(DiscardingObserver {
-                    discard_range: 0..7680,
-                    block_size: 512,
-                })),
-                ..Default::default()
-            }
-            .build()
-            .unwrap(),
-        );
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+            })),
+            ..Default::default()
+        }
+        .build()
+        .unwrap();
+        let (client, _task) = connect_to_server(server).await;
 
         let mut manager = Gpt::open(client).await.expect("load should succeed");
         let mut transaction = manager.create_transaction().unwrap();
@@ -1440,13 +1347,8 @@ mod tests {
         const PART_INSTANCE_GUID: [u8; 16] = [2u8; 16];
         const PART_NAME: &str = "part1";
 
-        let vmo = zx::Vmo::create(8192).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(16, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(
             client.clone(),
             vec![PartitionInfo {
@@ -1474,15 +1376,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn load_golden_gpt_linux() {
-        let contents = std::fs::read("/pkg/data/gpt_golden/gpt.linux.blk").unwrap();
-        let server = Arc::new(VmoBackedServer::new(contents.len() as u64 / 512, 512, &contents));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let manager = Gpt::open(Arc::new(RemoteBlockClient::new(client).await.unwrap()))
-            .await
-            .expect("load should succeed");
+        let server = VmoBackedServer::from_file(512, "/pkg/data/gpt_golden/gpt.linux.blk");
+        let (client, _task) = connect_to_server(server).await;
+        let manager = Gpt::open(client).await.expect("load should succeed");
         let partition = manager.partitions().get(&0).expect("No entry found");
         assert_eq!(partition.label, "ext");
         assert_eq!(partition.type_guid.to_string(), "0fc63daf-8483-4772-8e79-3d69d8477de4");
@@ -1493,9 +1389,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn load_golden_gpt_fuchsia() {
-        let contents = std::fs::read("/pkg/data/gpt_golden/gpt.fuchsia.blk").unwrap();
-        let server = Arc::new(VmoBackedServer::new(contents.len() as u64 / 512, 512, &contents));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
+        let server = VmoBackedServer::from_file(512, "/pkg/data/gpt_golden/gpt.fuchsia.blk");
+        let (client, _task) = connect_to_server(server).await;
 
         struct ExpectedPartition {
             label: &'static str,
@@ -1545,11 +1440,7 @@ mod tests {
             },
         ];
 
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let manager = Gpt::open(Arc::new(RemoteBlockClient::new(client).await.unwrap()))
-            .await
-            .expect("load should succeed");
+        let manager = Gpt::open(client).await.expect("load should succeed");
         for i in 0..EXPECTED_PARTITIONS.len() as u32 {
             let partition = manager.partitions().get(&i).expect("No entry found");
             let expected = &EXPECTED_PARTITIONS[i as usize];
@@ -1562,13 +1453,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn add_partitions_till_no_blocks_left() {
-        let vmo = zx::Vmo::create(65536).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(128, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(client.clone(), vec![PartitionInfo::nil(); 32]).await.expect("format failed");
         let mut manager = Gpt::open(client).await.expect("load should succeed");
         let mut transaction = manager.create_transaction().unwrap();
@@ -1608,13 +1494,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn add_partitions_till_no_slots_left() {
-        let vmo = zx::Vmo::create(65536).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
-        let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-
-        let _task =
-            fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-        let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+        let server = VmoBackedServer::new(128, 512, &[]).expect("Failed to create VmoBackedServer");
+        let (client, _task) = connect_to_server(server).await;
         Gpt::format(client.clone(), vec![PartitionInfo::nil(); 4]).await.expect("format failed");
         let mut manager = Gpt::open(client).await.expect("load should succeed");
         let mut transaction = manager.create_transaction().unwrap();
@@ -1660,8 +1541,8 @@ mod tests {
         shuffle_if_contains_offset: u64,
     }
 
-    impl vmo_backed_block_server::Observer for ShufflingObserver {
-        fn flush(&self, writes: Option<&mut vmo_backed_block_server::WriteCache>) {
+    impl Observer for ShufflingObserver {
+        fn flush(&self, writes: Option<&mut WriteCache>) {
             if self.start.load(Ordering::Relaxed) {
                 let Some(writes) = writes else { unreachable!() };
                 if writes
@@ -1676,7 +1557,7 @@ mod tests {
             }
         }
 
-        fn close(&self, writes: Option<&mut vmo_backed_block_server::WriteCache>) {
+        fn close(&self, writes: Option<&mut WriteCache>) {
             // Always shuffle every write which had yet to be flushed when the client closed.
             if self.start.load(Ordering::Relaxed) {
                 let Some(writes) = writes else { unreachable!() };
@@ -1696,24 +1577,19 @@ mod tests {
         for shuffle_if_contains_offset in [1, BLOCK_COUNT - 1] {
             let vmo = zx::Vmo::create(BLOCK_SIZE * BLOCK_COUNT).unwrap();
             let start_shuffling = Arc::new(AtomicBool::new(false));
-            let server = Arc::new(
-                VmoBackedServerOptions {
-                    initial_contents: InitialContents::FromVmo(vmo),
-                    block_size: BLOCK_SIZE as u32,
-                    observer: Some(Box::new(ShufflingObserver {
-                        start: start_shuffling.clone(),
-                        shuffle_if_contains_offset,
-                    })),
-                    write_tracking: true,
-                    ..Default::default()
-                }
-                .build()
-                .unwrap(),
-            );
-            let (client, server_end) = fidl::endpoints::create_proxy::<fblock::BlockMarker>();
-            let _task =
-                fasync::Task::spawn(async move { server.serve(server_end.into_stream()).await });
-            let client = Arc::new(RemoteBlockClient::new(client).await.unwrap());
+            let server = VmoBackedServerOptions {
+                initial_contents: InitialContents::FromVmo(vmo),
+                block_size: BLOCK_SIZE as u32,
+                observer: Some(Box::new(ShufflingObserver {
+                    start: start_shuffling.clone(),
+                    shuffle_if_contains_offset,
+                })),
+                write_tracking: true,
+                ..Default::default()
+            }
+            .build()
+            .unwrap();
+            let (client, _task) = connect_to_server(server).await;
             Gpt::format(client.clone(), vec![PartitionInfo::nil(); 80])
                 .await
                 .expect("format failed");

@@ -471,12 +471,12 @@ impl LocalBlockDevice {
         // Take care when modifying this!
         let thread = std::thread::spawn(move || {
             let mut executor = fasync::LocalExecutor::default();
-            scope_tx.send(executor.root_scope().new_child()).unwrap();
+            scope_tx.send(executor.root_scope().clone()).unwrap();
             let _ = executor
                 .run_singlethreaded(Abortable::new(std::future::pending::<()>(), registration));
         });
         let scope = scope_rx.await.unwrap();
-        let connector = Arc::new(VmoBackedServerConnector::new(scope, server));
+        let connector = Arc::new(VmoBackedServerConnector::new_with_scope(server, scope));
         let block_proxy = connector.connect_block()?.into_proxy();
         Ok(Self {
             thread: Some(thread),

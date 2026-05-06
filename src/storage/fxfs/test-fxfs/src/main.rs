@@ -33,9 +33,9 @@ use std::sync::{Arc, Weak};
 use storage_device::DeviceHolder;
 use storage_device::block_device::BlockDevice;
 use test_fxfs_config::Config;
+use test_vmo_backed_block_server::VmoBackedServer;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
-use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions, VmoBackedServerTestingExt};
 
 const BLOCK_SIZE: u32 = 4096; // 4KiB
 const USER_VOLUME_NAME: &str = "test_fxfs_user_volume";
@@ -252,13 +252,7 @@ async fn main() -> Result<(), Error> {
     // Android's bionic unit tests will fail with a smaller disk.
     // TODO(https://fxbug.dev/378744012): Make the size of VmoBackedServer configurable.
     let block_server = Arc::new(
-        VmoBackedServerOptions {
-            block_size: BLOCK_SIZE,
-            initial_contents: InitialContents::FromCapacity(393216),
-            ..Default::default()
-        }
-        .build()
-        .expect("failed to build vmo block server"),
+        VmoBackedServer::new(393216, BLOCK_SIZE, &[]).expect("Failed to create VmoBackedServer"),
     );
 
     let filesystem = FxFilesystemBuilder::new()

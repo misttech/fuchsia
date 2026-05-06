@@ -128,7 +128,7 @@ fxfs_platform_library("platform") {
     "//src/storage/fxfs/make-blob-image",
     "//src/storage/lib/blob_writer:blob-writer",
     "//src/storage/lib/block_protocol",
-    "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/block_server/vmo_backed:test_vmo_backed_block_server",
     "//src/storage/lib/fs_management/rust:fs_management",
     "//src/storage/lib/fsverity-merkle",
     "//src/sys/pkg/lib/fuchsia-merkle",

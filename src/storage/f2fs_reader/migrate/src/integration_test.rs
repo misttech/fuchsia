@@ -25,7 +25,7 @@ use storage_device::ranged_device::RangedDevice;
 use std::io::Read;
 use std::sync::Arc;
 use storage_device::{Device, DeviceHolder};
-use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt};
+use test_vmo_backed_block_server::VmoBackedServer;
 
 fn create_device_with_image_at_offset(path: &str, offset: u64) -> Arc<VmoBackedServer> {
     let path = std::path::PathBuf::from(path);
@@ -81,7 +81,10 @@ fn create_device_with_image_at_offset(path: &str, offset: u64) -> Arc<VmoBackedS
         }
     }
 
-    Arc::new(VmoBackedServer::from_vmo(F2FS_BLOCK_SIZE as u32, vmo))
+    Arc::new(
+        VmoBackedServer::from_vmo(F2FS_BLOCK_SIZE as u32, vmo)
+            .expect("Failed to create VmoBackedServer"),
+    )
 }
 
 async fn test_fxfs_migration_at_offset(offset: u64) {

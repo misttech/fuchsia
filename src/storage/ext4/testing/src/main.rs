@@ -10,41 +10,21 @@ use fidl_fuchsia_storage_block as fblock;
 use fuchsia_async as fasync;
 use fuchsia_runtime::{HandleType, take_startup_handle};
 use log::info;
-use std::sync::Arc;
+use test_vmo_backed_block_server::VmoBackedServer;
 use vfs::execution_scope::ExecutionScope;
-use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
-use zx;
 
 #[fuchsia::main(threads = 10)]
 async fn main() -> Result<(), Error> {
     info!("Starting ext4 test server");
 
-    // Read the image from /pkg/data/ext4_image.img into a VMO.
-    let path = "/pkg/data/ext4_image.img";
-    let data =
-        std::fs::read(path).with_context(|| format!("Failed to read image file {}", path))?;
-    let vmo = zx::Vmo::create(data.len() as u64).context("Failed to create VMO")?;
-    vmo.write(&data, 0).context("Failed to write to VMO")?;
-
-    // Create a VmoBackedServer to wrap the VMO as a block device.
-    let block_server = Arc::new(
-        VmoBackedServerOptions {
-            block_size: 512,
-            initial_contents: InitialContents::FromVmo(vmo),
-            ..Default::default()
-        }
-        .build()
-        .context("Failed to build VmoBackedServer")?,
-    );
-
+    let server = VmoBackedServer::from_file(512, "/pkg/data/ext4_image.img");
     // Create a channel for the block client.
     let (block_client_end, block_server_end) =
         fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
 
     // Serve the block device in a background task.
-    let block_server_clone = block_server.clone();
     fasync::Task::spawn(async move {
-        if let Err(e) = block_server_clone.serve(block_server_end.into_stream()).await {
+        if let Err(e) = server.serve(block_server_end.into_stream()).await {
             log::error!("Block server error: {:?}", e);
         }
     })

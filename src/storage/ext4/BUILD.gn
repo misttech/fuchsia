@@ -54,7 +54,7 @@ rustc_library("ext4-lib") {
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
-    "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/block_server/vmo_backed:test_vmo_backed_block_server",
     "//third_party/rust_crates:hex",
     "//third_party/rust_crates:maplit",
     "//third_party/rust_crates:sha2",

@@ -67,7 +67,7 @@ rustc_binary("fshost") {
     "//src/storage/fshost/config",
     "//src/storage/fvm/fidl/fuchsia.fvm:fuchsia.fvm_rust",
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
-    "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/block_server/vmo_backed",
     "//src/storage/lib/fs_management/rust:fs_management",
     "//src/storage/lib/key-bag",
     "//src/storage/lib/pseudo_fs",

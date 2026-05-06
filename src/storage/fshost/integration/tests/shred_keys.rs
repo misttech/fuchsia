@@ -12,13 +12,12 @@ use config::{data_fs_spec, data_fs_type, new_builder, volumes_spec};
 use fidl_fuchsia_fshost::AdminProxy;
 use fidl_fuchsia_fxfs as _;
 use fidl_fuchsia_io as fio;
-use fidl_fuchsia_storage_block::BlockMarker;
 use fs_management::filesystem::Filesystem;
 use fshost_test_fixture::disk_builder::{DataSpec, Disk};
 use fuchsia_async as _;
 use futures::FutureExt as _;
 use log;
-use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
+use test_vmo_backed_block_server::{VmoBackedServer, VmoBackedServerConnector};
 use zx::HandleBased as _;
 
 #[fuchsia::test]
@@ -48,15 +47,12 @@ async fn shred_data_volume_when_mounted_keymint() {
     // Manually mount fxfs and backup the keybag.
     let (vmo, _) = disk.into_vmo_and_type_guid().await;
     let keybag_backup = {
-        let server = std::sync::Arc::new(VmoBackedServer::from_vmo(
-            512,
-            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-        ));
-        let connector = Box::new(move |server_end: fidl::endpoints::ServerEnd<BlockMarker>| {
-            server.connect_server(server_end.into_channel().into());
-            Ok(())
-        });
-        let fs = Filesystem::from_boxed_config(connector, Box::new(fs_management::Fxfs::default()));
+        let server = std::sync::Arc::new(
+            VmoBackedServer::from_vmo(512, vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+                .unwrap(),
+        );
+        let connector = VmoBackedServerConnector::new(server);
+        let fs = Filesystem::new(connector, fs_management::Fxfs::default());
         let vol = fs.serve_multi_volume().await.unwrap();
         let unencrypted = vol
             .open_volume("unencrypted", fidl_fuchsia_fs_startup::MountOptions::default())
@@ -102,15 +98,12 @@ async fn shred_data_volume_when_mounted_keymint() {
     // Manually mount fxfs and restore the keybag.
     let (vmo, _) = disk.into_vmo_and_type_guid().await;
     {
-        let server = std::sync::Arc::new(VmoBackedServer::from_vmo(
-            512,
-            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-        ));
-        let connector = Box::new(move |server_end: fidl::endpoints::ServerEnd<BlockMarker>| {
-            server.connect_server(server_end.into_channel().into());
-            Ok(())
-        });
-        let fs = Filesystem::from_boxed_config(connector, Box::new(fs_management::Fxfs::default()));
+        let server = std::sync::Arc::new(
+            VmoBackedServer::from_vmo(512, vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+                .unwrap(),
+        );
+        let connector = VmoBackedServerConnector::new(server);
+        let fs = Filesystem::new(connector, fs_management::Fxfs::default());
         let vol = fs.serve_multi_volume().await.unwrap();
         let unencrypted = vol
             .open_volume("unencrypted", fidl_fuchsia_fs_startup::MountOptions::default())

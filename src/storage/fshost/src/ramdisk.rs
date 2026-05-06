@@ -10,7 +10,7 @@
 use crate::device::{Device, LocalBlockDevice};
 use anyhow::{Context, Error, ensure};
 use fuchsia_component::client::connect_to_protocol;
-use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
+use vmo_backed_block_server::VmoBackedServer;
 
 use zerocopy::{FromBytes, Immutable, KnownLayout};
 
@@ -69,12 +69,8 @@ async fn create_ramdisk(zbi_vmo: zx::Vmo) -> Result<Box<dyn Device>, Error> {
         zstd::decode_all(compressed_buf.as_slice()).context("zstd decompression failed")?;
     ramdisk_vmo.write(&decompressed_buf, 0).context("writing decompressed contents to vmo")?;
 
-    let server = VmoBackedServerOptions {
-        initial_contents: InitialContents::FromVmo(ramdisk_vmo),
-        ..Default::default()
-    }
-    .build()
-    .context("building ramdisk from vmo")?;
+    let server =
+        VmoBackedServer::from_vmo(512, ramdisk_vmo).context("building ramdisk from vmo")?;
 
     Ok(Box::new(LocalBlockDevice::new(server).await?))
 }

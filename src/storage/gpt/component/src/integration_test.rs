@@ -7,15 +7,12 @@ use std::sync::Arc;
 use block_client::{BlockClient as _, MutableBufferSlice, RemoteBlockClient};
 use fidl::HandleBased as _;
 use fidl::endpoints::ServiceMarker as _;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block as fblock;
+use fidl_fuchsia_storage_partitions as fpartitions;
 use fuchsia_component::client::connect::connect_to_protocol_at_dir_root;
 use test_case::test_case;
-use vmo_backed_block_server::{
-    InitialContents, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
-};
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_storage_block as fblock,
-    fidl_fuchsia_storage_partitions as fpartitions,
-};
+use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerConnector};
 
 #[test_case(true; "overlay_enabled")]
 #[test_case(false; "overlay_disabled")]
@@ -29,22 +26,16 @@ async fn test_overlay(overlay_enabled: bool) {
     vmo.write(b"super", 50 * BLOCK_SIZE as u64).unwrap();
     vmo.write(b"userdata", 150 * BLOCK_SIZE as u64).unwrap();
     let block_server = Arc::new(
-        VmoBackedServerOptions {
-            initial_contents: InitialContents::FromVmo(vmo),
-            block_size: BLOCK_SIZE,
-            ..Default::default()
-        }
-        .build()
-        .unwrap(),
+        VmoBackedServer::from_vmo(BLOCK_SIZE, vmo).expect("Failed to create VmoBackedServer"),
     );
 
     let gpt = {
-        let filesystem = fs_management::filesystem::Filesystem::from_boxed_config(
-            Box::new(move |server_end| Ok(block_server.connect_server(server_end))),
-            Box::new(fs_management::Gpt {
+        let filesystem = fs_management::filesystem::Filesystem::new(
+            VmoBackedServerConnector::new(block_server),
+            fs_management::Gpt {
                 merge_super_and_userdata: overlay_enabled,
                 ..fs_management::Gpt::dynamic_child()
-            }),
+            },
         );
         filesystem.serve_multi_volume().await.expect("Failed to start GPT")
     };
@@ -288,23 +279,15 @@ async fn test_commit_transaction_with_overlay(overlay_enabled: bool) {
     // the ones set below in initial_partitions)
     vmo.write(b"super", 50 * BLOCK_SIZE as u64).unwrap();
     vmo.write(b"userdata", 150 * BLOCK_SIZE as u64).unwrap();
-    let block_server = Arc::new(
-        VmoBackedServerOptions {
-            initial_contents: InitialContents::FromVmo(vmo),
-            block_size: BLOCK_SIZE,
-            ..Default::default()
-        }
-        .build()
-        .unwrap(),
-    );
+    let block_server = Arc::new(VmoBackedServer::from_vmo(BLOCK_SIZE, vmo).unwrap());
 
     let gpt = {
-        let filesystem = fs_management::filesystem::Filesystem::from_boxed_config(
-            Box::new(move |server_end| Ok(block_server.connect_server(server_end))),
-            Box::new(fs_management::Gpt {
+        let filesystem = fs_management::filesystem::Filesystem::new(
+            VmoBackedServerConnector::new(block_server),
+            fs_management::Gpt {
                 merge_super_and_userdata: overlay_enabled,
                 ..fs_management::Gpt::dynamic_child()
-            }),
+            },
         );
         filesystem.serve_multi_volume().await.expect("Failed to start GPT")
     };

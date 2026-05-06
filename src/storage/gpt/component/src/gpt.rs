@@ -693,8 +693,8 @@ mod tests {
     use std::num::NonZero;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use vmo_backed_block_server::{
-        InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt as _,
+    use test_vmo_backed_block_server::{
+        InitialContents, Observer, VmoBackedServer, VmoBackedServerOptions, WriteAction,
     };
 
     async fn setup(
@@ -735,8 +735,8 @@ mod tests {
 
     #[fuchsia::test]
     async fn load_unformatted_gpt() {
-        let vmo = zx::Vmo::create(4096).unwrap();
-        let server = Arc::new(VmoBackedServer::from_vmo(512, vmo));
+        let server =
+            Arc::new(VmoBackedServer::new(8, 512, &[]).expect("Failed to create VmoBackedServer"));
 
         GptManager::new(server.connect(), vfs::directory::immutable::simple())
             .await
@@ -988,9 +988,9 @@ mod tests {
         const BLOCK_SIZE: u32 = 512;
         const BLOCK_COUNT: u64 = 1024;
 
-        struct Observer(Arc<AtomicBool>);
+        struct ForceAccessObserver(Arc<AtomicBool>);
 
-        impl vmo_backed_block_server::Observer for Observer {
+        impl Observer for ForceAccessObserver {
             fn write(
                 &self,
                 _device_block_offset: u64,
@@ -998,12 +998,12 @@ mod tests {
                 _vmo: &Arc<zx::Vmo>,
                 _vmo_offset: u64,
                 opts: WriteOptions,
-            ) -> vmo_backed_block_server::WriteAction {
+            ) -> WriteAction {
                 assert_eq!(
                     opts.flags.contains(WriteFlags::FORCE_ACCESS),
                     self.0.load(Ordering::Relaxed)
                 );
-                vmo_backed_block_server::WriteAction::Write
+                WriteAction::Write
             }
         }
 
@@ -1012,7 +1012,7 @@ mod tests {
             VmoBackedServerOptions {
                 initial_contents: InitialContents::FromCapacity(BLOCK_COUNT),
                 block_size: BLOCK_SIZE,
-                observer: Some(Box::new(Observer(expect_force_access.clone()))),
+                observer: Some(Box::new(ForceAccessObserver(expect_force_access.clone()))),
                 info: DeviceInfo::Block(BlockInfo {
                     device_flags: fblock::DeviceFlag::FUA_SUPPORT,
                     ..Default::default()
@@ -1063,9 +1063,9 @@ mod tests {
         const BLOCK_SIZE: u32 = 512;
         const BLOCK_COUNT: u64 = 1024;
 
-        struct Observer(Arc<AtomicBool>);
+        struct BarrierObserver(Arc<AtomicBool>);
 
-        impl vmo_backed_block_server::Observer for Observer {
+        impl Observer for BarrierObserver {
             fn write(
                 &self,
                 _device_block_offset: u64,
@@ -1073,12 +1073,12 @@ mod tests {
                 _vmo: &Arc<zx::Vmo>,
                 _vmo_offset: u64,
                 opts: WriteOptions,
-            ) -> vmo_backed_block_server::WriteAction {
+            ) -> WriteAction {
                 assert_eq!(
                     opts.flags.contains(WriteFlags::PRE_BARRIER),
                     self.0.load(Ordering::Relaxed)
                 );
-                vmo_backed_block_server::WriteAction::Write
+                WriteAction::Write
             }
         }
 
@@ -1087,7 +1087,7 @@ mod tests {
             VmoBackedServerOptions {
                 initial_contents: InitialContents::FromCapacity(BLOCK_COUNT),
                 block_size: BLOCK_SIZE,
-                observer: Some(Box::new(Observer(expect_barrier.clone()))),
+                observer: Some(Box::new(BarrierObserver(expect_barrier.clone()))),
                 info: DeviceInfo::Block(BlockInfo {
                     device_flags: fblock::DeviceFlag::BARRIER_SUPPORT,
                     ..Default::default()
@@ -1230,8 +1230,8 @@ mod tests {
         const PART_2_NAME: &str = "part2";
 
         #[derive(Clone)]
-        struct Observer(Arc<AtomicBool>);
-        impl vmo_backed_block_server::Observer for Observer {
+        struct TransactionObserver(Arc<AtomicBool>);
+        impl Observer for TransactionObserver {
             fn write(
                 &self,
                 _device_block_offset: u64,
@@ -1239,15 +1239,11 @@ mod tests {
                 _vmo: &Arc<zx::Vmo>,
                 _vmo_offset: u64,
                 _opts: WriteOptions,
-            ) -> vmo_backed_block_server::WriteAction {
-                if self.0.load(Ordering::Relaxed) {
-                    vmo_backed_block_server::WriteAction::Fail
-                } else {
-                    vmo_backed_block_server::WriteAction::Write
-                }
+            ) -> WriteAction {
+                if self.0.load(Ordering::Relaxed) { WriteAction::Fail } else { WriteAction::Write }
             }
         }
-        let observer = Observer(Arc::new(AtomicBool::new(false)));
+        let observer = TransactionObserver(Arc::new(AtomicBool::new(false)));
         let (block_device, partitions_dir) = setup_with_options(
             VmoBackedServerOptions {
                 initial_contents: InitialContents::FromCapacity(16),

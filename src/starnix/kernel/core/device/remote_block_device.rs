@@ -432,7 +432,7 @@ mod tests {
     use crate::vfs::{SeekTarget, VecInputBuffer, VecOutputBuffer};
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::{BLKGETSIZE, BLKGETSIZE64};
-    use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt};
+    use vmo_backed_block_server::VmoBackedServer;
     use zerocopy::FromBytes as _;
 
     #[::fuchsia::test]
@@ -441,7 +441,8 @@ mod tests {
             let kernel = current_task.kernel();
             remote_block_device_init(locked, &current_task);
             let registry = kernel.remote_block_device_registry.clone();
-            let server = Arc::new(VmoBackedServer::new(2, 512, &[0u8; 1024]));
+            let server =
+                VmoBackedServer::new(2, 512, &[]).expect("Failed to create VmoBackedServer");
             let (client, server_end) = fidl::endpoints::create_endpoints::<BlockMarker>();
             std::thread::spawn(move || {
                 let mut executor = fuchsia_async::LocalExecutor::default();
@@ -494,7 +495,8 @@ mod tests {
             let kernel = current_task.kernel();
             remote_block_device_init(locked, &current_task);
             let registry = kernel.remote_block_device_registry.clone();
-            let server = Arc::new(VmoBackedServer::new(2, 512, &[0u8; 1024]));
+            let server =
+                VmoBackedServer::new(2, 512, &[]).expect("Failed to create VmoBackedServer");
             let (client, server_end) = fidl::endpoints::create_endpoints::<BlockMarker>();
             std::thread::spawn(move || {
                 let mut executor = fuchsia_async::LocalExecutor::default();
@@ -529,7 +531,8 @@ mod tests {
             remote_block_device_init(locked, &current_task);
             let registry = kernel.remote_block_device_registry.clone();
             // 3 blocks of 512 bytes = 1536 bytes
-            let server = Arc::new(VmoBackedServer::new(3, 512, &[0u8; 1536]));
+            let server =
+                VmoBackedServer::new(3, 512, &[]).expect("Failed to create VmoBackedServer");
             let (client, server_end) = fidl::endpoints::create_endpoints::<BlockMarker>();
             std::thread::spawn(move || {
                 let mut executor = fuchsia_async::LocalExecutor::default();
@@ -581,7 +584,8 @@ mod tests {
             remote_block_device_init(locked, &current_task);
             let registry = kernel.remote_block_device_registry.clone();
             // 2 blocks of 512 bytes = 1024 bytes
-            let server = Arc::new(VmoBackedServer::new(2, 512, &[0u8; 1024]));
+            let server =
+                VmoBackedServer::new(2, 512, &[]).expect("Failed to create VmoBackedServer");
             let (client, server_end) = fidl::endpoints::create_endpoints::<BlockMarker>();
             std::thread::spawn(move || {
                 let mut executor = fuchsia_async::LocalExecutor::default();
@@ -628,7 +632,8 @@ mod tests {
             let registry = kernel.remote_block_device_registry.clone();
             // 3 blocks of 512 bytes = 1536 bytes
             // Initialize with a known pattern (0xFF)
-            let server = Arc::new(VmoBackedServer::new(3, 512, &[0xFFu8; 1536]));
+            let server = VmoBackedServer::new(3, 512, &[0xFFu8; 1536])
+                .expect("Failed to create VmoBackedServer");
             let (client, server_end) = fidl::endpoints::create_endpoints::<BlockMarker>();
             std::thread::spawn(move || {
                 let mut executor = fuchsia_async::LocalExecutor::default();

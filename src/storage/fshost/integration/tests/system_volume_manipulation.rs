@@ -11,21 +11,22 @@ use block_client::RemoteBlockClient;
 use config::{blob_fs_type, data_fs_spec, data_fs_type, new_builder, volumes_spec};
 use device_watcher::recursive_wait;
 use fidl::endpoints::{ServiceMarker as _, create_proxy};
+use fidl_fuchsia_fshost as ffshost;
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_storage_block as fblock;
 use fshost_test_fixture::disk_builder::{
     Disk, expected_fxblob_volumes, list_all_fxfs_volumes, test_blob_hash,
 };
 use fshost_test_fixture::{TestFixture, write_blob};
+use fuchsia_async as fasync;
 use fuchsia_component::client::{connect_to_protocol_at_dir_root, connect_to_protocol_at_dir_svc};
 use fxfs_make_blob_image::{CompressionAlgorithm, FxBlobBuilder};
 use std::sync::Arc;
 use storage_device::DeviceHolder;
 use storage_device::block_device::BlockDevice;
-use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt};
+use test_vmo_backed_block_server::VmoBackedServer;
 use zx::HandleBased as _;
-use {
-    fidl_fuchsia_fshost as ffshost, fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
-    fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync,
-};
 
 const TEST_BLOBS: [&[u8]; 3] =
     ["Goodbye, stranger!".as_bytes(), "Hello, world!".as_bytes(), &['a' as u8; 16_384]];
@@ -319,10 +320,13 @@ async fn mount_system_blob_volume_handles_concurrency() {
 async fn create_fxblob_image() -> zx::Vmo {
     let fxblob_vmo = zx::Vmo::create(DEVICE_SIZE).unwrap();
     let image_size = {
-        let block_server = Arc::new(VmoBackedServer::from_vmo(
-            BLOCK_SIZE,
-            fxblob_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-        ));
+        let block_server = Arc::new(
+            VmoBackedServer::from_vmo(
+                BLOCK_SIZE,
+                fxblob_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            )
+            .unwrap(),
+        );
         let device = DeviceHolder::new(
             BlockDevice::new(
                 RemoteBlockClient::new(block_server.connect::<fblock::BlockProxy>())

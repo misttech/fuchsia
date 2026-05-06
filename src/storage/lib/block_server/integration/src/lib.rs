@@ -15,7 +15,7 @@ use std::num::NonZero;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use test_case::test_case;
-use vmo_backed_block_server::{InitialContents, Observer, VmoBackedServerOptions};
+use test_vmo_backed_block_server::{InitialContents, Observer, VmoBackedServerOptions, WriteCache};
 use zx::HandleBased as _;
 
 // Make the block device big enough so that we can have a request which creates more than
@@ -564,11 +564,11 @@ async fn test_barriers_and_fua_rust_server(case: BarrierFuaTestCase) {
         }
     }
 
-    impl vmo_backed_block_server::Observer for ShufflingObserver {
-        fn flush(&self, _writes: Option<&mut vmo_backed_block_server::WriteCache>) {
+    impl Observer for ShufflingObserver {
+        fn flush(&self, _writes: Option<&mut WriteCache>) {
             assert_ne!(self.0.fetch_sub(1, Ordering::Relaxed), 0);
         }
-        fn close(&self, writes: Option<&mut vmo_backed_block_server::WriteCache>) {
+        fn close(&self, writes: Option<&mut WriteCache>) {
             if let Some(writes) = writes {
                 writes.shuffle();
                 writes.discard_some();

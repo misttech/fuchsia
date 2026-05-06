@@ -401,11 +401,10 @@ mod tests {
     use std::sync::Arc;
     use storage_device::block_device::BlockDevice;
     use storage_device::{Device, InlineCryptoOptions, ReadOptions, WriteOptions};
-    use vmo_backed_block_server::{
-        InitialContents, VmoBackedServerOptions, VmoBackedServerTestingExt,
-    };
+    use test_vmo_backed_block_server::VmoBackedServer;
 
     const BLOCK_SIZE: u32 = 4096;
+    const BLOCK_COUNT: u64 = 393216;
     const TEST_UUID: [u8; 16] =
         [75, 146, 230, 48, 132, 165, 68, 97, 141, 247, 22, 242, 153, 171, 153, 38];
 
@@ -476,23 +475,15 @@ mod tests {
             [241, 22, 180, 110, 76, 135, 84, 48, 206, 33, 210, 253, 11, 10, 230, 122];
 
         let block_server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: BLOCK_SIZE,
-                initial_contents: InitialContents::FromCapacity(393216),
-                ..Default::default()
-            }
-            .build()
-            .expect("build failed"),
+            VmoBackedServer::new(BLOCK_COUNT, BLOCK_SIZE, &[])
+                .expect("Failed to create VmoBackedServer"),
         );
 
-        let block_server_clone = block_server.clone();
         let (insecure_inilne_crypto_proxy, server) =
             fidl::endpoints::create_sync_proxy::<DeviceMarker>();
         std::thread::spawn(|| {
             LocalExecutor::default().run_singlethreaded(async move {
-                block_server_clone
-                    .connect_insecure_inline_encryption_server(server, TEST_UUID)
-                    .await;
+                block_server.connect_insecure_inline_encryption_server(server, TEST_UUID).await;
             })
         });
 
@@ -513,13 +504,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_create_key_with_id_with_lblk32_key() {
         let block_server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: BLOCK_SIZE,
-                initial_contents: InitialContents::FromCapacity(393216),
-                ..Default::default()
-            }
-            .build()
-            .expect("build failed"),
+            VmoBackedServer::new(BLOCK_COUNT, BLOCK_SIZE, &[])
+                .expect("Failed to create VmoBackedServer"),
         );
 
         let block_server_clone = block_server.clone();
@@ -622,22 +608,14 @@ mod tests {
     #[fuchsia::test]
     fn unwrap_fxfs_wrapped_key_with_lblk32_key() {
         let block_server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: BLOCK_SIZE,
-                initial_contents: InitialContents::FromCapacity(393216),
-                ..Default::default()
-            }
-            .build()
-            .expect("build failed"),
+            VmoBackedServer::new(BLOCK_COUNT, BLOCK_SIZE, &[])
+                .expect("Failed to create VmoBackedServer"),
         );
-        let block_server_clone = block_server.clone();
         let (insecure_inilne_crypto_proxy, server) =
             fidl::endpoints::create_sync_proxy::<DeviceMarker>();
         std::thread::spawn(|| {
             LocalExecutor::default().run_singlethreaded(async move {
-                block_server_clone
-                    .connect_insecure_inline_encryption_server(server, TEST_UUID)
-                    .await;
+                block_server.connect_insecure_inline_encryption_server(server, TEST_UUID).await;
             })
         });
 

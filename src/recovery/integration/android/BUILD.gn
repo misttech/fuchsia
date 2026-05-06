@@ -30,7 +30,7 @@ rustc_test("bin") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component-test",
     "//src/recovery/lib/bootloader-message",
-    "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/block_server/vmo_backed",
     "//src/storage/lib/vfs/rust:vfs",
     "//src/sys/pkg/testing/mock-reboot",
     "//third_party/rust_crates:futures",

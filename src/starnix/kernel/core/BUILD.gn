@@ -438,7 +438,7 @@ rustc_test("starnix_core_test") {
     "//src/starnix/kernel/syscall_loop:restricted_trampoline",
     "//src/storage/ext4/tests:test_img",
     "//src/storage/fxfs/platform:fxfs-testing",
-    "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/block_server/vmo_backed",
     "//src/storage/lib/storage_device",
     "//src/sys/time/testing/fake-wake-alarms:lib",
     "//src/testing/fidl:placeholders_rust",

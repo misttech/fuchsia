@@ -249,11 +249,11 @@ mod tests {
     use super::*;
     use crate::readers::{BlockDeviceReader, VecReader};
     use crate::structs::{FIRST_BG_PADDING, InvalidAddressErrorType, ParsingError};
+    use fidl_fuchsia_storage_block as fblock;
+    use fuchsia_async as fasync;
     use std::fs;
     use std::path::Path;
-    use vmo_backed_block_server::{InitialContents, VmoBackedServerOptions};
-    use zx::Vmo;
-    use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
+    use test_vmo_backed_block_server::VmoBackedServer;
 
     #[fuchsia::test]
     async fn test_processor_read_only_blocks_write() {
@@ -307,26 +307,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_processor_writeable_overwrite_extents() {
-        let data = fs::read("/pkg/data/1file.img").expect("Unable to read file");
-        let vmo = Vmo::create(data.len() as u64).expect("failed to create VMO");
-        vmo.write(data.as_slice(), 0).expect("failed to write to VMO");
-        let server = Arc::new(
-            VmoBackedServerOptions {
-                block_size: 512,
-                initial_contents: InitialContents::FromVmo(vmo),
-                ..Default::default()
-            }
-            .build()
-            .expect("build from VmoBackedServerOptions failed"),
-        );
+        let server = VmoBackedServer::from_file(512, "/pkg/data/1file.img");
 
-        let server_clone = server.clone();
         let (block_client_end1, block_server_end1) =
             fidl::endpoints::create_endpoints::<fblock::BlockMarker>();
         std::thread::spawn(move || {
             let mut executor = fasync::TestExecutor::new();
-            let _task =
-                executor.run_singlethreaded(server_clone.serve(block_server_end1.into_stream()));
+            let _task = executor.run_singlethreaded(server.serve(block_server_end1.into_stream()));
         });
         let inspector = fuchsia_inspect::Inspector::default();
         let rw_processor = Arc::new(Ext4Processor::new(

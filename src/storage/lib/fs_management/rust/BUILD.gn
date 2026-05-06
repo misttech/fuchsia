@@ -39,7 +39,7 @@ rustc_library("fs_management") {
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
     "//src/storage/lib/blob_writer:blob-writer",
     "//src/storage/lib/block_server",
-    "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/block_server/vmo_backed",
     "//src/storage/lib/delivery_blob",
     "//src/storage/lib/ramdevice_client",
     "//src/sys/pkg/lib/fuchsia-merkle",

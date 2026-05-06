@@ -35,7 +35,7 @@ rustc_library("migrate") {
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
     "//src/storage/fxfs/platform",
     "//src/storage/lib/block_client/rust",
-    "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/block_server/vmo_backed:test_vmo_backed_block_server",
     "//src/storage/lib/fscrypt",
     "//src/storage/lib/storage_device",
     "//third_party/rust_crates:anyhow",

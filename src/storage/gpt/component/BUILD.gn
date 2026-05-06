@@ -32,7 +32,7 @@ rustc_library("lib") {
   test_deps = [
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
-    "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/block_server/vmo_backed:test_vmo_backed_block_server",
   ]
   sources = [
     "src/config.rs",
@@ -93,7 +93,7 @@ rustc_test("gpt_integration_test") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/storage/lib/block_client/rust:block-client",
-    "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/block_server/vmo_backed",
     "//src/storage/lib/fs_management/rust:fs_management",
     "//third_party/rust_crates:test-case",
   ]

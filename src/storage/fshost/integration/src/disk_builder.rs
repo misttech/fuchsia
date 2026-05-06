@@ -29,8 +29,8 @@ use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
 use storage_isolated_driver_manager::{BlockDeviceMatcher, find_block_device};
+use test_vmo_backed_block_server::{VmoBackedServer, VmoBackedServerConnector};
 use uuid::Uuid;
-use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerTestingExt as _};
 use zerocopy::{Immutable, IntoBytes};
 use zx::{self as zx, HandleBased};
 
@@ -504,10 +504,13 @@ impl DiskBuilder {
             return (vmo, self.type_guid);
         }
 
-        let server = Arc::new(VmoBackedServer::from_vmo(
-            TEST_DISK_BLOCK_SIZE,
-            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-        ));
+        let server = Arc::new(
+            VmoBackedServer::from_vmo(
+                TEST_DISK_BLOCK_SIZE,
+                vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            )
+            .unwrap(),
+        );
 
         if self.gpt {
             // Format the disk with gpt, with a single empty partition named "fvm".
@@ -555,7 +558,7 @@ impl DiskBuilder {
             Box::new(DirBasedBlockConnector::new(dir, "part-000/volume".to_string()))
         } else {
             // Format the volume manager onto the disk directly.
-            Box::new(move |server_end| Ok(server.connect_server(server_end)))
+            Box::new(VmoBackedServerConnector::new(server))
         };
 
         if self.volumes_spec.fxfs_blob {
@@ -935,10 +938,13 @@ pub async fn list_all_fxfs_volumes(disk: &Disk) -> HashSet<String> {
     let Disk::Prebuilt(vmo, _) = disk else {
         panic!("list_all_fxfs_volumes only supports prebuilt disks");
     };
-    let server = Arc::new(VmoBackedServer::from_vmo(
-        TEST_DISK_BLOCK_SIZE,
-        vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
-    ));
+    let server = Arc::new(
+        VmoBackedServer::from_vmo(
+            TEST_DISK_BLOCK_SIZE,
+            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        )
+        .unwrap(),
+    );
 
     let partitions_dir = vfs::directory::immutable::simple();
     let manager = GptManager::new(server.connect(), partitions_dir.clone()).await.unwrap();
