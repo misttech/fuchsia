@@ -124,6 +124,7 @@ class Daemon:
         self.event_waiter = DapEventWaiter()
         self.stopped_threads: set[int] = set()
         self.stop_event = asyncio.Event()
+        self.shutdown_complete_event = asyncio.Event()
         self.zxdb_writer: asyncio.StreamWriter | None = None
         self.zxdb_reader: asyncio.StreamReader | None = None
         self.port = port
@@ -407,6 +408,7 @@ class Daemon:
         if self.dap_proc:
             self.dap_proc.terminate()
 
+        self.shutdown_complete_event.set()
         return 0
 
     async def handle_uds_client(
@@ -419,23 +421,33 @@ class Daemon:
         current_task = asyncio.current_task()
         assert current_task is not None
 
-        self.active_handlers.add(current_task)
-
         line = await reader.readline()
         if not line:
             return
 
         try:
             req = deserialize_request(line.decode("utf-8"))
+
+            # To avoid deadlocks during shutdown, do not add the "stop" command
+            # handler task to active_handlers. The main loop in _run_dap_session
+            # waits for all active_handlers to complete before shutting down.
+            # If the stop handler task waits for shutdown inside active_handlers,
+            # it would wait for itself to complete.
+            if req.command != "stop":
+                self.active_handlers.add(current_task)
+
             resp = await self.registry.handle(req.command, req)
             writer.write(serialize(resp).encode("utf-8"))
             await writer.drain()
+
+            if req.command == "stop":
+                await self.shutdown_complete_event.wait()
         except Exception as e:
             resp = Response(success=False, message=f"Error: {e}")
             writer.write(serialize(resp).encode("utf-8"))
             await writer.drain()
         finally:
-            self.active_handlers.remove(current_task)
+            self.active_handlers.discard(current_task)
             writer.close()
             await writer.wait_closed()
 

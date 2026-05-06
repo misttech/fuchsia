@@ -192,13 +192,12 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(exit_code, 0)
 
             # Wait for process to exit
-            for _ in range(10):
-                if proc.poll() is not None:
-                    break
-                await asyncio.sleep(0.5)
-            self.assertIsNotNone(
-                proc.poll(), "Daemon process did not exit after stop"
-            )
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(proc.wait), timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                self.fail("Daemon process did not exit after stop")
 
             # Verify socket is deleted
             self.assertFalse(UDS_PATH.exists(), "Socket file was not deleted")

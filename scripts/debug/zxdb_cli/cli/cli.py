@@ -160,6 +160,15 @@ async def send_command(req: BaseRequest) -> int:
         else:
             print("No response received from daemon.")
 
+        if req.command == "stop":
+            # Wait for daemon to close connection (EOF)
+            try:
+                await asyncio.wait_for(reader.read(), timeout=5.0)
+            except asyncio.TimeoutError:
+                print(
+                    "Warning: Timed out waiting for daemon to close connection."
+                )
+
         writer.close()
         await writer.wait_closed()
         return 0
