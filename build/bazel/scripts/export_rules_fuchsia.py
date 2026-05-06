@@ -110,7 +110,13 @@ def main() -> int:
         fuchsia_dir / "build/bazel_sdk/bazel_rules_fuchsia", output_dir
     )
 
-    # Step 2: Substitutue @fuchsia_rules_common// with //fuchsia_rules_common/ in output_dir
+    # Step 2: copy fuchsia_rules_common to output_dir/fuchsia_rules_common
+    depfile_inputs |= copy_tree(
+        fuchsia_dir / "build/bazel_sdk/fuchsia_rules_common",
+        output_dir / "fuchsia_rules_common",
+    )
+
+    # Step 3: Substitutue @fuchsia_rules_common// with //fuchsia_rules_common/ in output_dir
     for rootdir, dirnames, filenames in os.walk(output_dir):
         for filename in filenames:
             if filename.endswith(".bzl") or filename.endswith(".bazel"):
@@ -123,12 +129,6 @@ def main() -> int:
                         "@fuchsia_rules_common//", "//fuchsia_rules_common/"
                     )
                     filepath.write_text(content)
-
-    # Step 3: copy fuchsia_rules_common to output_dir/fuchsia_rules_common
-    depfile_inputs |= copy_tree(
-        fuchsia_dir / "build/bazel_sdk/fuchsia_rules_common",
-        output_dir / "fuchsia_rules_common",
-    )
 
     # Step 4: modify MODULE.bazel to remove specific segment.
     module_bazel_path = output_dir / "MODULE.bazel"

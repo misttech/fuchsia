@@ -5,6 +5,10 @@
 """Public definitions for Assembly related rules."""
 
 load(
+    "@fuchsia_rules_common//assembly:product_configuration.bzl",
+    _BUILD_TYPES = "BUILD_TYPES",
+)
+load(
     "//fuchsia/private:fuchsia_prebuilt_package.bzl",
     _fuchsia_prebuilt_package = "fuchsia_prebuilt_package",
 )
@@ -88,7 +92,6 @@ load(
 )
 load(
     "//fuchsia/private/assembly:fuchsia_product_configuration.bzl",
-    _BUILD_TYPES = "BUILD_TYPES",
     _INPUT_DEVICE_TYPE = "INPUT_DEVICE_TYPE",
     _fuchsia_hybrid_product_configuration = "fuchsia_hybrid_product_configuration",
     _fuchsia_prebuilt_product_configuration = "fuchsia_prebuilt_product_configuration",

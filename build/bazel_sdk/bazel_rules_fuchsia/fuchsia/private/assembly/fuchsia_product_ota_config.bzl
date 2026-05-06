@@ -5,7 +5,7 @@
 """Rule for creating OTA configurations for products that use the Omaha Client."""
 
 load(
-    ":providers.bzl",
+    "@fuchsia_rules_common//assembly:providers.bzl",
     "FuchsiaOmahaOtaConfigInfo",
 )
 

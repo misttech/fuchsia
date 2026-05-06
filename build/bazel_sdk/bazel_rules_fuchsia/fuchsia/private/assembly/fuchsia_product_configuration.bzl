@@ -5,28 +5,21 @@
 """Rule for declaring a Fuchsia product configuration."""
 
 # buildifier: disable=module-docstring
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@fuchsia_rules_common//:local_actions.bzl", "LOCAL_ONLY_ACTION_KWARGS")
-load("@fuchsia_rules_common//assembly:providers.bzl", "FuchsiaProductConfigInfo")
-load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
-load("@fuchsia_rules_common//packages:utils.bzl", "get_driver_component_manifests")
-load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
-load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
+load("@fuchsia_rules_common//assembly:json_utils.bzl", "extract_labels")
+load("@fuchsia_rules_common//assembly:product_configuration.bzl", "BUILD_TYPES", "common_product_configuration_impl")
 load(
-    ":providers.bzl",
+    "@fuchsia_rules_common//assembly:providers.bzl",
     "FuchsiaAssembledPackageInfo",
     "FuchsiaOmahaOtaConfigInfo",
+    "FuchsiaProductConfigInfo",
     "FuchsiaProductInputBundleInfo",
     "FuchsiaStarnixContainerInfo",
 )
-load(":utils.bzl", "collect_package_file_deps", "create_pkg_detail", "extract_labels", "replace_labels_with_files", "select_root_dir_with_file")
-
-# Define build types
-BUILD_TYPES = struct(
-    ENG = "eng",
-    USER = "user",
-    USER_DEBUG = "userdebug",
-)
+load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
+load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
+load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
+load(":utils.bzl", "select_root_dir_with_file")
 
 # Define input device types option
 INPUT_DEVICE_TYPE = struct(
@@ -37,164 +30,10 @@ INPUT_DEVICE_TYPE = struct(
     TOUCHSCREEN = "touchscreen",
 )
 
-def _collect_debug_symbols(dep):
-    if FuchsiaPackageInfo in dep:
-        return getattr(dep[FuchsiaPackageInfo], "build_id_dirs", [])
-    return getattr(dep[FuchsiaAssembledPackageInfo], "build_id_dirs", [])
-
 def _fuchsia_product_configuration_impl(ctx):
     sdk = get_fuchsia_sdk_toolchain(ctx)
 
-    product_config = json.decode(ctx.attr.product_config)
-    product_config_file = ctx.actions.declare_file(ctx.label.name + "_product_config.json")
-
-    replace_labels_with_files(product_config, ctx.attr.product_config_labels)
-
-    platform = product_config.get("platform", {})
-    build_type = platform.get("build_type")
-    product = product_config.get("product", {})
-    packages = {}
-
-    input_files = []
-    build_id_dirs = []
-    bootfs_pkg_details = []
-    for dep in ctx.attr.bootfs_packages:
-        bootfs_pkg_details.append(create_pkg_detail(dep))
-        input_files += collect_package_file_deps(dep)
-        build_id_dirs += _collect_debug_symbols(dep)
-    if bootfs_pkg_details:
-        packages["bootfs"] = bootfs_pkg_details
-
-    base_pkg_details = []
-    for dep in ctx.attr.base_packages:
-        base_pkg_details.append(create_pkg_detail(dep))
-        input_files += collect_package_file_deps(dep)
-        build_id_dirs += _collect_debug_symbols(dep)
-    packages["base"] = base_pkg_details
-
-    cache_pkg_details = []
-    for dep in ctx.attr.cache_packages:
-        cache_pkg_details.append(create_pkg_detail(dep))
-        input_files += collect_package_file_deps(dep)
-        build_id_dirs += _collect_debug_symbols(dep)
-    packages["cache"] = cache_pkg_details
-    product["packages"] = packages
-
-    base_driver_details = []
-    for dep in ctx.attr.base_driver_packages:
-        package_detail = create_pkg_detail(dep)
-        base_driver_details.append(
-            {
-                "package": package_detail["manifest"],
-                "components": get_driver_component_manifests(dep),
-            },
-        )
-        input_files += collect_package_file_deps(dep)
-    product["base_drivers"] = base_driver_details
-
-    starnix_containers = []
-    for container in ctx.attr.starnix_containers:
-        container_detail = container[FuchsiaStarnixContainerInfo]
-
-        images = {}
-        if container_detail.system:
-            images["system"] = container_detail.system
-        if container_detail.vendor:
-            images["vendor"] = container_detail.vendor
-        if container_detail.ramdisk:
-            images["ramdisk"] = container_detail.ramdisk
-
-        starnix_containers.append(
-            {
-                "name": container_detail.name,
-                "base": container_detail.base,
-                "fstab": container_detail.fstab,
-                "init": container_detail.init,
-                "hals": container_detail.hals,
-                "skip_subpackages": container_detail.skip_subpackages,
-                "images_or_package": {"images": images},
-            },
-        )
-
-    if len(starnix_containers) > 0:
-        product["starnix_containers"] = starnix_containers
-
-    product_config["product"] = product
-
-    if ctx.attr.ota_configuration:
-        swd_config = product_config["platform"].setdefault("software_delivery", {})
-        update_checker_config = swd_config.setdefault("update_checker", {})
-        omaha_config = update_checker_config.setdefault("omaha_client", {})
-
-        ota_config_info = ctx.attr.ota_configuration[FuchsiaOmahaOtaConfigInfo]
-
-        channels_file = ctx.actions.declare_file("channel_config.json")
-        ctx.actions.write(channels_file, ota_config_info.channels)
-        input_files.append(channels_file)
-
-        omaha_config["channels_path"] = channels_file.path
-
-        tuf_config_paths = []
-        for (hostname, repo_config) in ota_config_info.tuf_repositories.items():
-            repo_config_file = ctx.actions.declare_file(hostname + ".json")
-            ctx.actions.write(repo_config_file, repo_config)
-            tuf_config_paths.append(repo_config_file.path)
-            input_files.append(repo_config_file)
-        swd_config["tuf_config_paths"] = tuf_config_paths
-
-    content = json.encode_indent(product_config, indent = "  ")
-    ctx.actions.write(product_config_file, content)
-    input_files.append(product_config_file)
-
-    product_config_dir = ctx.actions.declare_directory(ctx.label.name)
-    args = [
-        "generate",
-        "product",
-        "--config",
-        product_config_file.path,
-        "--output",
-        product_config_dir.path,
-    ]
-
-    if ctx.attr.repo:
-        repo = ctx.attr.repo
-    else:
-        repo = ctx.attr._release_repository_flag[BuildSettingInfo].value
-
-    # TODO(https://b.corp.google.com/issues/416239346): Make "repo" field
-    # required.
-    if repo:
-        args += ["--repo", repo]
-
-    # If version is "__unset", the target hasn't set it.
-    if ctx.attr.version != "__unset":
-        args += ["--version", ctx.attr.version]
-    if ctx.file.version_file:
-        args += ["--version-file", ctx.file.version_file.path]
-        input_files.append(ctx.file.version_file)
-
-    for pib in ctx.attr.product_input_bundles:
-        directory = pib[FuchsiaProductInputBundleInfo].directory
-        args += ["--product-input-bundles", directory]
-
-    ctx.actions.run(
-        executable = sdk.assembly_config,
-        arguments = args,
-        inputs = input_files + ctx.files.product_config_labels + ctx.files.product_input_bundles + ctx.files.deps + ctx.files.starnix_containers,
-        outputs = [product_config_dir],
-        progress_message = "Creating product config for %s" % ctx.label.name,
-        mnemonic = "FuchsiaProductConfig",
-        **LOCAL_ONLY_ACTION_KWARGS
-    )
-
-    return [
-        DefaultInfo(files = depset([product_config_dir])),
-        FuchsiaProductConfigInfo(
-            directory = product_config_dir.path,
-            build_type = build_type,
-            build_id_dirs = build_id_dirs,
-        ),
-    ]
+    return common_product_configuration_impl(ctx, sdk.assembly_config)
 
 def _fuchsia_prebuilt_product_configuration_impl(ctx):
     directory = select_root_dir_with_file(ctx.files.files, "product_configuration.json")

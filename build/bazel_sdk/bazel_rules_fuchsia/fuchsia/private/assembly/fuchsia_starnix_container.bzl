@@ -4,7 +4,7 @@
 
 """Rule for declaring a Fuchsia starnix container."""
 
-load(":providers.bzl", "FuchsiaStarnixContainerInfo")
+load("@fuchsia_rules_common//assembly:providers.bzl", "FuchsiaStarnixContainerInfo")
 
 def _fuchsia_starnix_container_impl(ctx):
     all_files = [ctx.file.system]
