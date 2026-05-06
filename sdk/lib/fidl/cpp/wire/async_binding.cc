@@ -58,6 +58,11 @@ fidl::UnbindInfo LockedUnbindInfo::Get() const {
   return info;
 }
 
+std::optional<fidl::UnbindInfo> LockedUnbindInfo::GetIfSet() const {
+  std::scoped_lock lock(lock_);
+  return info_;
+}
+
 AsyncBinding::AsyncBinding(async_dispatcher_t* dispatcher, AnyUnownedTransport transport,
                            ThreadingPolicy threading_policy)
     : dispatcher_(dispatcher),

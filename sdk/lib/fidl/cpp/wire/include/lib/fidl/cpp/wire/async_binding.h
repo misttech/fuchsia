@@ -67,6 +67,9 @@ class LockedUnbindInfo {
   // |Get| will panic unless |Set| was called.
   fidl::UnbindInfo Get() const;
 
+  // Returns the UnbindInfo if it has been set, or std::nullopt if not.
+  std::optional<fidl::UnbindInfo> GetIfSet() const;
+
  private:
   LockedUnbindInfo(const LockedUnbindInfo&) = delete;
   LockedUnbindInfo& operator=(const LockedUnbindInfo&) = delete;
@@ -394,8 +397,8 @@ class WeakBindingRef {
     if (auto binding = binding_.lock(); binding) {
       return binding;
     }
-    if (info_) {
-      return info_->Get();
+    if (auto maybe_info = info_ ? info_->GetIfSet() : std::nullopt) {
+      return *maybe_info;
     }
     return Invalid{};
   }
