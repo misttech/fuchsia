@@ -79,3 +79,24 @@ func TestPolicyCommand_Execute(t *testing.T) {
 		t.Errorf("Expected ExitSuccess when exception already exists, got %v", status)
 	}
 }
+
+func TestPolicyCommand_Execute_AssemblyFailure(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Scaffold a corrupt config file
+	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
+	os.MkdirAll(filepath.Dir(seedConfig), 0755)
+	os.WriteFile(seedConfig, []byte(`{corrupt json}`), 0644)
+
+	cmd := &PolicyCommand{
+		fuchsiaDir: tempDir,
+	}
+
+	ctx := context.Background()
+	f := flag.NewFlagSet("test_failure", flag.ContinueOnError)
+	f.Parse([]string{"add", "AllProjectsMustHaveALicense", "src/foo/bar"})
+
+	if status := cmd.Execute(ctx, f); status != subcommands.ExitFailure {
+		t.Errorf("Expected ExitFailure for assembly error, got %v", status)
+	}
+}

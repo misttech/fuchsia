@@ -76,13 +76,12 @@ func AddPolicyException(fuchsiaDir, checkName, projectPath string) error {
 	// Check if this project already has an exception
 	builder := v2config.NewBuilder(fuchsiaDir)
 	if err := builder.Assemble(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to assemble config: %v\n", err)
-	} else {
-		if list, ok := builder.Config.PolicyExceptions[checkName]; ok {
-			if _, exists := list[projectPath]; exists {
-				fmt.Printf("Project '%s' already has a policy exception for '%s'. Nothing to do.\n", projectPath, checkName)
-				return nil
-			}
+		return fmt.Errorf("failed to assemble config: %w", err)
+	}
+	if list, ok := builder.Config.PolicyExceptions[checkName]; ok {
+		if _, exists := list[projectPath]; exists {
+			fmt.Printf("Project '%s' already has a policy exception for '%s'. Nothing to do.\n", projectPath, checkName)
+			return nil
 		}
 	}
 
