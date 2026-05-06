@@ -19,19 +19,21 @@ func main() {
 
 	// Register subcommands package's built-in commands
 	commander.Register(commander.HelpCommand(), "")
-	commander.Register(commander.FlagsCommand(), "")
-	commander.Register(commander.CommandsCommand(), "")
 
 	// Register our tool's commands
 	commander.Register(&GenerateCommand{}, "")
-	commander.Register(&ValidateCommand{}, "")
-	commander.Register(&FixCommand{}, "")
-	commander.Register(&ReadmeCommand{}, "")
-	commander.Register(&ProjectCommand{}, "")
-	commander.Register(&PolicyCommand{}, "")
-	commander.Register(&AllowlistCommand{}, "")
-	commander.Register(&CopyrightCommand{}, "")
-	commander.Register(&ClassifyCommand{}, "")
+
+	// Auditing & Remediation
+	commander.Register(&ValidateCommand{}, "Auditing & Remediation")
+	commander.Register(&FixCommand{}, "Auditing & Remediation")
+	commander.Register(&ClassifyCommand{}, "Auditing & Remediation")
+	commander.Register(&ProjectCommand{}, "Auditing & Remediation")
+	commander.Register(&ReadmeCommand{}, "Auditing & Remediation")
+	commander.Register(&CopyrightCommand{}, "Auditing & Remediation")
+
+	// Policy Management
+	commander.Register(&PolicyCommand{}, "Policy Management")
+	commander.Register(&AllowlistCommand{}, "Policy Management")
 
 	// Fallback routing for backward compatibility
 	// If no valid subcommand is provided, we insert "generate" into os.Args.
@@ -46,8 +48,6 @@ func main() {
 		"copyright": true,
 		"classify":  true,
 		"help":      true,
-		"flags":     true,
-		"commands":  true,
 	}
 
 	insertGenerate := true
