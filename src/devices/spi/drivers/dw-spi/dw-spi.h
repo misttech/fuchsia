@@ -5,8 +5,10 @@
 #ifndef SRC_DEVICES_SPI_DRIVERS_DW_SPI_DW_SPI_H_
 #define SRC_DEVICES_SPI_DRIVERS_DW_SPI_DW_SPI_H_
 
+#include <fidl/fuchsia.hardware.spi.businfo/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.spiimpl/cpp/driver/wire.h>
 #include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/result.h>
@@ -91,6 +93,7 @@ class DwSpiDriver : public fdf::DriverBase2 {
   std::shared_ptr<fdf::Namespace> incoming_;
   std::unique_ptr<DwSpi> device_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
+  fdf_metadata::MetadataServer<fuchsia_hardware_spi_businfo::SpiBusMetadata> spi_metadata_server_;
 };
 
 }  // namespace dw_spi

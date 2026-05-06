@@ -131,6 +131,12 @@ zx::result<> DwSpiDriver::Start(fdf::DriverContext context) {
     return pdev.take_error();
   }
 
+  if (zx::result result = spi_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), *pdev);
+      result.is_error()) {
+    fdf::error("Failed to serve SPI metadata: {}", result.status_string());
+    return result.take_error();
+  }
+
   // Connect to power domain
   auto power_domain_client =
       incoming()->Connect<fuchsia_hardware_powerdomain::Service::Domain>("power-domain");
@@ -220,6 +226,10 @@ zx::result<> DwSpiDriver::Start(fdf::DriverContext context) {
   std::vector<fuchsia_driver_framework::Offer> offers = {
       fdf::MakeOffer2<fuchsia_hardware_spiimpl::Service>(),
   };
+
+  if (std::optional offer = spi_metadata_server_.CreateOffer(); offer.has_value()) {
+    offers.push_back(offer.value());
+  }
 
   if (zx::result result =
           AddChild(name(), cpp20::span<const fuchsia_driver_framework::NodeProperty2>(), offers);
