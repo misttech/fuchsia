@@ -511,19 +511,17 @@ impl TopologyInspect {
 
     fn maybe_record_event(
         &self,
-        element: &Element,
+        _element: &Element,
         event_name: &str,
         callback: impl FnOnce(&inspect::Node),
     ) {
         if let Some(events) = &self.events {
-            if !element.synthetic {
-                let instant = zx::BootInstant::get();
-                events.borrow_mut().add_entry(|node| {
-                    node.record_int(TIME, instant.into_nanos());
-                    node.record_child(event_name, callback);
-                });
-                self.shadow.lock().add_entry(ShadowEvent { time: instant })
-            }
+            let instant = zx::BootInstant::get();
+            events.borrow_mut().add_entry(|node| {
+                node.record_int(TIME, instant.into_nanos());
+                node.record_child(event_name, callback);
+            });
+            self.shadow.lock().add_entry(ShadowEvent { time: instant })
         }
     }
 }
@@ -658,19 +656,18 @@ impl AddElementInspectWriter {
 
     pub fn commit(self, topology: &mut Topology) {
         // First create the vertex since we'll need it when adding dependencies.
-        let (synthetic, inspect_vertex) = {
+        let inspect_vertex = {
             // unwrap: safe, if we are here it means we are just adding an element so we can't have
             // removed it. Otherwise, it's a bug in the implementation.
             let element = topology.get_element(&self.element_id).unwrap();
-            let vertex = topology.inspect().create_element_vertex(
+            topology.inspect().create_element_vertex(
                 element.id,
                 &element.name,
                 element.synthetic,
                 &element.valid_levels,
                 self.current_level,
                 self.required_level,
-            );
-            (element.synthetic, vertex)
+            )
         };
         topology.get_element_mut(&self.element_id).unwrap().inspect_vertex =
             Some(Rc::new(RefCell::new(inspect_vertex)));
@@ -684,14 +681,12 @@ impl AddElementInspectWriter {
             );
         }
 
-        if !synthetic {
-            topology.inspect().emit_add_element_event(
-                self.element_id,
-                self.current_level,
-                self.required_level,
-                &self.dependencies,
-            );
-        }
+        topology.inspect().emit_add_element_event(
+            self.element_id,
+            self.current_level,
+            self.required_level,
+            &self.dependencies,
+        );
 
         self.other_events.commit(topology);
     }

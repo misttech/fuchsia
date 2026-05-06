@@ -2859,9 +2859,20 @@ mod tests {
             &hierarchy,
             [
                 {
+                    add_element: {
+                        element_id: *synthetic.id,
+                    },
+                },
+                {
                     create_lease: {
                         element_id: *child,
                         lease_id: *lease.id,
+                    },
+                },
+                {
+                    update_level: {
+                        element_id: *synthetic.id,
+                        required_level: 0u64,
                     },
                 },
                 {
@@ -2869,6 +2880,12 @@ mod tests {
                         element_id: *child,
                         lease_id: *lease.id,
                         status: 1u64,
+                    },
+                },
+                {
+                    update_level: {
+                        element_id: *synthetic.id,
+                        required_level: 255u64,
                     },
                 },
                 {
