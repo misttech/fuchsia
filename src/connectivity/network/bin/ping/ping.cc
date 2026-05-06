@@ -166,6 +166,8 @@ struct PingStatistics {
   uint64_t sum_rtt_usec = 0;
   uint16_t num_sent = 0;
   uint16_t num_lost = 0;
+  const char* host = nullptr;
+  uint64_t total_time_ms = 0;
 
   void Update(uint64_t rtt_usec) {
     if (rtt_usec < min_rtt_usec) {
@@ -179,12 +181,18 @@ struct PingStatistics {
   }
 
   void Print() const {
-    if (num_sent == 0) {
+    uint16_t total = num_sent + num_lost;
+    if (total == 0) {
       printf("No echo request sent\n");
       return;
     }
-    printf("RTT Min/Max/Avg = [ %.3f / %.3f / %.3f ] ms\n", USEC_TO_MSEC(min_rtt_usec),
-           USEC_TO_MSEC(max_rtt_usec), USEC_TO_MSEC(sum_rtt_usec / num_sent));
+    printf("--- %s ping statistics ---\n", host);
+    printf("%u packets transmitted, %u received, %u%% packet loss, time %lu ms\n", total, num_sent,
+           (num_lost * 100) / total, total_time_ms);
+    if (num_sent > 0) {
+      printf("RTT Min/Max/Avg = [ %.3f / %.3f / %.3f ] ms\n", USEC_TO_MSEC(min_rtt_usec),
+             USEC_TO_MSEC(max_rtt_usec), USEC_TO_MSEC(sum_rtt_usec / num_sent));
+    }
   }
 };
 
@@ -249,6 +257,7 @@ int main(int argc, char** argv) {
     return options.Usage();
   }
 
+  stats.host = options.host;
   options.Print();
 
   struct addrinfo hints = {
@@ -312,7 +321,9 @@ int main(int argc, char** argv) {
   auto received_packet = reinterpret_cast<packet_t*>(rcvd.get());
 
   const zx_ticks_t ticks_per_usec = zx::ticks::per_second().get() / 1000000;
+  bool any_success = false;
 
+  zx_ticks_t total_start = zx::ticks::now().get();
   while (options.count-- > 0) {
     *packet = {
         .hdr =
@@ -335,48 +346,63 @@ int main(int argc, char** argv) {
     ssize_t r = sendto(s.get(), packet, sent_packet_size, 0, info->ai_addr, info->ai_addrlen);
     if (r < 0) {
       fprintf(stderr, "ping: Could not send packet: %s\n", strerror(errno));
-      return -1;
     }
 
     struct pollfd fd = {
         .fd = s.get(),
         .events = POLLIN,
     };
-    switch (poll(&fd, 1, static_cast<int>(options.timeout_msec))) {
-      case 1:
-        if (fd.revents & POLLIN) {
-          r = recvfrom(s.get(), received_packet, sent_packet_size, 0, NULL, NULL);
-          if (!ValidateReceivedPacket(*packet, sent_packet_size, *received_packet, r, options)) {
-            fprintf(stderr, "ping: Received packet didn't match sent packet: %d\n",
-                    packet->hdr.un.echo.sequence);
+
+    if (r >= 0) {
+      switch (poll(&fd, 1, static_cast<int>(options.timeout_msec))) {
+        case 1:
+          if (fd.revents & POLLIN) {
+            r = recvfrom(s.get(), received_packet, sent_packet_size, 0, NULL, NULL);
+            if (r < 0) {
+              fprintf(stderr, "ping: recvfrom failed: %s\n", strerror(errno));
+            } else if (!ValidateReceivedPacket(*packet, sent_packet_size, *received_packet, r,
+                                               options)) {
+              fprintf(stderr, "ping: Received packet didn't match sent packet: %d\n",
+                      ntohs(packet->hdr.un.echo.sequence));
+              r = -1;
+            }
+            break;
+          } else {
+            fprintf(stderr, "ping: Spurious wakeup from poll\n");
+            r = -1;
+            break;
           }
-          break;
-        } else {
-          fprintf(stderr, "ping: Spurious wakeup from poll\n");
+        case 0:
+          fprintf(stderr, "ping: Timeout after %d ms\n", static_cast<int>(options.timeout_msec));
           r = -1;
           break;
-        }
-      case 0:
-        fprintf(stderr, "ping: Timeout after %d ms\n", static_cast<int>(options.timeout_msec));
-        __FALLTHROUGH;
-      default:
-        r = -1;
+        default:
+          fprintf(stderr, "ping: poll error: %s\n", strerror(errno));
+          r = -1;
+          break;
+      }
     }
 
     if (r < 0) {
-      fprintf(stderr, "ping: Could not read result of ping\n");
-      return -1;
+      stats.num_lost++;
     }
-    zx_ticks_t after = zx::ticks::now().get();
-    int seq = ntohs(packet->hdr.un.echo.sequence);
-    uint64_t usec = (after - before) / ticks_per_usec;
-    stats.Update(usec);
-    printf("%" PRIu64 " bytes from %s : icmp_seq=%d rtt=%.3f ms\n", r, options.host, seq,
-           (float)usec / 1000.0);
+
+    if (r >= 0) {
+      zx_ticks_t after = zx::ticks::now().get();
+      int seq = ntohs(packet->hdr.un.echo.sequence);
+      uint64_t usec = (after - before) / ticks_per_usec;
+      stats.Update(usec);
+      any_success = true;
+      printf("%" PRIu64 " bytes from %s : icmp_seq=%d rtt=%.3f ms\n", r, options.host, seq,
+             (float)usec / 1000.0);
+    }
+
     if (options.count > 0) {
       usleep(static_cast<unsigned int>(options.interval_msec * 1000));
     }
   }
+  zx_ticks_t total_end = zx::ticks::now().get();
+  stats.total_time_ms = (total_end - total_start) / (ticks_per_usec * 1000);
   stats.Print();
-  return 0;
+  return any_success ? 0 : -1;
 }

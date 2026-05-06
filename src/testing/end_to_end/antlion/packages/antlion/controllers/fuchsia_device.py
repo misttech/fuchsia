@@ -627,55 +627,53 @@ class FuchsiaDevice:
         if not additional_ping_params:
             additional_ping_params = ""
 
+        stdout_str = ""
+        stderr_str = ""
+        exit_status = 0
+
         try:
             ping_result = self.ssh.run(
                 f"ping -c {count} -i {interval} -t {timeout} -s {size} "
                 f"{additional_ping_params} {dest_ip}"
             )
+            stdout_str = ping_result.stdout.decode("utf-8")
+            stderr_str = ping_result.stderr.decode("utf-8")
+            exit_status = ping_result.returncode
         except CalledProcessError as e:
             self.log.debug(f"Failed to ping from host: {e}")
-            return PingResult(
-                exit_status=e.returncode,
-                stdout=e.stdout.decode("utf-8"),
-                stderr=e.stderr.decode("utf-8"),
-                transmitted=None,
-                received=None,
-                time_ms=None,
-                rtt_min_ms=None,
-                rtt_avg_ms=None,
-                rtt_max_ms=None,
-                rtt_mdev_ms=None,
-            )
+            stdout_str = e.stdout.decode("utf-8")
+            stderr_str = e.stderr.decode("utf-8")
+            exit_status = e.returncode
 
-        stdout_str = ping_result.stdout.decode("utf-8")
-        stderr_str = ping_result.stderr.decode("utf-8")
-        rtt_stats: re.Match[str] | None = None
+        stats_match = re.search(
+            r"(\d+) packets transmitted, (\d+) received, (\d+)% packet loss",
+            stdout_str,
+        )
+        rtt_match = re.search(
+            r"RTT Min/Max/Avg = \[ ([0-9.]+) / ([0-9.]+) / ([0-9.]+) \] ms",
+            stdout_str,
+        )
 
-        if not stderr_str:
-            rtt_line = stdout_str.strip().split("\n")[-1]
-            rtt_stats = re.search(
-                r"RTT Min/Max/Avg = \[ ([0-9.]+) / ([0-9.]+) / ([0-9.]+) \] ms",
-                rtt_line,
-            )
-            if rtt_stats is None:
-                raise FuchsiaDeviceError(
-                    f'Unable to parse ping output: "{rtt_line}"'
-                )
+        transmitted = int(stats_match.group(1)) if stats_match else None
+        received = int(stats_match.group(2)) if stats_match else None
 
-        return PingResult(
-            exit_status=ping_result.returncode,
-            stdout=stdout_str,
-            stderr=stderr_str,
-            transmitted=None,
-            received=len(
+        if received is None:
+            received = len(
                 re.findall(
                     r"\d+ bytes from .* icmp_seq=\d+ rtt=.* ms", stdout_str
                 )
-            ),
+            )
+
+        return PingResult(
+            exit_status=exit_status,
+            stdout=stdout_str,
+            stderr=stderr_str,
+            transmitted=transmitted,
+            received=received,
             time_ms=None,
-            rtt_min_ms=float(rtt_stats.group(1)) if rtt_stats else None,
-            rtt_avg_ms=float(rtt_stats.group(3)) if rtt_stats else None,
-            rtt_max_ms=float(rtt_stats.group(2)) if rtt_stats else None,
+            rtt_min_ms=float(rtt_match.group(1)) if rtt_match else None,
+            rtt_avg_ms=float(rtt_match.group(3)) if rtt_match else None,
+            rtt_max_ms=float(rtt_match.group(2)) if rtt_match else None,
             rtt_mdev_ms=None,
         )
 
