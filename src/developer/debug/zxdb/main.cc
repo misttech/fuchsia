@@ -118,6 +118,7 @@ void SetupCommandLineOptions(const CommandLineOptions& options, Session* session
 }  // namespace
 
 int ConsoleMain(int argc, const char* argv[]) {
+  signal(SIGPIPE, SIG_IGN);
   using ::analytics::core_dev_tools::EarlyProcessAnalyticsOptions;
 
   CommandLineOptions options;

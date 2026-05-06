@@ -137,8 +137,10 @@ void DebugAdapterServer::ConnectionResolvedMainThread(fbl::unique_fd client) {
 
   // Reset the client connection on error.
   buffer_->set_error_callback([this]() {
-    LOGS(Info) << "Connection lost.";
-    OnDisconnect();
+    main_loop_->PostTask(FROM_HERE, [this]() {
+      LOGS(Info) << "Connection lost.";
+      OnDisconnect();
+    });
   });
 }
 
