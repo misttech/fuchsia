@@ -1945,6 +1945,18 @@ alias(
 )
 
 alias(
+    name = "pin-init-0.3.0",
+    actual = "//third_party/rust_crates/forks/pin-init:pin_init",
+    tags = ["manual"],
+)
+
+alias(
+    name = "pin-init",
+    actual = "//third_party/rust_crates/forks/pin-init:pin_init",
+    tags = ["manual"],
+)
+
+alias(
     name = "pin-project-1.1.11",
     actual = "//third_party/rust_crates/vendor/pin-project-1.1.11:pin_project",
     tags = ["manual"],

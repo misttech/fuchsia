@@ -425,6 +425,7 @@ _NORMAL_DEPENDENCIES = {
             "percent-encoding": Label("//third_party/rust_crates/vendor/percent-encoding-2.3.1:percent_encoding"),
             "pest": Label("//third_party/rust_crates/vendor/pest-2.8.6:pest"),
             "phf": Label("//third_party/rust_crates/vendor/phf-0.13.1:phf"),
+            "pin-init": Label("//third_party/rust_crates/vendor/pin-init-0.3.0:pin_init"),
             "pin-project": Label("//third_party/rust_crates/vendor/pin-project-1.1.11:pin_project"),
             "pin-project-lite": Label("//third_party/rust_crates/vendor/pin-project-lite-0.2.17:pin_project_lite"),
             "pin-weak": Label("//third_party/rust_crates/vendor/pin-weak-1.1.0:pin_weak"),
