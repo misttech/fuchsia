@@ -83,12 +83,17 @@ impl FfxMain for LogTool {
 pub async fn log_impl(
     writer: impl ToolIO<OutputItem = LogEntry> + Write + 'static,
     ctx: &EnvironmentContext,
-    cmd: LogCommand,
+    mut cmd: LogCommand,
     rcs_connector: Connector<RemoteControlProxyHolder>,
     include_timestamp: bool,
 ) -> Result<(), LogError> {
     // TODO(b/333908164): We have 3 different flags that all do the same thing.
     // Remove them when possible.
+    let color_config: bool = ctx.get(ffx_config::keys::LOG_CMD_COLOR).unwrap_or(true);
+    if !color_config || ctx.is_strict() {
+        cmd.no_color = true;
+    }
+
     let symbolize_disabled = cmd.symbolize.is_symbolize_disabled();
     let prettification_disabled = cmd.symbolize.is_prettification_disabled();
     log_main(

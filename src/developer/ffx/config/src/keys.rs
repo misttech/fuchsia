@@ -57,3 +57,6 @@ pub const SSH_PRIVATE_KEY: &str = "ssh.priv";
 
 /// The path to the discovery cache directory
 pub const DISCOVERY_CACHE_DIR_CONFIG: &str = "target.discovery_cache_dir";
+
+/// Whether or not to enable colored output for log commands.
+pub const LOG_CMD_COLOR: &str = "log_cmd.color";

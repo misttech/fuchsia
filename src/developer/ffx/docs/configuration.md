@@ -183,6 +183,9 @@ When updating, please add the value in alphabetical order.
     |                                         | `error`, `warn`, `info`, `debug`,  |
     |                                         | `trace`. No components are defined |
     |                                         | by default                         |
+    | `log_cmd.color`                         | Whether to color logs based on     |
+    |                                         | their severity. Defaults to `true`.|
+    |                                         | Always disabled in strict mode.    |
     | `metrics.upload_timeout`                | Defaults to `2.0`                  |
     |                                         | The time in fractional seconds to  |
     |                                         | wait before giving up on uploading |
