@@ -27,18 +27,11 @@ GN to Bazel.
     comments from the `BUILD.gn` file to the `BUILD.bazel` file. If a comment
     is above or on the same line as an attribute in `BUILD.gn`, it should be
     placed in the same relative position to the mapped attribute in `BUILD.bazel`.
-
-    Map the attributes as follows:
-    -   `sources` -> `srcs`
-    -   `public_deps` -> `deps`
-    -   `sdk_area` -> `api_area`
-    -   `sdk_category` -> `category`
-    -   `enable_* = true` -> `enable_* = True`
-    -   `visibility = ["*"]` -> `visibility = ["//visibility:public"]`
-    *(For other values of `visibility`, map to the corresponding visibility
-    in Bazel).*
     *(Example: If a comment is above `excluded_checks = [`, it should sit directly
     above `excluded_checks = [` in the `BUILD.bazel` file).*
+
+    Map the attributes according to the attributes mapping in `references/gn_to_bazel_attributes_mapping.md`
+
 4.  If dependencies are missing Bazel targets, migrate those dependencies first.
 5.  Verify the Bazel target builds successfully:
 
@@ -48,15 +41,10 @@ GN to Bazel.
 
 ## 2. Register the target
 
-1.  If Bazel target has a category, add its IDK atom target to the appropriate
-    list in `//sdk/fidl/category_lists.bzl` based on its category:
-    -   `partner` (and `stable` is `true`) ->
-        `PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST`
-    -   `partner` (and `stable` is `false`) ->
-        `PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST`
-    -   `prebuilt` -> `PREBUILT_FIDL_LIBRARY_ATOMS_LIST`
-    -   `host_tool` -> `HOST_TOOL_FIDL_LIBRARY_ATOMS_LIST`
-    -   `compat_test` -> `COMPAT_TEST_FIDL_LIBRARY_ATOMS_LIST`
+1.  If the newly created Bazel target has a `category` attribute, add its IDK atom target to the appropriate list in `//sdk/fidl/category_lists.bzl` based on the rules in `references/idk_atom_target_registration_rules.md`.
+2. If the migrated libraries are under `//sdk/fidl` directory, add the label of the verification target
+   `//path/to/dir:verify_bazel2gn` to the `fidl_bazel2gn_verification_targets` list in `//sdk/fidl/bazel2gn_verification_targets.gni`, else add to the
+   `bazel2gn_verification_targets` list in `//build/bazel2gn_verification_targets.gni`.
 
 ## 3. Sync FIDL targets back to GN
 
@@ -67,7 +55,7 @@ GN to Bazel.
 
 ## 4. Review, Verification and Cleanup
 
-1.  **Review the changed code** using the checklist in
+1.  Check the changes according to the checklist in
     `references/migration_code_review_checklist.md`.
 
 2.  Format your changes:
