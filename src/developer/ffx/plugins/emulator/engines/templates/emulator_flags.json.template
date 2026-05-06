@@ -159,6 +159,10 @@
               "-device",
               "virtio_input_multi_touch_pci_1",
             {{/if}}
+            {{#if (eq runtime.engine_type "qemu")}}
+              "-device",
+              "virtio-multitouch-pci",
+            {{/if}}
         {{/if}}
         {{#if (eq device.audio.model "none")}}
             "-no-audio",
