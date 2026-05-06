@@ -74,7 +74,7 @@ rust_library(
         "//third_party/rust_crates/ask2patch/memchr",
         "//third_party/rust_crates/vendor/libc-0.2.186:libc",
         "//third_party/rust_crates/vendor/log-0.4.29:log",
-        "//third_party/rust_crates/vendor/unicode-segmentation-1.12.0:unicode_segmentation",
+        "//third_party/rust_crates/vendor/unicode-segmentation-1.13.2:unicode_segmentation",
         "//third_party/rust_crates/vendor/unicode-width-0.1.14:unicode_width",
     ] + select({
         "@rules_rust//rust/platform:aarch64-apple-darwin": [

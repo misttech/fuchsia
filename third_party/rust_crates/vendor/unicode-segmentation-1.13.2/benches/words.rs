@@ -1,9 +1,9 @@
-//! Compares the performance of `UnicodeSegmentation::graphemes` with stdlib's UTF-8 scalar-based
-//! `std::str::chars`.
+//! Compares the performance of `UnicodeSegmentation::unicode_words` with stdlib's UTF-8
+//! scalar-based `std::str::split_whitespace`.
 //!
-//! It is expected that `std::str::chars` is faster than `UnicodeSegmentation::graphemes` since it
-//! does not consider the complexity of grapheme clusters. The question in this benchmark
-//! is how much slower full unicode handling is.
+//! It is expected that `std::str::split_whitespace` is faster than
+//! `UnicodeSegmentation::unicode_words` since it does not consider the complexity of grapheme
+//! clusters. The question in this benchmark is how much slower full unicode handling is.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
@@ -23,25 +23,25 @@ const FILES: &[&str] = &[
 
 #[inline(always)]
 fn grapheme(text: &str) {
-    for c in UnicodeSegmentation::graphemes(black_box(text), true) {
-        black_box(c);
+    for w in text.unicode_words() {
+        black_box(w);
     }
 }
 
 #[inline(always)]
 fn scalar(text: &str) {
-    for c in black_box(text).chars() {
-        black_box(c);
+    for w in text.split_whitespace() {
+        black_box(w);
     }
 }
 
 fn bench_all(c: &mut Criterion) {
-    let mut group = c.benchmark_group("chars");
+    let mut group = c.benchmark_group("words");
 
     for file in FILES {
         group.bench_with_input(
             BenchmarkId::new("grapheme", file),
-            &fs::read_to_string(format!("benches/texts/{}.txt", file)).unwrap(),
+            &fs::read_to_string(format!("benches/texts/{file}.txt")).unwrap(),
             |b, content| b.iter(|| grapheme(content)),
         );
     }
@@ -49,7 +49,7 @@ fn bench_all(c: &mut Criterion) {
     for file in FILES {
         group.bench_with_input(
             BenchmarkId::new("scalar", file),
-            &fs::read_to_string(format!("benches/texts/{}.txt", file)).unwrap(),
+            &fs::read_to_string(format!("benches/texts/{file}.txt")).unwrap(),
             |b, content| b.iter(|| scalar(content)),
         );
     }

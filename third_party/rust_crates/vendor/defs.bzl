@@ -488,7 +488,7 @@ _NORMAL_DEPENDENCIES = {
             "unic-char-range": Label("//third_party/rust_crates/vendor/unic-char-range-0.9.0:unic_char_range"),
             "unic-ucd-block": Label("//third_party/rust_crates/vendor/unic-ucd-block-0.9.0:unic_ucd_block"),
             "unicase": Label("//third_party/rust_crates/vendor/unicase-2.9.0:unicase"),
-            "unicode-segmentation": Label("//third_party/rust_crates/vendor/unicode-segmentation-1.12.0:unicode_segmentation"),
+            "unicode-segmentation": Label("//third_party/rust_crates/vendor/unicode-segmentation-1.13.2:unicode_segmentation"),
             "unicode-width": Label("//third_party/rust_crates/vendor/unicode-width-0.2.2:unicode_width"),
             "unicode-xid": Label("//third_party/rust_crates/vendor/unicode-xid-0.2.6:unicode_xid"),
             "untrusted": Label("//third_party/rust_crates/vendor/untrusted-0.9.0:untrusted"),
