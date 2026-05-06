@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::convert::{convert_channel_band, convert_security_type};
 use crate::processors::toggle_events::ClientConnectionsToggleEvent;
 use crate::util::cobalt_logger::log_cobalt_batch;
 use derivative::Derivative;
@@ -15,6 +16,7 @@ use fuchsia_inspect_contrib::inspect_log;
 use fuchsia_inspect_contrib::nodes::{BoundedListNode, LruCacheNode};
 use fuchsia_inspect_derive::Unit;
 use fuchsia_sync::Mutex;
+use ieee80211::OuiFmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use strum_macros::{Display, EnumIter};
@@ -274,6 +276,9 @@ impl ConnectDisconnectLogger {
         self.log_connect_attempt_inspect(result, bss);
         self.log_connect_attempt_cobalt(result, flushed_successive_failures, downtime_duration)
             .await;
+        if result == fidl_ieee80211::StatusCode::Success {
+            self.log_device_connected_cobalt_metrics(bss).await;
+        }
     }
 
     fn log_connect_attempt_inspect(
@@ -340,6 +345,89 @@ impl ConnectDisconnectLogger {
         }
 
         log_cobalt_batch!(self.cobalt_proxy, &metric_events, "log_connect_attempt_cobalt");
+    }
+
+    async fn log_device_connected_cobalt_metrics(&self, bss: &BssDescription) {
+        let mut metric_events = vec![];
+        metric_events.push(MetricEvent {
+            metric_id: metrics::NUMBER_OF_CONNECTED_DEVICES_METRIC_ID,
+            event_codes: vec![],
+            payload: MetricEventPayload::Count(1),
+        });
+
+        let security_type_dim = convert_security_type(&bss.protection());
+        metric_events.push(MetricEvent {
+            metric_id: metrics::CONNECTED_NETWORK_SECURITY_TYPE_METRIC_ID,
+            event_codes: vec![security_type_dim as u32],
+            payload: MetricEventPayload::Count(1),
+        });
+
+        if bss.supports_uapsd() {
+            metric_events.push(MetricEvent {
+                metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_APSD_METRIC_ID,
+                event_codes: vec![],
+                payload: MetricEventPayload::Count(1),
+            });
+        }
+
+        if let Some(rm_enabled_cap) = bss.rm_enabled_cap() {
+            if rm_enabled_cap.link_measurement_enabled() {
+                metric_events.push(MetricEvent {
+                    metric_id:
+                        metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_LINK_MEASUREMENT_METRIC_ID,
+                    event_codes: vec![],
+                    payload: MetricEventPayload::Count(1),
+                });
+            }
+            if rm_enabled_cap.neighbor_report_enabled() {
+                metric_events.push(MetricEvent {
+                    metric_id:
+                        metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_NEIGHBOR_REPORT_METRIC_ID,
+                    event_codes: vec![],
+                    payload: MetricEventPayload::Count(1),
+                });
+            }
+        }
+
+        if bss.supports_ft() {
+            metric_events.push(MetricEvent {
+                metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_FT_METRIC_ID,
+                event_codes: vec![],
+                payload: MetricEventPayload::Count(1),
+            });
+        }
+
+        if let Some(cap) = bss.ext_cap().and_then(|cap| cap.ext_caps_octet_3)
+            && cap.bss_transition()
+        {
+            metric_events.push(MetricEvent {
+                    metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_BSS_TRANSITION_MANAGEMENT_METRIC_ID,
+                    event_codes: vec![],
+                    payload: MetricEventPayload::Count(1),
+                });
+        }
+
+        metric_events.push(MetricEvent {
+            metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
+            event_codes: vec![bss.channel.primary as u32],
+            payload: MetricEventPayload::Count(1),
+        });
+
+        let channel_band_dim = convert_channel_band(bss.channel.primary);
+        metric_events.push(MetricEvent {
+            metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
+            event_codes: vec![channel_band_dim as u32],
+            payload: MetricEventPayload::Count(1),
+        });
+
+        let oui_string = bss.bssid.to_oui_uppercase("");
+        metric_events.push(MetricEvent {
+            metric_id: metrics::DEVICE_CONNECTED_TO_AP_OUI_2_METRIC_ID,
+            event_codes: vec![],
+            payload: MetricEventPayload::StringValue(oui_string),
+        });
+
+        log_cobalt_batch!(self.cobalt_proxy, &metric_events, "log_device_connected_cobalt_metrics");
     }
 
     pub async fn log_disconnect(&self, info: &DisconnectInfo) {
@@ -709,6 +797,8 @@ mod tests {
     use windowed_stats::experimental::inspect::TimeMatrixClient;
     use windowed_stats::experimental::testing::TimeMatrixCall;
     use wlan_common::channel::{Cbw, Channel};
+    use wlan_common::ie::IeType;
+    use wlan_common::test_utils::fake_stas::IesOverrides;
     use wlan_common::{fake_bss_description, random_bss_description};
 
     #[fuchsia::test]
@@ -905,6 +995,33 @@ mod tests {
             vec![fidl_ieee80211::StatusCode::Success.into_primitive() as u32]
         );
         assert_eq!(breakdowns_by_status_code[0].payload, MetricEventPayload::Count(1));
+
+        let metrics_devices =
+            test_helper.get_logged_metrics(metrics::NUMBER_OF_CONNECTED_DEVICES_METRIC_ID);
+        assert_eq!(metrics_devices.len(), 1);
+        assert_eq!(metrics_devices[0].payload, MetricEventPayload::Count(1));
+
+        let metrics_security =
+            test_helper.get_logged_metrics(metrics::CONNECTED_NETWORK_SECURITY_TYPE_METRIC_ID);
+        assert_eq!(metrics_security.len(), 1);
+        assert_eq!(metrics_security[0].event_codes, vec![5]); // Wpa2Personal
+
+        let metrics_channel = test_helper.get_logged_metrics(
+            metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
+        );
+        assert_eq!(metrics_channel.len(), 1);
+        assert_eq!(metrics_channel[0].event_codes, vec![157]);
+
+        let metrics_band = test_helper.get_logged_metrics(
+            metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_CHANNEL_BAND_METRIC_ID,
+        );
+        assert_eq!(metrics_band.len(), 1);
+        assert_eq!(metrics_band[0].event_codes, vec![2]); // Band5Ghz
+
+        let metrics_oui =
+            test_helper.get_logged_metrics(metrics::DEVICE_CONNECTED_TO_AP_OUI_2_METRIC_ID);
+        assert_eq!(metrics_oui.len(), 1);
+        assert_eq!(metrics_oui[0].payload, MetricEventPayload::StringValue("00F620".to_string()));
     }
 
     #[fuchsia::test]
@@ -933,6 +1050,73 @@ mod tests {
             test_helper.get_logged_metrics(metrics::SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_METRIC_ID);
         assert_eq!(metrics.len(), 1);
         assert_eq!(metrics[0].payload, MetricEventPayload::IntegerValue(0));
+    }
+
+    #[fuchsia::test]
+    fn test_log_device_connected_metrics_capabilities() {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.cobalt_proxy.clone(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+        );
+
+        let wmm_info = vec![0x80]; // U-APSD enabled
+        #[rustfmt::skip]
+        let rm_enabled_capabilities = vec![
+            0x03, // link measurement and neighbor report enabled
+            0x00, 0x00, 0x00, 0x00,
+        ];
+        #[rustfmt::skip]
+        let ext_capabilities = vec![
+            0x04, 0x00,
+            0x08, // BSS transition supported
+            0x00, 0x00, 0x00, 0x00, 0x40
+        ];
+
+        let bss_description = fake_bss_description!(Wpa2,
+            ies_overrides: IesOverrides::new()
+                .remove(IeType::WMM_PARAM)
+                .set(IeType::WMM_INFO, wmm_info)
+                .set(IeType::RM_ENABLED_CAPABILITIES, rm_enabled_capabilities)
+                .set(IeType::MOBILITY_DOMAIN, vec![0x00; 3])
+                .set(IeType::EXT_CAPABILITIES, ext_capabilities),
+        );
+
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss_description,
+            false
+        ));
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        let metrics = test_helper
+            .get_logged_metrics(metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_APSD_METRIC_ID);
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].payload, MetricEventPayload::Count(1));
+
+        let metrics = test_helper.get_logged_metrics(
+            metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_BSS_TRANSITION_MANAGEMENT_METRIC_ID,
+        );
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].payload, MetricEventPayload::Count(1));
+
+        let metrics = test_helper.get_logged_metrics(
+            metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_LINK_MEASUREMENT_METRIC_ID,
+        );
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].payload, MetricEventPayload::Count(1));
+
+        let metrics = test_helper.get_logged_metrics(
+            metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_NEIGHBOR_REPORT_METRIC_ID,
+        );
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].payload, MetricEventPayload::Count(1));
     }
 
     #[test_case(1; "one_failure")]

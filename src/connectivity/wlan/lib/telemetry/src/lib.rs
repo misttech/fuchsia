@@ -15,6 +15,7 @@ use windowed_stats::experimental::inspect::TimeMatrixClient;
 use wlan_common::bss::BssDescription;
 use wlan_legacy_metrics_registry as metrics;
 
+mod convert;
 mod processors;
 pub(crate) mod util;
 pub use crate::processors::connect_disconnect::DisconnectInfo;
