@@ -6,8 +6,8 @@ use crate::{ArrayContent, DiagnosticsHierarchy, ExponentialHistogram, LinearHist
 use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use either::Either;
-use log;
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
+use std::collections::BTreeSet;
 
 impl<Key> Serialize for DiagnosticsHierarchy<Key>
 where
@@ -27,7 +27,7 @@ pub struct SerializableHierarchyFields<'a, Key> {
 }
 
 fn get_name<'a, K: AsRef<str>>(
-    a: &'a Either<&'a Property<K>, &'a DiagnosticsHierarchy<K>>,
+    a: Either<&'a Property<K>, &'a DiagnosticsHierarchy<K>>,
 ) -> &'a str {
     match a {
         Either::Left(property) => property.name(),
@@ -48,10 +48,19 @@ where
             .iter()
             .map(Either::Left)
             .chain(self.hierarchy.children.iter().map(Either::Right));
+        // From analysis of Inspect files, 99.5% of nodes have =< 16 children.
+        let mut seen_names = if items >= 16 { Some(BTreeSet::new()) } else { None };
         while let Some(val) = it.next() {
-            if it.clone().any(|a| get_name(&a) == get_name(&val)) {
+            let name = get_name(val);
+            let is_duplicate = if let Some(ref mut seen) = seen_names {
+                !seen.insert(name)
+            } else {
+                it.clone().any(|a| get_name(a) == name)
+            };
+
+            if is_duplicate {
                 log::warn!(
-                    item_name:? = get_name(&val),
+                    item_name:? = name,
                     emitting_component:? = self.moniker;
                     "Encountered duplicate names while serializing Inspect"
                 );
