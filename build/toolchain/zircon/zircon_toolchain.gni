@@ -11,6 +11,7 @@ import("//build/toolchain/ccache.gni")
 import("//build/toolchain/concurrent_jobs.gni")
 import("//build/toolchain/default_tools.gni")
 import("//build/toolchain/rbe.gni")
+import("//build/toolchain/rbe_toolchain_vars.gni")
 import("//build/toolchain/zircon/clang.gni")
 import("//build/toolchain/zircon/gcc.gni")
 import("//build/zircon/build_args.gni")
@@ -166,8 +167,6 @@ template("zircon_toolchain") {
     }
   }
 
-  # Cached and distributed wrappers just go on the front of compiler commands.
-  compiler_prefix_list = []
   if (defined(invoker.cxx_rbe_enable)) {
     _cxx_rbe_enable = invoker.cxx_rbe_enable
   } else {
@@ -180,94 +179,21 @@ template("zircon_toolchain") {
   }
   _restat_link = _link_rbe_enable
 
-  if (link_rbe_enable) {
-    _rbe_flags = RBE_EXEC_STRATEGY_MAP[link_rbe_exec_strategy]
-    if (disable_xattr_for_rbe) {
-      _rbe_flags += [ "--disable-xattr" ]
-    }
-  }
-
-  _restat_cc_prefix_list = []
+  # Cached and distributed wrappers just go on the front of compiler commands,
+  # but these are plumbed specially in tool() as $command_launcher, not just
+  # part of $command; and are elided from the compilation database.
+  _cxx_launcher = []
   if (restat_cc) {
-    if (!_cxx_rbe_enable) {
-      # Local-only execution may use this wrapper script directly.
-      _restat_cc_wrapper = [
-        rebase_path(python_exe_src, root_build_dir),
-        "-S",
-        rebase_path(restat_wrapper, root_build_dir),
-      ]
-      _restat_cc_prefix_list = _restat_cc_wrapper + [
-                                 "--outputs",
-                                 "{{output}}",
-                                 "{{DEPFILE}}",
-                                 "--",
-                               ]
+    if (_cxx_rbe_enable) {
+      _cxx_launcher = restat_command_launcher.remote
+    } else {
+      _cxx_launcher = restat_command_launcher.local
     }
-    # For remote-building, --preserve_unchanged_output_mtime is sufficient
-    # to preserve timestamps of unchanged outputs, and provide restat benefit.
-    # However, in modes that also (conditionally) use local execution
-    # (i.e. --exec_strategy={racing,remote_local_fallback}),
-    # the local execution could unconditionally overwrite outputs.
-    # While this may be suboptimal as a missed opportunity to prune
-    # the action graph, it does not violate correctness.
   }
-  _restat_cc_prefix = string_join(" ", _restat_cc_prefix_list) + " "
-
   if (_cxx_rbe_enable) {
     # Use reclient to remotely build C++.
-    if (cxx_rbe_minimalist_wrapper) {
-      _working_subdir = rebase_path(root_build_dir, "//")
-      compiler_prefix_list = [
-        rebase_path(cxx_remote_wrapper_minimalist, root_build_dir),
-        "--working-subdir=" + _working_subdir,
-      ]
-    } else {
-      compiler_prefix_list = [
-        rebase_path(python_exe_src, root_build_dir),
-        "-S",
-        rebase_path(cxx_remote_wrapper, root_build_dir),
-      ]
-    }
-    if (disable_xattr_for_rbe) {
-      compiler_prefix_list += [ "--disable-xattr" ]
-    }
-    if (cxx_rbe_check == "consistency") {
-      # Compare local vs. remote build.
-      # Allow caching.
-      # Use local concurrency.
-      # TODO(https://fxbug.dev/42079382): enable file trace comparison
-      compiler_prefix_list += [
-        "--compare",
-
-        # "--fsatrace-path",
-        # rebase_path("//prebuilt/fsatrace/fsatrace", root_build_dir),
-        "--exec_strategy=remote",
-        "--miscomparison-export-dir",
-        rebase_path(comparison_diagnostics_dir, root_build_dir),
-      ]
-      _cxx_concurrent_jobs = concurrent_jobs.local
-    } else if (cxx_rbe_check == "determinism") {
-      # Determinism check is run locally, and doesn't use RBE,
-      # even though it uses the same wrapper script.
-      compiler_prefix_list += [
-        "--local",
-        "--check-determinism",
-        "--miscomparison-export-dir",
-        rebase_path(comparison_diagnostics_dir, root_build_dir),
-      ]
-      _cxx_concurrent_jobs = concurrent_jobs.local
-    } else {
-      compiler_prefix_list += RBE_EXEC_STRATEGY_MAP[cxx_rbe_exec_strategy]
-      if (!cxx_rbe_download_obj_files) {
-        # download everything except the object file
-        compiler_prefix_list += [ "--download_regex='-.*\\.o\$\$'" ]
-      }
-      _cxx_concurrent_jobs = concurrent_jobs.remote
-    }
-    if (restat_cc) {
-      # re-client has built-in support for write-if-changed behavior
-      compiler_prefix_list += [ "--preserve_unchanged_output_mtime" ]
-    }
+    _cxx_concurrent_jobs = rbe_toolchain_vars.cxx_concurrent_jobs
+    _cxx_launcher += rbe_toolchain_vars.cxx_launcher
 
     # When debugging or working around unexpected differences between
     # local and remote execution, upload the entire toolchain to see
@@ -279,22 +205,22 @@ template("zircon_toolchain") {
       } else {  # The python wrapper already adjusts paths accordingly.
         _toolchain_dir_arg = _tool_root_dir
       }
-      compiler_prefix_list += [
+      _cxx_launcher += [
         "--inputs",
         _toolchain_dir_arg,
       ]
     }
-    compiler_prefix_list += [ "--" ]
+
+    _cxx_launcher += [ "--" ]
   } else {
     if (defined(invoker.use_ccache)) {
       use_ccache = invoker.use_ccache
     }
     if (use_ccache) {
-      compiler_prefix_list = [ "ccache" ]
+      _cxx_launcher += [ "ccache" ]
     }
     _cxx_concurrent_jobs = concurrent_jobs.local
   }
-  compiler_prefix = string_join(" ", compiler_prefix_list) + " "
 
   # Compute what will be the value of `toolchain_variant` for this instance.
   # This is invoker.toolchain_args.toolchain_variant, eventually augmented
@@ -509,6 +435,8 @@ template("zircon_toolchain") {
     depfile = "{{output}}.d"
     depsformat = "gcc"
     switches = "-MD -MF $depfile -o {{output}} {{defines}} {{include_dirs}}"
+    command_launcher =
+        string_replace(string_join(" ", _cxx_launcher), "{{DEPFILE}}", depfile)
   }
 
   _link_common = {
@@ -539,7 +467,7 @@ template("zircon_toolchain") {
               rebase_path(python_exe_src, root_build_dir),
               "-S",
               rebase_path(prebuilt_tool_remote_wrapper, root_build_dir),
-            ] + _rbe_flags +
+            ] + rbe_toolchain_vars.link_rbe_flags +
             [
               "--inputs",
               "\"$unstripped_outfile\"",
@@ -599,12 +527,10 @@ template("zircon_toolchain") {
           "--local",
           "--check-determinism",
         ]
-        not_needed([ "_rbe_flags" ])
       } else if (link_rbe_check == "consistency") {
         _linker_prefix_list += [ "--compare" ]
-        not_needed([ "_rbe_flags" ])
       } else if (link_rbe_check == "none") {
-        _linker_prefix_list += _rbe_flags
+        _linker_prefix_list += rbe_toolchain_vars.link_rbe_flags
         _link_concurrent_jobs = concurrent_jobs.remote
       }
       if (!link_rbe_download_unstripped_outputs) {
@@ -668,7 +594,7 @@ template("zircon_toolchain") {
               rebase_path(python_exe_src, root_build_dir),
               "-S",
               rebase_path(prebuilt_tool_remote_wrapper, root_build_dir),
-            ] + _rbe_flags +
+            ] + rbe_toolchain_vars.link_rbe_flags +
             [
               "--label_toolname=$breakpad_dump_syms",
               "--inputs",  # specify executable, due to log_it wrapper
@@ -721,9 +647,6 @@ template("zircon_toolchain") {
       description = "ASM {{output}}"
       forward_variables_from(_compile_common, "*")
       command = "$cc $switches {{asmflags}} -c {{source}}"
-      command_launcher =
-          string_replace(_restat_cc_prefix, "{{DEPFILE}}", depfile) +
-          compiler_prefix
       restat = restat_cc
     }
 
@@ -731,9 +654,6 @@ template("zircon_toolchain") {
       description = "CC {{output}}"
       forward_variables_from(_compile_common, "*")
       command = "$cc $switches {{cflags}} {{cflags_c}} -c {{source}}"
-      command_launcher =
-          string_replace(_restat_cc_prefix, "{{DEPFILE}}", depfile) +
-          compiler_prefix
       restat = restat_cc
     }
 
@@ -741,9 +661,6 @@ template("zircon_toolchain") {
       description = "CXX {{output}}"
       forward_variables_from(_compile_common, "*")
       command = "$cxx $switches {{cflags}} {{cflags_cc}} -c {{source}}"
-      command_launcher =
-          string_replace(_restat_cc_prefix, "{{DEPFILE}}", depfile) +
-          compiler_prefix
       restat = restat_cc
     }
 
@@ -767,7 +684,7 @@ template("zircon_toolchain") {
         } else if (link_rbe_check == "consistency") {
           _linker_prefix_list += [ "--compare" ]
         } else if (link_rbe_check == "none") {
-          _linker_prefix_list += _rbe_flags
+          _linker_prefix_list += rbe_toolchain_vars.link_rbe_flags
           _link_concurrent_jobs = concurrent_jobs.remote
         }
         _linker_input_args = [ "\"$rspfile\"" ]
@@ -874,7 +791,7 @@ template("zircon_toolchain") {
                   "\"$depend_output,$link_output\"",
                   "--preserve_unchanged_output_mtime",  # only overwrite if
                                                         # changed
-                ] + _rbe_flags + [ "--" ]
+                ] + rbe_toolchain_vars.link_rbe_flags + [ "--" ]
             _remote_ifs_prefix = string_join(" ", _remote_ifs_prefix_list)
           }
           command += " && $_remote_ifs_prefix $llvm_ifs --write-if-changed --output-ifs=$depend_output --output-elf=$link_output $unstripped_output"

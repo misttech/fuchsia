@@ -10,6 +10,7 @@ import("//build/toolchain/ccache.gni")
 import("//build/toolchain/concurrent_jobs.gni")
 import("//build/toolchain/default_tools.gni")
 import("//build/toolchain/rbe.gni")
+import("//build/toolchain/rbe_toolchain_vars.gni")
 import("//build/toolchain/restat.gni")
 
 # Defines a Clang-based toolchain.
@@ -78,7 +79,6 @@ template("clang_toolchain") {
       _toolchain_dir = string_replace(prefix, "/bin", "")  # remove suffix
     }
 
-    compiler_prefix_list = []
     if (defined(invoker.rust_rbe_enable)) {
       rust_rbe_enable = invoker.rust_rbe_enable
     }
@@ -96,67 +96,21 @@ template("clang_toolchain") {
     # re-client provides write-if-change with --preserve_unchanged_output_mtime.
     _restat_link = _link_rbe_enable
 
+    # Cached and distributed wrappers just go on the front of compiler commands,
+    # but these are plumbed specially in tool() as $command_launcher, not just
+    # part of $command; and are elided from the compilation database.
+    _cxx_launcher = []
+    if (restat_cc) {
+      if (_cxx_rbe_enable) {
+        _cxx_launcher = restat_command_launcher.remote
+      } else {
+        _cxx_launcher = restat_command_launcher.local
+      }
+    }
     if (_cxx_rbe_enable) {
       # Use reclient to remotely build C++.
-      if (cxx_rbe_minimalist_wrapper) {
-        _cxx_remote_wrapper_path =
-            rebase_path(cxx_remote_wrapper_minimalist, root_build_dir)
-        _working_subdir = rebase_path(root_build_dir, "//")
-        compiler_prefix_list = [
-          _cxx_remote_wrapper_path,
-          "--working-subdir=" + _working_subdir,
-        ]
-      } else {
-        _cxx_remote_wrapper_path =
-            rebase_path(cxx_remote_wrapper, root_build_dir)
-        compiler_prefix_list = [
-          rebase_path(python_exe_src, root_build_dir),
-          "-S",
-          _cxx_remote_wrapper_path,
-        ]
-      }
-
-      if (disable_xattr_for_rbe) {
-        compiler_prefix_list += [ "--disable-xattr" ]
-      }
-
-      if (cxx_rbe_check == "consistency") {
-        # Compare local vs. remote build.
-        # Allow caching.
-        # Use local concurrency.
-        # TODO(https://fxbug.dev/42079382): enable file trace comparison
-        compiler_prefix_list += [
-          "--compare",
-
-          # "--fsatrace-path",
-          # rebase_path("//prebuilt/fsatrace/fsatrace", root_build_dir),
-          "--miscomparison-export-dir",
-          rebase_path(comparison_diagnostics_dir, root_build_dir),
-          "--exec_strategy=remote",
-        ]
-        _cxx_concurrent_jobs = concurrent_jobs.local
-      } else if (cxx_rbe_check == "determinism") {
-        # Determinism check is run locally, and doesn't use RBE,
-        # even though it uses the same wrapper script.
-        compiler_prefix_list += [
-          "--local",
-          "--check-determinism",
-          "--miscomparison-export-dir",
-          rebase_path(comparison_diagnostics_dir, root_build_dir),
-        ]
-        _cxx_concurrent_jobs = concurrent_jobs.local
-      } else {
-        compiler_prefix_list += RBE_EXEC_STRATEGY_MAP[cxx_rbe_exec_strategy]
-        if (!cxx_rbe_download_obj_files) {  # download everything except the
-                                            # object file
-          compiler_prefix_list += [ "--download_regex='-.*\\.o\$\$'" ]
-        }
-        _cxx_concurrent_jobs = concurrent_jobs.remote
-      }
-      if (restat_cc) {
-        # re-client has built-in support for write-if-changed behavior
-        compiler_prefix_list += [ "--preserve_unchanged_output_mtime" ]
-      }
+      _cxx_concurrent_jobs = rbe_toolchain_vars.cxx_concurrent_jobs
+      _cxx_launcher = rbe_toolchain_vars.cxx_launcher
 
       # When debugging or working around unexpected differences between
       # local and remote execution, upload the entire toolchain to see
@@ -168,159 +122,53 @@ template("clang_toolchain") {
         } else {  # The python wrapper already adjusts paths accordingly.
           _toolchain_dir_arg = _toolchain_dir
         }
-        compiler_prefix_list += [
+        _cxx_launcher += [
           "--inputs",
           _toolchain_dir_arg,
         ]
       }
-      compiler_prefix_list += [ "--" ]
+
+      _cxx_launcher += [ "--" ]
     } else {
       if (defined(invoker.use_ccache)) {
         use_ccache = invoker.use_ccache
       }
       if (use_ccache) {
-        compiler_prefix_list = [ "ccache " ]
+        _cxx_launcher = [ "ccache" ]
       }
       _cxx_concurrent_jobs = concurrent_jobs.local
-    }
-    compiler_prefix = string_join(" ", compiler_prefix_list) + " "
-
-    if (_link_rbe_enable) {
-      _rbe_flags = RBE_EXEC_STRATEGY_MAP[link_rbe_exec_strategy]
-      if (disable_xattr_for_rbe) {
-        _rbe_flags += [ "--disable-xattr" ]
-      }
     }
 
     # Configure builds to be restat-friendly by preserving timestamps of
     # unchanged outputs, for both local and remote builds.
-    _restat_rustc_prefix_list = []
+    _rust_launcher = []
     if (restat_rust) {
-      if (!rust_rbe_enable) {
-        # Local-only execution may use this wrapper script directly.
-        _restat_rust_wrapper = [
-          rebase_path(python_exe_src, root_build_dir),
-          "-S",
-          rebase_path(restat_wrapper, root_build_dir),
-        ]
-        _restat_rustc_prefix_list = _restat_rust_wrapper + [
-                                      "--outputs",
-                                      "{{output}}",
-                                      "{{DEPFILE}}",
-                                      "--",
-                                    ]
+      if (rust_rbe_enable) {
+        _rust_launcher = restat_command_launcher.remote
+      } else {
+        _rust_launcher = restat_command_launcher.local
       }
-      # For remote-building, --preserve_unchanged_output_mtime is sufficient
-      # to preserve timestamps of unchanged outputs, and provide restat benefit.
-      # However, in modes that also (conditionally) use local execution
-      # (i.e. --exec_strategy={racing,remote_local_fallback}),
-      # the local execution could unconditionally overwrite outputs.
-      # While this may be suboptimal as a missed opportunity to prune
-      # the action graph, it does not violate correctness.
     }
-    _restat_rustc_prefix = string_join(" ", _restat_rustc_prefix_list) + " "
-
-    _restat_cc_prefix_list = []
-    if (restat_cc) {
-      if (!_cxx_rbe_enable) {
-        # Local-only execution may use this wrapper script directly.
-        _restat_cc_wrapper = [
-          rebase_path(python_exe_src, root_build_dir),
-          "-S",
-          rebase_path(restat_wrapper, root_build_dir),
-        ]
-        _restat_cc_prefix_list = _restat_cc_wrapper + [
-                                   "--outputs",
-                                   "{{output}}",
-                                   "{{DEPFILE}}",
-                                   "--",
-                                 ]
-      }
-      # For remote-building, --preserve_unchanged_output_mtime is sufficient
-      # to preserve timestamps of unchanged outputs, and provide restat benefit.
-      # However, in modes that also (conditionally) use local execution
-      # (i.e. --exec_strategy={racing,remote_local_fallback}),
-      # the local execution could unconditionally overwrite outputs.
-      # While this may be suboptimal as a missed opportunity to prune
-      # the action graph, it does not violate correctness.
-    }
-    _restat_cc_prefix = string_join(" ", _restat_cc_prefix_list) + " "
 
     # Configure Rust remote builds.
-    _rustc_wrapper = ""
-    _rust_concurrent_jobs = {
-    }
     if (rust_rbe_enable) {
-      assert(
-          rust_rbe_check == "none" || rust_rbe_check == "consistency" ||
-              rust_rbe_check == "determinism",
-          "rust_rbe_check must be one of {none,consistency,determinism}, but got: ${rust_rbe_check}.")
-      if (rust_rbe_check == "consistency") {
-        # Compare local vs. remote build.
-        # Allow caching.
-        # Use local concurrency.
-        _rewrapper_flags = [
-          "--compare",
-          "--fsatrace-path",
-          rebase_path("//prebuilt/fsatrace/fsatrace", root_build_dir),
-          "--exec_strategy=remote",
-          "--miscomparison-export-dir",
-          rebase_path(comparison_diagnostics_dir, root_build_dir),
-        ]
-        _rust_concurrent_jobs = concurrent_jobs.local
-      } else if (rust_rbe_check == "determinism") {
-        # Determinism check is run locally, and doesn't use RBE,
-        # even though it uses the same wrapper script.
-        _rewrapper_flags = [
-          "--local",
-          "--check-determinism",
-          "--miscomparison-export-dir",
-          rebase_path(comparison_diagnostics_dir, root_build_dir),
-        ]
-        _rust_concurrent_jobs = concurrent_jobs.local
-      } else {
-        _rust_rbe_exec_strategy_flags =
-            RBE_EXEC_STRATEGY_MAP[rust_rbe_exec_strategy]
-        _rewrapper_flags = _rust_rbe_exec_strategy_flags
-      }
-      if (restat_rust) {
-        # re-client has built-in support for write-if-changed behavior
-        _rewrapper_flags += [ "--preserve_unchanged_output_mtime" ]
-      }
-      if (disable_xattr_for_rbe) {
-        _rewrapper_flags += [ "--disable-xattr" ]
-      }
-      _rustc_remote_wrapper_path =
-          rebase_path(rustc_remote_wrapper, root_build_dir)
-      _rustc_wrapper_tokens = [
-        rebase_path(python_exe_src, root_build_dir),
-        "-S",
-        _rustc_remote_wrapper_path,
-        "--rust-compilation-deps-path={{target_gen_dir}}/{{label_name}}.rust_compilation_deps",
-        "--rust-sources-path={{target_gen_dir}}//{{label_name}}.rust_sources",
-      ]
-      _rustc_wrapper =
-          string_join(" ",
-                      _rustc_wrapper_tokens + _rewrapper_flags + [ "--" ]) + " "
-      _rust_concurrent_jobs = concurrent_jobs.remote
+      _rust_command_prefix = rbe_toolchain_vars.rust_command_prefix
+      _rust_concurrent_jobs = rbe_toolchain_vars.rust_concurrent_jobs
     } else {
+      _rust_command_prefix = []
       _rust_concurrent_jobs = concurrent_jobs.local
     }
+
     if (rustc_timeout > 0 || ice_detection) {
-      _wrapper = rebase_path("//build/rust/rustc_wrapper.sh", root_build_dir)
+      _rust_command_prefix += [
+        rebase_path("//build/rust/rustc_wrapper.sh", root_build_dir),
+        "--timeout",
+        "$rustc_timeout",
+      ]
       if (ice_detection) {
-        _check_ice = "--check-ice"
-      } else {
-        _check_ice = ""
+        _rust_command_prefix += [ "--check-ice" ]
       }
-      _rustc_wrapper += string_join(" ",
-                                    [
-                                      _wrapper,
-                                      "--timeout",
-                                      "$rustc_timeout",
-                                      _check_ice,
-                                      "--",
-                                    ]) + " "
+      _rust_command_prefix += [ "--" ]
     }
 
     # Set all tools to defaults
@@ -389,9 +237,9 @@ template("clang_toolchain") {
       forward_variables_from(_cxx_concurrent_jobs, "*")
       depfile = "{{output}}.d"
       command = "$cc -MD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} -c {{source}} -o {{output}}"
-      command_launcher =
-          string_replace(_restat_cc_prefix, "{{DEPFILE}}", depfile) +
-          compiler_prefix
+      command_launcher = string_replace(string_join(" ", _cxx_launcher),
+                                        "{{DEPFILE}}",
+                                        depfile)
       depsformat = "gcc"
       description = "CC {{output}}"
       outputs =
@@ -403,9 +251,9 @@ template("clang_toolchain") {
       forward_variables_from(_cxx_concurrent_jobs, "*")
       depfile = "{{output}}.d"
       command = "$cxx -MD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} -c {{source}} -o {{output}}"
-      command_launcher =
-          string_replace(_restat_cc_prefix, "{{DEPFILE}}", depfile) +
-          compiler_prefix
+      command_launcher = string_replace(string_join(" ", _cxx_launcher),
+                                        "{{DEPFILE}}",
+                                        depfile)
       depsformat = "gcc"
       description = "CXX {{output}}"
       outputs =
@@ -417,9 +265,9 @@ template("clang_toolchain") {
       forward_variables_from(_cxx_concurrent_jobs, "*")
       depfile = "{{output}}.d"
       command = "$cc -MD -MF $depfile {{defines}} {{include_dirs}} {{asmflags}} -c {{source}} -o {{output}}"
-      command_launcher =
-          string_replace(_restat_cc_prefix, "{{DEPFILE}}", depfile) +
-          compiler_prefix
+      command_launcher = string_replace(string_join(" ", _cxx_launcher),
+                                        "{{DEPFILE}}",
+                                        depfile)
       depsformat = "gcc"
       description = "ASM {{output}}"
       outputs =
@@ -431,9 +279,9 @@ template("clang_toolchain") {
       forward_variables_from(concurrent_jobs.local, "*")
       depfile = "{{output}}.d"
       command = "$cc -MD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} {{cflags_objc}} -c {{source}} -o {{output}}"
-      command_launcher =
-          string_replace(_restat_cc_prefix, "{{DEPFILE}}", depfile) +
-          compiler_prefix
+      command_launcher = string_replace(string_join(" ", _cxx_launcher),
+                                        "{{DEPFILE}}",
+                                        depfile)
       depsformat = "gcc"
       description = "OBJC {{output}}"
       outputs =
@@ -445,9 +293,9 @@ template("clang_toolchain") {
       forward_variables_from(concurrent_jobs.local, "*")
       depfile = "{{output}}.d"
       command = "$cxx -MD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} {{cflags_objcc}} -c {{source}} -o {{output}}"
-      command_launcher =
-          string_replace(_restat_cc_prefix, "{{DEPFILE}}", depfile) +
-          compiler_prefix
+      command_launcher = string_replace(string_join(" ", _cxx_launcher),
+                                        "{{DEPFILE}}",
+                                        depfile)
       depsformat = "gcc"
       description = "OBJCXX {{output}}"
       outputs =
@@ -559,7 +407,8 @@ template("clang_toolchain") {
           if (rust_rbe_enable) {
             _exec_strategy_flags = []
             if (rust_rbe_check == "none") {
-              _exec_strategy_flags = _rust_rbe_exec_strategy_flags
+              _exec_strategy_flags =
+                  rbe_toolchain_vars.rust_rbe_exec_strategy_flags
             }
             rust_link_remote_strip_prefix =
                 string_join(" ",
@@ -567,9 +416,10 @@ template("clang_toolchain") {
                                 [ "-- " ])
           }
           if (_link_rbe_enable) {
-            cxx_link_remote_strip_prefix = string_join(
-                    " ",
-                    _remote_strip_prefix_common + _rbe_flags + [ "-- " ])
+            cxx_link_remote_strip_prefix =
+                string_join(" ",
+                            _remote_strip_prefix_common +
+                                rbe_toolchain_vars.link_rbe_flags + [ "-- " ])
           }
         }
 
@@ -605,14 +455,16 @@ template("clang_toolchain") {
             "--preserve_unchanged_output_mtime",
           ]
           if (_link_rbe_enable) {
-            cxx_link_remote_dump_syms_prefix = string_join(
-                    " ",
-                    _remote_dump_syms_prefix_list + _rbe_flags + [ "-- " ])
+            cxx_link_remote_dump_syms_prefix =
+                string_join(" ",
+                            _remote_dump_syms_prefix_list +
+                                rbe_toolchain_vars.link_rbe_flags + [ "-- " ])
           }
           if (rust_rbe_enable) {
             _exec_strategy_flags = []
             if (rust_rbe_check == "none") {
-              _exec_strategy_flags = _rust_rbe_exec_strategy_flags
+              _exec_strategy_flags =
+                  rbe_toolchain_vars.rust_rbe_exec_strategy_flags
             }
             rust_link_remote_dump_syms_prefix =
                 string_join(" ",
@@ -670,6 +522,12 @@ template("clang_toolchain") {
                              ])
       forward_variables_from(_rust_concurrent_jobs, "*")
 
+      restat = restat_rust
+      command_launcher = string_replace(string_join(" ", _rust_launcher),
+                                        "{{DEPFILE}}",
+                                        depfile)
+      command += string_join(" ", _rust_command_prefix) + " "
+
       ld_location_env = ""
       link_map_args = ""
       if (invoker.toolchain_os == "fuchsia") {
@@ -679,13 +537,6 @@ template("clang_toolchain") {
         # On host, clang seems to be used to perform linking
         link_map_args = "-Clink-args=-Wl,--Map=\"{{UNSTRIPPED_OUTFILE}}.map\""
       }
-
-      # Overwrite an existing output file only if its contents have changed.
-      command += string_replace(_restat_rustc_prefix, "{{DEPFILE}}", depfile)
-      restat = restat_rust
-
-      # Possibly enable remote building for the rustc command.
-      command += _rustc_wrapper
 
       # TODO(https://fxbug.dev/42124325): Replacement for rustenv
       command += "{{rustenv}}${ld_location_env} RUST_BACKTRACE=1 $rustc --color=always --crate-name={{crate_name}} {{source}}"
@@ -820,12 +671,11 @@ template("clang_toolchain") {
       rlib = "{{output_dir}}/lib{{target_output_name}}{{output_extension}}"
       depfile = "$rlib.d"
 
-      # Overwrite an existing output file only if its contents have changed.
-      command = string_replace(_restat_rustc_prefix, "{{DEPFILE}}", depfile)
       restat = restat_rust
-
-      # Possibly enable remote building for the rustc command.
-      command += _rustc_wrapper
+      command_launcher = string_replace(string_join(" ", _rust_launcher),
+                                        "{{DEPFILE}}",
+                                        depfile)
+      command = string_join(" ", _rust_command_prefix) + " "
 
       # TODO(https://fxbug.dev/42124325): Replacement for rustenv
       command += "{{rustenv}} RUST_BACKTRACE=1 $rustc --color=always --crate-name={{crate_name}} {{source}}"
@@ -865,12 +715,11 @@ template("clang_toolchain") {
       # emit=metadata signals to scan dependencies using only .rmetas
       rmeta = "{{output_dir}}/{{target_output_name}}.rmeta"
 
-      # Overwrite an existing output file only if its contents have changed.
-      command = string_replace(_restat_rustc_prefix, "{{DEPFILE}}", depfile)
       restat = restat_rust
-
-      # Possibly enable remote building for the rustc command.
-      command += _rustc_wrapper
+      command_launcher = string_replace(string_join(" ", _rust_launcher),
+                                        "{{DEPFILE}}",
+                                        depfile)
+      command = string_join(" ", _rust_command_prefix) + " "
 
       # TODO(https://fxbug.dev/42124325): Replacement for rustenv
       command += "{{rustenv}} RUST_BACKTRACE=1 $rustc --color=always --crate-name={{crate_name}} {{source}}"
@@ -931,12 +780,11 @@ template("clang_toolchain") {
 
       rmeta = "{{output_dir}}/{{target_output_name}}.rmeta"
 
-      # Overwrite an existing output file only if its contents have changed.
-      command = string_replace(_restat_rustc_prefix, "{{DEPFILE}}", depfile)
       restat = restat_rust
-
-      # Possibly enable remote building for the rustc command.
-      command += _rustc_wrapper
+      command_launcher = string_replace(string_join(" ", _rust_launcher),
+                                        "{{DEPFILE}}",
+                                        depfile)
+      command = string_join(" ", _rust_command_prefix) + " "
 
       # TODO(https://fxbug.dev/42124325): Replacement for rustenv
       command += "{{rustenv}} RUST_BACKTRACE=1 $rustc --color=always --crate-name={{crate_name}} {{source}} "
@@ -985,7 +833,7 @@ template("clang_toolchain") {
         } else if (link_rbe_check == "consistency") {
           _linker_prefix_list += [ "--compare" ]
         } else if (link_rbe_check == "none") {
-          _linker_prefix_list += _rbe_flags
+          _linker_prefix_list += rbe_toolchain_vars.link_rbe_flags
           _link_concurrent_jobs = concurrent_jobs.remote
         }
         _linker_input_args = [ "\"$rspfile\"" ]
@@ -1067,13 +915,11 @@ template("clang_toolchain") {
             "--local",
             "--check-determinism",
           ]
-          not_needed([ "_rbe_flags" ])
         } else if (link_rbe_check == "consistency") {
           _linker_prefix_list += [ "--compare" ]
-          not_needed([ "_rbe_flags" ])
         } else if (link_rbe_check == "none") {
           _link_concurrent_jobs = concurrent_jobs.remote
-          _linker_prefix_list += _rbe_flags
+          _linker_prefix_list += rbe_toolchain_vars.link_rbe_flags
         }
         if (!link_rbe_download_unstripped_outputs) {
           _linker_prefix_list += [
@@ -1250,7 +1096,7 @@ template("clang_toolchain") {
                 "\"$depend_output,$link_output\"",
                 "--preserve_unchanged_output_mtime",  # only overwrite if
                                                       # changed
-              ] + _rbe_flags + [ "--" ]
+              ] + rbe_toolchain_vars.link_rbe_flags + [ "--" ]
           _remote_ifs_prefix = string_join(" ", _remote_ifs_prefix_list)
         }
         command += " && $_remote_ifs_prefix ${prefix}/llvm-ifs --write-if-changed --output-ifs=$depend_output --output-elf=$link_output $unstripped_output"
