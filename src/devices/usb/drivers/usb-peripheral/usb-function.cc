@@ -562,6 +562,15 @@ void UsbFunction::OnNodeControllerUnbound(fidl::UnbindInfo info) {
 void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,
                                 fit::callback<void(zx_status_t)> completer) {
   TRACE_DURATION("usb-peripheral", __func__);
+  if (last_configured_.has_value() && *last_configured_ == configured) {
+    if (configured) {
+      fdf::warn("SetConfigured called twice with configured = true");
+    }
+    // Nothing to do since it's already in the desired state.
+    completer(ZX_OK);
+    return;
+  }
+  last_configured_ = configured;
   if (function_intf_fidl_) {
     fdescriptor::wire::UsbSpeed fspeed = static_cast<fdescriptor::wire::UsbSpeed>(speed);
     function_intf_fidl_->SetConfigured(configured, fspeed)

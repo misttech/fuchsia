@@ -286,10 +286,11 @@ class FakeUsbFunction
       fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
 
-  void Bind(async_dispatcher_t* dispatcher,
+  void Bind(fdf::UnownedSynchronizedDispatcher dispatcher,
             fidl::ServerEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> server_end) {
+    dispatcher_ = std::move(dispatcher);
     binding_.emplace(fidl::BindServer(
-        dispatcher, std::move(server_end), shared_from_this(),
+        dispatcher_.value()->async_dispatcher(), std::move(server_end), shared_from_this(),
         [](FakeUsbFunction* impl, fidl::UnbindInfo info,
            fidl::ServerEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> server_end) {
           impl->unbound_completion_.Signal();
@@ -301,12 +302,18 @@ class FakeUsbFunction
   bool control_called() const { return control_called_; }
   uint8_t control_req() const { return control_req_; }
   bool set_configured_called() const { return set_configured_called_; }
+  void clear_set_configured_called() { set_configured_called_ = false; }
   bool configured() const { return configured_; }
   bool set_interface_called() const { return set_interface_called_; }
 
   void set_on_set_configured(fit::function<void()> cb) { on_set_configured_ = std::move(cb); }
   uint8_t interface() const { return interface_; }
   uint8_t alt_setting() const { return alt_setting_; }
+
+  fdf::UnownedSynchronizedDispatcher& dispatcher() {
+    ZX_ASSERT(dispatcher_.has_value());
+    return dispatcher_.value();
+  }
 
  private:
   libsync::Completion call_completed_;
@@ -323,6 +330,7 @@ class FakeUsbFunction
   uint8_t interface_ = 0;
   uint8_t alt_setting_ = 0;
 
+  std::optional<fdf::UnownedSynchronizedDispatcher> dispatcher_;
   std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_function::UsbFunctionInterface>>
       binding_;
 };
@@ -595,8 +603,7 @@ class UsbPeripheralHarness : public ::testing::Test {
       return endpoints.take_error();
     }
     auto fake_function = std::make_shared<FakeUsbFunction>();
-    fake_function->Bind(dut().runtime().StartBackgroundDispatcher()->async_dispatcher(),
-                        std::move(endpoints->server));
+    fake_function->Bind(dut().runtime().StartBackgroundDispatcher(), std::move(endpoints->server));
     ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
     return zx::ok(std::make_tuple(fake_function, std::move(endpoints->client)));
   }
@@ -824,6 +831,41 @@ TEST_F(UsbPeripheralReadyTest, HostConnectionToggle) {
     ASSERT_TRUE(disconnected_res.ok());
     ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
   }
+}
+
+TEST_F(UsbPeripheralReadyTest, DisconnectHostWhenAlreadyPeripheralReady) {
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+  FakeUsbFunction& fake = *function_clients_.fakes[0];
+  EXPECT_FALSE(fake.set_configured_called());
+  EXPECT_FALSE(fake.configured());
+
+  {
+    auto disconnected_res = this->dci()->SetConnected(false);
+    ASSERT_TRUE(disconnected_res.ok());
+  }
+
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+
+  fake.WaitUntilCalled();
+  EXPECT_TRUE(fake.set_configured_called());
+  EXPECT_FALSE(fake.configured());
+
+  fake.clear_set_configured_called();
+  {
+    auto disconnected_res = this->dci()->SetConnected(false);
+    ASSERT_TRUE(disconnected_res.ok());
+  }
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+
+  // Not called again. Run in the fake's dispatcher so we know it would've
+  // processed any call made as part of processing SetConnected.
+  libsync::Completion comp;
+  async::PostTask(fake.dispatcher()->async_dispatcher(), [&]() {
+    EXPECT_FALSE(fake.set_configured_called());
+    EXPECT_FALSE(fake.configured());
+    comp.Signal();
+  });
+  comp.Wait();
 }
 
 TEST_F(UsbPeripheralReadyTest, SmallRequestQueueing) {
@@ -1250,8 +1292,7 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureFailsIfAlreadyBound) {
       fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
   ASSERT_OK(endpoints);
   auto second_fake = std::make_shared<FakeUsbFunction>();
-  second_fake->Bind(dut().runtime().StartBackgroundDispatcher()->async_dispatcher(),
-                    std::move(endpoints->server));
+  second_fake->Bind(dut().runtime().StartBackgroundDispatcher(), std::move(endpoints->server));
   auto second_fake_endpoint = std::move(endpoints->client);
   ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
 

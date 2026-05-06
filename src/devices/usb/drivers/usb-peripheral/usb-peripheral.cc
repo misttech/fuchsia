@@ -1338,12 +1338,25 @@ void UsbPeripheral::OnHostConnectionChanged(bool connected) {
   }
 
   // Disconnect event.
-  if (state_ != DeviceState::kHostConnected) {
-    fdf::info("Host disconnected event ignored in state {}", state_);
-    return;
+  switch (state_) {
+    case DeviceState::kHostConnected:
+      // Normal disconnect, go back to peripheral ready.
+      SetStateLocked(DeviceState::kPeripheralReady);
+      break;
+    case DeviceState::kPeripheralReady:
+    case DeviceState::kWaitForFunctionBind:
+    case DeviceState::kStarting:
+    case DeviceState::kStopping:
+      // This is a no-op for the state-machine.
+      // We still proceed to make sure the functions are not configured in case
+      // there's a race between host connection changing and peripheral state
+      // changing.
+      break;
+    case DeviceState::kNoConfiguration:
+      fdf::info("Host disconnected event ignored in state {}", state_);
+      return;
   }
 
-  SetStateLocked(DeviceState::kPeripheralReady);
   // When a host disconnects, it's a good practice to unconfigure the functions.
   for (auto& config : configurations_) {
     for (auto func_index : config.functions) {

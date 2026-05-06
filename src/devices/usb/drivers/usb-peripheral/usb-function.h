@@ -156,6 +156,7 @@ class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
   // TODO(https://fxbug.dev/439593030): Remove this flag once we decide to move
   // all resources to the FIDL interface.
   bool alloc_resources_over_fidl_ = false;
+  std::optional<bool> last_configured_;
   UsbPeripheral* peripheral_;
   ddk::UsbFunctionInterfaceProtocolClient function_intf_;
   fidl::WireSharedClient<fuchsia_hardware_usb_function::UsbFunctionInterface> function_intf_fidl_;
