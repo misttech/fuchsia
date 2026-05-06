@@ -28,7 +28,7 @@ def _idk_host_tool_impl(
     if not name.endswith("_idk"):
         fail('IDK atom `name`s must end with "_idk".')
     if target_compatible_with != HOST_OS_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s`." % HOST_OS_CONSTRAINTS)
+        fail("`target_compatible_with` must be `HOST_OS_CONSTRAINTS`.")
 
     if not output_name:
         output_name = idk_name
@@ -153,7 +153,7 @@ def _idk_cc_binary_host_tool_impl(
         target_compatible_with,
         **kwargs):
     if target_compatible_with != HOST_OS_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s`." % HOST_OS_CONSTRAINTS)
+        fail("`target_compatible_with` must be `HOST_OS_CONSTRAINTS`.")
 
     binary_name = name
 
@@ -206,7 +206,7 @@ def idk_go_binary_host_tool(
     GN note: Unlike some GN templates, `name` should not include "_sdk"/"_idk".
     """
     if target_compatible_with != HOST_OS_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s`." % HOST_OS_CONSTRAINTS)
+        fail("`target_compatible_with` must be `HOST_OS_CONSTRAINTS`.")
 
     binary_name = name
 
@@ -233,7 +233,7 @@ def _idk_rustc_binary_host_tool_impl(
         target_compatible_with,
         **kwargs):
     if target_compatible_with != HOST_OS_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s`." % HOST_OS_CONSTRAINTS)
+        fail("`target_compatible_with` must be `HOST_OS_CONSTRAINTS`.")
 
     binary_name = name
 

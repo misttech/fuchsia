@@ -28,7 +28,7 @@ def _cc_binary_host_tool_impl(
         target_compatible_with,
         **kwargs):
     if target_compatible_with != HOST_CONSTRAINTS and target_compatible_with != HOST_OS_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s` or `%s`." % (HOST_CONSTRAINTS, HOST_OS_CONSTRAINTS))
+        fail("`target_compatible_with` must be `HOST_CONSTRAINTS` or `HOST_OS_CONSTRAINTS`.")
 
     # Also ensure the API level is "PLATFORM".
     target_compatible_with += _target_compatible_with_platform_api_level
@@ -83,7 +83,7 @@ def go_binary_host_tool(
         **kwargs: Passed to `go_binary()`.
     """
     if target_compatible_with != HOST_CONSTRAINTS and target_compatible_with != HOST_OS_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s` or `%s`." % (HOST_CONSTRAINTS, HOST_OS_CONSTRAINTS))
+        fail("`target_compatible_with` must be `HOST_CONSTRAINTS` or `HOST_OS_CONSTRAINTS`.")
 
     # Also ensure the API level is "PLATFORM".
     target_compatible_with += _target_compatible_with_platform_api_level
@@ -115,7 +115,7 @@ def py_binary_host_tool(
         **kwargs: Passed to `py_binary()`.
     """
     if target_compatible_with != HOST_CONSTRAINTS and target_compatible_with != HOST_OS_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s` or `%s`." % (HOST_CONSTRAINTS, HOST_OS_CONSTRAINTS))
+        fail("`target_compatible_with` must be `HOST_CONSTRAINTS` or `HOST_OS_CONSTRAINTS`.")
 
     # Also ensure the API level is "PLATFORM".
     target_compatible_with += _target_compatible_with_platform_api_level
@@ -131,7 +131,7 @@ def _rustc_binary_host_tool_impl(
         target_compatible_with,
         **kwargs):
     if target_compatible_with != HOST_CONSTRAINTS and target_compatible_with != HOST_OS_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s` or `%s`." % (HOST_CONSTRAINTS, HOST_OS_CONSTRAINTS))
+        fail("`target_compatible_with` must be `HOST_CONSTRAINTS` or `HOST_OS_CONSTRAINTS`.")
 
     # Also ensure the API level is "PLATFORM".
     target_compatible_with += _target_compatible_with_platform_api_level
