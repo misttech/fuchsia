@@ -31,3 +31,11 @@ config("src_config") {
 config("magma_tests_include_config") {
   include_dirs = [ "tests" ]
 }
+
+group("tests") {
+  testonly = true
+  deps = [
+    "lib/magma_service/sys_driver_rust:tests",
+    "tests",
+  ]
+}
