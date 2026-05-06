@@ -129,6 +129,7 @@ kernel_elf_binary("elf-code-patching-test-add-one") {
   deps = [
     ":add-one",
     ":elf-code-patching-test.interp",
+    "//zircon/kernel/phys:boot-options",
   ]
 }
 
@@ -144,6 +145,7 @@ kernel_elf_binary("elf-code-patching-test-multiply") {
   deps = [
     ":elf-code-patching-test.interp",
     ":multiply_by_factor",
+    "//zircon/kernel/phys:boot-options",
   ]
 }
 
