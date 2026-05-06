@@ -206,10 +206,6 @@ if (is_host) {
       "//bundles/infra/*",
       "//src/developer/ffx/*",
 
-      # TODO(b/296235955) Some things in vendor directories depend on this and
-      # probably shouldn't. We should fix that and remove this.
-      "//vendor/*",
-
       # Dart tests require special handling for their own kind of isolation, so
       # these are 'allowed' to use this directly so they can copy it in where
       # it's needed.
