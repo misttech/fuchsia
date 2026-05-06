@@ -1530,12 +1530,22 @@ class FuchsiaDevice(
                 )
             )
         except fcp.FcTransportStatus as status:
-            # FC_ERR_FDOMAIN is expected in this instance because the device
-            # powered off.
-            zx_status: int | None = (
+            # We can't reliably get a message back from the device when
+            # requesting shutdown, so we have to check for whether we receive a
+            # communication error. This can be represented by either
+            # FC_ERR_FDOMAIN which denotes an error with writing/reading from
+            # the underlying channel, or FC_ERR_TRANSPORT which is when the
+            # whole transport layer fails to communicate with the device. There
+            # is a race regarding which can happen first and it is
+            # non-deterministic
+            fc_transport_status: int | None = (
                 status.args[0] if len(status.args) > 0 else None
             )
-            if zx_status != fcp.FcTransportStatus.FC_ERR_FDOMAIN:
+            if (
+                fc_transport_status != fcp.FcTransportStatus.FC_ERR_FDOMAIN
+                and fc_transport_status
+                != fcp.FcTransportStatus.FC_ERR_TRANSPORT
+            ):
                 raise fc_errors.FuchsiaControllerError(
                     "Fuchsia Controller FIDL Error"
                 ) from status
