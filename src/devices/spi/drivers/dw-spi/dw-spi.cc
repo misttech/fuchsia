@@ -8,10 +8,9 @@
 #include <fidl/fuchsia.hardware.powerdomain/cpp/wire.h>
 #include <fidl/fuchsia.hardware.reset/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_export2.h>
-#include <lib/driver/component/cpp/node_add_args.h>
-#include <lib/driver/platform-device/cpp/pdev.h>
-
-#include <vector>
+#include <lib/driver/logging/cpp/logger.h>
+#include <lib/driver/mmio/cpp/mmio.h>
+#include <lib/zx/interrupt.h>
 
 #include "registers.h"
 
@@ -114,11 +113,6 @@ void DwSpi::ExchangeVector(fuchsia_hardware_spiimpl::wire::SpiImplExchangeVector
       fidl::VectorView<uint8_t>::FromExternal(rxdata.data(), rxdata.size()));
 }
 
-void DwSpi::Serve(fdf::ServerEnd<fuchsia_hardware_spiimpl::SpiImpl> request) {
-  bindings_.AddBinding(fdf::Dispatcher::GetCurrent()->get(), std::move(request), this,
-                       fidl::kIgnoreBindingClosure);
-}
-
 zx::result<> DwSpiDriver::Start(fdf::DriverContext context) {
   fdf::info("Starting dw-spi driver");
 
@@ -206,29 +200,6 @@ zx::result<> DwSpiDriver::Start(fdf::DriverContext context) {
 
   device_ = std::make_unique<DwSpi>(*std::move(mmio), std::move(irq_result.value()));
   device_->InitRegisters();
-
-  fuchsia_hardware_spiimpl::Service::InstanceHandler handler({
-      .device = fit::bind_member<&DwSpi::Serve>(device_.get()),
-  });
-  if (zx::result<> result =
-          outgoing()->AddService<fuchsia_hardware_spiimpl::Service>(std::move(handler));
-      result.is_error()) {
-    fdf::error("AddService failed: {}", result.status_string());
-    return result.take_error();
-  }
-
-  std::vector<fuchsia_driver_framework::Offer> offers = {
-      fdf::MakeOffer2<fuchsia_hardware_spiimpl::Service>(),
-  };
-
-  if (zx::result result =
-          AddChild(name(), cpp20::span<const fuchsia_driver_framework::NodeProperty2>(), offers);
-      result.is_ok()) {
-    controller_.Bind(*std::move(result));
-  } else {
-    fdf::error("Failed to add child node: {}", result.status_string());
-    return result.take_error();
-  }
 
   fdf::info("dw-spi driver initialized successfully");
   return zx::ok();

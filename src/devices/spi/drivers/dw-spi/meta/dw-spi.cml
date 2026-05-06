@@ -13,8 +13,7 @@
         colocate: "true",
     },
     capabilities: [
-        { service: "fuchsia.hardware.spiimpl.Service" },
-        { service: "fuchsia.hardware.spi.businfo.SpiBusMetadata" },
+        { service: 'fuchsia.hardware.spiimpl.Service' },
     ],
     use: [
         { service: "fuchsia.hardware.platform.device.Service" },
@@ -24,12 +23,8 @@
     ],
     expose: [
         {
-            service: "fuchsia.hardware.spiimpl.Service",
-            from: "self",
-        },
-        {
-            service: "fuchsia.hardware.spi.businfo.SpiBusMetadata",
-            from: "self",
+            service: 'fuchsia.hardware.spiimpl.Service',
+            from: 'self',
         },
     ],
 }
