@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Set
 
+import depfile as depfile
 from gn_label import GnLabel
 
 
@@ -80,8 +81,7 @@ class FileAccess:
 
     def write_depfile(self, dep_file_path: Path | str, main_entry: str) -> None:
         os.makedirs(os.path.dirname(dep_file_path), exist_ok=True)
-        with open(dep_file_path, "w") as dep_file:
-            dep_file.write(f"{main_entry}:\\\n")
-            dep_file.write(
-                "\\\n".join(sorted([f"    {p}" for p in self.visited_files]))
-            )
+        df = depfile.DepFile(main_entry)
+        df.update(self.visited_files)
+        with open(dep_file_path, "w") as file:
+            df.write_to(file)

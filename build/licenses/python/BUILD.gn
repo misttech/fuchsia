@@ -24,6 +24,7 @@ if (is_host) {
     sources = common_sources
     deps = [
       "//build/bazel_sdk/bazel_rules_fuchsia/fuchsia/tools/licenses:spdx_types",
+      "//build/python/modules/depfile",
     ]
   }
 
@@ -51,7 +52,10 @@ if (is_host) {
     python_host_test(test_name) {
       main_source = "${test_name}.py"
       sources = common_sources
-      libraries = [ "//build/bazel_sdk/bazel_rules_fuchsia/fuchsia/tools/licenses:spdx_types" ]
+      libraries = [
+        "//build/bazel_sdk/bazel_rules_fuchsia/fuchsia/tools/licenses:spdx_types",
+        "//build/python/modules/depfile",
+      ]
     }
 
     host_test_deps += [ ":${test_name}" ]

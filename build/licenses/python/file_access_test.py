@@ -97,35 +97,47 @@ class FileAccessTest(unittest.TestCase):
             {"key": "value"},
         )
 
-    def _assert_depfile(self, expected_content: str) -> None:
+    def _assert_depfile(self, expected_files: list[Path]) -> None:
         depfile_path = self.temp_dir_path / "depfile"
         self.file_access.write_depfile(
             dep_file_path=depfile_path, main_entry="main"
         )
         actual_depfile_contents = depfile_path.read_text()
+
+        expected_paths = sorted(
+            [os.path.relpath(p, start=os.getcwd()) for p in expected_files]
+        )
+        if expected_paths:
+            input_continuation = " \\\n  "
+            expected_content = (
+                f"main: \\\n  {input_continuation.join(expected_paths)}\n"
+            )
+        else:
+            expected_content = "main:\n"
+
         self.assertEqual(actual_depfile_contents, expected_content)
 
     def test_write_depfile_after_read_text(self) -> None:
         self.file_access.read_text(GnLabel.from_str("//foo"))
-        self._assert_depfile(f"""main:\\\n    {self.temp_dir_path}/foo""")
+        self._assert_depfile([self.temp_dir_path / "foo"])
 
     def test_write_depfile_after_read_json(self) -> None:
-        self.file_access.read_text(GnLabel.from_str("//json"))
-        self._assert_depfile(f"""main:\\\n    {self.temp_dir_path}/json""")
+        self.file_access.read_json(GnLabel.from_str("//json"))
+        self._assert_depfile([self.temp_dir_path / "json"])
 
     def test_write_depfile_after_file_exists(self) -> None:
         self.file_access.file_exists(GnLabel.from_str("//bar"))
-        self._assert_depfile(f"""main:\\\n    {self.temp_dir_path}/bar""")
+        self._assert_depfile([self.temp_dir_path / "bar"])
 
     def test_write_depfile_after_directory_exists(self) -> None:
         self.file_access.directory_exists(GnLabel.from_str("//"))
-        self._assert_depfile(f"""main:\\\n    {self.temp_dir_path}/""")
+        self._assert_depfile([self.temp_dir_path])
 
     def test_write_depfile_after_search_directory(self) -> None:
         self.file_access.search_directory(
             GnLabel.from_str("//"), path_predicate=lambda _: True
         )
-        self._assert_depfile(f"""main:\\\n    {self.temp_dir_path}/""")
+        self._assert_depfile([self.temp_dir_path])
 
 
 if __name__ == "__main__":
