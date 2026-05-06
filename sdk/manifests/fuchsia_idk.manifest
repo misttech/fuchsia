@@ -250,9 +250,13 @@ fidl_library://fidl/fuchsia.hardware.pinimpl
 fidl_library://fidl/fuchsia.hardware.platform.bus (unstable)
 fidl_library://fidl/fuchsia.hardware.platform.device
 fidl_library://fidl/fuchsia.hardware.power (unstable)
+fidl_library://fidl/fuchsia.hardware.power.battery (unstable)
+fidl_library://fidl/fuchsia.hardware.power.charger (unstable)
 fidl_library://fidl/fuchsia.hardware.power.sensor
+fidl_library://fidl/fuchsia.hardware.power.source (unstable)
 fidl_library://fidl/fuchsia.hardware.power.statecontrol
 fidl_library://fidl/fuchsia.hardware.power.suspend (unstable)
+fidl_library://fidl/fuchsia.hardware.power.usb (unstable)
 fidl_library://fidl/fuchsia.hardware.powerdomain (unstable)
 fidl_library://fidl/fuchsia.hardware.qualcomm.fastrpc (unstable)
 fidl_library://fidl/fuchsia.hardware.qualcomm.router (unstable)

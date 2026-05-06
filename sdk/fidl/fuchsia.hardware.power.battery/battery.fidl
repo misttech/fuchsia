@@ -1,0 +1,98 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+@available(added=HEAD)
+library fuchsia.hardware.power.battery;
+
+using fuchsia.hardware.power.source;
+using fuchsia.power.system;
+using zx;
+
+/// High-level charging status for clients.
+type ChargeStatus = flexible enum {
+    NOT_CHARGING = 1;
+    CHARGING = 2;
+    DISCHARGING = 3;
+    FULL = 4;
+};
+
+/// Battery health status.
+type HealthStatus = flexible enum {
+    GOOD = 1;
+    COLD = 2;
+    COOL = 3;
+    WARM = 4;
+    HOT = 5;
+    DEAD = 6;
+    OVER_VOLTAGE = 7;
+    UNSPECIFIED_FAILURE = 8;
+};
+
+/// Static hardware characteristics of the battery pack.
+type Spec = table {
+    /// Base spec from the underlying power source.
+    1: source_spec fuchsia.hardware.power.source.Spec;
+
+    /// Design capacity in microamp-hours.
+    2: design_capacity_uah uint32;
+    /// Design voltage in microvolts.
+    3: design_voltage_uv uint32;
+    /// Battery chemistry description.
+    4: chemistry string:MAX;
+};
+
+/// Dynamic status of the battery pack telemetry.
+type Status = table {
+    /// Base status from the underlying power source.
+    1: source_status fuchsia.hardware.power.source.Status;
+
+    /// High-level charging status.
+    2: charge_status ChargeStatus;
+    /// Battery level percentage (0.0 to 100.0).
+    3: level_percent float32;
+    /// Remaining capacity in microamp-hours.
+    4: remaining_capacity_uah uint32;
+    /// Full charge capacity in microamp-hours.
+    5: full_charge_capacity_uah uint32;
+    /// Battery health status.
+    6: health HealthStatus;
+    /// Temperature in milli-Celsius.
+    7: temperature_mc int32;
+    /// Number of charge cycles.
+    8: cycle_count uint32;
+    /// Estimated time remaining until empty or full.
+    9: time_remaining zx.Duration;
+};
+
+/// Protocol representing the Battery (acting as the Fuel Gauge).
+///
+/// This protocol focuses on reading the chemical telemetry of the cell pack.
+/// Charging operations are managed separately via [`fuchsia.hardware.power.charger/Charger`].
+@discoverable
+open protocol Battery {
+    /// Returns the spec immediately.
+    flexible GetSpec() -> (struct {
+        spec Spec;
+    }) error fuchsia.hardware.power.source.Error;
+
+    /// Returns the status immediately.
+    flexible GetStatus() -> (struct {
+        status Status;
+    }) error fuchsia.hardware.power.source.Error;
+
+    /// Hanging get for status updates.
+    /// See [`fuchsia.hardware.power.source/Source.Watch`] for semantics.
+    flexible Watch(resource struct {
+        interest Status;
+        wake_on Status;
+        lease fuchsia.power.system.LeaseToken:optional;
+    }) -> (resource struct {
+        status Status;
+        wake_lease fuchsia.power.system.LeaseToken:optional;
+    });
+};
+
+service Service {
+    battery client_end:Battery;
+    power_source client_end:fuchsia.hardware.power.source.Source;
+};
