@@ -675,15 +675,16 @@ impl AddElementInspectWriter {
         topology.get_element_mut(&self.element_id).unwrap().inspect_vertex =
             Some(Rc::new(RefCell::new(inspect_vertex)));
 
+        for (dependency, is_assertive) in &self.dependencies {
+            topology.inspect().on_add_dependency(
+                &topology.elements,
+                dependency,
+                *is_assertive,
+                false,
+            );
+        }
+
         if !synthetic {
-            for (dependency, is_assertive) in &self.dependencies {
-                topology.inspect().on_add_dependency(
-                    &topology.elements,
-                    dependency,
-                    *is_assertive,
-                    false,
-                );
-            }
             topology.inspect().emit_add_element_event(
                 self.element_id,
                 self.current_level,

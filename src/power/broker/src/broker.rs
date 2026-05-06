@@ -2701,7 +2701,16 @@ mod tests {
                                     leases: {},
                                     valid_levels: vec![0u64, 255],
                                 },
-                                relationships: {},
+                                relationships: {
+                                    child.to_string() => {
+                                        edge_id: AnyProperty,
+                                        meta: {
+                                            "255": {
+                                                required_level: ON.level as u64,
+                                            }
+                                        }
+                                    }
+                                },
                             },
                             parent1.to_string() => {
                                 meta: {
