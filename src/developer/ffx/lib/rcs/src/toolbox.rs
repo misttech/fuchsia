@@ -171,7 +171,10 @@ fn toolbox_error_message(protocol_name: &str) -> String {
         '/toolbox', but it wasn't available. \n\n\
         Make sure the target is connected and otherwise functioning, \
         and that it is configured to provide capabilities over the \
-        network to host tools.\
+        network to host tools.\n\n\
+        If the protocol is provided by a component that is not in the \
+        base image, you may need to have a package server running and \
+        available to your target.
     "
     )
 }
@@ -181,10 +184,13 @@ fn backup_error_message(protocol_name: &str, backup_name: &str) -> String {
         "\
         Attempted to find protocol marker {protocol_name} at \
         '/toolbox' or '{backup_name}', but it wasn't available \
-        at either of those monikers. \n\n\
+        at either of those monikers.\n\n\
         Make sure the target is connected and otherwise functioning, \
         and that it is configured to provide capabilities over the \
-        network to host tools.\
+        network to host tools.\n\n\
+        If the protocol is provided by a component that is not in the \
+        base image, you may need to have a package server running and \
+        available to your target.
     "
     )
 }
