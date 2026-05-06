@@ -2324,7 +2324,7 @@ Controls whether to promote warnings to errors.
 
 **Current value (from the default):** `true`
 
-From //build/config/BUILD.gn:29
+From //build/config/BUILD.gn:26
 
 ### developer_test_labels
 
@@ -4236,7 +4236,7 @@ will be able to load any ELF binaries produced by this build.
 
 **Current value (from the default):** `4096`
 
-From //build/config/fuchsia/BUILD.gn:38
+From //build/config/fuchsia/BUILD.gn:35
 
 ### experimental_force_enable_new_wakeup_accounting
 
