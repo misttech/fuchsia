@@ -14,48 +14,6 @@
         }
       },
       "additionalProperties": false
-    },
-    {
-      "description": "Unexpected error with string denoting error message.",
-      "type": "object",
-      "required": [
-        "unexpected_error"
-      ],
-      "properties": {
-        "unexpected_error": {
-          "type": "object",
-          "required": [
-            "message"
-          ],
-          "properties": {
-            "message": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "description": "A known error that can be reported to the user.",
-      "type": "object",
-      "required": [
-        "user_error"
-      ],
-      "properties": {
-        "user_error": {
-          "type": "object",
-          "required": [
-            "message"
-          ],
-          "properties": {
-            "message": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "additionalProperties": false
     }
   ]
 }

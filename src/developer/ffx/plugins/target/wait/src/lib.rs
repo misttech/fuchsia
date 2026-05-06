@@ -20,10 +20,6 @@ const DEFAULT_DIAGNOSTICS_TIMEOUT_SECS: f64 = 2.0;
 pub enum CommandStatus {
     /// Successfully waited for the target (either to come up or shut down).
     Ok {},
-    /// Unexpected error with string denoting error message.
-    UnexpectedError { message: String },
-    /// A known error that can be reported to the user.
-    UserError { message: String },
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -99,12 +95,10 @@ impl<T: DeviceWaiter + fho::TryFromEnv> FfxMain for WaitOperation<T> {
             }
             Err(e @ Error::User(_)) => {
                 let message = get_diagnostics_string(&self.env, self.cmd.timeout, e).await;
-                writer.machine(&CommandStatus::UserError { message: message.clone() })?;
                 Err(Error::User(anyhow::anyhow!(message)))
             }
             Err(e) => {
                 let message = get_diagnostics_string(&self.env, self.cmd.timeout, e).await;
-                writer.machine(&CommandStatus::UnexpectedError { message: message.clone() })?;
                 Err(Error::Unexpected(anyhow::anyhow!(message)))
             }
         }
@@ -187,10 +181,6 @@ mod test {
             matches!(res, Err(Error::Unexpected(_))),
             "expected 'unexpected error' {stdout} {stderr}"
         );
-        let err = format!("schema not valid {stdout}");
-        let json = serde_json::from_str(&stdout).expect(&err);
-        let err = format!("json must adhere to schema: {json}");
-        <WaitOperation<MockDeviceWaiter> as FfxMain>::Writer::verify_schema(&json).expect(&err)
     }
 
     #[fuchsia::test]
@@ -215,9 +205,5 @@ mod test {
         let (stdout, stderr) = test_buffers.into_strings();
         assert!(res.is_err(), "expected error {stdout} {stderr}");
         assert!(matches!(res, Err(Error::User(_))), "expected 'user error' {stdout} {stderr}");
-        let err = format!("schema not valid {stdout}");
-        let json = serde_json::from_str(&stdout).expect(&err);
-        let err = format!("json must adhere to schema: {json}");
-        <WaitOperation<MockDeviceWaiter> as FfxMain>::Writer::verify_schema(&json).expect(&err)
     }
 }
