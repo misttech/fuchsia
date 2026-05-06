@@ -1669,8 +1669,9 @@ impl<K: Clone + Hash + Eq, V: Clone + PartialEq> SubscribeMap<K, V> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{AnyProperty, assert_data_tree};
+    use diagnostics_assertions::{AnyProperty, PropertyAssertion, assert_data_tree};
     use fidl_fuchsia_power_broker::{BinaryPowerLevel, DependencyToken};
+    use fuchsia_inspect::hierarchy::DiagnosticsHierarchy;
 
     use power_broker_client::BINARY_POWER_LEVELS;
     use zx::{self as zx, HandleBased};
@@ -1714,6 +1715,71 @@ mod tests {
             0,
             "claims.pending not empty"
         );
+    }
+
+    #[track_caller]
+    fn assert_events_recorded_in_order_helper(
+        hierarchy: &DiagnosticsHierarchy,
+        expected_events: &[(&'static str, Vec<(&'static str, Box<dyn PropertyAssertion>)>)],
+    ) {
+        let events_node = hierarchy
+            .get_child_by_path(&["test", "topology", "events"])
+            .expect("events node found");
+
+        let mut expected_idx = 0;
+
+        for child_node in events_node.children.iter().rev() {
+            if expected_idx >= expected_events.len() {
+                break;
+            }
+            let (expected_name, expected_properties) = &expected_events[expected_idx];
+            if let Some(event_node) = child_node.get_child(expected_name) {
+                let matches = expected_properties.iter().all(|(prop_name, assertion)| {
+                    if let Some(property) = event_node.get_property(prop_name) {
+                        assertion.run(property).is_ok()
+                    } else {
+                        false
+                    }
+                });
+                if matches {
+                    expected_idx += 1;
+                }
+            }
+        }
+
+        if expected_idx != expected_events.len() {
+            println!("--- INSPECT EVENTS RECORDED ---");
+            for child_node in events_node.children.iter().rev() {
+                println!("Event: {:?}", child_node);
+            }
+            println!("---------------------------------");
+        }
+
+        assert_eq!(
+            expected_idx,
+            expected_events.len(),
+            "Failed to find all expected events in chronological order. Found {}/{} expected events.",
+            expected_idx,
+            expected_events.len()
+        );
+    }
+
+    macro_rules! assert_events_recorded_in_order {
+        ($hierarchy:expr, [ $( { $event:ident: { $( $prop:ident: $val:expr $(,)? )* } $(,)? } $(,)? )* ]) => {{
+            let expected = vec![
+                $(
+                    (
+                        stringify!($event),
+                        vec![
+                            $(
+                                (stringify!($prop), Box::new($val) as Box<dyn PropertyAssertion>),
+                            )*
+                        ]
+                    ),
+                )*
+            ];
+            assert_events_recorded_in_order_helper($hierarchy, &expected);
+        }};
     }
 
     #[fuchsia::test]
@@ -2156,6 +2222,27 @@ mod tests {
                 },
         }});
 
+        let hierarchy = fuchsia_inspect::reader::read(&inspect).await.unwrap();
+        assert_events_recorded_in_order!(
+            &hierarchy,
+            [
+                {
+                    add_element: {
+                        element_id: *broker.get_unsatisfiable_element_id(),
+                        current_level: "unset",
+                        required_level: "unset",
+                    },
+                },
+                {
+                    add_element: {
+                        element_id: *mithril,
+                        current_level: 0u64,
+                        required_level: 0u64,
+                    },
+                },
+            ]
+        );
+
         // This should fail, because the token was never registered.
         let add_element_not_authorized_res = broker.add_element(
             "Silver",
@@ -2236,6 +2323,34 @@ mod tests {
                     },
                 }
             }}});
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspect).await.unwrap();
+        assert_events_recorded_in_order!(
+            &hierarchy,
+            [
+                {
+                    add_element: {
+                        element_id: *broker.get_unsatisfiable_element_id(),
+                        current_level: "unset",
+                        required_level: "unset",
+                    },
+                },
+                {
+                    add_element: {
+                        element_id: *mithril,
+                        current_level: 0u64,
+                        required_level: 0u64,
+                    },
+                },
+                {
+                    add_element: {
+                        element_id: *silver,
+                        current_level: 0u64,
+                        required_level: 0u64,
+                    },
+                },
+            ]
+        );
 
         // Unregister token_mithril, then try to add again, which should fail.
         broker
@@ -2651,36 +2766,7 @@ mod tests {
                     lease.id.to_string() => "Satisfied",
                 },
                 topology: {
-                    // TODO(b/348700341): Re-enable this section of the data tree
-                    // when we can avoid explicitly marking the event number. As
-                    // broker changes, the exact order of creation / status
-                    // update events cannot be guaranteed.
                     events: contains {},
-                    /*
-                    events: contains {
-                        "14": {
-                            "@time": AnyProperty,
-                            event: "update_key",
-                            key: format!("lease_{}", lease.id),
-                            update: "level_1@C",
-                            vertex_id: child.to_string()
-                        },
-                        "17": {
-                            "@time": AnyProperty,
-                            event: "update_key",
-                            key: format!("lease_status_{}", lease.id),
-                            update: "Pending",
-                            vertex_id: child.to_string()
-                        },
-                        "21": {
-                            "@time": AnyProperty,
-                            event: "update_key",
-                            key: format!("lease_status_{}", lease.id),
-                            update: "Satisfied",
-                            vertex_id: child.to_string()
-                        }
-                    },
-                    */
                     stats: contains {},
                     "fuchsia.inspect.Graph": {
                         topology: {
@@ -2767,6 +2853,33 @@ mod tests {
                         },
                     },
         }}});
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspect).await.unwrap();
+        assert_events_recorded_in_order!(
+            &hierarchy,
+            [
+                {
+                    create_lease: {
+                        element_id: *child,
+                        lease_id: *lease.id,
+                    },
+                },
+                {
+                    update_lease: {
+                        element_id: *child,
+                        lease_id: *lease.id,
+                        status: 1u64,
+                    },
+                },
+                {
+                    update_lease: {
+                        element_id: *child,
+                        lease_id: *lease.id,
+                        status: 2u64,
+                    },
+                },
+            ]
+        );
 
         // Dropping the lease should cause both claims to be dropped.
         // C's required level should become OFF.
