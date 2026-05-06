@@ -8,7 +8,8 @@ use criterion::{Benchmark, Criterion};
 use fuchsia_criterion::FuchsiaCriterion;
 use std::time::Duration;
 
-const POLICY_BYTES: &[u8] = include_bytes!("../../../../lib/selinux/testdata/policies/emulator");
+const POLICY_BYTES: &[u8] =
+    include_bytes!("../../../../lib/selinux/testdata/policies/aosp_sepolicy");
 
 fn load_policy_bench() -> Benchmark {
     Benchmark::new("load_policy", move |b| {

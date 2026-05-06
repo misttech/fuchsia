@@ -25,7 +25,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:criterion",
   ]
 
-  inputs = [ "//src/starnix/lib/selinux/testdata/policies/emulator" ]
+  inputs = [ "//src/starnix/lib/selinux/testdata/policies/aosp_sepolicy" ]
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
 }
