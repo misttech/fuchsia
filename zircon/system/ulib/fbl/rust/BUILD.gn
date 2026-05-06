@@ -22,8 +22,8 @@ rustc_library("fbl") {
   with_unit_tests = true
   test_deps = [ ":test_support" ]
   deps = [
-    "//zircon/system/ulib/kalloc",
-    "//zircon/system/ulib/zr",
+    "//src/lib/kalloc",
+    "//src/lib/zr",
   ]
 }
 
