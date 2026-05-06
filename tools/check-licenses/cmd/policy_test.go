@@ -17,6 +17,15 @@ import (
 func TestPolicyCommand_Execute(t *testing.T) {
 	tempDir := t.TempDir()
 
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd)
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatal(err)
+	}
+
 	// Scaffold the recursive config system
 	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
 	os.MkdirAll(filepath.Dir(seedConfig), 0755)
@@ -83,6 +92,15 @@ func TestPolicyCommand_Execute(t *testing.T) {
 func TestPolicyCommand_Execute_AssemblyFailure(t *testing.T) {
 	tempDir := t.TempDir()
 
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd)
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatal(err)
+	}
+
 	// Scaffold a corrupt config file
 	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
 	os.MkdirAll(filepath.Dir(seedConfig), 0755)
@@ -98,5 +116,48 @@ func TestPolicyCommand_Execute_AssemblyFailure(t *testing.T) {
 
 	if status := cmd.Execute(ctx, f); status != subcommands.ExitFailure {
 		t.Errorf("Expected ExitFailure for assembly error, got %v", status)
+	}
+}
+
+func TestPolicyCommand_Execute_RelativePathFromSubdir(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Scaffold the recursive config system
+	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
+	os.MkdirAll(filepath.Dir(seedConfig), 0755)
+	os.WriteFile(seedConfig, []byte(`{"includes": ["tools/check-licenses/assets"]}`), 0644)
+
+	cmd := &PolicyCommand{
+		fuchsiaDir: tempDir,
+	}
+
+	ctx := context.Background()
+
+	// Simulate running from a subdirectory
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd)
+
+	subdir := filepath.Join(tempDir, "src", "my_project")
+	if err := os.MkdirAll(subdir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(subdir); err != nil {
+		t.Fatal(err)
+	}
+
+	f := flag.NewFlagSet("test_relative", flag.ContinueOnError)
+	f.Parse([]string{"add", "AllProjectsMustHaveALicense", "."}) // target is "." (src/my_project)
+
+	if status := cmd.Execute(ctx, f); status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess, got %v", status)
+	}
+
+	// Expected config file should be named "my_project.json" under the check name directory
+	expectedConfigPath := filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs", "policy_exceptions", "AllProjectsMustHaveALicense", "my_project.json")
+	if _, err := os.Stat(expectedConfigPath); os.IsNotExist(err) {
+		t.Errorf("Expected config file to be created at %s", expectedConfigPath)
 	}
 }

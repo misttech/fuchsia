@@ -65,13 +65,18 @@ func AddPolicyException(fuchsiaDir, checkName, projectPath string) error {
 		fuchsiaDir = absFuchsiaDir
 	}
 
-	// Make sure the project path is relative to FuchsiaDir
-	if filepath.IsAbs(projectPath) {
-		rel, err := filepath.Rel(fuchsiaDir, projectPath)
-		if err == nil && !strings.HasPrefix(rel, "..") {
-			projectPath = rel
-		}
+	// Resolve to absolute path first (handles relative to CWD)
+	absProjectPath, err := filepath.Abs(projectPath)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path for %s: %w", projectPath, err)
 	}
+
+	// Make sure the project path is relative to FuchsiaDir
+	rel, err := filepath.Rel(fuchsiaDir, absProjectPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("project path %s must be inside fuchsia root %s", projectPath, fuchsiaDir)
+	}
+	projectPath = rel
 
 	// Check if this project already has an exception
 	builder := v2config.NewBuilder(fuchsiaDir)
