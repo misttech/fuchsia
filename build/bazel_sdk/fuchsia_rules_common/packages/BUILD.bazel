@@ -2,12 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Specifies all of the starlark files in this repo
 filegroup(
     name = "bzl_srcs",
-    srcs = [
-        "//assembly:bzl_srcs",
-        "//packages:bzl_srcs",
-    ],
-    visibility = ["//visibility:public"],
+    srcs = glob(["*.bzl"]),
+    visibility = ["//:__subpackages__"],
 )

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 # buildifier: disable=module-docstring
+load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load(":fuchsia_shell_task.bzl", "shell_task_rule")
 load(":fuchsia_task_ffx.bzl", "fuchsia_task_ffx")
 load(":fuchsia_task_publish.bzl", "fuchsia_task_publish")
@@ -12,7 +13,7 @@ load(":fuchsia_task_run_driver_tool.bzl", "fuchsia_task_run_driver_tool")
 load(":fuchsia_task_test_enumerated_components.bzl", "fuchsia_task_test_enumerated_components")
 load(":fuchsia_task_verbs.bzl", "make_help_executable", "verbs")
 load(":fuchsia_workflow.bzl", "fuchsia_workflow", "fuchsia_workflow_rule")
-load(":providers.bzl", "FuchsiaDebugSymbolInfo", "FuchsiaPackageInfo", "FuchsiaWorkflowInfo")
+load(":providers.bzl", "FuchsiaDebugSymbolInfo", "FuchsiaWorkflowInfo")
 load(":utils.bzl", "flatten", "label_name", "normalized_target_name")
 
 def _to_verb(label):

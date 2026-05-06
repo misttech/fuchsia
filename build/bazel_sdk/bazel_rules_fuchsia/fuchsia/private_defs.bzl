@@ -21,6 +21,7 @@ load(
     "@fuchsia_rules_common//assembly:providers.bzl",
     _FuchsiaProductConfigInfo = "FuchsiaProductConfigInfo",
 )
+load("@fuchsia_rules_common//packages:providers.bzl", _FuchsiaPackageInfo = "FuchsiaPackageInfo")
 load(
     "//fuchsia/private:fuchsia_api_level.bzl",
     _FUCHSIA_API_LEVEL_TARGET = "FUCHSIA_API_LEVEL_TARGET",
@@ -49,7 +50,6 @@ load(
     _FuchsiaComponentInfo = "FuchsiaComponentInfo",
     _FuchsiaComponentManifestInfo = "FuchsiaComponentManifestInfo",
     _FuchsiaDebugSymbolInfo = "FuchsiaDebugSymbolInfo",
-    _FuchsiaPackageInfo = "FuchsiaPackageInfo",
     _FuchsiaPackageResourcesInfo = "FuchsiaPackageResourcesInfo",
     _FuchsiaProductBundleInfo = "FuchsiaProductBundleInfo",
     _FuchsiaRunnableInfo = "FuchsiaRunnableInfo",

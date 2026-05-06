@@ -201,21 +201,6 @@ FuchsiaPackageGroupInfo = provider(
     },
 )
 
-FuchsiaPackageInfo = provider(
-    doc = "Contains information about a fuchsia package.",
-    fields = {
-        "fuchsia_cpu": "The target CPU specified when building this package in fuchsia format (x64, arm64, riscv64)",
-        "package_manifest": "JSON package manifest file representing the Fuchsia package.",
-        "package_name": "The name of the package",
-        "far_file": "The far archive",
-        "meta_far": "The meta.far file",
-        "files": "all files that compose this package, including the manifest and meta.far",
-        "build_id_dirs": "Directories containing the debug symbols",
-        "packaged_components": "A list of all the components in the form of FuchsiaPackagedComponentInfo structs",
-        "package_resources": "A list of resources added to this package",
-    },
-)
-
 FuchsiaProductImageInfo = provider(
     doc = "Info needed to pave a Fuchsia image",
     fields = {

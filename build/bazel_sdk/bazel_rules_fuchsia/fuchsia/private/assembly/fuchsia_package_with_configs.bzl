@@ -4,7 +4,7 @@
 
 """Rule for tying a package to its configs for assembly."""
 
-load("//fuchsia/private:providers.bzl", "FuchsiaPackageInfo")
+load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load(":providers.bzl", "FuchsiaAssembledPackageInfo", "FuchsiaConfigDataInfo")
 
 def _fuchsia_package_with_configs_impl(ctx):

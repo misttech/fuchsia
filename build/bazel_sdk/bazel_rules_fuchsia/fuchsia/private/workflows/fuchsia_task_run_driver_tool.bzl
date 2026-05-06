@@ -4,8 +4,9 @@
 
 """Runs driver tools delivered within a package."""
 
+load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load(":fuchsia_task_ffx.bzl", "ffx_task_rule")
-load(":providers.bzl", "FuchsiaDriverToolInfo", "FuchsiaPackageInfo")
+load(":providers.bzl", "FuchsiaDriverToolInfo")
 
 def _fuchsia_task_run_driver_tool_impl(ctx, make_ffx_task):
     repo = ctx.attr.repository

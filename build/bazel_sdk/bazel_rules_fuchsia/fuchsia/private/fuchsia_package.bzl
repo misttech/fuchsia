@@ -4,6 +4,7 @@
 
 """fuchsia_package() rule."""
 
+load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private/workflows:fuchsia_package_tasks.bzl", "fuchsia_package_tasks")
 load(":fuchsia_api_level.bzl", "FUCHSIA_API_LEVEL_ATTRS", "get_fuchsia_api_level")
@@ -23,7 +24,6 @@ load(
     "FuchsiaComponentInfo",
     "FuchsiaDebugSymbolInfo",
     "FuchsiaDriverToolInfo",
-    "FuchsiaPackageInfo",
     "FuchsiaPackageResourcesInfo",
     "FuchsiaPackagedComponentInfo",
     "FuchsiaStructuredConfigInfo",
@@ -36,22 +36,6 @@ load(
     "make_resource_struct",
     "stub_executable",
 )
-
-def get_driver_component_manifests(package):
-    """Returns a list of the manifest paths for drivers in the package
-
-    Args:
-        package: the package to parse
-    """
-    return [entry.dest for entry in package[FuchsiaPackageInfo].packaged_components if entry.component_info.is_driver]
-
-def get_component_manifests(package):
-    """Returns a list of the manifest paths for all components in the package
-
-    Args:
-        package: the package to parse.
-    """
-    return [entry.dest for entry in package[FuchsiaPackageInfo].packaged_components]
 
 def fuchsia_package(
         *,

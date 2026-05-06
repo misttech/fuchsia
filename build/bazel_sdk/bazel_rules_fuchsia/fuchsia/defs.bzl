@@ -12,6 +12,11 @@ See also:
 """
 
 load(
+    "@fuchsia_rules_common//packages:utils.bzl",
+    _get_component_manifests = "get_component_manifests",
+    _get_driver_component_manifests = "get_driver_component_manifests",
+)
+load(
     "//fuchsia/constraints:target_compatibility.bzl",
     _COMPATIBILITY = "COMPATIBILITY",
 )
@@ -110,8 +115,6 @@ load(
     _fuchsia_package = "fuchsia_package",
     _fuchsia_test_package = "fuchsia_test_package",
     _fuchsia_unittest_package = "fuchsia_unittest_package",
-    _get_component_manifests = "get_component_manifests",
-    _get_driver_component_manifests = "get_driver_component_manifests",
 )
 load(
     "//fuchsia/private:fuchsia_package_group.bzl",

@@ -4,11 +4,11 @@
 
 """Build rule for pre-built Fuchsia Packages."""
 
+load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load("//fuchsia/private/workflows:fuchsia_task_publish.bzl", "fuchsia_task_publish")
 load(
     ":providers.bzl",
     "FuchsiaPackageGroupInfo",
-    "FuchsiaPackageInfo",
 )
 
 def _fuchsia_package_group_impl(ctx):

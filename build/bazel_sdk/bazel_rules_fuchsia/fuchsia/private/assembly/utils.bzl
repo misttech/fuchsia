@@ -5,7 +5,7 @@
 """Utility functions used by multiple bazel rules and macros."""
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
-load("//fuchsia/private:providers.bzl", "FuchsiaPackageInfo")
+load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load("//fuchsia/private:utils.bzl", _LOCAL_ONLY_ACTION_KWARGS = "LOCAL_ONLY_ACTION_KWARGS")
 load(
     ":providers.bzl",

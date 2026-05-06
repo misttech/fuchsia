@@ -7,7 +7,7 @@ Providers for Fuchsia product assembly.
 """
 
 FuchsiaProductConfigInfo = provider(
-    doc = "Info about the ProductConfiguration and it's directory containing the product_config.json and all deps.",
+    doc = "Info about the ProductConfiguration and its directory containing the product_config.json and all deps.",
     fields = {
         "directory": "Directory of the product config container",
         "build_type": "The build type of the product.",

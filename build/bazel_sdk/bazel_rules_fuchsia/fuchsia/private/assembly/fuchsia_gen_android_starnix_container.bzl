@@ -4,8 +4,8 @@
 
 """Rule for generating an Android Starnix container."""
 
+load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
-load("//fuchsia/private:providers.bzl", "FuchsiaPackageInfo")
 load(":utils.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 
 def _gen_android_starnix_container_impl(ctx):

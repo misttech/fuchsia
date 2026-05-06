@@ -4,10 +4,10 @@
 
 """Enumerates all components within a test package and runs each of them as test components."""
 
+load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION", "get_fuchsia_sdk_toolchain")
 load(":fuchsia_task.bzl", "fuchsia_task_rule")
-load(":providers.bzl", "FuchsiaPackageInfo")
 
 def _fuchsia_task_test_enumerated_components_impl(ctx, make_fuchsia_task):
     sdk = get_fuchsia_sdk_toolchain(ctx)
