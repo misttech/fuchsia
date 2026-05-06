@@ -153,7 +153,7 @@ zx::result<> DwSpiDriver::Start(fdf::DriverContext context) {
   fdf::info("Power domain enabled successfully");
 
   // Enable clocks
-  std::vector<std::string_view> clock_names = {"clock-ssi", "clock-pclk"};
+  std::vector<std::string_view> clock_names = {"clock-bus", "clock-registers"};
   for (const auto& name : clock_names) {
     auto clock_client = incoming()->Connect<fuchsia_hardware_clock::Service::Clock>(name);
     if (clock_client.is_error()) {
