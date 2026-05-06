@@ -6,13 +6,10 @@ import("//build/compiled_action.gni")
 import("//build/config/clang/clang.gni")
 import("//build/cpp/library_headers.gni")
 import("//build/go/go_library.gni")
+import("//build/rust/config.gni")
+import("//build/rust/rustc_library.gni")
 import("//build/toolchain/toolchain_environment.gni")
 import("//build/toolchain/zircon/user_basic_redirect.gni")
-
-if (support_rust) {
-  import("//build/rust/config.gni")
-  import("//build/rust/rustc_library.gni")
-}
 
 # LINT.IfChange
 
@@ -21,19 +18,14 @@ supported_zither_backends = [
   "asm",  # Assembly data layout bindings.
   "c",  # C data layout bindings.
   "go",  # Go data layout bindings.
+  "rust",  # Rust data layout bindings.
   "legacy_syscall_cdecl",  # Legacy C syscall declarations.
   "zircon_ifs",  # Syscall text ABI bindings.
   "kernel",  # Internal kernel bindings.
   "go_runtime",  # go.git source files for Fuchsia support.
+  "rust_syscall",  # Thin Rust FFI syscall wrappers.
   "syscall_docs",  # Syscall documentation markdown.
 ]
-
-if (support_rust) {
-  supported_zither_backends += [
-    "rust",  # Rust data layout bindings.
-    "rust_syscall",  # Thin Rust FFI syscall wrappers.
-  ]
-}
 
 _clang_format = {
   script = "$clang_prefix/clang-format"
@@ -50,12 +42,10 @@ _gofmt = {
   extensions = [ "go" ]
 }
 
-if (support_rust) {
-  _rustfmt = {
-    script = "$rustc_prefix/bin/rustfmt"
-    inputs = [ "//rustfmt.toml" ]
-    args = [ "--config-path=" + rebase_path(inputs[0], root_build_dir) ]
-  }
+_rustfmt = {
+  script = "$rustc_prefix/bin/rustfmt"
+  inputs = [ "//rustfmt.toml" ]
+  args = [ "--config-path=" + rebase_path(inputs[0], root_build_dir) ]
 }
 
 # Information on supported Zither backends, accessible via
@@ -134,6 +124,7 @@ supported_zither_backend_info = {
 
     _library_template = "_zither_c_family_library"
   }
+
   asm = {
     output_namespace = {
       prefix_parts = [ "fidl" ]
@@ -148,6 +139,7 @@ supported_zither_backend_info = {
 
     _library_template = "_zither_c_family_library"
   }
+
   go = {
     output_namespace = {
       prefix_parts = [
@@ -160,20 +152,20 @@ supported_zither_backend_info = {
 
     _library_template = "_zither_go_library"
   }
-  if (support_rust) {
-    rust = {
-      output_namespace = {
-        prefix_parts = [
-          "fidl",
-          "data",
-        ]
-        library_name_separator = "-"
-        part_separator = "-"
-      }
-      formatter = _rustfmt
-      _library_template = "_zither_rust_library"
+
+  rust = {
+    output_namespace = {
+      prefix_parts = [
+        "fidl",
+        "data",
+      ]
+      library_name_separator = "-"
+      part_separator = "-"
     }
+    formatter = _rustfmt
+    _library_template = "_zither_rust_library"
   }
+
   zircon_ifs = {
     output_namespace = {
     }
@@ -204,14 +196,12 @@ supported_zither_backend_info = {
     _library_template = "_zither_legacy_syscall_cdecl_sources"
   }
 
-  if (support_rust) {
-    rust_syscall = {
-      output_namespace = {
-        library_name_separator = "-"
-      }
-      formatter = _rustfmt
-      _library_template = "_zither_rust_library"
+  rust_syscall = {
+    output_namespace = {
+      library_name_separator = "-"
     }
+    formatter = _rustfmt
+    _library_template = "_zither_rust_library"
   }
 
   go_runtime = {
@@ -492,82 +482,79 @@ template("_zither_go_library") {
   }
 }
 
-if (support_rust) {
-  template("_zither_rust_library") {
-    assert(invoker.backend == "rust" || invoker.backend == "rust_syscall")
+template("_zither_rust_library") {
+  assert(invoker.backend == "rust" || invoker.backend == "rust_syscall")
 
-    main_target = target_name
-    zither_target = "$target_name.gen"
+  main_target = target_name
+  zither_target = "$target_name.gen"
 
+  forward_variables_from(invoker,
+                         [
+                           "source_names",
+                           "output_namespace",
+                         ])
+
+  # Underscore to prevent rustc_library() from thinking that this value is a
+  # specification of output_dir for the associated rlib.
+  _output_dir = invoker.output_dir
+
+  generated_files = []
+  if (invoker.backend == "rust_syscall") {
+    crate_name = "zx-sys"
+    crate_root = "${_output_dir}/${output_namespace}/src/definitions.rs"
+    crate_deps = [ "//sdk/rust/zx-types" ]
+    not_needed([ "source_names" ])
+  } else {
+    foreach(name, source_names) {
+      name = string_replace(name, "-", "_")
+      generated_files += [ "${_output_dir}/${output_namespace}/src/${name}.rs" ]
+    }
+    crate_name = output_namespace
+    crate_root = "${_output_dir}/${output_namespace}/src/lib.rs"
+    crate_deps = [
+      "//third_party/rust_crates:bitflags",
+      "//third_party/rust_crates:zerocopy",
+    ]
+  }
+  generated_files += [ crate_root ]
+
+  _zither(zither_target) {
     forward_variables_from(invoker,
                            [
-                             "source_names",
-                             "output_namespace",
+                             "testonly",
+                             "visibility",
+                             "deps",
+                             "fidl_ir_json",
+                             "fidl_ir_target",
+                             "generated_files",
+                             "backend",
+                             "formatter",
+                             "output_dir",
                            ])
+  }
 
-    # Underscore to prevent rustc_library() from thinking that this value is a
-    # specification of output_dir for the associated rlib.
-    _output_dir = invoker.output_dir
+  rustc_library(main_target) {
+    forward_variables_from(invoker,
+                           [
+                             "visibility",
+                             "testonly",
+                           ])
+    edition = "2021"
+    source_root = crate_root
 
-    generated_files = []
-    if (invoker.backend == "rust_syscall") {
-      crate_name = "zx-sys"
-      crate_root = "${_output_dir}/${output_namespace}/src/definitions.rs"
-      crate_deps = [ "//sdk/rust/zx-types" ]
-      not_needed([ "source_names" ])
-    } else {
-      foreach(name, source_names) {
-        name = string_replace(name, "-", "_")
-        generated_files +=
-            [ "${_output_dir}/${output_namespace}/src/${name}.rs" ]
-      }
-      crate_name = output_namespace
-      crate_root = "${_output_dir}/${output_namespace}/src/lib.rs"
-      crate_deps = [
-        "//third_party/rust_crates:bitflags",
-        "//third_party/rust_crates:zerocopy",
-      ]
-    }
-    generated_files += [ crate_root ]
+    # Namespace by target so that there is no rlib collision between fidl()
+    # targets in the same file.
+    output_dir = "$target_out_dir/$main_target"
 
-    _zither(zither_target) {
-      forward_variables_from(invoker,
-                             [
-                               "testonly",
-                               "visibility",
-                               "deps",
-                               "fidl_ir_json",
-                               "fidl_ir_target",
-                               "generated_files",
-                               "backend",
-                               "formatter",
-                               "output_dir",
-                             ])
-    }
-
-    rustc_library(main_target) {
-      forward_variables_from(invoker,
-                             [
-                               "visibility",
-                               "testonly",
-                             ])
-      edition = "2021"
-      source_root = crate_root
-
-      # Namespace by target so that there is no rlib collision between fidl()
-      # targets in the same file.
-      output_dir = "$target_out_dir/$main_target"
-
-      sources = generated_files
-      non_rust_deps = [
-        ":${zither_target}($default_toolchain)",
-        ":${zither_target}.check($default_toolchain)",
-      ]
-      deps = crate_deps
-      configs += [ "//build/config/rust/lints:deny_unused_results" ]
-      configs += [ "//build/config/rust/lints:allow_missing_unsafe_on_extern" ]
-      disable_clippy = true
-    }
+    sources = generated_files
+    non_rust_deps = [
+      ":${zither_target}($default_toolchain)",
+      ":${zither_target}.check($default_toolchain)",
+    ]
+    deps = crate_deps
+    configs += [ "//build/config/rust/lints:deny_unused_results" ]
+    configs += [ "//build/config/rust/lints:allow_missing_unsafe_on_extern" ]
+    disable_clippy = true
   }
 }
 

@@ -13,16 +13,13 @@ import("//build/config/fuchsia_cxx_version.gni")
 import("//build/config/linker.gni")
 import("//build/config/linker_config.gni")
 import("//build/config/lto/config.gni")
+import("//build/rust/config.gni")
 import("//build/toolchain/ccache.gni")
 import("//build/toolchain/concurrent_jobs.gni")
 import("//build/toolchain/ifs_shared_library.gni")
 import("//build/toolchain/rbe.gni")
 import("//build/toolchain/toolchain_environment.gni")
 import("//build/toolchain/variant.gni")
-
-if (support_rust) {
-  import("//build/rust/config.gni")
-}
 
 declare_args() {
   # Controls whether to promote warnings to errors.
@@ -304,9 +301,7 @@ config("toolchain_version_stamp") {
             "json")
     defines = [ "TOOLCHAIN_VERSION=${clang_version.instance_id}" ]
   }
-  if (support_rust) {
-    rustflags = [ "--cfg=__rust_toolchain=\"${rustc_version_string}\"" ]
-  }
+  rustflags = [ "--cfg=__rust_toolchain=\"${rustc_version_string}\"" ]
 }
 
 linker_config("relative_paths") {

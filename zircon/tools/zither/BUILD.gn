@@ -180,11 +180,6 @@ template("zither_golden_test") {
       # Go builds are not supported for RISC-V.
       case = false
     }
-    if (case != false && !support_rust &&
-        (case.backend == "rust" || case.backend == "rust_syscall")) {
-      # Skip Rust cases.
-      case = false
-    }
     if (case != false) {
       all_cases += [ case ]
     }
