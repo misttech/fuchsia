@@ -185,6 +185,15 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
   // blocked on any other wait queues.
   static void DisownAllQueues(Thread* t) TA_EXCL(chainlock_transaction_token, t->get_lock());
 
+  // Get the effective profile of an OwnedWaitQueue. The effective profile of an
+  // OwnedWaitQueue is the composition of the effective profiles of all the
+  // threads currently waiting in that queue. As such, the effective profile may
+  // change as threads are added to or removed from the queue or when the
+  // effective profile of any thread in the queue changes, either due to base
+  // profile changes or transitive propagation of upstream profile changes from
+  // owned wait queues that they own.
+  SchedulerState::EffectiveProfile GetEffectiveProfile() const TA_REQ(get_lock());
+
   // Change a thread's base profile and deal with profile propagation side effects.
   static void SetThreadBaseProfileAndPropagate(Thread& thread,
                                                const SchedulerState::BaseProfile& profile)
@@ -412,6 +421,11 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
       }
       old_iss.Reset();
     }
+
+    if (inherited_scheduler_state_storage_) {
+      inherited_scheduler_state_storage_->ipvs.min_deadline =
+          collection_.MinInheritableRelativeDeadline();
+    }
   }
 
   void UpdateSchedStateStorageThreadAdded(Thread& t) TA_REQ(get_lock(), t.get_lock()) {
@@ -469,7 +483,8 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
   template <PropagateOp Op>
   static void BeginPropagate(Thread& upstream_node, OwnedWaitQueue& downstream_node,
                              PropagateOpTag<Op>,
-                             ForceInheritance force_inheritance = ForceInheritance::No)
+                             ForceInheritance force_inheritance = ForceInheritance::No,
+                             const SchedulerState::EffectiveProfile* old_target_ep = nullptr)
       TA_REQ(chainlock_transaction_token, preempt_disabled_token, upstream_node.get_lock(),
              downstream_node.get_lock());
 
@@ -501,7 +516,8 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
                               const SchedulerState::InheritedProfileValues* added_ipv,
                               const SchedulerState::InheritedProfileValues* lost_ipv,
                               PropagateOpTag<Op>,
-                              ForceInheritance force_inheritance = ForceInheritance::No)
+                              ForceInheritance force_inheritance = ForceInheritance::No,
+                              const SchedulerState::EffectiveProfile* old_target_ep = nullptr)
       TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(upstream_node),
              ChainLockable::GetLock(downstream_node), preempt_disabled_token);
 

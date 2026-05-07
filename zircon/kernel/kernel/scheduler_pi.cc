@@ -31,7 +31,9 @@
 template <typename Op, typename TargetType>
 class Scheduler::PiOperation {
  protected:
-  PiOperation(TargetType& target) TA_REQ(target.get_lock()) : target_(target) {}
+  PiOperation(TargetType& target, const SchedulerState::EffectiveProfile* old_target_ep)
+      TA_REQ(target.get_lock())
+      : target_(target), old_target_ep_(old_target_ep) {}
 
   static void AssertEpDirtyState(const Thread& thread, SchedulerState::ProfileDirtyFlag expected)
       TA_REQ(thread.get_lock()) {
@@ -130,6 +132,7 @@ class Scheduler::PiOperation {
   inline void HandlePiInteractionCommon() TA_REQ(chainlock_transaction_token, target_.get_lock());
 
   TargetType& target_;
+  const SchedulerState::EffectiveProfile* old_target_ep_;
 };
 
 namespace {
@@ -194,28 +197,8 @@ namespace {
 //
 SchedulerState::EffectiveProfile ComputeEffectiveProfile(const OwnedWaitQueue& owq)
     TA_REQ(owq.get_lock()) {
-  SchedulerState::EffectiveProfile ep{};
-
   DEBUG_ASSERT(owq.inherited_scheduler_state_storage() != nullptr);
-  const SchedulerState::WaitQueueInheritedSchedulerState& iss =
-      *owq.inherited_scheduler_state_storage();
-
-  iss.ipvs.AssertConsistency();
-
-  if (iss.ipvs.uncapped_utilization > SchedUtilization{0}) {
-    DEBUG_ASSERT(iss.ipvs.min_deadline > SchedDuration{0});
-    const SchedUtilization utilization =
-        ktl::min(Scheduler::kThreadUtilizationMax, iss.ipvs.uncapped_utilization);
-    const SchedDuration capacity = utilization * iss.ipvs.min_deadline;
-    ep.SetDeadline({capacity, iss.ipvs.min_deadline, utilization}, iss.ipvs.critical_count > 0);
-  } else {
-    // Note that we cannot assert that the total weight of this OWQ's IPVs has
-    // dropped to zero at this point.  It is possible that there are threads
-    // still in this queue, just none of them have inheritable profiles.
-    ep.SetFair(iss.ipvs.total_weight);
-  }
-
-  return ep;
+  return owq.GetEffectiveProfile();
 }
 
 template <typename T>
@@ -261,7 +244,7 @@ class ThreadBaseProfileChangedOp
     : public Scheduler::PiOperation<ThreadBaseProfileChangedOp, Thread> {
  public:
   using Base = Scheduler::PiOperation<ThreadBaseProfileChangedOp, Thread>;
-  ThreadBaseProfileChangedOp(Thread& target) TA_REQ(target.get_lock()) : Base{target} {}
+  ThreadBaseProfileChangedOp(Thread& target) TA_REQ(target.get_lock()) : Base{target, nullptr} {}
 
   void UpdateDynamicParams(const SchedulerState::EffectiveProfile& target_old_ep,
                            const SchedulerState::EffectiveProfile& target_new_ep,
@@ -300,7 +283,7 @@ class UpstreamThreadBaseProfileChangedOp
  public:
   UpstreamThreadBaseProfileChangedOp(const Thread& upstream, TargetType& target)
       TA_REQ(upstream.get_lock(), target.get_lock())
-      : Base{target}, upstream_{upstream} {}
+      : Base{target, nullptr}, upstream_{upstream} {}
 
   void UpdateDynamicParams(const SchedulerState::EffectiveProfile& target_old_ep,
                            const SchedulerState::EffectiveProfile& target_new_ep,
@@ -360,7 +343,7 @@ class JoinNodeToPiGraphOp
   JoinNodeToPiGraphOp(const UpstreamType& upstream, TargetType& target,
                       ForceInheritance force_inheritance)
       TA_REQ(upstream.get_lock(), target.get_lock())
-      : Base{target}, upstream_{upstream} {}
+      : Base{target, nullptr}, upstream_{upstream} {}
 
   void UpdateDynamicParams(const SchedulerState::EffectiveProfile& target_old_ep,
                            const SchedulerState::EffectiveProfile& target_new_ep,
@@ -489,9 +472,10 @@ template <typename UpstreamType, typename TargetType>
 class SplitNodeFromPiGraphOp
     : public Scheduler::PiOperation<SplitNodeFromPiGraphOp<UpstreamType, TargetType>, TargetType> {
  public:
-  SplitNodeFromPiGraphOp(UpstreamType& upstream, TargetType& target)
+  SplitNodeFromPiGraphOp(UpstreamType& upstream, TargetType& target,
+                         const SchedulerState::EffectiveProfile* old_target_ep)
       TA_REQ(upstream.get_lock(), target.get_lock())
-      : Base{target}, upstream_{upstream} {}
+      : Base{target, old_target_ep}, upstream_{upstream} {}
 
   void UpdateDynamicParams(const SchedulerState::EffectiveProfile& target_old_ep,
                            const SchedulerState::EffectiveProfile& target_new_ep,
@@ -851,8 +835,10 @@ inline void Scheduler::PiOperation<Op, TargetType>::HandlePiInteractionCommon() 
   } else {
     static_assert(ktl::is_same_v<TargetType, OwnedWaitQueue>,
                   "Targets of PI operations must either be Threads or OwnedWaitQueues");
-    SchedulerState::EffectiveProfile old_ep{ComputeEffectiveProfile(target_)};
-    static_cast<Op*>(this)->UpdateDynamicParams(old_ep, old_ep, CurrentTime());
+    const SchedulerState::EffectiveProfile& old_ep =
+        old_target_ep_ ? *old_target_ep_ : ComputeEffectiveProfile(target_);
+    SchedulerState::EffectiveProfile new_ep = ComputeEffectiveProfile(target_);
+    static_cast<Op*>(this)->UpdateDynamicParams(old_ep, new_ep, CurrentTime());
   }
 
   // The finish time should not be negative, but the start time can be when it
@@ -882,9 +868,10 @@ void Scheduler::JoinNodeToPiGraph(const UpstreamType& upstream, TargetType& targ
 }
 
 template <typename UpstreamType, typename TargetType>
-void Scheduler::SplitNodeFromPiGraph(UpstreamType& upstream, TargetType& target) {
+void Scheduler::SplitNodeFromPiGraph(UpstreamType& upstream, TargetType& target,
+                                     const SchedulerState::EffectiveProfile* old_target_ep) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_pi: split");
-  SplitNodeFromPiGraphOp op{upstream, target};
+  SplitNodeFromPiGraphOp op{upstream, target, old_target_ep};
   op.DoOperation();
 }
 
@@ -897,7 +884,11 @@ template void Scheduler::JoinNodeToPiGraph(const OwnedWaitQueue&, Thread&, Force
 template void Scheduler::JoinNodeToPiGraph(const OwnedWaitQueue&, OwnedWaitQueue&,
                                            ForceInheritance);
 
-template void Scheduler::SplitNodeFromPiGraph(Thread&, Thread&);
-template void Scheduler::SplitNodeFromPiGraph(Thread&, OwnedWaitQueue&);
-template void Scheduler::SplitNodeFromPiGraph(OwnedWaitQueue&, Thread&);
-template void Scheduler::SplitNodeFromPiGraph(OwnedWaitQueue&, OwnedWaitQueue&);
+template void Scheduler::SplitNodeFromPiGraph(Thread&, Thread&,
+                                              const SchedulerState::EffectiveProfile*);
+template void Scheduler::SplitNodeFromPiGraph(Thread&, OwnedWaitQueue&,
+                                              const SchedulerState::EffectiveProfile*);
+template void Scheduler::SplitNodeFromPiGraph(OwnedWaitQueue&, Thread&,
+                                              const SchedulerState::EffectiveProfile*);
+template void Scheduler::SplitNodeFromPiGraph(OwnedWaitQueue&, OwnedWaitQueue&,
+                                              const SchedulerState::EffectiveProfile*);

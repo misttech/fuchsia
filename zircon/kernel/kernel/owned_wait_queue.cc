@@ -130,7 +130,8 @@ inline bool IpvsAreConsequential(const SchedulerState::InheritedProfileValues* i
 
 template <typename UpstreamType, typename DownstreamType>
 void Propagate(UpstreamType& upstream, DownstreamType& downstream, AddSingleEdgeTag,
-               ForceInheritance force_inheritance)
+               ForceInheritance force_inheritance,
+               const SchedulerState::EffectiveProfile* old_target_ep = nullptr)
     TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(upstream),
            ChainLockable::GetLock(downstream), preempt_disabled_token) {
   Scheduler::JoinNodeToPiGraph(upstream, downstream, force_inheritance);
@@ -141,10 +142,11 @@ void Propagate(UpstreamType& upstream, DownstreamType& downstream, AddSingleEdge
 
 template <typename UpstreamType, typename DownstreamType>
 void Propagate(UpstreamType& upstream, DownstreamType& downstream, RemoveSingleEdgeTag,
-               ForceInheritance force_inheritance)
+               ForceInheritance force_inheritance,
+               const SchedulerState::EffectiveProfile* old_target_ep = nullptr)
     TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(upstream),
            ChainLockable::GetLock(downstream), preempt_disabled_token) {
-  Scheduler::SplitNodeFromPiGraph(upstream, downstream);
+  Scheduler::SplitNodeFromPiGraph(upstream, downstream, old_target_ep);
   if constexpr (ktl::is_same_v<DownstreamType, Thread>) {
     pi_demotions.Add(1u);
   }
@@ -152,7 +154,8 @@ void Propagate(UpstreamType& upstream, DownstreamType& downstream, RemoveSingleE
 
 template <typename UpstreamType, typename DownstreamType>
 void Propagate(UpstreamType& upstream, DownstreamType& downstream, BaseProfileChangedTag,
-               ForceInheritance force_inheritance)
+               ForceInheritance force_inheritance,
+               const SchedulerState::EffectiveProfile* old_target_ep = nullptr)
     TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(upstream),
            ChainLockable::GetLock(downstream), preempt_disabled_token) {
   Scheduler::UpstreamThreadBaseProfileChanged(upstream, downstream);
@@ -162,6 +165,23 @@ void Propagate(UpstreamType& upstream, DownstreamType& downstream, BaseProfileCh
 }
 
 }  // namespace
+
+SchedulerState::EffectiveProfile OwnedWaitQueue::GetEffectiveProfile() const {
+  SchedulerState::EffectiveProfile ep{};
+  if (inherited_scheduler_state_storage() != nullptr) {
+    const auto& iss = *inherited_scheduler_state_storage();
+    iss.ipvs.AssertConsistency();
+    if (iss.ipvs.uncapped_utilization > SchedUtilization{0}) {
+      const SchedUtilization utilization =
+          ktl::min(Scheduler::kThreadUtilizationMax, iss.ipvs.uncapped_utilization);
+      const SchedDuration capacity = utilization * iss.ipvs.min_deadline;
+      ep.SetDeadline({capacity, iss.ipvs.min_deadline, utilization}, iss.ipvs.critical_count > 0);
+    } else {
+      ep.SetFair(iss.ipvs.total_weight);
+    }
+  }
+  return ep;
+}
 
 OwnedWaitQueue::~OwnedWaitQueue() {
   // Something is very very wrong if we have been allowed to destruct while we
@@ -244,9 +264,10 @@ OwnedWaitQueue::WakeThreadsResult OwnedWaitQueue::WakeThreadsLocked(
 
     // Remove this thread's contributions to our IPVs, removing it from our
     // collection in the process.
+    const SchedulerState::EffectiveProfile old_target_ep = GetEffectiveProfile();
+    BeginPropagate(*t, *this, RemoveSingleEdgeOp, force_inheritance, &old_target_ep);
     DequeueThread(t, ZX_OK);
     UpdateSchedStateStorageThreadRemoved(*t);
-    BeginPropagate(*t, *this, RemoveSingleEdgeOp, force_inheritance);
 
     // If we still have blocked threads, and we are supposed to make this thread
     // our owner, do so now.  We removed our existing owner at the start of this
@@ -430,27 +451,20 @@ void OwnedWaitQueue::ApplyIpvDeltaToOwq(const SchedulerState::InheritedProfileVa
 
 template <OwnedWaitQueue::PropagateOp OpType>
 void OwnedWaitQueue::BeginPropagate(Thread& upstream_node, OwnedWaitQueue& downstream_node,
-                                    PropagateOpTag<OpType> op, ForceInheritance force_inheritance) {
+                                    PropagateOpTag<OpType> op, ForceInheritance force_inheritance,
+                                    const SchedulerState::EffectiveProfile* old_target_ep) {
   // When needed, base profile changes will directly call FinishPropagate.
   static_assert(OpType != PropagateOp::BaseProfileChanged);
   SchedulerState::InheritedProfileValues ipv_snapshot;
 
-  // Are we starting from a thread during an edge remove operation?  If so,
-  // and we were the last thread to leave the queue, then there is no longer
-  // any IPV storage for our downstream wait queue which needs to be updated.
-  // If the wait queue has no owner either, then we are done with propagation.
-  if constexpr (OpType == PropagateOp::RemoveSingleEdge) {
-    if (downstream_node.IsEmpty() && (downstream_node.owner_ == nullptr)) {
-      return;
-    }
-  }
-
   ipv_snapshot = SnapshotThreadIpv(upstream_node, force_inheritance);
 
   if constexpr (OpType == PropagateOp::RemoveSingleEdge) {
-    FinishPropagate(upstream_node, downstream_node, nullptr, &ipv_snapshot, op);
+    FinishPropagate(upstream_node, downstream_node, nullptr, &ipv_snapshot, op, force_inheritance,
+                    old_target_ep);
   } else if constexpr (OpType == PropagateOp::AddSingleEdge) {
-    FinishPropagate(upstream_node, downstream_node, &ipv_snapshot, nullptr, op, force_inheritance);
+    FinishPropagate(upstream_node, downstream_node, &ipv_snapshot, nullptr, op, force_inheritance,
+                    old_target_ep);
   }
 }
 
@@ -490,8 +504,8 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
                                      DownstreamNodeType& downstream_node,
                                      const SchedulerState::InheritedProfileValues* added_ipv,
                                      const SchedulerState::InheritedProfileValues* lost_ipv,
-                                     PropagateOpTag<OpType> op,
-                                     ForceInheritance force_inheritance) {
+                                     PropagateOpTag<OpType> op, ForceInheritance force_inheritance,
+                                     const SchedulerState::EffectiveProfile* old_target_ep) {
   // Propagation must start from a(n) (OWQ|Thread) and proceed to a(n) (Thread|OWQ).
   static_assert((ktl::is_same_v<UpstreamNodeType, OwnedWaitQueue> &&
                  ktl::is_same_v<DownstreamNodeType, Thread>) ||
@@ -570,7 +584,10 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
       owq_iter->get_lock().AssertHeld();
       if (owq_iter->IsEmpty()) {
         thread_iter = owq_iter->owner_;
-        DEBUG_ASSERT(thread_iter != nullptr);
+        if (thread_iter == nullptr) {
+          return;
+        }
+        Propagate(upstream_node, *owq_iter, op, force_inheritance, old_target_ep);
         goto start_from_owq;
       }
     }
@@ -624,6 +641,8 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
           *owq_iter->inherited_scheduler_state_storage_;
       owq_iss.ipvs.AssertConsistency();
       const SchedUtilization utilization_before = owq_iss.ipvs.uncapped_utilization;
+      const SchedulerState::EffectiveProfile old_owq_ep =
+          old_target_ep ? *old_target_ep : owq_iter->GetEffectiveProfile();
       ApplyIpvDeltaToOwq(lost_ipv, added_ipv, *owq_iter);
       const SchedUtilization utilization_after = owq_iss.ipvs.uncapped_utilization;
 
@@ -637,13 +656,14 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
           owq_iss.time_slice_ns = ss.time_slice_ns_;
           owq_iss.time_slice_used_ns = ss.time_slice_used_ns_;
         } else if (utilization_after == SchedUtilization{0}) {
-          // Last deadline thread just left, reset our dynamic params.
+          // Last deadline thread just left, propagate before resetting.
+          Propagate(upstream_node, *owq_iter, op, force_inheritance, &old_owq_ep);
           owq_iss.ResetDynamicParameters();
         } else {
           // The overall utilization has changed, but there was deadline
           // pressure both before and after.  We need to recompute the dynamic
           // scheduler parameters.
-          Propagate(upstream_node, *owq_iter, op, force_inheritance);
+          Propagate(upstream_node, *owq_iter, op, force_inheritance, &old_owq_ep);
         }
       }
 
@@ -2201,7 +2221,8 @@ OwnedWaitQueue::WakeThreadsResult OwnedWaitQueue::WakeAndRequeueInternal(
 // Explicit instantiation of a variant of the generic BeginPropagate method used in
 // wait.cc during thread unblock operations.
 template void OwnedWaitQueue::BeginPropagate(Thread&, OwnedWaitQueue&, RemoveSingleEdgeTag,
-                                             ForceInheritance);
+                                             ForceInheritance,
+                                             const SchedulerState::EffectiveProfile*);
 
 // Explicit instantiation of the common lock/unlock routines.
 template ktl::variant<ChainLock::Result, const void*>

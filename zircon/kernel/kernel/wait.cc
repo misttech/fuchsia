@@ -585,18 +585,20 @@ zx_status_t WaitQueue::UnblockThread(Thread* t, zx_status_t wait_queue_error) {
   }
 
   // Remove the thread from the wait queue and deal with any PI propagation
-  // which is required. Then, go ahead and formally unblock the thread (allowing
-  // it to join a scheduler run-queue, somewhere).
+  // required if the thread was removed from an owned wait queue. Finally,
+  // formally unblock the thread, allowing it to join a run queue.
   Dequeue(t, wait_queue_error);
+
   if (OwnedWaitQueue* owq = OwnedWaitQueue::DowncastToOwq(this); owq != nullptr) {
-    // We required that |this| wait queue's lock be held before calling
-    // UnblockThread, so we can assert that the OWQ it downcasts to has its lock
-    // held as well.  Static analysis gets confused here, because it does not
-    // know that the OWQ returned by DowncastToOwq is the same queue as the
-    // WaitQueue passed to it.
     owq->get_lock().MarkHeld();
+    // Get the effective profile of the owned wait queue before propagation,
+    // which will recompute the effective profile of the queue. This is
+    // necessary for the scheduler PI logic to determine how the wait queue's
+    // effective profile changed.
+    const SchedulerState::EffectiveProfile old_target_ep = owq->GetEffectiveProfile();
+    OwnedWaitQueue::BeginPropagate(*t, *owq, OwnedWaitQueue::RemoveSingleEdgeOp,
+                                   ForceInheritance::No, &old_target_ep);
     owq->UpdateSchedStateStorageThreadRemoved(*t);
-    OwnedWaitQueue::BeginPropagate(*t, *owq, OwnedWaitQueue::RemoveSingleEdgeOp);
   }
 
   // Now that any required propagation is complete, we can release all of the PI
