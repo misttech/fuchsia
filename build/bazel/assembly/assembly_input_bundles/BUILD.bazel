@@ -6,13 +6,9 @@ load("@rules_fuchsia//fuchsia:assembly.bzl", "fuchsia_platform_artifacts")
 
 package(default_visibility = ["//visibility:public"])
 
-fuchsia_platform_artifacts(
+alias(
     name = "platform_bringup",
-    applicable_licenses = [
-        "@gn_targets//bundles/assembly:bringup.bazel_inputs.license",
-    ],
-    directory = "@gn_targets//bundles/assembly:bringup.bazel_inputs.directory",
-    files = "@gn_targets//bundles/assembly:bringup.bazel_inputs",
+    actual = ":platform_eng",
 )
 
 fuchsia_platform_artifacts(

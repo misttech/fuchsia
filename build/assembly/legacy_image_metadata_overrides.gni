@@ -1,0 +1,149 @@
+# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/images/args.gni")
+import("//src/storage/fshost/generated_fshost_config.gni")
+
+# TODO(https://fxbug.dev/42162038): Burn this down.
+
+# For //build/images/fuchsia:fuchsia_assembly.
+legacy_fuchsia_image_metadata_overrides = {
+  zbi = {
+    name = "zircon-a"
+    archive = true
+    if (!sign_zbi) {
+      fastboot_flash = []
+      if (zircon_a_partition != "") {
+        fastboot_flash += [ zircon_a_partition ]
+      }
+      if (zircon_b_partition != "") {
+        fastboot_flash += [ zircon_b_partition ]
+      }
+    }
+  }
+
+  if (sign_zbi) {
+    zbi_signed = {
+      name = "zircon-a.signed"
+      archive = true
+      fastboot_flash = []
+      if (zircon_a_partition != "") {
+        fastboot_flash += [ zircon_a_partition ]
+      }
+      if (zircon_b_partition != "") {
+        fastboot_flash += [ zircon_b_partition ]
+      }
+    }
+  }
+
+  if (use_vbmeta) {
+    vbmeta = {
+      name = "zircon-a"
+      archive = true
+      fastboot_flash = []
+      if (vbmeta_a_partition != "") {
+        fastboot_flash += [ vbmeta_a_partition ]
+      }
+      if (vbmeta_b_partition != "") {
+        fastboot_flash += [ vbmeta_b_partition ]
+      }
+    }
+  }
+
+  minfs = {
+    name = "data"
+  }
+
+  blobfs = {
+    name = "blob"
+  }
+
+  if (fxfs_blob) {
+    fxfs_sparse = {
+      name = "fuchsia.fxfs_sparse"
+      type = "blk"
+      archive = true
+      fastboot_flash = [ fxfs_partition ]
+    }
+  } else {
+    fvm = {
+      name = "storage-full"
+      archive = add_qemu_to_build_archives
+    }
+
+    fvm_sparse = {
+      name = "storage-sparse"
+      archive = true
+    }
+
+    if (assembly_generate_fvm_fastboot) {
+      fvm_fastboot = {
+        name = "fvm.fastboot"
+        archive = true
+        fastboot_flash = [ fvm_partition ]
+      }
+    }
+  }
+}
+
+# For //build/images/bringup:bringup_non_fastboot.
+legacy_bringup_image_metadata_overrides = {
+  zbi = {
+    name = "zircon-a"
+    archive = true
+    bootserver_netboot = [ "--boot" ]
+  }
+
+  if (use_vbmeta) {
+    vbmeta = {
+      name = "zircon-a"
+      archive = true
+    }
+  }
+}
+
+# For //build/images/zedboot:zedboot_assembly.
+legacy_zedboot_image_metadata_overrides = {
+  _zedboot_metadata_slot = "zedboot"
+  if (recovery_is_zedboot) {
+    _zedboot_metadata_slot = "zircon-r"
+  }
+
+  zbi = {
+    name = _zedboot_metadata_slot
+    if (!sign_zbi) {
+      archive = true
+      if (recovery_is_zedboot) {
+        if (zircon_r_partition != "") {
+          fastboot_flash = [ zircon_r_partition ]
+        }
+      }
+    }
+  }
+
+  if (sign_zbi) {
+    zbi_signed = {
+      name = "${_zedboot_metadata_slot}.signed"
+      archive = true
+      if (recovery_is_zedboot) {
+        mkzedboot_mode = [ "vboot" ]
+        if (zircon_r_partition != "") {
+          fastboot_flash = [ zircon_r_partition ]
+        }
+      }
+    }
+  }
+
+  if (use_vbmeta) {
+    vbmeta = {
+      name = _zedboot_metadata_slot
+      archive = true
+      if (recovery_is_zedboot) {
+        if (vbmeta_r_partition != "") {
+          fastboot_flash = [ vbmeta_r_partition ]
+        }
+      }
+    }
+  }
+}

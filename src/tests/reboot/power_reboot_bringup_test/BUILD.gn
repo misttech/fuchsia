@@ -20,9 +20,12 @@ if (is_linux) {
     sources = [ "power_reboot_bringup_test.go" ]
   }
 
+  host_test_data("bringup_zbi") {
+    sources = [ "$root_build_dir/bringup.zbi" ]
+  }
+
   go_test("power_reboot_bringup_test") {
     embed = [ ":lib" ]
-    non_go_deps =
-        [ "//build/images/bringup:default_product_bundle_for_emulator.go" ]
+    non_go_deps = [ ":bringup_zbi" ]
   }
 }

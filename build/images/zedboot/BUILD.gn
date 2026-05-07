@@ -1,0 +1,99 @@
+# Copyright 2018 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/assembly/assembled_system.gni")
+import("//build/assembly/legacy_image_metadata_overrides.gni")
+import("//build/assembly/product_assembly_configuration.gni")
+import("//build/board.gni")
+import("//build/images/args.gni")
+import("//build/images/custom_signing.gni")
+import("//build/images/vbmeta.gni")
+import("//build/images/vboot/esp.gni")
+import("//build/product.gni")
+
+assert(current_toolchain == default_toolchain,
+       "//build/images/* are only valid in the Fuchsia toolchain")
+
+_product_config = "//products/zedboot"
+if (zedboot_product_assembly_config_label != false) {
+  _product_config = zedboot_product_assembly_config_label
+}
+
+# Note: This ZBI output is also used by a script in //scripts/verify_cmdline_params.
+assembled_system("zedboot_assembly") {
+  testonly = true
+  output_dir = root_build_dir
+  image_name = "zedboot"
+  generate_vbmeta = use_vbmeta
+  use_bringup_platform_bundles_only = true
+  product_assembly_config_label = _product_config
+
+  # Use the same board configuration for zedboot that's used for recovery (this defaults to the
+  # non-recovery board).
+  board_config_label = recovery_board_configuration_label
+
+  # zbi arguments
+  if (custom_signing_script != "") {
+    inputs = custom_signing_script_inputs
+    deps = [ "//build/images/custom_signing:deps" ]
+    generate_signed_zbi = true
+  }
+
+  image_metadata_overrides = legacy_zedboot_image_metadata_overrides
+
+  metadata = {
+    update_target = []
+    if (!sign_zbi) {
+      update_target += [ "zedboot=zedboot.zbi" ]
+    }
+
+    # Optionally include the signed images.
+    if (sign_zbi) {
+      update_target += [ "zedboot.signed=zedboot.zbi.signed" ]
+      if (recovery_is_zedboot) {
+        mkzedboot_mode = [ "vboot" ]
+      }
+    }
+
+    # Optionally include the vbmeta.
+    if (use_vbmeta) {
+      if (recovery_is_zedboot) {
+        # Only include zedboot as recovery.vbmeta if zedboot is used as recovery
+        update_target += [ "recovery.vbmeta=zedboot.vbmeta" ]
+      }
+    }
+  }
+}
+
+if (target_cpu == "x64" && !use_bazel_images_only) {
+  esp("esp") {
+    output_name = "zedboot"
+    cmdline = "efi_cmdline.txt"
+    deps = [ ":zedboot_assembly" ]
+    zedboot = "$root_build_dir/zedboot.zbi"
+    testonly = true
+
+    metadata = {
+      images = [
+        {
+          label = get_label_info(":$target_name", "label_with_toolchain")
+          mkzedboot_mode = [ "efi" ]
+          name = "zedboot-efi"
+          path = "zedboot.esp.blk"
+          type = "blk"
+        },
+      ]
+    }
+  }
+}
+
+group("zedboot") {
+  if (!use_bazel_images_only) {
+    public_deps = [ ":zedboot_assembly" ]
+    if (target_cpu == "x64") {
+      public_deps += [ ":esp" ]
+    }
+  }
+  testonly = true
+}
