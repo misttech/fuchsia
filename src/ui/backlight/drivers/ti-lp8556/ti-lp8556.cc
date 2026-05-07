@@ -282,8 +282,7 @@ void TiLp8556::GetSensorName(GetSensorNameCompleter::Sync& completer) {
   completer.Reply(fidl::StringView::FromExternal(kPowerSensorName));
 }
 
-zx::result<display::PanelType> TiLp8556::GetDisplayPanelInfo(
-    const std::shared_ptr<fdf::Namespace>& incoming) {
+zx::result<display::PanelType> TiLp8556::GetDisplayPanelInfo(fdf::Namespace* incoming) {
   zx::result panel_type_result =
       compat::GetMetadata<display::PanelType>(incoming, DEVICE_METADATA_DISPLAY_PANEL_TYPE, "pdev");
   if (panel_type_result.is_ok()) {
@@ -316,11 +315,11 @@ zx::result<display::PanelType> TiLp8556::GetDisplayPanelInfo(
 }
 
 zx::result<> TiLp8556::Start(fdf::DriverContext context) {
-  auto incoming_ptr = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  auto incoming = context.take_incoming();
   root_ = inspector_.GetRoot().CreateChild("ti-lp8556");
 
   // Obtain I2C protocol needed to control backlight
-  zx::result i2c = incoming_ptr->Connect<fuchsia_hardware_i2c::Service::Device>("i2c");
+  zx::result i2c = incoming->Connect<fuchsia_hardware_i2c::Service::Device>("i2c");
   if (i2c.is_error()) {
     fdf::error("Failed to connect to i2c: {}", i2c);
     return i2c.take_error();
@@ -328,7 +327,7 @@ zx::result<> TiLp8556::Start(fdf::DriverContext context) {
   i2c_ = i2c::I2cChannel{std::move(i2c.value())};
 
   zx::result pdev_client_end =
-      incoming_ptr->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+      incoming->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
@@ -359,7 +358,7 @@ zx::result<> TiLp8556::Start(fdf::DriverContext context) {
     }
   }
 
-  zx::result<display::PanelType> panel_type_result = GetDisplayPanelInfo(incoming_ptr);
+  zx::result<display::PanelType> panel_type_result = GetDisplayPanelInfo(incoming.get());
   if (panel_type_result.is_error()) {
     fdf::error("Failed to get display panel info: {}", panel_type_result);
     return panel_type_result.take_error();

@@ -73,7 +73,7 @@ class TiLp8556 : public fdf::DriverBase2,
  public:
   static constexpr std::string_view kDriverName = "ti_lp8556";
 
-  explicit TiLp8556();
+  TiLp8556();
 
   // fdf::DriverBase implementation.
   zx::result<> Start(fdf::DriverContext context) override;
@@ -133,8 +133,7 @@ class TiLp8556 : public fdf::DriverBase2,
  private:
   static constexpr char kPowerSensorName[] = "backlight";
 
-  zx::result<display::PanelType> GetDisplayPanelInfo(
-      const std::shared_ptr<fdf::Namespace>& incoming);
+  zx::result<display::PanelType> GetDisplayPanelInfo(fdf::Namespace* incoming);
 
   // Calls ReadSync() with a read size of 1 and returns the byte that was read.
   zx::result<uint8_t> ReadI2cByteSync(uint8_t addr);

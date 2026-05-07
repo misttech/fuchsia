@@ -35,7 +35,7 @@ class TestTiLp8556 : public TiLp8556 {
  public:
   using TiLp8556::inspector;
 
-  explicit TestTiLp8556() : TiLp8556() {}
+  TestTiLp8556() = default;
 };
 
 class TiLp8556TestEnvironment : public fdf_testing::Environment {

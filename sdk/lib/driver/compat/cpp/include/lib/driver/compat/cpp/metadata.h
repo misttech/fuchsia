@@ -15,10 +15,10 @@
 namespace compat {
 
 namespace internal {
-template <typename ReturnType, typename Unpersist>
-zx::result<ReturnType> GetMetadata(const std::shared_ptr<fdf::Namespace>& incoming, uint32_t type,
+template <typename ReturnType, typename Unpersist, typename NamespacePtr>
+zx::result<ReturnType> GetMetadata(const NamespacePtr& incoming, uint32_t type,
                                    std::string_view instance, Unpersist unpersist) {
-  zx::result compat = incoming->Connect<fuchsia_driver_compat::Service::Device>(instance);
+  zx::result compat = incoming->template Connect<fuchsia_driver_compat::Service::Device>(instance);
   if (compat.is_error()) {
     return compat.take_error();
   }
@@ -99,8 +99,9 @@ fdf::async_helpers::AsyncTask GetMetadataAsync(
 }  // namespace internal
 
 // Attempts to talk to a parent to acquire metadata with |type| and then decodes it into |FidlType|.
-template <typename FidlType, typename = std::enable_if_t<fidl::IsFidlObject<FidlType>::value>>
-zx::result<FidlType> GetMetadata(const std::shared_ptr<fdf::Namespace>& incoming, uint32_t type,
+template <typename FidlType, typename NamespacePtr,
+          typename = std::enable_if_t<fidl::IsFidlObject<FidlType>::value>>
+zx::result<FidlType> GetMetadata(const NamespacePtr& incoming, uint32_t type,
                                  std::string_view instance = "default") {
   return internal::GetMetadata<FidlType>(
       incoming, type, instance, [](const zx::vmo& vmo, size_t size) -> zx::result<FidlType> {
@@ -145,11 +146,11 @@ fdf::async_helpers::AsyncTask GetMetadataAsync(async_dispatcher_t* dispatcher,
 
 // Attempts to talk to a parent to acquire metadata with |type| and then decodes it into |FidlType|.
 // The result is only valid as long as |arena| remains alive.
-template <typename FidlType>
+template <typename FidlType, typename NamespacePtr>
 #if __cplusplus >= 202002l
   requires fidl::IsFidlObject<FidlType>::value
 #endif
-zx::result<fidl::ObjectView<FidlType>> GetMetadata(const std::shared_ptr<fdf::Namespace>& incoming,
+zx::result<fidl::ObjectView<FidlType>> GetMetadata(const NamespacePtr& incoming,
                                                    fidl::AnyArena& arena, uint32_t type,
                                                    std::string_view instance = "default") {
   return internal::GetMetadata<fidl::ObjectView<FidlType>>(
@@ -199,9 +200,9 @@ fdf::async_helpers::AsyncTask GetMetadataAsync(
 }
 
 // Attempts to talk to a parent to acquire metadata with |type| and then casts it into |ReturnType|.
-template <typename ReturnType, typename = std::enable_if_t<!fidl::IsFidlObject<ReturnType>::value>>
-zx::result<std::unique_ptr<ReturnType>> GetMetadata(const std::shared_ptr<fdf::Namespace>& incoming,
-                                                    uint32_t type,
+template <typename ReturnType, typename NamespacePtr,
+          typename = std::enable_if_t<!fidl::IsFidlObject<ReturnType>::value>>
+zx::result<std::unique_ptr<ReturnType>> GetMetadata(const NamespacePtr& incoming, uint32_t type,
                                                     std::string_view instance = "default") {
   return internal::GetMetadata<std::unique_ptr<ReturnType>>(
       incoming, type, instance,
@@ -242,11 +243,11 @@ fdf::async_helpers::AsyncTask GetMetadataAsync(
 
 // Attempts to talk to a parent to acquire an array of metadata with |type| and
 // stores it in a `std::vector<ReturnType>`.
-template <typename ReturnType, typename = std::enable_if_t<!fidl::IsFidlObject<ReturnType>::value>,
+template <typename ReturnType, typename NamespacePtr,
+          typename = std::enable_if_t<!fidl::IsFidlObject<ReturnType>::value>,
           typename = std::enable_if_t<std::is_trivial_v<ReturnType>>>
-zx::result<std::vector<ReturnType>> GetMetadataArray(
-    const std::shared_ptr<fdf::Namespace>& incoming, uint32_t type,
-    std::string_view instance = "default") {
+zx::result<std::vector<ReturnType>> GetMetadataArray(const NamespacePtr& incoming, uint32_t type,
+                                                     std::string_view instance = "default") {
   return internal::GetMetadata<std::vector<ReturnType>>(
       incoming, type, instance,
       [](const zx::vmo& vmo, size_t size) -> zx::result<std::vector<ReturnType>> {

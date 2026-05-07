@@ -66,14 +66,14 @@ zx::result<> InputReportDriver::CreateDevfsNode() {
   }
 
   fuchsia_driver_framework::DevfsAddArgs devfs_args{
-      {.connector = std::move(connector.value()), .class_name = "input-report"}};
+      {.connector = std::move(connector).value(), .class_name = "input-report"}};
 
   zx::result child = AddOwnedChild(kDeviceName, devfs_args);
   if (child.is_error()) {
     fdf::error("Failed to add child: {}", child);
     return child.take_error();
   }
-  child_ = std::move(child.value());
+  child_ = std::move(child).value();
 
   return zx::ok();
 }
