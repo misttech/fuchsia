@@ -252,7 +252,9 @@ serial logs also go to `ffx log` output, but when debugging issues involving a
 device crash or restart, starting `fx serial` before triggering the issue can
 yield more detailed logs than `ffx log`.
 
-### Kernel boot tests
+### Kernel development
+
+#### Kernel boot tests
 
 `fx run-boot-test` runs kernel boot tests and provides more control over the
 test environment than `fx test`. It is useful to run Zircon's core tests.
@@ -262,6 +264,11 @@ this may be difficult for your shell command harness. Unless you explicitly
 intend to interact with the panic shell, consider passing
 `--cmdline kernel.halt-on-panic=true` to get a failing exit code if Zircon
 panics.
+
+#### Core tests
+
+`fx core-tests` runs Zircon core tests and is a good way to verify that
+Zircon core tests have not regressed.
 
 ### Debugging
 
