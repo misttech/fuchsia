@@ -62,7 +62,7 @@ func TestAllowlistCommand_Execute(t *testing.T) {
 		t.Errorf("Expected ExitSuccess for public project, got %v", status)
 	}
 
-	publicConfigPath := filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs", "allowed_licenses", "Restricted", "GPL-2.0", "bar.json")
+	publicConfigPath := filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs", "allowed_licenses", "Restricted", "GPL-2.0", "foo.json")
 	if _, err := os.Stat(publicConfigPath); os.IsNotExist(err) {
 		t.Errorf("Expected config file to be created at %s", publicConfigPath)
 	}
@@ -96,6 +96,18 @@ func TestAllowlistCommand_Execute(t *testing.T) {
 	f4.Parse([]string{"add", "GPL-2.0", "src/foo/bar"})
 	if status := cmd.Execute(ctx, f4); status != subcommands.ExitSuccess {
 		t.Errorf("Expected ExitSuccess when allowlist entry already exists, got %v", status)
+	}
+
+	// Test 5: Third party file grouping (should group by project name from manifest)
+	f5 := flag.NewFlagSet("test5", flag.ContinueOnError)
+	f5.Parse([]string{"add", "GPL-2.0", "vendor/my_private_proj/LICENSE"})
+	if status := cmd.Execute(ctx, f5); status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess for third party file, got %v", status)
+	}
+
+	thirdPartyConfigPath := filepath.Join(tempDir, "vendor", "google", "tools", "check-licenses", "assets", "configs", "allowed_licenses", "Restricted", "GPL-2.0", "my_private_proj.json")
+	if _, err := os.Stat(thirdPartyConfigPath); os.IsNotExist(err) {
+		t.Errorf("Expected config file to be created at %s", thirdPartyConfigPath)
 	}
 }
 

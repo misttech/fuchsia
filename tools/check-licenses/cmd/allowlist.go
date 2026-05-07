@@ -110,10 +110,7 @@ func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath string) error {
 		return fmt.Errorf("failed to create config directory %s: %w", configDir, err)
 	}
 
-	baseName := filepath.Base(projectPath)
-	if baseName == "." || baseName == "/" {
-		baseName = "root"
-	}
+	baseName := findProjectBasename(projectPath, builder.Config.ManifestProjectNames)
 	destFile := filepath.Join(configDir, baseName+".json")
 
 	var cfg v2config.ConfigFile
