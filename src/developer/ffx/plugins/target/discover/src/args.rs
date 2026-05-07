@@ -55,4 +55,17 @@ pub struct DiscoverCommand {
         description = "stop the discover process (whether in foreground or background)"
     )]
     pub stop: bool,
+
+    #[argh(subcommand)]
+    pub subcommand: Option<DiscoverSubCommand>,
 }
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(subcommand)]
+pub enum DiscoverSubCommand {
+    Clear(ClearCommand),
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(subcommand, name = "clear", description = "clear the discovery cache")]
+pub struct ClearCommand {}

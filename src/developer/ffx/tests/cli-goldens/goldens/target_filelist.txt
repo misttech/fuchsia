@@ -9,6 +9,7 @@ ffx/target/clear-preferred-ssh-address.golden
 ffx/target/default.golden
 ffx/target/default/get.golden
 ffx/target/discover.golden
+ffx/target/discover/clear.golden
 ffx/target/echo.golden
 ffx/target/fastboot.golden
 ffx/target/fastboot/authorize.golden

@@ -6,7 +6,7 @@ use addr::TargetAddr;
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
-use ffx_target_discover_args::{DiscoverCommand, LoopMode};
+use ffx_target_discover_args::{DiscoverCommand, DiscoverSubCommand, LoopMode};
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool, Result, return_user_error, user_error};
 use fuchsia_async::Timer;
@@ -189,6 +189,10 @@ impl<P: ProcessManager, D: DiscoveryRunner> Discoverer<P, D> {
     }
 
     async fn discover(&mut self, cmd: DiscoverCommand) -> Result<()> {
+        if let Some(DiscoverSubCommand::Clear(_)) = cmd.subcommand {
+            return self.remove_cache_file();
+        }
+
         // If the "stop" flag is passed, that takes precedence. Just try to stop
         // the background process.
         if cmd.stop {
@@ -472,6 +476,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use ffx_config::{ConfigLevel, test_init};
+    use ffx_target_discover_args::ClearCommand;
     use tempfile::{TempDir, tempdir};
 
     struct TestHarness {
@@ -578,6 +583,7 @@ mod tests {
                 quiet: false,
                 time: Some(0),
                 stop: false,
+                subcommand: None,
             };
             let result = discoverer.discover(cmd).await;
             assert_matches!(result, Err(fho::Error::User(_)));
@@ -594,6 +600,7 @@ mod tests {
                 quiet: false,
                 time: None,
                 stop: true,
+                subcommand: None,
             };
             let result = discoverer.discover(cmd).await;
             assert!(result.is_ok());
@@ -605,7 +612,13 @@ mod tests {
             let mut harness = TestHarness::setup().await;
             let discovery_runner = harness.discovery_runner.as_ref().unwrap().clone();
             let mut discoverer = harness.create_discoverer(None);
-            let cmd = DiscoverCommand { loop_mode: None, quiet: false, time: None, stop: false };
+            let cmd = DiscoverCommand {
+                loop_mode: None,
+                quiet: false,
+                time: None,
+                stop: false,
+                subcommand: None,
+            };
             let result = discoverer.discover(cmd).await;
             assert!(result.is_ok());
             assert_eq!(discovery_runner.get_call_count(), 1);
@@ -633,6 +646,7 @@ mod tests {
                 quiet: false,
                 time: None,
                 stop: false,
+                subcommand: None,
             };
             let result = discoverer.discover(cmd).await;
             // We assert that the function returned the error we injected, confirming
@@ -650,6 +664,28 @@ mod tests {
             fs::write(&cache_file_path, "test").unwrap();
             assert!(cache_file_path.exists());
             assert!(discoverer.remove_cache_file().is_ok());
+            assert!(!cache_file_path.exists());
+        }
+
+        // Tests that "discover clear" removes the cache file.
+        #[fuchsia::test]
+        async fn test_discover_clear() {
+            let mut harness = TestHarness::setup().await;
+            let mut discoverer = harness.create_discoverer(None);
+            let cache_file_path =
+                ffx_target::get_discovery_cache_file(&harness.context).expect("cache file");
+            fs::write(&cache_file_path, "test").unwrap();
+            assert!(cache_file_path.exists());
+
+            let cmd = DiscoverCommand {
+                loop_mode: None,
+                quiet: false,
+                time: None,
+                stop: false,
+                subcommand: Some(DiscoverSubCommand::Clear(ClearCommand {})),
+            };
+            let result = discoverer.discover(cmd).await;
+            assert!(result.is_ok());
             assert!(!cache_file_path.exists());
         }
     }
