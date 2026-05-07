@@ -24,6 +24,7 @@ use crate::component_set::ComponentSet;
 use crate::config::ElfProgramBadHandlesPolicy;
 use crate::crash_info::CrashRecords;
 use crate::memory::reporter::MemoryReporter;
+use crate::runtime_dir::RuntimeDirectory;
 use crate::vdso_vmo::get_next_vdso_vmo;
 use ::routing::policy::ScopedPolicyChecker;
 use chrono::DateTime;
@@ -38,9 +39,11 @@ use fidl_fuchsia_memory_attribution as fattribution;
 use fidl_fuchsia_process as fproc;
 use fidl_fuchsia_process_lifecycle::{LifecycleMarker, LifecycleProxy};
 use fuchsia_async::{self as fasync, TimeoutExt};
-use fuchsia_runtime::{HandleInfo, HandleType, UtcClock, duplicate_utc_clock_handle, job_default};
-use futures::TryStreamExt;
+use fuchsia_runtime::{
+    HandleInfo, HandleType, UtcClock, UtcTimeline, duplicate_utc_clock_handle, job_default,
+};
 use futures::channel::oneshot;
+use futures::{FutureExt, TryStreamExt};
 use log::{trace, warn};
 use moniker::Moniker;
 use namespace::Namespace;
@@ -492,66 +495,15 @@ impl ElfRunner {
         program_config: ElfProgramConfig,
     ) -> Result<ElfComponent, StartComponentError> {
         let moniker = moniker.unwrap_or_else(|| Moniker::root());
+        let resolved_url = &start_info.resolved_url.clone();
 
-        // Fail early if there are clock issues.
-        let boot_clock = zx::Clock::<zx::MonotonicTimeline, zx::BootTimeline>::create(
-            zx::ClockOpts::CONTINUOUS,
-            /*backstop=*/ None,
-        )
-        .map_err(StartComponentError::BootClockCreateFailed)?;
+        let prep = self.prepare_launch(&moniker, &program_config, &mut start_info)?;
 
-        let ElfComponentLaunchInfo {
-            ns,
-            handle_infos,
-            utc_clock,
-            lifecycle_client,
-            outgoing_directory,
-            local_scope,
-        } = ElfComponentLaunchInfo::new(
-            &mut start_info,
-            &program_config,
-            self.utc_clock.as_ref().map(|c| &**c),
-        )?;
-
-        let resolved_url = &start_info.resolved_url;
-
-        // Create a job for this component that will contain its process.
-        let job = self.create_job(&program_config)?;
-
-        crash_handler::run_exceptions_server(
-            &self.scope,
-            job.top(),
-            moniker.clone(),
-            resolved_url.clone(),
-            self.crash_records.clone(),
-        )
-        .map_err(StartComponentError::ExceptionRegistrationFailed)?;
-
-        // Create and serve the runtime dir.
-        let runtime_dir_server_end = start_info
-            .runtime_dir
-            .ok_or(StartComponentError::StartInfoError(StartInfoError::MissingRuntimeDir))?;
-        let job_koid = job.proc().koid().map_err(StartComponentError::JobGetKoidFailed)?.raw_koid();
-
-        let runtime_dir = RuntimeDirBuilder::new(runtime_dir_server_end)
-            .args(program_config.args.clone())
-            .job_id(job_koid)
-            .serve();
-
-        // Configure the process launcher.
-        let proc_job_dup = job
-            .proc()
-            .duplicate_handle(zx::Rights::SAME_RIGHTS)
-            .map_err(StartComponentError::JobDuplicateFailed)?;
-
-        let name = Path::new(resolved_url)
-            .file_name()
-            .and_then(|filename| filename.to_str())
-            .ok_or_else(|| {
-                StartComponentError::StartInfoError(StartInfoError::BadResolvedUrl(
-                    resolved_url.clone(),
-                ))
-            })?;
+        // Connect to `fuchsia.process.Launcher`.
+        let launcher = self
+            .launcher_connector
+            .connect()
+            .map_err(|err| StartComponentError::ProcessLauncherConnectError(err.into()))?;
 
         // Wait on break_on_start with a timeout and don't fail.
         if let Some(break_on_start) = start_info.break_on_start {
@@ -562,28 +514,17 @@ impl ElfRunner {
                 .map(|error| warn!(moniker:%, error:%; "Failed to wait break_on_start"));
         }
 
-        let environs = merge_environ(
-            &self.additional_environ,
-            program_config.environ.as_deref().unwrap_or_default(),
-        );
-
-        // Connect to `fuchsia.process.Launcher`.
-        let launcher = self
-            .launcher_connector
-            .connect()
-            .map_err(|err| StartComponentError::ProcessLauncherConnectError(err.into()))?;
-
         let launch_info =
             runner::component::configure_launcher(runner::component::LauncherConfigArgs {
                 bin_path: &program_config.binary,
-                name,
+                name: &prep.name,
                 options: program_config.process_options(),
                 args: Some(program_config.args.clone()),
-                ns,
-                job: Some(proc_job_dup),
-                handle_infos: Some(handle_infos),
+                ns: prep.ns,
+                job: Some(prep.proc_job_dup),
+                handle_infos: Some(prep.handle_infos),
                 name_infos: None,
-                environs: (!environs.is_empty()).then_some(environs),
+                environs: (!prep.environs.is_empty()).then_some(prep.environs),
                 launcher: &launcher,
                 loader_proxy_chan: None,
                 executable_vmo: None,
@@ -595,8 +536,10 @@ impl ElfRunner {
             .launch(launch_info)
             .await
             .map_err(StartComponentError::ProcessLauncherFidlError)?;
+
         zx::Status::ok(status).map_err(StartComponentError::CreateProcessFailed)?;
         let process = process.unwrap(); // Process is present iff status is OK.
+
         if program_config.main_process_critical {
             job_default()
                 .set_critical(zx::JobCriticalOptions::RETCODE_NONZERO, &process)
@@ -607,7 +550,7 @@ impl ElfRunner {
         let pid = process.koid().map_err(StartComponentError::ProcessGetKoidFailed)?.raw_koid();
 
         // Add process ID to the runtime dir.
-        runtime_dir.add_process_id(pid);
+        prep.runtime_dir.add_process_id(pid);
 
         fuchsia_trace::instant!(
             c"component:start",
@@ -621,10 +564,10 @@ impl ElfRunner {
         // Add process start time to the runtime dir.
         let process_start_instant_mono =
             process.info().map_err(StartComponentError::ProcessInfoFailed)?.start_time;
-        runtime_dir.add_process_start_time(process_start_instant_mono.into_nanos());
+        prep.runtime_dir.add_process_start_time(process_start_instant_mono.into_nanos());
 
         // Add UTC estimate of the process start time to the runtime dir.
-        let utc_clock_started = fasync::OnSignals::new(&utc_clock, zx::Signals::CLOCK_STARTED)
+        let utc_clock_started = fasync::OnSignals::new(&prep.utc_clock, zx::Signals::CLOCK_STARTED)
             .on_timeout(zx::MonotonicInstant::after(zx::MonotonicDuration::default()), || {
                 Err(zx::Status::TIMED_OUT)
             })
@@ -634,9 +577,11 @@ impl ElfRunner {
         // The clock transformations needed to map a timestamp on a monotonic timeline
         // to a timestamp on the UTC timeline.
         let mono_to_clock_transformation =
-            boot_clock.get_details().map(|details| details.reference_to_synthetic).ok();
+            prep.boot_clock.get_details().map(|details| details.reference_to_synthetic).ok();
         let boot_to_utc_transformation = utc_clock_started
-            .then(|| utc_clock.get_details().map(|details| details.reference_to_synthetic).ok())
+            .then(|| {
+                prep.utc_clock.get_details().map(|details| details.reference_to_synthetic).ok()
+            })
             .flatten();
 
         if let Some(clock_transformation) = boot_to_utc_transformation {
@@ -663,20 +608,20 @@ impl ElfRunner {
 
                 // If any of the above values are unavailable (unlikely), then this
                 // does not happen.
-                runtime_dir.add_process_start_time_utc_estimate(dt.to_string())
+                prep.runtime_dir.add_process_start_time_utc_estimate(dt.to_string())
             }
         };
 
         Ok(ElfComponent::new(
-            runtime_dir,
+            prep.runtime_dir,
             moniker,
-            job,
+            prep.job,
             process,
-            lifecycle_client,
+            prep.lifecycle_client,
             program_config.main_process_critical,
-            local_scope,
+            prep.local_scope,
             resolved_url.clone(),
-            outgoing_directory,
+            prep.outgoing_directory,
             program_config,
             start_info.component_instance.ok_or(StartComponentError::StartInfoError(
                 StartInfoError::MissingComponentInstanceToken,
@@ -694,6 +639,112 @@ impl ElfRunner {
     pub fn serve_memory_reporter(&self, stream: fattribution::ProviderRequestStream) {
         self.memory_reporter.serve(stream);
     }
+
+    fn prepare_launch(
+        &self,
+        moniker: &Moniker,
+        program_config: &ElfProgramConfig,
+        start_info: &mut StartInfo,
+    ) -> Result<PreparedLaunch, StartComponentError> {
+        // Fail early if there are clock issues.
+        let boot_clock = zx::Clock::<zx::MonotonicTimeline, zx::BootTimeline>::create(
+            zx::ClockOpts::CONTINUOUS,
+            /*backstop=*/ None,
+        )
+        .map_err(StartComponentError::BootClockCreateFailed)?;
+
+        let ElfComponentLaunchInfo {
+            ns,
+            handle_infos,
+            utc_clock,
+            lifecycle_client,
+            outgoing_directory,
+            local_scope,
+        } = ElfComponentLaunchInfo::new(
+            start_info,
+            &program_config,
+            self.utc_clock.as_ref().map(|c| &**c),
+        )?;
+
+        let resolved_url = &start_info.resolved_url;
+
+        // Create a job for this component that will contain its process.
+        let job = self.create_job(&program_config)?;
+
+        crash_handler::run_exceptions_server(
+            &self.scope,
+            job.top(),
+            moniker.clone(),
+            resolved_url.clone(),
+            self.crash_records.clone(),
+        )
+        .map_err(StartComponentError::ExceptionRegistrationFailed)?;
+
+        // Create and serve the runtime dir.
+        let runtime_dir_server_end = start_info
+            .runtime_dir
+            .take()
+            .ok_or(StartComponentError::StartInfoError(StartInfoError::MissingRuntimeDir))?;
+
+        let job_koid = job.proc().koid().map_err(StartComponentError::JobGetKoidFailed)?.raw_koid();
+
+        let runtime_dir = RuntimeDirBuilder::new(runtime_dir_server_end)
+            .args(program_config.args.clone())
+            .job_id(job_koid)
+            .serve();
+
+        // Configure the process launcher.
+        let proc_job_dup = job
+            .proc()
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .map_err(StartComponentError::JobDuplicateFailed)?;
+
+        let name = Path::new(resolved_url)
+            .file_name()
+            .and_then(|filename| filename.to_str())
+            .ok_or_else(|| {
+                StartComponentError::StartInfoError(StartInfoError::BadResolvedUrl(
+                    resolved_url.clone(),
+                ))
+            })?
+            .to_owned();
+
+        let environs = merge_environ(
+            &self.additional_environ,
+            program_config.environ.as_deref().unwrap_or_default(),
+        );
+
+        Ok(PreparedLaunch {
+            ns,
+            handle_infos,
+            name,
+            environs,
+            proc_job_dup,
+            job,
+            runtime_dir,
+            boot_clock,
+            utc_clock,
+            lifecycle_client,
+            outgoing_directory,
+            local_scope,
+        })
+    }
+}
+
+struct PreparedLaunch {
+    ns: namespace::Namespace,
+    handle_infos: Vec<fidl_fuchsia_process::HandleInfo>,
+    name: String,
+    environs: Vec<String>,
+    proc_job_dup: zx::Job,
+
+    job: Job,
+    runtime_dir: RuntimeDirectory,
+    boot_clock: zx::Clock<zx::MonotonicTimeline, zx::BootTimeline>,
+    utc_clock: zx::Clock<zx::BootTimeline, UtcTimeline>,
+    lifecycle_client: Option<LifecycleProxy>,
+    outgoing_directory: Option<ClientEnd<fio::DirectoryMarker>>,
+    local_scope: ExecutionScope,
 }
 
 pub struct ScopedElfRunner {
@@ -724,7 +775,7 @@ impl ScopedElfRunner {
         start_info: fcrunner::ComponentStartInfo,
         server_end: ServerEnd<fcrunner::ComponentControllerMarker>,
     ) {
-        start(&self.runner, self.checker.clone(), start_info, server_end).await
+        start(&self.runner, self.checker.clone(), start_info, server_end).boxed().await
     }
 
     pub(crate) fn scope(&self) -> &ExecutionScope {
@@ -748,7 +799,7 @@ async fn start(
 ) {
     let resolved_url = start_info.resolved_url.clone().unwrap_or_else(|| "<unknown>".to_string());
 
-    let elf_component = match runner.start_component(start_info, &checker).await {
+    let elf_component = match runner.start_component(start_info, &checker).boxed().await {
         Ok(elf_component) => elf_component,
         Err(err) => {
             runner::component::report_start_error(
