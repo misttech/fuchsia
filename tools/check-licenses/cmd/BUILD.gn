@@ -38,6 +38,7 @@ if (is_host) {
     sources = [
       "allowlist.go",
       "classify.go",
+      "common.go",
       "config.go",
       "copyright.go",
       "fix.go",

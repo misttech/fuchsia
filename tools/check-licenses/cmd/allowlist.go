@@ -6,7 +6,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -75,78 +74,14 @@ func (c *AllowlistAddCommand) SetFlags(f *flag.FlagSet) {
 }
 
 func (c *AllowlistAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	// UX Check: Detect misplaced flags
-	misplacedFlags := false
-	for _, arg := range f.Args() {
-		if strings.HasPrefix(arg, "-") {
-			misplacedFlags = true
-			break
-		}
-	}
-
+	cmdStr, misplacedFlags := ReconstructCommand("allowlist add", f.Args(), []string{"<LicenseName>", "<projectPath>"}, c.bug, c.description)
 	if misplacedFlags || f.NArg() != 2 {
-		var bugVal string
-		var descVal string
-		var positionals []string
-
-		args := f.Args()
-		for i := 0; i < len(args); i++ {
-			arg := args[i]
-			if arg == "-bug" || arg == "--bug" {
-				if i+1 < len(args) {
-					bugVal = args[i+1]
-					i++
-				}
-			} else if arg == "-desc" || arg == "--desc" {
-				if i+1 < len(args) {
-					descVal = args[i+1]
-					i++
-				}
-			} else if strings.HasPrefix(arg, "-") {
-				// skip unknown flags
-			} else {
-				positionals = append(positionals, arg)
-			}
-		}
-
-		if c.bug != "" && bugVal == "" {
-			bugVal = c.bug
-		}
-		if c.description != "Auto-generated allowlist entry" && descVal == "" {
-			descVal = c.description
-		}
-
-		var cmdBuilder strings.Builder
-		cmdBuilder.WriteString("fx check-licenses allowlist add")
-		if bugVal != "" {
-			cmdBuilder.WriteString(fmt.Sprintf(" -bug %s", bugVal))
-		} else {
-			cmdBuilder.WriteString(" -bug <BugID>")
-		}
-		if descVal != "" && descVal != "Auto-generated allowlist entry" {
-			cmdBuilder.WriteString(fmt.Sprintf(" -desc %q", descVal))
-		}
-
-		if len(positionals) > 0 {
-			cmdBuilder.WriteString(fmt.Sprintf(" %s", positionals[0]))
-		} else {
-			cmdBuilder.WriteString(" <LicenseName>")
-		}
-		if len(positionals) > 1 {
-			cmdBuilder.WriteString(fmt.Sprintf(" %s", positionals[1]))
-		} else {
-			cmdBuilder.WriteString(" <projectPath>")
-		}
-		for _, extra := range positionals[2:] {
-			cmdBuilder.WriteString(fmt.Sprintf(" %s", extra))
-		}
-
 		if misplacedFlags {
 			fmt.Fprintln(os.Stderr, "❌ Error: Flags (like -bug or -desc) must be placed BEFORE positional arguments.")
 		} else {
 			fmt.Fprintln(os.Stderr, "❌ Error: Invalid number of arguments.")
 		}
-		fmt.Fprintf(os.Stderr, "Try running this copy-pasteable command instead:\n    %s\n\n", cmdBuilder.String())
+		fmt.Fprintf(os.Stderr, "Try running this copy-pasteable command instead:\n    %s\n\n", cmdStr)
 		return subcommands.ExitUsageError
 	}
 
@@ -168,26 +103,11 @@ func (c *AllowlistAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 
 // AddAllowlistEntry adds an allowed license exception for a given project path.
 func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath, bug, description string) error {
-	if fuchsiaDir == "" {
-		fuchsiaDir = "."
-	}
-	absFuchsiaDir, err := filepath.Abs(fuchsiaDir)
-	if err == nil {
-		fuchsiaDir = absFuchsiaDir
-	}
-
-	// Resolve to absolute path first (handles relative to CWD)
-	absProjectPath, err := filepath.Abs(projectPath)
+	var err error
+	fuchsiaDir, projectPath, err = ResolveAndValidatePath(fuchsiaDir, projectPath)
 	if err != nil {
-		return fmt.Errorf("failed to get absolute path for %s: %w", projectPath, err)
+		return err
 	}
-
-	// Make sure the project path is relative to FuchsiaDir
-	rel, err := filepath.Rel(fuchsiaDir, absProjectPath)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("project path %s must be inside fuchsia root %s", projectPath, fuchsiaDir)
-	}
-	projectPath = rel
 
 	// Check if this project already has an exception for this license
 	builder := v2config.NewBuilder(fuchsiaDir)
@@ -227,30 +147,19 @@ func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath, bug, description st
 	baseName := findProjectBasename(projectPath, builder.Config.ManifestProjectNames)
 	destFile := filepath.Join(configDir, baseName+".json")
 
-	var cfg v2config.ConfigFile
-	if data, err := os.ReadFile(destFile); err == nil {
-		json.Unmarshal(data, &cfg)
-	}
-
-	if cfg.AllowedLicenses == nil {
-		cfg.AllowedLicenses = make(map[string][]v2config.AllowlistEntry)
-	}
-
-	entry := v2config.AllowlistEntry{
-		Bug:         bug,
-		Description: description,
-		Paths:       []string{projectPath},
-	}
-	cfg.AllowedLicenses[licenseName] = append(cfg.AllowedLicenses[licenseName], entry)
-
-	outData, err := json.MarshalIndent(cfg, "", "    ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
-	}
-	outData = append(outData, '\n')
-
-	if err := os.WriteFile(destFile, outData, 0644); err != nil {
-		return fmt.Errorf("failed to write config file %s: %w", destFile, err)
+	// Read, mutate and write config file
+	if err := UpdateConfigFile(destFile, func(cfg *v2config.ConfigFile) {
+		if cfg.AllowedLicenses == nil {
+			cfg.AllowedLicenses = make(map[string][]v2config.AllowlistEntry)
+		}
+		entry := v2config.AllowlistEntry{
+			Bug:         bug,
+			Description: description,
+			Paths:       []string{projectPath},
+		}
+		cfg.AllowedLicenses[licenseName] = append(cfg.AllowedLicenses[licenseName], entry)
+	}); err != nil {
+		return err
 	}
 
 	fmt.Printf("✅ Added Allowlist Entry:\n")

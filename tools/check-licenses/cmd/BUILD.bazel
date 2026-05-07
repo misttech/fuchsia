@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "allowlist.go",
         "classify.go",
+        "common.go",
         "config.go",
         "copyright.go",
         "fix.go",
