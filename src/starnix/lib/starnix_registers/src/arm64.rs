@@ -38,7 +38,7 @@ impl<T: RegisterStorage> ArchSpecific for RegisterState<T> {
 }
 
 impl<T: RegisterStorage> RegisterState<T> {
-    fn is_thumb(&self) -> bool {
+    pub fn is_thumb(&self) -> bool {
         const IS_THUMB_MASK: u64 =
             zx::sys::ZX_REG_CPSR_ARCH_32_MASK | zx::sys::ZX_REG_CPSR_THUMB_MASK;
         (self.cpsr as u64) & IS_THUMB_MASK == IS_THUMB_MASK

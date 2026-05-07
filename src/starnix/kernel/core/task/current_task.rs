@@ -1389,6 +1389,42 @@ impl CurrentTask {
         self.task.write().seccomp_filters.notifier = notifier;
     }
 
+    // On ARM32 Linux, some undefined instructions are treated as software breakpoints.
+    // Read the instruction that caused the exception to handle it appropriately.
+    fn is_arm32_breakpoint(&self) -> bool {
+        #[cfg(target_arch = "aarch64")]
+        if self.thread_state.arch_width().is_arch32() {
+            let ip = self.thread_state.registers.instruction_pointer_register();
+            let user_addr = UserAddress::from(ip);
+
+            if self.thread_state.registers.is_thumb() {
+                // Read 2 bytes first to check the narrow Thumb instruction.
+                if let Ok(insn_bytes_16) = self.read_memory_to_array::<2>(user_addr) {
+                    let insn_u16 = u16::from_le_bytes(insn_bytes_16);
+                    if insn_u16 == 0xde01 {
+                        return true;
+                    }
+
+                    // Next, read 4 bytes to check the wide Thumb instruction.
+                    if let Ok(insn_bytes_32) = self.read_memory_to_array::<4>(user_addr) {
+                        let insn_u32 = u32::from_le_bytes(insn_bytes_32);
+                        if insn_u32 == 0xa000f7f0 {
+                            return true;
+                        }
+                    }
+                }
+            } else {
+                if let Ok(insn_bytes_32) = self.read_memory_to_array::<4>(user_addr) {
+                    let insn_u32 = u32::from_le_bytes(insn_bytes_32);
+                    if insn_u32 == 0xe7f001f0 {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// Processes a Zircon exception associated with this task.
     pub fn process_exception(
         &self,
@@ -1415,7 +1451,11 @@ impl CurrentTask {
                 }
             }
             zx::ExceptionType::UndefinedInstruction => {
-                ExceptionResult::Signal(SignalInfo::kernel(SIGILL))
+                if self.is_arm32_breakpoint() {
+                    ExceptionResult::Signal(SignalInfo::kernel(SIGTRAP))
+                } else {
+                    ExceptionResult::Signal(SignalInfo::kernel(SIGILL))
+                }
             }
             zx::ExceptionType::UnalignedAccess => {
                 ExceptionResult::Signal(SignalInfo::kernel(SIGBUS))

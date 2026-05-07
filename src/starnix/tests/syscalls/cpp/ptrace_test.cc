@@ -1420,6 +1420,88 @@ TEST_F(SoftwareBreakpointTest, Signalfd) {
   close(sfd);
 }
 
+// On ARM32 Linux, the specific instruction `0xe7f001f0` is used as a breakpoint, and should report
+// SIGTRAP, instead of SIGILL. On other architectures, their architecture-specific breakpoint
+// instruction is used instead (e.g. `0xcc` on x86_64, and `brk` on AArch64).
+TEST(PtraceTest, UndefinedInstructionSignal) {
+  // This test verifies that specific undefined instructions generate SIGTRAP
+  // on ARM32 (even when not ptraced), and SIGILL on other architectures.
+
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+
+  pid_t child_pid = helper.RunInForkedProcess([] {
+#if defined(__arm__)
+    // Execute the specific undefined instruction used as breakpoint on ARM32
+    asm volatile(".inst 0xe7f001f0");
+#elif defined(__aarch64__)
+    // Execute a generic undefined instruction on ARM64 (not a breakpoint)
+    asm volatile(".inst 0x00000000");
+#elif defined(__x86_64__)
+    // Execute a generic undefined instruction on x86_64 (ud2)
+    asm volatile("ud2");
+#elif defined(__riscv)
+    // Execute a generic undefined instruction on RISC-V (0x00000000 is always illegal)
+    asm volatile(".word 0x00000000");
+#else
+    // Fallback or skip
+    GTEST_SKIP() << "Unsupported architecture";
+#endif
+    _exit(1);  // Should not be reached
+  });
+
+  ASSERT_NE(child_pid, 0);
+
+  int status;
+  ASSERT_EQ(child_pid, waitpid(child_pid, &status, 0));
+
+#if defined(__arm__)
+  // We expect SIGTRAP for this specific instruction on ARM32
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGTRAP)
+      << "Expected SIGTRAP on ARM32, got " << WTERMSIG(status);
+#else
+  // We expect SIGILL on other architectures
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGILL)
+      << "Expected SIGILL, got " << WTERMSIG(status);
+#endif
+}
+
+#if defined(__arm__)
+__attribute__((noinline, target("thumb"))) void ExecuteThumbBreak1() {
+  asm volatile(".inst.n 0xde01");
+}
+
+__attribute__((noinline, target("thumb"))) void ExecuteThumbBreak2() {
+  asm volatile(".inst.w 0xf7f0a000");
+}
+
+TEST(PtraceTest, ThumbUndefinedInstructionSignal) {
+  test_helper::ForkHelper helper;
+  helper.OnlyWaitForForkedChildren();
+
+  // Test Thumb-1 breakpoint (0xde01)
+  pid_t child_pid1 = helper.RunInForkedProcess([] {
+    ExecuteThumbBreak1();
+    _exit(1);
+  });
+
+  int status;
+  ASSERT_EQ(child_pid1, waitpid(child_pid1, &status, 0));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGTRAP)
+      << "Expected SIGTRAP for Thumb-1, got " << WTERMSIG(status);
+
+  // Test Thumb-2 breakpoint (0xf7f0a000)
+  pid_t child_pid2 = helper.RunInForkedProcess([] {
+    ExecuteThumbBreak2();
+    _exit(1);
+  });
+
+  ASSERT_EQ(child_pid2, waitpid(child_pid2, &status, 0));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGTRAP)
+      << "Expected SIGTRAP for Thumb-2, got " << WTERMSIG(status);
+}
+#endif
+
 // Create 2 memory mappings next to each other, and poke to a memory address that spans both
 // mappings. Use file-backed mapping so that they are guaranteed to be distinct VMOs.
 //
