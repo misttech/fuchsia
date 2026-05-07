@@ -94,7 +94,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 							CheckName: "AllLicenseTextsMustBeRecognized",
 							Project:   cf.ProjectRoot,
 							FilePath:  cf.Path,
-							Issue:     fmt.Sprintf("Unrecognized license text: no SPDX ID could be matched. If this file is an exception, allow it by running:\n    fx check-licenses policy add AllLicenseTextsMustBeRecognized %s", relPath),
+							Issue:     fmt.Sprintf("Unrecognized license text: no SPDX ID could be matched. If this file is an exception, allow it by running:\n    fx check-licenses policy add -bug <BugID> AllLicenseTextsMustBeRecognized %s", relPath),
 						}
 						select {
 						case <-ctx.Done():
@@ -193,7 +193,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 								LicenseID: match.SPDXID,
 								Project:   cf.ProjectRoot,
 								FilePath:  cf.Path,
-								Issue:     fmt.Sprintf("File was not approved to use license pattern %s (Type: %s). To allow this project to use this license, run:\n    fx check-licenses allowlist add %s %s", match.SPDXID, match.MatchType, match.SPDXID, relProjRoot),
+								Issue:     fmt.Sprintf("File was not approved to use license pattern %s (Type: %s). To allow this project to use this license, run:\n    fx check-licenses allowlist add -bug <BugID> %s %s", match.SPDXID, match.MatchType, match.SPDXID, relProjRoot),
 							}
 							select {
 							case <-ctx.Done():
