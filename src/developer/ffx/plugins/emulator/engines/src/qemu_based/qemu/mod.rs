@@ -9,6 +9,7 @@
 
 use super::get_host_tool;
 use crate::qemu_based::QemuBasedEngine;
+use crate::qemu_based::comms::QemuSocket;
 use async_trait::async_trait;
 use emulator_instance::{
     CpuArchitecture, EmulatorConfiguration, EmulatorInstanceData, EmulatorInstanceInfo,
@@ -18,10 +19,13 @@ use ffx_config::EnvironmentContext;
 use ffx_emulator_common::config::QEMU_TOOL;
 use ffx_emulator_common::find_unused_vsock_cid;
 use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
-use fho::{Result, bug, return_bug};
+use fho::{Result, bug, return_bug, user_error};
+use serde_json::{Deserializer, Value, json};
 use std::env;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, Instant, SystemTime};
 
 #[derive(Clone, Debug)]
 pub struct QemuEngine {
@@ -250,15 +254,81 @@ impl EmulatorEngine for QemuEngine {
 }
 
 impl QemuEngine {
-    /// Captures a screenshot using QEMU's QMP screendump command.
-    async fn capture_screenshot_qmp(&self, _absolute_path: &Path) -> Result<()> {
-        // TODO(https://fxbug.dev/492401744): Implement QMP screenshot capture.
-        // 1. Connect to QMP via Unix Socket (MACHINE_CONSOLE).
-        // 2. Execute 'qmp_capabilities' to initialize the session.
-        // 3. Send 'screendump' command with a temporary PPM file path.
-        // 4. Parse the resulting PPM P6 data and encode it as PNG using the 'png' crate.
-        // 5. Clean up the temporary PPM file.
-        Err(fho::user_error!("Screenshot capture logic for QEMU is not yet implemented."))
+    /// Captures a screenshot and saves it as a PNG file using QEMU's QMP screendump command.
+    async fn capture_screenshot_qmp(&mut self, absolute_path: &Path) -> Result<()> {
+        let instance_dir =
+            self.data.get_emulator_configuration().runtime.instance_directory.clone();
+        let console_path =
+            self.get_path_for_console_type(&instance_dir, EngineConsoleType::Machine);
+
+        const MAX_ELAPSED: Duration = Duration::from_secs(10);
+        let mut socket = QemuSocket::new(&console_path);
+        let start = Instant::now();
+        let stream = self.open_socket(&mut socket, &MAX_ELAPSED).await?;
+
+        let mut responses = Deserializer::from_reader(&stream).into_iter::<Value>();
+
+        let filename = absolute_path.to_str().ok_or_else(|| bug!("Invalid target path"))?;
+        let command_id = format!(
+            "screendump-{}",
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("system time before epoch!")
+                .as_nanos()
+        );
+
+        let request = json!({
+            "execute": "screendump",
+            "id": command_id,
+            "arguments": {
+                "filename": filename
+            }
+        });
+        let request_cmd = format!("{}\n", request);
+
+        (&stream)
+            .write_all(request_cmd.as_bytes())
+            .map_err(|e| user_error!("Error writing screendump: {e}"))?;
+
+        // Wait for the specific response with our ID.
+        loop {
+            if start.elapsed() > MAX_ELAPSED {
+                return Err(user_error!(
+                    "Timed out ({} s) waiting for screendump response.",
+                    MAX_ELAPSED.as_secs()
+                ));
+            }
+            let data = responses
+                .next()
+                .ok_or_else(|| user_error!("QMP connection closed while waiting for screendump"))?
+                .map_err(|e| user_error!("Error reading QMP response: {e}"))?;
+
+            if data.get("id").and_then(|id| id.as_str()) == Some(&command_id) {
+                if let Some(error) = data.get("error") {
+                    return Err(user_error!("Screenshot error from emulator: {}", error));
+                }
+                if let Some(_return_value) = data.get("return") {
+                    // TODO(https://fxbug.dev/492401744): QEMU outputs PPM by default.
+                    // Future implementation will call convert_ppm_to_png here to save as a
+                    // true PNG file.
+                    return Ok(());
+                }
+                return Err(user_error!("Unknown QMP response for screendump: {:?}", data));
+            }
+        }
+    }
+
+    #[allow(dead_code)]
+    /// Converts a PPM P6 file to a PNG file.
+    fn convert_ppm_to_png(&self, _ppm_source: &Path, _png_destination: &Path) -> Result<()> {
+        // TODO(https://fxbug.dev/492401744): Implement PPM to PNG conversion:
+        // 1. Read the PPM file bytes from _ppm_source.
+        // 2. Parse the PPM P6 header (Magic "P6", width, height, max_val).
+        //    Note: QEMU typically outputs 8-bit PPM (max_val = 255).
+        // 3. Validate that the pixel data size matches (width * height * 3 bytes for RGB).
+        // 4. Use the `png` crate to encode the raw RGB data into a PNG file at _png_destination.
+        //    Reference implementation in CL 1598288.
+        Err(user_error!("PPM to PNG conversion is not yet implemented."))
     }
 }
 
