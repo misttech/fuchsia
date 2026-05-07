@@ -148,6 +148,15 @@ def _cxx_command_scanner() -> Tuple[argparse.ArgumentParser, Sequence[str]]:
         help="underyling linker tool",
     )
     parser.add_argument(
+        "-T",
+        dest="linker_scripts",
+        type=Path,
+        action="append",
+        default=[],
+        metavar="SCRIPT",
+        help="linker script",
+    )
+    parser.add_argument(
         "--save-temps",
         action="store_true",
         default=False,
@@ -439,6 +448,15 @@ def _linker_driver_arg_parser() -> argparse.ArgumentParser:
         type=Path,
         help="linking version script",
     )
+    parser.add_argument(
+        "-T",
+        "--script",
+        dest="linker_scripts",
+        type=Path,
+        action="append",
+        default=[],
+        help="linker script",
+    )
     return parser
 
 
@@ -446,7 +464,7 @@ _LINKER_DRIVER_PARSER = _linker_driver_arg_parser()
 
 # These are flags that are joined with their arguments with
 # no separator (no '=' or space).
-_CPP_FUSED_FLAGS = ["-I", "-D", "-L", "-l", "-U", "-isystem"]
+_CPP_FUSED_FLAGS = ["-I", "-D", "-L", "-l", "-U", "-isystem", "-T"]
 
 
 def expand_forwarded_driver_flags(args: Iterable[str]) -> Iterable[str]:
@@ -690,6 +708,7 @@ class CxxAction(object):
             yield self.linker_version_script
         if self.linker_just_symbols:
             yield self.linker_just_symbols
+        yield from self.linker_scripts
 
     @property
     def response_files(self) -> list[Path]:
@@ -731,6 +750,17 @@ class CxxAction(object):
     @property
     def linker_version_script(self) -> Optional[Path]:
         return self._linker_attributes.version_script
+
+    @property
+    def linker_scripts(self) -> Sequence[Path]:
+        all_scripts = (self._attributes.linker_scripts or []) + (
+            self._linker_attributes.linker_scripts or []
+        )
+        # Filter out symbol assignments like -Tfoo=0x1234.
+        # This assumes that file names do not contain '='.
+        # It also doesn't handle other non-file -T variants like
+        # "-Ttext 0x1234", but those are not currently used in the Fuchsia build.
+        return [p for p in all_scripts if "=" not in str(p)]
 
     @property
     def rtlib(self) -> Optional[str]:

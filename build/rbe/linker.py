@@ -266,6 +266,7 @@ class LinkerInvocation(object):
         search_paths: Sequence[Path] | None = None,
         l_libs: Sequence[str] | None = None,  # e.g. "c" from "-lc"
         direct_files: Sequence[Path] | None = None,
+        unscanned_direct_files: Sequence[Path] | None = None,
         sysroot: Path | None = None,
     ):
         working_dir_abs = working_dir_abs or Path(os.curdir).absolute()
@@ -277,6 +278,7 @@ class LinkerInvocation(object):
         )
         self._l_libs = l_libs or []
         self._direct_files = direct_files or []
+        self._unscanned_direct_files = unscanned_direct_files or []
         self._sysroot = sysroot
 
     @property
@@ -297,6 +299,10 @@ class LinkerInvocation(object):
     @property
     def direct_files(self) -> Sequence[Path]:
         return self._direct_files
+
+    @property
+    def unscanned_direct_files(self) -> Sequence[Path]:
+        return self._unscanned_direct_files
 
     @property
     def sysroot(self) -> Optional[Path]:
@@ -477,6 +483,10 @@ class LinkerInvocation(object):
         for f in self.direct_files:
             vmsg(f"Expanding direct file: {f}")
             yield from self.expand_possible_linker_script(f)
+
+        for f in self._unscanned_direct_files:
+            vmsg(f"Yielding unscanned direct file: {f}")
+            yield f
 
     def expand_possible_linker_script(
         self,

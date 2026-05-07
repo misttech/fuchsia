@@ -94,6 +94,38 @@ class LinkerScriptParseTests(unittest.TestCase):
         expanded = list(link.expand_linker_script("\n  \n    \n      \n"))
         self.assertEqual(expanded, [])
 
+    def test_unscanned_direct_files(self) -> None:
+        text = "THIS IS NOT A VALID LINKER SCRIPT AND SHOULD CAUSE A PARSE ERROR IF SCANNED"
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            script = tdp / "bad.ld"
+            script.write_text(text)
+            link = linker.LinkerInvocation(
+                working_dir_abs=tdp, unscanned_direct_files=[script]
+            )
+            # expand_all should yield the script but not fail parsing it
+            expanded = list(link.expand_all())
+            self.assertEqual(expanded, [script])
+
+    def test_rodso_content_fails_parsing(self) -> None:
+        text = """SECTIONS { . = 0; }"""
+        with tempfile.TemporaryDirectory() as td:
+            link = linker.LinkerInvocation(working_dir_abs=Path(td))
+            with self.assertRaises(linker.ParseError):
+                list(link.expand_linker_script(text))
+
+    def test_rodso_content_unscanned(self) -> None:
+        text = """SECTIONS { . = 0; }"""
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            script = tdp / "rodso.ld"
+            script.write_text(text)
+            link = linker.LinkerInvocation(
+                working_dir_abs=tdp, unscanned_direct_files=[script]
+            )
+            expanded = list(link.expand_all())
+            self.assertEqual(expanded, [script])
+
     def test_comment_one_line(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             link = linker.LinkerInvocation(working_dir_abs=Path(td))

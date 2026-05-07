@@ -134,6 +134,63 @@ class CxxLinkRemoteActionTests(unittest.TestCase):
         linker = c._linker_invocation()
         self.assertEqual(linker.direct_files, sources)
 
+    def test_linker_scripts_from_flags(self) -> None:
+        fake_root = Path("/home/project")
+        fake_builddir = Path("out/default")
+        fake_cwd = fake_root / fake_builddir
+        compiler = Path("clang++")
+        source = Path("hello.o")
+        script = Path("my_script.ld")
+        output = Path("hello")
+        command = _strs(
+            [
+                compiler,
+                "--target=riscv64-apple-darwin21",
+                "-T",
+                script,
+                source,
+                "-o",
+                output,
+            ]
+        )
+        c = cxx_link_remote_wrapper.CxxLinkRemoteAction(
+            ["--", *command],
+            exec_root=fake_root,
+            working_dir=fake_cwd,
+            host_platform=fuchsia.REMOTE_PLATFORM,
+            auto_reproxy=False,
+        )
+        linker_invoc = c._linker_invocation()
+        self.assertIn(script, linker_invoc.unscanned_direct_files)
+
+    def test_linker_scripts_from_Wl_flags(self) -> None:
+        fake_root = Path("/home/project")
+        fake_builddir = Path("out/default")
+        fake_cwd = fake_root / fake_builddir
+        compiler = Path("clang++")
+        source = Path("hello.o")
+        script = Path("my_script.ld")
+        output = Path("hello")
+        command = _strs(
+            [
+                compiler,
+                "--target=riscv64-apple-darwin21",
+                f"-Wl,-T,{script}",
+                source,
+                "-o",
+                output,
+            ]
+        )
+        c = cxx_link_remote_wrapper.CxxLinkRemoteAction(
+            ["--", *command],
+            exec_root=fake_root,
+            working_dir=fake_cwd,
+            host_platform=fuchsia.REMOTE_PLATFORM,
+            auto_reproxy=False,
+        )
+        linker_invoc = c._linker_invocation()
+        self.assertIn(script, linker_invoc.unscanned_direct_files)
+
     def test_remote_action_paths(self) -> None:
         fake_root = Path("/home/project")
         fake_builddir = Path("out/not-default")
