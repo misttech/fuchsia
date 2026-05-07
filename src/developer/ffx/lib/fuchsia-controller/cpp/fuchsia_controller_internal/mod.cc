@@ -126,19 +126,10 @@ PyObject *get_decode_error(const fit::result<T, V> &decode_res) {
 
 // Decodes a FIDL error from the scratch memory and turns it into a Python exception.
 template <typename T>
-PyObject *decode_wire_error_type(mod::FuchsiaControllerState *state) {
-  uint64_t fidl_msg_len = *reinterpret_cast<uint64_t *>(state->ERR_SCRATCH);
-  if (fidl_msg_len > mod::ERR_SCRATCH_LEN) {
-    std::ostringstream ss;
-    ss << "Attempted to parse FIDL object of size " << fidl_msg_len
-       << " which is beyond the max size of " << mod::ERR_SCRATCH_LEN
-       << ". This is likely a malformed error. ";
-    auto str = ss.str();
-    PyErr_SetString(PyExc_RuntimeError, str.c_str());
-    return nullptr;
-  }
-  fit::result decode_res = fidl::Unpersist<T>(cpp20::span(
-      reinterpret_cast<uint8_t *>(state->ERR_SCRATCH + sizeof(fidl_msg_len)), fidl_msg_len));
+PyObject *decode_wire_error_type(mod::FuchsiaControllerState *state, char *err_buf,
+                                 uint64_t err_len) {
+  fit::result decode_res =
+      fidl::Unpersist<T>(cpp20::span(reinterpret_cast<uint8_t *>(err_buf), err_len));
   if (decode_res.is_error()) {
     return get_decode_error(decode_res);
   }
@@ -156,7 +147,8 @@ PyObject *decode_wire_error_type(mod::FuchsiaControllerState *state) {
   return PyUnicode_FromStringAndSize(output.data(), static_cast<Py_ssize_t>(output.size()));
 }
 
-void set_fdomain_exception(mod::FuchsiaControllerState *state, fc_status_t err) {
+void set_fdomain_exception(mod::FuchsiaControllerState *state, fc_status_t err, char *err_buf,
+                           uint64_t err_len) {
   PyObject *tuple = PyTuple_New(2);
   if (tuple == nullptr) {
     std::ostringstream ss;
@@ -169,14 +161,16 @@ void set_fdomain_exception(mod::FuchsiaControllerState *state, fc_status_t err) 
   PyObject *err_message = nullptr;
   switch (err) {
     case FC_ERR_SOCKET_WRITE:
-      err_message = decode_wire_error_type<::fuchsia_fdomain::WriteSocketError>(state);
+      err_message =
+          decode_wire_error_type<::fuchsia_fdomain::WriteSocketError>(state, err_buf, err_len);
       break;
     case FC_ERR_CHANNEL_WRITE: {
-      err_message = decode_wire_error_type<::fuchsia_fdomain::WriteChannelError>(state);
+      err_message =
+          decode_wire_error_type<::fuchsia_fdomain::WriteChannelError>(state, err_buf, err_len);
       break;
     }
     case FC_ERR_FDOMAIN: {
-      err_message = decode_wire_error_type<::fuchsia_fdomain::Error>(state);
+      err_message = decode_wire_error_type<::fuchsia_fdomain::Error>(state, err_buf, err_len);
       break;
     }
     default:
@@ -209,22 +203,63 @@ FuchsiaControllerState *get_module_state() {
 }
 
 // Returns new reference.
-PyObject *str_from_scratch(mod::FuchsiaControllerState *state) {
-  uint64_t error_len = *reinterpret_cast<uint64_t *>(state->ERR_SCRATCH);
-  auto str_obj = PyUnicode_FromStringAndSize(state->ERR_SCRATCH + sizeof(uint64_t),
-                                             static_cast<Py_ssize_t>(error_len));
-  // If this is null this will return an internal error about allocating the string.
-  if (str_obj == nullptr) {
-    PyErr_Clear();
-    PyErr_SetString(PyExc_RuntimeError,
-                    "Internal error: unable to allocate error string from buffer. This is a bug");
-    return nullptr;
+namespace {
+
+// Convenience RAII error state handler.
+class LastError {
+ public:
+  explicit LastError(mod::FuchsiaControllerState *state) : state_(state) {
+    ffx_get_last_error(state_->ctx, &err_buf_, &err_len_, &err_type_);
   }
-  return str_obj;
-}
+
+  ~LastError() {
+    if (err_buf_ != nullptr) {
+      ffx_free_error_buffer(err_buf_, err_len_);
+    }
+  }
+
+  char *err_buf() { return err_buf_; }
+  uint64_t err_len() const { return err_len_; }
+  fc_err_type_t err_type() const { return err_type_; }
+
+  bool is_fidl() { return err_buf_ != nullptr && err_type_ == FC_ERR_TYPE_FIDL; }
+  bool is_string() { return err_buf_ != nullptr && err_type_ == FC_ERR_TYPE_STRING; }
+
+  PyObject *to_string() {
+    if (!is_string()) {
+      PyErr_SetString(PyExc_RuntimeError, "Internal error: expected string error from buffer");
+      return nullptr;
+    }
+    auto str_obj = PyUnicode_FromStringAndSize(err_buf_, static_cast<Py_ssize_t>(err_len_));
+    // If this is null this will return an internal error about allocating the string.
+    if (str_obj == nullptr) {
+      PyErr_Clear();
+      PyErr_SetString(PyExc_RuntimeError,
+                      "Internal error: unable to allocate error string from buffer. This is a bug");
+      return nullptr;
+    }
+    return str_obj;
+  }
+
+  void set_fdomain_exception(fc_status_t err) {
+    if (!is_fidl()) {
+      PyErr_SetString(PyExc_RuntimeError, "Internal error: expected FIDL error from buffer");
+      return;
+    }
+    ::set_fdomain_exception(state_, err, err_buf_, err_len_);
+  }
+
+ private:
+  mod::FuchsiaControllerState *state_;
+  char *err_buf_ = nullptr;
+  uint64_t err_len_ = 0;
+  fc_err_type_t err_type_ = FC_ERR_TYPE_NONE;
+};
+
+}  // namespace
 
 void set_python_exception(fc_status_t err) {
-  auto state = get_module_state();
+  LastError last_err(get_module_state());
   switch (err) {
     // If for some reason this is passed, some bug has been introduced, as there
     // is no reason to return `FC_OK`.
@@ -254,7 +289,7 @@ void set_python_exception(fc_status_t err) {
     case FC_ERR_PROTOCOL:
     case FC_ERR_TRANSPORT:
     case FC_ERR_INTERNAL: {
-      auto str_obj = str_from_scratch(state);
+      auto str_obj = last_err.to_string();
       if (str_obj == nullptr) {
         return;
       }
@@ -267,7 +302,7 @@ void set_python_exception(fc_status_t err) {
             ss << "Failed to allocate Tuple in %s" << __func__;
             auto out = ss.str();
             PyErr_SetString(PyExc_RuntimeError, out.c_str());
-            return;
+            break;
           }
           PyTuple_SetItem(tuple, 0, PyLong_FromLong(err));
           PyTuple_SetItem(tuple, 1, str_obj);
@@ -285,7 +320,7 @@ void set_python_exception(fc_status_t err) {
     case FC_ERR_SOCKET_WRITE:
     case FC_ERR_CHANNEL_WRITE:
     case FC_ERR_FDOMAIN: {
-      ::set_fdomain_exception(state, err);
+      last_err.set_fdomain_exception(err);
       break;
     }
     case FC_ERR_INTERRUPTED: {

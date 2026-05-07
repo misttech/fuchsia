@@ -11,13 +11,8 @@
 
 namespace mod {
 
-// Max size of the error buffer. Same as max FIDL message size to support
-// encoding FIDL errors.
-constexpr uint64_t ERR_SCRATCH_LEN = 65536;
-
 // Definition of the module-wide state.
 using FuchsiaControllerState = struct {
-  char ERR_SCRATCH[ERR_SCRATCH_LEN];
   ffx_lib_context_t *ctx;
 };
 

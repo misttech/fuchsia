@@ -103,3 +103,19 @@ assoc_values!(FcTransportStatus, [
     INTERRUPTED                        = -100000;
 ]);
 // LINT.ThenChange(//src/developer/ffx/lib/fuchsia-controller/cpp/fuchsia_controller_internal/fuchsia_controller.h)
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[repr(transparent)]
+pub struct FcErrorPayloadType(i32);
+
+impl FcErrorPayloadType {
+    pub fn into_raw(&self) -> i32 {
+        self.0
+    }
+}
+
+assoc_values!(FcErrorPayloadType, [
+    NONE   = 0;
+    STRING = 1;
+    FIDL   = 2;
+]);

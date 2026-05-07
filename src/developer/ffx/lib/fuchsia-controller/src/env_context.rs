@@ -57,9 +57,9 @@ async fn new_device_connection(
 }
 
 impl EnvContext {
-    pub(crate) fn write_err<T: std::fmt::Display>(&self, err: T) {
+    pub(crate) fn write_err<T: std::fmt::Display>(&self, thread_id: std::thread::ThreadId, err: T) {
         let lib = self.lib_ctx.upgrade().expect("library context instance deallocated early");
-        lib.write_err(err)
+        lib.write_err(thread_id, err)
     }
 
     pub(crate) fn lib_ctx(&self) -> Arc<LibContext> {

@@ -3,14 +3,12 @@
 // found in the LICENSE file.
 
 use crate::commands::LibraryCommand;
-use crate::ext_buffer::ExtBuffer;
 use crate::fdomain::FDomainState;
 use anyhow::Result;
 use async_lock::{Mutex as AsyncMutex, MutexGuard};
 use fdomain_client::Error as FDomainInternalError;
 use fuchsia_async::{LocalExecutor, Task};
 use signal_hook::consts::signal;
-use std::ops::DerefMut;
 use std::os::fd::{IntoRawFd, RawFd};
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt;
@@ -19,8 +17,14 @@ use zx_types;
 
 pub type Notifier = Arc<AsyncMutex<Option<LibNotifier>>>;
 
+#[derive(Debug)]
+pub(crate) enum ErrorPayload {
+    String(String),
+    Fidl(Vec<u8>),
+}
+
 pub struct LibContext {
-    buf: Mutex<ExtBuffer<u8>>,
+    pub(crate) errors: Mutex<std::collections::HashMap<std::thread::ThreadId, ErrorPayload>>,
     notifier: Notifier,
     cmd_sender: async_channel::Sender<LibraryCommand>,
     thread_ctx: Mutex<Option<std::thread::JoinHandle<()>>>,
@@ -30,7 +34,7 @@ pub struct LibContext {
 }
 
 impl LibContext {
-    pub(crate) fn new(buf: ExtBuffer<u8>) -> Self {
+    pub(crate) fn new() -> Self {
         let notifier = Notifier::default();
         let (cmd_sender, receiver) = async_channel::unbounded::<LibraryCommand>();
         let (signal_sender, signal_receiver) = async_channel::bounded(1);
@@ -65,7 +69,7 @@ impl LibContext {
         });
         Self {
             cmd_sender,
-            buf: Mutex::new(buf),
+            errors: Mutex::new(std::collections::HashMap::new()),
             notifier: notifier.clone(),
             thread_ctx: Mutex::new(Some(new_command_thread(
                 receiver,
@@ -78,40 +82,45 @@ impl LibContext {
         }
     }
 
-    fn write_fidl_to_buffer(&self, fidl_err: impl fidl::Persistable) {
-        let mut guard = self.buf.lock().unwrap();
-        let buf = guard.deref_mut();
-        let msg = fidl::persist(&fidl_err).expect("encoding fdomain fidl error");
-        buf[0..8].clone_from_slice(&msg.len().to_ne_bytes());
-        buf[8..(8 + msg.len())].clone_from_slice(&msg);
+    fn fidl_to_payload(&self, fidl_err: &impl fidl::Persistable) -> Option<ErrorPayload> {
+        Some(ErrorPayload::Fidl(fidl::persist(fidl_err).expect("encoding fdomain fidl error")))
     }
 
-    pub(crate) fn write_fdomain_err(&self, err: &FDomainInternalError) {
+    pub(crate) fn write_fdomain_err(
+        &self,
+        thread_id: std::thread::ThreadId,
+        err: &FDomainInternalError,
+    ) {
         use FDomainInternalError::*;
-        match err {
-            SocketWrite(s) => self.write_fidl_to_buffer(s.clone()),
-            ChannelWrite(c) => self.write_fidl_to_buffer(c.clone()),
-            FDomain(f) => self.write_fidl_to_buffer(f.clone()),
+        let payload = match err {
+            SocketWrite(s) => self.fidl_to_payload(s),
+            ChannelWrite(c) => self.fidl_to_payload(c),
+            FDomain(f) => self.fidl_to_payload(f),
             ProtocolObjectTypeIncompatible
             | ProtocolRightsIncompatible
             | ConnectionMismatch
             | StreamingAborted
             | ProtocolSignalsIncompatible
-            | ProtocolStreamEventIncompatible => {}
-            t @ Transport(_) => self.write_err(t),
-            p @ Protocol(_) => self.write_err(p),
+            | ProtocolStreamEventIncompatible => None,
+            t @ Transport(_) => Some(ErrorPayload::String(self.err_to_string(t))),
+            p @ Protocol(_) => Some(ErrorPayload::String(self.err_to_string(p))),
+        };
+        if let Some(p) = payload {
+            let mut guard = self.errors.lock().unwrap();
+            guard.insert(thread_id, p);
         }
     }
 
-    pub(crate) fn write_err<T: std::fmt::Display>(&self, err: T) {
+    fn err_to_string<T: std::fmt::Display>(&self, err: T) -> String {
         // LINT.IfChange(no_fdomain_client)
         let error = format!("FFX Library Error: {err}");
         // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:no_fdomain_client)
-        let mut guard = self.buf.lock().unwrap();
-        let buf = guard.deref_mut();
-        buf[0..8].clone_from_slice(&error.len().to_ne_bytes());
-        buf[8..(8 + error.len())].clone_from_slice(error.as_bytes());
-        buf[8 + error.len()] = 0.into();
+        error
+    }
+
+    pub(crate) fn write_err<T: std::fmt::Display>(&self, thread_id: std::thread::ThreadId, err: T) {
+        let mut guard = self.errors.lock().unwrap();
+        guard.insert(thread_id, ErrorPayload::String(self.err_to_string(err)));
     }
 
     pub(crate) fn run(&self, cmd: LibraryCommand) {
@@ -237,35 +246,24 @@ impl LibNotifier {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::sync::Mutex as SyncMutex;
 
-    static SCRATCH_LOCK: Mutex<()> = SyncMutex::new(());
-    static mut SCRATCH: [u8; 1024] = [0; 1024];
     fn testing_lib_context() -> LibContext {
-        let raw = std::ptr::addr_of_mut!(SCRATCH) as *mut u8;
-        // SAFETY: This is unsafe because multiple threads can read it, so is protected by way of a
-        // mutex.
-        let buf = unsafe { ExtBuffer::new(raw, 1024) };
-        LibContext::new(buf)
-    }
-
-    fn decode_string_error<'a>(_guard: &std::sync::MutexGuard<'a, ()>) -> &'a str {
-        // SAFETY: While it can't be proven this is the right lock, we should at least
-        // be holding the lock here when testing usage of the shared scratch buffer.
-        unsafe {
-            let msg_len = usize::from_ne_bytes(SCRATCH[0..8].try_into().unwrap());
-            std::str::from_utf8(&SCRATCH[8..(8 + msg_len)]).unwrap()
-        }
+        LibContext::new()
     }
 
     // Tests for a bug in which `Transport(None)` would simply print `None`.
     #[test]
     fn test_transport_error_prints_readable_message() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let ctx = testing_lib_context();
         let err = FDomainInternalError::Transport(None);
-        ctx.write_fdomain_err(&err);
-        let s = decode_string_error(&_lock);
-        assert!(s.contains(&format!("{err}")), "GOT: '{s}'; WANT: '{err}'");
+        let thread_id = std::thread::current().id();
+        ctx.write_fdomain_err(thread_id, &err);
+        let errors = ctx.errors.lock().unwrap();
+        let payload = errors.get(&thread_id).unwrap();
+        if let ErrorPayload::String(s) = payload {
+            assert!(s.contains(&format!("{err}")), "GOT: '{s}'; WANT: '{err}'");
+        } else {
+            panic!("Expected string error payload");
+        }
     }
 }

@@ -36,31 +36,37 @@ pub(crate) enum LibraryCommand {
     },
     GetNotificationDescriptor {
         lib: Arc<LibContext>,
+        calling_thread: std::thread::ThreadId,
         responder: Responder<i32>,
     },
     CreateEnvContext {
         lib: Arc<LibContext>,
+        calling_thread: std::thread::ThreadId,
         responder: Responder<CmdResult<Arc<EnvContext>>>,
         config: Vec<FfxConfigEntry>,
         isolate_dir: Option<PathBuf>,
     },
     OpenDeviceProxy {
         env: Arc<EnvContext>,
+        calling_thread: std::thread::ThreadId,
         moniker: String,
         capability_name: String,
         responder: Responder<CmdResult<zx_types::zx_handle_t>>,
     },
     OpenRemoteControlProxy {
         env: Arc<EnvContext>,
+        calling_thread: std::thread::ThreadId,
         responder: Responder<CmdResult<zx_types::zx_handle_t>>,
     },
     HandleGetKoid {
         lib: Arc<LibContext>,
+        calling_thread: std::thread::ThreadId,
         handle: zx_types::zx_handle_t,
         responder: Responder<CmdResult<u64>>,
     },
     ChannelRead {
         lib: Arc<LibContext>,
+        calling_thread: std::thread::ThreadId,
         channel: zx_types::zx_handle_t,
         out_buf: ExtBuffer<u8>,
         out_handles: ExtBuffer<MaybeUninit<zx_types::zx_handle_t>>,
@@ -68,10 +74,12 @@ pub(crate) enum LibraryCommand {
     },
     ChannelCreate {
         env: Arc<EnvContext>,
+        calling_thread: std::thread::ThreadId,
         responder: Responder<CmdResult<(zx_types::zx_handle_t, zx_types::zx_handle_t)>>,
     },
     ChannelWrite {
         lib: Arc<LibContext>,
+        calling_thread: std::thread::ThreadId,
         channel: zx_types::zx_handle_t,
         buf: ExtBuffer<u8>,
         handles: ExtBuffer<zx_types::zx_handle_t>,
@@ -79,12 +87,14 @@ pub(crate) enum LibraryCommand {
     },
     ConfigGetString {
         env_ctx: Arc<EnvContext>,
+        calling_thread: std::thread::ThreadId,
         config_key: String,
         out_buf: ExtBuffer<u8>,
         responder: Responder<CmdResult<usize>>,
     },
     ChannelWriteEtc {
         lib: Arc<LibContext>,
+        calling_thread: std::thread::ThreadId,
         channel: zx_types::zx_handle_t,
         buf: ExtBuffer<u8>,
         handles: ExtBuffer<zx_types::zx_handle_disposition_t>,
@@ -92,14 +102,17 @@ pub(crate) enum LibraryCommand {
     },
     EventCreate {
         env: Arc<EnvContext>,
+        calling_thread: std::thread::ThreadId,
         responder: Responder<CmdResult<zx_types::zx_handle_t>>,
     },
     EventPairCreate {
         env: Arc<EnvContext>,
+        calling_thread: std::thread::ThreadId,
         responder: Responder<CmdResult<(zx_types::zx_handle_t, zx_types::zx_handle_t)>>,
     },
     ObjectSignal {
         lib: Arc<LibContext>,
+        calling_thread: std::thread::ThreadId,
         handle: zx_types::zx_handle_t,
         clear_mask: fidl::Signals,
         set_mask: fidl::Signals,
@@ -107,6 +120,7 @@ pub(crate) enum LibraryCommand {
     },
     ObjectSignalPeer {
         lib: Arc<LibContext>,
+        calling_thread: std::thread::ThreadId,
         handle: zx_types::zx_handle_t,
         clear_mask: fidl::Signals,
         set_mask: fidl::Signals,
@@ -114,29 +128,34 @@ pub(crate) enum LibraryCommand {
     },
     ObjectSignalPoll {
         lib: Arc<LibContext>,
+        calling_thread: std::thread::ThreadId,
         handle: zx_types::zx_handle_t,
         signals: fidl::Signals,
         responder: Responder<CmdResult<fidl::Signals>>,
     },
     SocketCreate {
         env: Arc<EnvContext>,
+        calling_thread: std::thread::ThreadId,
         options: u32,
         responder: Responder<CmdResult<(zx_types::zx_handle_t, zx_types::zx_handle_t)>>,
     },
     SocketRead {
         lib: Arc<LibContext>,
+        calling_thread: std::thread::ThreadId,
         socket: zx_types::zx_handle_t,
         out_buf: ExtBuffer<u8>,
         responder: Responder<ReadResponse>,
     },
     SocketWrite {
         lib: Arc<LibContext>,
+        calling_thread: std::thread::ThreadId,
         socket: zx_types::zx_handle_t,
         buf: ExtBuffer<u8>,
         responder: Responder<FcTransportStatus>,
     },
     TargetWait {
         env: Arc<EnvContext>,
+        calling_thread: std::thread::ThreadId,
         timeout: u64,
         responder: Responder<FcTransportStatus>,
         offline: bool,
@@ -155,45 +174,45 @@ impl LibraryCommand {
             Self::BlockForever { responder: _r } => loop {
                 tokio::time::sleep(std::time::Duration::MAX).await
             },
-            Self::GetNotificationDescriptor { lib, responder } => {
+            Self::GetNotificationDescriptor { lib, calling_thread, responder } => {
                 match lib.notifier_descriptor().await {
                     Ok(r) => {
                         responder.send(r).unwrap();
                     }
                     Err(e) => {
-                        lib.write_err(e);
+                        lib.write_err(calling_thread, e);
                         responder.send(FcTransportStatus::INTERNAL.into_raw()).unwrap();
                     }
                 }
             }
-            Self::CreateEnvContext { lib, config, responder, isolate_dir } => {
+            Self::CreateEnvContext { lib, calling_thread, responder, config, isolate_dir } => {
                 match EnvContext::new(Arc::downgrade(&lib), config, isolate_dir) {
                     Ok(e) => {
                         responder.send(Ok(Arc::new(e))).unwrap();
                     }
                     Err(e) => {
-                        lib.write_err(e);
+                        lib.write_err(calling_thread, e);
                         responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
                     }
                 }
             }
-            Self::OpenRemoteControlProxy { env, responder } => {
+            Self::OpenRemoteControlProxy { env, calling_thread, responder } => {
                 match env.connect_remote_control_proxy().await {
                     Ok(h) => {
                         responder.send(Ok(h)).unwrap();
                     }
                     Err(e) => {
-                        env.write_err(e);
+                        env.write_err(calling_thread, e);
                         responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
                     }
                 }
             }
-            Self::HandleGetKoid { lib, handle, responder } => {
+            Self::HandleGetKoid { lib, calling_thread, handle, responder } => {
                 let mut state = lib.fdomain_state().await;
                 let handle = match state.handle(handle) {
                     Ok(h) => h,
                     Err(e) => {
-                        lib.write_err(e);
+                        lib.write_err(calling_thread, e);
                         responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
                         return;
                     }
@@ -201,23 +220,30 @@ impl LibraryCommand {
                 match handle.as_handle_ref().get_koid().await {
                     Ok(koid) => responder.send(Ok(koid)).unwrap(),
                     Err(e) => {
-                        lib.write_fdomain_err(&e);
+                        lib.write_fdomain_err(calling_thread, &e);
                         responder.send(Err(e.into())).unwrap();
                     }
                 }
             }
-            Self::OpenDeviceProxy { env, moniker, capability_name, responder } => {
+            Self::OpenDeviceProxy { env, calling_thread, moniker, capability_name, responder } => {
                 match env.connect_device_proxy(moniker, capability_name).await {
                     Ok(r) => {
                         responder.send(Ok(r)).unwrap();
                     }
                     Err(e) => {
-                        env.write_err(e);
+                        env.write_err(calling_thread, e);
                         responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
                     }
                 }
             }
-            Self::ChannelRead { lib, channel, mut out_buf, mut out_handles, responder } => {
+            Self::ChannelRead {
+                lib,
+                calling_thread,
+                channel,
+                mut out_buf,
+                mut out_handles,
+                responder,
+            } => {
                 // There's room here to optimize this. We've already got an out buffer to read
                 // directly into here. For the sake of avoiding complexity this is just copying
                 // things for now.
@@ -232,7 +258,7 @@ impl LibraryCommand {
                             }
                         },
                         Err(e) => {
-                            lib.write_err(e);
+                            lib.write_err(calling_thread, e);
                             responder.send(FcTransportStatus::INTERNAL.into()).unwrap();
                             return;
                         }
@@ -277,16 +303,16 @@ impl LibraryCommand {
                             .unwrap();
                     }
                     Err(e) => {
-                        lib.write_fdomain_err(&e);
+                        lib.write_fdomain_err(calling_thread, &e);
                         responder.send(FcTransportStatus::from(e).into()).unwrap();
                     }
                 }
             }
-            Self::ChannelCreate { env, responder } => {
+            Self::ChannelCreate { env, calling_thread, responder } => {
                 let fdomain_client = match env.fdomain_client().await {
                     Ok(c) => c,
                     Err(e) => {
-                        env.write_err(e);
+                        env.write_err(calling_thread, e);
                         responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
                         return;
                     }
@@ -298,14 +324,14 @@ impl LibraryCommand {
                 let right = state.register(right.into());
                 responder.send(Ok((left, right))).unwrap();
             }
-            Self::ChannelWrite { lib, channel, buf, handles, responder } => {
+            Self::ChannelWrite { lib, calling_thread, channel, buf, handles, responder } => {
                 let mut fdomain_handles = Vec::new();
                 let mut state = lib.fdomain_state().await;
                 for hdl in handles.iter() {
                     let fd_hdl = match state.take_handle(*hdl) {
                         Ok(h) => h,
                         Err(e) => {
-                            lib.write_err(e);
+                            lib.write_err(calling_thread, e);
                             responder.send(FcTransportStatus::INTERNAL).unwrap();
                             return;
                         }
@@ -315,7 +341,7 @@ impl LibraryCommand {
                 let handle = match state.handle(channel) {
                     Ok(h) => h,
                     Err(e) => {
-                        lib.write_err(e);
+                        lib.write_err(calling_thread, e);
                         responder.send(FcTransportStatus::INTERNAL).unwrap();
                         return;
                     }
@@ -324,13 +350,13 @@ impl LibraryCommand {
                 let status = match channel.fdomain_write(&buf, fdomain_handles).await {
                     Ok(()) => FcTransportStatus::OK,
                     Err(e) => {
-                        lib.write_fdomain_err(&e);
+                        lib.write_fdomain_err(calling_thread, &e);
                         e.into()
                     }
                 };
                 responder.send(status).unwrap();
             }
-            Self::ChannelWriteEtc { lib, channel, buf, mut handles, responder } => {
+            Self::ChannelWriteEtc { lib, calling_thread, channel, buf, mut handles, responder } => {
                 let mut handle_ops =
                     Vec::with_capacity(zx_types::ZX_CHANNEL_MAX_MSG_HANDLES as usize);
                 // The verification pass is just to eliminate some headaches around lifetime checks
@@ -367,7 +393,7 @@ impl LibraryCommand {
                     let fdomain_hdl = match fdomain.take_handle(disp.handle) {
                         Ok(h) => h,
                         Err(e) => {
-                            lib.write_err(e);
+                            lib.write_err(calling_thread, e);
                             responder.send(FcTransportStatus::INTERNAL).unwrap();
                             return;
                         }
@@ -383,7 +409,7 @@ impl LibraryCommand {
                 let handle = match fdomain.handle(channel) {
                     Ok(g) => g,
                     Err(e) => {
-                        lib.write_err(e);
+                        lib.write_err(calling_thread, e);
                         responder.send(FcTransportStatus::INTERNAL).unwrap();
                         return;
                     }
@@ -392,17 +418,23 @@ impl LibraryCommand {
                 let status = match channel.fdomain_write_etc(&buf, handle_ops).await {
                     Ok(_) => FcTransportStatus::OK,
                     Err(e) => {
-                        lib.write_fdomain_err(&e);
+                        lib.write_fdomain_err(calling_thread, &e);
                         e.into()
                     }
                 };
                 responder.send(status).unwrap();
             }
-            Self::ConfigGetString { env_ctx, responder, config_key, mut out_buf } => {
+            Self::ConfigGetString {
+                env_ctx,
+                calling_thread,
+                responder,
+                config_key,
+                mut out_buf,
+            } => {
                 let result: String = match env_ctx.context.get(&config_key) {
                     Ok(r) => r,
                     Err(e) => {
-                        env_ctx.write_err(e);
+                        env_ctx.write_err(calling_thread, e);
                         responder.send(Err(FcTransportStatus::NOT_FOUND)).unwrap();
                         return;
                     }
@@ -415,11 +447,11 @@ impl LibraryCommand {
                 out_buf[..result_bytes.len()].copy_from_slice(result_bytes);
                 responder.send(Ok(result_bytes.len())).unwrap();
             }
-            Self::EventCreate { env, responder } => {
+            Self::EventCreate { env, calling_thread, responder } => {
                 let fdomain_client = match env.fdomain_client().await {
                     Ok(c) => c,
                     Err(e) => {
-                        env.write_err(e);
+                        env.write_err(calling_thread, e);
                         responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
                         return;
                     }
@@ -430,11 +462,11 @@ impl LibraryCommand {
                 let hdl = fdomain_state.register(hdl.into());
                 responder.send(Ok(hdl)).unwrap();
             }
-            Self::EventPairCreate { env, responder } => {
+            Self::EventPairCreate { env, calling_thread, responder } => {
                 let fdomain_client = match env.fdomain_client().await {
                     Ok(c) => c,
                     Err(e) => {
-                        env.write_err(e);
+                        env.write_err(calling_thread, e);
                         responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
                         return;
                     }
@@ -446,12 +478,12 @@ impl LibraryCommand {
                 let right = state.register(right.into());
                 responder.send(Ok((left, right))).unwrap();
             }
-            Self::ObjectSignal { lib, handle, clear_mask, set_mask, responder } => {
+            Self::ObjectSignal { lib, calling_thread, handle, clear_mask, set_mask, responder } => {
                 let mut fdomain = lib.fdomain_state().await;
                 let handle = match fdomain.handle(handle) {
                     Ok(g) => g,
                     Err(e) => {
-                        lib.write_err(e);
+                        lib.write_err(calling_thread, e);
                         responder.send(FcTransportStatus::INTERNAL).unwrap();
                         return;
                     }
@@ -459,18 +491,25 @@ impl LibraryCommand {
                 let status = match handle.signal_handle(set_mask, clear_mask).await {
                     Ok(_) => FcTransportStatus::OK,
                     Err(e) => {
-                        lib.write_fdomain_err(&e);
+                        lib.write_fdomain_err(calling_thread, &e);
                         e.into()
                     }
                 };
                 responder.send(status).unwrap();
             }
-            Self::ObjectSignalPeer { lib, handle, clear_mask, set_mask, responder } => {
+            Self::ObjectSignalPeer {
+                lib,
+                calling_thread,
+                handle,
+                clear_mask,
+                set_mask,
+                responder,
+            } => {
                 let mut fdomain = lib.fdomain_state().await;
                 let handle = match fdomain.handle(handle) {
                     Ok(g) => g,
                     Err(e) => {
-                        lib.write_err(e);
+                        lib.write_err(calling_thread, e);
                         responder.send(FcTransportStatus::INTERNAL).unwrap();
                         return;
                     }
@@ -480,17 +519,17 @@ impl LibraryCommand {
                 let status = match ep.signal_peer(clear_mask, set_mask).await {
                     Ok(_) => FcTransportStatus::OK,
                     Err(e) => {
-                        lib.write_fdomain_err(&e);
+                        lib.write_fdomain_err(calling_thread, &e);
                         e.into()
                     }
                 };
                 responder.send(status).unwrap();
             }
-            Self::ObjectSignalPoll { lib, handle, signals, responder } => {
+            Self::ObjectSignalPoll { lib, calling_thread, handle, signals, responder } => {
                 let poll_res = match lib.fdomain_state().await.poll_signal(handle, signals).await {
                     Ok(p) => p,
                     Err(e) => {
-                        lib.write_err(e);
+                        lib.write_err(calling_thread, e);
                         responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
                         return;
                     }
@@ -499,7 +538,7 @@ impl LibraryCommand {
                     Poll::Ready(res) => match res {
                         Ok(sig) => Ok(sig),
                         Err(e) => {
-                            lib.write_fdomain_err(&e);
+                            lib.write_fdomain_err(calling_thread, &e);
                             responder.send(Err(e.into())).unwrap();
                             return;
                         }
@@ -508,11 +547,11 @@ impl LibraryCommand {
                 };
                 responder.send(res).unwrap();
             }
-            Self::SocketCreate { env, options, responder } => {
+            Self::SocketCreate { env, calling_thread, options, responder } => {
                 let fdomain_client = match env.fdomain_client().await {
                     Ok(c) => c,
                     Err(e) => {
-                        env.write_err(e);
+                        env.write_err(calling_thread, e);
                         responder.send(Err(FcTransportStatus::INTERNAL)).unwrap();
                         return;
                     }
@@ -532,7 +571,7 @@ impl LibraryCommand {
                 let right = fdomain_state.register(right.into());
                 responder.send(Ok((left, right))).unwrap();
             }
-            Self::SocketRead { lib, socket, mut out_buf, responder } => {
+            Self::SocketRead { lib, calling_thread, socket, mut out_buf, responder } => {
                 let poll_res =
                     match lib.fdomain_state().await.socket_read(socket, &mut out_buf).await {
                         Ok(p) => match p {
@@ -543,14 +582,14 @@ impl LibraryCommand {
                             }
                         },
                         Err(e) => {
-                            lib.write_err(e);
+                            lib.write_err(calling_thread, e);
                             responder.send(FcTransportStatus::INTERNAL.into()).unwrap();
                             return;
                         }
                     };
                 match poll_res {
                     Err(e) => {
-                        lib.write_fdomain_err(&e);
+                        lib.write_fdomain_err(calling_thread, &e);
                         responder.send(FcTransportStatus::from(e).into()).unwrap()
                     }
                     Ok(size) => responder
@@ -562,12 +601,12 @@ impl LibraryCommand {
                         .unwrap(),
                 }
             }
-            Self::SocketWrite { lib, socket, buf, responder } => {
+            Self::SocketWrite { lib, calling_thread, socket, buf, responder } => {
                 let mut fdomain_state = lib.fdomain_state().await;
                 let handle = match fdomain_state.handle(socket) {
                     Ok(g) => g,
                     Err(e) => {
-                        lib.write_err(e);
+                        lib.write_err(calling_thread, e);
                         responder.send(FcTransportStatus::INTERNAL).unwrap();
                         return;
                     }
@@ -576,19 +615,19 @@ impl LibraryCommand {
                 let status = match socket.fdomain_write_all(&buf).await {
                     Ok(()) => FcTransportStatus::OK,
                     Err(e) => {
-                        lib.write_fdomain_err(&e);
+                        lib.write_fdomain_err(calling_thread, &e);
                         e.into()
                     }
                 };
                 responder.send(status).unwrap();
             }
-            Self::TargetWait { env, timeout, responder, offline } => {
+            Self::TargetWait { env, calling_thread, timeout, responder, offline } => {
                 match env.target_wait(timeout, offline).await {
                     Ok(()) => {
                         responder.send(FcTransportStatus::OK).unwrap();
                     }
                     Err(e) => {
-                        env.write_err(e);
+                        env.write_err(calling_thread, e);
                         responder.send(FcTransportStatus::INTERNAL).unwrap();
                     }
                 }

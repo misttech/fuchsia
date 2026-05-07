@@ -1171,7 +1171,7 @@ PyMODINIT_FUNC PyInit_libfuchsia_controller_internal() {
     return nullptr;
   }
   auto state = reinterpret_cast<mod::FuchsiaControllerState *>(PyModule_GetState(m.get()));
-  create_ffx_lib_context(&state->ctx, state->ERR_SCRATCH, mod::ERR_SCRATCH_LEN);
+  create_ffx_lib_context(&state->ctx);
   if (PyModule_AddObject(m.get(), "ZxStatus", reinterpret_cast<PyObject *>(zx_status_type)) < 0) {
     Py_DECREF(zx_status_type);
     return nullptr;

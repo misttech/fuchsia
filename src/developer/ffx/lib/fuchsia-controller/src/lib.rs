@@ -32,13 +32,8 @@ mod waker;
 // LINT.IfChange
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn create_ffx_lib_context(
-    ctx: *mut *const LibContext,
-    error_scratch: *mut u8,
-    len: u64,
-) {
-    let buf = unsafe { ExtBuffer::new(error_scratch, len as usize) };
-    let ctx_out = LibContext::new(buf);
+pub unsafe extern "C" fn create_ffx_lib_context(ctx: *mut *const LibContext) {
+    let ctx_out = LibContext::new();
     let ptr = Arc::into_raw(Arc::new(ctx_out));
 
     unsafe { *ctx = ptr };
@@ -84,7 +79,14 @@ pub unsafe extern "C" fn create_ffx_env_context(
             config.push(FfxConfigEntry { key, value });
         }
     }
-    lib.run(LibraryCommand::CreateEnvContext { lib: lib.clone(), responder, config, isolate_dir });
+    let calling_thread = std::thread::current().id();
+    lib.run(LibraryCommand::CreateEnvContext {
+        lib: lib.clone(),
+        calling_thread,
+        responder,
+        config,
+        isolate_dir,
+    });
     match rx.recv() {
         Ok(r) => match r {
             Ok(env) => {
@@ -111,8 +113,10 @@ pub unsafe extern "C" fn ffx_connect_device_proxy(
         .to_owned();
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
+    let calling_thread = std::thread::current().id();
     ctx.lib_ctx().run(LibraryCommand::OpenDeviceProxy {
         env: ctx.clone(),
+        calling_thread,
         moniker,
         capability_name,
         responder,
@@ -137,7 +141,14 @@ pub unsafe extern "C" fn ffx_target_wait(
 ) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
-    ctx.lib_ctx().run(LibraryCommand::TargetWait { env: ctx.clone(), timeout, responder, offline });
+    let calling_thread = std::thread::current().id();
+    ctx.lib_ctx().run(LibraryCommand::TargetWait {
+        env: ctx.clone(),
+        calling_thread,
+        timeout,
+        responder,
+        offline,
+    });
     rx.recv().unwrap_or(FcTransportStatus::INTERRUPTED).into()
 }
 
@@ -148,7 +159,12 @@ pub unsafe extern "C" fn ffx_connect_remote_control_proxy(
 ) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
-    ctx.lib_ctx().run(LibraryCommand::OpenRemoteControlProxy { env: ctx.clone(), responder });
+    let calling_thread = std::thread::current().id();
+    ctx.lib_ctx().run(LibraryCommand::OpenRemoteControlProxy {
+        env: ctx.clone(),
+        calling_thread,
+        responder,
+    });
     match rx.recv() {
         Ok(r) => match r {
             Ok(h) => {
@@ -203,8 +219,10 @@ pub unsafe extern "C" fn ffx_channel_write(
 ) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
+    let calling_thread = std::thread::current().id();
     ctx.run(LibraryCommand::ChannelWrite {
         lib: ctx.clone(),
+        calling_thread,
         channel,
         buf: unsafe { ExtBuffer::new(out_buf, out_len as usize) },
         handles: unsafe { ExtBuffer::new(hdls, hdls_len as usize) },
@@ -224,8 +242,10 @@ pub unsafe extern "C" fn ffx_channel_write_etc(
 ) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
+    let calling_thread = std::thread::current().id();
     ctx.run(LibraryCommand::ChannelWriteEtc {
         lib: ctx.clone(),
+        calling_thread,
         channel: handle,
         buf: unsafe { ExtBuffer::new(out_buf, out_len as usize) },
         // Construction of HandleDisposition structs has to happen in the main thread, as it
@@ -249,8 +269,10 @@ pub unsafe extern "C" fn ffx_channel_read(
 ) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
+    let calling_thread = std::thread::current().id();
     ctx.run(LibraryCommand::ChannelRead {
         lib: ctx.clone(),
+        calling_thread,
         channel: handle,
         out_buf: unsafe { ExtBuffer::new(out_buf, out_len as usize) },
         out_handles: unsafe {
@@ -280,7 +302,13 @@ pub unsafe extern "C" fn ffx_socket_create(
 ) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    ctx.lib_ctx().run(LibraryCommand::SocketCreate { env: ctx.clone(), options, responder: tx });
+    let calling_thread = std::thread::current().id();
+    ctx.lib_ctx().run(LibraryCommand::SocketCreate {
+        env: ctx.clone(),
+        calling_thread,
+        options,
+        responder: tx,
+    });
     match rx.recv() {
         Ok(res) => match res {
             Ok((ch0, ch1)) => {
@@ -304,8 +332,10 @@ pub unsafe extern "C" fn ffx_socket_write(
 ) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
+    let calling_thread = std::thread::current().id();
     ctx.run(LibraryCommand::SocketWrite {
         lib: ctx.clone(),
+        calling_thread,
         socket: handle,
         buf: unsafe { ExtBuffer::new(buf, buf_len as usize) },
         responder,
@@ -323,8 +353,10 @@ pub unsafe extern "C" fn ffx_socket_read(
 ) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
+    let calling_thread = std::thread::current().id();
     ctx.run(LibraryCommand::SocketRead {
         lib: ctx.clone(),
+        calling_thread,
         socket: handle,
         out_buf: unsafe { ExtBuffer::new(out_buf, out_len as usize) },
         responder,
@@ -341,7 +373,12 @@ pub unsafe extern "C" fn ffx_socket_read(
 pub unsafe extern "C" fn ffx_connect_handle_notifier(ctx: *const LibContext) -> i32 {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    ctx.run(LibraryCommand::GetNotificationDescriptor { lib: ctx.clone(), responder: tx });
+    let calling_thread = std::thread::current().id();
+    ctx.run(LibraryCommand::GetNotificationDescriptor {
+        lib: ctx.clone(),
+        calling_thread,
+        responder: tx,
+    });
     rx.recv().unwrap_or_else(|_| FcTransportStatus::INTERRUPTED.into_raw())
 }
 
@@ -353,7 +390,12 @@ pub unsafe extern "C" fn ffx_event_create(
 ) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    ctx.lib_ctx().run(LibraryCommand::EventCreate { env: ctx.clone(), responder: tx });
+    let calling_thread = std::thread::current().id();
+    ctx.lib_ctx().run(LibraryCommand::EventCreate {
+        env: ctx.clone(),
+        calling_thread,
+        responder: tx,
+    });
     match rx.recv() {
         Ok(r) => match r {
             Ok(hdl) => {
@@ -375,7 +417,12 @@ pub unsafe extern "C" fn ffx_eventpair_create(
 ) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    ctx.lib_ctx().run(LibraryCommand::EventPairCreate { env: ctx.clone(), responder: tx });
+    let calling_thread = std::thread::current().id();
+    ctx.lib_ctx().run(LibraryCommand::EventPairCreate {
+        env: ctx.clone(),
+        calling_thread,
+        responder: tx,
+    });
     match rx.recv() {
         Ok(r) => match r {
             Ok((hdl0, hdl1)) => {
@@ -400,8 +447,10 @@ pub unsafe extern "C" fn ffx_object_signal(
     let (tx, rx) = mpsc::sync_channel(1);
     let clear_mask = fidl::Signals::from_bits_retain(clear_mask);
     let set_mask = fidl::Signals::from_bits_retain(set_mask);
+    let calling_thread = std::thread::current().id();
     ctx.run(LibraryCommand::ObjectSignal {
         lib: ctx.clone(),
+        calling_thread,
         handle,
         clear_mask,
         set_mask,
@@ -421,8 +470,10 @@ pub unsafe extern "C" fn ffx_object_signal_peer(
     let (tx, rx) = mpsc::sync_channel(1);
     let clear_mask = fidl::Signals::from_bits_retain(clear_mask);
     let set_mask = fidl::Signals::from_bits_retain(set_mask);
+    let calling_thread = std::thread::current().id();
     ctx.run(LibraryCommand::ObjectSignalPeer {
         lib: ctx.clone(),
+        calling_thread,
         handle,
         clear_mask,
         set_mask,
@@ -441,7 +492,14 @@ pub unsafe extern "C" fn ffx_object_signal_poll(
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
     let signals = fidl::Signals::from_bits_retain(signals);
-    ctx.run(LibraryCommand::ObjectSignalPoll { lib: ctx.clone(), handle, signals, responder: tx });
+    let calling_thread = std::thread::current().id();
+    ctx.run(LibraryCommand::ObjectSignalPoll {
+        lib: ctx.clone(),
+        calling_thread,
+        handle,
+        signals,
+        responder: tx,
+    });
     match rx.recv() {
         Ok(r) => match r {
             Ok(sig) => {
@@ -464,7 +522,12 @@ pub unsafe extern "C" fn ffx_channel_create(
 ) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    ctx.lib_ctx().run(LibraryCommand::ChannelCreate { env: ctx.clone(), responder: tx });
+    let calling_thread = std::thread::current().id();
+    ctx.lib_ctx().run(LibraryCommand::ChannelCreate {
+        env: ctx.clone(),
+        calling_thread,
+        responder: tx,
+    });
     match rx.recv() {
         Ok(r) => match r {
             Ok((hdl0, hdl1)) => {
@@ -487,7 +550,13 @@ pub unsafe extern "C" fn ffx_handle_get_koid(
 ) -> FcTransportStatus {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    ctx.run(LibraryCommand::HandleGetKoid { lib: ctx.clone(), handle, responder: tx });
+    let calling_thread = std::thread::current().id();
+    ctx.run(LibraryCommand::HandleGetKoid {
+        lib: ctx.clone(),
+        calling_thread,
+        handle,
+        responder: tx,
+    });
     match rx.recv() {
         Ok(r) => match r {
             Ok(k) => {
@@ -529,11 +598,12 @@ pub unsafe extern "C" fn ffx_config_get_string(
     }
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
+    let calling_thread = std::thread::current().id();
     let config_key = unsafe { std::slice::from_raw_parts(config_key, config_key_len as usize) };
     let config_key_str = match std::str::from_utf8(config_key) {
         Ok(s) => s.to_owned(),
         Err(e) => {
-            ctx.write_err(e);
+            ctx.write_err(calling_thread, e);
             return FcTransportStatus::INTERNAL;
         }
     };
@@ -541,6 +611,7 @@ pub unsafe extern "C" fn ffx_config_get_string(
     ctx.lib_ctx().run(LibraryCommand::ConfigGetString {
         responder: tx,
         env_ctx: ctx.clone(),
+        calling_thread,
         config_key: config_key_str,
         out_buf: unsafe { ExtBuffer::new(out_buf, out_buf_size) },
     });
@@ -557,6 +628,48 @@ pub unsafe extern "C" fn ffx_config_get_string(
     .into()
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ffx_get_last_error(
+    ctx: *const LibContext,
+    out_buf: *mut *mut u8,
+    out_len: *mut u64,
+    out_type: *mut i32,
+) {
+    let ctx = unsafe { &*ctx };
+    let thread_id = std::thread::current().id();
+    let mut guard = ctx.errors.lock().unwrap();
+    if let Some(payload) = guard.remove(&thread_id) {
+        match payload {
+            crate::lib_context::ErrorPayload::String(s) => {
+                let boxed = s.into_bytes().into_boxed_slice();
+                unsafe { *out_len = boxed.len() as u64 };
+                unsafe { *out_type = crate::compat::FcErrorPayloadType::STRING.into_raw() };
+                unsafe { *out_buf = Box::into_raw(boxed) as *mut u8 };
+            }
+            crate::lib_context::ErrorPayload::Fidl(v) => {
+                let boxed = v.into_boxed_slice();
+                unsafe { *out_len = boxed.len() as u64 };
+                unsafe { *out_type = crate::compat::FcErrorPayloadType::FIDL.into_raw() };
+                unsafe { *out_buf = Box::into_raw(boxed) as *mut u8 };
+            }
+        }
+    } else {
+        unsafe { *out_len = 0 };
+        unsafe { *out_type = crate::compat::FcErrorPayloadType::NONE.into_raw() };
+        unsafe { *out_buf = std::ptr::null_mut() }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ffx_free_error_buffer(ptr: *mut u8, len: u64) {
+    if !ptr.is_null() {
+        unsafe {
+            let fat_ptr = std::ptr::slice_from_raw_parts_mut(ptr, len as usize);
+            let _ = Box::from_raw(fat_ptr);
+        }
+    }
+}
+
 // LINT.ThenChange(../cpp/fuchsia_controller_internal/fuchsia_controller.h)
 
 #[cfg(test)]
@@ -568,30 +681,26 @@ mod test {
     use std::io::Read;
     use std::os::fd::{FromRawFd, RawFd};
     use std::os::unix::net::UnixStream;
-    use std::sync::Mutex;
 
-    // Since we'll be reading the buffer, we need to ensure that we've got mutual exclusion between
-    // threads.
-    static SCRATCH_LOCK: Mutex<()> = Mutex::new(());
-    static mut SCRATCH: [u8; 1024] = [0; 1024];
     fn testing_lib_context() -> *const LibContext {
-        let raw = std::ptr::addr_of_mut!(SCRATCH) as *mut u8;
         let mut ctx: *const LibContext = std::ptr::null_mut();
-        // SAFETY: This is unsafe because it is a static location, which can
-        // then be potentially accessed by multiple threads. This remains safe
-        // so long as each test using a lib context acquires the scratch lock
-        // at the beginning of the test.
         unsafe {
-            create_ffx_lib_context(&mut ctx, raw, 1024);
+            create_ffx_lib_context(&mut ctx);
         }
         ctx
     }
 
-    fn decode_fidl_err<T: fidl::Persistable>(_guard: &std::sync::MutexGuard<'_, ()>) -> T {
-        // SAFETY: While it can't be proven it's the right lock, we should be holding it here.
+    fn decode_fidl_err<T: fidl::Persistable>(lib_ctx: *const LibContext) -> T {
+        let mut err_buf: *mut u8 = std::ptr::null_mut();
+        let mut err_len = 0u64;
+        let mut err_type = 0i32;
+        unsafe { ffx_get_last_error(lib_ctx, &mut err_buf, &mut err_len, &mut err_type) };
+        assert_eq!(err_type, crate::compat::FcErrorPayloadType::FIDL.into_raw()); // FIDL payload
         unsafe {
-            let msg_len = usize::from_ne_bytes(SCRATCH[0..8].try_into().unwrap());
-            fidl::unpersist(&SCRATCH[8..(8 + msg_len)]).unwrap()
+            let fat_ptr = std::ptr::slice_from_raw_parts(err_buf, err_len as usize);
+            let payload = fidl::unpersist(&*fat_ptr).unwrap();
+            ffx_free_error_buffer(err_buf, err_len);
+            payload
         }
     }
 
@@ -709,7 +818,6 @@ mod test {
 
     #[test]
     fn channel_read_empty() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -744,7 +852,6 @@ mod test {
 
     #[test]
     fn socket_read_empty() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -769,7 +876,6 @@ mod test {
 
     #[test]
     fn channel_read_some_data_null_out_params() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -826,7 +932,6 @@ mod test {
 
     #[test]
     fn channel_read_some_data_too_small_byte_buffer() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -881,7 +986,6 @@ mod test {
 
     #[test]
     fn socket_read_some_data_too_large_byte_buffer() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -911,7 +1015,6 @@ mod test {
 
     #[test]
     fn channel_read_some_data_too_small_handle_buffer() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -970,7 +1073,6 @@ mod test {
 
     #[test]
     fn channel_read_some_data_nonnull_out_params() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -1031,7 +1133,6 @@ mod test {
 
     #[test]
     fn channel_write_then_read_some_data() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -1088,7 +1189,6 @@ mod test {
 
     #[test]
     fn channel_write_etc_then_read_some_data() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -1160,7 +1260,6 @@ mod test {
 
     #[test]
     fn channel_write_etc_unsupported_op() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -1219,7 +1318,6 @@ mod test {
 
     #[test]
     fn channel_write_etc_invalid_arg() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -1278,7 +1376,6 @@ mod test {
 
     #[test]
     fn socket_write_then_read_some_data() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -1307,7 +1404,6 @@ mod test {
 
     #[test]
     fn channel_read_peer_closed() {
-        let lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -1332,7 +1428,7 @@ mod test {
         let expect: FcTransportStatus =
             fdomain_client::Error::FDomain(expected_inner.clone()).into();
         assert_eq!(result, expect);
-        let msg = decode_fidl_err::<fdproto::Error>(&lock);
+        let msg = decode_fidl_err::<fdproto::Error>(lib_ctx);
         assert_eq!(msg, expected_inner);
         unsafe {
             ffx_close_handle(lib_ctx, a);
@@ -1343,7 +1439,6 @@ mod test {
 
     #[test]
     fn event_pair_signal_peer_peer_closed() {
-        let lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -1366,7 +1461,7 @@ mod test {
         let expect: FcTransportStatus =
             fdomain_client::Error::FDomain(expected_inner.clone()).into();
         assert_eq!(result, expect.into());
-        let msg = decode_fidl_err::<fdproto::Error>(&lock);
+        let msg = decode_fidl_err::<fdproto::Error>(lib_ctx);
         assert_eq!(msg, expected_inner);
         unsafe {
             ffx_close_handle(lib_ctx, a);
@@ -1377,7 +1472,6 @@ mod test {
 
     #[test]
     fn channel_write_no_such_handle() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -1410,7 +1504,6 @@ mod test {
 
     #[test]
     fn socket_read_peer_closed() {
-        let lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -1429,7 +1522,7 @@ mod test {
         let expect: FcTransportStatus =
             fdomain_client::Error::FDomain(expected_inner.clone()).into();
         assert_eq!(result, expect.into());
-        let msg = decode_fidl_err::<fdproto::Error>(&lock);
+        let msg = decode_fidl_err::<fdproto::Error>(lib_ctx);
         assert_eq!(msg, expected_inner);
         unsafe {
             ffx_close_handle(lib_ctx, a);
@@ -1440,7 +1533,6 @@ mod test {
 
     #[test]
     fn user_signal_events_null_out() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut event: u32 = 0;
@@ -1473,7 +1565,6 @@ mod test {
 
     #[test]
     fn user_signal_events_one_signal() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut event: u32 = 0;
@@ -1501,7 +1592,6 @@ mod test {
 
     #[test]
     fn user_signal_events_many_signals() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut event: u32 = 0;
@@ -1535,7 +1625,6 @@ mod test {
 
     #[test]
     fn user_signal_event_pair() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut event: u32 = 0;
@@ -1575,7 +1664,6 @@ mod test {
 
     #[test]
     fn user_signal_peer_event_pair() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut tx: u32 = 0;
@@ -1614,7 +1702,6 @@ mod test {
 
     #[test]
     fn socket_write_peer_closed() {
-        let lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let mut a: u32 = 0;
@@ -1634,7 +1721,7 @@ mod test {
         let expect: FcTransportStatus =
             fdomain_client::Error::SocketWrite(expected_inner.clone()).into();
         assert_eq!(result, expect);
-        let msg = decode_fidl_err::<fdproto::WriteSocketError>(&lock);
+        let msg = decode_fidl_err::<fdproto::WriteSocketError>(lib_ctx);
         assert_eq!(msg, expected_inner);
         unsafe {
             ffx_close_handle(lib_ctx, a);
@@ -1645,7 +1732,6 @@ mod test {
 
     #[test]
     fn handle_ready_notification() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let fd: RawFd = unsafe { ffx_connect_handle_notifier(lib_ctx) };
@@ -1713,7 +1799,6 @@ mod test {
 
     #[test]
     fn user_signal_pending() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let fd: RawFd = unsafe { ffx_connect_handle_notifier(lib_ctx) };
@@ -1758,7 +1843,6 @@ mod test {
 
     #[test]
     fn user_signal_peer_pending() {
-        let _lock = SCRATCH_LOCK.lock().unwrap();
         let lib_ctx = testing_lib_context();
         let env_ctx = testing_env_context(lib_ctx);
         let fd: RawFd = unsafe { ffx_connect_handle_notifier(lib_ctx) };

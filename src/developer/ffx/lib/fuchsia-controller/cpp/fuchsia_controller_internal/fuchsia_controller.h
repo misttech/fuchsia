@@ -20,6 +20,13 @@ typedef struct _ffx_config_t {
   const char* value;
 } ffx_config_t;
 
+// Determines the type of error from `ffx_get_last_error`.
+typedef int32_t fc_err_type_t;
+
+#define FC_ERR_TYPE_NONE (0)
+#define FC_ERR_TYPE_STRING (1)
+#define FC_ERR_TYPE_FIDL (2)
+
 // Similar to zx_status_t but for fuchsia-controller specifically.
 typedef int32_t fc_status_t;
 // Lint suppressed because we are asserting on the sizeof(long),
@@ -51,7 +58,7 @@ _Static_assert(sizeof(long) >= sizeof(fc_status_t));  // NOLINT
 #define FC_ERR_CONNECTION_MISMATCH (-10)
 #define FC_ERR_STREAMING_ABORTED (-11)
 
-extern void create_ffx_lib_context(ffx_lib_context_t** ctx, char* error_scratch, uint64_t size);
+extern void create_ffx_lib_context(ffx_lib_context_t** ctx);
 
 extern fc_status_t create_ffx_env_context(ffx_env_context_t** env_ctx, ffx_lib_context_t* lib_ctx,
                                           ffx_config_t* config, uint64_t config_len,
@@ -130,6 +137,9 @@ extern fc_status_t _block_forever(ffx_lib_context_t* ctx);
 // There can only be one file descriptor for the lifetime of a library module, so all calls to this
 // function will return the same file descriptor number.
 extern int32_t ffx_connect_handle_notifier(ffx_lib_context_t* ctx);
+extern void ffx_get_last_error(ffx_lib_context_t* ctx, char** out_buf, uint64_t* out_len,
+                               fc_err_type_t* out_type);
+extern void ffx_free_error_buffer(char* ptr, uint64_t len);
 
 #ifdef __cplusplus
 
