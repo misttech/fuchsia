@@ -1794,7 +1794,7 @@ class VmCowPages::LookupCursor {
   // Returned page must be an allocated and owned page in this VMO. As such this will never return a
   // reference to the zero page. |will_write| indicates if this page needs to be writable or not,
   // which for an owned and allocated page just involves a potential dirty request / transition.
-  zx::result<RequireResult> RequireOwnedPage(bool will_write, uint max_request_pages,
+  zx::result<RequireResult> RequireOwnedPage(bool will_write, uint64_t max_request_pages,
                                              DeferredOps& deferred, MultiPageRequest* page_request)
       TA_REQ(lock());
 
@@ -1803,11 +1803,11 @@ class VmCowPages::LookupCursor {
   // any deferred actions, to enforce the requirement that all operations on a pager backed VMO are
   // serialized with the paged_vmo_lock. Having to present a DeferredOps here is a simple way to
   // ensure this lock is held.
-  zx::result<RequireResult> RequireReadPage(uint max_request_pages, DeferredOps& deferred,
+  zx::result<RequireResult> RequireReadPage(uint64_t max_request_pages, DeferredOps& deferred,
                                             MultiPageRequest* page_request) TA_REQ(lock());
 
   // Returned page will be readable or writable based on the |will_write| flag.
-  zx::result<RequireResult> RequirePage(bool will_write, uint max_request_pages,
+  zx::result<RequireResult> RequirePage(bool will_write, uint64_t max_request_pages,
                                         DeferredOps& deferred, MultiPageRequest* page_request)
       TA_REQ(lock()) {
     // Being writable implies owning the page, so forward to the correct operation.
@@ -1828,7 +1828,7 @@ class VmCowPages::LookupCursor {
   // actual pages and, if |will_write| is true, that they can be written to. The return value is
   // the number of contiguous pages found and filled into |paddrs|, and the cursor is incremented
   // by that many pages.
-  uint IfExistPages(bool will_write, uint max_pages, paddr_t* paddrs) TA_REQ(lock());
+  uint64_t IfExistPages(bool will_write, uint64_t max_pages, paddr_t* paddrs) TA_REQ(lock());
 
   // Checks the current slot for a page and returns it. This does not return zero pages and, due to
   // the lack of taking a page request, will not perform copy-on-write allocations or dirty
@@ -2031,8 +2031,9 @@ class VmCowPages::LookupCursor {
   zx_status_t CursorReferenceToPage(AnonymousPageRequest* page_request) TA_REQ(lock());
 
   // Helpers for generating read or dirty requests for the given maximal range.
-  zx_status_t ReadRequest(uint max_request_pages, PageRequest* page_request) TA_REQ(lock());
-  zx_status_t DirtyRequest(uint max_request_pages, LazyPageRequest* page_request) TA_REQ(lock());
+  zx_status_t ReadRequest(uint64_t max_request_pages, PageRequest* page_request) TA_REQ(lock());
+  zx_status_t DirtyRequest(uint64_t max_request_pages, LazyPageRequest* page_request)
+      TA_REQ(lock());
 
   // Target always exists. This is provided in the constructor and will always be non-null.
   VmCowPages* const target_;

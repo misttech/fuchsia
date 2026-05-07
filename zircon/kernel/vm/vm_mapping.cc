@@ -1285,7 +1285,7 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLockedObject(vaddr_t va, ui
     for (; offset < (num_required_pages * kPageSize); offset += kPageSize) {
       arch_mmu_flags_t curr_mmu_flags = range.mmu_flags;
 
-      uint num_curr_pages = static_cast<uint>(num_required_pages - (offset / kPageSize));
+      uint64_t num_curr_pages = num_required_pages - (offset / kPageSize);
       __UNINITIALIZED zx::result<VmCowPages::LookupCursor::RequireResult> result =
           cursor->RequirePage(write, num_curr_pages, *deferred, page_request);
       if (result.is_error()) {
@@ -1330,8 +1330,8 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFaultLockedObject(vaddr_t va, ui
       // attempted to use these pages yet.
       if (extra_pages > 0) {
         bool writeable = (coalescer.GetMmuFlags() & ARCH_MMU_FLAG_PERM_WRITE);
-        size_t num_extra_pages = cursor->IfExistPages(writeable, static_cast<uint>(extra_pages),
-                                                      coalescer.GetNextPageSlot());
+        size_t num_extra_pages =
+            cursor->IfExistPages(writeable, extra_pages, coalescer.GetNextPageSlot());
         coalescer.IncrementCount(num_extra_pages);
       }
     }

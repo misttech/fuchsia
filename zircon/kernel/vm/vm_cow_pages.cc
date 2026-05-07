@@ -3528,7 +3528,7 @@ zx_status_t VmCowPages::LookupCursor::CursorReferenceToPage(AnonymousPageRequest
       owner_cursor_, owner_info_.owner_offset, page_request);
 }
 
-zx_status_t VmCowPages::LookupCursor::ReadRequest(uint max_request_pages,
+zx_status_t VmCowPages::LookupCursor::ReadRequest(uint64_t max_request_pages,
                                                   PageRequest* page_request) {
   // The owner must have a page_source_ to be doing a read request.
   DEBUG_ASSERT(owner_info_.owner.locked_or(target_).page_source_);
@@ -3551,7 +3551,7 @@ zx_status_t VmCowPages::LookupCursor::ReadRequest(uint max_request_pages,
   }
 
   // Try and batch more pages up to |max_request_pages|.
-  uint64_t request_size = static_cast<uint64_t>(max_request_pages) * kPageSize;
+  uint64_t request_size = max_request_pages * kPageSize;
   if (!TargetIsOwner()) {
     DEBUG_ASSERT(owner_info_.visible_end > offset_);
     // Limit the request by the number of pages that are actually visible from the target_ to
@@ -3590,7 +3590,7 @@ zx_status_t VmCowPages::LookupCursor::ReadRequest(uint max_request_pages,
   return status;
 }
 
-zx_status_t VmCowPages::LookupCursor::DirtyRequest(uint max_request_pages,
+zx_status_t VmCowPages::LookupCursor::DirtyRequest(uint64_t max_request_pages,
                                                    LazyPageRequest* page_request) {
   // Dirty requests, unlike read requests, happen directly against the target, and not the owner.
   // This is because to make something dirty you must own it. Simply checking for TargetIsOwner() is
@@ -3671,7 +3671,8 @@ uint64_t VmCowPages::LookupCursor::SkipMissingPages() {
   return possibly_empty / kPageSize;
 }
 
-uint VmCowPages::LookupCursor::IfExistPages(bool will_write, uint max_pages, paddr_t* paddrs) {
+uint64_t VmCowPages::LookupCursor::IfExistPages(bool will_write, uint64_t max_pages,
+                                                paddr_t* paddrs) {
   // Ensure that the requested range is valid.
   DEBUG_ASSERT(offset_ + kPageSize * max_pages <= end_offset_);
   DEBUG_ASSERT(paddrs);
@@ -3688,13 +3689,12 @@ uint VmCowPages::LookupCursor::IfExistPages(bool will_write, uint max_pages, pad
   // target_ is not the owner as otherwise the visible_end is the same as end_offset_ and we already
   // validated that we are within that range.
   if (!TargetIsOwner()) {
-    max_pages =
-        ktl::min(max_pages, static_cast<uint>((owner_info_.visible_end - offset_) / kPageSize));
+    max_pages = ktl::min(max_pages, (owner_info_.visible_end - offset_) / kPageSize);
   }
   DEBUG_ASSERT(max_pages > 0);
 
   // Take up to the max_pages as long as they exist contiguously.
-  uint pages = 0;
+  uint64_t pages = 0;
   owner_info_.cursor.ForEveryContiguous([&](const VmPageOrMarker* page) {
     if (page->IsPage()) {
       paddrs[pages] = page->PageAsPaddr();
@@ -3711,7 +3711,7 @@ uint VmCowPages::LookupCursor::IfExistPages(bool will_write, uint max_pages, pad
 }
 
 zx::result<VmCowPages::LookupCursor::RequireResult> VmCowPages::LookupCursor::RequireOwnedPage(
-    bool will_write, uint max_request_pages, DeferredOps& deferred,
+    bool will_write, uint64_t max_request_pages, DeferredOps& deferred,
     MultiPageRequest* page_request) {
   DEBUG_ASSERT(page_request);
 
@@ -3852,7 +3852,7 @@ zx::result<VmCowPages::LookupCursor::RequireResult> VmCowPages::LookupCursor::Re
 }
 
 zx::result<VmCowPages::LookupCursor::RequireResult> VmCowPages::LookupCursor::RequireReadPage(
-    uint max_request_pages, DeferredOps& deferred, MultiPageRequest* page_request) {
+    uint64_t max_request_pages, DeferredOps& deferred, MultiPageRequest* page_request) {
   DEBUG_ASSERT(page_request);
 
   // Make sure the cursor is valid.
@@ -3968,8 +3968,7 @@ zx_status_t VmCowPages::CommitRangeLocked(VmCowRange range, DeferredOps& deferre
   uint64_t offset = start_offset;
   while (offset < end) {
     __UNINITIALIZED zx::result<VmCowPages::LookupCursor::RequireResult> result =
-        cursor->RequireOwnedPage(false, static_cast<uint>((end - offset) / kPageSize), deferred,
-                                 page_request);
+        cursor->RequireOwnedPage(false, (end - offset) / kPageSize, deferred, page_request);
 
     if (result.is_error()) {
       status = result.error_value();
@@ -4926,8 +4925,7 @@ zx_status_t VmCowPages::ProtectRangeFromReclamation(VmCowRange range, bool set_a
       for (; !range.is_empty(); range = range.TrimmedFromStart(kPageSize)) {
         // Lookup the page, this will fault in the page from the parent if necessary, but will not
         // allocate pages directly in this if it is a child.
-        auto result = cursor->RequirePage(false, static_cast<uint>(range.len / kPageSize), deferred,
-                                          &page_request);
+        auto result = cursor->RequirePage(false, range.len / kPageSize, deferred, &page_request);
         status = result.status_value();
         if (status != ZX_OK) {
           break;
@@ -5906,8 +5904,8 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
       }
       AssertHeld(cursor->lock_ref());
       for (uint64_t offset = 0; offset < gap_len; offset += kPageSize) {
-        auto result = cursor->RequireOwnedPage(
-            true, static_cast<uint>((gap_len - offset) / kPageSize), deferred, page_request);
+        auto result =
+            cursor->RequireOwnedPage(true, (gap_len - offset) / kPageSize, deferred, page_request);
         // In the case of an error we want to take any pages we may have successfully committed in
         // this loop in order to ensure forward progress.
         if (result.is_error()) {

@@ -1355,8 +1355,7 @@ ktl::pair<zx_status_t, size_t> VmObjectPaged::ReadWriteInternal(uint64_t offset,
 
         // Attempt to lookup a page
         __UNINITIALIZED zx::result<VmCowPages::LookupCursor::RequireResult> result =
-            cursor->RequirePage(write, static_cast<uint>(max_waitable_pages), deferred,
-                                &page_request);
+            cursor->RequirePage(write, max_waitable_pages, deferred, &page_request);
 
         status = result.status_value();
         if (status != ZX_OK) {
