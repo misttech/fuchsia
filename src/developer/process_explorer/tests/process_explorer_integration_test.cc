@@ -118,10 +118,10 @@ class LocalRootJobImpl : public fuchsia::kernel::RootJob, public LocalComponentI
     });
 
     char err_msg[FDIO_SPAWN_ERR_MSG_MAX_LENGTH];
-    if (auto status = fdio_spawn_etc(job.get(), FDIO_SPAWN_CLONE_ALL, argv[0], argv.data(),
-                                     nullptr,  // Environ
-                                     actions.size(), actions.data(),
-                                     process.reset_and_get_address(), err_msg);
+    if (auto status = fdio_spawn_etc(
+            job.get(), FDIO_SPAWN_CLONE_ALL, normalized_argv[0], normalized_argv.data(),
+            nullptr,  // Environ
+            actions.size(), actions.data(), process.reset_and_get_address(), err_msg);
         status != ZX_OK) {
       FX_LOGS(ERROR) << "Failed to spawn command: " << zx_status_get_string(status);
     }
