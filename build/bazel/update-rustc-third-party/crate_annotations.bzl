@@ -211,22 +211,4 @@ CRATE_ANNOTATIONS = {
             ),
         ),
     ],
-    "pin-init": [
-        crate.annotation(
-            version = "0.3.0",
-            gen_build_script = False,
-            rustc_flags = [
-                "--cfg=USE_RUSTC_FEATURES",
-            ],
-        ),
-    ],
-    "pin-init-internal": [
-        crate.annotation(
-            version = "0.3.0",
-            gen_build_script = False,
-            rustc_flags = [
-                "--cfg=USE_RUSTC_FEATURES",
-            ],
-        ),
-    ],
 }

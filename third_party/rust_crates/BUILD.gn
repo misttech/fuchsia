@@ -1417,14 +1417,6 @@ group("phf-0.13.1") {
   public_deps = [ ":phf-v0_13_1" ]
 }
 
-group("pin-init") {
-  public_deps = [ ":pin-init-v0_3_0" ]
-}
-
-group("pin-init-0.3.0") {
-  public_deps = [ ":pin-init-v0_3_0" ]
-}
-
 group("pin-project") {
   public_deps = [ ":pin-project-v1_1_11" ]
 }
@@ -14362,76 +14354,6 @@ rustc_library("phf_shared-v0_7_24") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":phf_shared-v0_7_24.license" ]
-}
-
-license("pin-init-v0_3_0.license") {
-  public_package_name = "pin_init"
-  license_files = [
-    "//third_party/rust_crates/forks/pin-init/LICENSE-APACHE",
-    "//third_party/rust_crates/forks/pin-init/LICENSE-MIT",
-  ]
-}
-
-rustc_library("pin-init-v0_3_0") {
-  crate_name = "pin_init"
-  source_root = "//third_party/rust_crates/forks/pin-init/src/lib.rs"
-  output_name = "pin_init-d03e4a33589ee11"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":pin-init-internal-v0_3_0($host_toolchain)" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=d03e4a33589ee11",
-    "-Cextra-filename=-d03e4a33589ee11",
-    "--cfg=USE_RUSTC_FEATURES",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":pin-init-v0_3_0.license" ]
-}
-
-license("pin-init-internal-v0_3_0.license") {
-  public_package_name = "pin_init_internal"
-  license_files = [
-    "//third_party/rust_crates/forks/pin-init/internal/LICENSE-APACHE",
-    "//third_party/rust_crates/forks/pin-init/internal/LICENSE-MIT",
-  ]
-}
-
-rustc_macro("pin-init-internal-v0_3_0") {
-  crate_name = "pin_init_internal"
-  source_root = "//third_party/rust_crates/forks/pin-init/internal/src/lib.rs"
-  output_name = "pin_init_internal-449a5b2e2aeb03a2"
-  edition = "2021"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":proc-macro2-v1_0_106" ]
-  deps += [ ":quote-v1_0_45" ]
-  deps += [ ":syn-v2_0_117" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=449a5b2e2aeb03a2",
-    "-Cextra-filename=-449a5b2e2aeb03a2",
-    "--cfg=USE_RUSTC_FEATURES",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":pin-init-internal-v0_3_0.license" ]
 }
 
 license("pin-project-v1_1_11.license") {
