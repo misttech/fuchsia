@@ -39,9 +39,10 @@ class MsdVsiDevice : public msd::Device,
   // Creates a device for the given |device_handle| and returns ownership.
   // If |start_device_thread| is false, then StartDeviceThread should be called
   // to enable device request processing.
-  static std::unique_ptr<MsdVsiDevice> Create(void* device_handle, bool start_device_thread);
+  static std::unique_ptr<MsdVsiDevice> Create(void* device_handle, bool start_device_thread,
+                                              bool enable_suspend);
 
-  MsdVsiDevice() : magic_(kMagic) {}
+  explicit MsdVsiDevice(bool enable_suspend) : magic_(kMagic), enable_suspend_(enable_suspend) {}
 
   virtual ~MsdVsiDevice();
 
@@ -144,10 +145,6 @@ class MsdVsiDevice : public msd::Device,
 
   class VsiRegisterIo : public magma::RegisterIo {
    public:
-#if !defined(MSD_VSI_VIP_ENABLE_SUSPEND)
-    VsiRegisterIo(std::unique_ptr<magma::PlatformMmio> mmio, MsdVsiDevice& device)
-        : RegisterIo(std::move(mmio)) {}
-#else
     VsiRegisterIo(std::unique_ptr<magma::PlatformMmio> mmio, MsdVsiDevice& device)
         : RegisterIo(std::move(mmio)), device_(device) {}
     static constexpr uint32_t kOffsetToRestrictedRegisters = 0x20;
@@ -182,7 +179,6 @@ class MsdVsiDevice : public msd::Device,
 
    private:
     MsdVsiDevice& device_;
-#endif
   };
 
   enum class PowerState { kUnknown = 0, kSuspended, kOn };
@@ -414,11 +410,8 @@ class MsdVsiDevice : public msd::Device,
 
   Event events_[kNumEvents] = {};
 
-#if defined(MSD_VSI_VIP_ENABLE_SUSPEND)
+  const bool enable_suspend_;
   PowerState power_state_ = PowerState::kUnknown;
-#else
-  PowerState power_state_ = PowerState::kOn;
-#endif
   PowerState power_state() const { return power_state_; }
 
   // For testing and debugging purposes.

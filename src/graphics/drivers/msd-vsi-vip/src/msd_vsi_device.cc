@@ -68,16 +68,18 @@ bool MsdVsiDevice::Shutdown() {
   return true;
 }
 
-std::unique_ptr<MsdVsiDevice> MsdVsiDevice::Create(void* device_handle, bool start_device_thread) {
-  auto device = std::make_unique<MsdVsiDevice>();
+std::unique_ptr<MsdVsiDevice> MsdVsiDevice::Create(void* device_handle, bool start_device_thread,
+                                                   bool enable_suspend) {
+  auto device = std::make_unique<MsdVsiDevice>(enable_suspend);
 
   if (!device->Init(device_handle)) {
     MAGMA_LOG(ERROR, "Failed to initialize device");
     return nullptr;
   }
 
-  if (start_device_thread)
-    device->StartDeviceThread();
+  if (start_device_thread) {
+    device->StartDeviceThread(!enable_suspend);
+  }
 
   return device;
 }
@@ -300,10 +302,7 @@ void MsdVsiDevice::HangCheckTimeout() {
 
   MAGMA_LOG(WARNING, "Suspected NPU hang:");
   MAGMA_LOG(WARNING, "last_interrupt_timestamp %lu", last_interrupt_timestamp_.load());
-
-#if defined(MSD_VSI_VIP_ENABLE_SUSPEND)
   MAGMA_LOG(WARNING, "Power state %u", static_cast<unsigned int>(power_state_));
-#endif
 
   for (auto& str : dump) {
     MAGMA_LOG(WARNING, "%s", str.c_str());
@@ -344,7 +343,6 @@ int MsdVsiDevice::DeviceThreadLoop(bool disable_suspend) {
     auto timeout = std::chrono::duration_cast<std::chrono::milliseconds>(
         progress_->GetHangcheckTimeout(kTimeoutMs, std::chrono::steady_clock::now()));
 
-#if defined(MSD_VSI_VIP_ENABLE_SUSPEND)
     constexpr uint32_t kWaitForSuspendMs = 10;
     // If there are no more command buffers to execute wait before suspending
     if (!disable_suspend) {
@@ -352,7 +350,6 @@ int MsdVsiDevice::DeviceThreadLoop(bool disable_suspend) {
         timeout = std::chrono::milliseconds(kWaitForSuspendMs);
       }
     }
-#endif
 
     magma::Status status = device_request_semaphore_->Wait(timeout.count());
     switch (status.get()) {
@@ -367,14 +364,12 @@ int MsdVsiDevice::DeviceThreadLoop(bool disable_suspend) {
           break;
         }
 
-#if defined(MSD_VSI_VIP_ENABLE_SUSPEND)
-        if (timeout == std::chrono::milliseconds(kWaitForSuspendMs)) {
+        if (!disable_suspend && timeout == std::chrono::milliseconds(kWaitForSuspendMs)) {
           if (progress_->IsIdle() && power_state_ != PowerState::kSuspended) {
             StopRingBufferAndSuspend();
           }
           break;
         }
-#endif
 
         HangCheckTimeout();
       } break;
@@ -587,49 +582,51 @@ void MsdVsiDevice::ProcessRequestBacklog() {
   }
 }
 
-#if defined(MSD_VSI_VIP_ENABLE_SUSPEND)
-bool MsdVsiDevice::IsSuspendSupported() const { return true; }
+bool MsdVsiDevice::IsSuspendSupported() const { return enable_suspend_; }
 
 void MsdVsiDevice::PowerOn() {
   CHECK_THREAD_IS_CURRENT(device_thread_id_);
-
-  if (power_state_ != PowerState::kOn) {
-    auto clock_control = registers::ClockControl::Get().FromValue(0);
-
-    clock_control.set_clk3d_dis(0);
-    clock_control.set_clk2d_dis(0);
-    clock_control.set_fscale_val(registers::ClockControl::kFscaleOn);
-    clock_control.set_fscale_cmd_load(1);
-    clock_control.WriteTo(register_io_.get());
-
-    clock_control.set_fscale_cmd_load(0);
-    clock_control.WriteTo(register_io_.get());
-
-    power_state_ = PowerState::kOn;
-
-    DLOG("NNA on");
+  if (power_state_ == PowerState::kOn) {
+    return;
   }
+
+  auto clock_control = registers::ClockControl::Get().FromValue(0);
+
+  clock_control.set_clk3d_dis(0);
+  clock_control.set_clk2d_dis(0);
+  clock_control.set_fscale_val(registers::ClockControl::kFscaleOn);
+  clock_control.set_fscale_cmd_load(1);
+  clock_control.WriteTo(register_io_.get());
+
+  clock_control.set_fscale_cmd_load(0);
+  clock_control.WriteTo(register_io_.get());
+
+  power_state_ = PowerState::kOn;
+
+  DLOG("NNA on");
 }
 
 void MsdVsiDevice::PowerSuspend() {
   CHECK_THREAD_IS_CURRENT(device_thread_id_);
 
-  if (power_state_ != PowerState::kSuspended) {
-    auto clock_control = registers::ClockControl::Get().FromValue(0);
-
-    clock_control.set_clk3d_dis(1);
-    clock_control.set_clk2d_dis(1);
-    clock_control.set_fscale_val(registers::ClockControl::kFscaleSuspend);
-    clock_control.set_fscale_cmd_load(1);
-    clock_control.WriteTo(register_io_.get());
-
-    clock_control.set_fscale_cmd_load(0);
-    clock_control.WriteTo(register_io_.get());
-
-    power_state_ = PowerState::kSuspended;
-
-    DLOG("NNA suspended");
+  if (!enable_suspend_ || power_state_ == PowerState::kSuspended) {
+    return;
   }
+
+  auto clock_control = registers::ClockControl::Get().FromValue(0);
+
+  clock_control.set_clk3d_dis(1);
+  clock_control.set_clk2d_dis(1);
+  clock_control.set_fscale_val(registers::ClockControl::kFscaleSuspend);
+  clock_control.set_fscale_cmd_load(1);
+  clock_control.WriteTo(register_io_.get());
+
+  clock_control.set_fscale_cmd_load(0);
+  clock_control.WriteTo(register_io_.get());
+
+  power_state_ = PowerState::kSuspended;
+
+  DLOG("NNA suspended");
 }
 
 void MsdVsiDevice::StopRingBufferAndSuspend() {
@@ -648,12 +645,6 @@ void MsdVsiDevice::StopRingBufferAndSuspend() {
     PowerSuspend();
   }
 }
-#else
-bool MsdVsiDevice::IsSuspendSupported() const { return false; }
-void MsdVsiDevice::PowerSuspend() {}
-void MsdVsiDevice::StopRingBufferAndSuspend() {}
-void MsdVsiDevice::PowerOn() {}
-#endif
 
 bool MsdVsiDevice::AllocInterruptEvent(bool free_on_complete, uint32_t* out_event_id) {
   CHECK_THREAD_IS_CURRENT(device_thread_id_);
@@ -776,9 +767,7 @@ bool MsdVsiDevice::HardwareReset() {
     clock_control.set_isolate_gpu(1);
     clock_control.WriteTo(register_io_.get());
 
-#if defined(MSD_VSI_VIP_ENABLE_SUSPEND)
     power_state_ = PowerState::kUnknown;
-#endif
 
     {
       auto reg = registers::SecureAhbControl::Get().FromValue(0);

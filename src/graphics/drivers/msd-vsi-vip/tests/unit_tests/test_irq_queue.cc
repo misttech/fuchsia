@@ -14,7 +14,9 @@
 class TestIrqQueue : public ::testing::Test {
  public:
   void SetUp() override {
-    device_ = MsdVsiDevice::Create(GetTestDeviceHandle(), false /* start_device_thread */);
+    constexpr bool kStartDeviceThread = false;
+    constexpr bool kEnableSuspend = true;
+    device_ = MsdVsiDevice::Create(GetTestDeviceHandle(), kStartDeviceThread, kEnableSuspend);
     EXPECT_NE(device_, nullptr);
   }
 
@@ -31,7 +33,8 @@ TEST_F(TestIrqQueue, EmptyQueue) {
     device_->EnqueueDeviceRequest(std::move(request));
 
     ASSERT_EQ(1UL, device_->device_request_list_.size());
-    ASSERT_EQ(MsdVsiDevice::InterruptRequest::kRequestType, device_->device_request_list_.front()->RequestType());
+    ASSERT_EQ(MsdVsiDevice::InterruptRequest::kRequestType,
+              device_->device_request_list_.front()->RequestType());
   }
 
   {
@@ -43,7 +46,8 @@ TEST_F(TestIrqQueue, EmptyQueue) {
 
     ASSERT_EQ(2UL, device_->device_request_list_.size());
     uint32_t count = 0;
-    for(auto it = device_->device_request_list_.begin(); it != device_->device_request_list_.end(); ++it) {
+    for (auto it = device_->device_request_list_.begin(); it != device_->device_request_list_.end();
+         ++it) {
       auto event = it->get();
       ASSERT_EQ(MsdVsiDevice::InterruptRequest::kRequestType, event->RequestType());
       auto interrupt_event = static_cast<MsdVsiDevice::InterruptRequest*>(event);
@@ -56,7 +60,8 @@ TEST_F(TestIrqQueue, EmptyQueue) {
     device_->EnqueueDeviceRequest(std::make_unique<MsdVsiDevice::DumpRequest>());
 
     ASSERT_EQ(3UL, device_->device_request_list_.size());
-    ASSERT_EQ(MsdVsiDevice::DumpRequest::kRequestType, device_->device_request_list_.back()->RequestType());
+    ASSERT_EQ(MsdVsiDevice::DumpRequest::kRequestType,
+              device_->device_request_list_.back()->RequestType());
   }
 }
 
@@ -66,7 +71,8 @@ TEST_F(TestIrqQueue, Queue) {
     device_->EnqueueDeviceRequest(std::make_unique<MsdVsiDevice::DumpRequest>());
 
     ASSERT_EQ(1UL, device_->device_request_list_.size());
-    ASSERT_EQ(MsdVsiDevice::DumpRequest::kRequestType, device_->device_request_list_.back()->RequestType());
+    ASSERT_EQ(MsdVsiDevice::DumpRequest::kRequestType,
+              device_->device_request_list_.back()->RequestType());
   }
 
   {
@@ -77,7 +83,8 @@ TEST_F(TestIrqQueue, Queue) {
     device_->EnqueueDeviceRequest(std::move(request));
 
     ASSERT_EQ(2UL, device_->device_request_list_.size());
-    ASSERT_EQ(MsdVsiDevice::InterruptRequest::kRequestType, device_->device_request_list_.front()->RequestType());
+    ASSERT_EQ(MsdVsiDevice::InterruptRequest::kRequestType,
+              device_->device_request_list_.front()->RequestType());
   }
 
   {
@@ -89,7 +96,8 @@ TEST_F(TestIrqQueue, Queue) {
 
     ASSERT_EQ(3UL, device_->device_request_list_.size());
     uint32_t count = 0;
-    for(auto it = device_->device_request_list_.begin(); it != device_->device_request_list_.end(); ++it) {
+    for (auto it = device_->device_request_list_.begin(); it != device_->device_request_list_.end();
+         ++it) {
       auto event = it->get();
       if (count < 2) {
         ASSERT_EQ(MsdVsiDevice::InterruptRequest::kRequestType, event->RequestType());
@@ -100,5 +108,4 @@ TEST_F(TestIrqQueue, Queue) {
       }
     }
   }
-
 }

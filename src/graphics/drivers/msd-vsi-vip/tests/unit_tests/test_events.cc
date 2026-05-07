@@ -23,7 +23,9 @@ class TestEvents : public ::testing::Test {
   static constexpr uint32_t kAddressSpaceIndex = 1;
 
   void SetUp() override {
-    device_ = MsdVsiDevice::Create(GetTestDeviceHandle(), false /* start_device_thread */);
+    constexpr bool kStartDeviceThread = false;
+    constexpr bool kEnableSuspend = true;
+    device_ = MsdVsiDevice::Create(GetTestDeviceHandle(), kStartDeviceThread, kEnableSuspend);
     EXPECT_NE(device_, nullptr);
 
     address_space_owner_ = std::make_unique<AddressSpaceOwner>(device_->GetBusMapper());

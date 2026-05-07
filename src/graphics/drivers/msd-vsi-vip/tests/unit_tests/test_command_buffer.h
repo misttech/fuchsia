@@ -22,7 +22,9 @@ class TestCommandBuffer : public ::testing::Test {
   };
 
   void SetUp() override {
-    device_ = MsdVsiDevice::Create(GetTestDeviceHandle(), false /* start_device_thread */);
+    constexpr bool kStartDeviceThread = false;
+    constexpr bool kEnableSuspend = true;
+    device_ = MsdVsiDevice::Create(GetTestDeviceHandle(), kStartDeviceThread, kEnableSuspend);
     ASSERT_NE(device_, nullptr);
     ASSERT_TRUE(device_->IsIdle());
 

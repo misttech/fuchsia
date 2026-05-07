@@ -35,8 +35,6 @@ source_set("src") {
     "ringbuffer.h",
   ]
 
-  configs += [ "..:msd_vsi_vip_config" ]
-
   public_deps = [
     "../include",
     "//sdk/lib/fit",
