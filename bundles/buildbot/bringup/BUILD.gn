@@ -2,14 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# NOTE:  These have been relocated to //products/bringup:bootfs_test_files
-#        this file remains, emptied, to point people at that location.
-
-import("//build/board.gni")
-
-print()
-print(
-    "ERROR:  //bundles/buildbot/bringup has been moved to the 'bringup_with_tests' product configuration, use that instead:")
-print("          fx set bringup_with_tests.${board_name}")
-print()
-assert(false)
+# This is a group of tests to run in bringup builders.  These are NOT added to the bringup
+# image itself.  These are integration and e2e tests.
+group("bringup") {
+  testonly = true
+}
