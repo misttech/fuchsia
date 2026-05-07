@@ -23,10 +23,14 @@ To list targets with only their addresses:
     $ ffx target list --format a
     fe80::4415:3606:fb52:e2bc%zx-f80ff974f283",
     description = "List all targets",
-    note = "List all targets that the daemon currently has in memory. This includes
+    note = "List all targets.
+
+In daemon mode (default), this lists targets that the daemon currently has in memory. This includes
 manually added targets. The daemon also proactively discovers targets as
 they come online. Use `ffx target list` to always get the latest list
 of targets. Targets are sorted by name.
+
+In direct mode, this lists targets discovered by searching the local network (mDNS) and USB connections.
 
 The default target is marked with a '*' next to the node name. The table
 has the following columns:
@@ -96,13 +100,13 @@ pub struct ListCommand {
     /// --allow-addrs applies before --deny-addrs.
     pub deny_addrs: AddressTypes,
 
-    #[argh(switch, description = "do not connect to targets (local discovery only)")]
+    #[argh(switch, description = "do not connect to targets (direct mode only)")]
     pub no_probe: bool,
 
-    #[argh(switch, description = "do not do mDNS discovery (local discovery only)")]
+    #[argh(switch, description = "do not do mDNS discovery (direct mode only)")]
     pub no_mdns: bool,
 
-    #[argh(switch, description = "do not do USB discovery (local discovery only)")]
+    #[argh(switch, description = "do not do USB discovery (direct mode only)")]
     pub no_usb: bool,
 }
 
