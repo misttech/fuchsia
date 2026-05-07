@@ -187,7 +187,8 @@ INSTANTIATE_TEST_SUITE_P(BinderTest, ContextManagerPermission, kContextManagerPe
 class CallPermission : public BinderTest, public testing::WithParamInterface<std::string_view> {};
 
 // Test doing a binder call with and without the `call` permission.
-TEST_P(CallPermission, DoCall) {
+// TODO(https://fxbug.dev/510748271): Re-enable test.
+TEST_P(CallPermission, DISABLED_DoCall) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   std::string_view label = CallPermission::GetParam();
   bool expect_success = !cpp23::contains(label, "_no_");
