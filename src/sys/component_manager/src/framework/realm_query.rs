@@ -54,78 +54,78 @@ pub fn serve(
 }
 
 async fn serve_inner(scope: WeakComponentInstance, mut stream: fsys::RealmQueryRequestStream) {
-    loop {
-        let request = match stream.next().await {
-            Some(Ok(request)) => request,
-            Some(Err(error)) => {
+    while let Some(request) = stream.next().await {
+        match request {
+            Ok(req) => {
+                if let Err(error) = handle_request(&scope, req).await {
+                    warn!(error:?; "Could not respond to RealmQuery request");
+                    break;
+                }
+            }
+            Err(error) => {
                 warn!(error:?; "Could not get next RealmQuery request");
                 break;
             }
-            None => break,
-        };
-        let result = match request {
-            fsys::RealmQueryRequest::GetInstance { moniker, responder } => {
-                let result = get_instance(&scope, &moniker).await;
-                responder.send(result.as_ref().map_err(|e| *e))
-            }
-            fsys::RealmQueryRequest::GetResolvedDeclaration { moniker, responder } => {
-                let result = get_resolved_declaration(&scope, &moniker).await;
-                responder.send(result)
-            }
-            fsys::RealmQueryRequest::ResolveDeclaration {
-                parent,
-                child_location,
-                url,
-                responder,
-            } => {
-                let result = resolve_declaration(&scope, &parent, &child_location, &url).await;
-                responder.send(result)
-            }
-            fsys::RealmQueryRequest::GetStructuredConfig { moniker, responder } => {
-                let result = get_structured_config(&scope, &moniker).await;
-                responder.send(result.as_ref().map_err(|e| *e))
-            }
-            fsys::RealmQueryRequest::GetAllInstances { responder } => {
-                let result = get_all_instances(&scope).await;
-                responder.send(result)
-            }
-            fsys::RealmQueryRequest::ConstructNamespace { moniker, responder } => {
-                let result = construct_namespace(&scope, &moniker).await;
-                responder.send(result)
-            }
-            fsys::RealmQueryRequest::OpenDirectory { moniker, dir_type, object, responder } => {
-                let result = open_directory(&scope, &moniker, dir_type, object).await;
-                responder.send(result)
-            }
-            fsys::RealmQueryRequest::ConnectToStorageAdmin {
-                moniker,
+        }
+    }
+}
+
+async fn handle_request(
+    scope: &WeakComponentInstance,
+    request: fsys::RealmQueryRequest,
+) -> Result<(), fidl::Error> {
+    match request {
+        fsys::RealmQueryRequest::GetInstance { moniker, responder } => {
+            let result = get_instance(scope, &moniker).await;
+            responder.send(result.as_ref().map_err(|e| *e))
+        }
+        fsys::RealmQueryRequest::GetResolvedDeclaration { moniker, responder } => {
+            let result = get_resolved_declaration(scope, &moniker).await;
+            responder.send(result)
+        }
+        fsys::RealmQueryRequest::ResolveDeclaration { parent, child_location, url, responder } => {
+            let result = resolve_declaration(scope, &parent, &child_location, &url).await;
+            responder.send(result)
+        }
+        fsys::RealmQueryRequest::GetStructuredConfig { moniker, responder } => {
+            let result = get_structured_config(scope, &moniker).await;
+            responder.send(result.as_ref().map_err(|e| *e))
+        }
+        fsys::RealmQueryRequest::GetAllInstances { responder } => {
+            let result = get_all_instances(scope).await;
+            responder.send(result)
+        }
+        fsys::RealmQueryRequest::ConstructNamespace { moniker, responder } => {
+            let result = construct_namespace(scope, &moniker).await;
+            responder.send(result)
+        }
+        fsys::RealmQueryRequest::OpenDirectory { moniker, dir_type, object, responder } => {
+            let result = open_directory(scope, &moniker, dir_type, object).await;
+            responder.send(result)
+        }
+        fsys::RealmQueryRequest::ConnectToStorageAdmin {
+            moniker,
+            storage_name,
+            server_end,
+            responder,
+        } => {
+            let result = connect_to_storage_admin(scope, &moniker, storage_name, server_end).await;
+            responder.send(result)
+        }
+        fsys::RealmQueryRequest::OpenStorageAdmin {
+            moniker,
+            storage_name,
+            server_end,
+            responder,
+        } => {
+            let result = connect_to_storage_admin(
+                scope,
+                &moniker,
                 storage_name,
-                server_end,
-                responder,
-            } => {
-                let result =
-                    connect_to_storage_admin(&scope, &moniker, storage_name, server_end).await;
-                responder.send(result)
-            }
-            fsys::RealmQueryRequest::OpenStorageAdmin {
-                moniker,
-                storage_name,
-                server_end,
-                responder,
-            } => {
-                let result = connect_to_storage_admin(
-                    &scope,
-                    &moniker,
-                    storage_name,
-                    ServerEnd::new(server_end.into_channel()),
-                )
-                .await;
-                responder.send(result)
-            }
-        };
-        if let Err(error) = result {
-            warn!(error:?; "Could not respond to RealmQuery request");
-            break;
+                ServerEnd::new(server_end.into_channel()),
+            )
+            .await;
+            responder.send(result)
         }
     }
 }
