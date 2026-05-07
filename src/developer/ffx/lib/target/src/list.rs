@@ -134,7 +134,9 @@ async fn handles_to_infos(
 fn merge_target_addrs(targets: Vec<TargetInfo>) -> Vec<TargetInfo> {
     let mut merged_map: HashMap<u64, TargetInfo> = HashMap::with_capacity(targets.len());
     let mut result = HashSet::<TargetInfo>::with_capacity(targets.len());
-    for t in targets {
+    for mut t in targets {
+        let aset: HashSet<TargetAddr> = t.addresses.into_iter().collect();
+        t.addresses = aset.into_iter().collect();
         if let Some(boot_id) = t.boot_id {
             match merged_map.entry(boot_id) {
                 Entry::Occupied(mut entry) => {

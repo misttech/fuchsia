@@ -570,16 +570,20 @@ fn make_target<B: SplitByteSlice + Copy>(
     let mut ttl = 0u32;
     let mut ssh_port: u16 = 0;
     let mut ssh_address = None;
-    let mut src = ffx::TargetAddrInfo::Ip(ffx::TargetIp {
+    let src_info = ffx::TargetAddrInfo::Ip(ffx::TargetIp {
         ip: match &src {
             SocketAddr::V6(s) => IpAddress::Ipv6(Ipv6Address { addr: s.ip().octets() }),
             SocketAddr::V4(s) => IpAddress::Ipv4(Ipv4Address { addr: s.ip().octets() }),
         },
         scope_id: if let SocketAddr::V6(s) = &src { s.scope_id() } else { 0 },
     });
+    let mut discovered_addresses = Vec::new();
+    if !src.ip().is_multicast() {
+        discovered_addresses.push(src_info.clone());
+    }
     let fastboot_interface = is_fastboot_response(&msg);
 
-    for record in msg.additional.iter() {
+    for record in msg.answers.iter().chain(msg.additional.iter()) {
         match record.rtype {
             // Emulator adds Txt records to share the user mode networking configuration. This information
             // should override any A record information.
@@ -595,10 +599,6 @@ fn make_target<B: SplitByteSlice + Copy>(
                                     if let Ok(addr) = value.parse::<Ipv4Addr>() {
                                         let ip =
                                             IpAddress::Ipv4(Ipv4Address { addr: addr.octets() });
-                                        src = ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                                            ip,
-                                            scope_id: 0,
-                                        });
                                         ip_addr = Some(ip);
                                     }
                                 }
@@ -623,19 +623,58 @@ fn make_target<B: SplitByteSlice + Copy>(
                             scope_id: 0,
                             port: ssh_port,
                         }));
+                        discovered_addresses.push(ffx::TargetAddrInfo::IpPort(ffx::TargetIpPort {
+                            ip,
+                            scope_id: 0,
+                            port: ssh_port,
+                        }));
                     }
                     log::debug!("emulator mdns txt {:?} {:?}", txt_lines, record.domain);
                 } else {
                     log::debug!("no data in txt record {:?}", record.domain);
                 }
             }
-            dns::Type::A | dns::Type::Aaaa => {
+            dns::Type::A => {
                 if nodename.is_empty() {
                     write!(nodename, "{}", record.domain).unwrap();
                     nodename = nodename.trim_end_matches(".local").into();
                 }
                 if ttl == 0 {
                     ttl = record.ttl;
+                }
+                if let Some(IpAddr::V4(v4)) = record.rdata.ip_addr() {
+                    let ip = IpAddress::Ipv4(Ipv4Address { addr: v4.octets() });
+                    let target_addr = ffx::TargetAddrInfo::Ip(ffx::TargetIp { ip, scope_id: 0 });
+                    if !discovered_addresses.contains(&target_addr) {
+                        discovered_addresses.push(target_addr);
+                    }
+                }
+            }
+            dns::Type::Aaaa => {
+                if nodename.is_empty() {
+                    write!(nodename, "{}", record.domain).unwrap();
+                    nodename = nodename.trim_end_matches(".local").into();
+                }
+                if ttl == 0 {
+                    ttl = record.ttl;
+                }
+                if let Some(IpAddr::V6(v6)) = record.rdata.ip_addr() {
+                    let ip = IpAddress::Ipv6(Ipv6Address { addr: v6.octets() });
+                    let scope_id = if v6.is_link_local_addr()
+                        && let ffx::TargetAddrInfo::Ip(ref sip) = src_info
+                    {
+                        sip.scope_id
+                    } else {
+                        0
+                    };
+
+                    // Only add link-local addresses if we have a valid scope ID.
+                    if !v6.is_link_local_addr() || scope_id != 0 {
+                        let target_addr = ffx::TargetAddrInfo::Ip(ffx::TargetIp { ip, scope_id });
+                        if !discovered_addresses.contains(&target_addr) {
+                            discovered_addresses.push(target_addr);
+                        }
+                    }
                 }
             }
             _ => {}
@@ -645,7 +684,7 @@ fn make_target<B: SplitByteSlice + Copy>(
     log::debug!(
         "Making target from message. nodename: {} address: {:#?} fastboot_interface: {:#?} serial: {:#?}",
         nodename,
-        src,
+        discovered_addresses,
         fastboot_interface,
         serial,
     );
@@ -656,7 +695,7 @@ fn make_target<B: SplitByteSlice + Copy>(
     Some((
         ffx::TargetInfo {
             nodename: Some(nodename),
-            addresses: Some(vec![src]),
+            addresses: Some(discovered_addresses),
             serial_number: serial,
             target_state: fastboot_interface.map(|_| ffx::TargetState::Fastboot),
             fastboot_interface,
@@ -1024,16 +1063,19 @@ mod tests {
             .serialize_vec_outer()
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let parsed = msg_bytes.parse::<Message<_>>().expect("failed to parse");
-        let addr: SocketAddr = (MDNS_MCAST_V4, 12).into();
+        let addr: SocketAddr = (Ipv4Addr::new(192, 168, 1, 1), 12).into();
         let (t, ttl) = make_target(addr, parsed).unwrap();
         assert_eq!(ttl, 4500);
-        assert_eq!(
-            t.addresses.as_ref().unwrap()[0],
-            ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                ip: IpAddress::Ipv4(Ipv4Address { addr: MDNS_MCAST_V4.octets() }),
-                scope_id: 0
-            })
-        );
+        let addrs = t.addresses.as_ref().unwrap();
+        assert_eq!(addrs.len(), 2);
+        assert!(addrs.contains(&ffx::TargetAddrInfo::Ip(ffx::TargetIp {
+            ip: IpAddress::Ipv4(Ipv4Address { addr: [192, 168, 1, 1] }),
+            scope_id: 0
+        })));
+        assert!(addrs.contains(&ffx::TargetAddrInfo::Ip(ffx::TargetIp {
+            ip: IpAddress::Ipv4(Ipv4Address { addr: [8, 8, 8, 8] }),
+            scope_id: 0
+        })));
         assert_eq!(t.nodename.unwrap(), "foo._fuchsia._udp");
     }
 
@@ -1064,16 +1106,18 @@ mod tests {
             .serialize_vec_outer()
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let parsed = msg_bytes.parse::<Message<_>>().expect("failed to parse");
-        let addr: SocketAddr = (MDNS_MCAST_V4, 12).into();
+        let addr: SocketAddr = (Ipv4Addr::new(192, 168, 1, 1), 12).into();
         let (t, ttl) = make_target(addr, parsed).unwrap();
         assert_eq!(ttl, 4500);
-        assert_eq!(
-            t.addresses.as_ref().unwrap()[0],
-            ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                ip: IpAddress::Ipv4(Ipv4Address { addr: MDNS_MCAST_V4.octets() }),
-                scope_id: 0
-            })
-        );
+        let addrs = t.addresses.as_ref().unwrap();
+        assert!(addrs.contains(&ffx::TargetAddrInfo::Ip(ffx::TargetIp {
+            ip: IpAddress::Ipv4(Ipv4Address { addr: [192, 168, 1, 1] }),
+            scope_id: 0
+        })));
+        assert!(addrs.contains(&ffx::TargetAddrInfo::Ip(ffx::TargetIp {
+            ip: IpAddress::Ipv4(Ipv4Address { addr: [8, 8, 8, 8] }),
+            scope_id: 0
+        })));
         assert_eq!(t.nodename.unwrap(), "foo._fuchsia._udp");
         assert_eq!(t.serial_number.unwrap(), "1234990");
         Ok(())
@@ -1106,16 +1150,23 @@ mod tests {
             .serialize_vec_outer()
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let parsed = msg_bytes.parse::<Message<_>>().expect("failed to parse");
-        let addr: SocketAddr = (MDNS_MCAST_V4, 12).into();
+        let addr: SocketAddr = (Ipv4Addr::new(192, 168, 1, 1), 12).into();
         let (t, ttl) = make_target(addr, parsed).unwrap();
         assert_eq!(ttl, 4500);
-        assert_eq!(
-            t.addresses.as_ref().unwrap()[0],
-            ffx::TargetAddrInfo::Ip(ffx::TargetIp {
-                ip: IpAddress::Ipv4(Ipv4Address { addr: [123, 11, 22, 33] }),
-                scope_id: 0
-            })
-        );
+        let addrs = t.addresses.as_ref().unwrap();
+        assert!(addrs.contains(&ffx::TargetAddrInfo::Ip(ffx::TargetIp {
+            ip: IpAddress::Ipv4(Ipv4Address { addr: [192, 168, 1, 1] }),
+            scope_id: 0
+        })));
+        assert!(addrs.contains(&ffx::TargetAddrInfo::IpPort(ffx::TargetIpPort {
+            ip: IpAddress::Ipv4(Ipv4Address { addr: [123, 11, 22, 33] }),
+            scope_id: 0,
+            port: 54321
+        })));
+        assert!(addrs.contains(&ffx::TargetAddrInfo::Ip(ffx::TargetIp {
+            ip: IpAddress::Ipv4(Ipv4Address { addr: [8, 8, 8, 8] }),
+            scope_id: 0
+        })));
         assert_eq!(
             t.ssh_address,
             Some(ffx::TargetIpAddrInfo::IpPort(TargetIpPort {
@@ -1126,6 +1177,74 @@ mod tests {
         );
         assert_eq!(t.nodename.unwrap(), "foo._fuchsia._udp");
         Ok(())
+    }
+
+    #[test]
+    fn test_make_target_link_local_no_scope() {
+        let nodename = DomainBuilder::from_str("foo._fuchsia._udp.local").unwrap();
+        let record = RecordBuilder::new(
+            nodename,
+            dns::Type::Aaaa,
+            Class::Any,
+            true,
+            4500,
+            &[0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // fe80::1
+        );
+        let mut message = MessageBuilder::new(0, true);
+        message.add_additional(record);
+        let mut msg_bytes = message
+            .into_serializer()
+            .serialize_vec_outer()
+            .unwrap_or_else(|_| panic!("failed to serialize"));
+        let parsed = msg_bytes.parse::<Message<_>>().expect("failed to parse");
+        let addr: SocketAddr = (Ipv4Addr::new(192, 168, 1, 1), 12).into();
+        let (t, _ttl) = make_target(addr, parsed).unwrap();
+        let addrs = t.addresses.as_ref().unwrap();
+
+        // Should only contain the source address (IPv4), not the link-local IPv6 address.
+        assert_eq!(addrs.len(), 1);
+        assert!(addrs.contains(&ffx::TargetAddrInfo::Ip(ffx::TargetIp {
+            ip: IpAddress::Ipv4(Ipv4Address { addr: [192, 168, 1, 1] }),
+            scope_id: 0
+        })));
+    }
+
+    #[test]
+    fn test_make_target_link_local_with_scope() {
+        let nodename = DomainBuilder::from_str("foo._fuchsia._udp.local").unwrap();
+        let record = RecordBuilder::new(
+            nodename,
+            dns::Type::Aaaa,
+            Class::Any,
+            true,
+            4500,
+            &[0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2], // fe80::2
+        );
+        let mut message = MessageBuilder::new(0, true);
+        message.add_additional(record);
+        let mut msg_bytes = message
+            .into_serializer()
+            .serialize_vec_outer()
+            .unwrap_or_else(|_| panic!("failed to serialize"));
+        let parsed = msg_bytes.parse::<Message<_>>().expect("failed to parse");
+
+        let src_ip = Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1); // fe80::1
+        let addr = SocketAddr::V6(std::net::SocketAddrV6::new(src_ip, 12, 0, 3)); // scope_id = 3
+
+        let (t, _ttl) = make_target(addr, parsed).unwrap();
+        let addrs = t.addresses.as_ref().unwrap();
+
+        assert_eq!(addrs.len(), 2);
+        assert!(addrs.contains(&ffx::TargetAddrInfo::Ip(ffx::TargetIp {
+            ip: IpAddress::Ipv6(Ipv6Address { addr: src_ip.octets() }),
+            scope_id: 3
+        })));
+        assert!(addrs.contains(&ffx::TargetAddrInfo::Ip(ffx::TargetIp {
+            ip: IpAddress::Ipv6(Ipv6Address {
+                addr: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2]
+            }),
+            scope_id: 3
+        })));
     }
 
     #[test]
