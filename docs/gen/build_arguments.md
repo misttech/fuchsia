@@ -8621,7 +8621,7 @@ but at the cost of the wrapper overhead (tradeoff vs. action pruning).
 
 **Current value (from the default):** `false`
 
-From //build/toolchain/restat.gni:27
+From //build/toolchain/restat.gni:28
 
 ### restat_rust
 
@@ -8629,7 +8629,7 @@ Set to true to make Rust compiles preserve timestamps of unchanged outputs.
 
 **Current value (from the default):** `true`
 
-From //build/toolchain/restat.gni:19
+From //build/toolchain/restat.gni:20
 
 ### riscv64_enable_vector
 
