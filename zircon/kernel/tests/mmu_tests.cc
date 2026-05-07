@@ -532,6 +532,155 @@ static bool test_large_region_atomic() {
   END_TEST;
 }
 
+// Test that RangeChangeUpdateLocked ignores pinned pages.
+static bool test_unmap_ignore_pinned() {
+  BEGIN_TEST;
+
+  fbl::RefPtr<VmAspace> aspace = VmAspace::Create(VmAspace::Type::User, "test aspace");
+  auto cleanup_aspace = fit::defer([&]() { ASSERT(ZX_OK == aspace->Destroy()); });
+
+  ArchVmAspace& arch_aspace = aspace->arch_aspace();
+  const arch_mmu_flags_t arch_rw_flags = ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE;
+
+  fbl::RefPtr<VmAddressRegion> vmar = aspace->RootVmar();
+
+  {
+    // Ensure an unpinned range gets completely unmapped.
+    fbl::RefPtr<VmObjectPaged> vmo;
+    ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, 4 * kPageSize, &vmo));
+    ASSERT_OK(vmo->CommitRange(0, 4 * kPageSize));
+
+    auto mapping_result =
+        vmar->CreateVmMapping(0, 4 * kPageSize, 0, VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE,
+                              vmo, 0, arch_rw_flags, "test");
+    ASSERT_OK(mapping_result.status_value());
+    ASSERT_OK(mapping_result->mapping->MapRange(0, 4 * kPageSize, false));
+    auto cleanup_mapping = fit::defer([&] { ASSERT(ZX_OK == mapping_result->mapping->Destroy()); });
+
+    const vaddr_t va = mapping_result->base;
+    zx_paddr_t paddr;
+    arch_mmu_flags_t mmu_flags;
+
+    for (size_t i = 0; i < 4; i++) {
+      EXPECT_OK(arch_aspace.Query(va + i * kPageSize, &paddr, &mmu_flags));
+    }
+
+    fbl::RefPtr<VmCowPages> cow = vmo->DebugGetCowPages();
+    VmCowPages::DeferredOps deferred(cow.get());
+    Guard<CriticalMutex> guard{cow->lock()};
+    cow->RangeChangeUpdateLocked(VmCowRange(0, 4 * kPageSize), VmObject::RangeChangeOp::Unmap,
+                                 &deferred);
+
+    for (size_t i = 0; i < 4; i++) {
+      EXPECT_EQ(ZX_ERR_NOT_FOUND, arch_aspace.Query(va + i * kPageSize, &paddr, &mmu_flags));
+    }
+  }
+
+  {
+    // Ensure a fully pinned range doesn't get unmapped.
+    fbl::RefPtr<VmObjectPaged> vmo;
+    ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, 4 * kPageSize, &vmo));
+    ASSERT_OK(vmo->CommitRangePinned(0, 4 * kPageSize, false));
+    auto unpin = fit::defer([&]() { vmo->Unpin(0, 4 * kPageSize); });
+
+    auto mapping_result =
+        vmar->CreateVmMapping(0, 4 * kPageSize, 0, VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE,
+                              vmo, 0, arch_rw_flags, "test");
+    ASSERT_OK(mapping_result.status_value());
+    ASSERT_OK(mapping_result->mapping->MapRange(0, 4 * kPageSize, false));
+    auto cleanup_mapping = fit::defer([&] { ASSERT(ZX_OK == mapping_result->mapping->Destroy()); });
+
+    const vaddr_t va = mapping_result->base;
+    zx_paddr_t paddr;
+    arch_mmu_flags_t mmu_flags;
+
+    fbl::RefPtr<VmCowPages> cow = vmo->DebugGetCowPages();
+    VmCowPages::DeferredOps deferred(cow.get());
+    Guard<CriticalMutex> guard{cow->lock()};
+    cow->RangeChangeUpdateLocked(VmCowRange(0, 4 * kPageSize), VmObject::RangeChangeOp::Unmap,
+                                 &deferred);
+
+    for (size_t i = 0; i < 4; i++) {
+      EXPECT_OK(arch_aspace.Query(va + i * kPageSize, &paddr, &mmu_flags));
+    }
+  }
+
+  {
+    // Unmap a greater range than exists in the VMO or in the mapping.
+    fbl::RefPtr<VmObjectPaged> vmo;
+    ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, 4 * kPageSize, &vmo));
+    ASSERT_OK(vmo->CommitRange(0, 4 * kPageSize));
+    ASSERT_OK(vmo->CommitRangePinned(kPageSize, 2 * kPageSize, false));
+    auto unpin = fit::defer([&]() { vmo->Unpin(kPageSize, 2 * kPageSize); });
+
+    auto mapping_result =
+        vmar->CreateVmMapping(0, 4 * kPageSize, 0, VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE,
+                              vmo, 0, arch_rw_flags, "test");
+    ASSERT_OK(mapping_result.status_value());
+    ASSERT_OK(mapping_result->mapping->MapRange(0, 4 * kPageSize, false));
+    auto cleanup_mapping = fit::defer([&] { ASSERT(ZX_OK == mapping_result->mapping->Destroy()); });
+
+    const vaddr_t va = mapping_result->base;
+    zx_paddr_t paddr;
+    arch_mmu_flags_t mmu_flags;
+
+    fbl::RefPtr<VmCowPages> cow = vmo->DebugGetCowPages();
+    VmCowPages::DeferredOps deferred(cow.get());
+    Guard<CriticalMutex> guard{cow->lock()};
+    // Note: Large len here. This is okay.
+    cow->RangeChangeUpdateLocked(VmCowRange(0, 100 * kPageSize), VmObject::RangeChangeOp::Unmap,
+                                 &deferred);
+
+    EXPECT_EQ(ZX_ERR_NOT_FOUND, arch_aspace.Query(va + 0 * kPageSize, &paddr, &mmu_flags));
+    EXPECT_OK(arch_aspace.Query(va + 1 * kPageSize, &paddr, &mmu_flags));
+    EXPECT_OK(arch_aspace.Query(va + 2 * kPageSize, &paddr, &mmu_flags));
+    EXPECT_EQ(ZX_ERR_NOT_FOUND, arch_aspace.Query(va + 3 * kPageSize, &paddr, &mmu_flags));
+  }
+
+  {
+    // Alternating pinned pages.
+    fbl::RefPtr<VmObjectPaged> vmo;
+    ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0u, 20 * kPageSize, &vmo));
+    ASSERT_OK(vmo->CommitRange(0, 20 * kPageSize));
+
+    for (uint64_t i = 0; i < 20; i += 2) {
+      ASSERT_OK(vmo->CommitRangePinned(i * kPageSize, kPageSize, false));
+    }
+    auto unpin = fit::defer([&]() {
+      for (uint64_t i = 0; i < 20; i += 2) {
+        vmo->Unpin(i * kPageSize, kPageSize);
+      }
+    });
+
+    auto mapping_result = vmar->CreateVmMapping(0, 20 * kPageSize, 0,
+                                                VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE,
+                                                vmo, 0, arch_rw_flags, "test");
+    ASSERT_OK(mapping_result.status_value());
+    ASSERT_OK(mapping_result->mapping->MapRange(0, 20 * kPageSize, false));
+    auto cleanup_mapping = fit::defer([&] { ASSERT(ZX_OK == mapping_result->mapping->Destroy()); });
+
+    const vaddr_t va = mapping_result->base;
+    zx_paddr_t paddr;
+    arch_mmu_flags_t mmu_flags;
+
+    fbl::RefPtr<VmCowPages> cow = vmo->DebugGetCowPages();
+    VmCowPages::DeferredOps deferred(cow.get());
+    Guard<CriticalMutex> guard{cow->lock()};
+    cow->RangeChangeUpdateLocked(VmCowRange(0, 20 * kPageSize), VmObject::RangeChangeOp::Unmap,
+                                 &deferred);
+
+    for (uint64_t i = 0; i < 20; i++) {
+      if (i % 2 == 0) {
+        EXPECT_OK(arch_aspace.Query(va + i * kPageSize, &paddr, &mmu_flags));
+      } else {
+        EXPECT_EQ(ZX_ERR_NOT_FOUND, arch_aspace.Query(va + i * kPageSize, &paddr, &mmu_flags));
+      }
+    }
+  }
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(mmu_tests)
 UNITTEST("create large unaligned region and ensure it can be unmapped", test_large_unaligned_region)
 UNITTEST("create large unaligned region without mapping and ensure it can be unmapped",
@@ -541,4 +690,5 @@ UNITTEST("trigger oom failures when creating a mapping", test_mapping_oom)
 UNITTEST("skip existing entry when mapping multiple pages", test_skip_existing_mapping)
 UNITTEST("create large vm region and unmap single pages", test_large_region_unmap)
 UNITTEST("splitting a large page is atomic", test_large_region_atomic)
+UNITTEST("test that unmap ignores pinned pages", test_unmap_ignore_pinned)
 UNITTEST_END_TESTCASE(mmu_tests, "mmu", "mmu tests")

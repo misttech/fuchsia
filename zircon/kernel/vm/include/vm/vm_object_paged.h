@@ -378,11 +378,18 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
   }
 
   // Apply the specified operation to all mappings in the given range.
+  //
+  // Preconditions
+  // * This range may not include pages mapped in the kernel address space without the
+  //   VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING flag.
+  // * |range| must be page-aligned.
   void RangeChangeUpdateLocked(VmCowRange range, RangeChangeOp op) TA_REQ(lock());
 
   // Apply the specified operation to all mappings in the given range, forwarded to the original
   // owner of the VmCowPages. In the case of references and slices, this ensures that all VMOs in
   // the reference list of the original, cloned VMO are included.
+  //
+  // |offset| and |len| must be page-rounded.
   void ForwardRangeChangeUpdateLocked(uint64_t offset, uint64_t len, RangeChangeOp op)
       TA_REQ(lock());
 

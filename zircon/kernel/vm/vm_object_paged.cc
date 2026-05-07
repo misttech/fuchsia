@@ -1921,10 +1921,10 @@ zx_status_t VmObjectPaged::SetMappingCachePolicy(const arch_mmu_flags_t cache_po
 
 void VmObjectPaged::RangeChangeUpdateLocked(VmCowRange range, RangeChangeOp op) {
   canary_.Assert();
+  DEBUG_ASSERT(range.is_page_aligned());
 
-  // offsets for vmos needn't be aligned, but vmars use aligned offsets
-  uint64_t aligned_offset = RoundDownPageSize(range.offset);
-  uint64_t aligned_len = RoundUpPageSize(range.end()) - aligned_offset;
+  uint64_t aligned_offset = range.offset;
+  uint64_t aligned_len = range.len;
   if (GetIntersect(cow_range_.offset, cow_range_.len, aligned_offset, aligned_len, &aligned_offset,
                    &aligned_len)) {
     // Found the intersection in cow space, convert back to object space.
@@ -1946,11 +1946,13 @@ void VmObjectPaged::RangeChangeUpdateLocked(VmCowRange range, RangeChangeOp op) 
 void VmObjectPaged::ForwardRangeChangeUpdateLocked(uint64_t offset, uint64_t len,
                                                    RangeChangeOp op) {
   canary_.Assert();
+  DEBUG_ASSERT(IsPageRounded(offset) && IsPageRounded(len));
 
   // Call RangeChangeUpdateLocked on the owner of the CowPages.
   AssertHeld(cow_pages_locked()->get_paged_backlink_locked()->lock_ref());
   if (auto cow_range = GetCowRange(offset, len)) {
-    cow_pages_locked()->get_paged_backlink_locked()->RangeChangeUpdateLocked(*cow_range, op);
+    VmObjectPaged* const paged_owner = cow_pages_locked()->get_paged_backlink_locked();
+    cow_pages_locked()->RangeChangeUpdateMappingsLocked(*paged_owner, *cow_range, op);
   }
 }
 

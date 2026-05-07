@@ -756,6 +756,17 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   void RangeChangeUpdateLocked(VmCowRange range, RangeChangeOp op, DeferredOps* deferred)
       TA_REQ(lock());
 
+  // Apply the specified operation to all mappings of |paged| in the given range. The provided
+  // |range| must be page aligned.
+  //
+  // |paged| is assumed to be one of the aliases for this |VmCowPages| node. |range| must be
+  // page-aligned.
+  //
+  // Differs from |RangeChangeUpdateLocked| in that this method does not apply the operation to
+  // copy-on-write children.
+  void RangeChangeUpdateMappingsLocked(VmObjectPaged& paged, VmCowRange range, RangeChangeOp op)
+      TA_REQ(lock());
+
   // The VmObjectPaged is changing its cache mapping policy. Clean / invalidate all existing pages
   // and update page queues if required.
   void FinishCachePolicyTransitionLocked() TA_REQ(lock());

@@ -4890,6 +4890,122 @@ static bool vmo_dedup_hidden_zero_page_test() {
   END_TEST;
 }
 
+// Regression test for https://fxbug.dev/504708573. Attempt to zero a range that has pages mapped in
+// the kernel after committed pages.
+static bool vmo_zero_partially_pinned_range_test() {
+  BEGIN_TEST;
+
+  // Ensure that we do not compress pages before ZeroRange acquires the VmCowPage lock, as this
+  // would prevent the unmap round-up optimization from being triggered.
+  AutoVmScannerDisable scanner_disable;
+
+  auto test_vmo = [](fbl::RefPtr<VmObject> vmo) -> bool {
+    BEGIN_TEST;
+
+    // Commit a page to force an unmap when the range is zeroed.
+    ASSERT_OK(vmo->CommitRange(0, kPageSize));
+
+    auto ka = VmAspace::kernel_aspace();
+    void* ptr;
+    ASSERT_OK(ka->MapObjectInternal(vmo, "test", /*offset=*/kPageSize, /*size=*/kPageSize, &ptr, 0,
+                                    VmAspace::VMM_FLAG_COMMIT, kArchRwFlags));
+    auto cleanup_mapping =
+        fit::defer([&ka, ptr] { ASSERT(ZX_OK == ka->FreeRegion(reinterpret_cast<vaddr_t>(ptr))); });
+
+    EXPECT_OK(vmo->ZeroRange(0, 2 * kPageSize));
+
+    END_TEST;
+  };
+
+  {
+    fbl::RefPtr<VmObjectPaged> vmo;
+    ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 2 * kPageSize, &vmo));
+    EXPECT_TRUE(test_vmo(ktl::move(vmo)));
+  }
+
+  {
+    fbl::RefPtr<VmObjectPaged> vmo;
+    ASSERT_OK(make_committed_pager_vmo(2, /*trap_dirty=*/false, /*resizable=*/false,
+                                       /*out_pages=*/nullptr, &vmo));
+    EXPECT_TRUE(test_vmo(ktl::move(vmo)));
+  }
+
+  {
+    fbl::RefPtr<VmObjectPaged> vmo;
+    ASSERT_OK(make_committed_pager_vmo(2, /*trap_dirty=*/false, /*resizable=*/false,
+                                       /*out_pages=*/nullptr, &vmo));
+    fbl::RefPtr<VmObject> unidirectional_clone;
+    ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::OnWrite, 0, 2 * kPageSize,
+                               false, &unidirectional_clone));
+    EXPECT_TRUE(test_vmo(ktl::move(unidirectional_clone)));
+  }
+
+  {
+    // Same as above; use the parent instead of the child though.
+    fbl::RefPtr<VmObjectPaged> vmo;
+    ASSERT_OK(make_committed_pager_vmo(2, /*trap_dirty=*/false, /*resizable=*/false,
+                                       /*out_pages=*/nullptr, &vmo));
+    fbl::RefPtr<VmObject> unidirectional_clone;
+    ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::OnWrite, 0, 2 * kPageSize,
+                               false, &unidirectional_clone));
+    EXPECT_TRUE(test_vmo(ktl::move(vmo)));
+  }
+
+  {
+    fbl::RefPtr<VmObjectPaged> vmo;
+    ASSERT_OK(VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, 0, 2 * kPageSize, &vmo));
+    ASSERT_OK(vmo->CommitRange(0, 2 * kPageSize));
+
+    fbl::RefPtr<VmObject> bidirectional_clone;
+    ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::Full, 0, 2 * kPageSize,
+                               false, &bidirectional_clone));
+    EXPECT_TRUE(test_vmo(ktl::move(bidirectional_clone)));
+  }
+
+  END_TEST;
+}
+
+// Test that unmaps propagated to copy-on-write children are not applied to kernel mappings.
+static bool vmo_apply_unmap_to_child_with_kernel_mapping_test() {
+  BEGIN_TEST;
+
+  AutoVmScannerDisable scanner_disable;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+  ASSERT_OK(make_committed_pager_vmo(4, /*trap_dirty=*/false, /*resizable=*/false,
+                                     /*out_pages=*/nullptr, &vmo));
+
+  fbl::RefPtr<VmObject> unidirectional_clone_no_paged;
+  ASSERT_OK(vmo->CreateClone(Resizability::NonResizable, SnapshotType::OnWrite, kPageSize,
+                             3 * kPageSize, false, &unidirectional_clone_no_paged));
+  fbl::RefPtr<VmObjectPaged> unidirectional_clone =
+      DownCastVmObject<VmObjectPaged>(unidirectional_clone_no_paged);
+  ASSERT_NONNULL(unidirectional_clone);
+
+  auto ka = VmAspace::kernel_aspace();
+  void* ptr;
+  ASSERT_OK(ka->MapObjectInternal(unidirectional_clone, "test", /*offset=*/kPageSize,
+                                  /*size=*/kPageSize, &ptr, 0, VmAspace::VMM_FLAG_COMMIT,
+                                  kArchRwFlags));
+  auto cleanup_mapping =
+      fit::defer([&ka, ptr] { ASSERT(ZX_OK == ka->FreeRegion(reinterpret_cast<vaddr_t>(ptr))); });
+
+  // Show that this is indeed a unidirectional clone, and that the kernel mapping will be subject to
+  // the attempted unmap.
+  vm_page_t* page = unidirectional_clone->DebugGetCowPages()->DebugGetPage(kPageSize);
+  ASSERT_NONNULL(page);
+  EXPECT_GT(page->object.pin_count, 0u);
+  EXPECT_TRUE(unidirectional_clone->DebugGetCowPages()->DebugIsEmpty(0));
+  EXPECT_TRUE(unidirectional_clone->DebugGetCowPages()->DebugIsEmpty(2 * kPageSize));
+  EXPECT_EQ(unidirectional_clone->DebugGetCowPages()->DebugGetParent().get(),
+            vmo->DebugGetCowPages().get());
+
+  // This does not crash.
+  EXPECT_OK(vmo->ZeroRange(0, 4 * kPageSize));
+
+  END_TEST;
+}
+
 static bool vmo_compress_to_marker_pager_test() {
   BEGIN_TEST;
 
@@ -5111,6 +5227,8 @@ VM_UNITTEST(vmo_loaned_page_in_high_priority_test)
 VM_UNITTEST(vmo_zero_marker_transfer_test)
 VM_UNITTEST(vmo_pager_supply_test)
 VM_UNITTEST(vmo_dedup_hidden_zero_page_test)
+VM_UNITTEST(vmo_zero_partially_pinned_range_test)
+VM_UNITTEST(vmo_apply_unmap_to_child_with_kernel_mapping_test)
 VM_UNITTEST(vmo_compress_to_marker_pager_test)
 VM_UNITTEST(vmo_compress_to_marker_anon_test)
 UNITTEST_END_TESTCASE(vmo_tests, "vmo", "VmObject tests")

@@ -6950,7 +6950,46 @@ void VmCowPages::RangeChangeUpdateLocked(VmCowRange range, RangeChangeOp op,
     }
   }
   if (paged_ref_ && !range.is_empty()) {
-    paged_backlink_locked(this)->RangeChangeUpdateLocked(range, op);
+    range = range.ExpandTillPageAligned();
+    RangeChangeUpdateMappingsLocked(*paged_ref_, range, op);
+  }
+}
+
+void VmCowPages::RangeChangeUpdateMappingsLocked(VmObjectPaged& paged, VmCowRange range,
+                                                 RangeChangeOp op) {
+  canary_.Assert();
+  DEBUG_ASSERT(range.is_page_aligned());
+  AssertHeld(paged.lock_ref());
+
+  if (pinned_page_count_ == 0) {
+    paged.RangeChangeUpdateLocked(range, op);
+  } else {
+    // The operation is permitted for any page unless it is mapped within the kernel address space
+    // without the VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING flag. Since being mapped in the kernel
+    // requires a page to be pinned, we can avoid illegal operations by simply skipping all pinned
+    // pages.
+    uint64_t maybe_unpinned_start = range.offset;
+    zx_status_t status = page_list_.ForEveryPageInRange(
+        [&](const VmPageOrMarker* slot, uint64_t offset) {
+          if (!slot->IsPage() || slot->Page()->object.pin_count == 0) {
+            return ZX_ERR_NEXT;  // we are looking for pinned pages
+          }
+          if (const uint64_t unpinned_portion_len = offset - maybe_unpinned_start;
+              unpinned_portion_len > 0) {
+            AssertHeld(paged.lock_ref());
+            paged.RangeChangeUpdateLocked(VmCowRange(maybe_unpinned_start, unpinned_portion_len),
+                                          op);
+          }
+          maybe_unpinned_start = offset + kPageSize;
+          return ZX_ERR_NEXT;
+        },
+        range.offset, range.end());
+    DEBUG_ASSERT(ZX_OK == status);
+
+    if (const uint64_t unpinned_portion_len = range.end() - maybe_unpinned_start;
+        unpinned_portion_len > 0) {
+      paged.RangeChangeUpdateLocked(VmCowRange(maybe_unpinned_start, unpinned_portion_len), op);
+    }
   }
 }
 
@@ -7046,8 +7085,8 @@ void VmCowPages::RangeChangeUpdateCowChildren(LockedPtr self, VmCowRange range, 
     // single range here.
     if (candidate->paged_ref_) {
       AssertHeld(candidate->paged_ref_->lock_ref());
-      candidate->paged_ref_->RangeChangeUpdateLocked(
-          VmCowRange(first_gap_start, last_gap_end - first_gap_start), op);
+      candidate->RangeChangeUpdateMappingsLocked(
+          *candidate->paged_ref_, VmCowRange(first_gap_start, last_gap_end - first_gap_start), op);
     }
     vm_vmo_range_update_from_parent_performed.Add(1);
     // We processed this node and may need to walk the subtree.

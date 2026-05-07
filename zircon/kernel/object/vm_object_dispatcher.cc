@@ -355,7 +355,8 @@ zx_status_t VmObjectDispatcher::SetStreamSize(uint64_t stream_size) {
   DEBUG_ASSERT(paged);
   {
     Guard<CriticalMutex> vmo_guard{paged->lock()};
-    paged->ForwardRangeChangeUpdateLocked(zero_start, vmo_size - zero_start,
+    const uint64_t aligned_zero_start = RoundDownPageSize(zero_start);
+    paged->ForwardRangeChangeUpdateLocked(aligned_zero_start, vmo_size - aligned_zero_start,
                                           VmCowPages::RangeChangeOp::Unmap);
     op.CommitLocked();
   }

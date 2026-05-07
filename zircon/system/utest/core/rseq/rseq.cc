@@ -422,4 +422,17 @@ TEST(RseqTest, ManyConcurrent) {
   }
 }
 
+// Regression test related to https://fxbug.dev/504708573. Attempt to unmap kernel pages through
+// set_stream_size.
+TEST(RseqTest, SetStreamSize) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size() * 4, 0, &vmo));
+
+  ASSERT_OK(zx_thread_set_rseq(vmo.get(), zx_system_get_page_size() * 2, sizeof(zx_rseq_t)));
+  auto cleanup = fit::defer([]() { ASSERT_OK(zx_thread_set_rseq(ZX_HANDLE_INVALID, 0, 0)); });
+
+  // Will attempt to unmap the last two pages of |vmo|.
+  EXPECT_OK(vmo.set_stream_size(zx_system_get_page_size() * 2));
+}
+
 }  // namespace
