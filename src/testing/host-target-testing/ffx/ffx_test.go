@@ -33,7 +33,7 @@ func TestTargetListEmpty(t *testing.T) {
 
 	ffxtoolScript := createScript(t, string(data))
 
-	isolateDir := NewIsolateDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
+	isolateDir := NewRunDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
 	ffx, err := NewFFXTool(ffxtoolScript, isolateDir)
 	if err != nil {
 		t.Fatalf("Failed to create ffx tool: %s", err)
@@ -59,7 +59,7 @@ func TestTargetList(t *testing.T) {
 
 	ffxtoolScript := createScript(t, string(data))
 
-	isolateDir := NewIsolateDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
+	isolateDir := NewRunDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
 	ffx, err := NewFFXTool(ffxtoolScript, isolateDir)
 	if err != nil {
 		t.Fatalf("Failed to create ffx tool: %s", err)

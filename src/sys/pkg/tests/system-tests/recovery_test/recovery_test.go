@@ -74,13 +74,13 @@ func doTest(ctx context.Context) error {
 	}
 	defer archiveCleanup()
 
-	ffx, ffxCleanup, err := c.ffxConfig.NewFfxTool(ctx)
+	ffxTool, ffxCleanup, err := c.ffxConfig.NewFfxTool(ctx, c.deviceConfig.SSHKeyFile())
 	if err != nil {
 		return fmt.Errorf("failed to create ffx: %w", err)
 	}
 	defer ffxCleanup()
 
-	deviceClient, err := c.deviceConfig.NewDeviceClient(ctx, ffx)
+	deviceClient, err := c.deviceConfig.NewDeviceClient(ctx, ffxTool)
 	if err != nil {
 		return fmt.Errorf("failed to create ota test client: %w", err)
 	}
@@ -105,21 +105,21 @@ func doTest(ctx context.Context) error {
 	}
 
 	if err := util.RunWithTimeout(ctx, c.paveTimeout, func() error {
-		err := initializeDevice(ctx, deviceClient, ffx, build)
-		return err
+		return initializeDevice(ctx, deviceClient, ffxTool, build)
 	}); err != nil {
 		return fmt.Errorf("initialization failed: %w", err)
 	}
 
-	return testRecovery(ctx, ffx, deviceClient, ffx.IsolateDir(), build)
+	return testRecovery(ctx, ffxTool, deviceClient, ffxTool.RunDir(), build, ffx.FfxVersionPolicyLatest)
 }
 
 func testRecovery(
 	ctx context.Context,
 	ffxTool *ffx.FFXTool,
 	device *device.Client,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffx.RunDir,
 	build artifacts.Build,
+	version ffx.FfxVersionPolicy,
 ) error {
 	for i := 1; i <= c.cycleCount; i++ {
 		logger.Infof(ctx, "Recovery Attempt %d", i)
@@ -128,7 +128,7 @@ func testRecovery(
 		// setting a timeout on the context, and running the actual test in a
 		// closure.
 		if err := util.RunWithTimeout(ctx, c.cycleTimeout, func() error {
-			return doTestRecovery(ctx, ffxTool, device, ffxIsolateDir, build)
+			return doTestRecovery(ctx, ffxTool, device, ffxRunDir, build, version)
 		}); err != nil {
 			return fmt.Errorf("Recovery Cycle %d failed: %w", i, err)
 		}
@@ -141,17 +141,18 @@ func doTestRecovery(
 	ctx context.Context,
 	ffxTool *ffx.FFXTool,
 	device *device.Client,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffx.RunDir,
 	build artifacts.Build,
+	version ffx.FfxVersionPolicy,
 ) error {
 	// We don't install an OTA, so we don't need to prefetch the blobs.
-	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffxIsolateDir)
+	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffxRunDir, version)
 	if err != nil {
 		return fmt.Errorf("unable to get repository: %w", err)
 	}
 
-	// We should use this ffx after we reboot.
-	nextFfxTool, err := build.GetFfx(ctx, ffxIsolateDir)
+	// Get the FFX tool matching the version of the build we are testing to use for reconnection.
+	nextFfxTool, err := build.GetFfx(ctx, ffxRunDir, version)
 	if err != nil {
 		return fmt.Errorf("failed to get ffx from build %s: %w", build, err)
 	}
@@ -212,12 +213,12 @@ func doTestRecovery(
 func initializeDevice(
 	ctx context.Context,
 	device *device.Client,
-	ffx *ffx.FFXTool,
+	ffxTool *ffx.FFXTool,
 	build artifacts.Build,
 ) error {
 	logger.Infof(ctx, "Initializing device")
 
-	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffx.IsolateDir())
+	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffxTool.RunDir(), ffx.FfxVersionPolicyLatest)
 	if err != nil {
 		return err
 	}
@@ -247,18 +248,18 @@ func initializeDevice(
 		}
 
 		if c.useFlash {
-			if err := flash.FlashDevice(ctx, device, ffx, build, sshPrivateKey.PublicKey()); err != nil {
+			if err := flash.FlashDevice(ctx, device, ffxTool, build, sshPrivateKey.PublicKey(), ffx.FfxVersionPolicyLatest); err != nil {
 				return fmt.Errorf("failed to flash device during initialization: %w", err)
 			}
 		} else {
-			if err := pave.PaveDevice(ctx, device, ffx, build, sshPrivateKey.PublicKey()); err != nil {
+			if err := pave.PaveDevice(ctx, device, ffxTool, build, sshPrivateKey.PublicKey(), ffx.FfxVersionPolicyLatest); err != nil {
 				return fmt.Errorf("failed to pave device during initialization: %w", err)
 			}
 		}
 	}
 
 	// Check if we support ABR. If so, we always boot into A after a pave.
-	expectedConfig, err := check.DetermineCurrentABRConfig(ctx, ffx, device, repo)
+	expectedConfig, err := check.DetermineCurrentABRConfig(ctx, ffxTool, device, repo)
 	if err != nil {
 		return err
 	}
@@ -270,7 +271,7 @@ func initializeDevice(
 
 	if err := check.ValidateDevice(
 		ctx,
-		ffx,
+		ffxTool,
 		device,
 		expectedSystemImage,
 		expectedConfig,

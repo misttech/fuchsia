@@ -72,7 +72,7 @@ func doTest(ctx context.Context) error {
 	}
 	defer archiveCleanup()
 
-	ffxTool, ffxCleanup, err := c.ffxConfig.NewFfxTool(ctx)
+	ffxTool, ffxCleanup, err := c.ffxConfig.NewFfxTool(ctx, c.deviceConfig.SSHKeyFile())
 	if err != nil {
 		return fmt.Errorf("failed to create ffx: %w", err)
 	}
@@ -148,7 +148,8 @@ func doTestReboot(
 	repo, err := build.GetPackageRepository(
 		ctx,
 		artifacts.LazilyFetchBlobs,
-		ffxTool.IsolateDir(),
+		ffxTool.RunDir(),
+		ffx.FfxVersionPolicyLatest,
 	)
 	if err != nil {
 		return fmt.Errorf("unable to get repository: %w", err)
@@ -232,7 +233,7 @@ func initializeDevice(
 ) error {
 	logger.Infof(ctx, "Initializing device")
 
-	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffxTool.IsolateDir())
+	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffxTool.RunDir(), ffx.FfxVersionPolicyLatest)
 	if err != nil {
 		return err
 	}
@@ -262,11 +263,11 @@ func initializeDevice(
 		}
 
 		if c.useFlash {
-			if err := flash.FlashDevice(ctx, device, ffxTool, build, sshPrivateKey.PublicKey()); err != nil {
+			if err := flash.FlashDevice(ctx, device, ffxTool, build, sshPrivateKey.PublicKey(), ffx.FfxVersionPolicyLatest); err != nil {
 				return fmt.Errorf("failed to flash device during initialization: %w", err)
 			}
 		} else {
-			if err := pave.PaveDevice(ctx, device, ffxTool, build, sshPrivateKey.PublicKey()); err != nil {
+			if err := pave.PaveDevice(ctx, device, ffxTool, build, sshPrivateKey.PublicKey(), ffx.FfxVersionPolicyLatest); err != nil {
 				return fmt.Errorf("failed to pave device during initialization: %w", err)
 			}
 		}

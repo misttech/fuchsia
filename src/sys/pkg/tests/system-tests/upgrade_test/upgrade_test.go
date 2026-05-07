@@ -75,9 +75,17 @@ func doTest(ctx context.Context) error {
 	}
 	defer outputCleanup()
 
+	ffxRunDirStr, err := os.MkdirTemp("", "ffx-run-dir")
+	if err != nil {
+		return fmt.Errorf("failed to create ffx run dir: %w", err)
+	}
+	defer os.RemoveAll(ffxRunDirStr)
+
+	ffxRunDir := ffx.NewRunDirWithPrivKey(ffxRunDirStr, c.deviceConfig.SSHKeyFile())
+
 	// Get the ffx we need to use to talk to the device right now. This typically is the ffx
 	// from the build under test.
-	latestFfx, ffxCleanup, err := c.ffxConfig.NewFfxTool(ctx)
+	latestFfx, ffxCleanup, err := c.ffxConfig.NewFfxTool(ctx, c.deviceConfig.SSHKeyFile())
 	if err != nil {
 		return fmt.Errorf("failed to create ffx: %w", err)
 	}
@@ -88,11 +96,6 @@ func doTest(ctx context.Context) error {
 		return fmt.Errorf("failed to create ota test client: %w", err)
 	}
 	defer deviceClient.Close()
-
-	target, err := latestFfx.GetDisambiguatedTarget(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to locate a suitable target: %w", err)
-	}
 
 	// Now that we're connected to the device we can emit logs with the
 	// estimated device monotonic time.
@@ -111,13 +114,24 @@ func doTest(ctx context.Context) error {
 		return fmt.Errorf("failed to get builds: %w", err)
 	}
 
-	for i, build := range chainedBuilds {
+	for i := range chainedBuilds {
+		// Use the latest FFX for the final target build, but use the FFX matching the API level for intermediate stepping stones to ensure compatibility.
+		if i == len(chainedBuilds)-1 {
+			chainedBuilds[i].Version = ffx.FfxVersionPolicyLatest
+		} else {
+			chainedBuilds[i].Version = ffx.FfxVersionPolicyFromApiLevel
+		}
+	}
+
+	for i, buildWithVersion := range chainedBuilds {
+		build := buildWithVersion.Build
 		// FIXME(https://fxbug.dev/336897946): We need to use the latest ffx because
 		// F11's ffx doesn't actually refresh metadata. We can remove this once
 		// we cut the next stepping stone.
 		logger.Infof(ctx, "Refreshing TUF metadata in build %s with latest ffx", build)
 
-		repo, err := build.GetPackageRepository(ctx, artifacts.PrefetchBlobs, latestFfx.IsolateDir())
+		logger.Infof(ctx, "Calling GetPackageRepository with version: %q for build %s", buildWithVersion.Version, build)
+		repo, err := build.GetPackageRepository(ctx, artifacts.PrefetchBlobs, ffxRunDir, buildWithVersion.Version)
 		if err != nil {
 			return fmt.Errorf("error getting repository: %w", err)
 		}
@@ -136,7 +150,7 @@ func doTest(ctx context.Context) error {
 			return fmt.Errorf("installer did not configure a build")
 		}
 
-		chainedBuilds[i] = build
+		chainedBuilds[i].Build = build
 	}
 
 	if len(chainedBuilds) == 0 {
@@ -147,7 +161,7 @@ func doTest(ctx context.Context) error {
 	rand := rand.New(rand.NewSource(99))
 
 	// Generate OTAs for each build.
-	otas, err := newOtas(ctx, rand, latestFfx, chainedBuilds)
+	otas, err := newOtas(ctx, rand, latestFfx, chainedBuilds, ffxRunDir)
 	if err != nil {
 		return err
 	}
@@ -170,11 +184,15 @@ func doTest(ctx context.Context) error {
 
 	currentBootSlot := <-ch
 
+	targetStr := deviceClient.Name()
+	if targetStr == "" {
+		targetStr = c.deviceConfig.DeviceAddress()
+	}
 	return testOTAs(
 		ctx,
 		deviceClient,
-		target.NodeName,
-		latestFfx.IsolateDir(),
+		targetStr,
+		ffxRunDir,
 		otas,
 		currentBootSlot,
 	)
@@ -184,7 +202,7 @@ func testOTAs(
 	ctx context.Context,
 	device *device.Client,
 	target string,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffx.RunDir,
 	otas []*otaData,
 	currentBootSlot *sl4f.Configuration,
 ) error {
@@ -206,7 +224,7 @@ func testOTAs(
 					ctx,
 					device,
 					target,
-					ffxIsolateDir,
+					ffxRunDir,
 					srcOta,
 					dstOta,
 					currentBootSlot,
@@ -262,6 +280,7 @@ func initializeDevice(
 				latestFfxTool,
 				ota.build,
 				sshPrivateKey.PublicKey(),
+				ffx.FfxVersionPolicyLatest,
 			); err != nil {
 				return nil, fmt.Errorf("failed to flash device during initialization: %w", err)
 			}
@@ -272,6 +291,7 @@ func initializeDevice(
 				latestFfxTool,
 				ota.build,
 				sshPrivateKey.PublicKey(),
+				ffx.FfxVersionPolicyLatest,
 			); err != nil {
 				return nil, fmt.Errorf("failed to pave device during initialization: %w", err)
 			}
@@ -279,7 +299,7 @@ func initializeDevice(
 	}
 
 	// The device was initialized, so use the ffx from the build to communicate with it.
-	ffxTool, err := ota.build.GetFfx(ctx, latestFfxTool.IsolateDir())
+	ffxTool, err := ota.build.GetFfx(ctx, latestFfxTool.RunDir(), ffx.FfxVersionPolicyLatest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ffx from build: %w", err)
 	}
@@ -309,7 +329,7 @@ func systemOTA(
 	ctx context.Context,
 	device *device.Client,
 	target string,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffx.RunDir,
 	srcOta *otaData,
 	dstOta *otaData,
 	currentBootSlot *sl4f.Configuration,
@@ -317,7 +337,7 @@ func systemOTA(
 	var err error
 
 	// We should use this ffx after we reboot.
-	nextFfxTool, err := dstOta.build.GetFfx(ctx, ffxIsolateDir)
+	nextFfxTool, err := dstOta.build.GetFfx(ctx, ffxRunDir, ffx.FfxVersionPolicyLatest)
 	if err != nil {
 		return fmt.Errorf("failed to get ffx from build %s: %w", dstOta, err)
 	}

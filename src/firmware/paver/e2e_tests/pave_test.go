@@ -15,7 +15,7 @@ import (
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/artifacts"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/device"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/errutil"
-	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
+	ffxpkg "go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/paver"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/util"
 	"go.fuchsia.dev/fuchsia/tools/lib/color"
@@ -70,7 +70,7 @@ func doTest(ctx context.Context) error {
 	}
 	defer archiveCleanup()
 
-	ffx, ffxCleanup, err := c.ffxConfig.NewFfxTool(ctx)
+	ffx, ffxCleanup, err := c.ffxConfig.NewFfxTool(ctx, c.deviceConfig.SSHKeyFile())
 	if err != nil {
 		return fmt.Errorf("failed to create ffx: %w", err)
 	}
@@ -102,7 +102,7 @@ func doTest(ctx context.Context) error {
 		return fmt.Errorf("failed to get upgrade build: %w", err)
 	}
 
-	return testPaves(ctx, deviceClient, downgradeBuild, upgradeBuild, ffx.IsolateDir())
+	return testPaves(ctx, deviceClient, downgradeBuild, upgradeBuild, ffx.RunDir())
 }
 
 func testPaves(
@@ -110,7 +110,7 @@ func testPaves(
 	deviceClient *device.Client,
 	downgradeBuild artifacts.Build,
 	upgradeBuild artifacts.Build,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffxpkg.RunDir,
 ) error {
 	for i := 1; i <= c.cycleCount; i++ {
 		logger.Infof(ctx, "Pave Attempt %d", i)
@@ -121,7 +121,7 @@ func testPaves(
 				deviceClient,
 				downgradeBuild,
 				upgradeBuild,
-				ffxIsolateDir,
+				ffxRunDir,
 			)
 		}); err != nil {
 			return fmt.Errorf("Pave Attempt %d failed: %w", i, err)
@@ -136,7 +136,7 @@ func doTestPave(
 	deviceClient *device.Client,
 	downgradeBuild artifacts.Build,
 	upgradeBuild artifacts.Build,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffxpkg.RunDir,
 ) error {
 
 	sshPrivateKey, err := c.deviceConfig.SSHPrivateKey()
@@ -154,7 +154,7 @@ func doTestPave(
 		return fmt.Errorf("failed to get paver to pave device: %w", err)
 	}
 
-	upgradeFfxTool, err := upgradeBuild.GetFfx(ctx, ffxIsolateDir)
+	upgradeFfxTool, err := upgradeBuild.GetFfx(ctx, ffxRunDir, ffxpkg.FfxVersionPolicyLatest)
 	if err != nil {
 		return fmt.Errorf("failed to get ffx from build %s: %w", upgradeBuild, err)
 	}

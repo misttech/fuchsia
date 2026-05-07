@@ -63,7 +63,7 @@ func createTestPackage(t *testing.T, dir string) (*Repository, build.MerkleRoot)
 	}
 
 	// Publish the config to the repo.
-	isolateDir := ffx.NewIsolateDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
+	isolateDir := ffx.NewRunDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
 	ffx, err := ffx.NewFFXTool("host-tools/ffx", isolateDir)
 	if err != nil {
 		t.Fatalf("failed to create FFXTool: %s", err)
@@ -219,7 +219,7 @@ func TestPublish(t *testing.T) {
 		t.Fatalf("Delivery blob does not exist '%s'. %s", actualPkg.Merkle(), err)
 	}
 
-	isolateDir := ffx.NewIsolateDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
+	isolateDir := ffx.NewRunDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
 	ffx, err := ffx.NewFFXTool("host-tools/ffx", isolateDir)
 	if err != nil {
 		t.Fatalf("failed to create FFXTool: %s", err)

@@ -102,7 +102,7 @@ func (c *DeviceConfig) deviceResolver(
 ) (device.DeviceResolver, error) {
 	switch c.deviceResolverMode {
 	case ConstantResolver:
-		logger.Infof(ctx, "constant resolver uses device name '%v' and hostname '%v'", c.deviceName, c.deviceHostname)
+		logger.Infof(ctx, "constant resolver uses device name '%v' and address '%v'", c.deviceName, c.deviceHostname)
 		return device.NewConstantHostResolver(
 			ctx,
 			c.deviceName,
@@ -134,6 +134,14 @@ func (c *DeviceConfig) deviceResolver(
 	default:
 		return nil, fmt.Errorf("Invalid device resolver mode %v", c.deviceResolverMode)
 	}
+}
+
+func (c *DeviceConfig) SSHKeyFile() string {
+	return c.sshKeyFile
+}
+
+func (c *DeviceConfig) DeviceAddress() string {
+	return c.deviceHostname
 }
 
 func (c *DeviceConfig) SSHPrivateKey() (ssh.Signer, error) {

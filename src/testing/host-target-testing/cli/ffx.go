@@ -14,15 +14,15 @@ import (
 )
 
 type FfxConfig struct {
-	ffxPath           string
-	ffxIsolateDirPath string
-	ffx               *ffx.FFXTool
+	ffxPath       string
+	ffxRunDirPath string
+	ffx           *ffx.FFXTool
 }
 
 func NewFfxConfig(fs *flag.FlagSet) *FfxConfig {
 	c := &FfxConfig{}
 	fs.StringVar(&c.ffxPath, "ffx-path", "host-tools/ffx", "ffx tool path")
-	fs.StringVar(&c.ffxIsolateDirPath, "ffx-isolate-dir", "", "ffx isolate dir path")
+	fs.StringVar(&c.ffxRunDirPath, "ffx-run-dir", "", "ffx run dir path")
 
 	return c
 }
@@ -30,7 +30,7 @@ func NewFfxConfig(fs *flag.FlagSet) *FfxConfig {
 func (c *FfxConfig) Validate() error {
 	for _, s := range []string{
 		c.ffxPath,
-		c.ffxIsolateDirPath,
+		c.ffxRunDirPath,
 	} {
 		if err := util.ValidatePath(s); err != nil {
 			return err
@@ -39,51 +39,32 @@ func (c *FfxConfig) Validate() error {
 	return nil
 }
 
-func (c *FfxConfig) NewFfxIsolateDir(ctx context.Context) (ffx.IsolateDir, func(), error) {
-	var ffxIsolateDirPath string
-	var cleanup func()
-	var err error
-	if c.ffxIsolateDirPath == "" {
-		ffxIsolateDirPath, err = os.MkdirTemp("", "ffx-isolate-dir")
-		if err != nil {
-			return ffx.IsolateDir{}, func() {}, err
-		}
-		cleanup = func() {
-			os.RemoveAll(ffxIsolateDirPath)
-		}
-	} else {
-		cleanup = func() {}
-	}
-
-	return ffx.NewIsolateDir(ffxIsolateDirPath), cleanup, nil
-}
-
-func (c *FfxConfig) NewFfxTool(ctx context.Context) (*ffx.FFXTool, func(), error) {
-	var ffxIsolateDirPath string
+func (c *FfxConfig) NewFfxTool(ctx context.Context, sshPrivateKeyPath string) (*ffx.FFXTool, func(), error) {
+	var outputDir string
 	var cleanupDir func()
 	var err error
-	if c.ffxIsolateDirPath == "" {
-		ffxIsolateDirPath, err = os.MkdirTemp("", "ffx-isolate-dir")
+	if c.ffxRunDirPath == "" {
+		outputDir, err = os.MkdirTemp("", "ffx-output-dir")
 		if err != nil {
 			return nil, func() {}, err
 		}
 		cleanupDir = func() {
-			os.RemoveAll(ffxIsolateDirPath)
+			os.RemoveAll(outputDir)
 		}
 	} else {
-		ffxIsolateDirPath = c.ffxIsolateDirPath
+		outputDir = c.ffxRunDirPath
 		cleanupDir = func() {}
 	}
 
-	ffxIsolateDir := ffx.NewIsolateDir(ffxIsolateDirPath)
-	ffx, err := ffx.NewFFXTool(c.ffxPath, ffxIsolateDir)
+	runDir := ffx.NewRunDirWithPrivKey(outputDir, sshPrivateKeyPath)
+	ffxTool, err := ffx.NewFFXToolForVersion(ctx, c.ffxPath, runDir, ffx.FfxVersionPolicyLatest)
 	if err != nil {
 		cleanupDir()
 		return nil, func() {}, err
 	}
 
-	return ffx, func() {
-		ffx.StopDaemon(ctx)
+	return ffxTool, func() {
+		ffxTool.StopDaemon(ctx)
 		cleanupDir()
 	}, nil
 }

@@ -33,7 +33,8 @@ func newOtas(
 	ctx context.Context,
 	rand *rand.Rand,
 	latestFfx *ffx.FFXTool,
-	builds []artifacts.Build,
+	builds []artifacts.BuildWithVersion,
+	ffxRunDir ffx.RunDir,
 ) ([]*otaData, error) {
 	logger.Infof(ctx, "Preparing OTA packages")
 
@@ -42,7 +43,7 @@ func newOtas(
 	// Fetch all the build artifacts up front so it's not included in the
 	// `cycleTimeout` time limit.
 	otas := []*otaData{}
-	for i, build := range builds {
+	for i, buildWithVersion := range builds {
 		var name string
 		nth := len(builds) - 1 - i
 		if nth == 0 {
@@ -71,10 +72,12 @@ func newOtas(
 			ctx,
 			rand,
 			latestFfx,
-			build,
+			buildWithVersion.Build,
 			name,
 			blobFetchMode,
 			addRandomData,
+			ffxRunDir,
+			buildWithVersion.Version,
 		)
 		if err != nil {
 			return []*otaData{}, err
@@ -84,14 +87,17 @@ func newOtas(
 	}
 
 	// Finally, redo the last build as our prime build.
+	lastBuildWithVersion := builds[len(builds)-1]
 	ota, err := newOta(
 		ctx,
 		rand,
 		latestFfx,
-		builds[len(builds)-1],
+		lastBuildWithVersion.Build,
 		"N-prime",
 		artifacts.LazilyFetchBlobs,
 		true,
+		ffxRunDir,
+		lastBuildWithVersion.Version,
 	)
 	if err != nil {
 		return []*otaData{}, err
@@ -112,12 +118,14 @@ func newOta(
 	name string,
 	blobFetchMode artifacts.BlobFetchMode,
 	addRandomData bool,
+	ffxRunDir ffx.RunDir,
+	version ffx.FfxVersionPolicy,
 ) (*otaData, error) {
 	logger.Debugf(ctx, "Creating OTA %s", name)
 
-	latestFfx.ClearIsolateDir()
+	latestFfx.ClearRunDir()
 
-	repo, err := build.GetPackageRepository(ctx, blobFetchMode, latestFfx.IsolateDir())
+	repo, err := build.GetPackageRepository(ctx, blobFetchMode, ffxRunDir, version)
 	if err != nil {
 		return nil, fmt.Errorf("error getting repository: %w", err)
 	}

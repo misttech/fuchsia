@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
@@ -25,28 +26,59 @@ var _ FFXToolImpl = (*ffxDaemon)(nil)
 
 type ffxDaemon struct {
 	ffxToolPath         string
-	isolateDir          IsolateDir
+	runDir              RunDir
 	supportsPackageBlob *bool
+	supportsDirect      bool
 }
 
-func newFfxDaemon(ffxToolPath string, isolateDir IsolateDir) (*ffxDaemon, error) {
+var directSupportCache sync.Map
+
+func newFfxDaemon(ctx context.Context, ffxToolPath string, runDir RunDir) (*ffxDaemon, error) {
 	if _, err := os.Stat(ffxToolPath); err != nil {
 		return nil, fmt.Errorf("error accessing %v: %w", ffxToolPath, err)
 	}
 
+	// Check if the ffx binary supports the --direct flag, which allows bypassing
+	// the daemon for certain commands to avoid sync issues in tests that frequently
+	// reboot the target.
+	var supportsDirect bool
+	if val, ok := directSupportCache.Load(ffxToolPath); ok {
+		supportsDirect = val.(bool)
+	} else {
+		supportsDirect = false
+		cmd := exec.CommandContext(ctx, ffxToolPath, "--help")
+		output, err := cmd.Output()
+		if err == nil {
+			if strings.Contains(string(output), "--direct") {
+				supportsDirect = true
+			}
+		} else {
+			logger.Warningf(ctx, "failed to run ffx --help to check for --direct: %v", err)
+		}
+		directSupportCache.Store(ffxToolPath, supportsDirect)
+	}
+
 	return &ffxDaemon{
 		ffxToolPath:         ffxToolPath,
-		isolateDir:          isolateDir,
+		runDir:              runDir,
 		supportsPackageBlob: nil,
+		supportsDirect:      supportsDirect,
 	}, nil
 }
 
-func (f *ffxDaemon) IsolateDir() IsolateDir {
-	return f.isolateDir
+func (f *ffxDaemon) RunDir() RunDir {
+	return f.runDir
 }
 
-func (f *ffxDaemon) ClearIsolateDir() {
-	os.RemoveAll(f.IsolateDir().path)
+func (f *ffxDaemon) ClearRunDir() {
+	os.RemoveAll(f.RunDir().path)
+}
+
+func (f *ffxDaemon) appendDirectFlag(args []string) []string {
+	if f.supportsDirect {
+		return append(args, "--direct")
+	}
+	return args
 }
 
 func (f *ffxDaemon) StopDaemon(ctx context.Context) error {
@@ -59,13 +91,8 @@ func (f *ffxDaemon) StopDaemon(ctx context.Context) error {
 }
 
 func (f *ffxDaemon) TargetList(ctx context.Context) ([]TargetEntry, error) {
-	args := []string{
-		"--direct",
-		"--machine",
-		"json",
-		"target",
-		"list",
-	}
+	args := f.appendDirectFlag([]string{})
+	args = append(args, "--machine", "json", "target", "list")
 
 	stdout, err := f.runFFXCmd(ctx, args...)
 	if err != nil {
@@ -143,17 +170,8 @@ func (f *ffxDaemon) WaitForTarget(ctx context.Context, address string) (TargetEn
 }
 
 func (f *ffxDaemon) TargetGetSshAddress(ctx context.Context, target string) (string, error) {
-	args := []string{
-		"--direct",
-		"--target",
-		target,
-		"target",
-		"list",
-		"--format",
-		"addresses",
-		"--no-probe",
-		"--no-usb",
-	}
+	args := f.appendDirectFlag([]string{})
+	args = append(args, "--target", target, "target", "list", "--format", "addresses", "--no-probe", "--no-usb")
 
 	stdout, err := f.runFFXCmd(ctx, args...)
 	if err != nil {
@@ -256,17 +274,8 @@ func (f *ffxDaemon) TargetUpdateCheckNowMonitor(ctx context.Context, target stri
 }
 
 func (f *ffxDaemon) TargetUpdateForceInstallNoReboot(ctx context.Context, target string, url string) error {
-	args := []string{
-		"--direct",
-		"--target",
-		target,
-		"target",
-		"update",
-		"force-install",
-		url,
-		"--reboot",
-		"false",
-	}
+	args := f.appendDirectFlag([]string{})
+	args = append(args, "--target", target, "target", "update", "force-install", url, "--reboot", "false")
 
 	_, err := f.runFFXCmd(ctx, args...)
 	return err
@@ -287,7 +296,7 @@ func (f *ffxDaemon) runFFXCmd(ctx context.Context, args ...string) ([]byte, erro
 	args = append(
 		[]string{
 			"--log-level", "trace",
-			"--isolate-dir", f.isolateDir.path,
+			"--isolate-dir", f.runDir.path,
 			"--config", fmt.Sprintf("ffx.subtool-search-paths=%s", filepath.Dir(path)),
 		},
 		args...,
@@ -312,6 +321,16 @@ func (f *ffxDaemon) runFFXCmd(ctx context.Context, args ...string) ([]byte, erro
 		logger.Infof(ctx, "running %s %q failed with: %v", path, args, cmdRet)
 	}
 	return stdout, cmdRet
+}
+
+func (f *ffxDaemon) RunAndGetOutput(ctx context.Context, args ...string) (string, error) {
+	stdout, err := f.runFFXCmd(ctx, args...)
+	return string(stdout), err
+}
+
+func (f *ffxDaemon) Run(ctx context.Context, args ...string) error {
+	_, err := f.RunAndGetOutput(ctx, args...)
+	return err
 }
 
 func (f *ffxDaemon) RepositoryCreate(ctx context.Context, repoDir, keysDir string) error {
@@ -353,15 +372,15 @@ func (f *ffxDaemon) SupportsPackageBlob(ctx context.Context) bool {
 	return *f.supportsPackageBlob
 }
 
-func (f *ffxDaemon) DecompressBlobs(ctx context.Context, delivery_blobs []string, out_dir string) error {
+func (f *ffxDaemon) DecompressBlobs(ctx context.Context, deliveryBlobs []string, outDir string) error {
 	args := []string{
 		"package",
 		"blob",
 		"decompress",
-		"--output", out_dir,
+		"--output", outDir,
 	}
 
-	args = append(args, delivery_blobs...)
+	args = append(args, deliveryBlobs...)
 
 	_, err := f.runFFXCmd(ctx, args...)
 	return err
@@ -381,12 +400,8 @@ func (f *ffxDaemon) RegisterPackageRepository(ctx context.Context, repo_url stri
 }
 
 func (f *ffxDaemon) TargetGetLastRebootReason(ctx context.Context, target string) (string, error) {
-	args := []string{
-		"--direct",
-		"--target", target,
-		"--machine", "json",
-		"target", "show",
-	}
+	args := f.appendDirectFlag([]string{})
+	args = append(args, "--target", target, "--machine", "json", "target", "show")
 
 	stdout, err := f.runFFXCmd(ctx, args...)
 	if err != nil {

@@ -20,20 +20,21 @@ import (
 func FlashDevice(
 	ctx context.Context,
 	d *device.Client,
-	ffx *ffx.FFXTool,
+	ffxTool *ffx.FFXTool,
 	build artifacts.Build,
 	publicKey ssh.PublicKey,
+	version ffx.FfxVersionPolicy,
 ) error {
 	logger.Infof(ctx, "Starting to flash device")
 	startTime := time.Now()
 
-	// We should use this ffx after we reboot.
-	nextFfx, err := build.GetFfx(ctx, ffx.IsolateDir())
+	// Fetch the FFX tool associated with the build we are flashing to use for reconnection after the device reboots.
+	nextFfx, err := build.GetFfx(ctx, ffxTool.RunDir(), version)
 	if err != nil {
 		return fmt.Errorf("failed to get ffx from build: %w", err)
 	}
 
-	if err := d.Flash(ctx, ffx, build, publicKey); err != nil {
+	if err := d.Flash(ctx, ffxTool, build, publicKey); err != nil {
 		return fmt.Errorf("device failed to flash: %w", err)
 	}
 

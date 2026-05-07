@@ -38,7 +38,7 @@ func createAndRunFlasher(t *testing.T, setupFlasher func(t *testing.T, flasher *
 		t.Fatal(err)
 	}
 
-	ffxIsolateDir := NewIsolateDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
+	ffxIsolateDir := NewRunDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
 	ffx, err := NewFFXTool(ffxPath, ffxIsolateDir)
 	if err != nil {
 		t.Fatal(err)

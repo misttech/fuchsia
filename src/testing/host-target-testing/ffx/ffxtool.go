@@ -7,15 +7,34 @@ package ffx
 import (
 	"context"
 	"time"
+
+	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
 
-// IsolateDir represents the isolation directory for ffx.
-type IsolateDir struct {
-	path string
+// FfxVersionPolicy specifies whether to use the latest ffx or infer the version from the target's API level.
+type FfxVersionPolicy string
+
+const (
+	FfxVersionPolicyLatest       FfxVersionPolicy = "latest"
+	FfxVersionPolicyFromApiLevel FfxVersionPolicy = "fromApiLevel"
+)
+
+// RunDir represents the execution directory for ffx.
+type RunDir struct {
+	path    string
+	privKey string
 }
 
-func NewIsolateDir(path string) IsolateDir {
-	return IsolateDir{path: path}
+func NewRunDir(path string) RunDir {
+	return RunDir{path: path}
+}
+
+func NewRunDirWithPrivKey(path string, privKey string) RunDir {
+	return RunDir{path: path, privKey: privKey}
+}
+
+func (d RunDir) PrivKey() string {
+	return d.privKey
 }
 
 // TargetAddress represents a single address for a target.
@@ -61,9 +80,11 @@ type FFXToolImpl interface {
 	DecompressBlobs(ctx context.Context, deliveryBlobs []string, outDir string) error
 	RegisterPackageRepository(ctx context.Context, repoURL string) error
 	TargetGetLastRebootReason(ctx context.Context, target string) (string, error)
-	IsolateDir() IsolateDir
+	RunDir() RunDir
+	Run(ctx context.Context, args ...string) error
+	RunAndGetOutput(ctx context.Context, args ...string) (string, error)
 	StopDaemon(ctx context.Context) error
-	ClearIsolateDir()
+	ClearRunDir()
 }
 
 var _ FFXToolImpl = (*FFXTool)(nil)
@@ -73,12 +94,19 @@ type FFXTool struct {
 	impl FFXToolImpl
 }
 
-func NewFFXTool(ffxToolPath string, isolateDir IsolateDir) (*FFXTool, error) {
-	impl, err := newFfxDaemon(ffxToolPath, isolateDir)
+func NewFFXToolForVersion(ctx context.Context, ffxPath string, runDir RunDir, versionPolicy FfxVersionPolicy) (*FFXTool, error) {
+	logger.Infof(ctx, "NewFFXToolForVersion called with version policy: %q", versionPolicy)
+	// Note: The version policy is currently only used for logging in this CL.
+	// It will be used in a follow-up CL to switch between daemon and strict mode.
+	impl, err := newFfxDaemon(ctx, ffxPath, runDir)
 	if err != nil {
 		return nil, err
 	}
 	return &FFXTool{impl: impl}, nil
+}
+
+func NewFFXTool(ffxPath string, runDir RunDir) (*FFXTool, error) {
+	return NewFFXToolForVersion(context.Background(), ffxPath, runDir, FfxVersionPolicyLatest)
 }
 
 func (t *FFXTool) runFFXCmd(ctx context.Context, args ...string) ([]byte, error) {
@@ -162,14 +190,22 @@ func (t *FFXTool) TargetGetLastRebootReason(ctx context.Context, target string) 
 	return t.impl.TargetGetLastRebootReason(ctx, target)
 }
 
-func (t *FFXTool) IsolateDir() IsolateDir {
-	return t.impl.IsolateDir()
+func (t *FFXTool) RunDir() RunDir {
+	return t.impl.RunDir()
+}
+
+func (t *FFXTool) Run(ctx context.Context, args ...string) error {
+	return t.impl.Run(ctx, args...)
+}
+
+func (t *FFXTool) RunAndGetOutput(ctx context.Context, args ...string) (string, error) {
+	return t.impl.RunAndGetOutput(ctx, args...)
 }
 
 func (t *FFXTool) StopDaemon(ctx context.Context) error {
 	return t.impl.StopDaemon(ctx)
 }
 
-func (t *FFXTool) ClearIsolateDir() {
-	t.impl.ClearIsolateDir()
+func (t *FFXTool) ClearRunDir() {
+	t.impl.ClearRunDir()
 }

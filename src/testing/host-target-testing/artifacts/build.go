@@ -62,7 +62,8 @@ type Build interface {
 	// GetFfx returns the FFXTool from this build.
 	GetFfx(
 		ctx context.Context,
-		ffxIsolateDir ffx.IsolateDir,
+		ffxRunDir ffx.RunDir,
+		version ffx.FfxVersionPolicy,
 	) (*ffx.FFXTool, error)
 
 	// GetFlashManifest returns the path to the flash manifest used for flashing.
@@ -75,7 +76,8 @@ type Build interface {
 	GetPackageRepository(
 		ctx context.Context,
 		blobFetchMode BlobFetchMode,
-		ffxIsolateDir ffx.IsolateDir,
+		ffxRunDir ffx.RunDir,
+		version ffx.FfxVersionPolicy,
 	) (*packages.Repository, error)
 
 	// GetPaverDir downloads and returns the directory containing the images
@@ -90,6 +92,11 @@ type Build interface {
 
 	// GetVbmetaPath downloads and returns a path to the zircon-a vbmeta image.
 	GetVbmetaPath(ctx context.Context) (string, error)
+}
+
+type BuildWithVersion struct {
+	Build   Build
+	Version ffx.FfxVersionPolicy
 }
 
 // ArtifactsBuild represents the build artifacts for a specific build.
@@ -142,9 +149,10 @@ func (b *ArtifactsBuild) GetBootserver(ctx context.Context) (string, error) {
 
 func (b *ArtifactsBuild) GetFfx(
 	ctx context.Context,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffx.RunDir,
+	version ffx.FfxVersionPolicy,
 ) (*ffx.FFXTool, error) {
-	// Use the latest ffx
+	// Get the ffx tool for this build.
 	ffxPath := filepath.Join(b.buildDir, relativeFfxPath)
 
 	if err := b.archive.download(
@@ -176,7 +184,7 @@ func (b *ArtifactsBuild) GetFfx(
 		return nil, fmt.Errorf("failed to make ffxPath executable: %w", err)
 	}
 
-	return ffx.NewFFXTool(ffxPath, ffxIsolateDir)
+	return ffx.NewFFXToolForVersion(ctx, ffxPath, ffxRunDir, version)
 }
 
 func (b *ArtifactsBuild) GetFlashManifest(ctx context.Context) (string, error) {
@@ -287,7 +295,8 @@ func (b *ArtifactsBuild) GetProductBundleDir(ctx context.Context) (string, error
 func (b *ArtifactsBuild) GetPackageRepository(
 	ctx context.Context,
 	fetchMode BlobFetchMode,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffx.RunDir,
+	version ffx.FfxVersionPolicy,
 ) (*packages.Repository, error) {
 	if b.packages != nil {
 		return b.packages, nil
@@ -357,7 +366,7 @@ func (b *ArtifactsBuild) GetPackageRepository(
 		}
 	}
 
-	ffx, err := b.GetFfx(ctx, ffxIsolateDir)
+	ffxTool, err := b.GetFfx(ctx, ffxRunDir, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ffx: %w", err)
 	}
@@ -372,11 +381,11 @@ func (b *ArtifactsBuild) GetPackageRepository(
 		packagesDir,
 		&proxyBlobStore{
 			b:        b,
-			ffx:      ffx,
+			ffx:      ffxTool,
 			blobsDir: b.blobsDir,
 			blobType: blobType,
 		},
-		ffx,
+		ffxTool,
 		blobType,
 	)
 	if err != nil {
@@ -684,10 +693,11 @@ func (b *FuchsiaDirBuild) GetBootserver(ctx context.Context) (string, error) {
 
 func (b *FuchsiaDirBuild) GetFfx(
 	ctx context.Context,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffx.RunDir,
+	version ffx.FfxVersionPolicy,
 ) (*ffx.FFXTool, error) {
 	ffxPath := filepath.Join(b.dir, "host_x64/ffx")
-	return ffx.NewFFXTool(ffxPath, ffxIsolateDir)
+	return ffx.NewFFXToolForVersion(ctx, ffxPath, ffxRunDir, version)
 }
 
 func (b *FuchsiaDirBuild) GetFlashManifest(ctx context.Context) (string, error) {
@@ -717,9 +727,10 @@ func (b *FuchsiaDirBuild) GetProductBundleDir(ctx context.Context) (string, erro
 func (b *FuchsiaDirBuild) GetPackageRepository(
 	ctx context.Context,
 	blobFetchMode BlobFetchMode,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffx.RunDir,
+	version ffx.FfxVersionPolicy,
 ) (*packages.Repository, error) {
-	ffx, err := b.GetFfx(ctx, ffxIsolateDir)
+	ffxTool, err := b.GetFfx(ctx, ffxRunDir, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ffx: %w", err)
 	}
@@ -729,7 +740,7 @@ func (b *FuchsiaDirBuild) GetPackageRepository(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get delivery blob type: %w", err)
 	}
-	return packages.NewRepository(ctx, filepath.Join(b.dir, "amber-files"), blobFS, ffx, blobType)
+	return packages.NewRepository(ctx, filepath.Join(b.dir, "amber-files"), blobFS, ffxTool, blobType)
 }
 
 func (b *FuchsiaDirBuild) GetPaverDir(ctx context.Context) (string, error) {
@@ -798,10 +809,11 @@ func (b *ProductBundleDirBuild) GetBootserver(ctx context.Context) (string, erro
 
 func (b *ProductBundleDirBuild) GetFfx(
 	ctx context.Context,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffx.RunDir,
+	version ffx.FfxVersionPolicy,
 ) (*ffx.FFXTool, error) {
 	ffxPath := filepath.Join(b.productBundleDir, "ffx")
-	return ffx.NewFFXTool(ffxPath, ffxIsolateDir)
+	return ffx.NewFFXToolForVersion(ctx, ffxPath, ffxRunDir, version)
 }
 
 func (b *ProductBundleDirBuild) GetFlashManifest(ctx context.Context) (string, error) {
@@ -815,9 +827,10 @@ func (b *ProductBundleDirBuild) GetProductBundleDir(ctx context.Context) (string
 func (b *ProductBundleDirBuild) GetPackageRepository(
 	ctx context.Context,
 	blobFetchMode BlobFetchMode,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffx.RunDir,
+	version ffx.FfxVersionPolicy,
 ) (*packages.Repository, error) {
-	ffx, err := b.GetFfx(ctx, ffxIsolateDir)
+	ffxTool, err := b.GetFfx(ctx, ffxRunDir, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ffx: %w", err)
 	}
@@ -832,7 +845,7 @@ func (b *ProductBundleDirBuild) GetPackageRepository(
 	)
 
 	// TODO(https://fxbug.dev/42076853): Read delivery blob type from product bundle.
-	return packages.NewRepository(ctx, b.productBundleDir, blobFS, ffx, nil)
+	return packages.NewRepository(ctx, b.productBundleDir, blobFS, ffxTool, nil)
 }
 
 func (b *ProductBundleDirBuild) GetPaverDir(ctx context.Context) (string, error) {
@@ -897,9 +910,10 @@ func (b *OmahaBuild) GetBootserver(ctx context.Context) (string, error) {
 
 func (b *OmahaBuild) GetFfx(
 	ctx context.Context,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffx.RunDir,
+	version ffx.FfxVersionPolicy,
 ) (*ffx.FFXTool, error) {
-	return b.build.GetFfx(ctx, ffxIsolateDir)
+	return b.build.GetFfx(ctx, ffxRunDir, version)
 }
 
 type versionedFlashManifest struct {
@@ -1096,9 +1110,10 @@ func (b *OmahaBuild) updateVBMeta(
 func (b *OmahaBuild) GetPackageRepository(
 	ctx context.Context,
 	blobFetchMode BlobFetchMode,
-	ffxIsolateDir ffx.IsolateDir,
+	ffxRunDir ffx.RunDir,
+	version ffx.FfxVersionPolicy,
 ) (*packages.Repository, error) {
-	return b.build.GetPackageRepository(ctx, blobFetchMode, ffxIsolateDir)
+	return b.build.GetPackageRepository(ctx, blobFetchMode, ffxRunDir, version)
 }
 
 func (b *OmahaBuild) GetPaverDir(ctx context.Context) (string, error) {

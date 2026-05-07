@@ -8,9 +8,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strings"
 
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/artifacts"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/device"
+	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
 )
 
 type repeatableBuildKind int
@@ -188,9 +190,11 @@ func (c *RepeatableBuildConfig) GetBuilds(
 	ctx context.Context,
 	deviceClient *device.Client,
 	outputDir string,
-) ([]artifacts.Build, error) {
-	var builds []artifacts.Build
+) ([]artifacts.BuildWithVersion, error) {
+	var builds []artifacts.BuildWithVersion
 	for _, b := range c.builds {
+		var build artifacts.Build
+		var err error
 		switch b.kind {
 		case builderNameKind:
 			builder := c.archiveConfig.BuildArchive().GetBuilder(b.value)
@@ -199,7 +203,7 @@ func (c *RepeatableBuildConfig) GetBuilds(
 				return nil, fmt.Errorf("failed to lookup build id: %w", err)
 			}
 
-			build, err := c.archiveConfig.BuildArchive().GetBuildByID(
+			build, err = c.archiveConfig.BuildArchive().GetBuildByID(
 				ctx,
 				buildID,
 				outputDir,
@@ -208,9 +212,8 @@ func (c *RepeatableBuildConfig) GetBuilds(
 				return nil, err
 			}
 
-			builds = append(builds, build)
 		case buildIdKind:
-			build, err := c.archiveConfig.BuildArchive().GetBuildByID(
+			build, err = c.archiveConfig.BuildArchive().GetBuildByID(
 				ctx,
 				b.value,
 				outputDir,
@@ -218,15 +221,12 @@ func (c *RepeatableBuildConfig) GetBuilds(
 			if err != nil {
 				return nil, err
 			}
-
-			builds = append(builds, build)
 		case fuchsiaBuildDirKind:
-			build := artifacts.NewFuchsiaDirBuild(b.value)
-			builds = append(builds, build)
+			build = artifacts.NewFuchsiaDirBuild(b.value)
 		case productBundleDirKind:
-			build := artifacts.NewProductBundleDirBuild(b.value)
-			builds = append(builds, build)
+			build = artifacts.NewProductBundleDirBuild(b.value)
 		}
+		builds = append(builds, artifacts.BuildWithVersion{Build: build, Version: ffx.FfxVersionPolicy(b.versionPolicy)})
 	}
 
 	// Append the last build id as our final upgrade.
@@ -240,15 +240,16 @@ func (c *RepeatableBuildConfig) GetBuilds(
 			return nil, err
 		}
 
-		builds = append(builds, build)
+		builds = append(builds, artifacts.BuildWithVersion{Build: build, Version: ffx.FfxVersionPolicyLatest})
 	}
 
 	return builds, nil
 }
 
 type repeatableBuild struct {
-	kind  repeatableBuildKind
-	value string
+	kind          repeatableBuildKind
+	value         string
+	versionPolicy string
 }
 
 type repeatableBuildVar struct {
@@ -267,6 +268,25 @@ func (v repeatableBuildVar) Set(s string) error {
 	if s == "" {
 		return fmt.Errorf("%s value cannot be empty", v.kind)
 	}
-	v.c.builds = append(v.c.builds, repeatableBuild{kind: v.kind, value: s})
+
+	val := s
+	versionPolicy := string(ffx.FfxVersionPolicyLatest)
+	if v.kind == buildIdKind {
+		// For build IDs, we allow the format "build_id:version_policy" to specify a specific
+		// ffx version policy to use with this build.
+		parts := strings.Split(s, ":")
+		val = parts[0]
+		if val == "" {
+			return fmt.Errorf("build ID cannot be empty")
+		}
+		if len(parts) > 1 {
+			versionPolicy = parts[1]
+			if versionPolicy != string(ffx.FfxVersionPolicyLatest) && versionPolicy != string(ffx.FfxVersionPolicyFromApiLevel) {
+				return fmt.Errorf("invalid ffx version policy %q, must be 'latest' or 'fromApiLevel'", versionPolicy)
+			}
+		}
+	}
+
+	v.c.builds = append(v.c.builds, repeatableBuild{kind: v.kind, value: val, versionPolicy: versionPolicy})
 	return nil
 }
