@@ -19,15 +19,44 @@ import (
 )
 
 type PolicyCommand struct {
-	fuchsiaDir  string
-	bug         string
-	description string
+	fuchsiaDir string
 }
 
 func (*PolicyCommand) Name() string     { return "policy" }
 func (*PolicyCommand) Synopsis() string { return "Manage policy exceptions." }
 func (*PolicyCommand) Usage() string {
-	return `policy add <CheckName> <targetPath> -bug <BugID> [-desc <Description>]:
+	return `policy <subcommand> [options]:
+  Manage policy exceptions.
+
+  Subcommands:
+    add   Add a new policy exception.
+`
+}
+
+func (p *PolicyCommand) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&p.fuchsiaDir, "fuchsia_dir", os.Getenv("FUCHSIA_DIR"), "Location of the fuchsia root directory.")
+}
+
+func (p *PolicyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	subFlags := flag.NewFlagSet("policy", flag.ContinueOnError)
+	if err := subFlags.Parse(f.Args()); err != nil {
+		return subcommands.ExitUsageError
+	}
+	subCommander := subcommands.NewCommander(subFlags, "policy")
+	subCommander.Register(&PolicyAddCommand{fuchsiaDir: p.fuchsiaDir}, "")
+	return subCommander.Execute(ctx)
+}
+
+type PolicyAddCommand struct {
+	fuchsiaDir  string
+	bug         string
+	description string
+}
+
+func (*PolicyAddCommand) Name() string     { return "add" }
+func (*PolicyAddCommand) Synopsis() string { return "Add a policy exception." }
+func (*PolicyAddCommand) Usage() string {
+	return `add -bug <BugID> [-desc <Description>] <CheckName> <targetPath>:
   Adds a policy exception for the given project or file path.
 
   Flags:
@@ -35,21 +64,89 @@ func (*PolicyCommand) Usage() string {
     -desc Optional description for this exception.
 
   Examples:
-    fx check-licenses policy -bug b/123 add AllProjectsMustHaveALicense vendor/foo
-    fx check-licenses policy -bug b/456 -desc "Custom exception" add AllLicenseTextsMustBeRecognized third_party/bar/LICENSE
-
+    fx check-licenses policy add -bug b/123 AllProjectsMustHaveALicense vendor/foo
+    fx check-licenses policy add -bug b/456 -desc "Custom exception" AllLicenseTextsMustBeRecognized third_party/bar/LICENSE
 `
 }
 
-func (p *PolicyCommand) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&p.fuchsiaDir, "fuchsia_dir", os.Getenv("FUCHSIA_DIR"), "Location of the fuchsia root directory.")
+func (p *PolicyAddCommand) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&p.bug, "bug", "", "Bug ID tracking this exception (Mandatory).")
 	f.StringVar(&p.description, "desc", "Auto-generated exception", "Optional description for this exception.")
 }
 
-func (p *PolicyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	if f.NArg() != 3 || f.Arg(0) != "add" {
-		fmt.Fprintln(os.Stderr, "Usage: fx check-licenses policy -bug <BugID> [-desc <Description>] add <CheckName> <targetPath>")
+func (p *PolicyAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	// UX Check: Detect misplaced flags
+	misplacedFlags := false
+	for _, arg := range f.Args() {
+		if strings.HasPrefix(arg, "-") {
+			misplacedFlags = true
+			break
+		}
+	}
+
+	if misplacedFlags || f.NArg() != 2 {
+		var bugVal string
+		var descVal string
+		var positionals []string
+
+		args := f.Args()
+		for i := 0; i < len(args); i++ {
+			arg := args[i]
+			if arg == "-bug" || arg == "--bug" {
+				if i+1 < len(args) {
+					bugVal = args[i+1]
+					i++
+				}
+			} else if arg == "-desc" || arg == "--desc" {
+				if i+1 < len(args) {
+					descVal = args[i+1]
+					i++
+				}
+			} else if strings.HasPrefix(arg, "-") {
+				// skip unknown flags
+			} else {
+				positionals = append(positionals, arg)
+			}
+		}
+
+		if p.bug != "" && bugVal == "" {
+			bugVal = p.bug
+		}
+		if p.description != "Auto-generated exception" && descVal == "" {
+			descVal = p.description
+		}
+
+		var cmdBuilder strings.Builder
+		cmdBuilder.WriteString("fx check-licenses policy add")
+		if bugVal != "" {
+			cmdBuilder.WriteString(fmt.Sprintf(" -bug %s", bugVal))
+		} else {
+			cmdBuilder.WriteString(" -bug <BugID>")
+		}
+		if descVal != "" && descVal != "Auto-generated exception" {
+			cmdBuilder.WriteString(fmt.Sprintf(" -desc %q", descVal))
+		}
+
+		if len(positionals) > 0 {
+			cmdBuilder.WriteString(fmt.Sprintf(" %s", positionals[0]))
+		} else {
+			cmdBuilder.WriteString(" <CheckName>")
+		}
+		if len(positionals) > 1 {
+			cmdBuilder.WriteString(fmt.Sprintf(" %s", positionals[1]))
+		} else {
+			cmdBuilder.WriteString(" <targetPath>")
+		}
+		for _, extra := range positionals[2:] {
+			cmdBuilder.WriteString(fmt.Sprintf(" %s", extra))
+		}
+
+		if misplacedFlags {
+			fmt.Fprintln(os.Stderr, "❌ Error: Flags (like -bug or -desc) must be placed BEFORE positional arguments.")
+		} else {
+			fmt.Fprintln(os.Stderr, "❌ Error: Invalid number of arguments.")
+		}
+		fmt.Fprintf(os.Stderr, "Try running this copy-pasteable command instead:\n    %s\n\n", cmdBuilder.String())
 		return subcommands.ExitUsageError
 	}
 
@@ -58,7 +155,7 @@ func (p *PolicyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 		return subcommands.ExitUsageError
 	}
 
-	checkName := f.Arg(1)
+	checkName := f.Arg(0)
 	if !v2config.ValidPolicyChecks[checkName] {
 		var validChecks []string
 		for k := range v2config.ValidPolicyChecks {
@@ -67,7 +164,7 @@ func (p *PolicyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 		fmt.Fprintf(os.Stderr, "Error: invalid check name %q. Must be one of: %s\n", checkName, strings.Join(validChecks, ", "))
 		return subcommands.ExitUsageError
 	}
-	targetPath := filepath.Clean(f.Arg(2))
+	targetPath := filepath.Clean(f.Arg(1))
 
 	if err := AddPolicyException(p.fuchsiaDir, checkName, targetPath, p.bug, p.description); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

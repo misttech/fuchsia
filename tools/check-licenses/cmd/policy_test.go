@@ -52,7 +52,7 @@ func TestPolicyCommand_Execute(t *testing.T) {
 	// Test 2: Public project
 	f2 := flag.NewFlagSet("test2", flag.ContinueOnError)
 	cmd.SetFlags(f2)
-	f2.Parse([]string{"-bug", "b/123", "add", "AllProjectsMustHaveALicense", "src/foo/bar"})
+	f2.Parse([]string{"add", "-bug", "b/123", "AllProjectsMustHaveALicense", "src/foo/bar"})
 	if status := cmd.Execute(ctx, f2); status != subcommands.ExitSuccess {
 		t.Errorf("Expected ExitSuccess for public project, got %v", status)
 	}
@@ -77,7 +77,7 @@ func TestPolicyCommand_Execute(t *testing.T) {
 	// Test 3: Private project (vendor/...)
 	f3 := flag.NewFlagSet("test3", flag.ContinueOnError)
 	cmd.SetFlags(f3)
-	f3.Parse([]string{"-bug", "b/123", "add", "AllProjectsMustHaveALicense", "vendor/my_private_proj"})
+	f3.Parse([]string{"add", "-bug", "b/123", "AllProjectsMustHaveALicense", "vendor/my_private_proj"})
 	if status := cmd.Execute(ctx, f3); status != subcommands.ExitSuccess {
 		t.Errorf("Expected ExitSuccess for private project, got %v", status)
 	}
@@ -90,7 +90,7 @@ func TestPolicyCommand_Execute(t *testing.T) {
 	// Test 4: Already exists (should not fail, should exit success)
 	f4 := flag.NewFlagSet("test4", flag.ContinueOnError)
 	cmd.SetFlags(f4)
-	f4.Parse([]string{"-bug", "b/123", "add", "AllProjectsMustHaveALicense", "src/foo/bar"})
+	f4.Parse([]string{"add", "-bug", "b/123", "AllProjectsMustHaveALicense", "src/foo/bar"})
 	if status := cmd.Execute(ctx, f4); status != subcommands.ExitSuccess {
 		t.Errorf("Expected ExitSuccess when exception already exists, got %v", status)
 	}
@@ -98,7 +98,7 @@ func TestPolicyCommand_Execute(t *testing.T) {
 	// Test 5: Third party file grouping (should group by project name from manifest)
 	f5 := flag.NewFlagSet("test5", flag.ContinueOnError)
 	cmd.SetFlags(f5)
-	f5.Parse([]string{"-bug", "b/123", "add", "AllLicenseTextsMustBeRecognized", "vendor/my_private_proj/LICENSE"})
+	f5.Parse([]string{"add", "-bug", "b/123", "AllLicenseTextsMustBeRecognized", "vendor/my_private_proj/LICENSE"})
 	if status := cmd.Execute(ctx, f5); status != subcommands.ExitSuccess {
 		t.Errorf("Expected ExitSuccess for third party file, got %v", status)
 	}
@@ -114,6 +114,14 @@ func TestPolicyCommand_Execute(t *testing.T) {
 	f6.Parse([]string{"add", "AllProjectsMustHaveALicense", "src/foo/bar"})
 	if status := cmd.Execute(ctx, f6); status != subcommands.ExitUsageError {
 		t.Errorf("Expected ExitUsageError for missing -bug flag, got %v", status)
+	}
+
+	// Test 7: Misplaced flags (UX Check, should fail)
+	f7 := flag.NewFlagSet("test7", flag.ContinueOnError)
+	cmd.SetFlags(f7)
+	f7.Parse([]string{"add", "AllProjectsMustHaveALicense", "src/foo/bar", "-bug", "b/123"})
+	if status := cmd.Execute(ctx, f7); status != subcommands.ExitUsageError {
+		t.Errorf("Expected ExitUsageError for misplaced flags, got %v", status)
 	}
 }
 
@@ -145,7 +153,7 @@ func TestPolicyCommand_Execute_AssemblyFailure(t *testing.T) {
 	ctx := context.Background()
 	f := flag.NewFlagSet("test_failure", flag.ContinueOnError)
 	cmd.SetFlags(f)
-	f.Parse([]string{"-bug", "b/123", "add", "AllProjectsMustHaveALicense", "src/foo/bar"})
+	f.Parse([]string{"add", "-bug", "b/123", "AllProjectsMustHaveALicense", "src/foo/bar"})
 
 	if status := cmd.Execute(ctx, f); status != subcommands.ExitFailure {
 		t.Errorf("Expected ExitFailure for assembly error, got %v", status)
@@ -187,7 +195,7 @@ func TestPolicyCommand_Execute_RelativePathFromSubdir(t *testing.T) {
 
 	f := flag.NewFlagSet("test_relative", flag.ContinueOnError)
 	cmd.SetFlags(f)
-	f.Parse([]string{"-bug", "b/123", "add", "AllProjectsMustHaveALicense", "."}) // target is "." (src/my_project)
+	f.Parse([]string{"add", "-bug", "b/123", "AllProjectsMustHaveALicense", "."}) // target is "." (src/my_project)
 
 	if status := cmd.Execute(ctx, f); status != subcommands.ExitSuccess {
 		t.Errorf("Expected ExitSuccess, got %v", status)
@@ -214,7 +222,7 @@ func TestPolicyCommand_Execute_InvalidCheckName(t *testing.T) {
 	ctx := context.Background()
 	f := flag.NewFlagSet("test_invalid_check", flag.ContinueOnError)
 	cmd.SetFlags(f)
-	f.Parse([]string{"-bug", "b/123", "add", "InvalidCheckName", "src/foo/bar"})
+	f.Parse([]string{"add", "-bug", "b/123", "InvalidCheckName", "src/foo/bar"})
 
 	if status := cmd.Execute(ctx, f); status != subcommands.ExitUsageError {
 		t.Errorf("Expected ExitUsageError for invalid check name, got %v", status)
