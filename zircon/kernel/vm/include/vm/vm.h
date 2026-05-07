@@ -37,6 +37,22 @@
   ktrace::Scope VM_MAKE_UNIQUE_TOKEN(_duration_) = \
       KTRACE_BEGIN_SCOPE_ENABLE(VM_KTRACE_LEVEL_ENABLED(level), "kernel:vm", string, ##args)
 
+// In builds with verbose VM tracing enabled (VM_TRACING_LEVEL >= 1), we emit these events under the
+// "kernel:vm" category at the specified VM tracing level. In standard/production builds
+// (VM_TRACING_LEVEL = 0), we fallback to emitting under the lightweight "kernel:oom" category
+// instead.
+//
+// The general expectation is that users will enable "kernel:oom" in cases where "kernel:vm" is
+// too expensive. Using a compile-time selection here prevents duplicate overlapping slices in
+// the trace visualizer when both categories are enabled at runtime, while still providing a
+// single category for developers opting for more verbose VM tracing.
+#if VM_TRACING_LEVEL >= 1
+#define OOM_KTRACE_DURATION(level, string, args...) VM_KTRACE_DURATION(level, string, ##args)
+#else
+#define OOM_KTRACE_DURATION(level, string, args...) \
+  ktrace::Scope VM_MAKE_UNIQUE_TOKEN(_duration_) = KTRACE_BEGIN_SCOPE("kernel:oom", string, ##args)
+#endif
+
 #define VM_KTRACE_DURATION_BEGIN(level, string, args...) \
   KTRACE_DURATION_BEGIN_ENABLE(VM_KTRACE_LEVEL_ENABLED(level), "kernel:vm", string, ##args)
 

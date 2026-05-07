@@ -224,7 +224,7 @@ void MemoryWatchdog::WorkerThread() {
   while (true) {
     // If we've hit OOM level perform some immediate synchronous eviction to attempt to avoid OOM.
     if (mem_event_idx_ == PressureLevel::kOutOfMemory) {
-      VM_KTRACE_DURATION(1, "MemoryWatchdog::OutOfMemory");
+      OOM_KTRACE_DURATION(1, "MemoryWatchdog::OutOfMemory");
       printf("memory-pressure: beginning reclamation to avoid OOM. Allocations are now disabled\n");
       CountPressureEvent(mem_event_idx_);
       // Keep trying to perform eviction for as long as we are evicting non-zero pages and we remain

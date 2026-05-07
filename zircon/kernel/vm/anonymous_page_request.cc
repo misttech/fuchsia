@@ -24,7 +24,7 @@ zx::result<> AnonymousPageRequest::Allocate() {
   DEBUG_ASSERT(active_);
   DEBUG_ASSERT(!has_page());
 
-  VM_KTRACE_DURATION(1, "AnonymousPageRequest::Allocate");
+  OOM_KTRACE_DURATION(1, "AnonymousPageRequest::Allocate");
 
   // Although the pmm_wait_till_free_pages call will unblock based on bounded kernel action, and not
   // some unbounded user request, the kernel might need to acquire arbitrary locks to achieve this.
