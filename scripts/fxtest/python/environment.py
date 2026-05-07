@@ -93,7 +93,9 @@ class ExecutionEnvironment:
             with open(build_dir_file) as f:
                 out_dir = os.path.join(fuchsia_dir, f.readline().strip())
         if not os.path.isdir(out_dir):
-            raise EnvironmentError(f"Expected directory at {out_dir}")
+            raise EnvironmentError(
+                f"Expected directory at {out_dir}. Ensure you have set up your build directory correctly using 'fx set'."
+            )
 
         # Either disable logging, log to the given path, or format
         # a default path in the output directory.

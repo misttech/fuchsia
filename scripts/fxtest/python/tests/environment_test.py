@@ -141,7 +141,7 @@ class TestExecutionEnvironment(unittest.TestCase):
                 default_flags = args.parse_args([])
                 self.assertRaisesRegex(
                     environment.EnvironmentError,
-                    r"^Expected directory at.+out/foo$",
+                    r"Expected directory at.*Ensure you have set up your build directory correctly using 'fx set'.",
                     lambda: environment.ExecutionEnvironment.initialize_from_args(
                         default_flags
                     ),
