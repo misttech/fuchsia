@@ -572,14 +572,8 @@ impl ElfRunnerProgram {
 
     async fn wait_for_shutdown(self, lifecycle: ServerEnd<fprocess_lifecycle::LifecycleMarker>) {
         let mut stream = lifecycle.into_stream();
-        #[allow(clippy::never_loop)]
-        while let Ok(Some(request)) = stream.try_next().await {
-            match request {
-                fprocess_lifecycle::LifecycleRequest::Stop { .. } => {
-                    break;
-                }
-            }
-        }
+        // The channel only receives a Stop request, or it closes.
+        let _ = stream.try_next().await;
         let scope = self.scope.clone();
         drop(self);
         scope.wait().await;
@@ -600,43 +594,48 @@ impl Inner {
         mut stream: fcrunner::ComponentRunnerRequestStream,
     ) -> Result<(), anyhow::Error> {
         while let Ok(Some(request)) = stream.try_next().await {
-            match request {
-                fcrunner::ComponentRunnerRequest::Start { mut start_info, controller, .. } => {
-                    let Some(token) = start_info.component_instance.take() else {
-                        warn!(
-                            "When calling the ComponentRunner protocol of an ELF runner, \
-                            one must provide the ComponentStartInfo.component_instance field."
-                        );
-                        _ = controller.close_with_epitaph(zx::Status::INVALID_ARGS);
-                        continue;
-                    };
-                    let token = InstanceToken::from(token);
-                    let Some(target_moniker) = self.resources.instance_registry.get(&token) else {
-                        warn!(
-                            "The provided ComponentStartInfo.component_instance token is invalid. \
-                            The component has either already been destroyed, or the token is not \
-                            minted by component_manager."
-                        );
-                        _ = controller.close_with_epitaph(zx::Status::NOT_SUPPORTED);
-                        continue;
-                    };
-                    start_info.component_instance = Some(token.into());
-                    let checker = ScopedPolicyChecker::new(
-                        self.resources.security_policy.clone(),
-                        (*target_moniker).clone(),
-                    );
-                    self.elf_runner
-                        .clone()
-                        .get_scoped_runner(checker)
-                        .start(start_info, controller)
-                        .await;
-                }
-                fcrunner::ComponentRunnerRequest::_UnknownMethod { ordinal, .. } => {
-                    warn!(ordinal:%; "Unknown ComponentRunner request");
-                }
-            }
+            self.handle_runner_request(request).await;
         }
         Ok(())
+    }
+
+    async fn handle_runner_request(&self, request: fcrunner::ComponentRunnerRequest) {
+        match request {
+            fcrunner::ComponentRunnerRequest::Start { mut start_info, controller, .. } => {
+                let Some(token) = start_info.component_instance.take() else {
+                    warn!(
+                        "When calling the ComponentRunner protocol of an ELF runner, \
+                        one must provide the ComponentStartInfo.component_instance field."
+                    );
+                    _ = controller.close_with_epitaph(zx::Status::INVALID_ARGS);
+                    return;
+                };
+                let token = InstanceToken::from(token);
+                let Some(target_moniker) = self.resources.instance_registry.get(&token) else {
+                    warn!(
+                        "The provided ComponentStartInfo.component_instance token is invalid. \
+                        The component has either already been destroyed, or the token is not \
+                        minted by component_manager."
+                    );
+                    _ = controller.close_with_epitaph(zx::Status::NOT_SUPPORTED);
+                    return;
+                };
+                start_info.component_instance = Some(token.into());
+                let checker = ScopedPolicyChecker::new(
+                    self.resources.security_policy.clone(),
+                    (*target_moniker).clone(),
+                );
+                self.elf_runner
+                    .clone()
+                    .get_scoped_runner(checker)
+                    .start(start_info, controller)
+                    .boxed()
+                    .await;
+            }
+            fcrunner::ComponentRunnerRequest::_UnknownMethod { ordinal, .. } => {
+                warn!(ordinal:%; "Unknown ComponentRunner request");
+            }
+        }
     }
 }
 
@@ -757,14 +756,7 @@ mod tests {
                       _config: Option<zx::Vmo>| {
                     async move {
                         let mut stream = lifecycle_server.into_stream();
-                        #[allow(clippy::never_loop)]
-                        while let Ok(Some(request)) = stream.try_next().await {
-                            match request {
-                                fprocess_lifecycle::LifecycleRequest::Stop { .. } => {
-                                    break;
-                                }
-                            }
-                        }
+                        let _ = stream.try_next().await;
                         drop(stream);
                         // We'd like to test what happens when the program continues running
                         // after it's dropped its lifecycle channel.
