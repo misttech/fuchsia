@@ -123,7 +123,8 @@ class LocalRootJobImpl : public fuchsia::kernel::RootJob, public LocalComponentI
             nullptr,  // Environ
             actions.size(), actions.data(), process.reset_and_get_address(), err_msg);
         status != ZX_OK) {
-      FX_LOGS(ERROR) << "Failed to spawn command: " << zx_status_get_string(status);
+      FX_LOGS(ERROR) << "Failed to spawn command: " << zx_status_get_string(status)
+                     << ", error: " << err_msg;
     }
 
     char buffer[1];
