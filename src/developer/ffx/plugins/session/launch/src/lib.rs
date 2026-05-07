@@ -10,9 +10,10 @@ use fdomain_fuchsia_component_decl as fdecl;
 use fdomain_fuchsia_developer_remotecontrol as rc;
 use fdomain_fuchsia_session::{LaunchConfiguration, LauncherProxy};
 use ffx_session_launch_args::SessionLaunchCommand;
-use ffx_writer::SimpleWriter;
+use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
 use moniker::Moniker;
+use std::io::Write;
 use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
 
 const SESSION_MANAGER_MONIKER: &str = "/core/session-manager";
@@ -30,20 +31,25 @@ fho::embedded_plugin!(LaunchTool);
 
 #[async_trait(?Send)]
 impl FfxMain for LaunchTool {
-    type Writer = SimpleWriter;
+    type Writer = MachineWriter<()>;
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         launch_impl(self.launcher_proxy, self.rcs, self.cmd, &mut writer).await?;
+        if writer.is_machine() {
+            writer.machine(&())?;
+        }
         Ok(())
     }
 }
 
-pub async fn launch_impl<W: std::io::Write>(
+pub async fn launch_impl(
     launcher_proxy: LauncherProxy,
     rcs: RemoteControlProxyHolder,
     cmd: SessionLaunchCommand,
-    writer: &mut W,
+    writer: &mut MachineWriter<()>,
 ) -> Result<()> {
-    writeln!(writer, "Launching session: {}", cmd.url)?;
+    if !writer.is_machine() {
+        writeln!(writer, "Launching session: {}", cmd.url)?;
+    }
     // A moniker is needed to resolve the component declaration because resolution is
     // context dependent on the location within the topology (e.g. to find resolver).
     // But the child name doesn't matter so we can use `placeholder`.
@@ -106,7 +112,36 @@ mod test {
         let rcs = rcs_proxy.into();
 
         let launch_cmd = SessionLaunchCommand { url: SESSION_URL.to_string(), config: vec![] };
-        let result = launch_impl(proxy, rcs, launch_cmd, &mut std::io::stdout()).await;
+        let test_buffers = ffx_writer::TestBuffers::default();
+        let mut writer = MachineWriter::new_test(None, &test_buffers);
+        let result = launch_impl(proxy, rcs, launch_cmd, &mut writer).await;
         assert!(result.is_ok());
+    }
+
+    #[fuchsia::test]
+    async fn test_machine_output_is_valid_json() {
+        const SESSION_URL: &str = "Session URL";
+
+        let client = fdomain_local::local_client_empty();
+        let proxy = target_holders::fdomain::fake_proxy(client.clone(), |req| match req {
+            LauncherRequest::Launch { configuration: _, responder } => {
+                let _ = responder.send(Ok(()));
+            }
+        });
+
+        let (rcs_proxy, _) = client.create_proxy_and_stream::<rc::RemoteControlMarker>();
+        let rcs = rcs_proxy.into();
+
+        let launch_cmd = SessionLaunchCommand { url: SESSION_URL.to_string(), config: vec![] };
+        let test_buffers = ffx_writer::TestBuffers::default();
+        let writer = MachineWriter::new_test(Some(ffx_writer::Format::Json), &test_buffers);
+
+        let tool = LaunchTool { cmd: launch_cmd, rcs, launcher_proxy: proxy };
+
+        let result = tool.main(writer).await;
+        assert!(result.is_ok());
+
+        let output = test_buffers.into_stdout_str();
+        assert_eq!(output, "null\n");
     }
 }
