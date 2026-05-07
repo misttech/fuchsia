@@ -260,6 +260,7 @@ class UciRadioOptions(TypedDict, total=False):
     beacon_int: int
     short_preamble: Literal["0", "1"]
     rts: int
+    require_mode: Literal["n", "ac", "ax"]
 
 
 # TODO(https://fxbug.dev/489258440): Make channel required param and provide easy way to use
@@ -274,11 +275,6 @@ class RadioConfig:
         country: The country code for the radio (default: "US")
         n_capabilities: Selection of 802.11n capabilities.
         ac_capabilities: Selection of 802.11ac capabilities.
-        require_mode: Forces the radio to operate in a specific 802.11 mode.
-            Corresponds to the 'require_mode' option in OpenWrt's wireless
-            configuration. Useful for testing scenarios that need to ensure
-            the AP is only advertising/allowing clients of a specific standard
-            (e.g., 'n' for 802.11n, 'ac' for 802.11ac, 'ax' for 802.11ax).
         custom_uci_options: Arbitrary UCI options to set on the radio.
         custom_hostapd_options: Arbitrary hostapd options to pass through via UCI list hostapd_options.
     """
@@ -288,7 +284,6 @@ class RadioConfig:
     country: str = "US"
     n_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT()
     ac_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT()
-    require_mode: Literal["n", "ac", "ax", None] = None
     custom_uci_options: UciRadioOptions = dataclasses.field(
         default_factory=lambda: UciRadioOptions()
     )
@@ -302,7 +297,6 @@ class RadioConfig:
         country: str = "US",
         n_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT(),
         ac_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT(),
-        require_mode: Literal["n", "ac", "ax", None] = None,
         custom_uci_options: UciRadioOptions | None = None,
     ) -> "RadioConfig":
         """Creates a RadioConfig object with the specified channel and BSS settings.
@@ -313,7 +307,6 @@ class RadioConfig:
             country: The country code for the radio.
             n_capabilities: Selection of 802.11n capabilities.
             ac_capabilities: Selection of 802.11ac capabilities.
-            require_mode: UCI require_mode value.
             custom_uci_options: Structured UciRadioOptions to set on the radio.
 
         Returns:
@@ -330,7 +323,6 @@ class RadioConfig:
             country=country,
             n_capabilities=n_capabilities,
             ac_capabilities=ac_capabilities,
-            require_mode=require_mode,
             custom_uci_options=custom_uci_options,
         )
 

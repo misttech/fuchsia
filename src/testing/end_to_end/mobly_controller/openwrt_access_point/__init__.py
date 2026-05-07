@@ -178,11 +178,6 @@ class OpenWrtAP:
                 country = "AU"
             self.ssh.run(f"uci set wireless.{radio}.country='{country}'")
 
-            if radio_config.require_mode:
-                self.ssh.run(
-                    f"uci set wireless.{radio}.require_mode='{radio_config.require_mode}'"
-                )
-
             for option, value in radio_config.custom_uci_options.items():
                 self.ssh.run(f"uci set wireless.{radio}.{option}='{value}'")
 

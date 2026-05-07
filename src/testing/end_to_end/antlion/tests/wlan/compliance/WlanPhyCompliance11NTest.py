@@ -31,6 +31,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     HtMode,
     RadioConfig,
     Security,
+    UciRadioOptions,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
@@ -223,11 +224,15 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
 
             n_caps = [cap for cap in test.n_capabilities if cap]
 
-            require_mode: Literal["n", "ac", None] = None
+            require_mode: Literal["n", "ac", "ax"] | None = None
             if test.n_mode == hostapd_constants.Mode.MODE_11N_PURE.value:
                 require_mode = "n"
             elif test.n_mode == hostapd_constants.Mode.MODE_11AC_PURE.value:
                 require_mode = "ac"
+
+            custom_uci_options: UciRadioOptions = {}
+            if require_mode:
+                custom_uci_options["require_mode"] = require_mode
 
             config = AccessPointConfig(
                 radios=[
@@ -247,7 +252,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                             )
                         ],
                         n_capabilities=CapabilitySelection.CUSTOM(n_caps),
-                        require_mode=require_mode,
+                        custom_uci_options=custom_uci_options,
                     )
                 ]
             )
