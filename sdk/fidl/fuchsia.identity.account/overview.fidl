@@ -12,4 +12,5 @@
 /// small number of privileged clients. `AccountManager` may be used to acquire
 /// less powerful `Account` and `Persona` handles that may then be passed to
 /// other parts of the system.
+@available(added=HEAD)
 library fuchsia.identity.account;

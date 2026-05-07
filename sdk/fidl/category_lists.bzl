@@ -75,6 +75,8 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.images2:fuchsia.images2_idk",
     "//sdk/fidl/fuchsia.input:fuchsia.input_idk",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_idk",
+    "//sdk/fidl/fuchsia.input.virtualkeyboard:fuchsia.input.virtualkeyboard_idk",
+    "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_idk",
     "//sdk/fidl/fuchsia.intl:fuchsia.intl_idk",
     "//sdk/fidl/fuchsia.io:fuchsia.io_idk",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_idk",
