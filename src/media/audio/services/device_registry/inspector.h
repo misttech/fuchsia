@@ -12,6 +12,7 @@
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/inspect/cpp/vmo/types.h>
 
+#include <optional>
 #include <string>
 
 #include "src/media/audio/services/device_registry/basic_types.h"
@@ -30,7 +31,7 @@ static constexpr std::string_view kAddedAt = "added_at";
 static constexpr std::string_view kAddedBy = "added_by";
 static constexpr std::string_view kFailedAt = "failed_at";
 static constexpr std::string_view kRemovedAt = "removed_at";
-static constexpr std::string_view kDeviceType = "type";
+static constexpr std::string_view kDeviceType = "device_type";
 static constexpr std::string_view kTokenId = "token_id";
 static constexpr std::string_view kHealthy = "healthy";
 static constexpr std::string_view kIsInput = "is_input";
@@ -41,11 +42,12 @@ static constexpr std::string_view kClockDomain = "clock_domain";
 static constexpr std::string_view kDriverTimeout = "driver_timeouts";
 static constexpr std::string_view kDriverLateResponse = "driver_late_responses";
 
-static constexpr std::string_view kDaiElements = "DAI_elements";
-static constexpr std::string_view kRingBufferElements = "RingBuffer_elements";
-static constexpr std::string_view kPacketStreamElements = "PacketStream_elements";
-static constexpr std::string_view kDescription = "description";
 static constexpr std::string_view kElementId = "element_id";
+static constexpr std::string_view kDescription = "description";
+
+static constexpr std::string_view kDAIs = "DAIs";
+static constexpr std::string_view kRingBuffers = "RingBuffers";
+static constexpr std::string_view kPacketStreams = "PacketStreams";
 
 static constexpr std::string_view kSupportedFormats = "supported_format_sets";
 static constexpr std::string_view kFormatProps = "format";
@@ -125,9 +127,6 @@ class RunningIntervalInspectInstance {
   inspect::Node running_interval_node_;
 };
 
-void RecordPcmFormat(inspect::Node& node, fuchsia_audio::SampleType sample_type,
-                     uint32_t channel_count, uint32_t frames_per_second);
-
 // This represents an active instance of the audio driver RingBuffer protocol.
 class RingBufferInspectInstance {
  public:
@@ -195,12 +194,12 @@ class PacketStreamInspectInstance {
   inspect::Node format_node_;
 };
 
-//           rb_format_set_0
-//             channel_count
-//               [0]
-//                 channel_0
-//                   min_frequency:  0
-//                   max_frequency:  48000
+// rb_format_set_0
+//   channel_count
+//     [0]
+//       channel_0
+//         min_frequency:  0
+//         max_frequency:  48000
 struct ChannelSetRecord {
   inspect::Node channel_set_node;
   std::vector<inspect::Node> channel_nodes;
@@ -223,71 +222,6 @@ struct SupportedEncodingsRecord {
   inspect::StringArray encoding_types;
 };
 
-void RecordSupportedPcmFormatSets(
-    inspect::Node& header_node, std::vector<SupportedPcmFormatsRecord>& records,
-    const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets, std::string_view prefix);
-
-void RecordSupportedEncodingSets(
-    inspect::Node& header_node, std::vector<SupportedEncodingsRecord>& records,
-    const std::vector<fuchsia_hardware_audio::SupportedEncodings>& encodings,
-    std::string_view prefix);
-
-// This represents a ring buffer element expressed in the hardware topology. Over time, it may have
-// RingBufferInspectInstance children, if a client connects to the RingBuffer API.
-class RingBufferElement {
- public:
-  RingBufferElement(inspect::Node ring_buffer_element_node, ElementId element_id,
-                    const std::optional<std::string>& element_name);
-  ~RingBufferElement();
-
-  inspect::Node& inspect_node() { return ring_buffer_element_node_; }
-  std::shared_ptr<RingBufferInspectInstance> RecordRingBufferInstance(const zx::time& created_at);
-
-  void RecordSupportedFormatSets(
-      const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets);
-
-  ElementId element_id() const { return element_id_; }
-
- private:
-  static constexpr std::string_view kClassName = "RingBufferElement";
-
-  inspect::Node ring_buffer_element_node_;
-  inspect::Node ring_buffer_format_sets_header_node_;
-  std::vector<SupportedPcmFormatsRecord> supported_pcm_formats_sets_;
-  ElementId element_id_;
-
-  std::vector<std::shared_ptr<RingBufferInspectInstance>> ring_buffer_instances_;
-};
-
-// This represents a packet stream element expressed in the hardware topology. Over time, it may
-// have PacketStreamInspectInstance children, if a client connects to the PacketStream API.
-class PacketStreamElement {
- public:
-  PacketStreamElement(inspect::Node packet_stream_element_node, ElementId element_id,
-                      const std::optional<std::string>& element_name);
-  ~PacketStreamElement();
-
-  inspect::Node& inspect_node() { return packet_stream_element_node_; }
-  std::shared_ptr<PacketStreamInspectInstance> RecordPacketStreamInstance(
-      const zx::time& created_at);
-
-  void RecordSupportedFormatSets(
-      const std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>& format_sets);
-
-  ElementId element_id() const { return element_id_; }
-
- private:
-  static constexpr std::string_view kClassName = "PacketStreamElement";
-
-  inspect::Node packet_stream_element_node_;
-  inspect::Node packet_stream_format_sets_header_node_;
-  std::vector<SupportedPcmFormatsRecord> supported_pcm_formats_sets_;
-  std::vector<SupportedEncodingsRecord> supported_encodings_;
-  ElementId element_id_;
-
-  std::vector<std::shared_ptr<PacketStreamInspectInstance>> packet_stream_instances_;
-};
-
 struct DaiFormatSetRecord {
   inspect::Node dai_format_set_node;
   inspect::UintArray dai_format_set_channel_counts;
@@ -298,30 +232,92 @@ struct DaiFormatSetRecord {
   inspect::UintArray dai_format_set_sample_sizes;
 };
 
-// This represents a DAI element expressed in the hardware topology.
-class DaiElement {
- public:
-  DaiElement(inspect::Node dai_element_node, ElementId element_id,
-             const std::optional<std::string>& element_name);
-  ~DaiElement();
+void RecordSupportedPcmFormatSets(
+    inspect::Node& header_node, std::vector<SupportedPcmFormatsRecord>& records,
+    const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets, std::string_view prefix);
 
-  inspect::Node& inspect_node() { return dai_element_node_; }
+void RecordSupportedEncodingSets(
+    inspect::Node& header_node, std::vector<SupportedEncodingsRecord>& records,
+    const std::vector<fuchsia_hardware_audio::SupportedEncodings>& encodings,
+    std::string_view prefix);
+
+// IoNode represents a DAI/RingBuffer/PacketStream as expressed in the hardware topology.
+// Conceptually these are the _only places that audio frames enter or leave the topology._ IoNodes
+// report all properties/state NOT conveyed through the signalprocessing protocol (format support,
+// creation of RingBuffer/PacketStream instances, buffer sizes, timestamp details, etc). "IoNode"
+// naming explicitly avoids "Element" because all signalprocessing aspects are handled elsewhere.
+class IoNode {
+ public:
+  IoNode(inspect::Node node, ElementId element_id, const std::optional<std::string>& element_name);
+  ~IoNode();
+
+  inspect::Node& inspect_node() { return node_; }
+  ElementId element_id() const { return element_id_; }
+
+ protected:
+  inspect::Node& format_sets_header_node() { return format_sets_header_node_; }
+  inspect::Node& format_node() { return format_node_; }
+
+ private:
+  static constexpr std::string_view kClassName = "IoNode";
+  inspect::Node node_;
+  inspect::Node format_sets_header_node_;
+  inspect::Node format_node_;
+  ElementId element_id_;
+};
+
+// This represents the functionality of a ring buffer as expressed in the hardware topology. This
+// object will have RingBufferInspectInstance children, if a client connects to the RingBuffer API.
+class RingBuffer : public IoNode {
+ public:
+  RingBuffer(inspect::Node ring_buffer_node, ElementId element_id,
+             const std::optional<std::string>& element_name);
+  ~RingBuffer();
+
+  std::shared_ptr<RingBufferInspectInstance> RecordRingBufferInstance(const zx::time& created_at);
+  void RecordSupportedFormatSets(
+      const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets);
+
+ private:
+  static constexpr std::string_view kClassName = "RingBuffer";
+  std::vector<SupportedPcmFormatsRecord> supported_pcm_formats_sets_;
+  std::vector<std::shared_ptr<RingBufferInspectInstance>> ring_buffer_instances_;
+};
+
+// This represents the functionality of a packet stream as expressed in the hardware topology. This
+// object have PacketStreamInspectInstance children, if a client connects to the PacketStream API.
+class PacketStream : public IoNode {
+ public:
+  PacketStream(inspect::Node packet_stream_node, ElementId element_id,
+               const std::optional<std::string>& element_name);
+  ~PacketStream();
+
+  std::shared_ptr<PacketStreamInspectInstance> RecordPacketStreamInstance(
+      const zx::time& created_at);
+  void RecordSupportedFormatSets(
+      const std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>& format_sets);
+
+ private:
+  static constexpr std::string_view kClassName = "PacketStream";
+  std::vector<SupportedPcmFormatsRecord> supported_pcm_formats_sets_;
+  std::vector<SupportedEncodingsRecord> supported_encodings_;
+  std::vector<std::shared_ptr<PacketStreamInspectInstance>> packet_stream_instances_;
+};
+
+// This represents the functionality of a DAI as expressed in the hardware topology.
+class Dai : public IoNode {
+ public:
+  Dai(inspect::Node dai_node, ElementId element_id, const std::optional<std::string>& element_name);
+  ~Dai();
+
   void RecordSetDaiFormat(const zx::time& set_at,
                           const fuchsia_hardware_audio::DaiFormat& dai_format);
-
   void RecordSupportedFormatSets(
       const std::vector<fuchsia_hardware_audio::DaiSupportedFormats>& format_sets);
 
-  ElementId element_id() const { return element_id_; }
-
  private:
-  static constexpr std::string_view kClassName = "DaiElement";
-
-  inspect::Node dai_element_node_;
-  inspect::Node dai_format_sets_header_node_;
+  static constexpr std::string_view kClassName = "Dai";
   std::vector<DaiFormatSetRecord> dai_format_sets_;
-  inspect::Node format_node_;
-  ElementId element_id_;
 };
 
 // This represents an audio driver and its device. It is created when an audio device is detected in
@@ -342,18 +338,18 @@ class DeviceInspectInstance {
                         std::optional<std::string> unique_instance_id,
                         std::optional<ClockDomain> clock_domain);
 
-  std::shared_ptr<DaiElement> RecordDaiElement(ElementId element_id,
-                                               const std::optional<std::string>& element_name);
+  std::shared_ptr<Dai> RecordDai(ElementId element_id,
+                                 const std::optional<std::string>& element_name);
 
-  std::shared_ptr<RingBufferElement> RecordRingBufferElement(
-      ElementId element_id, const std::optional<std::string>& element_name);
+  std::shared_ptr<RingBuffer> RecordRingBuffer(ElementId element_id,
+                                               const std::optional<std::string>& element_name);
   void RecordRingBufferSupportedFormatSets(
       ElementId element_id, const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets);
   std::shared_ptr<RingBufferInspectInstance> RecordRingBufferInstance(ElementId element_id,
                                                                       const zx::time& created_at);
 
-  std::shared_ptr<PacketStreamElement> RecordPacketStreamElement(
-      ElementId element_id, const std::optional<std::string>& element_name);
+  std::shared_ptr<PacketStream> RecordPacketStream(ElementId element_id,
+                                                   const std::optional<std::string>& element_name);
   void RecordPacketStreamSupportedFormatSets(
       ElementId element_id,
       const std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>& format_sets);
@@ -374,17 +370,17 @@ class DeviceInspectInstance {
   inspect::Node device_node_;
   std::string name_;
 
-  inspect::Node dai_elements_root_node_;
-  inspect::Node ring_buffer_elements_root_node_;
-  inspect::Node packet_stream_elements_root_node_;
+  inspect::Node dais_root_node_;
+  inspect::Node ring_buffers_root_node_;
+  inspect::Node packet_streams_root_node_;
 
   inspect::BoolProperty healthy_;
   inspect::UintProperty count_timeout_;
   inspect::UintProperty count_late_response_;
 
-  std::vector<std::shared_ptr<DaiElement>> dai_elements_;
-  std::vector<std::shared_ptr<RingBufferElement>> ring_buffer_elements_;
-  std::vector<std::shared_ptr<PacketStreamElement>> packet_stream_elements_;
+  std::vector<std::shared_ptr<Dai>> dais_;
+  std::vector<std::shared_ptr<RingBuffer>> ring_buffers_;
+  std::vector<std::shared_ptr<PacketStream>> packet_streams_;
 };
 
 // This represents a client connection to one of the seven ADR FIDL protocols:

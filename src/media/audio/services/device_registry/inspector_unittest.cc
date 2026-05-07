@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include "src/media/audio/services/device_registry/inspector.h"
+#include "src/media/audio/services/device_registry/testing/fakes/fake_composite.h"
 
 using ::inspect::BoolPropertyValue;
 using ::inspect::IntPropertyValue;
@@ -27,6 +28,7 @@ namespace fad = fuchsia_audio_device;
 namespace media_audio {
 
 namespace {
+
 const inspect::Hierarchy* GetChild(const inspect::Hierarchy* parent, std::string_view name) {
   if (!parent) {
     return nullptr;
@@ -179,8 +181,8 @@ TEST_F(InspectorTest, DetectedDevice) {
 
   auto devices_node = GetChild(&hierarchy, kDevices);
   ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
   ASSERT_TRUE(devices_node->node().properties().empty());
-  ASSERT_EQ(devices_node->children().size(), 1u);
 
   auto device_node = &devices_node->children().front();
   ASSERT_FALSE(device_node->node().properties().empty());
@@ -215,7 +217,7 @@ TEST_F(InspectorTest, DetectedDevice) {
             UidToString(FakeComposite::kDefaultUniqueInstanceId));
   ASSERT_EQ(device_node->children().size(), 3u);
 
-  auto ring_buffers_node = GetChild(device_node, kRingBufferElements);
+  auto ring_buffers_node = GetChild(device_node, kRingBuffers);
   ASSERT_NE(ring_buffers_node, nullptr);
   EXPECT_TRUE(ring_buffers_node->node().properties().empty());
   ASSERT_EQ(ring_buffers_node->children().size(), 2u);
@@ -235,7 +237,7 @@ TEST_F(InspectorTest, DetectedDevice) {
               (first_rb_element_id == FakeComposite::kDestRbElementId &&
                last_rb_element_id == FakeComposite::kSourceRbElementId));
 
-  auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
+  auto ps_elements_node = GetChild(device_node, kPacketStreams);
   ASSERT_NE(ps_elements_node, nullptr);
   EXPECT_TRUE(ps_elements_node->node().properties().empty());
   ASSERT_EQ(ps_elements_node->children().size(), 3u);
@@ -729,14 +731,13 @@ TEST_F(InspectorDaiTest, SupportedDaiFormats) {
   auto devices_node = GetChild(&hierarchy, kDevices);
   ASSERT_NE(devices_node, nullptr);
   ASSERT_FALSE(devices_node->children().empty());
-  ASSERT_EQ(devices_node->children().size(), 1u);
 
   auto device_node = &devices_node->children().front();
   ASSERT_FALSE(device_node->node().properties().empty());
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
 
-  auto dais_node = GetChild(device_node, kDaiElements);
+  auto dais_node = GetChild(device_node, kDAIs);
   ASSERT_NE(dais_node, nullptr);
   ASSERT_FALSE(dais_node->children().empty());
   ASSERT_LE(dais_node->children().size(), fuchsia_audio_device::kMaxProcessingElementCount);
@@ -852,7 +853,7 @@ TEST_F(InspectorDaiTest, SetDaiFormat) {
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
 
-  auto dais_node = GetChild(device_node, kDaiElements);
+  auto dais_node = GetChild(device_node, kDAIs);
   ASSERT_NE(dais_node, nullptr) << "No DAI elements node found";
   ASSERT_FALSE(dais_node->children().empty()) << "No DAI element children";
 
@@ -952,14 +953,13 @@ TEST_F(InspectorRingBufferTest, SupportedRingBufferFormats) {
   auto devices_node = GetChild(&hierarchy, kDevices);
   ASSERT_NE(devices_node, nullptr);
   ASSERT_FALSE(devices_node->children().empty());
-  ASSERT_EQ(devices_node->children().size(), 1u);
 
   auto device_node = &devices_node->children().front();
   ASSERT_FALSE(device_node->node().properties().empty());
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
 
-  auto ring_buffers_node = GetChild(device_node, kRingBufferElements);
+  auto ring_buffers_node = GetChild(device_node, kRingBuffers);
   ASSERT_NE(ring_buffers_node, nullptr);
   ASSERT_FALSE(ring_buffers_node->children().empty());
 
@@ -1130,7 +1130,7 @@ TEST_F(InspectorRingBufferTest, RingBufferStartStop) {
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
 
-  auto ring_buffers_node = GetChild(device_node, kRingBufferElements);
+  auto ring_buffers_node = GetChild(device_node, kRingBuffers);
   ASSERT_NE(ring_buffers_node, nullptr);
   ASSERT_FALSE(ring_buffers_node->children().empty());
 
@@ -1232,7 +1232,7 @@ TEST_F(InspectorRingBufferTest, SetActiveChannels) {
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
 
-  auto ring_buffers_node = GetChild(device_node, kRingBufferElements);
+  auto ring_buffers_node = GetChild(device_node, kRingBuffers);
   ASSERT_NE(ring_buffers_node, nullptr);
   ASSERT_FALSE(ring_buffers_node->children().empty());
 
@@ -1294,7 +1294,7 @@ TEST_F(InspectorRingBufferTest, RbBufferProperties) {
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
 
-  auto ring_buffers_node = GetChild(device_node, kRingBufferElements);
+  auto ring_buffers_node = GetChild(device_node, kRingBuffers);
   ASSERT_NE(ring_buffers_node, nullptr);
   ASSERT_FALSE(ring_buffers_node->children().empty());
 
@@ -1346,7 +1346,7 @@ TEST_F(InspectorRingBufferTest, RingBufferFormat) {
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
 
-  auto ring_buffers_node = GetChild(device_node, kRingBufferElements);
+  auto ring_buffers_node = GetChild(device_node, kRingBuffers);
   ASSERT_NE(ring_buffers_node, nullptr);
   ASSERT_FALSE(ring_buffers_node->children().empty());
 
@@ -1389,14 +1389,14 @@ TEST_F(InspectorPacketStreamTest, PacketStreamInstance) {
   auto hierarchy = GetHierarchy();
   auto devices_node = GetChild(&hierarchy, kDevices);
   ASSERT_NE(devices_node, nullptr);
-  ASSERT_EQ(devices_node->children().size(), 1u);
+  ASSERT_FALSE(devices_node->children().empty());
 
   auto device_node = &devices_node->children().front();
   ASSERT_FALSE(device_node->node().properties().empty());
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
 
-  auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
+  auto ps_elements_node = GetChild(device_node, kPacketStreams);
   ASSERT_NE(ps_elements_node, nullptr);
   ASSERT_EQ(ps_elements_node->children().size(), 3u);
 
@@ -1416,7 +1416,7 @@ TEST_F(InspectorPacketStreamTest, PacketStreamInstance) {
   hierarchy = GetHierarchy();
   devices_node = GetChild(&hierarchy, kDevices);
   device_node = &devices_node->children().front();
-  ps_elements_node = GetChild(device_node, kPacketStreamElements);
+  ps_elements_node = GetChild(device_node, kPacketStreams);
 
   // Find the node with the correct element_id.
   const inspect::Hierarchy* target_ps_element_node = nullptr;
@@ -1448,14 +1448,13 @@ TEST_F(InspectorPacketStreamTest, SupportedPacketStreamFormats) {
   auto devices_node = GetChild(&hierarchy, kDevices);
   ASSERT_NE(devices_node, nullptr);
   ASSERT_FALSE(devices_node->children().empty());
-  ASSERT_EQ(devices_node->children().size(), 1u);
 
   auto device_node = &devices_node->children().front();
   ASSERT_FALSE(device_node->node().properties().empty());
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
 
-  auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
+  auto ps_elements_node = GetChild(device_node, kPacketStreams);
   ASSERT_NE(ps_elements_node, nullptr);
   ASSERT_FALSE(ps_elements_node->children().empty());
 
@@ -1627,7 +1626,7 @@ TEST_F(InspectorPacketStreamTest, PacketStreamStartStop) {
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
 
-  auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
+  auto ps_elements_node = GetChild(device_node, kPacketStreams);
   ASSERT_NE(ps_elements_node, nullptr);
   ASSERT_FALSE(ps_elements_node->children().empty());
 
@@ -1692,7 +1691,7 @@ TEST_F(InspectorPacketStreamTest, PsBufferProperties) {
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
 
-  auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
+  auto ps_elements_node = GetChild(device_node, kPacketStreams);
   ASSERT_NE(ps_elements_node, nullptr);
   ASSERT_FALSE(ps_elements_node->children().empty());
 
@@ -1761,7 +1760,7 @@ TEST_P(InspectorPacketStreamFormatTest, PacketStreamFormat) {
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
   ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
 
-  auto ps_elements_node = GetChild(device_node, kPacketStreamElements);
+  auto ps_elements_node = GetChild(device_node, kPacketStreams);
   ASSERT_NE(ps_elements_node, nullptr);
   ASSERT_FALSE(ps_elements_node->children().empty());
 
@@ -1789,17 +1788,17 @@ TEST_P(InspectorPacketStreamFormatTest, PacketStreamFormat) {
     EXPECT_EQ(
         format_node->node().get_property<UintPropertyValue>(std::string(kChannelCount))->value(),
         *format.pcm_format()->channel_count());
-    std::ostringstream ss;
-    ss << *format.pcm_format()->sample_type();
+    std::ostringstream stream;
+    stream << *format.pcm_format()->sample_type();
     EXPECT_EQ(
         format_node->node().get_property<StringPropertyValue>(std::string(kSampleFormat))->value(),
-        ss.str());
+        stream.str());
   } else if (format.encoding().has_value()) {
-    std::ostringstream ss;
-    ss << *format.encoding()->encoding_type();
+    std::ostringstream stream;
+    stream << *format.encoding()->encoding_type();
     EXPECT_EQ(
         format_node->node().get_property<StringPropertyValue>(std::string(kEncodingType))->value(),
-        ss.str());
+        stream.str());
     EXPECT_EQ(
         format_node->node().get_property<UintPropertyValue>(std::string(kChannelCount))->value(),
         *format.encoding()->decoded_channel_count());

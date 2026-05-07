@@ -10,6 +10,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
+#include <ostream>
 #include <string>
 
 #include "src/media/audio/services/device_registry/logging.h"
@@ -17,6 +19,21 @@
 namespace media_audio {
 
 namespace fha = fuchsia_hardware_audio;
+namespace fhasp = fuchsia_hardware_audio_signalprocessing;
+
+namespace {
+
+void RecordPcmFormat(inspect::Node& node, fuchsia_audio::SampleType sample_type,
+                     uint32_t channel_count, uint32_t frames_per_second) {
+  node.RecordUint(kChannelCount, channel_count);
+  node.RecordUint(kFramesPerSecond, frames_per_second);
+
+  std::ostringstream stream;
+  stream << sample_type;
+  node.RecordString(kSampleFormat, stream.str());
+}
+
+}  // namespace
 
 // static
 // This singleton handles Inspect for the entire service.
@@ -31,16 +48,6 @@ void Inspector::Initialize(async_dispatcher_t* dispatcher) {
   } else {
     FX_LOGS(ERROR) << "Inspector::Initialize should only be called once";
   }
-}
-
-void RecordPcmFormat(inspect::Node& node, fuchsia_audio::SampleType sample_type,
-                     uint32_t channel_count, uint32_t frames_per_second) {
-  node.RecordUint(kChannelCount, channel_count);
-  node.RecordUint(kFramesPerSecond, frames_per_second);
-
-  std::ostringstream stream;
-  stream << sample_type;
-  node.RecordString(kSampleFormat, stream.str());
 }
 
 ///////////////////////////////////////
@@ -371,38 +378,46 @@ void PacketStreamInspectInstance::RecordFormat(
 }
 
 ///////////////////////////////////////
-// RingBufferElement methods
-RingBufferElement::RingBufferElement(inspect::Node ring_buffer_element_node, ElementId element_id,
-                                     const std::optional<std::string>& element_name)
-    : ring_buffer_element_node_(std::move(ring_buffer_element_node)), element_id_(element_id) {
+// IoNode methods
+IoNode::IoNode(inspect::Node node, ElementId element_id,
+               const std::optional<std::string>& element_name)
+    : node_(std::move(node)), element_id_(element_id) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+  node_.RecordUint(kElementId, element_id);
+  if (element_name.has_value()) {
+    node_.RecordString(kDescription, *element_name);
+  }
+}
+
+IoNode::~IoNode() { ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_; }
+
+///////////////////////////////////////
+// RingBuffer methods
+RingBuffer::RingBuffer(inspect::Node ring_buffer_node, ElementId element_id,
+                       const std::optional<std::string>& element_name)
+    : IoNode(std::move(ring_buffer_node), element_id, element_name) {
   ADR_LOG_METHOD(kTraceInspector) << "element " << element_id << ", '" << element_name.value_or("")
                                   << "'";
-  ring_buffer_element_node_.RecordUint(kElementId, element_id);
-  if (element_name.has_value()) {
-    ring_buffer_element_node_.RecordString(kDescription, *element_name);
-  }
   // Consider recording an 'is_input' bool, indicating dataflow direction (derived from Topology?).
 }
 
-RingBufferElement::~RingBufferElement() {
-  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
-}
+RingBuffer::~RingBuffer() { ADR_LOG_METHOD(kTraceInspector) << "element " << element_id(); }
 
-void RingBufferElement::RecordSupportedFormatSets(
+void RingBuffer::RecordSupportedFormatSets(
     const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets) {
-  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id();
 
-  ring_buffer_format_sets_header_node_ = ring_buffer_element_node_.CreateChild(kSupportedFormats);
-  RecordSupportedPcmFormatSets(ring_buffer_format_sets_header_node_, supported_pcm_formats_sets_,
-                               format_sets, "rb_format_set_");
+  format_sets_header_node() = inspect_node().CreateChild(kSupportedFormats);
+  RecordSupportedPcmFormatSets(format_sets_header_node(), supported_pcm_formats_sets_, format_sets,
+                               "rb_format_set_");
 }
 
-std::shared_ptr<RingBufferInspectInstance> RingBufferElement::RecordRingBufferInstance(
+std::shared_ptr<RingBufferInspectInstance> RingBuffer::RecordRingBufferInstance(
     const zx::time& created_at) {
-  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_ << ", instance "
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id() << ", instance "
                                   << ring_buffer_instances_.size();
 
-  auto ring_buffer_instance_node = ring_buffer_element_node_.CreateChild(
+  auto ring_buffer_instance_node = inspect_node().CreateChild(
       std::string("instance_") + std::to_string(ring_buffer_instances_.size()));
   auto ring_buffer_instance =
       std::make_shared<RingBufferInspectInstance>(std::move(ring_buffer_instance_node), created_at);
@@ -413,29 +428,21 @@ std::shared_ptr<RingBufferInspectInstance> RingBufferElement::RecordRingBufferIn
 }
 
 ///////////////////////////////////////
-// PacketStreamElement methods
-PacketStreamElement::PacketStreamElement(inspect::Node packet_stream_element_node,
-                                         ElementId element_id,
-                                         const std::optional<std::string>& element_name)
-    : packet_stream_element_node_(std::move(packet_stream_element_node)), element_id_(element_id) {
+// PacketStream methods
+PacketStream::PacketStream(inspect::Node packet_stream_node, ElementId element_id,
+                           const std::optional<std::string>& element_name)
+    : IoNode(std::move(packet_stream_node), element_id, element_name) {
   ADR_LOG_METHOD(kTraceInspector) << "element " << element_id << ", '" << element_name.value_or("")
                                   << "'";
-  packet_stream_element_node_.RecordUint(kElementId, element_id);
-  if (element_name.has_value()) {
-    packet_stream_element_node_.RecordString(kDescription, *element_name);
-  }
 }
 
-PacketStreamElement::~PacketStreamElement() {
-  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
-}
+PacketStream::~PacketStream() { ADR_LOG_METHOD(kTraceInspector) << "element " << element_id(); }
 
-void PacketStreamElement::RecordSupportedFormatSets(
+void PacketStream::RecordSupportedFormatSets(
     const std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>& format_sets) {
-  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id();
 
-  packet_stream_format_sets_header_node_ =
-      packet_stream_element_node_.CreateChild(kSupportedFormats);
+  format_sets_header_node() = inspect_node().CreateChild(kSupportedFormats);
 
   std::vector<fuchsia_audio_device::PcmFormatSet> pcm_format_sets;
   std::vector<fuchsia_hardware_audio::SupportedEncodings> encoding_sets;
@@ -449,18 +456,18 @@ void PacketStreamElement::RecordSupportedFormatSets(
     }
   }
 
-  RecordSupportedPcmFormatSets(packet_stream_format_sets_header_node_, supported_pcm_formats_sets_,
+  RecordSupportedPcmFormatSets(format_sets_header_node(), supported_pcm_formats_sets_,
                                pcm_format_sets, "ps_pcm_format_set_");
-  RecordSupportedEncodingSets(packet_stream_format_sets_header_node_, supported_encodings_,
-                              encoding_sets, "ps_encoding_set_");
+  RecordSupportedEncodingSets(format_sets_header_node(), supported_encodings_, encoding_sets,
+                              "ps_encoding_set_");
 }
 
-std::shared_ptr<PacketStreamInspectInstance> PacketStreamElement::RecordPacketStreamInstance(
+std::shared_ptr<PacketStreamInspectInstance> PacketStream::RecordPacketStreamInstance(
     const zx::time& created_at) {
-  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_ << ", instance "
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id() << ", instance "
                                   << packet_stream_instances_.size();
 
-  auto packet_stream_instance_node = packet_stream_element_node_.CreateChild(
+  auto packet_stream_instance_node = inspect_node().CreateChild(
       std::string("instance_") + std::to_string(packet_stream_instances_.size()));
   auto packet_stream_instance = std::make_shared<PacketStreamInspectInstance>(
       std::move(packet_stream_instance_node), created_at);
@@ -471,30 +478,26 @@ std::shared_ptr<PacketStreamInspectInstance> PacketStreamElement::RecordPacketSt
 }
 
 ///////////////////////////////////////
-// DaiElement methods
-DaiElement::DaiElement(inspect::Node dai_element_node, ElementId element_id,
-                       const std::optional<std::string>& element_name)
-    : dai_element_node_(std::move(dai_element_node)), element_id_(element_id) {
-  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
-  dai_element_node_.RecordUint(kElementId, element_id);
-  if (element_name.has_value()) {
-    dai_element_node_.RecordString(kDescription, *element_name);
-  }
+// Dai methods
+Dai::Dai(inspect::Node dai_node, ElementId element_id,
+         const std::optional<std::string>& element_name)
+    : IoNode(std::move(dai_node), element_id, element_name) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id;
 }
 
-DaiElement::~DaiElement() { ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_; }
+Dai::~Dai() { ADR_LOG_METHOD(kTraceInspector) << "element " << element_id(); }
 
-void DaiElement::RecordSupportedFormatSets(
+void Dai::RecordSupportedFormatSets(
     const std::vector<fuchsia_hardware_audio::DaiSupportedFormats>& format_sets) {
-  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id();
 
-  dai_format_sets_header_node_ = dai_element_node_.CreateChild(kSupportedFormats);
+  format_sets_header_node() = inspect_node().CreateChild(kSupportedFormats);
   dai_format_sets_.clear();
   for (auto i = 0u; i < format_sets.size(); ++i) {
     dai_format_sets_.emplace_back(DaiFormatSetRecord{});
     auto& dai_format_set = dai_format_sets_[i];
     dai_format_set.dai_format_set_node =
-        dai_format_sets_header_node_.CreateChild("dai_format_set_" + std::to_string(i));
+        format_sets_header_node().CreateChild("dai_format_set_" + std::to_string(i));
 
     const auto& channel_counts = format_sets[i].number_of_channels();
     dai_format_set.dai_format_set_channel_counts =
@@ -544,25 +547,25 @@ void DaiElement::RecordSupportedFormatSets(
   }
 }
 
-void DaiElement::RecordSetDaiFormat(const zx::time& set_at,
-                                    const fuchsia_hardware_audio::DaiFormat& dai_format) {
-  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
-  format_node_ = dai_element_node_.CreateChild(kFormatProps);
+void Dai::RecordSetDaiFormat(const zx::time& set_at,
+                             const fuchsia_hardware_audio::DaiFormat& dai_format) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id();
+  format_node() = inspect_node().CreateChild(kFormatProps);
 
-  format_node_.RecordUint(kBitsPerFrame, dai_format.bits_per_slot());
-  format_node_.RecordUint(kBitsPerSample, dai_format.bits_per_sample());
-  format_node_.RecordUint(kChannelCount, dai_format.number_of_channels());
-  format_node_.RecordUint(kChannelBitmask, dai_format.channels_to_use_bitmask());
-  format_node_.RecordUint(kFramesPerSecond, dai_format.frame_rate());
+  format_node().RecordUint(kBitsPerFrame, dai_format.bits_per_slot());
+  format_node().RecordUint(kBitsPerSample, dai_format.bits_per_sample());
+  format_node().RecordUint(kChannelCount, dai_format.number_of_channels());
+  format_node().RecordUint(kChannelBitmask, dai_format.channels_to_use_bitmask());
+  format_node().RecordUint(kFramesPerSecond, dai_format.frame_rate());
 
   std::ostringstream format_stream;
   format_stream << dai_format.frame_format();
-  format_node_.RecordString(kFrameFormat, format_stream.str());
+  format_node().RecordString(kFrameFormat, format_stream.str());
 
   format_stream.str("");
   format_stream.clear();
   format_stream << dai_format.sample_format();
-  format_node_.RecordString(kSampleFormat, format_stream.str());
+  format_node().RecordString(kSampleFormat, format_stream.str());
 }
 
 ///////////////////////////////////////
@@ -626,57 +629,55 @@ void DeviceInspectInstance::RecordProperties(std::optional<bool> is_input,
   }
 }
 
-std::shared_ptr<DaiElement> DeviceInspectInstance::RecordDaiElement(
+std::shared_ptr<Dai> DeviceInspectInstance::RecordDai(
     ElementId element_id, const std::optional<std::string>& element_name) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
-  if (dai_elements_.empty()) {
-    dai_elements_root_node_ = device_node_.CreateChild(kDaiElements);
+  if (dais_.empty()) {
+    dais_root_node_ = device_node_.CreateChild(kDAIs);
   }
-  auto dai_element_node = dai_elements_root_node_.CreateChild(std::to_string(dai_elements_.size()));
-  auto dai_element =
-      std::make_shared<DaiElement>(std::move(dai_element_node), element_id, element_name);
+  auto dai_node = dais_root_node_.CreateChild(std::to_string(dais_.size()));
+  auto dai = std::make_shared<Dai>(std::move(dai_node), element_id, element_name);
 
-  dai_elements_.push_back(dai_element);
-  return dai_element;
+  dais_.push_back(dai);
+  return dai;
 }
 
-std::shared_ptr<RingBufferElement> DeviceInspectInstance::RecordRingBufferElement(
+std::shared_ptr<RingBuffer> DeviceInspectInstance::RecordRingBuffer(
     ElementId element_id, const std::optional<std::string>& element_name) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
-  if (ring_buffer_elements_.empty()) {
-    ring_buffer_elements_root_node_ = device_node_.CreateChild(kRingBufferElements);
+  if (ring_buffers_.empty()) {
+    ring_buffers_root_node_ = device_node_.CreateChild(kRingBuffers);
   }
-  auto ring_buffer_element_node =
-      ring_buffer_elements_root_node_.CreateChild(std::to_string(ring_buffer_elements_.size()));
-  auto ring_buffer_element = std::make_shared<RingBufferElement>(
-      std::move(ring_buffer_element_node), element_id, element_name);
+  auto ring_buffer_node = ring_buffers_root_node_.CreateChild(std::to_string(ring_buffers_.size()));
+  auto ring_buffer =
+      std::make_shared<RingBuffer>(std::move(ring_buffer_node), element_id, element_name);
 
-  ring_buffer_elements_.push_back(ring_buffer_element);
-  return ring_buffer_element;
+  ring_buffers_.push_back(ring_buffer);
+  return ring_buffer;
 }
 
-std::shared_ptr<PacketStreamElement> DeviceInspectInstance::RecordPacketStreamElement(
+std::shared_ptr<PacketStream> DeviceInspectInstance::RecordPacketStream(
     ElementId element_id, const std::optional<std::string>& element_name) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
-  if (packet_stream_elements_.empty()) {
-    packet_stream_elements_root_node_ = device_node_.CreateChild(kPacketStreamElements);
+  if (packet_streams_.empty()) {
+    packet_streams_root_node_ = device_node_.CreateChild(kPacketStreams);
   }
-  auto packet_stream_element_node =
-      packet_stream_elements_root_node_.CreateChild(std::to_string(packet_stream_elements_.size()));
-  auto packet_stream_element = std::make_shared<PacketStreamElement>(
-      std::move(packet_stream_element_node), element_id, element_name);
+  auto packet_stream_node =
+      packet_streams_root_node_.CreateChild(std::to_string(packet_streams_.size()));
+  auto packet_stream =
+      std::make_shared<PacketStream>(std::move(packet_stream_node), element_id, element_name);
 
-  packet_stream_elements_.push_back(packet_stream_element);
-  return packet_stream_element;
+  packet_streams_.push_back(packet_stream);
+  return packet_stream;
 }
 
 void DeviceInspectInstance::RecordRingBufferSupportedFormatSets(
     ElementId element_id, const std::vector<fuchsia_audio_device::PcmFormatSet>& format_sets) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
-  auto found = std::ranges::find_if(ring_buffer_elements_, [element_id](const auto& rb_ptr) {
+  auto found = std::ranges::find_if(ring_buffers_, [element_id](const auto& rb_ptr) {
     return (rb_ptr->element_id() == element_id);
   });
-  if (found == ring_buffer_elements_.end()) {
+  if (found == ring_buffers_.end()) {
     ADR_WARN_OBJECT() << "Cannot record supported format sets: RingBuffer element_id " << element_id
                       << " not found";
   } else {
@@ -688,13 +689,12 @@ void DeviceInspectInstance::RecordPacketStreamSupportedFormatSets(
     ElementId element_id,
     const std::vector<fuchsia_audio_device::PacketStreamSupportedFormats>& format_sets) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
-  auto found =
-      std::ranges::find_if(packet_stream_elements_.begin(), packet_stream_elements_.end(),
-                           [element_id](const std::shared_ptr<PacketStreamElement>& ps_ptr) {
-                             return (ps_ptr->element_id() == element_id);
-                           });
-  if (found == packet_stream_elements_.end()) {
-    ADR_WARN_OBJECT() << "Cannot record supported format sets: PacketStreamElement element_id "
+  auto found = std::ranges::find_if(packet_streams_.begin(), packet_streams_.end(),
+                                    [element_id](const std::shared_ptr<PacketStream>& ps_ptr) {
+                                      return (ps_ptr->element_id() == element_id);
+                                    });
+  if (found == packet_streams_.end()) {
+    ADR_WARN_OBJECT() << "Cannot record supported format sets: PacketStream element_id "
                       << element_id << " not found";
   } else {
     found->get()->RecordSupportedFormatSets(format_sets);
@@ -704,10 +704,10 @@ void DeviceInspectInstance::RecordPacketStreamSupportedFormatSets(
 std::shared_ptr<RingBufferInspectInstance> DeviceInspectInstance::RecordRingBufferInstance(
     ElementId element_id, const zx::time& created_at) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
-  auto found = std::ranges::find_if(ring_buffer_elements_, [element_id](const auto& rb_ptr) {
+  auto found = std::ranges::find_if(ring_buffers_, [element_id](const auto& rb_ptr) {
     return (rb_ptr->element_id() == element_id);
   });
-  if (found == ring_buffer_elements_.end()) {
+  if (found == ring_buffers_.end()) {
     ADR_WARN_OBJECT() << "Cannot create RingBuffer inspect instance: element_id " << element_id
                       << " not found";
     return nullptr;
@@ -718,12 +718,12 @@ std::shared_ptr<RingBufferInspectInstance> DeviceInspectInstance::RecordRingBuff
 std::shared_ptr<PacketStreamInspectInstance> DeviceInspectInstance::RecordPacketStreamInstance(
     ElementId element_id, const zx::time& created_at) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "', element " << element_id;
-  auto found = std::ranges::find_if(packet_stream_elements_, [element_id](const auto& ps_ptr) {
+  auto found = std::ranges::find_if(packet_streams_, [element_id](const auto& ps_ptr) {
     return (ps_ptr->element_id() == element_id);
   });
-  if (found == packet_stream_elements_.end()) {
-    ADR_WARN_OBJECT() << "Cannot create PacketStreamElement inspect instance: element_id "
-                      << element_id << " not found";
+  if (found == packet_streams_.end()) {
+    ADR_WARN_OBJECT() << "Cannot create PacketStream inspect instance: element_id " << element_id
+                      << " not found";
     return nullptr;
   }
   return found->get()->RecordPacketStreamInstance(created_at);

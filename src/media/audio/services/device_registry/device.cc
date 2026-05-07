@@ -1538,8 +1538,8 @@ void Device::RetrieveDaiFormatSets() {
   element_dai_format_sets_.clear();
   dai_inspect_nodes_.clear();
   for (auto element_id : *remaining_dai_ids) {
-    auto element_node = inspect()->RecordDaiElement(
-        element_id, sig_proc_element_map_[element_id].element.description());
+    auto element_node =
+        inspect()->RecordDai(element_id, sig_proc_element_map_[element_id].element.description());
     dai_inspect_nodes_.insert({element_id, element_node});
     GetDaiFormatSets(element_id, [this, remaining_dai_ids](
                                      ElementId element_id,
@@ -1646,7 +1646,7 @@ void Device::RetrieveRingBufferFormatSets() {
       std::make_shared<std::unordered_set<ElementId>>(ring_buffer_ids_);
 
   for (auto id : ring_buffer_ids_) {
-    inspect()->RecordRingBufferElement(id, sig_proc_element_map_[id].element.description());
+    inspect()->RecordRingBuffer(id, sig_proc_element_map_[id].element.description());
 
     if (is_composite()) {
       ADR_LOG_METHOD(kLogCompositeFidlCalls) << " GetRingBufferFormats (element " << id << ")";
@@ -1720,7 +1720,7 @@ void Device::RetrievePacketStreamFormatSets() {
       std::make_shared<std::unordered_set<ElementId>>(packet_stream_ids_);
 
   for (auto id : packet_stream_ids_) {
-    inspect()->RecordPacketStreamElement(id, sig_proc_element_map_[id].element.description());
+    inspect()->RecordPacketStream(id, sig_proc_element_map_[id].element.description());
 
     ADR_LOG_METHOD(kLogCompositeFidlCalls) << " GetPacketStreamFormats (element " << id << ")";
     composite_client_.value()->GetPacketStreamFormats(id).Then(
