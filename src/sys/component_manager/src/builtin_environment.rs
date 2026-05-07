@@ -597,29 +597,8 @@ impl BuiltinEnvironment {
         let irq_resource_handle =
             take_startup_handle(HandleType::IrqResource.into()).map(zx::Resource::from);
 
-        let zbi_vmo_handle = take_startup_handle(HandleType::BootdataVmo.into()).map(zx::Vmo::from);
-        let mut zbi_parser = match zbi_vmo_handle {
-            Some(zbi_vmo) => Some(
-                ZbiParser::new(zbi_vmo)
-                    .set_store_item(ZbiType::Cmdline)
-                    .set_store_item(ZbiType::ImageArgs)
-                    .set_store_item(ZbiType::Crashlog)
-                    .set_store_item(ZbiType::KernelDriver)
-                    .set_store_item(ZbiType::PlatformId)
-                    .set_store_item(ZbiType::StorageBootfsFactory)
-                    .set_store_item(ZbiType::StorageRamdisk)
-                    .set_store_item(ZbiType::SerialNumber)
-                    .set_store_item(ZbiType::BootloaderFile)
-                    .set_store_item(ZbiType::DeviceTree)
-                    .set_store_item(ZbiType::DriverMetadata)
-                    .set_store_item(ZbiType::CpuTopology)
-                    .set_store_item(ZbiType::AcpiRsdp)
-                    .set_store_item(ZbiType::Smbios)
-                    .set_store_item(ZbiType::Framebuffer)
-                    .parse()?,
-            ),
-            None => None,
-        };
+        let mut zbi_parser =
+            parse_zbi(take_startup_handle(HandleType::BootdataVmo.into()).map(zx::Vmo::from))?;
 
         // Set up BootArguments service.
         let boot_args = BootArguments::new(&mut zbi_parser).await?;
@@ -627,17 +606,7 @@ impl BuiltinEnvironment {
             move |stream| boot_args.clone().serve(stream).boxed(),
         );
 
-        if let Some(mut zbi_parser) = zbi_parser {
-            let factory_items = FactoryItems::new(&mut zbi_parser)?;
-            root_input_builder.add_builtin_protocol_if_enabled::<fboot::FactoryItemsMarker>(
-                move |stream| factory_items.clone().serve(stream).boxed(),
-            );
-
-            let items = Items::new(zbi_parser)?;
-            root_input_builder.add_builtin_protocol_if_enabled::<fboot::ItemsMarker>(
-                move |stream| items.clone().serve(stream).boxed(),
-            );
-        }
+        setup_factory_and_items(&mut root_input_builder, zbi_parser)?;
 
         // Set up CrashRecords service.
         let crash_records_svc = CrashIntrospectSvc::new(crash_records);
@@ -645,79 +614,7 @@ impl BuiltinEnvironment {
             move |stream| crash_records_svc.clone().serve(stream).boxed(),
         );
 
-        // Set up KernelStats service.
-        let info_resource_handle = system_resource_handle
-            .as_ref()
-            .map(|handle| {
-                match handle.create_child(
-                    zx::ResourceKind::SYSTEM,
-                    None,
-                    zx::sys::ZX_RSRC_SYSTEM_INFO_BASE,
-                    1,
-                    b"info",
-                ) {
-                    Ok(resource) => Some(resource),
-                    Err(_) => None,
-                }
-            })
-            .flatten();
-        if let Some(kernel_stats) = info_resource_handle.map(KernelStats::new) {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::StatsMarker>(
-                move |stream| kernel_stats.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the ReadOnlyLog service.
-        let debuglog_resource = system_resource_handle
-            .as_ref()
-            .map(|handle| {
-                match handle.create_child(
-                    zx::ResourceKind::SYSTEM,
-                    None,
-                    zx::sys::ZX_RSRC_SYSTEM_DEBUGLOG_BASE,
-                    1,
-                    b"debuglog",
-                ) {
-                    Ok(resource) => Some(resource),
-                    Err(_) => None,
-                }
-            })
-            .flatten();
-
-        if let Some(debuglog_resource) = debuglog_resource {
-            let read_only_log = ReadOnlyLog::new(debuglog_resource);
-
-            root_input_builder.add_builtin_protocol_if_enabled::<fboot::ReadOnlyLogMarker>(
-                move |stream| read_only_log.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up WriteOnlyLog service.
-        let debuglog_resource = system_resource_handle
-            .as_ref()
-            .map(|handle| {
-                match handle.create_child(
-                    zx::ResourceKind::SYSTEM,
-                    None,
-                    zx::sys::ZX_RSRC_SYSTEM_DEBUGLOG_BASE,
-                    1,
-                    b"debuglog",
-                ) {
-                    Ok(resource) => Some(resource),
-                    Err(_) => None,
-                }
-            })
-            .flatten();
-
-        if let Some(debuglog_resource) = debuglog_resource {
-            let write_only_log = WriteOnlyLog::new(
-                zx::DebugLog::create(&debuglog_resource, zx::DebugLogOpts::empty()).unwrap(),
-            );
-
-            root_input_builder.add_builtin_protocol_if_enabled::<fboot::WriteOnlyLogMarker>(
-                move |stream| write_only_log.clone().serve(stream).boxed(),
-            );
-        }
+        setup_kernel_resources(&mut root_input_builder, system_resource_handle.as_ref());
 
         // Register the UTC time maintainer.
         if let Some(clock) = utc_clock {
@@ -757,338 +654,6 @@ impl BuiltinEnvironment {
             let smc_resource = SmcResource::new(handle.into());
             root_input_builder.add_builtin_protocol_if_enabled::<fkernel::SmcResourceMarker>(
                 move |stream| smc_resource.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the CpuResource service.
-        let cpu_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_CPU_BASE,
-                        1,
-                        b"cpu",
-                    )
-                    .ok()
-            })
-            .map(CpuResource::new)
-            .and_then(Result::ok);
-        if let Some(cpu_resource) = cpu_resource {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::CpuResourceMarker>(
-                move |stream| cpu_resource.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the EnergyInfoResource service.
-        let energy_info_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_ENERGY_INFO_BASE,
-                        1,
-                        b"energy_info",
-                    )
-                    .ok()
-            })
-            .map(EnergyInfoResource::new)
-            .and_then(Result::ok);
-        if let Some(energy_info_resource) = energy_info_resource {
-            root_input_builder
-                .add_builtin_protocol_if_enabled::<fkernel::EnergyInfoResourceMarker>(
-                    move |stream| energy_info_resource.clone().serve(stream).boxed(),
-                );
-        }
-
-        // Set up the DebugResource service.
-        let debug_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_DEBUG_BASE,
-                        1,
-                        b"debug",
-                    )
-                    .ok()
-            })
-            .map(DebugResource::new)
-            .and_then(Result::ok);
-        if let Some(debug_resource) = debug_resource {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::DebugResourceMarker>(
-                move |stream| debug_resource.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the DebuglogResource service.
-        let debuglog_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_DEBUGLOG_BASE,
-                        1,
-                        b"debuglog",
-                    )
-                    .ok()
-            })
-            .map(DebuglogResource::new)
-            .and_then(Result::ok);
-        if let Some(debuglog_resource) = debuglog_resource {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::DebuglogResourceMarker>(
-                move |stream| debuglog_resource.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the HypervisorResource service.
-        let hypervisor_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_HYPERVISOR_BASE,
-                        1,
-                        b"hypervisor",
-                    )
-                    .ok()
-            })
-            .map(HypervisorResource::new)
-            .and_then(Result::ok);
-        if let Some(hypervisor_resource) = hypervisor_resource {
-            root_input_builder
-                .add_builtin_protocol_if_enabled::<fkernel::HypervisorResourceMarker>(
-                    move |stream| hypervisor_resource.clone().serve(stream).boxed(),
-                );
-        }
-
-        // Set up the InfoResource service.
-        let info_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_INFO_BASE,
-                        1,
-                        b"info",
-                    )
-                    .ok()
-            })
-            .map(InfoResource::new)
-            .and_then(Result::ok);
-        if let Some(info_resource) = info_resource {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::InfoResourceMarker>(
-                move |stream| info_resource.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the IommuResource service.
-        let iommu_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_IOMMU_BASE,
-                        1,
-                        b"iommu",
-                    )
-                    .ok()
-            })
-            .map(IommuResource::new)
-            .and_then(Result::ok);
-        if let Some(iommu_resource) = iommu_resource {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::IommuResourceMarker>(
-                move |stream| iommu_resource.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the MexecResource service.
-        let mexec_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_MEXEC_BASE,
-                        1,
-                        b"mexec",
-                    )
-                    .ok()
-            })
-            .map(MexecResource::new)
-            .and_then(Result::ok);
-        if let Some(mexec_resource) = mexec_resource {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::MexecResourceMarker>(
-                move |stream| mexec_resource.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the MsiResource service.
-        let msi_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_MSI_BASE,
-                        1,
-                        b"msi",
-                    )
-                    .ok()
-            })
-            .map(MsiResource::new)
-            .and_then(Result::ok);
-        if let Some(msi_resource) = msi_resource {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::MsiResourceMarker>(
-                move |stream| msi_resource.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the PowerResource service.
-        let power_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_POWER_BASE,
-                        1,
-                        b"power",
-                    )
-                    .ok()
-            })
-            .map(PowerResource::new)
-            .and_then(Result::ok);
-        if let Some(power_resource) = power_resource {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::PowerResourceMarker>(
-                move |stream| power_resource.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the ProfileResource service.
-        let profile_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_PROFILE_BASE,
-                        1,
-                        b"profile",
-                    )
-                    .ok()
-            })
-            .map(ProfileResource::new)
-            .and_then(Result::ok);
-        if let Some(profile_resource) = profile_resource {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::ProfileResourceMarker>(
-                move |stream| profile_resource.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the StallResource service.
-        let stall_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_STALL_BASE,
-                        1,
-                        b"stall",
-                    )
-                    .ok()
-            })
-            .map(StallResource::new)
-            .and_then(Result::ok);
-        if let Some(stall_resource) = stall_resource {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::StallResourceMarker>(
-                move |stream| stall_resource.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the SamplingResource service.
-        let sampling_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_SAMPLING_BASE,
-                        1,
-                        b"sampling",
-                    )
-                    .ok()
-            })
-            .map(SamplingResource::new)
-            .and_then(Result::ok);
-        if let Some(sampling_resource) = sampling_resource {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::SamplingResourceMarker>(
-                move |stream| sampling_resource.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the TracingResource service.
-        let tracing_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_TRACING_BASE,
-                        1,
-                        b"tracing",
-                    )
-                    .ok()
-            })
-            .map(TracingResource::new)
-            .and_then(Result::ok);
-        if let Some(tracing_resource) = tracing_resource {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::TracingResourceMarker>(
-                move |stream| tracing_resource.clone().serve(stream).boxed(),
-            );
-        }
-
-        // Set up the VmexResource service.
-        let vmex_resource = system_resource_handle
-            .as_ref()
-            .and_then(|handle| {
-                handle
-                    .create_child(
-                        zx::ResourceKind::SYSTEM,
-                        None,
-                        zx::sys::ZX_RSRC_SYSTEM_VMEX_BASE,
-                        1,
-                        b"vmex",
-                    )
-                    .ok()
-            })
-            .map(VmexResource::new)
-            .and_then(Result::ok);
-        if let Some(vmex_resource) = vmex_resource {
-            root_input_builder.add_builtin_protocol_if_enabled::<fkernel::VmexResourceMarker>(
-                move |stream| vmex_resource.clone().serve(stream).boxed(),
             );
         }
 
@@ -1155,43 +720,18 @@ impl BuiltinEnvironment {
         let root_component_input = root_input_builder.build();
         let model = Model::new(params, root_component_input.clone()).await?;
 
-        let event_logger = if runtime_config.log_all_events {
-            let event_logger = Arc::new(EventLogger::new());
-            model.root().hooks.install(event_logger.hooks());
-            Some(event_logger)
-        } else {
-            None
-        };
-
         // Set up the root realm stop notifier.
-        let stop_notifier = Arc::new(RootStopNotifier::new());
-        model.root().hooks.install(stop_notifier.hooks());
 
         // Set up the Component Tree Diagnostics runtime statistics.
         let inspector = model.context().inspector();
-        let component_tree_stats = ComponentTreeStats::new(inspector.root().create_child("stats"));
-        component_tree_stats.track_component_manager_stats();
-        component_tree_stats.start_measuring();
-        model.root().hooks.install(component_tree_stats.hooks());
 
-        let component_lifecycle_time_stats =
-            Arc::new(ComponentLifecycleTimeStats::new(inspector.root().create_child("lifecycle")));
-        model.root().hooks.install(component_lifecycle_time_stats.hooks());
-
-        let component_escrow_duration_status = Arc::new(::diagnostics::escrow::DurationStats::new(
-            inspector.root().create_child("escrow"),
-        ));
-        model.root().hooks.install(component_escrow_duration_status.hooks());
-
-        let component_id_index_node = inspector.root().create_child("component_id_index");
-        for instance in model.component_id_index().iter() {
-            component_id_index_node
-                .record_string(instance.moniker.to_string(), instance.instance_id.to_string());
-        }
-        inspector.root().record(component_id_index_node);
-
-        // Serve stats about inspect in a lazy node.
-        inspector.record_lazy_stats();
+        let (
+            event_logger,
+            stop_notifier,
+            component_tree_stats,
+            component_lifecycle_time_stats,
+            component_escrow_duration_status,
+        ) = install_model_hooks(&model, &runtime_config, &inspector);
 
         Ok(BuiltinEnvironment {
             model,
@@ -1418,6 +958,515 @@ impl BuiltinEnvironment {
             }
             Err(e) => info!("Unable to open Registry server for tracing: {}", e),
         }
+    }
+}
+
+fn install_model_hooks(
+    model: &Model,
+    runtime_config: &RuntimeConfig,
+    inspector: &Inspector,
+) -> (
+    Option<Arc<EventLogger>>,
+    Arc<RootStopNotifier>,
+    Arc<ComponentTreeStats<DiagnosticsTask>>,
+    Arc<ComponentLifecycleTimeStats>,
+    Arc<::diagnostics::escrow::DurationStats>,
+) {
+    let event_logger = if runtime_config.log_all_events {
+        let event_logger = Arc::new(EventLogger::new());
+        model.root().hooks.install(event_logger.hooks());
+        Some(event_logger)
+    } else {
+        None
+    };
+
+    let stop_notifier = Arc::new(RootStopNotifier::new());
+    model.root().hooks.install(stop_notifier.hooks());
+
+    let component_tree_stats = ComponentTreeStats::new(inspector.root().create_child("stats"));
+
+    component_tree_stats.track_component_manager_stats();
+    component_tree_stats.start_measuring();
+    model.root().hooks.install(component_tree_stats.hooks());
+
+    let component_lifecycle_time_stats =
+        Arc::new(ComponentLifecycleTimeStats::new(inspector.root().create_child("lifecycle")));
+    model.root().hooks.install(component_lifecycle_time_stats.hooks());
+
+    let component_escrow_duration_status = Arc::new(::diagnostics::escrow::DurationStats::new(
+        inspector.root().create_child("escrow"),
+    ));
+    model.root().hooks.install(component_escrow_duration_status.hooks());
+
+    let component_id_index_node = inspector.root().create_child("component_id_index");
+    for instance in model.component_id_index().iter() {
+        component_id_index_node
+            .record_string(instance.moniker.to_string(), instance.instance_id.to_string());
+    }
+    inspector.root().record(component_id_index_node);
+
+    // Serve stats about inspect in a lazy node.
+    inspector.record_lazy_stats();
+
+    (
+        event_logger,
+        stop_notifier,
+        component_tree_stats,
+        component_lifecycle_time_stats,
+        component_escrow_duration_status,
+    )
+}
+
+fn parse_zbi(zbi_vmo_handle: Option<zx::Vmo>) -> Result<Option<ZbiParser>, Error> {
+    let zbi_parser = match zbi_vmo_handle {
+        Some(zbi_vmo) => Some(
+            ZbiParser::new(zbi_vmo)
+                .set_store_item(ZbiType::Cmdline)
+                .set_store_item(ZbiType::ImageArgs)
+                .set_store_item(ZbiType::Crashlog)
+                .set_store_item(ZbiType::KernelDriver)
+                .set_store_item(ZbiType::PlatformId)
+                .set_store_item(ZbiType::StorageBootfsFactory)
+                .set_store_item(ZbiType::StorageRamdisk)
+                .set_store_item(ZbiType::SerialNumber)
+                .set_store_item(ZbiType::BootloaderFile)
+                .set_store_item(ZbiType::DeviceTree)
+                .set_store_item(ZbiType::DriverMetadata)
+                .set_store_item(ZbiType::CpuTopology)
+                .set_store_item(ZbiType::AcpiRsdp)
+                .set_store_item(ZbiType::Smbios)
+                .set_store_item(ZbiType::Framebuffer)
+                .parse()?,
+        ),
+        None => None,
+    };
+    Ok(zbi_parser)
+}
+
+fn setup_factory_and_items(
+    builder: &mut RootInputBuilder,
+    zbi_parser: Option<ZbiParser>,
+) -> Result<(), Error> {
+    if let Some(mut inner_parser) = zbi_parser {
+        let factory_items = FactoryItems::new(&mut inner_parser)?;
+        builder.add_builtin_protocol_if_enabled::<fboot::FactoryItemsMarker>(move |stream| {
+            factory_items.clone().serve(stream).boxed()
+        });
+
+        let items = Items::new(inner_parser)?;
+        builder.add_builtin_protocol_if_enabled::<fboot::ItemsMarker>(move |stream| {
+            items.clone().serve(stream).boxed()
+        });
+    }
+    Ok(())
+}
+
+fn setup_kernel_resources(
+    root_input_builder: &mut RootInputBuilder,
+    system_resource_handle: Option<&Resource>,
+) {
+    // Set up KernelStats service.
+    let info_resource_handle = system_resource_handle
+        .as_ref()
+        .map(|handle| {
+            match handle.create_child(
+                zx::ResourceKind::SYSTEM,
+                None,
+                zx::sys::ZX_RSRC_SYSTEM_INFO_BASE,
+                1,
+                b"info",
+            ) {
+                Ok(resource) => Some(resource),
+                Err(_) => None,
+            }
+        })
+        .flatten();
+    if let Some(kernel_stats) = info_resource_handle.map(KernelStats::new) {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::StatsMarker>(move |stream| {
+            kernel_stats.clone().serve(stream).boxed()
+        });
+    }
+
+    // Set up the ReadOnlyLog service.
+    let debuglog_resource = system_resource_handle
+        .as_ref()
+        .map(|handle| {
+            match handle.create_child(
+                zx::ResourceKind::SYSTEM,
+                None,
+                zx::sys::ZX_RSRC_SYSTEM_DEBUGLOG_BASE,
+                1,
+                b"debuglog",
+            ) {
+                Ok(resource) => Some(resource),
+                Err(_) => None,
+            }
+        })
+        .flatten();
+
+    if let Some(debuglog_resource) = debuglog_resource {
+        let read_only_log = ReadOnlyLog::new(debuglog_resource);
+
+        root_input_builder.add_builtin_protocol_if_enabled::<fboot::ReadOnlyLogMarker>(
+            move |stream| read_only_log.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up WriteOnlyLog service.
+    let debuglog_resource = system_resource_handle
+        .as_ref()
+        .map(|handle| {
+            match handle.create_child(
+                zx::ResourceKind::SYSTEM,
+                None,
+                zx::sys::ZX_RSRC_SYSTEM_DEBUGLOG_BASE,
+                1,
+                b"debuglog",
+            ) {
+                Ok(resource) => Some(resource),
+                Err(_) => None,
+            }
+        })
+        .flatten();
+
+    if let Some(debuglog_resource) = debuglog_resource {
+        let write_only_log = WriteOnlyLog::new(
+            zx::DebugLog::create(&debuglog_resource, zx::DebugLogOpts::empty()).unwrap(),
+        );
+
+        root_input_builder.add_builtin_protocol_if_enabled::<fboot::WriteOnlyLogMarker>(
+            move |stream| write_only_log.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the CpuResource service.
+    let cpu_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_CPU_BASE,
+                    1,
+                    b"cpu",
+                )
+                .ok()
+        })
+        .map(CpuResource::new)
+        .and_then(Result::ok);
+    if let Some(cpu_resource) = cpu_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::CpuResourceMarker>(
+            move |stream| cpu_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the EnergyInfoResource service.
+    let energy_info_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_ENERGY_INFO_BASE,
+                    1,
+                    b"energy_info",
+                )
+                .ok()
+        })
+        .map(EnergyInfoResource::new)
+        .and_then(Result::ok);
+    if let Some(energy_info_resource) = energy_info_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::EnergyInfoResourceMarker>(
+            move |stream| energy_info_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the DebugResource service.
+    let debug_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_DEBUG_BASE,
+                    1,
+                    b"debug",
+                )
+                .ok()
+        })
+        .map(DebugResource::new)
+        .and_then(Result::ok);
+    if let Some(debug_resource) = debug_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::DebugResourceMarker>(
+            move |stream| debug_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the DebuglogResource service.
+    let debuglog_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_DEBUGLOG_BASE,
+                    1,
+                    b"debuglog",
+                )
+                .ok()
+        })
+        .map(DebuglogResource::new)
+        .and_then(Result::ok);
+    if let Some(debuglog_resource) = debuglog_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::DebuglogResourceMarker>(
+            move |stream| debuglog_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the HypervisorResource service.
+    let hypervisor_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_HYPERVISOR_BASE,
+                    1,
+                    b"hypervisor",
+                )
+                .ok()
+        })
+        .map(HypervisorResource::new)
+        .and_then(Result::ok);
+    if let Some(hypervisor_resource) = hypervisor_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::HypervisorResourceMarker>(
+            move |stream| hypervisor_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the InfoResource service.
+    let info_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_INFO_BASE,
+                    1,
+                    b"info",
+                )
+                .ok()
+        })
+        .map(InfoResource::new)
+        .and_then(Result::ok);
+    if let Some(info_resource) = info_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::InfoResourceMarker>(
+            move |stream| info_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the IommuResource service.
+    let iommu_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_IOMMU_BASE,
+                    1,
+                    b"iommu",
+                )
+                .ok()
+        })
+        .map(IommuResource::new)
+        .and_then(Result::ok);
+    if let Some(iommu_resource) = iommu_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::IommuResourceMarker>(
+            move |stream| iommu_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the MexecResource service.
+    let mexec_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_MEXEC_BASE,
+                    1,
+                    b"mexec",
+                )
+                .ok()
+        })
+        .map(MexecResource::new)
+        .and_then(Result::ok);
+    if let Some(mexec_resource) = mexec_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::MexecResourceMarker>(
+            move |stream| mexec_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the MsiResource service.
+    let msi_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_MSI_BASE,
+                    1,
+                    b"msi",
+                )
+                .ok()
+        })
+        .map(MsiResource::new)
+        .and_then(Result::ok);
+    if let Some(msi_resource) = msi_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::MsiResourceMarker>(
+            move |stream| msi_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the PowerResource service.
+    let power_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_POWER_BASE,
+                    1,
+                    b"power",
+                )
+                .ok()
+        })
+        .map(PowerResource::new)
+        .and_then(Result::ok);
+    if let Some(power_resource) = power_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::PowerResourceMarker>(
+            move |stream| power_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the ProfileResource service.
+    let profile_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_PROFILE_BASE,
+                    1,
+                    b"profile",
+                )
+                .ok()
+        })
+        .map(ProfileResource::new)
+        .and_then(Result::ok);
+    if let Some(profile_resource) = profile_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::ProfileResourceMarker>(
+            move |stream| profile_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the StallResource service.
+    let stall_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_STALL_BASE,
+                    1,
+                    b"stall",
+                )
+                .ok()
+        })
+        .map(StallResource::new)
+        .and_then(Result::ok);
+    if let Some(stall_resource) = stall_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::StallResourceMarker>(
+            move |stream| stall_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the SamplingResource service.
+    let sampling_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_SAMPLING_BASE,
+                    1,
+                    b"sampling",
+                )
+                .ok()
+        })
+        .map(SamplingResource::new)
+        .and_then(Result::ok);
+    if let Some(sampling_resource) = sampling_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::SamplingResourceMarker>(
+            move |stream| sampling_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the TracingResource service.
+    let tracing_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_TRACING_BASE,
+                    1,
+                    b"tracing",
+                )
+                .ok()
+        })
+        .map(TracingResource::new)
+        .and_then(Result::ok);
+    if let Some(tracing_resource) = tracing_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::TracingResourceMarker>(
+            move |stream| tracing_resource.clone().serve(stream).boxed(),
+        );
+    }
+
+    // Set up the VmexResource service.
+    let vmex_resource = system_resource_handle
+        .as_ref()
+        .and_then(|handle| {
+            handle
+                .create_child(
+                    zx::ResourceKind::SYSTEM,
+                    None,
+                    zx::sys::ZX_RSRC_SYSTEM_VMEX_BASE,
+                    1,
+                    b"vmex",
+                )
+                .ok()
+        })
+        .map(VmexResource::new)
+        .and_then(Result::ok);
+    if let Some(vmex_resource) = vmex_resource {
+        root_input_builder.add_builtin_protocol_if_enabled::<fkernel::VmexResourceMarker>(
+            move |stream| vmex_resource.clone().serve(stream).boxed(),
+        );
     }
 }
 
