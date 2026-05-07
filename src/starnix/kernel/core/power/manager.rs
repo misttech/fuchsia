@@ -369,13 +369,16 @@ impl Default for SuspendResumeManager {
             async move {
                 let inspector = fuchsia_inspect::Inspector::default();
                 let root = inspector.root();
-                let mut message_counters = message_counters_clone.lock();
-                message_counters.retain(|c| c.0.upgrade().is_some());
+                let message_counters = message_counters_clone.lock();
+                let active_counter_names: Vec<String> = message_counters
+                    .iter()
+                    .filter_map(|c| c.0.upgrade())
+                    .map(|c| c.to_string())
+                    .collect();
                 let message_counters_inspect =
-                    root.create_string_array("message_counters", message_counters.len());
-                for (i, c) in message_counters.iter().enumerate() {
-                    let counter = c.0.upgrade().expect("lost counter should be retained");
-                    message_counters_inspect.set(i, counter.to_string());
+                    root.create_string_array("message_counters", active_counter_names.len());
+                for (i, name) in active_counter_names.iter().enumerate() {
+                    message_counters_inspect.set(i, name);
                 }
                 root.record(message_counters_inspect);
                 Ok(inspector)
