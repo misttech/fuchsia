@@ -140,3 +140,15 @@ type AllowlistEntry struct {
 	Description string   `json:"description,omitempty"`
 	Paths       []string `json:"paths"` // Paths to allowed projects/files
 }
+
+const (
+	PolicyCheckAllLicenseTextsMustBeRecognized                     = "AllLicenseTextsMustBeRecognized"
+	PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders = "AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders"
+	PolicyCheckAllProjectsMustHaveALicense                         = "AllProjectsMustHaveALicense"
+)
+
+var ValidPolicyChecks = map[string]bool{
+	PolicyCheckAllLicenseTextsMustBeRecognized:                     true,
+	PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders: true,
+	PolicyCheckAllProjectsMustHaveALicense:                         true,
+}

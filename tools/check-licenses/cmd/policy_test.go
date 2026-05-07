@@ -199,3 +199,24 @@ func TestPolicyCommand_Execute_RelativePathFromSubdir(t *testing.T) {
 		t.Errorf("Expected config file to be created at %s", expectedConfigPath)
 	}
 }
+
+func TestPolicyCommand_Execute_InvalidCheckName(t *testing.T) {
+	tempDir := t.TempDir()
+
+	origEnv := os.Getenv("FUCHSIA_DIR")
+	os.Setenv("FUCHSIA_DIR", tempDir)
+	defer os.Setenv("FUCHSIA_DIR", origEnv)
+
+	cmd := &PolicyCommand{
+		fuchsiaDir: tempDir,
+	}
+
+	ctx := context.Background()
+	f := flag.NewFlagSet("test_invalid_check", flag.ContinueOnError)
+	cmd.SetFlags(f)
+	f.Parse([]string{"-bug", "b/123", "add", "InvalidCheckName", "src/foo/bar"})
+
+	if status := cmd.Execute(ctx, f); status != subcommands.ExitUsageError {
+		t.Errorf("Expected ExitUsageError for invalid check name, got %v", status)
+	}
+}

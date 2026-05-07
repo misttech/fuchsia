@@ -59,6 +59,14 @@ func (p *PolicyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 	}
 
 	checkName := f.Arg(1)
+	if !v2config.ValidPolicyChecks[checkName] {
+		var validChecks []string
+		for k := range v2config.ValidPolicyChecks {
+			validChecks = append(validChecks, k)
+		}
+		fmt.Fprintf(os.Stderr, "Error: invalid check name %q. Must be one of: %s\n", checkName, strings.Join(validChecks, ", "))
+		return subcommands.ExitUsageError
+	}
 	targetPath := filepath.Clean(f.Arg(2))
 
 	if err := AddPolicyException(p.fuchsiaDir, checkName, targetPath, p.bug, p.description); err != nil {
