@@ -59,6 +59,10 @@ Resulting product is not supported and may misbehave!
     {
         product_config.platform.ui.enable_experimental_dso = true;
     }
+    #[cfg(feature = "experimental_memory_opt")]
+    {
+        product_config.platform.kernel.oom.experimental_expand_memory_stall = true;
+    }
 
     let mut board_config =
         BoardConfig::from_dir(&board_config).context("Reading board configuration")?;

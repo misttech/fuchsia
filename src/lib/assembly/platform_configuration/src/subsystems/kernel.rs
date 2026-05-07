@@ -70,6 +70,9 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
         if let Some(hysteresis_sec) = kernel_config.oom.hysteresis_seconds {
             builder.kernel_arg(KernelArg::OomHysteresisSeconds(hysteresis_sec));
         }
+        if kernel_config.oom.experimental_expand_memory_stall {
+            builder.kernel_arg(KernelArg::OomExperimentalExpandMemoryStall(true));
+        }
         match (&context.board_config.kernel.serial_mode, &context.build_type) {
             (SerialMode::NoOutput, &BuildType::User) => {
                 builder.kernel_arg(KernelArg::Serial("none".to_string()))

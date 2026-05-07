@@ -42,6 +42,8 @@
 ?kernel.oom.evict-with-min-target=true
 ?kernel.oom.eviction-delay-ms=*
 ?kernel.oom.eviction-delta-at-oom-mb=*
+?kernel.oom.experimental_expand_memory_stall=false
+?kernel.oom.experimental_expand_memory_stall=true
 ?kernel.oom.hysteresis-seconds=*
 ?kernel.oom.imminent-oom-delta-mb=*
 ?kernel.oom.outofmemory-mb=*

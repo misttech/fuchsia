@@ -339,6 +339,16 @@ bool waited_too_long(uint32_t waited) {
 
 zx_status_t PagerProxy::WaitOnEvent(Event* event, bool suspendable) {
   ThreadDispatcher::AutoBlocked by(ThreadDispatcher::Blocked::PAGER);
+  ktl::optional<ScopedMemoryStall> memory_stall;
+  if (BootOptions::Get()->experimental_expand_memory_stall) {
+    // Note: This counts *all* pager waits as stalls, not just ones resulting from a refault (which
+    // is what Linux measures). This can result in false positives, e.g. during boot or app launch
+    // when there is a lot of pager activity, we might incorrectly conclude that there is a memory
+    // stall even in the absence of memory pressure. However, incorporating this distinction
+    // involves non trivial complexity so as an approximation for now just count every pager wait.
+    // See https://fxbug.dev/508774420
+    memory_stall.emplace();
+  }
   kcounter_add(dispatcher_pager_total_request_count, 1);
   uint32_t waited = 0;
   // Ignore the suspend signal if not suspendable.

@@ -976,6 +976,12 @@ both needs the behavior, and for which the feature is sufficiently stable to
 enable it.
 )""")
 
+DEFINE_OPTION("kernel.oom.experimental_expand_memory_stall", bool, experimental_expand_memory_stall, {false}, R"""(
+When true, expands memory stall measurements to include decompression time and
+time spent waiting for user pagers. This brings Zircon's stall metrics closer to
+Linux's PSI (Pressure Stall Information) semantics.
+)""")
+
 // Machine-specific options are included here for all the kernel places.
 // In the generator program, they're included separately.
 

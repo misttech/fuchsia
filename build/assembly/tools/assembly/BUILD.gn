@@ -13,6 +13,10 @@ declare_args() {
   # This flag exists to support experimental dso builders, for more information
   # see https://fxbug.dev/403545512
   experimental_dso_enabled = false
+
+  # If true, experimental memory optimization features like the
+  # `kernel.oom.experimental_expand_memory_stall` kernel argument will be enabled.
+  experimental_mem_enabled = false
 }
 
 rustc_binary("assembly") {
@@ -22,6 +26,9 @@ rustc_binary("assembly") {
   features = []
   if (experimental_dso_enabled) {
     features += [ "experimental_dso" ]
+  }
+  if (experimental_mem_enabled) {
+    features += [ "experimental_memory_opt" ]
   }
 
   deps = [

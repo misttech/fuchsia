@@ -297,6 +297,10 @@ pub struct OomConfig {
     /// Hysteresis interval (in seconds) between memory pressure state transitions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hysteresis_seconds: Option<u32>,
+
+    /// (Experimental) If true, enable expanded memory stall metrics.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub experimental_expand_memory_stall: bool,
 }
 
 impl Default for OomConfig {
@@ -314,6 +318,7 @@ impl Default for OomConfig {
             imminent_oom_delta_mb: None,
             debounce_mb: None,
             hysteresis_seconds: None,
+            experimental_expand_memory_stall: false,
         }
     }
 }

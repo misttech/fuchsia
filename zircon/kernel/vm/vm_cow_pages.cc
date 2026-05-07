@@ -942,6 +942,10 @@ void VmCowPages::CacheFree(vm_page_t* p, PmmOptDelayReuse delay_reuse) {
 
 zx_status_t VmCowPages::MakePageFromReference(VmPageOrMarkerRef page_or_mark,
                                               AnonymousPageRequest* page_request) {
+  ktl::optional<ScopedMemoryStall> memory_stall;
+  if (BootOptions::Get()->experimental_expand_memory_stall) {
+    memory_stall.emplace();
+  }
   DEBUG_ASSERT(page_or_mark->IsReference());
   VmCompression* compression = Pmm::Node().GetPageCompression();
   DEBUG_ASSERT(compression);

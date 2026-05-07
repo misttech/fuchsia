@@ -110,6 +110,9 @@ pub enum KernelArg {
     /// state with more free memory; transitions in the opposite direction are not delayed.
     OomHysteresisSeconds(u32),
 
+    /// (Experimental) If true, enable expanded memory stall metrics.
+    OomExperimentalExpandMemoryStall(bool),
+
     /// If this option is set, the system will halt on a kernel panic instead
     /// of rebooting.
     HaltOnPanic(bool),
@@ -294,6 +297,9 @@ impl KernelArg {
             Self::OomImminentOomDeltaMib(i) => ("kernel.oom.imminent-oom-delta-mb", i.to_string()),
             Self::OomDebounceMib(i) => ("kernel.oom.debounce-mb", i.to_string()),
             Self::OomHysteresisSeconds(i) => ("kernel.oom.hysteresis-seconds", i.to_string()),
+            Self::OomExperimentalExpandMemoryStall(b) => {
+                ("kernel.oom.experimental_expand_memory_stall", b.to_string())
+            }
             Self::HaltOnPanic(b) => ("kernel.halt-on-panic", b.to_string()),
             Self::AslrEntropyBits(i) => ("aslr.entropy_bits", i.to_string()),
             Self::CprngSeedRequireJitterEntropy(b) => {
@@ -342,6 +348,7 @@ impl KernelArg {
             | Self::OomEvictAtWarning(_)
             | Self::OomEvictContinuous(_)
             | Self::OomEvictWithMinTarget(_)
+            | Self::OomExperimentalExpandMemoryStall(_)
             | Self::HaltOnPanic(_)
             | Self::PageScannerStartAtBoot(_)
             | Self::PhysVerbose(_)
@@ -424,7 +431,7 @@ impl AddToImage for KernelArg {
             | Self::EnableVirtualHeap(_)
             | Self::HeapMaxSizeMib(_)
             | Self::JitterentropyEntropyPer1000Bytes(_) => true,
-            Self::AllowDebugUartSuspend(_) => false,
+            Self::AllowDebugUartSuspend(_) | Self::OomExperimentalExpandMemoryStall(_) => false,
         }
     }
     fn add_to_userdebug_images(&self) -> bool {
