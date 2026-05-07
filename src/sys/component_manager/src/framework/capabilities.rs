@@ -50,6 +50,7 @@ pub fn serve(
         let default_target = weak_source.into();
         Capabilities { remote_capabilities, weak_scope, default_target, moniker }
             .handle_stream(stream)
+            .boxed()
             .await
     }
     .boxed()
@@ -155,305 +156,300 @@ impl Capabilities {
         mut stream: fruntime::CapabilitiesRequestStream,
     ) -> Result<(), Error> {
         while let Some(Ok(request)) = stream.next().await {
-            match request {
-                fruntime::CapabilitiesRequest::ConnectorCreate {
-                    connector,
-                    receiver_client_end,
-                    responder,
-                    ..
-                } => {
-                    let cap = Connector::new_sendable(RemoteReceiver {
-                        remote_receiver: receiver_client_end.into_proxy(),
-                    });
-                    let res = self.remote_capabilities.store(connector, cap);
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::DirConnectorCreate {
-                    dir_connector,
-                    receiver_client_end,
-                    responder,
-                    ..
-                } => {
-                    let cap = DirConnector::new_sendable(RemoteDirReceiver {
-                        remote_receiver: receiver_client_end.into_proxy(),
-                    });
-                    let res = self.remote_capabilities.store(dir_connector, cap);
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::DictionaryCreate {
-                    dictionary, responder, ..
-                } => {
-                    let res = self.remote_capabilities.store(dictionary, Dictionary::new());
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::DataCreate {
-                    data_handle, data, responder, ..
-                } => {
-                    let data_res = data_from_remote(data);
-                    let res =
-                        data_res.and_then(|data| self.remote_capabilities.store(data_handle, data));
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::ConnectorRouterCreate {
-                    router,
-                    router_client_end,
-                    responder,
-                    ..
-                } => {
-                    let remote_router = Router::<Connector>::new(RemoteRouter::new(
-                        router_client_end.into_proxy(),
-                        self.remote_capabilities.clone(),
-                        self.moniker.clone(),
-                    ));
-                    let res = self.remote_capabilities.store(router, remote_router);
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::DirConnectorRouterCreate {
-                    router,
-                    router_client_end,
-                    responder,
-                    ..
-                } => {
-                    let remote_router = Router::<DirConnector>::new(RemoteRouter::new(
-                        router_client_end.into_proxy(),
-                        self.remote_capabilities.clone(),
-                        self.moniker.clone(),
-                    ));
-                    let res = self.remote_capabilities.store(router, remote_router);
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::DictionaryRouterCreate {
-                    router,
-                    router_client_end,
-                    responder,
-                    ..
-                } => {
-                    let remote_router = Router::<Dictionary>::new(RemoteRouter::new(
-                        router_client_end.into_proxy(),
-                        self.remote_capabilities.clone(),
-                        self.moniker.clone(),
-                    ));
-                    let res = self.remote_capabilities.store(router, remote_router);
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::DataRouterCreate {
-                    router,
-                    router_client_end,
-                    responder,
-                    ..
-                } => {
-                    let remote_router = Router::<Data>::new(RemoteRouter::new(
-                        router_client_end.into_proxy(),
-                        self.remote_capabilities.clone(),
-                        self.moniker.clone(),
-                    ));
-                    let res = self.remote_capabilities.store(router, remote_router);
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::InstanceTokenCreate {
-                    instance_token,
-                    responder,
-                    ..
-                } => {
-                    let res =
-                        self.remote_capabilities.store(instance_token, self.default_target.clone());
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::ConnectorOpen {
-                    connector,
-                    channel,
-                    responder,
-                    ..
-                } => {
-                    let res = self.remote_capabilities.get(connector).map(|c: Connector| {
-                        let _ = c.send(channel);
-                    });
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::DirConnectorOpen { payload, responder, .. } => {
-                    let res = (|| {
-                        let invalid_args = fruntime::CapabilitiesError::InvalidArgs;
-                        let handle = payload.dir_connector.ok_or(invalid_args)?;
-                        let channel = payload.channel.ok_or(invalid_args)?;
-                        let path_str = payload.path.unwrap_or_else(|| ".".to_string());
-                        let path = RelativePath::new(path_str).map_err(|_| invalid_args)?;
-                        let dir_connector: DirConnector = self.remote_capabilities.get(handle)?;
-                        let _ = dir_connector.send(channel, path, payload.flags);
-                        Ok(())
-                    })();
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::DictionaryInsert {
-                    dictionary,
-                    key,
-                    value,
-                    responder,
-                    ..
-                } => {
-                    let res = (|| {
-                        let dictionary: Dictionary = self.remote_capabilities.get(dictionary)?;
-                        let key =
-                            Name::new(key).map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
-                        let value: Capability = self.remote_capabilities.get(value)?;
-                        let _ = dictionary.insert(key, value);
-                        Ok(())
-                    })();
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::DictionaryGet {
-                    dictionary,
-                    key,
-                    value,
-                    responder,
-                    ..
-                } => {
-                    let res = (|| {
-                        let dictionary: Dictionary = self.remote_capabilities.get(dictionary)?;
-                        let key =
-                            Name::new(key).map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
-                        let cap = dictionary
-                            .get(&key)
-                            .ok_or(fruntime::CapabilitiesError::NoSuchCapability)?;
-                        let type_ = capability_as_type(&cap)
-                            .map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
+            self.handle_request(request).boxed().await?;
+        }
+        Ok(())
+    }
+
+    async fn handle_request(&self, request: fruntime::CapabilitiesRequest) -> Result<(), Error> {
+        match request {
+            fruntime::CapabilitiesRequest::ConnectorCreate {
+                connector,
+                receiver_client_end,
+                responder,
+                ..
+            } => {
+                let cap = Connector::new_sendable(RemoteReceiver {
+                    remote_receiver: receiver_client_end.into_proxy(),
+                });
+                let res = self.remote_capabilities.store(connector, cap);
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::DirConnectorCreate {
+                dir_connector,
+                receiver_client_end,
+                responder,
+                ..
+            } => {
+                let cap = DirConnector::new_sendable(RemoteDirReceiver {
+                    remote_receiver: receiver_client_end.into_proxy(),
+                });
+                let res = self.remote_capabilities.store(dir_connector, cap);
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::DictionaryCreate { dictionary, responder, .. } => {
+                let res = self.remote_capabilities.store(dictionary, Dictionary::new());
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::DataCreate { data_handle, data, responder, .. } => {
+                let data_res = data_from_remote(data);
+                let res =
+                    data_res.and_then(|data| self.remote_capabilities.store(data_handle, data));
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::ConnectorRouterCreate {
+                router,
+                router_client_end,
+                responder,
+                ..
+            } => {
+                let remote_router = Router::<Connector>::new(RemoteRouter::new(
+                    router_client_end.into_proxy(),
+                    self.remote_capabilities.clone(),
+                    self.moniker.clone(),
+                ));
+                let res = self.remote_capabilities.store(router, remote_router);
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::DirConnectorRouterCreate {
+                router,
+                router_client_end,
+                responder,
+                ..
+            } => {
+                let remote_router = Router::<DirConnector>::new(RemoteRouter::new(
+                    router_client_end.into_proxy(),
+                    self.remote_capabilities.clone(),
+                    self.moniker.clone(),
+                ));
+                let res = self.remote_capabilities.store(router, remote_router);
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::DictionaryRouterCreate {
+                router,
+                router_client_end,
+                responder,
+                ..
+            } => {
+                let remote_router = Router::<Dictionary>::new(RemoteRouter::new(
+                    router_client_end.into_proxy(),
+                    self.remote_capabilities.clone(),
+                    self.moniker.clone(),
+                ));
+                let res = self.remote_capabilities.store(router, remote_router);
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::DataRouterCreate {
+                router,
+                router_client_end,
+                responder,
+                ..
+            } => {
+                let remote_router = Router::<Data>::new(RemoteRouter::new(
+                    router_client_end.into_proxy(),
+                    self.remote_capabilities.clone(),
+                    self.moniker.clone(),
+                ));
+                let res = self.remote_capabilities.store(router, remote_router);
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::InstanceTokenCreate {
+                instance_token,
+                responder,
+                ..
+            } => {
+                let res =
+                    self.remote_capabilities.store(instance_token, self.default_target.clone());
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::ConnectorOpen {
+                connector, channel, responder, ..
+            } => {
+                let res = self.remote_capabilities.get(connector).map(|c: Connector| {
+                    let _ = c.send(channel);
+                });
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::DirConnectorOpen { payload, responder, .. } => {
+                let res = (|| {
+                    let invalid_args = fruntime::CapabilitiesError::InvalidArgs;
+                    let handle = payload.dir_connector.ok_or(invalid_args)?;
+                    let channel = payload.channel.ok_or(invalid_args)?;
+                    let path_str = payload.path.unwrap_or_else(|| ".".to_string());
+                    let path = RelativePath::new(path_str).map_err(|_| invalid_args)?;
+                    let dir_connector: DirConnector = self.remote_capabilities.get(handle)?;
+                    let _ = dir_connector.send(channel, path, payload.flags);
+                    Ok(())
+                })();
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::DictionaryInsert {
+                dictionary,
+                key,
+                value,
+                responder,
+                ..
+            } => {
+                let res = (|| {
+                    let dictionary: Dictionary = self.remote_capabilities.get(dictionary)?;
+                    let key =
+                        Name::new(key).map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
+                    let value: Capability = self.remote_capabilities.get(value)?;
+                    let _ = dictionary.insert(key, value);
+                    Ok(())
+                })();
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::DictionaryGet {
+                dictionary,
+                key,
+                value,
+                responder,
+                ..
+            } => {
+                let res = (|| {
+                    let dictionary: Dictionary = self.remote_capabilities.get(dictionary)?;
+                    let key =
+                        Name::new(key).map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
+                    let cap = dictionary
+                        .get(&key)
+                        .ok_or(fruntime::CapabilitiesError::NoSuchCapability)?;
+                    let type_ = capability_as_type(&cap)
+                        .map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
+                    self.remote_capabilities.store(value, cap)?;
+                    Ok(type_)
+                })();
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::DictionaryRemove { payload, responder, .. } => {
+                let res = (|| {
+                    let handle =
+                        payload.dictionary.ok_or(fruntime::CapabilitiesError::InvalidArgs)?;
+                    let dictionary: Dictionary = self.remote_capabilities.get(handle)?;
+                    let key = payload.key.ok_or(fruntime::CapabilitiesError::InvalidArgs)?;
+                    let key =
+                        Name::new(key).map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
+                    let cap = dictionary
+                        .remove(&key)
+                        .ok_or(fruntime::CapabilitiesError::NoSuchCapability)?;
+                    let type_ = capability_as_type(&cap)
+                        .map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
+                    if let Some(value) = payload.value {
                         self.remote_capabilities.store(value, cap)?;
-                        Ok(type_)
-                    })();
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::DictionaryRemove { payload, responder, .. } => {
-                    let res = (|| {
-                        let handle =
-                            payload.dictionary.ok_or(fruntime::CapabilitiesError::InvalidArgs)?;
-                        let dictionary: Dictionary = self.remote_capabilities.get(handle)?;
-                        let key = payload.key.ok_or(fruntime::CapabilitiesError::InvalidArgs)?;
-                        let key =
-                            Name::new(key).map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
-                        let cap = dictionary
-                            .remove(&key)
-                            .ok_or(fruntime::CapabilitiesError::NoSuchCapability)?;
-                        let type_ = capability_as_type(&cap)
-                            .map_err(|_| fruntime::CapabilitiesError::InvalidArgs)?;
-                        if let Some(value) = payload.value {
-                            self.remote_capabilities.store(value, cap)?;
-                        }
-                        Ok(type_)
-                    })();
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::DictionaryIterateKeys {
-                    dictionary,
-                    key_iterator,
-                    responder,
-                    ..
-                } => {
-                    let res = (|| {
-                        let dictionary: Dictionary = self.remote_capabilities.get(dictionary)?;
-                        self.weak_scope.spawn(handle_key_iterator_stream(
-                            dictionary,
-                            key_iterator.into_stream(),
-                        ));
-                        Ok(())
-                    })();
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::DataGet { data_handle, responder, .. } => {
-                    match self.remote_capabilities.get(data_handle) {
-                        Ok(data) => {
-                            let _ = responder.send(Ok(&data_to_remote(data)));
-                        }
-                        Err(e) => {
-                            let _ = responder.send(Err(e));
-                        }
+                    }
+                    Ok(type_)
+                })();
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::DictionaryIterateKeys {
+                dictionary,
+                key_iterator,
+                responder,
+                ..
+            } => {
+                let res = (|| {
+                    let dictionary: Dictionary = self.remote_capabilities.get(dictionary)?;
+                    self.weak_scope
+                        .spawn(handle_key_iterator_stream(dictionary, key_iterator.into_stream()));
+                    Ok(())
+                })();
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::DataGet { data_handle, responder, .. } => {
+                match self.remote_capabilities.get(data_handle) {
+                    Ok(data) => {
+                        let _ = responder.send(Ok(&data_to_remote(data)));
+                    }
+                    Err(e) => {
+                        let _ = responder.send(Err(e));
                     }
                 }
-                fruntime::CapabilitiesRequest::CapabilityAssociateHandle {
-                    capability_handle,
-                    other_handle,
-                    responder,
-                    ..
-                } => {
-                    let res = (|| {
-                        let capability: Capability =
-                            self.remote_capabilities.get(capability_handle)?;
-                        self.remote_capabilities.store(other_handle, capability)
-                    })();
-                    let _ = responder.send(res);
-                }
-                fruntime::CapabilitiesRequest::ConnectorRouterRoute {
+            }
+            fruntime::CapabilitiesRequest::CapabilityAssociateHandle {
+                capability_handle,
+                other_handle,
+                responder,
+                ..
+            } => {
+                let res = (|| {
+                    let capability: Capability = self.remote_capabilities.get(capability_handle)?;
+                    self.remote_capabilities.store(other_handle, capability)
+                })();
+                let _ = responder.send(res);
+            }
+            fruntime::CapabilitiesRequest::ConnectorRouterRoute {
+                router,
+                request,
+                instance_token,
+                connector,
+                responder,
+                ..
+            } => {
+                let res = route_from_remote::<Connector>(
+                    &self.remote_capabilities,
                     router,
                     request,
                     instance_token,
                     connector,
-                    responder,
-                    ..
-                } => {
-                    let res = route_from_remote::<Connector>(
-                        &self.remote_capabilities,
-                        router,
-                        request,
-                        instance_token,
-                        connector,
-                    )
-                    .await;
-                    let _ = responder.send(res.map_err(zx::Status::into_raw));
-                }
-                fruntime::CapabilitiesRequest::DirConnectorRouterRoute {
+                )
+                .await;
+                let _ = responder.send(res.map_err(zx::Status::into_raw));
+            }
+            fruntime::CapabilitiesRequest::DirConnectorRouterRoute {
+                router,
+                request,
+                instance_token,
+                dir_connector,
+                responder,
+                ..
+            } => {
+                let res = route_from_remote::<DirConnector>(
+                    &self.remote_capabilities,
                     router,
                     request,
                     instance_token,
                     dir_connector,
-                    responder,
-                    ..
-                } => {
-                    let res = route_from_remote::<DirConnector>(
-                        &self.remote_capabilities,
-                        router,
-                        request,
-                        instance_token,
-                        dir_connector,
-                    )
-                    .await;
-                    let _ = responder.send(res.map_err(zx::Status::into_raw));
-                }
-                fruntime::CapabilitiesRequest::DictionaryRouterRoute {
+                )
+                .await;
+                let _ = responder.send(res.map_err(zx::Status::into_raw));
+            }
+            fruntime::CapabilitiesRequest::DictionaryRouterRoute {
+                router,
+                request,
+                instance_token,
+                dictionary,
+                responder,
+                ..
+            } => {
+                let res = route_from_remote::<Dictionary>(
+                    &self.remote_capabilities,
                     router,
                     request,
                     instance_token,
                     dictionary,
-                    responder,
-                    ..
-                } => {
-                    let res = route_from_remote::<Dictionary>(
-                        &self.remote_capabilities,
-                        router,
-                        request,
-                        instance_token,
-                        dictionary,
-                    )
-                    .await;
-                    let _ = responder.send(res.map_err(zx::Status::into_raw));
-                }
-                fruntime::CapabilitiesRequest::DataRouterRoute {
+                )
+                .await;
+                let _ = responder.send(res.map_err(zx::Status::into_raw));
+            }
+            fruntime::CapabilitiesRequest::DataRouterRoute {
+                router,
+                request,
+                instance_token,
+                data,
+                responder,
+                ..
+            } => {
+                let res = route_from_remote::<Data>(
+                    &self.remote_capabilities,
                     router,
                     request,
                     instance_token,
                     data,
-                    responder,
-                    ..
-                } => {
-                    let res = route_from_remote::<Data>(
-                        &self.remote_capabilities,
-                        router,
-                        request,
-                        instance_token,
-                        data,
-                    )
-                    .await;
-                    let _ = responder.send(res.map_err(zx::Status::into_raw));
-                }
-                request => return Err(format_err!("unknown request type: {request:?}")),
+                )
+                .await;
+                let _ = responder.send(res.map_err(zx::Status::into_raw));
             }
+            request => return Err(format_err!("unknown request type: {request:?}")),
         }
         Ok(())
     }

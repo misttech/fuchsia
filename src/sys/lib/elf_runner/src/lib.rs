@@ -476,6 +476,7 @@ impl ElfRunner {
         let main_process_critical = program_config.main_process_critical;
         let res: Result<ElfComponent, StartComponentError> = self
             .start_component_helper(start_info, Some(checker.scope.clone()), program_config)
+            .boxed()
             .await;
         match res {
             Err(e) if main_process_critical => {

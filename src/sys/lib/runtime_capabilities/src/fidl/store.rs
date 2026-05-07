@@ -8,7 +8,7 @@ use crate::{Capability, Connector, Dictionary, DirConnector, WeakInstanceToken};
 use cm_types::RelativePath;
 use fidl::handle::Signals;
 use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_component_sandbox::{self as fsandbox, CapabilityStoreRequest};
 use fidl_fuchsia_io as fio;
 use fuchsia_async as fasync;
 use futures::{FutureExt, TryStreamExt};
@@ -38,252 +38,250 @@ pub async fn serve_capability_store(
 ) -> Result<(), fidl::Error> {
     let outer_store: Arc<Store> = Arc::new(Store::new(Default::default()));
     while let Some(request) = stream.try_next().await? {
-        let mut store = outer_store.lock().unwrap();
-        match request {
-            fsandbox::CapabilityStoreRequest::Duplicate { id, dest_id, responder } => {
-                let result = (|| {
-                    let cap =
-                        store.get(&id).ok_or(fsandbox::CapabilityStoreError::IdNotFound)?.clone();
-                    insert_capability(&mut store, dest_id, cap)
-                })();
-                responder.send(result)?;
-            }
-            fsandbox::CapabilityStoreRequest::Drop { id, responder } => {
-                let result =
-                    store.remove(&id).map(|_| ()).ok_or(fsandbox::CapabilityStoreError::IdNotFound);
-                responder.send(result)?;
-            }
-            fsandbox::CapabilityStoreRequest::Export { id, responder } => {
-                let result = (|| {
-                    let cap =
-                        store.remove(&id).ok_or(fsandbox::CapabilityStoreError::IdNotFound)?;
-                    Ok(cap.into_fsandbox_capability(token.clone()))
-                })();
-                responder.send(result)?;
-            }
-            fsandbox::CapabilityStoreRequest::Import { id, capability, responder } => {
-                let result = (|| {
-                    let capability = capability
-                        .try_into()
-                        .map_err(|_| fsandbox::CapabilityStoreError::BadCapability)?;
-                    insert_capability(&mut store, id, capability)
-                })();
-                responder.send(result)?;
-            }
-            fsandbox::CapabilityStoreRequest::ConnectorCreate { id, receiver, responder } => {
-                let result = (|| {
-                    let connector = Connector::new_with_fidl_receiver(receiver, receiver_scope);
-                    insert_capability(&mut store, id, Capability::Connector(connector))
-                })();
-                responder.send(result)?;
-            }
-            fsandbox::CapabilityStoreRequest::ConnectorOpen { id, server_end, responder } => {
-                let result = (|| {
-                    let this = get_connector(&store, id)?;
-                    let _ = this.send(server_end);
+        handle_capability_store_request(request, &outer_store, receiver_scope, &token)
+            .boxed()
+            .await?;
+    }
+    Ok(())
+}
+
+async fn handle_capability_store_request(
+    request: CapabilityStoreRequest,
+    outer_store: &Arc<Store>,
+    receiver_scope: &fasync::Scope,
+    token: &WeakInstanceToken,
+) -> Result<(), fidl::Error> {
+    let mut store = outer_store.lock().unwrap();
+    match request {
+        fsandbox::CapabilityStoreRequest::Duplicate { id, dest_id, responder } => {
+            let result = (|| {
+                let cap = store.get(&id).ok_or(fsandbox::CapabilityStoreError::IdNotFound)?.clone();
+                insert_capability(&mut store, dest_id, cap)
+            })();
+            responder.send(result)?;
+        }
+        fsandbox::CapabilityStoreRequest::Drop { id, responder } => {
+            let result =
+                store.remove(&id).map(|_| ()).ok_or(fsandbox::CapabilityStoreError::IdNotFound);
+            responder.send(result)?;
+        }
+        fsandbox::CapabilityStoreRequest::Export { id, responder } => {
+            let result = (|| {
+                let cap = store.remove(&id).ok_or(fsandbox::CapabilityStoreError::IdNotFound)?;
+                Ok(cap.into_fsandbox_capability(token.clone()))
+            })();
+            responder.send(result)?;
+        }
+        fsandbox::CapabilityStoreRequest::Import { id, capability, responder } => {
+            let result = (|| {
+                let capability = capability
+                    .try_into()
+                    .map_err(|_| fsandbox::CapabilityStoreError::BadCapability)?;
+                insert_capability(&mut store, id, capability)
+            })();
+            responder.send(result)?;
+        }
+        fsandbox::CapabilityStoreRequest::ConnectorCreate { id, receiver, responder } => {
+            let result = (|| {
+                let connector = Connector::new_with_fidl_receiver(receiver, receiver_scope);
+                insert_capability(&mut store, id, Capability::Connector(connector))
+            })();
+            responder.send(result)?;
+        }
+        fsandbox::CapabilityStoreRequest::ConnectorOpen { id, server_end, responder } => {
+            let result = (|| {
+                let this = get_connector(&store, id)?;
+                let _ = this.send(server_end);
+                Ok(())
+            })();
+            responder.send(result)?;
+        }
+        fsandbox::CapabilityStoreRequest::DirConnectorCreate { id, receiver, responder } => {
+            let result = (|| {
+                let connector = DirConnector::new_with_fidl_receiver(receiver, receiver_scope);
+                insert_capability(&mut store, id, Capability::DirConnector(connector))
+            })();
+            responder.send(result)?;
+        }
+        fsandbox::CapabilityStoreRequest::DirConnectorOpen { payload, responder } => {
+            let result = (|| {
+                let Some(id) = payload.id else {
+                    return Err(fsandbox::CapabilityStoreError::InvalidArgs);
+                };
+                let Some(server_end) = payload.server_end else {
+                    return Err(fsandbox::CapabilityStoreError::InvalidArgs);
+                };
+                let this = get_dir_connector(&store, id)?;
+                let path = payload
+                    .path
+                    .map(RelativePath::new)
+                    .transpose()
+                    .map_err(|_| fsandbox::CapabilityStoreError::InvalidArgs)?
+                    .unwrap_or_else(|| RelativePath::dot());
+                let _ = this.send(server_end, path, payload.flags);
+                Ok(())
+            })();
+            responder.send(result)?;
+        }
+        fsandbox::CapabilityStoreRequest::DictionaryCreate { id, responder } => {
+            let result =
+                insert_capability(&mut store, id, Capability::Dictionary(Dictionary::new()));
+            responder.send(result)?;
+        }
+        fsandbox::CapabilityStoreRequest::DictionaryLegacyImport { id, client_end, responder } => {
+            let result = (|| {
+                let capability = Dictionary::try_from(client_end)
+                    .map_err(|_| fsandbox::CapabilityStoreError::BadCapability)?
+                    .into();
+                insert_capability(&mut store, id, capability)
+            })();
+            responder.send(result)?;
+        }
+        fsandbox::CapabilityStoreRequest::DictionaryLegacyExport { id, server_end, responder } => {
+            let result = (|| {
+                let cap = store.remove(&id).ok_or(fsandbox::CapabilityStoreError::IdNotFound)?;
+                let Capability::Dictionary(_) = &cap else {
+                    return Err(fsandbox::CapabilityStoreError::WrongType);
+                };
+                let koid = server_end.as_handle_ref().basic_info().unwrap().related_koid;
+                registry::insert(
+                    cap,
+                    koid,
+                    fasync::OnSignals::new(server_end, Signals::OBJECT_PEER_CLOSED).map(|_| ()),
+                );
+                Ok(())
+            })();
+            responder.send(result)?
+        }
+        fsandbox::CapabilityStoreRequest::DictionaryInsert { id, item, responder } => {
+            let result = (|| {
+                let this = get_dictionary(&store, id)?;
+                let this = this.clone();
+                let key =
+                    item.key.parse().map_err(|_| fsandbox::CapabilityStoreError::InvalidKey)?;
+                let value =
+                    store.remove(&item.value).ok_or(fsandbox::CapabilityStoreError::IdNotFound)?;
+                if this.insert(key, value).is_some() {
+                    Err(fsandbox::CapabilityStoreError::ItemAlreadyExists)
+                } else {
                     Ok(())
-                })();
-                responder.send(result)?;
-            }
-            fsandbox::CapabilityStoreRequest::DirConnectorCreate { id, receiver, responder } => {
-                let result = (|| {
-                    let connector = DirConnector::new_with_fidl_receiver(receiver, receiver_scope);
-                    insert_capability(&mut store, id, Capability::DirConnector(connector))
-                })();
-                responder.send(result)?;
-            }
-            fsandbox::CapabilityStoreRequest::DirConnectorOpen { payload, responder } => {
-                let result = (|| {
-                    let Some(id) = payload.id else {
-                        return Err(fsandbox::CapabilityStoreError::InvalidArgs);
-                    };
-                    let Some(server_end) = payload.server_end else {
-                        return Err(fsandbox::CapabilityStoreError::InvalidArgs);
-                    };
-                    let this = get_dir_connector(&store, id)?;
-                    let path = payload
-                        .path
-                        .map(RelativePath::new)
-                        .transpose()
-                        .map_err(|_| fsandbox::CapabilityStoreError::InvalidArgs)?
-                        .unwrap_or_else(|| RelativePath::dot());
-                    let _ = this.send(server_end, path, payload.flags);
-                    Ok(())
-                })();
-                responder.send(result)?;
-            }
-            fsandbox::CapabilityStoreRequest::DictionaryCreate { id, responder } => {
-                let result =
-                    insert_capability(&mut store, id, Capability::Dictionary(Dictionary::new()));
-                responder.send(result)?;
-            }
-            fsandbox::CapabilityStoreRequest::DictionaryLegacyImport {
-                id,
-                client_end,
-                responder,
-            } => {
-                let result = (|| {
-                    let capability = Dictionary::try_from(client_end)
-                        .map_err(|_| fsandbox::CapabilityStoreError::BadCapability)?
-                        .into();
-                    insert_capability(&mut store, id, capability)
-                })();
-                responder.send(result)?;
-            }
-            fsandbox::CapabilityStoreRequest::DictionaryLegacyExport {
-                id,
-                server_end,
-                responder,
-            } => {
-                let result = (|| {
-                    let cap =
-                        store.remove(&id).ok_or(fsandbox::CapabilityStoreError::IdNotFound)?;
-                    let Capability::Dictionary(_) = &cap else {
-                        return Err(fsandbox::CapabilityStoreError::WrongType);
-                    };
-                    let koid = server_end.as_handle_ref().basic_info().unwrap().related_koid;
-                    registry::insert(
-                        cap,
-                        koid,
-                        fasync::OnSignals::new(server_end, Signals::OBJECT_PEER_CLOSED).map(|_| ()),
-                    );
-                    Ok(())
-                })();
-                responder.send(result)?
-            }
-            fsandbox::CapabilityStoreRequest::DictionaryInsert { id, item, responder } => {
-                let result = (|| {
-                    let this = get_dictionary(&store, id)?;
-                    let this = this.clone();
-                    let key =
-                        item.key.parse().map_err(|_| fsandbox::CapabilityStoreError::InvalidKey)?;
-                    let value = store
-                        .remove(&item.value)
-                        .ok_or(fsandbox::CapabilityStoreError::IdNotFound)?;
-                    if this.insert(key, value).is_some() {
-                        Err(fsandbox::CapabilityStoreError::ItemAlreadyExists)
-                    } else {
-                        Ok(())
+                }
+            })();
+            responder.send(result)?;
+        }
+        fsandbox::CapabilityStoreRequest::DictionaryGet { id, key, dest_id, responder } => {
+            let result = (|| {
+                let this = get_dictionary(&store, id)?;
+                let key = Key::new(key).map_err(|_| fsandbox::CapabilityStoreError::InvalidKey)?;
+                let cap = match this.get(&key) {
+                    Some(cap) => Ok(cap),
+                    None => {
+                        this.not_found(key.as_str());
+                        Err(fsandbox::CapabilityStoreError::ItemNotFound)
                     }
-                })();
-                responder.send(result)?;
-            }
-            fsandbox::CapabilityStoreRequest::DictionaryGet { id, key, dest_id, responder } => {
-                let result = (|| {
-                    let this = get_dictionary(&store, id)?;
-                    let key =
-                        Key::new(key).map_err(|_| fsandbox::CapabilityStoreError::InvalidKey)?;
-                    let cap = match this.get(&key) {
-                        Some(cap) => Ok(cap),
-                        None => {
-                            this.not_found(key.as_str());
-                            Err(fsandbox::CapabilityStoreError::ItemNotFound)
-                        }
-                    }?;
-                    insert_capability(&mut store, dest_id, cap)
-                })();
-                responder.send(result)?;
-            }
-            fsandbox::CapabilityStoreRequest::DictionaryRemove { id, key, dest_id, responder } => {
-                let result = (|| {
-                    let this = get_dictionary(&store, id)?;
-                    let key =
-                        Key::new(key).map_err(|_| fsandbox::CapabilityStoreError::InvalidKey)?;
-                    // Check this before removing from the dictionary.
-                    if let Some(dest_id) = dest_id.as_ref() {
-                        if store.contains_key(&dest_id.id) {
-                            return Err(fsandbox::CapabilityStoreError::IdAlreadyExists);
-                        }
+                }?;
+                insert_capability(&mut store, dest_id, cap)
+            })();
+            responder.send(result)?;
+        }
+        fsandbox::CapabilityStoreRequest::DictionaryRemove { id, key, dest_id, responder } => {
+            let result = (|| {
+                let this = get_dictionary(&store, id)?;
+                let key = Key::new(key).map_err(|_| fsandbox::CapabilityStoreError::InvalidKey)?;
+                // Check this before removing from the dictionary.
+                if let Some(dest_id) = dest_id.as_ref() {
+                    if store.contains_key(&dest_id.id) {
+                        return Err(fsandbox::CapabilityStoreError::IdAlreadyExists);
                     }
-                    let cap = match this.remove(&key) {
-                        Some(cap) => Ok(cap.into()),
-                        None => {
-                            this.not_found(key.as_str());
-                            Err(fsandbox::CapabilityStoreError::ItemNotFound)
-                        }
-                    }?;
-                    if let Some(dest_id) = dest_id.as_ref() {
-                        store.insert(dest_id.id, cap);
+                }
+                let cap = match this.remove(&key) {
+                    Some(cap) => Ok(cap.into()),
+                    None => {
+                        this.not_found(key.as_str());
+                        Err(fsandbox::CapabilityStoreError::ItemNotFound)
                     }
-                    Ok(())
-                })();
-                responder.send(result)?;
-            }
-            fsandbox::CapabilityStoreRequest::DictionaryCopy { id, dest_id, responder } => {
-                let result = (|| {
-                    let this = get_dictionary(&store, id)?;
-                    let dict = this.shallow_copy();
-                    insert_capability(&mut store, dest_id, Capability::Dictionary(dict))
-                })();
-                responder.send(result)?
-            }
-            fsandbox::CapabilityStoreRequest::DictionaryKeys {
-                id,
-                iterator: server_end,
-                responder,
-            } => {
-                let result = (|| {
-                    let this = get_dictionary(&store, id)?;
-                    let keys = this.snapshot_keys_as_strings().into_iter();
+                }?;
+                if let Some(dest_id) = dest_id.as_ref() {
+                    store.insert(dest_id.id, cap);
+                }
+                Ok(())
+            })();
+            responder.send(result)?;
+        }
+        fsandbox::CapabilityStoreRequest::DictionaryCopy { id, dest_id, responder } => {
+            let result = (|| {
+                let this = get_dictionary(&store, id)?;
+                let dict = this.shallow_copy();
+                insert_capability(&mut store, dest_id, Capability::Dictionary(dict))
+            })();
+            responder.send(result)?
+        }
+        fsandbox::CapabilityStoreRequest::DictionaryKeys {
+            id,
+            iterator: server_end,
+            responder,
+        } => {
+            let result = (|| {
+                let this = get_dictionary(&store, id)?;
+                let keys = this.snapshot_keys_as_strings().into_iter();
+                let stream = server_end.into_stream();
+                let mut this = this.lock();
+                this.tasks().spawn(serve_dictionary_keys_iterator(keys, stream));
+                Ok(())
+            })();
+            responder.send(result)?
+        }
+        fsandbox::CapabilityStoreRequest::DictionaryEnumerate {
+            id,
+            iterator: server_end,
+            responder,
+        } => {
+            let result = (|| {
+                let this = get_dictionary(&store, id)?;
+                let items = this.enumerate().map(|(k, v)| (k, Ok(v)));
+                let stream = server_end.into_stream();
+                let mut this = this.lock();
+                this.tasks().spawn(serve_dictionary_enumerate_iterator(
+                    Arc::downgrade(&outer_store),
+                    items,
+                    stream,
+                ));
+                Ok(())
+            })();
+            responder.send(result)?
+        }
+        fsandbox::CapabilityStoreRequest::DictionaryDrain {
+            id,
+            iterator: server_end,
+            responder,
+        } => {
+            let result = (|| {
+                let this = get_dictionary(&store, id)?;
+                // Take out entries, replacing with an empty BTreeMap.
+                // They are dropped if the caller does not request an iterator.
+                let items = this.drain();
+                if let Some(server_end) = server_end {
                     let stream = server_end.into_stream();
                     let mut this = this.lock();
-                    this.tasks().spawn(serve_dictionary_keys_iterator(keys, stream));
-                    Ok(())
-                })();
-                responder.send(result)?
-            }
-            fsandbox::CapabilityStoreRequest::DictionaryEnumerate {
-                id,
-                iterator: server_end,
-                responder,
-            } => {
-                let result = (|| {
-                    let this = get_dictionary(&store, id)?;
-                    let items = this.enumerate().map(|(k, v)| (k, Ok(v)));
-                    let stream = server_end.into_stream();
-                    let mut this = this.lock();
-                    this.tasks().spawn(serve_dictionary_enumerate_iterator(
+                    this.tasks().spawn(serve_dictionary_drain_iterator(
                         Arc::downgrade(&outer_store),
                         items,
                         stream,
                     ));
-                    Ok(())
-                })();
-                responder.send(result)?
-            }
-            fsandbox::CapabilityStoreRequest::DictionaryDrain {
-                id,
-                iterator: server_end,
-                responder,
-            } => {
-                let result = (|| {
-                    let this = get_dictionary(&store, id)?;
-                    // Take out entries, replacing with an empty BTreeMap.
-                    // They are dropped if the caller does not request an iterator.
-                    let items = this.drain();
-                    if let Some(server_end) = server_end {
-                        let stream = server_end.into_stream();
-                        let mut this = this.lock();
-                        this.tasks().spawn(serve_dictionary_drain_iterator(
-                            Arc::downgrade(&outer_store),
-                            items,
-                            stream,
-                        ));
-                    }
-                    Ok(())
-                })();
-                responder.send(result)?
-            }
-            fsandbox::CapabilityStoreRequest::CreateServiceAggregate { sources, responder } => {
-                // Store does not use an async-compatible mutex, so we can't hold a MutexGuard for
-                // it across await boundaries. This means we must drop the store MutexGuard before
-                // calling await, or Rust yells at us that the futures are not Send.
-                drop(store);
-                responder.send(create_service_aggregate(token.clone(), sources).await)?;
-            }
-            fsandbox::CapabilityStoreRequest::_UnknownMethod { ordinal, .. } => {
-                warn!("Received unknown CapabilityStore request with ordinal {ordinal}");
-            }
+                }
+                Ok(())
+            })();
+            responder.send(result)?
+        }
+        fsandbox::CapabilityStoreRequest::CreateServiceAggregate { sources, responder } => {
+            // Store does not use an async-compatible mutex, so we can't hold a MutexGuard for
+            // it across await boundaries. This means we must drop the store MutexGuard before
+            // calling await, or Rust yells at us that the futures are not Send.
+            drop(store);
+            responder.send(create_service_aggregate(token.clone(), sources).await)?;
+        }
+        fsandbox::CapabilityStoreRequest::_UnknownMethod { ordinal, .. } => {
+            warn!("Received unknown CapabilityStore request with ordinal {ordinal}");
         }
     }
     Ok(())
