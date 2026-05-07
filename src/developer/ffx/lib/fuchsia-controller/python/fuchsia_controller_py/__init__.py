@@ -2,6 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import atexit
+from concurrent.futures import ThreadPoolExecutor
+
 import fuchsia_controller_internal
 from fuchsia_controller_internal import (
     FcTransportStatus,
@@ -23,7 +26,30 @@ __all__ = [
 ]
 
 from abc import ABC, abstractmethod
-from typing import Self
+from typing import Any, Callable, Self
+
+# This is a placeholder to unblock the main thread from receiving signals in
+# lieu of a more thoroughly implemented async story for the fuchsia-controller
+# ABI.
+EXECUTOR = ThreadPoolExecutor(max_workers=1)
+
+
+def _shutdown_executor() -> None:
+    EXECUTOR.shutdown(wait=True, cancel_futures=True)
+
+
+atexit.register(_shutdown_executor)
+
+
+def _run_in_executor(
+    func: Callable[..., Any], *args: Any, **kwargs: Any
+) -> Any:
+    future = EXECUTOR.submit(func, *args, **kwargs)
+    try:
+        return future.result()
+    except BaseException:
+        future.cancel()
+        raise
 
 
 def connect_handle_notifier() -> int:
@@ -80,7 +106,9 @@ class Handle(BaseHandle):
     def koid(self) -> int:
         if self._handle is None:
             raise ValueError("Handle is already closed")
-        return fuchsia_controller_internal.handle_koid(self._handle)
+        return _run_in_executor(
+            fuchsia_controller_internal.handle_koid, self._handle
+        )
 
     def take(self) -> int:
         if self._handle is None:
@@ -127,7 +155,9 @@ class Socket(BaseHandle):
         """
         if self._socket is None:
             raise ValueError("Socket is already closed")
-        fuchsia_controller_internal.socket_write(self._socket, buffer)
+        _run_in_executor(
+            fuchsia_controller_internal.socket_write, self._socket, buffer
+        )
 
     def read(self) -> bytes:
         """Reads data from the socket."""
@@ -148,7 +178,9 @@ class Socket(BaseHandle):
     def koid(self) -> int:
         if self._socket is None:
             raise ValueError("Socket is already closed")
-        return fuchsia_controller_internal.socket_koid(self._socket)
+        return _run_in_executor(
+            fuchsia_controller_internal.socket_koid, self._socket
+        )
 
     def close(self) -> None:
         self._socket = None
@@ -207,8 +239,11 @@ class Context:
         """
         if self._handle is None:
             raise ValueError("Context is already closed")
-        fuchsia_controller_internal.context_target_wait(
-            self._handle, timeout, offline
+        _run_in_executor(
+            fuchsia_controller_internal.context_target_wait,
+            self._handle,
+            timeout,
+            offline,
         )
 
     def config_get_string(self, key: str) -> str:
@@ -244,8 +279,11 @@ class Context:
         if self._handle is None:
             raise ValueError("Context is already closed")
         return Channel(
-            fuchsia_controller_internal.context_connect_device_proxy(
-                self._handle, moniker, capability_name
+            _run_in_executor(
+                fuchsia_controller_internal.context_connect_device_proxy,
+                self._handle,
+                moniker,
+                capability_name,
             )
         )
 
@@ -258,8 +296,9 @@ class Context:
         if self._handle is None:
             raise ValueError("Context is already closed")
         return Channel(
-            fuchsia_controller_internal.context_connect_remote_control_proxy(
-                self._handle
+            _run_in_executor(
+                fuchsia_controller_internal.context_connect_remote_control_proxy,
+                self._handle,
             )
         )
 
@@ -273,7 +312,10 @@ class Context:
         """
         if self._handle is None:
             raise ValueError("Context is already closed")
-        left, right = fuchsia_controller_internal.channel_create(self._handle)
+        left, right = _run_in_executor(
+            fuchsia_controller_internal.channel_create,
+            self._handle,
+        )
         return (Channel(left), Channel(right))
 
     def event_create_pair(self) -> tuple["Event", "Event"]:
@@ -286,8 +328,8 @@ class Context:
         """
         if self._handle is None:
             raise ValueError("Context is already closed")
-        left, right = fuchsia_controller_internal.event_create_pair(
-            self._handle
+        left, right = _run_in_executor(
+            fuchsia_controller_internal.event_create_pair, self._handle
         )
         return (Event(left), Event(right))
 
@@ -299,7 +341,11 @@ class Context:
         """
         if self._handle is None:
             raise ValueError("Context is already closed")
-        return Event(fuchsia_controller_internal.event_create(self._handle))
+        return Event(
+            _run_in_executor(
+                fuchsia_controller_internal.event_create, self._handle
+            )
+        )
 
     def socket_create(
         self, options: int | None = None
@@ -315,8 +361,8 @@ class Context:
             options = 0
         if self._handle is None:
             raise ValueError("Context is already closed")
-        left, right = fuchsia_controller_internal.socket_create(
-            self._handle, options
+        left, right = _run_in_executor(
+            fuchsia_controller_internal.socket_create, self._handle, options
         )
         return (Socket(left), Socket(right))
 
@@ -381,8 +427,11 @@ class Channel(BaseHandle):
                 for x in handle_desc
             ]
         )
-        return fuchsia_controller_internal.channel_write(
-            self._channel, encoded_fidl_message[0], encoded_handle_dispositions
+        return _run_in_executor(
+            fuchsia_controller_internal.channel_write,
+            self._channel,
+            encoded_fidl_message[0],
+            encoded_handle_dispositions,
         )
 
     def read(self) -> tuple[bytes, list[Handle]]:
@@ -401,7 +450,9 @@ class Channel(BaseHandle):
     def koid(self) -> int:
         if self._channel is None:
             raise ValueError("Channel is already closed")
-        return fuchsia_controller_internal.channel_koid(self._channel)
+        return _run_in_executor(
+            fuchsia_controller_internal.channel_koid, self._channel
+        )
 
     def take(self) -> int:
         if self._channel is None:
@@ -463,8 +514,11 @@ class Event(BaseHandle):
         """Attempts to signal a peer on the other side of this event."""
         if self._event is None:
             raise ValueError("Event is already closed")
-        fuchsia_controller_internal.event_signal_peer(
-            self._event, clear_mask, set_mask
+        _run_in_executor(
+            fuchsia_controller_internal.event_signal_peer,
+            self._event,
+            clear_mask,
+            set_mask,
         )
 
     def as_int(self) -> int:
@@ -475,7 +529,9 @@ class Event(BaseHandle):
     def koid(self) -> int:
         if self._event is None:
             raise ValueError("Event is already closed")
-        return fuchsia_controller_internal.event_koid(self._event)
+        return _run_in_executor(
+            fuchsia_controller_internal.event_koid, self._event
+        )
 
     def take(self) -> int:
         if self._event is None:

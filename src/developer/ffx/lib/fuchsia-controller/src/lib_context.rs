@@ -193,7 +193,7 @@ fn new_command_thread(
                     *notifier.lock().await = None;
                     break;
                 }
-                let cmd_fut = cmd.run();
+                let cmd_fut = Task::local(cmd.run());
                 let _ = futures_lite::FutureExt::or(cmd_fut, async {
                     sigint_receiver.recv().await.unwrap();
                     log::info!("command thread received signal.");

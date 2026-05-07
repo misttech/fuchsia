@@ -160,8 +160,7 @@ class PythonHandle : public PythonObject {
       if (state == nullptr) {
         return;
       }
-      auto ctx = state->ctx;
-      fc_status_t status = ffx_close_handle(ctx, handle_);
+      fc_status_t status = ffx_close_handle(state->ctx, handle_);
       if (status != FC_OK) {
         mod::set_python_exception(status);
         return;
@@ -240,7 +239,7 @@ class PythonSocket : public PythonObject {
       if (state == nullptr) {
         return;
       }
-      fc_status_t status = ffx_close_handle(state->ctx, handle());
+      fc_status_t status = ffx_close_handle(state->ctx, handle_);
       if (status != FC_OK) {
         mod::set_python_exception(status);
         return;
@@ -484,7 +483,12 @@ PyObject *handle_koid_helper(PyObject *self, PyObject *args) {
     return nullptr;
   }
   zx_koid_t out;
-  zx_status_t status = ffx_handle_get_koid(mod::get_module_state()->ctx, handle->handle(), &out);
+  zx_status_t status;
+  auto ctx = mod::get_module_state()->ctx;
+  auto koid_handle = handle->handle();
+  Py_BEGIN_ALLOW_THREADS;
+  status = ffx_handle_get_koid(ctx, koid_handle, &out);
+  Py_END_ALLOW_THREADS;
   if (status != FC_OK) {
     mod::set_python_exception(status);
     return nullptr;
@@ -563,7 +567,11 @@ PyObject *context_connect_remote_control_proxy(PyObject *self, PyObject *args) {
     return nullptr;
   }
   zx_handle_t handle;
-  zx_status_t status = ffx_connect_remote_control_proxy(context->context(), &handle);
+  zx_status_t status;
+  auto ctx = context->context();
+  Py_BEGIN_ALLOW_THREADS;
+  status = ffx_connect_remote_control_proxy(ctx, &handle);
+  Py_END_ALLOW_THREADS;
   if (status != FC_OK) {
     mod::set_python_exception(status);
     return nullptr;
@@ -583,7 +591,11 @@ PyObject *context_connect_device_proxy(PyObject *self, PyObject *args) {
     return nullptr;
   }
   zx_handle_t handle;
-  zx_status_t status = ffx_connect_device_proxy(context->context(), moniker, capability, &handle);
+  zx_status_t status;
+  auto ctx = context->context();
+  Py_BEGIN_ALLOW_THREADS;
+  status = ffx_connect_device_proxy(ctx, moniker, capability, &handle);
+  Py_END_ALLOW_THREADS;
   if (status != FC_OK) {
     mod::set_python_exception(status);
     return nullptr;
@@ -652,7 +664,11 @@ PyObject *context_target_wait(PyObject *self, PyObject *args) {
   if (!context) {
     return nullptr;
   }
-  zx_status_t status = ffx_target_wait(context->context(), timeout_seconds, offline);
+  zx_status_t status;
+  auto ctx = context->context();
+  Py_BEGIN_ALLOW_THREADS;
+  status = ffx_target_wait(ctx, timeout_seconds, offline);
+  Py_END_ALLOW_THREADS;
   if (status != FC_OK) {
     mod::set_python_exception(status);
     return nullptr;
@@ -694,9 +710,14 @@ PyObject *channel_write(PyObject *self, PyObject *args) {
     PyErr_SetString(PyExc_TypeError, "Expected a buffer.");
     return nullptr;
   }
-  zx_status_t status =
-      ffx_channel_write_etc(mod::get_module_state()->ctx, channel->handle(),
-                            static_cast<const char *>(view.buf), view.len, c_handles, handles_len);
+  zx_status_t status;
+  auto buf = static_cast<const char *>(view.buf);
+  auto buf_len = view.len;
+  auto ctx = mod::get_module_state()->ctx;
+  auto ch = channel->handle();
+  Py_BEGIN_ALLOW_THREADS;
+  status = ffx_channel_write_etc(ctx, ch, buf, buf_len, c_handles, handles_len);
+  Py_END_ALLOW_THREADS;
   if (status != FC_OK) {
     PyBuffer_Release(&view);
     mod::set_python_exception(status);
@@ -717,14 +738,32 @@ PyObject *channel_read(PyObject *self, PyObject *args) {
   }
   // This is the max FIDL message size;
   static constexpr uint64_t c_buf_len = 65536;
-  static char c_buf[c_buf_len] = {};
+  char c_buf[c_buf_len];
   static constexpr uint64_t handles_len = 64;
-  static zx_handle_t handles[handles_len] = {};
-  static uint64_t actual_bytes_count = 0;
-  static uint64_t actual_handles_count = 0;
+  zx_handle_t handles[handles_len];
+  uint64_t actual_bytes_count = 0;
+  uint64_t actual_handles_count = 0;
 
-  auto status = ffx_channel_read(mod::get_module_state()->ctx, channel->handle(), c_buf, c_buf_len,
-                                 handles, handles_len, &actual_bytes_count, &actual_handles_count);
+  fc_status_t status;
+  auto ctx = mod::get_module_state()->ctx;
+  auto ch = channel->handle();
+  // This does not release the GIL as this does not block. See src/commands.rs
+  // and src/fdomain.rs for more details. The reason this does not block is:
+  //
+  // -- We do not attempt to take ahold of fdomain_client (from the env context)
+  // -- We only ever poll on the rust Future<> for the channel reads, so the
+  //    only time we return is when the read is ready to receive data.
+  //
+  // For any cases where we could potentially block, FC_ERR_SHOULD_WAIT is
+  // returned and we register a waker that will notify the main Python thread
+  // via a unix pipe that there is an error or data available on this channel.
+  //
+  // All this also applies to socket reads.
+  //
+  // Currently, this function, socket reading, and signal polling are the main
+  // async functions implemented.
+  status = ffx_channel_read(ctx, ch, c_buf, c_buf_len, handles, handles_len, &actual_bytes_count,
+                            &actual_handles_count);
   if (status != FC_OK) {
     mod::set_python_exception(status);
     return nullptr;
@@ -768,8 +807,14 @@ PyObject *socket_write(PyObject *self, PyObject *args) {
     PyErr_SetString(PyExc_TypeError, "Expected a buffer.");
     return nullptr;
   }
-  auto status = ffx_socket_write(mod::get_module_state()->ctx, socket->handle(),
-                                 static_cast<const char *>(view.buf), view.len);
+  fc_status_t status;
+  auto ctx = mod::get_module_state()->ctx;
+  auto sock = socket->handle();
+  auto buf = static_cast<const char *>(view.buf);
+  auto buf_len = view.len;
+  Py_BEGIN_ALLOW_THREADS;
+  status = ffx_socket_write(ctx, sock, buf, buf_len);
+  Py_END_ALLOW_THREADS;
   PyBuffer_Release(&view);
   if (status != FC_OK) {
     mod::set_python_exception(status);
@@ -788,10 +833,14 @@ PyObject *socket_read(PyObject *self, PyObject *args) {
     return nullptr;
   }
   constexpr static uint64_t c_buf_len = 65536;
-  static char c_buf[c_buf_len] = {};
+  char c_buf[c_buf_len];
   uint64_t actual_bytes_count = 0;
-  auto status = ffx_socket_read(mod::get_module_state()->ctx, socket->handle(), c_buf,
-                                sizeof(c_buf), &actual_bytes_count);
+  fc_status_t status;
+  auto ctx = mod::get_module_state()->ctx;
+  auto sock = socket->handle();
+  // This does not block: see the usage of `ffx_channel_read` for comments
+  // explaining why.
+  status = ffx_socket_read(ctx, sock, c_buf, sizeof(c_buf), &actual_bytes_count);
   if (status != FC_OK) {
     mod::set_python_exception(status);
     return nullptr;
@@ -849,7 +898,11 @@ PyObject *socket_create(PyObject *self, PyObject *args) {
   if (!context) {
     return nullptr;
   }
-  auto status = ffx_socket_create(context->context(), options, &socket1, &socket2);
+  fc_status_t status;
+  auto ctx = context->context();
+  Py_BEGIN_ALLOW_THREADS;
+  status = ffx_socket_create(ctx, options, &socket1, &socket2);
+  Py_END_ALLOW_THREADS;
   if (status != FC_OK) {
     mod::set_python_exception(status);
     return nullptr;
@@ -893,7 +946,11 @@ PyObject *channel_create(PyObject *self, PyObject *args) {
   if (context == nullptr) {
     return nullptr;
   }
-  auto status = ffx_channel_create(context->context(), 0, &hdl0, &hdl1);
+  fc_status_t status;
+  auto ctx = context->context();
+  Py_BEGIN_ALLOW_THREADS;
+  status = ffx_channel_create(ctx, 0, &hdl0, &hdl1);
+  Py_END_ALLOW_THREADS;
   if (status != FC_OK) {
     mod::set_python_exception(status);
     return nullptr;
@@ -934,8 +991,11 @@ PyObject *event_signal_peer(PyObject *self, PyObject *args) {
   if (!event) {
     return nullptr;
   }
-  zx_status_t status =
-      ffx_object_signal_peer(mod::get_module_state()->ctx, event->handle(), clear_mask, set_mask);
+  zx_status_t status;
+  auto ctx = mod::get_module_state()->ctx;
+  Py_BEGIN_ALLOW_THREADS;
+  status = ffx_object_signal_peer(ctx, event->handle(), clear_mask, set_mask);
+  Py_END_ALLOW_THREADS;
   if (status != FC_OK) {
     mod::set_python_exception(status);
     return nullptr;
@@ -978,7 +1038,11 @@ PyObject *event_create(PyObject *self, PyObject *args) {
   if (context == nullptr) {
     return nullptr;
   }
-  auto status = ffx_event_create(context->context(), 0, &hdl);
+  fc_status_t status;
+  auto ctx = context->context();
+  Py_BEGIN_ALLOW_THREADS;
+  status = ffx_event_create(ctx, 0, &hdl);
+  Py_END_ALLOW_THREADS;
   if (status != FC_OK) {
     mod::set_python_exception(status);
     return nullptr;
@@ -997,7 +1061,11 @@ PyObject *event_create_pair(PyObject *self, PyObject *args) {
   if (context == nullptr) {
     return nullptr;
   }
-  auto status = ffx_eventpair_create(context->context(), 0, &hdl0, &hdl1);
+  fc_status_t status;
+  auto ctx = context->context();
+  Py_BEGIN_ALLOW_THREADS;
+  status = ffx_eventpair_create(ctx, 0, &hdl0, &hdl1);
+  Py_END_ALLOW_THREADS;
   if (status != FC_OK) {
     mod::set_python_exception(status);
     return nullptr;
