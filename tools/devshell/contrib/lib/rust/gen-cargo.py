@@ -27,6 +27,16 @@ def main():
                               For example: //garnet/bin/foo/bar:baz",
     )
     parser.add_argument(
+        "--host",
+        help="Generate symlinks to the host toolchain variant of the GN target",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--test",
+        help="Generate symlinks to the unit tests variant of the GN target",
+        action="store_true",
+    )
+    parser.add_argument(
         "--output", help="Path to Cargo.toml to generate", required=False
     )
     parser.add_argument("--out-dir", help="Path to the Fuchsia build directory")
@@ -38,6 +48,20 @@ def main():
         output = os.path.abspath(args.output)
     else:
         output = os.path.join(args.gn_target.src_path, "Cargo.toml")
+
+    if args.test:
+        if args.host:
+            args.gn_target = rust.GnTarget(
+                f"{args.gn_target}_test_executable.actual(//build/toolchain:host_x64-novariant)"
+            )
+        else:
+            args.gn_target = rust.GnTarget(
+                f"{args.gn_target}_test_executable.actual"
+            )
+    elif args.host:
+        args.gn_target = rust.GnTarget(
+            f"{args.gn_target}(//build/toolchain:host_x64)"
+        )
 
     manifest_path = args.gn_target.manifest_path(build_dir=build_dir)
     if os.path.exists(manifest_path):
