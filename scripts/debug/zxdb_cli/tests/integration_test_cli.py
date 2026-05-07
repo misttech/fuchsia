@@ -448,6 +448,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             frames = body.get("stackFrames")
             self.assertEqual(len(frames), 1)
             self.assertEqual(frames[0]["name"], "main")
+            self.assertEqual(frames[0]["source"]["name"], "main.cc")
 
             # Stop via CLI
             exit_code = await main(["stop"])

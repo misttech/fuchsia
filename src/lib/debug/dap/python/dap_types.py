@@ -3,8 +3,27 @@
 # found in the LICENSE file.
 
 from dataclasses import dataclass
+from typing import Optional
 
 
+# TODO(https://fxbug.dev/510003272): Support presentationHint.
+@dataclass
+class Source:
+    """A Source is a descriptor for source code.
+
+    Attributes:
+        name: The short name of the source.
+        path: The path of the source to be shown in the UI.
+        sourceReference: If the value > 0 the contents of the source must be
+            retrieved through the `source` request.
+    """
+
+    name: Optional[str] = None
+    path: Optional[str] = None
+    sourceReference: Optional[int] = None
+
+
+# TODO(https://fxbug.dev/510003272): Support presentationHint.
 @dataclass
 class StackFrame:
     """A StackFrame.
@@ -20,12 +39,14 @@ class StackFrame:
             UTF-16 code units and the client capability `columnsStartAt1` determines
             whether it is 0- or 1-based. If attribute `source` is missing or doesn't
             exist, `column` is 0 and should be ignored by the client.
+        source: The source of the frame.
     """
 
     id: int
     name: str
     line: int
     column: int
+    source: Optional[Source] = None
 
 
 @dataclass
