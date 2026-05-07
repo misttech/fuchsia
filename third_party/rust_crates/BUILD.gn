@@ -2062,11 +2062,11 @@ group("smallvec-1.15.1") {
 }
 
 group("socket2") {
-  public_deps = [ ":socket2-v0_5_9" ]
+  public_deps = [ ":socket2-v0_5_10" ]
 }
 
-group("socket2-0.5.9") {
-  public_deps = [ ":socket2-v0_5_9" ]
+group("socket2-0.5.10") {
+  public_deps = [ ":socket2-v0_5_10" ]
 }
 
 if (current_os == "fuchsia") {
@@ -19575,18 +19575,18 @@ rustc_library("smallvec-v1_15_1") {
   applicable_licenses = [ ":smallvec-v1_15_1.license" ]
 }
 
-license("socket2-v0_5_9.license") {
+license("socket2-v0_5_10.license") {
   public_package_name = "socket2"
   license_files = [
-    "//third_party/rust_crates/vendor/socket2-0.5.9/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/socket2-0.5.9/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/socket2-0.5.10/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/socket2-0.5.10/LICENSE-MIT",
   ]
 }
 
-rustc_library("socket2-v0_5_9") {
+rustc_library("socket2-v0_5_10") {
   crate_name = "socket2"
-  source_root = "//third_party/rust_crates/vendor/socket2-0.5.9/src/lib.rs"
-  output_name = "socket2-8876d41c8cffb055"
+  source_root = "//third_party/rust_crates/vendor/socket2-0.5.10/src/lib.rs"
+  output_name = "socket2-707e9761f9ef71a4"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -19604,14 +19604,14 @@ rustc_library("socket2-v0_5_9") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=8876d41c8cffb055",
-    "-Cextra-filename=-8876d41c8cffb055",
+    "-Cmetadata=707e9761f9ef71a4",
+    "-Cextra-filename=-707e9761f9ef71a4",
     "--cfg=feature=\"all\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":socket2-v0_5_9.license" ]
+  applicable_licenses = [ ":socket2-v0_5_10.license" ]
 }
 
 license("spin-v0_9_8.license") {
@@ -21002,7 +21002,7 @@ rustc_library("tokio-v1_38_1") {
     deps += [ ":mio-v0_8_11" ]
     deps += [ ":num_cpus-v1_17_0" ]
     deps += [ ":signal-hook-registry-v1_4_8" ]
-    deps += [ ":socket2-v0_5_9" ]
+    deps += [ ":socket2-v0_5_10" ]
   }
 
   rustenv = []

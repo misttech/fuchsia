@@ -85,7 +85,7 @@ CRATE_ANNOTATIONS = {
                         "//third_party/rust_crates/vendor/mio-0.8.11:mio",
                         "//third_party/rust_crates/vendor/num_cpus-1.17.0:num_cpus",
                         "//third_party/rust_crates/vendor/signal-hook-registry-1.4.8:signal_hook_registry",
-                        "//third_party/rust_crates/vendor/socket2-0.5.9:socket2",
+                        "//third_party/rust_crates/vendor/socket2-0.5.10:socket2",
                     ],
                 },
             ),
