@@ -5,13 +5,37 @@
 import asyncio
 import contextlib
 import json
+import os
+import signal
 import subprocess
 import unittest
 from io import StringIO
+from typing import Any
 
 from cli.cli import main
 from daemon.daemon import UDS_PATH
 from fx_cmd.lib import FxCmd
+from shared.protocol import PROTOCOL_VERSION, HelloRequest, serialize
+
+DAEMON_CLEANUP_TIMEOUT = 5.0
+SOCKET_POLL_RETRIES = 10
+
+
+async def _cleanup_process_group(proc: subprocess.Popen[Any]) -> None:
+    """Kills the process group of the given process."""
+    if proc.poll() is None:
+        try:
+            pgid = os.getpgid(proc.pid)
+            os.killpg(pgid, signal.SIGTERM)
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(proc.wait), timeout=DAEMON_CLEANUP_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                os.killpg(pgid, signal.SIGKILL)
+                proc.wait()
+        except ProcessLookupError:
+            pass
 
 
 class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
@@ -154,6 +178,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
         return server
 
     async def test_daemon_lifecycle(self) -> None:
+        """Tests that the daemon starts and stops correctly."""
         # Find an open port
         temp_server = await asyncio.start_server(
             lambda r, w: None, "127.0.0.1", 0
@@ -177,11 +202,12 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
 
         try:
             # Wait for socket to appear
-            for _ in range(10):
+            for _ in range(SOCKET_POLL_RETRIES):
                 if UDS_PATH.exists():
                     break
                 await asyncio.sleep(0.5)
@@ -203,9 +229,123 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(UDS_PATH.exists(), "Socket file was not deleted")
 
         finally:
-            if proc.poll() is None:
-                proc.terminate()
-                proc.wait()
+            await _cleanup_process_group(proc)
+
+    async def test_daemon_hello(self) -> None:
+        """Tests the versioned hello handshake."""
+
+        async def run_test() -> None:
+            # Find an open port
+            temp_server = await asyncio.start_server(
+                lambda r, w: None, "127.0.0.1", 0
+            )
+            port = temp_server.sockets[0].getsockname()[1]
+            temp_server.close()
+            await temp_server.wait_closed()
+
+            self.fake_dap_server = await self.start_fake_dap_server(port)
+
+            fx_cmd = FxCmd()
+            cmd = fx_cmd.command_line(
+                "zxdb-daemon",
+                "--port",
+                str(port),
+                "--connect-to-existing",
+            )
+            proc = subprocess.Popen(
+                cmd,
+                stdout=None,
+                stderr=None,
+                start_new_session=True,
+            )
+
+            try:
+                # Wait for daemon to create socket
+                for _ in range(SOCKET_POLL_RETRIES):
+                    if UDS_PATH.exists():
+                        break
+                    await asyncio.sleep(0.5)
+                self.assertTrue(
+                    UDS_PATH.exists(), "Socket file was not created"
+                )
+
+                # Test valid version
+                for _ in range(10):
+                    try:
+                        reader, writer = await asyncio.open_unix_connection(
+                            UDS_PATH
+                        )
+                        break
+                    except (ConnectionRefusedError, FileNotFoundError):
+                        await asyncio.sleep(0.5)
+                else:
+                    self.fail("Failed to connect to daemon socket")
+                req = HelloRequest(version=PROTOCOL_VERSION)
+                writer.write(serialize(req).encode("utf-8"))
+                await writer.drain()
+
+                try:
+                    response = await asyncio.wait_for(
+                        reader.readline(), timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    self.fail("Timed out waiting for response from daemon")
+                writer.close()
+                await writer.wait_closed()
+
+                resp_dict = json.loads(response.decode("utf-8"))
+                self.assertTrue(resp_dict.get("success"))
+                self.assertEqual(
+                    resp_dict.get("body", {}).get("protocol_version"),
+                    PROTOCOL_VERSION,
+                )
+
+                # Test invalid version
+                for _ in range(10):
+                    try:
+                        reader, writer = await asyncio.open_unix_connection(
+                            UDS_PATH
+                        )
+                        break
+                    except (ConnectionRefusedError, FileNotFoundError):
+                        await asyncio.sleep(0.5)
+                else:
+                    self.fail("Failed to connect to daemon socket")
+                req = HelloRequest(version=PROTOCOL_VERSION + 1)
+                writer.write(serialize(req).encode("utf-8"))
+                await writer.drain()
+
+                try:
+                    response = await asyncio.wait_for(
+                        reader.readline(), timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    self.fail("Timed out waiting for response from daemon")
+                writer.close()
+                await writer.wait_closed()
+
+                resp_dict = json.loads(response.decode("utf-8"))
+                self.assertFalse(resp_dict.get("success"))
+                self.assertIn("version mismatch", resp_dict.get("message", ""))
+
+            finally:
+                await _cleanup_process_group(proc)
+                if self.fake_dap_server:
+                    self.fake_dap_server.close()
+                    await self.fake_dap_server.wait_closed()
+                    self.fake_dap_server = None
+
+        # Run the test twice to ensure that the daemon can be started and stopped
+        # repeatedly without leaving stale state or leaking resources.
+        try:
+            await asyncio.wait_for(run_test(), timeout=30.0)
+        except asyncio.TimeoutError:
+            self.fail("Test timed out")
+
+        try:
+            await asyncio.wait_for(run_test(), timeout=30.0)
+        except asyncio.TimeoutError:
+            self.fail("Test timed out")
 
     async def test_pause_continue(self) -> None:
         # Find an open port
@@ -231,6 +371,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
 
         try:
@@ -254,9 +395,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(exit_code, 0)
 
         finally:
-            if proc.poll() is None:
-                proc.terminate()
-                proc.wait()
+            await _cleanup_process_group(proc)
 
     async def test_stack_trace(self) -> None:
         # Find an open port
@@ -283,6 +422,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
 
         try:
@@ -314,9 +454,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(exit_code, 0)
 
         finally:
-            if proc.poll() is None:
-                proc.terminate()
-                proc.wait()
+            await _cleanup_process_group(proc)
 
 
 if __name__ == "__main__":

@@ -15,15 +15,18 @@ from ffx_cmd.lib import FfxCmd
 from pydap.client import DapClient
 from pydap.models import (
     ContinueArguments,
+    InitializeArguments,
     PauseArguments,
     StackTraceArguments,
     dataclass_to_dict,
 )
 from shared.protocol import (
+    PROTOCOL_VERSION,
     AttachRequest,
     BaseRequest,
     ContinueRequest,
     GetStateRequest,
+    HelloRequest,
     PauseRequest,
     Response,
     StackTraceRequest,
@@ -125,6 +128,7 @@ class Daemon:
         self.stopped_threads: set[int] = set()
         self.stop_event = asyncio.Event()
         self.shutdown_complete_event = asyncio.Event()
+        self.dap_ready_event = asyncio.Event()
         self.zxdb_writer: asyncio.StreamWriter | None = None
         self.zxdb_reader: asyncio.StreamReader | None = None
         self.port = port
@@ -132,6 +136,7 @@ class Daemon:
         self.dap_proc: AsyncCommand | None = None
 
         self.registry.register("stop", self.handle_stop)
+        self.registry.register("hello", self.handle_hello)
         self.registry.register(
             "get-state",
             self.handle_get_state,
@@ -185,6 +190,30 @@ class Daemon:
     async def handle_stop(self, _req: StopRequest) -> Response:
         self.stop_event.set()
         return Response(success=True, message="Daemon stopping")
+
+    async def handle_hello(self, req: HelloRequest) -> Response:
+        """Handles the hello handshake request.
+
+        Verifies the protocol version and blocks until the DAP server
+        connection is fully initialized.
+        """
+        if req.version != PROTOCOL_VERSION:
+            return Response(
+                success=False,
+                message=f"Protocol version mismatch. CLI version: {req.version}, Daemon version: {PROTOCOL_VERSION}",
+            )
+
+        try:
+            await asyncio.wait_for(self.dap_ready_event.wait(), timeout=10.0)
+        except asyncio.TimeoutError:
+            return Response(
+                success=False,
+                message="Timed out waiting for DAP connection to be ready",
+            )
+
+        return Response(
+            success=True, body={"protocol_version": PROTOCOL_VERSION}
+        )
 
     async def handle_get_state(self, _req: GetStateRequest) -> Response:
         if not self.zxdb_writer:
@@ -351,6 +380,9 @@ class Daemon:
         # Poll for connection to DAP port
         connected = False
         for _ in range(20):
+            if self.stop_event.is_set():
+                print("Stop event set during DAP polling. Exiting.")
+                return 0
             try:
                 (
                     self.zxdb_reader,
@@ -360,10 +392,12 @@ class Daemon:
                 print("Connected to DAP server.")
                 break
             except Exception:
-                await asyncio.sleep(1)
-
-        assert self.zxdb_reader is not None
-        assert self.zxdb_writer is not None
+                try:
+                    await asyncio.wait_for(self.stop_event.wait(), timeout=1.0)
+                    print("Stop event set during DAP polling wait. Exiting.")
+                    return 0
+                except asyncio.TimeoutError:
+                    pass
 
         if not connected:
             print("Failed to connect to DAP server after polling.")
@@ -374,6 +408,9 @@ class Daemon:
             UDS_PATH.unlink(missing_ok=True)
             return 1
 
+        assert self.zxdb_reader is not None
+        assert self.zxdb_writer is not None
+
         # Run DAP client
         self.background_tasks.add(
             asyncio.create_task(
@@ -383,13 +420,11 @@ class Daemon:
 
         self.background_tasks.add(asyncio.create_task(self._process_events()))
 
-        # Initialize DAP
-        from pydap.models import InitializeArguments
-
         await self.dap_client.initialize(
             self.zxdb_writer,
             InitializeArguments(adapterID="zxdb"),
         )
+        self.dap_ready_event.set()
 
         await self.stop_event.wait()
 
@@ -399,6 +434,16 @@ class Daemon:
             )
             for task in pending:
                 task.cancel()
+
+        for task in self.background_tasks:
+            task.cancel()
+
+        if self.zxdb_writer:
+            self.zxdb_writer.close()
+            try:
+                await self.zxdb_writer.wait_closed()
+            except Exception:
+                pass
 
         server.close()
         await server.wait_closed()

@@ -11,5 +11,6 @@ if (is_host) {
       "//scripts/debug/zxdb_cli/cli:cli_lib",
       "//scripts/debug/zxdb_cli/daemon:daemon_lib",
     ]
+    deps = [ "//scripts/debug/zxdb_cli/daemon:install" ]
   }
 }

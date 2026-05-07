@@ -7,13 +7,14 @@ import asyncio
 import json
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import Final
 
 from fx_cmd.lib import FxCmd
 from shared.protocol import (
+    PROTOCOL_VERSION,
     BaseRequest,
+    HelloRequest,
     StartRequest,
     deserialize_request,
     make_request,
@@ -25,6 +26,8 @@ UDS_PATH: Final[Path] = Path("/tmp/fx-debug-daemon.sock")
 
 
 async def main(args: list[str]) -> int:
+    # Define argument parser for the CLI.
+    # It supports a raw JSON input or specific subcommands.
     parser = argparse.ArgumentParser(description="fx debug cli")
     parser.add_argument("--json", help="JSON request string")
     subparsers = parser.add_subparsers(dest="command", required=False)
@@ -71,6 +74,7 @@ async def main(args: list[str]) -> int:
         print("Error: Either --json or a command must be provided")
         return 1
 
+    # Process the parsed arguments and dispatch to commands.
     req: BaseRequest | None = None
     if parsed_args.json:
         try:
@@ -99,7 +103,89 @@ async def main(args: list[str]) -> int:
     return await send_command(req)
 
 
+async def _try_connect_and_handshake() -> bool | None:
+    """Attempts to connect to the UDS and perform handshake.
+
+    Returns:
+        True if handshake succeeded.
+        False if handshake failed (version mismatch or error response).
+        None if connection failed (socket not ready yet).
+    """
+    try:
+        reader, writer = await asyncio.open_unix_connection(UDS_PATH)
+    except (ConnectionRefusedError, FileNotFoundError):
+        return None
+    except Exception as e:
+        print(
+            json.dumps(
+                {
+                    "success": False,
+                    "message": f"Error connecting to daemon: {e}",
+                }
+            )
+        )
+        return False
+
+    try:
+        req = HelloRequest(version=PROTOCOL_VERSION)
+        writer.write(serialize(req).encode("utf-8"))
+        await writer.drain()
+
+        response_line = await reader.readline()
+        writer.close()
+        await writer.wait_closed()
+
+        if not response_line:
+            print(
+                json.dumps(
+                    {
+                        "success": False,
+                        "message": "No response received during handshake",
+                    }
+                )
+            )
+            return False
+
+        resp_dict = json.loads(response_line.decode("utf-8"))
+        if not resp_dict.get("success"):
+            print(
+                json.dumps(
+                    {
+                        "success": False,
+                        "message": f"Handshake failed: {resp_dict.get('message')}",
+                    }
+                )
+            )
+            return False
+
+        body = resp_dict.get("body", {})
+        daemon_version = body.get("protocol_version")
+        if daemon_version != PROTOCOL_VERSION:
+            print(
+                json.dumps(
+                    {
+                        "success": False,
+                        "message": f"Protocol version mismatch. CLI: {PROTOCOL_VERSION}, Daemon: {daemon_version}",
+                    }
+                )
+            )
+            return False
+
+        return True
+    except Exception as e:
+        print(
+            json.dumps(
+                {
+                    "success": False,
+                    "message": f"Error during handshake: {e}",
+                }
+            )
+        )
+        return False
+
+
 async def start_daemon(port: int | None) -> int:
+    """Spawns the daemon process and waits for it to be ready."""
     # Check if a daemon is already running. If the socket file exists, attempt
     # to connect to it to verify if it is active. If the connection is refused,
     # the socket is stale (e.g., from a crash or rapid restart) and can be safely removed.
@@ -108,7 +194,14 @@ async def start_daemon(port: int | None) -> int:
             reader, writer = await asyncio.open_unix_connection(UDS_PATH)
             writer.close()
             await writer.wait_closed()
-            print(f"Daemon socket already exists at {UDS_PATH}")
+            print(
+                json.dumps(
+                    {
+                        "success": False,
+                        "message": f"Daemon socket already exists at {UDS_PATH}",
+                    }
+                )
+            )
             return 1
         except (ConnectionRefusedError, FileNotFoundError):
             UDS_PATH.unlink(missing_ok=True)
@@ -130,14 +223,33 @@ async def start_daemon(port: int | None) -> int:
         )
         print("Spawning daemon...")
 
-        # Wait for socket to appear
-        for _ in range(5):
+        # Wait for socket to appear and handshake
+        for _ in range(10):
             if UDS_PATH.exists():
-                print("Daemon is ready.")
-                return 0
-            time.sleep(1)
+                result = await _try_connect_and_handshake()
+                if result is True:
+                    print(
+                        json.dumps(
+                            {
+                                "success": True,
+                                "protocol_version": PROTOCOL_VERSION,
+                            }
+                        )
+                    )
+                    return 0
+                elif result is False:
+                    return 1
+                # If None, continue polling
+            await asyncio.sleep(1)
 
-        print("Daemon started but socket not found yet.")
+        print(
+            json.dumps(
+                {
+                    "success": False,
+                    "message": "Daemon started but failed to respond to handshake in time.",
+                }
+            )
+        )
         return 1
     except Exception as e:
         print(f"Failed to start daemon: {e}")
