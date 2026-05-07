@@ -798,10 +798,6 @@ mod tests {
             Ok(())
         }
 
-        async fn shred_data(&mut self) -> Result<(), Error> {
-            unreachable!();
-        }
-
         async fn shutdown(&mut self) -> Result<(), Error> {
             unreachable!();
         }
@@ -839,6 +835,14 @@ mod tests {
                 true,
                 "Unexpected call to register_filesystem"
             );
+        }
+
+        async fn provision_fxfs(&mut self, _device: &mut dyn Device) -> Result<(), Error> {
+            Ok(())
+        }
+
+        async fn shred_data_online(&mut self) -> Result<(), Error> {
+            Ok(())
         }
     }
 

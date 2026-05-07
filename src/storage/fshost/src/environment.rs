@@ -18,9 +18,12 @@ use crate::device::{Device, RegisteredDevices};
 use crate::watcher::{DirSource, Watcher};
 use anyhow::{Context, Error, anyhow, bail};
 use async_trait::async_trait;
-use fidl::endpoints::{Proxy, ServerEnd, ServiceMarker as _, create_proxy};
+use fidl::endpoints::{
+    DiscoverableProtocolMarker, Proxy, ServerEnd, ServiceMarker as _, create_proxy,
+};
 use fidl_fuchsia_fs_startup::{MountOptions, VolumesProxy};
 use fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner;
+use fidl_fuchsia_fxfs as ffxfs;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block::BlockProxy;
 use fidl_fuchsia_storage_partitions as fpartitions;
@@ -31,6 +34,9 @@ use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_inspect as finspect;
 use std::sync::Arc;
+
+use crate::device::constants::{BLOB_IMAGE_VOLUME_LABEL, BLOB_VOLUME_LABEL};
+use crate::recovery::IMAGE_FILE_NAME;
 
 pub struct PartitionInfo {
     pub label: String,
@@ -69,9 +75,8 @@ pub trait Environment: Send + Sync {
     /// Mounts data volume on the already mounted container filesystem.
     async fn mount_data_volume(&mut self) -> Result<(), Error>;
 
-    /// Shreds the data volume, triggering a reformat on reboot.
-    /// The data volume must be Fxfs-formatted and must be currently serving.
-    async fn shred_data(&mut self) -> Result<(), Error>;
+    /// Called to shred the encryption keys for the data volume.
+    async fn shred_data_online(&mut self) -> Result<(), Error>;
 
     /// Synchronously shut down all associated filesystems.
     async fn shutdown(&mut self) -> Result<(), Error>;
@@ -98,9 +103,7 @@ pub trait Environment: Send + Sync {
     ) -> Result<(), Error>;
 
     /// When called, attempt to provision the device with Fxfs.
-    async fn provision_fxfs(&mut self, _device: &mut dyn Device) -> Result<(), Error> {
-        Ok(())
-    }
+    async fn provision_fxfs(&mut self, device: &mut dyn Device) -> Result<(), Error>;
 }
 
 enum BufferedDirectory {
@@ -548,7 +551,7 @@ impl Environment for FshostEnvironment {
         Ok(())
     }
 
-    async fn shred_data(&mut self) -> Result<(), Error> {
+    async fn shred_data_online(&mut self) -> Result<(), Error> {
         if !self.data.is_serving() {
             return Err(anyhow!("Can't shred data; not already mounted"));
         }
@@ -673,13 +676,16 @@ impl FilesystemLauncher {
         let fs = fs.serve_multi_volume().await?;
         // Before we return the serving filesystem, handle installing any new blob volumes which
         // may have been flashed to the device.
-        if let Err(error) = crate::service::maybe_install_new_blob_volume(&fs).await {
-            // If we fail to install the new blob volume, all we can do here is log a warning here
-            // and continue mounting the existing blob volume. Typically this happens if flashing
-            // a new blob volume was incomplete, in which case we probably have booted back into the
-            // old slot, and this warning can be ignored. We don't want to file a crash report in
-            // this case, otherwise the slot may erroneously be marked as unhealthy.
-            log::warn!(error:?; "could not install new blob volume");
+        if fs.has_volume(BLOB_IMAGE_VOLUME_LABEL).await.context("checking for image volume")? {
+            if let Err(error) = install_blob_image(&fs).await {
+                // If we fail to install the new blob volume, all we can do here is log a warning
+                // here and continue mounting the existing blob volume. Typically this happens if
+                // flashing a new blob volume was incomplete, in which case we probably have
+                // booted back into the old slot, and this warning can be ignored. We don't want
+                // to file a crash report in this case, otherwise the slot may erroneously be
+                // marked as unhealthy.
+                log::warn!(error:?; "could not install new blob volume");
+            }
         }
         Ok(fs)
     }
@@ -728,4 +734,33 @@ impl FilesystemLauncher {
         // occur no more than once per-boot, this doesn't seem worth fixing.
         self.corruption_events.record_uint(format, 1);
     }
+}
+
+/// Searches for a new blob volume ready for installation on the system container and attempts to
+/// install it. On failure, the installation file will be cleaned up so we don't attempt the
+/// installation again on subsequent boots.
+pub async fn install_blob_image(fs: &ServingMultiVolumeFilesystem) -> Result<(), Error> {
+    log::info!("Installing system blob volume from image...");
+
+    let installer: ffxfs::VolumeInstallerProxy = connect_to_named_protocol_at_dir_root(
+        fs.exposed_dir(),
+        ffxfs::VolumeInstallerMarker::PROTOCOL_NAME,
+    )?;
+    if let Err(error) = installer
+        .install(BLOB_IMAGE_VOLUME_LABEL, IMAGE_FILE_NAME, BLOB_VOLUME_LABEL)
+        .await
+        .context("FIDL call to fuchsia.fxfs/VolumeInstaller.Install")?
+        .map_err(zx::Status::from_raw)
+    {
+        log::error!(error:?; "failed to install blob volume, cleaning up...");
+        if let Err(error) = fs.remove_volume(BLOB_IMAGE_VOLUME_LABEL).await {
+            log::error!(error:?; "could not remove blob image after failed installation");
+        }
+        // Return the original installation error.
+        return Err(error).context("failed to install blob volume");
+    } else {
+        log::info!("Successfully installed system blob volume from image.");
+    }
+
+    Ok(())
 }

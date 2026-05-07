@@ -29,6 +29,7 @@ mod inspect;
 mod manager;
 mod matcher;
 mod ramdisk;
+mod recovery;
 mod service;
 mod watcher;
 
@@ -111,11 +112,10 @@ async fn main() -> Result<(), Error> {
         config.clone(),
         inspector.clone(),
         watcher,
-        registered_devices,
+        registered_devices.clone(),
         device_publisher,
     );
 
-    let launcher = env.launcher();
     // Records inspect metrics. Too expensive to build the tree data in newer fxfs environments.
     register_stats(inspector.root(), env.data_root()?, config.data_filesystem_format != "fxfs");
     let blob_exposed_dir = env.blobfs_exposed_dir()?;
@@ -131,31 +131,30 @@ async fn main() -> Result<(), Error> {
         "gpt" => remote_dir(gpt_exposed_dir),
         "mnt" => vfs::pseudo_directory! {},
     };
+
     let system_gpt_service_instance = env.system_gpt_volume_service_instance()?;
+    let gpt_exposed_dir = env.partition_manager_exposed_dir()?;
+    let launcher = env.launcher();
     let env: Arc<Mutex<dyn Environment>> = Arc::new(Mutex::new(env));
-    // Guard to prevent concurrent access to the system container (or the partition backing it).
-    // TODO(https://fxbug.dev/444486641): Using a shared lock like this is not ideal, as we could
-    // forget to lock it when adding new FIDL methods to these protocols. We should leverage our
-    // Environment trait and FshostEnvironment type to support guarded access.
-    let system_partition_lock = Arc::new(Mutex::new(()));
+    let recovery_ops = Arc::new(recovery::RecoveryOps::new(
+        env.clone(),
+        registered_devices.clone(),
+        config.clone(),
+        launcher,
+        gpt_exposed_dir,
+        scope.clone(),
+    ));
+
     let svc_dir = vfs::pseudo_directory! {
         fshost::AdminMarker::PROTOCOL_NAME =>
-            service::fshost_admin(
-                system_partition_lock.clone(),
-                env.clone(),
-                config.clone(),
-            ),
+            service::fshost_admin(recovery_ops.clone()),
         fshost::RecoveryMarker::PROTOCOL_NAME =>
-            service::fshost_recovery(
-                system_partition_lock.clone(),
-                env.clone(),
-                config.clone(),
-                launcher,
-            ),
+            service::fshost_recovery(recovery_ops),
         fidl_fuchsia_hardware_block_volume::ServiceMarker::SERVICE_NAME => vfs::pseudo_directory! {
             "system_gpt" => remote_dir(system_gpt_service_instance),
         }
     };
+
     if config.fxfs_blob {
         export
             .add_entry(
@@ -190,8 +189,8 @@ async fn main() -> Result<(), Error> {
         fidl::endpoints::ServerEnd::new(directory_request.into()),
     );
 
-    // TODO(https://fxbug.dev/42069366): //src/tests/oom looks for "fshost: lifecycle handler ready" to
-    // indicate the watcher is about to start.
+    // TODO(https://fxbug.dev/42069366): //src/tests/oom looks for "fshost: lifecycle handler ready"
+    // to indicate the watcher is about to start.
     log::info!("fshost: lifecycle handler ready");
 
     // Run the main loop of fshost, handling devices as they appear according to our filesystem
@@ -211,9 +210,9 @@ async fn main() -> Result<(), Error> {
     };
 
     log::info!("shutdown signal received");
-    // TODO(https://fxbug.dev/42069366): //src/tests/oom looks for "received shutdown command over lifecycle
-    // interface" to indicate fshost shutdown is starting. Shutdown logs have to go straight to
-    // serial because of timing issues (https://fxbug.dev/42179880).
+    // TODO(https://fxbug.dev/42069366): //src/tests/oom looks for "received shutdown command
+    // over lifecycle interface" to indicate fshost shutdown is starting. Shutdown logs have to
+    // go straight to serial because of timing issues (https://fxbug.dev/42179880).
     debug_log("received shutdown command over lifecycle interface");
 
     // Shutting down fshost involves sending asynchronous shutdown signals to several different

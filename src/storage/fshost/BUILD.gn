@@ -108,6 +108,7 @@ rustc_binary("fshost") {
     "src/matcher.rs",
     "src/matcher/config_matcher.rs",
     "src/ramdisk.rs",
+    "src/recovery.rs",
     "src/service.rs",
     "src/watcher.rs",
   ]

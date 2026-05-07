@@ -2,32 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::device::DeviceTag;
-use crate::device::constants::{BLOB_IMAGE_VOLUME_LABEL, BLOB_VOLUME_LABEL};
-use crate::environment::{Container, Environment, FilesystemLauncher, FvmContainer, FxfsContainer};
-use anyhow::{Context, Error, anyhow, ensure};
-use fidl::endpoints::{ClientEnd, Proxy, RequestStream, ServerEnd};
+use crate::environment::Environment;
+use crate::recovery::{FilesystemCorrupt, RecoveryOps};
+use anyhow::{Context, Error, anyhow};
+use fidl::endpoints::{ClientEnd, RequestStream, ServerEnd};
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
 use fidl_fuchsia_fshost as fshost;
 use fidl_fuchsia_fxfs as ffxfs;
-use fidl_fuchsia_io::{self as fio, DirectoryMarker};
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
-use fidl_fuchsia_storage_partitions as fpartitions;
-use fs_management::filesystem::BlockConnector;
-use fs_management::format::{DiskFormat, detect_disk_format};
-use fs_management::{Fvm, Fxfs, filesystem};
+
+use fshost::{AdminRequest, RecoveryRequest};
 use fuchsia_async as fasync;
-use fuchsia_async::TimeoutExt as _;
-use fuchsia_component::client::connect_to_protocol_at_dir_root;
-use fuchsia_fs::file::write;
+
 use fuchsia_runtime::HandleType;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
-use futures::{StreamExt as _, TryFutureExt as _, TryStreamExt as _};
+use futures::{StreamExt, TryStreamExt};
 use std::sync::Arc;
-use thiserror::Error;
 use vfs::service;
-use zx::{self as zx, MonotonicDuration};
 
 pub enum FshostShutdownResponder {
     Lifecycle(
@@ -45,323 +38,48 @@ impl FshostShutdownResponder {
     }
 }
 
-const FIND_PARTITION_DURATION: MonotonicDuration = MonotonicDuration::from_seconds(20);
 const STARNIX_TEST_VOLUME_NAME: &str = "starnix_test_volume";
-const IMAGE_FILE_NAME: &str = "blob.img";
 
-async fn mount_main_starnix_volume(
+async fn open_or_create_starnix_volume(
     environment: &Arc<Mutex<dyn Environment>>,
-    starnix_volume_name: String,
+    volume_name: &str,
     crypt: ClientEnd<ffxfs::CryptMarker>,
     exposed_dir: ServerEnd<fio::DirectoryMarker>,
+    recreate: bool,
 ) -> Result<[u8; 16], Error> {
     let mut env = environment.lock().await;
-    if let Some(multi_vol_fs) = env.get_container() {
-        let mounted_vol = if multi_vol_fs.has_volume(&starnix_volume_name).await? {
-            multi_vol_fs
-                .open_volume(
-                    &starnix_volume_name,
-                    MountOptions { crypt: Some(crypt), ..MountOptions::default() },
-                )
-                .await?
-        } else {
-            multi_vol_fs
-                .create_volume(
-                    &starnix_volume_name,
-                    CreateOptions::default(),
-                    MountOptions { crypt: Some(crypt), ..MountOptions::default() },
-                )
-                .await?
-        };
-        mounted_vol.exposed_dir().clone(exposed_dir.into_channel().into())?;
-        multi_vol_fs
-            .get_volume_info(&starnix_volume_name)
-            .await
-            .context("get_volume_info")?
-            .guid
-            .ok_or_else(|| anyhow!("No GUID returned"))
-    } else {
-        Err(anyhow!("Tried to mount starnix volume without container set"))
-    }
-}
+    let multi_vol_fs = env
+        .get_container()
+        .ok_or_else(|| anyhow!("Tried to mount starnix volume without container set"))?;
 
-async fn create_starnix_volume_impl(
-    environment: &Arc<Mutex<dyn Environment>>,
-    starnix_volume_name: &str,
-    crypt: ClientEnd<ffxfs::CryptMarker>,
-    exposed_dir: ServerEnd<fio::DirectoryMarker>,
-) -> Result<[u8; 16], Error> {
-    let mut env = environment.lock().await;
-    if let Some(multi_vol_fs) = env.get_container() {
-        // If the starnix volume already exists, unmount if mounted and then remove.
-        if multi_vol_fs.has_volume(starnix_volume_name).await? {
-            log::info!(starnix_volume_name:%; "Recreating starnix volume");
-            multi_vol_fs.remove_volume(starnix_volume_name).await?;
+    let mount_options = MountOptions { crypt: Some(crypt), ..MountOptions::default() };
+    let mounted_vol = if recreate {
+        if multi_vol_fs.has_volume(volume_name).await? {
+            log::info!(volume_name:%; "Recreating starnix volume");
+            multi_vol_fs.remove_volume(volume_name).await?;
         }
-        let mounted_vol = multi_vol_fs
+        multi_vol_fs
             .create_volume(
-                starnix_volume_name,
+                volume_name,
                 CreateOptions { restrict_inode_ids_to_32_bit: Some(true), ..Default::default() },
-                MountOptions { crypt: Some(crypt), ..MountOptions::default() },
+                mount_options,
             )
-            .await?;
-        mounted_vol.exposed_dir().clone(exposed_dir.into_channel().into())?;
-        multi_vol_fs
-            .get_volume_info(&starnix_volume_name)
-            .await
-            .context("get_volume_info")?
-            .guid
-            .ok_or_else(|| anyhow!("No GUID returned"))
+            .await?
     } else {
-        Err(anyhow!("Tried to mount starnix volume without container set"))
-    }
-}
-
-async fn mount_starnix_volume(
-    environment: &Arc<Mutex<dyn Environment>>,
-    config: &fshost_config::Config,
-    crypt: ClientEnd<ffxfs::CryptMarker>,
-    exposed_dir: ServerEnd<fio::DirectoryMarker>,
-) -> Result<[u8; 16], Error> {
-    if config.starnix_volume_name.is_empty() {
-        create_starnix_volume_impl(environment, STARNIX_TEST_VOLUME_NAME, crypt, exposed_dir).await
-    } else {
-        mount_main_starnix_volume(
-            environment,
-            config.starnix_volume_name.clone(),
-            crypt,
-            exposed_dir,
-        )
-        .await
-    }
-}
-
-async fn create_starnix_volume(
-    environment: &Arc<Mutex<dyn Environment>>,
-    config: &fshost_config::Config,
-    crypt: ClientEnd<ffxfs::CryptMarker>,
-    exposed_dir: ServerEnd<fio::DirectoryMarker>,
-) -> Result<[u8; 16], Error> {
-    let volume_name = if config.starnix_volume_name.is_empty() {
-        STARNIX_TEST_VOLUME_NAME
-    } else {
-        &config.starnix_volume_name
-    };
-
-    create_starnix_volume_impl(environment, volume_name, crypt, exposed_dir).await
-}
-
-async fn write_data_file(
-    system_partition_lock: &Arc<Mutex<()>>,
-    environment: &Arc<Mutex<dyn Environment>>,
-    config: &fshost_config::Config,
-    launcher: &FilesystemLauncher,
-    filename: &str,
-    payload: zx::Vmo,
-) -> Result<(), Error> {
-    if !config.ramdisk_image {
-        return Err(anyhow!(
-            "Can't WriteDataFile from a non-recovery build;
-            ramdisk_image must be set."
-        ));
-    }
-
-    let content_size = if let Ok(content_size) = payload.get_content_size() {
-        content_size
-    } else if let Ok(content_size) = payload.get_size() {
-        content_size
-    } else {
-        return Err(anyhow!("Failed to get content size"));
-    };
-
-    let content_size =
-        usize::try_from(content_size).context("Failed to convert u64 content_size to usize")?;
-
-    let _guard = system_partition_lock.lock().await;
-    let device = get_system_container_for_recovery(environment).await?;
-    let mut container: Box<dyn Container> = if config.fxfs_blob {
-        Box::new(FxfsContainer::new(
-            launcher
-                .serve_fxblob(device, Box::new(Fxfs::dynamic_child()))
-                .await
-                .context("serving Fxblob")?,
-        ))
-    } else {
-        Box::new(FvmContainer::new(
-            launcher
-                .serve_fvm(device, Box::new(Fvm::dynamic_child()))
-                .await
-                .context("serving Fvm")?,
-            false,
-        ))
-    };
-    let mut data = container.serve_data(&launcher).await.context("serving data from Fxblob")?;
-    let filesystem = container.into_fs();
-
-    let data_root = data.root().context("Failed to get data root")?;
-    let (directory_proxy, file_path) = match filename.rsplit_once("/") {
-        Some((directory_path, relative_file_path)) => {
-            let directory_proxy = fuchsia_fs::directory::create_directory_recursive(
-                &data_root,
-                directory_path,
-                fio::Flags::FLAG_MAYBE_CREATE | fio::PERM_READABLE | fio::PERM_WRITABLE,
-            )
-            .await
-            .context("Failed to create directory")?;
-            (directory_proxy, relative_file_path)
+        if multi_vol_fs.has_volume(volume_name).await? {
+            multi_vol_fs.open_volume(volume_name, mount_options).await?
+        } else {
+            multi_vol_fs.create_volume(volume_name, CreateOptions::default(), mount_options).await?
         }
-        None => (data_root, filename),
     };
 
-    let file_proxy = fuchsia_fs::directory::open_file(
-        &directory_proxy,
-        file_path,
-        fio::Flags::FLAG_MAYBE_CREATE | fio::PERM_READABLE | fio::PERM_WRITABLE,
-    )
-    .await
-    .context("Failed to open file")?;
-
-    let mut contents = vec![0; content_size];
-    payload.read(&mut contents, 0).context("reading payload vmo")?;
-    write(&file_proxy, &contents).await.context("writing file contents")?;
-
-    data.shutdown().await.context("shutting down data")?;
-    filesystem.shutdown().await.context("shutting down filesystem")?;
-    return Ok(());
-}
-
-async fn shred_data_volume(
-    system_partition_lock: &Arc<Mutex<()>>,
-    environment: &Arc<Mutex<dyn Environment>>,
-    config: &fshost_config::Config,
-) -> Result<(), zx::Status> {
-    if !(config.data_filesystem_format == "fxfs" || !config.no_zxcrypt) {
-        return Err(zx::Status::NOT_SUPPORTED);
-    }
-
-    // If we expect the filesystems to be live, ask `environment` to shred the data volume.
-    if (config.data || config.fxfs_blob) && !config.ramdisk_image {
-        log::info!("Filesystem is running; shredding online.");
-        environment.lock().await.shred_data().await.map_err(|error| {
-            log::error!(error:?; "Failed to shred data");
-            zx::Status::INTERNAL
-        })?;
-    } else {
-        // Otherwise we need to find the system container and shred the encrypted volumes in it.
-        log::info!("Filesystem is not running; shredding offline.");
-        let _guard = system_partition_lock.lock().await;
-
-        // Get the block connector for all filesystem types. This blocks until the matchers find
-        // the system container, so even if we don't use it, we know after this the device exists.
-        let device = get_system_container_for_recovery(environment).await?;
-        let format = detect_disk_format(
-            &device
-                .connect_block()
-                .map_err(|error| {
-                    log::error!(error:?; "connect_block failed");
-                    zx::Status::INTERNAL
-                })?
-                .into_proxy(),
-        )
-        .await;
-
-        if config.fxfs_blob {
-            if format != DiskFormat::Fxfs {
-                return Ok(());
-            }
-
-            let fxfs = fs_management::filesystem::Filesystem::from_boxed_config(
-                device,
-                Box::new(Fxfs::dynamic_child()),
-            );
-            let serving_fxfs = fxfs.serve_multi_volume().await.map_err(|error| {
-                log::error!(error:?; "Failed to serve fxfs");
-                zx::Status::INTERNAL
-            })?;
-            let mut fxfs_container = Box::new(FxfsContainer::new(serving_fxfs));
-            fxfs_container.shred_data().await.map_err(|error| {
-                log::error!(error:?; "Failed to shred fxfs keybag");
-                zx::Status::INTERNAL
-            })?;
-            fxfs_container.into_fs().shutdown().await.map_err(|error| {
-                log::error!(error:?; "Failed to unmount fxfs");
-                zx::Status::INTERNAL
-            })?;
-            log::info!("Deleted fxfs-data keybag");
-        } else if config.data_filesystem_format == "minfs" {
-            if format != DiskFormat::Fvm {
-                return Ok(());
-            }
-
-            let fvm = fs_management::filesystem::Filesystem::from_boxed_config(
-                device,
-                Box::new(Fvm::dynamic_child()),
-            );
-            let serving_fvm = fvm.serve_multi_volume().await.map_err(|error| {
-                log::error!(error:?; "Failed to serve fvm");
-                zx::Status::INTERNAL
-            })?;
-            let mut fvm_container = FvmContainer::new(serving_fvm, false);
-            fvm_container.shred_data().await.map_err(|error| {
-                log::error!(error:?; "Failed to call shred data on fvm component");
-                zx::Status::INTERNAL
-            })?;
-            log::info!("Shredded zxcrypt instances in fvm");
-        }
-    }
-    log::info!("Shredded the data volume.  Data will be lost!!");
-    Ok(())
-}
-
-async fn init_system_partition_table(
-    system_partition_lock: &Arc<Mutex<()>>,
-    partitions: Vec<fpartitions::PartitionInfo>,
-    environment: &Arc<Mutex<dyn Environment>>,
-    config: &fshost_config::Config,
-) -> Result<(), zx::Status> {
-    if !config.ramdisk_image {
-        log::error!("init_system_partition_table only supported in ramdisk-image mode.");
-        return Err(zx::Status::NOT_SUPPORTED);
-    }
-    if !config.gpt {
-        log::error!("init_system_partition_table called on a non-gpt system.");
-        return Err(zx::Status::NOT_SUPPORTED);
-    }
-
-    let _guard = system_partition_lock.lock().await;
-    let registered_devices = environment.lock().await.registered_devices().clone();
-    const TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(10);
-    let _ = registered_devices
-        .get_block_connector(DeviceTag::SystemPartitionTable)
-        .map_err(|error| {
-            log::error!(error:?; "init_system_partition_table: unable to get block connector");
-            zx::Status::NOT_FOUND
-        })
-        .on_timeout(TIMEOUT, || {
-            log::error!("init_system_partition_table: Failed to find gpt within timeout");
-            Err(zx::Status::NOT_FOUND)
-        })
-        .await?;
-
-    log::info!("init_system_partition_table: Reformatting GPT...");
-    let exposed_dir = environment.lock().await.partition_manager_exposed_dir().map_err(|err| {
-        log::error!(
-            err:?;
-            "init_system_partition_table: Failed to connect to partition manager"
-        );
-        Err(zx::Status::BAD_STATE)
-    })?;
-    let client =
-        connect_to_protocol_at_dir_root::<fpartitions::PartitionsAdminMarker>(&exposed_dir)
-            .unwrap();
-    client
-        .reset_partition_table(&partitions[..])
+    mounted_vol.exposed_dir().clone(exposed_dir.into_channel().into())?;
+    multi_vol_fs
+        .get_volume_info(volume_name)
         .await
-        .map_err(|err| {
-            log::error!(err:?; "init_system_partition_table: FIDL error");
-            Err(zx::Status::PEER_CLOSED)
-        })?
-        .map_err(zx::Status::from_raw)
+        .context("get_volume_info")?
+        .guid
+        .ok_or_else(|| anyhow!("No GUID returned"))
 }
 
 pub fn fshost_volume_provider(
@@ -381,14 +99,21 @@ pub fn fshost_volume_provider(
                         responder,
                     }) => {
                         log::info!(mode:?; "volume provider mount");
-                        let res = match mode {
-                            fshost::MountMode::MaybeCreate => {
-                                mount_starnix_volume(&env, &config, crypt, exposed_dir).await
-                            }
-                            fshost::MountMode::AlwaysCreate => {
-                                create_starnix_volume(&env, &config, crypt, exposed_dir).await
-                            }
+                        let volume_name = if config.starnix_volume_name.is_empty() {
+                            STARNIX_TEST_VOLUME_NAME
+                        } else {
+                            &config.starnix_volume_name
                         };
+                        let recreate = mode == fshost::MountMode::AlwaysCreate
+                            || config.starnix_volume_name.is_empty();
+                        let res = open_or_create_starnix_volume(
+                            &env,
+                            volume_name,
+                            crypt,
+                            exposed_dir,
+                            recreate,
+                        )
+                        .await;
                         let res = match res {
                             Ok(guid) => Ok(guid),
                             Err(error) => {
@@ -411,33 +136,26 @@ pub fn fshost_volume_provider(
 }
 
 /// Make a new vfs service node that implements fuchsia.fshost.Admin
-pub fn fshost_admin(
-    system_partition_lock: Arc<Mutex<()>>,
-    environment: Arc<Mutex<dyn Environment>>,
-    config: Arc<fshost_config::Config>,
-) -> Arc<service::Service> {
+pub fn fshost_admin(ops: Arc<RecoveryOps>) -> Arc<service::Service> {
     service::host(move |mut stream: fshost::AdminRequestStream| {
-        let system_partition_lock = system_partition_lock.clone();
-        let env = environment.clone();
-        let config = config.clone();
+        let ops = ops.clone();
         async move {
             while let Some(request) = stream.next().await {
                 match request {
-                    Ok(fshost::AdminRequest::ShredDataVolume { responder }) => {
+                    Ok(AdminRequest::ShredDataVolume { responder }) => {
                         log::info!("admin shred data volume called");
-                        let res =
-                            match shred_data_volume(&system_partition_lock, &env, &config).await {
-                                Ok(()) => Ok(()),
-                                Err(status) => {
-                                    // If shredding is not supported, only emit a warning.
-                                    if status == zx::Status::NOT_SUPPORTED {
-                                        log::warn!("shred_data_volume not supported");
-                                    } else {
-                                        log::error!(status:?; "shred_data_volume failed");
-                                    }
-                                    Err(status.into_raw())
+                        let res = ops.shred_data().await;
+                        let res = match res {
+                            Ok(()) => Ok(()),
+                            Err(status) => {
+                                if status == zx::Status::NOT_SUPPORTED {
+                                    log::warn!("shred_data_volume not supported");
+                                } else {
+                                    log::error!(status:?; "shred_data_volume failed");
                                 }
-                            };
+                                Err(status.into_raw())
+                            }
+                        };
                         responder.send(res).unwrap_or_else(|error| {
                             log::error!(error:?; "failed to send fidl response");
                         });
@@ -452,155 +170,88 @@ pub fn fshost_admin(
     })
 }
 
-/// Make a new vfs service node that implements fuchsia.fshost.Recovery
-pub fn fshost_recovery(
-    system_partition_lock: Arc<Mutex<()>>,
-    environment: Arc<Mutex<dyn Environment>>,
-    config: Arc<fshost_config::Config>,
-    launcher: Arc<FilesystemLauncher>,
-) -> Arc<service::Service> {
+pub fn fshost_recovery(ops: Arc<RecoveryOps>) -> Arc<service::Service> {
     service::host(move |mut stream: fshost::RecoveryRequestStream| {
-        let system_partition_lock = system_partition_lock.clone();
-        let env = environment.clone();
-        let config = config.clone();
-        let launcher = launcher.clone();
+        let ops = ops.clone();
         async move {
             while let Some(request) = stream.next().await {
                 match request {
-                    Ok(fshost::RecoveryRequest::WriteDataFile { responder, payload, filename }) => {
+                    Ok(RecoveryRequest::WriteDataFile { responder, payload, filename }) => {
                         log::info!(filename:?; "recovery write data file called");
-                        let res = match write_data_file(
-                            &system_partition_lock,
-                            &env,
-                            &config,
-                            &launcher,
-                            &filename,
-                            payload,
-                        )
-                        .await
-                        {
-                            Ok(()) => Ok(()),
-                            Err(error) => {
-                                log::error!(error:?; "write_data_file failed");
-                                Err(zx::Status::INTERNAL.into_raw())
-                            }
-                        };
+                        let res = ops.write_data_file(&filename, payload).await.map_err(|error| {
+                            log::error!(error:?; "write_data_file failed");
+                            zx::Status::INTERNAL.into_raw()
+                        });
                         responder.send(res).unwrap_or_else(|error| {
                             log::error!(error:?; "failed to send fidl response");
                         });
                     }
-                    Ok(fshost::RecoveryRequest::InitSystemPartitionTable {
-                        partitions,
-                        responder,
-                    }) => {
+                    Ok(RecoveryRequest::InitSystemPartitionTable { partitions, responder }) => {
                         log::info!("recovery init gpt called");
-                        let res = match init_system_partition_table(
-                            &system_partition_lock,
-                            partitions,
-                            &env,
-                            &config,
-                        )
-                        .await
-                        {
-                            Ok(()) => Ok(()),
-                            Err(error) => {
+                        let res =
+                            ops.init_system_partition_table(partitions).await.map_err(|error| {
                                 log::error!(error:?; "init_system_partition_table failed");
-                                Err(error.into_raw())
-                            }
-                        };
+                                error.into_raw()
+                            });
                         responder.send(res).unwrap_or_else(|error| {
                             log::error!(error:?; "failed to send fidl response");
                         });
                     }
-                    Ok(fshost::RecoveryRequest::FormatSystemBlobVolume { responder }) => {
+                    Ok(RecoveryRequest::FormatSystemBlobVolume { responder }) => {
                         log::info!("formatting system blob volume");
-                        let res = match format_system_blob_volume_impl(
-                            &system_partition_lock,
-                            &env,
-                            &config,
-                        )
-                        .await
-                        {
-                            Ok(()) => Ok(()),
-                            Err(error) => {
-                                log::error!(error:?; "format_system_blob_volume failed");
-                                Err(if let Ok(status) = error.downcast::<zx::Status>() {
-                                    status
-                                } else {
-                                    zx::Status::INTERNAL
-                                })
-                            }
-                        };
-                        responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|error| {
+                        let res = ops.format_system_blob_volume().await.map_err(|error| {
+                            log::error!(error:?; "format_system_blob_volume failed");
+                            error
+                                .downcast::<zx::Status>()
+                                .unwrap_or(zx::Status::INTERNAL)
+                                .into_raw()
+                        });
+                        responder.send(res).unwrap_or_else(|error| {
                             log::error!(error:?; "failed to send fidl response");
                         });
                     }
-                    Ok(fshost::RecoveryRequest::MountSystemBlobVolume {
-                        blob_exposed_dir,
-                        responder,
-                    }) => {
+                    Ok(RecoveryRequest::MountSystemBlobVolume { blob_exposed_dir, responder }) => {
                         log::info!("mounting system blob volume");
-                        let res = match mount_system_blob_volume_impl(
-                            &system_partition_lock,
-                            &env,
-                            &config,
-                            blob_exposed_dir,
-                        )
-                        .await
-                        {
-                            Ok(()) => Ok(()),
-                            Err(error) => {
-                                log::error!(error:?; "mount_system_blob_volume failed");
-                                Err(if let Ok(status) = error.downcast::<zx::Status>() {
-                                    status
-                                } else {
-                                    zx::Status::INTERNAL
-                                })
-                            }
-                        };
-                        responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|error| {
-                            log::error!(error:?; "failed to send fidl response");
-                        });
-                    }
-                    Ok(fshost::RecoveryRequest::GetBlobImageHandle { responder }) => {
-                        log::info!("getting image handle for new system blob volume");
-                        let res = get_blob_image_handle(&system_partition_lock, &env, &config)
-                            .await
-                            .map_err(|error| {
-                                // If we suspect the filesystem is corrupted (e.g. if we failed to
-                                // mount the system container, or we failed to create a new volume),
-                                // report ZX_ERR_IO_DATA_INTEGRITY so remedial action can be taken.
-                                if error.is::<FilesystemCorrupt>() {
-                                    log::error!(
-                                        error:?;
-                                        "Filesystem may be corrupt and requires a full re-flash."
-                                    );
-                                    return zx::Status::IO_DATA_INTEGRITY;
-                                }
-                                // For all other errors, make sure we log the error context before
-                                // returning a generic ZX_ERR_INTERNAL code.
-                                log::error!(error:?; "get_blob_image_handle failed");
-                                zx::Status::INTERNAL
-                            });
-                        responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|error| {
-                            log::error!(error:?; "failed to send fidl response");
-                        });
-                    }
-                    Ok(fshost::RecoveryRequest::InstallBlobImage { responder }) => {
-                        log::info!("installing system blob volume");
                         let res =
-                            match install_blob_image(&system_partition_lock, &env, &config).await {
-                                Ok(()) => Ok(()),
-                                Err(error) => {
-                                    log::error!(error:?; "failed to install blob image");
-                                    Err(if let Ok(status) = error.downcast::<zx::Status>() {
-                                        status
-                                    } else {
-                                        zx::Status::INTERNAL
-                                    })
-                                }
-                            };
-                        responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|error| {
+                            ops.mount_system_blob_volume(blob_exposed_dir).await.map_err(|error| {
+                                log::error!(error:?; "mount_system_blob_volume failed");
+                                error
+                                    .downcast::<zx::Status>()
+                                    .unwrap_or(zx::Status::INTERNAL)
+                                    .into_raw()
+                            });
+                        responder.send(res).unwrap_or_else(|error| {
+                            log::error!(error:?; "failed to send fidl response");
+                        });
+                    }
+                    Ok(RecoveryRequest::GetBlobImageHandle { responder }) => {
+                        log::info!("getting image handle for new system blob volume");
+                        let res = ops.get_blob_image_handle().await.map_err(|error| {
+                            if error.is::<FilesystemCorrupt>() {
+                                log::error!(
+                                    error:?;
+                                    "Filesystem may be corrupt and requires a full re-flash."
+                                );
+                                zx::Status::IO_DATA_INTEGRITY.into_raw()
+                            } else {
+                                log::error!(error:?; "get_blob_image_handle failed");
+                                zx::Status::INTERNAL.into_raw()
+                            }
+                        });
+                        responder.send(res).unwrap_or_else(|error| {
+                            log::error!(error:?; "failed to send fidl response");
+                        });
+                    }
+                    Ok(RecoveryRequest::InstallBlobImage { responder }) => {
+                        log::info!("installing system blob volume");
+                        let res = ops.install_blob_image_offline().await.map_err(|error| {
+                            log::error!(error:?; "failed to install blob image");
+                            error
+                                .downcast::<zx::Status>()
+                                .unwrap_or(zx::Status::INTERNAL)
+                                .into_raw()
+                        });
+                        responder.send(res).unwrap_or_else(|error| {
                             log::error!(error:?; "failed to send fidl response");
                         });
                     }
@@ -622,315 +273,12 @@ pub fn handle_lifecycle_requests(
             LifecycleRequestStream::from_channel(fasync::Channel::from_channel(handle.into()));
         fasync::Task::spawn(async move {
             if let Ok(Some(LifecycleRequest::Stop { .. })) = stream.try_next().await {
-                shutdown.start_send(FshostShutdownResponder::Lifecycle(stream)).unwrap_or_else(
-                    |e| log::error!("failed to send shutdown message. error: {:?}", e),
-                );
+                if let Err(e) = shutdown.try_send(FshostShutdownResponder::Lifecycle(stream)) {
+                    log::error!("failed to send shutdown message. error: {:?}", e);
+                }
             }
         })
         .detach();
     }
-    Ok(())
-}
-
-async fn format_system_blob_volume_impl(
-    system_partition_lock: &Arc<Mutex<()>>,
-    environment: &Arc<Mutex<dyn Environment>>,
-    config: &fshost_config::Config,
-) -> Result<(), Error> {
-    ensure!(config.ramdisk_image, "format_system_blob_volume called in a non-Recovery build");
-    ensure!(config.fxfs_blob, "format_system_blob_volume requires a fxblob-based product");
-
-    let _guard = system_partition_lock.clone().lock_owned().await;
-    let device = get_system_container_for_recovery(environment).await?;
-
-    let fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
-    let serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;
-
-    if serving_fxfs.has_volume(BLOB_VOLUME_LABEL).await.context("checking for blob volume")? {
-        log::info!("Removing existing blob volume.");
-        serving_fxfs.remove_volume(BLOB_VOLUME_LABEL).await.context("removing blob volume")?;
-    }
-    log::info!("Creating new blob volume.");
-    let blob_volume = serving_fxfs
-        .create_volume(
-            BLOB_VOLUME_LABEL,
-            CreateOptions::default(),
-            MountOptions { as_blob: Some(true), ..Default::default() },
-        )
-        .await
-        .context("creating blob volume")?;
-
-    blob_volume.shutdown().await.context("unmounting blob volume")?;
-    serving_fxfs.shutdown().await.context("unmounting fxfs")?;
-    Ok(())
-}
-
-async fn mount_system_blob_volume_impl(
-    system_partition_lock: &Arc<Mutex<()>>,
-    environment: &Arc<Mutex<dyn Environment>>,
-    config: &fshost_config::Config,
-    blob_exposed_dir: ServerEnd<DirectoryMarker>,
-) -> Result<(), Error> {
-    ensure!(config.ramdisk_image, "mount_system_blob_volume called in a non-Recovery build");
-    ensure!(config.fxfs_blob, "mount_system_blob_volume requires a fxblob-based product");
-
-    let guard = system_partition_lock.clone().lock_owned().await;
-    let device = get_system_container_for_recovery(environment).await?;
-
-    log::info!("Mounting Fxfs.");
-    let fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
-    let serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;
-
-    log::info!("Mounting blob volume.");
-    if !serving_fxfs.has_volume(BLOB_VOLUME_LABEL).await.context("checking for blob volume")? {
-        log::error!(
-            "Blob volume missing! Use fuchsia.fshost/Recovery.FormatSystemBlobVolume to create one."
-        );
-        return Err(zx::Status::NOT_FOUND).context("missing blob volume");
-    }
-    let blob_volume = serving_fxfs
-        .open_volume(BLOB_VOLUME_LABEL, MountOptions { as_blob: Some(true), ..Default::default() })
-        .await
-        .context("mounting blob volume")?;
-
-    let blob_root = fuchsia_fs::directory::clone(blob_volume.root())?;
-    let blob_svc =
-        fuchsia_fs::directory::open_directory(blob_volume.exposed_dir(), "svc", fio::PERM_READABLE)
-            .await?;
-
-    // Create a pseudo-directory for us to forward what we want from the blob component's exposed
-    // directory. When we stop serving the last connection to this directory, we can safely unmount
-    // the filesystem.
-    let exposed_dir = vfs::pseudo_directory! {
-        "root" => vfs::remote::remote_dir(blob_root),
-        "svc" => vfs::remote::remote_dir(blob_svc),
-    };
-
-    let scope = vfs::ExecutionScope::new();
-    vfs::directory::serve_on(
-        exposed_dir,
-        fio::PERM_READABLE | fio::PERM_WRITABLE | fio::PERM_EXECUTABLE,
-        scope.clone(),
-        blob_exposed_dir,
-    );
-
-    // TODO(https://fxbug.dev/444486641): Is this the best way to manage state across calls to this
-    // method? As we expand functionality of this protocol, we may want to consider a more holistic
-    // approach to guarding the system container (e.g. extending the FshostEnvironment itself).
-    fasync::Task::spawn(async move {
-        let _guard = guard;
-        scope.wait().await;
-        log::info!("All handles to system container closed, unmounting...");
-        if let Err(e) = blob_volume.shutdown().await {
-            log::error!("Failed to unmount blob volume: {e:?}");
-        }
-        if let Err(e) = serving_fxfs.shutdown().await {
-            log::error!("Failed to shutdown fxfs: {e:?}");
-        }
-        log::info!("System container unmounted.");
-    })
-    .detach();
-
-    Ok(())
-}
-
-async fn get_system_container_for_recovery(
-    env: &Arc<Mutex<dyn Environment>>,
-) -> Result<Box<dyn BlockConnector>, zx::Status> {
-    log::info!("Finding system container...");
-    let registered_devices = env.lock().await.registered_devices().clone();
-    let block_connector = registered_devices
-        .get_block_connector(DeviceTag::SystemContainerOnRecovery)
-        .map_err(|error| {
-            log::error!(error:?; "Unable to get block connector for system container");
-            zx::Status::NOT_FOUND
-        })
-        .on_timeout(FIND_PARTITION_DURATION, || {
-            log::warn!("Failed to find system container within timeout");
-            Err(zx::Status::NOT_FOUND)
-        })
-        .await?;
-    Ok(block_connector)
-}
-
-#[derive(Debug, Error)]
-#[error(transparent)]
-struct FilesystemCorrupt(#[from] anyhow::Error);
-
-/// Obtains a handle to a file which can be used to write a new system blob image, and a token that
-/// will unmount the system container when dropped. The volume will be installed automatically on
-/// the next system boot, or by calling [`install_blob_image`].
-async fn get_blob_image_handle(
-    system_partition_lock: &Arc<Mutex<()>>,
-    environment: &Arc<Mutex<dyn Environment>>,
-    config: &fshost_config::Config,
-) -> Result<fshost::RecoveryGetBlobImageHandleResponse, Error> {
-    ensure!(config.ramdisk_image, "get_blob_image_handle called in a non-Recovery build");
-    ensure!(config.fxfs_blob, "get_blob_image_handle requires a fxblob-based product");
-
-    let guard = system_partition_lock.clone().lock_owned().await;
-    let device = get_system_container_for_recovery(environment)
-        .await
-        .context("could not find system container")?;
-
-    // Ensure the system container was already formatted with fxfs before mounting.
-    const EXPECTED_FORMAT: DiskFormat = DiskFormat::Fxfs;
-    let format =
-        detect_disk_format(&device.connect_block().context("connect_block failed")?.into_proxy())
-            .await;
-    if format != EXPECTED_FORMAT {
-        log::warn!(
-            "wrong system container format (expected = {EXPECTED_FORMAT:?}, detected = {format:?})"
-        );
-        return Ok(fshost::RecoveryGetBlobImageHandleResponse::Unformatted(fshost::Unformatted {}));
-    }
-
-    let fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
-    // TODO(https://fxbug.dev/458436824): The error mapping below is not strictly correct since we
-    // could fail to mount the system container if the on-disk version happens to be newer than the
-    // one in the recovery image. We should detect this case so we can suggest to the user that they
-    // flash a newer image.
-    let serving_fxfs =
-        fxfs.serve_multi_volume().await.context("serving fxfs").map_err(FilesystemCorrupt)?;
-
-    if serving_fxfs
-        .has_volume(BLOB_IMAGE_VOLUME_LABEL)
-        .await
-        .context("checking for blob image volume")?
-    {
-        serving_fxfs
-            .remove_volume(BLOB_IMAGE_VOLUME_LABEL)
-            .await
-            .context("deleting existing blob image volume")
-            .map_err(FilesystemCorrupt)?
-    }
-
-    let pending = serving_fxfs
-        .create_volume(BLOB_IMAGE_VOLUME_LABEL, Default::default(), Default::default())
-        .await
-        .context("creating blob image volume")
-        .map_err(FilesystemCorrupt)?;
-
-    let image_file = fuchsia_fs::directory::open_file(
-        pending.root(),
-        IMAGE_FILE_NAME,
-        fio::PERM_READABLE
-            | fio::PERM_WRITABLE
-            | fio::Flags::PROTOCOL_FILE
-            | fio::Flags::FLAG_MAYBE_CREATE
-            | fio::Flags::FILE_TRUNCATE,
-    )
-    .await
-    .context("opening/creating image file")
-    .map_err(FilesystemCorrupt)?
-    .into_client_end()
-    .map_err(|_| anyhow!("failed to get client end for image handle"))?;
-
-    // Create an event pair which we use as a token to indicate when we should unmount the system
-    // container. This is required since we won't be able to determine when clients are done writing
-    // to the image file.
-    let (our_mount_token, mount_token) = zx::EventPair::create();
-
-    fasync::Task::spawn(async move {
-        let _guard = guard;
-        if let Err(error) =
-            fasync::OnSignals::new(our_mount_token, zx::Signals::OBJECT_PEER_CLOSED).await
-        {
-            log::error!(error:?; "failed to wait for unmount token, unmounting");
-        } else {
-            log::info!("Unmount token closed, unmounting system container.");
-        }
-        if let Err(error) = pending.shutdown().await {
-            log::error!(error:?; "failed to unmount blob image volume");
-        }
-        if let Err(error) = serving_fxfs.shutdown().await {
-            log::error!(error:?; "failed to shutdown fxfs");
-        }
-        log::info!("System container unmounted.");
-    })
-    .detach();
-
-    Ok(fshost::RecoveryGetBlobImageHandleResponse::MountedSystemContainer(
-        fshost::MountedSystemContainer { image_file, mount_token },
-    ))
-}
-
-/// Triggers installation of the system blob volume previously written by [`get_blob_image_handle`].
-async fn install_blob_image(
-    system_partition_lock: &Arc<Mutex<()>>,
-    environment: &Arc<Mutex<dyn Environment>>,
-    config: &fshost_config::Config,
-) -> Result<(), Error> {
-    ensure!(config.ramdisk_image, "install_blob_image called in a non-Recovery build");
-    ensure!(config.fxfs_blob, "install_blob_image requires a fxblob-based product");
-
-    let _guard = system_partition_lock.clone().lock_owned().await;
-    let device = get_system_container_for_recovery(environment).await?;
-
-    let fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
-    let serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;
-
-    if !serving_fxfs
-        .has_volume(BLOB_IMAGE_VOLUME_LABEL)
-        .await
-        .context("checking for image volume")?
-    {
-        log::error!(
-            "blob image missing, use fuchsia.fshost/Recovery.GetBlobImageHandle to write one"
-        );
-        return Err(zx::Status::NOT_FOUND).context("missing blob image volume");
-    }
-
-    let installer = connect_to_protocol_at_dir_root::<ffxfs::VolumeInstallerMarker>(
-        serving_fxfs.exposed_dir(),
-    )?;
-    if let Err(error) = installer
-        .install(BLOB_IMAGE_VOLUME_LABEL, IMAGE_FILE_NAME, BLOB_VOLUME_LABEL)
-        .await
-        .context("FIDL call to fuchsia.fxfs/VolumeInstaller.Install")?
-        .map_err(zx::Status::from_raw)
-    {
-        log::error!(error:?; "failed to install blob volume, cleaning up...");
-        if let Err(error) = serving_fxfs.remove_volume(BLOB_IMAGE_VOLUME_LABEL).await {
-            log::error!(error:?; "could not remove blob image after failed installation");
-        }
-        // Return the original installation error.
-        return Err(error).context("failed to install blob volume");
-    } else {
-        log::info!("Successfully installed system blob volume from image.");
-    }
-
-    Ok(())
-}
-
-/// Searches for a new blob volume ready for installation on the system container and attempts to
-/// install it. On failure, the installation file will be cleaned up so we don't attempt the
-/// installation again on subsequent boots.
-pub async fn maybe_install_new_blob_volume(
-    fs: &fs_management::filesystem::ServingMultiVolumeFilesystem,
-) -> Result<(), Error> {
-    if !fs.has_volume(BLOB_IMAGE_VOLUME_LABEL).await.context("checking for image volume")? {
-        return Ok(());
-    }
-    log::info!("Installing system blob volume from image...");
-
-    let installer =
-        connect_to_protocol_at_dir_root::<ffxfs::VolumeInstallerMarker>(fs.exposed_dir())?;
-    if let Err(error) = installer
-        .install(BLOB_IMAGE_VOLUME_LABEL, IMAGE_FILE_NAME, BLOB_VOLUME_LABEL)
-        .await
-        .context("FIDL call to fuchsia.fxfs/VolumeInstaller.Install")?
-        .map_err(zx::Status::from_raw)
-    {
-        log::error!(error:?; "failed to install blob volume, cleaning up...");
-        if let Err(error) = fs.remove_volume(BLOB_IMAGE_VOLUME_LABEL).await {
-            log::error!(error:?; "could not remove blob image after failed installation");
-        }
-        // Return the original installation error.
-        return Err(error).context("failed to install blob volume");
-    } else {
-        log::info!("Successfully installed system blob volume from image.");
-    }
-
     Ok(())
 }
