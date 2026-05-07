@@ -2223,7 +2223,7 @@ async fn handle_nl80211_message<I: IfaceManager>(
                     match client_iface.start_sched_scan(request, initial_charging).await {
                         Ok(results) => {
                             if !results.is_empty() {
-                                info!("PNO scan loop completed with resultss");
+                                info!("PNO scan loop completed with results");
                                 if let Some(proxy) = state.lock().scan_multicast_proxy.as_ref() {
                                     let _ = proxy.message(
                                         fidl_wlanix::Nl80211MulticastMessageRequest {

@@ -923,6 +923,7 @@ impl ClientIface for SmeClientIface {
         initial_charging_status: bool,
     ) -> Result<Vec<fidl_sme::ScanResult>, Error> {
         info!("SmeClientIface.start_sched_scan called with request: {:?}", request);
+        self.telemetry_sender.send(TelemetryEvent::PnoScanEnabled);
 
         // Note that one scan will be logged to metrics for a requested PNO scan even if many
         // scans actually happen to find the network(s).
@@ -1007,6 +1008,7 @@ impl ClientIface for SmeClientIface {
                             if matching_results.is_empty() {
                                 timer_futures.push(fasync::Timer::new(TIME_WAIT_BETWEEN_SCHEDULED_SCANS.after_now()));
                             } else {
+                                self.telemetry_sender.send(TelemetryEvent::PnoScanResultsReceived);
                                 return Ok(matching_results);
                             }
                         }
@@ -1023,6 +1025,9 @@ impl ClientIface for SmeClientIface {
                         }
                         Err(e) => {
                             error!("Failed to run scan, will not continue PNO scans: {:?}", e);
+                            self.telemetry_sender.send(TelemetryEvent::PnoScanDisabled {
+                                reason: wlan_telemetry::PnoScanDisabledReason::Internal,
+                            });
                             self.telemetry_sender.send(TelemetryEvent::ScanResult {
                                 result: wlan_telemetry::ScanResult::Failed,
                             });
@@ -1036,6 +1041,10 @@ impl ClientIface for SmeClientIface {
 
     async fn stop_sched_scan(&self) -> Result<(), Error> {
         warn!("SmeClientIface.stop_sched_scan called");
+        self.telemetry_sender.send(TelemetryEvent::PnoScanDisabled {
+            reason: wlan_telemetry::PnoScanDisabledReason::ApiRequest,
+        });
+
         // If a PNO scan is running, it will listen for signals to cancel, so we just need to send one here.
         if let Some(abort_tx) = self.pno_scan_stop_signal.lock().take() {
             let _ = abort_tx.send(());
@@ -2395,6 +2404,15 @@ mod tests {
         let mut scan_fut = test_values.iface.start_sched_scan(request, true);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::PnoScanEnabled))
+        );
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::ScanStart))
+        );
+
         // Respond to the SME scan request
         let (_req, responder) = assert_matches!(
             test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
@@ -2413,6 +2431,17 @@ mod tests {
 
         let found_results = assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
         assert_eq!(found_results.len(), 1);
+
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::ScanResult {
+                result: wlan_telemetry::ScanResult::Complete { num_results: 1 }
+            }))
+        );
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::PnoScanResultsReceived))
+        );
     }
 
     #[test]
@@ -2689,12 +2718,66 @@ mod tests {
         let mut scan_fut = test_values.iface.start_sched_scan(request, true);
         assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
 
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::PnoScanEnabled))
+        );
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::ScanStart))
+        );
+
         let mut stop_fut = test_values.iface.stop_sched_scan();
         assert_matches!(test_values.exec.run_until_stalled(&mut stop_fut), Poll::Ready(Ok(())));
+
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::PnoScanDisabled {
+                reason: wlan_telemetry::PnoScanDisabledReason::ApiRequest
+            }))
+        );
 
         // When the stop signal is received, the scan should complete and return an empty list
         let found_results = assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Ready(Ok(res)) => res);
         assert!(found_results.is_empty());
+    }
+
+    #[test]
+    fn test_start_sched_scan_failed_internal() {
+        let mut test_values = setup_test_manager_with_iface();
+        let request = fidl_common::ScheduledScanRequest::default();
+        let mut scan_fut = test_values.iface.start_sched_scan(request, true);
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Pending);
+
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::PnoScanEnabled))
+        );
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::ScanStart))
+        );
+
+        let (_req, responder) = assert_matches!(
+            test_values.exec.run_until_stalled(&mut test_values.sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::Scan { req, responder }))) => (req, responder));
+
+        responder.send(Err(fidl_sme::ScanErrorCode::InternalError)).expect("Failed to send result");
+
+        // Should return an Error due to InternalError
+        assert_matches!(test_values.exec.run_until_stalled(&mut scan_fut), Poll::Ready(Err(_)));
+
+        // Verify that PnoScanDisabled { reason: Internal } and ScanResult::Failed were logged
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::PnoScanDisabled {
+                reason: wlan_telemetry::PnoScanDisabledReason::Internal
+            }))
+        );
+        assert_matches!(
+            test_values.telemetry_receiver.try_next(),
+            Ok(Some(TelemetryEvent::ScanResult { result: wlan_telemetry::ScanResult::Failed }))
+        );
     }
 
     #[test_case(
