@@ -310,28 +310,26 @@ fn update_tags_with_test_entry(tags: &mut FuchsiaTestTags, test_entry: &TestEntr
     // - "unknown" means we do not have knowledge of the build rule being used.
     // - "uncategorized" means we otherwise could not match the test.
 
-    let test_type = if test_entry.name.starts_with("host_") || test_entry.name.starts_with("linux_")
-    {
-        "host"
-    } else if test_entry.name.ends_with("_host_test.sh") {
-        "host_shell"
-    } else {
-        match (build_rule, has_generated_manifest, realm) {
-            (_, _, Some(realm)) if realm != HERMETIC_TEST_REALM => "system",
-            (Some("fuchsia_unittest_package"), true, _) => "unit",
-            (Some("fuchsia_unittest_package"), false, _) => "integration",
-            (Some("fuchsia_test_package"), true, _) => "unit",
-            (Some("fuchsia_test_package"), false, _) => "integration",
-            (Some("fuchsia_test"), true, _) => "unit",
-            (Some("fuchsia_test"), false, _) => "integration",
-            (Some("prebuilt_test_package"), _, _) => "prebuilt",
-            (Some("fuchsia_fuzzer_package"), _, _) => "fuzzer",
-            (Some("fuzzer_package"), _, _) => "fuzzer",
-            (Some("bootfs_test"), _, _) => "bootfs",
-            (None, _, _) => "unknown",
-            _ => "uncategorized",
-        }
-    };
+    let test_type =
+        if test_entry.os.to_lowercase() == "linux" || test_entry.os.to_lowercase() == "mac" {
+            "host"
+        } else {
+            match (build_rule, has_generated_manifest, realm) {
+                (_, _, Some(realm)) if realm != HERMETIC_TEST_REALM => "system",
+                (Some("fuchsia_unittest_package"), true, _) => "unit",
+                (Some("fuchsia_unittest_package"), false, _) => "integration",
+                (Some("fuchsia_test_package"), true, _) => "unit",
+                (Some("fuchsia_test_package"), false, _) => "integration",
+                (Some("fuchsia_test"), true, _) => "unit",
+                (Some("fuchsia_test"), false, _) => "integration",
+                (Some("prebuilt_test_package"), _, _) => "prebuilt",
+                (Some("fuchsia_fuzzer_package"), _, _) => "fuzzer",
+                (Some("fuzzer_package"), _, _) => "fuzzer",
+                (Some("bootfs_test"), _, _) => "bootfs",
+                (None, _, _) => "unknown",
+                _ => "uncategorized",
+            }
+        };
 
     tags.os = Some(test_entry.os.clone());
     tags.cpu = Some(test_entry.cpu.clone());
@@ -1189,7 +1187,7 @@ mod tests {
                     TestTag { key: "os".to_string(), value: "linux".to_string() },
                     TestTag { key: "package_label".to_string(), value: "".to_string() },
                     TestTag { key: "realm".to_string(), value: "".to_string() },
-                    TestTag { key: "scope".to_string(), value: "host_shell".to_string() },
+                    TestTag { key: "scope".to_string(), value: "host".to_string() },
                 ],
             ),
             (
