@@ -24,9 +24,11 @@ rustc_library("starnix_container") {
     "src/hal_manifest.rs",
     "src/lib.rs",
     "src/remote_bundle.rs",
+    "src/repackage.rs",
   ]
 
   deps = [
+    "//src/lib/assembly/config_schema",
     "//src/lib/depfile",
     "//src/lib/fuchsia-url",
     "//src/starnix/lib/linux_uapi",

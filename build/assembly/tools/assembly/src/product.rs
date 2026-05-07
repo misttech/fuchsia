@@ -13,6 +13,7 @@ use camino::Utf8PathBuf;
 use fuchsia_pkg::PackageManifest;
 use image_assembly_config_builder::ProductAssembly;
 use log::info;
+use starnix_container;
 
 /// Product assembly
 pub fn assemble(args: ProductArgs) -> Result<()> {
@@ -88,7 +89,7 @@ Resulting product is not supported and may misbehave!
         }
 
         // Repackage starnix containers if they have a prebuilt package.
-        product_config.repackage_starnix_containers(&outdir)?;
+        starnix_container::repackage_starnix_containers(&mut product_config, &outdir)?;
     }
     let developer_overrides = if let Some(overrides_path) = developer_overrides {
         Some(load_developer_overrides(&overrides_path, suppress_overrides_warning)?)

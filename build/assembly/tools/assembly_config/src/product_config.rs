@@ -145,7 +145,7 @@ pub fn hybrid(args: &HybridProductArgs) -> Result<()> {
     let temp_repackaged_path = Utf8PathBuf::from_path_buf(temp_repackaged_dir.path().to_path_buf())
         .map_err(|p| anyhow::anyhow!("converting temp path to utf8: {:?}", p))?;
 
-    config.repackage_starnix_containers(&temp_repackaged_path)?;
+    starnix_container::repackage_starnix_containers(&mut config, &temp_repackaged_path)?;
 
     config.write_to_dir_with_depfile(&args.output, Some(&mut depfile))?;
 

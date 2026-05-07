@@ -18,9 +18,11 @@ use ext4_extract::remote_bundle as rb;
 
 mod hal_manifest;
 mod remote_bundle;
+pub mod repackage;
 
 use crate::remote_bundle::Writer;
 use depfile::Depfile;
+pub use repackage::repackage_starnix_containers;
 
 #[derive(Debug, Clone)]
 pub struct StarnixContainerGenerator {
