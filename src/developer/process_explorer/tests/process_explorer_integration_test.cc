@@ -12,17 +12,33 @@
 #include <lib/syslog/cpp/macros.h>
 #include <sys/socket.h>
 
+#include <utility>
+
 #include <fbl/unique_fd.h>
-#include <src/lib/testing/loop_fixture/real_loop_fixture.h>
 
 #include "lib/sys/component/cpp/testing/realm_builder_types.h"
 #include "src/developer/process_explorer/process_data.h"
 #include "src/lib/fsl/socket/strings.h"
+#include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 
 namespace process_explorer {
 namespace {
 
-using namespace component_testing;
+using component_testing::ChildRef;
+using component_testing::LocalComponentImpl;
+using component_testing::ParentRef;
+using component_testing::Protocol;
+using component_testing::RealmBuilder;
+using component_testing::Route;
+
+zx::job CreateJob() {
+  zx_handle_t default_job = zx_job_default();
+  zx_handle_t job;
+  if (auto status = zx_job_create(default_job, 0u, &job); status != ZX_OK) {
+    FX_LOGS(ERROR) << "Failed to create job: " << zx_status_get_string(status);
+  }
+  return zx::job(job);
+}
 
 class RealmBuilderTest : public gtest::RealLoopFixture {};
 
@@ -77,18 +93,9 @@ class LocalRootJobImpl : public fuchsia::kernel::RootJob, public LocalComponentI
   bool WasCalled() const { return called_; }
 
  private:
-  zx::job CreateJob() {
-    zx_handle_t default_job = zx_job_default();
-    zx_handle_t job;
-    if (auto status = zx_job_create(default_job, 0u, &job); status != ZX_OK) {
-      FX_LOGS(ERROR) << "Failed to create job: " << zx_status_get_string(status);
-    }
-    return zx::job(job);
-  }
-
-  void LaunchProcess(const zx::job& job, const std::string name, std::vector<const char*> argv) {
+  void LaunchProcess(const zx::job& job, const std::string& name, std::vector<const char*> argv) {
     // fdio_spawn requires that argv has a nullptr in the end.
-    std::vector<const char*> normalized_argv = argv;
+    std::vector<const char*> normalized_argv = std::move(argv);
     normalized_argv.push_back(nullptr);
 
     zx::process process;
@@ -118,10 +125,10 @@ class LocalRootJobImpl : public fuchsia::kernel::RootJob, public LocalComponentI
     });
 
     char err_msg[FDIO_SPAWN_ERR_MSG_MAX_LENGTH];
-    if (auto status = fdio_spawn_etc(
-            job.get(), FDIO_SPAWN_CLONE_ALL, normalized_argv[0], normalized_argv.data(),
-            nullptr,  // Environ
-            actions.size(), actions.data(), process.reset_and_get_address(), err_msg);
+    if (auto status = fdio_spawn_etc(job.get(), FDIO_SPAWN_CLONE_ALL, normalized_argv[0],
+                                     normalized_argv.data(),
+                                     /*environ=*/nullptr, actions.size(), actions.data(),
+                                     process.reset_and_get_address(), err_msg);
         status != ZX_OK) {
       FX_LOGS(ERROR) << "Failed to spawn command: " << zx_status_get_string(status)
                      << ", error: " << err_msg;
@@ -133,7 +140,7 @@ class LocalRootJobImpl : public fuchsia::kernel::RootJob, public LocalComponentI
     processes_stdin_.push_back(std::move(stdin_fd));
   }
 
-  void AddProcessToList(zx::unowned_process process, std::string name) {
+  void AddProcessToList(const zx::unowned_process& process, std::string name) {
     zx_info_handle_basic_t info;
     if (auto status =
             process->get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
@@ -147,12 +154,17 @@ class LocalRootJobImpl : public fuchsia::kernel::RootJob, public LocalComponentI
     }
 
     std::vector<KernelObject> process_objects;
+    process_objects.reserve(handles.size());
     for (const auto& handle : handles) {
-      process_objects.push_back(
-          {handle.type, handle.koid, handle.related_koid, handle.peer_owner_koid});
+      process_objects.push_back({
+          .object_type = handle.type,
+          .koid = handle.koid,
+          .related_koid = handle.related_koid,
+          .peer_owner_koid = handle.peer_owner_koid,
+      });
     }
 
-    processes_.push_back({info.koid, name, process_objects});
+    processes_.push_back({.koid = info.koid, .name = std::move(name), .objects = process_objects});
   }
 
   zx::job job_;
@@ -175,21 +187,27 @@ TEST_F(RealmBuilderTest, RouteServiceToComponent) {
     return new_root_job;
   });
 
-  builder.AddRoute(Route{.capabilities = {Protocol{fuchsia::kernel::RootJob::Name_}},
-                         .source = ChildRef{"root_job"},
-                         .targets = {ChildRef{"process_explorer"}}});
-  builder.AddRoute(Route{.capabilities = {Protocol{fuchsia::logger::LogSink::Name_}},
-                         .source = ParentRef(),
-                         .targets = {ChildRef{"process_explorer"}}});
-  builder.AddRoute(Route{.capabilities = {Protocol{fuchsia::process::explorer::Query::Name_}},
-                         .source = ChildRef{"process_explorer"},
-                         .targets = {ParentRef()}});
+  builder.AddRoute(Route{
+      .capabilities = {Protocol{.name = fuchsia::kernel::RootJob::Name_}},
+      .source = ChildRef{"root_job"},
+      .targets = {ChildRef{"process_explorer"}},
+  });
+  builder.AddRoute(Route{
+      .capabilities = {Protocol{.name = fuchsia::logger::LogSink::Name_}},
+      .source = ParentRef(),
+      .targets = {ChildRef{"process_explorer"}},
+  });
+  builder.AddRoute(Route{
+      .capabilities = {Protocol{.name = fuchsia::process::explorer::Query::Name_}},
+      .source = ChildRef{"process_explorer"},
+      .targets = {ParentRef()},
+  });
 
   auto realm = builder.Build(dispatcher());
-  auto cleanup = fit::defer([&]() {
+  auto cleanup = fit::defer([&] {
     bool complete = false;
     realm.Teardown([&](fit::result<fuchsia::component::Error> result) { complete = true; });
-    RunLoopUntil([&]() { return complete; });
+    RunLoopUntil([&] { return complete; });
   });
   fuchsia::process::explorer::QueryPtr explorer;
   ASSERT_EQ(realm.component().Connect(explorer.NewRequest()), ZX_OK);
