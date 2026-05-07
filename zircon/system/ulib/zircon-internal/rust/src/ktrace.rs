@@ -14,8 +14,9 @@ pub const KTRACE_GRP_SYSCALL_BIT: u32 = 8;
 pub const KTRACE_GRP_VM_BIT: u32 = 9;
 pub const KTRACE_GRP_RESTRICTED_BIT: u32 = 10;
 pub const KTRACE_GRP_POWER_BIT: u32 = 11;
+pub const KTRACE_GRP_OOM_BIT: u32 = 12;
 // Keep last and updated as you add more bits.
-pub const KTRACE_GRP_NEXT_UNUSED_BIT: u32 = 12;
+pub const KTRACE_GRP_NEXT_UNUSED_BIT: u32 = 13;
 
 pub const KTRACE_GRP_ALL: u32 = (1 << KTRACE_GRP_NEXT_UNUSED_BIT) - 1;
 pub const KTRACE_GRP_META: u32 = 1 << KTRACE_GRP_META_BIT;
@@ -30,6 +31,7 @@ pub const KTRACE_GRP_SYSCALL: u32 = 1 << KTRACE_GRP_SYSCALL_BIT;
 pub const KTRACE_GRP_VM: u32 = 1 << KTRACE_GRP_VM_BIT;
 pub const KTRACE_GRP_RESTRICTED: u32 = 1 << KTRACE_GRP_RESTRICTED_BIT;
 pub const KTRACE_GRP_POWER: u32 = 1 << KTRACE_GRP_POWER_BIT;
+pub const KTRACE_GRP_OOM: u32 = 1 << KTRACE_GRP_OOM_BIT;
 
 pub const KTRACE_ACTION_START: u32 = 1; // options = grpmask, 0 = all
 pub const KTRACE_ACTION_STOP: u32 = 2; // options ignored

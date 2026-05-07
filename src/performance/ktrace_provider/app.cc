@@ -48,6 +48,7 @@ constexpr KTraceCategory kGroupCategories[] = {
      "Duration events for when restricted mode is entered"},
     {"kernel:power", KTRACE_GRP_POWER,
      "Counters and events related to power (DVFS, idle, hotplug, etc...)."},
+    {"kernel:oom", KTRACE_GRP_OOM, "Memory pressure and OOM events"},
 };
 
 // Meta category to retain current contents of ktrace buffer.
