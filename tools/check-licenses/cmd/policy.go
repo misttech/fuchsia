@@ -19,36 +19,49 @@ import (
 )
 
 type PolicyCommand struct {
-	fuchsiaDir string
+	fuchsiaDir  string
+	bug         string
+	description string
 }
 
 func (*PolicyCommand) Name() string     { return "policy" }
 func (*PolicyCommand) Synopsis() string { return "Manage policy exceptions." }
 func (*PolicyCommand) Usage() string {
-	return `policy add <CheckName> <targetPath>:
+	return `policy add <CheckName> <targetPath> -bug <BugID> [-desc <Description>]:
   Adds a policy exception for the given project or file path.
 
+  Flags:
+    -bug  Bug ID tracking this exception (Mandatory).
+    -desc Optional description for this exception.
+
   Examples:
-    fx check-licenses policy add AllProjectsMustHaveALicense vendor/foo
-    fx check-licenses policy add AllLicenseTextsMustBeRecognized third_party/bar/LICENSE
+    fx check-licenses policy -bug b/123 add AllProjectsMustHaveALicense vendor/foo
+    fx check-licenses policy -bug b/456 -desc "Custom exception" add AllLicenseTextsMustBeRecognized third_party/bar/LICENSE
 
 `
 }
 
 func (p *PolicyCommand) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&p.fuchsiaDir, "fuchsia_dir", os.Getenv("FUCHSIA_DIR"), "Location of the fuchsia root directory.")
+	f.StringVar(&p.bug, "bug", "", "Bug ID tracking this exception (Mandatory).")
+	f.StringVar(&p.description, "desc", "Auto-generated exception", "Optional description for this exception.")
 }
 
 func (p *PolicyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	if f.NArg() != 3 || f.Arg(0) != "add" {
-		fmt.Fprintln(os.Stderr, "Usage: fx check-licenses policy add <CheckName> <targetPath>")
+		fmt.Fprintln(os.Stderr, "Usage: fx check-licenses policy -bug <BugID> [-desc <Description>] add <CheckName> <targetPath>")
+		return subcommands.ExitUsageError
+	}
+
+	if p.bug == "" {
+		fmt.Fprintln(os.Stderr, "Error: the -bug flag is mandatory.")
 		return subcommands.ExitUsageError
 	}
 
 	checkName := f.Arg(1)
 	targetPath := filepath.Clean(f.Arg(2))
 
-	if err := AddPolicyException(p.fuchsiaDir, checkName, targetPath); err != nil {
+	if err := AddPolicyException(p.fuchsiaDir, checkName, targetPath, p.bug, p.description); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
 	}
@@ -57,7 +70,7 @@ func (p *PolicyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 }
 
 // AddPolicyException adds a policy exception for a given project or file path.
-func AddPolicyException(fuchsiaDir, checkName, targetPath string) error {
+func AddPolicyException(fuchsiaDir, checkName, targetPath, bug, description string) error {
 	if fuchsiaDir == "" {
 		fuchsiaDir = "."
 	}
@@ -124,8 +137,8 @@ func AddPolicyException(fuchsiaDir, checkName, targetPath string) error {
 
 	// Append
 	entry := v2config.AllowlistEntry{
-		Bug:         "TODO: File bug with TQ-OSRB",
-		Description: "Auto-generated exception",
+		Bug:         bug,
+		Description: description,
 		Paths:       []string{targetPath},
 	}
 	cfg.PolicyExceptions[checkName] = append(cfg.PolicyExceptions[checkName], entry)
@@ -144,10 +157,8 @@ func AddPolicyException(fuchsiaDir, checkName, targetPath string) error {
 	fmt.Printf("✅ Added Policy Exception:\n")
 	fmt.Printf("  - Check:  %s\n", checkName)
 	fmt.Printf("  - Target: %s\n", targetPath)
+	fmt.Printf("  - Bug:    %s\n", bug)
 	fmt.Printf("  - File:   %s\n\n", destFile)
-	fmt.Printf("ACTION REQUIRED:\n")
-	fmt.Printf("You must file a bug with the TQ-OSRB component explaining why this path needs a policy exception.\n")
-	fmt.Printf("Once filed, update the 'bug' field in %s with the bug number.\n", destFile)
 
 	return nil
 }
