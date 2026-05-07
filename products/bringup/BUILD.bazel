@@ -143,44 +143,6 @@ fuchsia_product_bundle(
 )
 
 ###
-# qemu-arm64
-
-fuchsia_product(
-    name = "image.qemu-arm64",
-    board_config = "//boards:qemu-arm64",
-    platform_artifacts = "//build/bazel/assembly/assembly_input_bundles:platform_bringup",
-    product_config = ":product_config",
-)
-
-fuchsia_product_bundle(
-    name = "product_bundle.qemu-arm64",
-    main = ":image.qemu-arm64",
-    product_bundle_name = "bringup.qemu-arm64",
-    product_bundle_version = build_info_version,
-    recovery = "//products/zedboot:qemu-arm64",
-)
-
-fuchsia_product(
-    name = "image_with_tests.qemu-arm64",
-    board_config = "//boards:qemu-arm64",
-    platform_artifacts = "//build/bazel/assembly/assembly_input_bundles:platform_bringup",
-    product_config = ":product_config_with_tests",
-)
-
-fuchsia_product_bundle(
-    name = "product_bundle_with_tests.qemu-arm64",
-    main = ":image_with_tests.qemu-arm64",
-    product_bundle_name = "bringup_with_tests.qemu-arm64",
-    product_bundle_version = build_info_version,
-    recovery = "//products/zedboot:qemu-arm64",
-    virtual_devices = [
-        "//build/bazel/assembly/virtual_devices:arm64-emu-recommended",
-        "//build/bazel/assembly/virtual_devices:arm64-emu-min",
-        "//build/bazel/assembly/virtual_devices:arm64-emu-extra-large",
-    ],
-)
-
-###
 # vim3
 
 fuchsia_product(

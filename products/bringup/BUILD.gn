@@ -58,6 +58,9 @@ if (current_cpu == "x64") {
 if (current_cpu == "arm64") {
   bazel_product_bundle("product_bundle.arm64") {
     testonly = true
+    use_bringup_platform_bundles = true
+    image_has_fxfs_blob = false
+    image_has_fvm = false
     product_bundle_name = "bringup.arm64"
     bazel_product_bundle_target = ":product_bundle.arm64"
     bazel_product_image_target = ":image.arm64"
@@ -73,7 +76,6 @@ if (current_cpu == "arm64") {
   }
 
   bazel_product_bundle("product_bundle_with_tests.arm64") {
-    testonly = true
     product_bundle_name = "bringup_with_tests.arm64"
     bazel_product_bundle_target = ":product_bundle_with_tests.arm64"
     bazel_product_image_target = ":image_with_tests.arm64"
@@ -82,40 +84,6 @@ if (current_cpu == "arm64") {
     bazel_recovery_image_target = "//products/zedboot:arm64"
     bazel_inputs_from_gn =
         bringup_with_tests_bazel_inputs + [ "//boards/arm64:arm64.bazel_input" ]
-
-    # Note: this is last so that local variables cannot mask anything set in that scope,
-    # so that this scope only contains truly common parameters.
-    forward_variables_from(bazel_product_bundle_params, "*")
-  }
-
-  bazel_product_bundle("product_bundle.qemu-arm64") {
-    testonly = true
-    product_bundle_name = "bringup.qemu-arm64"
-    bazel_product_bundle_target = ":product_bundle.qemu-arm64"
-    bazel_product_image_target = ":image.qemu-arm64"
-    bazel_product_config_target = ":product_config"
-    bazel_product_config_name = "bringup"
-    bazel_recovery_image_target = "//products/zedboot:qemu-arm64"
-    bazel_inputs_from_gn =
-        bringup_bazel_inputs + [ "//boards/qemu-arm64:qemu-arm64.bazel_input" ]
-    image_use_vbmeta = false
-
-    # Note: this is last so that local variables cannot mask anything set in that scope,
-    # so that this scope only contains truly common parameters.
-    forward_variables_from(bazel_product_bundle_params, "*")
-  }
-
-  bazel_product_bundle("product_bundle_with_tests.qemu-arm64") {
-    testonly = true
-    product_bundle_name = "bringup_with_tests.qemu-arm64"
-    bazel_product_bundle_target = ":product_bundle_with_tests.qemu-arm64"
-    bazel_product_image_target = ":image_with_tests.qemu-arm64"
-    bazel_product_config_target = ":product_config_with_tests"
-    bazel_product_config_name = "bringup_with_tests"
-    bazel_recovery_image_target = "//products/zedboot:qemu-arm64"
-    bazel_inputs_from_gn = bringup_with_tests_bazel_inputs +
-                           [ "//boards/qemu-arm64:qemu-arm64.bazel_input" ]
-    image_use_vbmeta = false
 
     # Note: this is last so that local variables cannot mask anything set in that scope,
     # so that this scope only contains truly common parameters.
