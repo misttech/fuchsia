@@ -28,9 +28,10 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{SigSet, Signal, UNBLOCKABLE_SIGNALS, UncheckedSignal};
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{
-    __WALL, __WCLONE, P_ALL, P_PGID, P_PID, P_PIDFD, SFD_CLOEXEC, SFD_NONBLOCK, SI_TKILL,
-    SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, SS_AUTODISARM, SS_DISABLE, SS_ONSTACK, WCONTINUED,
-    WEXITED, WNOHANG, WNOWAIT, WSTOPPED, WUNTRACED, errno, error, pid_t, rusage, sigaltstack,
+    __WALL, __WCLONE, __WNOTHREAD, P_ALL, P_PGID, P_PID, P_PIDFD, SFD_CLOEXEC, SFD_NONBLOCK,
+    SI_TKILL, SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, SS_AUTODISARM, SS_DISABLE, SS_ONSTACK,
+    WCONTINUED, WEXITED, WNOHANG, WNOWAIT, WSTOPPED, WUNTRACED, errno, error, pid_t, rusage,
+    sigaltstack,
 };
 use static_assertions::const_assert_eq;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -822,6 +823,9 @@ pub struct WaitingOptions {
 impl WaitingOptions {
     fn new(options: u32) -> Self {
         const_assert_eq!(WUNTRACED, WSTOPPED);
+        if options & __WNOTHREAD != 0 {
+            track_stub!(TODO("https://fxbug.dev/509926462"), "wait options wnothread");
+        }
         Self {
             wait_for_exited: options & WEXITED > 0,
             wait_for_stopped: options & WSTOPPED > 0,
@@ -848,7 +852,7 @@ impl WaitingOptions {
 
     /// Build a `WaitingOptions` from the waiting flags of wait4.
     pub fn new_for_wait4(options: u32) -> Result<Self, Errno> {
-        if options & !(__WCLONE | __WALL | WNOHANG | WUNTRACED | WCONTINUED) != 0 {
+        if options & !(__WCLONE | __WNOTHREAD | __WALL | WNOHANG | WUNTRACED | WCONTINUED) != 0 {
             track_stub!(TODO("https://fxbug.dev/322874017"), "wait4 options", options);
             return error!(EINVAL);
         }
