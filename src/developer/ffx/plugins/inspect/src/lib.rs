@@ -16,7 +16,7 @@ use iquery_fdomain::commands::{
 use serde::Serialize;
 use std::fmt;
 use std::io::Write;
-use target_holders::fdomain::{RemoteControlProxyHolder, toolbox_or};
+use target_holders::fdomain::{RemoteControlProxyHolder, toolbox};
 
 mod accessor_provider;
 mod apply_selectors;
@@ -31,7 +31,7 @@ fho::embedded_plugin!(InspectTool);
 pub struct InspectTool {
     #[command]
     cmd: InspectCommand,
-    #[with(deferred(toolbox_or("bootstrap/archivist")))]
+    #[with(deferred(toolbox()))]
     archive_accessor: Deferred<ArchiveAccessorProxy>,
     rcs: Deferred<RemoteControlProxyHolder>,
 }
