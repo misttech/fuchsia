@@ -7,7 +7,7 @@ import enum
 import random
 import re
 import string
-from typing import Literal, Optional, Protocol, TypeAlias
+from typing import Literal, Mapping, Optional, Protocol, TypeAlias, TypedDict
 
 
 class Band(enum.StrEnum):
@@ -172,6 +172,18 @@ DEFAULT_2G_CHANNEL = BssChannel(Band.BAND_2G, 1, HtMode(bw=40, extension="+"))
 DEFAULT_5G_CHANNEL = BssChannel(Band.BAND_5G, 36, VhtMode(bw=80))
 
 
+class UciBssOptions(TypedDict, total=False):
+    """A TypedDict for common custom UCI options for a 'wifi-iface' section.
+
+    'total=False' means all keys are optional. Add more options as needed.
+
+    Attributes:
+        dtim_period: DTIM period.
+    """
+
+    dtim_period: int
+
+
 @dataclasses.dataclass
 class BssSettings:
     """Settings for a BSS (Multiple SSIDs on the same radio).
@@ -180,12 +192,16 @@ class BssSettings:
         ssid: The Service Set Identifier (network name)
         security: The security encryption protocol
         password: The passphrase or key for the network
+        custom_uci_options: UciBssOptions or Mapping to set on the BSS.
     """
 
     ssid: str
     security: Security
     password: str | None = None
     hidden: bool = False
+    custom_uci_options: UciBssOptions | Mapping[
+        str, str | int
+    ] = dataclasses.field(default_factory=dict)
 
     @property
     def name(self) -> str:
@@ -228,6 +244,24 @@ class CapabilitySelection:
         return cls(mode="CUSTOM", capabilities=capabilities)
 
 
+class UciRadioOptions(TypedDict, total=False):
+    """A TypedDict for common custom UCI options for a 'wifi-device' section.
+
+    'total=False' means all keys are optional. Add more options as needed.
+
+    Attributes:
+        frag: Fragment threshold.
+        beacon_int: Beacon interval in milliseconds.
+        short_preamble: Use short preamble ("0" or "1").
+        rts: RTS threshold.
+    """
+
+    frag: int
+    beacon_int: int
+    short_preamble: Literal["0", "1"]
+    rts: int
+
+
 # TODO(https://fxbug.dev/489258440): Make channel required param and provide easy way to use
 # default 2g/5g channels.
 @dataclasses.dataclass
@@ -245,6 +279,8 @@ class RadioConfig:
             configuration. Useful for testing scenarios that need to ensure
             the AP is only advertising/allowing clients of a specific standard
             (e.g., 'n' for 802.11n, 'ac' for 802.11ac, 'ax' for 802.11ax).
+        custom_uci_options: Arbitrary UCI options to set on the radio.
+        custom_hostapd_options: Arbitrary hostapd options to pass through via UCI list hostapd_options.
     """
 
     channel: BssChannel
@@ -253,6 +289,10 @@ class RadioConfig:
     n_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT()
     ac_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT()
     require_mode: Literal["n", "ac", "ax", None] = None
+    custom_uci_options: UciRadioOptions = dataclasses.field(
+        default_factory=lambda: UciRadioOptions()
+    )
+    # TODO(b/510315419): Create a typed dict for hostapd options.
 
     @classmethod
     def generate(
@@ -263,6 +303,7 @@ class RadioConfig:
         n_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT(),
         ac_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT(),
         require_mode: Literal["n", "ac", "ax", None] = None,
+        custom_uci_options: UciRadioOptions | None = None,
     ) -> "RadioConfig":
         """Creates a RadioConfig object with the specified channel and BSS settings.
 
@@ -273,12 +314,15 @@ class RadioConfig:
             n_capabilities: Selection of 802.11n capabilities.
             ac_capabilities: Selection of 802.11ac capabilities.
             require_mode: UCI require_mode value.
+            custom_uci_options: Structured UciRadioOptions to set on the radio.
 
         Returns:
             A RadioConfig object.
         """
         if bss_settings is None:
             bss_settings = []
+        if custom_uci_options is None:
+            custom_uci_options = {}
 
         return cls(
             channel=channel,
@@ -287,6 +331,7 @@ class RadioConfig:
             n_capabilities=n_capabilities,
             ac_capabilities=ac_capabilities,
             require_mode=require_mode,
+            custom_uci_options=custom_uci_options,
         )
 
 

@@ -123,6 +123,9 @@ class OpenWrtAP:
         hidden = "1" if bss.hidden else "0"
         self.ssh.run(f"uci set wireless.{bss.name}.hidden='{hidden}'")
 
+        for option, value in bss.custom_uci_options.items():
+            self.ssh.run(f"uci set wireless.{bss.name}.{option}='{value}'")
+
     def configure_wifi(self, config: AccessPointConfig) -> None:
         """Configures the Wi-Fi on the Access Point.
 
@@ -179,6 +182,10 @@ class OpenWrtAP:
                 self.ssh.run(
                     f"uci set wireless.{radio}.require_mode='{radio_config.require_mode}'"
                 )
+
+            for option, value in radio_config.custom_uci_options.items():
+                self.ssh.run(f"uci set wireless.{radio}.{option}='{value}'")
+
             if radio_config.bss_settings:
                 for bss in radio_config.bss_settings:
                     self._configure_bss(bss, radio)
