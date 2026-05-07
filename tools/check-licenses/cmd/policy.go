@@ -108,11 +108,8 @@ func AddPolicyException(fuchsiaDir, checkName, targetPath string) error {
 		return fmt.Errorf("failed to create config directory %s: %w", configDir, err)
 	}
 
-	// We'll write to a file named after the target base name
-	baseName := filepath.Base(targetPath)
-	if baseName == "." || baseName == "/" {
-		baseName = "root"
-	}
+	// Determine the config file name based on project name or top-level component
+	baseName := findProjectBasename(targetPath, builder.Config.ManifestProjectNames)
 	destFile := filepath.Join(configDir, baseName+".json")
 
 	// Read existing if any
@@ -153,4 +150,31 @@ func AddPolicyException(fuchsiaDir, checkName, targetPath string) error {
 	fmt.Printf("Once filed, update the 'bug' field in %s with the bug number.\n", destFile)
 
 	return nil
+}
+
+func findProjectBasename(targetPath string, manifestProjectNames map[string]string) string {
+	targetPath = filepath.Clean(targetPath)
+
+	// Walk up the path to find a match in manifests
+	for p := targetPath; p != "." && p != "/"; p = filepath.Dir(p) {
+		if _, ok := manifestProjectNames[p]; ok {
+			return filepath.Base(p)
+		}
+	}
+
+	// Fallback for first-party or paths not in manifest
+	dir := filepath.Dir(targetPath)
+	if dir == "." || dir == "/" {
+		return "root"
+	}
+
+	parts := strings.Split(targetPath, string(filepath.Separator))
+	if len(parts) > 0 && parts[0] != "" {
+		if parts[0] == "src" && len(parts) > 1 && parts[1] != "" {
+			return parts[1]
+		}
+		return parts[0]
+	}
+
+	return "root"
 }
