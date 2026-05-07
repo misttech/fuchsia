@@ -728,6 +728,16 @@ ffx log --force-set-severity.
     }
 
     #[fuchsia::test]
+    async fn test_no_symbolizer_config_message() {
+        let err = LogError::NoSymbolizerConfig;
+        let msg = format!("{}", err);
+        assert_eq!(
+            msg,
+            "No symbolizer configuration provided. You can provide one via config, or run 'ffx log --symbolize off' to disable symbolization."
+        );
+    }
+
+    #[fuchsia::test]
     async fn logger_prints_current_logs_and_exits_on_dump() {
         let mut environment = TestEnvironment::new(TestEnvironmentConfig::default()).await;
         let cmd = LogCommand {

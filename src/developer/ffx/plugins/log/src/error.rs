@@ -34,7 +34,9 @@ pub enum LogError {
     IOError(#[from] std::io::Error),
     #[error("Cannot use dump with --since now")]
     DumpWithSinceNow,
-    #[error("No symbolizer configuration provided")]
+    #[error(
+        "No symbolizer configuration provided. You can provide one via config, or run 'ffx log --symbolize off' to disable symbolization."
+    )]
     NoSymbolizerConfig,
     #[error(transparent)]
     SymbolizerError(#[from] ReadError),
