@@ -5,7 +5,7 @@
 import asyncio
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydap.models import (
     AttachRequestArguments,
@@ -32,7 +32,7 @@ class DapClient:
     """A client for the Debug Adapter Protocol."""
 
     def __init__(self) -> None:
-        self._pending_requests: Dict[int, asyncio.Future[Any]] = {}
+        self._pending_requests: dict[int, asyncio.Future[Any]] = {}
 
         self._seq_counter = 1
 
@@ -63,9 +63,9 @@ class DapClient:
         self,
         writer: asyncio.StreamWriter,
         command: str,
-        arguments: Optional[Dict[str, Any]] = None,
+        arguments: dict[str, Any] | None = None,
         timeout: float = 5.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Sends a request to the debug adapter and waits for the response."""
         seq = self._seq_counter
         self._seq_counter += 1
@@ -93,7 +93,7 @@ class DapClient:
 
     async def initialize(
         self, writer: asyncio.StreamWriter, args: InitializeArguments
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Sends an initialize request."""
         return await self.send_request(
             writer, "initialize", dataclass_to_dict(args)
@@ -101,7 +101,7 @@ class DapClient:
 
     async def disconnect(
         self, writer: asyncio.StreamWriter, args: DisconnectArguments
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Sends a disconnect request."""
         return await self.send_request(
             writer, "disconnect", dataclass_to_dict(args)
@@ -118,7 +118,7 @@ class DapClient:
 
     async def continue_thread(
         self, writer: asyncio.StreamWriter, args: ContinueArguments
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Sends a continue request."""
         return await self.send_request(
             writer, "continue", dataclass_to_dict(args)
@@ -126,7 +126,7 @@ class DapClient:
 
     async def pause_thread(
         self, writer: asyncio.StreamWriter, args: PauseArguments
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Sends a pause request."""
         return await self.send_request(writer, "pause", dataclass_to_dict(args))
 
@@ -137,7 +137,7 @@ class DapClient:
 
     async def attach(
         self, writer: asyncio.StreamWriter, args: AttachRequestArguments
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Sends an attach request."""
         data = dataclass_to_dict(args)
         # Map _restart to __restart for protocol compliance
@@ -151,7 +151,7 @@ class DapClient:
 
     async def _read_message(
         self, reader: asyncio.StreamReader
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Reads a single message from the reader, handling protocol framing."""
         content_length = None
         while True:
@@ -177,7 +177,7 @@ class DapClient:
         return json.loads(body.decode("utf-8"))
 
     async def _write_message(
-        self, writer: asyncio.StreamWriter, value: Dict[str, Any]
+        self, writer: asyncio.StreamWriter, value: dict[str, Any]
     ) -> None:
         """Writes a message to the writer, handling protocol framing."""
         content = json.dumps(value, separators=(",", ":")).encode("utf-8")

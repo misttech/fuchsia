@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 # TODO(https://fxbug.dev/510003272): Support presentationHint.
@@ -18,9 +17,9 @@ class Source:
             retrieved through the `source` request.
     """
 
-    name: Optional[str] = None
-    path: Optional[str] = None
-    sourceReference: Optional[int] = None
+    name: str | None = None
+    path: str | None = None
+    sourceReference: int | None = None
 
 
 # TODO(https://fxbug.dev/510003272): Support presentationHint.
@@ -46,7 +45,7 @@ class StackFrame:
     name: str
     line: int
     column: int
-    source: Optional[Source] = None
+    source: Source | None = None
 
 
 @dataclass

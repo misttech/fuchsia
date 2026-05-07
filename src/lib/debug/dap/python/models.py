@@ -4,7 +4,7 @@
 
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any
 
 from pydap.dap_types import StackFrame, Thread
 
@@ -15,15 +15,15 @@ class MessageType(str, Enum):
     EVENT = "event"
 
 
-def verbatim_factory(items: List[Tuple[str, Any]]) -> Dict[str, Any]:
+def verbatim_factory(items: list[tuple[str, Any]]) -> dict[str, Any]:
     return {k: v for k, v in items if v is not None}
 
 
-def dataclass_to_dict(obj: Any) -> Dict[str, Any]:
+def dataclass_to_dict(obj: Any) -> dict[str, Any]:
     return asdict(obj, dict_factory=verbatim_factory)
 
 
-def from_dict(cls: Type[Any], data: Dict[str, Any]) -> Any:
+def from_dict(cls: type[Any], data: dict[str, Any]) -> Any:
     """Creates a dataclass instance from a dictionary with spec-cased keys."""
     if not hasattr(cls, "__dataclass_fields__"):
         return data
@@ -35,7 +35,7 @@ def from_dict(cls: Type[Any], data: Dict[str, Any]) -> Any:
             args = getattr(field.type, "__args__", None)
 
             if (
-                origin in (list, List)
+                origin is list
                 and args
                 and hasattr(args[0], "__dataclass_fields__")
             ):
@@ -74,7 +74,7 @@ class Request:
     seq: int
     type: str
     command: str
-    arguments: Optional[Dict[str, Any]] = None
+    arguments: dict[str, Any] | None = None
 
 
 @dataclass
@@ -95,9 +95,9 @@ class Response:
     type: str
     request_seq: int
     success: bool
-    command: Optional[str] = None
-    message: Optional[str] = None
-    body: Optional[Dict[str, Any]] = None
+    command: str | None = None
+    message: str | None = None
+    body: dict[str, Any] | None = None
 
 
 @dataclass
@@ -114,7 +114,7 @@ class Event:
     seq: int
     type: str
     event: str
-    body: Optional[Dict[str, Any]] = None
+    body: dict[str, Any] | None = None
 
 
 @dataclass
@@ -128,8 +128,8 @@ class InitializeArguments:
     """
 
     adapterID: str
-    supportsInvalidatedEvent: Optional[bool] = None
-    supportsRunInTerminalRequest: Optional[bool] = None
+    supportsInvalidatedEvent: bool | None = None
+    supportsRunInTerminalRequest: bool | None = None
 
 
 @dataclass
@@ -140,7 +140,7 @@ class DisconnectArguments:
         terminateDebuggee: Indicates whether the debuggee should be terminated when the debugger is disconnected.
     """
 
-    terminateDebuggee: Optional[bool] = None
+    terminateDebuggee: bool | None = None
 
 
 @dataclass
@@ -151,7 +151,7 @@ class StackTraceResponse:
         stackFrames: The stack frames of the thread.
     """
 
-    stackFrames: List[StackFrame]
+    stackFrames: list[StackFrame]
 
 
 @dataclass
@@ -173,7 +173,7 @@ class ThreadsResponse:
         threads: All threads.
     """
 
-    threads: List[Thread]
+    threads: list[Thread]
 
 
 @dataclass
@@ -187,8 +187,8 @@ class StackTraceArguments:
     """
 
     threadId: int
-    startFrame: Optional[int] = None
-    levels: Optional[int] = None
+    startFrame: int | None = None
+    levels: int | None = None
 
 
 @dataclass
@@ -201,7 +201,7 @@ class ContinueArguments:
     """
 
     threadId: int
-    singleThread: Optional[bool] = None
+    singleThread: bool | None = None
 
 
 @dataclass
@@ -224,5 +224,5 @@ class AttachRequestArguments:
         extra_fields: Additional implementation specific attributes.
     """
 
-    _restart: Optional[Any] = None
-    extra_fields: Optional[Dict[str, Any]] = None
+    _restart: Any | None = None
+    extra_fields: dict[str, Any] | None = None
