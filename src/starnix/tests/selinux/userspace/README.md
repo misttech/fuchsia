@@ -5,7 +5,7 @@ can also run on Linux but the Linux version is not tested in CQ.
 
 ### Running the tests
 
-#### Run on Starnix with:
+#### Running on Starnix:
 ```
 fx test sestarnix_userspace_tests
 ```
@@ -15,26 +15,31 @@ Or use `#meta/<test_name>.cm` to only execute a specific test. E.g.
 fx test sestarnix_userspace_tests#meta/socketpipes.cm
 ```
 
-#### Run on Linux with:
+#### Running on Linux:
 
+If you have a vendor/google checkout and want to run the tests on Android GKI:
 ```
-./run_on_linux.py --kernel ./local/vmlinuz
+fx test sestarnix_userspace_tests_on_linux --host
 ```
 
-Or use `-k` to execute a specific test and `--all-output` to get all the outputs:
+Otherwise, if you want to run the tests with custom options (for example to
+update the audit expectations), you can use the `run_on_linux.py` script.
+
+This requires enabling userspace tests on Linux by adding
+`enable_sestarnix_userspace_tests_on_linux = true` to `fx args` and adding the
+test target with `fx add-test //src/starnix/tests/selinux/userspace:tests`.
+
+Then you can use `-k` to execute a specific test, `--all-output` to get all the outputs, and specify a kernel:
+
 ```
 ./run_on_linux.py --kernel ./local/vmlinuz -k "*mprotect*" --all-output
 ```
 
-Requires having a kernel located at $FUCHSIA_DIR/local/vmlinuz
+If you need a kernel you can download one from CIPD:
 
-You can download one from CIPD:
 ```
 wget -qO- "https://chrome-infra-packages.appspot.com/dl/fuchsia/third_party/3pp/sestarnix/linux/linux-amd64/+/latest" | bsdtar -xO -f - bzImage > "$FUCHSIA_DIR/local/vmlinuz"
 ```
-
-For running the tests on other kernels please see [//vendor/google/starnix/tests/selinux/userspace/README.md](../../../../../vendor/google/starnix/tests/selinux/userspace/README.md).
-
 
 ### Audit checker
 
@@ -54,7 +59,7 @@ with the `--update-audit-expectations` flag. This will modify the JSON file cont
 the expected audit logs for each test case.
 
 ```bash
-./run_tests_on_linux.sh --update-audit-expectations
+./run_tests_on_linux.py --update-audit-expectations
 ```
 
 After updating, rerun the tests *without* the flag on both Linux and Starnix

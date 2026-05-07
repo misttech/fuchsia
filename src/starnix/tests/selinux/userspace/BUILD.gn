@@ -7,13 +7,26 @@ import("//build/config/clang/clang_cpu.gni")
 import("//build/config/sysroot.gni")
 import("//build/python/python_host_test.gni")
 import("//build/tools/json_merge/json_merge.gni")
+import("//src/starnix/build/args.gni")
 import("//src/starnix/kernel/starnix.gni")
 import("//src/starnix/tests/build/starnix_linux_test_component.gni")
 import("//src/starnix/tests/starnix_test_subpackages.gni")
 
-if (is_linux) {
-  sysroot_libs = sysroot + "/lib/${clang_cpu}-linux-gnu"
+sysroot_libs = sysroot + "/lib/${clang_cpu}-linux-gnu"
+common_lib_names = [
+  "libc.so.6",
+  "libdl.so.2",
+  "libm.so.6",
+  "libpthread.so.0",
+  "libresolv.so.2",
+  "librt.so.1",
+]
+host_lib_names = common_lib_names + [ "ld-linux-x86-64.so.2" ]
+not_needed([ "sysroot_libs" ])
+not_needed([ "common_lib_names" ])
+not_needed([ "host_lib_names" ])
 
+if (is_linux) {
   if (current_cpu == "x64") {
     ld_so_name = "ld-linux-x86-64.so.2"
     ld_so_dir = "lib64"
@@ -35,14 +48,10 @@ if (is_linux) {
 
   # Libraries used by the test binaries. Add new ones as needed.
   resource("libs") {
-    sources = [
-      sysroot_libs + "/libc.so.6",
-      sysroot_libs + "/libdl.so.2",
-      sysroot_libs + "/libm.so.6",
-      sysroot_libs + "/libpthread.so.0",
-      sysroot_libs + "/libresolv.so.2",
-      sysroot_libs + "/librt.so.1",
-    ]
+    sources = []
+    foreach(lib, common_lib_names) {
+      sources += [ sysroot_libs + "/$lib" ]
+    }
     outputs = "data/lib/{{source_file_part}}"
   }
 
@@ -164,36 +173,38 @@ test_subprogram_names = [
 ]
 
 # Policies made available to the tests.
+policy_files = [
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/anon_inode_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/append_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/audit_access_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/binder_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/bpf_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/capabilities_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/file_transition_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/genfscon_create_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/inherit_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/ioctl_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/memfd_class_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/memfd_transition_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/minimal_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/mount_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/mprotect_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/netlink_audit_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/netlink_xperms_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/overlayfs_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/perf_event_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/pipe_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/ptrace_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/selinuxfs_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/socket_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/syslog_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/timerslack_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/tun_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/xattr_access_policy",
+]
+
 resource("policies") {
-  sources = [
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/anon_inode_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/append_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/audit_access_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/binder_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/bpf_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/capabilities_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/file_transition_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/genfscon_create_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/inherit_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/ioctl_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/memfd_class_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/memfd_transition_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/minimal_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/mount_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/mprotect_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/netlink_audit_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/netlink_xperms_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/overlayfs_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/perf_event_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/pipe_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/ptrace_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/selinuxfs_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/socket_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/syslog_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/timerslack_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/tun_policy",
-    "//src/starnix/lib/selinux/testdata/composite_policies/compiled/xattr_access_policy",
-  ]
+  sources = policy_files
   outputs = "data/policies/{{source_file_part}}"
 }
 
@@ -318,14 +329,147 @@ fuchsia_test_package("sestarnix_userspace_tests") {
 group("tests") {
   testonly = true
   deps = [ ":sestarnix_userspace_tests" ]
-  if (host_os == "linux") {
+  if (host_os == "linux" && host_cpu == "x64" &&
+      enable_sestarnix_userspace_tests_on_linux) {
     deps += [ ":sestarnix_userspace_tests_on_linux($host_toolchain)" ]
   }
 }
 
 if (is_host) {
+  host_test_data("qemu") {
+    sources = [
+      "//prebuilt/third_party/qemu/linux-x64/bin/qemu-system-x86_64",
+      "//prebuilt/third_party/qemu/linux-x64/share/qemu/bios-256k.bin",
+      "//prebuilt/third_party/qemu/linux-x64/share/qemu/efi-e1000.rom",
+      "//prebuilt/third_party/qemu/linux-x64/share/qemu/kvmvapic.bin",
+      "//prebuilt/third_party/qemu/linux-x64/share/qemu/linuxboot_dma.bin",
+    ]
+    outputs = [ "$target_out_dir/qemu/{{source_file_part}}" ]
+  }
+
+  host_test_data("policies_host") {
+    sources = policy_files
+    outputs = [ "$target_out_dir/policies/{{source_file_part}}" ]
+  }
+
+  host_test_data("audit_expectations_host") {
+    deps = [ ":audit_expectations.json" ]
+    sources = [ "$target_out_dir/audit_expectations.json" ]
+    outputs = [ "$target_out_dir/audit_expectations/{{source_file_part}}" ]
+  }
+
+  host_test_data("expectations_host") {
+    sources = [ "expectations/expectations.json5" ]
+    outputs = [ "$target_out_dir/expectations/{{source_file_part}}" ]
+  }
+
+  host_test_data("gki_prebuilt") {
+    sources = [
+      "//prebuilt/starnix/internal/gki/x86_64/bzImage",
+      "//prebuilt/starnix/internal/gki/x86_64/virtio_console.ko",
+      "//prebuilt/starnix/internal/gki/x86_64/virtio_pci.ko",
+      "//prebuilt/starnix/internal/gki/x86_64/virtio_pci_legacy_dev.ko",
+      "//prebuilt/starnix/internal/gki/x86_64/virtio_pci_modern_dev.ko",
+    ]
+    outputs = [ "$target_out_dir/gki/{{source_file_part}}" ]
+  }
+
+  host_test_data("init_for_linux_host") {
+    out_dir = get_label_info(":init_for_linux($target_linux_toolchain)",
+                             "root_out_dir")
+    deps = [ ":init_for_linux($target_linux_toolchain)" ]
+    sources = [ "${out_dir}/init_for_linux" ]
+    outputs = [ "$target_out_dir/linux_x64/init_for_linux" ]
+  }
+
+  action_foreach("libs_copy") {
+    script = "//build/toolchain/copy.py"
+    sources = []
+    foreach(lib, host_lib_names) {
+      sources += [ sysroot_libs + "/$lib" ]
+    }
+    outputs = [ "$target_gen_dir/libs/{{source_file_part}}" ]
+    args = [
+      "{{source}}",
+      rebase_path(target_gen_dir + "/libs/{{source_file_part}}",
+                  root_build_dir),
+    ]
+  }
+
+  host_test_data("libs_host") {
+    deps = [ ":libs_copy" ]
+    sources = []
+    foreach(lib, host_lib_names) {
+      sources += [ "$target_gen_dir/libs/$lib" ]
+    }
+    outputs = [ "$target_out_dir/libs/{{source_file_part}}" ]
+  }
+
+  generated_file("test_list") {
+    outputs = [ "$target_gen_dir/test_list.json" ]
+    output_conversion = "json"
+    contents = test_names
+  }
+
+  host_test_data("test_list_data") {
+    sources = [ "$target_gen_dir/test_list.json" ]
+    outputs = [ "$target_out_dir/test_list.json" ]
+    deps = [ ":test_list" ]
+  }
+
+  generated_file("files_map") {
+    testonly = true
+    outputs = [ "$target_gen_dir/files_map.json" ]
+    output_conversion = "json"
+    data_keys = [ "distribution_entries" ]
+    deps = [ ":sestarnix_userspace_tests" ]
+  }
+
+  host_test_data("files_map_data") {
+    sources = [ "$target_gen_dir/files_map.json" ]
+    outputs = [ "$target_out_dir/files_map.json" ]
+    deps = [ ":files_map" ]
+  }
+
+  host_test_data_targets = []
+  foreach(name, test_subprogram_names) {
+    target_name = "${name}_host"
+    host_test_data_targets += [ ":$target_name" ]
+    host_test_data(target_name) {
+      testonly = true
+      out_dir =
+          get_label_info(":${name}($target_linux_toolchain)", "root_out_dir")
+      deps = [ ":${name}($target_linux_toolchain)" ]
+      sources = [ "${out_dir}/${name}_bin" ]
+      outputs = [ "$target_out_dir/linux_x64/${name}_bin" ]
+    }
+  }
+  foreach(name, test_names) {
+    target_name = "${name}_bin_host"
+    host_test_data_targets += [ ":$target_name" ]
+    host_test_data(target_name) {
+      testonly = true
+      out_dir = get_label_info(":${name}_bin($target_linux_toolchain)",
+                               "root_out_dir")
+      deps = [ ":${name}_bin($target_linux_toolchain)" ]
+      sources = [ "${out_dir}/${name}_bin" ]
+      outputs = [ "$target_out_dir/linux_x64/${name}_bin" ]
+    }
+  }
+
   python_host_test("sestarnix_userspace_tests_on_linux") {
     main_source = "run_on_linux.py"
     deps = [ ":sestarnix_userspace_tests" ]
+    test_data_deps = [
+                       ":audit_expectations_host",
+                       ":expectations_host",
+                       ":files_map_data",
+                       ":gki_prebuilt",
+                       ":init_for_linux_host",
+                       ":libs_host",
+                       ":policies_host",
+                       ":qemu",
+                       ":test_list_data",
+                     ] + host_test_data_targets
   }
 }

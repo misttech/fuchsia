@@ -7,6 +7,11 @@ declare_args() {
   # known as "host tests." The default preference is to build and run tests against Machina instead.
   starnix_force_build_host_tests = false
 
+  # Enable SEStarnix userspace tests on Linux.
+  # On CI/CQ this requires internal prebuilts only available in internal checkouts.
+  # TODO(https://fxbug.dev/510724670): Remove this flag when the prebuilts are available publicly.
+  enable_sestarnix_userspace_tests_on_linux = false
+
   # Compiles-in trace and debug logging in release builds. By default, these
   # logs are compiled-out for performance reasons.
   #

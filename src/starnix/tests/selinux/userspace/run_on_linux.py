@@ -14,32 +14,19 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List
 
 SUCCESS_RE = re.compile("TEST SUCCESS$", re.MULTILINE)
 
 
-def parse_manifest(
-    path: pathlib.Path, output_dir: pathlib.Path
-) -> dict[str, pathlib.Path]:
-    """Returns a mapping of package file to file path from the package manifest at path."""
-    files = {}
-    for line in path.read_text().splitlines():
-        dest, origin = line.strip().split("=", 1)
-        files[dest] = output_dir / origin
-    return files
-
-
 def build_initrd(
     work_dir: pathlib.Path,
-    fuchsia_dir: pathlib.Path,
     files: Dict[str, pathlib.Path],
 ) -> pathlib.Path:
     """Builds an initrd containing the provided files.
 
     Args:
       work_dir: the temporary dir we are working in.
-      fuchsia_dir: the root of the Fuchsia checkout.
       files: mapping of destination path in initrd to source path on host.
 
     Returns:
@@ -77,43 +64,66 @@ def build_initrd(
     return work_dir / "initrd.img"
 
 
-def get_fuchsia_paths() -> Tuple[pathlib.Path, pathlib.Path]:
-    """Returns (fuchsia_dir, output_dir)."""
-    if "FUCHSIA_DIR" in os.environ:
-        fuchsia_dir = pathlib.Path(os.environ["FUCHSIA_DIR"])
-        output_dir_str = subprocess.check_output(
-            ["scripts/fx", "get-build-dir"], cwd=fuchsia_dir, text=True
-        ).strip()
-        output_dir = pathlib.Path(output_dir_str)
-        if not output_dir.is_absolute():
-            output_dir = fuchsia_dir / output_dir
-        return fuchsia_dir, output_dir
-    else:
-        raise EnvironmentError("FUCHSIA_DIR environment variable not set")
+def get_fuchsia_dir() -> pathlib.Path:
+    """Returns fuchsia_dir."""
+    assert "FUCHSIA_DIR" in os.environ
+    return pathlib.Path(os.environ["FUCHSIA_DIR"])
 
 
-def collect_distribution_files(
-    fuchsia_dir: pathlib.Path, output_dir: pathlib.Path
-) -> Tuple[Dict[str, pathlib.Path], List[str]]:
-    """Parses manifests and returns (files_map, test_names)."""
-    container_manifest = (
-        output_dir
-        / "obj/src/starnix/tests/selinux/userspace/sestarnix_userspace_test_container.manifest"
+def get_output_dir() -> pathlib.Path:
+    """Returns the directory where the built artifacts are located."""
+    return pathlib.Path.cwd()
+
+
+def get_test_names() -> List[str]:
+    """Returns the list of test names."""
+    test_list_path = (
+        get_output_dir()
+        / "host_x64/obj/src/starnix/tests/selinux/userspace/test_list.json"
     )
-    tests_manifest = (
-        output_dir
-        / "obj/src/starnix/tests/selinux/userspace/sestarnix_userspace_tests.manifest"
-    )
-    files = parse_manifest(container_manifest, output_dir)
-    files.update(parse_manifest(tests_manifest, output_dir))
-    tests = []
-    for package_path in files.keys():
-        if package_path.startswith(
-            "data/tests/"
-        ) and not package_path.startswith("data/tests/expectations/"):
-            tests.append(package_path.removeprefix("data/tests/"))
+    return sorted(json.loads(test_list_path.read_text()))
 
-    return files, sorted(tests)
+
+def collect_initrd_mapping(
+    output_dir: pathlib.Path,
+) -> Dict[str, pathlib.Path]:
+    """Returns the mapping of files to include in the distribution."""
+    files_map_path = (
+        output_dir
+        / "host_x64/obj/src/starnix/tests/selinux/userspace/files_map.json"
+    )
+
+    filename_to_dest = {}
+    data = json.loads(files_map_path.read_text())
+
+    for entry in data:
+        src = entry.get("source")
+        dest = entry.get("destination")
+        if src and dest:
+            filename_to_dest[pathlib.Path(src).name] = dest
+
+    target_out_dir = (
+        output_dir / "host_x64/obj/src/starnix/tests/selinux/userspace"
+    )
+    dirs_to_scan = [
+        "libs",
+        "expectations",
+        "policies",
+        "linux_x64",
+        "audit_expectations",
+    ]
+
+    files = {}
+    for d in dirs_to_scan:
+        dir_path = target_out_dir / d
+        for file_path in dir_path.iterdir():
+            if file_path.is_file():
+                filename = file_path.name
+                dest = filename_to_dest.get(filename)
+                if dest:
+                    files[dest] = file_path
+
+    return files
 
 
 def parse_audit_expectations_from_output(stdout: str) -> list[dict[str, Any]]:
@@ -154,13 +164,13 @@ def sanitize_audit_log(log: str) -> str:
 
 def write_updated_expectations(
     all_new_expectations: list[dict[str, Any]],
-    fuchsia_dir: pathlib.Path,
 ) -> None:
     """Updates the `audit_success.json` file with new results, if they are meaningfully different."""
     if not all_new_expectations:
         print("No new audit expectations found to update.")
         return
 
+    fuchsia_dir = get_fuchsia_dir()
     expectations_file = (
         fuchsia_dir
         / "src/starnix/tests/selinux/userspace/expectations/audit_success.json"
@@ -241,7 +251,7 @@ def write_updated_expectations(
 
 class TestSestarnixUserspaceOnLinux(unittest.TestCase):
     work_dir: pathlib.Path
-    fuchsia_dir: pathlib.Path
+    output_dir: pathlib.Path
     kernel_path: pathlib.Path
     initrd_path: pathlib.Path
     args = argparse.Namespace(
@@ -257,14 +267,12 @@ class TestSestarnixUserspaceOnLinux(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.work_dir = pathlib.Path(tempfile.mkdtemp())
+        cls.output_dir = get_output_dir()
 
-        try:
-            cls.fuchsia_dir, output_dir = get_fuchsia_paths()
-        except EnvironmentError as e:
-            raise unittest.SkipTest(str(e))
-
-        # The directory that contains the Android kernel and kernel modules.
-        gki_dir = cls.fuchsia_dir / "prebuilt/starnix/internal/gki/x86_64"
+        gki_dir = (
+            cls.output_dir
+            / "host_x64/obj/src/starnix/tests/selinux/userspace/gki"
+        )
 
         if cls.args.kernel:
             if cls.args.kernel.is_absolute():
@@ -274,62 +282,76 @@ class TestSestarnixUserspaceOnLinux(unittest.TestCase):
         else:
             cls.kernel_path = gki_dir / "bzImage"
 
+        print(f"DEBUG: Using kernel_path: {cls.kernel_path}", flush=True)
+
         if not cls.kernel_path.is_file():
             raise RuntimeError(f"Kernel not found at {cls.kernel_path}")
 
         try:
-            files, _ = collect_distribution_files(cls.fuchsia_dir, output_dir)
+            files = collect_initrd_mapping(cls.output_dir)
             # Only add kernel modules to the initrd if we are using the default kernel.
             if not cls.args.kernel:
                 for item in gki_dir.iterdir():
                     if item.is_file() and item.suffix == ".ko":
                         files[f"lib/modules/{item.name}"] = item
-            cls.initrd_path = build_initrd(cls.work_dir, cls.fuchsia_dir, files)
+            cls.initrd_path = build_initrd(cls.work_dir, files)
         except Exception as e:
             raise RuntimeError(f"Failed to build initrd: {e}")
 
     @classmethod
     def tearDownClass(cls) -> None:
         if cls.args.update_audit_expectations:
-            write_updated_expectations(
-                cls.new_audit_expectations, cls.fuchsia_dir
-            )
+            write_updated_expectations(cls.new_audit_expectations)
         if cls.args.preserve_work_dir:
             print(f"Workdir preserved at {cls.work_dir}")
         else:
             shutil.rmtree(cls.work_dir, ignore_errors=True)
 
     def run_specific_test(self, test_name: str) -> None:
-        append_args = f"console=ttyS0 security=selinux debug=all audit=1 audit_backlog_limit=0 panic=-1 -- data/tests/{test_name}"
+        qemu_path = (
+            self.output_dir
+            / "host_x64/obj/src/starnix/tests/selinux/userspace/qemu/qemu-system-x86_64"
+        )
+        qemu_bios_path = (
+            self.output_dir
+            / "host_x64/obj/src/starnix/tests/selinux/userspace/qemu"
+        )
+
+        append_args = f"console=ttyS0 security=selinux debug=all audit=1 audit_backlog_limit=0 panic=-1 -- data/tests/{test_name}_bin"
         if self.args.json or self.args.update_audit_expectations:
             append_args += " --json"
         if self.args.skip_audit:
             append_args += " --skip-audit"
 
+        qemu_args = [
+            str(qemu_path),
+            "-L",
+            str(qemu_bios_path),
+            "-kernel",
+            str(self.kernel_path),
+            "-initrd",
+            str(self.initrd_path),
+            "-no-reboot",
+            "-display",
+            "none",
+            "-vga",
+            "none",
+            "-chardev",
+            "stdio,id=char0",
+            "-device",
+            "virtio-serial-pci",
+            "-device",
+            "virtconsole,chardev=char0",
+            "-m",
+            "1G",
+            "-enable-kvm",
+            "-append",
+            append_args,
+        ]
+        print(f"Running QEMU command: {' '.join(qemu_args)}", flush=True)
+
         result = subprocess.run(
-            [
-                "qemu-system-x86_64",
-                "-kernel",
-                self.kernel_path,
-                "-initrd",
-                self.initrd_path,
-                "-no-reboot",
-                "-display",
-                "none",
-                "-vga",
-                "none",
-                "-chardev",
-                "stdio,id=char0",
-                "-device",
-                "virtio-serial-pci",
-                "-device",
-                "virtconsole,chardev=char0",
-                "-m",
-                "1G",
-                "-enable-kvm",
-                "-append",
-                append_args,
-            ],
+            qemu_args,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -371,8 +393,7 @@ class TestSestarnixUserspaceOnLinux(unittest.TestCase):
 def populate_dynamic_tests() -> None:
     """Generates test methods on the class."""
     try:
-        fuchsia_dir, output_dir = get_fuchsia_paths()
-        _, tests = collect_distribution_files(fuchsia_dir, output_dir)
+        tests = get_test_names()
     except Exception as e:
         err_msg = str(e)
 
@@ -451,16 +472,26 @@ else:
         print("\nStandard Unittest Help:")
     else:
         print("Re-building tests...")
-        fuchsia_dir, _ = get_fuchsia_paths()
+        fuchsia_dir = get_fuchsia_dir()
         subprocess.run(
             [
                 "scripts/fx",
                 "build",
-                "//src/starnix/tests/selinux/userspace:sestarnix_userspace_tests",
+                "//src/starnix/tests/selinux/userspace:tests",
             ],
             check=True,
             cwd=fuchsia_dir,
         )
+        # To match the behavior of when the script is invoked by `fx test`,
+        # change the CWD to the output directory.
+        output_dir_str = subprocess.check_output(
+            ["scripts/fx", "get-build-dir"], cwd=fuchsia_dir, text=True
+        ).strip()
+        output_dir = pathlib.Path(output_dir_str)
+        if not output_dir.is_absolute():
+            output_dir = fuchsia_dir / output_dir
+        os.chdir(output_dir)
+
         populate_dynamic_tests()
 
     TestSestarnixUserspaceOnLinux.args = args
