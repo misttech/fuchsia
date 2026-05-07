@@ -10,7 +10,9 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum LogError {
-    #[error("Failed to identify host: {0:?}")]
+    #[error(
+        "Failed to identify host: {0:?}. Please ensure the device is connected and powered on. Run 'ffx target list' to see available targets."
+    )]
     IdentifyHostError(IdentifyHostError),
     #[error(transparent)]
     UnknownError(#[from] anyhow::Error),
@@ -105,5 +107,17 @@ impl From<ConnectCapabilityError> for LogError {
 impl From<IdentifyHostError> for LogError {
     fn from(error: IdentifyHostError) -> Self {
         LogError::IdentifyHostError(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_identify_host_error_message() {
+        let err = LogError::IdentifyHostError(IdentifyHostError::ProxyConnectionFailed);
+        let msg = format!("{}", err);
+        assert!(msg.contains("Please ensure the device is connected and powered on. Run 'ffx target list' to see available targets."));
     }
 }
