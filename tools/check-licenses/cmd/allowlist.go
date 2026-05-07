@@ -20,15 +20,44 @@ import (
 )
 
 type AllowlistCommand struct {
-	fuchsiaDir  string
-	bug         string
-	description string
+	fuchsiaDir string
 }
 
 func (*AllowlistCommand) Name() string     { return "allowlist" }
 func (*AllowlistCommand) Synopsis() string { return "Manage allowed licenses." }
 func (*AllowlistCommand) Usage() string {
-	return `allowlist -bug <BugID> [-desc <Description>] add <LicenseName> <projectPath>:
+	return `allowlist <subcommand> [options]:
+  Manage allowed licenses.
+
+  Subcommands:
+    add   Add a new allowed license entry.
+`
+}
+
+func (c *AllowlistCommand) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&c.fuchsiaDir, "fuchsia_dir", os.Getenv("FUCHSIA_DIR"), "Location of the fuchsia root directory.")
+}
+
+func (c *AllowlistCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	subFlags := flag.NewFlagSet("allowlist", flag.ContinueOnError)
+	if err := subFlags.Parse(f.Args()); err != nil {
+		return subcommands.ExitUsageError
+	}
+	subCommander := subcommands.NewCommander(subFlags, "allowlist")
+	subCommander.Register(&AllowlistAddCommand{fuchsiaDir: c.fuchsiaDir}, "")
+	return subCommander.Execute(ctx)
+}
+
+type AllowlistAddCommand struct {
+	fuchsiaDir  string
+	bug         string
+	description string
+}
+
+func (*AllowlistAddCommand) Name() string     { return "add" }
+func (*AllowlistAddCommand) Synopsis() string { return "Add an allowed license entry." }
+func (*AllowlistAddCommand) Usage() string {
+	return `add -bug <BugID> [-desc <Description>] add <LicenseName> <projectPath>:
   Adds an allowed license exception for the given project path.
 
   Flags:
@@ -36,19 +65,88 @@ func (*AllowlistCommand) Usage() string {
     -desc Optional description for this exception.
 
   Examples:
-    fx check-licenses allowlist -bug b/123 add GPL-2.0 vendor/foo
+    fx check-licenses allowlist add -bug b/123 GPL-2.0 vendor/foo
 `
 }
 
-func (c *AllowlistCommand) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&c.fuchsiaDir, "fuchsia_dir", os.Getenv("FUCHSIA_DIR"), "Location of the fuchsia root directory.")
+func (c *AllowlistAddCommand) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.bug, "bug", "", "Bug ID tracking this exception (Mandatory).")
 	f.StringVar(&c.description, "desc", "Auto-generated allowlist entry", "Optional description for this exception.")
 }
 
-func (c *AllowlistCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	if f.NArg() != 3 || f.Arg(0) != "add" {
-		fmt.Fprintln(os.Stderr, "Usage: fx check-licenses allowlist -bug <BugID> [-desc <Description>] add <LicenseName> <projectPath>")
+func (c *AllowlistAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	// UX Check: Detect misplaced flags
+	misplacedFlags := false
+	for _, arg := range f.Args() {
+		if strings.HasPrefix(arg, "-") {
+			misplacedFlags = true
+			break
+		}
+	}
+
+	if misplacedFlags || f.NArg() != 2 {
+		var bugVal string
+		var descVal string
+		var positionals []string
+
+		args := f.Args()
+		for i := 0; i < len(args); i++ {
+			arg := args[i]
+			if arg == "-bug" || arg == "--bug" {
+				if i+1 < len(args) {
+					bugVal = args[i+1]
+					i++
+				}
+			} else if arg == "-desc" || arg == "--desc" {
+				if i+1 < len(args) {
+					descVal = args[i+1]
+					i++
+				}
+			} else if strings.HasPrefix(arg, "-") {
+				// skip unknown flags
+			} else {
+				positionals = append(positionals, arg)
+			}
+		}
+
+		if c.bug != "" && bugVal == "" {
+			bugVal = c.bug
+		}
+		if c.description != "Auto-generated allowlist entry" && descVal == "" {
+			descVal = c.description
+		}
+
+		var cmdBuilder strings.Builder
+		cmdBuilder.WriteString("fx check-licenses allowlist add")
+		if bugVal != "" {
+			cmdBuilder.WriteString(fmt.Sprintf(" -bug %s", bugVal))
+		} else {
+			cmdBuilder.WriteString(" -bug <BugID>")
+		}
+		if descVal != "" && descVal != "Auto-generated allowlist entry" {
+			cmdBuilder.WriteString(fmt.Sprintf(" -desc %q", descVal))
+		}
+
+		if len(positionals) > 0 {
+			cmdBuilder.WriteString(fmt.Sprintf(" %s", positionals[0]))
+		} else {
+			cmdBuilder.WriteString(" <LicenseName>")
+		}
+		if len(positionals) > 1 {
+			cmdBuilder.WriteString(fmt.Sprintf(" %s", positionals[1]))
+		} else {
+			cmdBuilder.WriteString(" <projectPath>")
+		}
+		for _, extra := range positionals[2:] {
+			cmdBuilder.WriteString(fmt.Sprintf(" %s", extra))
+		}
+
+		if misplacedFlags {
+			fmt.Fprintln(os.Stderr, "❌ Error: Flags (like -bug or -desc) must be placed BEFORE positional arguments.")
+		} else {
+			fmt.Fprintln(os.Stderr, "❌ Error: Invalid number of arguments.")
+		}
+		fmt.Fprintf(os.Stderr, "Try running this copy-pasteable command instead:\n    %s\n\n", cmdBuilder.String())
 		return subcommands.ExitUsageError
 	}
 
@@ -57,8 +155,8 @@ func (c *AllowlistCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...in
 		return subcommands.ExitUsageError
 	}
 
-	licenseName := f.Arg(1)
-	projectPath := filepath.Clean(f.Arg(2))
+	licenseName := f.Arg(0)
+	projectPath := filepath.Clean(f.Arg(1))
 
 	if err := AddAllowlistEntry(c.fuchsiaDir, licenseName, projectPath, c.bug, c.description); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
