@@ -1826,16 +1826,21 @@ impl Journal {
                     if inner.terminate && flush_fut.is_none() && compact_fut.is_none() {
                         return Poll::Ready(());
                     }
-                    // The / 2 is here because after compacting, we cannot reclaim the space until the
-                    // _next_ time we flush the device since the super-block is not guaranteed to
-                    // persist until then.
+                    // `journal_bytes` refers to bytes in the journal that haven't yet been flushed
+                    // to the layer files. It increases with each transaction and decreases when
+                    // compactions complete. The flush task is woken whenever a transaction is
+                    // committed and we should see this metric updated regularly.
+                    let journal_bytes = self.objects.last_end_offset()
+                        - inner.super_block_header.journal_checkpoint.file_offset;
+                    fxfs_trace::counter!("journal-bytes", 0, "total" => journal_bytes);
+                    // The / 2 is here because after compacting, we cannot reclaim the space until
+                    // the _next_ time we flush the device since the super-block is not guaranteed
+                    // to persist until then.
                     if compact_fut.is_none()
                         && !inner.terminate
                         && !inner.disable_compactions
                         && inner.image_builder_mode.is_none()
-                        && self.objects.last_end_offset()
-                            - inner.super_block_header.journal_checkpoint.file_offset
-                            > inner.reclaim_size / 2
+                        && journal_bytes > inner.reclaim_size / 2
                     {
                         compact_fut = Some(Box::pin(self.compact()));
                         inner.compaction_running = true;
@@ -1864,6 +1869,12 @@ impl Journal {
                         inner.compaction_running = false;
                         self.reclaim_event.notify(usize::MAX);
                         pending = false;
+                        fxfs_trace::counter!(
+                            "journal-bytes",
+                            0,
+                            "total" => self.objects.last_end_offset()
+                                - inner.super_block_header.journal_checkpoint.file_offset
+                        );
                     }
                 }
                 if pending {
