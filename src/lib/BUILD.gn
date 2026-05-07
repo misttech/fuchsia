@@ -70,6 +70,7 @@ group("tests") {
     "injectable-time:tests",
     "intl:tests",
     "json_parser:tests",
+    "kalloc:tests",
     "libdoc:tests($host_toolchain)",
     "line_input:tests",
     "listnode:tests",
