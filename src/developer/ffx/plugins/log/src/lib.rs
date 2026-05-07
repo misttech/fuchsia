@@ -47,7 +47,6 @@ impl Clock for RealClock {
 #[cfg(test)]
 mod testing_utils;
 
-const ARCHIVIST_MONIKER: &str = "bootstrap/archivist";
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 #[derive(FfxTool)]
@@ -187,7 +186,7 @@ async fn connect_to_target(
     // Connect to ArchiveAccessor
     let diagnostics_client = rcs_fdomain::toolbox::connect_with_timeout::<ArchiveAccessorMarker>(
         &rcs_client,
-        Some(ARCHIVIST_MONIKER),
+        None::<String>,
         TIMEOUT,
     )
     .await
@@ -195,7 +194,7 @@ async fn connect_to_target(
     // Connect to LogSettings
     let log_settings_client = rcs_fdomain::toolbox::connect_with_timeout::<LogSettingsMarker>(
         &rcs_client,
-        Some(ARCHIVIST_MONIKER),
+        None::<String>,
         TIMEOUT,
     )
     .await
