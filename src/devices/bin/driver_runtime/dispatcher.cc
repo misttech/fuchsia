@@ -2232,6 +2232,7 @@ zx_status_t Dispatcher::ThreadPool::OnDispatcherAdded(Dispatcher& dispatcher) {
     if ((allow_sync_call_dispatchers_ + 1) > thread_limit_) {
       LOGF(WARNING,
            "Dispatcher that allows sync calls created when already at thread pool thread limit");
+      return ZX_ERR_NO_RESOURCES;
     }
     ++allow_sync_call_dispatchers_;
   }
@@ -2283,7 +2284,7 @@ void Dispatcher::ThreadPool::Reset() {
 
   {
     fbl::AutoLock al(&lock_);
-    thread_limit_ = 10;
+    thread_limit_ = kDefaultThreadLimit;
     num_threads_ = 0;
     allow_sync_call_dispatchers_ = 0;
     num_dispatchers_ = 0;

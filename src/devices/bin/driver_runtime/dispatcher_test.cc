@@ -3297,21 +3297,29 @@ TEST_F(DispatcherTest, MaximumThreads) {
     thread_context::PushDriver(driver);
     auto pop_driver = fit::defer([]() { thread_context::PopDriver(); });
 
-    ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 1);
+    ASSERT_EQ(1, driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads());
 
     constexpr uint32_t kNumDispatchers =
-        driver_runtime::Dispatcher::ThreadPool::kDefaultThreadLimit + 1;
+        driver_runtime::Dispatcher::ThreadPool::kDefaultThreadLimit;
+
+    ASSERT_EQ(kNumDispatchers,
+              driver_runtime::GetDispatcherCoordinator().default_thread_pool()->thread_limit());
 
     std::array<driver_runtime::Dispatcher*, kNumDispatchers> dispatchers;
     std::array<DispatcherShutdownObserver, kNumDispatchers> observers;
     for (uint32_t i = 0; i < kNumDispatchers; i++) {
-      ASSERT_OK(fdf_dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__, "",
+      EXPECT_OK(fdf_dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__, "",
                                        observers[i].fdf_observer(), &dispatchers[i]));
-      ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(),
-                std::min(i + 1, 10u));
+      EXPECT_EQ(i + 1,
+                driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads());
     }
+    driver_runtime::Dispatcher* no_dispatcher = nullptr;
+    ASSERT_EQ(ZX_ERR_NO_RESOURCES, fdf_dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS,
+                                                          __func__, "", nullptr, &no_dispatcher));
+    ASSERT_EQ(nullptr, no_dispatcher);
 
-    ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 10);
+    ASSERT_EQ(kNumDispatchers,
+              driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads());
 
     for (uint32_t i = 0; i < kNumDispatchers; i++) {
       dispatchers[i]->ShutdownAsync();
@@ -3322,7 +3330,8 @@ TEST_F(DispatcherTest, MaximumThreads) {
 }
 
 TEST_F(DispatcherTest, GetDefaultThreadPoolSize) {
-  ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->thread_limit(), 10);
+  ASSERT_EQ(driver_runtime::Dispatcher::ThreadPool::kDefaultThreadLimit,
+            driver_runtime::GetDispatcherCoordinator().default_thread_pool()->thread_limit());
 }
 
 TEST_F(DispatcherTest, SetDefaultThreadPoolSize) {

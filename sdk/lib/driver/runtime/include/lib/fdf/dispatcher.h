@@ -104,6 +104,10 @@ struct fdf_dispatcher_shutdown_observer {
 //
 // ZX_ERR_INVALID_ARGS: This was not called from a thread managed by the driver runtime.
 //
+// ZX_ERR_NO_RESOURCES: A thread needed to be spawned to create this dispatcher, but couldn't be.
+// This is likely because a dispatcher that allows sync calls was requested, but the thread pool is
+// currently at its limit.
+//
 // ZX_ERR_BAD_STATE: Dispatchers are currently not allowed to be created, such as when a driver
 // is being shutdown by its driver host.
 zx_status_t fdf_dispatcher_create(uint32_t options, const char* name, size_t name_len,

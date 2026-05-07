@@ -238,7 +238,15 @@ class SynchronizedDispatcher final : public Dispatcher {
   //
   // # Errors
   //
+  // ZX_ERR_NOT_SUPPORTED: |options| is not a supported configuration, which is any of the
+  // following:
+  //   * `FDF_DISPATCHER_OPTION_UNSYNCHRONIZED` with `FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS`.
+  //
   // ZX_ERR_INVALID_ARGS: This was not called from a thread managed by the driver runtime.
+  //
+  // ZX_ERR_NO_RESOURCES: A thread needed to be spawned to create this dispatcher, but couldn't be.
+  // This is likely because a dispatcher that allows sync calls was requested, but the thread pool
+  // is currently at its limit.
   //
   // ZX_ERR_BAD_STATE: Dispatchers are currently not allowed to be created, such as when a driver
   // is being shutdown by its driver host.
@@ -316,10 +324,15 @@ class UnsynchronizedDispatcher final : public Dispatcher {
   //
   // # Errors
   //
-  // ZX_ERR_NOT_SUPPORTED: |options| is not a supported configuration, which is any of:
-  //   * `FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS`.
+  // ZX_ERR_NOT_SUPPORTED: |options| is not a supported configuration, which is any of the
+  // following:
+  //   * `FDF_DISPATCHER_OPTION_UNSYNCHRONIZED` with `FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS`.
   //
   // ZX_ERR_INVALID_ARGS: This was not called from a thread managed by the driver runtime.
+  //
+  // ZX_ERR_NO_RESOURCES: A thread needed to be spawned to create this dispatcher, but couldn't be.
+  // This is likely because a dispatcher that allows sync calls was requested, but the thread pool
+  // is currently at its limit.
   //
   // ZX_ERR_BAD_STATE: Dispatchers are currently not allowed to be created, such as when a driver
   // is being shutdown by its driver host.
