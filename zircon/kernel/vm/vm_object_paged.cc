@@ -1349,7 +1349,7 @@ ktl::pair<zx_status_t, size_t> VmObjectPaged::ReadWriteInternal(uint64_t offset,
         // actual limit of the read/write operation. For a read we can wake up once some pages are
         // received, minimizing the latency before we start making progress, but as this is not true
         // for writes we cap the maximum number requested.
-        constexpr uint64_t kMaxWriteWaitPages = 16;
+        constexpr uint64_t kMaxWriteWaitPages = 256;  // 1MB batch size (256 * 4KB pages)
         const uint64_t max_wait_pages = write ? kMaxWriteWaitPages : UINT64_MAX;
         const uint64_t max_waitable_pages = ktl::min(remaining_pages, max_wait_pages);
 

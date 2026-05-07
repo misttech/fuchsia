@@ -31,8 +31,9 @@
 
 namespace {
 
-// This value corresponds to `VmObject::LookupInfo::kMaxPages`
-static constexpr uint64_t kMaxPagesBatch = 16;
+// This value corresponds to the kernel's VmObjectPaged::ReadWriteInternal write batch limit
+// (kMaxWriteWaitPages).
+static constexpr uint64_t kMaxPagesBatch = 256;
 
 void CheckRights(const zx::stream& stream, zx_rights_t expected_rights, const char* message) {
   zx_info_handle_basic_t info = {};

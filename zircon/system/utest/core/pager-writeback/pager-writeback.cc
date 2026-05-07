@@ -150,8 +150,8 @@ class ThreadedPagePinner {
 
 namespace pager_tests {
 
-// This value corresponds to `VmObjectPaged::ReadWriteInternalLocked::kMaxWriteWaitPages`
-static constexpr uint64_t kMaxWriteWaitPages = 16;
+// This value corresponds to `VmObjectPaged::ReadWriteInternal::kMaxWriteWaitPages`
+static constexpr uint64_t kMaxWriteWaitPages = 256;
 
 // Convenience macro for tests that want to create VMOs both with and without the ZX_VMO_TRAP_DIRTY
 // flag. |base_create_option| specifies the common create options to be used for both cases. The
@@ -7831,7 +7831,7 @@ TEST(PagerWriteback, LargeWriteBatched) {
   UserPager pager;
   ASSERT_TRUE(pager.Init());
 
-  constexpr size_t kNumPages = 128;
+  constexpr size_t kNumPages = kMaxWriteWaitPages * 8;
   constexpr size_t kPageSteps = 8;
   static_assert(kNumPages % kPageSteps == 0);
   static_assert(kPageSteps < kMaxWriteWaitPages);
