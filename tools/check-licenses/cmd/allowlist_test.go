@@ -184,3 +184,24 @@ func TestAllowlistCommand_Execute_RelativePathFromSubdir(t *testing.T) {
 		t.Errorf("Expected config file to be created at %s", expectedConfigPath)
 	}
 }
+
+func TestAllowlistCommand_Execute_UnknownLicenseName(t *testing.T) {
+	tempDir := t.TempDir()
+
+	origEnv := os.Getenv("FUCHSIA_DIR")
+	os.Setenv("FUCHSIA_DIR", tempDir)
+	defer os.Setenv("FUCHSIA_DIR", origEnv)
+
+	cmd := &AllowlistCommand{
+		fuchsiaDir: tempDir,
+	}
+
+	ctx := context.Background()
+	f := flag.NewFlagSet("test_unknown_license", flag.ContinueOnError)
+	cmd.SetFlags(f)
+	f.Parse([]string{"add", "-bug", "b/123", "GPLO-2.0", "src/foo/bar"})
+
+	if status := cmd.Execute(ctx, f); status != subcommands.ExitFailure {
+		t.Errorf("Expected ExitFailure for unknown license name, got %v", status)
+	}
+}

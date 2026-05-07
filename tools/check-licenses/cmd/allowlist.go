@@ -57,7 +57,7 @@ type AllowlistAddCommand struct {
 func (*AllowlistAddCommand) Name() string     { return "add" }
 func (*AllowlistAddCommand) Synopsis() string { return "Add an allowed license entry." }
 func (*AllowlistAddCommand) Usage() string {
-	return `add -bug <BugID> [-desc <Description>] add <LicenseName> <projectPath>:
+	return `add -bug <BugID> [-desc <Description>] <LicenseName> <projectPath>:
   Adds an allowed license exception for the given project path.
 
   Flags:
@@ -211,6 +211,9 @@ func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath, bug, description st
 
 	// Find the license category by scanning both public and private allowed_licenses dirs
 	category := findLicenseCategory(fuchsiaDir, licenseName)
+	if category == "Uncategorized" {
+		return fmt.Errorf("unknown or unapproved license name %q. If this is a brand new license, it must first be reviewed by the OSRB and manually categorized under allowed_licenses/ first", licenseName)
+	}
 
 	configDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "configs", "allowed_licenses", category, licenseName)
 	if isPrivate {
