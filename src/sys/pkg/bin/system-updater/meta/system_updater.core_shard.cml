@@ -34,6 +34,11 @@
             to: "#system-update",
         },
         {
+            protocol: "fuchsia.paver.Paver",
+            from: "#paver",
+            to: "#system-update",
+        },
+        {
             protocol: [ "fuchsia.net.http.Loader" ],
             from: "#network",
             to: "#system-update",

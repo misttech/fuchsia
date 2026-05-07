@@ -48,6 +48,11 @@
             dependency: "weak",
         },
         {
+            protocol: "fuchsia.paver.Paver",
+            from: "#paver",
+            to: "#system-update",
+        },
+        {
             protocol: "fuchsia.pkg.Cup",
             from: "#pkg-resolver",
             to: "#system-update",

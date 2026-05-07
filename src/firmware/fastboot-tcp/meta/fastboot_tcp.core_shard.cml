@@ -26,7 +26,7 @@
         {
             protocol: "fuchsia.paver.Paver",
             from: "#paver",
-            to: "#system_recovery",
+            to: "#fastboot-tcp",
         },
         {
             dictionary: "diagnostics",

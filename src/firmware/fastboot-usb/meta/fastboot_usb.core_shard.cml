@@ -21,7 +21,7 @@
         {
             protocol: "fuchsia.paver.Paver",
             from: "#paver",
-            to: "#system_recovery",
+            to: "#fastboot-usb",
         },
         {
             protocol: "fuchsia.buildinfo.Provider",
