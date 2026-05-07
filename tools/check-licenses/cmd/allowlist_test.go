@@ -17,6 +17,19 @@ import (
 func TestAllowlistCommand_Execute(t *testing.T) {
 	tempDir := t.TempDir()
 
+	origEnv := os.Getenv("FUCHSIA_DIR")
+	os.Setenv("FUCHSIA_DIR", tempDir)
+	defer os.Setenv("FUCHSIA_DIR", origEnv)
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd)
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatal(err)
+	}
+
 	// Scaffold the recursive config system
 	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
 	os.MkdirAll(filepath.Dir(seedConfig), 0755)
@@ -83,5 +96,59 @@ func TestAllowlistCommand_Execute(t *testing.T) {
 	f4.Parse([]string{"add", "GPL-2.0", "src/foo/bar"})
 	if status := cmd.Execute(ctx, f4); status != subcommands.ExitSuccess {
 		t.Errorf("Expected ExitSuccess when allowlist entry already exists, got %v", status)
+	}
+}
+
+func TestAllowlistCommand_Execute_RelativePathFromSubdir(t *testing.T) {
+	tempDir := t.TempDir()
+
+	origEnv := os.Getenv("FUCHSIA_DIR")
+	os.Setenv("FUCHSIA_DIR", tempDir)
+	defer os.Setenv("FUCHSIA_DIR", origEnv)
+
+	// Scaffold the recursive config system
+	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
+	os.MkdirAll(filepath.Dir(seedConfig), 0755)
+	os.WriteFile(seedConfig, []byte(`{"includes": ["tools/check-licenses/assets"]}`), 0644)
+
+	cmd := &AllowlistCommand{
+		fuchsiaDir: tempDir,
+	}
+
+	ctx := context.Background()
+
+	// Create placeholder category
+	catDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs", "allowed_licenses", "Restricted", "GPL-2.0")
+	if err := os.MkdirAll(catDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate running from a subdirectory
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd)
+
+	subdir := filepath.Join(tempDir, "src", "my_project")
+	if err := os.MkdirAll(subdir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(subdir); err != nil {
+		t.Fatal(err)
+	}
+
+	f := flag.NewFlagSet("test_relative", flag.ContinueOnError)
+	cmd.SetFlags(f)
+	f.Parse([]string{"add", "GPL-2.0", "."}) // target is "." (src/my_project)
+
+	if status := cmd.Execute(ctx, f); status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess, got %v", status)
+	}
+
+	// Expected config file should be named "my_project.json" under the check name directory
+	expectedConfigPath := filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs", "allowed_licenses", "Restricted", "GPL-2.0", "my_project.json")
+	if _, err := os.Stat(expectedConfigPath); os.IsNotExist(err) {
+		t.Errorf("Expected config file to be created at %s", expectedConfigPath)
 	}
 }
