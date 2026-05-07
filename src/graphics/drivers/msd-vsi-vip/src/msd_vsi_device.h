@@ -37,10 +37,8 @@ class MsdVsiDevice : public msd::Device,
   using DeviceRequest = DeviceRequest<MsdVsiDevice>;
 
   // Creates a device for the given |device_handle| and returns ownership.
-  // If |start_device_thread| is false, then StartDeviceThread should be called
-  // to enable device request processing.
-  static std::unique_ptr<MsdVsiDevice> Create(void* device_handle, bool start_device_thread,
-                                              bool enable_suspend);
+  // StartDeviceThread should be called afterwards to enable device processing.
+  static std::unique_ptr<MsdVsiDevice> Create(void* device_handle, bool enable_suspend);
 
   explicit MsdVsiDevice(bool enable_suspend) : magic_(kMagic), enable_suspend_(enable_suspend) {}
 
@@ -73,6 +71,9 @@ class MsdVsiDevice : public msd::Device,
   bool IsValidDeviceId() {
     return (device_id() == kMsdVsiVipDevice8000 || device_id() == kMsdVsiVipDevice9000);
   }
+
+  // This should be called after creating a device to handle requests.
+  void StartDeviceThread();
 
   bool Shutdown();
   bool IsIdle();
@@ -212,10 +213,7 @@ class MsdVsiDevice : public msd::Device,
                          uint32_t buf_size_dwords, uint32_t start_dword, uint32_t dword_count,
                          uint32_t active_head_dword);
 
-  // It is possible to start the DeviceThread with suspend disabled. The default is suspend is
-  // enabled. Disabling suspend is for testing.
-  void StartDeviceThread(bool disable_suspend = false);
-  int DeviceThreadLoop(bool disable_suspend);
+  int DeviceThreadLoop();
 
   void EnqueueDeviceRequest(std::unique_ptr<DeviceRequest> request);
 

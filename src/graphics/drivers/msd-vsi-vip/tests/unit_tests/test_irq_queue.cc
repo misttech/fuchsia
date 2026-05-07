@@ -14,9 +14,8 @@
 class TestIrqQueue : public ::testing::Test {
  public:
   void SetUp() override {
-    constexpr bool kStartDeviceThread = false;
     constexpr bool kEnableSuspend = true;
-    device_ = MsdVsiDevice::Create(GetTestDeviceHandle(), kStartDeviceThread, kEnableSuspend);
+    device_ = MsdVsiDevice::Create(GetTestDeviceHandle(), kEnableSuspend);
     EXPECT_NE(device_, nullptr);
   }
 

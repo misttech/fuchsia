@@ -23,9 +23,8 @@ class TestEvents : public ::testing::Test {
   static constexpr uint32_t kAddressSpaceIndex = 1;
 
   void SetUp() override {
-    constexpr bool kStartDeviceThread = false;
     constexpr bool kEnableSuspend = true;
-    device_ = MsdVsiDevice::Create(GetTestDeviceHandle(), kStartDeviceThread, kEnableSuspend);
+    device_ = MsdVsiDevice::Create(GetTestDeviceHandle(), kEnableSuspend);
     EXPECT_NE(device_, nullptr);
 
     address_space_owner_ = std::make_unique<AddressSpaceOwner>(device_->GetBusMapper());
@@ -160,8 +159,8 @@ TEST_F(TestEvents, WriteUnorderedEventIds) {
   uint32_t num_new_rb_instructions = MsdVsiDevice::kNumEvents + 2;  // Add 2 for WAIT-LINK.
   device_->LinkRingbuffer(prev_wait_link, rb_link_addr, num_new_rb_instructions /* prefetch */);
 
-  // Start the device thread with suspend disabled
-  device_->StartDeviceThread(true);
+  // Start the device thread.
+  device_->StartDeviceThread();
 
   constexpr uint64_t kTimeoutMs = 5000;
   for (unsigned int j = 0; j < MsdVsiDevice::kNumEvents; j++) {

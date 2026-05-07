@@ -36,11 +36,10 @@ uint32_t to_uint32(uint64_t val) {
 
 TEST(MsdVsiDevice, MemoryWrite) {
   {
-    constexpr bool kStartDeviceThread = false;
     constexpr bool kEnableSuspend = true;
     // Not supported for Nelson & A5.
     std::unique_ptr<MsdVsiDevice> device =
-        MsdVsiDevice::Create(GetTestDeviceHandle(), kStartDeviceThread, kEnableSuspend);
+        MsdVsiDevice::Create(GetTestDeviceHandle(), kEnableSuspend);
     if (((device->device_id() == kMsdVsiVipDevice8000) &&
          (device->customer_id() == MAGMA_VSI_VIP_NELSON_CUSTOMER_ID)) ||
         ((device->device_id() == kMsdVsiVipDevice9000) &&
@@ -65,12 +64,11 @@ class TestMsdVsiDevice : public drm_test_info {
     this->dev = &device_;
     this->stream = &command_stream_;
 
-    constexpr bool kStartDeviceThread = true;
     constexpr bool kEnableSuspend = true;
-    device_.msd_vsi_device =
-        MsdVsiDevice::Create(GetTestDeviceHandle(), kStartDeviceThread, kEnableSuspend);
+    device_.msd_vsi_device = MsdVsiDevice::Create(GetTestDeviceHandle(), kEnableSuspend);
     if (!device_.msd_vsi_device)
       return DRETF(false, "no test device");
+    device_.msd_vsi_device->StartDeviceThread();
 
     if (!device_.msd_vsi_device->IsIdle())
       return DRETF(false, "device not idle");

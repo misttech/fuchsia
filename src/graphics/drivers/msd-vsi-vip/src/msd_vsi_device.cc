@@ -68,19 +68,12 @@ bool MsdVsiDevice::Shutdown() {
   return true;
 }
 
-std::unique_ptr<MsdVsiDevice> MsdVsiDevice::Create(void* device_handle, bool start_device_thread,
-                                                   bool enable_suspend) {
+std::unique_ptr<MsdVsiDevice> MsdVsiDevice::Create(void* device_handle, bool enable_suspend) {
   auto device = std::make_unique<MsdVsiDevice>(enable_suspend);
-
   if (!device->Init(device_handle)) {
     MAGMA_LOG(ERROR, "Failed to initialize device");
     return nullptr;
   }
-
-  if (start_device_thread) {
-    device->StartDeviceThread(!enable_suspend);
-  }
-
   return device;
 }
 
@@ -313,14 +306,13 @@ void MsdVsiDevice::HangCheckTimeout() {
   ProcessRequestBacklog();
 }
 
-void MsdVsiDevice::StartDeviceThread(bool disable_suspend) {
+void MsdVsiDevice::StartDeviceThread() {
   DASSERT(!device_thread_.joinable());
-  device_thread_ =
-      std::thread([this, disable_suspend] { this->DeviceThreadLoop(disable_suspend); });
+  device_thread_ = std::thread([this] { this->DeviceThreadLoop(); });
   interrupt_thread_ = std::thread([this] { this->InterruptThreadLoop(); });
 }
 
-int MsdVsiDevice::DeviceThreadLoop(bool disable_suspend) {
+int MsdVsiDevice::DeviceThreadLoop() {
   magma::PlatformThreadHelper::SetCurrentThreadName("DeviceThread");
 
   device_thread_id_ = std::make_unique<magma::PlatformThreadId>();
@@ -345,7 +337,7 @@ int MsdVsiDevice::DeviceThreadLoop(bool disable_suspend) {
 
     constexpr uint32_t kWaitForSuspendMs = 10;
     // If there are no more command buffers to execute wait before suspending
-    if (!disable_suspend) {
+    if (enable_suspend_) {
       if (progress_->IsIdle() && power_state_ != PowerState::kSuspended) {
         timeout = std::chrono::milliseconds(kWaitForSuspendMs);
       }
@@ -364,7 +356,7 @@ int MsdVsiDevice::DeviceThreadLoop(bool disable_suspend) {
           break;
         }
 
-        if (!disable_suspend && timeout == std::chrono::milliseconds(kWaitForSuspendMs)) {
+        if (enable_suspend_ && timeout == std::chrono::milliseconds(kWaitForSuspendMs)) {
           if (progress_->IsIdle() && power_state_ != PowerState::kSuspended) {
             StopRingBufferAndSuspend();
           }

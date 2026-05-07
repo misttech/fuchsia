@@ -13,13 +13,15 @@
 void MsdVsiDriver::Destroy(MsdVsiDriver* drv) { delete drv; }
 
 std::unique_ptr<msd::Device> MsdVsiDriver::MsdCreateDevice(msd::DeviceHandle* device_handle) {
-  bool start_device_thread = (configure_flags() & MSD_DRIVER_CONFIG_TEST_NO_DEVICE_THREAD) == 0;
-
   constexpr bool kEnableSuspend = true;
-  std::unique_ptr<MsdVsiDevice> device =
-      MsdVsiDevice::Create(device_handle, start_device_thread, kEnableSuspend);
+  std::unique_ptr<MsdVsiDevice> device = MsdVsiDevice::Create(device_handle, kEnableSuspend);
   if (!device) {
     return DRETP(nullptr, "Failed to create device");
+  }
+
+  bool start_device_thread = (configure_flags() & MSD_DRIVER_CONFIG_TEST_NO_DEVICE_THREAD) == 0;
+  if (start_device_thread) {
+    device->StartDeviceThread();
   }
 
   return device;

@@ -27,9 +27,8 @@ const size_t kPageSize = zx_system_get_page_size();
 class MsdVsiDeviceTest : public ::testing::Test {
  public:
   void SetUp() override {
-    constexpr bool kStartDeviceThread = false;
     constexpr bool kEnableSuspend = true;
-    device_ = MsdVsiDevice::Create(GetTestDeviceHandle(), kStartDeviceThread, kEnableSuspend);
+    device_ = MsdVsiDevice::Create(GetTestDeviceHandle(), kEnableSuspend);
     EXPECT_NE(device_, nullptr);
   }
 
@@ -158,10 +157,9 @@ TEST_F(MsdVsiDeviceTest, LoadAddressSpace) {
 
   // Ensure we can do this > once
   for (uint32_t i = 0; i < 2; i++) {
-    constexpr bool kStartDeviceThread = false;
     constexpr bool kEnableSuspend = true;
     std::unique_ptr<MsdVsiDevice> device =
-        MsdVsiDevice::Create(GetTestDeviceHandle(), kStartDeviceThread, kEnableSuspend);
+        MsdVsiDevice::Create(GetTestDeviceHandle(), kEnableSuspend);
     ASSERT_NE(device, nullptr);
 
     EXPECT_TRUE(device->IsIdle());
