@@ -57,7 +57,8 @@ func TestAllowlistCommand_Execute(t *testing.T) {
 
 	// Test 2: Public project
 	f2 := flag.NewFlagSet("test2", flag.ContinueOnError)
-	f2.Parse([]string{"add", "GPL-2.0", "src/foo/bar"})
+	cmd.SetFlags(f2)
+	f2.Parse([]string{"-bug", "b/123", "add", "GPL-2.0", "src/foo/bar"})
 	if status := cmd.Execute(ctx, f2); status != subcommands.ExitSuccess {
 		t.Errorf("Expected ExitSuccess for public project, got %v", status)
 	}
@@ -81,7 +82,8 @@ func TestAllowlistCommand_Execute(t *testing.T) {
 
 	// Test 3: Private project (vendor/...)
 	f3 := flag.NewFlagSet("test3", flag.ContinueOnError)
-	f3.Parse([]string{"add", "GPL-2.0", "vendor/my_private_proj"})
+	cmd.SetFlags(f3)
+	f3.Parse([]string{"-bug", "b/123", "add", "GPL-2.0", "vendor/my_private_proj"})
 	if status := cmd.Execute(ctx, f3); status != subcommands.ExitSuccess {
 		t.Errorf("Expected ExitSuccess for private project, got %v", status)
 	}
@@ -93,14 +95,16 @@ func TestAllowlistCommand_Execute(t *testing.T) {
 
 	// Test 4: Already exists (should not fail, should exit success)
 	f4 := flag.NewFlagSet("test4", flag.ContinueOnError)
-	f4.Parse([]string{"add", "GPL-2.0", "src/foo/bar"})
+	cmd.SetFlags(f4)
+	f4.Parse([]string{"-bug", "b/123", "add", "GPL-2.0", "src/foo/bar"})
 	if status := cmd.Execute(ctx, f4); status != subcommands.ExitSuccess {
 		t.Errorf("Expected ExitSuccess when allowlist entry already exists, got %v", status)
 	}
 
 	// Test 5: Third party file grouping (should group by project name from manifest)
 	f5 := flag.NewFlagSet("test5", flag.ContinueOnError)
-	f5.Parse([]string{"add", "GPL-2.0", "vendor/my_private_proj/LICENSE"})
+	cmd.SetFlags(f5)
+	f5.Parse([]string{"-bug", "b/123", "add", "GPL-2.0", "vendor/my_private_proj/LICENSE"})
 	if status := cmd.Execute(ctx, f5); status != subcommands.ExitSuccess {
 		t.Errorf("Expected ExitSuccess for third party file, got %v", status)
 	}
@@ -108,6 +112,14 @@ func TestAllowlistCommand_Execute(t *testing.T) {
 	thirdPartyConfigPath := filepath.Join(tempDir, "vendor", "google", "tools", "check-licenses", "assets", "configs", "allowed_licenses", "Restricted", "GPL-2.0", "my_private_proj.json")
 	if _, err := os.Stat(thirdPartyConfigPath); os.IsNotExist(err) {
 		t.Errorf("Expected config file to be created at %s", thirdPartyConfigPath)
+	}
+
+	// Test 6: Missing bug flag (should fail)
+	f6 := flag.NewFlagSet("test6", flag.ContinueOnError)
+	cmd.SetFlags(f6)
+	f6.Parse([]string{"add", "GPL-2.0", "src/foo/bar"})
+	if status := cmd.Execute(ctx, f6); status != subcommands.ExitUsageError {
+		t.Errorf("Expected ExitUsageError for missing -bug flag, got %v", status)
 	}
 }
 
@@ -152,7 +164,7 @@ func TestAllowlistCommand_Execute_RelativePathFromSubdir(t *testing.T) {
 
 	f := flag.NewFlagSet("test_relative", flag.ContinueOnError)
 	cmd.SetFlags(f)
-	f.Parse([]string{"add", "GPL-2.0", "."}) // target is "." (src/my_project)
+	f.Parse([]string{"-bug", "b/123", "add", "GPL-2.0", "."}) // target is "." (src/my_project)
 
 	if status := cmd.Execute(ctx, f); status != subcommands.ExitSuccess {
 		t.Errorf("Expected ExitSuccess, got %v", status)

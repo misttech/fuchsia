@@ -20,34 +20,47 @@ import (
 )
 
 type AllowlistCommand struct {
-	fuchsiaDir string
+	fuchsiaDir  string
+	bug         string
+	description string
 }
 
 func (*AllowlistCommand) Name() string     { return "allowlist" }
 func (*AllowlistCommand) Synopsis() string { return "Manage allowed licenses." }
 func (*AllowlistCommand) Usage() string {
-	return `allowlist add <LicenseName> <projectPath>:
+	return `allowlist -bug <BugID> [-desc <Description>] add <LicenseName> <projectPath>:
   Adds an allowed license exception for the given project path.
 
+  Flags:
+    -bug  Bug ID tracking this exception (Mandatory).
+    -desc Optional description for this exception.
+
   Examples:
-    fx check-licenses allowlist add GPL-2.0 vendor/foo
+    fx check-licenses allowlist -bug b/123 add GPL-2.0 vendor/foo
 `
 }
 
 func (c *AllowlistCommand) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.fuchsiaDir, "fuchsia_dir", os.Getenv("FUCHSIA_DIR"), "Location of the fuchsia root directory.")
+	f.StringVar(&c.bug, "bug", "", "Bug ID tracking this exception (Mandatory).")
+	f.StringVar(&c.description, "desc", "Auto-generated allowlist entry", "Optional description for this exception.")
 }
 
 func (c *AllowlistCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	if f.NArg() != 3 || f.Arg(0) != "add" {
-		fmt.Fprintln(os.Stderr, "Usage: fx check-licenses allowlist add <LicenseName> <projectPath>")
+		fmt.Fprintln(os.Stderr, "Usage: fx check-licenses allowlist -bug <BugID> [-desc <Description>] add <LicenseName> <projectPath>")
+		return subcommands.ExitUsageError
+	}
+
+	if c.bug == "" {
+		fmt.Fprintln(os.Stderr, "Error: the -bug flag is mandatory.")
 		return subcommands.ExitUsageError
 	}
 
 	licenseName := f.Arg(1)
 	projectPath := filepath.Clean(f.Arg(2))
 
-	if err := AddAllowlistEntry(c.fuchsiaDir, licenseName, projectPath); err != nil {
+	if err := AddAllowlistEntry(c.fuchsiaDir, licenseName, projectPath, c.bug, c.description); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
 	}
@@ -56,7 +69,7 @@ func (c *AllowlistCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...in
 }
 
 // AddAllowlistEntry adds an allowed license exception for a given project path.
-func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath string) error {
+func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath, bug, description string) error {
 	if fuchsiaDir == "" {
 		fuchsiaDir = "."
 	}
@@ -123,8 +136,8 @@ func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath string) error {
 	}
 
 	entry := v2config.AllowlistEntry{
-		Bug:         "TODO: File bug with TQ-OSRB",
-		Description: "Auto-generated allowlist entry",
+		Bug:         bug,
+		Description: description,
 		Paths:       []string{projectPath},
 	}
 	cfg.AllowedLicenses[licenseName] = append(cfg.AllowedLicenses[licenseName], entry)
@@ -142,10 +155,8 @@ func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath string) error {
 	fmt.Printf("✅ Added Allowlist Entry:\n")
 	fmt.Printf("  - License: %s\n", licenseName)
 	fmt.Printf("  - Project: %s\n", projectPath)
+	fmt.Printf("  - Bug:     %s\n", bug)
 	fmt.Printf("  - File:    %s\n\n", destFile)
-	fmt.Printf("ACTION REQUIRED:\n")
-	fmt.Printf("You must file a bug with the TQ-OSRB component explaining why this project needs to use this license.\n")
-	fmt.Printf("Once filed, update the 'bug' field in %s with the bug number.\n", destFile)
 
 	return nil
 }
