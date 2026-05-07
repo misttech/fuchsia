@@ -413,17 +413,8 @@ impl Drop for TestHelper {
         // Drop the event stream so the WlantapPhyProxy can be converted
         // back into a channel. Conversion from a proxy into a channel fails
         // otherwise.
-        if let Some(mut stream) = self.event_stream.take() {
-            // Create a no-op waker to synchronously poll and drain
-            // any ready events left in the channel before teardown.
-            let waker = futures::task::noop_waker();
-            let mut cx = futures::task::Context::from_waker(&waker);
-            while let std::task::Poll::Ready(Some(result)) = stream.poll_next_unpin(&mut cx) {
-                if let Ok(event) = result {
-                    warn!("Draining unhandled event during teardown: {:?}", event);
-                }
-            }
-        }
+        let event_stream = self.event_stream.take();
+        drop(event_stream);
 
         let sync_proxy = wlantap::WlantapPhySynchronousProxy::new(
             // Arc::into_inner() should succeed in a properly constructed test. Using a WlantapPhyProxy
