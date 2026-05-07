@@ -1015,7 +1015,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   lsan = {
@@ -5729,16 +5729,6 @@ precommitted (which is not done by default).
 **Current value (from the default):** `false`
 
 From //src/graphics/drivers/msd-arm-mali/src/BUILD.gn:23
-
-### msd_vsi_vip_enable_suspend
-
-Enable suspend.
-This will stop the ring buffer and suspend the clks when there are no
-submitted commands.
-
-**Current value (from the default):** `true`
-
-From //src/graphics/drivers/msd-vsi-vip/BUILD.gn:14
 
 ### netstack3_profile_rustc
 
