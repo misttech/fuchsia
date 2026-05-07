@@ -17,9 +17,16 @@ import execution
 
 
 async def get_dirty_files(
-    fuchsia_dir: str, recorder: event.EventRecorder
+    fuchsia_dir: str,
+    affected_since: str | None = None,
+    recorder: event.EventRecorder | None = None,
 ) -> list[str] | None:
-    """Invokes git status over the workspace identifying any currently modified files.
+    """Invokes git to identify modified files.
+
+    Args:
+        fuchsia_dir: The Fuchsia directory.
+        affected_since: If set, compare against this commit/branch instead of checking uncommitted files.
+        recorder: The event recorder.
 
     Returns:
         A list of modified files relative to fuchsia_dir, or None if clean/invalid.
@@ -31,40 +38,93 @@ async def get_dirty_files(
         recorder=recorder,
     )
     if not toplevel_res or toplevel_res.return_code != 0:
-        recorder.emit_instruction_message(
-            "ERROR: You must run fx test from inside a git repository to use --show-affected-tests."
-        )
+        if recorder:
+            stdout = toplevel_res.stdout if toplevel_res else "None"
+            stderr = toplevel_res.stderr if toplevel_res else "None"
+            recorder.emit_instruction_message(
+                "ERROR: You must run fx test from inside a git repository to use --show-affected-tests.\n"
+                f"STDOUT: {stdout}\n"
+                f"STDERR: {stderr}"
+            )
         return None
 
     repo_root = toplevel_res.stdout.strip() if toplevel_res.stdout else ""
-    recorder.emit_instruction_message(f"Querying repository: {repo_root}")
-
-    status_res = await execution.run_command(
-        "git",
-        "--no-optional-locks",
-        "status",
-        "--porcelain",
-        recorder=recorder,
-    )
-    if not status_res or status_res.stdout is None:
-        return []
-
-    status_out = status_res.stdout
+    if recorder:
+        recorder.emit_instruction_message(f"Querying repository: {repo_root}")
 
     dirty_files = []
-    for line in status_out.splitlines():
-        if len(line) < 4:
-            continue
-        rel_path = line[3:].split(" -> ")[-1].strip()
-        if not rel_path:
-            continue
-        abs_path = os.path.join(repo_root, rel_path)
-        dirty_files.append(os.path.relpath(abs_path, fuchsia_dir))
+    if affected_since:
+        if recorder:
+            recorder.emit_instruction_message(
+                f"Querying files changed since {affected_since}"
+            )
+        diff_res = await execution.run_command(
+            "git",
+            "diff",
+            "--name-only",
+            f"{affected_since}...",
+            recorder=recorder,
+        )
+        if not diff_res or diff_res.return_code != 0 or diff_res.stdout is None:
+            if recorder:
+                stdout = diff_res.stdout if diff_res else "None"
+                stderr = diff_res.stderr if diff_res else "None"
+                recorder.emit_warning_message(
+                    f"Failed to run git diff against {affected_since}\n"
+                    f"STDOUT: {stdout}\n"
+                    f"STDERR: {stderr}"
+                )
+            return None
+
+        for line in diff_res.stdout.splitlines():
+            rel_path = line.strip()
+            if not rel_path:
+                continue
+            abs_path = os.path.join(repo_root, rel_path)
+            dirty_files.append(os.path.relpath(abs_path, fuchsia_dir))
+    else:
+        status_res = await execution.run_command(
+            "git",
+            "--no-optional-locks",
+            "status",
+            "--porcelain",
+            recorder=recorder,
+        )
+        if (
+            not status_res
+            or status_res.return_code != 0
+            or status_res.stdout is None
+        ):
+            if recorder:
+                stdout = status_res.stdout if status_res else "None"
+                stderr = status_res.stderr if status_res else "None"
+                recorder.emit_warning_message(
+                    f"Failed to run git status\n"
+                    f"STDOUT: {stdout}\n"
+                    f"STDERR: {stderr}"
+                )
+            return []
+
+        for line in status_res.stdout.splitlines():
+            # Examples of line format:
+            # "M  path/to/file.py"
+            # "R  old/path.py -> new/path.py"
+            if len(line) < 4:
+                continue
+            rel_path = line[3:].split(" -> ")[-1].strip()
+            if not rel_path:
+                continue
+            abs_path = os.path.join(repo_root, rel_path)
+            dirty_files.append(os.path.relpath(abs_path, fuchsia_dir))
 
     if not dirty_files:
-        recorder.emit_instruction_message(
-            "\nYour repository is completely clean. No files are modified, so no tests are affected."
+        msg = (
+            f"\nNo files changed since {affected_since}."
+            if affected_since
+            else "\nYour repository is completely clean. No files are modified, so no tests are affected."
         )
+        if recorder:
+            recorder.emit_instruction_message(msg)
         return None
 
     return dirty_files
@@ -219,17 +279,21 @@ async def find_affected_tests(
 
 async def get_affected_targets(
     exec_env: environment.ExecutionEnvironment,
-    recorder: event.EventRecorder,
+    affected_since: str | None = None,
+    recorder: event.EventRecorder | None = None,
 ) -> list[AffectedTarget]:
     """Orchestrates discovering which tests are affected by dirty files across several different configurations."""
 
-    dirty_files = await get_dirty_files(exec_env.fuchsia_dir, recorder)
+    dirty_files = await get_dirty_files(
+        exec_env.fuchsia_dir, affected_since, recorder
+    )
     if dirty_files is None:
         return []
 
-    recorder.emit_instruction_message(
-        f"Found {len(dirty_files)} modified file(s)."
-    )
+    if recorder:
+        recorder.emit_instruction_message(
+            f"Found {len(dirty_files)} modified file(s)."
+        )
 
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".txt", delete=True
@@ -253,17 +317,21 @@ async def get_affected_targets(
                 ),
             ]
 
-            group_id = recorder.emit_event_group(
-                "Finding affected tests",
-                queued_events=len(build_configurations),
-            )
+            group_id = None
+            if recorder:
+                group_id = recorder.emit_event_group(
+                    "Finding affected tests",
+                    queued_events=len(build_configurations),
+                )
 
             async def run_find_affected(
                 config: BuildConfig,
             ) -> GatheredResult:
-                child_id = recorder.emit_event_group(
-                    f"Checking {config.product_board}", parent=group_id
-                )
+                child_id = None
+                if recorder:
+                    child_id = recorder.emit_event_group(
+                        f"Checking {config.product_board}", parent=group_id
+                    )
                 try:
                     pb_slug = config.product_board.replace(".", "_")
                     out_dir = os.path.join(out_tmp_dir, pb_slug)
@@ -276,11 +344,13 @@ async def get_affected_targets(
                         dirty_files_path,
                     )
                 finally:
-                    recorder.emit_end(id=child_id)
+                    if recorder and child_id:
+                        recorder.emit_end(id=child_id)
 
-            recorder.emit_instruction_message(
-                f"Spawning parallel evaluations for {len(build_configurations)} product/board configurations (this might take a minute)..."
-            )
+            if recorder:
+                recorder.emit_instruction_message(
+                    f"Spawning parallel evaluations for {len(build_configurations)} product/board configurations (this might take a minute)..."
+                )
 
             try:
                 results = await asyncio.gather(
@@ -290,7 +360,8 @@ async def get_affected_targets(
                     )
                 )
             finally:
-                recorder.emit_end(id=group_id)
+                if recorder and group_id:
+                    recorder.emit_end(id=group_id)
 
             label_to_results = clean_gathered_results(results)
             if not label_to_results:
@@ -305,7 +376,9 @@ async def show_affected_tests(
     recorder: event.EventRecorder,
 ) -> None:
     """Orchestrates discovering which tests are affected by dirty files across several different configurations."""
-    targets = await get_affected_targets(exec_env, recorder)
+    targets = await get_affected_targets(
+        exec_env, flags.affected_since, recorder
+    )
 
     if not targets:
         recorder.emit_info_message(

@@ -65,6 +65,7 @@ class Flags:
     dry: bool
     show_affected_tests: bool
     run_affected_tests: bool
+    affected_since: str | None
     list: bool
     list_runtime_deps: bool
     previous: PrevOption | None
@@ -325,6 +326,12 @@ def parse_args(
         "--run-affected-tests",
         action="store_true",
         help="Automatically add and run tests affected by the current dirty repository state.",
+    )
+    utility.add_argument(
+        "--affected-since",
+        type=str,
+        default=None,
+        help="Get affected files by comparing against this commit/branch instead of checking uncommitted files in the working area.",
     )
     utility.add_argument(
         "--dry",

@@ -610,7 +610,7 @@ class AsyncMain:
 
         if flags.run_affected_tests:
             targets = await find_affected.get_affected_targets(
-                exec_env, recorder
+                exec_env, flags.affected_since, recorder
             )
             if targets:
                 labels = await self._add_affected_tests(
