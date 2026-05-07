@@ -99,3 +99,23 @@ isolated environment.
 - **pbus vs non-pbus nodes**: Nodes with MMIO, IRQs, or metadata become platform
   bus nodes. Nodes with only bind properties are non-pbus nodes. This affects
   how they are published and which visitors might interact with them.
+- **Stale Checked-in DTB Files**:
+  - **Symptom**: Changes to `.dts` files do not appear in `driver dump` or
+    logs after building and flashing.
+  - **Cause**: Some board configurations (ones which do not contain devicetree_parsed)
+    may use a checked-in binary `.dtb` file as an overlay or base, instead of
+    compiling the source `.dts` files on the fly. Changes to the `.dts` source
+    files will have no effect until the binary `.dtb` file is recompiled and
+    committed or updated in the workspace.
+  - **Action**: Check the board configuration (e.g., `BUILD.bazel` or
+    `BUILD.gn`) to see if it references a `.dtb` file directly. If so, you may
+    need to use the prebuilt `dtc` tool to manually compile the `.dts` into
+    `.dtb` for testing.
+- **Base Devicetree Source Location**:
+  - **Symptom**: Cannot find where I2C or other devices are defined in the
+    expected directory.
+  - **Details**: For custom hardware targets, the base devicetree source
+    files (often ending in `.dtsi` or `.dts.S`) might not be in the same
+    directory as the final `.dts` or `.dtb` files. For example, in some
+    internal targets, they are located in the board driver's source directory
+    (e.g., `vendor/google/<target>/board/drivers/<target>/dts/`).
