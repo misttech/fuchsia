@@ -307,7 +307,7 @@ def _zither_rust_library_impl(
         # TODO(https://fxbug.dev/454449781): Figure out how to make this target depend on the check target.
         # deps = crate_deps + [":" + zither_target + ".check"],
         deps = crate_deps,
-        edition = "2021",
+        edition = "2024",
         testonly = testonly,
         visibility = visibility,
     )

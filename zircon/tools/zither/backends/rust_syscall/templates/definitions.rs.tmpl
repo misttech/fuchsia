@@ -17,7 +17,7 @@ pub use zx_types::*;
 // Only link against zircon when targeting Fuchsia
 #[cfg(target_os = "fuchsia")]
 #[link(name = "zircon")]
-extern {
+unsafe extern "C" {
 {{ range . }}
 {{ $lastParamIndex := LastParameterIndex .}}
     pub fn zx_{{ LowerCaseWithUnderscores . }}(

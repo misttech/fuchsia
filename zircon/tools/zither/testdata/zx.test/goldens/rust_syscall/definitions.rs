@@ -11,7 +11,7 @@ pub use zx_types::*;
 // Only link against zircon when targeting Fuchsia
 #[cfg(target_os = "fuchsia")]
 #[link(name = "zircon")]
-extern "C" {
+unsafe extern "C" {
 
     pub fn zx_channel_read(
         handle: zx_handle_t,

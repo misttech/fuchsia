@@ -539,7 +539,7 @@ template("_zither_rust_library") {
                              "visibility",
                              "testonly",
                            ])
-    edition = "2021"
+    edition = "2024"
     source_root = crate_root
 
     # Namespace by target so that there is no rlib collision between fidl()
