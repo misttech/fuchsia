@@ -57,7 +57,7 @@ sysmem
 ?ta-manager-config
 ?ums-function
 ?usb-audio
-usb-bus
+?usb-bus
 ?usb-cdc-acm
 ?usb-cdc-ecm
 ?usb-composite

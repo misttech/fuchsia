@@ -258,11 +258,6 @@ assembly_input_bundle("bootstrap") {
       package_target = "//src/devices/spi/drivers/spi:package"
       driver_components = [ "meta/spi.cm" ]
     },
-    {
-      set = "bootfs"
-      package_target = "//src/devices/usb/drivers/usb-bus:package"
-      driver_components = [ "meta/usb-bus.cm" ]
-    },
   ]
 }
 
@@ -476,6 +471,11 @@ assembly_input_bundle("input_drivers") {
 
 assembly_input_bundle("usb_host_drivers") {
   drivers = [
+    {
+      set = "bootfs"
+      package_target = "//src/devices/usb/drivers/usb-bus:package"
+      driver_components = [ "meta/usb-bus.cm" ]
+    },
     {
       set = "bootfs"
       package_target = "//src/connectivity/bluetooth/hci/transport/usb:package"
