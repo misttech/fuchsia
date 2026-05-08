@@ -17,11 +17,11 @@ use log::info;
 use net_declare::net_mac;
 use net_types::UnicastAddr;
 use net_types::ip::{IpAddress, Ipv4Addr, Ipv6Addr};
-use netstack3_core::TimerId;
 use netstack3_core::device::{EthernetDeviceId, EthernetLinkDevice, RecvEthernetFrameMeta};
 use netstack3_core::testutil::{CtxPairExt as _, FakeBindingsCtx, FakeCtx};
+use netstack3_core::{NetworkSerializationContext, TimerId};
 use packet::serialize::{Buf, Either, PacketBuilder, PacketConstraints, SerializeError};
-use packet::{FragmentedBuffer, Serializer};
+use packet::{FragmentedBuffer, NestableSerializer as _, Serializer};
 use packet_formats::ethernet::EthernetFrameBuilder;
 use packet_formats::ip::{IpExt, IpPacketBuilder};
 use packet_formats::ipv4::Ipv4PacketBuilder;
@@ -296,7 +296,7 @@ impl<B: PacketBuilder> FuzzablePacket for (B,) {
     fn serialize(self, buf: Buf<Vec<u8>>) -> Result<Buf<Vec<u8>>, SerializeError<Never>> {
         self.0
             .wrap_body(buf)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .map(Either::into_inner)
             .map_err(|(err, _ser)| err)
     }
@@ -315,7 +315,7 @@ impl<BA: PacketBuilder, BB: PacketBuilder, BC: PacketBuilder> FuzzablePacket for
         buf.wrap_in(a)
             .wrap_in(b)
             .wrap_in(c)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .map(Either::into_inner)
             .map_err(|(err, _ser)| err)
     }

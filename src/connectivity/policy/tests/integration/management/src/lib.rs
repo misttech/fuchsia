@@ -60,7 +60,10 @@ use netstack_testing_common::{
     dhcpv4 as dhcpv4_helper, try_all, try_any, wait_for_component_stopped,
 };
 use netstack_testing_macros::netstack_test;
-use packet::{EmptyBuf, InnerPacketBuilder as _, ParsablePacket as _, Serializer as _};
+use packet::{
+    EmptyBuf, InnerPacketBuilder as _, NestableSerializer as _, NoOpSerializationContext,
+    ParsablePacket as _, Serializer as _,
+};
 use packet_formats::ethernet::{
     ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,
     EthernetFrameLengthCheck,
@@ -1690,7 +1693,7 @@ mod dhcpv6_helper {
                     EtherType::Ipv6,
                     ETHERNET_MIN_BODY_LEN_NO_TAG,
                 ))
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
                 .expect("error serializing dhcpv6 packet");
 
         let () =

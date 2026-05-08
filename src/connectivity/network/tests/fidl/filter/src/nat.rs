@@ -24,7 +24,7 @@ use net_types::Witness as _;
 use net_types::ip::{IpAddress as _, Ipv4, Ipv6};
 use netemul::RealmTcpStream;
 use netstack_testing_macros::netstack_test;
-use packet::{ParsablePacket, Serializer};
+use packet::{NoOpSerializationContext, ParsablePacket, Serializer};
 use packet_formats::ethernet::{
     ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,
     EthernetFrameLengthCheck,
@@ -532,6 +532,7 @@ async fn masquerade_icmp_error<
     message: M,
     code: M::Code,
 ) -> i32 {
+    use packet::NestableSerializer as _;
     use packet_formats::ip::IpPacket as _;
 
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
@@ -615,7 +616,7 @@ async fn masquerade_icmp_error<
                         EtherType::from_ip_version(I::VERSION),
                         ETHERNET_MIN_BODY_LEN_NO_TAG,
                     ))
-                    .serialize_vec_outer()
+                    .serialize_vec_outer(&mut NoOpSerializationContext)
                     .expect("failed to serialize ICMP error")
                     .unwrap_b();
                 fake_ep.write(icmp_error.as_ref()).await.expect("failed to write ICMP error");

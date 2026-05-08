@@ -138,7 +138,7 @@ mod tests {
     use mdns::protocol::{
         Class, DomainBuilder, EmbeddedPacketBuilder, MessageBuilder, RecordBuilder, Type,
     };
-    use packet::serialize::{InnerPacketBuilder, Serializer};
+    use packet::serialize::{InnerPacketBuilder, NoOpSerializationContext, Serializer};
     use protocols::testing::FakeDaemonBuilder;
     use std::cell::RefCell;
     use std::net::{IpAddr, SocketAddr};
@@ -268,7 +268,7 @@ mod tests {
 
         let msg_bytes = message
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"))
             .unwrap_b();
         socket.send_to(msg_bytes.as_ref(), &addr.into()).unwrap();
@@ -382,7 +382,7 @@ mod tests {
         message.add_additional(other_record);
         let msg_bytes = message
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"))
             .unwrap_b();
         socket.send_to(msg_bytes.as_ref(), &addr.into()).unwrap();

@@ -12,6 +12,7 @@ use packet::{Buf, PacketBuilder, Serializer};
 use packet_formats::icmp::{IcmpEchoRequest, IcmpPacketBuilder, IcmpZeroCode};
 use test_case::test_case;
 
+use netstack3_base::NetworkSerializationContext;
 use netstack3_base::testutil::{TestIpExt, set_logger_for_test};
 use netstack3_core::IpExt;
 use netstack3_core::testutil::{
@@ -79,8 +80,11 @@ fn test_icmp_connection<I: TestIpExt + IpExt>(
         IcmpEchoRequest::new(0, 1),
     );
     let echo_body = vec![1, 2, 3, 4];
-    let buf =
-        pb.wrap_body(Buf::new(echo_body.clone(), ..)).serialize_vec_outer().unwrap().into_inner();
+    let buf = pb
+        .wrap_body(Buf::new(echo_body.clone(), ..))
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
+        .unwrap()
+        .into_inner();
     let conn = net.with_context(LOCAL_CTX_NAME, |ctx| {
         let mut socket_api = ctx.core_api().icmp_echo::<I>();
         let conn = socket_api.create();
@@ -127,7 +131,7 @@ fn test_icmp_connection<I: TestIpExt + IpExt>(
         packet_formats::icmp::IcmpEchoReply::new(icmp_id, 1),
     )
     .wrap_body(Buf::new(echo_body, ..))
-    .serialize_vec_outer()
+    .serialize_vec_outer(&mut NetworkSerializationContext::default())
     .unwrap()
     .into_inner()
     .into_inner();

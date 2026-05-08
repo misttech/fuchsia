@@ -1327,7 +1327,8 @@ where
 mod test {
     use ip_test_macro::ip_test;
     use netstack3_base::{
-        HandshakeOptions, Options, ResetOptions, SackBlocks, SegmentOptions, UnscaledWindowSize,
+        HandshakeOptions, NetworkSerializationContext, Options, ResetOptions, SackBlocks,
+        SegmentOptions, UnscaledWindowSize,
     };
     use packet::{ParseBuffer as _, Serializer as _};
     use packet_formats::tcp::options::TcpOptions as _;
@@ -1380,7 +1381,10 @@ mod test {
             },
         );
 
-        let mut serialized = serializer.serialize_vec_outer().unwrap().unwrap_b();
+        let mut serialized = serializer
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .unwrap_b();
         let parsed_segment = serialized
             .parse_with::<_, TcpSegment<_>>(TcpParseArgs::new(
                 *I::TEST_ADDRS.remote_ip,

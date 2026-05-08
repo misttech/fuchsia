@@ -14,11 +14,11 @@ use derivative::Derivative;
 use net_types::UnicastAddr;
 use net_types::ip::Ipv6Addr;
 use netstack3_base::{
-    AnyDevice, CoreTimerContext, DeviceIdContext, HandleableTimer, RngContext,
+    AnyDevice, CoreTimerContext, DeviceIdContext, HandleableTimer, NetworkSerializer, RngContext,
     StrongDeviceIdentifier as _, TimerBindingsTypes, TimerContext, TimerHandler,
     WeakDeviceIdentifier,
 };
-use packet::{EitherSerializer, EmptyBuf, InnerPacketBuilder as _, PartialSerializer, Serializer};
+use packet::{EitherSerializer, EmptyBuf, InnerPacketBuilder as _, PartialSerializer};
 use packet_formats::icmp::ndp::options::NdpOptionBuilder;
 use packet_formats::icmp::ndp::{OptionSequenceBuilder, RouterSolicitation};
 use rand::Rng as _;
@@ -108,7 +108,7 @@ pub trait RsContext<BC: RsBindingsTypes>:
     /// The callback is called with a source address suitable for an outgoing
     /// router solicitation message and returns the message body.
     fn send_rs_packet<
-        S: Serializer<Buffer = EmptyBuf> + PartialSerializer,
+        S: NetworkSerializer<Buffer = EmptyBuf> + PartialSerializer,
         F: FnOnce(Option<UnicastAddr<Ipv6Addr>>) -> S,
     >(
         &mut self,
@@ -333,7 +333,7 @@ mod tests {
         }
 
         fn send_rs_packet<
-            S: Serializer<Buffer = EmptyBuf>,
+            S: NetworkSerializer<Buffer = EmptyBuf>,
             F: FnOnce(Option<UnicastAddr<Ipv6Addr>>) -> S,
         >(
             &mut self,

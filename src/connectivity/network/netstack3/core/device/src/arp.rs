@@ -13,15 +13,15 @@ use net_types::ip::{Ip, Ipv4, Ipv4Addr};
 use net_types::{SpecifiedAddr, UnicastAddr, Witness as _};
 use netstack3_base::{
     CoreTimerContext, Counter, CounterContext, DeviceIdContext, EventContext, FrameDestination,
-    InstantBindingsTypes, LinkDevice, SendFrameContext, SendFrameError, TimerContext,
-    TxMetadataBindingsTypes, WeakDeviceIdentifier,
+    InstantBindingsTypes, LinkDevice, NetworkSerializer, SendFrameContext, SendFrameError,
+    TimerContext, TxMetadataBindingsTypes, WeakDeviceIdentifier,
 };
 use netstack3_ip::nud::{
     self, ConfirmationFlags, DynamicNeighborUpdateSource, LinkResolutionContext, NudBindingsTypes,
     NudConfigContext, NudContext, NudHandler, NudSenderContext, NudState, NudTimerId,
     NudUserConfig,
 };
-use packet::{BufferMut, InnerPacketBuilder, Serializer};
+use packet::{BufferMut, InnerPacketBuilder};
 use packet_formats::arp::{ArpOp, ArpPacket, ArpPacketBuilder, HType};
 use packet_formats::utils::NonZeroDuration;
 use ref_cast::RefCast;
@@ -85,7 +85,7 @@ pub trait ArpSenderContext<D: ArpDevice, BC: ArpBindingsContext<D, Self::DeviceI
         meta: BC::TxMetadata,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut;
 }
 
@@ -342,7 +342,7 @@ impl<D: ArpDevice, BC: ArpBindingsContext<D, CC::DeviceId>, CC: ArpSenderContext
         meta: BC::TxMetadata,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut,
     {
         let Self(core_ctx) = self;
@@ -719,7 +719,9 @@ mod tests {
         FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeInstant, FakeLinkDeviceId, FakeNetworkSpec,
         FakeTimerId, FakeTxMetadata, FakeWeakDeviceId, WithFakeFrameContext, assert_empty,
     };
-    use netstack3_base::{CtxPair, InstantContext as _, IntoCoreTimerCtx, TimerHandler};
+    use netstack3_base::{
+        CtxPair, InstantContext as _, IntoCoreTimerCtx, NetworkSerializationContext, TimerHandler,
+    };
     use netstack3_ip::nud::testutil::{
         assert_dynamic_neighbor_state, assert_dynamic_neighbor_with_addr, assert_neighbor_unknown,
     };
@@ -727,7 +729,7 @@ mod tests {
         DelegateNudContext, DynamicNeighborState, NudCounters, NudIcmpContext, Reachable, Stale,
         UseDelegateNudContext,
     };
-    use packet::{Buf, ParseBuffer};
+    use packet::{Buf, ParseBuffer, Serializer as _};
     use packet_formats::arp::{ArpHardwareType, ArpNetworkType, peek_arp_types};
     use packet_formats::ipv4::Ipv4FragmentType;
     use test_case::test_case;
@@ -988,7 +990,7 @@ mod tests {
     ) {
         let buf = ArpPacketBuilder::new(op, sender_mac, sender_ipv4, target_mac, target_ipv4)
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap();
         let (hw, proto) = peek_arp_types(buf.as_ref()).unwrap();
         assert_eq!(hw, ArpHardwareType::Ethernet);

@@ -433,7 +433,9 @@ mod test {
     use proptest_support::failed_seeds_no_std;
     use test_case::test_case;
 
-    use crate::{SackBlock, SackBlocks, SeqNum, Timestamp, TimestampOption};
+    use crate::{
+        NetworkSerializationContext, SackBlock, SackBlocks, SeqNum, Timestamp, TimestampOption,
+    };
 
     const EXAMPLE_DATA: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     #[test_case(FragmentedPayload::new([&EXAMPLE_DATA[..]]); "contiguous")]
@@ -451,7 +453,7 @@ mod test {
     fn fragmented_payload_serializer_data<const N: usize>(payload: FragmentedPayload<'_, N>) {
         let serialized = payload
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .expect("should serialize")
             .unwrap_b()
             .into_inner();

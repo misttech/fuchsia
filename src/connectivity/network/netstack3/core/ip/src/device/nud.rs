@@ -23,13 +23,12 @@ use netstack3_base::{
     AddressResolutionFailed, AnyDevice, CoreTimerContext, Counter, CounterContext, DeviceIdContext,
     DeviceIdentifier, ErrorAndSerializer, EventContext, HandleableTimer, Instant,
     InstantBindingsTypes, LinkAddress, LinkDevice, LinkUnicastAddress, LocalTimerHeap,
-    SendFrameError, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
-    TxMetadataBindingsTypes, WeakDeviceIdentifier,
+    NetworkSerializationContext, NetworkSerializer, SendFrameError, StrongDeviceIdentifier,
+    TimerBindingsTypes, TimerContext, TxMetadataBindingsTypes, WeakDeviceIdentifier,
 };
 use netstack3_hashmap::hash_map::{self, Entry, HashMap};
 use packet::{
     Buf, BufferMut, GrowBuffer as _, ParsablePacket as _, ParseBufferMut as _, SerializeError,
-    Serializer,
 };
 use packet_formats::ip::IpPacket as _;
 use packet_formats::ipv4::{Ipv4FragmentType, Ipv4Header as _, Ipv4Packet};
@@ -439,13 +438,13 @@ impl<D: LinkDevice, N: LinkResolutionNotifier<D>, M> Incomplete<D, N, M> {
         CC: NudConfigContext<I>,
         DeviceId: StrongDeviceIdentifier,
         B: BufferMut,
-        S: Serializer<Buffer = B>,
+        S: NetworkSerializer<Buffer = B>,
     {
         // NB: it's important that we attempt to serialize the packet *before*
         // scheduling a retransmission timer, so that if serialization fails and we
         // propagate an error, we're not leaving a dangling timer.
         let packet = packet
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .map_err(|(error, serializer)| ErrorAndSerializer { error, serializer })?
             .map_a(|b| Buf::new(b.as_ref().to_vec(), ..))
             .into_inner();
@@ -524,7 +523,7 @@ impl<D: LinkDevice, N: LinkResolutionNotifier<D>, M> Incomplete<D, N, M> {
     ) -> Result<(), ErrorAndSerializer<SerializeError<Never>, S>>
     where
         B: BufferMut,
-        S: Serializer<Buffer = B>,
+        S: NetworkSerializer<Buffer = B>,
     {
         let Self { pending_frames, transmit_counter: _, notifiers: _, _marker } = self;
 
@@ -536,7 +535,7 @@ impl<D: LinkDevice, N: LinkResolutionNotifier<D>, M> Incomplete<D, N, M> {
         // has not been received and handled yet.
         if pending_frames.len() < MAX_PENDING_FRAMES {
             pending_frames.push_back((
-                body.serialize_vec_outer()
+                body.serialize_vec_outer(&mut NetworkSerializationContext::default())
                     .map_err(|(error, serializer)| ErrorAndSerializer { error, serializer })?
                     .map_a(|b| Buf::new(b.as_ref().to_vec(), ..))
                     .into_inner(),
@@ -1274,7 +1273,7 @@ impl<D: LinkDevice, BC: NudBindingsTypes<D>> DynamicNeighborState<D, BC> {
         I: Ip,
         BC: NudBindingsContext<I, D, CC::DeviceId>,
         CC: NudSenderContext<I, D, BC>,
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut,
     {
         match self {
@@ -2194,7 +2193,7 @@ pub trait NudSenderContext<I: Ip, D: LinkDevice, BC: NudBindingsTypes<D>>:
         meta: BC::TxMetadata,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut;
 }
 
@@ -2269,7 +2268,7 @@ pub trait NudHandler<I: Ip, D: LinkDevice, BC: NudBindingsTypes<D>>: DeviceIdCon
         meta: BC::TxMetadata,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut;
 }
 
@@ -2652,7 +2651,7 @@ impl<I: Ip, D: LinkDevice, BC: NudBindingsContext<I, D, CC::DeviceId>, CC: NudCo
         meta: BC::TxMetadata,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut,
     {
         let do_multicast_solicit = self.with_nud_state_mut_and_sender_ctx(
@@ -2968,6 +2967,7 @@ mod tests {
 
     use super::*;
     use crate::internal::device::nud::api::NeighborApi;
+    use packet::NestableSerializer as _;
 
     struct FakeNudContext<I: Ip, D: LinkDevice> {
         state: NudState<I, D, FakeBindingsCtxImpl<I>>,
@@ -3153,7 +3153,7 @@ mod tests {
             _tx_meta: FakeTxMetadata,
         ) -> Result<(), SendFrameError<S>>
         where
-            S: Serializer,
+            S: NetworkSerializer,
             S::Buffer: BufferMut,
         {
             self.send_frame(bindings_ctx, FakeNudMessageMeta::IpFrame { dst_link_address }, body)

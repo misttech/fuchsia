@@ -9,7 +9,7 @@ use ip_test_macro::ip_test;
 use net_types::ip::{AddrSubnet, IpAddress as _, IpVersion, Mtu};
 use net_types::{Witness, ZonedAddr};
 use netstack3_base::testutil::TestIpExt;
-use netstack3_base::{CounterContext, ResourceCounterContext};
+use netstack3_base::{CounterContext, NetworkSerializationContext, ResourceCounterContext};
 use netstack3_core::sync::RemoveResourceResult;
 use netstack3_core::testutil::{
     CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeBindingsCtx, FakeCtx, PureIpDeviceAndIpVersion,
@@ -24,7 +24,7 @@ use netstack3_device::testutil::DeviceCounterExpectations;
 use netstack3_device::{DeviceCounters, DeviceId};
 use netstack3_ip::testutil::IpCounterExpectations;
 use netstack3_ip::{IpCounters, IpPacketDestination};
-use packet::{Buf, FragmentedBuffer as _, Serializer as _};
+use packet::{Buf, FragmentedBuffer as _, NestableSerializer as _, Serializer as _};
 use packet_formats::ip::{IpPacketBuilder, IpProto};
 use test_case::test_case;
 
@@ -39,7 +39,7 @@ fn default_ip_packet<I: TestIpExt>() -> Buf<Vec<u8>> {
             TTL,
             IpProto::Udp.into(),
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .ok()
         .unwrap()
         .unwrap_b()

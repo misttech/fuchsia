@@ -3570,7 +3570,8 @@ mod tests {
         MultipleDevicesId, TestIpExt as _, set_logger_for_test,
     };
     use netstack3_base::{
-        CounterCollection, Mark, MarkDomain, RemoteAddressError, SendFrameErrorReason,
+        CounterCollection, Mark, MarkDomain, NetworkSerializationContext, RemoteAddressError,
+        SendFrameErrorReason,
     };
     use netstack3_datagram::MulticastInterfaceSelector;
     use netstack3_hashmap::{HashMap, HashSet};
@@ -3617,7 +3618,7 @@ mod tests {
 
         let buffer = builder
             .wrap_body(Buf::new(body.to_owned(), ..))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .into_inner();
 
@@ -7852,7 +7853,7 @@ mod tests {
 
         let buffer = builder
             .wrap_body(Buf::new(vec![1, 2, 3, 4], ..))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .into_inner();
 

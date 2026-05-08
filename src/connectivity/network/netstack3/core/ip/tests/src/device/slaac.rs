@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use assert_matches::assert_matches;
 use net_types::ip::{Ipv6, Ipv6Addr, Mtu, Subnet};
 use net_types::{LinkLocalAddress as _, NonMappedAddr, Witness as _};
-use packet::{Buf, InnerPacketBuilder as _, Serializer as _};
+use packet::{Buf, InnerPacketBuilder as _, NestableSerializer as _, Serializer as _};
 use packet_formats::icmp::ndp::options::{NdpOptionBuilder, PrefixInformation};
 use packet_formats::icmp::ndp::{OptionSequenceBuilder, RouterAdvertisement};
 use packet_formats::icmp::{IcmpPacketBuilder, IcmpZeroCode};
@@ -16,7 +16,7 @@ use packet_formats::ipv6::Ipv6PacketBuilder;
 use packet_formats::utils::NonZeroDuration;
 
 use netstack3_base::testutil::{TestAddrs, TestIpExt as _};
-use netstack3_base::{FrameDestination, InstantContext as _};
+use netstack3_base::{FrameDestination, InstantContext as _, NetworkSerializationContext};
 use netstack3_core::device::{BlackholeDevice, EthernetCreationProperties, EthernetLinkDevice};
 use netstack3_core::testutil::{CtxPairExt as _, DEFAULT_INTERFACE_METRIC, FakeCtx};
 use netstack3_device::loopback::{LoopbackCreationProperties, LoopbackDevice};
@@ -64,7 +64,7 @@ fn build_slaac_ra_packet(
             REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
             Ipv6Proto::Icmpv6,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .unwrap_b()
 }

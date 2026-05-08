@@ -30,7 +30,9 @@ use netstack_testing_common::{
     ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
 };
 use netstack_testing_macros::netstack_test;
-use packet::{Buf, PacketBuilder as _, ParsablePacket as _, Serializer as _};
+use packet::{
+    Buf, NoOpSerializationContext, PacketBuilder as _, ParsablePacket as _, Serializer as _,
+};
 use packet_formats::error::ParseError;
 use packet_formats::ethernet::{
     ETHERNET_HDR_LEN_NO_TAG, ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrame,
@@ -442,7 +444,7 @@ async fn device_minimum_tx_frame_size<N: Netstack>(
             0,
         )
         .wrap_body(Buf::new(vec![0; body_len], ..))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NoOpSerializationContext)
         .unwrap()
         .into_inner()
     }
@@ -546,7 +548,7 @@ async fn tx_queue_drops<N: Netstack>(name: &str) {
         0,
     )
     .wrap_body(Buf::new(vec![0; 20], ..))
-    .serialize_vec_outer()
+    .serialize_vec_outer(&mut NoOpSerializationContext)
     .unwrap()
     .into_inner();
 

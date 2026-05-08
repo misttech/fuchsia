@@ -9,7 +9,7 @@ use core::time::Duration;
 use assert_matches::assert_matches;
 use net_types::ip::{Ipv6, Ipv6Addr, Subnet};
 use net_types::{LinkLocalUnicastAddr, Witness as _};
-use packet::{BufferMut, InnerPacketBuilder as _, Serializer as _};
+use packet::{BufferMut, InnerPacketBuilder as _, NestableSerializer as _, Serializer as _};
 use packet_formats::icmp::ndp::options::{NdpOptionBuilder, PrefixInformation, RouteInformation};
 use packet_formats::icmp::ndp::{OptionSequenceBuilder, RouterAdvertisement};
 use packet_formats::icmp::{IcmpPacketBuilder, IcmpZeroCode};
@@ -17,8 +17,8 @@ use packet_formats::ip::Ipv6Proto;
 use packet_formats::ipv6::Ipv6PacketBuilder;
 use packet_formats::utils::NonZeroDuration;
 
-use netstack3_base::FrameDestination;
 use netstack3_base::testutil::{FakeInstant, TestAddrs, TestIpExt as _};
+use netstack3_base::{FrameDestination, NetworkSerializationContext};
 use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetDeviceEvent, EthernetLinkDevice,
 };
@@ -159,12 +159,12 @@ fn router_advertisement_buf(
                 ip::icmp::REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
                 Ipv6Proto::Icmpv6,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .unwrap_b(),
         OptionSequenceBuilder::new(options.iter())
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .unwrap_b(),
     )

@@ -905,7 +905,7 @@ impl IdAndSeq {
 #[cfg(test)]
 mod tests {
     use ip_test_macro::ip_test;
-    use packet::{EmptyBuf, ParseBuffer, Serializer, SliceBufViewMut};
+    use packet::{EmptyBuf, NoOpSerializationContext, ParseBuffer, Serializer, SliceBufViewMut};
     use test_case::test_case;
 
     use super::*;
@@ -972,7 +972,7 @@ mod tests {
             IcmpEchoRequest::new(1, 1),
         )
         .wrap_body(EmptyBuf)
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NoOpSerializationContext)
         .unwrap()
         .as_ref()
         .to_vec();

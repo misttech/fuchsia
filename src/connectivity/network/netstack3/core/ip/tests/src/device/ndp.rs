@@ -16,7 +16,10 @@ use net_declare::net_ip_v6;
 use net_types::ethernet::Mac;
 use net_types::ip::{AddrSubnet, Ip as _, Ipv6, Ipv6Addr, Ipv6Scope, Mtu, Subnet};
 use net_types::{NonMappedAddr, ScopeableAddress as _, UnicastAddr, Witness as _};
-use packet::{Buf, EmptyBuf, InnerPacketBuilder as _, PacketBuilder as _, Serializer as _};
+use packet::{
+    Buf, EmptyBuf, InnerPacketBuilder as _, NestableSerializer as _, PacketBuilder as _,
+    Serializer as _,
+};
 use packet_formats::ethernet::EthernetFrameLengthCheck;
 use packet_formats::icmp::ndp::options::{NdpOption, NdpOptionBuilder, PrefixInformation};
 use packet_formats::icmp::ndp::{
@@ -40,7 +43,7 @@ use netstack3_base::testutil::{
 };
 use netstack3_base::{
     FrameDestination, InstantContext as _, IpAddressId as _, Ipv6DeviceAddr, LinkAddress,
-    RngContext as _,
+    NetworkSerializationContext, RngContext as _,
 };
 use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetDeviceId, EthernetLinkDevice,
@@ -916,7 +919,7 @@ fn test_receiving_router_solicitation_validity_check() {
             REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
             Ipv6Proto::Icmpv6,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
@@ -948,7 +951,7 @@ fn test_receiving_router_advertisement_validity_check() {
                 ),
             ))
             .wrap_in(Ipv6PacketBuilder::new(src_ip, dst_ip, hop_limit, Ipv6Proto::Icmpv6))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .unwrap_b()
     }
@@ -1034,7 +1037,7 @@ fn test_receiving_neighbor_solicitation_validity_check(
             NeighborSolicitation::new(TARGET_ADDR),
         ))
         .wrap_in(Ipv6PacketBuilder::new(src_ip, dst_ip, hop_limit, Ipv6Proto::Icmpv6))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .unwrap_b();
 
@@ -1106,7 +1109,7 @@ fn test_receiving_neighbor_advertisement_validity_check(
             ),
         ))
         .wrap_in(Ipv6PacketBuilder::new(src_ip, dst_ip, hop_limit, Ipv6Proto::Icmpv6))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .unwrap_b();
 
@@ -1149,7 +1152,7 @@ fn test_sending_ipv6_packet_after_hop_limit_change() {
                 REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
                 Ipv6Proto::Icmpv6,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .unwrap_b();
         ctx.test_api().receive_ip_packet::<Ipv6, _>(
@@ -1211,7 +1214,7 @@ fn test_receiving_router_advertisement_mtu_option() {
                 REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
                 Ipv6Proto::Icmpv6,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .unwrap_b()
     }
@@ -1638,7 +1641,7 @@ fn slaac_packet_buf(
             REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
             Ipv6Proto::Icmpv6,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .unwrap_b()
 }

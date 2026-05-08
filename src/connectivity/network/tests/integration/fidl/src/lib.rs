@@ -21,8 +21,8 @@ use netstack_testing_common::{
     ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, get_component_moniker,
 };
 use netstack_testing_macros::netstack_test;
-use packet::ParsablePacket as _;
 use packet::serialize::Serializer as _;
+use packet::{NestableSerializer as _, NoOpSerializationContext, ParsablePacket as _};
 use packet_formats::error::ParseError;
 use packet_formats::ethernet::{
     ETHERNET_MIN_BODY_LEN_NO_TAG, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck,
@@ -404,7 +404,7 @@ async fn test_forwarding<I: IpExt + IcmpIpExt, N: Netstack>(
             I::ETHER_TYPE,
             ETHERNET_MIN_BODY_LEN_NO_TAG,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NoOpSerializationContext)
         .expect("serialize ICMP packet")
         .unwrap_b();
 

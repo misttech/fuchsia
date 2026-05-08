@@ -336,7 +336,8 @@ pub mod testutil {
 mod tests {
     use byteorder::{ByteOrder, NetworkEndian};
     use packet::{
-        AsFragmentedByteSlice, Buf, GrowBufferMut, InnerPacketBuilder, ParseBuffer, Serializer,
+        AsFragmentedByteSlice, Buf, GrowBufferMut, InnerPacketBuilder, NoOpSerializationContext,
+        ParseBuffer, Serializer,
     };
 
     use super::*;
@@ -471,7 +472,7 @@ mod tests {
     fn test_serialize() {
         let buf = new_test_ethernet_packet_builder()
             .wrap_body((&new_serialize_buf()[..]).into_serializer())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         assert_eq!(
             &buf.as_ref()[..ETHERNET_HDR_LEN_NO_TAG],
@@ -486,14 +487,14 @@ mod tests {
         let mut buf_0 = [0; ETHERNET_MIN_FRAME_LEN];
         let _: Buf<&mut [u8]> = new_test_ethernet_packet_builder()
             .wrap_body(Buf::new(&mut buf_0[..], ETHERNET_HDR_LEN_NO_TAG..))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .unwrap_a();
         let mut buf_1 = [0; ETHERNET_MIN_FRAME_LEN];
         (&mut buf_1[..ETHERNET_HDR_LEN_NO_TAG]).copy_from_slice(&[0xFF; ETHERNET_HDR_LEN_NO_TAG]);
         let _: Buf<&mut [u8]> = new_test_ethernet_packet_builder()
             .wrap_body(Buf::new(&mut buf_1[..], ETHERNET_HDR_LEN_NO_TAG..))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .unwrap_a();
         assert_eq!(&buf_0[..], &buf_1[..]);

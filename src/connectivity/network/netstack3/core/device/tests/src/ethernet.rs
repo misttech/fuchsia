@@ -10,7 +10,7 @@ use net_types::ethernet::Mac;
 use net_types::ip::{AddrSubnet, Ip, IpAddr, IpAddress, IpVersion, Ipv4, Ipv6, Ipv6Addr};
 use net_types::{SpecifiedAddr, UnicastAddr, Witness};
 use netstack3_base::testutil::{TEST_ADDRS_V4, TestIpExt, new_rng};
-use netstack3_base::{FrameDestination, IpAddressId as _};
+use netstack3_base::{FrameDestination, IpAddressId as _, NetworkSerializationContext};
 use netstack3_core::IpExt;
 use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetLinkDevice, RecvEthernetFrameMeta,
@@ -28,7 +28,7 @@ use netstack3_device::socket::DeviceSocketMetadata;
 use netstack3_device::testutil::{DeviceCounterExpectations, IPV6_MIN_IMPLIED_MAX_FRAME_SIZE};
 use netstack3_ip::device::{IpDeviceStateContext, StableSlaacAddressConfiguration};
 use netstack3_ip::testutil::IpCounterExpectations;
-use packet::{Buf, FragmentedBuffer as _, Serializer as _};
+use packet::{Buf, FragmentedBuffer as _, NestableSerializer as _, Serializer as _};
 use packet_formats::ethernet::EthernetFrameLengthCheck;
 use packet_formats::icmp::IcmpDestUnreachable;
 use packet_formats::ip::{IpPacketBuilder, IpProto};
@@ -204,7 +204,7 @@ where
             64,
             IpProto::Tcp.into(),
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .ok()
         .unwrap()
         .unwrap_b();
@@ -258,7 +258,7 @@ where
             64,
             IpProto::Tcp.into(),
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .ok()
         .unwrap()
         .unwrap_b();
@@ -375,7 +375,7 @@ fn receive_simple_ip_packet_test<A: IpAddress>(
                 IpProto::Tcp.into(),
             ),
         )
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .ok()
         .unwrap()
         .into_inner();

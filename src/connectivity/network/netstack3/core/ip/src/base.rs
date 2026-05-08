@@ -32,9 +32,9 @@ use netstack3_base::{
     DeviceIdContext, DeviceIdentifier as _, ErrorAndSerializer, EventContext, FrameDestination,
     HandleableTimer, InstantContext, InterfaceProperties, IpAddressId, IpDeviceAddr,
     IpDeviceAddressIdContext, IpExt, MarkDomain, Marks, Matcher as _, MatcherBindingsTypes,
-    NestedIntoCoreTimerCtx, NotFoundError, ResourceCounterContext, RngContext,
-    SendFrameErrorReason, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext, TimerHandler,
-    TxMetadata as _, TxMetadataBindingsTypes, WeakIpAddressId, WrapBroadcastMarker,
+    NestedIntoCoreTimerCtx, NetworkSerializationContext, NotFoundError, ResourceCounterContext,
+    RngContext, SendFrameErrorReason, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
+    TimerHandler, TxMetadata as _, TxMetadataBindingsTypes, WeakIpAddressId, WrapBroadcastMarker,
 };
 use netstack3_filter::{
     self as filter, ConnectionDirection, ConntrackConnection, FilterBindingsContext,
@@ -3228,14 +3228,17 @@ where
 
     let body = body.with_size_limit(mtu.into());
 
-    let fits_mtu =
-        match body.serialize_new_buf(PacketConstraints::UNCONSTRAINED, AlwaysFailBufferAlloc) {
-            // We hit the allocator that refused to allocate new data, which
-            // means the MTU is respected.
-            Err(SerializeError::Alloc(())) => true,
-            // MTU failure, we should try to fragment.
-            Err(SerializeError::SizeLimitExceeded) => false,
-        };
+    let fits_mtu = match body.serialize_new_buf(
+        &mut NetworkSerializationContext::default(),
+        PacketConstraints::UNCONSTRAINED,
+        AlwaysFailBufferAlloc,
+    ) {
+        // We hit the allocator that refused to allocate new data, which
+        // means the MTU is respected.
+        Err(SerializeError::Alloc(())) => true,
+        // MTU failure, we should try to fragment.
+        Err(SerializeError::SizeLimitExceeded) => false,
+    };
 
     if fits_mtu {
         return core_ctx
@@ -5005,8 +5008,9 @@ pub(crate) mod testutil {
     use super::*;
 
     use netstack3_base::testutil::{FakeBindingsCtx, FakeCoreCtx, FakeStrongDeviceId};
-    use netstack3_base::{AssignedAddrIpExt, SendFrameContext, SendFrameError, SendableFrameMeta};
-    use packet::Serializer;
+    use netstack3_base::{
+        AssignedAddrIpExt, NetworkSerializer, SendFrameContext, SendFrameError, SendableFrameMeta,
+    };
 
     /// A [`SendIpPacketMeta`] for dual stack contextx.
     #[derive(Debug, GenericOverIp)]
@@ -5040,7 +5044,7 @@ pub(crate) mod testutil {
             frame: SS,
         ) -> Result<(), SendFrameError<SS>>
         where
-            SS: Serializer,
+            SS: NetworkSerializer,
             SS::Buffer: BufferMut,
         {
             SendFrameContext::send_frame(

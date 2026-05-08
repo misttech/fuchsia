@@ -37,7 +37,7 @@ use netstack_testing_common::{
     dhcpv4 as dhcpv4_helper,
 };
 use netstack_testing_macros::netstack_test;
-use packet::{InnerPacketBuilder, ParsablePacket as _, Serializer};
+use packet::{InnerPacketBuilder, NoOpSerializationContext, ParsablePacket as _, Serializer};
 use packet_formats::arp::{ArpOp, ArpPacketBuilder};
 use packet_formats::ethernet::EtherType;
 use sockaddr::{EthernetSockaddr, IntoSockAddr as _, TryToSockaddrLl as _};
@@ -1597,7 +1597,7 @@ async fn forfeit_address_on_conflict<SERVER: Netstack>(name: &str) {
     let buf =
         ArpPacketBuilder::new(ArpOp::Request, sender_mac, sender_ipv4, target_mac, target_ipv4)
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .unwrap_b();
     let remote_addr = libc::sockaddr_ll::from(EthernetSockaddr {

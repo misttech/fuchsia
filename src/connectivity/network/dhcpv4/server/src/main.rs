@@ -17,8 +17,8 @@ use futures::{Future, SinkExt as _, StreamExt as _, TryFutureExt as _, TryStream
 use log::{debug, error, info, warn};
 use net_declare::net::prefix_length_v4;
 use net_types::ethernet::Mac;
-use packet::Serializer;
 use packet::serialize::InnerPacketBuilder;
+use packet::{NestableSerializer as _, NoOpSerializationContext, Serializer};
 use packet_formats::ipv4::Ipv4PacketBuilder;
 use packet_formats::udp::UdpPacketBuilder;
 use sockaddr::IntoSockAddr as _;
@@ -467,7 +467,7 @@ async fn define_msg_handling_loop_future<DS: DataStore>(
                 .into_serializer()
                 .wrap_in(udp_builder)
                 .wrap_in(ipv4_builder)
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
                 .expect("serialize packet failed")
                 .unwrap_b();
 

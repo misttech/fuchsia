@@ -15,7 +15,7 @@ use net_types::ip::{
     AddrSubnet, Ip, IpAddress as _, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet,
 };
 use net_types::{SpecifiedAddr, UnicastAddr, Witness as _};
-use packet::{Buf, InnerPacketBuilder as _, Serializer as _};
+use packet::{Buf, InnerPacketBuilder as _, NestableSerializer as _, Serializer as _};
 use packet_formats::arp::{ArpOp, ArpPacketBuilder};
 use packet_formats::ethernet::{
     ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrameBuilder, EthernetFrameLengthCheck,
@@ -37,7 +37,9 @@ use test_case::test_case;
 use netstack3_base::testutil::{
     FakeNetwork, FakeNetworkLinks, TestAddrs, TestIpExt, WithFakeFrameContext, set_logger_for_test,
 };
-use netstack3_base::{CtxPair, DeviceIdContext, FrameDestination, InstantContext as _};
+use netstack3_base::{
+    CtxPair, DeviceIdContext, FrameDestination, InstantContext as _, NetworkSerializationContext,
+};
 use netstack3_core::device::{
     EthernetCreationProperties, EthernetDeviceId, EthernetLinkDevice, RecvEthernetFrameMeta,
     WeakDeviceId,
@@ -115,7 +117,7 @@ fn router_advertisement_with_source_link_layer_option_should_add_neighbor() {
                 REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
                 Ipv6Proto::Icmpv6,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .unwrap_b()
     };
@@ -253,7 +255,7 @@ fn neighbor_advertisement_without_target_link_layer_address_option_should_be_pro
                 REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
                 Ipv6Proto::Icmpv6,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .unwrap_b(),
     );
@@ -299,7 +301,7 @@ fn neighbor_confirmation_with_new_link_layer_address_should_update_cache<I: Test
                     EtherType::Arp,
                     ETHERNET_MIN_BODY_LEN_NO_TAG,
                 ))
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
                 .unwrap()
                 .unwrap_b()
             },
@@ -314,7 +316,7 @@ fn neighbor_confirmation_with_new_link_layer_address_should_update_cache<I: Test
                     EtherType::Ipv6,
                     ETHERNET_MIN_BODY_LEN_NO_TAG,
                 ))
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
                 .unwrap()
                 .unwrap_b()
             },
@@ -1035,7 +1037,7 @@ fn icmp_error_fragment_offset(fragment_offset: u16) {
             NonZeroU16::new(12345).unwrap(),
         ))
         .wrap_in(ipv4_packet_builder)
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .unwrap_b();
     ctx.test_api().receive_ip_packet::<Ipv4, _>(

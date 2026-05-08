@@ -11,6 +11,7 @@ use fidl_fuchsia_net_dhcpv6::{
 use fuchsia_async::Task;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::Mutex;
+use packet::NoOpSerializationContext;
 
 use std::net::Ipv6Addr;
 use std::pin::Pin;
@@ -88,7 +89,7 @@ fn make_fake_ra_prefix_packet(prefix: ot::Ip6Prefix, valid: u32, preferred: u32)
 
     let serialized = IcmpPacketBuilder::<Ipv6, _>::new(src_addr, dst_addr, IcmpZeroCode, ra)
         .wrap_body(OptionSequenceBuilder::new(options.iter()).into_serializer())
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NoOpSerializationContext)
         .unwrap()
         .as_ref()
         .to_vec();

@@ -19,7 +19,10 @@ use net_types::ip::{
 use net_types::{
     MulticastAddr, NonMappedAddr, SpecifiedAddr, UnicastAddr, Witness as _, ZonedAddr,
 };
-use packet::{Buf, InnerPacketBuilder, PacketBuilder, ParseBuffer, ParseMetadata, Serializer as _};
+use packet::{
+    Buf, InnerPacketBuilder, NestableSerializer as _, PacketBuilder, ParseBuffer, ParseMetadata,
+    Serializer as _,
+};
 use packet_formats::ethernet::{
     ETHERNET_MIN_BODY_LEN_NO_TAG, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck,
     EthernetIpExt as _,
@@ -50,7 +53,9 @@ use netstack3_base::testutil::{
     FakeInstant, TEST_ADDRS_V4, TEST_ADDRS_V6, TestAddrs, TestDualStackIpExt, TestIpExt, new_rng,
     set_logger_for_test,
 };
-use netstack3_base::{FrameDestination, InstantContext as _, IpDeviceAddr, Marks};
+use netstack3_base::{
+    FrameDestination, InstantContext as _, IpDeviceAddr, Marks, NetworkSerializationContext,
+};
 use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetLinkDevice, MaxEthernetFrameSize,
     RecvEthernetFrameMeta,
@@ -200,7 +205,11 @@ fn process_ip_fragment<I: Ip>(
 }
 
 fn wrap_body<B: PacketBuilder + Debug>(builder: B, body: Vec<u8>) -> Buf<Vec<u8>> {
-    builder.wrap_body(Buf::new(body, ..)).serialize_vec_outer().unwrap().into_inner()
+    builder
+        .wrap_body(Buf::new(body, ..))
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
+        .unwrap()
+        .into_inner()
 }
 
 /// Generate and 'receive' an IPv4 fragment packet.
@@ -958,7 +967,7 @@ fn drop_ipv6_link_local_packets(which_link_local_addr: WhichLinkLocalAddr) {
 
     let ipv6_packet_buf = Buf::new(vec![0; 128], ..)
         .wrap_in(Ipv6PacketBuilder::new(src_addr, dst_addr, 64, IpProto::Udp.into()))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
     // Receive the IP packet.
     ctx.test_api().receive_ip_packet::<Ipv6, _>(&device, Some(frame_dst), ipv6_packet_buf);
@@ -1006,7 +1015,7 @@ fn test_ipv6_packet_too_big() {
     // arriving locally.
     let mut ipv6_packet_buf = Buf::new(body, ..)
         .wrap_in(Ipv6PacketBuilder::new(extra_ip, fake_config.remote_ip, 64, IpProto::Udp.into()))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
     // Receive the IP packet.
     ctx.test_api().receive_ip_packet::<Ipv6, _>(&device, Some(frame_dst), ipv6_packet_buf.clone());
@@ -1078,7 +1087,7 @@ fn create_packet_too_big_buf<A: IpAddress>(
                     .unwrap_or_else(Default::default),
             ))
             .wrap_in(Ipv4PacketBuilder::new(src_ip, dst_ip, 64, Ipv4Proto::Icmp))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap(),
         IpAddr::V6([src_ip, dst_ip]) => body
             .wrap_in(IcmpPacketBuilder::<Ipv6, Icmpv6PacketTooBig>::new(
@@ -1088,7 +1097,7 @@ fn create_packet_too_big_buf<A: IpAddress>(
                 Icmpv6PacketTooBig::new(u32::from(mtu)),
             ))
             .wrap_in(Ipv6PacketBuilder::new(src_ip, dst_ip, 64, Ipv6Proto::Icmpv6))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap(),
     }
     .into_inner()
@@ -1250,7 +1259,7 @@ fn test_ip_update_pmtu_too_low<I: GetPmtuIpExt>() {
 fn create_orig_packet_buf(src_ip: Ipv4Addr, dst_ip: Ipv4Addr, body_len: usize) -> Buf<Vec<u8>> {
     Buf::new(vec![0; body_len], ..)
         .wrap_in(Ipv4PacketBuilder::new(src_ip, dst_ip, 64, IpProto::Udp.into()))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .into_inner()
 }
@@ -1407,7 +1416,7 @@ fn test_invalid_icmpv4_in_ipv6() {
     let buf = Buf::new(Vec::new(), ..)
         .wrap_in(icmp_builder)
         .wrap_in(ip_builder)
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
 
     ctx.test_api().enable_device(&device);
@@ -1455,7 +1464,7 @@ fn test_invalid_icmpv6_in_ipv4() {
     let buf = Buf::new(Vec::new(), ..)
         .wrap_in(icmp_builder)
         .wrap_in(ip_builder)
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
 
     ctx.test_api().receive_ip_packet::<Ipv4, _>(&device, Some(frame_dst), buf);
@@ -1507,7 +1516,7 @@ fn test_joining_leaving_ip_multicast_group<I: TestIpExt + IpExt>() {
             I::ETHER_TYPE,
             ETHERNET_MIN_BODY_LEN_NO_TAG,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .ok()
         .unwrap()
         .into_inner();
@@ -1644,7 +1653,7 @@ fn test_no_dispatch_non_ndp_packets_during_ndp_dad() {
 
     let buf = Buf::new(vec![0; 10], ..)
         .wrap_in(Ipv6PacketBuilder::new(config.remote_ip, ip, 64, IpProto::Udp.into()))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .into_inner();
 
@@ -1693,7 +1702,7 @@ fn test_no_dispatch_non_ndp_packets_during_ndp_dad() {
 
     let buf = Buf::new(vec![0; 10], ..)
         .wrap_in(Ipv6PacketBuilder::new(config.remote_ip, ip, 64, IpProto::Udp.into()))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .into_inner();
 
@@ -1756,7 +1765,7 @@ fn test_drop_multicast_source<I: IpExt + TestIpExt>() {
             64,
             IpProto::Udp.into(),
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .into_inner();
 
@@ -1777,7 +1786,7 @@ fn new_ip_packet_buf<I: IpExt>(src_addr: I::Addr, dst_addr: I::Addr) -> impl AsR
     IP_BODY
         .into_serializer()
         .wrap_in(I::PacketBuilder::new(src_addr, dst_addr, TTL, IpProto::Udp.into()))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
 }
 
@@ -2812,7 +2821,7 @@ fn conntrack_entry_retained_across_loopback<I: TestDualStackIpExt + IpExt>(
                     I::OtherVersion::ETHER_TYPE,
                     ETHERNET_MIN_BODY_LEN_NO_TAG,
                 ))
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
                 .ok()
                 .unwrap()
                 .into_inner();
@@ -2864,8 +2873,11 @@ fn test_receive_ipv6_mapped_dst() {
 
     let builder = Ipv6PacketBuilder::new(src.get(), dst, 1, IpProto::Udp.into());
 
-    let buffer =
-        builder.wrap_body(Buf::new(vec![0u8; 10], ..)).serialize_vec_outer().unwrap().unwrap_b();
+    let buffer = builder
+        .wrap_body(Buf::new(vec![0u8; 10], ..))
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
+        .unwrap()
+        .unwrap_b();
 
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device,

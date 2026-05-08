@@ -5,9 +5,16 @@
 #![cfg(test)]
 
 use fdio::{SpawnAction, SpawnOptions};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_root as fnet_root;
+use fidl_fuchsia_net_stack as fnet_stack;
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
-use fuchsia_runtime::{duplicate_utc_clock_handle, job_default, HandleInfo, HandleType};
-use zx::{HandleBased as _, ProcessInfo};
+use fuchsia_runtime::{HandleInfo, HandleType, duplicate_utc_clock_handle, job_default};
 use futures::future;
 use futures::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use futures::stream::StreamExt as _;
@@ -17,8 +24,8 @@ use netemul::RealmUdpSocket as _;
 use netstack_testing_common::interfaces;
 use netstack_testing_common::realms::{Netstack, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
-use packet::{Buf, Serializer};
-use packet_formats::ethernet::{EtherType, EthernetFrameBuilder, ETHERNET_MIN_BODY_LEN_NO_TAG};
+use packet::{Buf, NoOpSerializationContext, Serializer, NestableSerializer as _};
+use packet_formats::ethernet::{ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrameBuilder};
 use packet_formats::ip::{IpProto, Ipv4Proto};
 use packet_formats::ipv4::Ipv4PacketBuilder;
 use packet_formats::udp::UdpPacketBuilder;
@@ -26,12 +33,7 @@ use regex::Regex;
 use std::convert::TryInto as _;
 use std::ffi::{CStr, CString};
 use std::num::NonZeroU16;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext, fidl_fuchsia_net_root as fnet_root,
-    fidl_fuchsia_net_stack as fnet_stack, fidl_fuchsia_posix_socket as fposix_socket,
-    fidl_fuchsia_posix_socket_packet as fposix_socket_packet, fuchsia_async as fasync,
-};
+use zx::{HandleBased as _, ProcessInfo};
 
 const BINARY_PATH: &str = "/pkg/bin/tcpdump";
 
@@ -216,8 +218,7 @@ async fn start_tcpdump_and_wait_for_patterns<
             .expect("wait for process termination"),
         zx::Signals::PROCESS_TERMINATED
     );
-    let ProcessInfo { return_code, .. } =
-        process.info().expect("process info");
+    let ProcessInfo { return_code, .. } = process.info().expect("process info");
     assert_eq!(return_code, 0);
 }
 
@@ -231,8 +232,7 @@ async fn version_test() {
             .expect("wait for process termination"),
         zx::Signals::PROCESS_TERMINATED
     );
-    let ProcessInfo { return_code, .. } =
-        process.info().expect("process info");
+    let ProcessInfo { return_code, .. } = process.info().expect("process info");
     assert_eq!(return_code, 0);
 
     let mut stdout_reader = BufReader::new(fasync::Socket::from_socket(stdout_reader));
@@ -265,8 +265,10 @@ async fn packet_test<N: Netstack>(name: &str) {
         std_socket_addr!("127.0.0.1:9875"),
         SendToAddress::BoundAddress,
         || futures::future::ready(()),
-        vec![Regex::new(r"lo\s+In\s+IP 127\.0\.0\.1\.9875 > 127\.0\.0\.1\.9875: UDP, length 4")
-            .expect("parse tcpdump packet regex")],
+        vec![
+            Regex::new(r"lo\s+In\s+IP 127\.0\.0\.1\.9875 > 127\.0\.0\.1\.9875: UDP, length 4")
+                .expect("parse tcpdump packet regex"),
+        ],
     )
     .await
 }
@@ -371,7 +373,7 @@ async fn bridged_packet_test(name: &str) {
                     EtherType::Ipv4,
                     ETHERNET_MIN_BODY_LEN_NO_TAG,
                 ))
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
                 .expect("error serializing UDP packet")
                 .unwrap_b();
 

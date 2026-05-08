@@ -17,8 +17,8 @@ use core::ops::Range;
 use net_types::ip::{Ip, IpAddress, IpVersionMarker};
 use packet::{
     BufferView, BufferViewMut, ByteSliceInnerPacketBuilder, EmptyBuf, FragmentedBytesMut, FromRaw,
-    InnerPacketBuilder, MaybeParsed, PacketBuilder, PacketConstraints, ParsablePacket,
-    ParseMetadata, PartialPacketBuilder, SerializeTarget, Serializer,
+    InnerPacketBuilder, MaybeParsed, NoOpSerializationContext, PacketBuilder, PacketConstraints,
+    ParsablePacket, ParseMetadata, PartialPacketBuilder, SerializeTarget, Serializer,
 };
 use zerocopy::byteorder::network_endian::U16;
 use zerocopy::{
@@ -254,7 +254,7 @@ impl<B: SplitByteSlice> UdpPacket<B> {
         self,
         src_ip: A,
         dst_ip: A,
-    ) -> impl Serializer<Buffer = EmptyBuf> + Debug + 'a
+    ) -> impl Serializer<NoOpSerializationContext, Buffer = EmptyBuf> + Debug + 'a
     where
         B: 'a,
     {
@@ -461,7 +461,7 @@ impl<B: SplitByteSlice> UdpPacketRaw<B> {
         self,
         src_ip: A,
         dst_ip: A,
-    ) -> Option<impl Serializer<Buffer = EmptyBuf> + 'a>
+    ) -> Option<impl Serializer<NoOpSerializationContext, Buffer = EmptyBuf> + 'a>
     where
         B: 'a,
     {
@@ -662,7 +662,7 @@ impl<B> Debug for UdpPacket<B> {
 mod tests {
     use byteorder::{ByteOrder, NetworkEndian};
     use net_types::ip::{Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
-    use packet::{Buf, ParseBuffer, ParseBufferMut};
+    use packet::{Buf, NestableSerializer as _, ParseBuffer, ParseBufferMut};
 
     use super::*;
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
@@ -704,7 +704,7 @@ mod tests {
             .wrap_in(udp_packet.builder(ip_packet.src_ip(), ip_packet.dst_ip()))
             .wrap_in(ip_packet.builder())
             .wrap_in(frame.builder())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         assert_eq!(buffer.as_ref(), ETHERNET_FRAME.bytes);
     }
@@ -736,7 +736,7 @@ mod tests {
             .wrap_in(udp_packet.builder(ip_packet.src_ip(), ip_packet.dst_ip()))
             .wrap_in(ip_packet.builder())
             .wrap_in(frame.builder())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         assert_eq!(buffer.as_ref(), ETHERNET_FRAME.bytes);
     }
@@ -777,7 +777,10 @@ mod tests {
 
     #[test]
     fn test_serialize() {
-        let mut buf = new_test_udp_builder().wrap_body(EmptyBuf).serialize_vec_outer().unwrap();
+        let mut buf = new_test_udp_builder()
+            .wrap_body(EmptyBuf)
+            .serialize_vec_outer(&mut NoOpSerializationContext)
+            .unwrap();
         assert_eq!(buf.as_ref(), [0, 1, 0, 2, 0, 8, 239, 199]);
         let packet = buf
             .parse_with::<_, UdpPacket<_>>(UdpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4))
@@ -796,13 +799,13 @@ mod tests {
         let mut buf_0 = [0; HEADER_BYTES];
         let _: Buf<&mut [u8]> = new_test_udp_builder()
             .wrap_body(Buf::new(&mut buf_0[..], HEADER_BYTES..))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .unwrap_a();
         let mut buf_1 = [0xFF; HEADER_BYTES];
         let _: Buf<&mut [u8]> = new_test_udp_builder()
             .wrap_body(Buf::new(&mut buf_1[..], HEADER_BYTES..))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .unwrap_a();
         assert_eq!(buf_0, buf_1);
@@ -879,7 +882,7 @@ mod tests {
         let ser =
             UdpPacketBuilder::new(TEST_SRC_IPV4, TEST_DST_IPV4, None, NonZeroU16::new(1).unwrap())
                 .wrap_body((&[0; (1 << 16) - HEADER_BYTES][..]).into_serializer());
-        let _ = ser.serialize_vec_outer();
+        let _ = ser.serialize_vec_outer(&mut NoOpSerializationContext);
     }
 
     #[test]
@@ -966,7 +969,7 @@ mod tests {
             NonZeroU16::new(1).unwrap(),
         )
         .wrap_body((&[0xff, 0xd9]).into_serializer());
-        let buf = serializer.serialize_vec_outer().unwrap();
+        let buf = serializer.serialize_vec_outer(&mut NoOpSerializationContext).unwrap();
         // The serializer has flipped the bits for us.
         // Normally, 0xFFFF can't be checksum because -0
         // can not be produced by adding non-negtive 16-bit
@@ -987,7 +990,7 @@ mod tests {
         const ADDR: Ipv4Addr = Ipv4::UNSPECIFIED_ADDRESS;
         let serializer = UdpPacketBuilder::new(ADDR, ADDR, None, DST_PORT)
             .wrap_body((&[0xff, 0xd9]).into_serializer());
-        let mut buf = serializer.serialize_vec_outer().unwrap();
+        let mut buf = serializer.serialize_vec_outer(&mut NoOpSerializationContext).unwrap();
         let mut packet = buf
             .parse_with_mut::<_, UdpPacket<_>>(UdpParseArgs::new(ADDR, ADDR))
             .expect("parse should succeed");

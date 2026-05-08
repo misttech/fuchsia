@@ -10,10 +10,12 @@ use core::convert::Infallible as Never;
 use derivative::Derivative;
 use log::trace;
 use netstack3_base::sync::Mutex;
-use netstack3_base::{Device, DeviceIdContext, ErrorAndSerializer};
+use netstack3_base::{
+    Device, DeviceIdContext, ErrorAndSerializer, NetworkSerializationContext, NetworkSerializer,
+};
 use packet::{
     Buf, BufferAlloc, ContiguousBuffer, FragmentedBuffer as _, GrowBufferMut,
-    NoReuseBufferProvider, ReusableBuffer, Serializer, new_buf_vec,
+    NoReuseBufferProvider, ReusableBuffer, new_buf_vec,
 };
 
 use crate::internal::base::DeviceSendFrameError;
@@ -150,7 +152,7 @@ pub trait TransmitQueueHandler<D: Device, BC>: TransmitQueueCommon<D, BC> {
         body: S,
     ) -> Result<usize, TransmitQueueFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: ReusableBuffer;
 }
 
@@ -263,7 +265,7 @@ where
         body: S,
     ) -> Result<usize, TransmitQueueFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: ReusableBuffer,
     {
         let (len, result) =
@@ -275,14 +277,17 @@ where
                         None => return Err(TransmitQueueFrameError::QueueFull(body)),
                     },
                 };
-                let body = body.serialize_outer(NoReuseBufferProvider(allocator)).map_err(
-                    |(e, serializer)| {
+                let body = body
+                    .serialize_outer(
+                        &mut NetworkSerializationContext::default(),
+                        NoReuseBufferProvider(allocator),
+                    )
+                    .map_err(|(e, serializer)| {
                         TransmitQueueFrameError::SerializeError(ErrorAndSerializer {
                             serializer,
                             error: e.map_alloc(|_| ()),
                         })
-                    },
-                )?;
+                    })?;
                 let len = body.len();
                 let result =
                     insert_and_notify::<_, _, CC>(bindings_ctx, device_id, inserter, meta, body);

@@ -9,8 +9,8 @@ use net_declare::{net_ip_v4, net_ip_v6, net_mac};
 use net_types::ethernet::Mac;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
 use packet::{
-    BufferAlloc, FragmentedBuffer, NoReuseBufferProvider, PacketBuilder as _, ReusableBuffer,
-    Serializer,
+    BufferAlloc, FragmentedBuffer, NoOpSerializationContext, NoReuseBufferProvider,
+    PacketBuilder as _, ReusableBuffer, Serializer,
 };
 use packet_formats::ethernet::EthernetFrameBuilder;
 use packet_formats::ip::{IpPacket as _, IpProto};
@@ -85,7 +85,7 @@ pub(crate) trait IpExt: Ip + packet_formats::ip::IpExt {
     const DST_ADDR: Self::Addr;
 
     fn make_packet<
-        S: Serializer<Buffer: FragmentedBuffer>,
+        S: Serializer<NoOpSerializationContext, Buffer: FragmentedBuffer>,
         B: ReusableBuffer,
         A: BufferAlloc<B, Error: Debug>,
     >(
@@ -102,7 +102,7 @@ impl IpExt for Ipv4 {
     const DST_ADDR: Self::Addr = net_ip_v4!("192.0.2.2");
 
     fn make_packet<
-        S: Serializer<Buffer: FragmentedBuffer>,
+        S: Serializer<NoOpSerializationContext, Buffer: FragmentedBuffer>,
         B: ReusableBuffer,
         A: BufferAlloc<B, Error: Debug>,
     >(
@@ -145,7 +145,7 @@ impl IpExt for Ipv6 {
     const DST_ADDR: Self::Addr = net_ip_v6!("2001:db8::2");
 
     fn make_packet<
-        S: Serializer<Buffer: FragmentedBuffer>,
+        S: Serializer<NoOpSerializationContext, Buffer: FragmentedBuffer>,
         B: ReusableBuffer,
         A: BufferAlloc<B, Error: Debug>,
     >(
@@ -194,7 +194,7 @@ impl IpExt for Ipv6 {
 
 fn maybe_wrap_in_ethernet<
     I: IpExt,
-    S: Serializer<Buffer: FragmentedBuffer>,
+    S: Serializer<NoOpSerializationContext, Buffer: FragmentedBuffer>,
     B: ReusableBuffer,
     A: BufferAlloc<B, Error: Debug>,
 >(
@@ -205,10 +205,12 @@ fn maybe_wrap_in_ethernet<
     if wrap {
         EthernetFrameBuilder::new(SRC_MAC, DST_MAC, I::ETHER_TYPE, 0)
             .wrap_body(body)
-            .serialize_outer(NoReuseBufferProvider(alloc))
+            .serialize_outer(&mut NoOpSerializationContext, NoReuseBufferProvider(alloc))
             .map_err(|(e, _)| e)
             .unwrap()
     } else {
-        body.serialize_outer(NoReuseBufferProvider(alloc)).map_err(|(e, _)| e).unwrap()
+        body.serialize_outer(&mut NoOpSerializationContext, NoReuseBufferProvider(alloc))
+            .map_err(|(e, _)| e)
+            .unwrap()
     }
 }

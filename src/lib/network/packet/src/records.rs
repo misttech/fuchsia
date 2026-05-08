@@ -1972,7 +1972,7 @@ pub mod options {
         use zerocopy::byteorder::network_endian::U16;
 
         use super::*;
-        use crate::Serializer;
+        use crate::{NoOpSerializationContext, Serializer};
 
         #[derive(Debug)]
         struct DummyOptionsImpl;
@@ -2502,8 +2502,12 @@ pub mod options {
                     let expect = expect.iter().map(Into::into).collect::<Vec<_>>();
 
                     let ser = OptionSequenceBuilder::<O, _>::new(opts.iter());
-                    let serialized =
-                        ser.into_serializer().serialize_vec_outer().unwrap().as_ref().to_vec();
+                    let serialized = ser
+                        .into_serializer()
+                        .serialize_vec_outer(&mut NoOpSerializationContext)
+                        .unwrap()
+                        .as_ref()
+                        .to_vec();
                     let options = Options::<_, I>::parse(serialized.as_slice())
                         .unwrap()
                         .iter()
@@ -2699,7 +2703,12 @@ pub mod options {
             // iterator over values.
             let ser = OptionSequenceBuilder::<DummyOption, _>::new(collected.iter());
 
-            let serialized = ser.into_serializer().serialize_vec_outer().unwrap().as_ref().to_vec();
+            let serialized = ser
+                .into_serializer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
+                .unwrap()
+                .as_ref()
+                .to_vec();
 
             assert_eq!(serialized, bytes);
         }
@@ -2728,7 +2737,12 @@ pub mod options {
             // iterator over values.
             let ser = OptionSequenceBuilder::<NdpOption, _>::new(collected.iter());
 
-            let serialized = ser.into_serializer().serialize_vec_outer().unwrap().as_ref().to_vec();
+            let serialized = ser
+                .into_serializer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
+                .unwrap()
+                .as_ref()
+                .to_vec();
 
             assert_eq!(serialized, bytes);
         }

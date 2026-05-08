@@ -31,7 +31,9 @@ use netemul::InStack;
 use netstack_testing_common::realms::{KnownServiceProvider, Netstack, TestSandboxExt as _};
 use netstack_testing_common::{Result, constants};
 use netstack_testing_macros::netstack_test;
-use packet::{ParsablePacket as _, Serializer as _};
+use packet::{
+    NestableSerializer as _, NoOpSerializationContext, ParsablePacket as _, Serializer as _,
+};
 use packet_formats::ethernet::testutil::ETHERNET_HDR_LEN_NO_TAG;
 use packet_formats::ethernet::{ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrameBuilder};
 use packet_formats::ipv4::{Ipv4Header as _, Ipv4PacketBuilder};
@@ -530,7 +532,7 @@ async fn inspect_dhcp(
                 EtherType::Ipv4,
                 ETHERNET_MIN_BODY_LEN_NO_TAG,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("failed to serialize UDP packet")
             .unwrap_b();
         fake_ep.write(ser.as_ref()).await.expect("failed to write to endpoint");

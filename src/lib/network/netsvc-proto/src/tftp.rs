@@ -977,7 +977,7 @@ impl InnerPacketBuilder for OptionAckPacketBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use packet::{ParseBuffer as _, Serializer as _};
+    use packet::{NoOpSerializationContext, ParseBuffer as _, Serializer as _};
 
     const FILENAME: &'static str = "filename";
 
@@ -986,7 +986,7 @@ mod tests {
         let mut req =
             TransferRequestBuilder::new(TransferDirection::Read, FILENAME, TftpMode::OCTET)
                 .into_serializer()
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
                 .unwrap_or_else(|_| panic!("failed to serialize"));
         let body = match req.parse::<TftpPacket<_>>().expect("failed to parse") {
             TftpPacket::ReadRequest(b) => b,
@@ -1002,7 +1002,7 @@ mod tests {
         let mut req =
             TransferRequestBuilder::new(TransferDirection::Write, FILENAME, TftpMode::OCTET)
                 .into_serializer()
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
                 .unwrap_or_else(|_| panic!("failed to serialize"));
         let body = match req.parse::<TftpPacket<_>>().expect("failed to parse") {
             TftpPacket::WriteRequest(b) => b,
@@ -1018,7 +1018,7 @@ mod tests {
         let data: Vec<_> = std::iter::successors(Some(0u8), |v| Some(*v + 1)).take(128).collect();
         let mut ser = DataPacketBuilder::new(123)
             .wrap_body((&data[..]).into_serializer())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let body = match ser.parse::<TftpPacket<_>>().expect("failed to parse") {
             TftpPacket::Data(b) => b,
@@ -1033,7 +1033,7 @@ mod tests {
         const ERR_STR: &str = "ERROR";
         let mut err = ErrorPacketBuilder::new(TftpError::FileNotFound, ERR_STR)
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let body = match err.parse::<TftpPacket<_>>().expect("failed to parse") {
             TftpPacket::Error(b) => b,
@@ -1053,7 +1053,7 @@ mod tests {
         ]);
         let mut oack = builder
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let body = match oack.parse::<TftpPacket<_>>().expect("failed to parse") {
             TftpPacket::OptionAck(b) => b,
@@ -1071,7 +1071,7 @@ mod tests {
     fn test_ack() {
         let mut ack = AckPacketBuilder::new(123)
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let body = match ack.parse::<TftpPacket<_>>().expect("failed to parse") {
             TftpPacket::Ack(b) => b,
@@ -1095,7 +1095,7 @@ mod tests {
         );
         let mut req = builder
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let body = match req.parse::<TftpPacket<_>>().expect("failed to parse") {
             TftpPacket::ReadRequest(b) => b,

@@ -19,8 +19,9 @@ use explicit::ResultExt as _;
 use net_types::ip::IpAddress;
 use packet::{
     BufferView, BufferViewMut, ByteSliceInnerPacketBuilder, EmptyBuf, FragmentedBytesMut, FromRaw,
-    InnerPacketBuilder, MaybeParsed, PacketBuilder, PacketConstraints, ParsablePacket,
-    ParseMetadata, PartialPacketBuilder, SerializeTarget, Serializer, SplitByteSliceBufView,
+    InnerPacketBuilder, MaybeParsed, NoOpSerializationContext, PacketBuilder, PacketConstraints,
+    ParsablePacket, ParseMetadata, PartialPacketBuilder, SerializeTarget, Serializer,
+    SplitByteSliceBufView,
 };
 use zerocopy::byteorder::network_endian::{U16, U32};
 use zerocopy::{
@@ -465,7 +466,7 @@ impl<B: SplitByteSlice> TcpSegment<B> {
         self,
         src_ip: A,
         dst_ip: A,
-    ) -> impl Serializer<Buffer = EmptyBuf> + Debug + 'a
+    ) -> impl Serializer<NoOpSerializationContext, Buffer = EmptyBuf> + Debug + 'a
     where
         B: 'a,
     {
@@ -1562,7 +1563,7 @@ mod tests {
     use assert_matches::assert_matches;
     use byteorder::{ByteOrder, NetworkEndian};
     use net_types::ip::{Ipv4Addr, Ipv6Addr};
-    use packet::{Buf, ParseBuffer};
+    use packet::{Buf, NestableSerializer as _, ParseBuffer};
     use test_case::test_case;
 
     use super::*;
@@ -1608,7 +1609,7 @@ mod tests {
             .wrap_in(segment.builder(packet.src_ip(), packet.dst_ip()))
             .wrap_in(packet.builder())
             .wrap_in(frame.builder())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         assert_eq!(buffer.as_ref(), ETHERNET_FRAME.bytes);
     }
@@ -1638,7 +1639,7 @@ mod tests {
             .wrap_in(segment.builder(packet.src_ip(), packet.dst_ip()))
             .wrap_in(packet.builder())
             .wrap_in(frame.builder())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         assert_eq!(buffer.as_ref(), ETHERNET_FRAME.bytes);
     }
@@ -1730,7 +1731,7 @@ mod tests {
 
         let mut buf = builder
             .wrap_body((&[0, 1, 2, 3, 4, 5, 7, 8, 9]).into_serializer())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         // assert that we get the literal bytes we expected
         assert_eq!(
@@ -1760,13 +1761,13 @@ mod tests {
         let mut buf_0 = [0; HDR_PREFIX_LEN];
         let _: Buf<&mut [u8]> = new_builder(TEST_SRC_IPV4, TEST_DST_IPV4)
             .wrap_body(Buf::new(&mut buf_0[..], HDR_PREFIX_LEN..))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .unwrap_a();
         let mut buf_1 = [0xFF; HDR_PREFIX_LEN];
         let _: Buf<&mut [u8]> = new_builder(TEST_SRC_IPV4, TEST_DST_IPV4)
             .wrap_body(Buf::new(&mut buf_1[..], HDR_PREFIX_LEN..))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .unwrap_a();
         assert_eq!(&buf_0[..], &buf_1[..]);
@@ -1781,7 +1782,7 @@ mod tests {
 
         let mut buffer = new_builder(TEST_SRC_IPV4, TEST_DST_IPV4)
             .wrap_body(EmptyBuf)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .unwrap_b();
 
@@ -1807,7 +1808,7 @@ mod tests {
             segment
                 .builder(TEST_SRC_IPV4, TEST_DST_IPV4)
                 .wrap_body(EmptyBuf)
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
                 .unwrap()
                 .unwrap_b()
                 .as_ref(),
@@ -1824,7 +1825,7 @@ mod tests {
         // can't fit in the length field in the IPv4 pseudo-header.
         let _: Buf<&mut [u8]> = new_builder(TEST_SRC_IPV4, TEST_DST_IPV4)
             .wrap_body(Buf::new(&mut [0; (1 << 16) - HDR_PREFIX_LEN][..], ..))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .unwrap_a();
     }
@@ -1837,7 +1838,7 @@ mod tests {
         // can't fit in the length field in the IPv4 pseudo-header.
         let _: Buf<&mut [u8]> = new_builder(TEST_SRC_IPV6, TEST_DST_IPV6)
             .wrap_body(Buf::new(&mut [0; (1 << 32) - HDR_PREFIX_LEN][..], ..))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .unwrap_a();
     }
@@ -1967,7 +1968,7 @@ mod tests {
         // Serialize and Parse the segment.
         let mut buf = builder
             .wrap_body((&[0, 1, 2, 3, 4, 5, 7, 8, 9]).into_serializer())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         let segment = buf
             .parse_with::<_, TcpSegment<_>>(TcpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4))
@@ -1992,7 +1993,7 @@ mod tests {
         // Serialize the segment.
         let buf = builder
             .wrap_body((&[0, 1, 2, 3, 4, 5, 7, 8, 9]).into_serializer())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
 
         // Verify the options were serialized as [NOP, NOP, TIMESTAMP].
@@ -2045,7 +2046,7 @@ mod tests {
         // option.
         let mut buf = builder
             .wrap_body((&[0, 1, 2, 3, 4, 5, 7, 8, 9]).into_serializer())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         let segment = buf
             .parse_with::<_, TcpSegment<_>>(TcpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4))
@@ -2079,7 +2080,7 @@ mod tests {
         // Serialize and Parse the segment. Parsing should reject the segment.
         let mut buf = builder
             .wrap_body((&[0, 1, 2, 3, 4, 5, 7, 8, 9]).into_serializer())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         assert_matches!(
             buf.parse_with::<_, TcpSegment<_>>(TcpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4)),

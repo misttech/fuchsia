@@ -1308,7 +1308,10 @@ pub mod options {
 mod tests {
     use byteorder::{ByteOrder, NetworkEndian};
     use net_types::ip::{Ip, IpAddress, Subnet};
-    use packet::{EmptyBuf, InnerPacketBuilder, PacketBuilder, ParseBuffer, Serializer};
+    use packet::{
+        EmptyBuf, InnerPacketBuilder, NestableSerializer as _, NoOpSerializationContext,
+        PacketBuilder, ParseBuffer, Serializer,
+    };
     use test_case::test_case;
     use zerocopy::Ref;
 
@@ -1323,7 +1326,7 @@ mod tests {
             &[options::NdpOptionBuilder::RedirectedHeader { original_packet: &expected_packet }];
         let serialized = OptionSequenceBuilder::new(options.iter())
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         // 8 bytes for the kind, length and reserved byes + the bytes for the packet.
         let mut expected = [0; 16];
@@ -1350,7 +1353,7 @@ mod tests {
         let options = &[options::NdpOptionBuilder::Mtu(expected_mtu)];
         let serialized = OptionSequenceBuilder::new(options.iter())
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         // An MTU option is exactly 8 bytes.
         //
@@ -1395,7 +1398,7 @@ mod tests {
         let options = &[options::NdpOptionBuilder::Nonce(nonce)];
         let serialized = OptionSequenceBuilder::new(options.iter())
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
 
         // The first two bytes are the kind and length bytes, respectively,
@@ -1424,7 +1427,7 @@ mod tests {
         let options = &[options::NdpOptionBuilder::PrefixInformation(expected_prefix_info.clone())];
         let serialized = OptionSequenceBuilder::new(options.iter())
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         // A Prefix Information option is exactly 32 bytes.
         //
@@ -1450,7 +1453,7 @@ mod tests {
             let options = &[options::NdpOptionBuilder::RecursiveDnsServer(expected_rdnss.clone())];
             let serialized = OptionSequenceBuilder::new(options.iter())
                 .into_serializer()
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
                 .unwrap();
             // 8 bytes for the kind, length, reserved and lifetime bytes + the bytes for
             // the addresses.
@@ -1573,7 +1576,7 @@ mod tests {
                 *icmp.message(),
             ))
             .wrap_in(ipv6_builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .as_ref()
             .to_vec();
@@ -1603,7 +1606,7 @@ mod tests {
                 *icmp.message(),
             ))
             .wrap_in(ipv6_builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .as_ref()
             .to_vec();
@@ -1733,7 +1736,7 @@ mod tests {
                 *icmp.message(),
             ))
             .wrap_in(ipv6_builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .as_ref()
             .to_vec();
@@ -1799,7 +1802,8 @@ mod tests {
                 retransmit_timer_seconds,
             ),
         );
-        let serialized = icmp.wrap_body(EmptyBuf).serialize_vec_outer().unwrap();
+        let serialized =
+            icmp.wrap_body(EmptyBuf).serialize_vec_outer(&mut NoOpSerializationContext).unwrap();
 
         // As per RFC 4191 section 2.2,
         //
@@ -1926,7 +1930,7 @@ mod tests {
 
         let serialized = OptionSequenceBuilder::new(option_builders.iter())
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
 
         // As per RFC 4191 section 2.3,

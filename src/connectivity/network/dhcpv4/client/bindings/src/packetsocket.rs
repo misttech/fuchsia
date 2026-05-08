@@ -318,7 +318,9 @@ mod test {
     use fuchsia_async as fasync;
     use futures::{FutureExt as _, join};
     use netstack_testing_common::realms::TestSandboxExt as _;
-    use packet::{InnerPacketBuilder as _, PacketBuilder as _, Serializer as _};
+    use packet::{
+        InnerPacketBuilder as _, NoOpSerializationContext, PacketBuilder as _, Serializer as _,
+    };
 
     #[fasync::run_singlethreaded(test)]
     async fn packet_socket_provider_impl_send_receive() {
@@ -392,7 +394,7 @@ mod test {
             packet_formats::ip::Ipv4Proto::Other(0),
         )
         .wrap_body(b"hello world!".into_serializer())
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NoOpSerializationContext)
         .expect("serialize");
 
         let DatagramInfo { length, address } = {

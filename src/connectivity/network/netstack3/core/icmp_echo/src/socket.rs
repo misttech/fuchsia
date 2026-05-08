@@ -1275,10 +1275,10 @@ mod tests {
         FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeSocketWritableListener, FakeWeakDeviceId,
         TestIpExt,
     };
-    use netstack3_base::{CtxPair, Icmpv4ErrorCode, Icmpv6ErrorCode};
+    use netstack3_base::{CtxPair, Icmpv4ErrorCode, Icmpv6ErrorCode, NetworkSerializationContext};
     use netstack3_ip::socket::testutil::{FakeDeviceConfig, FakeIpSocketCtx, InnerFakeIpSocketCtx};
     use netstack3_ip::{LocalDeliveryPacketInfo, SendIpPacketMeta};
-    use packet::{Buf, EmptyBuf, Serializer};
+    use packet::{Buf, EmptyBuf, NestableSerializer as _, Serializer};
     use packet_formats::icmp::{
         IcmpDestUnreachable, IcmpPacket, IcmpParseArgs, IcmpZeroCode, Icmpv4DestUnreachableCode,
         Icmpv6DestUnreachableCode,
@@ -1525,8 +1525,11 @@ mod tests {
             IcmpZeroCode,
             packet_formats::icmp::IcmpEchoReply::new(0, 1),
         );
-        let buf =
-            pb.wrap_body(Buf::new(Vec::new(), ..)).serialize_vec_outer().unwrap().into_inner();
+        let buf = pb
+            .wrap_body(Buf::new(Vec::new(), ..))
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .into_inner();
         assert_matches!(
             api.send(&conn, buf),
             Err(datagram::SendError::SerializeError(
@@ -1581,7 +1584,7 @@ mod tests {
                 // Use 0 here to show that this is filled by the API.
                 IcmpEchoRequest::new(0, SEQ_NUM),
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .unwrap_b();
         api.send(&sock, Buf::new(packet, ..)).unwrap();
@@ -1613,7 +1616,7 @@ mod tests {
             IcmpEchoReply::new(ICMP_ID.get(), SEQ_NUM),
         )
         .wrap_body(Buf::new([1u8, 2, 3, 4], ..))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
 
         let CtxPair { core_ctx, bindings_ctx } = &mut ctx;
@@ -1666,7 +1669,7 @@ mod tests {
             IcmpEchoReply::new(OTHER_ICMP_ID.get(), SEQ_NUM),
         )
         .wrap_body(EmptyBuf)
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
 
         let CtxPair { core_ctx, bindings_ctx } = &mut ctx;
@@ -1704,7 +1707,7 @@ mod tests {
             IcmpEchoReply::new(ICMP_ID.get(), SEQ_NUM),
         )
         .wrap_body(Buf::new([1u8, 2, 3, 4], ..))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
 
         let src_ip = I::TEST_ADDRS.remote_ip;
@@ -1764,7 +1767,7 @@ mod tests {
                 // ICMP echo with an ID of 0.
                 IcmpEchoRequest::new(0, 1),
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .unwrap_b();
 

@@ -284,14 +284,16 @@ mod tests {
     use super::*;
 
     use assert_matches::assert_matches;
-    use packet::{InnerPacketBuilder as _, ParseBuffer as _, Serializer as _};
+    use packet::{
+        InnerPacketBuilder as _, NoOpSerializationContext, ParseBuffer as _, Serializer as _,
+    };
 
     #[test]
     fn test_parse_serialize() {
         const PAYLOAD: [u8; 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         let mut pkt = NetbootPacketBuilder::new(Opcode::Ack.into(), 3, 4)
             .wrap_body((&PAYLOAD[..]).into_serializer())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("failed to serialize");
         let parsed = pkt.parse::<NetbootPacket<_>>().expect("failed to parse");
         assert_eq!(parsed.command(), OpcodeOrErr::Op(Opcode::Ack));

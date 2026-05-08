@@ -11,11 +11,13 @@ use alloc::vec::Vec;
 
 use explicit::UnreachableExt;
 use net_types::ip::{GenericOverIp, Ip, IpInvariant, Ipv4, Ipv6, Mtu};
-use netstack3_base::{Counter, RngContext, Uninstantiable};
+use netstack3_base::{
+    Counter, NetworkSerializationContext, NetworkSerializer, RngContext, Uninstantiable,
+};
 use netstack3_filter::ForwardedPacket;
 use packet::{
     Buf, BufferMut, EmptyBuf, FragmentedBuffer as _, InnerPacketBuilder as _, Nested,
-    PacketBuilder, PacketConstraints, ParsablePacket, SerializeError, Serializer,
+    PacketBuilder, PacketConstraints, ParsablePacket, SerializeError,
 };
 use packet_formats::ip::FragmentOffset;
 use packet_formats::ipv4::options::Ipv4Option;
@@ -73,7 +75,7 @@ pub enum FragmentationError {
 // TODO(https://fxbug.dev/42148826): Ideally we'd be able to generate fragments
 // without requiring the IP body to be dumped into a Vec first. Update this when
 // that support is available in packet and packet_formats.
-pub trait FragmentableIpSerializer<I: FragmentationIpExt>: Serializer {
+pub trait FragmentableIpSerializer<I: FragmentationIpExt>: NetworkSerializer {
     /// The builder for each fragment.
     type Builder<'a>: FragmentableIpPacketBuilder<I>
     where
@@ -97,7 +99,7 @@ pub trait FragmentableIpSerializer<I: FragmentationIpExt>: Serializer {
 impl<I, S, B> FragmentableIpSerializer<I> for Nested<S, B>
 where
     I: FragmentationIpExt,
-    S: Serializer,
+    S: NetworkSerializer,
     B: AsFragmentableIpPacketBuilder<I> + PacketBuilder,
 {
     type Builder<'a>
@@ -114,7 +116,11 @@ where
         let builder = self.outer().try_as_fragmentable()?;
         let body = self
             .inner()
-            .serialize_new_buf(PacketConstraints::UNCONSTRAINED, packet::new_buf_vec)
+            .serialize_new_buf(
+                &mut NetworkSerializationContext::default(),
+                PacketConstraints::UNCONSTRAINED,
+                packet::new_buf_vec,
+            )
             .map_err(|e| match e {
                 SerializeError::SizeLimitExceeded => FragmentationError::SizeLimitExceeded,
             })?;
@@ -308,7 +314,7 @@ where
 impl<I, B> FragmentableIpSerializer<I> for ForwardedPacket<I, B>
 where
     I: FragmentationIpExt,
-    B: BufferMut,
+    B: BufferMut + NetworkSerializer,
 {
     type Builder<'a>
         = I::ForwardedFragmentBuilder
@@ -511,7 +517,7 @@ impl<'a, I: FragmentationIpExt, S: FragmentableIpSerializer<I>> IpFragmenter<'a,
     ///
     /// Panics if fragmentation is not necessary for the `serializer` that
     /// created this `IpFragmenter`.
-    pub(crate) fn next(&mut self) -> Option<(impl Serializer<Buffer = EmptyBuf>, bool)> {
+    pub(crate) fn next(&mut self) -> Option<(impl NetworkSerializer<Buffer = EmptyBuf>, bool)> {
         let Self {
             builder,
             body,
@@ -613,7 +619,7 @@ mod tests {
     use net_types::Witness as _;
     use netstack3_base::testutil::{TEST_ADDRS_V4, TEST_ADDRS_V6};
     use netstack3_filter::FilterIpExt;
-    use packet::{Buffer, BufferView, GrowBuffer};
+    use packet::{Buffer, BufferView, GrowBuffer, Serializer};
     use packet_formats::ip::IpProto;
     use packet_formats::ipv4::Ipv4Packet;
     use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeaderData;
@@ -633,7 +639,7 @@ mod tests {
             self.next()
                 .expect("no more fragments")
                 .0
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
                 .map_err(|(err, _serializer)| err)
                 .unwrap()
                 .unwrap_b()
@@ -790,7 +796,10 @@ mod tests {
             let Self(inner) = self;
             let mut buffer = inner
                 .new_serializer(body)
-                .serialize_outer(packet::NoReuseBufferProvider(packet::new_buf_vec))
+                .serialize_outer(
+                    &mut NetworkSerializationContext::default(),
+                    packet::NoReuseBufferProvider(packet::new_buf_vec),
+                )
                 .map_err(|(err, _)| err)
                 .unwrap();
             let packet =

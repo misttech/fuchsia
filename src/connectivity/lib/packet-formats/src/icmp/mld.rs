@@ -849,7 +849,7 @@ impl_icmp_message!(
 #[cfg(test)]
 mod tests {
 
-    use packet::{ParseBuffer, Serializer};
+    use packet::{NestableSerializer as _, NoOpSerializationContext, ParseBuffer, Serializer};
     use test_case::test_case;
 
     use super::*;
@@ -883,7 +883,7 @@ mod tests {
             .into_serializer()
             .wrap_in(icmp.builder(src_ip, dst_ip))
             .wrap_in(with_options)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .as_ref()
             .to_vec()
@@ -934,7 +934,7 @@ mod tests {
             .into_serializer()
             .wrap_in(IcmpPacketBuilder::new(src_ip, dst_ip, IcmpSenderZeroCode, msg))
             .wrap_in(with_options)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .as_ref()
             .to_vec()
@@ -965,7 +965,7 @@ mod tests {
             .into_serializer()
             .wrap_in(IcmpPacketBuilder::new(src_ip, dst_ip, IcmpSenderZeroCode, msg))
             .wrap_in(with_options)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .as_ref()
             .to_vec()
@@ -1290,7 +1290,7 @@ mod tests {
     #[test]
     fn report_v2_split_many_sources() {
         use crate::testdata::mld_router_report_v2::*;
-        use packet::PacketBuilder;
+        use packet::{NestableSerializer as _, PacketBuilder};
 
         const ETH_MTU: usize = 1500;
         const MAX_SOURCES: usize = 89;
@@ -1329,7 +1329,7 @@ mod tests {
                 .into_serializer()
                 .wrap_in(icmp_builder.clone())
                 .wrap_in(ip_builder.clone())
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
                 .unwrap_or_else(|(err, _)| panic!("{err:?}"))
                 .unwrap_b()
                 .into_inner()
@@ -1389,7 +1389,7 @@ mod tests {
     #[test]
     fn report_v2_split_many_groups() {
         use crate::testdata::mld_router_report_v2::*;
-        use packet::PacketBuilder;
+        use packet::{NestableSerializer as _, PacketBuilder};
 
         const ETH_MTU: usize = 1500;
         const EXPECT_SERIALIZED: usize = 1496;
@@ -1425,7 +1425,7 @@ mod tests {
                 .into_serializer()
                 .wrap_in(icmp_builder.clone())
                 .wrap_in(ip_builder.clone())
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
                 .unwrap_or_else(|(err, _)| panic!("{err:?}"))
                 .unwrap_b()
                 .into_inner()

@@ -10,8 +10,8 @@ use core::convert::Infallible as Never;
 use assert_matches::assert_matches;
 use ip_test_macro::ip_test;
 use netstack3_base::testutil::{MultipleDevicesId, MultipleDevicesIdState, TestIpExt};
-use netstack3_base::{CtxPair, SubnetMatcher};
-use packet::{InnerPacketBuilder as _, Serializer};
+use netstack3_base::{CtxPair, NetworkSerializationContext, NetworkSerializer, SubnetMatcher};
+use packet::{InnerPacketBuilder as _, NestableSerializer as _};
 use packet_formats::ip::IpProto;
 
 use crate::internal::routing::rules::RuleMatcher;
@@ -91,11 +91,11 @@ impl<I: IpLayerIpExt, BC: TxMetadataBindingsTypes> IpDeviceSendContext<I, BC> fo
         _egress_proof: filter::ProofOfEgressCheck,
     ) -> Result<(), netstack3_base::SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut,
     {
         let frame = body
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .map_err(|(err, serializer)| netstack3_base::SendFrameError {
                 error: err.into(),
                 serializer,

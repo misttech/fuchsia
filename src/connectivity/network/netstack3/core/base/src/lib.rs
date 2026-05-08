@@ -31,6 +31,7 @@ mod ip;
 mod map_deref;
 mod matchers;
 mod num;
+mod packet;
 mod port_alloc;
 mod resource_references;
 mod rng;
@@ -83,6 +84,7 @@ pub use matchers::{
     UdpSocketProperties, UdpSocketState, UdpStateMatcher,
 };
 pub use num::PositiveIsize;
+pub use packet::{DynamicNetworkSerializer, NetworkSerializationContext, NetworkSerializer};
 pub use port_alloc::{EphemeralPort, PortAllocImpl, simple_randomized_port_alloc};
 pub use resource_references::{
     DeferredResourceRemovalContext, ReferenceNotifiers, ReferenceNotifiersExt,

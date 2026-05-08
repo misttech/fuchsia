@@ -30,12 +30,12 @@ use netstack3_base::{
     AnyDevice, AssignedAddrIpExt, Counter, CounterCollectionSpec, DeferredResourceRemovalContext,
     DeviceIdContext, EventContext, ExistsError, HandleableTimer, Instant, InstantBindingsTypes,
     InstantContext, IpAddressId, IpDeviceAddr, IpDeviceAddressIdContext, IpExt, Ipv4DeviceAddr,
-    Ipv6DeviceAddr, NotFoundError, RemoveResourceResultWithContext, ResourceCounterContext,
-    RngContext, SendFrameError, StrongDeviceIdentifier, TimerContext, TimerHandler,
-    TxMetadataBindingsTypes, WeakDeviceIdentifier, WeakIpAddressId,
+    Ipv6DeviceAddr, NetworkSerializer, NotFoundError, RemoveResourceResultWithContext,
+    ResourceCounterContext, RngContext, SendFrameError, StrongDeviceIdentifier, TimerContext,
+    TimerHandler, TxMetadataBindingsTypes, WeakDeviceIdentifier, WeakIpAddressId,
 };
 use netstack3_filter::ProofOfEgressCheck;
-use packet::{BufferMut, Serializer};
+use packet::BufferMut;
 use packet_formats::icmp::mld::MldPacket;
 use packet_formats::icmp::ndp::NonZeroNdpLifetime;
 use packet_formats::utils::NonZeroDuration;
@@ -1189,7 +1189,7 @@ pub trait IpDeviceSendContext<I: IpExt, BC: TxMetadataBindingsTypes>:
         egress_proof: ProofOfEgressCheck,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut;
 }
 

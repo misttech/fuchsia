@@ -41,8 +41,8 @@ use netstack_testing_common::{
     ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT, Result, pause_fake_clock, wait_for_component_stopped,
 };
 use netstack_testing_macros::netstack_test;
-use packet::ParsablePacket as _;
-use packet::serialize::{InnerPacketBuilder as _, Serializer as _};
+use packet::serialize::{InnerPacketBuilder as _, NoOpSerializationContext, Serializer as _};
+use packet::{NestableSerializer as _, ParsablePacket as _};
 use packet_formats::ethernet::{
     ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,
     EthernetFrameLengthCheck, EthernetIpExt as _,
@@ -608,7 +608,7 @@ async fn discovered_dhcpv6_dns<M: Manager, N: Netstack>(name: &str, check_type: 
                         EtherType::Ipv6,
                         ETHERNET_MIN_BODY_LEN_NO_TAG,
                     ))
-                    .serialize_vec_outer()
+                    .serialize_vec_outer(&mut NoOpSerializationContext)
                     .unwrap_or_else(|(err, _serializer)| {
                         panic!("failed to serialize DHCPv6 packet: {:?}", err)
                     })

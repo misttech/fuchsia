@@ -8,6 +8,7 @@ use loom::sync::Arc;
 use net_declare::net_mac;
 use net_types::UnicastAddr;
 use net_types::ethernet::Mac;
+use netstack3_base::NetworkSerializationContext;
 use netstack3_core::CtxPair;
 use netstack3_core::device::{EthernetLinkDevice, RecvEthernetFrameMeta};
 use netstack3_core::device_socket::{Protocol, TargetDevice};
@@ -25,7 +26,7 @@ fn packet_socket_change_device_and_protocol_atomic() {
     let make_ethernet_frame = |ethertype| {
         EthernetFrameBuilder::new(SRC_MAC, DEVICE_MAC, ethertype, 0)
             .wrap_body(Buf::new(vec![1; 10], ..))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .into_inner()
     };

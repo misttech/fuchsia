@@ -1042,7 +1042,7 @@ mod tests {
     };
     use netstack3_base::{
         CounterCollection, CounterContext, CtxPair, Instant as _, IntoCoreTimerCtx,
-        SendFrameContext as _,
+        NetworkSerializationContext, NetworkSerializer, SendFrameContext as _,
     };
     use packet::serialize::Buf;
     use packet::{ParsablePacket as _, ParseBuffer, Serializer};
@@ -1208,7 +1208,7 @@ mod tests {
             _body: S,
         ) -> Result<(), IpSendFrameError<S>>
         where
-            S: Serializer,
+            S: NetworkSerializer,
             S::Buffer: BufferMut,
         {
             unimplemented!();
@@ -1291,7 +1291,10 @@ mod tests {
             GROUP_ADDR.get(),
             Duration::ZERO.try_into().unwrap(),
         );
-        let buff = ser.into_serializer().serialize_vec_outer().unwrap();
+        let buff = ser
+            .into_serializer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap();
         core_ctx.receive_igmp_packet(
             bindings_ctx,
             &FakeDeviceId,
@@ -1311,7 +1314,10 @@ mod tests {
             GROUP_ADDR.get(),
             resp_time.get().try_into().unwrap(),
         );
-        let buff = ser.into_serializer().serialize_vec_outer().unwrap();
+        let buff = ser
+            .into_serializer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap();
         core_ctx.receive_igmp_packet(
             bindings_ctx,
             &FakeDeviceId,
@@ -1331,7 +1337,10 @@ mod tests {
             Ipv4Addr::new([0, 0, 0, 0]),
             resp_time.get().try_into().unwrap(),
         );
-        let buff = ser.into_serializer().serialize_vec_outer().unwrap();
+        let buff = ser
+            .into_serializer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap();
         core_ctx.receive_igmp_packet(
             bindings_ctx,
             &FakeDeviceId,
@@ -1344,7 +1353,10 @@ mod tests {
 
     fn receive_igmp_report(core_ctx: &mut FakeCoreCtx, bindings_ctx: &mut FakeBindingsCtx) {
         let ser = IgmpPacketBuilder::<Buf<Vec<u8>>, IgmpMembershipReportV2>::new(GROUP_ADDR.get());
-        let buff = ser.into_serializer().serialize_vec_outer().unwrap();
+        let buff = ser
+            .into_serializer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap();
         core_ctx.receive_igmp_packet(
             bindings_ctx,
             &FakeDeviceId,
@@ -2227,14 +2239,18 @@ mod tests {
                 Ipv4::UNSPECIFIED_ADDRESS,
                 Duration::ZERO.try_into().unwrap(),
             );
-            ser.into_serializer().serialize_vec_outer().unwrap()
+            ser.into_serializer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
+                .unwrap()
         };
         let v2_query = {
             let ser = IgmpPacketBuilder::<Buf<Vec<u8>>, IgmpMembershipQueryV2>::new_with_resp_time(
                 Ipv4::UNSPECIFIED_ADDRESS,
                 Duration::from_secs(10).try_into().unwrap(),
             );
-            ser.into_serializer().serialize_vec_outer().unwrap()
+            ser.into_serializer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
+                .unwrap()
         };
         let v3_query = {
             let ser = IgmpMembershipQueryV3Builder::new(
@@ -2245,7 +2261,9 @@ mod tests {
                 Igmpv3QQIC::new_exact(Duration::from_secs(125)).unwrap(),
                 core::iter::empty(),
             );
-            ser.into_serializer().serialize_vec_outer().unwrap()
+            ser.into_serializer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
+                .unwrap()
         };
 
         let base_header_info = new_recv_pkt_info().header_info;

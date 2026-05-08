@@ -15,14 +15,16 @@ use assert_matches::assert_matches;
 use ip_test_macro::ip_test;
 use net_types::ZonedAddr;
 use net_types::ip::IpVersion;
-use packet::{Buf, ParsablePacket as _, Serializer as _};
+use packet::{Buf, NestableSerializer as _, ParsablePacket as _, Serializer as _};
 use packet_formats::ethernet::{EtherType, EthernetFrameBuilder};
 use packet_formats::ip::{IpPacket as _, IpPacketBuilder as _, IpProto};
 use packet_formats::tcp::TcpSegmentBuilder;
 use packet_formats::udp::UdpPacketBuilder;
 
 use netstack3_base::testutil::{TestDualStackIpExt, TestIpExt, set_logger_for_test};
-use netstack3_base::{CtxPair, Mark, MarkDomain, MarkMatcher, MarkMatchers};
+use netstack3_base::{
+    CtxPair, Mark, MarkDomain, MarkMatcher, MarkMatchers, NetworkSerializationContext,
+};
 use netstack3_core::IpExt;
 use netstack3_core::device::{EthernetLinkDevice, RecvEthernetFrameMeta};
 use netstack3_core::filter::{
@@ -57,7 +59,7 @@ fn make_udp_reply_packet<I: TestIpExt>() -> Buf<Vec<u8>> {
             EtherType::from_ip_version(I::VERSION),
             0, /* min_body_len */
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .unwrap_b()
 }
@@ -242,7 +244,7 @@ fn tcp_accepted_mark<I: TestDualStackIpExt + IpExt>() {
                     EtherType::from_ip_version(I::VERSION),
                     0, /* min_body_len */
                 ))
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
                 .unwrap()
                 .unwrap_b()
         };
@@ -312,7 +314,7 @@ fn tcp_accepted_mark<I: TestDualStackIpExt + IpExt>() {
                 EtherType::from_ip_version(I::VERSION),
                 0, /* min_body_len */
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .unwrap_b()
     };

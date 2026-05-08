@@ -722,7 +722,7 @@ mod tests {
     use core::fmt::Debug;
     use core::time::Duration;
 
-    use packet::{PacketBuilder, ParseBuffer, Serializer};
+    use packet::{NoOpSerializationContext, PacketBuilder, ParseBuffer, Serializer};
 
     use super::*;
     use crate::igmp::IgmpMaxRespCode;
@@ -749,7 +749,7 @@ mod tests {
     {
         igmp.builder()
             .wrap_body(M::body_bytes(&igmp.body).into_serializer())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .as_ref()
             .to_vec()
@@ -761,7 +761,12 @@ mod tests {
     >(
         igmp: &IgmpMessage<B, M>,
     ) -> Vec<u8> {
-        igmp.builder().into_serializer().serialize_vec_outer().unwrap().as_ref().to_vec()
+        igmp.builder()
+            .into_serializer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
+            .unwrap()
+            .as_ref()
+            .to_vec()
     }
 
     fn test_parse_and_serialize<
@@ -893,7 +898,11 @@ mod tests {
                 .unwrap(),
             [Ipv4Addr::new(igmp_router_queries::v3::SOURCE)].into_iter(),
         );
-        let serialized = builder.into_serializer().serialize_vec_outer().unwrap().unwrap_b();
+        let serialized = builder
+            .into_serializer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
+            .unwrap()
+            .unwrap_b();
         assert_eq!(serialized.as_ref(), igmp_router_queries::v3::QUERY);
     }
 
@@ -915,7 +924,11 @@ mod tests {
                 )
             }),
         );
-        let serialized = builder.into_serializer().serialize_vec_outer().unwrap().unwrap_b();
+        let serialized = builder
+            .into_serializer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
+            .unwrap()
+            .unwrap_b();
         assert_eq!(serialized.as_ref(), MEMBER_REPORT);
     }
 
@@ -933,7 +946,7 @@ mod tests {
     #[test]
     fn membership_report_v3_split_many_sources() {
         use igmp_reports::v3::*;
-        use packet::PacketBuilder;
+        use packet::{NestableSerializer as _, PacketBuilder};
         const ETH_MTU: usize = 1500;
         const MAX_SOURCES: usize = 365;
 
@@ -962,7 +975,7 @@ mod tests {
             builder
                 .into_serializer()
                 .wrap_in(ip_builder.clone())
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
                 .unwrap_or_else(|(err, _)| panic!("{err:?}"))
                 .unwrap_b()
                 .into_inner()
@@ -1019,7 +1032,7 @@ mod tests {
     #[test]
     fn membership_report_v3_split_many_groups() {
         use igmp_reports::v3::*;
-        use packet::PacketBuilder;
+        use packet::{NestableSerializer as _, PacketBuilder};
 
         const ETH_MTU: usize = 1500;
         const EXPECT_SERIALIZED: usize = 1496;
@@ -1046,7 +1059,7 @@ mod tests {
             builder
                 .into_serializer()
                 .wrap_in(ip_builder.clone())
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
                 .unwrap_or_else(|(err, _)| panic!("{err:?}"))
                 .unwrap_b()
                 .into_inner()

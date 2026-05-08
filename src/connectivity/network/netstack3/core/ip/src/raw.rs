@@ -882,7 +882,7 @@ mod test {
     use netstack3_base::testutil::{
         FakeStrongDeviceId, FakeTxMetadata, FakeWeakDeviceId, MultipleDevicesId, TestIpExt,
     };
-    use netstack3_base::{ContextProvider, CounterContext, CtxPair};
+    use netstack3_base::{ContextProvider, CounterContext, CtxPair, NetworkSerializationContext};
     use packet::{
         Buf, InnerPacketBuilder as _, PacketBuilder as _, ParseBuffer as _, Serializer as _,
     };
@@ -1114,7 +1114,7 @@ mod test {
         const TTL: u8 = 255;
         I::PacketBuilder::new(*I::TEST_ADDRS.local_ip, *I::TEST_ADDRS.remote_ip, TTL, proto)
             .wrap_body(ip_body.into_serializer())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
     }
 
@@ -1125,7 +1125,7 @@ mod test {
     ) -> impl AsRef<[u8]> {
         IcmpPacketBuilder::new(*I::TEST_ADDRS.local_ip, *I::TEST_ADDRS.remote_ip, code, message)
             .wrap_body([].into_serializer())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
     }
 

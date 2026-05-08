@@ -1046,7 +1046,7 @@ mod tests {
     };
     use fidl_fuchsia_developer_ffx::TargetIpPort;
     use fidl_fuchsia_net::IpAddress::Ipv4;
-    use packet::{InnerPacketBuilder, ParseBuffer, Serializer};
+    use packet::{InnerPacketBuilder, NoOpSerializationContext, ParseBuffer, Serializer};
     use std::io::Write;
 
     static_assertions::assert_impl_all!(MdnsProtocol: Send, Sync);
@@ -1060,7 +1060,7 @@ mod tests {
         message.add_additional(record);
         let mut msg_bytes = message
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let parsed = msg_bytes.parse::<Message<_>>().expect("failed to parse");
         let addr: SocketAddr = (Ipv4Addr::new(192, 168, 1, 1), 12).into();
@@ -1103,7 +1103,7 @@ mod tests {
         message.add_additional(text_record);
         let mut msg_bytes = message
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let parsed = msg_bytes.parse::<Message<_>>().expect("failed to parse");
         let addr: SocketAddr = (Ipv4Addr::new(192, 168, 1, 1), 12).into();
@@ -1147,7 +1147,7 @@ mod tests {
         message.add_additional(text_record);
         let mut msg_bytes = message
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let parsed = msg_bytes.parse::<Message<_>>().expect("failed to parse");
         let addr: SocketAddr = (Ipv4Addr::new(192, 168, 1, 1), 12).into();
@@ -1194,7 +1194,7 @@ mod tests {
         message.add_additional(record);
         let mut msg_bytes = message
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let parsed = msg_bytes.parse::<Message<_>>().expect("failed to parse");
         let addr: SocketAddr = (Ipv4Addr::new(192, 168, 1, 1), 12).into();
@@ -1224,7 +1224,7 @@ mod tests {
         message.add_additional(record);
         let mut msg_bytes = message
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let parsed = msg_bytes.parse::<Message<_>>().expect("failed to parse");
 
@@ -1262,7 +1262,7 @@ mod tests {
         message.add_additional(record);
         let mut msg_bytes = message
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"));
         let parsed = msg_bytes.parse::<Message<_>>().expect("failed to parse");
         let addr: SocketAddr = (MDNS_MCAST_V4, 12).into();
@@ -1297,7 +1297,7 @@ mod tests {
 
         message
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("failed to serialize"))
             .unwrap_b()
             .as_ref()
@@ -1348,7 +1348,7 @@ mod tests {
         message.add_answer(fastboot_record);
         message
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("couldn't serialize mdns message"))
             .unwrap_b()
             .as_ref()
@@ -1378,7 +1378,7 @@ mod tests {
         let message = MessageBuilder::new(0, true);
         let mut bytes = message
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("couldn't serialize mdns message"));
         let message =
             bytes.parse::<dns::Message<_>>().unwrap_or_else(|_| panic!("couldn't parse mdns"));

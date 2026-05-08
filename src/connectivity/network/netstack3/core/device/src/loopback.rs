@@ -16,12 +16,12 @@ use net_types::ip::{Ipv4, Ipv6, Mtu};
 use netstack3_base::sync::Mutex;
 use netstack3_base::{
     AnyDevice, BroadcastIpExt, CoreTimerContext, Device, DeviceIdAnyCompatContext, DeviceIdContext,
-    FrameDestination, RecvFrameContext, RecvIpFrameMeta, ResourceCounterContext, SendFrameError,
-    SendFrameErrorReason, SendableFrameMeta, StrongDeviceIdentifier, TimerContext,
+    FrameDestination, NetworkSerializer, RecvFrameContext, RecvIpFrameMeta, ResourceCounterContext,
+    SendFrameError, SendFrameErrorReason, SendableFrameMeta, StrongDeviceIdentifier, TimerContext,
     TxMetadataBindingsTypes, WeakDeviceIdentifier,
 };
 use netstack3_ip::{DeviceIpLayerMetadata, IpPacketDestination};
-use packet::{Buf, Buffer as _, BufferMut, FragmentedBuffer as _, PacketBuilder, Serializer};
+use packet::{Buf, Buffer as _, BufferMut, FragmentedBuffer as _, PacketBuilder};
 use packet_formats::ethernet::{
     EtherType, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck, EthernetIpExt,
 };
@@ -359,7 +359,7 @@ where
         body: S,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut,
     {
         let Self { device_id, metadata } = self;
@@ -397,7 +397,7 @@ where
         + DeviceIdContext<AnyDevice>,
     BC: DeviceLayerTypes,
     I: EthernetIpExt + BroadcastIpExt,
-    S: Serializer,
+    S: NetworkSerializer,
     S::Buffer: BufferMut,
 {
     core_ctx.increment_both(device_id, DeviceCounters::send_frame::<I>);
@@ -436,7 +436,7 @@ where
         > + ResourceCounterContext<<CC as DeviceIdContext<LoopbackDevice>>::DeviceId, DeviceCounters>
         + DeviceIdContext<AnyDevice>,
     BC: DeviceLayerTypes,
-    S: Serializer,
+    S: NetworkSerializer,
     S::Buffer: BufferMut,
 {
     /// The minimum length of bodies of Ethernet frames sent over the loopback
@@ -467,7 +467,7 @@ where
             Meta = LoopbackTxQueueMeta<<CC as DeviceIdContext<AnyDevice>>::WeakDeviceId, BC>,
         > + ResourceCounterContext<<CC as DeviceIdContext<LoopbackDevice>>::DeviceId, DeviceCounters>
         + DeviceIdContext<AnyDevice>,
-    S: Serializer,
+    S: NetworkSerializer,
     S::Buffer: BufferMut,
     BC: DeviceLayerTypes,
 {

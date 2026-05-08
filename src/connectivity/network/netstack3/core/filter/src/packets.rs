@@ -9,10 +9,13 @@ use core::num::NonZeroU16;
 use net_types::ip::{
     GenericOverIp, Ip, IpAddress, IpInvariant, IpVersionMarker, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr,
 };
-use netstack3_base::{Options, PayloadLen, SegmentHeader};
+use netstack3_base::{
+    DynamicNetworkSerializer, NetworkSerializationContext, NetworkSerializer, Options, PayloadLen,
+    SegmentHeader,
+};
 use packet::{
-    Buf, Buffer, BufferMut, BufferProvider, BufferViewMut, DynSerializer, DynamicSerializer,
-    EitherSerializer, EmptyBuf, GrowBufferMut, InnerSerializer, LayoutBufferAlloc, Nested,
+    Buf, Buffer, BufferMut, BufferProvider, BufferViewMut, DynSerializer, EitherSerializer,
+    EmptyBuf, GrowBufferMut, InnerSerializer, LayoutBufferAlloc, NestableSerializer, Nested,
     PacketBuilder, PacketConstraints, ParsablePacket, ParseBuffer, ParseMetadata,
     PartialSerializeResult, PartialSerializer, SerializeError, Serializer, SliceBufViewMut,
     TruncatingSerializer,
@@ -347,7 +350,7 @@ pub trait DynamicMaybeIcmpErrorMut<I: IpExt> {
 
 /// A serializer that may also be a valid transport layer packet.
 pub trait TransportPacketSerializer<I: FilterIpExt>:
-    Serializer
+    NetworkSerializer
     + PartialSerializer
     + MaybeTransportPacket
     + MaybeTransportPacketMut<I>
@@ -359,7 +362,7 @@ pub trait TransportPacketSerializer<I: FilterIpExt>:
 impl<I, S> TransportPacketSerializer<I> for S
 where
     I: FilterIpExt,
-    S: Serializer
+    S: NetworkSerializer
         + PartialSerializer
         + MaybeTransportPacket
         + MaybeTransportPacketMut<I>
@@ -374,7 +377,7 @@ where
 /// in conjunction with [`DynTransportSerializer`] it allows dynamic dispatch
 /// for slow-path protocols.
 pub trait DynamicTransportSerializer<I: FilterIpExt>:
-    DynamicSerializer
+    DynamicNetworkSerializer
     + PartialSerializer
     + MaybeTransportPacket
     + DynamicMaybeTransportPacketMut<I>
@@ -385,10 +388,10 @@ pub trait DynamicTransportSerializer<I: FilterIpExt>:
 
 impl<O, I> DynamicTransportSerializer<I> for O
 where
+    I: FilterIpExt,
     O: TransportPacketSerializer<I>
         + DynamicMaybeTransportPacketMut<I>
         + DynamicMaybeIcmpErrorMut<I>,
-    I: FilterIpExt,
 {
 }
 
@@ -404,15 +407,16 @@ impl<'a, I: FilterIpExt> DynTransportSerializer<'a, I> {
     }
 }
 
-impl<I: FilterIpExt> Serializer for DynTransportSerializer<'_, I> {
+impl<I: FilterIpExt> Serializer<NetworkSerializationContext> for DynTransportSerializer<'_, I> {
     type Buffer = EmptyBuf;
 
     fn serialize<B: GrowBufferMut, P: BufferProvider<Self::Buffer, B>>(
         self,
+        context: &mut NetworkSerializationContext,
         outer: PacketConstraints,
         provider: P,
     ) -> Result<B, (SerializeError<P::Error>, Self)> {
-        match DynSerializer::new_dyn(self.0).serialize(outer, provider) {
+        match DynSerializer::new_dyn(self.0).serialize(context, outer, provider) {
             Ok(r) => Ok(r),
             Err((e, _)) => Err((e, self)),
         }
@@ -420,12 +424,15 @@ impl<I: FilterIpExt> Serializer for DynTransportSerializer<'_, I> {
 
     fn serialize_new_buf<B: GrowBufferMut, A: LayoutBufferAlloc<B>>(
         &self,
+        context: &mut NetworkSerializationContext,
         outer: PacketConstraints,
         alloc: A,
     ) -> Result<B, SerializeError<A::Error>> {
-        DynSerializer::new_dyn(self.0).serialize_new_buf(outer, alloc)
+        DynSerializer::new_dyn(self.0).serialize_new_buf(context, outer, alloc)
     }
 }
+
+impl<'a, I: FilterIpExt> NestableSerializer for DynTransportSerializer<'a, I> {}
 
 impl<'a, I: FilterIpExt> PartialSerializer for DynTransportSerializer<'a, I> {
     fn partial_serialize(
@@ -1238,28 +1245,34 @@ impl<I: IpExt, B: BufferMut> ForwardedPacket<I, B> {
     }
 }
 
-impl<I: IpExt, B: BufferMut> Serializer for ForwardedPacket<I, B> {
-    type Buffer = <B as Serializer>::Buffer;
+impl<I: IpExt, B: BufferMut + NetworkSerializer> Serializer<NetworkSerializationContext>
+    for ForwardedPacket<I, B>
+{
+    type Buffer = <B as Serializer<NetworkSerializationContext>>::Buffer;
 
     fn serialize<G: packet::GrowBufferMut, P: packet::BufferProvider<Self::Buffer, G>>(
         self,
+        context: &mut NetworkSerializationContext,
         outer: packet::PacketConstraints,
         provider: P,
     ) -> Result<G, (packet::SerializeError<P::Error>, Self)> {
         let Self { src_addr, dst_addr, protocol, transport_header_offset, buffer } = self;
-        buffer.serialize(outer, provider).map_err(|(err, buffer)| {
+        buffer.serialize(context, outer, provider).map_err(|(err, buffer)| {
             (err, Self { src_addr, dst_addr, protocol, transport_header_offset, buffer })
         })
     }
 
     fn serialize_new_buf<BB: GrowBufferMut, A: LayoutBufferAlloc<BB>>(
         &self,
+        context: &mut NetworkSerializationContext,
         outer: packet::PacketConstraints,
         alloc: A,
     ) -> Result<BB, packet::SerializeError<A::Error>> {
-        self.buffer.serialize_new_buf(outer, alloc)
+        self.buffer.serialize_new_buf(context, outer, alloc)
     }
 }
+
+impl<I: IpExt, B: BufferMut + NetworkSerializer> NestableSerializer for ForwardedPacket<I, B> {}
 
 impl<I: IpExt, B: BufferMut> PartialSerializer for ForwardedPacket<I, B> {
     fn partial_serialize(
@@ -2364,28 +2377,34 @@ impl<I: FilterIpExt, B: BufferMut> MaybeIcmpErrorMut<I> for RawIpBody<I, B> {
     }
 }
 
-impl<I: IpExt, B: BufferMut> Serializer for RawIpBody<I, B> {
-    type Buffer = <B as Serializer>::Buffer;
+impl<I: IpExt, B: BufferMut + NetworkSerializer> Serializer<NetworkSerializationContext>
+    for RawIpBody<I, B>
+{
+    type Buffer = <B as Serializer<NetworkSerializationContext>>::Buffer;
 
     fn serialize<G: GrowBufferMut, P: BufferProvider<Self::Buffer, G>>(
         self,
+        context: &mut NetworkSerializationContext,
         outer: PacketConstraints,
         provider: P,
     ) -> Result<G, (SerializeError<P::Error>, Self)> {
         let Self { protocol, src_addr, dst_addr, body, transport_packet_data } = self;
-        body.serialize(outer, provider).map_err(|(err, body)| {
+        body.serialize(context, outer, provider).map_err(|(err, body)| {
             (err, Self { protocol, src_addr, dst_addr, body, transport_packet_data })
         })
     }
 
     fn serialize_new_buf<BB: GrowBufferMut, A: LayoutBufferAlloc<BB>>(
         &self,
+        context: &mut NetworkSerializationContext,
         outer: PacketConstraints,
         alloc: A,
     ) -> Result<BB, SerializeError<A::Error>> {
-        self.body.serialize_new_buf(outer, alloc)
+        self.body.serialize_new_buf(context, outer, alloc)
     }
 }
+
+impl<I: IpExt, B: BufferMut + NetworkSerializer> NestableSerializer for RawIpBody<I, B> {}
 
 impl<I: IpExt, B: BufferMut> PartialSerializer for RawIpBody<I, B> {
     fn partial_serialize(
@@ -3561,13 +3580,13 @@ mod tests {
     use alloc::vec::Vec;
     use core::fmt::Debug;
     use core::marker::PhantomData;
-    use netstack3_base::{SeqNum, UnscaledWindowSize};
+    use netstack3_base::{NetworkSerializationContext, SeqNum, UnscaledWindowSize};
 
     use assert_matches::assert_matches;
     use ip_test_macro::ip_test;
     use packet::{
-        EmptyBuf, FragmentedBuffer as _, InnerPacketBuilder as _, PacketBuilder as _,
-        ParseBufferMut, PartialSerializer,
+        EmptyBuf, FragmentedBuffer as _, InnerPacketBuilder as _, NestableSerializer as _,
+        PacketBuilder as _, ParseBufferMut, PartialSerializer,
     };
     use packet_formats::icmp::IcmpZeroCode;
     use packet_formats::tcp::TcpSegmentBuilder;
@@ -3634,7 +3653,7 @@ mod tests {
             dst_port: NonZeroU16,
         ) -> Vec<u8> {
             Self::make_serializer_with_ports::<I>(src_ip, dst_ip, src_port, dst_port)
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
                 .expect("serialize packet")
                 .unwrap_b()
                 .into_inner()
@@ -3651,7 +3670,7 @@ mod tests {
                 .wrap_body(Self::make_serializer_with_ports_data::<I>(
                     src_ip, dst_ip, src_port, dst_port, data,
                 ))
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
                 .expect("serialize packet")
                 .unwrap_b()
                 .into_inner()
@@ -4142,7 +4161,7 @@ mod tests {
     fn ip_packet<I: TestIpExt, P: Protocol>(src: I::Addr, dst: I::Addr) -> Buf<Vec<u8>> {
         Buf::new(P::make_packet::<I>(src, dst), ..)
             .wrap_in(I::PacketBuilder::new(src, dst, I::PACKET_TTL, P::proto::<I>()))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .expect("serialize IP packet")
             .unwrap_b()
     }
@@ -4422,7 +4441,10 @@ mod tests {
         )
         .wrap_in(I::PacketBuilder::new(I::DST_IP_2, I::SRC_IP, u8::MAX, IE::proto()));
 
-        let mut bytes: Buf<Vec<u8>> = serializer.serialize_vec_outer().unwrap().unwrap_b();
+        let mut bytes: Buf<Vec<u8>> = serializer
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .unwrap_b();
         let icmp_payload = match packet_type {
             PacketType::FullyParsed => {
                 let packet = I::as_filter_packet_owned(bytes.parse_mut::<I::Packet<_>>().unwrap());
@@ -4574,7 +4596,10 @@ mod tests {
         )
         .wrap_in(I::PacketBuilder::new(I::DST_IP_2, I::SRC_IP, u8::MAX, IE::proto()));
 
-        let mut bytes: Buf<Vec<u8>> = serializer.serialize_vec_outer().unwrap().unwrap_b();
+        let mut bytes: Buf<Vec<u8>> = serializer
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .unwrap_b();
 
         let conntrack_packet = match packet_type {
             PacketType::FullyParsed => {
@@ -4665,7 +4690,10 @@ mod tests {
         )
         .wrap_in(I::PacketBuilder::new(I::DST_IP_2, I::SRC_IP_2, u8::MAX, IE::proto()));
 
-        let mut bytes: Buf<Vec<u8>> = serializer.serialize_vec_outer().unwrap().unwrap_b();
+        let mut bytes: Buf<Vec<u8>> = serializer
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .unwrap_b();
 
         let conntrack_packet = match packet_type {
             PacketType::FullyParsed => {
@@ -4762,8 +4790,14 @@ mod tests {
             // their original values.
             .wrap_in(I::PacketBuilder::new(I::SRC_IP, I::DST_IP, u8::MAX, IE::proto()));
 
-        let actual_bytes = serializer.serialize_vec_outer().unwrap().unwrap_b();
-        let expected_bytes = expected_serializer.serialize_vec_outer().unwrap().unwrap_b();
+        let actual_bytes = serializer
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .unwrap_b();
+        let expected_bytes = expected_serializer
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .unwrap_b();
 
         assert_eq!(actual_bytes, expected_bytes);
     }
@@ -4814,7 +4848,11 @@ mod tests {
         let serializer = IE::make_serializer(I::SRC_IP, I::DST_IP, payload_bytes)
             .wrap_in(I::PacketBuilder::new(I::SRC_IP, I::DST_IP, u8::MAX, IE::proto()));
 
-        let mut bytes = serializer.serialize_vec_outer().unwrap().unwrap_b().into_inner();
+        let mut bytes = serializer
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .unwrap_b()
+            .into_inner();
 
         {
             fn modify_packet<I: TestIpExt, P: IpPacket<I>>(mut packet: P) {
@@ -4866,8 +4904,11 @@ mod tests {
             // their original values.
             .wrap_in(I::PacketBuilder::new(I::SRC_IP, I::DST_IP, u8::MAX, IE::proto()));
 
-        let expected_bytes =
-            expected_serializer.serialize_vec_outer().unwrap().unwrap_b().into_inner();
+        let expected_bytes = expected_serializer
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .unwrap_b()
+            .into_inner();
 
         assert_eq!(bytes, expected_bytes);
     }
@@ -4898,7 +4939,7 @@ mod tests {
                     TX_PACKET_NO_TTL,
                     P::proto::<I>(),
                 ))
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
                 .expect("serialize packet")
                 .unwrap_b()
                 .into_inner();

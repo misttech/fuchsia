@@ -8,12 +8,12 @@ use alloc::vec::Vec;
 use core::marker::PhantomData;
 
 use derivative::Derivative;
-use packet::{BufferMut, Serializer};
+use packet::BufferMut;
 
 use crate::testutil::{FakeFrameCtx, FakeTxMetadata, WithFakeFrameContext};
 use crate::{
-    ContextProvider, CoreTxMetadataContext, CounterContext, ResourceCounterContext, SendFrameError,
-    SendableFrameMeta, TxMetadataBindingsTypes,
+    ContextProvider, CoreTxMetadataContext, CounterContext, NetworkSerializer,
+    ResourceCounterContext, SendFrameError, SendableFrameMeta, TxMetadataBindingsTypes,
 };
 
 /// A test helper used to provide an implementation of a core context.
@@ -61,7 +61,7 @@ impl<BC, S, Meta, DeviceId> SendableFrameMeta<FakeCoreCtx<S, Meta, DeviceId>, BC
         frame: SS,
     ) -> Result<(), SendFrameError<SS>>
     where
-        SS: Serializer,
+        SS: NetworkSerializer,
         SS::Buffer: BufferMut,
     {
         self.send_meta(&mut core_ctx.frames, bindings_ctx, frame)

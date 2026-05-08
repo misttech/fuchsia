@@ -15,7 +15,24 @@ use std::time::Duration;
 
 use anyhow::{Context as _, anyhow};
 use assert_matches::assert_matches;
+use fidl_fuchsia_hardware_network as fhardware_network;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_net_ext::{IntoExt as _, IpExt as _};
+use fidl_fuchsia_net_filter as fnet_filter;
+use fidl_fuchsia_net_filter_ext as fnet_filter_ext;
+use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
+use fidl_fuchsia_net_routes as fnet_routes;
+use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
+use fidl_fuchsia_net_tun as fnet_tun;
+use fidl_fuchsia_posix as fposix;
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_posix_socket_ext as fposix_socket_ext;
+use fidl_fuchsia_posix_socket_packet as fpacket;
+use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
 use fuchsia_async::net::{DatagramSocket, UdpSocket};
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt as _};
 use futures::future::{self, LocalBoxFuture};
@@ -45,7 +62,9 @@ use netstack_testing_common::{
     ping,
 };
 use netstack_testing_macros::netstack_test;
-use packet::{ParsablePacket as _, Serializer as _};
+use packet::{
+    NestableSerializer as _, NoOpSerializationContext, ParsablePacket as _, Serializer as _,
+};
 use packet_formats::ethernet::{
     ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,
     EthernetFrameLengthCheck,
@@ -71,19 +90,6 @@ use sockaddr::{IntoSockAddr as _, PureIpSockaddr, TryToSockaddrLl};
 use socket2::{InterfaceIndexOrAddress, SockRef};
 use test_case::{test_case, test_matrix};
 use test_util::assert_gt;
-use {
-    fidl_fuchsia_hardware_network as fhardware_network, fidl_fuchsia_net as fnet,
-    fidl_fuchsia_net_ext as fnet_ext, fidl_fuchsia_net_filter as fnet_filter,
-    fidl_fuchsia_net_filter_ext as fnet_filter_ext, fidl_fuchsia_net_interfaces as fnet_interfaces,
-    fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
-    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_routes as fnet_routes,
-    fidl_fuchsia_net_routes_ext as fnet_routes_ext, fidl_fuchsia_net_tun as fnet_tun,
-    fidl_fuchsia_posix as fposix, fidl_fuchsia_posix_socket as fposix_socket,
-    fidl_fuchsia_posix_socket_ext as fposix_socket_ext,
-    fidl_fuchsia_posix_socket_packet as fpacket,
-    fidl_fuchsia_posix_socket_raw as fposix_socket_raw,
-};
 
 async fn run_udp_socket_test(
     server: &netemul::TestRealm<'_>,
@@ -2332,7 +2338,7 @@ async fn ip_endpoint_packets<N: Netstack>(name: &str) {
             IcmpEchoRequest::new(ICMP_ID, SEQ_NUM),
         ))
         .wrap_in(Ipv4PacketBuilder::new(src_ip, dst_ip, 1, Ipv4Proto::Icmp))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NoOpSerializationContext)
         .expect("serialization failed")
         .as_ref()
         .to_vec();
@@ -2407,7 +2413,7 @@ async fn ip_endpoint_packets<N: Netstack>(name: &str) {
             IcmpEchoRequest::new(ICMP_ID, SEQ_NUM),
         ))
         .wrap_in(Ipv6PacketBuilder::new(src_ip, dst_ip, 1, Ipv6Proto::Icmpv6))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NoOpSerializationContext)
         .expect("serialization failed")
         .as_ref()
         .to_vec();
@@ -3682,6 +3688,7 @@ async fn tcp_connect_icmp_error<N: Netstack, I: TestIpExt, M: IcmpMessage<I> + D
     message: M,
     code: M::Code,
 ) -> i32 {
+    use packet::NestableSerializer as _;
     use packet_formats::ip::IpPacket as _;
 
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
@@ -3737,7 +3744,7 @@ async fn tcp_connect_icmp_error<N: Netstack, I: TestIpExt, M: IcmpMessage<I> + D
                         EtherType::from_ip_version(I::VERSION),
                         ETHERNET_MIN_BODY_LEN_NO_TAG,
                     ))
-                    .serialize_vec_outer()
+                    .serialize_vec_outer(&mut NoOpSerializationContext)
                     .expect("failed to serialize ICMP error")
                     .unwrap_b();
                 fake_ep.write(icmp_error.as_ref()).await.expect("failed to write ICMP error");
@@ -4042,7 +4049,7 @@ async fn tcp_established_icmp_error<N: Netstack, I: TestIpExt, M: IcmpMessage<I>
             .wrap_in(syn_ack)
             .wrap_in(I::PacketBuilder::new(ip.dst_ip(), ip.src_ip(), u8::MAX, IpProto::Tcp.into()))
             .wrap_in(ethernet_builder.clone())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("serialize SYN/ACK")
             .unwrap_b();
         fake_ep.write(frame.as_ref()).await.expect("write SYN/ACK");
@@ -4070,7 +4077,7 @@ async fn tcp_established_icmp_error<N: Netstack, I: TestIpExt, M: IcmpMessage<I>
                 I::map_ip_out((), |()| Ipv4Proto::Icmp, |()| Ipv6Proto::Icmpv6),
             ))
             .wrap_in(ethernet_builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("serialize ICMP error")
             .unwrap_b();
         fake_ep.write(icmp_error.as_ref()).await.expect("write ICMP error");
@@ -4146,6 +4153,7 @@ impl TestPmtuIpExt for Ipv6 {
 #[test_case(true; "start by priming cache")]
 #[test_case(false; "start with empty cache")]
 async fn tcp_update_mss_from_pmtu<N: Netstack, I: TestPmtuIpExt>(name: &str, prime_cache: bool) {
+    use packet::NestableSerializer as _;
     use packet_formats::ip::IpPacket as _;
 
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
@@ -4194,7 +4202,7 @@ async fn tcp_update_mss_from_pmtu<N: Netstack, I: TestPmtuIpExt>(name: &str, pri
                 EtherType::from_ip_version(I::VERSION),
                 ETHERNET_MIN_BODY_LEN_NO_TAG,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("serialize ICMP error")
             .unwrap_b();
         fake_ep.write(icmp_error.as_ref()).await.expect("write ICMP error");
@@ -4246,7 +4254,7 @@ async fn tcp_update_mss_from_pmtu<N: Netstack, I: TestPmtuIpExt>(name: &str, pri
             )
             .wrap_in(I::PacketBuilder::new(ip.dst_ip(), ip.src_ip(), u8::MAX, IpProto::Tcp.into()))
             .wrap_in(ethernet_builder.clone())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("serialize SYN/ACK")
             .unwrap_b();
         fake_ep.write(frame.as_ref()).await.expect("write SYN/ACK");
@@ -4284,7 +4292,7 @@ async fn tcp_update_mss_from_pmtu<N: Netstack, I: TestPmtuIpExt>(name: &str, pri
                 I::map_ip_out((), |()| Ipv4Proto::Icmp, |()| Ipv6Proto::Icmpv6),
             ))
             .wrap_in(ethernet_builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("serialize ICMP error")
             .unwrap_b();
         fake_ep.write(icmp_error.as_ref()).await.expect("write ICMP error");
@@ -5259,7 +5267,7 @@ async fn broadcast_recv<N: Netstack>(name: &str) {
             EtherType::Ipv4,
             ETHERNET_MIN_BODY_LEN_NO_TAG,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NoOpSerializationContext)
         .expect("failed to serialize UDP packet")
         .unwrap_b();
     fake_ep.write(broadcast_packet.as_ref()).await.expect("failed to write UDP packet");

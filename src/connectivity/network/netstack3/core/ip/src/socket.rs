@@ -14,8 +14,9 @@ use net_types::{MulticastAddress, ScopeableAddress, SpecifiedAddr, Witness as _}
 use netstack3_base::socket::{SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::{
     AnyDevice, CounterContext, DeviceIdContext, DeviceIdentifier, EitherDeviceId, InstantContext,
-    InterfaceProperties, IpDeviceAddr, IpExt, Marks, Mms, SendFrameErrorReason,
-    StrongDeviceIdentifier, TxMetadata as _, TxMetadataBindingsTypes, WeakDeviceIdentifier,
+    InterfaceProperties, IpDeviceAddr, IpExt, Marks, Mms, NetworkSerializationContext,
+    SendFrameErrorReason, StrongDeviceIdentifier, TxMetadata as _, TxMetadataBindingsTypes,
+    WeakDeviceIdentifier,
 };
 use netstack3_filter::{
     self as filter, DynTransportSerializer, DynamicTransportSerializer, FilterBindingsContext,
@@ -964,9 +965,10 @@ where
             );
             let header_len = packet_builder.constraints().header_len();
             let ip_frame = packet_builder.wrap_body(body);
-            let packet = match ip_frame
-                .serialize_outer(packet::NoReuseBufferProvider(packet::new_buf_vec))
-            {
+            let packet = match ip_frame.serialize_outer(
+                &mut NetworkSerializationContext::default(),
+                packet::NoReuseBufferProvider(packet::new_buf_vec),
+            ) {
                 Ok(packet) => packet,
                 Err((error, _frame)) => {
                     debug!("Failed to serialize packet {:?}", error);
@@ -1085,7 +1087,13 @@ where
     let loopback_packet = (!egress_device.is_loopback()
         && ((options.multicast_loop() && remote_ip.addr().is_multicast())
             || next_hop.is_broadcast()))
-    .then(|| body.serialize_new_buf(PacketConstraints::UNCONSTRAINED, packet::new_buf_vec))
+    .then(|| {
+        body.serialize_new_buf(
+            &mut NetworkSerializationContext::default(),
+            PacketConstraints::UNCONSTRAINED,
+            packet::new_buf_vec,
+        )
+    })
     .transpose()?
     .map(|buf| RawIpBody::new(*proto, local_ip.addr(), remote_ip.addr(), buf));
 

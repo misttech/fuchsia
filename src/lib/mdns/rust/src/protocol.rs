@@ -956,7 +956,7 @@ impl EmbeddedPacketBuilder for DomainBuilder {
 mod tests {
     use super::*;
 
-    use packet::{ParseBuffer, Serializer};
+    use packet::{NoOpSerializationContext, ParseBuffer, Serializer};
     use std::fmt::Write;
 
     trait EmbeddedPacketBuilderTestExt: EmbeddedPacketBuilder {
@@ -1089,7 +1089,7 @@ mod tests {
         message.add_additional(record);
         let mut msg_bytes = message
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("Failed to serialize"));
         let parsed = msg_bytes.parse::<Message<_>>().expect("Failed to parse!");
         // TODO(awdavies): These checks can probably be abstracted a bit.

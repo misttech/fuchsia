@@ -11,8 +11,8 @@ use fuchsia_async::{DurationExt as _, TimeoutExt as _};
 use futures::{FutureExt as _, Stream, StreamExt as _, TryStreamExt as _, future};
 use net_types::Witness as _;
 use net_types::ip::Ip as _;
-use packet::Buf;
 use packet::serialize::{InnerPacketBuilder, Serializer};
+use packet::{Buf, NestableSerializer as _, NoOpSerializationContext};
 use packet_formats::ethernet::{
     ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrameBuilder, EthernetFrameLengthCheck,
 };
@@ -52,7 +52,7 @@ pub fn create_message<M: IcmpMessage<net_types::ip::Ipv6, Code = IcmpZeroCode> +
             EtherType::Ipv6,
             ETHERNET_MIN_BODY_LEN_NO_TAG,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NoOpSerializationContext)
         .map_err(|e| anyhow::anyhow!("failed to serialize NDP packet: {:?}", e))?
         .unwrap_b())
 }

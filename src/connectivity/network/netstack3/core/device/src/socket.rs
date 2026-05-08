@@ -16,12 +16,12 @@ use netstack3_base::socket::SocketCookie;
 use netstack3_base::sync::{Mutex, PrimaryRc, RwLock, StrongRc, WeakRc};
 use netstack3_base::{
     AnyDevice, ContextPair, Counter, Device, DeviceIdContext, FrameDestination, Inspectable,
-    Inspector, InspectorDeviceExt, InspectorExt, ReferenceNotifiers, ReferenceNotifiersExt as _,
-    RemoveResourceResultWithContext, ResourceCounterContext, SendFrameContext,
-    SendFrameErrorReason, StrongDeviceIdentifier, WeakDeviceIdentifier as _,
+    Inspector, InspectorDeviceExt, InspectorExt, NetworkSerializer, ReferenceNotifiers,
+    ReferenceNotifiersExt as _, RemoveResourceResultWithContext, ResourceCounterContext,
+    SendFrameContext, SendFrameErrorReason, StrongDeviceIdentifier, WeakDeviceIdentifier as _,
 };
 use netstack3_hashmap::{HashMap, HashSet};
-use packet::{BufferMut, ParsablePacket as _, Serializer};
+use packet::{BufferMut, ParsablePacket as _};
 use packet_formats::error::ParseError;
 use packet_formats::ethernet::{EtherType, EthernetFrameLengthCheck};
 
@@ -547,7 +547,7 @@ where
         body: S,
     ) -> Result<(), SendFrameErrorReason>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut,
         D: DeviceSocketSendTypes,
         C::CoreContext: DeviceIdContext<D>
@@ -1102,7 +1102,9 @@ mod tests {
     use netstack3_base::testutil::{
         FakeReferencyDeviceId, FakeStrongDeviceId, FakeWeakDeviceId, MultipleDevicesId,
     };
-    use netstack3_base::{CounterContext, CtxPair, SendFrameError, SendableFrameMeta};
+    use netstack3_base::{
+        CounterContext, CtxPair, NetworkSerializationContext, SendFrameError, SendableFrameMeta,
+    };
     use netstack3_hashmap::HashMap;
     use packet::ParsablePacket;
     use test_case::test_case;
@@ -1969,10 +1971,11 @@ mod tests {
             frame: S,
         ) -> Result<(), SendFrameError<S>>
         where
-            S: packet::Serializer,
-            S::Buffer: packet::BufferMut,
+            S: NetworkSerializer,
+            S::Buffer: BufferMut,
         {
-            let frame = match frame.serialize_vec_outer() {
+            let frame = match frame.serialize_vec_outer(&mut NetworkSerializationContext::default())
+            {
                 Err(e) => {
                     let _: (packet::SerializeError<core::convert::Infallible>, _) = e;
                     unreachable!()

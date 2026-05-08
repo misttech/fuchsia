@@ -48,7 +48,9 @@ use netstack_testing_common::realms::{
 };
 use netstack_testing_common::{constants, get_inspect_data};
 use netstack_testing_macros::netstack_test;
-use packet::{ParseBuffer as _, Serializer as _};
+use packet::{
+    NestableSerializer as _, NoOpSerializationContext, ParseBuffer as _, Serializer as _,
+};
 use packet_formats::arp::{ArpOp, ArpPacket};
 use packet_formats::ethernet::testutil::{ETHERNET_HDR_LEN_NO_TAG, ETHERNET_MIN_BODY_LEN_NO_TAG};
 use packet_formats::ethernet::{
@@ -3441,7 +3443,7 @@ async fn inspect_conntrack_nat_state(name: &str) {
             EtherType::Ipv4,
             ETHERNET_MIN_BODY_LEN_NO_TAG,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NoOpSerializationContext)
         .expect("serialize UDP packet IP packet in ethernet frame")
         .unwrap_b();
     let fake_ep = network.create_fake_endpoint().expect("create fake endpoint");

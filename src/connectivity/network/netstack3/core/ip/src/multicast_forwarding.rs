@@ -303,7 +303,8 @@ mod testutil {
     use netstack3_base::socket::SocketIpAddr;
     use netstack3_base::testutil::{FakeStrongDeviceId, MultipleDevicesId};
     use netstack3_base::{
-        CoreTimerContext, CounterContext, CtxPair, FrameDestination, Marks, ResourceCounterContext,
+        CoreTimerContext, CounterContext, CtxPair, FrameDestination, Marks,
+        NetworkSerializationContext, NetworkSerializer, ResourceCounterContext,
     };
     use netstack3_filter::ProofOfEgressCheck;
     use netstack3_hashmap::HashSet;
@@ -352,7 +353,7 @@ mod testutil {
         const IP_BODY: [u8; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
         I::PacketBuilder::new(src_addr, dst_addr, TTL, IpProto::Udp.into())
             .wrap_body(IP_BODY.into_serializer())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
     }
 
@@ -544,7 +545,7 @@ mod testutil {
             _egress_proof: ProofOfEgressCheck,
         ) -> Result<(), netstack3_base::SendFrameError<S>>
         where
-            S: Serializer,
+            S: NetworkSerializer,
             S::Buffer: BufferMut,
         {
             let dst = match destination {

@@ -6,7 +6,10 @@
 
 use dhcp_protocol::{AtLeast, AtMostBytes};
 use diagnostics_traits::Inspector;
-use packet::{InnerPacketBuilder, ParseBuffer as _, Serializer};
+use packet::{
+    InnerPacketBuilder, NestableSerializer as _, NoOpSerializationContext, ParseBuffer as _,
+    Serializer,
+};
 use packet_formats::ip::IpPacket as _;
 use std::net::Ipv4Addr;
 use std::num::{NonZeroU16, NonZeroU32, TryFromIntError};
@@ -92,7 +95,11 @@ pub(crate) fn serialize_dhcp_message_to_ip_packet(
         packet_formats::ip::Ipv4Proto::Proto(packet_formats::ip::IpProto::Udp),
     );
 
-    match message.into_serializer().wrap_in(udp_builder).wrap_in(ipv4_builder).serialize_vec_outer()
+    match message
+        .into_serializer()
+        .wrap_in(udp_builder)
+        .wrap_in(ipv4_builder)
+        .serialize_vec_outer(&mut NoOpSerializationContext)
     {
         Ok(buf) => buf,
         Err(e) => {
@@ -1047,7 +1054,7 @@ mod test {
             .into_serializer()
             .wrap_in(tcp_builder)
             .wrap_in(ipv4_builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("serialize error");
 
         assert_matches!(
@@ -1081,7 +1088,7 @@ mod test {
             .into_serializer()
             .wrap_in(udp_builder)
             .wrap_in(ipv4_builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("serialize error");
 
         let result = parse_dhcp_message_from_ip_packet(bytes.as_ref(), CLIENT_PORT);

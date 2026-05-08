@@ -26,12 +26,13 @@ use netstack3_base::sync::Mutex;
 use netstack3_base::{
     AnyDevice, Counter, CounterContext, DeviceIdContext, EitherDeviceId, FrameDestination,
     IcmpIpExt, Icmpv4ErrorCode, Icmpv6ErrorCode, InstantBindingsTypes, InstantContext,
-    IpDeviceAddr, IpExt, Marks, RngContext, TokenBucket, TxMetadataBindingsTypes,
+    IpDeviceAddr, IpExt, Marks, NetworkSerializer, RngContext, TokenBucket,
+    TxMetadataBindingsTypes,
 };
 use netstack3_filter::{DynTransportSerializer, DynamicTransportSerializer, FilterIpExt};
 use packet::{
     BufferMut, InnerPacketBuilder as _, PacketBuilder as _, ParsablePacket as _, ParseBuffer,
-    PartialSerializer, Serializer, TruncateDirection, TruncatingSerializer,
+    PartialSerializer, TruncateDirection, TruncatingSerializer,
 };
 use packet_formats::icmp::ndp::options::{NdpOption, NdpOptionBuilder};
 use packet_formats::icmp::ndp::{
@@ -1309,7 +1310,7 @@ pub fn send_ndp_packet<BC, CC, S>(
 ) -> Result<(), IpSendFrameError<S>>
 where
     CC: IpLayerHandler<Ipv6, BC>,
-    S: Serializer + PartialSerializer,
+    S: NetworkSerializer + PartialSerializer,
     S::Buffer: BufferMut,
 {
     macro_rules! send {
@@ -2614,7 +2615,8 @@ pub(crate) mod testutil {
     use alloc::vec::Vec;
     use net_types::ethernet::Mac;
     use net_types::ip::{Ipv6, Ipv6Addr};
-    use packet::{Buf, InnerPacketBuilder as _, Serializer as _};
+    use netstack3_base::NetworkSerializationContext;
+    use packet::{Buf, InnerPacketBuilder as _, NestableSerializer as _, Serializer as _};
     use packet_formats::icmp::ndp::options::NdpOptionBuilder;
     use packet_formats::icmp::ndp::{
         NeighborAdvertisement, NeighborSolicitation, OptionSequenceBuilder,
@@ -2649,7 +2651,7 @@ pub(crate) mod testutil {
                 REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
                 Ipv6Proto::Icmpv6,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .unwrap_b()
     }
@@ -2676,7 +2678,7 @@ pub(crate) mod testutil {
                 REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
                 Ipv6Proto::Icmpv6,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap()
             .unwrap_b()
     }
@@ -2696,9 +2698,9 @@ mod tests {
         FakeBindingsCtx, FakeCoreCtx, FakeDeviceId, FakeInstant, FakeTxMetadata, FakeWeakDeviceId,
         TEST_ADDRS_V4, TEST_ADDRS_V6, TestIpExt, set_logger_for_test,
     };
-    use netstack3_base::{CtxPair, Uninstantiable};
+    use netstack3_base::{CtxPair, NetworkSerializationContext, Uninstantiable};
     use netstack3_filter::TransportPacketSerializer;
-    use packet::{Buf, EmptyBuf};
+    use packet::{Buf, EmptyBuf, NestableSerializer as _, Serializer as _};
     use packet_formats::icmp::mld::MldPacket;
     use packet_formats::ip::IpProto;
     use packet_formats::utils::NonZeroDuration;
@@ -3238,7 +3240,7 @@ mod tests {
             _body: S,
         ) -> Result<(), IpSendFrameError<S>>
         where
-            S: Serializer,
+            S: NetworkSerializer,
             S::Buffer: BufferMut,
         {
             unimplemented!()
@@ -3320,7 +3322,7 @@ mod tests {
                 TEST_ADDRS_V4.local_ip,
                 IcmpPacketBuilder::new(TEST_ADDRS_V4.remote_ip, TEST_ADDRS_V4.local_ip, code, msg)
                     .wrap_body(Buf::new(original_packet, ..))
-                    .serialize_vec_outer()
+                    .serialize_vec_outer(&mut NetworkSerializationContext::default())
                     .unwrap(),
                 &LocalDeliveryPacketInfo::default(),
                 None,
@@ -3353,7 +3355,7 @@ mod tests {
                 64,
                 Ipv4Proto::Icmp,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap();
 
         test_receive_icmpv4_error_helper(
@@ -3422,7 +3424,7 @@ mod tests {
             Ipv4Proto::Icmp,
         )
         .wrap_body(EmptyBuf)
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
 
         test_receive_icmpv4_error_helper(
@@ -3490,7 +3492,7 @@ mod tests {
             IpProto::Udp.into(),
         )
         .wrap_body(EmptyBuf)
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
 
         test_receive_icmpv4_error_helper(
@@ -3590,7 +3592,7 @@ mod tests {
                 TEST_ADDRS_V6.local_ip,
                 IcmpPacketBuilder::new(TEST_ADDRS_V6.remote_ip, TEST_ADDRS_V6.local_ip, code, msg)
                     .wrap_body(Buf::new(original_packet, ..))
-                    .serialize_vec_outer()
+                    .serialize_vec_outer(&mut NetworkSerializationContext::default())
                     .unwrap(),
                 &LocalDeliveryPacketInfo::default(),
                 None,
@@ -3623,7 +3625,7 @@ mod tests {
                 64,
                 Ipv6Proto::Icmpv6,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap();
 
         test_receive_icmpv6_error_helper(
@@ -3686,7 +3688,7 @@ mod tests {
                 64,
                 Ipv6Proto::Icmpv6,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap();
 
         test_receive_icmpv6_error_helper(
@@ -3748,7 +3750,7 @@ mod tests {
             IpProto::Udp.into(),
         )
         .wrap_body(EmptyBuf)
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
 
         test_receive_icmpv6_error_helper(

@@ -2815,6 +2815,7 @@ mod tests {
     use fidl::endpoints::{Proxy, ServerEnd};
     use fuchsia_async as fasync;
     use futures::StreamExt;
+    use netstack3_core::NetworkSerializationContext;
     use packet::{PacketBuilder as _, Serializer as _};
     use packet_formats::icmp::IcmpIpExt;
 
@@ -3107,7 +3108,7 @@ mod tests {
                     packet_formats::icmp::IcmpEchoRequest::new(0, 1),
                 )
                 .wrap_body(Buf::new(buf, ..))
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
                 .unwrap()
                 .into_inner()
                 .into_inner()
@@ -3141,7 +3142,7 @@ mod tests {
                     packet_formats::icmp::IcmpEchoReply::new(id, 1),
                 )
                 .wrap_body(Buf::new(buf, ..))
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
                 .unwrap()
                 .into_inner()
                 .into_inner()

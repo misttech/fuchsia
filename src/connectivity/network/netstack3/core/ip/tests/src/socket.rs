@@ -22,7 +22,7 @@ use netstack3_base::socket::SocketIpAddr;
 use netstack3_base::testutil::{TestAddrs, TestIpExt, set_logger_for_test};
 use netstack3_base::{
     CounterCollection as _, CounterContext, EitherDeviceId, IpDeviceAddr, Mms,
-    ResourceCounterContext,
+    NetworkSerializationContext, ResourceCounterContext,
 };
 use netstack3_core::device::{DeviceId, EthernetLinkDevice};
 use netstack3_core::testutil::{CtxPairExt as _, FakeBindingsCtx, FakeCtx, FakeCtxBuilder};
@@ -413,7 +413,7 @@ fn test_send_local<I: IpSocketIpExt + IpExt>(
     let buffer =
         IcmpPacketBuilder::<I, _>::new(expected_from_ip.get(), to_ip.get(), IcmpZeroCode, reply)
             .wrap_body(Buf::new(body.to_vec(), ..))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap();
 
     // Send an echo packet on the socket and validate that the packet is

@@ -16,8 +16,8 @@ use netstack_testing_common::realms::{Netstack2, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
 use netsvc_proto::{debuglog, netboot, tftp};
 use packet::{
-    FragmentedBuffer as _, InnerPacketBuilder as _, MaybeReuseBufferProvider, PacketBuilder as _,
-    ParseBuffer as _, Serializer,
+    FragmentedBuffer as _, InnerPacketBuilder as _, MaybeReuseBufferProvider,
+    NoOpSerializationContext, PacketBuilder as _, ParseBuffer as _, Serializer,
 };
 use std::borrow::Cow;
 use std::convert::{TryFrom as _, TryInto as _};
@@ -506,7 +506,7 @@ async fn discover(sock: &fuchsia_async::net::UdpSocket, scope_id: u32) -> std::n
                     ARG,
                 )
                 .wrap_body(("*\0".as_bytes()).into_serializer())
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
                 .expect("serialize query")
                 .unwrap_b();
 
@@ -566,14 +566,17 @@ async fn discover(sock: &fuchsia_async::net::UdpSocket, scope_id: u32) -> std::n
 
 async fn send_message<S>(ser: S, sock: &fuchsia_async::net::UdpSocket, to: std::net::SocketAddr)
 where
-    S: Serializer + std::fmt::Debug,
+    S: Serializer<NoOpSerializationContext> + std::fmt::Debug,
     S::Buffer: packet::ReusableBuffer + std::fmt::Debug + AsRef<[u8]>,
 {
     let b = ser
-        .serialize_outer(MaybeReuseBufferProvider(|length| {
-            assert!(length <= BUFFER_SIZE, "{} > {}", length, BUFFER_SIZE);
-            Result::<_, std::convert::Infallible>::Ok(packet::Buf::new([0u8; BUFFER_SIZE], ..))
-        }))
+        .serialize_outer(
+            &mut NoOpSerializationContext,
+            MaybeReuseBufferProvider(|length| {
+                assert!(length <= BUFFER_SIZE, "{} > {}", length, BUFFER_SIZE);
+                Result::<_, std::convert::Infallible>::Ok(packet::Buf::new([0u8; BUFFER_SIZE], ..))
+            }),
+        )
         .expect("failed to serialize");
     let sent = sock.send_to(b.as_ref(), to).await.expect("send to failed");
     assert_eq!(sent, b.len());

@@ -12,7 +12,7 @@ use ip_test_macro::ip_test;
 use net_declare::{net_ip_v4, net_ip_v6};
 use net_types::ip::{IpAddress, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet};
 use net_types::{SpecifiedAddr, Witness};
-use packet::{Buf, PacketBuilder, Serializer};
+use packet::{Buf, NestableSerializer as _, PacketBuilder, Serializer};
 use packet_formats::ethernet::EthernetFrameLengthCheck;
 use packet_formats::icmp::{
     IcmpDestUnreachable, IcmpEchoReply, IcmpEchoRequest, IcmpMessage, IcmpPacket,
@@ -25,7 +25,9 @@ use packet_formats::testutil::parse_icmp_packet_in_ip_packet_in_ethernet_frame;
 use packet_formats::udp::UdpPacketBuilder;
 
 use netstack3_base::testutil::{TEST_ADDRS_V4, TEST_ADDRS_V6, TestIpExt, set_logger_for_test};
-use netstack3_base::{FrameDestination, MarkMatcher, MarkMatchers, Marks};
+use netstack3_base::{
+    FrameDestination, MarkMatcher, MarkMatchers, Marks, NetworkSerializationContext,
+};
 use netstack3_core::device::DeviceId;
 use netstack3_core::ip::MarkDomain;
 use netstack3_core::testutil::{Ctx, CtxPairExt as _, FakeBindingsCtx, FakeCtxBuilder};
@@ -83,7 +85,10 @@ fn test_receive_ip_packet<
         proto,
     );
     modify_packet_builder(&mut pb);
-    let buffer = pb.wrap_body(Buf::new(body, ..)).serialize_vec_outer().unwrap();
+    let buffer = pb
+        .wrap_body(Buf::new(body, ..))
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
+        .unwrap();
 
     let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(I::TEST_ADDRS)
         .build_with_modifications(modify_stack_state_builder);
@@ -199,7 +204,7 @@ fn test_receive_echo(test_mark_reflection: bool) {
                 IcmpZeroCode,
                 req,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap();
         test_receive_ip_packet::<I, _, _, _, _, _>(
             |_| {},
@@ -236,7 +241,7 @@ fn test_receive_timestamp(test_mark_reflection: bool) {
             IcmpZeroCode,
             req,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
     test_receive_ip_packet::<Ipv4, _, _, _, _, _>(
         |_| {},
@@ -337,7 +342,7 @@ fn test_port_unreachable(test_mark_reflection: bool) {
                 None,
                 NonZeroU16::new(1234).unwrap(),
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap();
         test_receive_ip_packet::<I, _, _, _, _, _>(
             |_| {},
@@ -490,7 +495,7 @@ fn icmp_reply_follows_request_interface<I: TestIpExt + IpExt>() {
             TTL,
             I::ICMP_IP_PROTO,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
 
     let mut builder = FakeCtxBuilder::with_addrs(I::TEST_ADDRS);

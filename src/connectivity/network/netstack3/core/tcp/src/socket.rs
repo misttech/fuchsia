@@ -5808,8 +5808,8 @@ mod tests {
     use netstack3_base::{
         ContextProvider, CounterCollection, CounterContext, IcmpIpExt, Icmpv4ErrorCode,
         Icmpv6ErrorCode, Instant as _, InstantContext, LinkDevice, Mark, MarkDomain,
-        MatcherBindingsTypes, Mms, ReferenceNotifiers, ResourceCounterContext,
-        StrongDeviceIdentifier, Uninstantiable, UninstantiableWrapper,
+        MatcherBindingsTypes, Mms, NetworkSerializationContext, ReferenceNotifiers,
+        ResourceCounterContext, StrongDeviceIdentifier, Uninstantiable, UninstantiableWrapper,
     };
     use netstack3_filter::testutil::NoOpSocketOpsFilter;
     use netstack3_filter::{SocketOpsFilter, TransportPacketSerializer, Tuple};
@@ -10009,8 +10009,11 @@ mod tests {
         let mut builder =
             TcpSegmentBuilder::new(REMOTE_IP, LOCAL_IP, REMOTE_PORT, LOCAL_PORT, 1, None, u16::MAX);
         builder.syn(true);
-        let syn =
-            builder.wrap_body(Buf::new(vec![], ..)).serialize_vec_outer().unwrap().into_inner();
+        let syn = builder
+            .wrap_body(Buf::new(vec![], ..))
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .into_inner();
 
         <TcpIpTransportContext as IpTransportContext<Ipv6, _, _>>::receive_ip_packet(
             &mut ctx.core_ctx,

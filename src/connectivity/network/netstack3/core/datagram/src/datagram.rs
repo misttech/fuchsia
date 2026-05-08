@@ -5081,7 +5081,7 @@ mod test {
         FakeDeviceConfig, FakeDualStackIpSocketCtx, FakeIpSocketCtx,
     };
     use netstack3_ip::testutil::DualStackSendIpPacketMeta;
-    use packet::{Buf, Serializer as _};
+    use packet::{Buf, NestableSerializer as _};
     use packet_formats::ip::{Ipv4Proto, Ipv6Proto};
     use test_case::test_case;
 

@@ -182,6 +182,7 @@ fn handle_destination_options_ext_hdr<
 mod tests {
     use alloc::vec;
 
+    use netstack3_base::NetworkSerializationContext;
     use netstack3_base::testutil::{FakeDeviceId, TEST_ADDRS_V6};
     use packet::ParseBuffer;
     use packet::serialize::{Buf, PacketBuilder, Serializer};
@@ -203,8 +204,10 @@ mod tests {
             IpProto::Tcp.into(),
         );
         let frame_dst = FrameDestination::Individual { local: true };
-        let mut buffer =
-            builder.wrap_body(Buf::new(vec![1, 2, 3, 4, 5], ..)).serialize_vec_outer().unwrap();
+        let mut buffer = builder
+            .wrap_body(Buf::new(vec![1, 2, 3, 4, 5], ..))
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap();
         let packet = buffer.parse::<Ipv6Packet<_>>().unwrap();
 
         assert_eq!(

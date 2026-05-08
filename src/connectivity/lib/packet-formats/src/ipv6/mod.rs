@@ -21,9 +21,10 @@ use net_types::ip::{GenericOverIp, Ipv4Addr, Ipv6, Ipv6Addr, Ipv6SourceAddr};
 use packet::records::{AlignedRecordSequenceBuilder, Records, RecordsRaw};
 use packet::{
     BufferProvider, BufferView, BufferViewMut, EmptyBuf, FragmentedBytesMut, FromRaw,
-    GrowBufferMut, InnerPacketBuilder, LayoutBufferAlloc, MaybeParsed, PacketBuilder,
-    PacketConstraints, ParsablePacket, ParseMetadata, PartialPacketBuilder, PartialSerializeResult,
-    PartialSerializer, SerializeError, SerializeTarget, Serializer,
+    GrowBufferMut, InnerPacketBuilder, LayoutBufferAlloc, MaybeParsed, NestableSerializer,
+    NoOpSerializationContext, PacketBuilder, PacketConstraints, ParsablePacket, ParseMetadata,
+    PartialPacketBuilder, PartialSerializeResult, PartialSerializer, SerializeError,
+    SerializeTarget, Serializer,
 };
 use zerocopy::byteorder::network_endian::{U16, U32};
 use zerocopy::{
@@ -595,7 +596,10 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
         &self,
         v4_src_addr: Ipv4Addr,
         v4_dst_addr: Ipv4Addr,
-    ) -> Nat64TranslationResult<impl Serializer<Buffer = EmptyBuf> + Debug + '_, Nat64Error> {
+    ) -> Nat64TranslationResult<
+        impl Serializer<NoOpSerializationContext, Buffer = EmptyBuf> + Debug + '_,
+        Nat64Error,
+    > {
         // A single `Serializer` type so that all possible return values from
         // this function have the same type.
         #[derive(Debug)]
@@ -604,16 +608,16 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
             Udp(U),
             Other(O),
         }
-
-        impl<T, U, O> Serializer for Nat64Serializer<T, U, O>
+        impl<T, U, O> Serializer<NoOpSerializationContext> for Nat64Serializer<T, U, O>
         where
-            T: Serializer<Buffer = EmptyBuf>,
-            U: Serializer<Buffer = EmptyBuf>,
-            O: Serializer<Buffer = EmptyBuf>,
+            T: Serializer<NoOpSerializationContext, Buffer = EmptyBuf>,
+            U: Serializer<NoOpSerializationContext, Buffer = EmptyBuf>,
+            O: Serializer<NoOpSerializationContext, Buffer = EmptyBuf>,
         {
             type Buffer = EmptyBuf;
             fn serialize<B, P>(
                 self,
+                context: &mut NoOpSerializationContext,
                 outer: PacketConstraints,
                 provider: P,
             ) -> Result<B, (SerializeError<P::Error>, Self)>
@@ -623,30 +627,43 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
             {
                 match self {
                     Nat64Serializer::Tcp(serializer) => serializer
-                        .serialize(outer, provider)
+                        .serialize(context, outer, provider)
                         .map_err(|(err, ser)| (err, Nat64Serializer::Tcp(ser))),
                     Nat64Serializer::Udp(serializer) => serializer
-                        .serialize(outer, provider)
+                        .serialize(context, outer, provider)
                         .map_err(|(err, ser)| (err, Nat64Serializer::Udp(ser))),
                     Nat64Serializer::Other(serializer) => serializer
-                        .serialize(outer, provider)
+                        .serialize(context, outer, provider)
                         .map_err(|(err, ser)| (err, Nat64Serializer::Other(ser))),
                 }
             }
 
             fn serialize_new_buf<B: GrowBufferMut, A: LayoutBufferAlloc<B>>(
                 &self,
+                context: &mut NoOpSerializationContext,
                 outer: PacketConstraints,
                 alloc: A,
             ) -> Result<B, SerializeError<A::Error>> {
                 match self {
-                    Nat64Serializer::Tcp(serializer) => serializer.serialize_new_buf(outer, alloc),
-                    Nat64Serializer::Udp(serializer) => serializer.serialize_new_buf(outer, alloc),
+                    Nat64Serializer::Tcp(serializer) => {
+                        serializer.serialize_new_buf(context, outer, alloc)
+                    }
+                    Nat64Serializer::Udp(serializer) => {
+                        serializer.serialize_new_buf(context, outer, alloc)
+                    }
                     Nat64Serializer::Other(serializer) => {
-                        serializer.serialize_new_buf(outer, alloc)
+                        serializer.serialize_new_buf(context, outer, alloc)
                     }
                 }
             }
+        }
+
+        impl<T, U, O> NestableSerializer for Nat64Serializer<T, U, O>
+        where
+            T: Serializer<NoOpSerializationContext, Buffer = EmptyBuf>,
+            U: Serializer<NoOpSerializationContext, Buffer = EmptyBuf>,
+            O: Serializer<NoOpSerializationContext, Buffer = EmptyBuf>,
+        {
         }
 
         // TODO(https://fxbug.dev/42174049): Add support for fragmented packets
@@ -1581,7 +1598,7 @@ pub(crate) fn reassemble_fragmented_packet<
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use packet::{Buf, FragmentedBuffer, ParseBuffer};
+    use packet::{Buf, FragmentedBuffer, NestableSerializer as _, ParseBuffer};
     use test_case::test_case;
 
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
@@ -1616,7 +1633,7 @@ mod tests {
             .into_serializer()
             .wrap_in(packet.builder())
             .wrap_in(frame.builder())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         assert_eq!(buffer.as_ref(), ETHERNET_FRAME.bytes);
 
@@ -1642,7 +1659,7 @@ mod tests {
             .into_serializer()
             .wrap_in(packet.builder())
             .wrap_in(frame.builder())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         assert_eq!(buffer.as_ref(), ETHERNET_FRAME.bytes);
 
@@ -2077,7 +2094,7 @@ mod tests {
         let mut buf = (&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
             .into_serializer()
             .wrap_in(builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         // assert that we get the literal bytes we expected
         assert_eq!(
@@ -2140,13 +2157,13 @@ mod tests {
         let mut buf_0 = [0; IPV6_FIXED_HDR_LEN];
         let _: Buf<&mut [u8]> = Buf::new(&mut buf_0[..], IPV6_FIXED_HDR_LEN..)
             .wrap_in(new_builder())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .unwrap_a();
         let mut buf_1 = [0xFF; IPV6_FIXED_HDR_LEN];
         let _: Buf<&mut [u8]> = Buf::new(&mut buf_1[..], IPV6_FIXED_HDR_LEN..)
             .wrap_in(new_builder())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .unwrap_a();
         assert_eq!(&buf_0[..], &buf_1[..]);
@@ -2170,7 +2187,7 @@ mod tests {
                 )
                 .unwrap(),
             )
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap();
         let packet = buf.parse::<Ipv6Packet<_>>().unwrap();
         assert_eq!(packet.proto(), IpProto::Tcp.into());
@@ -2184,7 +2201,7 @@ mod tests {
         // rejected.
         let _: Buf<&mut [u8]> = Buf::new(&mut [0; 1 << 16][..], ..)
             .wrap_in(new_builder())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .unwrap_a();
     }
@@ -2621,7 +2638,7 @@ mod tests {
             .into_serializer()
             .wrap_in(tcp_builder)
             .wrap_in(ipv4_builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("Failed to serialize to v4_pkt_buf");
 
         let v6_tcp_builder = TcpSegmentBuilder::new(
@@ -2638,7 +2655,7 @@ mod tests {
             .into_serializer()
             .wrap_in(v6_tcp_builder)
             .wrap_in(ipv6_builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("Failed to serialize to v4_pkt_buf");
 
         (v4_pkt_buf, v6_pkt_buf)
@@ -2657,7 +2674,7 @@ mod tests {
             assert_matches!(nat64_translation_result, Nat64TranslationResult::Forward(s) => s);
 
         let translated_v4_pkt_buf = serializable_pkt
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("Failed to serialize to translated_v4_pkt_buf");
 
         assert_eq!(
@@ -2689,7 +2706,7 @@ mod tests {
             .into_serializer()
             .wrap_in(v4_udp_builder)
             .wrap_in(ipv4_builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("Unable to serialize to v4_pkt_buf");
 
         let v6_udp_builder =
@@ -2699,7 +2716,7 @@ mod tests {
             .into_serializer()
             .wrap_in(v6_udp_builder)
             .wrap_in(ipv6_builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("Unable to serialize to v6_pkt_buf");
 
         (v4_pkt_buf, v6_pkt_buf)
@@ -2718,7 +2735,7 @@ mod tests {
                                                Nat64TranslationResult::Forward(s) => s);
 
         let translated_v4_pkt_buf = serializable_pkt
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("Unable to serialize to translated_v4_pkt_buf");
 
         assert_eq!(
@@ -2737,13 +2754,13 @@ mod tests {
         let expected_v4_pkt_buf = (&PAYLOAD)
             .into_serializer()
             .wrap_in(ipv4_builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("Unable to serialize to expected_v4_pkt_buf");
 
         let mut v6_pkt_buf = (&PAYLOAD)
             .into_serializer()
             .wrap_in(ipv6_builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("Unable to serialize to v6_pkt_buf");
 
         let translated_v4_pkt_buf = {
@@ -2758,7 +2775,7 @@ mod tests {
                                                    Nat64TranslationResult::Forward(s) => s);
 
             let translated_buf = serializable_pkt
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NoOpSerializationContext)
                 .expect("Unable to serialize to translated_buf");
 
             translated_buf
@@ -2793,8 +2810,11 @@ mod tests {
             more_fragments,
             identification,
         );
-        let mut serialized =
-            builder.wrap_body(PAYLOAD.into_serializer()).serialize_vec_outer().unwrap().unwrap_b();
+        let mut serialized = builder
+            .wrap_body(PAYLOAD.into_serializer())
+            .serialize_vec_outer(&mut NoOpSerializationContext)
+            .unwrap()
+            .unwrap_b();
         let packet = serialized.parse::<Ipv6Packet<_>>().unwrap();
         assert!(packet.fragment_header_present());
         assert_eq!(packet.proto(), Ipv6Proto::Proto(IpProto::Tcp));

@@ -19,8 +19,8 @@ use net_types::ip::{
 use net_types::{MulticastAddr, SpecifiedAddr, Witness as _, map_ip_twice};
 use netstack3_base::{
     AnyDevice, BroadcastIpExt, CounterContext, DeviceIdContext, ExistsError, IpAddressId,
-    IpDeviceAddressIdContext, Ipv4DeviceAddr, Ipv6DeviceAddr, NotFoundError, ReceivableFrameMeta,
-    RecvIpFrameMeta, ReferenceNotifiersExt, RemoveResourceResultWithContext,
+    IpDeviceAddressIdContext, Ipv4DeviceAddr, Ipv6DeviceAddr, NetworkSerializer, NotFoundError,
+    ReceivableFrameMeta, RecvIpFrameMeta, ReferenceNotifiersExt, RemoveResourceResultWithContext,
     ResourceCounterContext, SendFrameError, WeakDeviceIdentifier,
 };
 use netstack3_device::blackhole::{BlackholeDeviceCounters, BlackholeDeviceId};
@@ -53,7 +53,7 @@ use netstack3_ip::nud::{
 use netstack3_ip::{
     self as ip, DeviceIpLayerMetadata, IpPacketDestination, IpRoutingDeviceContext, RawMetric,
 };
-use packet::{BufferMut, Serializer};
+use packet::BufferMut;
 use packet_formats::ethernet::EthernetIpExt;
 
 use crate::context::prelude::*;
@@ -212,7 +212,7 @@ impl<I: BroadcastIpExt, BC: BindingsContext, L: LockBefore<crate::lock_ordering:
         ProofOfEgressCheck { .. }: ProofOfEgressCheck,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut,
     {
         send_ip_frame(self, bindings_ctx, device, destination, ip_layer_metadata, body)
@@ -237,7 +237,7 @@ impl<
         ProofOfEgressCheck { .. }: ProofOfEgressCheck,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut,
     {
         let Self { config: _, core_ctx } = self;
@@ -940,7 +940,7 @@ fn send_ip_frame<BC, S, I, L>(
 ) -> Result<(), SendFrameError<S>>
 where
     BC: BindingsContext,
-    S: Serializer,
+    S: NetworkSerializer,
     S::Buffer: BufferMut,
     I: EthernetIpExt + BroadcastIpExt,
     L: LockBefore<crate::lock_ordering::IpState<I>>

@@ -913,6 +913,7 @@ mod tests {
     use fidl_fuchsia_posix_socket_packet as fppacket;
     use ip_test_macro::ip_test;
     use net_types::Witness;
+    use netstack3_core::NetworkSerializationContext;
     use netstack3_core::ip::Mark;
     use netstack3_core::sync::ResourceTokenValue;
     use netstack3_core::testutil::{self, FakeDeviceId, TestIpExt};
@@ -1173,7 +1174,11 @@ mod tests {
                 )
                 .wrap_body(udp_packet);
                 let serialized = ip_packet
-                    .serialize_new_buf(PacketConstraints::UNCONSTRAINED, packet::new_buf_vec)
+                    .serialize_new_buf(
+                        &mut NetworkSerializationContext::default(),
+                        PacketConstraints::UNCONSTRAINED,
+                        packet::new_buf_vec,
+                    )
                     .expect("Failed to serialize test packet")
                     .into_inner();
                 let mut parts = [&serialized[..]];

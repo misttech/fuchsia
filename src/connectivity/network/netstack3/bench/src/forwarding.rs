@@ -9,12 +9,12 @@
 
 use net_types::Witness as _;
 use net_types::ip::Ipv4;
-use netstack3_base::bench;
 use netstack3_base::testutil::{Bencher, TEST_ADDRS_V4};
+use netstack3_base::{NetworkSerializationContext, bench};
 use netstack3_core::StackStateBuilder;
 use netstack3_core::device::{DeviceId, EthernetLinkDevice, RecvEthernetFrameMeta};
 use netstack3_core::testutil::{CtxPairExt as _, FakeCtxBuilder};
-use packet::{Buf, InnerPacketBuilder, Serializer};
+use packet::{Buf, InnerPacketBuilder, NestableSerializer as _, Serializer};
 use packet_formats::ethernet::testutil::{
     ETHERNET_DST_MAC_BYTE_OFFSET, ETHERNET_HDR_LEN_NO_TAG, ETHERNET_MIN_BODY_LEN_NO_TAG,
     ETHERNET_SRC_MAC_BYTE_OFFSET,
@@ -65,7 +65,7 @@ fn bench_forward_minimum<B: Bencher>(b: &mut B, frame_size: usize) {
             EtherType::Ipv4,
             ETHERNET_HDR_LEN_NO_TAG,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap();
 
     let buf = buf.as_mut();

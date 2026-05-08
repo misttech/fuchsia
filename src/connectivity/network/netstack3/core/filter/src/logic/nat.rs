@@ -1251,8 +1251,8 @@ mod tests {
     use ip_test_macro::ip_test;
     use net_types::ip::{AddrSubnet, Ipv4};
     use netstack3_base::testutil::FakeMatcherDeviceId;
-    use netstack3_base::{IntoCoreTimerCtx, TimerContext};
-    use packet::{EmptyBuf, PacketBuilder, Serializer};
+    use netstack3_base::{IntoCoreTimerCtx, NetworkSerializationContext, TimerContext};
+    use packet::{EmptyBuf, NestableSerializer as _, PacketBuilder, Serializer};
     use packet_formats::ip::{IpPacketBuilder, IpProto};
     use packet_formats::udp::UdpPacketBuilder;
     use test_case::{test_case, test_matrix};
@@ -2553,7 +2553,12 @@ mod tests {
         let mut error_packet = IE::make_serializer(
             redirect_addr,
             I::ULTIMATE_SRC,
-            packet.clone().serialize_vec_outer().unwrap().unwrap_b().into_inner(),
+            packet
+                .clone()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
+                .unwrap()
+                .unwrap_b()
+                .into_inner(),
         )
         .wrap_in(I::PacketBuilder::new(
             redirect_addr,
@@ -2580,7 +2585,11 @@ mod tests {
             // shouldn't end up in the packet destined to the other host.
             I::ULTIMATE_DST,
             I::ULTIMATE_SRC,
-            packet_pre_nat.serialize_vec_outer().unwrap().unwrap_b().into_inner(),
+            packet_pre_nat
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
+                .unwrap()
+                .unwrap_b()
+                .into_inner(),
         )
         .wrap_in(I::PacketBuilder::new(
             I::ULTIMATE_DST,
@@ -2753,7 +2762,12 @@ mod tests {
         let mut error_packet = IE::make_serializer(
             error_src_addr,
             I::ULTIMATE_DST,
-            reply_packet.clone().serialize_vec_outer().unwrap().unwrap_b().into_inner(),
+            reply_packet
+                .clone()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
+                .unwrap()
+                .unwrap_b()
+                .into_inner(),
         )
         .wrap_in(I::PacketBuilder::new(
             error_src_addr,
@@ -2780,7 +2794,11 @@ mod tests {
             // rewritten since it's not one configured for NAT.
             error_src_addr,
             redirect_addr,
-            reply_packet_pre_nat.serialize_vec_outer().unwrap().unwrap_b().into_inner(),
+            reply_packet_pre_nat
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
+                .unwrap()
+                .unwrap_b()
+                .into_inner(),
         )
         .wrap_in(I::PacketBuilder::new(
             error_src_addr,
@@ -2922,7 +2940,12 @@ mod tests {
         let mut error_packet = IE::make_serializer(
             error_src_addr,
             I::NETSTACK,
-            packet.clone().serialize_vec_outer().unwrap().unwrap_b().into_inner(),
+            packet
+                .clone()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
+                .unwrap()
+                .unwrap_b()
+                .into_inner(),
         )
         .wrap_in(I::PacketBuilder::new(error_src_addr, I::NETSTACK, u8::MAX, IE::proto()));
 
@@ -2944,7 +2967,11 @@ mod tests {
             // shouldn't end up in the packet destined to the other host.
             error_src_addr,
             I::ULTIMATE_SRC,
-            packet_pre_nat.serialize_vec_outer().unwrap().unwrap_b().into_inner(),
+            packet_pre_nat
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
+                .unwrap()
+                .unwrap_b()
+                .into_inner(),
         )
         .wrap_in(I::PacketBuilder::new(
             error_src_addr,
@@ -3102,7 +3129,12 @@ mod tests {
         let mut error_packet = IE::make_serializer(
             error_src_addr,
             I::ULTIMATE_DST,
-            reply_packet.clone().serialize_vec_outer().unwrap().unwrap_b().into_inner(),
+            reply_packet
+                .clone()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
+                .unwrap()
+                .unwrap_b()
+                .into_inner(),
         )
         .wrap_in(I::PacketBuilder::new(
             error_src_addr,
@@ -3131,7 +3163,11 @@ mod tests {
                     // shouldn't end up in the packet destined to the other host.
                     I::NETSTACK,
                     I::ULTIMATE_DST,
-                    reply_packet_pre_nat.serialize_vec_outer().unwrap().unwrap_b().into_inner(),
+                    reply_packet_pre_nat
+                        .serialize_vec_outer(&mut NetworkSerializationContext::default())
+                        .unwrap()
+                        .unwrap_b()
+                        .into_inner(),
                 ),
             );
 

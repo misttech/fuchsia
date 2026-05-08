@@ -407,7 +407,10 @@ impl_icmp_message!(
 #[cfg(test)]
 mod tests {
     use core::fmt::Debug;
-    use packet::{InnerPacketBuilder, ParseBuffer, Serializer};
+    use packet::{
+        InnerPacketBuilder, NestableSerializer as _, NoOpSerializationContext, ParseBuffer,
+        Serializer,
+    };
 
     use super::*;
     use crate::icmp::{IcmpMessage, MessageBody};
@@ -427,7 +430,7 @@ mod tests {
             .into_serializer()
             .wrap_in(icmp.builder(src_ip, dst_ip))
             .wrap_in(builder)
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap()
             .as_ref()
             .to_vec()

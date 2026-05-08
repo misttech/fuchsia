@@ -22,8 +22,8 @@ use netstack3_base::{
     InspectableValue, Inspector, InspectorExt, ResourceCounterContext, WeakDeviceIdentifier,
 };
 use netstack3_filter::{self as filter, DynTransportSerializer};
-use packet::InnerPacketBuilder;
-use packet::serialize::{PacketBuilder, Serializer};
+use packet::serialize::PacketBuilder;
+use packet::{InnerPacketBuilder, NestableSerializer as _};
 use packet_formats::icmp::mld::{
     MldPacket, Mldv1Body, Mldv1MessageBuilder, Mldv1MessageType, Mldv2QueryBody,
     Mldv2ReportMessageBuilder, MulticastListenerDone, MulticastListenerReport,
@@ -842,6 +842,7 @@ mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
     use core::cell::RefCell;
+    use packet::Serializer;
 
     use assert_matches::assert_matches;
     use net_types::ethernet::Mac;
@@ -852,7 +853,7 @@ mod tests {
     };
     use netstack3_base::{
         CounterCollection, CounterContext, CtxPair, InstantContext as _, IntoCoreTimerCtx,
-        SendFrameContext,
+        NetworkSerializationContext, NetworkSerializer, SendFrameContext,
     };
     use packet::{Buf, BufferMut, ParseBuffer};
     use packet_formats::gmp::GroupRecordType;
@@ -1035,7 +1036,7 @@ mod tests {
             _body: S,
         ) -> Result<(), IpSendFrameError<S>>
         where
-            S: Serializer,
+            S: NetworkSerializer,
             S::Buffer: BufferMut,
         {
             unimplemented!();
@@ -1163,7 +1164,7 @@ mod tests {
             )
             .into_serializer(),
         )
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .unwrap_b()
     }
@@ -1179,7 +1180,7 @@ mod tests {
         .wrap_body(
             Mldv1MessageBuilder::<MulticastListenerReport>::new(group_addr).into_serializer(),
         )
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .unwrap_b()
     }
@@ -1203,7 +1204,7 @@ mod tests {
             )
             .into_serializer(),
         )
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .unwrap_b()
     }

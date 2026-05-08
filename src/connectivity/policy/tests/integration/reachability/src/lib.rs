@@ -5,11 +5,12 @@
 #![cfg(test)]
 #![deny(clippy::await_holding_refcell_ref)]
 
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin,
-    fidl_fuchsia_net_neighbor as fnet_neighbor, fidl_fuchsia_net_reachability as fnet_reachability,
-    fidl_fuchsia_testing as ftesting, fuchsia_async as fasync,
-};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use fidl_fuchsia_net_neighbor as fnet_neighbor;
+use fidl_fuchsia_net_reachability as fnet_reachability;
+use fidl_fuchsia_testing as ftesting;
+use fuchsia_async as fasync;
 
 use assert_matches::assert_matches;
 use fidl::endpoints::Proxy;
@@ -24,7 +25,10 @@ use netstack_testing_common::realms::{
 };
 use netstack_testing_common::{get_inspect_data, interfaces, wait_for_component_stopped};
 use netstack_testing_macros::netstack_test;
-use packet::{Buf, InnerPacketBuilder as _, Serializer as _};
+use packet::{
+    Buf, InnerPacketBuilder as _, NestableSerializer as _, NoOpSerializationContext,
+    Serializer as _,
+};
 use packet_formats::ethernet::{
     ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrameBuilder, EthernetFrameLengthCheck,
 };
@@ -134,7 +138,7 @@ fn reply_if_echo_request(
                         EtherType::Ipv4,
                         ETHERNET_MIN_BODY_LEN_NO_TAG,
                     ))
-                    .serialize_vec_outer()
+                    .serialize_vec_outer(&mut NoOpSerializationContext)
                     .expect("failed to serialize ICMPv4 packet")
                     .unwrap_b()
             });
@@ -184,7 +188,7 @@ fn reply_if_echo_request(
                         EtherType::Ipv6,
                         ETHERNET_MIN_BODY_LEN_NO_TAG,
                     ))
-                    .serialize_vec_outer()
+                    .serialize_vec_outer(&mut NoOpSerializationContext)
                     .expect("failed to serialize ICMPv6 packet")
                     .unwrap_b()
             });

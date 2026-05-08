@@ -17,17 +17,17 @@ use netstack3_base::ref_counted_hash_map::{InsertResult, RefCountedHashSet, Remo
 use netstack3_base::sync::{Mutex, RwLock};
 use netstack3_base::{
     BroadcastIpExt, CoreTimerContext, Device, DeviceIdContext, EventContext, FrameDestination,
-    HandleableTimer, LinkDevice, NestedIntoCoreTimerCtx, ReceivableFrameMeta, RecvFrameContext,
-    RecvIpFrameMeta, ResourceCounterContext, RngContext, SendFrameError, SendFrameErrorReason,
-    SendableFrameMeta, TimerContext, TimerHandler, TxMetadataBindingsTypes, WeakDeviceIdentifier,
-    WrapBroadcastMarker,
+    HandleableTimer, LinkDevice, NestedIntoCoreTimerCtx, NetworkSerializer, ReceivableFrameMeta,
+    RecvFrameContext, RecvIpFrameMeta, ResourceCounterContext, RngContext, SendFrameError,
+    SendFrameErrorReason, SendableFrameMeta, TimerContext, TimerHandler, TxMetadataBindingsTypes,
+    WeakDeviceIdentifier, WrapBroadcastMarker,
 };
 use netstack3_ip::nud::{
     LinkResolutionContext, NudBindingsTypes, NudHandler, NudState, NudTimerId, NudUserConfig,
 };
 use netstack3_ip::{DeviceIpLayerMetadata, IpPacketDestination};
 use netstack3_trace::trace_duration;
-use packet::{Buf, BufferMut, PacketBuilder, Serializer};
+use packet::{Buf, BufferMut, NestableSerializer as _, PacketBuilder};
 use packet_formats::arp::{ArpHardwareType, ArpNetworkType, peek_arp_types};
 use packet_formats::ethernet::{
     ETHERNET_HDR_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,
@@ -157,7 +157,7 @@ pub fn send_as_ethernet_frame_to_dst<S, BC, CC>(
     meta: BC::TxMetadata,
 ) -> Result<(), SendFrameError<S>>
 where
-    S: Serializer,
+    S: NetworkSerializer,
     S::Buffer: BufferMut,
     BC: EthernetIpLinkDeviceBindingsContext,
     CC: EthernetIpLinkDeviceDynamicStateContext<BC>
@@ -188,7 +188,7 @@ fn send_ethernet_frame<S, BC, CC>(
     meta: BC::TxMetadata,
 ) -> Result<(), SendFrameError<S>>
 where
-    S: Serializer,
+    S: NetworkSerializer,
     S::Buffer: BufferMut,
     BC: EthernetIpLinkDeviceBindingsContext,
     CC: EthernetIpLinkDeviceDynamicStateContext<BC>
@@ -442,7 +442,7 @@ where
         + TransmitQueueHandler<EthernetLinkDevice, BC, Meta = BC::TxMetadata>
         + ResourceCounterContext<CC::DeviceId, DeviceCounters>,
     I: EthernetIpExt + BroadcastIpExt,
-    S: Serializer,
+    S: NetworkSerializer,
     S::Buffer: BufferMut,
 {
     core_ctx.increment_both(device_id, DeviceCounters::send_frame::<I>);
@@ -772,7 +772,7 @@ impl<
         body: S,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut,
     {
         let Self { device_id, dst_addr } = self;
@@ -811,7 +811,7 @@ where
         body: S,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut,
     {
         let Self { device_id, metadata } = self;
@@ -1265,7 +1265,7 @@ mod tests {
             tx_meta: FakeTxMetadata,
         ) -> Result<(), SendFrameError<S>>
         where
-            S: Serializer,
+            S: NetworkSerializer,
             S::Buffer: BufferMut,
         {
             let Self { core_ctx, device_id } = self;

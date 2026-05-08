@@ -21,6 +21,7 @@ use netstack3_base::testutil::{
 };
 use netstack3_base::{
     FrameDestination, InstantContext as _, IpAddressId as _, IpDeviceAddr, LocalAddressError,
+    NetworkSerializationContext,
 };
 use netstack3_core::device::{
     DeviceId, EthernetCreationProperties, EthernetDeviceEvent, EthernetLinkDevice,
@@ -1136,7 +1137,7 @@ fn receive_ipv4_packet(ctx: &mut FakeCtx, device_id: &DeviceId<FakeBindingsCtx>)
         IpProto::Udp.into(),
     )
     .wrap_body(Buf::new(vec![0; 10], ..))
-    .serialize_vec_outer()
+    .serialize_vec_outer(&mut NetworkSerializationContext::default())
     .unwrap()
     .into_inner();
 

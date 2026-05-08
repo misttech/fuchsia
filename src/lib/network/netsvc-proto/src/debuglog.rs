@@ -144,7 +144,7 @@ impl<'a> PacketBuilder for LogPacketBuilder<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use packet::{ParseBuffer as _, Serializer as _};
+    use packet::{NoOpSerializationContext, ParseBuffer as _, Serializer as _};
 
     /// Helper to convince the compiler we're holding buffer views.
     fn as_buffer_view<'a, B: packet::BufferView<&'a [u8]>>(
@@ -160,7 +160,7 @@ mod tests {
         let mut log = LogPacketBuilder::new(3, NODENAME)
             .unwrap()
             .wrap_body(LOG_DATA.as_bytes().into_serializer())
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("Failed to serialize"));
         let packet = log.parse::<DebugLogPacket<_>>().expect("Failed to parse");
         assert_eq!(packet.seqno(), 3);
@@ -173,7 +173,7 @@ mod tests {
         const SEQNO: u32 = 4;
         let ack = AckPacketBuilder::new(SEQNO)
             .into_serializer()
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .unwrap_or_else(|_| panic!("Failed to serialize"));
         let mut bv = ack.as_ref();
         let head = as_buffer_view(&mut bv)

@@ -10,9 +10,10 @@ use net_types::{BroadcastAddr, MulticastAddr};
 
 use core::convert::Infallible as Never;
 use core::fmt::Debug;
-use packet::{BufferMut, SerializeError, Serializer};
+use packet::{BufferMut, SerializeError};
 use thiserror::Error;
 
+use crate::NetworkSerializer;
 use crate::error::ErrorAndSerializer;
 use crate::socket::SocketCookie;
 
@@ -113,7 +114,7 @@ pub trait SendFrameContext<BC, Meta> {
         frame: S,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut;
 }
 
@@ -133,7 +134,7 @@ pub trait SendableFrameMeta<CC, BC> {
         frame: S,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut;
 }
 
@@ -148,7 +149,7 @@ where
         frame: S,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut,
     {
         metadata.send_meta(self, bindings_ctx, frame)
@@ -280,6 +281,7 @@ pub(crate) mod testutil {
     use alloc::boxed::Box;
     use alloc::vec::Vec;
 
+    use crate::packet::NetworkSerializationContext;
     use crate::testutil::FakeBindingsCtx;
 
     /// A fake [`FrameContext`].
@@ -333,7 +335,7 @@ pub(crate) mod testutil {
             frame: S,
         ) -> Result<(), SendFrameError<S>>
         where
-            S: Serializer,
+            S: NetworkSerializer,
             S::Buffer: BufferMut,
         {
             if let Some(error) = core_ctx.should_error_for_frame.as_mut().and_then(|f| f(&self)) {
@@ -341,7 +343,7 @@ pub(crate) mod testutil {
             }
 
             let buffer = frame
-                .serialize_vec_outer()
+                .serialize_vec_outer(&mut NetworkSerializationContext::default())
                 .map_err(|(e, serializer)| SendFrameError { error: e.into(), serializer })?;
             core_ctx.push(self, buffer.as_ref().to_vec());
             Ok(())

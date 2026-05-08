@@ -15,6 +15,7 @@ use net_declare::{net_ip_v4, net_ip_v6, net_mac, net_subnet_v4, net_subnet_v6};
 use net_types::ethernet::Mac;
 use net_types::ip::{Ipv4, Ipv6, Subnet};
 use net_types::{SpecifiedAddr, UnicastAddr, Witness as _, ZonedAddr};
+use netstack3_base::NetworkSerializationContext;
 use netstack3_core::CtxPair;
 use netstack3_core::device::{EthernetLinkDevice, RecvEthernetFrameMeta};
 use netstack3_core::routes::{AddableEntry, AddableMetric, RawMetric};
@@ -22,7 +23,9 @@ use netstack3_core::testutil::{CtxPairExt as _, FakeBindingsCtx, FakeCtx, FakeCt
 use netstack3_ip::icmp::testutil::{
     neighbor_advertisement_ip_packet, neighbor_solicitation_ip_packet,
 };
-use packet::{Buf, InnerPacketBuilder as _, ParseBuffer as _, Serializer as _};
+use packet::{
+    Buf, InnerPacketBuilder as _, NestableSerializer as _, ParseBuffer as _, Serializer as _,
+};
 use packet_formats::arp::{ArpOp, ArpPacketBuilder};
 use packet_formats::ethernet::{
     ETHERNET_MIN_BODY_LEN_NO_TAG, EtherType, EthernetFrameBuilder, EthernetFrameLengthCheck,
@@ -113,7 +116,7 @@ impl TestIpExt for Ipv4 {
         )
         .into_serializer()
         .wrap_in(EthernetFrameBuilder::new(DEVICE_MAC, Mac::BROADCAST, EtherType::Arp, 0))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .unwrap_b()
     }
@@ -133,7 +136,7 @@ impl TestIpExt for Ipv4 {
             EtherType::Arp,
             ETHERNET_MIN_BODY_LEN_NO_TAG,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .unwrap_b()
     }
@@ -159,7 +162,7 @@ impl TestIpExt for Ipv6 {
             EtherType::Ipv6,
             ETHERNET_MIN_BODY_LEN_NO_TAG,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .unwrap_b()
     }
@@ -179,7 +182,7 @@ impl TestIpExt for Ipv6 {
             EtherType::Ipv6,
             ETHERNET_MIN_BODY_LEN_NO_TAG,
         ))
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .unwrap()
         .unwrap_b()
     }

@@ -13,13 +13,13 @@ use log::debug;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6, Mtu};
 use netstack3_base::sync::{Mutex, RwLock};
 use netstack3_base::{
-    BroadcastIpExt, CoreTimerContext, Device, DeviceIdContext, ReceivableFrameMeta,
-    RecvFrameContext, RecvIpFrameMeta, ResourceCounterContext, SendFrameError,
+    BroadcastIpExt, CoreTimerContext, Device, DeviceIdContext, NetworkSerializer,
+    ReceivableFrameMeta, RecvFrameContext, RecvIpFrameMeta, ResourceCounterContext, SendFrameError,
     SendFrameErrorReason, SendableFrameMeta, TimerContext, TxMetadataBindingsTypes,
     WeakDeviceIdentifier,
 };
 use netstack3_ip::{DeviceIpLayerMetadata, IpPacketDestination};
-use packet::{Buf, BufferMut, Serializer};
+use packet::{Buf, BufferMut};
 
 use crate::internal::base::{
     DeviceCounters, DeviceLayerTypes, DeviceReceiveFrameSpec, PureIpDeviceCounters,
@@ -235,7 +235,7 @@ where
         body: S,
     ) -> Result<(), SendFrameError<S>>
     where
-        S: Serializer,
+        S: NetworkSerializer,
         S::Buffer: BufferMut,
     {
         let Self { device_id, metadata: PureIpHeaderParams { ip_version } } = self;
@@ -264,7 +264,7 @@ where
     CC: TransmitQueueHandler<PureIpDevice, BC, Meta = PureIpDeviceTxQueueFrameMetadata<BC>>
         + ResourceCounterContext<CC::DeviceId, DeviceCounters>,
     I: Ip + BroadcastIpExt,
-    S: Serializer,
+    S: NetworkSerializer,
     S::Buffer: BufferMut,
 {
     core_ctx.increment_both(device_id, |counters| &counters.send_total_frames);
@@ -294,7 +294,7 @@ where
         + ResourceCounterContext<CC::DeviceId, DeviceCounters>,
     BC: TxMetadataBindingsTypes,
     I: Ip,
-    S: Serializer,
+    S: NetworkSerializer,
     S::Buffer: BufferMut,
 {
     let result = TransmitQueueHandler::<PureIpDevice, _>::queue_tx_frame(

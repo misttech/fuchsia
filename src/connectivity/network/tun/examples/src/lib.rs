@@ -312,7 +312,8 @@ mod helpers {
     use net_types::ethernet::Mac;
     use net_types::ip::{Ipv4, Ipv4Addr};
     use packet::{
-        InnerPacketBuilder as _, PacketBuilder as _, ParsablePacket as _, Serializer as _,
+        InnerPacketBuilder as _, NestableSerializer as _, NoOpSerializationContext,
+        PacketBuilder as _, ParsablePacket as _, Serializer as _,
     };
     use packet_formats::arp::{ArpOp, ArpPacket, ArpPacketBuilder};
     use packet_formats::ethernet::{
@@ -362,7 +363,7 @@ mod helpers {
                 EtherType::Ipv4,
                 ETHERNET_MIN_BODY_LEN_NO_TAG,
             ))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("serialization failed")
             .as_ref()
             .to_vec()
@@ -381,7 +382,7 @@ mod helpers {
                 IcmpEchoRequest::new(ICMP_ID, ICMP_SEQNUM),
             ))
             .wrap_in(Ipv4PacketBuilder::new(bob_ip, alice_ip, 1, Ipv4Proto::Icmp))
-            .serialize_vec_outer()
+            .serialize_vec_outer(&mut NoOpSerializationContext)
             .expect("serialization failed")
             .as_ref()
             .to_vec()
@@ -494,7 +495,7 @@ mod helpers {
             )
             .into_serializer(),
         )
-        .serialize_vec_outer()
+        .serialize_vec_outer(&mut NoOpSerializationContext)
         .expect("serialization failed")
         .as_ref()
         .to_vec()
