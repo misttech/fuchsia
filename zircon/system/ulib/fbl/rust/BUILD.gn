@@ -21,6 +21,7 @@ rustc_library("fbl") {
     "src/ref_counted.rs",
     "src/ref_ptr.rs",
     "src/ring_buffer.rs",
+    "src/string_buffer.rs",
     "src/vector.rs",
   ]
   with_unit_tests = true

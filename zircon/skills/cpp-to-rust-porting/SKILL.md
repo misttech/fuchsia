@@ -17,6 +17,8 @@ kernel and library code from C++ to Rust.
 2.  **Memory Layout Parity**: The memory layout of Rust structs must match
     corresponding C++ objects exactly.
 3.  **Test Parity**: Test coverage for Rust code must match C++ code exactly.
+    Always cross-check Rust test coverage against the corresponding C++ tests
+    and close any gaps by adding more tests to the Rust side.
 4.  **Ergonomic Design**: The Rust code should be ergonomic and follow Rust best
     practices where they don't conflict with layout or behavior requirements.
 5.  **DRY Principle**: Apply "Don't Repeat Yourself" to minimize duplication.
@@ -77,3 +79,33 @@ To verify that Rust implementations are compatible with C++:
 When using `unsafe` blocks, always add a `// SAFETY:` comment explaining why the
 block is safe. This is especially important when porting C++ code where memory
 safety depends on invariants not checked by the compiler.
+
+### 6. Workaround for Generic Const Expressions
+
+Stable Rust does not allow generic parameters in const operations (e.g., `[u8; N
++ 1]`). When porting C++ templates that use a capacity `N` and allocate `N + 1`
+  elements for a null terminator:
+- Let the Rust generic parameter `N` represent the **total size** of the backing
+  array.
+- Document that a C++ `Type<M>` corresponds to a Rust `Type<{M + 1}>`.
+- The Rust implementation will have a capacity of `N - 1`.
+
+### 7. Ergonomic Design via `Deref`
+
+When porting collection-like or string-like C++ structures:
+- Avoid porting methods like `data()`, `length()`, or custom indexing directly
+  if they can be provided by `Deref` and `DerefMut` to a slice (e.g., `[u8]` or
+  `[T]`).
+- Implementing `Deref` automatically provides `len()`, `is_empty()`, and
+  standard indexing, making the Rust code more idiomatic.
+
+### 8. Avoid Redundant Initialization
+
+When initializing an array with `[0; N]`, do not explicitly set elements to `0`
+immediately after, as they are already zero-initialized.
+
+### 9. Namespace Usage
+
+Prefer adding `use` directives at the top of the file rather than writing out
+fully qualified namespaces (e.g., `core::ffi::CStr`) for everything explicitly.
+This makes the code more compact and readable.

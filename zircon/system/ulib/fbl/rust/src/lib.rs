@@ -18,6 +18,7 @@ mod recyclable;
 mod ref_counted;
 mod ref_ptr;
 mod ring_buffer;
+mod string_buffer;
 mod vector;
 
 pub use array::Array;
@@ -31,4 +32,5 @@ pub use recyclable::Recyclable;
 pub use ref_counted::{HasRefCount, RefCounted};
 pub use ref_ptr::RefPtr;
 pub use ring_buffer::RingBuffer;
+pub use string_buffer::StringBuffer;
 pub use vector::Vector;
