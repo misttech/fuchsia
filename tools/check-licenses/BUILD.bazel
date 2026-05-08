@@ -99,6 +99,7 @@ go_library(
         "v2/readme/rust.go",
         "v2/readme/types.go",
         "v2/readme/update.go",
+        "v2/readme/validate.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme",
     target_compatible_with = HOST_CONSTRAINTS,

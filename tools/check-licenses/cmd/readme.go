@@ -86,46 +86,10 @@ func (c *ReadmeCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 	formattedBytes := []byte(formattedText)
 
 	// Run Validation Checks for both 'check' and 'format'
-	hasValidationErrors := false
-	for i, r := range readmes {
-		// Check 1: Unknown fields
-		if len(r.UnknownFields) > 0 {
-			fmt.Fprintf(os.Stderr, "❌ Error (Readme %d): Found unknown/invalid fields: %+v\n", i+1, r.UnknownFields)
-			hasValidationErrors = true
-		}
-
-		// Check 2: Required Fields
-		if r.Name == "" {
-			fmt.Fprintf(os.Stderr, "❌ Error (Readme %d): 'Name' is a required field.\n", i+1)
-			hasValidationErrors = true
-		}
-		if r.URL == "" {
-			fmt.Fprintf(os.Stderr, "❌ Error (Readme %d): 'URL' is a required field.\n", i+1)
-			hasValidationErrors = true
-		}
-		if r.Version == "" {
-			fmt.Fprintf(os.Stderr, "❌ Error (Readme %d): 'Version' is a required field.\n", i+1)
-			hasValidationErrors = true
-		}
-		if r.SecurityCritical != "yes" && r.SecurityCritical != "no" {
-			fmt.Fprintf(os.Stderr, "❌ Error (Readme %d): 'Security Critical' is required and must be exactly 'yes' or 'no'. Got: %q\n", i+1, r.SecurityCritical)
-			hasValidationErrors = true
-		}
-		if i > 0 && r.Location == "" {
-			fmt.Fprintf(os.Stderr, "❌ Error (Readme %d): 'Location' is a required field for sub-projects defined after a DEPENDENCY DIVIDER.\n", i+1)
-			hasValidationErrors = true
-		}
-		if len(r.LicenseFiles) == 0 {
-			fmt.Fprintf(os.Stderr, "❌ Error (Readme %d): At least one 'License File' must be specified.\n", i+1)
-			hasValidationErrors = true
-		} else {
-			for _, lf := range r.LicenseFiles {
-				if lf.License == "" {
-					fmt.Fprintf(os.Stderr, "❌ Error (Readme %d): License File '%s' is missing required '  License:' metadata.\n", i+1, lf.Path)
-					hasValidationErrors = true
-				}
-			}
-		}
+	errs := readme.Validate(readmes)
+	hasValidationErrors := len(errs) > 0
+	for _, err := range errs {
+		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
 	}
 
 	// Action: Check
