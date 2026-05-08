@@ -15,9 +15,18 @@ const MAX_NAME_LENGTH uint32 = 256;
 /// assign the ids in the driver, so it will be the driver author's
 /// responsibility to assign sensible ids.
 type DeviceInformation = table {
+    /// Required.
     1: vendor_id uint32;
+
+    /// Required.
     2: product_id uint32;
+
+    /// Optional.
     3: version uint32;
+
+    /// The time interval between each poll of the device.
+    ///
+    /// Optional.
     4: polling_rate zx.Duration;
 
     /// Human-readable name of the manufacturer. Optional.
@@ -40,25 +49,35 @@ type DeviceInformation = table {
 /// send multiple types of reports (E.g: a physical touchscreen can send touch and
 /// stylus reports, so it will have both a TouchDescriptor and a StylusDescriptor).
 type DeviceDescriptor = table {
-    /// When `mouse` is present the device has a mouse.
+    /// Describes the mouse part of the device.
+    ///
+    /// Optional. Present iff the device is/has a mouse.
     2: mouse MouseDescriptor;
 
-    /// When `sensor` is present the device has a sensor.
+    /// Describes the sensor part of the device.
+    ///
+    /// Optional. Present iff the device is/has a sensor.
     3: sensor SensorDescriptor;
 
-    /// When `touch` is present the device has a touch device.
-    /// (E.g: Touchscreen, touchpad).
+    /// Describes the touch part (such as a touchscreen or touchpad) of the
+    /// device.
+    ///
+    /// Optional. Present iff the device is/has a touch device.
     4: touch TouchDescriptor;
 
-    /// When `keyboard` is present the device has a keyboard.
+    /// Describes the keyboard part of the device.
+    ///
+    /// Optional. Present iff the device is/has a keyboard.
     5: keyboard KeyboardDescriptor;
 
-    /// When `consumer_control` is present the device has a ConsumerControl
-    /// device.
+    /// Describes the consumer control part of the device.
+    ///
+    /// Optional. Present iff the device is/has a consumer control device.
     6: consumer_control ConsumerControlDescriptor;
 
-    /// `device_information` should always be present to help distinguish
-    /// between physical devices.
+    /// Identifies the physical device.
+    ///
+    /// Required.
     7: device_information DeviceInformation;
 };
 
@@ -66,5 +85,8 @@ type DeviceDescriptor = table {
 /// Output information typically represents device output to the user
 /// (E.g: LEDs, tactile feedback, etc).
 type OutputDescriptor = table {
+    /// Describes the keyboard output part of the device.
+    ///
+    /// Optional. Present iff the device is/has a keyboard.
     1: keyboard KeyboardOutputDescriptor;
 };

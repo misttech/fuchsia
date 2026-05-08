@@ -10,24 +10,37 @@ using zx;
 /// types are not mutually exclusive. The `event_time` is the time in
 /// nanoseconds when the report was generated.
 type InputReport = resource(added=HEAD) table {
-    /// `event_time` is in nanoseconds when the event was recorded.
+    /// The monotonic time when the event was generated.
+    ///
+    /// Required.
+    // TODO(https://fxbug.dev/120125569): Use zx.InstantMono.
     1: event_time zx.Time;
-    /// `mouse` is the report generated if the device contains a mouse.
+
+    /// Optional. Present iff the device reports mouse input.
     2: mouse MouseInputReport;
-    /// `sensor` is the report generated if the device contains a sensor.
+
+    /// Optional. Present iff the device reports sensor input.
     4: sensor SensorInputReport;
-    /// `touch` is the report generated if the device contains a touch device.
+
+    /// Optional. Present iff the device reports touch input.
     5: touch TouchInputReport;
-    /// `keyboard` is the report generated if the device contains a keyboard.
+
+    /// Optional. Present iff the device reports keyboard input.
     6: keyboard KeyboardInputReport;
-    /// `consumer_controls` is the report generated if the device contains a
-    /// ConsumerControl device.
+
+    /// Optional. Present iff the device reports consumer control input.
     7: consumer_control ConsumerControlInputReport;
 
     /// Unique ID to connect trace async begin/end events.
+    ///
+    /// Optional.
     3: trace_id uint64;
-    /// The Descriptor that describes this InputReport will have a matching
-    /// ReportID. If this doesn't exist, report_id is 0.
+
+    /// A device may have multiple input descriptors of the same type. This
+    /// field specifies which descriptor this InputReport corresponds to.
+    /// Omitted if the device has no more than one descriptor for each type.
+    ///
+    /// Optional.
     8: report_id uint8;
 
     /// Optional wake lease for power baton passing.
@@ -39,6 +52,7 @@ type InputReport = resource(added=HEAD) table {
 /// Output information typically represents device output to the user
 /// (E.g: LEDs, tactile feedback, etc).
 type OutputReport = table {
+    /// Optional. Present iff the device is/has a keyboard.
     1: keyboard KeyboardOutputReport;
 };
 
@@ -47,7 +61,9 @@ type OutputReport = table {
 /// device. Sending a feature report to the device sets the device in that
 /// state.
 type FeatureReport = table {
+    /// Optional. Present iff the device is/has a sensor.
     1: sensor SensorFeatureReport;
 
+    /// Optional. Present iff the device is/has a touch device.
     2: touch TouchFeatureReport;
 };

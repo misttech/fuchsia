@@ -52,11 +52,16 @@ type SensorAxis = struct {
 /// Describes the format of the input report that will be sent from the sensor
 /// to the device.
 type SensorInputDescriptor = table {
-    /// Each `SensorAxis` in `values` describes what a sensor is measuring and its range.
-    /// These will directly correspond to the values in `SensorReport`.
+    /// Describes the ranges of the values that the sensor device reports.
+    /// Must not be empty.
+    ///
+    /// Required.
     1: values vector<SensorAxis>:SENSOR_MAX_VALUES;
-    /// ReportID of current descriptor. Report with same report ID should be
-    /// associated with this descriptor.
+
+    /// A sensor may have multiple input descriptors of the same type.
+    /// Reports with the same report ID are associated with this descriptor.
+    ///
+    /// Required iff the sensor has more than one input descriptors.
     2: report_id uint8;
 };
 
@@ -73,36 +78,72 @@ type SensorReportingState = flexible enum : uint32 {
 
 /// Describes the format of the sensor's feature report. Feature reports can be
 /// requested from the sensor, or sent to the sensor.
+///
+/// At least one of the fields below must be present.
 type SensorFeatureDescriptor = table {
-    /// Describes the minimum and maximum reporting interval this sensor
-    /// supports.
+    /// Valid range of the reporting interval for the given `SensorType`.
+    ///
+    /// Optional. Present iff sensor supports getting/setting the reporting
+    /// interval.
     1: report_interval Axis;
-    /// If this is true then SensorFeatureReport supports setting a
-    /// SensorReportingState.
+
+    /// True iff `SensorFeatureReport` supports setting/getting the
+    /// `SensorReportingState`.
+    ///
+    /// Optional. Present iff sensor supports getting/setting the reporting
+    /// state.
     3: supports_reporting_state bool;
-    /// Sets the sensitivity for the given `SensorType`.
+
+    /// Valid range of the sensitivity for the given `SensorType`.
+    ///
+    /// Optional. Present iff sensor supports getting/setting the sensitivity.
     2: sensitivity vector<SensorAxis>:SENSOR_MAX_VALUES;
-    /// Sets the high threshold values for the given `SensorType`.
+
+    /// Valid range of the high threshold values for the given `SensorType`.
+    ///
+    /// Optional. Present iff sensor supports getting/setting the high
+    /// threshold values.
     4: threshold_high vector<SensorAxis>:SENSOR_MAX_VALUES;
-    /// Sets the low threshold values for the given `SensorType`.
+
+    /// Valid range of the low threshold values for the given `SensorType`.
+    ///
+    /// Optional. Present iff sensor supports getting/setting the low
+    /// threshold values.
     5: threshold_low vector<SensorAxis>:SENSOR_MAX_VALUES;
-    /// Describes the minimum and maximum sampling rate this sensor supports.
+
+    /// Valid range of sampling rates this sensor supports.
+    ///
+    /// Optional. Present iff sensor supports getting/setting the sampling
+    /// rate.
     6: sampling_rate Axis;
-    /// ReportID of current descriptor. Report with same report ID should be
-    /// associated with this descriptor.
+
+    /// A sensor may have multiple feature descriptors of the same type.
+    /// Reports with the same report ID are associated with this descriptor.
+    ///
+    /// Required iff the sensor has more than one feature descriptors.
     7: report_id uint8;
 };
 
 /// The capabilities of a sensor device.
 type SensorDescriptor = table {
+    /// Input descriptors.
+    ///
+    /// Must not be empty.
     1: input vector<SensorInputDescriptor>:MAX_REPORT_COUNT;
+
+    /// Feature descriptors.
+    ///
+    /// Optional. Present iff sensor supports getting/setting features of the
+    /// sensor.
     2: feature vector<SensorFeatureDescriptor>:MAX_REPORT_COUNT;
 };
 
 /// `SensorReport` gives the values measured by a sensor at a given point in time.
 type SensorInputReport = table {
-    /// The ordering of `values` will always directly correspond to the ordering of
-    /// the values in `SensorDescriptor`.
+    /// The size and ordering of `values` must match the sensor axes in
+    /// `SensorDescriptor`.
+    ///
+    /// Required.
     1: values vector<int64>:SENSOR_MAX_VALUES;
 };
 
@@ -110,20 +151,50 @@ type SensorInputReport = table {
 /// FeatureReport is sent to the Input Device it sets the configuration of the device.
 /// If a FeatureReport is requested from the Input Device it shows the device's
 /// current configuration.
+///
+/// At least one of the fields below must be present.
 type SensorFeatureReport = table {
-    /// The time between reports sent by the sensor.
+    /// The time between reports sent by the sensor, in microseconds.
+    ///
+    /// Must fall within the range specified in the descriptor's `report_interval`.
+    ///
+    /// Optional.
+    // TODO(https://fxbug.dev/506351590): Fix the incorrect unit.
     1: report_interval int64;
-    /// This determines when the sensor will send reports.
+
+    /// Determines when the sensor will send reports.
+    ///
+    /// Optional.
     3: reporting_state SensorReportingState;
-    /// The sensitivity for various `SensorType`. This vector must be given in
-    /// the order of the descriptor's `sensitivity` vector.
+
+    /// The sensitivity for various `SensorType`. The order of the values
+    /// must match the sensor axes in `SensorDescriptor`.
+    ///
+    /// Must fall within the range specified in the descriptor's `sensitivity`.
+    ///
+    /// Optional.
+    // TODO(https://fxbug.dev/506351590): Fix the incorrect unit.
     2: sensitivity vector<int64>:SENSOR_MAX_VALUES;
-    /// The high thresholds for various `SensorType`. This vector must be given in
-    /// the order of the descriptor's `threshold_high` vector.
+
+    /// The high thresholds for various `SensorType`. The order must match the
+    /// sensor axes in `SensorDescriptor`.
+    ///
+    /// Must fall within the range specified in the descriptor's `threshold_high`.
+    ///
+    /// Optional.
+    // TODO(https://fxbug.dev/506351590): Fix the incorrect unit.
     4: threshold_high vector<int64>:SENSOR_MAX_VALUES;
-    /// The low thresholds for various `SensorType`. This vector must be given in
-    /// the order of the descriptor's `threshold_low` vector.
+
+    /// The low thresholds for various `SensorType`. The order must match the
+    /// sensor axes in `SensorDescriptor`.
+    ///
+    /// Optional.
+    // TODO(https://fxbug.dev/506351590): Fix the incorrect unit.
     5: threshold_low vector<int64>:SENSOR_MAX_VALUES;
+
     /// The rate at which the sensor is sampled.
+    ///
+    /// Optional.
+    // TODO(https://fxbug.dev/506351590): Fix the incorrect unit.
     6: sampling_rate int64;
 };
