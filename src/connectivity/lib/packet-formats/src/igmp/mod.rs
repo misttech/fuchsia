@@ -29,7 +29,8 @@ use internet_checksum::Checksum;
 use net_types::ip::Ipv4Addr;
 use packet::{
     AsFragmentedByteSlice, BufferView, FragmentedByteSlice, FragmentedBytesMut, InnerPacketBuilder,
-    PacketBuilder, PacketConstraints, ParsablePacket, ParseMetadata, SerializeTarget,
+    NestablePacketBuilder, NoOpSerializationContext, PacketBuilder, PacketConstraints,
+    ParsablePacket, ParseMetadata, SerializationContext, SerializeTarget,
 };
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SplitByteSlice, Unaligned};
 
@@ -202,16 +203,27 @@ impl<B, M: MessageType<B, VariableBody = ()>> InnerPacketBuilder for IgmpPacketB
     }
 }
 
-impl<B, M: MessageType<B>> PacketBuilder for IgmpPacketBuilder<B, M>
+/// A trait for IGMP serialization contexts.
+pub trait IgmpSerializationContext: SerializationContext {}
+
+impl IgmpSerializationContext for NoOpSerializationContext {}
+
+impl<B, M: MessageType<B>> NestablePacketBuilder for IgmpPacketBuilder<B, M>
 where
     M::VariableBody: IgmpNonEmptyBody,
 {
     fn constraints(&self) -> PacketConstraints {
         PacketConstraints::new(total_header_size::<M::FixedHeader>(), 0, 0, core::usize::MAX)
     }
+}
 
+impl<B, M: MessageType<B>, C: IgmpSerializationContext> PacketBuilder<C> for IgmpPacketBuilder<B, M>
+where
+    M::VariableBody: IgmpNonEmptyBody,
+{
     fn serialize(
         &self,
+        _context: &mut C,
         target: &mut SerializeTarget<'_>,
         message_body: FragmentedBytesMut<'_, '_>,
     ) {
@@ -381,7 +393,7 @@ pub fn peek_message_type<MessageType: TryFrom<u8>>(
 #[cfg(test)]
 mod tests {
 
-    use packet::{NoOpSerializationContext, PacketBuilder, ParseBuffer, Serializer};
+    use packet::{NestablePacketBuilder as _, NoOpSerializationContext, ParseBuffer, Serializer};
 
     use super::*;
     use crate::igmp::messages::*;

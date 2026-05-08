@@ -8,7 +8,8 @@ use std::num::NonZeroU16;
 use itertools::Itertools as _;
 use net_types::ip::IpVersion;
 use packet::{
-    Buf, BufferAlloc, InnerPacketBuilder as _, PacketBuilder as _, ParseBuffer, ReusableBuffer,
+    Buf, BufferAlloc, InnerPacketBuilder as _, NestablePacketBuilder as _, ParseBuffer,
+    ReusableBuffer,
 };
 use packet_formats::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
 use packet_formats::ip::{IpPacket, IpProto};

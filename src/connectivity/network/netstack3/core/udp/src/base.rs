@@ -63,7 +63,9 @@ use netstack3_ip::{
     TransportIpContext,
 };
 use netstack3_trace::trace_duration;
-use packet::{BufferMut, FragmentedByteSlice, Nested, PacketBuilder, ParsablePacket, ParseBuffer};
+use packet::{
+    BufferMut, FragmentedByteSlice, NestablePacketBuilder as _, Nested, ParsablePacket, ParseBuffer,
+};
 use packet_formats::ip::{DscpAndEcn, IpProto, IpProtoExt};
 use packet_formats::udp::{UdpPacket, UdpPacketBuilder, UdpPacketRaw, UdpParseArgs};
 use thiserror::Error;

@@ -20,7 +20,7 @@ use netstack3_base::{
     ResourceCounterContext, WeakDeviceIdentifier,
 };
 use netstack3_filter::DynTransportSerializer;
-use packet::{BufferMut, EmptyBuf, InnerPacketBuilder, PacketBuilder};
+use packet::{BufferMut, EmptyBuf, InnerPacketBuilder, NestablePacketBuilder as _};
 use packet_formats::error::ParseError;
 use packet_formats::igmp::messages::{
     IgmpLeaveGroup, IgmpMembershipQueryV2, IgmpMembershipQueryV3, IgmpMembershipReportV1,

@@ -11,8 +11,8 @@
 //! the netsvc source code in `//src/bringup/bin/netsvc`.
 
 use packet::{
-    BufferView, FragmentedBytesMut, PacketBuilder, PacketConstraints, ParsablePacket,
-    ParseMetadata, SerializeTarget,
+    BufferView, FragmentedBytesMut, NestablePacketBuilder, PacketBuilder, PacketConstraints,
+    ParsablePacket, ParseMetadata, SerializationContext, SerializeTarget,
 };
 use std::num::NonZeroU16;
 use zerocopy::byteorder::little_endian::U32;
@@ -262,12 +262,19 @@ impl NetbootPacketBuilder {
     }
 }
 
-impl PacketBuilder for NetbootPacketBuilder {
+impl NestablePacketBuilder for NetbootPacketBuilder {
     fn constraints(&self) -> PacketConstraints {
         PacketConstraints::new(std::mem::size_of::<MessageHead>(), 0, 0, std::usize::MAX)
     }
+}
 
-    fn serialize(&self, target: &mut SerializeTarget<'_>, _body: FragmentedBytesMut<'_, '_>) {
+impl<C: SerializationContext> PacketBuilder<C> for NetbootPacketBuilder {
+    fn serialize(
+        &self,
+        _context: &mut C,
+        target: &mut SerializeTarget<'_>,
+        _body: FragmentedBytesMut<'_, '_>,
+    ) {
         let mut bv = crate::as_buffer_view_mut(&mut target.header);
         let mut message = bv.take_obj_front::<MessageHead>().expect("not enough space in buffer");
         let MessageHead { magic, cookie, cmd, arg } = &mut *message;

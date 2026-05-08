@@ -21,7 +21,9 @@ use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use log::{error, info};
 use net_types::SpecifiedAddr;
 use net_types::ip::{Ip, Ipv4, Ipv6};
-use packet::{NoOpSerializationContext, PacketBuilder as _, ParseBuffer as _, Serializer as _};
+use packet::{
+    NestablePacketBuilder as _, NoOpSerializationContext, ParseBuffer as _, Serializer as _,
+};
 use packet_formats::icmp::{
     IcmpEchoReply, IcmpEchoRequest, IcmpMessage, IcmpPacketBuilder, IcmpPacketRaw, IcmpZeroCode,
 };

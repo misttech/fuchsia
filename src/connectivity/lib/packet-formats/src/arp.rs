@@ -321,7 +321,7 @@ impl<B, HwAddr, ProtoAddr> Debug for ArpPacket<B, HwAddr, ProtoAddr> {
 
 #[cfg(test)]
 mod tests {
-    use packet::{NoOpSerializationContext, PacketBuilder, ParseBuffer, Serializer};
+    use packet::{NestablePacketBuilder, NoOpSerializationContext, ParseBuffer, Serializer};
 
     use super::*;
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};

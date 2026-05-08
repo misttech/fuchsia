@@ -20,8 +20,8 @@ use net_types::{
     MulticastAddr, NonMappedAddr, SpecifiedAddr, UnicastAddr, Witness as _, ZonedAddr,
 };
 use packet::{
-    Buf, InnerPacketBuilder, NestableSerializer as _, PacketBuilder, ParseBuffer, ParseMetadata,
-    Serializer as _,
+    Buf, InnerPacketBuilder, NestablePacketBuilder, NestableSerializer as _, PacketBuilder,
+    ParseBuffer, ParseMetadata, Serializer as _,
 };
 use packet_formats::ethernet::{
     ETHERNET_MIN_BODY_LEN_NO_TAG, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck,
@@ -204,7 +204,10 @@ fn process_ip_fragment<I: Ip>(
     }
 }
 
-fn wrap_body<B: PacketBuilder + Debug>(builder: B, body: Vec<u8>) -> Buf<Vec<u8>> {
+fn wrap_body<B: PacketBuilder<NetworkSerializationContext> + Debug>(
+    builder: B,
+    body: Vec<u8>,
+) -> Buf<Vec<u8>> {
     builder
         .wrap_body(Buf::new(body, ..))
         .serialize_vec_outer(&mut NetworkSerializationContext::default())

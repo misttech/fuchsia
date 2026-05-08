@@ -32,8 +32,8 @@ use netstack3_ip::{
 };
 use netstack3_trace::trace_duration;
 use packet::{
-    BufferMut, BufferView as _, EmptyBuf, FragmentedByteSlice, InnerPacketBuilder, PacketBuilder,
-    ParseBuffer,
+    BufferMut, BufferView as _, EmptyBuf, FragmentedByteSlice, InnerPacketBuilder,
+    NestablePacketBuilder as _, ParseBuffer,
 };
 use packet_formats::error::ParseError;
 use packet_formats::ip::IpProto;

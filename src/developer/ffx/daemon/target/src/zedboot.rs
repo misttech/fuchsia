@@ -14,8 +14,8 @@ use netsvc_proto::netboot::{
     ADVERT_PORT, NetbootPacket, NetbootPacketBuilder, Opcode, SERVER_PORT,
 };
 use packet::{
-    Buf, FragmentedBuffer, InnerPacketBuilder, NoOpSerializationContext, PacketBuilder,
-    ParseBuffer, Serializer,
+    Buf, FragmentedBuffer, InnerPacketBuilder, NestablePacketBuilder as _,
+    NoOpSerializationContext, ParseBuffer, Serializer,
 };
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};

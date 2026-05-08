@@ -12,7 +12,7 @@ use ip_test_macro::ip_test;
 use net_declare::{net_ip_v4, net_ip_v6};
 use net_types::ip::{IpAddress, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet};
 use net_types::{SpecifiedAddr, Witness};
-use packet::{Buf, NestableSerializer as _, PacketBuilder, Serializer};
+use packet::{Buf, NestablePacketBuilder, NestableSerializer as _, Serializer};
 use packet_formats::ethernet::EthernetFrameLengthCheck;
 use packet_formats::icmp::{
     IcmpDestUnreachable, IcmpEchoReply, IcmpEchoRequest, IcmpMessage, IcmpPacket,
@@ -62,7 +62,7 @@ fn test_receive_ip_packet<
     I: TestIpExt + IpExt,
     C: PartialEq + Debug,
     M: IcmpMessage<I, Code = C> + PartialEq + Debug,
-    PBF: FnOnce(&mut <I as packet_formats::ip::IpExt>::PacketBuilder),
+    PBF: FnOnce(&mut <I as packet_formats::ip::IpExt>::PacketBuilder<NetworkSerializationContext>),
     SSBF: FnOnce(&mut StackStateBuilder),
     F: for<'a> FnOnce(&IcmpPacket<I, &'a [u8], M>),
 >(

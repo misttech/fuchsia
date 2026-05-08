@@ -319,7 +319,8 @@ mod test {
     use futures::{FutureExt as _, join};
     use netstack_testing_common::realms::TestSandboxExt as _;
     use packet::{
-        InnerPacketBuilder as _, NoOpSerializationContext, PacketBuilder as _, Serializer as _,
+        InnerPacketBuilder as _, NestablePacketBuilder as _, NoOpSerializationContext,
+        Serializer as _,
     };
 
     #[fasync::run_singlethreaded(test)]

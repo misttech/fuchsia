@@ -884,7 +884,7 @@ mod test {
     };
     use netstack3_base::{ContextProvider, CounterContext, CtxPair, NetworkSerializationContext};
     use packet::{
-        Buf, InnerPacketBuilder as _, PacketBuilder as _, ParseBuffer as _, Serializer as _,
+        Buf, InnerPacketBuilder as _, NestablePacketBuilder as _, ParseBuffer as _, Serializer as _,
     };
     use packet_formats::icmp::{
         IcmpEchoReply, IcmpMessage, IcmpPacketBuilder, IcmpZeroCode, Icmpv6MessageType,

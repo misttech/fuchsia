@@ -7,8 +7,9 @@
 use net_types::ethernet::Mac;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
 use packet::{
-    BufferView, BufferViewMut, FragmentedBytesMut, PacketBuilder, PacketConstraints,
-    ParsablePacket, ParseMetadata, SerializeTarget,
+    BufferView, BufferViewMut, FragmentedBytesMut, NestablePacketBuilder, NoOpSerializationContext,
+    PacketBuilder, PacketConstraints, ParsablePacket, ParseMetadata, SerializationContext,
+    SerializeTarget,
 };
 use zerocopy::byteorder::network_endian::{U16, U32};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SplitByteSlice, Unaligned};
@@ -278,12 +279,24 @@ impl EthernetFrameBuilder {
 // sound assumption. If we support them in the future, we will need to update
 // these to compute dynamically.
 
-impl PacketBuilder for EthernetFrameBuilder {
+/// A trait for Ethernet serialization contexts.
+pub trait EthernetSerializationContext: SerializationContext {}
+
+impl EthernetSerializationContext for NoOpSerializationContext {}
+
+impl NestablePacketBuilder for EthernetFrameBuilder {
     fn constraints(&self) -> PacketConstraints {
         PacketConstraints::new(ETHERNET_HDR_LEN_NO_TAG, 0, self.min_body_len, core::usize::MAX)
     }
+}
 
-    fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
+impl<C: EthernetSerializationContext> PacketBuilder<C> for EthernetFrameBuilder {
+    fn serialize(
+        &self,
+        _context: &mut C,
+        target: &mut SerializeTarget<'_>,
+        body: FragmentedBytesMut<'_, '_>,
+    ) {
         // NOTE: EtherType values of 1500 and below are used to indicate the
         // length of the body in bytes. We don't need to validate this because
         // the EtherType enum has no variants with values in that range.
@@ -564,7 +577,11 @@ mod tests {
         let mut b = [&mut buf[..]];
         let buf = b.as_fragmented_byte_slice();
         let (header, body, footer) = buf.try_split_contiguous(ETHERNET_HDR_LEN_NO_TAG..).unwrap();
-        new_test_ethernet_packet_builder().serialize(&mut SerializeTarget { header, footer }, body);
+        new_test_ethernet_packet_builder().serialize(
+            &mut NoOpSerializationContext,
+            &mut SerializeTarget { header, footer },
+            body,
+        );
     }
 
     #[test]
@@ -584,6 +601,7 @@ mod tests {
         // method, and use the public API instead.
         GrowBufferMut::serialize(
             &mut Buf::new(&mut buffer[..], ETHERNET_HDR_LEN_NO_TAG..ETHERNET_HDR_LEN_NO_TAG),
+            &mut NoOpSerializationContext,
             builder,
         );
 

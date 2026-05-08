@@ -17,8 +17,9 @@ use core::ops::Range;
 use net_types::ip::{Ip, IpAddress, IpVersionMarker};
 use packet::{
     BufferView, BufferViewMut, ByteSliceInnerPacketBuilder, EmptyBuf, FragmentedBytesMut, FromRaw,
-    InnerPacketBuilder, MaybeParsed, NoOpSerializationContext, PacketBuilder, PacketConstraints,
-    ParsablePacket, ParseMetadata, PartialPacketBuilder, SerializeTarget, Serializer,
+    InnerPacketBuilder, MaybeParsed, NestablePacketBuilder, NoOpSerializationContext,
+    PacketBuilder, PacketConstraints, ParsablePacket, ParseMetadata, PartialPacketBuilder,
+    SerializationContext, SerializeTarget, Serializer,
 };
 use zerocopy::byteorder::network_endian::U16;
 use zerocopy::{
@@ -515,6 +516,13 @@ impl<B: SplitByteSliceMut> UdpPacketRaw<B> {
 // performed in UdpPacket::parse, provides the invariant that a UdpPacket always
 // has a valid checksum.
 
+/// A trait for UDP serialization contexts.
+// TODO(https://fxbug.dev/485599557): Expand the definition of this trait to
+// support checksum offloading.
+pub trait UdpSerializationContext: SerializationContext {}
+
+impl UdpSerializationContext for NoOpSerializationContext {}
+
 /// A builder for UDP packets.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct UdpPacketBuilder<A: IpAddress> {
@@ -598,7 +606,7 @@ impl<A: IpAddress> UdpPacketBuilder<A> {
     }
 }
 
-impl<A: IpAddress> PacketBuilder for UdpPacketBuilder<A> {
+impl<A: IpAddress> NestablePacketBuilder for UdpPacketBuilder<A> {
     fn constraints(&self) -> PacketConstraints {
         PacketConstraints::new(
             HEADER_BYTES,
@@ -616,8 +624,15 @@ impl<A: IpAddress> PacketBuilder for UdpPacketBuilder<A> {
             },
         )
     }
+}
 
-    fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
+impl<A: IpAddress, C: UdpSerializationContext> PacketBuilder<C> for UdpPacketBuilder<A> {
+    fn serialize(
+        &self,
+        _context: &mut C,
+        target: &mut SerializeTarget<'_>,
+        body: FragmentedBytesMut<'_, '_>,
+    ) {
         self.serialize_header(body.len(), target.header);
 
         let mut checksum = compute_transport_checksum_serialize(
@@ -634,8 +649,8 @@ impl<A: IpAddress> PacketBuilder for UdpPacketBuilder<A> {
     }
 }
 
-impl<A: IpAddress> PartialPacketBuilder for UdpPacketBuilder<A> {
-    fn partial_serialize(&self, body_len: usize, buffer: &mut [u8]) {
+impl<A: IpAddress, C: UdpSerializationContext> PartialPacketBuilder<C> for UdpPacketBuilder<A> {
+    fn partial_serialize(&self, _context: &mut C, body_len: usize, buffer: &mut [u8]) {
         self.serialize_header(body_len, buffer);
     }
 }
@@ -872,7 +887,11 @@ mod tests {
         let (header, body, footer) = buf.try_split_contiguous(..).unwrap();
         let builder =
             UdpPacketBuilder::new(TEST_SRC_IPV4, TEST_DST_IPV4, None, NonZeroU16::new(1).unwrap());
-        builder.serialize(&mut SerializeTarget { header, footer }, body);
+        builder.serialize(
+            &mut NoOpSerializationContext,
+            &mut SerializeTarget { header, footer },
+            body,
+        );
     }
 
     #[test]

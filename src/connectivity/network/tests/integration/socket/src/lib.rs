@@ -78,7 +78,7 @@ use packet_formats::icmp::{
     MessageBody,
 };
 use packet_formats::igmp::messages::IgmpPacket;
-use packet_formats::ip::{IpPacketBuilder as _, IpProto, Ipv4Proto, Ipv6Proto};
+use packet_formats::ip::{IpPacketBuilder, IpProto, Ipv4Proto, Ipv6Proto};
 use packet_formats::ipv4::{Ipv4Header as _, Ipv4Packet, Ipv4PacketBuilder};
 use packet_formats::ipv6::{Ipv6Header, Ipv6Packet, Ipv6PacketBuilder};
 use packet_formats::tcp::options::TcpOptionsBuilder;
@@ -3832,7 +3832,7 @@ fn try_parse_frame_as_tcp<I: TestIpExt>(
     frame: Vec<u8>,
 ) -> Option<(
     EthernetFrameBuilder,
-    impl packet_formats::ip::IpPacketBuilder<I>,
+    impl IpPacketBuilder<NoOpSerializationContext, I>,
     TcpSegmentBuilder<I::Addr>,
     Vec<u8>,
 )> {
@@ -3851,7 +3851,11 @@ fn try_parse_frame_as_tcp<I: TestIpExt>(
         TcpSegment::parse(&mut ip.body(), TcpParseArgs::new(ip.src_ip(), ip.dst_ip())).ok()?;
 
     let eth_builder = eth.builder();
-    let ip_builder = ip.builder();
+    let mut ip_builder = <I::PacketBuilder<NoOpSerializationContext> as IpPacketBuilder<
+        NoOpSerializationContext,
+        I,
+    >>::new(ip.src_ip(), ip.dst_ip(), ip.ttl(), ip.proto());
+    ip_builder.set_dscp_and_ecn(ip.dscp_and_ecn());
     let tcp_builder = tcp.builder(ip.src_ip(), ip.dst_ip()).prefix_builder().clone();
     drop(ip);
 

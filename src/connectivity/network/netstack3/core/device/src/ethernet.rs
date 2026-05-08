@@ -27,7 +27,7 @@ use netstack3_ip::nud::{
 };
 use netstack3_ip::{DeviceIpLayerMetadata, IpPacketDestination};
 use netstack3_trace::trace_duration;
-use packet::{Buf, BufferMut, NestableSerializer as _, PacketBuilder};
+use packet::{Buf, BufferMut, NestablePacketBuilder as _, NestableSerializer as _};
 use packet_formats::arp::{ArpHardwareType, ArpNetworkType, peek_arp_types};
 use packet_formats::ethernet::{
     ETHERNET_HDR_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,

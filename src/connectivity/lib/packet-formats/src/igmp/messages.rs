@@ -722,7 +722,7 @@ mod tests {
     use core::fmt::Debug;
     use core::time::Duration;
 
-    use packet::{NoOpSerializationContext, PacketBuilder, ParseBuffer, Serializer};
+    use packet::{NestablePacketBuilder as _, NoOpSerializationContext, ParseBuffer, Serializer};
 
     use super::*;
     use crate::igmp::IgmpMaxRespCode;
@@ -946,7 +946,7 @@ mod tests {
     #[test]
     fn membership_report_v3_split_many_sources() {
         use igmp_reports::v3::*;
-        use packet::{NestableSerializer as _, PacketBuilder};
+        use packet::{NestablePacketBuilder as _, NestableSerializer as _};
         const ETH_MTU: usize = 1500;
         const MAX_SOURCES: usize = 365;
 
@@ -1032,7 +1032,7 @@ mod tests {
     #[test]
     fn membership_report_v3_split_many_groups() {
         use igmp_reports::v3::*;
-        use packet::{NestableSerializer as _, PacketBuilder};
+        use packet::{NestablePacketBuilder as _, NestableSerializer as _};
 
         const ETH_MTU: usize = 1500;
         const EXPECT_SERIALIZED: usize = 1496;

@@ -912,7 +912,11 @@ pub trait GrowBufferMut: GrowBuffer + FragmentedBufferMut {
     /// - `b.prefix_len() < c.header_len()`
     /// - `b.len() + b.suffix_len() < c.min_body_bytes() + c.footer_len()`
     #[doc(hidden)]
-    fn serialize<B: PacketBuilder>(&mut self, builder: B) {
+    fn serialize<C: SerializationContext, B: PacketBuilder<C>>(
+        &mut self,
+        context: &mut C,
+        builder: B,
+    ) {
         let c = builder.constraints();
         if self.len() < c.min_body_len() {
             // The body isn't large enough to satisfy the minimum body length
@@ -953,7 +957,7 @@ pub trait GrowBufferMut: GrowBuffer + FragmentedBufferMut {
             // will probably take care of it for us.
             zero(header);
             zero(footer);
-            builder.serialize(&mut SerializeTarget { header, footer }, body);
+            builder.serialize(context, &mut SerializeTarget { header, footer }, body);
         });
 
         self.grow_front(c.header_len());

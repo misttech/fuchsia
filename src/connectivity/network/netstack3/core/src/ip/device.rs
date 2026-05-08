@@ -17,8 +17,9 @@ use net_types::ip::{AddrSubnet, Ip, IpMarked, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Mt
 use net_types::{LinkLocalUnicastAddr, MulticastAddr, SpecifiedAddr, UnicastAddr, Witness as _};
 use netstack3_base::{
     AnyDevice, CoreTimerContext, CounterContext, DeviceIdContext, ExistsError, IpAddressId as _,
-    IpDeviceAddr, IpDeviceAddressIdContext, Ipv4DeviceAddr, Ipv6DeviceAddr, NetworkSerializer,
-    NotFoundError, RemoveResourceResultWithContext, ResourceCounterContext,
+    IpDeviceAddr, IpDeviceAddressIdContext, Ipv4DeviceAddr, Ipv6DeviceAddr,
+    NetworkPartialSerializer, NetworkSerializer, NotFoundError, RemoveResourceResultWithContext,
+    ResourceCounterContext,
 };
 use netstack3_device::ethernet::EthernetDeviceId;
 use netstack3_device::{DeviceId, WeakDeviceId};
@@ -50,7 +51,7 @@ use netstack3_ip::{
     IpDeviceEgressStateContext, IpDeviceIngressStateContext, IpLayerIpExt, IpSasHandler,
     IpSendFrameError, Ipv4PresentAddressStatus,
 };
-use packet::{EmptyBuf, InnerPacketBuilder, PartialSerializer};
+use packet::{EmptyBuf, InnerPacketBuilder};
 use packet_formats::icmp::IcmpZeroCode;
 use packet_formats::icmp::ndp::options::{NdpNonce, NdpOptionBuilder};
 use packet_formats::icmp::ndp::{OptionSequenceBuilder, RouterSolicitation};
@@ -1034,7 +1035,7 @@ impl<'a, Config: Borrow<Ipv6DeviceConfiguration>, BC: BindingsContext> RsContext
     }
 
     fn send_rs_packet<
-        S: NetworkSerializer<Buffer = EmptyBuf> + PartialSerializer,
+        S: NetworkSerializer<Buffer = EmptyBuf> + NetworkPartialSerializer,
         F: FnOnce(Option<UnicastAddr<Ipv6Addr>>) -> S,
     >(
         &mut self,

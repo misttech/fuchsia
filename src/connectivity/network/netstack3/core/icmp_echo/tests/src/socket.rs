@@ -8,7 +8,7 @@ use core::num::NonZeroU16;
 use assert_matches::assert_matches;
 use ip_test_macro::ip_test;
 use net_types::ZonedAddr;
-use packet::{Buf, PacketBuilder, Serializer};
+use packet::{Buf, NestablePacketBuilder, Serializer};
 use packet_formats::icmp::{IcmpEchoRequest, IcmpPacketBuilder, IcmpZeroCode};
 use test_case::test_case;
 

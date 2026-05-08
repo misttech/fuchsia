@@ -44,7 +44,7 @@ use netstack3_ip::{
     IpHeaderInfo, IpLayerIpExt, IpTransportContext, LocalDeliveryPacketInfo,
     MulticastMembershipHandler, ReceiveIpPacketMeta, SocketMetadata, TransportIpContext,
 };
-use packet::{BufferMut, PacketBuilder, ParsablePacket as _, ParseBuffer};
+use packet::{BufferMut, NestablePacketBuilder as _, ParsablePacket as _, ParseBuffer};
 use packet_formats::icmp::{IcmpEchoReply, IcmpEchoRequest, IcmpPacketBuilder, IcmpPacketRaw};
 use packet_formats::ip::{IpProtoExt, Ipv4Proto, Ipv6Proto};
 

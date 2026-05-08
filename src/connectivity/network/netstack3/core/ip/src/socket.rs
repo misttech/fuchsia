@@ -24,7 +24,9 @@ use netstack3_filter::{
     SocketOpsFilterBindingContext, TransportPacketSerializer,
 };
 use netstack3_trace::trace_duration;
-use packet::{BufferMut, PacketBuilder as _, PacketConstraints, SerializeError, Serializer};
+use packet::{
+    BufferMut, NestablePacketBuilder as _, PacketConstraints, SerializeError, Serializer,
+};
 use packet_formats::ip::{DscpAndEcn, IpPacketBuilder as _};
 use thiserror::Error;
 

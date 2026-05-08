@@ -22,8 +22,7 @@ use netstack3_base::{
     InspectableValue, Inspector, InspectorExt, ResourceCounterContext, WeakDeviceIdentifier,
 };
 use netstack3_filter::{self as filter, DynTransportSerializer};
-use packet::serialize::PacketBuilder;
-use packet::{InnerPacketBuilder, NestableSerializer as _};
+use packet::{InnerPacketBuilder, NestablePacketBuilder as _, NestableSerializer as _};
 use packet_formats::icmp::mld::{
     MldPacket, Mldv1Body, Mldv1MessageBuilder, Mldv1MessageType, Mldv2QueryBody,
     Mldv2ReportMessageBuilder, MulticastListenerDone, MulticastListenerReport,

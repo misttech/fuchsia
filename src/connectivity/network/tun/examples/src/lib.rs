@@ -312,8 +312,8 @@ mod helpers {
     use net_types::ethernet::Mac;
     use net_types::ip::{Ipv4, Ipv4Addr};
     use packet::{
-        InnerPacketBuilder as _, NestableSerializer as _, NoOpSerializationContext,
-        PacketBuilder as _, ParsablePacket as _, Serializer as _,
+        InnerPacketBuilder as _, NestablePacketBuilder as _, NestableSerializer as _,
+        NoOpSerializationContext, ParsablePacket as _, Serializer as _,
     };
     use packet_formats::arp::{ArpOp, ArpPacket, ArpPacketBuilder};
     use packet_formats::ethernet::{

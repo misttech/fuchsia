@@ -51,7 +51,7 @@ fn convert_zx_time_into_seconds_until(time: zx::MonotonicInstant) -> u32 {
 
 fn make_fake_ra_prefix_packet(prefix: ot::Ip6Prefix, valid: u32, preferred: u32) -> Vec<u8> {
     use net_types::ip::Ipv6;
-    use packet::{InnerPacketBuilder, PacketBuilder, Serializer};
+    use packet::{InnerPacketBuilder, NestablePacketBuilder as _, Serializer};
     use packet_formats::icmp::ndp::options::{NdpOptionBuilder, PrefixInformation};
     use packet_formats::icmp::ndp::{OptionSequenceBuilder, RoutePreference, RouterAdvertisement};
     use packet_formats::icmp::{IcmpPacketBuilder, IcmpZeroCode};

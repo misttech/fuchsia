@@ -16,8 +16,9 @@ use netstack3_base::{
 };
 use netstack3_filter::ForwardedPacket;
 use packet::{
-    Buf, BufferMut, EmptyBuf, FragmentedBuffer as _, InnerPacketBuilder as _, Nested,
-    PacketBuilder, PacketConstraints, ParsablePacket, SerializeError,
+    Buf, BufferMut, EmptyBuf, FragmentedBuffer as _, InnerPacketBuilder as _,
+    NestablePacketBuilder, Nested, PacketBuilder, PacketConstraints, ParsablePacket,
+    SerializeError,
 };
 use packet_formats::ip::FragmentOffset;
 use packet_formats::ipv4::options::Ipv4Option;
@@ -36,7 +37,9 @@ use rand::Rng;
 const MAX_FRAGMENT_OFFSET: usize = ((1 << 13) - 1) * 8;
 
 pub trait FragmentationIpExt:
-    packet_formats::ip::IpExt<PacketBuilder: AsFragmentableIpPacketBuilder<Self>>
+    packet_formats::ip::IpExt<
+        PacketBuilder<NetworkSerializationContext>: AsFragmentableIpPacketBuilder<Self>,
+    >
 {
     /// The IP packet builder for a forwarded packet.
     type ForwardedFragmentBuilder: FragmentableIpPacketBuilder<Self>;
@@ -100,7 +103,7 @@ impl<I, S, B> FragmentableIpSerializer<I> for Nested<S, B>
 where
     I: FragmentationIpExt,
     S: NetworkSerializer,
-    B: AsFragmentableIpPacketBuilder<I> + PacketBuilder,
+    B: AsFragmentableIpPacketBuilder<I> + PacketBuilder<NetworkSerializationContext>,
 {
     type Builder<'a>
         = B::Builder<'a>
@@ -168,7 +171,7 @@ pub trait FragmentableIpPacketBuilder<I: FragmentationIpExt> {
         offset: FragmentOffset,
         position: FragmentPosition,
         identifier: I::FragmentationId,
-    ) -> impl PacketBuilder + '_;
+    ) -> impl PacketBuilder<NetworkSerializationContext> + '_;
 }
 
 /// Blanket impl for everything that has a shape to fit in `Ipv4FragmentBuilder`
@@ -190,7 +193,7 @@ where
 
 /// A trait marking all the IPv4 builder types that can be fragmented with
 /// [`Ipv4FragmentBuilder`].
-trait InnerIpv4FragmentBuilder: PacketBuilder {
+trait InnerIpv4FragmentBuilder: PacketBuilder<NetworkSerializationContext> {
     fn prefix(&self) -> &Ipv4PacketBuilder;
     fn prefix_mut(&mut self) -> &mut Ipv4PacketBuilder;
     fn clone_for_fragment(&self, position: FragmentPosition) -> impl InnerIpv4FragmentBuilder;
@@ -256,7 +259,7 @@ where
         offset: FragmentOffset,
         position: FragmentPosition,
         (): (),
-    ) -> impl PacketBuilder + '_ {
+    ) -> impl PacketBuilder<NetworkSerializationContext> + '_ {
         let mut builder = self.builder.clone_for_fragment(position);
         set_ipv4_fragment(builder.prefix_mut(), offset, position);
         builder
@@ -301,7 +304,7 @@ where
         offset: FragmentOffset,
         position: FragmentPosition,
         identifier: u32,
-    ) -> impl PacketBuilder + '_ {
+    ) -> impl PacketBuilder<NetworkSerializationContext> + '_ {
         Ipv6PacketBuilderWithFragmentHeader::new(
             self.builder,
             offset,
@@ -387,7 +390,7 @@ impl FragmentableIpPacketBuilder<Ipv4> for ForwardedIpv4PacketBuilder {
         offset: FragmentOffset,
         position: FragmentPosition,
         (): (),
-    ) -> impl PacketBuilder + '_ {
+    ) -> impl PacketBuilder<NetworkSerializationContext> + '_ {
         let Self { builder, raw_options } = self;
         let mut builder = builder.clone();
         set_ipv4_fragment(&mut builder, offset, position);
@@ -408,7 +411,7 @@ impl<I: FragmentationIpExt> FragmentableIpPacketBuilder<I> for Uninstantiable {
         _offset: FragmentOffset,
         _position: FragmentPosition,
         _identifier: I::FragmentationId,
-    ) -> impl PacketBuilder + '_ {
+    ) -> impl PacketBuilder<NetworkSerializationContext> + '_ {
         self.uninstantiable_unreachable::<Ipv6PacketBuilder>()
     }
 }

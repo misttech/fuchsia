@@ -9,8 +9,8 @@ use net_declare::{net_ip_v4, net_ip_v6, net_mac};
 use net_types::ethernet::Mac;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
 use packet::{
-    BufferAlloc, FragmentedBuffer, NoOpSerializationContext, NoReuseBufferProvider,
-    PacketBuilder as _, ReusableBuffer, Serializer,
+    BufferAlloc, FragmentedBuffer, NestablePacketBuilder as _, NoOpSerializationContext,
+    NoReuseBufferProvider, ReusableBuffer, Serializer,
 };
 use packet_formats::ethernet::EthernetFrameBuilder;
 use packet_formats::ip::{IpPacket as _, IpProto};

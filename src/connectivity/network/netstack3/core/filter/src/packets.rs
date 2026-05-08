@@ -10,15 +10,15 @@ use net_types::ip::{
     GenericOverIp, Ip, IpAddress, IpInvariant, IpVersionMarker, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr,
 };
 use netstack3_base::{
-    DynamicNetworkSerializer, NetworkSerializationContext, NetworkSerializer, Options, PayloadLen,
-    SegmentHeader,
+    DynamicNetworkSerializer, NetworkPartialSerializer, NetworkSerializationContext,
+    NetworkSerializer, Options, PayloadLen, SegmentHeader,
 };
 use packet::{
     Buf, Buffer, BufferMut, BufferProvider, BufferViewMut, DynSerializer, EitherSerializer,
-    EmptyBuf, GrowBufferMut, InnerSerializer, LayoutBufferAlloc, NestableSerializer, Nested,
-    PacketBuilder, PacketConstraints, ParsablePacket, ParseBuffer, ParseMetadata,
-    PartialSerializeResult, PartialSerializer, SerializeError, Serializer, SliceBufViewMut,
-    TruncatingSerializer,
+    EmptyBuf, GrowBufferMut, InnerSerializer, LayoutBufferAlloc, NestablePacketBuilder as _,
+    NestableSerializer, Nested, PacketConstraints, ParsablePacket, ParseBuffer, ParseMetadata,
+    PartialSerializeResult, PartialSerializer, SerializationContext, SerializeError, Serializer,
+    SliceBufViewMut, TruncatingSerializer,
 };
 use packet_formats::icmp::mld::{
     MulticastListenerDone, MulticastListenerQuery, MulticastListenerQueryV2,
@@ -269,8 +269,8 @@ pub trait IpPacket<I: FilterIpExt> {
 // TODO(https://fxbug.dev/424212358): Currently this trait relies on
 // PartialSerializer to access raw packet contents. It should be replaced with
 // direct access to the packet contents when the packet is already serialized.
-pub trait FilterIpPacket<I: FilterIpExt>: IpPacket<I> + PartialSerializer {}
-impl<I: FilterIpExt, P: IpPacket<I> + PartialSerializer> FilterIpPacket<I> for P {}
+pub trait FilterIpPacket<I: FilterIpExt>: IpPacket<I> + NetworkPartialSerializer {}
+impl<I: FilterIpExt, P: IpPacket<I> + NetworkPartialSerializer> FilterIpPacket<I> for P {}
 
 /// A payload of an IP packet that may be a valid transport layer packet.
 ///
@@ -351,7 +351,7 @@ pub trait DynamicMaybeIcmpErrorMut<I: IpExt> {
 /// A serializer that may also be a valid transport layer packet.
 pub trait TransportPacketSerializer<I: FilterIpExt>:
     NetworkSerializer
-    + PartialSerializer
+    + NetworkPartialSerializer
     + MaybeTransportPacket
     + MaybeTransportPacketMut<I>
     + MaybeIcmpErrorPayload<I>
@@ -363,7 +363,7 @@ impl<I, S> TransportPacketSerializer<I> for S
 where
     I: FilterIpExt,
     S: NetworkSerializer
-        + PartialSerializer
+        + NetworkPartialSerializer
         + MaybeTransportPacket
         + MaybeTransportPacketMut<I>
         + MaybeIcmpErrorPayload<I>
@@ -378,7 +378,7 @@ where
 /// for slow-path protocols.
 pub trait DynamicTransportSerializer<I: FilterIpExt>:
     DynamicNetworkSerializer
-    + PartialSerializer
+    + NetworkPartialSerializer
     + MaybeTransportPacket
     + DynamicMaybeTransportPacketMut<I>
     + DynamicMaybeIcmpErrorMut<I>
@@ -434,13 +434,16 @@ impl<I: FilterIpExt> Serializer<NetworkSerializationContext> for DynTransportSer
 
 impl<'a, I: FilterIpExt> NestableSerializer for DynTransportSerializer<'a, I> {}
 
-impl<'a, I: FilterIpExt> PartialSerializer for DynTransportSerializer<'a, I> {
+impl<'a, I: FilterIpExt> PartialSerializer<NetworkSerializationContext>
+    for DynTransportSerializer<'a, I>
+{
     fn partial_serialize(
         &self,
+        context: &mut NetworkSerializationContext,
         outer: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        (*self.0).partial_serialize(outer, buffer)
+        (*self.0).partial_serialize(context, outer, buffer)
     }
 }
 
@@ -1163,13 +1166,16 @@ pub struct PartialSerializeRef<'a, S> {
     reference: &'a S,
 }
 
-impl<'a, S: PartialSerializer> PartialSerializer for PartialSerializeRef<'a, S> {
+impl<'a, C: SerializationContext, S: PartialSerializer<C>> PartialSerializer<C>
+    for PartialSerializeRef<'a, S>
+{
     fn partial_serialize(
         &self,
+        context: &mut C,
         outer: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        self.reference.partial_serialize(outer, buffer)
+        self.reference.partial_serialize(context, outer, buffer)
     }
 }
 
@@ -1181,11 +1187,12 @@ const TX_PACKET_NO_TTL: u8 = 0;
 /// eBPF filters want to see a serialized packet. We provide `PartialSerialize`,
 /// which allows to serialize just the packet headers - that's enough for most
 /// eBPF programs. TTL is not known here, so the field is set to 64.
-impl<I: FilterIpExt, S: TransportPacketSerializer<I> + PartialSerializer> PartialSerializer
-    for TxPacket<'_, I, S>
+impl<I: FilterIpExt, S: TransportPacketSerializer<I> + NetworkPartialSerializer>
+    PartialSerializer<NetworkSerializationContext> for TxPacket<'_, I, S>
 {
     fn partial_serialize(
         &self,
+        context: &mut NetworkSerializationContext,
         outer: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
@@ -1193,7 +1200,7 @@ impl<I: FilterIpExt, S: TransportPacketSerializer<I> + PartialSerializer> Partia
             I::PacketBuilder::new(self.src_addr, self.dst_addr, TX_PACKET_NO_TTL, self.protocol);
         packet_builder
             .wrap_body(PartialSerializeRef { reference: self.serializer })
-            .partial_serialize(outer, buffer)
+            .partial_serialize(context, outer, buffer)
     }
 }
 
@@ -1274,9 +1281,12 @@ impl<I: IpExt, B: BufferMut + NetworkSerializer> Serializer<NetworkSerialization
 
 impl<I: IpExt, B: BufferMut + NetworkSerializer> NestableSerializer for ForwardedPacket<I, B> {}
 
-impl<I: IpExt, B: BufferMut> PartialSerializer for ForwardedPacket<I, B> {
+impl<C: SerializationContext, I: IpExt, B: BufferMut> PartialSerializer<C>
+    for ForwardedPacket<I, B>
+{
     fn partial_serialize(
         &self,
+        _context: &mut C,
         _outer: PacketConstraints,
         mut buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
@@ -1420,8 +1430,11 @@ impl<I: IpExt, B: BufferMut> MaybeIcmpErrorPayload<I> for ForwardedPacket<I, B> 
     }
 }
 
-impl<I: FilterIpExt, S: TransportPacketSerializer<I>, B: IpPacketBuilder<I>> IpPacket<I>
-    for Nested<S, B>
+impl<
+    I: FilterIpExt,
+    S: TransportPacketSerializer<I>,
+    B: IpPacketBuilder<NetworkSerializationContext, I>,
+> IpPacket<I> for Nested<S, B>
 {
     type TransportPacket<'a>
         = &'a S
@@ -2406,9 +2419,10 @@ impl<I: IpExt, B: BufferMut + NetworkSerializer> Serializer<NetworkSerialization
 
 impl<I: IpExt, B: BufferMut + NetworkSerializer> NestableSerializer for RawIpBody<I, B> {}
 
-impl<I: IpExt, B: BufferMut> PartialSerializer for RawIpBody<I, B> {
+impl<I: IpExt, B: BufferMut> PartialSerializer<NetworkSerializationContext> for RawIpBody<I, B> {
     fn partial_serialize(
         &self,
+        _context: &mut NetworkSerializationContext,
         _outer: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
@@ -3031,7 +3045,7 @@ pub mod testutil {
         use net_declare::{net_ip_v4, net_ip_v6, net_subnet_v4, net_subnet_v6};
         use net_types::ip::Subnet;
         use netstack3_base::{SeqNum, UnscaledWindowSize};
-        use packet::{PacketBuilder as _, PartialPacketBuilder as _, TruncateDirection};
+        use packet::{NestablePacketBuilder as _, PartialPacketBuilder as _, TruncateDirection};
         use packet_formats::icmp::{Icmpv4DestUnreachableCode, Icmpv6DestUnreachableCode};
 
         use super::*;
@@ -3151,12 +3165,13 @@ pub mod testutil {
             }
         }
 
-        impl<I: TestIpExt, T> PartialSerializer for FakeIpPacket<I, T>
+        impl<I: TestIpExt, T> PartialSerializer<NetworkSerializationContext> for FakeIpPacket<I, T>
         where
             for<'a> &'a T: TransportPacketExt<I>,
         {
             fn partial_serialize(
                 &self,
+                context: &mut NetworkSerializationContext,
                 _outer: PacketConstraints,
                 buffer: &mut [u8],
             ) -> Result<PartialSerializeResult, SerializeError<Never>> {
@@ -3173,7 +3188,7 @@ pub mod testutil {
                         total_size: constraints.header_len() + body_len,
                     });
                 }
-                builder.partial_serialize(body_len, buffer);
+                builder.partial_serialize(context, body_len, buffer);
 
                 Ok(PartialSerializeResult {
                     bytes_written: constraints.header_len(),
@@ -3585,8 +3600,8 @@ mod tests {
     use assert_matches::assert_matches;
     use ip_test_macro::ip_test;
     use packet::{
-        EmptyBuf, FragmentedBuffer as _, InnerPacketBuilder as _, NestableSerializer as _,
-        PacketBuilder as _, ParseBufferMut, PartialSerializer,
+        EmptyBuf, FragmentedBuffer as _, InnerPacketBuilder as _, NestablePacketBuilder as _,
+        NestableSerializer as _, ParseBufferMut, PartialSerializer,
     };
     use packet_formats::icmp::IcmpZeroCode;
     use packet_formats::tcp::TcpSegmentBuilder;
@@ -4926,6 +4941,7 @@ mod tests {
         let mut buf = [0u8; 128];
         let result = PartialSerializer::partial_serialize(
             &packet,
+            &mut NetworkSerializationContext::default(),
             PacketConstraints::UNCONSTRAINED,
             &mut buf,
         )
@@ -4977,8 +4993,11 @@ mod tests {
 
         for i in 1..(packet_len + 1) {
             let mut buf = alloc::vec![0u8; i];
-            let result =
-                packet.partial_serialize(PacketConstraints::UNCONSTRAINED, buf.as_mut_slice());
+            let result = packet.partial_serialize(
+                &mut NetworkSerializationContext::default(),
+                PacketConstraints::UNCONSTRAINED,
+                buf.as_mut_slice(),
+            );
 
             let bytes_written = if i >= packet_len { packet_len } else { i };
             assert_eq!(

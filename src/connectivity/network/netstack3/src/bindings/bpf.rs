@@ -22,6 +22,7 @@ use fidl_fuchsia_posix as fposix;
 use fidl_table_validation::ValidFidlTable;
 use log::{error, warn};
 use net_types::ip::IpVersion;
+use netstack3_core::NetworkSerializationContext;
 use netstack3_core::device::DeviceId;
 use netstack3_core::filter::{
     BindingsPacketMatcher, FilterIpExt, FilterIpPacket, FilterPacketMetadata, Interfaces,
@@ -176,7 +177,11 @@ impl<'a, C> SkBuff<'a, C> {
     ) -> Self {
         // TODO(https://fxbug.dev/424212358): Implement lazy packet serialization.
         let serialize_result = packet
-            .partial_serialize(PacketConstraints::UNCONSTRAINED, data_buffer)
+            .partial_serialize(
+                &mut NetworkSerializationContext::default(),
+                PacketConstraints::UNCONSTRAINED,
+                data_buffer,
+            )
             .expect("Packet serialization failed");
         let packet_len = serialize_result.total_size;
         let packet_data = &data_buffer[..serialize_result.bytes_written];
@@ -917,7 +922,7 @@ mod tests {
     use netstack3_core::ip::Mark;
     use netstack3_core::sync::ResourceTokenValue;
     use netstack3_core::testutil::{self, FakeDeviceId, TestIpExt};
-    use packet::{InnerPacketBuilder, PacketBuilder, PacketConstraints, Serializer};
+    use packet::{InnerPacketBuilder, NestablePacketBuilder, PacketConstraints, Serializer};
     use packet_formats::ip::{IpPacketBuilder, IpProto};
     use packet_formats::udp::UdpPacketBuilder;
     use std::num::NonZeroU16;

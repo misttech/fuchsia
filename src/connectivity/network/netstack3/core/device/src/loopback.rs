@@ -21,7 +21,7 @@ use netstack3_base::{
     TxMetadataBindingsTypes, WeakDeviceIdentifier,
 };
 use netstack3_ip::{DeviceIpLayerMetadata, IpPacketDestination};
-use packet::{Buf, Buffer as _, BufferMut, FragmentedBuffer as _, PacketBuilder};
+use packet::{Buf, Buffer as _, BufferMut, FragmentedBuffer as _, NestablePacketBuilder as _};
 use packet_formats::ethernet::{
     EtherType, EthernetFrame, EthernetFrameBuilder, EthernetFrameLengthCheck, EthernetIpExt,
 };

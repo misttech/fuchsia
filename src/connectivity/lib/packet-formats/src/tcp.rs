@@ -19,9 +19,9 @@ use explicit::ResultExt as _;
 use net_types::ip::IpAddress;
 use packet::{
     BufferView, BufferViewMut, ByteSliceInnerPacketBuilder, EmptyBuf, FragmentedBytesMut, FromRaw,
-    InnerPacketBuilder, MaybeParsed, NoOpSerializationContext, PacketBuilder, PacketConstraints,
-    ParsablePacket, ParseMetadata, PartialPacketBuilder, SerializeTarget, Serializer,
-    SplitByteSliceBufView,
+    InnerPacketBuilder, MaybeParsed, NestablePacketBuilder, NoOpSerializationContext,
+    PacketBuilder, PacketConstraints, ParsablePacket, ParseMetadata, PartialPacketBuilder,
+    SerializationContext, SerializeTarget, Serializer, SplitByteSliceBufView,
 };
 use zerocopy::byteorder::network_endian::{U16, U32};
 use zerocopy::{
@@ -704,6 +704,13 @@ impl<B: SplitByteSlice + CloneableByteSlice> TcpSegmentRaw<B> {
 #[derive(Debug)]
 pub struct TcpOptionsTooLongError;
 
+/// A trait for TCP serialization contexts.
+// TODO(https://fxbug.dev/485599557): Expand the definition of this trait to
+// support checksum offloading.
+pub trait TcpSerializationContext: SerializationContext {}
+
+impl TcpSerializationContext for NoOpSerializationContext {}
+
 /// A builder for TCP segments with options
 #[derive(Debug, Clone)]
 pub struct TcpSegmentBuilderWithOptions<A: IpAddress, O> {
@@ -774,14 +781,25 @@ impl<A: IpAddress, O> TcpSegmentBuilderWithOptions<A, O> {
     }
 }
 
-impl<A: IpAddress, O: InnerPacketBuilder> PacketBuilder for TcpSegmentBuilderWithOptions<A, O> {
+impl<A: IpAddress, O: InnerPacketBuilder> NestablePacketBuilder
+    for TcpSegmentBuilderWithOptions<A, O>
+{
     fn constraints(&self) -> PacketConstraints {
         let header_len = HDR_PREFIX_LEN + self.options.bytes_len();
         assert_eq!(header_len % 4, 0);
         PacketConstraints::new(header_len, 0, 0, (1 << 16) - 1 - header_len)
     }
+}
 
-    fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
+impl<A: IpAddress, O: InnerPacketBuilder, C: TcpSerializationContext> PacketBuilder<C>
+    for TcpSegmentBuilderWithOptions<A, O>
+{
+    fn serialize(
+        &self,
+        context: &mut C,
+        target: &mut SerializeTarget<'_>,
+        body: FragmentedBytesMut<'_, '_>,
+    ) {
         let opt_len = self.options.bytes_len();
         // `take_back_zero` consumes the extent of the receiving slice, but that
         // behavior is undesirable here: `prefix_builder.serialize` also needs
@@ -791,15 +809,15 @@ impl<A: IpAddress, O: InnerPacketBuilder> PacketBuilder for TcpSegmentBuilderWit
         let mut header = &mut &mut target.header[..];
         let options = header.take_back_zero(opt_len).expect("too few bytes for TCP options");
         self.options.serialize(options);
-        self.prefix_builder.serialize(target, body);
+        self.prefix_builder.serialize(context, target, body);
     }
 }
 
-impl<A: IpAddress, O: InnerPacketBuilder> PartialPacketBuilder
+impl<A: IpAddress, O: InnerPacketBuilder, C: TcpSerializationContext> PartialPacketBuilder<C>
     for TcpSegmentBuilderWithOptions<A, O>
 {
-    fn partial_serialize(&self, body_len: usize, mut buffer: &mut [u8]) {
-        self.prefix_builder.partial_serialize(body_len, &mut buffer[..HDR_PREFIX_LEN]);
+    fn partial_serialize(&self, context: &mut C, body_len: usize, mut buffer: &mut [u8]) {
+        self.prefix_builder.partial_serialize(context, body_len, &mut buffer[..HDR_PREFIX_LEN]);
 
         let opt_len = self.options.bytes_len();
         let options = (&mut buffer).take_back_zero(opt_len).expect("too few bytes for TCP options");
@@ -970,12 +988,19 @@ impl<A: IpAddress> TcpSegmentBuilder<A> {
     }
 }
 
-impl<A: IpAddress> PacketBuilder for TcpSegmentBuilder<A> {
+impl<A: IpAddress> NestablePacketBuilder for TcpSegmentBuilder<A> {
     fn constraints(&self) -> PacketConstraints {
         PacketConstraints::new(HDR_PREFIX_LEN, 0, 0, core::usize::MAX)
     }
+}
 
-    fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
+impl<A: IpAddress, C: TcpSerializationContext> PacketBuilder<C> for TcpSegmentBuilder<A> {
+    fn serialize(
+        &self,
+        _context: &mut C,
+        target: &mut SerializeTarget<'_>,
+        body: FragmentedBytesMut<'_, '_>,
+    ) {
         self.serialize_header(target.header);
 
         let body_len = body.len();
@@ -998,8 +1023,8 @@ impl<A: IpAddress> PacketBuilder for TcpSegmentBuilder<A> {
     }
 }
 
-impl<A: IpAddress> PartialPacketBuilder for TcpSegmentBuilder<A> {
-    fn partial_serialize(&self, _body_len: usize, buffer: &mut [u8]) {
+impl<A: IpAddress, C: TcpSerializationContext> PartialPacketBuilder<C> for TcpSegmentBuilder<A> {
+    fn partial_serialize(&self, _context: &mut C, _body_len: usize, buffer: &mut [u8]) {
         self.serialize_header(buffer)
     }
 }
@@ -2020,18 +2045,29 @@ mod tests {
         option: O,
     }
 
-    impl<A: IpAddress, O: AsRef<[u8]>> PacketBuilder for TcpSegmentBuilderWithCustomOption<A, O> {
+    impl<A: IpAddress, O: AsRef<[u8]>> NestablePacketBuilder
+        for TcpSegmentBuilderWithCustomOption<A, O>
+    {
         fn constraints(&self) -> PacketConstraints {
             let opt_len = self.option.as_ref().len();
             let header_len = HDR_PREFIX_LEN + usize::from(opt_len);
             PacketConstraints::new(header_len, 0, 0, usize::MAX)
         }
+    }
 
-        fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
+    impl<A: IpAddress, O: AsRef<[u8]>, C: TcpSerializationContext> PacketBuilder<C>
+        for TcpSegmentBuilderWithCustomOption<A, O>
+    {
+        fn serialize(
+            &self,
+            context: &mut C,
+            target: &mut SerializeTarget<'_>,
+            body: FragmentedBytesMut<'_, '_>,
+        ) {
             let Self { option, prefix_builder } = self;
             let mut header = &mut &mut target.header[..];
             header.write_obj_back(option.as_ref()).unwrap();
-            prefix_builder.serialize(target, body);
+            prefix_builder.serialize(context, target, body);
         }
     }
 

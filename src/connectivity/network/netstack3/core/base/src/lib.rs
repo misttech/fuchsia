@@ -84,7 +84,10 @@ pub use matchers::{
     UdpSocketProperties, UdpSocketState, UdpStateMatcher,
 };
 pub use num::PositiveIsize;
-pub use packet::{DynamicNetworkSerializer, NetworkSerializationContext, NetworkSerializer};
+pub use packet::{
+    DynamicNetworkSerializer, NetworkPartialSerializer, NetworkSerializationContext,
+    NetworkSerializer,
+};
 pub use port_alloc::{EphemeralPort, PortAllocImpl, simple_randomized_port_alloc};
 pub use resource_references::{
     DeferredResourceRemovalContext, ReferenceNotifiers, ReferenceNotifiersExt,

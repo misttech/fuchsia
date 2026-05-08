@@ -17,7 +17,7 @@ use net_types::ethernet::Mac;
 use net_types::ip::{AddrSubnet, Ip as _, Ipv6, Ipv6Addr, Ipv6Scope, Mtu, Subnet};
 use net_types::{NonMappedAddr, ScopeableAddress as _, UnicastAddr, Witness as _};
 use packet::{
-    Buf, EmptyBuf, InnerPacketBuilder as _, NestableSerializer as _, PacketBuilder as _,
+    Buf, EmptyBuf, InnerPacketBuilder as _, NestablePacketBuilder as _, NestableSerializer as _,
     Serializer as _,
 };
 use packet_formats::ethernet::EthernetFrameLengthCheck;

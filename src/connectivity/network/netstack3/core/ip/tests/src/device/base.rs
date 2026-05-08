@@ -51,7 +51,7 @@ use netstack3_ip::testutil::IpCounterExpectations;
 use netstack3_ip::{
     AddableEntry, AddableEntryEither, AddableMetric, ResolveRouteError, RouteResolveOptions,
 };
-use packet::{Buf, PacketBuilder, Serializer};
+use packet::{Buf, NestablePacketBuilder, Serializer};
 use packet_formats::ip::IpProto;
 use packet_formats::ipv4::Ipv4PacketBuilder;
 use packet_formats::testutil::ArpPacketInfo;

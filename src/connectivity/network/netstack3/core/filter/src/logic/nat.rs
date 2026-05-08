@@ -1252,7 +1252,7 @@ mod tests {
     use net_types::ip::{AddrSubnet, Ipv4};
     use netstack3_base::testutil::FakeMatcherDeviceId;
     use netstack3_base::{IntoCoreTimerCtx, NetworkSerializationContext, TimerContext};
-    use packet::{EmptyBuf, NestableSerializer as _, PacketBuilder, Serializer};
+    use packet::{EmptyBuf, NestablePacketBuilder as _, NestableSerializer as _, Serializer};
     use packet_formats::ip::{IpPacketBuilder, IpProto};
     use packet_formats::udp::UdpPacketBuilder;
     use test_case::{test_case, test_matrix};

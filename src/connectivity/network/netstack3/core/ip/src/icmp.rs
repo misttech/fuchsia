@@ -26,13 +26,13 @@ use netstack3_base::sync::Mutex;
 use netstack3_base::{
     AnyDevice, Counter, CounterContext, DeviceIdContext, EitherDeviceId, FrameDestination,
     IcmpIpExt, Icmpv4ErrorCode, Icmpv6ErrorCode, InstantBindingsTypes, InstantContext,
-    IpDeviceAddr, IpExt, Marks, NetworkSerializer, RngContext, TokenBucket,
-    TxMetadataBindingsTypes,
+    IpDeviceAddr, IpExt, Marks, NetworkPartialSerializer, NetworkSerializer, RngContext,
+    TokenBucket, TxMetadataBindingsTypes,
 };
 use netstack3_filter::{DynTransportSerializer, DynamicTransportSerializer, FilterIpExt};
 use packet::{
-    BufferMut, InnerPacketBuilder as _, PacketBuilder as _, ParsablePacket as _, ParseBuffer,
-    PartialSerializer, TruncateDirection, TruncatingSerializer,
+    BufferMut, InnerPacketBuilder as _, NestablePacketBuilder as _, ParsablePacket as _,
+    ParseBuffer, TruncateDirection, TruncatingSerializer,
 };
 use packet_formats::icmp::ndp::options::{NdpOption, NdpOptionBuilder};
 use packet_formats::icmp::ndp::{
@@ -1310,7 +1310,7 @@ pub fn send_ndp_packet<BC, CC, S>(
 ) -> Result<(), IpSendFrameError<S>>
 where
     CC: IpLayerHandler<Ipv6, BC>,
-    S: NetworkSerializer + PartialSerializer,
+    S: NetworkSerializer + NetworkPartialSerializer,
     S::Buffer: BufferMut,
 {
     macro_rules! send {
@@ -3349,11 +3349,10 @@ mod tests {
                 IcmpZeroCode,
                 IcmpEchoRequest::new(ICMP_ID, SEQ_NUM),
             ))
-            .wrap_in(<Ipv4 as packet_formats::ip::IpExt>::PacketBuilder::new(
-                TEST_ADDRS_V4.local_ip,
-                TEST_ADDRS_V4.remote_ip,
-                64,
-                Ipv4Proto::Icmp,
+            .wrap_in(<Ipv4 as packet_formats::ip::IpExt>::PacketBuilder::<
+                NetworkSerializationContext,
+            >::new(
+                TEST_ADDRS_V4.local_ip, TEST_ADDRS_V4.remote_ip, 64, Ipv4Proto::Icmp
             ))
             .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap();
@@ -3417,11 +3416,10 @@ mod tests {
         // `IcmpIpTransportContext::receive_icmp_error`, but we should go no
         // further - in particular, we should not dispatch to the Echo sockets.
 
-        let mut buffer = <Ipv4 as packet_formats::ip::IpExt>::PacketBuilder::new(
-            TEST_ADDRS_V4.local_ip,
-            TEST_ADDRS_V4.remote_ip,
-            64,
-            Ipv4Proto::Icmp,
+        let mut buffer = <Ipv4 as packet_formats::ip::IpExt>::PacketBuilder::<
+            NetworkSerializationContext,
+        >::new(
+            TEST_ADDRS_V4.local_ip, TEST_ADDRS_V4.remote_ip, 64, Ipv4Proto::Icmp
         )
         .wrap_body(EmptyBuf)
         .serialize_vec_outer(&mut NetworkSerializationContext::default())
@@ -3485,11 +3483,10 @@ mod tests {
         // checking that `IcmpIpTransportContext::receive_icmp_error` was NOT
         // called.
 
-        let mut buffer = <Ipv4 as packet_formats::ip::IpExt>::PacketBuilder::new(
-            TEST_ADDRS_V4.local_ip,
-            TEST_ADDRS_V4.remote_ip,
-            64,
-            IpProto::Udp.into(),
+        let mut buffer = <Ipv4 as packet_formats::ip::IpExt>::PacketBuilder::<
+            NetworkSerializationContext,
+        >::new(
+            TEST_ADDRS_V4.local_ip, TEST_ADDRS_V4.remote_ip, 64, IpProto::Udp.into()
         )
         .wrap_body(EmptyBuf)
         .serialize_vec_outer(&mut NetworkSerializationContext::default())
@@ -3619,11 +3616,10 @@ mod tests {
                 IcmpZeroCode,
                 IcmpEchoRequest::new(ICMP_ID, SEQ_NUM),
             ))
-            .wrap_in(<Ipv6 as packet_formats::ip::IpExt>::PacketBuilder::new(
-                TEST_ADDRS_V6.local_ip,
-                TEST_ADDRS_V6.remote_ip,
-                64,
-                Ipv6Proto::Icmpv6,
+            .wrap_in(<Ipv6 as packet_formats::ip::IpExt>::PacketBuilder::<
+                NetworkSerializationContext,
+            >::new(
+                TEST_ADDRS_V6.local_ip, TEST_ADDRS_V6.remote_ip, 64, Ipv6Proto::Icmpv6
             ))
             .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap();
@@ -3682,11 +3678,10 @@ mod tests {
         // further - in particular, we should not call into Echo sockets.
 
         let mut buffer = EmptyBuf
-            .wrap_in(<Ipv6 as packet_formats::ip::IpExt>::PacketBuilder::new(
-                TEST_ADDRS_V6.local_ip,
-                TEST_ADDRS_V6.remote_ip,
-                64,
-                Ipv6Proto::Icmpv6,
+            .wrap_in(<Ipv6 as packet_formats::ip::IpExt>::PacketBuilder::<
+                NetworkSerializationContext,
+            >::new(
+                TEST_ADDRS_V6.local_ip, TEST_ADDRS_V6.remote_ip, 64, Ipv6Proto::Icmpv6
             ))
             .serialize_vec_outer(&mut NetworkSerializationContext::default())
             .unwrap();
@@ -3743,11 +3738,10 @@ mod tests {
         // checking that `IcmpIpTransportContext::receive_icmp_error` was NOT
         // called.
 
-        let mut buffer = <Ipv6 as packet_formats::ip::IpExt>::PacketBuilder::new(
-            TEST_ADDRS_V6.local_ip,
-            TEST_ADDRS_V6.remote_ip,
-            64,
-            IpProto::Udp.into(),
+        let mut buffer = <Ipv6 as packet_formats::ip::IpExt>::PacketBuilder::<
+            NetworkSerializationContext,
+        >::new(
+            TEST_ADDRS_V6.local_ip, TEST_ADDRS_V6.remote_ip, 64, IpProto::Udp.into()
         )
         .wrap_body(EmptyBuf)
         .serialize_vec_outer(&mut NetworkSerializationContext::default())

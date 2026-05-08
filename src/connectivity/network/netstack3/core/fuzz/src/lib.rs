@@ -173,7 +173,7 @@ impl FrameType {
 }
 
 impl EthernetFrameType {
-    fn arbitrary_buf<O: PacketBuilder + Debug>(
+    fn arbitrary_buf<O: PacketBuilder<NetworkSerializationContext> + Debug>(
         &self,
         outer: O,
         u: &mut Unstructured<'_>,
@@ -191,7 +191,12 @@ impl EthernetFrameType {
 }
 
 impl IpFrameType {
-    fn arbitrary_buf<'a, A: IpAddress, IPB: IpPacketBuilder<A::Version>, O: PacketBuilder + Debug>(
+    fn arbitrary_buf<
+        'a,
+        A: IpAddress,
+        IPB: IpPacketBuilder<NetworkSerializationContext, A::Version>,
+        O: PacketBuilder<NetworkSerializationContext> + Debug,
+    >(
         &self,
         outer: O,
         u: &mut Unstructured<'a>,
@@ -288,7 +293,7 @@ trait FuzzablePacket {
 }
 
 // Implement for `(B,)` rather than for `B` to avoid a blanket impl conflict.
-impl<B: PacketBuilder> FuzzablePacket for (B,) {
+impl<B: PacketBuilder<NetworkSerializationContext>> FuzzablePacket for (B,) {
     fn try_constraints(&self) -> Option<PacketConstraints> {
         Some(self.0.constraints())
     }
@@ -302,7 +307,12 @@ impl<B: PacketBuilder> FuzzablePacket for (B,) {
     }
 }
 
-impl<BA: PacketBuilder, BB: PacketBuilder, BC: PacketBuilder> FuzzablePacket for (BA, BB, BC) {
+impl<
+    BA: PacketBuilder<NetworkSerializationContext>,
+    BB: PacketBuilder<NetworkSerializationContext>,
+    BC: PacketBuilder<NetworkSerializationContext>,
+> FuzzablePacket for (BA, BB, BC)
+{
     fn try_constraints(&self) -> Option<PacketConstraints> {
         let (a, b, c) = self;
         a.constraints()

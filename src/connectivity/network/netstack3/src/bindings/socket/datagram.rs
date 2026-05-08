@@ -2816,7 +2816,7 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::StreamExt;
     use netstack3_core::NetworkSerializationContext;
-    use packet::{PacketBuilder as _, Serializer as _};
+    use packet::{NestablePacketBuilder as _, Serializer as _};
     use packet_formats::icmp::IcmpIpExt;
 
     use crate::bindings::integration_tests::{

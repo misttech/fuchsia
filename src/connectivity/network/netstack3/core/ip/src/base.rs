@@ -45,7 +45,7 @@ use netstack3_filter::{
 };
 use netstack3_hashmap::HashMap;
 use packet::{
-    Buf, BufferMut, GrowBuffer, LayoutBufferAlloc, PacketBuilder as _, PacketConstraints,
+    Buf, BufferMut, GrowBuffer, LayoutBufferAlloc, NestablePacketBuilder as _, PacketConstraints,
     ParsablePacket as _, ParseBuffer, ParseBufferMut, ParseMetadata, SerializeError,
     Serializer as _,
 };
@@ -4969,7 +4969,7 @@ where
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct Wrap<'a, I: IpLayerIpExt> {
-        builder: &'a mut I::PacketBuilder,
+        builder: &'a mut I::PacketBuilder<NetworkSerializationContext>,
         next_packet_id: I::PacketId,
     }
 

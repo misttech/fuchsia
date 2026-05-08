@@ -8,8 +8,9 @@
 
 use crate::ValidStr;
 use packet::{
-    BufferView, BufferViewMut, FragmentedBytesMut, InnerPacketBuilder, PacketBuilder,
-    PacketConstraints, ParsablePacket, ParseMetadata, SerializeTarget,
+    BufferView, BufferViewMut, FragmentedBytesMut, InnerPacketBuilder, NestablePacketBuilder,
+    PacketBuilder, PacketConstraints, ParsablePacket, ParseMetadata, SerializationContext,
+    SerializeTarget,
 };
 use std::num::NonZeroU16;
 use zerocopy::byteorder::little_endian::U32;
@@ -119,7 +120,7 @@ impl<'a> LogPacketBuilder<'a> {
     }
 }
 
-impl<'a> PacketBuilder for LogPacketBuilder<'a> {
+impl<'a> NestablePacketBuilder for LogPacketBuilder<'a> {
     fn constraints(&self) -> PacketConstraints {
         PacketConstraints::new(
             /* header_len */ std::mem::size_of::<PacketHead>() + MAX_NODENAME_LENGTH,
@@ -128,8 +129,15 @@ impl<'a> PacketBuilder for LogPacketBuilder<'a> {
             /* max_body_len */ MAX_LOG_DATA,
         )
     }
+}
 
-    fn serialize(&self, target: &mut SerializeTarget<'_>, _body: FragmentedBytesMut<'_, '_>) {
+impl<'a, C: SerializationContext> PacketBuilder<C> for LogPacketBuilder<'a> {
+    fn serialize(
+        &self,
+        _context: &mut C,
+        target: &mut SerializeTarget<'_>,
+        _body: FragmentedBytesMut<'_, '_>,
+    ) {
         let mut bv = crate::as_buffer_view_mut(&mut target.header);
         let mut head = bv.take_obj_front::<PacketHead>().unwrap();
         head.magic.set(MAGIC);

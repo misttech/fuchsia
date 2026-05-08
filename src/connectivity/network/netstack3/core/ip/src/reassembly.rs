@@ -933,7 +933,7 @@ mod tests {
         assert_empty,
     };
     use netstack3_base::{CtxPair, IntoCoreTimerCtx, NetworkSerializationContext};
-    use packet::{Buf, PacketBuilder, ParsablePacket, ParseBuffer, Serializer};
+    use packet::{Buf, NestablePacketBuilder as _, ParsablePacket, ParseBuffer, Serializer};
     use packet_formats::ip::{FragmentOffset, IpProto, Ipv6Proto};
     use packet_formats::ipv4::Ipv4PacketBuilder;
     use packet_formats::ipv6::{Ipv6PacketBuilder, Ipv6PacketBuilderWithFragmentHeader};

@@ -21,9 +21,9 @@ use packet::records::RecordsIter;
 use packet::records::options::{OptionSequenceBuilder, OptionsRaw};
 use packet::{
     BufferProvider, BufferView, BufferViewMut, EmptyBuf, FragmentedBytesMut, FromRaw,
-    GrowBufferMut, InnerPacketBuilder, LayoutBufferAlloc, MaybeParsed, NestableSerializer,
-    NoOpSerializationContext, PacketBuilder, PacketConstraints, ParsablePacket, ParseMetadata,
-    PartialPacketBuilder, PartialSerializeResult, PartialSerializer, SerializeError,
+    GrowBufferMut, InnerPacketBuilder, LayoutBufferAlloc, MaybeParsed, NestablePacketBuilder,
+    NestableSerializer, NoOpSerializationContext, PacketBuilder, PacketConstraints, ParsablePacket,
+    ParseMetadata, PartialPacketBuilder, PartialSerializeResult, PartialSerializer, SerializeError,
     SerializeTarget, Serializer,
 };
 use zerocopy::byteorder::network_endian::U16;
@@ -33,8 +33,8 @@ use zerocopy::{
 
 use crate::error::ParseError;
 use crate::ip::{
-    DscpAndEcn, FragmentOffset, IpExt, IpPacketBuilder, IpProto, Ipv4Proto, Ipv6Proto, Nat64Error,
-    Nat64TranslationResult,
+    DscpAndEcn, FragmentOffset, IpExt, IpPacketBuilder, IpProto, IpSerializationContext, Ipv4Proto,
+    Ipv6Proto, Nat64Error, Nat64TranslationResult,
 };
 use crate::ipv6::Ipv6PacketBuilder;
 use crate::tcp::{TcpParseArgs, TcpSegment};
@@ -257,9 +257,10 @@ impl<B: SplitByteSlice> Ipv4Header for Ipv4Packet<B> {
     }
 }
 
-impl<B: SplitByteSlice> PartialSerializer for Ipv4Packet<B> {
+impl<B: SplitByteSlice, C: IpSerializationContext<Ipv4>> PartialSerializer<C> for Ipv4Packet<B> {
     fn partial_serialize(
         &self,
+        _context: &mut C,
         _outer: PacketConstraints,
         mut buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
@@ -875,7 +876,7 @@ impl<'a, B> Ipv4PacketBuilderWithOptions<'a, RecordsIter<'a, B, Ipv4OptionsImpl>
     }
 }
 
-impl<'a, I> PacketBuilder for Ipv4PacketBuilderWithOptions<'a, I>
+impl<'a, I> NestablePacketBuilder for Ipv4PacketBuilderWithOptions<'a, I>
 where
     I: Iterator + Clone,
     I::Item: Borrow<Ipv4Option<'a>>,
@@ -885,8 +886,20 @@ where
         assert_eq!(header_len % 4, 0);
         PacketConstraints::new(header_len, 0, 0, (1 << 16) - 1 - header_len)
     }
+}
 
-    fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
+impl<'a, I, C: IpSerializationContext<Ipv4>> PacketBuilder<C>
+    for Ipv4PacketBuilderWithOptions<'a, I>
+where
+    I: Iterator + Clone,
+    I::Item: Borrow<Ipv4Option<'a>>,
+{
+    fn serialize(
+        &self,
+        context: &mut C,
+        target: &mut SerializeTarget<'_>,
+        body: FragmentedBytesMut<'_, '_>,
+    ) {
         let opt_len = self.aligned_options_len();
         // `take_back_zero` consumes the extent of the receiving slice, but that
         // behavior is undesirable here: `prefix_builder.serialize` also needs
@@ -897,25 +910,27 @@ where
         let opts = header.take_back_zero(opt_len).expect("too few bytes for Ipv4 options");
         let Ipv4PacketBuilderWithOptions { prefix_builder, options } = self;
         options.serialize_into(opts);
-        prefix_builder.serialize(target, body);
+        prefix_builder.serialize(context, target, body);
     }
 }
 
-impl<'a, I> PartialPacketBuilder for Ipv4PacketBuilderWithOptions<'a, I>
+impl<'a, I, C: IpSerializationContext<Ipv4>> PartialPacketBuilder<C>
+    for Ipv4PacketBuilderWithOptions<'a, I>
 where
     I: Iterator + Clone,
     I::Item: Borrow<Ipv4Option<'a>>,
 {
-    fn partial_serialize(&self, body_len: usize, header: &mut [u8]) {
+    fn partial_serialize(&self, context: &mut C, body_len: usize, header: &mut [u8]) {
         let Ipv4PacketBuilderWithOptions { prefix_builder, options } = self;
-        prefix_builder.partial_serialize(body_len, header);
+        prefix_builder.partial_serialize(context, body_len, header);
         let options_slice = &mut header[IPV4_MIN_HDR_LEN..];
         assert_eq!(options_slice.len(), self.aligned_options_len());
         options.serialize_into(options_slice);
     }
 }
 
-impl<'a, I> IpPacketBuilder<Ipv4> for Ipv4PacketBuilderWithOptions<'a, I>
+impl<'a, C: IpSerializationContext<Ipv4>, I> IpPacketBuilder<C, Ipv4>
+    for Ipv4PacketBuilderWithOptions<'a, I>
 where
     I: Default + Debug + Clone + Iterator<Item: Borrow<Ipv4Option<'a>>>,
 {
@@ -932,7 +947,7 @@ where
     }
 
     fn set_src_ip(&mut self, addr: Ipv4Addr) {
-        self.prefix_builder.set_src_ip(addr);
+        <Ipv4PacketBuilder as IpPacketBuilder<C, Ipv4>>::set_src_ip(&mut self.prefix_builder, addr)
     }
 
     fn dst_ip(&self) -> Ipv4Addr {
@@ -940,7 +955,7 @@ where
     }
 
     fn set_dst_ip(&mut self, addr: Ipv4Addr) {
-        self.prefix_builder.set_dst_ip(addr);
+        <Ipv4PacketBuilder as IpPacketBuilder<C, Ipv4>>::set_dst_ip(&mut self.prefix_builder, addr)
     }
 
     fn proto(&self) -> Ipv4Proto {
@@ -948,7 +963,10 @@ where
     }
 
     fn set_dscp_and_ecn(&mut self, dscp_and_ecn: DscpAndEcn) {
-        self.prefix_builder.set_dscp_and_ecn(dscp_and_ecn)
+        <Ipv4PacketBuilder as IpPacketBuilder<C, Ipv4>>::set_dscp_and_ecn(
+            &mut self.prefix_builder,
+            dscp_and_ecn,
+        )
     }
 }
 
@@ -1069,12 +1087,19 @@ impl Ipv4PacketBuilder {
     }
 }
 
-impl PacketBuilder for Ipv4PacketBuilder {
+impl NestablePacketBuilder for Ipv4PacketBuilder {
     fn constraints(&self) -> PacketConstraints {
         PacketConstraints::new(IPV4_MIN_HDR_LEN, 0, 0, (1 << 16) - 1 - IPV4_MIN_HDR_LEN)
     }
+}
 
-    fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
+impl<C: IpSerializationContext<Ipv4>> PacketBuilder<C> for Ipv4PacketBuilder {
+    fn serialize(
+        &self,
+        _context: &mut C,
+        target: &mut SerializeTarget<'_>,
+        body: FragmentedBytesMut<'_, '_>,
+    ) {
         let header_len = target.header.len();
         let total_len = header_len + body.len();
         let mut hdr_prefix = self.get_header_prefix(header_len, total_len);
@@ -1086,15 +1111,15 @@ impl PacketBuilder for Ipv4PacketBuilder {
     }
 }
 
-impl PartialPacketBuilder for Ipv4PacketBuilder {
-    fn partial_serialize(&self, body_len: usize, mut header: &mut [u8]) {
+impl<C: IpSerializationContext<Ipv4>> PartialPacketBuilder<C> for Ipv4PacketBuilder {
+    fn partial_serialize(&self, _context: &mut C, body_len: usize, mut header: &mut [u8]) {
         let total_len = header.len() + body_len;
         let hdr_prefix = self.get_header_prefix(header.len(), total_len);
         (&mut header).write_obj_front(&hdr_prefix).expect("too few bytes for IPv4 header prefix");
     }
 }
 
-impl IpPacketBuilder<Ipv4> for Ipv4PacketBuilder {
+impl<C: IpSerializationContext<Ipv4>> IpPacketBuilder<C, Ipv4> for Ipv4PacketBuilder {
     fn new(src_ip: Ipv4Addr, dst_ip: Ipv4Addr, ttl: u8, proto: Ipv4Proto) -> Self {
         Ipv4PacketBuilder::new(src_ip, dst_ip, ttl, proto)
     }
@@ -1615,8 +1640,11 @@ mod tests {
 
         for i in 1..expected_partial.len() {
             let mut buf = vec![0u8; i];
-            let result =
-                packet.partial_serialize(PacketConstraints::UNCONSTRAINED, buf.as_mut_slice());
+            let result = packet.partial_serialize(
+                &mut NoOpSerializationContext,
+                PacketConstraints::UNCONSTRAINED,
+                buf.as_mut_slice(),
+            );
 
             // PartialSerializer serializes the header only if the buffer is
             // large enough to fit the whole header.
@@ -1951,8 +1979,11 @@ mod tests {
 
         for i in 1..(packet_len + 1) {
             let mut buf = vec![0u8; i];
-            let result =
-                packet.partial_serialize(PacketConstraints::UNCONSTRAINED, buf.as_mut_slice());
+            let result = packet.partial_serialize(
+                &mut NoOpSerializationContext,
+                PacketConstraints::UNCONSTRAINED,
+                buf.as_mut_slice(),
+            );
 
             let bytes_written = if i >= packet_len { packet_len } else { i };
             assert_eq!(

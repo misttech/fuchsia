@@ -1309,8 +1309,8 @@ mod tests {
     use byteorder::{ByteOrder, NetworkEndian};
     use net_types::ip::{Ip, IpAddress, Subnet};
     use packet::{
-        EmptyBuf, InnerPacketBuilder, NestableSerializer as _, NoOpSerializationContext,
-        PacketBuilder, ParseBuffer, Serializer,
+        EmptyBuf, InnerPacketBuilder, NestablePacketBuilder as _, NestableSerializer as _,
+        NoOpSerializationContext, ParseBuffer, Serializer,
     };
     use test_case::test_case;
     use zerocopy::Ref;

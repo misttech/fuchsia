@@ -266,8 +266,12 @@ where
         call_method_on_either!(self, with_all_contents_mut, f)
     }
 
-    fn serialize<BB: PacketBuilder>(&mut self, builder: BB) {
-        call_method_on_either!(self, serialize, builder)
+    fn serialize<C: SerializationContext, BB: PacketBuilder<C>>(
+        &mut self,
+        context: &mut C,
+        builder: BB,
+    ) {
+        call_method_on_either!(self, serialize, context, builder)
     }
 }
 
@@ -742,10 +746,7 @@ pub struct SerializeTarget<'a> {
 ///
 /// `()` may be used as an "empty" `PacketBuilder` with no header, footer,
 /// minimum body length requirement, or maximum body length requirement.
-pub trait PacketBuilder: Sized {
-    /// Gets the constraints for this `PacketBuilder`.
-    fn constraints(&self) -> PacketConstraints;
-
+pub trait PacketBuilder<C: SerializationContext>: NestablePacketBuilder + Sized {
     /// Serializes this packet into an existing buffer.
     ///
     /// *This method is usually called by this crate during the serialization of
@@ -774,7 +775,17 @@ pub trait PacketBuilder: Sized {
     /// May panic if the `target.header` or `target.footer` are not large enough
     /// to fit the packet's header and footer respectively, or if the body does
     /// not satisfy the minimum or maximum body length requirements.
-    fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>);
+    fn serialize(
+        &self,
+        context: &mut C,
+        target: &mut SerializeTarget<'_>,
+        body: FragmentedBytesMut<'_, '_>,
+    );
+}
+
+pub trait NestablePacketBuilder: Sized {
+    /// Gets the constraints for this `PacketBuilder`.
+    fn constraints(&self) -> PacketConstraints;
 
     /// Wraps given packet `body` in this packet.
     ///
@@ -786,42 +797,76 @@ pub trait PacketBuilder: Sized {
     }
 }
 
-impl<'a, B: PacketBuilder> PacketBuilder for &'a B {
+impl<'a, B: NestablePacketBuilder> NestablePacketBuilder for &'a B {
     #[inline]
     fn constraints(&self) -> PacketConstraints {
         B::constraints(self)
     }
+}
+
+impl<'a, C: SerializationContext, B: PacketBuilder<C>> PacketBuilder<C> for &'a B {
     #[inline]
-    fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
-        B::serialize(self, target, body)
+    fn serialize(
+        &self,
+        context: &mut C,
+        target: &mut SerializeTarget<'_>,
+        body: FragmentedBytesMut<'_, '_>,
+    ) {
+        B::serialize(self, context, target, body)
     }
 }
 
-impl<'a, B: PacketBuilder> PacketBuilder for &'a mut B {
+impl<'a, B: NestablePacketBuilder> NestablePacketBuilder for &'a mut B {
     #[inline]
     fn constraints(&self) -> PacketConstraints {
         B::constraints(self)
     }
+}
+
+impl<'a, C: SerializationContext, B: PacketBuilder<C>> PacketBuilder<C> for &'a mut B {
     #[inline]
-    fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
-        B::serialize(self, target, body)
+    fn serialize(
+        &self,
+        context: &mut C,
+        target: &mut SerializeTarget<'_>,
+        body: FragmentedBytesMut<'_, '_>,
+    ) {
+        B::serialize(self, context, target, body)
     }
 }
 
-impl PacketBuilder for () {
+impl NestablePacketBuilder for () {
     #[inline]
     fn constraints(&self) -> PacketConstraints {
         PacketConstraints::UNCONSTRAINED
     }
-    #[inline]
-    fn serialize(&self, _target: &mut SerializeTarget<'_>, _body: FragmentedBytesMut<'_, '_>) {}
 }
 
-impl PacketBuilder for Never {
+impl<C: SerializationContext> PacketBuilder<C> for () {
+    #[inline]
+    fn serialize(
+        &self,
+        _context: &mut C,
+        _target: &mut SerializeTarget<'_>,
+        _body: FragmentedBytesMut<'_, '_>,
+    ) {
+    }
+}
+
+impl NestablePacketBuilder for Never {
     fn constraints(&self) -> PacketConstraints {
         match *self {}
     }
-    fn serialize(&self, _target: &mut SerializeTarget<'_>, _body: FragmentedBytesMut<'_, '_>) {}
+}
+
+impl<C: SerializationContext> PacketBuilder<C> for Never {
+    fn serialize(
+        &self,
+        _context: &mut C,
+        _target: &mut SerializeTarget<'_>,
+        _body: FragmentedBytesMut<'_, '_>,
+    ) {
+    }
 }
 
 /// One object encapsulated in another one.
@@ -885,12 +930,20 @@ pub struct LimitedSizePacketBuilder {
     pub limit: usize,
 }
 
-impl PacketBuilder for LimitedSizePacketBuilder {
+impl NestablePacketBuilder for LimitedSizePacketBuilder {
     fn constraints(&self) -> PacketConstraints {
         PacketConstraints::with_max_body_len(self.limit)
     }
+}
 
-    fn serialize(&self, _target: &mut SerializeTarget<'_>, _body: FragmentedBytesMut<'_, '_>) {}
+impl<C: SerializationContext> PacketBuilder<C> for LimitedSizePacketBuilder {
+    fn serialize(
+        &self,
+        _context: &mut C,
+        _target: &mut SerializeTarget<'_>,
+        _body: FragmentedBytesMut<'_, '_>,
+    ) {
+    }
 }
 
 /// A builder capable of serializing packets - which do not encapsulate other
@@ -1451,7 +1504,7 @@ pub trait SerializationContext: Sized {
     /// modification.
     fn serialize_with_outer<
         I: Serializer<Self>,
-        O: PacketBuilder,
+        O: PacketBuilder<Self>,
         B: GrowBufferMut,
         P: BufferProvider<I::Buffer, B>,
     >(
@@ -1474,7 +1527,7 @@ pub trait SerializationContext: Sized {
     /// modification.
     fn serialize_new_buf_with_outer<
         I: Serializer<Self>,
-        O: PacketBuilder,
+        O: PacketBuilder<Self>,
         B: GrowBufferMut,
         A: LayoutBufferAlloc<B>,
     >(
@@ -1495,7 +1548,7 @@ impl SerializationContext for NoOpSerializationContext {
 
     fn serialize_with_outer<
         I: Serializer<Self>,
-        O: PacketBuilder,
+        O: PacketBuilder<Self>,
         B: GrowBufferMut,
         P: BufferProvider<I::Buffer, B>,
     >(
@@ -1510,7 +1563,7 @@ impl SerializationContext for NoOpSerializationContext {
 
     fn serialize_new_buf_with_outer<
         I: Serializer<Self>,
-        O: PacketBuilder,
+        O: PacketBuilder<Self>,
         B: GrowBufferMut,
         A: LayoutBufferAlloc<B>,
     >(
@@ -1705,7 +1758,7 @@ pub trait NestableSerializer: Sized {
     /// produces a new `Serializer` which describes encapsulating this one in
     /// the packet described by `outer`.
     #[inline]
-    fn wrap_in<B: PacketBuilder>(self, outer: B) -> Nested<Self, B> {
+    fn wrap_in<B: NestablePacketBuilder>(self, outer: B) -> Nested<Self, B> {
         outer.wrap_body(self)
     }
 
@@ -1752,13 +1805,22 @@ impl<I, B> InnerSerializer<I, B> {
 /// serialize it using `self.buffer`.
 struct InnerPacketBuilderWrapper<I>(I);
 
-impl<I: InnerPacketBuilder> PacketBuilder for InnerPacketBuilderWrapper<I> {
+impl<I: InnerPacketBuilder> NestablePacketBuilder for InnerPacketBuilderWrapper<I> {
     fn constraints(&self) -> PacketConstraints {
         let Self(wrapped) = self;
         PacketConstraints::new(wrapped.bytes_len(), 0, 0, usize::MAX)
     }
+}
 
-    fn serialize(&self, target: &mut SerializeTarget<'_>, _body: FragmentedBytesMut<'_, '_>) {
+impl<C: SerializationContext, I: InnerPacketBuilder> PacketBuilder<C>
+    for InnerPacketBuilderWrapper<I>
+{
+    fn serialize(
+        &self,
+        _context: &mut C,
+        target: &mut SerializeTarget<'_>,
+        _body: FragmentedBytesMut<'_, '_>,
+    ) {
         let Self(wrapped) = self;
 
         // Note that the body might be non-empty if an outer
@@ -2029,7 +2091,9 @@ impl<C: SerializationContext, B: GrowBuffer + ShrinkBuffer> Serializer<C>
 
 impl<B: GrowBuffer + ShrinkBuffer> NestableSerializer for TruncatingSerializer<B> {}
 
-impl<C: SerializationContext, I: Serializer<C>, O: PacketBuilder> Serializer<C> for Nested<I, O> {
+impl<C: SerializationContext, I: Serializer<C>, O: PacketBuilder<C>> Serializer<C>
+    for Nested<I, O>
+{
     type Buffer = I::Buffer;
 
     #[inline]
@@ -2047,7 +2111,7 @@ impl<C: SerializationContext, I: Serializer<C>, O: PacketBuilder> Serializer<C> 
         // `context.serialize_with_outer.
         match self.inner.serialize(context, outer, provider) {
             Ok(mut buf) => {
-                buf.serialize(&self.outer);
+                buf.serialize(context, &self.outer);
                 Ok(buf)
             }
             Err((err, inner)) => Err((err, self.outer.wrap_body(inner))),
@@ -2068,15 +2132,15 @@ impl<C: SerializationContext, I: Serializer<C>, O: PacketBuilder> Serializer<C> 
         // TODO(https://fxbug.dev/485599557): Perform inner serialization within
         // `context.serialize_with_outer.
         let mut buf = self.inner.serialize_new_buf(context, outer, alloc)?;
-        GrowBufferMut::serialize(&mut buf, &self.outer);
+        GrowBufferMut::serialize(&mut buf, context, &self.outer);
         Ok(buf)
     }
 }
 
-impl<I: NestableSerializer, O: PacketBuilder> NestableSerializer for Nested<I, O> {}
+impl<I: NestableSerializer, O: NestablePacketBuilder> NestableSerializer for Nested<I, O> {}
 
 /// A packet builder used for partial packet serialization.
-pub trait PartialPacketBuilder: PacketBuilder {
+pub trait PartialPacketBuilder<C: SerializationContext>: PacketBuilder<C> {
     /// Serializes the header to the specified `buffer`.
     ///
     /// Checksums (if any) should not calculated. The corresponding fields
@@ -2085,11 +2149,11 @@ pub trait PartialPacketBuilder: PacketBuilder {
     /// `body_len` specifies size of the packet body wrapped by this
     /// `PacketBuilder`. It is supplied so the correct packet size can be
     /// written in the header.
-    fn partial_serialize(&self, body_len: usize, buffer: &mut [u8]);
+    fn partial_serialize(&self, context: &mut C, body_len: usize, buffer: &mut [u8]);
 }
 
-impl PartialPacketBuilder for () {
-    fn partial_serialize(&self, _body_len: usize, _buffer: &mut [u8]) {}
+impl<C: SerializationContext> PartialPacketBuilder<C> for () {
+    fn partial_serialize(&self, _context: &mut C, _body_len: usize, _buffer: &mut [u8]) {}
 }
 
 /// Result returned by `PartialSerializer::partial_serialize`.
@@ -2106,7 +2170,7 @@ pub struct PartialSerializeResult {
 ///
 /// Partial serialization allows to serialize only packet headers without
 /// calculating packet checksums (if any).
-pub trait PartialSerializer {
+pub trait PartialSerializer<C: SerializationContext> {
     /// Serializes the head of the packet to the specified `buffer`.
     ///
     /// If the packet contains network or transport level headers that fit in
@@ -2118,14 +2182,16 @@ pub trait PartialSerializer {
     /// actually serialized.
     fn partial_serialize(
         &self,
+        context: &mut C,
         outer: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>>;
 }
 
-impl<B: GrowBuffer + ShrinkBuffer> PartialSerializer for B {
+impl<C: SerializationContext, B: GrowBuffer + ShrinkBuffer> PartialSerializer<C> for B {
     fn partial_serialize(
         &self,
+        _context: &mut C,
         _outer: PacketConstraints,
         _buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
@@ -2133,9 +2199,12 @@ impl<B: GrowBuffer + ShrinkBuffer> PartialSerializer for B {
     }
 }
 
-impl<B: GrowBuffer + ShrinkBuffer> PartialSerializer for TruncatingSerializer<B> {
+impl<C: SerializationContext, B: GrowBuffer + ShrinkBuffer> PartialSerializer<C>
+    for TruncatingSerializer<B>
+{
     fn partial_serialize(
         &self,
+        _context: &mut C,
         outer: PacketConstraints,
         _buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
@@ -2145,11 +2214,12 @@ impl<B: GrowBuffer + ShrinkBuffer> PartialSerializer for TruncatingSerializer<B>
     }
 }
 
-impl<I: InnerPacketBuilder, B: GrowBuffer + ShrinkBuffer> PartialSerializer
-    for InnerSerializer<I, B>
+impl<C: SerializationContext, I: InnerPacketBuilder, B: GrowBuffer + ShrinkBuffer>
+    PartialSerializer<C> for InnerSerializer<I, B>
 {
     fn partial_serialize(
         &self,
+        _context: &mut C,
         outer: PacketConstraints,
         _buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
@@ -2160,22 +2230,28 @@ impl<I: InnerPacketBuilder, B: GrowBuffer + ShrinkBuffer> PartialSerializer
     }
 }
 
-impl<A: PartialSerializer, B: PartialSerializer> PartialSerializer for EitherSerializer<A, B> {
+impl<C: SerializationContext, A: PartialSerializer<C>, B: PartialSerializer<C>> PartialSerializer<C>
+    for EitherSerializer<A, B>
+{
     fn partial_serialize(
         &self,
+        context: &mut C,
         outer: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
         match self {
-            EitherSerializer::A(s) => s.partial_serialize(outer, buffer),
-            EitherSerializer::B(s) => s.partial_serialize(outer, buffer),
+            EitherSerializer::A(s) => s.partial_serialize(context, outer, buffer),
+            EitherSerializer::B(s) => s.partial_serialize(context, outer, buffer),
         }
     }
 }
 
-impl<I: PartialSerializer, O: PartialPacketBuilder> PartialSerializer for Nested<I, O> {
+impl<C: SerializationContext, I: PartialSerializer<C>, O: PartialPacketBuilder<C>>
+    PartialSerializer<C> for Nested<I, O>
+{
     fn partial_serialize(
         &self,
+        context: &mut C,
         outer: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
@@ -2186,9 +2262,9 @@ impl<I: PartialSerializer, O: PartialPacketBuilder> PartialSerializer for Nested
 
         let header_len = header_constraints.header_len();
         let inner_buf = buffer.get_mut(header_len..).unwrap_or(&mut []);
-        let mut result = self.inner.partial_serialize(constraints, inner_buf)?;
+        let mut result = self.inner.partial_serialize(context, constraints, inner_buf)?;
         if header_len <= buffer.len() {
-            self.outer.partial_serialize(result.total_size, &mut buffer[..header_len]);
+            self.outer.partial_serialize(context, result.total_size, &mut buffer[..header_len]);
             result.bytes_written += header_len;
         }
         result.total_size += header_len + header_constraints.footer_len();
@@ -2486,7 +2562,7 @@ mod tests {
         }
     }
 
-    impl PacketBuilder for DummyPacketBuilder {
+    impl NestablePacketBuilder for DummyPacketBuilder {
         fn constraints(&self) -> PacketConstraints {
             PacketConstraints::new(
                 self.header_len,
@@ -2495,8 +2571,15 @@ mod tests {
                 self.max_body_len,
             )
         }
+    }
 
-        fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
+    impl PacketBuilder<NoOpSerializationContext> for DummyPacketBuilder {
+        fn serialize(
+            &self,
+            _context: &mut NoOpSerializationContext,
+            target: &mut SerializeTarget<'_>,
+            body: FragmentedBytesMut<'_, '_>,
+        ) {
             assert_eq!(target.header.len(), self.header_len);
             assert_eq!(target.footer.len(), self.footer_len);
             assert!(body.len() >= self.min_body_len);
@@ -2506,8 +2589,13 @@ mod tests {
         }
     }
 
-    impl PartialPacketBuilder for DummyPacketBuilder {
-        fn partial_serialize(&self, _body_len: usize, buffer: &mut [u8]) {
+    impl PartialPacketBuilder<NoOpSerializationContext> for DummyPacketBuilder {
+        fn partial_serialize(
+            &self,
+            _context: &mut NoOpSerializationContext,
+            _body_len: usize,
+            buffer: &mut [u8],
+        ) {
             buffer.fill(self.header_byte)
         }
     }
@@ -2652,7 +2740,7 @@ mod tests {
             VerifyingSerializer { ser: self, verifier }
         }
 
-        fn wrap_in_verifying<B: PacketBuilder>(
+        fn wrap_in_verifying<B: PacketBuilder<NoOpSerializationContext>>(
             self,
             outer: B,
             truncating: bool,

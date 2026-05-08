@@ -185,7 +185,7 @@ mod tests {
     use netstack3_base::NetworkSerializationContext;
     use netstack3_base::testutil::{FakeDeviceId, TEST_ADDRS_V6};
     use packet::ParseBuffer;
-    use packet::serialize::{Buf, PacketBuilder, Serializer};
+    use packet::serialize::{Buf, NestablePacketBuilder as _, Serializer};
     use packet_formats::ip::IpProto;
     use packet_formats::ipv6::Ipv6PacketBuilder;
 

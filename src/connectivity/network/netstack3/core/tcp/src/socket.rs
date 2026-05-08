@@ -5822,7 +5822,7 @@ mod tests {
     use netstack3_ip::{
         BaseTransportIpContext, HopLimits, IpTransportContext, LocalDeliveryPacketInfo,
     };
-    use packet::{Buf, BufferMut, PacketBuilder as _, ParseBuffer as _, Serializer as _};
+    use packet::{Buf, BufferMut, NestablePacketBuilder as _, ParseBuffer as _, Serializer as _};
     use packet_formats::icmp::{
         IcmpDestUnreachable, Icmpv4DestUnreachableCode, Icmpv4ParameterProblemCode,
         Icmpv4TimeExceededCode, Icmpv6DestUnreachableCode, Icmpv6ParameterProblemCode,

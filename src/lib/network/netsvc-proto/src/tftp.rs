@@ -22,8 +22,8 @@
 
 use crate::ValidStr;
 use packet::{
-    BufferView, FragmentedBytesMut, InnerPacketBuilder, PacketBuilder, PacketConstraints,
-    ParsablePacket, ParseMetadata, SerializeTarget,
+    BufferView, FragmentedBytesMut, InnerPacketBuilder, NestablePacketBuilder, PacketBuilder,
+    PacketConstraints, ParsablePacket, ParseMetadata, SerializationContext, SerializeTarget,
 };
 use std::io::Write as _;
 use std::num::NonZeroU16;
@@ -873,7 +873,7 @@ impl DataPacketBuilder {
     }
 }
 
-impl PacketBuilder for DataPacketBuilder {
+impl NestablePacketBuilder for DataPacketBuilder {
     fn constraints(&self) -> PacketConstraints {
         PacketConstraints::new(
             std::mem::size_of::<MessageHead>() + std::mem::size_of::<U16>(),
@@ -882,8 +882,15 @@ impl PacketBuilder for DataPacketBuilder {
             std::u16::MAX.into(),
         )
     }
+}
 
-    fn serialize(&self, target: &mut SerializeTarget<'_>, _body: FragmentedBytesMut<'_, '_>) {
+impl<C: SerializationContext> PacketBuilder<C> for DataPacketBuilder {
+    fn serialize(
+        &self,
+        _context: &mut C,
+        target: &mut SerializeTarget<'_>,
+        _body: FragmentedBytesMut<'_, '_>,
+    ) {
         let mut bv = crate::as_buffer_view_mut(&mut target.header);
         bv.take_obj_front::<MessageHead>().unwrap().set_opcode(Opcode::Data);
         bv.take_obj_front::<U16>().unwrap().set(self.block);

@@ -14,7 +14,10 @@ use core::fmt::{Debug, Display};
 use core::hash::Hash;
 
 use net_types::ip::{GenericOverIp, Ip, IpAddr, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
-use packet::{BufferViewMut, PacketBuilder, ParsablePacket, ParseMetadata, PartialPacketBuilder};
+use packet::{
+    BufferViewMut, NoOpSerializationContext, PacketBuilder, ParsablePacket, ParseMetadata,
+    PartialPacketBuilder, SerializationContext,
+};
 use zerocopy::{
     FromBytes, Immutable, IntoBytes, KnownLayout, SplitByteSlice, SplitByteSliceMut, Unaligned,
 };
@@ -55,6 +58,11 @@ impl IpProtoExt for Ipv6 {
     type Proto = Ipv6Proto;
 }
 
+/// A trait for IP serialization contexts.
+pub trait IpSerializationContext<I: IpExt>: SerializationContext {}
+
+impl<I: IpExt> IpSerializationContext<I> for NoOpSerializationContext {}
+
 /// An extension trait to the `Ip` trait adding associated types relevant for
 /// packet parsing and serialization.
 pub trait IpExt: EthernetIpExt + IcmpIpExt {
@@ -62,7 +70,7 @@ pub trait IpExt: EthernetIpExt + IcmpIpExt {
     type PacketParseError: From<ParseError> + Debug + PartialEq + Send + Sync;
 
     /// An IP packet type for this IP version.
-    type Packet<B: SplitByteSlice>: IpPacket<B, Self, Builder = Self::PacketBuilder>
+    type Packet<B: SplitByteSlice>: IpPacket<B, Self>
         + GenericOverIp<Self, Type = Self::Packet<B>>
         + GenericOverIp<Ipv4, Type = Ipv4Packet<B>>
         + GenericOverIp<Ipv6, Type = Ipv6Packet<B>>;
@@ -72,7 +80,7 @@ pub trait IpExt: EthernetIpExt + IcmpIpExt {
         + GenericOverIp<Ipv4, Type = Ipv4PacketRaw<B>>
         + GenericOverIp<Ipv6, Type = Ipv6PacketRaw<B>>;
     /// An IP packet builder type for the IP version.
-    type PacketBuilder: IpPacketBuilder<Self> + Eq;
+    type PacketBuilder<C: IpSerializationContext<Self>>: IpPacketBuilder<C, Self> + Eq;
     /// Minimal IP header size.
     const MIN_HEADER_LENGTH: usize;
 }
@@ -81,7 +89,7 @@ impl IpExt for Ipv4 {
     type PacketParseError = ParseError;
     type Packet<B: SplitByteSlice> = Ipv4Packet<B>;
     type PacketRaw<B: SplitByteSlice> = Ipv4PacketRaw<B>;
-    type PacketBuilder = Ipv4PacketBuilder;
+    type PacketBuilder<C: IpSerializationContext<Self>> = Ipv4PacketBuilder;
 
     const MIN_HEADER_LENGTH: usize = IPV4_MIN_HDR_LEN;
 }
@@ -90,7 +98,7 @@ impl IpExt for Ipv6 {
     type PacketParseError = Ipv6ParseError;
     type Packet<B: SplitByteSlice> = Ipv6Packet<B>;
     type PacketRaw<B: SplitByteSlice> = Ipv6PacketRaw<B>;
-    type PacketBuilder = Ipv6PacketBuilder;
+    type PacketBuilder<C: IpSerializationContext<Self>> = Ipv6PacketBuilder;
 
     const MIN_HEADER_LENGTH: usize = IPV6_FIXED_HDR_LEN;
 }
@@ -190,7 +198,7 @@ pub trait IpPacket<B: SplitByteSlice, I: IpExt>:
     Sized + Debug + ParsablePacket<B, (), Error = I::PacketParseError>
 {
     /// A builder for this packet type.
-    type Builder: IpPacketBuilder<I>;
+    type Builder<C: IpSerializationContext<I>>: IpPacketBuilder<C, I>;
 
     /// The source IP address.
     fn src_ip(&self) -> I::Addr;
@@ -250,11 +258,11 @@ pub trait IpPacket<B: SplitByteSlice, I: IpExt>:
     fn to_vec(&self) -> Vec<u8>;
 
     /// Constructs a builder with the same contents as this packet's header.
-    fn builder(&self) -> Self::Builder;
+    fn builder<C: IpSerializationContext<I>>(&self) -> Self::Builder<C>;
 }
 
 impl<B: SplitByteSlice> IpPacket<B, Ipv4> for Ipv4Packet<B> {
-    type Builder = Ipv4PacketBuilder;
+    type Builder<C: IpSerializationContext<Ipv4>> = Ipv4PacketBuilder;
 
     fn src_ip(&self) -> Ipv4Addr {
         Ipv4Header::src_ip(self)
@@ -300,13 +308,13 @@ impl<B: SplitByteSlice> IpPacket<B, Ipv4> for Ipv4Packet<B> {
         self.to_vec()
     }
 
-    fn builder(&self) -> Self::Builder {
+    fn builder<C: IpSerializationContext<Ipv4>>(&self) -> Self::Builder<C> {
         Ipv4Header::builder(self)
     }
 }
 
 impl<B: SplitByteSlice> IpPacket<B, Ipv6> for Ipv6Packet<B> {
-    type Builder = Ipv6PacketBuilder;
+    type Builder<C: IpSerializationContext<Ipv6>> = Ipv6PacketBuilder;
 
     fn src_ip(&self) -> Ipv6Addr {
         Ipv6Header::src_ip(self)
@@ -351,7 +359,7 @@ impl<B: SplitByteSlice> IpPacket<B, Ipv6> for Ipv6Packet<B> {
         self.to_vec()
     }
 
-    fn builder(&self) -> Self::Builder {
+    fn builder<C: IpSerializationContext<Ipv6>>(&self) -> Self::Builder<C> {
         self.builder()
     }
 }
@@ -375,7 +383,9 @@ impl<B: SplitByteSlice, I: IpExt> GenericOverIp<I> for Ipv6PacketRaw<B> {
 }
 
 /// A builder for IP packets.
-pub trait IpPacketBuilder<I: IpExt>: PacketBuilder + PartialPacketBuilder + Clone + Debug {
+pub trait IpPacketBuilder<C: SerializationContext, I: IpExt>:
+    PacketBuilder<C> + PartialPacketBuilder<C> + Clone + Debug
+{
     /// Returns a new packet builder for an associated IP version with the given
     /// given source and destination IP addresses, TTL (IPv4)/Hop Limit (IPv4)
     /// and Protocol Number.

@@ -14,7 +14,7 @@ use netstack3_core::device::{EthernetLinkDevice, RecvEthernetFrameMeta};
 use netstack3_core::device_socket::{Protocol, TargetDevice};
 use netstack3_core::sync::Mutex;
 use netstack3_core::testutil::{CtxPairExt, FakeCtx, FakeCtxBuilder};
-use packet::{Buf, PacketBuilder, Serializer};
+use packet::{Buf, NestablePacketBuilder, Serializer};
 use packet_formats::ethernet::{EtherType, EthernetFrameBuilder};
 use std::num::NonZeroU16;
 

@@ -21,9 +21,9 @@ use net_types::ip::{GenericOverIp, Ipv4Addr, Ipv6, Ipv6Addr, Ipv6SourceAddr};
 use packet::records::{AlignedRecordSequenceBuilder, Records, RecordsRaw};
 use packet::{
     BufferProvider, BufferView, BufferViewMut, EmptyBuf, FragmentedBytesMut, FromRaw,
-    GrowBufferMut, InnerPacketBuilder, LayoutBufferAlloc, MaybeParsed, NestableSerializer,
-    NoOpSerializationContext, PacketBuilder, PacketConstraints, ParsablePacket, ParseMetadata,
-    PartialPacketBuilder, PartialSerializeResult, PartialSerializer, SerializeError,
+    GrowBufferMut, InnerPacketBuilder, LayoutBufferAlloc, MaybeParsed, NestablePacketBuilder,
+    NestableSerializer, NoOpSerializationContext, PacketBuilder, PacketConstraints, ParsablePacket,
+    ParseMetadata, PartialPacketBuilder, PartialSerializeResult, PartialSerializer, SerializeError,
     SerializeTarget, Serializer,
 };
 use zerocopy::byteorder::network_endian::{U16, U32};
@@ -34,8 +34,8 @@ use zerocopy::{
 use crate::error::{IpParseErrorAction, IpParseResult, Ipv6ParseError, ParseError};
 use crate::icmp::Icmpv6ParameterProblemCode;
 use crate::ip::{
-    DscpAndEcn, FragmentOffset, IpExt, IpPacketBuilder, IpProto, Ipv4Proto, Ipv6ExtHdrType,
-    Ipv6Proto, Nat64Error, Nat64TranslationResult,
+    DscpAndEcn, FragmentOffset, IpExt, IpPacketBuilder, IpProto, IpSerializationContext, Ipv4Proto,
+    Ipv6ExtHdrType, Ipv6Proto, Nat64Error, Nat64TranslationResult,
 };
 use crate::ipv4::{HDR_PREFIX_LEN, Ipv4PacketBuilder};
 use crate::tcp::{TcpParseArgs, TcpSegment};
@@ -378,9 +378,10 @@ impl<B: SplitByteSlice> FromRaw<Ipv6PacketRaw<B>, ()> for Ipv6Packet<B> {
     }
 }
 
-impl<B: SplitByteSlice> PartialSerializer for Ipv6Packet<B> {
+impl<B: SplitByteSlice, C: IpSerializationContext<Ipv6>> PartialSerializer<C> for Ipv6Packet<B> {
     fn partial_serialize(
         &self,
+        _context: &mut C,
         _outer: PacketConstraints,
         mut buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
@@ -1150,7 +1151,7 @@ where
 /// `Ipv6HeaderBuilder`.
 ///
 /// This can't be a blanket impl because `PacketBuilder` is a foreign trait.
-macro_rules! impl_packet_builder {
+macro_rules! impl_packet_builder_base {
     {} => {
         fn constraints(&self) -> PacketConstraints {
             let ext_headers = self.extension_headers_len();
@@ -1162,12 +1163,23 @@ macro_rules! impl_packet_builder {
             let max_body_len = IPV6_MAX_PAYLOAD_LENGTH - ext_headers;
             PacketConstraints::new(header_len, footer_len, min_body_len, max_body_len)
         }
+    }
+}
 
-        fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
+macro_rules! impl_packet_builder {
+    {} => {
+        fn serialize(
+            &self,
+            _context: &mut C,
+            target: &mut SerializeTarget<'_>,
+            body: FragmentedBytesMut<'_, '_>,
+        ) {
             let mut bv = &mut target.header;
             self.serialize_header(
                 &mut bv,
-                NextHeader::NextLayer(self.fixed_header().proto()),
+                NextHeader::NextLayer(
+                    <Ipv6PacketBuilder as IpPacketBuilder<C, Ipv6>>::proto(self.fixed_header())
+                ),
                 body.len(),
             );
         }
@@ -1176,10 +1188,17 @@ macro_rules! impl_packet_builder {
 
 macro_rules! impl_partial_packet_builder {
     {} => {
-        fn partial_serialize(&self, body_len: usize, mut buffer: &mut [u8]) {
+        fn partial_serialize(
+            &self,
+            _context: &mut C,
+            body_len: usize,
+            mut buffer: &mut [u8],
+        ) {
             self.serialize_header(
                 &mut &mut buffer,
-                NextHeader::NextLayer(self.fixed_header().proto()),
+                NextHeader::NextLayer(
+                    <Ipv6PacketBuilder as IpPacketBuilder<C, Ipv6>>::proto(self.fixed_header())
+                ),
                 body_len,
             );
         }
@@ -1275,11 +1294,15 @@ impl Ipv6HeaderBuilder for Ipv6PacketBuilder {
     }
 }
 
-impl PacketBuilder for Ipv6PacketBuilder {
+impl NestablePacketBuilder for Ipv6PacketBuilder {
+    impl_packet_builder_base! {}
+}
+
+impl<C: IpSerializationContext<Ipv6>> PacketBuilder<C> for Ipv6PacketBuilder {
     impl_packet_builder! {}
 }
 
-impl PartialPacketBuilder for Ipv6PacketBuilder {
+impl<C: IpSerializationContext<Ipv6>> PartialPacketBuilder<C> for Ipv6PacketBuilder {
     impl_partial_packet_builder! {}
 }
 
@@ -1330,7 +1353,7 @@ fn next_multiple_of_eight(x: usize) -> usize {
     (x + 7) & (!7)
 }
 
-impl IpPacketBuilder<Ipv6> for Ipv6PacketBuilder {
+impl<C: IpSerializationContext<Ipv6>> IpPacketBuilder<C, Ipv6> for Ipv6PacketBuilder {
     fn new(src_ip: Ipv6Addr, dst_ip: Ipv6Addr, ttl: u8, proto: Ipv6Proto) -> Self {
         Ipv6PacketBuilder::new(src_ip, dst_ip, ttl, proto)
     }
@@ -1395,7 +1418,16 @@ where
     }
 }
 
-impl<'a, I> PacketBuilder for Ipv6PacketBuilderWithHbhOptions<'a, I>
+impl<'a, I> NestablePacketBuilder for Ipv6PacketBuilderWithHbhOptions<'a, I>
+where
+    I: Iterator + Clone,
+    I::Item: Borrow<HopByHopOption<'a>>,
+{
+    impl_packet_builder_base! {}
+}
+
+impl<'a, I, C: IpSerializationContext<Ipv6>> PacketBuilder<C>
+    for Ipv6PacketBuilderWithHbhOptions<'a, I>
 where
     I: Iterator + Clone,
     I::Item: Borrow<HopByHopOption<'a>>,
@@ -1403,7 +1435,8 @@ where
     impl_packet_builder! {}
 }
 
-impl<'a, I> PartialPacketBuilder for Ipv6PacketBuilderWithHbhOptions<'a, I>
+impl<'a, I, C: IpSerializationContext<Ipv6>> PartialPacketBuilder<C>
+    for Ipv6PacketBuilderWithHbhOptions<'a, I>
 where
     I: Iterator + Clone,
     I::Item: Borrow<HopByHopOption<'a>>,
@@ -1411,7 +1444,8 @@ where
     impl_partial_packet_builder! {}
 }
 
-impl<'a, I> IpPacketBuilder<Ipv6> for Ipv6PacketBuilderWithHbhOptions<'a, I>
+impl<'a, C: IpSerializationContext<Ipv6>, I> IpPacketBuilder<C, Ipv6>
+    for Ipv6PacketBuilderWithHbhOptions<'a, I>
 where
     I: Iterator<Item: Borrow<HopByHopOption<'a>>> + Debug + Default + Clone,
 {
@@ -1444,7 +1478,10 @@ where
     }
 
     fn set_dscp_and_ecn(&mut self, dscp_and_ecn: DscpAndEcn) {
-        self.prefix_builder.set_dscp_and_ecn(dscp_and_ecn)
+        <Ipv6PacketBuilder as IpPacketBuilder<C, Ipv6>>::set_dscp_and_ecn(
+            &mut self.prefix_builder,
+            dscp_and_ecn,
+        )
     }
 }
 
@@ -1526,11 +1563,19 @@ impl<B: Ipv6HeaderBuilder> Ipv6HeaderBuilder for Ipv6PacketBuilderWithFragmentHe
     }
 }
 
-impl<B: Ipv6HeaderBuilder> PacketBuilder for Ipv6PacketBuilderWithFragmentHeader<B> {
+impl<B: Ipv6HeaderBuilder> NestablePacketBuilder for Ipv6PacketBuilderWithFragmentHeader<B> {
+    impl_packet_builder_base! {}
+}
+
+impl<B: Ipv6HeaderBuilder, C: IpSerializationContext<Ipv6>> PacketBuilder<C>
+    for Ipv6PacketBuilderWithFragmentHeader<B>
+{
     impl_packet_builder! {}
 }
 
-impl<B: Ipv6HeaderBuilder> PartialPacketBuilder for Ipv6PacketBuilderWithFragmentHeader<B> {
+impl<B: Ipv6HeaderBuilder, C: IpSerializationContext<Ipv6>> PartialPacketBuilder<C>
+    for Ipv6PacketBuilderWithFragmentHeader<B>
+{
     impl_partial_packet_builder! {}
 }
 
@@ -2134,8 +2179,11 @@ mod tests {
 
         for i in 1..expected_partial.len() {
             let mut buf = vec![0u8; i];
-            let result =
-                packet.partial_serialize(PacketConstraints::UNCONSTRAINED, buf.as_mut_slice());
+            let result = packet.partial_serialize(
+                &mut NoOpSerializationContext,
+                PacketConstraints::UNCONSTRAINED,
+                buf.as_mut_slice(),
+            );
 
             // PartialSerializer serializes the header only if the buffer is
             // large enough to fit the whole header.
@@ -2859,8 +2907,11 @@ mod tests {
 
         for i in 1..(packet_len + 1) {
             let mut buf = vec![0u8; i];
-            let result =
-                packet.partial_serialize(PacketConstraints::UNCONSTRAINED, buf.as_mut_slice());
+            let result = packet.partial_serialize(
+                &mut NoOpSerializationContext,
+                PacketConstraints::UNCONSTRAINED,
+                buf.as_mut_slice(),
+            );
 
             let bytes_written = if i >= packet_len { packet_len } else { i };
             assert_eq!(

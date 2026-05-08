@@ -367,14 +367,9 @@ fn receive_simple_ip_packet_test<A: IpAddress>(
     A::Version: TestIpExt + IpExt,
 {
     let buf = Buf::new(Vec::new(), ..)
-        .wrap_in(
-            <<A::Version as packet_formats::ip::IpExt>::PacketBuilder as IpPacketBuilder<_>>::new(
-                src_ip,
-                dst_ip,
-                64,
-                IpProto::Tcp.into(),
-            ),
-        )
+        .wrap_in(<<A::Version as packet_formats::ip::IpExt>::PacketBuilder<
+            NetworkSerializationContext,
+        > as IpPacketBuilder<_, _>>::new(src_ip, dst_ip, 64, IpProto::Tcp.into()))
         .serialize_vec_outer(&mut NetworkSerializationContext::default())
         .ok()
         .unwrap()

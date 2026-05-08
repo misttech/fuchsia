@@ -1290,7 +1290,7 @@ mod tests {
     #[test]
     fn report_v2_split_many_sources() {
         use crate::testdata::mld_router_report_v2::*;
-        use packet::{NestableSerializer as _, PacketBuilder};
+        use packet::{NestablePacketBuilder as _, NestableSerializer as _};
 
         const ETH_MTU: usize = 1500;
         const MAX_SOURCES: usize = 89;
@@ -1389,7 +1389,7 @@ mod tests {
     #[test]
     fn report_v2_split_many_groups() {
         use crate::testdata::mld_router_report_v2::*;
-        use packet::{NestableSerializer as _, PacketBuilder};
+        use packet::{NestablePacketBuilder as _, NestableSerializer as _};
 
         const ETH_MTU: usize = 1500;
         const EXPECT_SERIALIZED: usize = 1496;

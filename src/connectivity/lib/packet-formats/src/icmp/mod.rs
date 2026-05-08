@@ -39,8 +39,8 @@ use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersion, Ipv4, Ipv4Addr, Ipv
 use packet::records::options::{Options, OptionsImpl};
 use packet::{
     AsFragmentedByteSlice, BufferView, FragmentedByteSlice, FragmentedBytesMut, FromRaw,
-    PacketBuilder, PacketConstraints, ParsablePacket, ParseMetadata, PartialPacketBuilder,
-    SerializeTarget,
+    NestablePacketBuilder, NoOpSerializationContext, PacketBuilder, PacketConstraints,
+    ParsablePacket, ParseMetadata, PartialPacketBuilder, SerializationContext, SerializeTarget,
 };
 use zerocopy::byteorder::network_endian::U16;
 use zerocopy::{
@@ -726,6 +726,11 @@ impl<I: IcmpIpExt, B: SplitByteSlice, M: IcmpMessage<I, Body<B> = ndp::Options<B
     }
 }
 
+/// A trait for ICMP serialization contexts.
+pub trait IcmpSerializationContext: SerializationContext {}
+
+impl IcmpSerializationContext for NoOpSerializationContext {}
+
 /// A builder for ICMP packets.
 #[derive(Debug, PartialEq, Clone)]
 pub struct IcmpPacketBuilder<I: IcmpIpExt, M: IcmpMessage<I>> {
@@ -809,7 +814,7 @@ impl<I: IcmpIpExt, M: IcmpMessage<I>> IcmpPacketBuilder<I, M> {
 // TODO(joshlf): Figure out a way to split body and non-body message types by
 // trait and implement PacketBuilder for some and InnerPacketBuilder for others.
 
-impl<I: IcmpIpExt, M: IcmpMessage<I>> PacketBuilder for IcmpPacketBuilder<I, M> {
+impl<I: IcmpIpExt, M: IcmpMessage<I>> NestablePacketBuilder for IcmpPacketBuilder<I, M> {
     fn constraints(&self) -> PacketConstraints {
         // The maximum body length constraint to make sure the body length
         // doesn't overflow the 32-bit length field in the pseudo-header used
@@ -825,9 +830,14 @@ impl<I: IcmpIpExt, M: IcmpMessage<I>> PacketBuilder for IcmpPacketBuilder<I, M> 
         // for these message types, and this won't be an issue anymore.
         PacketConstraints::new(mem::size_of::<Header<M>>(), 0, 0, core::u32::MAX as usize)
     }
+}
 
+impl<I: IcmpIpExt, M: IcmpMessage<I>, C: IcmpSerializationContext> PacketBuilder<C>
+    for IcmpPacketBuilder<I, M>
+{
     fn serialize(
         &self,
+        _context: &mut C,
         target: &mut SerializeTarget<'_>,
         message_body: FragmentedBytesMut<'_, '_>,
     ) {
@@ -835,8 +845,10 @@ impl<I: IcmpIpExt, M: IcmpMessage<I>> PacketBuilder for IcmpPacketBuilder<I, M> 
     }
 }
 
-impl<I: IcmpIpExt, M: IcmpMessage<I>> PartialPacketBuilder for IcmpPacketBuilder<I, M> {
-    fn partial_serialize(&self, _body_len: usize, buffer: &mut [u8]) {
+impl<I: IcmpIpExt, M: IcmpMessage<I>, C: IcmpSerializationContext> PartialPacketBuilder<C>
+    for IcmpPacketBuilder<I, M>
+{
+    fn partial_serialize(&self, _context: &mut C, _body_len: usize, buffer: &mut [u8]) {
         self.serialize_header(buffer, None);
     }
 }

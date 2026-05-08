@@ -10,7 +10,7 @@ use ip_test_macro::ip_test;
 
 use net_types::ip::{AddrSubnet, GenericOverIp, Ip, IpAddr, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Mtu};
 use net_types::{SpecifiedAddr, Witness};
-use packet::{Buf, InnerPacketBuilder, PacketBuilder as _, ParseBuffer, Serializer as _};
+use packet::{Buf, InnerPacketBuilder, NestablePacketBuilder as _, ParseBuffer, Serializer as _};
 use packet_formats::ethernet::EthernetFrameLengthCheck;
 use packet_formats::icmp::{IcmpIpExt, IcmpZeroCode};
 use packet_formats::ip::IpPacket;

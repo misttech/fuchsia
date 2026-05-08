@@ -17,7 +17,7 @@ use netstack_testing_macros::netstack_test;
 use netsvc_proto::{debuglog, netboot, tftp};
 use packet::{
     FragmentedBuffer as _, InnerPacketBuilder as _, MaybeReuseBufferProvider,
-    NoOpSerializationContext, PacketBuilder as _, ParseBuffer as _, Serializer,
+    NestablePacketBuilder as _, NoOpSerializationContext, ParseBuffer as _, Serializer,
 };
 use std::borrow::Cow;
 use std::convert::{TryFrom as _, TryInto as _};

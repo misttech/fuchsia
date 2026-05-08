@@ -308,7 +308,7 @@ mod testutil {
     };
     use netstack3_filter::ProofOfEgressCheck;
     use netstack3_hashmap::HashSet;
-    use packet::{BufferMut, InnerPacketBuilder, PacketBuilder, Serializer};
+    use packet::{BufferMut, InnerPacketBuilder, NestablePacketBuilder as _, Serializer};
     use packet_formats::ip::{IpPacketBuilder, IpProto};
 
     use crate::device::IpDeviceSendContext;
