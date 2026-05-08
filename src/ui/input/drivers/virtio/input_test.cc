@@ -533,15 +533,7 @@ TEST_F(VirtioInputTest, KeyboardReportDescriptor) {
       static_cast<uint32_t>(fuchsia_input_report::wire::VendorGoogleProductId::kVirtioKeyboard));
 
   ASSERT_TRUE(descriptor.has_keyboard());
-  ASSERT_TRUE(descriptor.keyboard().has_output());
-  ASSERT_TRUE(descriptor.keyboard().output().has_leds());
-  std::set<fuchsia_input_report::LedType> kExpectedLeds{
-      fuchsia_input_report::LedType::kNumLock, fuchsia_input_report::LedType::kCapsLock,
-      fuchsia_input_report::LedType::kScrollLock, fuchsia_input_report::LedType::kCompose,
-      fuchsia_input_report::LedType::kKana};
-  EXPECT_TRUE(std::set(descriptor.keyboard().output().leds().begin(),
-                       descriptor.keyboard().output().leds().end()) == kExpectedLeds);
-
+  EXPECT_FALSE(descriptor.keyboard().has_output());
   ASSERT_TRUE(descriptor.keyboard().has_input());
   ASSERT_TRUE(descriptor.keyboard().input().has_keys3());
   std::set<fuchsia_input::Key> kExpectedKeys;

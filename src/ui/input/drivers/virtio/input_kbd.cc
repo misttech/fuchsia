@@ -206,17 +206,8 @@ fuchsia_input_report::wire::DeviceDescriptor HidKeyboard::GetDescriptor(fidl::An
   const auto input =
       fuchsia_input_report::wire::KeyboardInputDescriptor::Builder(allocator).keys3(kKeys).Build();
 
-  const auto output =
-      fuchsia_input_report::wire::KeyboardOutputDescriptor::Builder(allocator)
-          .leds({allocator,
-                 {fuchsia_input_report::LedType::kNumLock, fuchsia_input_report::LedType::kCapsLock,
-                  fuchsia_input_report::LedType::kScrollLock,
-                  fuchsia_input_report::LedType::kCompose, fuchsia_input_report::LedType::kKana}})
-          .Build();
-
   const auto keyboard = fuchsia_input_report::wire::KeyboardDescriptor::Builder(allocator)
                             .input(input)
-                            .output(output)
                             .Build();
 
   return fuchsia_input_report::wire::DeviceDescriptor::Builder(allocator)
