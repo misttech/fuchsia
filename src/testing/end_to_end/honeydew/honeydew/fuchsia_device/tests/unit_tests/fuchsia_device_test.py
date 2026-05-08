@@ -48,7 +48,7 @@ from honeydew.auxiliary_devices.usb_power_hub import (
     usb_power_hub as usb_power_hub_interface,
 )
 from honeydew.fuchsia_device import fuchsia_device
-from honeydew.transports.fastboot import fastboot_impl
+from honeydew.transports.fastboot import fastboot
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx
@@ -380,7 +380,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
 
     # List all the tests related to transports
     @mock.patch.object(
-        fastboot_impl.FastbootImpl,
+        fastboot.Fastboot,
         "__init__",
         autospec=True,
         return_value=None,
@@ -390,7 +390,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         transport."""
         self.assertIsInstance(
             self.fd_fc_obj.fastboot,
-            fastboot_impl.FastbootImpl,
+            fastboot.Fastboot,
         )
         mock_fastboot_init.assert_called_once()
 

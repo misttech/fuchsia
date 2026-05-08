@@ -88,10 +88,7 @@ from honeydew.auxiliary_devices.power_switch import (
 from honeydew.auxiliary_devices.usb_power_hub import (
     usb_power_hub as usb_power_hub_interface,
 )
-from honeydew.transports.fastboot import (
-    fastboot as fastboot_transport_interface,
-)
-from honeydew.transports.fastboot import fastboot_impl
+from honeydew.transports.fastboot import fastboot
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx
 from honeydew.transports.ffx.config import FfxConfigData
@@ -411,7 +408,7 @@ class FuchsiaDevice(
         return fuchsia_controller_obj
 
     @properties.Transport
-    def fastboot(self) -> fastboot_transport_interface.Fastboot:
+    def fastboot(self) -> fastboot.Fastboot:
         """Returns the Fastboot transport object.
 
         Returns:
@@ -420,12 +417,10 @@ class FuchsiaDevice(
         Raises:
             FuchsiaDeviceError: Failed to instantiate.
         """
-        fastboot_obj: fastboot_transport_interface.Fastboot = (
-            fastboot_impl.FastbootImpl(
-                device_name=self.device_name,
-                reboot_affordance=self,
-                ffx_transport=self.ffx,
-            )
+        fastboot_obj: fastboot.Fastboot = fastboot.Fastboot(
+            device_name=self.device_name,
+            reboot_affordance=self,
+            ffx_transport=self.ffx,
         )
         return fastboot_obj
 

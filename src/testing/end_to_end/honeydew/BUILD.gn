@@ -134,7 +134,6 @@ python_library("honeydew_no_testonly") {
     "transports/fastboot/__init__.py",
     "transports/fastboot/errors.py",
     "transports/fastboot/fastboot.py",
-    "transports/fastboot/fastboot_impl.py",
     "transports/ffx/__init__.py",
     "transports/ffx/config.py",
     "transports/ffx/errors.py",
