@@ -58,8 +58,11 @@ PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.diagnostics.system:fuchsia.diagnostics.system_idk",
     "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_idk",
     "//sdk/fidl/fuchsia.element:fuchsia.element_idk",
+    "//sdk/fidl/fuchsia.factory.wlan:fuchsia.factory.wlan_idk",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_idk",
     "//sdk/fidl/fuchsia.fonts:fuchsia.fonts_idk",
+    "//sdk/fidl/fuchsia.gpu.agis:fuchsia.gpu.agis_idk",
+    "//sdk/fidl/fuchsia.gpu.magma:fuchsia.gpu.magma_idk",
     "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_idk",
     "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_idk",
     "//sdk/fidl/fuchsia.hardware.audio.signalprocessing:fuchsia.hardware.audio.signalprocessing_idk",
@@ -234,6 +237,7 @@ PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
 PREBUILT_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
     "//sdk/fidl/fuchsia.device:fuchsia.device_idk",
+    "//sdk/fidl/fuchsia.fs:fuchsia.fs_idk",
     "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_idk",
     "//sdk/fidl/fuchsia.memory.sampler:fuchsia.memory.sampler_idk",
     "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_idk",
