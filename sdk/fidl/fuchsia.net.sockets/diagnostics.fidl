@@ -229,6 +229,10 @@ closed protocol Control {
     /// socket is updated before this call returns, propagation of the error to
     /// an application is unsynchronized. Subsequent operations (such as TCP
     /// reads and writes) may not immediately see the error.
+    ///
+    /// NOTE: For UDP sockets, the receive buffer is not cleared, so it's
+    /// possible for a socket to be interrupted, but still read pending
+    /// datagrams. This is in order to maintain compatibility with Linux.
     strict DisconnectIp(table {
         /// Sockets matching all matchers will be disconnected (see above).
         ///
