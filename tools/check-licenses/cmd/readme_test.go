@@ -20,10 +20,6 @@ func TestReadmeCommand_Format(t *testing.T) {
 	tempDir := t.TempDir()
 	testFilePath := filepath.Join(tempDir, "README.fuchsia")
 
-	// Enforce test hermeticity by setting FUCHSIA_DIR to tempDir
-	os.Setenv("FUCHSIA_DIR", tempDir)
-	defer os.Unsetenv("FUCHSIA_DIR")
-
 	// Messy unformatted content
 	content := []byte(`
 Name: test_project
@@ -42,7 +38,7 @@ Description:
 	cmd := &ReadmeCommand{}
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	cmd.SetFlags(fs)
-	fs.Parse([]string{"format", testFilePath})
+	fs.Parse([]string{"-fuchsia_dir", tempDir, "format", testFilePath})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -68,10 +64,6 @@ func TestReadmeCommand_Check(t *testing.T) {
 	tempDir := t.TempDir()
 	testFilePath := filepath.Join(tempDir, "README.fuchsia")
 
-	// Enforce test hermeticity by setting FUCHSIA_DIR to tempDir
-	os.Setenv("FUCHSIA_DIR", tempDir)
-	defer os.Unsetenv("FUCHSIA_DIR")
-
 	// Clean, canonical content
 	content := []byte("Name: test_project\nURL: https://test\nVersion: 1.0\nSecurity Critical: no\n\nLicense File: LICENSE\n  License: MIT\n\nDescription:\n  A test project\n")
 	if err := os.WriteFile(testFilePath, content, 0644); err != nil {
@@ -81,7 +73,7 @@ func TestReadmeCommand_Check(t *testing.T) {
 	cmd := &ReadmeCommand{}
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	cmd.SetFlags(fs)
-	fs.Parse([]string{"check", testFilePath})
+	fs.Parse([]string{"-fuchsia_dir", tempDir, "check", testFilePath})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -97,7 +89,7 @@ func TestReadmeCommand_Check(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fs.Parse([]string{"check", testFilePath})
+	fs.Parse([]string{"-fuchsia_dir", tempDir, "check", testFilePath})
 	status = cmd.Execute(ctx, fs)
 	if status != subcommands.ExitFailure {
 		t.Errorf("Expected ExitFailure (1) for checking file with unknown field, got %v", status)
@@ -108,7 +100,7 @@ func TestReadmeCommand_Check(t *testing.T) {
 	if err := os.WriteFile(testFilePath, badSubProjectContent, 0644); err != nil {
 		t.Fatal(err)
 	}
-	fs.Parse([]string{"check", testFilePath})
+	fs.Parse([]string{"-fuchsia_dir", tempDir, "check", testFilePath})
 	status = cmd.Execute(ctx, fs)
 	if status != subcommands.ExitFailure {
 		t.Errorf("Expected ExitFailure (1) for checking file with missing Location on sub-project, got %v", status)

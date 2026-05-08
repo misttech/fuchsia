@@ -17,7 +17,9 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
 )
 
-type ReadmeCommand struct{}
+type ReadmeCommand struct {
+	fuchsiaDir string
+}
 
 func (*ReadmeCommand) Name() string     { return "readme" }
 func (*ReadmeCommand) Synopsis() string { return "Format or check a README.fuchsia file." }
@@ -31,7 +33,9 @@ func (*ReadmeCommand) Usage() string {
 `
 }
 
-func (c *ReadmeCommand) SetFlags(f *flag.FlagSet) {}
+func (c *ReadmeCommand) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&c.fuchsiaDir, "fuchsia_dir", os.Getenv("FUCHSIA_DIR"), "Location of the fuchsia root directory (//).")
+}
 
 func (c *ReadmeCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	subFlags := flag.NewFlagSet("readme", flag.ContinueOnError)
@@ -39,12 +43,13 @@ func (c *ReadmeCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 		return subcommands.ExitUsageError
 	}
 	subCommander := subcommands.NewCommander(subFlags, "readme")
-	subCommander.Register(&ReadmeFormatCommand{}, "")
-	subCommander.Register(&ReadmeCheckCommand{}, "")
+	subCommander.Register(&ReadmeFormatCommand{fuchsiaDir: c.fuchsiaDir}, "")
+	subCommander.Register(&ReadmeCheckCommand{fuchsiaDir: c.fuchsiaDir}, "")
 	return subCommander.Execute(ctx)
 }
 
 type ReadmeFormatCommand struct {
+	fuchsiaDir  string
 	printStdout bool
 }
 
@@ -68,7 +73,7 @@ func (c *ReadmeFormatCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 	}
 
 	targetFile := f.Arg(0)
-	fuchsiaDir, targetFile, err := ResolveAndValidatePath("", targetFile)
+	fuchsiaDir, targetFile, err := ResolveAndValidatePath(c.fuchsiaDir, targetFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
@@ -130,7 +135,9 @@ func (c *ReadmeFormatCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 	return subcommands.ExitSuccess
 }
 
-type ReadmeCheckCommand struct{}
+type ReadmeCheckCommand struct {
+	fuchsiaDir string
+}
 
 func (*ReadmeCheckCommand) Name() string { return "check" }
 func (*ReadmeCheckCommand) Synopsis() string {
@@ -151,7 +158,7 @@ func (c *ReadmeCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 	}
 
 	targetFile := f.Arg(0)
-	fuchsiaDir, targetFile, err := ResolveAndValidatePath("", targetFile)
+	fuchsiaDir, targetFile, err := ResolveAndValidatePath(c.fuchsiaDir, targetFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
