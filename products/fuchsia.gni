@@ -29,3 +29,7 @@ assembly_board_configs = [ "//boards" ]
 
 # List these products in products.json, and upload to CIPD.
 assembly_product_configs = [ "//products" ]
+
+# Make sure that the developer can manually build these bazel actions.
+extra_bazel_build_action_labels = assembly_board_configs
+extra_bazel_build_action_labels += product_bundle_labels

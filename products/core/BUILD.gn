@@ -12,6 +12,24 @@ assert(
 
 _bazel_inputs = core_bazel_inputs
 
+group("core") {
+  testonly = true
+  deps = []
+  if (current_cpu == "x64") {
+    deps += [
+      ":product_bundle.x64",
+      ":product_bundle.x64_reduced_perf_variation",
+      ":product_bundle_f2fs.x64",
+      ":product_bundle_minfs.x64",
+    ]
+  } else if (current_cpu == "arm64") {
+    deps += [
+      ":product_bundle.arm64",
+      ":product_bundle_f2fs.arm64",
+      ":product_bundle_minfs.arm64",
+    ]
+  }
+}
 if (current_cpu == "x64") {
   bazel_product_bundle("product_bundle.x64") {
     testonly = true

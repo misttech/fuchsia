@@ -16,6 +16,8 @@ group("product_bundles") {
   testonly = true
   deps = [
     "//bundles/buildbot/virtualization:starnix_linux_vm_bundle",
+    "//products/bringup",
+    "//products/core",
     "//products/microfuchsia",
     "//products/minimal",
     "//products/terminal",
