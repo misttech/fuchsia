@@ -17,7 +17,7 @@ The message is a contiguous structure consisting of a single
 
 Objects are stored in **traversal order**, and are subject to **padding**.
 
-![drawing](images/objorder.png)
+![Diagram showing message structure with in-line primary object followed by out-of-line secondary objects in traversal order.](images/objorder.png)
 
 ### Primary and Secondary Objects
 
@@ -99,7 +99,7 @@ in place in memory.
 Message encoding is canonical &mdash; there is exactly one encoding for
 a given message.
 
-![drawing](images/dual-forms.png)
+![Diagram showing dual forms of a message: encoded (for transfer) and decoded (for consumption in memory).](images/dual-forms.png)
 
 #### Encoded Messages
 
@@ -169,7 +169,7 @@ Each `Rect` struct contains two `Point`s, which are stored **in-line**
 primitive data types (`x` and `y`) are also stored **in-line**.
 The reason is the same; there is a fixed number of the member types.
 
-![drawing](images/objects.png)
+![Diagram showing memory layout of Region structure with out-of-line vector of Rect structures.](images/objects.png)
 
 We use **in-line** storage when the size of the subordinate
 object is fixed, and **out-of-line** when it's variable (including
@@ -203,9 +203,9 @@ value **0** or **1**.
 
 All floating point values represent valid IEEE 754 bit patterns.
 
-![drawing](images/primitive-int.png)
+![Diagram showing little-endian representation of a signed integer.](images/primitive-int.png)
 
-![drawing](images/primitive-fp.png)
+![Diagram showing little-endian representation of a floating-point value.](images/primitive-fp.png)
 
 ## Enums and Bits
 
@@ -227,7 +227,7 @@ In this respect, handles are like pointers; they reference a context that's
 unique to each application.
 Handles are moved from one application's context to the other's.
 
-![drawing](images/handlexlate.png)
+![Diagram showing handle translation between process context and handle vector during encoding/decoding.](images/handlexlate.png)
 
 The value zero can be used to indicate a optional handle is absent[^1].
 
@@ -258,7 +258,7 @@ Arrays are denoted:
     Note: An array's size MUST be no more than 2<sup>32</sup>-1.
     For additional details, see [RFC-0059].
 
-![drawing](images/arrays.png)
+![Diagram showing memory layout of an array with fixed length sequence of elements.](images/arrays.png)
 
 ### Vectors {#vectors}
 
@@ -291,7 +291,7 @@ Vectors are denoted as follows:
 
 **T** can be any FIDL type.
 
-![drawing](images/vectors.png)
+![Diagram showing memory layout of a vector with size and data pointer referencing out-of-line elements.](images/vectors.png)
 
 ### Strings {#strings}
 
@@ -312,13 +312,13 @@ Here are some examples.
 A struct with an **int32** and an **int8** field has an alignment of 4 bytes (due to
 the **int32**), and a size of 8 bytes (3 bytes of padding after the **int8**):
 
-![drawing](images/struct1.png)
+![Diagram showing memory layout of a struct with an int32 and an int8 field, including padding.](images/struct1.png)
 
 A struct with a **bool** and a **string** field has an alignment of 8 bytes
 (due to the **string**) and a size of 24 bytes (7 bytes of padding after the
 **bool**):
 
-![drawing](images/struct2.png)
+![Diagram showing memory layout of a struct with a bool and a string field, including padding.](images/struct2.png)
 
 Note: Keep in mind that a **string** is really just a special case of
 `vector<uint8>`.
@@ -326,7 +326,7 @@ Note: Keep in mind that a **string** is really just a special case of
 A struct with a **bool** and two **uint8** fields has an alignment of 1 byte
 and a size of 3 bytes (no padding!):
 
-![drawing](images/struct3.png)
+![Diagram showing memory layout of a struct with a bool and two uint8 fields, with no padding.](images/struct3.png)
 
 A structure can be:
 
@@ -377,7 +377,7 @@ The following example illustrates:
 The `Color` content is padded to the 8 byte secondary object alignment boundary.
 Going through the layout in detail:
 
-![drawing](images/structs.png)
+![Detailed diagram showing memory layout of a complex struct with in-line and out-of-line data.](images/structs.png)
 
 1. The first member, `filled bool`, occupies one byte, but requires three bytes
    of padding because of the next member, which has a 4-byte alignment
@@ -410,7 +410,7 @@ Overall, this structure takes 48 bytes.
 By moving the `dashed bool` to be immediately after the `filled bool`, though,
 you can realize significant space savings [^2]:
 
-![drawing](images/struct-reorg.png)
+![Diagram showing optimized memory layout after structure packing to reduce padding.](images/struct-reorg.png)
 
 1. The two `bool` values are "packed" together within what would have been
    wasted space.
@@ -435,11 +435,11 @@ bit 0 of its flags indicate whether the data is stored inline or out-of-line:
 
   - If bit 0 is set, an *inline representation* is used.
 
-![drawing](images/inline_envelope.png)
+![Diagram showing inline representation of an envelope (payload <= 4 bytes).](images/inline_envelope.png)
 
   - If bit 0 is unset an *out-of-line representation* is used.
 
-![drawing](images/out_of_line_envelope.png)
+![Diagram showing out-of-line representation of an envelope (payload > 4 bytes).](images/out_of_line_envelope.png)
 
 Bit 0 may only be set if the size of the payload is <= 4 bytes. Bit 0 may be
 unset only if either the envelope is the zero envelope or the size of the
@@ -468,7 +468,7 @@ The following example shows how tables are laid out according to their fields.
 {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/fidl/fuchsia.examples.docs/misc.test.fidl" region_tag="wire-format-tables" %}
 ```
 
-![drawing](images/tables.png)
+![Diagram showing memory layout of a table with envelopes pointing to elements.](images/tables.png)
 
 ### Unions
 
@@ -491,7 +491,7 @@ The following example shows how unions are laid out according to their fields.
 {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/fidl/fuchsia.examples.docs/misc.test.fidl" region_tag="wire-format-unions" %}
 ```
 
-![drawing](images/union.png)
+![Diagram showing memory layout of a union with ordinal and envelope.](images/union.png)
 
 ### Transactional Messages {#transactional-messages}
 
@@ -503,7 +503,7 @@ a collection of data.
 
 The header has the following form:
 
-![drawing](images/transaction-header.png)
+![Diagram showing fields of a transactional message header.](images/transaction-header.png)
 
 *   `zx_txid_t txid`, transaction ID (32 bits)
     * `txid`s with the high bit set are reserved for use by
@@ -574,7 +574,7 @@ Note: Although only the `txid` is needed to determine which request a method
 response is associated with, bindings must also check that the `ordinal` matches
 the method that was called.
 
-![drawing](images/transaction-division.png)
+![Diagram showing a method response message for Divide operation.](images/transaction-division.png)
 
 Below, we see that `123 + 456` is `579`.
 Here, the `txid` value is now `2` &mdash; this is simply the next transaction
@@ -583,14 +583,14 @@ The `ordinal` is `1`, indicating **Add()**, and note that the result requires
 4 bytes of padding in order to make the **body** object have a size that's
 a multiple of 8 bytes.
 
-![drawing](images/transaction-addition.png)
+![Diagram showing a method response message for Add operation.](images/transaction-addition.png)
 
 And finally, the **Clear()** method is different than the **Add()** and
 **Divide()** in two important ways:
 * it does not have a **body** (that is, it consists solely of the **header**), and
 * it does not solicit a response from the interface (`txid` is zero).
 
-![drawing](images/method-clear.png)
+![Diagram showing a method request message for Clear operation with no body.](images/method-clear.png)
 
 #### Event Requests
 
@@ -606,7 +606,7 @@ prior to the connection being closed. This allows the client to distinguish
 between the connection being closed due to an error, as opposed to for other
 reasons (such as the calculator process terminating abnormally).
 
-![drawing](images/events.png)
+![Diagram showing an event request message for OnError operation.](images/events.png)
 
 Notice how the `txid` is zero (indicating this is not part of a transaction),
 and `ordinal` is `4` (indicating the **OnError()** method).
