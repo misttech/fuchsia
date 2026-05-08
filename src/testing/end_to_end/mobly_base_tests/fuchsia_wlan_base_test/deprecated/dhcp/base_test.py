@@ -31,7 +31,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     Band,
     BssSettings,
     RadioConfig,
-    Security,
+    SecurityWpa2,
 )
 
 
@@ -123,7 +123,6 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
         password = AccessPointConfig.random_string(20)
 
         if self.openwrt_ap:
-            # TODO(b/501011320): Support different ciphers in WPA/WPA2
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
@@ -131,7 +130,7 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
                         bss_settings=[
                             BssSettings(
                                 ssid=ssid,
-                                security=Security.WPA2,
+                                security=SecurityWpa2(),
                                 password=password,
                             )
                         ],

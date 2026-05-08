@@ -9,6 +9,13 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
     Band,
     Security,
+    SecurityOpen,
+    SecurityWep,
+    SecurityWpa,
+    SecurityWpa2,
+    SecurityWpa2Wpa3Mixed,
+    SecurityWpa3,
+    SecurityWpaWpa2Mixed,
 )
 
 # TODO(b/489927930): This file should be removed after OpenWRT migration is complete.
@@ -25,18 +32,26 @@ class AccessPointConfigMapper:
         return band_map[band]
 
     @staticmethod
-    def to_hostapd_security(security: Security) -> HostapdSecurityMode:
-        """Maps Security to HostapdSecurityMode."""
-        security_map = {
-            Security.NONE: HostapdSecurityMode.OPEN,
-            Security.WPA: HostapdSecurityMode.WPA,
-            Security.WPA2: HostapdSecurityMode.WPA2,
-            Security.WPA3: HostapdSecurityMode.WPA3,
-            Security.WPA_WPA2: HostapdSecurityMode.WPA_WPA2,
-            Security.WPA2_WPA3: HostapdSecurityMode.WPA2_WPA3,
-            Security.WEP: HostapdSecurityMode.WEP,
-        }
-        return security_map[security]
+    def to_hostapd_security(
+        security: Security,
+    ) -> HostapdSecurityMode:
+        """Maps Security or SecurityMode to HostapdSecurityMode."""
+        if isinstance(security, SecurityOpen):
+            return HostapdSecurityMode.OPEN
+        if isinstance(security, SecurityWpa):
+            return HostapdSecurityMode.WPA
+        if isinstance(security, SecurityWpa2):
+            return HostapdSecurityMode.WPA2
+        if isinstance(security, SecurityWpa3):
+            return HostapdSecurityMode.WPA3
+        if isinstance(security, SecurityWpaWpa2Mixed):
+            return HostapdSecurityMode.WPA_WPA2
+        if isinstance(security, SecurityWpa2Wpa3Mixed):
+            return HostapdSecurityMode.WPA2_WPA3
+        if isinstance(security, SecurityWep):
+            return HostapdSecurityMode.WEP
+
+        raise ValueError(f"Unsupported security mode: {security}")
 
     @staticmethod
     def to_hostapd_n_cap(cap: str) -> object:

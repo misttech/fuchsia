@@ -29,7 +29,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     EhtMode,
     HeMode,
     RadioConfig,
-    Security,
+    SecurityOpen,
 )
 
 N_CAPABILITIES_DEFAULT = [
@@ -173,7 +173,7 @@ class RegulatoryComplianceTest(base_test.WifiBaseTest):
                         bss_settings=[
                             BssSettings(
                                 ssid=ssid,
-                                security=Security.NONE,
+                                security=SecurityOpen(),
                             )
                         ],
                     )

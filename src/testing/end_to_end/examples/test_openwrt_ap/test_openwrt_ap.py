@@ -18,7 +18,10 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     BssSettings,
     RadioConfig,
-    Security,
+    SecurityOpen,
+    SecurityWpa2,
+    SecurityWpa2Wpa3Mixed,
+    SecurityWpa3,
 )
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -86,7 +89,7 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
         self.log.info("Found SSID: %s", bss_settings.ssid)
 
         # TODO: https://fxbug.dev/487800358 - Create and use to_fidl() function.
-        if bss_settings.security == Security.WPA2:
+        if isinstance(bss_settings.security, SecurityWpa2):
             if not bss_settings.password:
                 raise signals.TestFailure(
                     "Password must be provided for WPA2 security"
@@ -99,7 +102,9 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
                     )
                 ),
             )
-        elif bss_settings.security in (Security.WPA3, Security.WPA2_WPA3):
+        elif isinstance(
+            bss_settings.security, (SecurityWpa3, SecurityWpa2Wpa3Mixed)
+        ):
             if not bss_settings.password:
                 raise signals.TestFailure(
                     "Password must be provided for WPA3 security"
@@ -147,7 +152,7 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
                         bss_settings=[
                             BssSettings(
                                 ssid=AccessPointConfig.random_string(),
-                                security=Security.NONE,
+                                security=SecurityOpen(),
                             )
                         ],
                     )
@@ -165,7 +170,7 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
                         bss_settings=[
                             BssSettings(
                                 ssid=AccessPointConfig.random_string(),
-                                security=Security.NONE,
+                                security=SecurityOpen(),
                             )
                         ],
                     )
@@ -183,7 +188,7 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
                         bss_settings=[
                             BssSettings(
                                 ssid=AccessPointConfig.random_string(),
-                                security=Security.WPA2,
+                                security=SecurityWpa2(),
                                 password=AccessPointConfig.random_string(16),
                             )
                         ],
@@ -202,7 +207,7 @@ class OpenWrtAPScanConnectTest(fuchsia_base_test.FuchsiaBaseTest):
                         bss_settings=[
                             BssSettings(
                                 ssid=AccessPointConfig.random_string(),
-                                security=Security.WPA2_WPA3,
+                                security=SecurityWpa2Wpa3Mixed(),
                                 password=AccessPointConfig.random_string(16),
                             )
                         ],

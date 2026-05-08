@@ -26,7 +26,8 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     Band,
     BssSettings,
     RadioConfig,
-    Security,
+    SecurityOpen,
+    SecurityWpa2,
 )
 
 
@@ -76,11 +77,11 @@ class PolicyScanTest(base_test.WifiBaseTest):
                         bss_settings=[
                             BssSettings(
                                 ssid=self.open_network_2g["SSID"],
-                                security=Security.NONE,
+                                security=SecurityOpen(),
                             ),
                             BssSettings(
                                 ssid=self.wpa2_network_2g["SSID"],
-                                security=Security.WPA2,
+                                security=SecurityWpa2(),
                                 password=self.wpa2_network_2g["password"],
                             ),
                         ],
@@ -90,11 +91,11 @@ class PolicyScanTest(base_test.WifiBaseTest):
                         bss_settings=[
                             BssSettings(
                                 ssid=self.open_network_5g["SSID"],
-                                security=Security.NONE,
+                                security=SecurityOpen(),
                             ),
                             BssSettings(
                                 ssid=self.wpa2_network_5g["SSID"],
-                                security=Security.WPA2,
+                                security=SecurityWpa2(),
                                 password=self.wpa2_network_5g["password"],
                             ),
                         ],

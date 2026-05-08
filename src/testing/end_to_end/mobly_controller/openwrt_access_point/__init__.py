@@ -20,7 +20,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
     BssSettings,
-    Security,
+    SecurityOpen,
 )
 from mobly_controller.openwrt_access_point.lib.dhcp_config import (
     DhcpConfig as DhcpConfig,
@@ -112,13 +112,12 @@ class OpenWrtAP:
         self.ssh.run(f"uci set wireless.{bss.name}.network='lan'")
         self.ssh.run(f"uci set wireless.{bss.name}.mode='ap'")
         self.ssh.run(f"uci set wireless.{bss.name}.ssid='{bss.ssid}'")
-        self.ssh.run(
-            f"uci set wireless.{bss.name}.encryption='{bss.security.value}'"
-        )
-        if bss.password:
+        encryption = bss.security.uci_encryption
+
+        self.ssh.run(f"uci set wireless.{bss.name}.encryption='{encryption}'")
+
+        if bss.password and not isinstance(bss.security, SecurityOpen):
             self.ssh.run(f"uci set wireless.{bss.name}.key='{bss.password}'")
-        if bss.security == Security.NONE:
-            self.ssh.run(f"uci delete wireless.{bss.name}.key || true")
 
         hidden = "1" if bss.hidden else "0"
         self.ssh.run(f"uci set wireless.{bss.name}.hidden='{hidden}'")

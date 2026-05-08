@@ -18,17 +18,80 @@ class Band(enum.StrEnum):
 
 
 # TODO(https://fxbug.dev/487800358): Create to_fidl function.
-class Security(enum.StrEnum):
-    """The security protocol used for the Wi-Fi network."""
 
-    NONE = "none"
-    WPA = "psk"
-    WPA2 = "psk2"
-    WPA3 = "sae"
-    # Mixed modes
-    WPA_WPA2 = "psk-mixed"
-    WPA2_WPA3 = "sae-mixed"
-    WEP = "wep"
+
+class Security(Protocol):
+    """Protocol to abstract Wi-Fi security modes and their UCI mapping."""
+
+    @property
+    def uci_encryption(self) -> str:
+        """Returns the string used for OpenWrt's wireless 'encryption' setting."""
+        ...
+
+
+@dataclasses.dataclass(frozen=True)
+class SecurityOpen:
+    @property
+    def uci_encryption(self) -> str:
+        return "none"
+
+
+@dataclasses.dataclass(frozen=True)
+class SecurityWpa:
+    cipher: Literal["ccmp", "tkip", "ccmp+tkip"] | None = None
+
+    @property
+    def uci_encryption(self) -> str:
+        if self.cipher is None:
+            return "psk"
+        return f"psk+{self.cipher}"
+
+
+@dataclasses.dataclass(frozen=True)
+class SecurityWpa2:
+    cipher: Literal["ccmp", "tkip", "ccmp+tkip"] | None = None
+
+    @property
+    def uci_encryption(self) -> str:
+        if self.cipher is None:
+            return "psk2"
+        return f"psk2+{self.cipher}"
+
+
+@dataclasses.dataclass(frozen=True)
+class SecurityWpa3:
+    @property
+    def uci_encryption(self) -> str:
+        return "sae"
+
+
+@dataclasses.dataclass(frozen=True)
+class SecurityWpaWpa2Mixed:
+    cipher: Literal["ccmp", "tkip", "ccmp+tkip"] | None = None
+
+    @property
+    def uci_encryption(self) -> str:
+        if self.cipher is None:
+            return "psk-mixed"
+        return f"psk-mixed+{self.cipher}"
+
+
+@dataclasses.dataclass(frozen=True)
+class SecurityWpa2Wpa3Mixed:
+    cipher: Literal["ccmp", "tkip", "ccmp+tkip"] | None = None
+
+    @property
+    def uci_encryption(self) -> str:
+        if self.cipher is None:
+            return "sae-mixed"
+        return f"sae-mixed+{self.cipher}"
+
+
+@dataclasses.dataclass(frozen=True)
+class SecurityWep:
+    @property
+    def uci_encryption(self) -> str:
+        return "wep"
 
 
 Bandwidth: TypeAlias = Literal[20, 40, 80, 160, 320]

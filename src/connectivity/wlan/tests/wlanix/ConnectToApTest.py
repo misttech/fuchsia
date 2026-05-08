@@ -36,6 +36,9 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     BssSettings,
     RadioConfig,
     Security,
+    SecurityOpen,
+    SecurityWpa2,
+    SecurityWpa3,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
@@ -48,9 +51,9 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
             test_logic=self._test_logic,
             name_func=self.name_func,
             arg_sets=[
-                (Security.NONE, None),
-                (Security.WPA2, AccessPointConfig.random_string()),
-                (Security.WPA3, AccessPointConfig.random_string()),
+                (SecurityOpen(), None),
+                (SecurityWpa2(), AccessPointConfig.random_string()),
+                (SecurityWpa3(), AccessPointConfig.random_string()),
             ],
         )
 
@@ -200,7 +203,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                 ssid=list(ssid.encode("ascii"))
             )
             if password:
-                if security == Security.WPA3:
+                if isinstance(security, SecurityWpa3):
                     supplicant_sta_network_proxy.set_sae_password(
                         password=list(password.encode("ascii"))
                     )

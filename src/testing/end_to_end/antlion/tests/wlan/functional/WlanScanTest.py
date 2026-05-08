@@ -37,6 +37,8 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     BssSettings,
     RadioConfig,
     Security,
+    SecurityOpen,
+    SecurityWpa2,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
@@ -64,6 +66,7 @@ class WlanScanTest(base_test.WifiBaseTest):
 
     def pre_run(self) -> None:
         test_params: list[tuple[TestParams]] = []
+        securities: list[Security] = [SecurityOpen(), SecurityWpa2()]
         for (
             channel,
             security,
@@ -74,7 +77,7 @@ class WlanScanTest(base_test.WifiBaseTest):
             # TODO(https://github.com/python/mypy/issues/14688): Replace the code below
             # with the commented code above once the bug affecting StrEnum resolves.
             [DEFAULT_2G_CHANNEL, DEFAULT_5G_CHANNEL],
-            [Security.NONE, Security.WPA2],
+            securities,
         ):
             test_params.append(
                 (
@@ -135,7 +138,7 @@ class WlanScanTest(base_test.WifiBaseTest):
         ssid = AccessPointConfig.random_string(20)
         password = (
             AccessPointConfig.random_string(10)
-            if t.security == Security.WPA2
+            if isinstance(t.security, SecurityWpa2)
             else None
         )
         if self.openwrt_ap:
@@ -168,10 +171,10 @@ class WlanScanTest(base_test.WifiBaseTest):
                 ),
             )
 
-        if t.security == Security.NONE:
+        if isinstance(t.security, SecurityOpen):
             protocol = f_wlan_internal.Protocol.OPEN
             credentials = None
-        elif t.security == Security.WPA2:
+        elif isinstance(t.security, SecurityWpa2):
             if password is None:
                 raise signals.TestError("Password is required for WPA2")
             protocol = f_wlan_internal.Protocol.WPA2_PERSONAL
@@ -247,7 +250,7 @@ class WlanScanTest(base_test.WifiBaseTest):
                         bss_settings=[
                             BssSettings(
                                 ssid=ssid,
-                                security=Security.NONE,
+                                security=SecurityOpen(),
                             )
                         ],
                     )

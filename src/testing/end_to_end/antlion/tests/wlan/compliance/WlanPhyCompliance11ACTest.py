@@ -29,6 +29,8 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     CapabilitySelection,
     RadioConfig,
     Security,
+    SecurityOpen,
+    SecurityWpa2,
     VhtMode,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
@@ -96,7 +98,7 @@ N_CAPABS_20MHZ = [
     capabilities.N_CAPABILITY_HT20,
 ]
 
-SECURITY_MODES: list[Security] = [Security.NONE, Security.WPA2]
+SECURITY_MODES: list[Security] = [SecurityOpen(), SecurityWpa2()]
 
 
 @dataclass
@@ -140,7 +142,11 @@ class WlanPhyCompliance11ACTest(base_test.WifiBaseTest):
                     )
 
             # Maintain legacy naming for BUILD.gn filters
-            security = "open" if test.security_mode == Security.NONE else "wpa2"
+            security = (
+                "open"
+                if isinstance(test.security_mode, SecurityOpen)
+                else "wpa2"
+            )
             return f"test_11ac_{test.vht_bandwidth_mhz}mhz_{security}{''.join(ret)}"
 
         self.generate_tests(
@@ -200,9 +206,9 @@ class WlanPhyCompliance11ACTest(base_test.WifiBaseTest):
         password: str | None = None
 
         match settings.security_mode:
-            case Security.NONE:
+            case SecurityOpen():
                 pass
-            case Security.WPA2:
+            case SecurityWpa2():
                 password = AccessPointConfig.random_string()
                 security = DeprecatedSecurity(
                     security_mode=DeprecatedSecurityMode.WPA2,

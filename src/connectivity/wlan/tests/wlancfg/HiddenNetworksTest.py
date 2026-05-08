@@ -35,7 +35,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     Band,
     BssSettings,
     RadioConfig,
-    Security,
+    SecurityWpa2,
 )
 
 # These tests should have a longer timeout for connecting than normal connect
@@ -95,7 +95,7 @@ class HiddenNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                         bss_settings=[
                             BssSettings(
                                 ssid=self.hidden_ssid,
-                                security=Security.WPA2,
+                                security=SecurityWpa2(),
                                 password=self.hidden_password,
                                 hidden=True,
                             )

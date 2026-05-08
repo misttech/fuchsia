@@ -25,6 +25,8 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     BssSettings,
     RadioConfig,
     Security,
+    SecurityWpa2,
+    SecurityWpa3,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
@@ -106,7 +108,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
         self.setup_ap(
             channel=DEFAULT_5G_CHANNEL,
             ssid=wpa3_ssid,
-            security=Security.WPA3,
+            security=SecurityWpa3(),
             password=wpa3_password,
         )
 
@@ -128,7 +130,7 @@ class WlanMiscScenarioTest(base_test.WifiBaseTest):
         self.setup_ap(
             channel=DEFAULT_5G_CHANNEL,
             ssid=wpa2_ssid,
-            security=Security.WPA2,
+            security=SecurityWpa2(),
             password=wpa2_password,
         )
 

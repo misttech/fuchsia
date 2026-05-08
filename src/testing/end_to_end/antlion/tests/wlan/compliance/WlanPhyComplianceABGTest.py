@@ -21,7 +21,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     BssSettings,
     LegacyMode,
     RadioConfig,
-    Security,
+    SecurityOpen,
     UciBssOptions,
     UciRadioOptions,
 )
@@ -183,7 +183,6 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ):
                 country = additional_ap_parameters["country_code"]
 
-            # TODO(b/510315419): Support custom_hostapd_options once typed dict is available.
             radio_config = RadioConfig(
                 channel=BssChannel(
                     number=channel, band=band, phy_mode=LegacyMode()
@@ -193,7 +192,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
                 bss_settings=[
                     BssSettings(
                         ssid=ssid,
-                        security=Security.NONE,
+                        security=SecurityOpen(),
                         hidden=hidden,
                         custom_uci_options=custom_bss_uci_options,
                     )

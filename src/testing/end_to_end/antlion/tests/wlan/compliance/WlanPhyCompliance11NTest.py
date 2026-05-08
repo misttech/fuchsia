@@ -31,6 +31,8 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     HtMode,
     RadioConfig,
     Security,
+    SecurityOpen,
+    SecurityWpa2,
     UciRadioOptions,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
@@ -126,7 +128,9 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
             else:
                 chbw = test.chbw
             # Maintain legacy naming for BUILD.gn filters
-            security_name = "open" if test.security == Security.NONE else "wpa2"
+            security_name = (
+                "open" if test.security == SecurityOpen() else "wpa2"
+            )
             return f"test_11n_{test.frequency}_{chbw}_{security_name}_{test.n_mode}{''.join(ret)}"
 
         self.generate_tests(
@@ -203,7 +207,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
         else:
             raise ValueError(f"Invalid channel bandwidth: {test.chbw}")
 
-        if test.security == Security.WPA2:
+        if test.security == SecurityWpa2():
             password = AccessPointConfig.random_string(20)
 
         if self.openwrt_ap:
@@ -291,7 +295,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                     raise ValueError(f"Invalid channel: {channel}")
                 n_capabilities.append(extended_channel)
 
-            if test.security == Security.WPA2:
+            if test.security == SecurityWpa2():
                 security_profile = DeprecatedSecurity(
                     security_mode=DeprecatedSecurityMode.WPA2,
                     password=password,
@@ -342,7 +346,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_24,
                         chbw=CHANNEL_BANDWIDTH_20,
                         n_mode=combination[0],
-                        security=Security.NONE,
+                        security=SecurityOpen(),
                         n_capabilities=list(combination[1:]),
                     ),
                 )
@@ -367,7 +371,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_24,
                         chbw=CHANNEL_BANDWIDTH_40_LOWER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=Security.NONE,
+                        security=SecurityOpen(),
                         n_capabilities=list(combination),
                     ),
                 )
@@ -392,7 +396,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_24,
                         chbw=CHANNEL_BANDWIDTH_40_UPPER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=Security.NONE,
+                        security=SecurityOpen(),
                         n_capabilities=list(combination),
                     ),
                 )
@@ -416,7 +420,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_5,
                         chbw=CHANNEL_BANDWIDTH_20,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=Security.NONE,
+                        security=SecurityOpen(),
                         n_capabilities=list(combination),
                     ),
                 )
@@ -441,7 +445,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_5,
                         chbw=CHANNEL_BANDWIDTH_40_LOWER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=Security.NONE,
+                        security=SecurityOpen(),
                         n_capabilities=list(combination),
                     ),
                 )
@@ -467,7 +471,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_5,
                         chbw=CHANNEL_BANDWIDTH_40_UPPER,
                         n_mode=combination[0],
-                        security=Security.NONE,
+                        security=SecurityOpen(),
                         n_capabilities=list(combination[1:]),
                     ),
                 )
@@ -491,7 +495,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_24,
                         chbw=CHANNEL_BANDWIDTH_20,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=Security.WPA2,
+                        security=SecurityWpa2(),
                         n_capabilities=list(combination),
                     ),
                 )
@@ -516,7 +520,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_24,
                         chbw=CHANNEL_BANDWIDTH_40_LOWER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=Security.WPA2,
+                        security=SecurityWpa2(),
                         n_capabilities=list(combination),
                     ),
                 )
@@ -541,7 +545,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_24,
                         chbw=CHANNEL_BANDWIDTH_40_UPPER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=Security.WPA2,
+                        security=SecurityWpa2(),
                         n_capabilities=list(combination),
                     ),
                 )
@@ -565,7 +569,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_5,
                         chbw=CHANNEL_BANDWIDTH_20,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=Security.WPA2,
+                        security=SecurityWpa2(),
                         n_capabilities=list(combination),
                     ),
                 )
@@ -590,7 +594,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_5,
                         chbw=CHANNEL_BANDWIDTH_40_LOWER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=Security.WPA2,
+                        security=SecurityWpa2(),
                         n_capabilities=list(combination),
                     ),
                 )
@@ -615,7 +619,7 @@ class WlanPhyCompliance11NTest(base_test.WifiBaseTest):
                         frequency=FREQUENCY_5,
                         chbw=CHANNEL_BANDWIDTH_40_UPPER,
                         n_mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                        security=Security.WPA2,
+                        security=SecurityWpa2(),
                         n_capabilities=list(combination),
                     ),
                 )

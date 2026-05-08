@@ -38,6 +38,8 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     BssSettings,
     RadioConfig,
     Security,
+    SecurityOpen,
+    SecurityWpa2,
 )
 
 
@@ -47,8 +49,8 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
             test_logic=self._test_logic,
             name_func=self.name_func,
             arg_sets=[
-                (Security.NONE, None),
-                (Security.WPA2, AccessPointConfig.random_string()),
+                (SecurityOpen(), None),
+                (SecurityWpa2(), AccessPointConfig.random_string()),
             ],
         )
 
@@ -138,9 +140,9 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
 
             credentials = None
             protocol = fidl_security.Protocol.OPEN
-            if security == Security.NONE:
+            if isinstance(security, SecurityOpen):
                 pass
-            elif security == Security.WPA2:
+            elif isinstance(security, SecurityWpa2):
                 if password is None:
                     raise signals.TestError("Password is required for WPA2")
                 protocol = fidl_security.Protocol.WPA2_PERSONAL

@@ -27,7 +27,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     Band,
     BssSettings,
     RadioConfig,
-    Security,
+    SecurityOpen,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
@@ -124,7 +124,7 @@ class PingTest(base_test.WifiBaseTest):
             raise signals.TestAbortClass("Requires at least one access point")
 
         band = Band.BAND_2G
-        security = Security.NONE
+        security = SecurityOpen()
 
         if self.openwrt_ap:
             config = AccessPointConfig(

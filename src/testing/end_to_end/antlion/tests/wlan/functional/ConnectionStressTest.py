@@ -29,6 +29,8 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     BssSettings,
     RadioConfig,
     Security,
+    SecurityOpen,
+    SecurityWpa2,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
@@ -68,7 +70,7 @@ class ConnectionStressTest(base_test.WifiBaseTest):
                     TestParams(
                         profile=profile,
                         channel=channel,
-                        security=Security.NONE,
+                        security=SecurityOpen(),
                         ap_ssid=ssid,
                         ap_password=None,
                         dut_ssid=ssid,
@@ -84,7 +86,7 @@ class ConnectionStressTest(base_test.WifiBaseTest):
                 TestParams(
                     profile="whirlwind",
                     channel=channel,
-                    security=Security.NONE,
+                    security=SecurityOpen(),
                     ap_ssid=ssid,
                     ap_password=None,
                     dut_ssid=f"wrong_{ssid}",
@@ -101,7 +103,7 @@ class ConnectionStressTest(base_test.WifiBaseTest):
                 TestParams(
                     profile="whirlwind",
                     channel=channel,
-                    security=Security.WPA2,
+                    security=SecurityWpa2(),
                     ap_ssid=ssid,
                     ap_password=password,
                     dut_ssid=ssid,

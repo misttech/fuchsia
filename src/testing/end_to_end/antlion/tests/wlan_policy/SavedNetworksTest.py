@@ -34,6 +34,9 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     BssSettings,
     RadioConfig,
     Security,
+    SecurityOpen,
+    SecurityWpa2,
+    SecurityWpa3,
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
@@ -131,11 +134,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
                             BssSettings(
                                 ssid=ssid,
                                 security=security,
-                                password=(
-                                    password
-                                    if security != Security.NONE
-                                    else None
-                                ),
+                                password=password,
                             )
                         ],
                     )
@@ -379,7 +378,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         )
 
         self._start_ap(
-            test_network.ssid, Security.WPA2, test_network.credential_value
+            test_network.ssid, SecurityWpa2(), test_network.credential_value
         )
 
         for fd in self.fuchsia_devices:
@@ -424,7 +423,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         )
 
         self._start_ap(
-            test_network.ssid, Security.NONE, test_network.credential_value
+            test_network.ssid, SecurityOpen(), test_network.credential_value
         )
 
         for fd in self.fuchsia_devices:
@@ -462,7 +461,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         )
 
         self._start_ap(
-            test_network.ssid, Security.WPA3, test_network.credential_value
+            test_network.ssid, SecurityWpa3(), test_network.credential_value
         )
 
         for fd in self.fuchsia_devices:

@@ -13,7 +13,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     Band,
     BssSettings,
     RadioConfig,
-    Security,
+    SecurityOpen,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,7 @@ class SARSettingTest(base_test.ConnectionBaseTestClass):
                             bss_settings=[
                                 BssSettings(
                                     ssid=ssid,
-                                    security=Security.NONE,
+                                    security=SecurityOpen(),
                                 )
                             ],
                         )

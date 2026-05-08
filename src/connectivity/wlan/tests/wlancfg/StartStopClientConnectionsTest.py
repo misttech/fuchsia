@@ -29,7 +29,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     Band,
     BssSettings,
     RadioConfig,
-    Security,
+    SecurityWpa2,
 )
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ class StartStopClientConnectionsTest(
                         bss_settings=[
                             BssSettings(
                                 ssid=self.ssid,
-                                security=Security.WPA2,
+                                security=SecurityWpa2(),
                                 password=self.password,
                             )
                         ],
