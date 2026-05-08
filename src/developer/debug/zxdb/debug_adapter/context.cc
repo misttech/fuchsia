@@ -295,6 +295,7 @@ void DebugAdapterContext::DidCreateProcess(Process* process, uint64_t timestamp)
   dap::ProcessEvent event;
   event.name = process->GetName();
   event.isLocalProcess = false;
+  event.systemProcessId = process->GetKoid();
 
   switch (process->start_type()) {
     case Process::StartType::kAttach:

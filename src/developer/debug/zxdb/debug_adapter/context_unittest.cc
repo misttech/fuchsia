@@ -94,7 +94,10 @@ TEST_F(ContextTest, InitializedEvent) {
 TEST_F(ContextTest, ProcessStartEvent) {
   bool start_received = false;
 
-  client().registerHandler([&](const dap::ProcessEvent& arg) { start_received = true; });
+  client().registerHandler([&](const dap::ProcessEvent& arg) {
+    start_received = true;
+    EXPECT_EQ(arg.systemProcessId.value(0), static_cast<dap::integer>(kProcessKoid));
+  });
 
   InitializeDebugging();
   InjectProcess(kProcessKoid);
