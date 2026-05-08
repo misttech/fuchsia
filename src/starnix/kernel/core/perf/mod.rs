@@ -55,8 +55,6 @@ const DEFAULT_CHUNK_SIZE: usize = 4096;
 // If tests flake due to running out of buffer space, or if the profiling duration is
 // significantly increased, this buffer size may need further adjustment (expansion).
 const ESTIMATED_MMAP_BUFFER_SIZE: u64 = 40960;
-// perf_event_header struct size: 32 + 16 + 16 = 8 bytes.
-const PERF_EVENT_HEADER_SIZE: u16 = 8;
 // FXT magic bytes (little endian).
 const FXT_MAGIC_BYTES: [u8; 8] = [0x10, 0x00, 0x04, 0x46, 0x78, 0x54, 0x16, 0x00];
 
@@ -486,30 +484,7 @@ fn write_record_to_vmo(
     sample_period: u64,
     offset: u64,
 ) -> u64 {
-    // Write header.
-    track_stub!(
-        TODO("https://fxbug.dev/432501467"),
-        "[perf_event_open] determines whether the record is KERNEL or USER"
-    );
-    let perf_event_header = perf_event_header {
-        type_: perf_event_type_PERF_RECORD_SAMPLE,
-        misc: PERF_RECORD_MISC_KERNEL as u16,
-        size: PERF_EVENT_HEADER_SIZE,
-    };
-
-    // Total data offset. This is where the record should start getting written.
-    // The first page is reserved for metadata, so we need to add the page size.
-    // Example:
-    //  You're writing the first record (size 100). Start writing at 0 + 4096.
-    //  You're writing the second record. Start writing at 100 + 4096.
-    let data_offset = offset + (zx::system_get_page_size() as u64);
-
-    match perf_data_vmo.write(&perf_event_header.as_bytes(), data_offset) {
-        Ok(_) => (),
-        Err(e) => log_warn!("Failed to write perf_event_header: {}", e),
-    }
-
-    // Write sample.
+    // First, build record to determine its size (so that we can fill out `size` in header).
     let mut sample = Vec::<u8>::new();
     // sample_id
     if (sample_type & perf_event_sample_format_PERF_SAMPLE_IDENTIFIER as u64) != 0 {
@@ -548,15 +523,42 @@ fn write_record_to_vmo(
     }
     // The remaining data are not defined for now.
 
+    // Now that we know the sample size, we can calculate the record size.
+    // record_size = perf_event_header_size + sample_size.
+    // perf_event_header is defined to be 8 bytes.
+    let record_size: u64 = (std::mem::size_of::<perf_event_header>() + sample.len()) as u64;
+
+    track_stub!(
+        TODO("https://fxbug.dev/432501467"),
+        "[perf_event_open] determines whether the record is KERNEL or USER"
+    );
+    let perf_event_header = perf_event_header {
+        type_: perf_event_type_PERF_RECORD_SAMPLE,
+        misc: PERF_RECORD_MISC_KERNEL as u16,
+        size: record_size as u16,
+    };
+
+    // Total data offset. This is where the record should start getting written.
+    // The first page is reserved for metadata, so we need to add the page size.
+    // Example:
+    //  You're writing the first record (size 100). Start writing at 0 + 4096.
+    //  You're writing the second record. Start writing at 100 + 4096.
+    let data_offset = offset + (zx::system_get_page_size() as u64);
+
+    // Write header to memory.
+    match perf_data_vmo.write(&perf_event_header.as_bytes(), data_offset) {
+        Ok(_) => (),
+        Err(e) => log_warn!("Failed to write perf_event_header: {}", e),
+    }
+
+    // Write sample to memory immediately after the header.
     match perf_data_vmo
         .write(&sample, data_offset + (std::mem::size_of::<perf_event_header>() as u64))
     {
         Ok(_) => {
-            let bytes_written: u64 =
-                (std::mem::size_of::<perf_event_header>() + sample.len()) as u64;
             // Return the total size we wrote (header + sample) so that we can
             // increment offset counter.
-            return bytes_written;
+            return record_size;
         }
         Err(e) => {
             log_warn!("Failed to write PerfRecordSample to VMO due to: {}", e);

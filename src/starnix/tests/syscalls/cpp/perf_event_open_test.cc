@@ -656,6 +656,8 @@ TEST(PerfEventOpenTest, SampleIdIsValid) {
         curr_pointer += header->size;
       }
 
+      EXPECT_TRUE(read_samples);
+      EXPECT_EQ(curr_pointer, data_head.load(std::memory_order_relaxed));
       // Update data_tail to indicate we've consumed the records.
       data_tail.store(curr_pointer, std::memory_order_release);
 
@@ -885,6 +887,8 @@ TEST(PerfEventOpenTest, MmapFirstRecordPageIsValid) {
         curr_pointer += header->size;
       }
 
+      EXPECT_TRUE(read_samples);
+      EXPECT_EQ(curr_pointer, data_head.load(std::memory_order_relaxed));
       // Update data_tail to indicate we've consumed the records.
       data_tail.store(curr_pointer, std::memory_order_release);
       if (read_samples) {
