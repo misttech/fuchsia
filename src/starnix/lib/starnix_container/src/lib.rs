@@ -20,7 +20,8 @@ mod hal_manifest;
 mod remote_bundle;
 pub mod repackage;
 
-use crate::remote_bundle::Writer;
+use crate::remote_bundle::{Writer, apply_overrides};
+use assembly_config_schema::product_settings::StarnixFileOverride;
 use depfile::Depfile;
 pub use repackage::repackage_starnix_containers;
 
@@ -46,6 +47,16 @@ pub struct StarnixContainerGenerator {
     pub fstab: Option<Utf8PathBuf>,
     /// Path to extra init scripts, will go in /odm/etc/init. Can be passed more than once.
     pub init: Vec<Utf8PathBuf>,
+    /// File overrides to apply.
+    pub file_overrides: Vec<StarnixFileOverride>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImageOverridesResult {
+    /// Inodes that were skipped (removed or overwritten) in the original image.
+    pub skipped_inodes: std::collections::HashSet<u64>,
+    /// New files added by overrides, mapping inode to source path on host.
+    pub new_files: Vec<(u64, Utf8PathBuf)>,
 }
 
 #[derive(Debug, Clone)]
@@ -85,10 +96,37 @@ impl StarnixContainerGenerator {
 
         let image_outdir = outdir.join(name);
         std::fs::create_dir_all(&image_outdir)
-            .with_context(|| format!("Preparing directory for image files: {}", image_outdir))?;
-        let image_files = ext4_extract(image_path.as_str(), image_outdir.as_str()).with_context(
+            .with_context(|| format!("Preparing directory for image files: {}", &image_outdir))?;
+        let mut image_files = ext4_extract(image_path.as_str(), image_outdir.as_str()).with_context(
             || format!("Failed to extract EXT4 image from {}. Please ensure the file is a valid EXT4 filesystem image.", image_path),
         )?;
+
+        let my_overrides: Vec<StarnixFileOverride> =
+            self.file_overrides.iter().filter(|o| o.image_name == name.as_str()).cloned().collect();
+
+        if !my_overrides.is_empty() {
+            let metadata_file_path = image_outdir.join("metadata.v1");
+            let bytes = std::fs::read(&metadata_file_path)
+                .with_context(|| format!("Failed to read metadata at {}", metadata_file_path))?;
+            let metadata = ext4_metadata::Metadata::deserialize(&bytes)
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize metadata: {:?}", e))?;
+
+            let result = apply_overrides(metadata, my_overrides, name.as_str())?;
+
+            let new_metadata_bytes = result.metadata.serialize();
+            std::fs::write(&metadata_file_path, new_metadata_bytes)
+                .with_context(|| format!("Failed to write metadata at {}", metadata_file_path))?;
+
+            let skipped_inode_strings: std::collections::HashSet<String> =
+                result.skipped_inodes.iter().map(|i| i.to_string()).collect();
+
+            image_files.retain(|dst, _| !skipped_inode_strings.contains(dst));
+
+            for (inode, src_path) in result.new_files {
+                image_files.insert(inode.to_string(), src_path.to_string());
+            }
+        }
+
         for (dst, src) in &image_files {
             let dst = format!("data/{}/{}", name, dst);
             builder
@@ -394,6 +432,9 @@ impl StarnixContainerGenerator {
 
 impl StarnixContainerRepackager {
     pub fn build(self, deps: &mut Depfile) -> Result<Utf8PathBuf> {
+        std::fs::create_dir_all(&self.outdir)
+            .with_context(|| format!("Failed to create output directory {}", self.outdir))?;
+
         let new_base_package_manifest = PackageManifest::try_load_from(&self.base)
             .with_context(|| format!("Reading new base package: {}", self.base))?;
 
@@ -448,7 +489,9 @@ impl StarnixContainerRepackager {
             .iter()
             .find(|b| b.path == PackageManifest::META_FAR_BLOB_PATH)
             .context("base package missing meta.far")?;
-        let meta_far_bytes = std::fs::read(&meta_far_blob.source_path)?;
+        let meta_far_bytes = std::fs::read(&meta_far_blob.source_path).with_context(|| {
+            format!("Failed to read meta.far blob at {}", meta_far_blob.source_path)
+        })?;
         let mut far_reader =
             fuchsia_archive::Utf8Reader::new(std::io::Cursor::new(meta_far_bytes))?;
         let paths: Vec<String> = far_reader.list().map(|e| e.path().to_string()).collect();
@@ -488,6 +531,9 @@ impl StarnixContainerRepackager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assembly_config_schema::product_settings::{
+        StarnixFileOperation as FileOperation, StarnixFileOverride as FileOverride,
+    };
     use assert_matches::assert_matches;
     use ext4_metadata::{Metadata, NodeInfo, ROOT_INODE_NUM};
     use itertools::Itertools;
@@ -502,12 +548,15 @@ mod tests {
         // Build a fake "base".
         let base_manifest_path = outdir.join("base_package_manifest.json");
         let mut builder = PackageBuilder::new_platform_internal_package("test-base");
-        builder.add_contents_as_blob("data/test", "test-base-blob", &outdir).unwrap();
+        let test_blob_path = outdir.join("test-blob-file");
+        std::fs::write(&test_blob_path, "test-base-blob").unwrap();
+        builder.add_file_as_blob("data/test", &test_blob_path).unwrap();
         builder.manifest_path(&base_manifest_path);
         let _ = builder.build(&outdir, outdir.join("base-meta.far")).unwrap();
         base_manifest_path
     }
 
+    /// Test that the generator correctly produces a package manifest with the expected blobs and subpackages.
     #[test]
     fn test_generate() -> Result<()> {
         let tmp = TempDir::new().unwrap();
@@ -533,6 +582,7 @@ mod tests {
             init: vec![],
             skip_subpackages: false,
             fstab: None,
+            file_overrides: vec![],
         };
         let mut deps = Depfile::new();
         container.build(&mut deps).unwrap();
@@ -546,6 +596,11 @@ mod tests {
         assert_eq!(blobs.len(), 7);
         assert_eq!(subpackages.len(), 1);
         let blob_filenames: Vec<String> = blobs.iter().map(|b| b.path.clone()).collect();
+
+        // Verify that the test blob content is preserved.
+        let test_blob = blobs.iter().find(|b| b.path == "data/test").unwrap();
+        let content = std::fs::read_to_string(&test_blob.source_path).unwrap();
+        assert_eq!(content, "test-base-blob");
 
         // Check that the paths in the file are relative to the file, not the current directory.
         // We can't use the typed reader since it will resolve them to absolute paths.
@@ -578,15 +633,379 @@ mod tests {
         assert_eq!(
             blob_source_paths,
             vec![
-                "data/test".to_string(),
                 "meta.far".to_string(),
                 "odm/metadata.v1".to_string(),
                 "system/13".to_string(),
                 "system/metadata.v1".to_string(),
+                "test-blob-file".to_string(),
                 "vendor/13".to_string(),
                 "vendor/metadata.v1".to_string(),
             ]
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_apply_overrides_create_dirs() {
+        let mut metadata = Metadata::new();
+        metadata.insert_directory(ROOT_INODE_NUM, 0o040000 | 0o755, 0, 0, Default::default());
+
+        let overrides = vec![FileOverride {
+            image_name: "system".into(),
+            file_path: "a/b/c".into(),
+            operation: FileOperation::Create("src/path".into()),
+            mode: None,
+            uid: None,
+            gid: None,
+        }];
+
+        let result = apply_overrides(metadata, overrides, "system").unwrap();
+        let new_m = result.metadata;
+
+        // Verify /a exists and is a directory.
+        let root = new_m.get(ROOT_INODE_NUM).unwrap();
+        let root_dir = match root.info() {
+            ext4_metadata::NodeInfo::Directory(d) => d,
+            _ => panic!("Expected directory"),
+        };
+        let a_inode = *root_dir.children.iter().find(|(k, _)| k.as_str() == "a").unwrap().1;
+
+        let a_node = new_m.get(a_inode).unwrap();
+        assert_eq!(a_node.mode & 0o170000, 0o040000); // Directory
+
+        // Verify /a/b exists and is a directory.
+        let a_dir = match a_node.info() {
+            ext4_metadata::NodeInfo::Directory(d) => d,
+            _ => panic!("Expected directory"),
+        };
+        let b_inode = *a_dir.children.iter().find(|(k, _)| k.as_str() == "b").unwrap().1;
+
+        let b_node = new_m.get(b_inode).unwrap();
+        assert_eq!(b_node.mode & 0o170000, 0o040000); // Directory
+
+        // Verify /a/b/c exists and is a file!
+        let b_dir = match b_node.info() {
+            ext4_metadata::NodeInfo::Directory(d) => d,
+            _ => panic!("Expected directory"),
+        };
+        let c_inode = *b_dir.children.iter().find(|(k, _)| k.as_str() == "c").unwrap().1;
+
+        let c_node = new_m.get(c_inode).unwrap();
+        assert_eq!(c_node.mode & 0o170000, 0o100000); // File
+    }
+
+    #[test]
+    fn test_generator_remove_non_existent_file() -> Result<()> {
+        let tmp = TempDir::new().unwrap();
+        let outdir = Utf8Path::from_path(tmp.path()).unwrap();
+        let base_manifest_path = fake_base(outdir);
+
+        let generator = StarnixContainerGenerator {
+            name: "test-name".into(),
+            outdir: outdir.to_owned(),
+            base: base_manifest_path.clone(),
+            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            vendor: None,
+            ramdisk: vec![],
+            hals: vec![],
+            init: vec![],
+            skip_subpackages: false,
+            fstab: None,
+            file_overrides: vec![FileOverride {
+                image_name: "system".into(),
+                file_path: "non/existent/file".into(),
+                operation: FileOperation::Remove,
+                mode: None,
+                uid: None,
+                gid: None,
+            }],
+        };
+
+        let mut deps = Depfile::new();
+        let result = generator.build(&mut deps);
+        assert!(result.is_err());
+        let error_msg = format!("{:?}", result.err().unwrap());
+        eprintln!("Error message: {}", error_msg);
+        assert!(error_msg.contains("File to remove not found"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generator_overwrite_non_existent_file() -> Result<()> {
+        let tmp = TempDir::new().unwrap();
+        let outdir = Utf8Path::from_path(tmp.path()).unwrap();
+        let base_manifest_path = fake_base(outdir);
+
+        // Create a file to use for override.
+        let src_file = outdir.join("src_file");
+        std::fs::write(&src_file, "new content").unwrap();
+
+        let generator = StarnixContainerGenerator {
+            name: "test-name".into(),
+            outdir: outdir.to_owned(),
+            base: base_manifest_path.clone(),
+            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            vendor: None,
+            ramdisk: vec![],
+            hals: vec![],
+            init: vec![],
+            skip_subpackages: false,
+            fstab: None,
+            file_overrides: vec![FileOverride {
+                image_name: "system".into(),
+                file_path: "non/existent/file".into(),
+                operation: FileOperation::Overwrite(src_file),
+                mode: None,
+                uid: None,
+                gid: None,
+            }],
+        };
+
+        let mut deps = Depfile::new();
+        let result = generator.build(&mut deps);
+        assert!(result.is_err());
+        let error_msg = format!("{:?}", result.err().unwrap());
+        eprintln!("Error message: {}", error_msg);
+        assert!(error_msg.contains("File to overwrite not found"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generator_override_create() -> Result<()> {
+        let tmp = TempDir::new().unwrap();
+        let outdir = Utf8Path::from_path(tmp.path()).unwrap();
+        let base_manifest_path = fake_base(outdir);
+
+        // Create a file to use for override.
+        let src_file = outdir.join("src_file");
+        std::fs::write(&src_file, "new content").unwrap();
+
+        let generator = StarnixContainerGenerator {
+            name: "test-name".into(),
+            outdir: outdir.to_owned(),
+            base: base_manifest_path.clone(),
+            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            vendor: None,
+            ramdisk: vec![],
+            hals: vec![],
+            init: vec![],
+            skip_subpackages: false,
+            fstab: None,
+            file_overrides: vec![FileOverride {
+                image_name: "system".into(),
+                file_path: "new_file".into(),
+                operation: FileOperation::Create(src_file),
+                mode: Some(0o100000 | 0o755),
+                uid: Some(1000),
+                gid: Some(1000),
+            }],
+        };
+        let mut deps = Depfile::new();
+        generator.build(&mut deps).unwrap();
+        let output_manifest_path = outdir.join("package_manifest.json");
+
+        // Verify the package manifest.
+        let manifest = PackageManifest::try_load_from(&output_manifest_path).unwrap();
+        let (blobs, _subpackages) = manifest.into_blobs_and_subpackages();
+
+        let system_metadata_blob =
+            blobs.iter().find(|b| b.path == "data/system/metadata.v1").unwrap();
+        let m = Metadata::deserialize(&std::fs::read(&system_metadata_blob.source_path).unwrap())
+            .unwrap();
+
+        // new_file should be there.
+        let new_file_inode = m.lookup(ROOT_INODE_NUM, "new_file").expect("new_file not found");
+        let new_file_node = m.get(new_file_inode).expect("new_file node not found");
+        assert_matches!(new_file_node.info(), NodeInfo::File(_));
+        assert_eq!(new_file_node.mode, 0o100000 | 0o755);
+        assert_eq!(new_file_node.uid, 1000);
+        assert_eq!(new_file_node.gid, 1000);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generator_override_overwrite() -> Result<()> {
+        let tmp = TempDir::new().unwrap();
+        let outdir = Utf8Path::from_path(tmp.path()).unwrap();
+        let base_manifest_path = fake_base(outdir);
+
+        // Create a file to use for override.
+        let src_file = outdir.join("src_file");
+        std::fs::write(&src_file, "new content").unwrap();
+
+        let generator = StarnixContainerGenerator {
+            name: "test-name".into(),
+            outdir: outdir.to_owned(),
+            base: base_manifest_path.clone(),
+            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            vendor: None,
+            ramdisk: vec![],
+            hals: vec![],
+            init: vec![],
+            skip_subpackages: false,
+            fstab: None,
+            file_overrides: vec![FileOverride {
+                image_name: "system".into(),
+                file_path: "foo/file".into(),
+                operation: FileOperation::Overwrite(src_file),
+                mode: Some(0o100000 | 0o644), // Force file mode
+                uid: None,
+                gid: None,
+            }],
+        };
+        let mut deps = Depfile::new();
+        generator.build(&mut deps).unwrap();
+        let output_manifest_path = outdir.join("package_manifest.json");
+
+        // Verify the package manifest.
+        let manifest = PackageManifest::try_load_from(&output_manifest_path).unwrap();
+        let (blobs, _subpackages) = manifest.into_blobs_and_subpackages();
+
+        let system_metadata_blob =
+            blobs.iter().find(|b| b.path == "data/system/metadata.v1").unwrap();
+        let m = Metadata::deserialize(&std::fs::read(&system_metadata_blob.source_path).unwrap())
+            .unwrap();
+
+        // foo/file should be there and be updated!
+        let foo = m.lookup(ROOT_INODE_NUM, "foo").expect("foo not found");
+        let file_inode = m.lookup(foo, "file").expect("file not found");
+        let node = m.get(file_inode).expect("file node not found");
+        assert_matches!(node.info(), NodeInfo::File(_));
+        assert_eq!(node.mode, 0o100000 | 0o644);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generator_override_remove() -> Result<()> {
+        let tmp = TempDir::new().unwrap();
+        let outdir = Utf8Path::from_path(tmp.path()).unwrap();
+        let base_manifest_path = fake_base(outdir);
+
+        let generator = StarnixContainerGenerator {
+            name: "test-name".into(),
+            outdir: outdir.to_owned(),
+            base: base_manifest_path.clone(),
+            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            vendor: None,
+            ramdisk: vec![],
+            hals: vec![],
+            init: vec![],
+            skip_subpackages: false,
+            fstab: None,
+            file_overrides: vec![FileOverride {
+                image_name: "system".into(),
+                file_path: "foo/file".into(),
+                operation: FileOperation::Remove,
+                mode: None,
+                uid: None,
+                gid: None,
+            }],
+        };
+
+        let mut deps = Depfile::new();
+        generator.build(&mut deps).unwrap();
+        let output_manifest_path = outdir.join("package_manifest.json");
+
+        // Verify the package manifest.
+        let manifest = PackageManifest::try_load_from(&output_manifest_path).unwrap();
+        let (blobs, _subpackages) = manifest.into_blobs_and_subpackages();
+
+        let system_metadata_blob =
+            blobs.iter().find(|b| b.path == "data/system/metadata.v1").unwrap();
+        let m = Metadata::deserialize(&std::fs::read(&system_metadata_blob.source_path).unwrap())
+            .unwrap();
+
+        // foo/file should NOT be there.
+        let foo = m.lookup(ROOT_INODE_NUM, "foo").expect("foo not found");
+        assert!(m.lookup(foo, "file").is_err());
+
+        // Verify that untouched existing container files are strictly preserved.
+        let foo_node = m.get(foo).expect("foo node not found");
+        assert_matches!(foo_node.info(), NodeInfo::Directory(_));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_repackage_preserves_custom_files() -> Result<()> {
+        let tmp = TempDir::new().unwrap();
+        let outdir = Utf8Path::from_path(tmp.path()).unwrap();
+        let base_manifest_path = fake_base(outdir);
+
+        // Create a test host file to add as content.
+        let src_file = outdir.join("test.txt");
+        std::fs::write(&src_file, b"test content").unwrap();
+
+        // Run generator to populate two new custom files in the remote bundle.
+        let generator = StarnixContainerGenerator {
+            name: "test-name".into(),
+            outdir: outdir.to_owned(),
+            base: base_manifest_path.clone(),
+            system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            vendor: None,
+            ramdisk: vec![],
+            hals: vec![],
+            init: vec![],
+            skip_subpackages: false,
+            fstab: None,
+            file_overrides: vec![
+                FileOverride {
+                    image_name: "system".into(),
+                    file_path: "added_1".into(),
+                    operation: FileOperation::Create(src_file.clone()),
+                    mode: None,
+                    uid: None,
+                    gid: None,
+                },
+                FileOverride {
+                    image_name: "system".into(),
+                    file_path: "added_2".into(),
+                    operation: FileOperation::Create(src_file),
+                    mode: None,
+                    uid: None,
+                    gid: None,
+                },
+            ],
+        };
+        let mut deps = Depfile::new();
+        generator.build(&mut deps).unwrap();
+        let container_manifest_path = outdir.join("package_manifest.json");
+
+        // Run repackager (WITHOUT overrides) on the generated container.
+        let repackager = StarnixContainerRepackager {
+            name: "test-repack".into(),
+            outdir: outdir.join("repacked"),
+            container_manifest_path,
+            base: base_manifest_path,
+            hals: vec![],
+            skip_subpackages: false,
+        };
+        let mut deps = Depfile::new();
+        let final_manifest_path = repackager.build(&mut deps).unwrap();
+
+        // Verify final package contents.
+        let manifest = PackageManifest::try_load_from(final_manifest_path).unwrap();
+        let (blobs, _) = manifest.into_blobs_and_subpackages();
+
+        let system_metadata_blob =
+            blobs.iter().find(|b| b.path == "data/system/metadata.v1").unwrap();
+        let m = Metadata::deserialize(&std::fs::read(&system_metadata_blob.source_path).unwrap())
+            .unwrap();
+
+        // Verify 'added_1' is preserved.
+        let added_1_inode = m.lookup(ROOT_INODE_NUM, "added_1").expect("added_1 missing");
+        let added_1_node = m.get(added_1_inode).expect("added_1 node missing");
+        assert_matches!(added_1_node.info(), NodeInfo::File(_));
+
+        // Verify 'added_2' is preserved.
+        let added_2_inode = m.lookup(ROOT_INODE_NUM, "added_2").expect("added_2 missing");
+        let added_2_node = m.get(added_2_inode).expect("added_2 node missing");
+        assert_matches!(added_2_node.info(), NodeInfo::File(_));
 
         Ok(())
     }
@@ -616,6 +1035,7 @@ mod tests {
             init: vec![],
             skip_subpackages: true,
             fstab: None,
+            file_overrides: vec![],
         };
         let mut deps = Depfile::new();
         container.build(&mut deps).unwrap();
@@ -665,6 +1085,7 @@ mod tests {
             init: vec![],
             skip_subpackages: false,
             fstab: None,
+            file_overrides: vec![],
         };
         let mut deps = Depfile::new();
         container.build(&mut deps).unwrap();
@@ -741,6 +1162,7 @@ mod tests {
             init: vec![],
             skip_subpackages: false,
             fstab: None,
+            file_overrides: vec![],
         };
         let mut deps = Depfile::new();
         container.build(&mut deps).unwrap();
@@ -810,6 +1232,7 @@ tmpfs   /data       tmpfs   defaults            wait
             init: vec![],
             skip_subpackages: false,
             fstab: Some(fstab_path),
+            file_overrides: vec![],
         };
         let mut deps = Depfile::new();
         container.build(&mut deps).unwrap();
@@ -868,6 +1291,7 @@ tmpfs   /data       tmpfs   defaults            wait
             init: vec![init_path],
             skip_subpackages: false,
             fstab: None,
+            file_overrides: vec![],
         };
         let mut deps = Depfile::new();
         container.build(&mut deps).unwrap();
@@ -926,6 +1350,7 @@ tmpfs   /data       tmpfs   defaults            wait
             fstab: None,
             init: vec![],
             skip_subpackages: false,
+            file_overrides: vec![],
         };
 
         let result = container.build(&mut Depfile::new());
@@ -955,6 +1380,7 @@ tmpfs   /data       tmpfs   defaults            wait
             fstab: None,
             init: vec![],
             skip_subpackages: false,
+            file_overrides: vec![],
         };
 
         let result = container.build(&mut Depfile::new());

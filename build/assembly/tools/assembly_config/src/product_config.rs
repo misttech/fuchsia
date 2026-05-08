@@ -94,6 +94,7 @@ pub fn new(args: &ProductArgs) -> Result<()> {
             vendor,
             fstab: container.fstab.clone(),
             init: container.init.clone(),
+            file_overrides: container.file_overrides.clone(),
         }
         .build(&mut depfile)?;
 

@@ -153,6 +153,11 @@ pub struct StarnixContainerConfig {
     #[schemars(schema_with = "path_schema")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub init: Vec<Utf8PathBuf>,
+    /// File overrides to apply to the container.
+    #[walk_paths]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_overrides: Vec<StarnixFileOverride>,
+
     /// Initially, we have images, but at some point we have converted it
     /// to a package, and we should track that for hybrid assembly.
     ///
@@ -216,6 +221,46 @@ pub struct StarnixImages {
     #[schemars(schema_with = "path_schema")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ramdisk: Vec<Utf8PathBuf>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, WalkPaths, Clone)]
+pub struct StarnixFileOverride {
+    /// Name of the image to override files in (e.g. system, vendor, odm)
+    pub image_name: String,
+    /// Path to the file in the image (e.g. system/bin/sh)
+    pub file_path: String,
+    /// Operation to perform
+    pub operation: StarnixFileOperation,
+    /// Mode for the file (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<u16>,
+    /// UID for the file (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uid: Option<u16>,
+    /// GID for the file (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gid: Option<u16>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum StarnixFileOperation {
+    Overwrite(#[schemars(schema_with = "path_schema")] Utf8PathBuf),
+    Create(#[schemars(schema_with = "path_schema")] Utf8PathBuf),
+    Remove,
+}
+
+impl WalkPaths for StarnixFileOperation {
+    fn walk_paths_with_dest<F: WalkPathsFn>(
+        &mut self,
+        found: &mut F,
+        dest: Utf8PathBuf,
+    ) -> anyhow::Result<()> {
+        match self {
+            Self::Overwrite(path) | Self::Create(path) => found(path, dest, FileType::Unknown),
+            Self::Remove => Ok(()),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

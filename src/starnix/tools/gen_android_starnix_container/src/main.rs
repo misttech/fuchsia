@@ -71,6 +71,7 @@ fn main() -> Result<()> {
         ramdisk: cmd.ramdisk,
         fstab: cmd.fstab,
         init: cmd.init,
+        file_overrides: vec![],
     };
 
     let mut depfile = Depfile::new();

@@ -300,7 +300,8 @@ mod tests {
                     system: "path/to/system.img".into(),
                     vendor: Some("path/to/vendor.img".into()),
                     ramdisk: vec![("path/to/ramdisk.img".into()),],
-                })
+                }),
+                file_overrides: vec![],
             }]
         )
     }
