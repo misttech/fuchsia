@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/bazel_idk:defs.bzl", "idk_rustc_binary_host_tool")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 
 idk_rustc_binary_host_tool(
     name = "fake-omaha-client",
@@ -14,7 +14,7 @@ idk_rustc_binary_host_tool(
     category = "partner",
     edition = "2024",
     idk_name = "fake-omaha-client",
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     with_host_unit_tests = True,
     deps = [
         "//src/lib/fuchsia-async",
