@@ -4,12 +4,20 @@
 
 import("//build/test.gni")
 
+group("emulator_tests") {
+  testonly = true
+  deps = [
+    "//src/bringup/bin/console-launcher/qemu-tests:tests",
+    "//src/tests/drivers_serial_log:bringup_tests",
+    "//src/tests/reboot/power_reboot_bringup_test:tests",
+  ]
+}
+
 group("bootfs-tests") {
   testonly = true
 
   deps = [
     "//src/bringup/bin/console-launcher:shell-permissions-bootfs-test",
-    "//src/bringup/bin/console-launcher/qemu-tests:tests",
     "//src/bringup/bin/critical-services/crashsvc:crashsvc-test-bootfs-test",
     "//src/bringup/bin/sysinfo:sysinfo-bootfs-test",
     "//src/bringup/tests/bootfs_test:running-on-bootfs-test",
@@ -24,8 +32,6 @@ group("bootfs-tests") {
     "//src/devices/tests/devcoordinator-namespace:devcoordinator-namespace-bootfs-test",
     "//src/devices/usb/tests/usb:usb-bootfs-test",  # HW-required.
     "//src/lib/elf-search/test:elf-search-bootfs-test",
-    "//src/tests/drivers_serial_log:bringup_tests",
-    "//src/tests/reboot/power_reboot_bringup_test:tests",
     "//src/zircon/tests/entropy:entropy-bootfs-test",
     "//src/zircon/tests/exception:exception-bootfs-test",
     "//src/zircon/tests/futex-ownership:futex-ownership-bootfs-test",

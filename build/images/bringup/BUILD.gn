@@ -2,63 +2,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/assembly/assembled_system.gni")
-import("//build/assembly/legacy_image_metadata_overrides.gni")
-import("//build/assembly/product_bundle.gni")
-import("//build/images/args.gni")
-import("//build/product.gni")
+import("//build/images/paths.gni")
 
-assert(current_toolchain == default_toolchain,
-       "//build/images/* are only valid in the Fuchsia toolchain")
+assert(use_bazel_images_only, "Only bazel-assembled products are supported.")
 
-files = {
-  # Outputs of assembly.
-  outdir = target_out_dir + "/bringup"
+if (is_host) {
+  import("//build/testing/host_test_data.gni")
 
-  # Outputs of recovery.
-  recovery_name = get_label_info(recovery_label, "name")
-  recovery_outdir =
-      get_label_info(recovery_label, "target_out_dir") + "/" + recovery_name
-}
-
-assert(fuchsia_product_assembly_config_label != false,
-       "fuchsia_product_assembly_config_label must be defined to use bringup")
-
-bringup_base = {
-  testonly = true
-  output_dir = root_build_dir
-  generate_vbmeta = use_vbmeta
-
-  if (custom_signing_script != "") {
-    inputs = custom_signing_script_inputs
-    deps = [ "//build/images/custom_signing:deps" ]
-    generate_signed_zbi = true
+  host_test_data("default_product_bundle_for_emulator.go") {
+    # No tests should be assuming this product bundle target, but //tools/emulator/emulator.go
+    # finds the images in this product bundle via images.json, and uses them for its tests.
+    # They should explicitly use a product bundle instead.
+    # TODO(https://fxbug.dev/495904502)
+    visibility = [
+      "//src/bringup/bin/console-launcher/qemu-tests:*",
+      "//src/tests/drivers_serial_log:*",
+      "//src/tests/reboot/power_reboot_bringup_test:*",
+    ]
+    sources = [ files.product_bundle_dir ]
   }
-
-  product_assembly_config_label = fuchsia_product_assembly_config_label
-  board_config_label = board_configuration_label
-  use_bringup_platform_bundles_only = true
-}
-
-assembled_system("bringup_assembly") {
-  forward_variables_from(bringup_base, "*")
-  image_name = "bringup"
-  image_metadata_overrides = legacy_bringup_image_metadata_overrides
-}
-
-product_bundle("product_bundle") {
-  testonly = true
-  deps = [
-    ":bringup_assembly",
-    recovery_label,
-  ]
-
-  name = main_product_bundle_name
-  system_a = files.outdir
-  system_r = files.recovery_outdir
-}
-
-group("bringup") {
-  testonly = true
-  public_deps = [ ":product_bundle" ]
 }

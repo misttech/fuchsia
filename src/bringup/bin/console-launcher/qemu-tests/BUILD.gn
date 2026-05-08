@@ -20,12 +20,9 @@ if (is_linux) {
     sources = [ "console_qemu_test.go" ]
   }
 
-  host_test_data("bringup_zbi") {
-    sources = [ "$root_build_dir/bringup.zbi" ]
-  }
-
   go_test("console_qemu_test") {
     embed = [ ":lib" ]
-    non_go_deps = [ ":bringup_zbi" ]
+    non_go_deps =
+        [ "//build/images/bringup:default_product_bundle_for_emulator.go" ]
   }
 }

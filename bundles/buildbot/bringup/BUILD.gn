@@ -6,4 +6,11 @@
 # image itself.  These are integration and e2e tests.
 group("bringup") {
   testonly = true
+
+  deps = [
+    # These were in //src/bringup/tests:bootfs-tests, but they
+    # e2e-like tests that run bringup.zbi in an emulator, and
+    # aren't bootfs-based tests:
+    "//src/bringup/tests:emulator_tests",
+  ]
 }

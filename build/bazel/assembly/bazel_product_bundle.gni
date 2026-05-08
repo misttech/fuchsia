@@ -105,6 +105,11 @@ import("//src/sys/pkg/bin/package-tool/package-tool.gni")
 #
 #    Type: list(label)
 #
+#  use_bringup_platform_bundles (optional; default=false)
+#    If true, use the 'bringup' platform bundles instead of the full set of
+#    bundles for products that don't need the 'core' realm, or are building
+#    for architectures where the full set of bundles won't compile.
+#
 #  allow_eng_platform_bundle_use (optional; default=false)
 #    If true, allow the 'eng' platform bundles to be used by the assembled
 #    system. (This is only a check made by GN, assembly itself may still access
@@ -187,10 +192,7 @@ template("bazel_product_bundle") {
   }
 
   # The bazel inputs for all of the bazel actions described by this template.
-  _bazel_inputs = [
-    # The assembly config tool used by internal (non-sdk) Bazel targets.
-    "//build/assembly/tools/assembly_config:bazel_input($host_toolchain)",
-  ]
+  _bazel_inputs = []
 
   # See if there are any developer overrides enabled for this target, and
   # if so, pass them to assembly.
@@ -219,11 +221,19 @@ template("bazel_product_bundle") {
   }
   not_needed([ "_overrides_match_found" ])
 
-  if (defined(invoker.allow_eng_platform_bundle_use) &&
-      invoker.allow_eng_platform_bundle_use) {
+  if (defined(invoker.use_bringup_platform_bundles) &&
+      invoker.use_bringup_platform_bundles) {
+    # Use of the bringup AIB set takes precedence over the other sets of AIBs that
+    # could be used.
+    _bazel_inputs += [ "//bundles/assembly:bringup" ]
+  } else if (defined(invoker.allow_eng_platform_bundle_use) &&
+             invoker.allow_eng_platform_bundle_use) {
     # Some product bundles have eng artifacts in recovery slot and userdebug
     # artifacts in the main slot.
     _bazel_inputs += [
+      # bringup is also needed for zedboot images
+      "//bundles/assembly:bringup",
+
       "//bundles/assembly:eng",
       "//bundles/assembly:userdebug",
     ]

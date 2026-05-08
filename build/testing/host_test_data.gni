@@ -48,6 +48,11 @@ template("host_test_data") {
           get_label_info(":$target_name", "label_no_toolchain") ==
               "//build/images/fuchsia:default_product_bundle_for_emulator.go",
           "Only the '//build/images/fuchsia:default_product_bundle_for_emulator.go' is allowed to provide zedboot.zbi for host tests.")
+    } else if (source == "$root_build_dir/bringup.zbi") {
+      assert(
+          get_label_info(":$target_name", "label_no_toolchain") ==
+              "//build/images/bringup:bringup_zbi_for_host_tests",
+          "Only the '//build/images/bringup:bringup_zbi_for_host_tests' is allowed to provide bringup.zbi for host tests.")
     }
   }
 
