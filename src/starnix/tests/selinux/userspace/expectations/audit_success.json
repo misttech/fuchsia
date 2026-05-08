@@ -262,6 +262,18 @@
             ]
         },
         {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_GETFL",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=2F746D702F2338202864656C6574656429 dev=\"tmpfs\" ino=8 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_SETFL",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=2F746D702F233131202864656C6574656429 dev=\"tmpfs\" ino=11 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
             "name": "FifoTest.LabeledFromFilesystem",
             "audit_expectations": [
                 "avc:  denied  { write } for name=\"/\" dev=\"tmpfs\" ino=1 scontext=test_u:test_r:pipe_test_t:s0 tcontext=system_u:object_r:tmpfs_t:s0 tclass=dir permissive=1",

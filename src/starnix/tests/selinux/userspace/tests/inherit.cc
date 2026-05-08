@@ -258,6 +258,9 @@ TEST(InheritTest, DynamicTransitionFdRemainsValid) {
         WriteTaskAttr("current", "test_u:test_r:test_inherit_child_no_use_fd_t:s0");
     ASSERT_TRUE(transition_result.is_ok()) << "Failed to transition dynamically";
 
+    // Verify that the FD is still valid.
+    EXPECT_THAT(fcntl(fd.get(), F_GETFD), SyscallSucceeds());
+
     // Verify that the FD was not remapped to the null inode.
     const fbl::unique_fd null_fd(open("/sys/fs/selinux/null", O_RDONLY));
     ASSERT_TRUE(null_fd.is_valid());

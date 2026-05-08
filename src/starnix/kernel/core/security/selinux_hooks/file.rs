@@ -19,8 +19,9 @@ use crate::security::selinux_hooks::{
 use crate::task::CurrentTask;
 use crate::vfs::{FileHandle, FileObject, FsNodeHandle, canonicalize_ioctl_request};
 use linux_uapi::{
-    F_GETLK, F_SETFL, F_SETLK, F_SETLKW, FIBMAP, FIGETBSZ, FIOASYNC, FIOCLEX, FIONBIO, FIONCLEX,
-    FIONREAD, FS_IOC_GETFLAGS, FS_IOC_GETVERSION, FS_IOC_SETFLAGS, FS_IOC_SETVERSION,
+    F_GETFD, F_GETLK, F_GETOWN, F_GETOWN_EX, F_SETFD, F_SETFL, F_SETLK, F_SETLKW, FIBMAP, FIGETBSZ,
+    FIOASYNC, FIOCLEX, FIONBIO, FIONCLEX, FIONREAD, FS_IOC_GETFLAGS, FS_IOC_GETVERSION,
+    FS_IOC_SETFLAGS, FS_IOC_SETVERSION,
 };
 use selinux::{CommonFsNodePermission, PolicyCap, SecurityId, SecurityServer};
 use starnix_uapi::errors::Errno;
@@ -192,6 +193,7 @@ pub(in crate::security) fn check_file_fcntl_access(
     let subject_sid = current_task_state(current_task).current_sid;
 
     match fcntl_cmd {
+        F_GETFD | F_GETOWN | F_GETOWN_EX | F_SETFD => return Ok(()),
         F_GETLK | F_SETLK | F_SETLKW => {
             // Checks both the Lock and Use permissions.
             has_file_permissions(

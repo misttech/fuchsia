@@ -127,6 +127,7 @@ test_names = [
   "binder",
   "bpf",
   "capabilities",
+  "fcntl",
   "genfscon_create",
   "inherit",
   "ioctl",
