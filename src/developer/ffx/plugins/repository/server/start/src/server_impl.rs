@@ -559,7 +559,10 @@ pub async fn serve_impl(
         let tunnel_addr = cmd.tunnel_addr.clone().unwrap_or_else(|| default_tunnel_addr());
         let host_address: Option<HostAddr> = host_address.await?.into();
         let host_address = host_address.map(|t| t.0);
-        let knocker = LocalRcsKnockerImpl {};
+        let knocker = LocalRcsKnockerImpl {
+            ever_found: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            use_cache: false,
+        };
         let target_spec = target_spec.await?;
         let r = Box::pin(target::main_connect_loop(
             &context,

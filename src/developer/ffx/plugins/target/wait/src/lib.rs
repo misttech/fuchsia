@@ -93,6 +93,11 @@ impl<T: DeviceWaiter + fho::TryFromEnv> FfxMain for WaitOperation<T> {
                 writer.machine(&CommandStatus::Ok {})?;
                 Ok(())
             }
+            Err(e) if self.cmd.down => {
+                // If we are waiting for the device to go down, a failure means we cannot confirm it is down.
+                // Running diagnostics makes no sense in this case.
+                Err(e)
+            }
             Err(e @ Error::User(_)) => {
                 let message = get_diagnostics_string(&self.env, self.cmd.timeout, e).await;
                 Err(Error::User(anyhow::anyhow!(message)))
@@ -205,5 +210,36 @@ mod test {
         let (stdout, stderr) = test_buffers.into_strings();
         assert!(res.is_err(), "expected error {stdout} {stderr}");
         assert!(matches!(res, Err(Error::User(_))), "expected 'user error' {stdout} {stderr}");
+    }
+
+    #[fuchsia::test]
+    async fn test_down_error_no_diagnostics() {
+        let test_env = ffx_config::test_init().expect("test env");
+        let mut mock_waiter = MockDeviceWaiter::new();
+        mock_waiter
+            .expect_wait()
+            .times(1)
+            .returning(|_, _, _, _| Box::pin(async { Err(fho::bug!("oh no!")) }));
+        let tool = WaitOperation {
+            cmd: WaitOptions { timeout: 1000, down: true },
+            env: test_env.context.clone(),
+            waiter: mock_waiter,
+        };
+        let test_buffers = TestBuffers::default();
+        let writer = <WaitOperation<MockDeviceWaiter> as FfxMain>::Writer::new_test(
+            Some(Format::JsonPretty),
+            &test_buffers,
+        );
+        let res = tool.main(writer).await;
+        let (stdout, stderr) = test_buffers.into_strings();
+        assert!(res.is_err(), "expected error {stdout} {stderr}");
+        if let Err(e) = res {
+            let err_msg = e.to_string();
+            assert!(err_msg.contains("oh no!"), "expected 'oh no!' in error message: {err_msg}");
+            assert!(
+                !err_msg.contains("Diagnostics:"),
+                "did not expect 'Diagnostics:' in error message: {err_msg}"
+            );
+        }
     }
 }

@@ -327,7 +327,7 @@ pub async fn knock_target(target: &TargetProxy) -> Result<(), KnockError> {
     knock_target_with_timeout(target, DEFAULT_RCS_KNOCK_TIMEOUT).await
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WaitFor {
     DeviceOnline,
     DeviceOffline,
@@ -341,7 +341,10 @@ pub async fn wait_for_device(
     target_spec: &Option<String>,
     behavior: WaitFor,
 ) -> Result<(), ffx_command_error::Error> {
-    wait_for_device_inner(LocalRcsKnockerImpl, wait_timeout, env, target_spec, behavior).await
+    let ever_found = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let use_cache = behavior == WaitFor::DeviceOffline;
+    let knocker = LocalRcsKnockerImpl { ever_found: ever_found.clone(), use_cache };
+    wait_for_device_inner(knocker, wait_timeout, env, target_spec, behavior, ever_found).await
 }
 
 async fn wait_for_device_inner(
@@ -350,7 +353,9 @@ async fn wait_for_device_inner(
     env: &EnvironmentContext,
     target_spec: &Option<String>,
     behavior: WaitFor,
+    ever_found: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), ffx_command_error::Error> {
+    let ever_knocked = std::sync::atomic::AtomicBool::new(false);
     let target_spec_clone = target_spec.clone();
     let knock_fut = async {
         loop {
@@ -378,6 +383,7 @@ async fn wait_for_device_inner(
                     }
                 }
                 Ok(()) => {
+                    ever_knocked.store(true, std::sync::atomic::Ordering::Relaxed);
                     if let WaitFor::DeviceOffline = behavior {
                         Timer::new(Duration::from_millis(DOWN_REPOLL_DELAY_MS)).await;
                         continue;
@@ -395,17 +401,41 @@ async fn wait_for_device_inner(
     };
     futures_lite::FutureExt::or(knock_fut, async {
         timer.await;
+        let was_knocked = ever_knocked.load(std::sync::atomic::Ordering::Relaxed);
         Err(ffx_command_error::Error::User(match behavior {
             WaitFor::DeviceOnline => FfxTargetError::DaemonError {
                 err: DaemonError::Timeout,
                 target: target_spec.clone().into(),
             }
             .into(),
-            WaitFor::DeviceOffline => FfxTargetError::DaemonError {
-                err: DaemonError::ShutdownTimeout,
-                target: target_spec.clone().into(),
+            WaitFor::DeviceOffline => {
+                if was_knocked {
+                    FfxTargetError::DaemonError {
+                        err: DaemonError::ShutdownTimeout,
+                        target: target_spec.clone().into(),
+                    }
+                    .into()
+                } else if ever_found.load(std::sync::atomic::Ordering::Relaxed) {
+                    let msg = match target_spec {
+                        Some(spec) if !spec.is_empty() => format!("Timeout waiting for device to shut down. Device \"{spec}\" was found but never responsive."),
+                        _ => "Timeout waiting for device to shut down. The device was found but never responsive.".to_string(),
+                    };
+                    anyhow::anyhow!(msg).into()
+                } else {
+                    let discovery_timeout_ms = env.get::<u64, _>(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT).unwrap_or(2000);
+                    let wait_timeout_ms = wait_timeout.map(|d| d.as_millis() as u64).unwrap_or(u64::MAX);
+
+                    if wait_timeout_ms < discovery_timeout_ms {
+                        anyhow::anyhow!("Timeout waiting for device to shut down. The specified timeout ({}ms) was too short to allow discovery to complete (discovery timeout is {}ms).", wait_timeout_ms, discovery_timeout_ms).into()
+                    } else {
+                        let msg = match target_spec {
+                            Some(spec) if !spec.is_empty() => format!("Timeout waiting for device to shut down. Device \"{spec}\" was never found."),
+                            _ => "Timeout waiting for device to shut down. The device was never found.".to_string(),
+                        };
+                        anyhow::anyhow!(msg).into()
+                    }
+                }
             }
-            .into(),
         }))
     })
     .await
@@ -422,7 +452,10 @@ pub trait RcsKnocker {
 }
 
 ///  Knocks RCS without calling the ffx daemon.
-pub struct LocalRcsKnockerImpl;
+pub struct LocalRcsKnockerImpl {
+    pub ever_found: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub use_cache: bool,
+}
 
 impl<T: RcsKnocker + ?Sized> RcsKnocker for Box<T> {
     fn knock_rcs(
@@ -440,7 +473,15 @@ impl RcsKnocker for LocalRcsKnockerImpl {
         target_spec: &TargetInfoQuery,
         env: &EnvironmentContext,
     ) -> Result<(), KnockError> {
-        knock_target_daemonless(target_spec, env, None).await.map(|compat| {
+        knock_target_daemonless_impl(
+            target_spec,
+            env,
+            None,
+            self.use_cache,
+            Some(self.ever_found.clone()),
+        )
+        .await
+        .map(|compat| {
             let msg = match compat {
                 Some(c) => format!("Received compat info: {c:?}"),
                 None => format!("No compat info received"),
@@ -552,20 +593,37 @@ pub async fn knock_target_daemonless(
     context: &EnvironmentContext,
     knock_timeout: Option<Duration>,
 ) -> Result<Option<CompatibilityInfo>, KnockError> {
+    knock_target_daemonless_impl(target_spec, context, knock_timeout, false, None).await
+}
+
+pub(crate) async fn knock_target_daemonless_impl(
+    target_spec: &TargetInfoQuery,
+    context: &EnvironmentContext,
+    knock_timeout: Option<Duration>,
+    use_cache: bool,
+    ever_found: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+) -> Result<Option<CompatibilityInfo>, KnockError> {
     let knock_timeout = knock_timeout.unwrap_or(DEFAULT_RCS_KNOCK_TIMEOUT * 2);
     let res_future = async {
         log::debug!("resolving target spec address from {target_spec:?}");
         let resolver = resolve::DefaultTargetResolver;
-        let res =
-            // We generally knock when we're waiting for a device to appear, so let's not use the cache
-            resolver.resolve_target_address(target_spec, false, context).await.map_err(|e| match e {
+        let res = resolver.resolve_target_address(target_spec, use_cache, context).await.map_err(
+            |e| match e {
                 // When knocking, it's not critical if we have not yet found the target. The caller should just retry
                 FfxTargetError::OpenTargetError {
                     err: ffx::OpenTargetError::TargetNotFound,
                     ..
-                } => KnockError::NonCritical(KnockNonCriticalError::TargetNotFound { target: format!("{:?}", target_spec) }),
+                } => KnockError::NonCritical(KnockNonCriticalError::TargetNotFound {
+                    target: format!("{:?}", target_spec),
+                }),
                 _ => KnockError::Critical(KnockCriticalError::TargetError(format!("{:?}", e))),
-            })?;
+            },
+        )?;
+
+        if let Some(ever_found) = ever_found {
+            ever_found.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+
         log::debug!("daemonless knock connecting to resolved target {:?}", res);
         let conn = match res.get_connection_if_already_established() {
             Some(c) => c,
@@ -927,6 +985,7 @@ mod test {
             &env.context,
             &Some("foo".to_string()),
             WaitFor::DeviceOnline,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .await;
         assert!(res.is_ok(), "{:?}", res);
@@ -935,6 +994,11 @@ mod test {
     #[fuchsia::test]
     async fn wait_for_device_timeout_on_shutdown() {
         let mut mock = MockRcsKnocker::new();
+        let mut seq = mockall::Sequence::new();
+        mock.expect_knock_rcs()
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(|_, _| Box::pin(ready(Ok(()))));
         mock.expect_knock_rcs().returning(|_, _| Box::pin(pending()));
         let env = ffx_config::test_init().unwrap();
         let res = wait_for_device_inner(
@@ -943,6 +1007,7 @@ mod test {
             &env.context,
             &Some("foo".to_string()),
             WaitFor::DeviceOffline,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .await;
         // This step is essential for converting the error properly. Otherwise converting it to top
@@ -959,6 +1024,86 @@ mod test {
     }
 
     #[fuchsia::test]
+    async fn wait_for_device_timeout_on_shutdown_never_knocked() {
+        let mut mock = MockRcsKnocker::new();
+        mock.expect_knock_rcs().returning(|_, _| Box::pin(pending()));
+        let env = ffx_config::test_init().unwrap();
+        let res = wait_for_device_inner(
+            mock,
+            Some(Duration::from_secs(3)),
+            &env.context,
+            &Some("foo".to_string()),
+            WaitFor::DeviceOffline,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .await;
+        let err = res.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains(
+                "Timeout waiting for device to shut down. Device \"foo\" was never found."
+            ),
+            "expected new error message, got: {err_msg}"
+        );
+    }
+
+    #[fuchsia::test]
+    async fn wait_for_device_timeout_on_shutdown_found_but_never_responsive() {
+        let mut mock = MockRcsKnocker::new();
+        mock.expect_knock_rcs().returning(|_, _| Box::pin(pending()));
+        let env = ffx_config::test_init().unwrap();
+        let ever_found = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let res = wait_for_device_inner(
+            mock,
+            Some(Duration::from_secs(1)),
+            &env.context,
+            &Some("foo".to_string()),
+            WaitFor::DeviceOffline,
+            ever_found.clone(),
+        )
+        .await;
+        let err = res.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains(
+                "Timeout waiting for device to shut down. Device \"foo\" was found but never responsive."
+            ),
+            "expected new error message, got: {err_msg}"
+        );
+    }
+
+    #[fuchsia::test]
+    async fn wait_for_device_timeout_on_shutdown_short_timeout() {
+        let mut mock = MockRcsKnocker::new();
+        mock.expect_knock_rcs().returning(|_, _| Box::pin(pending()));
+        let env = ffx_config::test_init().unwrap();
+
+        // Set discovery timeout to 2000ms
+        env.context
+            .query(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT)
+            .level(Some(ffx_config::ConfigLevel::User))
+            .build()
+            .set(&env.context, Value::Number(2000.into()))
+            .unwrap();
+
+        let res = wait_for_device_inner(
+            mock,
+            Some(Duration::from_secs(1)),
+            &env.context,
+            &Some("foo".to_string()),
+            WaitFor::DeviceOffline,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .await;
+        let err = res.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("was too short to allow discovery to complete"),
+            "expected short timeout message, got: {err_msg}"
+        );
+    }
+
+    #[fuchsia::test]
     async fn wait_for_device_hangs_indefinitely() {
         let mut mock = MockRcsKnocker::new();
         mock.expect_knock_rcs().returning(|_, _| Box::pin(pending()));
@@ -969,6 +1114,7 @@ mod test {
             &env.context,
             &Some("foo".to_string()),
             WaitFor::DeviceOnline,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .await;
         assert!(res.is_err(), "{:?}", res);
@@ -989,6 +1135,7 @@ mod test {
             &env.context,
             &Some("foo".to_string()),
             WaitFor::DeviceOnline,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .await;
         assert!(res.is_err(), "{:?}", res);
@@ -1009,6 +1156,7 @@ mod test {
             &env.context,
             &Some("foo".to_string()),
             WaitFor::DeviceOffline,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .await;
         assert!(res.is_ok(), "{:?}", res);
@@ -1032,6 +1180,7 @@ mod test {
             &env.context,
             &Some("foo".to_string()),
             WaitFor::DeviceOnline,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .await;
         assert!(res.is_err(), "{:?}", res);
@@ -1055,6 +1204,7 @@ mod test {
             &env.context,
             &Some("foo".to_string()),
             WaitFor::DeviceOffline,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .await;
         assert!(res.is_ok(), "{:?}", res);
@@ -1080,6 +1230,7 @@ mod test {
             &env.context,
             &Some("foo".to_string()),
             WaitFor::DeviceOnline,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .await;
         assert!(res.is_ok(), "{:?}", res);
@@ -1110,6 +1261,7 @@ mod test {
             &env.context,
             &Some("foo".to_string()),
             WaitFor::DeviceOffline,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .await;
         assert!(res.is_ok(), "{:?}", res);
@@ -1126,6 +1278,7 @@ mod test {
             &env.context,
             &Some("foo".to_string()),
             WaitFor::DeviceOffline,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .await;
         assert!(res.is_err(), "{:?}", res);
