@@ -211,6 +211,66 @@ TEST(InheritTest, FdUseAllowed) {
   }));
 }
 
+// Verify that a file-descriptor marked with `O_CLOEXEC` will be closed before the SELinux access
+// checks are applied, and will therefore be invalid by the time the new program executes, rather
+// than having been remapped to null, and will not have triggered any SELinux denial audit logs.
+TEST(InheritTest, CloexecProcessedBeforeSelinuxCheck) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_inherit_parent_t:s0", [&] {
+    const auto tmp_file_path = CreateTmpFile();
+    ASSERT_TRUE(tmp_file_path.is_ok());
+    const fbl::unique_fd fd(open(tmp_file_path.value().data(), O_RDONLY | O_CLOEXEC));
+    ASSERT_TRUE(fd.is_valid());
+
+    ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_inherit_bridge_t:s0", [&] {
+      test_helper::ForkHelper fork_helper;
+      fork_helper.ExpectExitValue(1);
+
+      fork_helper.RunInForkedProcess([&] {
+        ASSERT_TRUE(
+            WriteTaskAttr("exec", "test_u:test_r:test_inherit_child_no_use_fd_t:s0").is_ok());
+
+        std::string fd_str = std::to_string(fd.get());
+        std::string bin_name = "is_fd_valid_bin";
+        const std::string path = PathForExec(bin_name);
+        char* const args[] = {bin_name.data(), fd_str.data(), nullptr};
+        SAFE_SYSCALL(execv(path.c_str(), args));
+      });
+    }));
+  }));
+}
+
+// Verify that dynamic transitions (those made without replacing the address-space with `exec()`)
+// do not cause file-descriptors to be remapped to null if the new domain cannot use them.
+TEST(InheritTest, DynamicTransitionFdRemainsValid) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_inherit_parent_t:s0", [&] {
+    const auto tmp_file_path = CreateTmpFile();
+    ASSERT_TRUE(tmp_file_path.is_ok());
+    const fbl::unique_fd fd(open(tmp_file_path.value().data(), O_RDONLY));
+    ASSERT_TRUE(fd.is_valid());
+
+    // Attempt dynamic transition to child domain.
+    // Note: This might fail if the policy does not allow dyntransition between these domains.
+    auto transition_result =
+        WriteTaskAttr("current", "test_u:test_r:test_inherit_child_no_use_fd_t:s0");
+    ASSERT_TRUE(transition_result.is_ok()) << "Failed to transition dynamically";
+
+    // Verify that the FD was not remapped to the null inode.
+    const fbl::unique_fd null_fd(open("/sys/fs/selinux/null", O_RDONLY));
+    ASSERT_TRUE(null_fd.is_valid());
+    EXPECT_EQ(IsSameInode(fd.get(), null_fd.get()), fit::ok(false));
+
+    // Verify that the FD is not accessible.
+    // We try to read from it. If SELinux revalidates on use or Starnix revokes access, this should
+    // fail.
+    char buf[1];
+    EXPECT_THAT(read(fd.get(), buf, 1), SyscallFailsWithErrno(EACCES));
+  }));
+}
+
 // When the `siginh` permission is denied, the parent's ITIMER_REAL is reset during `exec`.
 TEST(InheritTest, SiginhDeniedItimerRealReset) {
   constexpr char kParentSecurityContext[] = "test_u:test_r:test_inherit_parent_t:s0";

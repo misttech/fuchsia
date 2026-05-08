@@ -1092,6 +1092,17 @@ impl CurrentTask {
             new_mm
         };
 
+        // TODO(https://fxbug.dev/42082680): All threads other than the calling thread are destroyed.
+
+        // TODO: POSIX timers are not preserved.
+
+        // TODO: Ensure that the filesystem context is un-shared, undoing the effect of CLONE_FS.
+
+        // The file descriptor table is unshared, undoing the effect of the CLONE_FILES flag of
+        // clone(2).
+        self.live().files.unshare();
+        self.live().files.exec(locked, self);
+
         {
             let mut state = self.write();
 
@@ -1168,35 +1179,17 @@ impl CurrentTask {
         self.thread_group().signal_actions.reset_for_exec();
 
         // The exit signal (and that of the children) is reset to SIGCHLD.
-        let mut thread_group_state = self.thread_group().write();
-        thread_group_state.exit_signal = Some(SIGCHLD);
-        for (_, weak_child) in &mut thread_group_state.children {
-            if let Some(child) = weak_child.upgrade() {
-                let mut child_state = child.write();
-                child_state.exit_signal = Some(SIGCHLD);
+        {
+            let mut thread_group_state = self.thread_group().write();
+            thread_group_state.exit_signal = Some(SIGCHLD);
+            for (_, weak_child) in &mut thread_group_state.children {
+                if let Some(child) = weak_child.upgrade() {
+                    let mut child_state = child.write();
+                    child_state.exit_signal = Some(SIGCHLD);
+                }
             }
         }
 
-        std::mem::drop(thread_group_state);
-
-        // TODO(https://fxbug.dev/42082680): All threads other than the calling thread are destroyed.
-
-        // TODO: POSIX timers are not preserved.
-
-        // TODO: Ensure that the filesystem context is un-shared, undoing the effect of CLONE_FS.
-
-        // The file descriptor table is unshared, undoing the effect of the CLONE_FILES flag of
-        // clone(2).
-        self.live().files.unshare();
-        self.live().files.exec(locked, self);
-
-        // If SELinux is enabled, enforce permissions related to inheritance of file descriptors
-        // and resource limits. Then update the current task's SID.
-        //
-        // TODO: https://fxbug.dev/378655436 - After the above, enforce permissions related to
-        // signal state inheritance.
-        //
-        // This needs to be called after closing any files marked "close-on-exec".
         security::bprm_committed_creds(locked, self)?;
 
         self.thread_group().write().did_exec = true;

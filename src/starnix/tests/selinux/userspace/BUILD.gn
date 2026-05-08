@@ -163,6 +163,7 @@ test_subprogram_names = [
   "is_at_secure_set",
   "is_current_domain",
   "is_duplicated_fd",
+  "is_fd_valid",
   "is_itimer_real_reset",
   "is_selinux_null_inode",
   "is_soft_rlimit_reset",

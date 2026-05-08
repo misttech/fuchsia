@@ -276,6 +276,20 @@
             ]
         },
         {
+            "name": "InheritTest.CloexecProcessedBeforeSelinuxCheck",
+            "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
+                "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
+                "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
+            "name": "InheritTest.DynamicTransitionFdRemainsValid",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=\"/tmp/inherit_test_file:Urb5mz\" dev=\"tmpfs\" ino=7 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
             "name": "InheritTest.ExecutableFdRemappedToNull",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
