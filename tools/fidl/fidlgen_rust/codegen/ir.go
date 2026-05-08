@@ -677,7 +677,7 @@ func (c *compiler) compileDeclIdentifier(val fidlgen.EncodedCompoundIdentifier) 
 	if c.inExternalLibrary(val) {
 		crate := c.compileLibraryName(ci.Library)
 		if c.isCommon {
-			crate += "__common"
+			crate += "_common"
 		}
 		c.externCrates[crate] = struct{}{}
 		return fmt.Sprintf("%s::%s", crate, name)

@@ -7,12 +7,12 @@ use crate::parser::{self, ParsingError, RequireEscaped, VerboseError};
 use crate::validate::*;
 use anyhow::format_err;
 use buf_read_ext::BufReadExt as _;
-use fidl_fuchsia_diagnostics__common::{
+use fidl_fuchsia_diagnostics_common::{
     self as fdiagnostics, ComponentSelector, LogInterestSelector, PropertySelector, Selector,
     SelectorArgument, StringSelector, SubtreeSelector, TreeNames, TreeSelector,
 };
 
-use fidl_fuchsia_inspect__common::DEFAULT_TREE_NAME;
+use fidl_fuchsia_inspect_common::DEFAULT_TREE_NAME;
 use itertools::Itertools;
 use moniker::{
     BorrowedChildName, EXTENDED_MONIKER_COMPONENT_MANAGER_STR, ExtendedMoniker, Moniker,

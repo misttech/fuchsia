@@ -9,8 +9,8 @@
 
 use chrono::{Local, TimeZone, Utc};
 use diagnostics_hierarchy::HierarchyMatcher;
-use fidl_fuchsia_diagnostics__common::{DataType, Selector};
-use fidl_fuchsia_inspect__common as finspect;
+use fidl_fuchsia_diagnostics_common::{DataType, Selector};
+use fidl_fuchsia_inspect_common as finspect;
 use flyweights::FlyStr;
 use itertools::Itertools;
 use moniker::EXTENDED_MONIKER_COMPONENT_MANAGER_STR;

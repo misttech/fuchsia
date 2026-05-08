@@ -617,7 +617,7 @@ mod test {
         TargetIpPort, TargetRequest, TargetState,
     };
     use fidl_fuchsia_developer_remotecontrol::{self as frcs, RemoteControlProxy};
-    use fidl_fuchsia_net__common::{IpAddress, Ipv4Address};
+    use fidl_fuchsia_net_common::{IpAddress, Ipv4Address};
     use fidl_fuchsia_pkg::{
         MirrorConfig, RepositoryConfig, RepositoryManagerMarker, RepositoryManagerRequest,
         RepositoryManagerRequestStream,

@@ -46,7 +46,7 @@ impl ExampleEnum {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExampleProtocolMethodRequest {
-    pub arg: fidl_test_exampleusing__common::Empty,
+    pub arg: fidl_test_exampleusing_common::Empty,
 }
 
 impl fidl::Persistable for ExampleProtocolMethodRequest {}
@@ -250,7 +250,7 @@ mod internal {
             // Delegate to tuple encoding.
             fidl::encoding::Encode::<ExampleProtocolMethodRequest, D>::encode(
                 (
-                    <fidl_test_exampleusing__common::Empty as fidl::encoding::ValueTypeMarker>::borrow(&self.arg),
+                    <fidl_test_exampleusing_common::Empty as fidl::encoding::ValueTypeMarker>::borrow(&self.arg),
                 ),
                 encoder, offset, _depth
             )
@@ -258,7 +258,7 @@ mod internal {
     }
     unsafe impl<
         D: fidl::encoding::ResourceDialect,
-        T0: fidl::encoding::Encode<fidl_test_exampleusing__common::Empty, D>,
+        T0: fidl::encoding::Encode<fidl_test_exampleusing_common::Empty, D>,
     > fidl::encoding::Encode<ExampleProtocolMethodRequest, D> for (T0,)
     {
         #[inline]
@@ -282,7 +282,7 @@ mod internal {
     {
         #[inline(always)]
         fn new_empty() -> Self {
-            Self { arg: fidl::new_empty!(fidl_test_exampleusing__common::Empty, D) }
+            Self { arg: fidl::new_empty!(fidl_test_exampleusing_common::Empty, D) }
         }
 
         #[inline]
@@ -295,7 +295,7 @@ mod internal {
             decoder.debug_check_bounds::<Self>(offset);
             // Verify that padding bytes are zero.
             fidl::decode!(
-                fidl_test_exampleusing__common::Empty,
+                fidl_test_exampleusing_common::Empty,
                 D,
                 &mut self.arg,
                 decoder,

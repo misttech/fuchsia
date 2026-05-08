@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use core::cell::RefCell;
 use core::convert::Into;
-use fidl_fuchsia_memory_attribution_plugin__common as fplugin;
+use fidl_fuchsia_memory_attribution_plugin_common as fplugin;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;

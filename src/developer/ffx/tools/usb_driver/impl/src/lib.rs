@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_ffx_usb__common::{
+use fidl_fuchsia_ffx_usb_common::{
     self as usb_fidl, control_ordinals, ffx_usb_ordinals, list_devices_ordinals,
 };
 use futures::channel::mpsc;

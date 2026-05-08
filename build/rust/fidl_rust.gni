@@ -242,7 +242,7 @@ template("fidl_rust") {
   base_crate_name = string_replace(invoker.library_name, ".", "_")
 
   common_target_name = "${target_name}_common"
-  common_crate_name = "fidl_${base_crate_name}__common"
+  common_crate_name = "fidl_${base_crate_name}_common"
 
   fidl_target_name = target_name
   fidl_crate_name = "fidl_${base_crate_name}"

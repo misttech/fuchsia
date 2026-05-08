@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::fkernel_serde;
-use fidl_fuchsia_kernel__common as fkernel;
-use fidl_fuchsia_memory_attribution_plugin__common as fplugin;
+use fidl_fuchsia_kernel_common as fkernel;
+use fidl_fuchsia_memory_attribution_plugin_common as fplugin;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]

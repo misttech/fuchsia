@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use event_queue::Event;
-use fidl_fuchsia_update__common as fidl;
+use fidl_fuchsia_update_common as fidl;
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;
 use std::fmt;

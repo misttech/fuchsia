@@ -9,7 +9,7 @@ use crate::{
 };
 use bstr::ByteSlice;
 use core::default::Default;
-use fidl_fuchsia_memory_attribution_plugin__common as fplugin;
+use fidl_fuchsia_memory_attribution_plugin_common as fplugin;
 use fplugin::Vmo;
 #[cfg(target_os = "fuchsia")]
 use fuchsia_trace::duration;
