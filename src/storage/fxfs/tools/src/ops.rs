@@ -19,7 +19,7 @@ use fxfs::object_store::{
 use fxfs_crypto::{Crypt, WrappingKeyId};
 use sparse::reader::SparseReader;
 use sparse::{build_sparse_files, unsparse};
-use std::io::{Seek, Write};
+use std::io::Seek;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::{Arc, Weak};
@@ -191,7 +191,7 @@ pub async fn get(vol: &Arc<ObjectStore>, src: &Path) -> Result<Vec<u8>, Error> {
         loop {
             let bytes = handle.read(ofs, buf.as_mut()).await?;
             ofs += bytes as u64;
-            out.write_all(&buf.as_ref().as_slice()[..bytes])?;
+            out.extend_from_slice(&buf.as_ref().as_slice()[..bytes]);
             if bytes as u64 != handle.block_size() {
                 break;
             }

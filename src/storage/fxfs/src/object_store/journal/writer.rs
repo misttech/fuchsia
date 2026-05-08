@@ -140,7 +140,7 @@ impl std::io::Write for JournalWriter {
                 - std::mem::size_of::<Checksum>()
                 - self.buf.len() % self.block_size;
             let to_copy = min(space, buf.len() - offset);
-            self.buf.write_all(&buf[offset..offset + to_copy])?;
+            self.buf.extend_from_slice(&buf[offset..offset + to_copy]);
             if to_copy == space {
                 let end = self.buf.len();
                 let start = end + std::mem::size_of::<Checksum>() - self.block_size;

@@ -18,7 +18,6 @@ use fxfs::object_store::directory::{ReplacedChild, replace_child};
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::{ObjectDescriptor, Timestamp};
 use std::ffi::{OsStr, OsString};
-use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -222,13 +221,13 @@ impl FuseFs {
                 if len - ofs > bytes as u64 {
                     // Read `bytes` size of content from buf.
                     ofs += bytes as u64;
-                    out.write_all(&buf.as_ref().as_slice()[..bytes])?;
+                    out.extend_from_slice(&buf.as_slice()[..bytes]);
                     if bytes as u64 != handle.block_size() {
                         break;
                     }
                 } else {
                     // Read the remaining content from buf.
-                    out.write_all(&buf.as_ref().as_slice()[..(len - ofs) as usize])?;
+                    out.extend_from_slice(&buf.as_slice()[..(len - ofs) as usize]);
                     break;
                 }
             }
