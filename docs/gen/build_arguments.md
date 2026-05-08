@@ -1024,7 +1024,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -4196,7 +4196,7 @@ From //zircon/vdso/vdso.gni:9
 
 Propagate bandwidth and enable run queue promotion for threads making channel calls.
 
-**Current value (from the default):** `false`
+**Current value (from the default):** `true`
 
 From //zircon/kernel/params.gni:123
 
@@ -5257,7 +5257,7 @@ memory profile.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/switch/BUILD.gn:20
+From //zircon/kernel/switch/BUILD.gn:21
 
 ### kernel_no_userabi
 
