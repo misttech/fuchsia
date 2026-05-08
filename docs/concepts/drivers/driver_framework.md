@@ -56,7 +56,7 @@ host. However, a driver can also choose to be placed in the same driver
 host as its parent driver. When drivers are co-located in the same driver host,
 they share the same address space.
 
-![alt_text](images/diagram_driver_stack_01.svg "Diagram showing driver hosts for USB devices"){: width="600"}
+![Topology diagram showing hardware devices mapped to their corresponding driver hosts and drivers, demonstrating isolation.](images/diagram_driver_stack_01.svg "Diagram showing driver hosts for USB devices"){: width="600"}
 
 **Diagram 1**. Driver hosts representing USB devices connected to the PCI bus.
 

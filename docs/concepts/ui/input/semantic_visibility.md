@@ -49,7 +49,7 @@ The green, semantically invisible, view is overlaid on top of the blue, semantic
 Semantic hit tests will not see the green, semantically invisible view, and therefore go to the blue
 view.
 
-![simple diagram](images/simple_case.png)
+![Diagram showing how regular hit tests target a semantically invisible view, while semantic hit tests bypass it to target the underlying semantically visible view.](images/simple_case.png)
 
 _Image Description: The semantically invisible view is overlaid on top of the semantically visible
 one. Regular hit tests, which interact with all views, therefore hit the top, semantically invisible

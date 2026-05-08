@@ -8,7 +8,7 @@ to set up access to a device's memory:
 - Map the object to an [address space][address-spaces] in the [driver host][driver-host]
   (which is the process that the driver resides in).
 
-![alt_text](images/vmo-and-vmar-for-a-driver-01.svg "VMO and VMAR in a driver"){: width="500"}
+![Diagram showing a process mapping a VMO to its VMAR to access device memory.](images/vmo-and-vmar-for-a-driver-01.svg "VMO and VMAR in a driver"){: width="500"}
 
 **Diagram 1**. A process maps a virtual memory object (VMO) to its own virtual
 memory address region (VMAR) to access the memory region represented by the VMO.
