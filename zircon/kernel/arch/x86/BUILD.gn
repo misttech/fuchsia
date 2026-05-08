@@ -39,7 +39,6 @@ config("integer-register-abi") {
     "ssse3",
     "sse4.1",
     "sse4.2",
-    "3dnow",
     "avx",
     "avx2",
   ]
