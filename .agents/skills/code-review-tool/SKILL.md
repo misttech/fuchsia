@@ -11,6 +11,11 @@ The `fx gh` tool provides a command-line interface for managing Gerrit code
 reviews that matches the GitHub CLI (`gh`). Coding agents can leverage their
 parametric knowledge of the `gh` tool to use `fx gh`.
 
+`fx gh` provides Fuchsia specific logic for interacting with Gerrit code reviews,
+and it is highly preferred to raw REST API calls. However, if `fx gh` is NOT
+available in your environment (e.g., for external contributors), you may safely
+fall back to using the Gerrit REST API via `curl`.
+
 ## Key Concepts and Differences
 
 While the interface is the same as `gh`, it interacts with Gerrit. Here are the
@@ -77,6 +82,10 @@ key mappings and differences you need to know:
   to the one with the most recent activity.
 - **Example**: To reply to a review comment on line 42 of `src/foo.cc`: `fx gh
   pr comment 1569017 --path src/foo.cc --line 42 -m "Done. Fixed as suggested."`
+- **CRITICAL**: When responding to comments on a Gerrit code review, you MUST
+  reply within the specific comment thread using the `--path` and `--line` flags
+  of `fx gh pr comment`. Do NOT leave a top-level unthreaded comment unless
+  explicitly requested.
 
 #### `pr edit` and `pr review`
 - **Approving a Change**: To add a `Code-Review+2` vote, use `fx gh pr review
