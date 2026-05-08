@@ -16,6 +16,102 @@ import event
 import execution
 
 
+async def get_diff_base(recorder: event.EventRecorder | None = None) -> str:
+    """Determines the base commit for diffing, aligning with fx format-code."""
+    upstream_res = await execution.run_command(
+        "git",
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        "@{u}",
+        recorder=recorder,
+    )
+    upstream = ""
+    if upstream_res and upstream_res.return_code == 0 and upstream_res.stdout:
+        upstream = upstream_res.stdout.strip()
+
+    if not upstream:
+        ancestor_res = await execution.run_command(
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            "origin/main",
+            "HEAD",
+            recorder=recorder,
+        )
+        if ancestor_res and ancestor_res.return_code == 0:
+            upstream = "origin/main"
+        else:
+            ancestor_res = await execution.run_command(
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                "JIRI_HEAD",
+                "HEAD",
+                recorder=recorder,
+            )
+            if ancestor_res and ancestor_res.return_code == 0:
+                ancestor_res2 = await execution.run_command(
+                    "git",
+                    "merge-base",
+                    "--is-ancestor",
+                    "JIRI_HEAD",
+                    "origin/main",
+                    recorder=recorder,
+                )
+                if ancestor_res2 and ancestor_res2.return_code == 0:
+                    mb_res = await execution.run_command(
+                        "git",
+                        "merge-base",
+                        "HEAD",
+                        "origin/main",
+                        recorder=recorder,
+                    )
+                    if mb_res and mb_res.return_code == 0 and mb_res.stdout:
+                        upstream = mb_res.stdout.strip()
+                else:
+                    upstream = "JIRI_HEAD"
+            else:
+                upstream = "HEAD"
+
+    if upstream == "HEAD":
+        return "HEAD"
+
+    rev_list_res = await execution.run_command(
+        "git",
+        "rev-list",
+        "HEAD",
+        f"^{upstream}",
+        "--",
+        recorder=recorder,
+    )
+
+    if (
+        not rev_list_res
+        or rev_list_res.return_code != 0
+        or not rev_list_res.stdout
+    ):
+        return "HEAD"
+
+    lines = rev_list_res.stdout.splitlines()
+    if not lines:
+        return "HEAD"
+
+    local_commit = lines[-1].strip()
+
+    parent_res = await execution.run_command(
+        "git",
+        "rev-parse",
+        f"{local_commit}^",
+        recorder=recorder,
+    )
+
+    if parent_res and parent_res.return_code == 0 and parent_res.stdout:
+        return parent_res.stdout.strip()
+
+    return "HEAD"
+
+
 async def get_dirty_files(
     fuchsia_dir: str,
     affected_since: str | None = None,
@@ -53,69 +149,39 @@ async def get_dirty_files(
         recorder.emit_instruction_message(f"Querying repository: {repo_root}")
 
     dirty_files = []
-    if affected_since:
+    diff_base = affected_since
+    if not diff_base:
+        diff_base = await get_diff_base(recorder)
+
+    if recorder:
+        recorder.emit_instruction_message(
+            f"Querying files changed since {diff_base}"
+        )
+
+    diff_args = ["git", "diff", "--name-only", diff_base]
+
+    diff_res = await execution.run_command(
+        *diff_args,
+        recorder=recorder,
+    )
+
+    if not diff_res or diff_res.return_code != 0 or diff_res.stdout is None:
         if recorder:
-            recorder.emit_instruction_message(
-                f"Querying files changed since {affected_since}"
+            stdout = diff_res.stdout if diff_res else "None"
+            stderr = diff_res.stderr if diff_res else "None"
+            recorder.emit_warning_message(
+                f"Failed to run git diff against {diff_base}\n"
+                f"STDOUT: {stdout}\n"
+                f"STDERR: {stderr}"
             )
-        diff_res = await execution.run_command(
-            "git",
-            "diff",
-            "--name-only",
-            f"{affected_since}...",
-            recorder=recorder,
-        )
-        if not diff_res or diff_res.return_code != 0 or diff_res.stdout is None:
-            if recorder:
-                stdout = diff_res.stdout if diff_res else "None"
-                stderr = diff_res.stderr if diff_res else "None"
-                recorder.emit_warning_message(
-                    f"Failed to run git diff against {affected_since}\n"
-                    f"STDOUT: {stdout}\n"
-                    f"STDERR: {stderr}"
-                )
-            return None
+        return None
 
-        for line in diff_res.stdout.splitlines():
-            rel_path = line.strip()
-            if not rel_path:
-                continue
-            abs_path = os.path.join(repo_root, rel_path)
-            dirty_files.append(os.path.relpath(abs_path, fuchsia_dir))
-    else:
-        status_res = await execution.run_command(
-            "git",
-            "--no-optional-locks",
-            "status",
-            "--porcelain",
-            recorder=recorder,
-        )
-        if (
-            not status_res
-            or status_res.return_code != 0
-            or status_res.stdout is None
-        ):
-            if recorder:
-                stdout = status_res.stdout if status_res else "None"
-                stderr = status_res.stderr if status_res else "None"
-                recorder.emit_warning_message(
-                    f"Failed to run git status\n"
-                    f"STDOUT: {stdout}\n"
-                    f"STDERR: {stderr}"
-                )
-            return []
-
-        for line in status_res.stdout.splitlines():
-            # Examples of line format:
-            # "M  path/to/file.py"
-            # "R  old/path.py -> new/path.py"
-            if len(line) < 4:
-                continue
-            rel_path = line[3:].split(" -> ")[-1].strip()
-            if not rel_path:
-                continue
-            abs_path = os.path.join(repo_root, rel_path)
-            dirty_files.append(os.path.relpath(abs_path, fuchsia_dir))
+    for line in diff_res.stdout.splitlines():
+        rel_path = line.strip()
+        if not rel_path:
+            continue
+        abs_path = os.path.join(repo_root, rel_path)
+        dirty_files.append(os.path.relpath(abs_path, fuchsia_dir))
 
     if not dirty_files:
         msg = (
