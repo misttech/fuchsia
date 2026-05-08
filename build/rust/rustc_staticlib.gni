@@ -216,7 +216,7 @@ template("rustc_staticlib") {
     if (defined(invoker.dynamic_libstd)) {
       _dynamic_libstd = invoker.dynamic_libstd
     }
-    if (_dynamic_libstd && is_fuchsia) {
+    if (_dynamic_libstd && is_fuchsia && zircon_toolchain == false) {
       rustflags = [
         # This nightly flag is needed to support having dylibs in this target's
         # dependencies or transitive dependencies.
