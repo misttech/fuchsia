@@ -28,6 +28,8 @@ namespace wire {
 
 struct DocCommentWithQuotes;
 
+struct DocCommentWithStars;
+
 /// "pleaseescapethisdocommentproperly"
 struct DocCommentWithQuotes {
   uint8_t __reserved = {};
@@ -50,6 +52,19 @@ extern const char* kSmileLeadingZero;
 extern const char* kDollar;
 
 extern const char* kDollarBrace;
+
+extern const char* kStar;
+
+extern const char* kTwinkle;
+
+/// This comment has *asterisks* in it.
+/// And some \*escaped\* ones too.
+/// What about a list?
+/// * item 1
+/// * item 2
+struct DocCommentWithStars {
+  ::fidl::StringView field = {};
+};
 
 }  // namespace wire
 }  // namespace test_escaping
@@ -83,6 +98,38 @@ struct ::fidl::internal::WireCodingTraits<::test_escaping::wire::DocCommentWithQ
 
   static void Encode(
       internal::WireEncoder* encoder, ::test_escaping::wire::DocCommentWithQuotes* value, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
+  static void Decode(
+      internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
+};
+
+template <>
+struct TypeTraits<::test_escaping::wire::DocCommentWithStars> {
+  static constexpr uint32_t kMaxNumHandles = 0;
+  static constexpr uint32_t kMaxDepth = 1;
+  static constexpr uint32_t kPrimarySize = 16;
+  [[maybe_unused]]
+  static constexpr uint32_t kMaxOutOfLine = 4294967295;
+  static constexpr bool kHasFlexibleEnvelope = false;
+  static constexpr bool kHasPointer = true;
+};
+
+template <>
+struct IsFidlType<::test_escaping::wire::DocCommentWithStars> : public std::true_type {};
+template <>
+struct IsWire<::test_escaping::wire::DocCommentWithStars> : public std::true_type {};
+template <>
+struct IsStruct<::test_escaping::wire::DocCommentWithStars> : public std::true_type {};
+
+template <bool IsRecursive>
+struct ::fidl::internal::WireCodingTraits<::test_escaping::wire::DocCommentWithStars, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive> {
+  static constexpr size_t kInlineSize = 16;
+  static constexpr auto kMembers = std::make_tuple(::fidl::internal::WireStructMemberCodingInfo<::fidl::StringView, fidl::internal::WireCodingConstraintString<false>, IsRecursive>());
+  static constexpr bool kHasPadding = false;
+  using Base = WireStructCodingTraitsBase<::test_escaping::wire::DocCommentWithStars, ::fidl::internal::WireCodingConstraintEmpty, IsRecursive>;
+  static constexpr bool kIsMemcpyCompatible = Base::kIsMemcpyCompatible;
+
+  static void Encode(
+      internal::WireEncoder* encoder, ::test_escaping::wire::DocCommentWithStars* value, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
   static void Decode(
       internal::WireDecoder* decoder, ::fidl::internal::WirePosition position, RecursionDepth<IsRecursive> recursion_depth);
 };

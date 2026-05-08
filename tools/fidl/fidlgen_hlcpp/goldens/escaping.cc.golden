@@ -59,6 +59,39 @@ const char* DOLLAR = "$";
 
 const char* DOLLAR_BRACE = "${";
 
+extern "C" const fidl_type_t test_escaping_DocCommentWithStarsTable;
+const fidl_type_t* DocCommentWithStars::FidlType = &test_escaping_DocCommentWithStarsTable;
+
+::std::unique_ptr<DocCommentWithStars> DocCommentWithStars::New() { return ::std::make_unique<DocCommentWithStars>(); }
+
+void DocCommentWithStars::Encode(::fidl::Encoder* _encoder, size_t _offset,
+                                 std::optional<::fidl::HandleInformation> maybe_handle_info) {
+  if (::fidl::IsMemcpyCompatible<DocCommentWithStars>::value) {
+    memcpy(_encoder->template GetPtr<DocCommentWithStars>(_offset), this, sizeof(DocCommentWithStars));
+  } else {
+    ::fidl::Encode(_encoder, &field, _offset + 0);
+  }
+}
+
+void DocCommentWithStars::Decode(::fidl::Decoder* _decoder, DocCommentWithStars* _value, size_t _offset) {
+  if (::fidl::IsMemcpyCompatible<DocCommentWithStars>::value) {
+    memcpy(_value, _decoder->template GetPtr<DocCommentWithStars>(_offset), sizeof(DocCommentWithStars));
+  } else {
+    ::fidl::Decode(_decoder, &_value->field, _offset + 0);
+  }
+}
+
+zx_status_t DocCommentWithStars::Clone(DocCommentWithStars* _result) const {
+  zx_status_t _status = ::fidl::Clone(field, &_result->field);
+  if (_status != ZX_OK)
+    return _status;
+  return ZX_OK;
+}
+
+const char* STAR = "*";
+
+const char* TWINKLE = "a*b";
+
 //
 // Proxies and stubs definitions
 //

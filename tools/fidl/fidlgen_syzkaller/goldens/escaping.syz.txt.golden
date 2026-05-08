@@ -15,4 +15,13 @@ test_escaping_DocCommentWithQuotesOutOfLine {
 test_escaping_DocCommentWithQuotesHandles {
     void void
 } [packed]
+test_escaping_DocCommentWithStarsInLine {
+    fieldInLine fidl_string
+} [packed]
+test_escaping_DocCommentWithStarsOutOfLine {
+    fieldOutOfLine fidl_aligned[stringnoz]
+} [packed]
+test_escaping_DocCommentWithStarsHandles {
+    void void
+} [packed]
 

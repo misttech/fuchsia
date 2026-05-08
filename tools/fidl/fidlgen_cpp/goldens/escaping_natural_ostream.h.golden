@@ -16,10 +16,16 @@ template <>
 struct fidl::ostream::Formatter<::test_escaping::DocCommentWithQuotes> {
   static std::ostream& Format(std::ostream& os, const ::test_escaping::DocCommentWithQuotes& value);
 };
+template <>
+struct fidl::ostream::Formatter<::test_escaping::DocCommentWithStars> {
+  static std::ostream& Format(std::ostream& os, const ::test_escaping::DocCommentWithStars& value);
+};
 
 namespace test_escaping {
 
 std::ostream& operator<<(std::ostream& os, const ::test_escaping::DocCommentWithQuotes& value);
+
+std::ostream& operator<<(std::ostream& os, const ::test_escaping::DocCommentWithStars& value);
 
 }  // namespace test_escaping
 

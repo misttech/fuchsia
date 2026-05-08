@@ -9,6 +9,39 @@
       "HEAD"
     ]
   },
+  "maybe_attributes": [
+    {
+      "name": "doc",
+      "arguments": [
+        {
+          "name": "value",
+          "type": "string",
+          "value": {
+            "kind": "literal",
+            "value": " library *comment* with \\*stars\\*\n",
+            "expression": "/// library *comment* with \\*stars\\*",
+            "literal": {
+              "kind": "string",
+              "value": " library *comment* with \\*stars\\*\n",
+              "expression": "/// library *comment* with \\*stars\\*"
+            }
+          },
+          "location": {
+            "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
+            "line": 1,
+            "column": 1,
+            "length": 36
+          }
+        }
+      ],
+      "location": {
+        "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
+        "line": 1,
+        "column": 1,
+        "length": 36
+      }
+    }
+  ],
   "experiments": [
     "output_index_json"
   ],
@@ -19,7 +52,7 @@
       "name": "test.escaping/BASIC",
       "location": {
         "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
-        "line": 6,
+        "line": 7,
         "column": 7,
         "length": 5
       },
@@ -52,7 +85,7 @@
       "name": "test.escaping/DOLLAR",
       "location": {
         "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
-        "line": 16,
+        "line": 17,
         "column": 7,
         "length": 6
       },
@@ -85,7 +118,7 @@
       "name": "test.escaping/DOLLAR_BRACE",
       "location": {
         "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
-        "line": 17,
+        "line": 18,
         "column": 7,
         "length": 12
       },
@@ -118,7 +151,7 @@
       "name": "test.escaping/MAX",
       "location": {
         "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
-        "line": 9,
+        "line": 10,
         "column": 7,
         "length": 3
       },
@@ -151,7 +184,7 @@
       "name": "test.escaping/NULL",
       "location": {
         "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
-        "line": 8,
+        "line": 9,
         "column": 7,
         "length": 4
       },
@@ -184,7 +217,7 @@
       "name": "test.escaping/SMILE_LEADING_ZERO",
       "location": {
         "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
-        "line": 13,
+        "line": 14,
         "column": 7,
         "length": 18
       },
@@ -217,7 +250,7 @@
       "name": "test.escaping/SMILE_LITERAL",
       "location": {
         "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
-        "line": 10,
+        "line": 11,
         "column": 7,
         "length": 13
       },
@@ -250,7 +283,7 @@
       "name": "test.escaping/SMILE_LOWER",
       "location": {
         "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
-        "line": 11,
+        "line": 12,
         "column": 7,
         "length": 11
       },
@@ -283,7 +316,7 @@
       "name": "test.escaping/SMILE_UPPER",
       "location": {
         "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
-        "line": 12,
+        "line": 13,
         "column": 7,
         "length": 11
       },
@@ -311,6 +344,72 @@
           "expression": "\"\\u{1F600}\""
         }
       }
+    },
+    {
+      "name": "test.escaping/STAR",
+      "location": {
+        "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
+        "line": 29,
+        "column": 7,
+        "length": 4
+      },
+      "deprecated": false,
+      "type": {
+        "kind_v2": "string",
+        "nullable": false,
+        "type_shape_v2": {
+          "inline_size": 16,
+          "alignment": 8,
+          "depth": 1,
+          "max_handles": 0,
+          "max_out_of_line": 4294967295,
+          "has_padding": true,
+          "has_flexible_envelope": false
+        }
+      },
+      "value": {
+        "kind": "literal",
+        "value": "*",
+        "expression": "\"*\"",
+        "literal": {
+          "kind": "string",
+          "value": "*",
+          "expression": "\"*\""
+        }
+      }
+    },
+    {
+      "name": "test.escaping/TWINKLE",
+      "location": {
+        "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
+        "line": 30,
+        "column": 7,
+        "length": 7
+      },
+      "deprecated": false,
+      "type": {
+        "kind_v2": "string",
+        "nullable": false,
+        "type_shape_v2": {
+          "inline_size": 16,
+          "alignment": 8,
+          "depth": 1,
+          "max_handles": 0,
+          "max_out_of_line": 4294967295,
+          "has_padding": true,
+          "has_flexible_envelope": false
+        }
+      },
+      "value": {
+        "kind": "literal",
+        "value": "a*b",
+        "expression": "\"a*b\"",
+        "literal": {
+          "kind": "string",
+          "value": "a*b",
+          "expression": "\"a*b\""
+        }
+      }
     }
   ],
   "enum_declarations": [],
@@ -325,7 +424,7 @@
       ],
       "location": {
         "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
-        "line": 4,
+        "line": 5,
         "column": 6,
         "length": 20
       },
@@ -349,7 +448,7 @@
               },
               "location": {
                 "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
-                "line": 3,
+                "line": 4,
                 "column": 1,
                 "length": 39
               }
@@ -357,7 +456,7 @@
           ],
           "location": {
             "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
-            "line": 3,
+            "line": 4,
             "column": 1,
             "length": 39
           }
@@ -375,6 +474,92 @@
         "has_padding": false,
         "has_flexible_envelope": false
       }
+    },
+    {
+      "name": "test.escaping/DocCommentWithStars",
+      "naming_context": [
+        "DocCommentWithStars"
+      ],
+      "location": {
+        "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
+        "line": 25,
+        "column": 6,
+        "length": 19
+      },
+      "deprecated": false,
+      "maybe_attributes": [
+        {
+          "name": "doc",
+          "arguments": [
+            {
+              "name": "value",
+              "type": "string",
+              "value": {
+                "kind": "literal",
+                "value": " This comment has *asterisks* in it.\n And some \\*escaped\\* ones too.\n What about a list?\n * item 1\n * item 2\n",
+                "expression": "/// This comment has *asterisks* in it.\n/// And some \\*escaped\\* ones too.\n/// What about a list?\n/// * item 1\n/// * item 2",
+                "literal": {
+                  "kind": "string",
+                  "value": " This comment has *asterisks* in it.\n And some \\*escaped\\* ones too.\n What about a list?\n * item 1\n * item 2\n",
+                  "expression": "/// This comment has *asterisks* in it.\n/// And some \\*escaped\\* ones too.\n/// What about a list?\n/// * item 1\n/// * item 2"
+                }
+              },
+              "location": {
+                "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
+                "line": 20,
+                "column": 1,
+                "length": 123
+              }
+            }
+          ],
+          "location": {
+            "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
+            "line": 20,
+            "column": 1,
+            "length": 123
+          }
+        }
+      ],
+      "members": [
+        {
+          "type": {
+            "kind_v2": "string",
+            "nullable": false,
+            "type_shape_v2": {
+              "inline_size": 16,
+              "alignment": 8,
+              "depth": 1,
+              "max_handles": 0,
+              "max_out_of_line": 4294967295,
+              "has_padding": true,
+              "has_flexible_envelope": false
+            }
+          },
+          "name": "field",
+          "location": {
+            "filename": "../../tools/fidl/fidlc/testdata/escaping.test.fidl",
+            "line": 26,
+            "column": 5,
+            "length": 5
+          },
+          "deprecated": false,
+          "field_shape_v2": {
+            "offset": 0,
+            "padding": 0
+          }
+        }
+      ],
+      "resource": false,
+      "is_empty_success_struct": false,
+      "type_shape_v2": {
+        "inline_size": 16,
+        "alignment": 8,
+        "depth": 1,
+        "max_handles": 0,
+        "max_out_of_line": 4294967295,
+        "has_padding": true,
+        "has_flexible_envelope": false
+      }
     }
   ],
   "external_struct_declarations": [],
@@ -387,12 +572,15 @@
     "test.escaping/DOLLAR",
     "test.escaping/DOLLAR_BRACE",
     "test.escaping/DocCommentWithQuotes",
+    "test.escaping/DocCommentWithStars",
     "test.escaping/MAX",
     "test.escaping/NULL",
     "test.escaping/SMILE_LEADING_ZERO",
     "test.escaping/SMILE_LITERAL",
     "test.escaping/SMILE_LOWER",
-    "test.escaping/SMILE_UPPER"
+    "test.escaping/SMILE_UPPER",
+    "test.escaping/STAR",
+    "test.escaping/TWINKLE"
   ],
   "declarations": {
     "test.escaping/BASIC": "const",
@@ -404,6 +592,9 @@
     "test.escaping/SMILE_LITERAL": "const",
     "test.escaping/SMILE_LOWER": "const",
     "test.escaping/SMILE_UPPER": "const",
-    "test.escaping/DocCommentWithQuotes": "struct"
+    "test.escaping/STAR": "const",
+    "test.escaping/TWINKLE": "const",
+    "test.escaping/DocCommentWithQuotes": "struct",
+    "test.escaping/DocCommentWithStars": "struct"
   }
 }

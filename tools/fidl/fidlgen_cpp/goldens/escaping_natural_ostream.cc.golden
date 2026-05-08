@@ -15,11 +15,23 @@ std::ostream& fidl::ostream::Formatter<::test_escaping::DocCommentWithQuotes>::F
   os << "}";
   return os;
 }
+std::ostream& fidl::ostream::Formatter<::test_escaping::DocCommentWithStars>::Format(std::ostream& os, const ::test_escaping::DocCommentWithStars& value) {
+  os << "test_escaping::DocCommentWithStars";
+  os << "{ ";
+  os << "field";
+  os << " = " << fidl::ostream::Formatted<::std::string>(value.field()) << ", ";
+  os << "}";
+  return os;
+}
 
 namespace test_escaping {
 
 std::ostream& operator<<(std::ostream& os, const ::test_escaping::DocCommentWithQuotes& value) {
   return fidl::ostream::Formatter<::test_escaping::DocCommentWithQuotes>::Format(os, value);
+}
+
+std::ostream& operator<<(std::ostream& os, const ::test_escaping::DocCommentWithStars& value) {
+  return fidl::ostream::Formatter<::test_escaping::DocCommentWithStars>::Format(os, value);
 }
 
 #pragma clang diagnostic pop

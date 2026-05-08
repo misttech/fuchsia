@@ -46,7 +46,7 @@
 </tr>
 <tr>
     <td><a href="test.doccomments/index">test.doccomments</a></td>
-    <td> library comment #1</td>
+    <td>library comment #1</td>
 </tr>
 <tr>
     <td><a href="test.driverhandle/index">test.driverhandle</a></td>
@@ -86,7 +86,7 @@
 </tr>
 <tr>
     <td><a href="test.escaping/index">test.escaping</a></td>
-    <td></td>
+    <td>library <em>comment</em> with &#42;stars&#42;</td>
 </tr>
 <tr>
     <td><a href="test.experimentalmaybefromalias/index">test.experimentalmaybefromalias</a></td>

@@ -47,6 +47,46 @@ uint8_t& ::test_escaping::DocCommentWithQuotes::__reserved() {
   return *this;
 }
 
+::test_escaping::DocCommentWithStars::DocCommentWithStars(Storage_ storage) noexcept : storage_(std::move(storage)) {}
+::test_escaping::DocCommentWithStars::DocCommentWithStars(::std::string field) noexcept
+    : storage_({.field = std::move(field)}) {}
+
+::test_escaping::DocCommentWithStars::DocCommentWithStars(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag) : DocCommentWithStars(Storage_{
+                                                                                                                            .field = {},
+                                                                                                                        }) {}
+::test_escaping::DocCommentWithStars::DocCommentWithStars(const ::test_escaping::DocCommentWithStars& other) noexcept : ::test_escaping::DocCommentWithStars(other.CloneStorage_()) {}
+
+::test_escaping::DocCommentWithStars& test_escaping::DocCommentWithStars::operator=(const ::test_escaping::DocCommentWithStars& other) noexcept {
+  storage_ = other.CloneStorage_();
+  return *this;
+}
+
+bool test_escaping::DocCommentWithStars::operator==(const DocCommentWithStars& other) const noexcept {
+  return ::fidl::internal::NaturalStructCodingTraits<::test_escaping::DocCommentWithStars, 16>::Equal(this, &other);
+}
+
+bool test_escaping::DocCommentWithStars::operator!=(const DocCommentWithStars& other) const noexcept {
+  return !::fidl::internal::NaturalStructCodingTraits<::test_escaping::DocCommentWithStars, 16>::Equal(this, &other);
+}
+
+::test_escaping::DocCommentWithStars::Storage_ test_escaping::DocCommentWithStars::CloneStorage_() const {
+  return Storage_{
+      ::fidl::internal::NaturalClone(storage_.field)};
+}
+const ::std::string&
+test_escaping::DocCommentWithStars::field() const {
+  return storage_.field;
+}
+
+::std::string& ::test_escaping::DocCommentWithStars::field() {
+  return storage_.field;
+}
+
+::test_escaping::DocCommentWithStars& ::test_escaping::DocCommentWithStars::field(::std::string value) {
+  storage_.field = std::move(value);
+  return *this;
+}
+
 const char* ::test_escaping::kBasic = "'\"\\\n\r\t";
 
 const char* ::test_escaping::kNull = "\x00";
@@ -64,5 +104,9 @@ const char* ::test_escaping::kSmileLeadingZero = "😀";
 const char* ::test_escaping::kDollar = "$";
 
 const char* ::test_escaping::kDollarBrace = "${";
+
+const char* ::test_escaping::kStar = "*";
+
+const char* ::test_escaping::kTwinkle = "a*b";
 
 #pragma clang diagnostic pop

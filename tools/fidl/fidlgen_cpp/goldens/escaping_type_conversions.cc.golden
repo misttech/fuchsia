@@ -19,6 +19,15 @@ namespace internal {
   };
 }
 
+::test_escaping::DocCommentWithStars WireNaturalConversionTraits<::test_escaping::wire::DocCommentWithStars, ::test_escaping::DocCommentWithStars>::ToNatural(::test_escaping::wire::DocCommentWithStars src) {
+  return ::test_escaping::DocCommentWithStars(WireNaturalConversionTraits<::fidl::StringView, ::std::string>::ToNatural(std::move(src.field)));
+}
+::test_escaping::wire::DocCommentWithStars WireNaturalConversionTraits<::test_escaping::wire::DocCommentWithStars, ::test_escaping::DocCommentWithStars>::ToWire(fidl::AnyArena& arena, ::test_escaping::DocCommentWithStars src) {
+  return ::test_escaping::wire::DocCommentWithStars{
+      .field = WireNaturalConversionTraits<::fidl::StringView, ::std::string>::ToWire(arena, std::move(src.field())),
+  };
+}
+
 #pragma clang diagnostic pop
 
 }  // namespace internal

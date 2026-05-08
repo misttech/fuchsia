@@ -35,6 +35,21 @@ struct WireTypeForNaturalType<::test_escaping::DocCommentWithQuotes> {
   using type = ::test_escaping::wire::DocCommentWithQuotes;
 };
 
+template <>
+struct WireNaturalConversionTraits<::test_escaping::wire::DocCommentWithStars, ::test_escaping::DocCommentWithStars> {
+  static ::test_escaping::DocCommentWithStars ToNatural(::test_escaping::wire::DocCommentWithStars src);
+  static ::test_escaping::wire::DocCommentWithStars ToWire(fidl::AnyArena& arena, ::test_escaping::DocCommentWithStars src);
+};
+
+template <>
+struct NaturalTypeForWireType<::test_escaping::wire::DocCommentWithStars> {
+  using type = ::test_escaping::DocCommentWithStars;
+};
+template <>
+struct WireTypeForNaturalType<::test_escaping::DocCommentWithStars> {
+  using type = ::test_escaping::wire::DocCommentWithStars;
+};
+
 #pragma clang diagnostic pop
 
 }  // namespace internal

@@ -19,6 +19,8 @@ namespace test_escaping {
 
 class DocCommentWithQuotes;
 
+class DocCommentWithStars;
+
 extern const char* kBasic;
 
 extern const char* kNull;
@@ -36,6 +38,10 @@ extern const char* kSmileLeadingZero;
 extern const char* kDollar;
 
 extern const char* kDollarBrace;
+
+extern const char* kStar;
+
+extern const char* kTwinkle;
 
 /// "pleaseescapethisdocommentproperly"
 class DocCommentWithQuotes {
@@ -87,6 +93,60 @@ class DocCommentWithQuotes {
   static constexpr auto kPadding = std::make_tuple();
 };
 
+/// This comment has *asterisks* in it.
+/// And some \*escaped\* ones too.
+/// What about a list?
+/// * item 1
+/// * item 2
+class DocCommentWithStars {
+ private:
+  struct Storage_;
+
+ public:
+  DocCommentWithStars(Storage_ storage) noexcept;
+  DocCommentWithStars(::std::string field) noexcept;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdefaulted-function-deleted"
+  // Default constructs a |DocCommentWithStars| only if all of its members are default constructible.
+  DocCommentWithStars() = default;
+#pragma clang diagnostic pop
+
+  DocCommentWithStars(DocCommentWithStars&&) noexcept = default;
+  DocCommentWithStars& operator=(DocCommentWithStars&&) noexcept = default;
+  DocCommentWithStars(const DocCommentWithStars& other) noexcept;
+  DocCommentWithStars& operator=(const DocCommentWithStars& other) noexcept;
+
+  bool operator==(const DocCommentWithStars& other) const noexcept;
+  bool operator!=(const DocCommentWithStars& other) const noexcept;
+
+  const ::std::string&
+  field() const;
+
+  ::std::string& field();
+
+  // Setter for field.
+  //
+
+  DocCommentWithStars& field(::std::string value);
+
+  DocCommentWithStars(::fidl::internal::DefaultConstructPossiblyInvalidObjectTag);
+
+ private:
+  struct Storage_ final {
+    ::std::string field;
+  };
+
+  Storage_ storage_;
+  Storage_ CloneStorage_() const;
+
+  friend struct ::fidl::internal::NaturalStructCodingTraits<::test_escaping::DocCommentWithStars, 16>;
+  friend struct ::fidl::internal::MemberVisitor<::test_escaping::DocCommentWithStars>;
+  static constexpr auto kMembers = std::make_tuple(::fidl::internal::NaturalStructMember<Storage_, ::std::string, fidl::internal::NaturalCodingConstraintString<>>{
+      &Storage_::field, 0});
+  static constexpr auto kPadding = std::make_tuple();
+};
+
 }  // namespace test_escaping
 namespace fidl {
 
@@ -108,6 +168,24 @@ struct IsStruct<::test_escaping::DocCommentWithQuotes> : public std::true_type {
 template <>
 struct internal::NaturalCodingTraits<::test_escaping::DocCommentWithQuotes, ::fidl::internal::NaturalCodingConstraintEmpty> final
     : public ::fidl::internal::NaturalEmptyStructCodingTraits<::test_escaping::DocCommentWithQuotes> {};
+template <>
+struct IsFidlType<::test_escaping::DocCommentWithStars> : public std::true_type {};
+
+template <>
+struct TypeTraits<::test_escaping::DocCommentWithStars> {
+  static constexpr uint32_t kMaxNumHandles = 0;
+  static constexpr uint32_t kMaxDepth = 1;
+  static constexpr uint32_t kPrimarySize = 16;
+  static constexpr uint32_t kMaxOutOfLine = 4294967295;
+  static constexpr bool kHasPointer = true;
+};
+
+template <>
+struct IsStruct<::test_escaping::DocCommentWithStars> : public std::true_type {};
+
+template <>
+struct internal::NaturalCodingTraits<::test_escaping::DocCommentWithStars, ::fidl::internal::NaturalCodingConstraintEmpty> final
+    : public ::fidl::internal::NaturalStructCodingTraits<::test_escaping::DocCommentWithStars, 16> {};
 
 #pragma clang diagnostic pop
 

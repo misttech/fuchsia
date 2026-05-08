@@ -275,8 +275,14 @@ pub fn one_line(
 
 fn ol(description: &str) -> String {
     let lines: Vec<&str> = description.split("\n\n").collect();
-    // If no match for \n\n, lines will contain the description as is.
-    lines.first().unwrap().to_string()
+    let first_paragraph = lines.first().unwrap().to_string();
+    let html = pd(&first_paragraph);
+    let html = html.trim();
+    if html.starts_with("<p>") && html.ends_with("</p>") {
+        html[3..html.len() - 4].to_string()
+    } else {
+        html.to_string()
+    }
 }
 
 pub fn pulldown(
@@ -298,7 +304,7 @@ fn pd(text: &str) -> String {
     let parser = Parser::new(text);
     let mut html_text = String::new();
     pulldown_html::push_html(&mut html_text, parser);
-    html_text
+    html_text.replace("*", "&#42;")
 }
 
 pub fn method_id(

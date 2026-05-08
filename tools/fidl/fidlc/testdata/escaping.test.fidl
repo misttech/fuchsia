@@ -1,3 +1,4 @@
+/// library *comment* with \*stars\*
 library test.escaping;
 
 /// "pleaseescapethisdocommentproperly"
@@ -15,3 +16,15 @@ const SMILE_LEADING_ZERO string = "\u{01f600}";
 // Make sure we escape this properly in languages that use $ for interpolation.
 const DOLLAR string = "$";
 const DOLLAR_BRACE string = "${";
+
+/// This comment has *asterisks* in it.
+/// And some \*escaped\* ones too.
+/// What about a list?
+/// * item 1
+/// * item 2
+type DocCommentWithStars = struct {
+    field string;
+};
+
+const STAR string = "*";
+const TWINKLE string = "a*b";

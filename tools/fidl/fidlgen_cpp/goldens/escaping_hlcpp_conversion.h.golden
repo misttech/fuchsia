@@ -25,6 +25,16 @@ struct HLCPPToNaturalTraits<::test::escaping::DocCommentWithQuotes> {
   using NaturalType = ::test_escaping::DocCommentWithQuotes;
   static inline ::test_escaping::DocCommentWithQuotes Convert(::test::escaping::DocCommentWithQuotes&&);
 };
+template <>
+struct NaturalToHLCPPTraits<::test_escaping::DocCommentWithStars> {
+  using HLCPPType = ::test::escaping::DocCommentWithStars;
+  static inline ::test::escaping::DocCommentWithStars Convert(::test_escaping::DocCommentWithStars&&);
+};
+template <>
+struct HLCPPToNaturalTraits<::test::escaping::DocCommentWithStars> {
+  using NaturalType = ::test_escaping::DocCommentWithStars;
+  static inline ::test_escaping::DocCommentWithStars Convert(::test::escaping::DocCommentWithStars&&);
+};
 
 ::test::escaping::DocCommentWithQuotes NaturalToHLCPPTraits<::test_escaping::DocCommentWithQuotes>::Convert(::test_escaping::DocCommentWithQuotes&& value) {
   ::test::escaping::DocCommentWithQuotes hlcpp;
@@ -35,6 +45,17 @@ struct HLCPPToNaturalTraits<::test::escaping::DocCommentWithQuotes> {
 ::test_escaping::DocCommentWithQuotes HLCPPToNaturalTraits<::test::escaping::DocCommentWithQuotes>::Convert(::test::escaping::DocCommentWithQuotes&& value) {
   return ::test_escaping::DocCommentWithQuotes{{
       .__reserved = ::fidl::HLCPPToNatural(std::move(value.__reserved)),
+  }};
+}
+::test::escaping::DocCommentWithStars NaturalToHLCPPTraits<::test_escaping::DocCommentWithStars>::Convert(::test_escaping::DocCommentWithStars&& value) {
+  ::test::escaping::DocCommentWithStars hlcpp;
+  hlcpp.field = ::fidl::NaturalToHLCPP(std::move(value.field()));
+  return hlcpp;
+}
+
+::test_escaping::DocCommentWithStars HLCPPToNaturalTraits<::test::escaping::DocCommentWithStars>::Convert(::test::escaping::DocCommentWithStars&& value) {
+  return ::test_escaping::DocCommentWithStars{{
+      .field = ::fidl::HLCPPToNatural(std::move(value.field)),
   }};
 }
 
