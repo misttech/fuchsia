@@ -320,6 +320,7 @@ mod tests {
         assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(0..151)), Ordering::Less);
         assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(100..151)), Ordering::Less);
         assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(150..1000)), Ordering::Less);
+        assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(101..150)), Ordering::Equal);
     }
 
     #[test]

@@ -390,6 +390,10 @@ pub struct MergerIterator<'a, 'b, K, V> {
 }
 
 impl<'a, 'b, K: Key + LayerKey + OrdLowerBound, V: Value> MergerIterator<'a, 'b, K, V> {
+    pub fn pending_iterators_len(&self) -> usize {
+        self.pending_iterators.len()
+    }
+
     async fn seek(&mut self, bound: Bound<&K>) -> Result<(), Error> {
         let next_key = match bound {
             Bound::Unbounded => None,
@@ -833,6 +837,10 @@ mod tests {
 
         fn next_key(&self) -> Option<Self> {
             Some(TestKey(self.0.end..self.0.end + 1))
+        }
+
+        fn search_key(&self) -> Self {
+            TestKey(0..self.0.start + 1)
         }
     }
 
@@ -1784,15 +1792,19 @@ mod tests {
             counters(),
         );
         let mut iter = merger.query(Query::FullRange(&TestKey(0..1))).await.expect("seek failed");
+        assert_eq!(iter.pending_iterators_len(), 2);
         let ItemRef { key, .. } = iter.get().expect("missing item");
         assert_eq!(key, &TestKey(0..10));
         iter.advance().await.expect("advance failed");
+        assert_eq!(iter.pending_iterators_len(), 1);
         let ItemRef { key, .. } = iter.get().expect("missing item");
         assert_eq!(key, &TestKey(10..20));
         iter.advance().await.expect("advance failed");
+        assert_eq!(iter.pending_iterators_len(), 0);
         let ItemRef { key, .. } = iter.get().expect("missing item");
         assert_eq!(key, &TestKey(20..30));
         iter.advance().await.expect("advance failed");
+        assert_eq!(iter.pending_iterators_len(), 0);
         assert_eq!(iter.get(), None);
     }
 
@@ -1977,6 +1989,59 @@ mod tests {
         let ItemRef { key, value, .. } = iter.get().expect("missing item");
         assert_eq!((key, *value), (&items[2].key, items[2].value));
         iter.advance().await.expect("advance");
+        assert!(iter.get().is_none());
+    }
+
+    #[fuchsia::test]
+    async fn test_optimized_merge_lazy_pull() {
+        let skip_lists = [SkipListLayer::new(100), SkipListLayer::new(100)];
+        let items_top = [
+            Item::new(TestKey(10..20), 1),
+            Item::new(TestKey(20..30), 2),
+            Item::new(TestKey(30..40), 3),
+        ];
+        let items_bottom = [Item::new(TestKey(40..50), 4)];
+
+        for item in &items_top {
+            skip_lists[0].insert(item.clone()).expect("insert error");
+        }
+        for item in &items_bottom {
+            skip_lists[1].insert(item.clone()).expect("insert error");
+        }
+
+        let mut merger =
+            Merger::new(layer_ref_iter(&skip_lists), |_, _| MergeResult::EmitLeft, counters());
+        merger.set_trace(true);
+
+        let mut iter =
+            merger.query(Query::LimitedRange(&TestKey(10..20))).await.expect("seek failed");
+        // TODO(https://fxbug.dev/510925696): This currently fails because search_key() returns
+        // 0..n+1 which matches all layers. In subsequent CL, we should have search_key() return
+        // n..n+1.
+        assert_eq!(iter.pending_iterators_len(), 0);
+
+        let ItemRef { key, .. } = iter.get().expect("missing item");
+        assert_eq!(key, &TestKey(10..20));
+
+        iter.advance().await.expect("advance failed");
+        assert_eq!(iter.pending_iterators_len(), 0);
+
+        let ItemRef { key, .. } = iter.get().expect("missing item");
+        assert_eq!(key, &TestKey(20..30));
+
+        iter.advance().await.expect("advance failed");
+        assert_eq!(iter.pending_iterators_len(), 0);
+
+        let ItemRef { key, .. } = iter.get().expect("missing item");
+        assert_eq!(key, &TestKey(30..40));
+
+        iter.advance().await.expect("advance failed");
+        assert_eq!(iter.pending_iterators_len(), 0);
+
+        let ItemRef { key, .. } = iter.get().expect("missing item");
+        assert_eq!(key, &TestKey(40..50));
+
+        iter.advance().await.expect("advance failed");
         assert!(iter.get().is_none());
     }
 }

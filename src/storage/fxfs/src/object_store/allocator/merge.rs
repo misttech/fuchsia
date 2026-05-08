@@ -367,4 +367,165 @@ mod tests {
         iter.advance().await.expect("advance failed");
         assert!(iter.get().is_none());
     }
+
+    #[fuchsia::test]
+    async fn test_overlapping_boundaries() {
+        let base = (50..100, AllocatorValue::Abs { count: 1, owner_object_id: 1 });
+
+        let test_val = AllocatorValue::Abs { count: 1, owner_object_id: 2 };
+
+        // 1. Same end, start off-by-one.
+        // 49..100 vs 50..100
+
+        // Test with base (50..100) newer
+        test_merge(
+            base.clone(),
+            (49..100, test_val.clone()),
+            &[
+                (49..50, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+                (50..100, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+            ],
+        )
+        .await;
+        // Test with test_range (49..100) newer
+        test_merge(
+            (49..100, test_val.clone()),
+            base.clone(),
+            &[
+                (49..50, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+                (50..100, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+            ],
+        )
+        .await;
+
+        // 51..100 vs 50..100
+        // Test with base (50..100) newer
+        test_merge(
+            base.clone(),
+            (51..100, test_val.clone()),
+            &[
+                (50..51, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+                (51..100, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+            ],
+        )
+        .await;
+        // Test with test_range (51..100) newer
+        test_merge(
+            (51..100, test_val.clone()),
+            base.clone(),
+            &[
+                (50..51, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+                (51..100, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+            ],
+        )
+        .await;
+
+        // 2. End off-by-one, same start.
+        // 50..99 vs 50..100
+        // Test with base (50..100) newer
+        test_merge(
+            base.clone(),
+            (50..99, test_val.clone()),
+            &[(50..100, AllocatorValue::Abs { count: 1, owner_object_id: 1 })],
+        )
+        .await;
+        // Test with test_range (50..99) newer
+        test_merge(
+            (50..99, test_val.clone()),
+            base.clone(),
+            &[
+                (50..99, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+                (99..100, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+            ],
+        )
+        .await;
+
+        // 50..101 vs 50..100
+        // Test with base (50..100) newer
+        test_merge(
+            base.clone(),
+            (50..101, test_val.clone()),
+            &[
+                (50..100, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+                (100..101, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+            ],
+        )
+        .await;
+        // Test with test_range (50..101) newer
+        test_merge(
+            (50..101, test_val.clone()),
+            base.clone(),
+            &[(50..101, AllocatorValue::Abs { count: 1, owner_object_id: 2 })],
+        )
+        .await;
+
+        // 3. Both off-by-one.
+        // 49..99 vs 50..100
+        // Test with base (50..100) newer
+        test_merge(
+            base.clone(),
+            (49..99, test_val.clone()),
+            &[
+                (49..50, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+                (50..100, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+            ],
+        )
+        .await;
+        // Test with test_range (49..99) newer
+        test_merge(
+            (49..99, test_val.clone()),
+            base.clone(),
+            &[
+                (49..50, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+                (50..99, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+                (99..100, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+            ],
+        )
+        .await;
+
+        // 51..101 vs 50..100
+        // Test with base (50..100) newer
+        test_merge(
+            base.clone(),
+            (51..101, test_val.clone()),
+            &[
+                (50..51, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+                (51..100, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+                (100..101, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+            ],
+        )
+        .await;
+        // Test with test_range (51..101) newer
+        test_merge(
+            (51..101, test_val.clone()),
+            base.clone(),
+            &[
+                (50..51, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+                (51..101, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+            ],
+        )
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_length_1_ranges() {
+        // Touching length 1 ranges.
+        test_merge(
+            (10..11, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+            (11..12, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+            &[
+                (10..11, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+                (11..12, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+            ],
+        )
+        .await;
+
+        // Identical length 1 ranges.
+        test_merge(
+            (10..11, AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
+            (10..11, AllocatorValue::Abs { count: 1, owner_object_id: 2 }),
+            &[(10..11, AllocatorValue::Abs { count: 1, owner_object_id: 1 })],
+        )
+        .await;
+    }
 }

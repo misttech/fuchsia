@@ -1100,6 +1100,247 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_extent_overlapping_boundaries() {
+        use crate::lsm_tree::cache::NullCache;
+        use crate::object_store::VOLUME_DATA_KEY_ID;
+        let object_id = 1;
+        let attr_id = 0;
+        let base = Item::new(
+            ObjectKey::extent(object_id, attr_id, 50..100),
+            ObjectValue::Extent(ExtentValue::new_raw(0, VOLUME_DATA_KEY_ID)),
+        );
+
+        // 1. Same end, start off-by-one.
+        // 49..100 (older, val 2) vs 50..100 (newer, val 1).
+        // Yields 49..50 (val 2), 50..100 (val 1).
+        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        test_merge(
+            &tree,
+            &[base.clone()],
+            &[Item::new(
+                ObjectKey::extent(object_id, attr_id, 49..100),
+                ObjectValue::Extent(ExtentValue::new_raw(16384, VOLUME_DATA_KEY_ID)),
+            )],
+            &[
+                Item::new(
+                    ObjectKey::extent(object_id, attr_id, 49..50),
+                    ObjectValue::Extent(ExtentValue::new_raw(16384, VOLUME_DATA_KEY_ID)),
+                ),
+                base.clone(),
+            ],
+        )
+        .await;
+
+        // 51..100 (older, val 2) vs 50..100 (newer, val 1).
+        // Yields 50..100 (val 1).
+        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        test_merge(
+            &tree,
+            &[base.clone()],
+            &[Item::new(
+                ObjectKey::extent(object_id, attr_id, 51..100),
+                ObjectValue::Extent(ExtentValue::new_raw(16384, VOLUME_DATA_KEY_ID)),
+            )],
+            &[base.clone()],
+        )
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_extent_complex_multi_layer() {
+        use crate::lsm_tree::cache::NullCache;
+        use crate::object_store::extent_record::{ExtentKey, ExtentValue};
+        use crate::object_store::object_record::{
+            AttributeKey, ObjectKey, ObjectKeyData, ObjectValue,
+        };
+
+        let object_id = 1;
+        let attr_id = 0;
+
+        let top_options = vec![49..50, 50..51, 51..52, 98..99, 99..100, 100..101];
+
+        let middle_range = 50..100;
+
+        let base_options = vec![49..101, 49..100, 50..101, 48..102, 100..101, 100..102];
+
+        let calculate_expected = |top: std::ops::Range<u64>,
+                                  middle: std::ops::Range<u64>,
+                                  base: std::ops::Range<u64>| {
+            let mut points = vec![0; 200];
+            for x in 0u64..200u64 {
+                if top.contains(&x) {
+                    points[x as usize] = 1;
+                } else if middle.contains(&x) {
+                    points[x as usize] = 2;
+                } else if base.contains(&x) {
+                    points[x as usize] = 3;
+                }
+            }
+
+            let mut result = Vec::new();
+            let mut current_val = 0;
+            let mut start = 0;
+            let mut max_layers_needed = 0;
+            let mut start_x = None;
+
+            for x in 0..200 {
+                let val = points[x];
+
+                let layers_needed = if top.contains(&(x as u64)) {
+                    1
+                } else if middle.contains(&(x as u64)) {
+                    2
+                } else {
+                    3
+                };
+
+                if val != current_val {
+                    if current_val != 0 {
+                        result.push((start as u64..x as u64, current_val, 3 - max_layers_needed));
+                    }
+                    current_val = val;
+                    start = x;
+                    if start_x.is_none() && val != 0 {
+                        start_x = Some(x);
+                    }
+                }
+
+                if let Some(sx) = start_x {
+                    if x >= sx {
+                        max_layers_needed = std::cmp::max(max_layers_needed, layers_needed);
+                    }
+                }
+            }
+            if current_val != 0 {
+                result.push((start as u64..200, current_val, 3 - max_layers_needed));
+            }
+
+            // TODO(https://fxbug.dev/510925696): This is not the state we want to be in.
+            // Since next_key returns 0..end+1, it starts at 0 and forces loading all layers
+            // on the first advance if we don't find a match at 0.
+            // In a subsequent CL, we should change next_key to return end..u64::MAX and apply
+            // search_key() to it for seeking, which will allow needs_more_iterators to be
+            // optimized and avoid this conservative behavior.
+            for i in 0..result.len() {
+                result[i].2 = 0;
+            }
+
+            result
+        };
+
+        for top_range in top_options {
+            for base_range in &base_options {
+                let expected =
+                    calculate_expected(top_range.clone(), middle_range.clone(), base_range.clone());
+
+                let tree = LSMTree::new(merge, Box::new(NullCache {}));
+
+                // Base layer (Layer 2)
+                tree.insert(Item::new(
+                    ObjectKey::extent(object_id, attr_id, base_range.clone()),
+                    ObjectValue::Extent(ExtentValue::new_raw(0, 3)), // key_id = 3
+                ))
+                .expect("insert error");
+                tree.seal();
+
+                // Middle layer (Layer 1)
+                tree.insert(Item::new(
+                    ObjectKey::extent(object_id, attr_id, middle_range.clone()),
+                    ObjectValue::Extent(ExtentValue::new_raw(0, 2)), // key_id = 2
+                ))
+                .expect("insert error");
+                tree.seal();
+
+                // Top layer (Layer 0)
+                tree.insert(Item::new(
+                    ObjectKey::extent(object_id, attr_id, top_range.clone()),
+                    ObjectValue::Extent(ExtentValue::new_raw(0, 1)), // key_id = 1
+                ))
+                .expect("insert error");
+
+                let layer_set = tree.layer_set();
+
+                // Start search with full range of expected results.
+                let mut merger = layer_set.merger();
+                let mut iter = merger
+                    .query(Query::LimitedRange(&ObjectKey::extent(
+                        object_id,
+                        attr_id,
+                        expected[0].0.start..expected.last().unwrap().0.end,
+                    )))
+                    .await
+                    .expect("seek failed");
+
+                assert_eq!(iter.pending_iterators_len(), expected[0].2);
+
+                for e in expected {
+                    let crate::object_store::ItemRef { key, value, .. } =
+                        iter.get().expect("get failed");
+                    if let ObjectKeyData::Attribute(
+                        aid,
+                        AttributeKey::Extent(ExtentKey { range }),
+                    ) = &key.data
+                    {
+                        assert_eq!(aid, &attr_id);
+                        assert_eq!(range, &e.0);
+                    } else {
+                        panic!("Unexpected key type");
+                    }
+                    if let ObjectValue::Extent(ExtentValue::Some { key_id, .. }) = value {
+                        assert_eq!(key_id, &e.1);
+                    } else {
+                        panic!("Unexpected value type");
+                    }
+                    assert_eq!(iter.pending_iterators_len(), e.2);
+                    iter.advance().await.expect("advance failed");
+                }
+                assert_eq!(iter.pending_iterators_len(), 0);
+                assert!(iter.get().is_none());
+            }
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_next_key_behavior() -> Result<(), Error> {
+        let object_id = 1;
+        let attr_id = 0;
+        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+
+        // Layer 1 (older)
+        tree.insert(Item::new(
+            ObjectKey::extent(object_id, attr_id, 50..101),
+            ObjectValue::Extent(ExtentValue::new_raw(0, VOLUME_DATA_KEY_ID)),
+        ))?;
+        tree.seal();
+
+        // Layer 0 (newer)
+        tree.insert(Item::new(
+            ObjectKey::extent(object_id, attr_id, 0..100),
+            ObjectValue::Extent(ExtentValue::new_raw(16384, VOLUME_DATA_KEY_ID)),
+        ))?;
+
+        let layer_set = tree.layer_set();
+        let mut merger = layer_set.merger();
+
+        let mut iter = merger
+            .query(Query::LimitedRange(&ObjectKey::extent(object_id, attr_id, 0..100)))
+            .await?;
+
+        let item = iter.get().expect("missing item");
+        assert_eq!(item.key, &ObjectKey::extent(object_id, attr_id, 0..100));
+
+        iter.advance().await.expect("advance failed");
+
+        let item = iter.get().expect("missing item");
+        assert_eq!(item.key, &ObjectKey::extent(object_id, attr_id, 100..101));
+
+        iter.advance().await.expect("advance failed");
+        assert!(iter.get().is_none());
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
     async fn test_merge_project_usage() {
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
         let key = ObjectKey::project_usage(5, 6);
