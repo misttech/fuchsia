@@ -51,8 +51,7 @@ from honeydew.fuchsia_device import fuchsia_device
 from honeydew.transports.fastboot import fastboot_impl
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
-from honeydew.transports.ffx import ffx as ffx_transport
-from honeydew.transports.ffx import ffx_impl
+from honeydew.transports.ffx import ffx
 from honeydew.transports.fuchsia_controller import errors as fc_errors
 from honeydew.transports.fuchsia_controller import fuchsia_controller_impl
 from honeydew.transports.serial import serial as serial_interface
@@ -251,7 +250,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         with (
             mock.patch.object(
-                ffx_impl.FfxImpl,
+                ffx.FFX,
                 "_check_running_monitor",
                 return_value=False,
                 autospec=True,
@@ -262,7 +261,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 autospec=True,
             ) as mock_fc_create_context,
             mock.patch.object(
-                ffx_impl.FfxImpl,
+                ffx.FFX,
                 "check_connection",
                 autospec=True,
             ) as mock_ffx_check_connection,
@@ -313,7 +312,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             mock.patch.object(
-                ffx_impl.FfxImpl,
+                ffx.FFX,
                 "_check_running_monitor",
                 return_value=False,
                 autospec=True,
@@ -324,7 +323,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 autospec=True,
             ) as mock_fc_create_context,
             mock.patch.object(
-                ffx_impl.FfxImpl,
+                ffx.FFX,
                 "check_connection",
                 autospec=True,
             ) as mock_ffx_check_connection,
@@ -399,7 +398,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         """Test case to make sure fuchsia_device supports ffx transport."""
         self.assertIsInstance(
             self.fd_fc_obj.ffx,
-            ffx_transport.FFX,
+            ffx.FFX,
         )
 
     def test_ffx_transport_with_shared_data(self) -> None:
@@ -414,7 +413,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         }
         with (
             mock.patch.object(
-                ffx_impl.FfxImpl,
+                ffx.FFX,
                 "check_connection",
                 autospec=True,
             ) as mock_ffx_check_connection,
@@ -439,7 +438,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 config=config,
             )
             ffx_obj = fd_obj.ffx
-            self.assertIsInstance(ffx_obj, ffx_transport.FFX)
+            self.assertIsInstance(ffx_obj, ffx.FFX)
             self.assertEqual(ffx_obj.shared_data, shared_data)
             mock_ffx_check_connection.assert_called()
 
@@ -510,7 +509,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         autospec=True,
     )
@@ -529,7 +528,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         autospec=True,
     )
@@ -550,7 +549,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             self.fd_fc_obj.virtual_audio  # pylint: disable=pointless-statement
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         return_value="core/starnix_runner/kernels:",
         autospec=True,
@@ -568,7 +567,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_ffx_run.assert_called_once()
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         return_value="core/starnix_runner/kernels:",
         autospec=True,
@@ -612,7 +611,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         autospec=True,
     )
@@ -684,7 +683,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         return_value=None,
     )
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         return_value="".join(wlan_policy_using_fc._REQUIRED_CAPABILITIES),
         autospec=True,
@@ -720,7 +719,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         return_value="".join(wlan_core_using_fc._REQUIRED_CAPABILITIES),
         autospec=True,
@@ -754,7 +753,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
 
     # List all the tests related to static properties
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "get_target_board",
         return_value=_MOCK_ARGS["board"],
         autospec=True,
@@ -795,7 +794,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.fd_fc_obj.model(), "default-model")
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "get_target_product",
         return_value=_MOCK_ARGS["product"],
         autospec=True,
@@ -927,7 +926,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         "check_connection",
         autospec=True,
     )
-    @mock.patch.object(ffx_impl.FfxImpl, "check_connection", autospec=True)
+    @mock.patch.object(ffx.FFX, "check_connection", autospec=True)
     def test_health_check_fc(
         self,
         mock_ffx_check_connection: mock.Mock,
@@ -954,7 +953,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "check_connection",
         autospec=True,
     )
@@ -982,7 +981,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "check_connection",
         side_effect=ffx_errors.FfxConnectionError("ffx connection error"),
         autospec=True,
@@ -1066,7 +1065,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         name_func=_custom_test_name_func,
     )
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         autospec=True,
     )
@@ -1121,7 +1120,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         name_func=_custom_test_name_func,
     )
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         autospec=True,
     )
@@ -1141,7 +1140,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_ffx_run.assert_called_once()
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         autospec=True,
     )
@@ -1344,7 +1343,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_on_device_boot.assert_called()
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "notify_intentional_disconnect",
         autospec=True,
     )
@@ -1572,7 +1571,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_send_snapshot_command.assert_called()
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "wait_for_rcs_disconnection",
         autospec=True,
     )
@@ -1585,7 +1584,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_ffx_wait_for_rcs_disconnection.assert_called()
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "wait_for_rcs_disconnection",
         side_effect=ffx_errors.FfxCommandError("error"),
         autospec=True,
@@ -1607,7 +1606,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "wait_for_rcs_connection",
         autospec=True,
     )
@@ -1631,7 +1630,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "wait_for_rcs_connection",
         autospec=True,
     )
@@ -1656,7 +1655,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_resolve_device_ip.assert_called()
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "wait_for_rcs_connection",
         side_effect=ffx_errors.FfxCommandError("error"),
         autospec=True,
@@ -2263,7 +2262,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_fc_connect_device_proxy.assert_called()
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         return_value="core/starnix_runner/kernels:",
         autospec=True,
@@ -2275,7 +2274,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_ffx.assert_called_once()
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         return_value="",
         autospec=True,
@@ -2289,7 +2288,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_ffx.assert_called_once()
 
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         side_effect=ffx_errors.FfxCommandError("error"),
         autospec=True,
@@ -2311,7 +2310,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        ffx_impl.FfxImpl,
+        ffx.FFX,
         "run",
         return_value=_MOCK_ARGS["ffx_target_ssh_address_output"],
         autospec=True,
@@ -2326,7 +2325,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             await self.fd_fc_obj.resolve_device_ip()
         mock_ffx_run.assert_called_once_with(
             self.fd_fc_obj.ffx,
-            cmd=ffx_impl._FFX_CMDS["TARGET_SSH_ADDRESS"]
+            cmd=ffx._FFX_CMDS["TARGET_SSH_ADDRESS"]
             + [self.fd_fc_obj.device_name],
             include_target=False,
         )

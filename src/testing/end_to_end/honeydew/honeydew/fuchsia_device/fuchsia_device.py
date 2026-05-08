@@ -93,8 +93,7 @@ from honeydew.transports.fastboot import (
 )
 from honeydew.transports.fastboot import fastboot_impl
 from honeydew.transports.ffx import errors as ffx_errors
-from honeydew.transports.ffx import ffx as ffx_transport_interface
-from honeydew.transports.ffx import ffx_impl
+from honeydew.transports.ffx import ffx
 from honeydew.transports.ffx.config import FfxConfigData
 from honeydew.transports.fuchsia_controller import errors as fc_errors
 from honeydew.transports.fuchsia_controller import (
@@ -346,7 +345,7 @@ class FuchsiaDevice(
 
     # List all transports
     @properties.Transport
-    def ffx(self) -> ffx_transport_interface.FFX:
+    def ffx(self) -> ffx.FFX:
         """Returns the FFX transport object.
 
         Returns:
@@ -379,7 +378,7 @@ class FuchsiaDevice(
             if self._device_info.ip_port
             else self.device_name
         )
-        ffx_obj: ffx_transport_interface.FFX = ffx_impl.FfxImpl(
+        ffx_obj: ffx.FFX = ffx.FFX(
             query=query,
             name=self.device_name,
             config_data=self._ffx_config_data,

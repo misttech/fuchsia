@@ -139,7 +139,6 @@ python_library("honeydew_no_testonly") {
     "transports/ffx/config.py",
     "transports/ffx/errors.py",
     "transports/ffx/ffx.py",
-    "transports/ffx/ffx_impl.py",
     "transports/ffx/types.py",
     "transports/fuchsia_controller/__init__.py",
     "transports/fuchsia_controller/errors.py",
