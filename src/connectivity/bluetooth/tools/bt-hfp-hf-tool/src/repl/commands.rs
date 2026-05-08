@@ -203,6 +203,11 @@ gen_commands! {
             vec![Required("peer_id")],
             "Set the microphone gain"
         ),
+        Exit = (
+            "exit",
+            vec![],
+            "Exit the REPL"
+        ),
     }
 }
 

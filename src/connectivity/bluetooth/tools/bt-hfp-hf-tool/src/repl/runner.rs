@@ -29,10 +29,12 @@ impl Runner {
         let (mut commands, mut acks) = Self::cmd_stream();
 
         while let Some(command) = commands.next().await {
-            self.handle_command(command).await.map_err(|e| {
+            if self.handle_command(command).await.map_err(|e| {
                 println!("Error: {e}");
                 e
-            })?;
+            })? {
+                break;
+            }
 
             // Allow the rustyline thread to continue
             acks.send(()).await?;
@@ -96,17 +98,18 @@ impl Runner {
         (cmd_receiver, ack_sender)
     }
 
-    async fn handle_command(&mut self, line: String) -> Result<(), Error> {
+    async fn handle_command(&mut self, line: String) -> Result<bool, Error> {
         let mut components = line.trim().split_whitespace();
         let command = components.next().map(|c| c.parse());
         let args: Vec<&str> = components.collect();
 
         match { command } {
-            Some(Ok(command)) => self.command_handler.handle_command(command, args).await?,
-            Some(Err(err)) => println!("Unknown command: {err:?}"),
-            None => {}
+            Some(Ok(command)) => self.command_handler.handle_command(command, args).await,
+            Some(Err(err)) => {
+                println!("Unknown command: {err:?}");
+                Ok(false)
+            }
+            None => Ok(false),
         }
-
-        Ok(())
     }
 }

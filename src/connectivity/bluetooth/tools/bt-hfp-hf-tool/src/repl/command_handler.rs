@@ -28,7 +28,12 @@ impl CommandHandler {
         Self { peers, calls }
     }
 
-    pub async fn handle_command(&mut self, command: Command, args: Vec<&str>) -> Result<(), Error> {
+    /// Handles a command and returns `Ok(true)` if the REPL should terminate.
+    pub async fn handle_command(
+        &mut self,
+        command: Command,
+        args: Vec<&str>,
+    ) -> Result<bool, Error> {
         match command {
             Command::Help => print!("{}", Command::help_msg()),
             Command::ListPeers => self.list_peers(command, args),
@@ -41,9 +46,10 @@ impl CommandHandler {
             Command::RequestTransferToAg => self.request_transfer_to_ag(command, args).await,
             Command::RequestTerminate => self.request_terminate(command, args).await,
             Command::SendDtmfCode => self.send_dtmf_code(command, args).await,
+            Command::Exit => return Ok(true),
             command => println! {"{command} not implemented!"},
         }
-        Ok(())
+        Ok(false)
     }
 
     fn get_peer_by_str_id(&self, str: &str) -> Option<Peer> {
