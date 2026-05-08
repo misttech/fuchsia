@@ -1091,16 +1091,16 @@ impl DirEntry {
             self.node.notify(InotifyMask::ATTRIB, 0, Default::default(), mode, false);
         }
 
-        let scope = RcuReadScope::new();
-        if let Some(parent) = self.parent_ref(&scope) {
-            let local_name = self.local_name.read(&scope);
-            parent.node.notify(InotifyMask::DELETE, 0, local_name, mode, false);
-        }
-
         // This check is incorrect if there's another hard link to this FsNode that isn't in
         // memory at the moment.
         if Arc::strong_count(&self.node) == 1 {
             self.node.notify(InotifyMask::DELETE_SELF, 0, Default::default(), mode, false);
+        }
+
+        let scope = RcuReadScope::new();
+        if let Some(parent) = self.parent_ref(&scope) {
+            let local_name = self.local_name.read(&scope);
+            parent.node.notify(InotifyMask::DELETE, 0, local_name, mode, false);
         }
     }
 
