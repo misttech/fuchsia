@@ -5,6 +5,7 @@
 import argparse
 import asyncio
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,10 @@ from shared.protocol import (
     serialize,
 )
 
+# The maximum number of seconds that we will wait for the daemon to start. In particular, this is
+# how long we will wait for the daemon to write into the pipe FD that we pass to it when we start
+# the new process.
+DAEMON_STARTUP_TIMEOUT_SECS: Final[float] = 10.0
 # TODO(https://fxbug.dev/504962182): Replace this with something more appropriate.
 UDS_PATH: Final[Path] = Path("/tmp/fx-debug-daemon.sock")
 
@@ -211,6 +216,11 @@ async def start_daemon(port: int | None) -> int:
     if port is not None:
         args.extend(["--port", str(port)])
 
+    # Create a pipe for synchronization
+    read_fd, write_fd = os.pipe()
+    os.set_inheritable(write_fd, True)
+    args.append(f"--ready-fd={write_fd}")
+
     command_line = fx_cmd.command_line(*args)
 
     try:
@@ -220,37 +230,73 @@ async def start_daemon(port: int | None) -> int:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
+            pass_fds=[write_fd],  # Ensure FD is passed to child
         )
         print("Spawning daemon...")
 
-        # Wait for socket to appear and handshake
-        for _ in range(10):
-            if UDS_PATH.exists():
-                result = await _try_connect_and_handshake()
-                if result is True:
-                    print(
-                        json.dumps(
-                            {
-                                "success": True,
-                                "protocol_version": PROTOCOL_VERSION,
-                            }
-                        )
-                    )
-                    return 0
-                elif result is False:
-                    return 1
-                # If None, continue polling
-            await asyncio.sleep(1)
+        # Close write end in parent
+        os.close(write_fd)
 
-        print(
-            json.dumps(
-                {
-                    "success": False,
-                    "message": "Daemon started but failed to respond to handshake in time.",
-                }
+        # Wait for signal on the pipe with timeout
+        loop = asyncio.get_running_loop()
+        try:
+            # Read 1 byte from the pipe
+            await asyncio.wait_for(
+                loop.run_in_executor(None, os.read, read_fd, 1),
+                timeout=DAEMON_STARTUP_TIMEOUT_SECS,
             )
-        )
-        return 1
+        except asyncio.TimeoutError:
+            print(
+                json.dumps(
+                    {
+                        "success": False,
+                        "message": "Timed out waiting for daemon to signal readiness.",
+                    }
+                )
+            )
+            os.close(read_fd)
+            return 1
+        except Exception as e:
+            print(
+                json.dumps(
+                    {
+                        "success": False,
+                        "message": f"Error reading from pipe: {e}",
+                    }
+                )
+            )
+            os.close(read_fd)
+            return 1
+        finally:
+            try:
+                os.close(read_fd)
+            except OSError:
+                pass
+
+        # Now that daemon signaled readiness, perform handshake
+        result = await _try_connect_and_handshake()
+        if result is True:
+            print(
+                json.dumps(
+                    {
+                        "success": True,
+                        "protocol_version": PROTOCOL_VERSION,
+                    }
+                )
+            )
+            return 0
+        elif result is None:
+            print(
+                json.dumps(
+                    {
+                        "success": False,
+                        "message": "Daemon started but failed to respond to handshake in time.",
+                    }
+                )
+            )
+            return 1
+        else:
+            return 1
     except Exception as e:
         print(f"Failed to start daemon: {e}")
         return 1

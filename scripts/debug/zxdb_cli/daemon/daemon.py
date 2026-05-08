@@ -117,7 +117,10 @@ class DapEventWaiter:
 @final
 class Daemon:
     def __init__(
-        self, port: int | None, connect_to_existing: bool = False
+        self,
+        port: int | None,
+        connect_to_existing: bool = False,
+        ready_fd: int | None = None,
     ) -> None:
         self.registry = CommandHandlerRegistry()
         self.dap_client = DapClient()
@@ -134,6 +137,7 @@ class Daemon:
         self.port = port
         self.connect_to_existing = connect_to_existing
         self.dap_proc: AsyncCommand | None = None
+        self.ready_fd = ready_fd
 
         self.registry.register("stop", self.handle_stop)
         self.registry.register("hello", self.handle_hello)
@@ -327,6 +331,13 @@ class Daemon:
             self.handle_uds_client, UDS_PATH
         )
         print(f"Daemon listening on {UDS_PATH}")
+
+        if self.ready_fd is not None:
+            try:
+                os.write(self.ready_fd, b"1")
+                os.close(self.ready_fd)
+            except OSError as e:
+                print(f"Failed to write to ready-fd: {e}")
 
         if not self.connect_to_existing:
             import package_server

@@ -18,7 +18,6 @@ from fx_cmd.lib import FxCmd
 from shared.protocol import PROTOCOL_VERSION, HelloRequest, serialize
 
 DAEMON_CLEANUP_TIMEOUT = 5.0
-SOCKET_POLL_RETRIES = 10
 
 
 async def _cleanup_process_group(proc: subprocess.Popen[Any]) -> None:
@@ -177,8 +176,9 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
         server = await asyncio.start_server(handle_client, "127.0.0.1", port)
         return server
 
-    async def test_daemon_lifecycle(self) -> None:
-        """Tests that the daemon starts and stops correctly."""
+    async def _setup_daemon_and_server(
+        self,
+    ) -> tuple[subprocess.Popen[Any], int]:
         # Find an open port
         temp_server = await asyncio.start_server(
             lambda r, w: None, "127.0.0.1", 0
@@ -192,27 +192,43 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
 
         # Start Daemon manually
         fx_cmd = FxCmd()
-        cmd = fx_cmd.command_line(
+        args = [
             "zxdb-daemon",
             "--port",
             str(port),
             "--connect-to-existing",
-        )
+        ]
+
+        read_fd, write_fd = os.pipe()
+        os.set_inheritable(write_fd, True)
+        args.append(f"--ready-fd={write_fd}")
+
+        cmd = fx_cmd.command_line(*args)
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
+            pass_fds=[write_fd],
         )
 
-        try:
-            # Wait for socket to appear
-            for _ in range(SOCKET_POLL_RETRIES):
-                if UDS_PATH.exists():
-                    break
-                await asyncio.sleep(0.5)
-            self.assertTrue(UDS_PATH.exists(), "Socket file was not created")
+        # Close write end in parent
+        os.close(write_fd)
 
+        # Wait for signal on the pipe
+        loop = asyncio.get_running_loop()
+        await asyncio.wait_for(
+            loop.run_in_executor(None, os.read, read_fd, 1), timeout=10.0
+        )
+        os.close(read_fd)
+
+        return proc, port
+
+    async def test_daemon_lifecycle(self) -> None:
+        """Tests that the daemon starts and stops correctly."""
+        proc, port = await self._setup_daemon_and_server()
+
+        try:
             # Stop via CLI
             exit_code = await main(["stop"])
             self.assertEqual(exit_code, 0)
@@ -235,51 +251,11 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
         """Tests the versioned hello handshake."""
 
         async def run_test() -> None:
-            # Find an open port
-            temp_server = await asyncio.start_server(
-                lambda r, w: None, "127.0.0.1", 0
-            )
-            port = temp_server.sockets[0].getsockname()[1]
-            temp_server.close()
-            await temp_server.wait_closed()
-
-            self.fake_dap_server = await self.start_fake_dap_server(port)
-
-            fx_cmd = FxCmd()
-            cmd = fx_cmd.command_line(
-                "zxdb-daemon",
-                "--port",
-                str(port),
-                "--connect-to-existing",
-            )
-            proc = subprocess.Popen(
-                cmd,
-                stdout=None,
-                stderr=None,
-                start_new_session=True,
-            )
+            proc, port = await self._setup_daemon_and_server()
 
             try:
-                # Wait for daemon to create socket
-                for _ in range(SOCKET_POLL_RETRIES):
-                    if UDS_PATH.exists():
-                        break
-                    await asyncio.sleep(0.5)
-                self.assertTrue(
-                    UDS_PATH.exists(), "Socket file was not created"
-                )
-
                 # Test valid version
-                for _ in range(10):
-                    try:
-                        reader, writer = await asyncio.open_unix_connection(
-                            UDS_PATH
-                        )
-                        break
-                    except (ConnectionRefusedError, FileNotFoundError):
-                        await asyncio.sleep(0.5)
-                else:
-                    self.fail("Failed to connect to daemon socket")
+                reader, writer = await asyncio.open_unix_connection(UDS_PATH)
                 req = HelloRequest(version=PROTOCOL_VERSION)
                 writer.write(serialize(req).encode("utf-8"))
                 await writer.drain()
@@ -301,16 +277,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
                 )
 
                 # Test invalid version
-                for _ in range(10):
-                    try:
-                        reader, writer = await asyncio.open_unix_connection(
-                            UDS_PATH
-                        )
-                        break
-                    except (ConnectionRefusedError, FileNotFoundError):
-                        await asyncio.sleep(0.5)
-                else:
-                    self.fail("Failed to connect to daemon socket")
+                reader, writer = await asyncio.open_unix_connection(UDS_PATH)
                 req = HelloRequest(version=PROTOCOL_VERSION + 1)
                 writer.write(serialize(req).encode("utf-8"))
                 await writer.drain()
@@ -348,40 +315,9 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             self.fail("Test timed out")
 
     async def test_pause_continue(self) -> None:
-        # Find an open port
-        temp_server = await asyncio.start_server(
-            lambda r, w: None, "127.0.0.1", 0
-        )
-        port = temp_server.sockets[0].getsockname()[1]
-        temp_server.close()
-        await temp_server.wait_closed()
-
-        # Start fake DAP server
-        self.fake_dap_server = await self.start_fake_dap_server(port)
-
-        # Start Daemon manually
-        fx_cmd = FxCmd()
-        cmd = fx_cmd.command_line(
-            "zxdb-daemon",
-            "--port",
-            str(port),
-            "--connect-to-existing",
-        )
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        proc, port = await self._setup_daemon_and_server()
 
         try:
-            # Wait for socket to appear
-            for _ in range(10):
-                if UDS_PATH.exists():
-                    break
-                await asyncio.sleep(0.5)
-            self.assertTrue(UDS_PATH.exists(), "Socket file was not created")
-
             # Test Pause
             exit_code = await main(["pause", "1"])
             self.assertEqual(exit_code, 0)
@@ -398,41 +334,9 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             await _cleanup_process_group(proc)
 
     async def test_stack_trace(self) -> None:
-        # Find an open port
-        temp_server = await asyncio.start_server(
-            lambda r, w: None, "127.0.0.1", 0
-        )
-        port = temp_server.sockets[0].getsockname()[1]
-        temp_server.close()
-        await temp_server.wait_closed()
-
-        # Start dummy DAP server
-        self.fake_dap_server = await self.start_fake_dap_server(port)
-
-        # Start Daemon manually
-        fx_cmd = FxCmd()
-        cmd = fx_cmd.command_line(
-            "zxdb-daemon",
-            "--port",
-            str(port),
-            "--connect-to-existing",
-        )
-
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        proc, port = await self._setup_daemon_and_server()
 
         try:
-            # Wait for socket to appear
-            for _ in range(10):
-                if UDS_PATH.exists():
-                    break
-                await asyncio.sleep(0.5)
-            self.assertTrue(UDS_PATH.exists(), "Socket file was not created")
-
             f = StringIO()
             with contextlib.redirect_stdout(f):
                 exit_code = await main(["stackTrace", "1"])
