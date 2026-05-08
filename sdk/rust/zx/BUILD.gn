@@ -62,12 +62,12 @@ _common_sources = [
 _common_deps = [
   "//sdk/rust/zx-status",
   "//sdk/rust/zx-status-ext",
+  "//sdk/rust/zx-sys",
   "//third_party/rust_crates:bitflags",
   "//third_party/rust_crates:bstr",
   "//third_party/rust_crates:libc",
   "//third_party/rust_crates:static_assertions",
   "//third_party/rust_crates:zerocopy",
-  "//zircon/vdso:zx-sys",
 ]
 _common_test_deps = [
   ":zx",
