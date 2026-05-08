@@ -181,20 +181,34 @@ impl EngineBuilder {
         name: &mut Option<String>,
     ) -> Result<Option<Box<dyn EmulatorEngine>>> {
         if name.is_none() {
-            let mut all_instances = match self.emu_instances.get_all_instances() {
+            let all_instances = match self.emu_instances.get_all_instances() {
                 Ok(list) => list,
                 Err(e) => {
                     ffx_bail!("Error encountered looking up emulator instances: {e:?}");
                 }
             };
-            if all_instances.len() == 1 {
-                *name = Some(all_instances.pop().unwrap().get_name().to_string());
+
+            let running_instances: Vec<_> = all_instances
+                .iter()
+                .filter(|i| i.get_engine_state() == EngineState::Running)
+                .collect();
+
+            if running_instances.len() == 1 {
+                *name = Some(running_instances[0].get_name().to_string());
+            } else if running_instances.len() > 1 {
+                return_user_error!(
+                    "Multiple running emulators found. Indicate which emulator to access\n\
+                by specifying the emulator name with your command.\n\
+                See all the emulators available using `ffx emu list`."
+                );
+            } else if all_instances.len() == 1 {
+                *name = Some(all_instances[0].get_name().to_string());
             } else if all_instances.len() == 0 {
-                log::debug!("No emulators are running.");
+                log::debug!("No emulators found.");
                 return Ok(None);
             } else {
                 return_user_error!(
-                    "Multiple emulators are running. Indicate which emulator to access\n\
+                    "Multiple emulators found but none are running. Indicate which emulator to access\n\
                 by specifying the emulator name with your command.\n\
                 See all the emulators available using `ffx emu list`."
                 );

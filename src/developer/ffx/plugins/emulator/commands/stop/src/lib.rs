@@ -191,12 +191,125 @@ mod tests {
         write_to_disk(&data2, &instance_dir2).unwrap();
 
         let tool = EmuStopTool { cmd, context: env.context.clone() };
-        let expected_phrase = "Multiple emulators are running";
+        let expected_phrase = "Multiple emulators found but none are running";
         let err = tool
             .main(<EmuStopTool as fho::FfxMain>::Writer::new(None))
             .await
             .expect_err("expected error");
         assert!(err.to_string().contains(expected_phrase), "expected '{expected_phrase}' in {err}");
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_prefer_running() {
+        let env = ffx_config::test_init().unwrap();
+        let temp_path = PathBuf::from(tempdir().unwrap().path());
+        env.context
+            .query(EMU_INSTANCE_ROOT_DIR)
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(&env.context, json!(temp_path))
+            .expect("setting instance dir config");
+        let emu_instances = EmulatorInstances::new(temp_path.clone());
+        let cmd = StopCommand::default();
+
+        // Spawn a test process to get a valid running PID
+        let mut test_child = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .expect("failed to spawn test process");
+        let test_pid = test_child.id();
+
+        // Instance 1 is running
+        let mut data = EmulatorInstanceData::new_with_state("one_instance", EngineState::Running);
+        data.set_pid(test_pid);
+        let instance_dir = emu_instances.get_instance_dir("one_instance", true).unwrap();
+        write_to_disk(&data, &instance_dir).unwrap();
+
+        // Instance 2 is stopped (Staged)
+        let data2 = EmulatorInstanceData::new_with_state("two_instance", EngineState::Staged);
+        let instance_dir2 = emu_instances.get_instance_dir("two_instance", true).unwrap();
+        write_to_disk(&data2, &instance_dir2).unwrap();
+
+        let tool = EmuStopTool { cmd, context: env.context.clone() };
+
+        // Should succeed because it selects the running one.
+        tool.main(<EmuStopTool as fho::FfxMain>::Writer::new(None))
+            .await
+            .expect("unexpected error");
+
+        // Clean up the test process if it's still alive
+        let _ = test_child.kill();
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_multiple_running_auto_fail() {
+        let env = ffx_config::test_init().unwrap();
+        let temp_path = PathBuf::from(tempdir().unwrap().path());
+        env.context
+            .query(EMU_INSTANCE_ROOT_DIR)
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(&env.context, json!(temp_path))
+            .expect("setting instance dir config");
+        let emu_instances = EmulatorInstances::new(temp_path.clone());
+        let cmd = StopCommand::default();
+
+        // Spawn a test process to get a valid running PID
+        let mut test_child = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .expect("failed to spawn test process");
+        let test_pid = test_child.id();
+
+        // Instance 1 is running
+        let mut data = EmulatorInstanceData::new_with_state("one_instance", EngineState::Running);
+        data.set_pid(test_pid);
+        let instance_dir = emu_instances.get_instance_dir("one_instance", true).unwrap();
+        write_to_disk(&data, &instance_dir).unwrap();
+
+        // Instance 2 is also running (sharing same PID for test simplicity)
+        let mut data2 = EmulatorInstanceData::new_with_state("two_instance", EngineState::Running);
+        data2.set_pid(test_pid);
+        let instance_dir2 = emu_instances.get_instance_dir("two_instance", true).unwrap();
+        write_to_disk(&data2, &instance_dir2).unwrap();
+
+        let tool = EmuStopTool { cmd, context: env.context.clone() };
+
+        // Should fail because multiple are running.
+        let expected_phrase = "Multiple running emulators found";
+        let err = tool
+            .main(<EmuStopTool as fho::FfxMain>::Writer::new(None))
+            .await
+            .expect_err("expected error");
+        assert!(err.to_string().contains(expected_phrase), "expected '{expected_phrase}' in {err}");
+
+        let _ = test_child.kill();
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_only_stopped_auto_succeed() {
+        let env = ffx_config::test_init().unwrap();
+        let temp_path = PathBuf::from(tempdir().unwrap().path());
+        env.context
+            .query(EMU_INSTANCE_ROOT_DIR)
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(&env.context, json!(temp_path))
+            .expect("setting instance dir config");
+        let emu_instances = EmulatorInstances::new(temp_path.clone());
+        let cmd = StopCommand::default();
+
+        // Only one instance, and it is stopped (Staged)
+        let data = EmulatorInstanceData::new_with_state("one_instance", EngineState::Staged);
+        let instance_dir = emu_instances.get_instance_dir("one_instance", true).unwrap();
+        write_to_disk(&data, &instance_dir).unwrap();
+
+        let tool = EmuStopTool { cmd, context: env.context.clone() };
+
+        // Should succeed because it selects the only instance even though it's stopped.
+        tool.main(<EmuStopTool as fho::FfxMain>::Writer::new(None))
+            .await
+            .expect("unexpected error");
     }
 
     #[fuchsia::test]
