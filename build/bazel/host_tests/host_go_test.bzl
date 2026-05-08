@@ -68,7 +68,7 @@ def legacy_host_go_test(
     test_data = test_data + [":" + binary_as_test_data]
 
     # LINT.IfChange(go_test_wrapper)
-    wrapper_script = "//tools/go_test_parser:go_test_parser_tool"
+    wrapper_script = "//tools/go_test_parser:go_test_parser"
     test_args = [
         "./" + binary_name,
         "-test.timeout",

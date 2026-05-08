@@ -64,7 +64,7 @@ def legacy_host_rustc_test(
 
     # Wrap the binary invocation with //tools/rust_test_parser
     # LINT.IfChange(rustc_test_invocation)
-    wrapper_script = "//tools/rust_test_parser:rust_test_parser_tool"
+    wrapper_script = "//tools/rust_test_parser:rust_test_parser"
 
     # In Bazel, and unlike GN, rustc_test() binaries always contain debug
     # symbols (see //build/bazel/debug_symbols/README.md for details).
