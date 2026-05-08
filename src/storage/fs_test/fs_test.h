@@ -99,6 +99,11 @@ struct TestFilesystemOptions {
 
   uint64_t device_block_size = 0;
   uint64_t device_block_count = 0;
+
+  uint32_t nand_page_size = 0;
+  uint32_t nand_pages_per_block = 0;
+  uint32_t nand_oob_size = 0;
+
   uint64_t fvm_slice_size = 0;
   uint64_t initial_fvm_slice_count = 1;
   // Only supported for blobfs for now.

@@ -7,10 +7,14 @@
 #include <dlfcn.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.fs.startup/cpp/wire_types.h>
+#include <fidl/fuchsia.hardware.block.volume/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.nand/cpp/wire.h>
 #include <fidl/fuchsia.hardware.ramdisk/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <lib/component/incoming/cpp/directory.h>
+#include <lib/component/incoming/cpp/directory_watcher.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/fdio/namespace.h>
 #include <lib/fidl/cpp/wire/arena.h>
@@ -124,9 +128,9 @@ zx::result<std::pair<ramdevice_client::Ramdisk, std::string>> CreateRamDisk(
 // Creates a ram-nand device.  It does not create an FVM partition; that is left to the caller.
 zx::result<std::pair<ramdevice_client::RamNand, std::string>> CreateRamNand(
     const TestFilesystemOptions& options) {
-  constexpr int kPageSize = 4096;
-  constexpr int kPagesPerBlock = 64;
-  constexpr int kOobSize = 8;
+  uint32_t page_size = options.nand_page_size ? options.nand_page_size : 4096;
+  uint32_t pages_per_block = options.nand_pages_per_block ? options.nand_pages_per_block : 64;
+  uint32_t oob_size = options.nand_oob_size ? options.nand_oob_size : 8;
 
   uint32_t block_count;
   zx::vmo vmo;
@@ -136,14 +140,14 @@ zx::result<std::pair<ramdevice_client::RamNand, std::string>> CreateRamNand(
     if (status.is_error()) {
       return status.take_error();
     }
-    block_count = static_cast<uint32_t>(vmo_size / (kPageSize + kOobSize) / kPagesPerBlock);
+    block_count = static_cast<uint32_t>(vmo_size / (page_size + oob_size) / pages_per_block);
     // For now, when using a ram-nand device, the only supported device block size is 8 KiB, so
     // raise an error if the user tries to ask for something different.
     if ((options.device_block_size != 0 && options.device_block_size != 8192) ||
         (options.device_block_count != 0 &&
          options.device_block_size * options.device_block_count !=
-             block_count * kPageSize * kPagesPerBlock)) {
-      std::cout << "Bad device parameters" << std::endl;
+             block_count * page_size * pages_per_block)) {
+      std::cout << "Bad device parameters\n";
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
     status = zx::make_result(options.vmo->create_child(ZX_VMO_CHILD_SLICE, 0, vmo_size, &vmo));
@@ -154,7 +158,7 @@ zx::result<std::pair<ramdevice_client::RamNand, std::string>> CreateRamNand(
     return zx::error(ZX_ERR_INVALID_ARGS);
   } else {
     block_count = static_cast<uint32_t>(options.device_block_size * options.device_block_count /
-                                        kPageSize / kPagesPerBlock);
+                                        page_size / pages_per_block);
   }
 
   zx::vmo wear_vmo;
@@ -169,7 +173,7 @@ zx::result<std::pair<ramdevice_client::RamNand, std::string>> CreateRamNand(
           "/dev/sys/platform/ram-nand/nand-ctl", kDeviceWaitTime);
       channel.is_error()) {
     std::cout << "Failed waiting for /dev/sys/platform/ram-nand/nand-ctl to appear: "
-              << channel.status_string() << std::endl;
+              << channel.status_string() << "\n";
     return channel.take_error();
   }
 
@@ -178,11 +182,11 @@ zx::result<std::pair<ramdevice_client::RamNand, std::string>> CreateRamNand(
       .vmo = std::move(vmo),
       .nand_info =
           {
-              .page_size = kPageSize,
-              .pages_per_block = kPagesPerBlock,
+              .page_size = static_cast<uint32_t>(page_size),
+              .pages_per_block = static_cast<uint32_t>(pages_per_block),
               .num_blocks = block_count,
               .ecc_bits = 8,
-              .oob_size = kOobSize,
+              .oob_size = static_cast<uint32_t>(oob_size),
               .nand_class = fuchsia_hardware_nand::wire::Class::kFtl,
           },
       .fail_after = options.fail_after,
@@ -191,17 +195,21 @@ zx::result<std::pair<ramdevice_client::RamNand, std::string>> CreateRamNand(
   if (zx::result status =
           zx::make_result(ramdevice_client::RamNand::Create(std::move(config), &ram_nand));
       status.is_error()) {
-    std::cout << "RamNand::Create failed: " << status.status_string() << std::endl;
+    std::cout << "RamNand::Create failed: " << status.status_string() << "\n";
     return status.take_error();
   }
 
-  std::string ftl_path = std::string(ram_nand->path()) + "/ftl/block";
-  if (zx::result channel = device_watcher::RecursiveWaitForFile(ftl_path.c_str(), kDeviceWaitTime);
-      channel.is_error()) {
-    std::cout << "Failed waiting for " << ftl_path << " to appear: " << channel.status_string()
-              << std::endl;
-    return channel.take_error();
+  const char* kServiceName = fuchsia_hardware_block_volume::Service::Name;
+  auto svc_root = component::OpenServiceRoot();
+  if (svc_root.is_error()) {
+    return svc_root.take_error();
   }
+  component::SyncDirectoryWatcher watcher(svc_root.value().borrow(), kServiceName);
+  auto result = watcher.GetNextEntry(false, zx::deadline_after(kDeviceWaitTime));
+  if (result.is_error()) {
+    return result.take_error();
+  }
+  std::string ftl_path = std::string("/svc/") + kServiceName + "/" + result.value() + "/volume";
   return zx::ok(std::make_pair(*std::move(ram_nand), std::move(ftl_path)));
 }
 

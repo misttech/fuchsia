@@ -4,8 +4,8 @@
 
 #include "nand_operation.h"
 
-#include <lib/ddk/debug.h>
 #include <lib/ddk/driver.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <zircon/errors.h>
 #include <zircon/process.h>
 #include <zircon/status.h>
@@ -56,7 +56,7 @@ zx_status_t NandOperation::WaitForCompletion() {
         sync_completion_reset(&event_);
         return status_;
       case ZX_ERR_TIMED_OUT:
-        zxlogf(ERROR, "FTL: slow operation (%p), still waiting...", this);
+        FDF_LOG(ERROR, "FTL: slow operation (%p), still waiting...", this);
         break;
       default:
         return status;

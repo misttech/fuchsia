@@ -4,8 +4,10 @@
 
 #include <fcntl.h>
 #include <fidl/fuchsia.fs.startup/cpp/wire.h>
+#include <fidl/fuchsia.fs/cpp/wire.h>
 #include <fidl/fuchsia.fxfs/cpp/markers.h>
 #include <fidl/fuchsia.io/cpp/fidl.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
@@ -47,6 +49,7 @@
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/fs_test/fs_test.h"
+#include "src/storage/lib/fs_management/cpp/component.h"
 #include "src/storage/lib/fs_management/cpp/mount.h"
 
 namespace fs_test {
@@ -99,6 +102,10 @@ struct Snapshot {
   zx::vmo wear_info;
 };
 
+struct RemountResult {
+  RamDevice ramnand;
+};
+
 class WearSimulator {
  public:
   WearSimulator() = delete;
@@ -129,7 +136,7 @@ class WearSimulator {
 
   // Tears down the current system in the given simulator and remounts the ftl. Useful to log ftl
   // wear info.
-  zx::result<RamDevice> RemountFtl();
+  zx::result<RemountResult> RemountFtl();
 
   // Tears down the current system and remounts everything.
   void Reboot();
@@ -226,6 +233,9 @@ void WearSimulator::Init() {
       .nand_wear_vmo = wear_vmo_.borrow(),
       .device_block_size = kPageSize,
       .device_block_count = 0,
+      .nand_page_size = static_cast<uint32_t>(kPageSize),
+      .nand_pages_per_block = static_cast<uint32_t>(kPagesPerBlock),
+      .nand_oob_size = static_cast<uint32_t>(kSpareBytes),
       .fvm_slice_size = config_.fvm_slice_size,
   });
   ASSERT_TRUE(res.is_ok()) << "Failed to setup ram device: " << res.error_value();
@@ -491,34 +501,45 @@ void WearSimulator::ReduceBlobfsBy(size_t* space) {
   }
 }
 
-zx::result<RamDevice> WearSimulator::RemountFtl() {
+zx::result<RemountResult> WearSimulator::RemountFtl() {
   mount_.reset();
 
   auto snapshot = Snapshot();
   if (snapshot.is_error()) {
+    FX_LOGS(ERROR) << "Snapshot failed: " << snapshot.status_string();
     return snapshot.take_error();
   }
 
-  RamDevice ramnand = CreateRamDevice({
-                                          .use_ram_nand = true,
-                                          .vmo = snapshot->image.borrow(),
-                                          .use_existing_fvm = true,
-                                          .nand_wear_vmo = snapshot->wear_info.borrow(),
-                                          .device_block_size = kPageSize,
-                                          .device_block_count = 0,
-                                          .fvm_slice_size = config_.fvm_slice_size,
-                                      })
-                          .value();
+  auto ramnand_or = CreateRamDevice({
+      .use_ram_nand = true,
+      .vmo = snapshot->image.borrow(),
+      .use_existing_fvm = true,
+      .nand_wear_vmo = snapshot->wear_info.borrow(),
+      .device_block_size = kPageSize,
+      .device_block_count = 0,
+      .nand_page_size = static_cast<uint32_t>(kPageSize),
+      .nand_pages_per_block = static_cast<uint32_t>(kPagesPerBlock),
+      .nand_oob_size = static_cast<uint32_t>(kSpareBytes),
+      .fvm_slice_size = config_.fvm_slice_size,
+  });
+  if (ramnand_or.is_error()) {
+    FX_LOGS(ERROR) << "CreateRamDevice failed: " << ramnand_or.status_string();
+    return ramnand_or.take_error();
+  }
+  RamDevice ramnand = std::move(ramnand_or.value());
 
   vmo_ = std::move(snapshot->image);
   wear_vmo_ = std::move(snapshot->wear_info);
-  return zx::ok(std::move(ramnand));
+  return zx::ok(RemountResult{std::move(ramnand)});
 }
 
 void WearSimulator::Reboot() {
   ASSERT_TRUE(vmo_.is_valid()) << "No image vmo to snapshot";
   ASSERT_TRUE(wear_vmo_.is_valid()) << "No wear info to snapshot";
-  RamDevice ramnand = RemountFtl().value();
+  auto remount_res = RemountFtl();
+  ASSERT_TRUE(remount_res.is_ok());
+  RamDevice ramnand = std::move(remount_res->ramnand);
+  auto& fvm = ramnand.fvm_partition()->fvm().fs();
 
   fidl::Arena arena;
   fs_management::MountedVolume* blobfs;
@@ -526,11 +547,10 @@ void WearSimulator::Reboot() {
   fidl::WireSyncClient<fuchsia_fxfs::BlobCreator> blob_creator;
   fidl::WireSyncClient<fuchsia_fxfs::BlobReader> blob_reader;
   {
-    auto res = ramnand.fvm_partition()->fvm().fs().OpenVolume(
-        "blobfs", fuchsia_fs_startup::wire::MountOptions::Builder(arena)
-                      .as_blob(true)
-                      .uri("#meta/blobfs.cm")
-                      .Build());
+    auto res = fvm.OpenVolume("blobfs", fuchsia_fs_startup::wire::MountOptions::Builder(arena)
+                                            .as_blob(true)
+                                            .uri("#meta/blobfs.cm")
+                                            .Build());
     ASSERT_TRUE(res.is_ok()) << "Failed to create blobfs: " << res.error_value();
     blobfs = res.value();
 
@@ -550,7 +570,7 @@ void WearSimulator::Reboot() {
   fs_management::MountedVolume* minfs;
   fs_management::NamespaceBinding minfs_bind;
   {
-    auto res = ramnand.fvm_partition()->fvm().fs().OpenVolume(
+    auto res = fvm.OpenVolume(
         "minfs",
         fuchsia_fs_startup::wire::MountOptions::Builder(arena).uri("#meta/minfs.cm").Build());
     ASSERT_TRUE(res.is_ok()) << "Failed to create minfs: " << res.error_value();
@@ -692,8 +712,8 @@ TEST(Wear, MinimalSimulator) {
   WearSimulator sim = WearSimulator({
       .fvm_slice_size = 32ul * 1024,
       .block_count = 100,
-      .blobfs_partition_size = 10ul * 1024 * 1024,
-      .minfs_partition_size = 10ul * 1024 * 1024,
+      .blobfs_partition_size = 4ul * 1024 * 1024,
+      .minfs_partition_size = 4ul * 1024 * 1024,
       .minfs_cold_data_size = 2ul * 1024 * 1024,
       .minfs_cycle_data_size = 2ul * 1024 * 1024,
   });
@@ -723,8 +743,8 @@ TEST(Wear, ImageImport) {
   WearSimulator sim = WearSimulator({
       .fvm_slice_size = 32ul * 1024,
       .block_count = 100,
-      .blobfs_partition_size = 10ul * 1024 * 1024,
-      .minfs_partition_size = 10ul * 1024 * 1024,
+      .blobfs_partition_size = 4ul * 1024 * 1024,
+      .minfs_partition_size = 4ul * 1024 * 1024,
   });
   sim.InitFromImage("pkg/testdata/nand.zstd", "pkg/testdata/wear_info.bin");
   sim.SimulateMinfs(100);

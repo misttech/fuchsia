@@ -6,14 +6,12 @@
 
 #include <fuchsia/hardware/badblock/cpp/banjo.h>
 #include <fuchsia/hardware/nand/c/banjo.h>
-#include <lib/ddk/debug.h>
-#include <stdint.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <zircon/assert.h>
 
+#include <cstdarg>
 #include <cstdint>
 #include <memory>
-#include <new>
-#include <vector>
 
 #include <fbl/array.h>
 
@@ -26,35 +24,35 @@ namespace {
 __PRINTFLIKE(3, 4) void LogTrace(const char* file, int line, const char* format, ...) {
   va_list args;
   va_start(args, format);
-  zxlogvf(TRACE, file, line, format, args);
+  fdf::Logger::GlobalInstance()->logvf(FUCHSIA_LOG_TRACE, "ftl", file, line, format, args);
   va_end(args);
 }
 
 __PRINTFLIKE(3, 4) void LogDebug(const char* file, int line, const char* format, ...) {
   va_list args;
   va_start(args, format);
-  zxlogvf(DEBUG, file, line, format, args);
+  fdf::Logger::GlobalInstance()->logvf(FUCHSIA_LOG_DEBUG, "ftl", file, line, format, args);
   va_end(args);
 }
 
 __PRINTFLIKE(3, 4) void LogInfo(const char* file, int line, const char* format, ...) {
   va_list args;
   va_start(args, format);
-  zxlogvf(INFO, file, line, format, args);
+  fdf::Logger::GlobalInstance()->logvf(FUCHSIA_LOG_INFO, "ftl", file, line, format, args);
   va_end(args);
 }
 
 __PRINTFLIKE(3, 4) void LogWarning(const char* file, int line, const char* format, ...) {
   va_list args;
   va_start(args, format);
-  zxlogvf(WARNING, file, line, format, args);
+  fdf::Logger::GlobalInstance()->logvf(FUCHSIA_LOG_WARNING, "ftl", file, line, format, args);
   va_end(args);
 }
 
 __PRINTFLIKE(3, 4) void LogError(const char* file, int line, const char* format, ...) {
   va_list args;
   va_start(args, format);
-  zxlogvf(ERROR, file, line, format, args);
+  fdf::Logger::GlobalInstance()->logvf(FUCHSIA_LOG_ERROR, "ftl", file, line, format, args);
   va_end(args);
 }
 
@@ -108,9 +106,9 @@ class NandDriverImpl final : public ftl::NandDriver {
 
 const char* NandDriverImpl::Init() {
   parent_.Query(&info_, &op_size_);
-  zxlogf(INFO, "FTL: Nand: page_size %u, block size %u, %u blocks, %u ecc, %u oob, op size %lu",
-         info_.page_size, info_.pages_per_block, info_.num_blocks, info_.ecc_bits, info_.oob_size,
-         op_size_);
+  FDF_LOG(INFO, "FTL: Nand: page_size %u, block size %u, %u blocks, %u ecc, %u oob, op size %lu",
+          info_.page_size, info_.pages_per_block, info_.num_blocks, info_.ecc_bits, info_.oob_size,
+          op_size_);
 
   if (!GetBadBlocks()) {
     return "Failed to query bad blocks";
@@ -145,7 +143,7 @@ const char* NandDriverImpl::Attach(const ftl::Volume* ftl_volume) {
   const char* error = CreateNdmVolume(ftl_volume, options, true);
   if (error) {
     // Retry allowing the volume to be fixed as needed.
-    zxlogf(INFO, "FTL: About to retry volume creation");
+    FDF_LOG(INFO, "FTL: About to retry volume creation");
     options.flags = 0;
     error = CreateNdmVolume(ftl_volume, options);
   }
@@ -153,7 +151,7 @@ const char* NandDriverImpl::Attach(const ftl::Volume* ftl_volume) {
   if (!error && !volume_data_saved()) {
     // Initialization is complete; update the control data format, but ignore errors.
     if (!WriteVolumeData()) {
-      zxlogf(ERROR, "FTL: Failed to upgrade NDM version");
+      FDF_LOG(ERROR, "FTL: Failed to upgrade NDM version");
     }
   }
   return error;
@@ -182,7 +180,7 @@ int NandDriverImpl::NandRead(uint32_t start_page, uint32_t page_count, void* pag
   if (page_buffer) {
     status = operation.SetDataVmo(num_bytes);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "FTL: SetDataVmo Failed: %d", status);
+      FDF_LOG(ERROR, "FTL: SetDataVmo Failed: %d", status);
       return ftl::kNdmFatalError;
     }
   }
@@ -191,19 +189,19 @@ int NandDriverImpl::NandRead(uint32_t start_page, uint32_t page_count, void* pag
     status = operation.SetOobVmo(num_bytes);
     op->rw.offset_oob_vmo = data_pages;
     if (status != ZX_OK) {
-      zxlogf(ERROR, "FTL: SetOobVmo Failed: %d", status);
+      FDF_LOG(ERROR, "FTL: SetOobVmo Failed: %d", status);
       return ftl::kNdmFatalError;
     }
   }
 
-  zxlogf(TRACE, "FTL: Read page, start %d, len %d", start_page, page_count);
+  FDF_LOG(TRACE, "FTL: Read page, start %d, len %d", start_page, page_count);
   status = operation.Execute(&parent_);
   if (status == ZX_ERR_IO_DATA_INTEGRITY) {
     return ftl::kNdmUncorrectableEcc;
   }
 
   if (status != ZX_OK) {
-    zxlogf(ERROR, "FTL: Read failed: %d", status);
+    FDF_LOG(ERROR, "FTL: Read failed: %d", status);
     return ftl::kNdmFatalError;
   }
 
@@ -253,7 +251,7 @@ int NandDriverImpl::NandWrite(uint32_t start_page, uint32_t page_count, const vo
   if (page_buffer) {
     status = operation.SetDataVmo(num_bytes);
     if (status != ZX_OK) {
-      zxlogf(ERROR, "FTL: SetDataVmo Failed: %d", status);
+      FDF_LOG(ERROR, "FTL: SetDataVmo Failed: %d", status);
       return ftl::kNdmFatalError;
     }
     if (zx_status_t status = operation.GetVmo()->write(page_buffer, 0, data_size);
@@ -266,7 +264,7 @@ int NandDriverImpl::NandWrite(uint32_t start_page, uint32_t page_count, const vo
     status = operation.SetOobVmo(num_bytes);
     op->rw.offset_oob_vmo = data_pages;
     if (status != ZX_OK) {
-      zxlogf(ERROR, "FTL: SetOobVmo Failed: %d", status);
+      FDF_LOG(ERROR, "FTL: SetOobVmo Failed: %d", status);
       return ftl::kNdmFatalError;
     }
     if (zx_status_t status = operation.GetVmo()->write(oob_buffer, data_size, oob_size);
@@ -275,7 +273,7 @@ int NandDriverImpl::NandWrite(uint32_t start_page, uint32_t page_count, const vo
     }
   }
 
-  zxlogf(TRACE, "FTL: Write page, start %d, len %d", start_page, page_count);
+  FDF_LOG(TRACE, "FTL: Write page, start %d, len %d", start_page, page_count);
   status = operation.Execute(&parent_);
   if (status != ZX_OK) {
     return status == ZX_ERR_IO ? ftl::kNdmError : ftl::kNdmFatalError;
@@ -297,11 +295,11 @@ int NandDriverImpl::NandErase(uint32_t page_num) {
   op->erase.first_block = block_num;
   op->erase.num_blocks = 1;
 
-  zxlogf(TRACE, "FTL: Erase block num %d", block_num);
+  FDF_LOG(TRACE, "FTL: Erase block num %d", block_num);
 
   zx_status_t status = operation.Execute(&parent_);
   if (status != ZX_OK) {
-    zxlogf(ERROR, "FTL: NandErase failed: %d", status);
+    FDF_LOG(ERROR, "FTL: NandErase failed: %d", status);
     return status == ZX_ERR_IO ? ftl::kNdmError : ftl::kNdmFatalError;
   }
 
@@ -318,7 +316,7 @@ int NandDriverImpl::IsBadBlock(uint32_t page_num) {
   uint32_t block_num = page_num / info_.pages_per_block;
   for (uint32_t bad_block : bad_blocks_) {
     if (bad_block == block_num) {
-      zxlogf(ERROR, "FTL: IsBadBlock(%d) found", block_num);
+      FDF_LOG(ERROR, "FTL: IsBadBlock(%d) found", block_num);
       return ftl::kTrue;
     }
   }
@@ -353,8 +351,8 @@ void NandDriverImpl::TryEraseRange(uint32_t start_block, uint32_t end_block) {
   for (size_t i = 0; i < erase_operations.size(); ++i) {
     // If we run into a new bad block while erasing, its harmless, though we should log it.
     if (results[i].is_error()) {
-      zxlogf(DEBUG, "FTL: Bad block detect at block number %i.",
-             erase_operations[i]->GetOperation()->erase.first_block);
+      FDF_LOG(DEBUG, "FTL: Bad block detect at block number %i.",
+              erase_operations[i]->GetOperation()->erase.first_block);
     }
   }
 }
@@ -374,14 +372,14 @@ bool NandDriverImpl::HandleAlternateConfig(const ftl::Volume* ftl_volume,
   RemoveNdmVolume();
 
   options.flags = 0;  // Allow automatic fixing of errors.
-  zxlogf(INFO, "FTL: About to read volume of size %u blocks", num_blocks);
+  FDF_LOG(INFO, "FTL: About to read volume of size %u blocks", num_blocks);
   if (!IsNdmDataPresent(options)) {
-    zxlogf(ERROR, "FTL: Failed to read initial volume");
+    FDF_LOG(ERROR, "FTL: Failed to read initial volume");
     return true;
   }
 
   if (!SaveBadBlockData()) {
-    zxlogf(ERROR, "FTL: Failed to extract bad block table");
+    FDF_LOG(ERROR, "FTL: Failed to extract bad block table");
     return true;
   }
   RemoveNdmVolume();
@@ -389,19 +387,19 @@ bool NandDriverImpl::HandleAlternateConfig(const ftl::Volume* ftl_volume,
   TryEraseRange(num_blocks, info_.num_blocks);
   options.num_blocks = info_.num_blocks;
   if (!IsNdmDataPresent(options)) {
-    zxlogf(ERROR, "FTL: Failed to NDM extend volume");
+    FDF_LOG(ERROR, "FTL: Failed to NDM extend volume");
     return true;
   }
   if (!RestoreBadBlockData()) {
-    zxlogf(ERROR, "FTL: Failed to write bad block table");
+    FDF_LOG(ERROR, "FTL: Failed to write bad block table");
     return true;
   }
 
   const char* error = CreateNdmVolume(ftl_volume, options);
   if (error) {
-    zxlogf(ERROR, "FTL: Failed to extend volume: %s", error);
+    FDF_LOG(ERROR, "FTL: Failed to extend volume: %s", error);
   } else {
-    zxlogf(INFO, "FTL: Volume successfully extended");
+    FDF_LOG(INFO, "FTL: Volume successfully extended");
   }
 
   return true;
@@ -433,7 +431,7 @@ bool NandDriverImpl::GetBadBlocks() {
   bad_blocks_ = fbl::Array<uint32_t>(bad_block_list.release(), num_bad_blocks);
 
   for (uint32_t bad_block : bad_blocks_) {
-    zxlogf(DEBUG, "Bad block: %x", bad_block);
+    FDF_LOG(DEBUG, "Bad block: %x", bad_block);
   }
   return true;
 }

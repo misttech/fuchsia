@@ -139,9 +139,8 @@ std::vector<std::string> Metrics::GetPropertyNames<inspect::DoubleProperty>() {
   return property_names;
 }
 
-Metrics::Metrics()
-    : inspector_(),
-      root_(inspector_.GetRoot().CreateChild("ftl")),
+Metrics::Metrics(inspect::Node root)
+    : root_(std::move(root)),
       read_(MakePropertyForBlockOperation(root_, BlockOperationType::kRead)),
       write_(MakePropertyForBlockOperation(root_, BlockOperationType::kWrite)),
       flush_(MakePropertyForBlockOperation(root_, BlockOperationType::kFlush)),

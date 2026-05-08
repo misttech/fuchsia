@@ -4,9 +4,18 @@
 
 #include "ftl_test_observer.h"
 
+#include <dirent.h>
+#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.hardware.nand/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
+#include <lib/component/incoming/cpp/directory.h>
+#include <lib/component/incoming/cpp/service.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
+#include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/fdio/directory.h>
+#include <lib/fdio/fd.h>
 #include <lib/fdio/namespace.h>
+#include <sys/types.h>
 
 #include <fbl/unique_fd.h>
 #include <zxtest/zxtest.h>
@@ -62,27 +71,39 @@ zx_status_t FtlTestObserver::WaitForBlockDevice() {
     return ZX_ERR_BAD_STATE;
   }
 
-  zx_status_t status =
-      device_watcher::RecursiveWaitForFile(devfs_root().get(),
-                                           "sys/platform/ram-nand/nand-ctl/ram-nand-0/ftl/block")
-          .status_value();
-  if (status != ZX_OK) {
-    printf("Unable to open device, %d\n", status);
+  fidl::ClientEnd<fuchsia_io::Directory> exposed_dir = devmgr_.RealmExposedDir();
+  fidl::UnownedClientEnd<fuchsia_io::Directory> unowned_exposed_dir(exposed_dir);
+
+  zx::result dir =
+      component::OpenDirectoryAt(unowned_exposed_dir, fuchsia_hardware_block_volume::Service::Name);
+  if (dir.is_error()) {
+    return dir.status_value();
+  }
+
+  component::SyncDirectoryWatcher watcher(unowned_exposed_dir,
+                                          fuchsia_hardware_block_volume::Service::Name);
+  auto watch_result = watcher.GetNextEntry(false, zx::deadline_after(zx::sec(30)));
+  if (watch_result.is_error()) {
+    return watch_result.status_value();
+  }
+
+  std::string path =
+      std::string(fuchsia_hardware_block_volume::Service::Name) + "/" + watch_result.value();
+
+  zx::result block_dir = component::OpenDirectoryAt(unowned_exposed_dir, path);
+  if (block_dir.is_error()) {
+    return block_dir.status_value();
+  }
+
+  fdio_ns_t* ns;
+  if (zx_status_t status = fdio_ns_get_installed(&ns); status != ZX_OK) {
     return status;
   }
 
-  fdio_ns_t* name_space;
-  status = fdio_ns_get_installed(&name_space);
-  if (status != ZX_OK) {
-    printf("Unable to get name_space, %d\n", status);
+  if (zx_status_t status = fdio_ns_bind(ns, "/block_svc", block_dir->TakeChannel().release());
+      status != ZX_OK) {
     return status;
   }
 
-  status = fdio_ns_bind_fd(name_space, "/fake/dev", devfs_root().get());
-  if (status != ZX_OK) {
-    printf("Bind failed, %d\n", status);
-    return status;
-  }
-
-  return status;
+  return ZX_OK;
 }

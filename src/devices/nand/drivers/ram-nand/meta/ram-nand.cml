@@ -16,10 +16,15 @@
     },
     capabilities: [
         { service: "fuchsia.boot.metadata.PartitionMap" },
+        { service: "fuchsia.driver.compat.Service" },
     ],
     expose: [
         {
             service: "fuchsia.boot.metadata.PartitionMap",
+            from: "self",
+        },
+        {
+            service: "fuchsia.driver.compat.Service",
             from: "self",
         },
     ],

@@ -15,6 +15,8 @@
 #include <lib/async/default.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/cksum.h>
+#include <lib/component/incoming/cpp/directory.h>
+#include <lib/component/incoming/cpp/directory_watcher.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
@@ -388,17 +390,20 @@ class PaverServiceSkipBlockTest : public PaverServiceTest {
     return args;
   }
 
-  virtual fuchsia_hardware_nand::wire::RamNandInfo NandInfo() { return BaseNandInfo(); }
-
   void WaitForDevices() {
-    ASSERT_OK(RecursiveWaitForFile(device_->devfs_root().get(),
-                                   "sys/platform/ram-nand/nand-ctl/ram-nand-0/sysconfig/skip-block")
-                  .status_value());
-    zx::result fvm_result = RecursiveWaitForFile(
-        device_->devfs_root().get(), "sys/platform/ram-nand/nand-ctl/ram-nand-0/fvm/ftl/block");
-    ASSERT_OK(fvm_result.status_value());
-    fvm_client_ = fidl::ClientEnd<fuchsia_storage_block::Block>(std::move(fvm_result.value()));
+    auto svc_dir = devmgr_.RealmExposedDir();
+    component::SyncDirectoryWatcher skipblock_watcher(svc_dir.borrow(),
+                                                      "fuchsia.hardware.skipblock.Service");
+    zx::result skipblock = skipblock_watcher.GetNextEntry(false, zx::deadline_after(zx::sec(30)));
+    ASSERT_OK(skipblock.status_value());
+
+    component::SyncDirectoryWatcher volume_watcher(svc_dir.borrow(),
+                                                   "fuchsia.hardware.block.volume.Service");
+    zx::result volume = volume_watcher.GetNextEntry(false, zx::deadline_after(zx::sec(30)));
+    ASSERT_OK(volume.status_value());
   }
+
+  virtual fuchsia_hardware_nand::wire::RamNandInfo NandInfo() { return BaseNandInfo(); }
 
   void FindBootManager() {
     auto [local, remote] = fidl::Endpoints<fuchsia_paver::BootManager>::Create();
@@ -530,7 +535,6 @@ class PaverServiceSkipBlockTest : public PaverServiceTest {
   fidl::WireSyncClient<fuchsia_paver::Sysconfig> sysconfig_;
 
   std::unique_ptr<SkipBlockDevice> device_;
-  fidl::ClientEnd<fuchsia_storage_block::Block> fvm_client_;
 };
 
 constexpr AbrData kAbrDataAUnbootableBSuccessful = {

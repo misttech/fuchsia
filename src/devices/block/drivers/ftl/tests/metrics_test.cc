@@ -11,8 +11,9 @@
 namespace ftl {
 namespace {
 TEST(MetricsTest, GetInspectVmoReflectsExistingMetrics) {
-  Metrics metrics;
-  auto base_hierarchy = inspect::ReadFromVmo(metrics.DuplicateInspectVmo()).take_value();
+  inspect::Inspector inspector;
+  Metrics metrics(inspector.GetRoot().CreateChild("ftl"));
+  auto base_hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo()).take_value();
   auto* hierarchy = base_hierarchy.GetByPath({"ftl"});
   for (const auto& property_name : ftl::Metrics::GetPropertyNames<inspect::UintProperty>()) {
     auto* property = hierarchy->node().get_property<inspect::UintPropertyValue>(property_name);
@@ -26,8 +27,9 @@ TEST(MetricsTest, GetInspectVmoReflectsExistingMetrics) {
 }
 
 TEST(MetricsTest, MetricsInitializedToZero) {
-  Metrics metrics;
-  auto base_hierarchy = inspect::ReadFromVmo(metrics.DuplicateInspectVmo()).take_value();
+  inspect::Inspector inspector;
+  Metrics metrics(inspector.GetRoot().CreateChild("ftl"));
+  auto base_hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo()).take_value();
   auto* hierarchy = base_hierarchy.GetByPath({"ftl"});
   for (const auto& property_name : ftl::Metrics::GetPropertyNames<inspect::UintProperty>()) {
     auto* property = hierarchy->node().get_property<inspect::UintPropertyValue>(property_name);
@@ -49,7 +51,8 @@ TEST(MetricsTest, MetricsInitializedToZero) {
 }
 
 TEST(MetricsTest, MetricsMappedCorrectly) {
-  Metrics metrics;
+  inspect::Inspector inspector;
+  Metrics metrics(inspector.GetRoot().CreateChild("ftl"));
 
   std::map<std::string, uint64_t> expected_uint_values;
   std::map<std::string, double> expected_double_values;
@@ -165,7 +168,7 @@ TEST(MetricsTest, MetricsMappedCorrectly) {
   metrics.flush().block_erase.rate.Add(35);
   expected_double_values["block.flush.issued_block_erase.average_rate"] = 35;
 
-  auto base_hierarchy = inspect::ReadFromVmo(metrics.DuplicateInspectVmo()).take_value();
+  auto base_hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo()).take_value();
   auto* hierarchy = base_hierarchy.GetByPath({"ftl"});
   for (const auto& property_name : ftl::Metrics::GetPropertyNames<inspect::UintProperty>()) {
     auto* property = hierarchy->node().get_property<inspect::UintPropertyValue>(property_name);

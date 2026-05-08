@@ -48,8 +48,11 @@ test("ftl-test-bin") {
   include_dirs = [ "//src/devices/block/drivers/ftl" ]
   deps = [
     ":shared",
+    "//sdk/lib/driver/testing/cpp",
+    "//sdk/lib/driver/testing/cpp:scoped_global_logger",
     "//src/devices/block/drivers/ftl:common",
     "//src/devices/testing/mock-ddk",
+    "//src/storage/lib/block_client/cpp",
     "//zircon/system/ulib/zxtest",
   ]
 }
@@ -79,8 +82,10 @@ test("ftl-integration") {
   ]
   include_dirs = [ "//src/devices/block/drivers/ftl" ]
   deps = [
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/fidl/fuchsia.hardware.nand:fuchsia.hardware.nand_cpp",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
     "//src/devices/testing/driver-integration-test-shim",
     "//src/storage/lib/ramdevice_client/cpp",

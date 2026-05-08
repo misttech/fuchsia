@@ -87,7 +87,7 @@ class Metrics {
   template <typename InspectMetricType>
   static std::vector<std::string> GetPropertyNames();
 
-  Metrics();
+  explicit Metrics(inspect::Node root);
 
   inspect::UintProperty& max_wear() { return max_wear_; }
 
@@ -102,8 +102,6 @@ class Metrics {
   BlockOperationProperties& trim() { return trim_; }
   BlockOperationProperties& flush() { return flush_; }
 
-  zx::vmo DuplicateInspectVmo() const { return inspector_.DuplicateVmo(); }
-
   inspect::UintProperty& map_block_end_page_failure_reason(int reason) {
     ZX_ASSERT(reason < kReasonCount);
     return map_block_end_page_failure_reasons_[reason];
@@ -111,8 +109,6 @@ class Metrics {
 
  private:
   auto& GetRoot() { return root_; }
-
-  inspect::Inspector inspector_;
 
   // Inspect root.
   inspect::Node root_;

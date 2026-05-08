@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef SRC_DEVICES_BLOCK_DRIVERS_FTL_TESTS_FTL_TEST_OBSERVER_H_
+#define SRC_DEVICES_BLOCK_DRIVERS_FTL_TESTS_FTL_TEST_OBSERVER_H_
+
 #include <lib/driver-integration-test/fixture.h>
 
 #include <fbl/unique_fd.h>
@@ -9,7 +12,7 @@
 #include <zxtest/zxtest.h>
 
 // The path for the block device under test.
-constexpr char kTestDevice[] = "/fake/dev/sys/platform/ram-nand/nand-ctl/ram-nand-0/ftl/block";
+constexpr char kTestDevice[] = "/block_svc/volume";
 
 // Performs process-wide setup for the integration test.
 class FtlTestObserver {
@@ -33,3 +36,5 @@ class FtlTestObserver {
   std::optional<ramdevice_client::RamNand> ram_nand_;
   bool ok_ = false;
 };
+
+#endif  // SRC_DEVICES_BLOCK_DRIVERS_FTL_TESTS_FTL_TEST_OBSERVER_H_

@@ -7,6 +7,7 @@
 #include <fuchsia/hardware/badblock/cpp/banjo.h>
 #include <fuchsia/hardware/nand/cpp/banjo.h>
 #include <lib/ddk/driver.h>
+#include <lib/driver/testing/cpp/scoped_global_logger.h>
 
 #include <memory>
 #include <vector>
@@ -127,6 +128,7 @@ class NandDriverTest : public zxtest::Test {
   FakeBadBlock* bad_block() { return &bad_block_proto_; }
 
  private:
+  fdf_testing::ScopedGlobalLogger logger_;
   FakeNand nand_proto_;
   FakeBadBlock bad_block_proto_;
 };
@@ -141,6 +143,7 @@ TEST_F(NandDriverTest, Init) {
 }
 
 TEST(NandDriverTest, InitWithBigNand) {
+  fdf_testing::ScopedGlobalLogger logger_;
   const uint32_t kLargeOobSize = 45;
   FakeNand nand_proto(kLargeOobSize);
   FakeBadBlock bad_block_proto;

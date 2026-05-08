@@ -8,26 +8,21 @@
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/badblock/c/banjo.h>
 #include <fuchsia/hardware/badblock/cpp/banjo.h>
-#include <fuchsia/hardware/block/driver/c/banjo.h>
-#include <fuchsia/hardware/block/driver/cpp/banjo.h>
-#include <fuchsia/hardware/block/partition/cpp/banjo.h>
 #include <fuchsia/hardware/nand/c/banjo.h>
+#include <fuchsia/hardware/nand/cpp/banjo.h>
+#include <lib/async/cpp/task.h>
+#include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/component/cpp/driver_base.h>
 #include <lib/inspect/cpp/vmo/types.h>
-#include <lib/sync/completion.h>
 #include <lib/zbi-format/partition.h>
-#include <lib/zircon-internal/thread_annotations.h>
-#include <threads.h>
-#include <zircon/listnode.h>
-#include <zircon/types.h>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 
-#include <ddktl/device.h>
-#include <fbl/macros.h>
-
-#include "src/devices/block/drivers//ftl/metrics.h"
+#include "src/devices/block/drivers/ftl/metrics.h"
 #include "src/devices/block/drivers/ftl/nand_driver.h"
+#include "src/storage/lib/block_server/block_server.h"
 #include "src/storage/lib/ftl/ftln/volume.h"
 
 namespace ftl {
@@ -39,102 +34,66 @@ struct BlockParams {
   uint32_t num_pages;
 };
 
-// Ftl version of block_op_t.
-// TODO(rvargas): Explore using c++ lists.
-struct FtlOp {
-  block_op_t op;
-  list_node_t node;
-  block_impl_queue_callback completion_cb;
-  void* cookie;
-};
-
-class BlockDevice;
-using DeviceType =
-    ddk::Device<BlockDevice, ddk::Unbindable, ddk::Suspendable, ddk::GetProtocolable>;
-
-// Exposes the FTL library as a Fuchsia BlockDevice protocol.
-class BlockDevice : public DeviceType,
-                    public ddk::BlockImplProtocol<BlockDevice, ddk::base_protocol>,
-                    public ddk::BlockPartitionProtocol<BlockDevice>,
+class BlockDevice : public fdf::DriverBase,
+                    public block_server::DriverInterface,
                     public ftl::FtlInstance {
  public:
-  explicit BlockDevice(zx_device_t* parent = nullptr) : DeviceType(parent) {}
-  ~BlockDevice() override;
+  BlockDevice(fdf::DriverStartArgs start_args,
+              fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  ~BlockDevice() override = default;
 
-  zx_status_t Bind();
-  void DdkRelease() { delete this; }
-  void DdkUnbind(ddk::UnbindTxn txn);
+  void Start(fdf::StartCompleter completer) override;
+  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop() override;
 
-  // Performs the object initialization.
-  zx_status_t Init();
-
-  // Device protocol implementation.
-  zx_status_t Suspend();
-  void DdkSuspend(ddk::SuspendTxn txn);
-  zx_status_t DdkGetProtocol(uint32_t proto_id, void* out_protocol);
-
-  // Block protocol implementation.
-  void BlockImplQuery(block_info_t* info_out, size_t* block_op_size_out);
-  void BlockImplQueue(block_op_t* operation, block_impl_queue_callback completion_cb, void* cookie);
-
-  // Partition protocol implementation.
-  zx_status_t BlockPartitionGetGuid(guidtype_t guid_type, guid_t* out_guid);
-  zx_status_t BlockPartitionGetName(char* out_name, size_t capacity);
-  zx_status_t BlockPartitionGetMetadata(partition_metadata_t* out_metadata);
+  // block_server::DriverInterface implementation.
+  void OnRequests(std::span<block_server::Request> requests) override;
+  std::string_view SessionSchedulerRole() const override {
+    return "fuchsia.devices.block.drivers.ftl.device";
+  }
 
   // FtlInstance interface.
-  bool OnVolumeAdded(uint32_t page_size, uint32_t num_pages) final;
+  bool OnVolumeAdded(uint32_t page_size, uint32_t num_pages) override;
 
   // Issues a command to format the FTL (aka, delete all data).
   zx_status_t FormatInternal();
 
   // Returns a read_only handle to the underlying Inspect VMO.
-  zx::vmo DuplicateInspectVmo() const { return metrics_.DuplicateInspectVmo(); }
+  zx::vmo DuplicateInspectVmo() { return inspector().inspector().DuplicateVmo(); }
 
   OperationCounters& nand_counters() { return nand_counters_; }
 
-  void SetVolumeForTest(std::unique_ptr<ftl::Volume> volume) { volume_ = std::move(volume); }
+  void SetVolumeForTest(std::unique_ptr<ftl::Volume> volume) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    volume_ = std::move(volume);
+  }
 
   void SetNandParentForTest(const nand_protocol_t& nand) { parent_ = nand; }
 
-  DISALLOW_COPY_ASSIGN_AND_MOVE(BlockDevice);
-
  private:
   bool InitFtl();
-  void Kill();
-  bool AddToList(FtlOp* operation);
-  bool RemoveFromList(FtlOp** operation);
-  int WorkerThread();
-  static int WorkerThreadStub(void* arg);
 
-  // Implementation of the actual commands.
-  zx_status_t ReadWriteData(block_op_t* operation);
-  zx_status_t TrimData(block_op_t* operation);
-  zx_status_t Flush();
+  std::mutex mutex_;
 
   BlockParams params_ = {};
-
-  std::mutex lock_;
-  list_node_t txn_list_ TA_GUARDED(lock_) = LIST_INITIAL_VALUE(txn_list_);
-  bool dead_ TA_GUARDED(lock_) = false;
-
-  bool thread_created_ = false;
-  bool pending_flush_ = false;
-
-  sync_completion_t wake_signal_;
-  thrd_t worker_;
 
   nand_protocol_t parent_ = {};
   bad_block_protocol_t bad_block_ = {};
 
-  std::unique_ptr<ftl::Volume> volume_;
+  std::unique_ptr<ftl::Volume> volume_ __TA_GUARDED(mutex_);
 
   uint8_t guid_[ZBI_PARTITION_GUID_LEN] = {};
 
   Metrics metrics_;
 
   // Keeps track of the nand operations being issued for each incoming block operation.
-  OperationCounters nand_counters_;
+  OperationCounters nand_counters_ __TA_GUARDED(mutex_);
+
+  std::optional<block_server::BlockServer> block_server_ __TA_GUARDED(mutex_);
+  bool shutdown_ __TA_GUARDED(mutex_) = false;
+  void DoBackgroundFlush();
+  void ScheduleFlush();
+  bool pending_flush_ __TA_GUARDED(mutex_) = false;
 };
 
 }  // namespace ftl

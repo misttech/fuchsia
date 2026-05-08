@@ -116,6 +116,7 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
            "ram-nand.cm",
            "test.cm",
            "sysdev.cm",
+           "skip-block.cm",
        }}}};
 
   // Create and build the realm.
@@ -263,8 +264,9 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
   realm_builder.AddRoute(Route{
       .capabilities = {Service{"fuchsia.hardware.block.volume.Service"}},
       .source = {ChildRef{"driver_test_realm"}},
-      .targets = {ChildRef{"fshost"}},
+      .targets = {ChildRef{"fshost"}, ParentRef()},
   });
+
   realm_builder.AddLocalChild("fake-sysinfo",
                               [board_name = std::string(args->board_name)]() mutable {
                                 return std::make_unique<FakeSysinfo>(board_name);

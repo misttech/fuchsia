@@ -4,23 +4,24 @@
 
 #include "block_device.h"
 
-#include <fuchsia/hardware/block/driver/c/banjo.h>
-#include <fuchsia/hardware/nand/cpp/banjo.h>
-#include <lib/fit/function.h>
-#include <lib/fzl/owned-vmo-mapper.h>
+#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
+#include <lib/async/cpp/task.h>
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/inspect/cpp/reader.h>
 #include <lib/inspect/cpp/vmo/types.h>
 
-#include <atomic>
-#include <memory>
-#include <utility>
+#include <cstddef>
+#include <thread>
+#include <vector>
 
-#include <fbl/array.h>
 #include <zxtest/zxtest.h>
 
-#include "metrics.h"
-#include "src/devices/testing/mock-ddk/mock-device.h"
-#include "src/storage/lib/ftl/ftln/volume.h"
+#include "src/storage/lib/block_client/cpp/reader_writer.h"
+#include "src/storage/lib/block_client/cpp/remote_block_device.h"
+
+namespace ftl {
 namespace {
 
 constexpr uint32_t kPageSize = 1024;
@@ -43,16 +44,22 @@ bool CheckPattern(const void* buffer, size_t size, char pattern = kMagic) {
 
 class FakeNand : public ddk::NandProtocol<FakeNand> {
  public:
-  FakeNand() : proto_({&nand_protocol_ops_, this}) {}
+  static const nand_protocol_ops_t kOps;
+
+  FakeNand() : proto_({&kOps, this}) {}
 
   nand_protocol_t* proto() { return &proto_; }
 
   // Nand protocol:
   void NandQuery(nand_info_t* out_info, size_t* out_nand_op_size) {
     *out_info = {};
+    out_info->page_size = 1024;
     out_info->oob_size = 8;
+    out_info->pages_per_block = 4;
+    out_info->num_blocks = 10;
+    out_info->ecc_bits = 12;
     memcpy(out_info->partition_guid, kGuid, sizeof(kGuid));
-    *out_nand_op_size = 0;
+    *out_nand_op_size = sizeof(nand_operation_t);
   }
 
   void NandQueue(nand_operation_t* operation, nand_queue_callback callback, void* cookie) {}
@@ -68,7 +75,9 @@ class FakeNand : public ddk::NandProtocol<FakeNand> {
 
 class FakeVolume final : public ftl::Volume {
  public:
-  explicit FakeVolume(ftl::BlockDevice* device) : device_(device) {}
+  explicit FakeVolume(ftl::BlockDevice* device) : device_(device) {
+    data_.resize(static_cast<size_t>(kNumPages) * kPageSize, kMagic);
+  }
   ~FakeVolume() final {}
 
   bool written() const { return written_; }
@@ -89,7 +98,8 @@ class FakeVolume final : public ftl::Volume {
     OnOperation();
     first_page_ = first_page;
     num_pages_ = num_pages;
-    memset(buffer, kMagic, num_pages * kPageSize);
+    memcpy(buffer, data_.data() + (static_cast<size_t>(first_page) * kPageSize),
+           num_pages * kPageSize);
     return ZX_OK;
   }
   zx_status_t Write(uint32_t first_page, int num_pages, const void* buffer) final {
@@ -97,9 +107,8 @@ class FakeVolume final : public ftl::Volume {
     first_page_ = first_page;
     num_pages_ = num_pages;
     written_ = true;
-    if (!CheckPattern(buffer, kPageSize * num_pages)) {
-      return ZX_ERR_IO_DATA_INTEGRITY;
-    }
+    memcpy(data_.data() + (static_cast<size_t>(first_page) * kPageSize), buffer,
+           num_pages * kPageSize);
     return ZX_OK;
   }
   zx_status_t Format() final {
@@ -122,6 +131,7 @@ class FakeVolume final : public ftl::Volume {
     trimmed_ = true;
     first_page_ = first_page;
     num_pages_ = num_pages;
+    memset(data_.data() + (static_cast<size_t>(first_page) * kPageSize), 1, num_pages * kPageSize);
     return ZX_OK;
   }
 
@@ -174,6 +184,8 @@ class FakeVolume final : public ftl::Volume {
   }
 
   ftl::BlockDevice* device_;
+  std::vector<uint8_t> data_;
+
   uint32_t first_page_ = 0;
   int num_pages_ = 0;
   uint32_t wear_count_ = kWearCount;
@@ -188,431 +200,282 @@ class FakeVolume final : public ftl::Volume {
   bool trimmed_ = false;
 };
 
-TEST(BlockDeviceTest, TrivialLifetime) {
-  FakeNand nand;
-  ftl::BlockDevice device;
-  device.SetVolumeForTest(std::make_unique<FakeVolume>(&device));
-  device.SetNandParentForTest(*nand.proto());
-  ASSERT_OK(device.Init());
-}
-
-TEST(BlockDeviceTest, DdkLifetime) {
-  std::shared_ptr<MockDevice> fake_parent = MockDevice::FakeRootParent();
-  ftl::BlockDevice* device(new ftl::BlockDevice(fake_parent.get()));
-  device->SetVolumeForTest(std::make_unique<FakeVolume>(device));
-
-  FakeNand nand;
-  fake_parent->AddProtocol(ZX_PROTOCOL_NAND, nand.proto()->ops, nand.proto()->ctx);
-  ASSERT_OK(device->Bind());
-  device->DdkAsyncRemove();
-  ASSERT_OK(mock_ddk::ReleaseFlaggedDevices(fake_parent.get()));
-}
-
-TEST(BlockDeviceTest, GetName) {
-  FakeNand nand;
-  ftl::BlockDevice device;
-  device.SetVolumeForTest(std::make_unique<FakeVolume>(&device));
-  device.SetNandParentForTest(*nand.proto());
-  ASSERT_OK(device.Init());
-
-  char name[20];
-  ASSERT_OK(device.BlockPartitionGetName(name, sizeof(name)));
-
-  EXPECT_GT(strlen(name), 0);
-}
-
-TEST(BlockDeviceTest, GetType) {
-  FakeNand nand;
-  ftl::BlockDevice device;
-  device.SetVolumeForTest(std::make_unique<FakeVolume>(&device));
-  device.SetNandParentForTest(*nand.proto());
-  ASSERT_OK(device.Init());
-
-  guid_t guid;
-  ASSERT_OK(device.BlockPartitionGetGuid(GUIDTYPE_TYPE, &guid));
-
-  EXPECT_EQ(0, memcmp(&guid, kGuid, sizeof(guid)));
-}
-
-TEST(BlockDeviceTest, Query) {
-  FakeNand nand;
-  ftl::BlockDevice device;
-  device.SetVolumeForTest(std::make_unique<FakeVolume>(&device));
-  device.SetNandParentForTest(*nand.proto());
-  ASSERT_OK(device.Init());
-
-  block_info_t info;
-  size_t operation_size;
-  device.BlockImplQuery(&info, &operation_size);
-
-  ASSERT_EQ(info.block_count, kNumPages);
-  ASSERT_EQ(info.block_size, kPageSize);
-  ASSERT_EQ(info.max_transfer_size, fuchsia_storage_block::wire::kMaxTransferUnbounded);
-  ASSERT_EQ(info.flags, DEVICE_FLAG_TRIM_SUPPORT);
-
-  ASSERT_GT(operation_size, sizeof(block_op_t));
-}
-
-class BlockDeviceTest;
-
-// Wrapper for a block_op_t.
-class Operation {
+class TestFtlBlockDevice : public ftl::BlockDevice {
  public:
-  explicit Operation(size_t op_size, BlockDeviceTest* test) : op_size_(op_size), test_(test) {}
-  ~Operation() {}
-
-  // Accessors for the memory represented by the operation's vmo.
-  size_t buffer_size() const { return buffer_size_; }
-  void* buffer() const { return mapper_.start(); }
-
-  // Creates a vmo and sets the handle on the block_op_t.
-  bool SetVmo();
-
-  block_op_t* GetOperation();
-
-  void OnCompletion(zx_status_t status) {
-    status_ = status;
-    completed_ = true;
+  TestFtlBlockDevice(fdf::DriverStartArgs start_args,
+                     fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+      : ftl::BlockDevice(std::move(start_args), std::move(driver_dispatcher)) {
+    auto volume = std::make_unique<FakeVolume>(static_cast<ftl::BlockDevice*>(this));
+    volume_ptr_ = volume.get();
+    SetVolumeForTest(std::move(volume));
   }
 
-  bool completed() const { return completed_; }
-  zx_status_t status() const { return status_; }
-  BlockDeviceTest* test() const { return test_; }
+  FakeVolume* volume() { return volume_ptr_; }
 
-  DISALLOW_COPY_ASSIGN_AND_MOVE(Operation);
+  static DriverRegistration GetDriverRegistration() {
+    return FUCHSIA_DRIVER_REGISTRATION_V1(
+        fdf_internal::DriverServer<TestFtlBlockDevice>::initialize,
+        fdf_internal::DriverServer<TestFtlBlockDevice>::destroy);
+  }
 
  private:
-  zx_handle_t GetVmo();
-
-  fzl::OwnedVmoMapper mapper_;
-  size_t op_size_;
-  BlockDeviceTest* test_;
-  zx_status_t status_ = ZX_ERR_ACCESS_DENIED;
-  bool completed_ = false;
-  static constexpr size_t buffer_size_ = kPageSize * kNumPages;
-  std::unique_ptr<char[]> raw_buffer_;
+  FakeVolume* volume_ptr_;
 };
 
-bool Operation::SetVmo() {
-  block_op_t* operation = GetOperation();
-  if (!operation) {
-    return false;
-  }
-  operation->rw.vmo = GetVmo();
-  return operation->rw.vmo != ZX_HANDLE_INVALID;
-}
+class TestEnvironment : public fdf_testing::Environment {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    compat::DeviceServer::BanjoConfig banjo_config;
+    banjo_config.callbacks[ZX_PROTOCOL_NAND] = [this]() {
+      return compat::DeviceServer::GenericProtocol{
+          .ops = fake_nand_->proto()->ops,
+          .ctx = fake_nand_->proto()->ctx,
+      };
+    };
 
-block_op_t* Operation::GetOperation() {
-  if (!raw_buffer_) {
-    raw_buffer_.reset(new char[op_size_]);
-    memset(raw_buffer_.get(), 0, op_size_);
-  }
-  return reinterpret_cast<block_op_t*>(raw_buffer_.get());
-}
-
-zx_handle_t Operation::GetVmo() {
-  if (mapper_.start()) {
-    return mapper_.vmo().get();
+    compat_server_.Initialize("default", std::nullopt, std::move(banjo_config));
+    zx_status_t status =
+        compat_server_.Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(), &to_driver_vfs);
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+    return zx::ok();
   }
 
-  if (mapper_.CreateAndMap(buffer_size_, "") != ZX_OK) {
-    return ZX_HANDLE_INVALID;
-  }
+ private:
+  std::unique_ptr<FakeNand> fake_nand_ = std::make_unique<FakeNand>();
+  compat::DeviceServer compat_server_;
+};
 
-  return mapper_.vmo().get();
-}
+class TestConfig {
+ public:
+  using DriverType = TestFtlBlockDevice;
+  using EnvironmentType = TestEnvironment;
+};
 
-// Provides control primitives for tests that issue IO requests to the device.
+const nand_protocol_ops_t FakeNand::kOps = {
+    .query =
+        [](void* ctx, nand_info_t* out_info, size_t* out_nand_op_size) {
+          static_cast<FakeNand*>(ctx)->NandQuery(out_info, out_nand_op_size);
+        },
+    .queue =
+        [](void* ctx, nand_operation_t* op, nand_queue_callback cb, void* cookie) {
+          if (op->command == NAND_OP_READ) {
+            uint8_t buf[2048];
+            memset(buf, 0xff, sizeof(buf));
+            ASSERT_OK(zx_vmo_write(op->rw.data_vmo, buf, op->rw.offset_data_vmo * 1024,
+                                   op->rw.length * 1024));
+            memset(buf, 0xff, 16);
+            ASSERT_OK(
+                zx_vmo_write(op->rw.oob_vmo, buf, op->rw.offset_oob_vmo * 8, op->rw.length * 8));
+          }
+          async::PostTask(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                          [cb, cookie, op]() { cb(cookie, ZX_OK, op); });
+        },
+    .get_factory_bad_block_list = [](void* ctx, uint32_t* out, size_t count,
+                                     size_t* actual) { return ZX_ERR_BAD_STATE; },
+};
+
 class BlockDeviceTest : public zxtest::Test {
  public:
-  BlockDeviceTest();
-  ~BlockDeviceTest() {}
-
-  ftl::BlockDevice* GetDevice() { return device_.get(); }
-  size_t op_size() const { return op_size_; }
-  FakeVolume* GetVolume() { return volume_; }
-
-  static void CompletionCb(void* cookie, zx_status_t status, block_op_t* op) {
-    Operation* operation = reinterpret_cast<Operation*>(cookie);
-
-    operation->OnCompletion(status);
-    operation->test()->num_completed_++;
-    sync_completion_signal(&operation->test()->event_);
+  void SetUp() override {
+    ASSERT_OK(driver_test_.StartDriver());
+    fidl::ClientEnd<fuchsia_io::Directory> svc_dir = driver_test_.ConnectToDriverSvcDir();
+    zx::result service = component::OpenServiceAt<fuchsia_hardware_block_volume::Service>(svc_dir);
+    ASSERT_OK(service);
+    zx::result client_end = service->connect_volume();
+    ASSERT_OK(client_end);
+    client_ = block_client::RemoteBlockDevice::Create(std::move(client_end.value())).value();
   }
 
-  bool Wait() {
-    zx_status_t status = sync_completion_wait(&event_, ZX_SEC(5));
-    sync_completion_reset(&event_);
-    return status == ZX_OK;
-  }
-
-  bool WaitFor(int desired) {
-    while (num_completed_ < desired) {
-      if (!Wait()) {
-        return false;
-      }
-    }
-    return true;
-  }
+  void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
 
   void Read() {
-    Operation operation(op_size(), this);
-    ASSERT_TRUE(operation.SetVmo());
-    auto* op = operation.GetOperation();
-    op->rw.command = {.opcode = BLOCK_OPCODE_READ, .flags = 0};
-    op->rw.length = 1;
-    op->rw.offset_dev = 0;
-    device_->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
-
-    ASSERT_TRUE(Wait());
-    ASSERT_OK(operation.status());
+    char buffer[kPageSize];
+    memset(buffer, 'f', sizeof(buffer));
+    fidl::ClientEnd<fuchsia_io::Directory> svc_dir = driver_test_.ConnectToDriverSvcDir();
+    zx::result service = component::OpenServiceAt<fuchsia_hardware_block_volume::Service>(svc_dir);
+    ASSERT_OK(service);
+    zx::result read_client = service->connect_volume();
+    ASSERT_OK(read_client);
+    ASSERT_OK(
+        block_client::SingleReadBytes(read_client.value(), buffer, sizeof(buffer), 3 * kPageSize));
   }
 
   void Write() {
-    Operation operation(op_size(), this);
-    ASSERT_TRUE(operation.SetVmo());
-    auto* op = operation.GetOperation();
-    op->rw.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
-    op->rw.length = 1;
-    op->rw.offset_dev = 0;
-    memset(operation.buffer(), kMagic, kPageSize);
-    device_->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
-
-    ASSERT_TRUE(Wait());
-    ASSERT_OK(operation.status());
+    char buffer[kPageSize];
+    memset(buffer, 'f', sizeof(buffer));
+    fidl::ClientEnd<fuchsia_io::Directory> svc_dir = driver_test_.ConnectToDriverSvcDir();
+    zx::result service = component::OpenServiceAt<fuchsia_hardware_block_volume::Service>(svc_dir);
+    ASSERT_OK(service);
+    zx::result write_client = service->connect_volume();
+    ASSERT_OK(write_client);
+    ASSERT_OK(block_client::SingleWriteBytes(write_client.value(), buffer, sizeof(buffer),
+                                             5 * kPageSize));
   }
 
-  void Flush() {
-    Operation operation(op_size(), this);
-    ASSERT_TRUE(operation.SetVmo());
-    auto* op = operation.GetOperation();
-    op->rw.command = {.opcode = BLOCK_OPCODE_FLUSH, .flags = 0};
-    device_->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
-
-    ASSERT_TRUE(Wait());
-    ASSERT_OK(operation.status());
+  void Flush() const {
+    BlockFifoRequest requests[1] = {};
+    requests[0].command = {.opcode = BLOCK_OPCODE_FLUSH, .flags = 0};
+    ASSERT_OK(client_->FifoTransaction(requests, 1));
   }
 
-  void Trim() {
-    Operation operation(op_size(), this);
-    ASSERT_TRUE(operation.SetVmo());
-    auto* op = operation.GetOperation();
-    op->trim.command = {.opcode = BLOCK_OPCODE_TRIM, .flags = 0};
-    op->trim.length = 1;
-    op->trim.offset_dev = kNumPages - 1;
-    device_->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
-
-    ASSERT_TRUE(Wait());
-    ASSERT_OK(operation.status());
+  void Trim() const {
+    BlockFifoRequest requests[1] = {};
+    requests[0].command = {.opcode = BLOCK_OPCODE_TRIM, .flags = 0};
+    requests[0].length = 2;
+    requests[0].dev_offset = 3;
+    ASSERT_OK(client_->FifoTransaction(requests, 1));
   }
 
-  DISALLOW_COPY_ASSIGN_AND_MOVE(BlockDeviceTest);
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
 
- private:
-  sync_completion_t event_;
-  std::atomic<int> num_completed_ = 0;
-  std::unique_ptr<ftl::BlockDevice> device_;
-  size_t op_size_;
-  FakeNand nand_;
-  FakeVolume* volume_ = nullptr;  // Object owned by device_.
+  std::unique_ptr<block_client::RemoteBlockDevice> client_;
 };
 
-BlockDeviceTest::BlockDeviceTest() : device_(new ftl::BlockDevice()) {
-  volume_ = new FakeVolume(device_.get());
-  device_->SetVolumeForTest(std::unique_ptr<FakeVolume>(volume_));
-  device_->SetNandParentForTest(*nand_.proto());
+TEST_F(BlockDeviceTest, GetInfo) {
+  fuchsia_storage_block::wire::BlockInfo info;
+  ASSERT_OK(client_->BlockGetInfo(&info));
 
-  block_info_t info;
-  device_->BlockImplQuery(&info, &op_size_);
-
-  if (device_->Init() != ZX_OK) {
-    device_.reset();
-  }
-}
-
-// Tests trivial attempts to queue one operation.
-TEST_F(BlockDeviceTest, QueueOne) {
-  ftl::BlockDevice* device = GetDevice();
-  ASSERT_TRUE(device);
-
-  Operation operation(op_size(), this);
-
-  block_op_t* op = operation.GetOperation();
-  ASSERT_TRUE(op);
-
-  op->rw.command = {.opcode = BLOCK_OPCODE_READ, .flags = 0};
-  device->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
-
-  ASSERT_TRUE(Wait());
-  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, operation.status());
-
-  op->rw.length = 1;
-  device->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
-  ASSERT_EQ(ZX_ERR_INVALID_ARGS, operation.status());
-
-  op->rw.offset_dev = kNumPages;
-  device->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
-  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, operation.status());
-
-  ASSERT_TRUE(operation.SetVmo());
-
-  op->rw.offset_dev = kNumPages - 1;
-  device->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
-  ASSERT_TRUE(Wait());
-  ASSERT_OK(operation.status());
+  EXPECT_EQ(info.block_count, kNumPages);
+  EXPECT_EQ(info.block_size, kPageSize);
+  EXPECT_EQ(info.max_transfer_size, fuchsia_storage_block::wire::kMaxTransferUnbounded);
+  EXPECT_TRUE(
+      static_cast<uint32_t>(info.flags & fuchsia_storage_block::wire::DeviceFlag::kTrimSupport));
 }
 
 TEST_F(BlockDeviceTest, ReadWrite) {
-  ftl::BlockDevice* device = GetDevice();
-  ASSERT_TRUE(device);
+  char buffer[kPageSize * 2];
+  memset(buffer, 0, sizeof(buffer));
 
-  Operation operation(op_size(), this);
-  ASSERT_TRUE(operation.SetVmo());
+  auto svc_dir = driver_test_.ConnectToDriverSvcDir();
+  zx::result service = component::OpenServiceAt<fuchsia_hardware_block_volume::Service>(svc_dir);
+  ASSERT_OK(service);
+  zx::result read_client = service->connect_volume();
+  ASSERT_OK(read_client);
+  ASSERT_OK(
+      block_client::SingleReadBytes(read_client.value(), buffer, sizeof(buffer), 3 * kPageSize));
 
-  block_op_t* op = operation.GetOperation();
-  ASSERT_TRUE(op);
+  driver_test_.RunInDriverContext([](TestFtlBlockDevice& driver) {
+    EXPECT_TRUE(driver.volume()->written() == false);
+    EXPECT_EQ(2, driver.volume()->num_pages());
+    EXPECT_EQ(3, driver.volume()->first_page());
+  });
+  EXPECT_TRUE(CheckPattern(buffer, kPageSize * 2));
 
-  op->rw.command = {.opcode = BLOCK_OPCODE_READ, .flags = 0};
-  op->rw.length = 2;
-  op->rw.offset_dev = 3;
-  ASSERT_TRUE(operation.SetVmo());
-  device->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
+  memset(buffer, kMagic, sizeof(buffer));
+  zx::result write_client = service->connect_volume();
+  ASSERT_OK(write_client);
 
-  ASSERT_TRUE(Wait());
-  ASSERT_OK(operation.status());
+  ASSERT_OK(
+      block_client::SingleWriteBytes(write_client.value(), buffer, sizeof(buffer), 5 * kPageSize));
 
-  FakeVolume* volume = GetVolume();
-  EXPECT_FALSE(volume->written());
-  EXPECT_EQ(2, volume->num_pages());
-  EXPECT_EQ(3, volume->first_page());
-  EXPECT_TRUE(CheckPattern(operation.buffer(), kPageSize * 2));
+  driver_test_.RunInDriverContext([](TestFtlBlockDevice& driver) {
+    EXPECT_TRUE(driver.volume()->written());
+    EXPECT_EQ(2, driver.volume()->num_pages());
+    EXPECT_EQ(5, driver.volume()->first_page());
+  });
+}
 
-  op->rw.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
-  op->rw.length = 4;
-  op->rw.offset_dev = 5;
-  memset(operation.buffer(), kMagic, kPageSize * 5);
-  device->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
-
-  ASSERT_TRUE(Wait());
-  ASSERT_OK(operation.status());
-
-  EXPECT_TRUE(volume->written());
-  EXPECT_EQ(4, volume->num_pages());
-  EXPECT_EQ(5, volume->first_page());
+TEST(BlockDeviceTest, Lifetime) {
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test;
+  ASSERT_OK(driver_test.StartDriver());
+  ASSERT_OK(driver_test.StopDriver());
 }
 
 TEST_F(BlockDeviceTest, Trim) {
-  ftl::BlockDevice* device = GetDevice();
-  ASSERT_TRUE(device);
+  BlockFifoRequest requests[1] = {};
+  requests[0].command = {.opcode = BLOCK_OPCODE_TRIM, .flags = 0};
+  requests[0].length = 2;
+  requests[0].dev_offset = kNumPages;
+  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, client_->FifoTransaction(requests, 1));
 
-  Operation operation(op_size(), this);
-  block_op_t* op = operation.GetOperation();
-  ASSERT_TRUE(op);
+  requests[0].dev_offset = 3;
+  ASSERT_OK(client_->FifoTransaction(requests, 1));
+  driver_test_.RunInDriverContext([](TestFtlBlockDevice& driver) {
+    EXPECT_TRUE(driver.volume()->trimmed());
+    EXPECT_EQ(2, driver.volume()->num_pages());
+    EXPECT_EQ(3, driver.volume()->first_page());
+  });
 
-  op->trim.command = {.opcode = BLOCK_OPCODE_TRIM, .flags = 0};
-  device->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
+  char buffer[kPageSize * 2];
+  memset(buffer, 0, sizeof(buffer));
+  auto svc_dir = driver_test_.ConnectToDriverSvcDir();
+  zx::result service = component::OpenServiceAt<fuchsia_hardware_block_volume::Service>(svc_dir);
+  ASSERT_OK(service);
+  zx::result read_client = service->connect_volume();
+  ASSERT_OK(read_client);
+  ASSERT_OK(
+      block_client::SingleReadBytes(read_client.value(), buffer, sizeof(buffer), 3 * kPageSize));
 
-  ASSERT_TRUE(Wait());
-  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, operation.status());
-
-  op->trim.length = 2;
-  op->trim.offset_dev = kNumPages - 1;
-  device->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
-
-  ASSERT_TRUE(Wait());
-  ASSERT_EQ(ZX_ERR_OUT_OF_RANGE, operation.status());
-
-  op->trim.offset_dev = 3;
-  device->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
-
-  ASSERT_TRUE(Wait());
-  ASSERT_OK(operation.status());
-
-  EXPECT_TRUE(GetVolume()->trimmed());
-  EXPECT_EQ(2, GetVolume()->num_pages());
-  EXPECT_EQ(3, GetVolume()->first_page());
+  EXPECT_TRUE(CheckPattern(buffer, sizeof(buffer), 1));
 }
 
 TEST_F(BlockDeviceTest, Flush) {
-  ftl::BlockDevice* device = GetDevice();
-  ASSERT_TRUE(device);
-
-  Operation operation(op_size(), this);
-  block_op_t* op = operation.GetOperation();
-  ASSERT_TRUE(op);
-
-  op->rw.command = {.opcode = BLOCK_OPCODE_FLUSH, .flags = 0};
-  device->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
-
-  ASSERT_TRUE(Wait());
-  ASSERT_OK(operation.status());
-
-  EXPECT_TRUE(GetVolume()->flushed());
+  BlockFifoRequest requests[1] = {};
+  requests[0].command = {.opcode = BLOCK_OPCODE_FLUSH, .flags = 0};
+  ASSERT_OK(client_->FifoTransaction(requests, 1));
+  driver_test_.RunInDriverContext(
+      [](TestFtlBlockDevice& driver) { EXPECT_TRUE(driver.volume()->flushed()); });
 }
 
-// Tests serialization of multiple operations.
 TEST_F(BlockDeviceTest, QueueMultiple) {
-  ftl::BlockDevice* device = GetDevice();
-  ASSERT_TRUE(device);
+  char buffer[kPageSize * 2];
+  memset(buffer, 'f', sizeof(buffer));
 
-  std::unique_ptr<Operation> operations[10];
-  for (int i = 0; i < 10; i++) {
-    operations[i].reset(new Operation(op_size(), this));
-    Operation& operation = *(operations[i].get());
-    block_op_t* op = operation.GetOperation();
-    ASSERT_TRUE(op);
+  auto svc_dir = driver_test_.ConnectToDriverSvcDir();
+  zx::result service = component::OpenServiceAt<fuchsia_hardware_block_volume::Service>(svc_dir);
+  ASSERT_OK(service);
 
-    op->rw.command = {.opcode = BLOCK_OPCODE_READ, .flags = 0};
-    op->rw.length = 1;
-    op->rw.offset_dev = i;
-    ASSERT_TRUE(operation.SetVmo());
-    device->BlockImplQueue(op, &BlockDeviceTest::CompletionCb, &operation);
-  }
+  zx::result write_client = service->connect_volume();
+  ASSERT_OK(write_client);
+  ASSERT_OK(
+      block_client::SingleWriteBytes(write_client.value(), buffer, sizeof(buffer), 5 * kPageSize));
 
-  ASSERT_TRUE(WaitFor(10));
+  zx::result read_client = service->connect_volume();
+  ASSERT_OK(read_client);
+  ASSERT_OK(
+      block_client::SingleReadBytes(read_client.value(), buffer, sizeof(buffer), 3 * kPageSize));
 
-  for (const auto& operation : operations) {
-    ASSERT_OK(operation->status());
-    ASSERT_TRUE(operation->completed());
-  }
-}
-
-TEST_F(BlockDeviceTest, Format) {
-  ftl::BlockDevice* device = GetDevice();
-  ASSERT_TRUE(device);
-
-  EXPECT_OK(device->FormatInternal());
-  EXPECT_TRUE(GetVolume()->formatted());
-  EXPECT_FALSE(GetVolume()->leveled());
+  driver_test_.RunInDriverContext(
+      [](TestFtlBlockDevice& driver) { EXPECT_TRUE(driver.volume()->written()); });
 }
 
 TEST_F(BlockDeviceTest, GetInspectVmoContainsCountersAndWearCount) {
-  ftl::BlockDevice* device = GetDevice();
-  ASSERT_TRUE(device);
+  zx::vmo vmo;
+  driver_test_.RunInDriverContext([&vmo](TestFtlBlockDevice& driver) {
+    vmo = static_cast<ftl::BlockDevice&>(driver).DuplicateInspectVmo();
+  });
 
-  zx::vmo vmo = device->DuplicateInspectVmo();
   auto base_hierarchy = inspect::ReadFromVmo(vmo).take_value();
   auto* hierarchy = base_hierarchy.GetByPath({"ftl"});
   ASSERT_NOT_NULL(hierarchy);
-  for (const auto& property_name : ftl::Metrics::GetPropertyNames<inspect::UintProperty>()) {
-    auto* property = hierarchy->node().get_property<inspect::UintPropertyValue>(property_name);
-    EXPECT_NOT_NULL(property, "Missing Inspect Property: %s", property_name.c_str());
-  }
 
-  for (const auto& property_name : ftl::Metrics::GetPropertyNames<inspect::DoubleProperty>()) {
-    auto* property = hierarchy->node().get_property<inspect::DoublePropertyValue>(property_name);
-    EXPECT_NOT_NULL(property, "Missing Inspect Property: %s", property_name.c_str());
-  }
+  auto* property =
+      hierarchy->node().get_property<inspect::UintPropertyValue>("nand.erase_block.max_wear");
+  ASSERT_NOT_NULL(property);
+  EXPECT_EQ(property->value(), kWearCount);
+
+  auto* property_initial =
+      hierarchy->node().get_property<inspect::UintPropertyValue>("nand.initial_bad_blocks");
+  ASSERT_NOT_NULL(property_initial);
+  EXPECT_EQ(property_initial->value(), kInitialBadBlocks);
+
+  auto* property_running =
+      hierarchy->node().get_property<inspect::UintPropertyValue>("nand.running_bad_blocks");
+  ASSERT_NOT_NULL(property_running);
+  EXPECT_EQ(property_running->value(), kRunningBadBlocks);
+
+  auto* property_worn =
+      hierarchy->node().get_property<inspect::UintPropertyValue>("nand.worn_blocks_detected");
+  ASSERT_NOT_NULL(property_worn);
+  EXPECT_EQ(property_worn->value(), 0);
 }
 
-void ReadProperties(ftl::BlockDevice* device, std::map<std::string, uint64_t>& counters,
+void ReadProperties(const zx::vmo& vmo, std::map<std::string, uint64_t>& counters,
                     std::map<std::string, double>& rates) {
-  zx::vmo vmo = device->DuplicateInspectVmo();
   auto base_hierarchy = inspect::ReadFromVmo(vmo).take_value();
   auto* hierarchy = base_hierarchy.GetByPath({"ftl"});
-  // counters are still 0.
   for (const auto& property_name : ftl::Metrics::GetPropertyNames<inspect::UintProperty>()) {
     auto* property = hierarchy->node().get_property<inspect::UintPropertyValue>(property_name);
     ASSERT_NOT_NULL(property, "Missing Inspect Property: %s", property_name.c_str());
@@ -629,45 +492,54 @@ void ReadProperties(ftl::BlockDevice* device, std::map<std::string, uint64_t>& c
 void VerifyInspectMetrics(BlockDeviceTest* fixture, const std::string& block_metric_prefix,
                           fit::function<std::string()> clear_op,
                           fit::function<void()> trigger_metric_update_op) {
-  ftl::BlockDevice* device = fixture->GetDevice();
-  ASSERT_TRUE(device);
-  auto* volume = fixture->GetVolume();
+  fixture->driver_test_.RunInDriverContext([](TestFtlBlockDevice& driver) {
+    driver.volume()->UpdateWearCount(0);
+    driver.volume()->UpdateInitialBadBlockCount(0);
+    driver.volume()->UpdateRunningBadBlockCount(0);
+  });
 
   std::map<std::string, uint64_t> counters;
   std::map<std::string, double> rates;
   std::map<std::string, uint64_t> expected_counters;
   std::map<std::string, double> expected_rates;
 
-  volume->UpdateWearCount(0);
-  volume->UpdateInitialBadBlockCount(0);
-  volume->UpdateRunningBadBlockCount(0);
   // Random operation to trigger a metric update.
   expected_counters[clear_op()]++;
 
-  ReadProperties(device, counters, rates);
+  zx::vmo vmo;
+  fixture->driver_test_.RunInDriverContext([&vmo](TestFtlBlockDevice& driver) {
+    vmo = static_cast<ftl::BlockDevice&>(driver).DuplicateInspectVmo();
+  });
+
+  ReadProperties(vmo, counters, rates);
   for (const auto& counter : counters) {
     EXPECT_EQ(counter.second, expected_counters[counter.first],
               "Property %s had initial non zero counter.", counter.first.c_str());
   }
 
   // The counters are cleared before any operation.
-  volume->SetOnOperation([&]() {
-    auto& counters = device->nand_counters();
-    counters.page_read = 1;
-    counters.page_write = 2;
-    counters.block_erase = 3;
+  fixture->driver_test_.RunInDriverContext([](TestFtlBlockDevice& driver) {
+    driver.volume()->SetOnOperation([&driver]() {
+      auto& counters = driver.nand_counters();
+      counters.page_read = 1;
+      counters.page_write = 2;
+      counters.block_erase = 3;
+    });
+    driver.volume()->UpdateWearCount(24);
   });
 
-  volume->UpdateWearCount(24);
   trigger_metric_update_op();
 
-  volume->SetOnOperation([&]() {
-    auto& counters = device->nand_counters();
-    counters.page_read = 2;
-    counters.page_write = 4;
-    counters.block_erase = 5;
+  fixture->driver_test_.RunInDriverContext([](TestFtlBlockDevice& driver) {
+    driver.volume()->SetOnOperation([&driver]() {
+      auto& counters = driver.nand_counters();
+      counters.page_read = 2;
+      counters.page_write = 4;
+      counters.block_erase = 5;
+    });
+    driver.volume()->UpdateWearCount(12345678);
   });
-  volume->UpdateWearCount(12345678);
+
   trigger_metric_update_op();
 
   expected_counters[ftl::Metrics::GetMaxWearPropertyName()] = 12345678;
@@ -686,7 +558,13 @@ void VerifyInspectMetrics(BlockDeviceTest* fixture, const std::string& block_met
   expected_rates[block_metric_prefix + ".issued_page_write.average_rate"] = 3;
   expected_rates[block_metric_prefix + ".issued_block_erase.average_rate"] = 4;
 
-  ReadProperties(device, counters, rates);
+  zx::vmo vmo2;
+  fixture->driver_test_.RunInDriverContext([&vmo2](TestFtlBlockDevice& driver) {
+    vmo2 = static_cast<ftl::BlockDevice&>(driver).DuplicateInspectVmo();
+  });
+  counters.clear();
+  rates.clear();
+  ReadProperties(vmo2, counters, rates);
 
   for (const auto& counter : counters) {
     EXPECT_EQ(counter.second, expected_counters[counter.first], "Property %s mismatch.",
@@ -739,38 +617,124 @@ TEST_F(BlockDeviceTest, InspectFlushMetricsUpdatedCorrectly) {
 }
 
 TEST_F(BlockDeviceTest, InspectBadBlockMetricsPopulation) {
-  ftl::BlockDevice* device = GetDevice();
-  ASSERT_TRUE(device);
+  zx::vmo vmo;
+  driver_test_.RunInDriverContext([&vmo](TestFtlBlockDevice& driver) {
+    vmo = static_cast<ftl::BlockDevice&>(driver).DuplicateInspectVmo();
+  });
 
   std::map<std::string, uint64_t> counters;
   std::map<std::string, double> rates;
 
-  ReadProperties(device, counters, rates);
+  ReadProperties(vmo, counters, rates);
   ASSERT_EQ(counters["nand.initial_bad_blocks"], kInitialBadBlocks);
   ASSERT_EQ(counters["nand.running_bad_blocks"], kRunningBadBlocks);
   ASSERT_EQ(counters["nand.total_bad_blocks"], kInitialBadBlocks + kRunningBadBlocks);
   ASSERT_EQ(counters["nand.worn_blocks_detected"], 0);
   ASSERT_EQ(counters["nand.projected_bad_blocks"], kInitialBadBlocks + kRunningBadBlocks);
 
-  GetVolume()->UpdateInitialBadBlockCount(7);
-  GetVolume()->UpdateRunningBadBlockCount(8);
-  GetVolume()->UpdateWornBlocksCount(2);
+  driver_test_.RunInDriverContext([](TestFtlBlockDevice& driver) {
+    driver.volume()->UpdateInitialBadBlockCount(7);
+    driver.volume()->UpdateRunningBadBlockCount(8);
+    driver.volume()->UpdateWornBlocksCount(2);
+  });
 
   // Force a stats update.
   Read();
 
-  ReadProperties(device, counters, rates);
+  zx::vmo vmo2;
+  driver_test_.RunInDriverContext([&vmo2](TestFtlBlockDevice& driver) {
+    vmo2 = static_cast<ftl::BlockDevice&>(driver).DuplicateInspectVmo();
+  });
+  counters.clear();
+  rates.clear();
+  ReadProperties(vmo2, counters, rates);
+
   ASSERT_EQ(counters["nand.initial_bad_blocks"], 7);
   ASSERT_EQ(counters["nand.running_bad_blocks"], 8);
   ASSERT_EQ(counters["nand.total_bad_blocks"], 15);
+  ASSERT_EQ(counters["nand.worn_blocks_detected"], 2);
   ASSERT_EQ(counters["nand.projected_bad_blocks"], 17);
 }
 
-TEST_F(BlockDeviceTest, Suspend) {
-  ftl::BlockDevice* device = GetDevice();
-  ASSERT_TRUE(device);
-  device->Suspend();
-  EXPECT_TRUE(GetVolume()->flushed());
+TEST_F(BlockDeviceTest, ConcurrentRequests) {
+  constexpr int kNumThreads = 4;
+  constexpr int kOpsPerThread = 50;
+
+  std::vector<std::thread> threads;
+  threads.reserve(kNumThreads);
+  std::vector<zx_status_t> results(kNumThreads, ZX_OK);
+
+  for (int i = 0; i < kNumThreads; ++i) {
+    threads.emplace_back([this, i, &results]() {
+      auto svc_dir = driver_test_.ConnectToDriverSvcDir();
+      zx::result service =
+          component::OpenServiceAt<fuchsia_hardware_block_volume::Service>(svc_dir);
+      if (service.is_error()) {
+        results[i] = service.error_value();
+        return;
+      }
+      zx::result client = service->connect_volume();
+      if (client.is_error()) {
+        results[i] = client.error_value();
+        return;
+      }
+
+      for (int j = 0; j < kOpsPerThread; ++j) {
+        char buffer[kPageSize];
+        zx_status_t status;
+        if (j % 2 == 0) {
+          memset(buffer, kMagic, sizeof(buffer));
+          status = block_client::SingleWriteBytes(client.value(), buffer, sizeof(buffer),
+                                                  (j % kNumPages) * kPageSize);
+        } else {
+          status = block_client::SingleReadBytes(client.value(), buffer, sizeof(buffer),
+                                                 (j % kNumPages) * kPageSize);
+        }
+        if (status != ZX_OK) {
+          results[i] = status;
+          return;
+        }
+      }
+    });
+  }
+
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  for (int i = 0; i < kNumThreads; ++i) {
+    EXPECT_OK(results[i], "Thread %d failed", i);
+  }
+}
+
+TEST(BlockDeviceTest, RaceConditionTeardown) {
+  fdf_testing::BackgroundDriverTest<TestConfig> driver;
+  ASSERT_OK(driver.StartDriver());
+  fidl::ClientEnd<fuchsia_io::Directory> svc_dir = driver.ConnectToDriverSvcDir();
+  zx::result service = component::OpenServiceAt<fuchsia_hardware_block_volume::Service>(svc_dir);
+  ASSERT_OK(service);
+  zx::result client_end = service->connect_volume();
+  ASSERT_OK(client_end);
+  zx::result client = block_client::RemoteBlockDevice::Create(std::move(client_end.value()));
+  ASSERT_OK(client);
+  std::atomic<bool> stopped = false;
+  std::thread t([client = block_client::ReaderWriter(**std::move(client)), &stopped]() mutable {
+    char buffer[kPageSize];
+    memset(buffer, kMagic, sizeof(buffer));
+    while (!stopped) {
+      zx_status_t status = client.Read(0, sizeof(buffer), buffer);
+      if (status != ZX_OK) {
+        break;
+      }
+    }
+  });
+
+  zx::nanosleep(zx::deadline_after(zx::msec(50)));
+  ASSERT_OK(driver.StopDriver());
+  stopped = true;
+
+  t.join();
 }
 
 }  // namespace
+}  // namespace ftl

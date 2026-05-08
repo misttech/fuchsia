@@ -36,7 +36,7 @@ TEST_F(DeviceEnumerationTest, AstroTest) {
       "raw_nand.aml-raw_nand.nand.zircon-r.skip-block",
       "raw_nand.aml-raw_nand.nand.sys-config.skip-block",
       "raw_nand.aml-raw_nand.nand.migration.skip-block",
-      "raw_nand.aml-raw_nand.nand.fvm.ftl.block",
+      "raw_nand.aml-raw_nand.nand.fvm.ftl",
       "aml-sdio.aml_sdio.aml-sd-emmc.sdmmc",
       "aml-sdio.aml_sdio.aml-sd-emmc.sdmmc.sdmmc-sdio",
       "aml-sdio.aml_sdio.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1",

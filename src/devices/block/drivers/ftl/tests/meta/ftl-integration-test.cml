@@ -13,8 +13,7 @@
         binary: "test/ftl-integration-test",
     },
     use: [
-        {
-            protocol: [ "fuchsia.process.Launcher" ],
-        },
+        { service: "fuchsia.hardware.block.volume.Service" },
+        { protocol: "fuchsia.process.Launcher" },
     ],
 }
