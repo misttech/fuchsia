@@ -59,26 +59,17 @@ def main() -> int:
         )
 
         with ws.lock():
-            if ws.has_cartfs_dir and ws.is_checkout_uptodate():
+            if not ws.has_cartfs_dir:
+                ws.init_cartfs_workspace(args.snapshot)
+
+            if ws.is_checkout_uptodate():
                 logger.log_warn(
                     "No work to do, workspace is already bootstrapped."
                 )
                 return 0
 
-            if ws.has_cartfs_dir:
-                logger.log_info(
-                    f"Workspace is already linked to cartfs: {ws.cartfs_dir}"
-                )
-            else:
-                logger.log_info("Workspace is not linked to cartfs.")
-                ws.init_cartfs_workspace(args.snapshot)
+            ws.checkout_cartfs_to_cog_revisions()
 
-            if ws.is_checkout_uptodate():
-                logger.log_info(
-                    "CartFS checkout is up to date, skipping cartfs checkout update."
-                )
-            else:
-                ws.checkout_cartfs_to_cog_revisions()
         return 0
     except Exception:
         logger.log_exception("An unexpected error occurred:")

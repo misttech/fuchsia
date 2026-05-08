@@ -337,6 +337,7 @@ class Workspace:
             logger.emit_status("Attempting to snapshot CartFS workspace...")
             self._init_cartfs_workspace_snapshot()
 
+        # If snapshotting failed or was disabled, initialize an empty workspace.
         if not self.has_cartfs_dir:
             logger.emit_status("Creating an empty CartFS workspace...")
             self._init_cartfs_workspace_empty()
