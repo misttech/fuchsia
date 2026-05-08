@@ -101,7 +101,7 @@ func (p *PolicyAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...in
 	}
 	targetPath := filepath.Clean(f.Arg(1))
 
-	if err := AddPolicyException(p.fuchsiaDir, checkName, targetPath, p.bug, p.description); err != nil {
+	if _, err := AddPolicyException(p.fuchsiaDir, checkName, targetPath, p.bug, p.description); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
 	}
@@ -110,22 +110,22 @@ func (p *PolicyAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...in
 }
 
 // AddPolicyException adds a policy exception for a given project or file path.
-func AddPolicyException(fuchsiaDir, checkName, targetPath, bug, description string) error {
+func AddPolicyException(fuchsiaDir, checkName, targetPath, bug, description string) (string, error) {
 	var err error
 	fuchsiaDir, targetPath, err = ResolveAndValidatePath(fuchsiaDir, targetPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Check if this target already has an exception
 	builder := v2config.NewBuilder(fuchsiaDir)
 	if err := builder.Assemble(); err != nil {
-		return fmt.Errorf("failed to assemble config: %w", err)
+		return "", fmt.Errorf("failed to assemble config: %w", err)
 	}
 	if list, ok := builder.Config.PolicyExceptions[checkName]; ok {
 		if _, exists := list[targetPath]; exists {
 			fmt.Printf("Path '%s' already has a policy exception for '%s'. Nothing to do.\n", targetPath, checkName)
-			return nil
+			return "", nil
 		}
 	}
 
@@ -143,7 +143,7 @@ func AddPolicyException(fuchsiaDir, checkName, targetPath, bug, description stri
 	}
 
 	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory %s: %w", configDir, err)
+		return "", fmt.Errorf("failed to create config directory %s: %w", configDir, err)
 	}
 
 	// Determine the config file name based on project name or top-level component
@@ -162,7 +162,7 @@ func AddPolicyException(fuchsiaDir, checkName, targetPath, bug, description stri
 		}
 		cfg.PolicyExceptions[checkName] = append(cfg.PolicyExceptions[checkName], entry)
 	}); err != nil {
-		return err
+		return "", err
 	}
 
 	fmt.Printf("✅ Added Policy Exception:\n")
@@ -171,5 +171,5 @@ func AddPolicyException(fuchsiaDir, checkName, targetPath, bug, description stri
 	fmt.Printf("  - Bug:    %s\n", bug)
 	fmt.Printf("  - File:   %s\n\n", destFile)
 
-	return nil
+	return destFile, nil
 }

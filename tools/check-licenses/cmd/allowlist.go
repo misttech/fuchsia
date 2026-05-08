@@ -93,7 +93,7 @@ func (c *AllowlistAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 	licenseName := f.Arg(0)
 	projectPath := filepath.Clean(f.Arg(1))
 
-	if err := AddAllowlistEntry(c.fuchsiaDir, licenseName, projectPath, c.bug, c.description); err != nil {
+	if _, err := AddAllowlistEntry(c.fuchsiaDir, licenseName, projectPath, c.bug, c.description); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
 	}
@@ -102,22 +102,22 @@ func (c *AllowlistAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 }
 
 // AddAllowlistEntry adds an allowed license exception for a given project path.
-func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath, bug, description string) error {
+func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath, bug, description string) (string, error) {
 	var err error
 	fuchsiaDir, projectPath, err = ResolveAndValidatePath(fuchsiaDir, projectPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Check if this project already has an exception for this license
 	builder := v2config.NewBuilder(fuchsiaDir)
 	if err := builder.Assemble(); err != nil {
-		return fmt.Errorf("failed to assemble config: %w", err)
+		return "", fmt.Errorf("failed to assemble config: %w", err)
 	}
 	if list, ok := builder.Config.AllowedLicenses[licenseName]; ok {
 		if _, exists := list[projectPath]; exists {
 			fmt.Printf("Project '%s' already has an allowlist entry for '%s'. Nothing to do.\n", projectPath, licenseName)
-			return nil
+			return "", nil
 		}
 	}
 
@@ -132,7 +132,7 @@ func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath, bug, description st
 	// Find the license category by scanning both public and private allowed_licenses dirs
 	category := findLicenseCategory(fuchsiaDir, licenseName)
 	if category == "Uncategorized" {
-		return fmt.Errorf("unknown or unapproved license name %q. If this is a brand new license, it must first be reviewed by the OSRB and manually categorized under allowed_licenses/ first", licenseName)
+		return "", fmt.Errorf("unknown or unapproved license name %q. If this is a brand new license, it must first be reviewed by the OSRB and manually categorized under allowed_licenses/ first", licenseName)
 	}
 
 	configDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "configs", "allowed_licenses", category, licenseName)
@@ -141,7 +141,7 @@ func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath, bug, description st
 	}
 
 	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory %s: %w", configDir, err)
+		return "", fmt.Errorf("failed to create config directory %s: %w", configDir, err)
 	}
 
 	baseName := findProjectBasename(projectPath, builder.Config.ManifestProjectNames)
@@ -159,7 +159,7 @@ func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath, bug, description st
 		}
 		cfg.AllowedLicenses[licenseName] = append(cfg.AllowedLicenses[licenseName], entry)
 	}); err != nil {
-		return err
+		return "", err
 	}
 
 	fmt.Printf("✅ Added Allowlist Entry:\n")
@@ -168,7 +168,7 @@ func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath, bug, description st
 	fmt.Printf("  - Bug:     %s\n", bug)
 	fmt.Printf("  - File:    %s\n\n", destFile)
 
-	return nil
+	return destFile, nil
 }
 
 func findLicenseCategory(fuchsiaDir, licenseName string) string {
