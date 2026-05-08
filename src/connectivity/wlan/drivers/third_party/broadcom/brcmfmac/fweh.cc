@@ -294,8 +294,11 @@ static void brcmf_fweh_handle_event(brcmf_pub* drvr, struct brcmf_fweh_queue_ite
   }
   if (event_info->code == BRCMF_E_TDLS_PEER_EVENT) {
     ifp = drvr->iflist[0];
-  } else {
+  } else if (emsg.bsscfgidx < BRCMF_MAX_IFS) {
     ifp = drvr->iflist[emsg.bsscfgidx];
+  } else {
+    BRCMF_ERR("invalid bsscfgidx: %u", emsg.bsscfgidx);
+    goto event_free;
   }
 
   err = brcmf_fweh_call_event_handler(ifp, event_info->code, &emsg, event->data);
