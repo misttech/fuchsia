@@ -28,8 +28,8 @@ pub use create::create_cmd;
 pub use destroy::destroy_cmd;
 pub use doctor::{doctor_cmd_print, doctor_cmd_serialized};
 pub use explore::explore_cmd;
-pub use graph::{graph_cmd, GraphFilter, GraphOrientation};
-pub use list::{list_cmd_print, list_cmd_serialized, ListFilter};
+pub use graph::{GraphFilter, GraphOrientation, graph_cmd};
+pub use list::{ListFilter, list_cmd_print, list_cmd_serialized};
 pub use reload::reload_cmd;
 pub use resolve::resolve_cmd;
 pub use route::{route_cmd_print, route_cmd_serialized};
@@ -39,5 +39,5 @@ pub use start::start_cmd;
 pub use stop::stop_cmd;
 pub use storage::{
     storage_copy_cmd, storage_delete_all_cmd, storage_delete_cmd, storage_list_cmd,
-    storage_make_directory_cmd,
+    storage_list_cmd_write, storage_make_directory_cmd,
 };

@@ -5,6 +5,7 @@
 use crate::storage::{copy, delete, delete_all, list, make_directory};
 use anyhow::{Result, format_err};
 use moniker::Moniker;
+use std::io::Write;
 
 use flex_client::ProxyHasDomain;
 use flex_fuchsia_sys2 as fsys;
@@ -52,19 +53,20 @@ pub async fn storage_copy_cmd(
     copy(storage_admin, source_path, destination_path).await
 }
 
-pub async fn storage_list_cmd<W: std::io::Write>(
+pub async fn storage_list_cmd(
     storage_provider_moniker: String,
     storage_capability_name: String,
     path: String,
     realm_query: fsys::RealmQueryProxy,
-    mut writer: W,
-) -> Result<()> {
+) -> Result<Vec<String>> {
     let storage_admin =
         get_storage_admin(realm_query, storage_provider_moniker, storage_capability_name).await?;
-    let entries = list(storage_admin, path).await?;
+    list(storage_admin, path).await
+}
 
+pub fn storage_list_cmd_write<W: Write>(entries: Vec<String>, mut writer: W) -> Result<()> {
     for entry in entries {
-        writeln!(writer, "{}", entry)?;
+        writeln!(writer, "{entry}")?;
     }
     Ok(())
 }

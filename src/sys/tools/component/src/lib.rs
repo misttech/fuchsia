@@ -9,15 +9,16 @@ use anyhow::Result;
 use component_debug::cli::*;
 use component_debug::config::resolve_raw_config_overrides;
 use component_debug::copy::copy_cmd;
+use fidl_fuchsia_dash as fdash;
+use fidl_fuchsia_sys2 as fsys;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
 use futures::FutureExt;
 use socket_to_stdio::Stdout;
-use {fidl_fuchsia_dash as fdash, fidl_fuchsia_sys2 as fsys};
 
 pub async fn exec() -> Result<()> {
     let args: ComponentArgs = argh::from_env();
 
-    let writer = std::io::stdout();
+    let mut writer = std::io::stdout();
     let realm_query =
         connect_to_protocol_at_path::<fsys::RealmQueryMarker>("/svc/fuchsia.sys2.RealmQuery.root")?;
     let route_validator = connect_to_protocol_at_path::<fsys::RouteValidatorMarker>(
@@ -139,14 +140,10 @@ pub async fn exec() -> Result<()> {
                     .await
             }
             StorageSubcommand::List(list_args) => {
-                storage_list_cmd(
-                    args.provider,
-                    args.capability,
-                    list_args.path,
-                    realm_query,
-                    writer,
-                )
-                .await
+                let entries =
+                    storage_list_cmd(args.provider, args.capability, list_args.path, realm_query)
+                        .await?;
+                storage_list_cmd_write(entries, &mut writer)
             }
             StorageSubcommand::MakeDirectory(make_dir_args) => {
                 storage_make_directory_cmd(

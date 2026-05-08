@@ -9,6 +9,8 @@ ffx_plugin("ffx_component_storage") {
   version = "0.1.0"
   edition = "2024"
 
+  with_unit_tests = true
+
   deps = [
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
@@ -17,6 +19,12 @@ ffx_plugin("ffx_component_storage") {
     "//src/developer/ffx/plugins/component/common:ffx_component",
     "//src/sys/lib/component_debug:component_debug_fdomain",
     "//third_party/rust_crates:async-trait",
+  ]
+
+  test_deps = [
+    "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
+    "//src/lib/fdomain/local",
+    "//src/lib/fuchsia",
   ]
 
   args_sources = [ "src/args.rs" ]

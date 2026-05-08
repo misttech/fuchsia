@@ -5,13 +5,14 @@
 use async_trait::async_trait;
 use component_debug::cli::{
     storage_copy_cmd, storage_delete_all_cmd, storage_delete_cmd, storage_list_cmd,
-    storage_make_directory_cmd,
+    storage_list_cmd_write, storage_make_directory_cmd,
 };
 use component_debug_fdomain as component_debug;
 use errors::ffx_error;
+
 use ffx_component::rcs::connect_to_realm_query_f as connect_to_realm_query;
 use ffx_component_storage_args::{StorageCommand, SubCommandEnum};
-use ffx_writer::SimpleWriter;
+use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
 use target_holders::fdomain::RemoteControlProxyHolder;
 
@@ -26,9 +27,9 @@ fho::embedded_plugin!(StorageTool);
 
 #[async_trait(?Send)]
 impl FfxMain for StorageTool {
-    type Writer = SimpleWriter;
+    type Writer = MachineWriter<Vec<String>>;
 
-    async fn main(self, writer: Self::Writer) -> fho::Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let realm_query = connect_to_realm_query(&self.rcs).await?;
 
         // All errors from component_debug library are user-visible.
@@ -53,14 +54,19 @@ impl FfxMain for StorageTool {
                 .await
             }
             SubCommandEnum::List(list_args) => {
-                storage_list_cmd(
+                let entries = storage_list_cmd(
                     self.cmd.provider,
                     self.cmd.capability,
                     list_args.path,
                     realm_query,
-                    writer,
                 )
-                .await
+                .await?;
+                if writer.is_machine() {
+                    writer.machine(&entries)?;
+                } else {
+                    storage_list_cmd_write(entries, &mut writer)?;
+                }
+                Ok(())
             }
             SubCommandEnum::MakeDirectory(make_dir_args) => {
                 storage_make_directory_cmd(
@@ -83,5 +89,35 @@ impl FfxMain for StorageTool {
         }
         .map_err(|e| ffx_error!(e))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use fdomain_fuchsia_developer_remotecontrol as rc;
+    use ffx_component_storage_args::ListArgs;
+    use ffx_writer::TestBuffers;
+
+    #[fuchsia::test]
+    async fn test_storage_list_machine() {
+        let client = fdomain_local::local_client_empty();
+        let (rcs_proxy, _) = client.create_proxy_and_stream::<rc::RemoteControlMarker>();
+        let rcs = rcs_proxy.into();
+
+        let tool = StorageTool {
+            cmd: StorageCommand {
+                subcommand: SubCommandEnum::List(ListArgs { path: "123456::.".to_string() }),
+                provider: "/core".to_string(),
+                capability: "data".to_string(),
+            },
+            rcs,
+        };
+
+        let test_buffers = TestBuffers::default();
+        let writer = MachineWriter::new_test(Some(ffx_writer::Format::Json), &test_buffers);
+
+        let result = tool.main(writer).await;
+        assert!(result.is_err());
     }
 }
