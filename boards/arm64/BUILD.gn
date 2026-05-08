@@ -6,6 +6,7 @@ import("//build/assembly/board_configuration.gni")
 import("//build/assembly/board_input_bundle.gni")
 import("//build/board.gni")
 import("//build/info/info.gni")
+import("//src/devices/board/drivers/qemu-arm64/pci.gni")
 import("//zircon/tools/zbi/zbi_item.gni")
 
 assert(current_toolchain == default_toolchain,
@@ -17,7 +18,6 @@ board_configuration("arm64") {
   testonly = true
   partitions_config = "//boards/partitions:arm64"
   provided_features = [
-    "fuchsia::bus_kpci",
     "fuchsia::driver_framework_v2_support",
     "fuchsia::paravirtualization",
     "fuchsia::power",
@@ -30,6 +30,11 @@ board_configuration("arm64") {
     "fuchsia::vulkan_gpu",
     "fuchsia::xhci",
   ]
+  if (qemu_arm64_enable_user_pci) {
+    provided_features += [ "fuchsia::bus_pci" ]
+  } else {
+    provided_features += [ "fuchsia::bus_kpci" ]
+  }
 
   input_bundles = [
     ":main_bundle",

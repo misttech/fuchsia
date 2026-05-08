@@ -4,5 +4,5 @@
 
 declare_args() {
   # Enable user space PCI stack in the qemu-arm64 board driver.
-  qemu_arm64_enable_user_pci = false
+  qemu_arm64_enable_user_pci = true
 }

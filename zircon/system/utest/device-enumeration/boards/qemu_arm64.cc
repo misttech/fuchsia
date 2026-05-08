@@ -10,7 +10,7 @@ TEST_F(DeviceEnumerationTest, QemuArm64Test) {
   static const char* kNodeMonikers[] = {
       "qemu-bus",
       "pl031.rtc",
-      "pci.00_00_0_",
+      "pci0.bus.00_00_0",
   };
 
   VerifyNodes(kNodeMonikers);
