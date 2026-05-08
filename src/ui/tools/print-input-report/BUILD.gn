@@ -60,3 +60,8 @@ test("print-input-report-test-bin") {
 fuchsia_unittest_package("print-input-report-test") {
   deps = [ ":print-input-report-test-bin" ]
 }
+
+group("tests") {
+  testonly = true
+  deps = [ ":print-input-report-test" ]
+}

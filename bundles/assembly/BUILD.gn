@@ -888,6 +888,7 @@ assembly_input_bundle("bootstrap_eng") {
     "//src/ui/backlight/bin/backlight:bootfs",
     "//src/ui/input/bin/hid:bootfs",
     "//src/ui/tools/print-input-report:bootfs",
+    "//src/ui/tools/print-input-report-new:bootfs",
 
     # tests
     "//src/devices/block/bin/blktest:bootfs",
