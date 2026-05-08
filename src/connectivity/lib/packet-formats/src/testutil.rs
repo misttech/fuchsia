@@ -345,6 +345,10 @@ pub fn overwrite_icmpv6_checksum(buf: &mut [u8], checksum: [u8; 2]) -> ParseResu
 
 #[cfg(test)]
 mod crateonly {
+    use crate::TransportChecksumAction;
+    use crate::tcp::{TcpEnvelope, TcpSerializationContext};
+    use crate::udp::{UdpEnvelope, UdpSerializationContext};
+    use packet::SerializationContext;
     use std::sync::Once;
 
     /// Install a logger for tests.
@@ -377,6 +381,29 @@ mod crateonly {
             log::set_logger(&Logger).unwrap();
             log::set_max_level(log::LevelFilter::Trace);
         })
+    }
+
+    /// A [`SerializationContext`] that forces a specific transport-layer
+    /// checksum action to be used.
+    pub(crate) struct ForceChecksumAction(pub TransportChecksumAction);
+    impl SerializationContext for ForceChecksumAction {
+        type ContextState = ();
+    }
+    impl UdpSerializationContext for ForceChecksumAction {
+        fn envelope_to_state(_envelope: UdpEnvelope) -> Self::ContextState {
+            ()
+        }
+        fn checksum_action(&mut self) -> TransportChecksumAction {
+            self.0
+        }
+    }
+    impl TcpSerializationContext for ForceChecksumAction {
+        fn envelope_to_state(_envelope: TcpEnvelope) -> Self::ContextState {
+            ()
+        }
+        fn checksum_action(&mut self) -> TransportChecksumAction {
+            self.0
+        }
     }
 }
 

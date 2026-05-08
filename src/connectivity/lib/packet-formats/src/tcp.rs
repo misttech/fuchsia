@@ -31,7 +31,10 @@ use zerocopy::{
 
 use crate::error::{ParseError, ParseResult};
 use crate::ip::IpProto;
-use crate::{compute_transport_checksum_parts, compute_transport_checksum_serialize};
+use crate::{
+    TransportChecksumAction, compute_transport_checksum_parts,
+    compute_transport_checksum_serialize, compute_transport_pseudo_header_checksum,
+};
 
 use self::data_offset_reserved_flags::DataOffsetReservedFlags;
 use self::options::{TcpOptionsBuilder, TcpOptionsRaw, TcpOptionsRef};
@@ -708,16 +711,21 @@ pub struct TcpOptionsTooLongError;
 pub struct TcpEnvelope;
 
 /// A trait for TCP serialization contexts.
-// TODO(https://fxbug.dev/485599557): Expand the definition of this trait to
-// support checksum offloading.
 pub trait TcpSerializationContext: SerializationContext {
     /// Converts a `TcpEnvelope` into the serialization context's state.
     fn envelope_to_state(envelope: TcpEnvelope) -> Self::ContextState;
+
+    /// Returns the checksum action to take based on the serialization context.
+    fn checksum_action(&mut self) -> TransportChecksumAction;
 }
 
 impl TcpSerializationContext for NoOpSerializationContext {
     fn envelope_to_state(_envelope: TcpEnvelope) -> Self::ContextState {
         ()
+    }
+
+    fn checksum_action(&mut self) -> TransportChecksumAction {
+        TransportChecksumAction::ComputeFull
     }
 }
 
@@ -1015,7 +1023,7 @@ impl<A: IpAddress, C: TcpSerializationContext> PacketBuilder<C> for TcpSegmentBu
 
     fn serialize(
         &self,
-        _context: &mut C,
+        context: &mut C,
         target: &mut SerializeTarget<'_>,
         body: FragmentedBytesMut<'_, '_>,
     ) {
@@ -1023,20 +1031,29 @@ impl<A: IpAddress, C: TcpSerializationContext> PacketBuilder<C> for TcpSegmentBu
 
         let body_len = body.len();
 
-        #[rustfmt::skip]
-        let checksum = compute_transport_checksum_serialize(
-            self.src_ip,
-            self.dst_ip,
-            IpProto::Tcp.into(),
-            target,
-            body,
-        )
+        let checksum = match context.checksum_action() {
+            TransportChecksumAction::ComputeFull => compute_transport_checksum_serialize(
+                self.src_ip,
+                self.dst_ip,
+                IpProto::Tcp.into(),
+                target,
+                body,
+            ),
+            TransportChecksumAction::ComputePartial => compute_transport_pseudo_header_checksum(
+                self.src_ip,
+                self.dst_ip,
+                IpProto::Tcp.into(),
+                target,
+                body,
+            ),
+        }
         .unwrap_or_else(|| {
             panic!(
                 "total TCP segment length of {} bytes overflows length field of pseudo-header",
                 target.header.len() + body_len + target.footer.len(),
             )
         });
+
         target.header[CHECKSUM_RANGE].copy_from_slice(&checksum[..]);
     }
 }
@@ -1605,12 +1622,11 @@ impl<B> Debug for TcpSegment<B> {
 mod tests {
     use assert_matches::assert_matches;
     use byteorder::{ByteOrder, NetworkEndian};
-    use net_types::ip::{Ipv4Addr, Ipv6Addr};
+    use net_types::ip::{Ipv4, Ipv4Addr, Ipv6Addr};
     use packet::{Buf, NestableSerializer as _, ParseBuffer};
     use test_case::test_case;
 
     use super::*;
-    use crate::compute_transport_checksum;
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
     use crate::ipv4::{Ipv4Header, Ipv4Packet};
     use crate::ipv6::{Ipv6Header, Ipv6Packet};
@@ -1619,6 +1635,7 @@ mod tests {
         OPTION_LEN_TIMESTAMP, TcpOptions, TcpSackBlock, TimestampOption,
     };
     use crate::testutil::*;
+    use crate::{compute_transport_checksum, update_transport_checksum_pseudo_header};
 
     const TEST_SRC_IPV4: Ipv4Addr = Ipv4Addr::new([1, 2, 3, 4]);
     const TEST_DST_IPV4: Ipv4Addr = Ipv4Addr::new([5, 6, 7, 8]);
@@ -1814,6 +1831,38 @@ mod tests {
             .unwrap()
             .unwrap_a();
         assert_eq!(&buf_0[..], &buf_1[..]);
+    }
+
+    #[test]
+    fn test_serialization_checksum_actions() {
+        let body = [0x12, 0x34];
+        let serializer =
+            new_builder(TEST_SRC_IPV4, TEST_DST_IPV4).wrap_body(body.into_serializer());
+
+        // Create checksum over pseudo-header.
+        let mut c = internet_checksum::Checksum::new();
+        update_transport_checksum_pseudo_header::<Ipv4>(
+            &mut c,
+            TEST_SRC_IPV4,
+            TEST_DST_IPV4,
+            IpProto::Tcp.into(),
+            HDR_PREFIX_LEN + body.len(),
+        )
+        .expect("failed to update checksum");
+
+        // ComputePartial should produce the pseudo-header checksum.
+        let buf = serializer
+            .serialize_vec_outer(&mut ForceChecksumAction(TransportChecksumAction::ComputePartial))
+            .unwrap();
+        assert_eq!(&buf.as_ref()[CHECKSUM_OFFSET..CHECKSUM_OFFSET + 2], c.checksum());
+
+        // ComputeFull should produce a checksum that verifies.
+        let buf = serializer
+            .serialize_vec_outer(&mut ForceChecksumAction(TransportChecksumAction::ComputeFull))
+            .unwrap();
+
+        c.add_bytes(buf.as_ref());
+        assert_eq!(c.checksum(), [0, 0]);
     }
 
     #[test]

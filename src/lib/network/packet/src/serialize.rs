@@ -1523,10 +1523,12 @@ pub trait SerializationContext: Sized {
     >(
         &mut self,
         inner: I,
-        outer: &O,
+        _outer: &O,
         constraints: PacketConstraints,
         provider: P,
-    ) -> Result<B, (SerializeError<P::Error>, I)>;
+    ) -> Result<B, (SerializeError<P::Error>, I)> {
+        inner.serialize(self, constraints, provider)
+    }
 
     /// Updates the context with knowledge that an inner `Serializer` is being
     /// wrapped by an outer `PacketBuilder`. Must be called any time such
@@ -1546,10 +1548,12 @@ pub trait SerializationContext: Sized {
     >(
         &mut self,
         inner: &I,
-        outer: &O,
+        _outer: &O,
         constraints: PacketConstraints,
         alloc: A,
-    ) -> Result<B, SerializeError<A::Error>>;
+    ) -> Result<B, SerializeError<A::Error>> {
+        inner.serialize_new_buf(self, constraints, alloc)
+    }
 
     /// Updates the context with knowledge that an inner `PartialSerializer` is
     /// being wrapped by an outer `PartialPacketBuilder`. Must be called any
@@ -1564,10 +1568,12 @@ pub trait SerializationContext: Sized {
     fn partial_serialize_with_outer<I: PartialSerializer<Self>, O: PartialPacketBuilder<Self>>(
         &mut self,
         inner: &I,
-        outer: &O,
+        _outer: &O,
         constraints: PacketConstraints,
         buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>>;
+    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
+        inner.partial_serialize(self, constraints, buffer)
+    }
 }
 
 // An empty serialization context.
@@ -1577,45 +1583,8 @@ pub struct NoOpSerializationContext;
 impl SerializationContext for NoOpSerializationContext {
     type ContextState = ();
 
-    fn serialize_with_outer<
-        I: Serializer<Self>,
-        O: PacketBuilder<Self>,
-        B: GrowBufferMut,
-        P: BufferProvider<I::Buffer, B>,
-    >(
-        &mut self,
-        inner: I,
-        _outer: &O,
-        constraints: PacketConstraints,
-        provider: P,
-    ) -> Result<B, (SerializeError<P::Error>, I)> {
-        inner.serialize(self, constraints, provider)
-    }
-
-    fn serialize_new_buf_with_outer<
-        I: Serializer<Self>,
-        O: PacketBuilder<Self>,
-        B: GrowBufferMut,
-        A: LayoutBufferAlloc<B>,
-    >(
-        &mut self,
-        inner: &I,
-        _outer: &O,
-        constraints: PacketConstraints,
-        alloc: A,
-    ) -> Result<B, SerializeError<A::Error>> {
-        inner.serialize_new_buf(self, constraints, alloc)
-    }
-
-    fn partial_serialize_with_outer<I: PartialSerializer<Self>, O: PartialPacketBuilder<Self>>(
-        &mut self,
-        inner: &I,
-        _outer: &O,
-        constraints: PacketConstraints,
-        buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        inner.partial_serialize(self, constraints, buffer)
-    }
+    // No need to override the serialization methods; the default implementation
+    // does what we want.
 }
 
 pub trait Serializer<C: SerializationContext>: NestableSerializer + Sized {

@@ -86,6 +86,16 @@ mod private {
     pub trait Sealed {}
 }
 
+/// The checksumming action that should be performed during serialization based
+/// on available checksum offloading capabilities.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum TransportChecksumAction {
+    /// A full checksum should be computed.
+    ComputeFull,
+    /// A partial checksum over the IP pseudo-header should be computed.
+    ComputePartial,
+}
+
 fn update_transport_checksum_pseudo_header<I: Ip>(
     checksum: &mut Checksum,
     src_ip: I::Addr,
@@ -198,6 +208,29 @@ fn compute_transport_checksum_serialize<A: IpAddress>(
         checksum.add_bytes(p);
     }
     checksum.add_bytes(target.footer);
+    Some(checksum.checksum())
+}
+
+/// Computes just the pseudo-header portion of a TCP or UDP checksum.
+fn compute_transport_pseudo_header_checksum<A: IpAddress>(
+    src_ip: A,
+    dst_ip: A,
+    proto: u8,
+    target: &SerializeTarget<'_>,
+    body: FragmentedBytesMut<'_, '_>,
+) -> Option<[u8; 2]> {
+    // See for details:
+    // https://en.wikipedia.org/wiki/Transmission_Control_Protocol#Checksum_computation
+    let mut checksum = Checksum::new();
+    let transport_len = target.header.len() + body.len() + target.footer.len();
+    update_transport_checksum_pseudo_header::<A::Version>(
+        &mut checksum,
+        src_ip,
+        dst_ip,
+        proto,
+        transport_len,
+    )
+    .ok()?;
     Some(checksum.checksum())
 }
 

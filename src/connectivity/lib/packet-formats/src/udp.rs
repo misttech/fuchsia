@@ -28,7 +28,10 @@ use zerocopy::{
 
 use crate::error::{ParseError, ParseResult};
 use crate::ip::IpProto;
-use crate::{compute_transport_checksum_parts, compute_transport_checksum_serialize};
+use crate::{
+    TransportChecksumAction, compute_transport_checksum_parts,
+    compute_transport_checksum_serialize, compute_transport_pseudo_header_checksum,
+};
 
 /// The size of a UDP header in bytes.
 pub const HEADER_BYTES: usize = 8;
@@ -520,16 +523,21 @@ impl<B: SplitByteSliceMut> UdpPacketRaw<B> {
 pub struct UdpEnvelope;
 
 /// A trait for UDP serialization contexts.
-// TODO(https://fxbug.dev/485599557): Expand the definition of this trait to
-// support checksum offloading.
 pub trait UdpSerializationContext: SerializationContext {
     /// Converts a `UdpEnvelope` into the serialization context's state.
     fn envelope_to_state(envelope: UdpEnvelope) -> Self::ContextState;
+
+    /// Returns the checksum action to take based on the serialization context.
+    fn checksum_action(&mut self) -> TransportChecksumAction;
 }
 
 impl UdpSerializationContext for NoOpSerializationContext {
     fn envelope_to_state(_envelope: UdpEnvelope) -> Self::ContextState {
         ()
+    }
+
+    fn checksum_action(&mut self) -> TransportChecksumAction {
+        TransportChecksumAction::ComputeFull
     }
 }
 
@@ -643,22 +651,34 @@ impl<A: IpAddress, C: UdpSerializationContext> PacketBuilder<C> for UdpPacketBui
 
     fn serialize(
         &self,
-        _context: &mut C,
+        context: &mut C,
         target: &mut SerializeTarget<'_>,
         body: FragmentedBytesMut<'_, '_>,
     ) {
         self.serialize_header(body.len(), target.header);
 
-        let mut checksum = compute_transport_checksum_serialize(
-            self.src_ip,
-            self.dst_ip,
-            IpProto::Udp.into(),
-            target,
-            body,
-        )
+        let checksum = match context.checksum_action() {
+            TransportChecksumAction::ComputeFull => compute_transport_checksum_serialize(
+                self.src_ip,
+                self.dst_ip,
+                IpProto::Udp.into(),
+                target,
+                body,
+            )
+            .map(|mut c| {
+                sanitize_checksum(&mut c);
+                c
+            }),
+            TransportChecksumAction::ComputePartial => compute_transport_pseudo_header_checksum(
+                self.src_ip,
+                self.dst_ip,
+                IpProto::Udp.into(),
+                target,
+                body,
+            ),
+        }
         .unwrap(); // Not expected to fail since we were able to serialize the packet.
 
-        sanitize_checksum(&mut checksum);
         target.header[CHECKSUM_RANGE].copy_from_slice(&checksum[..]);
     }
 }
@@ -698,6 +718,7 @@ mod tests {
     use crate::ipv4::{Ipv4Header, Ipv4Packet};
     use crate::ipv6::{Ipv6Header, Ipv6Packet};
     use crate::testutil::*;
+    use crate::update_transport_checksum_pseudo_header;
 
     const TEST_SRC_IPV4: Ipv4Addr = Ipv4Addr::new([1, 2, 3, 4]);
     const TEST_DST_IPV4: Ipv4Addr = Ipv4Addr::new([5, 6, 7, 8]);
@@ -993,6 +1014,37 @@ mod tests {
     }
 
     #[test]
+    fn test_serialization_checksum_actions() {
+        let body = [0x12, 0x34];
+        let serializer = new_test_udp_builder().wrap_body(body.into_serializer());
+
+        // Create checksum over pseudo-header.
+        let mut c = internet_checksum::Checksum::new();
+        update_transport_checksum_pseudo_header::<Ipv4>(
+            &mut c,
+            TEST_SRC_IPV4,
+            TEST_DST_IPV4,
+            IpProto::Udp.into(),
+            HEADER_BYTES + body.len(),
+        )
+        .expect("failed to update checksum");
+
+        // ComputePartial should produce the pseudo-header checksum.
+        let buf = serializer
+            .serialize_vec_outer(&mut ForceChecksumAction(TransportChecksumAction::ComputePartial))
+            .unwrap();
+        assert_eq!(&buf.as_ref()[CHECKSUM_OFFSET..CHECKSUM_OFFSET + 2], c.checksum());
+
+        // ComputeFull should produce a checksum that verifies.
+        let buf = serializer
+            .serialize_vec_outer(&mut ForceChecksumAction(TransportChecksumAction::ComputeFull))
+            .unwrap();
+
+        c.add_bytes(buf.as_ref());
+        assert_eq!(c.checksum(), [0, 0]);
+    }
+
+    #[test]
     fn test_udp_checksum_0xffff() {
         // Test the behavior when a UDP packet has to flip its checksum field.
         let serializer = UdpPacketBuilder::new(
@@ -1001,14 +1053,13 @@ mod tests {
             None,
             NonZeroU16::new(1).unwrap(),
         )
-        .wrap_body((&[0xff, 0xd9]).into_serializer());
+        .wrap_body((&[0xFF, 0xD9]).into_serializer());
         let buf = serializer.serialize_vec_outer(&mut NoOpSerializationContext).unwrap();
         // The serializer has flipped the bits for us.
         // Normally, 0xFFFF can't be checksum because -0
         // can not be produced by adding non-negtive 16-bit
         // words
-        assert_eq!(buf.as_ref()[7], 0xFF);
-        assert_eq!(buf.as_ref()[8], 0xFF);
+        assert_eq!(&buf.as_ref()[CHECKSUM_OFFSET..CHECKSUM_OFFSET + 2], [0xFF, 0xFF]);
 
         // When validating the checksum, just add'em up.
         let mut c = internet_checksum::Checksum::new();
