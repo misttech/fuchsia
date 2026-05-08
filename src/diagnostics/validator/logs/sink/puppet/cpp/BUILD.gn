@@ -24,5 +24,4 @@ fuchsia_component("component") {
   testonly = true
   manifest = "meta/puppet.cml"
   deps = [ ":cpp-puppet" ]
-  check_includes = false  # see cml
 }

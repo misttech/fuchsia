@@ -71,7 +71,7 @@ Logger CreateLogger(fuchsia_logging::RawLogSettings* settings) {
   zx_koid_t pid = GetKoid(zx_process_self());
 
   zx::channel log_sink;
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   log_sink = zx::channel{zx_take_startup_handle(PA_LOG_SINK)};
 #endif
 

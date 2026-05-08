@@ -21,6 +21,7 @@
 #include <lib/syslog/structured_backend/cpp/raw_log_settings.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/process.h>
+#include <zircon/process.h>
 #include <zircon/processargs.h>
 
 #include <cstddef>
@@ -132,7 +133,7 @@ const char kTagFieldName[] = "tag";
 
 void FixDefaultSettings(RawLogSettings& settings, bool interest_listener_enabled) {
   // If no handle is provided, try the incoming namespace.
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   if (settings.log_sink == ZX_HANDLE_INVALID) {
     // If there is no procargs handle, `log_sink` will be ZX_HANDLE_INVALID which will fallback to
     // the following `if` and connect to svc.

@@ -31,7 +31,7 @@ DriverBase::DriverBase(std::string_view name, DriverStartArgs start_args,
                             ,
                             logger_wait_for_initial_interest
 #endif
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
                             ,
                             std::move(start_args_.log_sink())
 #endif

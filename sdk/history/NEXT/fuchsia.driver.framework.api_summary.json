@@ -553,6 +553,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.driver.framework/DriverStartArgs.log_sink",
+        "ordinal": "15",
+        "type": "fuchsia.logger/LogSink"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.driver.framework/DriverStartArgs.node",
         "ordinal": "1",
         "type": "client_end:fuchsia.driver.framework/Node"

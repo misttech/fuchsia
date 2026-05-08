@@ -95,10 +95,10 @@ class Logger final {
       ,
       bool wait_for_initial_interest = true
 #endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
       ,
       std::optional<fidl::ClientEnd<fuchsia_logger::LogSink>> maybe_log_sink = std::nullopt
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   );
 
   static zx::result<std::unique_ptr<Logger>> Create(
@@ -108,10 +108,10 @@ class Logger final {
       ,
       bool wait_for_initial_interest = true
 #endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
       ,
       std::optional<fidl::ClientEnd<fuchsia_logger::LogSink>> maybe_log_sink = std::nullopt
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
       )
       ZX_DEPRECATED_SINCE(1, 24, "Use Create2 which will return a no-op logger instead of failing");
 #endif  // !HOST_LOGGING
@@ -223,10 +223,10 @@ class Logger final {
       ,
       bool wait_for_initial_interest = true
 #endif  // FUCHSIA_API_LEVEL_LESS_THAN(29)
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
       ,
       std::optional<fidl::ClientEnd<fuchsia_logger::LogSink>> maybe_log_sink = std::nullopt
-#endif  // FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#endif  // FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   );
 #endif  // !HOST_LOGGING
 

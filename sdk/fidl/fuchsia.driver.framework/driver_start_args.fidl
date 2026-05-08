@@ -133,6 +133,6 @@ type DriverStartArgs = resource table {
     14: power_element_args PowerElementArgs;
 
     /// Log sink channel.
-    @available(added=HEAD)
+    @available(added=NEXT)
     15: log_sink client_end:fuchsia.logger.LogSink;
 };

@@ -7,7 +7,7 @@
 #include <lib/driver/testing/cpp/test_node.h>
 #include <lib/fdf/cpp/dispatcher.h>
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
 #include <lib/fdio/directory.h>
 #endif
 #include <zircon/availability.h>
@@ -66,7 +66,7 @@ zx::result<TestNode::CreateStartArgsResult> TestNode::CreateStartArgsAndServe() 
     return serve_result.take_error();
   }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
   auto [log_sink_client, log_sink_server] = *fidl::CreateEndpoints<fuchsia_logger::LogSink>();
   ZX_ASSERT(fdio_service_connect_at(incoming_directory_endpoints.client.channel().get(),
                                     "svc/fuchsia.logger.LogSink",
@@ -83,7 +83,7 @@ zx::result<TestNode::CreateStartArgsResult> TestNode::CreateStartArgsAndServe() 
       .node = std::move(incoming_node_endpoints.client),
       .incoming = std::move(incoming_entries),
       .outgoing_dir = std::move(outgoing_directory_endpoints.server),
-#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
       .log_sink = std::move(log_sink_client),
 #endif
   });
