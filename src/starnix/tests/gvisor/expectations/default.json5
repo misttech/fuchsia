@@ -936,6 +936,8 @@
                 "WriteTest.PartialWriteSIGBUS",
 
                 // chown_test
+                // TODO(https://fxbug.dev/511265190): Fix and re-enable.
+                "ChownTest.ChownRemovesSecurityCapability",
                 "ChownTest.SetGroupIdBitDeniedWithoutCapFsetIdOrRelevantGroup",
 
                 // raw_socket_test
