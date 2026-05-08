@@ -36,7 +36,7 @@ more information.
 
 Here is an example of a realm with a capability routed through it:
 
-<br>![Realm example](images/realm_example.png)<br>
+<br>![Component tree diagram showing 'fuchsia.Echo' protocol routing from 'echo' up to 'shell' and down to 'echo_tool'.](images/realm_example.png)<br>
 
 In this example, the `shell` component has two children: `tools` and `services`.
 `services` has two children, `logger` and `echo`, while `tools` has one child

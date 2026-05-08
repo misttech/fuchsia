@@ -137,7 +137,7 @@ There are the following offers:
 
 Here is a drawing of the realm in question:
 
-![Component shutdown example](images/component_shutdown_example.png){: width="662"}
+![Diagram of components A, B, C, and D with arrows showing shutdown dependencies. Solid arrows indicate strong dependencies (A->B, A->C, B->C), and a dashed arrow indicates a weak dependency (C->B).](images/component_shutdown_example.png){: width="662"}
 
 The shutdown ordering would be the following:
 

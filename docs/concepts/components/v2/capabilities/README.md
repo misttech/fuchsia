@@ -109,7 +109,7 @@ type                                  | description                             
 Consider the following example that describes capability routing through the
 component instance tree:
 
-<br>![Capability routing example](/docs/concepts/components/v2/images/capability_routing_example.png)<br>
+<br>![Component tree diagram showing capability routing of 'fuchsia.Echo' protocol from provider 'echo' up through 'services' and 'shell', and down to consumer 'echo_tool'.](/docs/concepts/components/v2/images/capability_routing_example.png)<br>
 
 In this example:
 
