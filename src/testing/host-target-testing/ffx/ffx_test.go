@@ -51,6 +51,7 @@ func TestTargetList(t *testing.T) {
 	expected_entries := []TargetEntry{
 		{NodeName: "1", Addresses: []TargetAddress{{Type: "Ip", IP: "127.0.0.1"}}, TargetState: "Product"},
 		{NodeName: "2", Addresses: []TargetAddress{{Type: "Ip", IP: "127.0.0.2"}}, TargetState: "Product"},
+		{NodeName: "fuchsia-5254-475e-82ef", Addresses: []TargetAddress{{Type: "Ip", IP: "fe80::9bf7:2e3:c4f8:9638%qemu"}}, TargetState: "Product"},
 	}
 	data, err := json.Marshal(expected_entries)
 	if err != nil {
@@ -86,5 +87,34 @@ func TestTargetList(t *testing.T) {
 	}
 	if target.NodeName != "1" {
 		t.Fatalf("unexpected device name, expected 1, got %s", target.NodeName)
+	}
+}
+
+func TestTargetListStrict(t *testing.T) {
+	expectedEntries := []TargetEntry{
+		{NodeName: "1", Addresses: []TargetAddress{{Type: "Ip", IP: "127.0.0.1"}}, TargetState: "Product"},
+		{NodeName: "2", Addresses: []TargetAddress{{Type: "Ip", IP: "127.0.0.2"}}, TargetState: "Product"},
+	}
+	data, err := json.Marshal(expectedEntries)
+	if err != nil {
+		t.Fatalf("Failed to marshal: %s", err)
+	}
+
+	ffxtoolScript := createScript(t, string(data))
+
+	runDir := NewRunDir(filepath.Join(t.TempDir(), "ffx-run-dir"))
+
+	// We must call newFfxStrict directly because NewFFXToolForVersion still defaults to daemon mode.
+	ffxStrict, err := newFfxStrict(context.Background(), ffxtoolScript, runDir)
+	if err != nil {
+		t.Fatalf("Failed to create ffx strict: %s", err)
+	}
+
+	entries, err := ffxStrict.TargetList(context.Background())
+	if err != nil {
+		t.Fatalf("Failed to run target list: %s", err)
+	}
+	if diff := cmp.Diff(entries, expectedEntries); diff != "" {
+		t.Fatalf("unexpected entries, diff:\n%s", diff)
 	}
 }

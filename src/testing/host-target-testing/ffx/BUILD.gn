@@ -11,10 +11,12 @@ if (is_host) {
     deps = [
       "../util",
       "//third_party/golibs:golang.org/x/crypto",
+      "//tools/lib/ffxutil",
       "//tools/lib/logger",
     ]
     sources = [
       "ffx_daemon.go",
+      "ffx_strict.go",
       "ffx_test.go",
       "ffxtool.go",
       "flasher.go",
