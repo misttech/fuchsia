@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::{
-    ActiveRequests, DecodedRequest, DeviceInfo, IntoOrchestrator, OffsetMap, Operation, RequestId,
-    SessionHelper, TraceFlowId, WriteFlags,
+    ActiveRequests, DecodedRequest, DeviceInfo, HandleRequestResult, IntoOrchestrator, OffsetMap,
+    Operation, RequestId, SessionHelper, TraceFlowId, WriteFlags,
 };
 use anyhow::Error;
 use block_protocol::{BlockFifoRequest, BlockFifoResponse};
@@ -51,12 +51,12 @@ struct SessionManagerInner<I: Interface + ?Sized> {
     open_sessions: HashMap<usize, Weak<Session<I>>>,
 }
 
-// The signals used in `SessionManagerInner::event`.
+// The signals used on the session's FIFO.
 
-/// Signalled on `SessionManagerInner::event` to wake up the FIFO loop.
+/// Signalled on the session's FIFO to wake up the FIFO loop.
 const FIFO_WAKE_SIGNAL: zx::Signals = zx::Signals::USER_0;
 
-/// Signalled on `SessionManagerInner::event` to terminate the FIFO loop.
+/// Signalled on the session's FIFO to terminate the FIFO loop.
 const SHUTDOWN_SIGNAL: zx::Signals = zx::Signals::USER_1;
 
 pub struct SessionManager<I: Interface + ?Sized> {
@@ -90,7 +90,13 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
     ) -> Result<(), Error> {
         let (helper, fifo) = SessionHelper::new(orchestrator.clone(), offset_map, block_size)?;
         let (abort_handle, registration) = AbortHandle::new_pair();
-        let session = Arc::new(Session { helper, fifo, queue: Mutex::default(), abort_handle });
+        let session = Arc::new(Session {
+            helper,
+            fifo,
+            queue: Mutex::default(),
+            abort_handle,
+            close_callback: Mutex::new(None),
+        });
         let sm = orchestrator.as_ref().borrow();
         sm.inner
             .lock()
@@ -102,7 +108,13 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
         let result = Abortable::new(
             async {
                 while let Some(request) = stream.try_next().await? {
-                    session.helper.handle_request(request).await?;
+                    match session.helper.handle_request(request).await? {
+                        HandleRequestResult::Ok => {}
+                        HandleRequestResult::Closed(callback) => {
+                            *session.close_callback.lock() = Some(callback);
+                            break;
+                        }
+                    }
                 }
                 Ok(())
             },
@@ -198,6 +210,7 @@ pub struct Session<I: Interface + ?Sized> {
     fifo: zx::Fifo<BlockFifoRequest, BlockFifoResponse>,
     queue: Mutex<SessionQueue>,
     abort_handle: AbortHandle,
+    close_callback: Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>,
 }
 
 #[derive(Default)]
@@ -500,6 +513,10 @@ impl<I: Interface + ?Sized> Session<I> {
 
 impl<I: Interface + ?Sized> Drop for Session<I> {
     fn drop(&mut self) {
+        let callback = std::mem::take(&mut *self.close_callback.lock());
+        if let Some(callback) = callback {
+            callback();
+        }
         let notify = {
             let mut inner = self.helper.session_manager().inner.lock();
             inner.open_sessions.remove(&(self as *const _ as usize));
@@ -531,8 +548,9 @@ mod tests {
     use crate::BlockInfo;
     use block_protocol::{BlockFifoCommand, BlockFifoRequest, BlockFifoResponse};
     use fidl::endpoints::create_proxy_and_stream;
+    use fidl_fuchsia_storage_block as fblock;
+    use fuchsia_async as fasync;
     use zx::HandleBased;
-    use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     struct MockInterface {
         request_sender: std::sync::mpsc::Sender<Request>,
@@ -1022,6 +1040,71 @@ mod tests {
         drop(proxy);
 
         fasync::unblock(move || session_manager.terminate()).await;
+        server_task.await;
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_session_close_is_synchronous() {
+        use futures::FutureExt as _;
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let interface = Arc::new(MockInterface { request_sender: tx });
+        let session_manager = Arc::new(SessionManager::new(interface.clone()));
+
+        let sm_clone = session_manager.clone();
+        let (proxy, stream) = create_proxy_and_stream::<fblock::BlockMarker>();
+        let server_task = fasync::Task::spawn(async move {
+            let server = crate::BlockServer::new(512, sm_clone);
+            server.handle_requests(stream).await.unwrap();
+        });
+
+        let (session_proxy, session_server_end) =
+            fidl::endpoints::create_proxy::<fblock::SessionMarker>();
+        proxy.open_session(session_server_end).unwrap();
+
+        let fifo_handle = session_proxy.get_fifo().await.unwrap().unwrap();
+        let fifo: zx::Fifo<BlockFifoResponse, BlockFifoRequest> = zx::Fifo::from(fifo_handle);
+
+        let vmo = zx::Vmo::create(8192).unwrap();
+        let vmo_id = session_proxy
+            .attach_vmo(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let req = BlockFifoRequest {
+            command: BlockFifoCommand {
+                opcode: fblock::BlockOpcode::Read.into_primitive(),
+                ..Default::default()
+            },
+            reqid: 123,
+            group: 0,
+            vmoid: vmo_id.id,
+            length: 1,
+            vmo_offset: 0,
+            dev_offset: 0,
+            trace_flow_id: 0,
+            ..Default::default()
+        };
+        fifo.write(&[req]).unwrap();
+
+        let r = rx.recv().unwrap();
+
+        // The close request shouldn't complete yet because the read is still hanging.
+        let mut close_fut = std::pin::pin!(session_proxy.close().fuse());
+        let mut timer_fut =
+            std::pin::pin!(fasync::Timer::new(std::time::Duration::from_millis(100)).fuse());
+        futures::select! {
+            res = close_fut => panic!("close completed too early: {:?}", res),
+            _ = timer_fut => {}
+        }
+
+        session_manager.complete_request(r.request_id, zx::Status::OK);
+
+        // Verify that close() now completes.
+        close_fut.await.unwrap().unwrap();
+
+        std::mem::drop(proxy);
         server_task.await;
     }
 }

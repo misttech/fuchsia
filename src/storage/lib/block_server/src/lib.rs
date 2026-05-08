@@ -1,9 +1,11 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{Error, anyhow};
+use anyhow::Error;
 use block_protocol::{BlockFifoRequest, BlockFifoResponse};
 use fblock::{BlockIoFlag, BlockOpcode, MAX_TRANSFER_UNBOUNDED};
+use fidl_fuchsia_storage_block as fblock;
+use fuchsia_async as fasync;
 use fuchsia_async::epoch::{Epoch, EpochGuard};
 use fuchsia_sync::{MappedMutexGuard, Mutex, MutexGuard};
 use futures::{Future, FutureExt as _, TryStreamExt as _};
@@ -16,7 +18,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use storage_device::buffer::Buffer;
 use zx::HandleBased;
-use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
 pub mod async_interface;
 pub mod c_interface;
@@ -624,6 +625,15 @@ impl Drop for VmoMapping {
     }
 }
 
+enum HandleRequestResult {
+    /// The request was handled successfully.
+    Ok,
+    /// The request closed the stream.  The caller must shut down the session, and must call the
+    /// provided callback after the session is completely shut down.  The caller should assume that
+    /// no further requests need to be handled once this is received.
+    Closed(Box<dyn FnOnce() + Send + 'static>),
+}
+
 impl<SM: SessionManager> SessionHelper<SM> {
     fn new(
         orchestrator: Arc<SM::Orchestrator>,
@@ -638,7 +648,10 @@ impl<SM: SessionManager> SessionHelper<SM> {
         self.orchestrator.as_ref().borrow()
     }
 
-    async fn handle_request(&self, request: fblock::SessionRequest) -> Result<(), Error> {
+    async fn handle_request(
+        &self,
+        request: fblock::SessionRequest,
+    ) -> Result<HandleRequestResult, Error> {
         match request {
             fblock::SessionRequest::GetFifo { responder } => {
                 let rights = zx::Rights::TRANSFER
@@ -650,7 +663,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
                     Ok(fifo) => responder.send(Ok(fifo.downcast()))?,
                     Err(s) => responder.send(Err(s.into_raw()))?,
                 }
-                Ok(())
+                Ok(HandleRequestResult::Ok)
             }
             fblock::SessionRequest::AttachVmo { vmo, responder } => {
                 let vmo = Arc::new(vmo);
@@ -658,7 +671,7 @@ impl<SM: SessionManager> SessionHelper<SM> {
                     let mut vmos = self.vmos.lock();
                     if vmos.len() == u16::MAX as usize {
                         responder.send(Err(zx::Status::NO_RESOURCES.into_raw()))?;
-                        return Ok(());
+                        return Ok(HandleRequestResult::Ok);
                     } else {
                         let vmo_id = match vmos.last_entry() {
                             None => 1,
@@ -682,11 +695,14 @@ impl<SM: SessionManager> SessionHelper<SM> {
                 };
                 SM::on_attach_vmo(self.orchestrator.clone(), &vmo).await?;
                 responder.send(Ok(&fblock::VmoId { id: vmo_id }))?;
-                Ok(())
+                Ok(HandleRequestResult::Ok)
             }
             fblock::SessionRequest::Close { responder } => {
-                responder.send(Ok(()))?;
-                Err(anyhow!("Closed"))
+                Ok(HandleRequestResult::Closed(Box::new(move || {
+                    if let Err(err) = responder.send(Ok(())) {
+                        log::warn!(err:?; "Error sending close response");
+                    }
+                })))
             }
         }
     }
@@ -1151,12 +1167,14 @@ pub enum Operation {
     },
     /// This will never be seen by the C interface.
     CloseVmo,
+    /// This will never be seen by the C interface.
     StartDecompressedRead {
         required_buffer_size: usize,
         device_block_offset: u64,
         block_count: u32,
         options: ReadOptions,
     },
+    /// This will never be seen by the C interface.
     ContinueDecompressedRead {
         offset: u64,
         device_block_offset: u64,
@@ -1326,7 +1344,9 @@ mod tests {
         BlockFifoCommand, BlockFifoRequest, BlockFifoResponse, InlineCryptoOptions, ReadOptions,
         WriteFlags, WriteOptions,
     };
+    use fidl_fuchsia_storage_block as fblock;
     use fidl_fuchsia_storage_block::{BlockIoFlag, BlockOpcode};
+    use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
     use futures::FutureExt as _;
     use futures::channel::oneshot;
@@ -1339,7 +1359,6 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::task::{Context, Poll};
     use zx::HandleBased as _;
-    use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
     #[derive(Default)]
     struct MockInterface {
@@ -2309,6 +2328,89 @@ mod tests {
                 reader.read_entries(&mut response).await.unwrap();
                 assert_eq!(response.status, zx::sys::ZX_OK);
                 assert_eq!(response.reqid, id);
+            }
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_session_close_is_synchronous() {
+        use futures::{FutureExt as _, StreamExt as _};
+
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fblock::BlockMarker>();
+
+        let (start_tx, mut start_rx) = futures::channel::mpsc::channel(1);
+        let (finish_tx, finish_rx) = futures::channel::oneshot::channel();
+        let finish_rx = Arc::new(Mutex::new(Some(finish_rx)));
+
+        futures::join!(
+            async move {
+                let block_server = BlockServer::new(
+                    BLOCK_SIZE,
+                    Arc::new(MockInterface {
+                        read_hook: Some(Box::new(move |_, _, _, _| {
+                            let mut start_tx = start_tx.clone();
+                            let finish_rx = finish_rx.lock().take().unwrap();
+                            Box::pin(async move {
+                                start_tx.try_send(()).unwrap();
+                                let _ = finish_rx.await;
+                                Ok(())
+                            })
+                        })),
+                        ..MockInterface::default()
+                    }),
+                );
+                block_server.handle_requests(stream).await.unwrap();
+            },
+            async move {
+                let (session_proxy, server) = fidl::endpoints::create_proxy();
+                proxy.open_session(server).unwrap();
+
+                let vmo = zx::Vmo::create(zx::system_get_page_size() as u64).unwrap();
+                let vmo_id = session_proxy
+                    .attach_vmo(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+                    .await
+                    .unwrap()
+                    .unwrap();
+
+                let mut fifo = fasync::Fifo::<BlockFifoResponse, BlockFifoRequest>::from_fifo(
+                    session_proxy.get_fifo().await.unwrap().unwrap(),
+                );
+                let (_reader, mut writer) = fifo.async_io();
+
+                writer
+                    .write_entries(&BlockFifoRequest {
+                        command: BlockFifoCommand {
+                            opcode: BlockOpcode::Read.into_primitive(),
+                            ..Default::default()
+                        },
+                        reqid: 1,
+                        vmoid: vmo_id.id,
+                        length: 1,
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap();
+
+                // Wait for the read to actually start.
+                start_rx.next().await.unwrap();
+
+                // The close request shouldn't complete yet because the read is still hanging.
+                let mut close_fut = std::pin::pin!(session_proxy.close().fuse());
+                let mut timer_fut = std::pin::pin!(
+                    fasync::Timer::new(std::time::Duration::from_millis(100)).fuse()
+                );
+                futures::select! {
+                    res = close_fut => panic!("close completed too early: {:?}", res),
+                    _ = timer_fut => {}
+                }
+
+                // Finish the pending request.
+                finish_tx.send(()).unwrap();
+
+                // Verify that close() now completes.
+                close_fut.await.unwrap().unwrap();
+
+                std::mem::drop(proxy);
             }
         );
     }

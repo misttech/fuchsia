@@ -1648,6 +1648,8 @@ void SdmmcBlockDevice::OnRequests(PartitionDevice& partition,
         break;
 
       case block_server::Operation::Tag::CloseVmo:
+      case block_server::Operation::Tag::StartDecompressedRead:
+      case block_server::Operation::Tag::ContinueDecompressedRead:
         __UNREACHABLE;
     }
   }

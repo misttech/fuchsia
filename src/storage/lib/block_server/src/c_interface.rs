@@ -7,13 +7,16 @@ use crate::{IntoOrchestrator, callback_interface};
 use fidl::endpoints::RequestStream;
 use fidl_fuchsia_storage_block as fblock;
 use fidl_fuchsia_storage_block::MAX_TRANSFER_UNBOUNDED;
-use fuchsia_async::{self as fasync, EHandle};
+use fuchsia_async as fasync;
 use fuchsia_sync::{Condvar, Mutex};
-use futures::stream::AbortHandle;
+use futures::stream::{AbortHandle, Abortable};
 use std::borrow::{Borrow, Cow};
 use std::ffi::{CStr, c_char, c_void};
 use std::num::NonZero;
 use std::sync::Arc;
+
+/// cbindgen:no-export
+pub type Session = callback_interface::Session<InterfaceAdapter>;
 
 #[repr(C)]
 pub struct Callbacks {
@@ -22,17 +25,16 @@ pub struct Callbacks {
     /// called.
     pub context: *mut c_void,
     /// Starts a thread.  The implementation must call [`block_server_thread`] on this newly created
-    /// thread, providing `arg`.  The implementation must then call [`block_server_thread_delete`]
-    /// after [`block_server_thread`] returns (but before [`block_server_delete`] is called).
+    /// thread, providing `arg`.  Once this completes, the implementation must NOT use the block
+    /// server for which the thread was started, as it could be destroyed at any time.
+    /// The implementation must call [`block_server_thread_release`] after [`block_server_thread`]
+    /// completes (but before [`block_server_delete`] is called).
     pub start_thread: unsafe extern "C" fn(context: *mut c_void, arg: *const c_void),
     /// Notifies the implementation of a new session.  The implementation must call
     /// [`block_server_session_run`] on a separate thread, and must call
     /// [`block_server_session_release`] after [`block_server_session_run`] (but before
     /// [`block_server_delete`] is called).
-    pub on_new_session: unsafe extern "C" fn(
-        context: *mut c_void,
-        session: *const callback_interface::Session<InterfaceAdapter>,
-    ),
+    pub on_new_session: unsafe extern "C" fn(context: *mut c_void, session: *const Session),
     /// Submits a batch of requests to be handled by the implementation.  The implementation must
     /// not retain references to `requests` after it returns.  The implementation must ensure that
     /// [`block_server_send_reply`] is called exactly once with the request ID of each entry in
@@ -85,7 +87,7 @@ impl callback_interface::Interface for InterfaceAdapter {
         Cow::Borrowed(&self.info)
     }
 
-    fn spawn_session(&self, session: Arc<callback_interface::Session<Self>>) {
+    fn spawn_session(&self, session: Arc<Session>) {
         unsafe {
             (self.callbacks.on_new_session)(self.callbacks.context, Arc::into_raw(session));
         }
@@ -182,8 +184,9 @@ type ShutdownCallback = unsafe extern "C" fn(*mut c_void);
 enum Mail {
     #[default]
     None,
-    Initialized(EHandle, AbortHandle),
+    Initialized(fasync::ScopeHandle, AbortHandle),
     AsyncShutdown(*const BlockServer, ShutdownCallback, *mut c_void),
+    ThreadFinished(*const BlockServer, ShutdownCallback, *mut c_void),
     Finished,
 }
 
@@ -211,11 +214,14 @@ impl Borrow<callback_interface::SessionManager<InterfaceAdapter>> for Orchestrat
 
 pub struct BlockServer {
     server: super::BlockServer<callback_interface::SessionManager<InterfaceAdapter>>,
-    ehandle: EHandle,
+    scope: fasync::ScopeHandle,
     abort_handle: AbortHandle,
     orchestrator: Arc<Orchestrator>,
 }
 
+/// Creates a new block server.  Returns nullptr on failure (e.g. if the thread to run the block
+/// server failed to start).
+///
 /// # Safety
 ///
 /// All callbacks in `callbacks` must be safe.
@@ -247,9 +253,9 @@ pub unsafe extern "C" fn block_server_new(
 
     let block_size = partition_info.block_size;
     match mail {
-        Mail::Initialized(ehandle, abort_handle) => Box::into_raw(Box::new(BlockServer {
+        Mail::Initialized(scope, abort_handle) => Box::into_raw(Box::new(BlockServer {
             server: super::BlockServer::new(block_size, orchestrator.clone()),
-            ehandle,
+            scope,
             abort_handle,
             orchestrator: orchestrator.clone(),
         })),
@@ -258,6 +264,11 @@ pub unsafe extern "C" fn block_server_new(
     }
 }
 
+/// Runs the main loop to handle FIDL requests for the block server.  Blocks until the server is
+/// shutting down.
+///
+/// After this returns, the caller *must* call [`block_server_thread_release`] on the same thread.
+///
 /// # Safety
 ///
 /// `arg` must be the value passed to the `start_thread` callback.
@@ -266,43 +277,66 @@ pub unsafe extern "C" fn block_server_thread(arg: *const c_void) {
     let orchestrator = unsafe { &*(arg as *const Orchestrator) };
 
     let mut executor = fasync::LocalExecutor::default();
-    let (abort_handle, registration) = futures::stream::AbortHandle::new_pair();
+    let scope = fasync::Scope::new();
 
-    orchestrator.mbox.post(Mail::Initialized(EHandle::local(), abort_handle));
+    // Create a future which will run until `abort_handle` is aborted, so that the scope will run
+    // that long as well.
+    let (abort_handle, registration) = AbortHandle::new_pair();
+    let root_task = scope.spawn(async move {
+        let _ = Abortable::new(std::future::pending::<()>(), registration).await;
+    });
+    orchestrator.mbox.post(Mail::Initialized(scope.clone(), abort_handle));
 
-    let _ = executor.run_singlethreaded(futures::stream::Abortable::new(
-        std::future::pending::<()>(),
-        registration,
-    ));
+    // Block until the abort handle is fired.  This is the main entry point, tasks are spawned on
+    // this executor.
+    let _ = executor.run_singlethreaded(root_task);
+
+    // At this point, the abort handle was fired, which happens when shutdown begins.
+    {
+        let mut mbox = orchestrator.mbox.0.lock();
+        let mail = std::mem::take(&mut *mbox);
+        if let Mail::AsyncShutdown(block_server, callback, arg) = mail {
+            *mbox = Mail::ThreadFinished(block_server, callback, arg);
+            orchestrator.mbox.1.notify_all();
+        } else {
+            *mbox = mail;
+        }
+    }
+
+    // Synchronously cancel the scope which is processing FIDL requests.
+    let _ = executor.run_singlethreaded(scope.cancel());
+
+    // No more sessions can be created.  Before we drop the `BlockServer` instance we must make
+    // sure there are no sessions running because otherwise there could be outstanding responses
+    // that would result in `block_server_send_reply` being called.
+    orchestrator.session_manager.terminate();
 }
 
-/// Called to delete the thread.  This *must* always be called, regardless of whether starting the
-/// thread is successful or not.
+/// Called to release the thread.  This *must* always be called on the thread spawned by
+/// [`Callbacks::start_thread`], regardless of whether [`block_server_thread`] is called or not.
 ///
 /// # Safety
 ///
 /// `arg` must be the value passed to the `start_thread` callback.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn block_server_thread_delete(arg: *const c_void) {
+pub unsafe extern "C" fn block_server_thread_release(arg: *const c_void) {
     // SAFETY: This balances the `into_raw` in `block_server_new`.
     let orchestrator = unsafe { Arc::from_raw(arg as *const Orchestrator) };
 
     let mail = orchestrator.mbox.post(Mail::Finished);
+    match mail {
+        Mail::None | Mail::Finished => {}
+        Mail::ThreadFinished(block_server, callback, arg) => {
+            // SAFETY: No other threads are running now, so it should be safe to drop the
+            // `BlockServer` instance.
+            let _ = unsafe { Box::from_raw(block_server as *mut BlockServer) };
 
-    if let Mail::AsyncShutdown(block_server, callback, arg) = mail {
-        // No more sessions can be created.  Before we drop the `BlockServer` instance we must make
-        // sure there are no sessions running because otherwise there could be outstanding responses
-        // that would result in `block_server_send_reply` being called.
-        orchestrator.session_manager.terminate();
-
-        // SAFETY: No other threads are running now, so it should be safe to drop the `BlockServer`
-        // instance.
-        let _ = unsafe { Box::from_raw(block_server as *mut BlockServer) };
-
-        // SAFETY: Whoever supplied the callback must guarantee it's safe.
-        unsafe {
-            callback(arg);
+            // SAFETY: Whoever supplied the callback must guarantee it's safe.
+            unsafe {
+                callback(arg);
+            }
         }
+        _ => panic!("block_server_thread_release called while thread is still running"),
     }
 }
 
@@ -375,9 +409,8 @@ pub unsafe extern "C" fn block_server_delete_async(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn block_server_serve(block_server: *const BlockServer, handle: zx_handle_t) {
     let block_server = unsafe { &*block_server };
-    let ehandle = &block_server.ehandle;
     let handle = unsafe { zx::NullableHandle::from_raw(handle) };
-    ehandle.global_scope().spawn(async move {
+    block_server.scope.spawn(async move {
         let _ = block_server
             .server
             .handle_requests(fblock::BlockRequestStream::from_channel(
@@ -391,9 +424,7 @@ pub unsafe extern "C" fn block_server_serve(block_server: *const BlockServer, ha
 ///
 /// `session` must be valid.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn block_server_session_run(
-    session: &callback_interface::Session<InterfaceAdapter>,
-) {
+pub unsafe extern "C" fn block_server_session_run(session: &Session) {
     let session = unsafe { Arc::from_raw(session) };
     session.run();
     let _ = Arc::into_raw(session);
@@ -403,9 +434,7 @@ pub unsafe extern "C" fn block_server_session_run(
 ///
 /// `session` must be valid.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn block_server_session_release(
-    session: &callback_interface::Session<InterfaceAdapter>,
-) {
+pub unsafe extern "C" fn block_server_session_release(session: &Session) {
     session.terminate_async();
     unsafe { Arc::from_raw(session) };
 }

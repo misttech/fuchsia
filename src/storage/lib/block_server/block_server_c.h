@@ -30,6 +30,7 @@
 namespace block_server::internal {
 
 struct BlockServer;
+struct Session;
 
 class WriteFlags {
  public:
@@ -44,8 +45,6 @@ class WriteFlags {
 
 namespace block_server {
 namespace internal {
-
-struct Session;
 
 struct PartitionInfo {
   uint32_t device_flags;
@@ -84,6 +83,10 @@ struct Operation {
     Trim,
     /// This will never be seen by the C interface.
     CloseVmo,
+    /// This will never be seen by the C interface.
+    StartDecompressedRead,
+    /// This will never be seen by the C interface.
+    ContinueDecompressedRead,
   };
 
   struct Read_Body {
@@ -107,11 +110,27 @@ struct Operation {
     uint32_t block_count;
   };
 
+  struct StartDecompressedRead_Body {
+    uintptr_t required_buffer_size;
+    uint64_t device_block_offset;
+    uint32_t block_count;
+    ReadOptions options;
+  };
+
+  struct ContinueDecompressedRead_Body {
+    uint64_t offset;
+    uint64_t device_block_offset;
+    uint32_t block_count;
+    ReadOptions options;
+  };
+
   Tag tag;
   union {
     Read_Body read;
     Write_Body write;
     Trim_Body trim;
+    StartDecompressedRead_Body start_decompressed_read;
+    ContinueDecompressedRead_Body continue_decompressed_read;
   };
 };
 
@@ -130,8 +149,10 @@ struct Callbacks {
   /// called.
   void *context;
   /// Starts a thread.  The implementation must call [`block_server_thread`] on this newly created
-  /// thread, providing `arg`.  The implementation must then call [`block_server_thread_delete`]
-  /// after [`block_server_thread`] returns (but before [`block_server_delete`] is called).
+  /// thread, providing `arg`.  Once this completes, the implementation must NOT use the block
+  /// server for which the thread was started, as it could be destroyed at any time.
+  /// The implementation must call [`block_server_thread_release`] after [`block_server_thread`]
+  /// completes (but before [`block_server_delete`] is called).
   void (*start_thread)(void *context, const void *arg);
   /// Notifies the implementation of a new session.  The implementation must call
   /// [`block_server_session_run`] on a separate thread, and must call
@@ -142,7 +163,8 @@ struct Callbacks {
   /// not retain references to `requests` after it returns.  The implementation must ensure that
   /// [`block_server_send_reply`] is called exactly once with the request ID of each entry in
   /// `requests`, regardless of its status; this call can be asynchronous but must occur before
-  /// [`block_server_delete`] is called.
+  /// [`block_server_delete`] is called.  Note that a reply must be sent for every request before
+  /// shutdown.
   void (*on_requests)(void *context, Request *requests, uintptr_t request_count);
   /// Logs `message` to the implementation's logger.  The implementation must not retain
   /// references to `message`.
@@ -153,23 +175,31 @@ using ShutdownCallback = void (*)(void *);
 
 extern "C" {
 
+/// Creates a new block server.  Returns nullptr on failure (e.g. if the thread to run the block
+/// server failed to start).
+///
 /// # Safety
 ///
 /// All callbacks in `callbacks` must be safe.
 BlockServer *block_server_new(const PartitionInfo *partition_info, Callbacks callbacks);
 
+/// Runs the main loop to handle FIDL requests for the block server.  Blocks until the server is
+/// shutting down.
+///
+/// After this returns, the caller *must* call [`block_server_thread_release`] on the same thread.
+///
 /// # Safety
 ///
 /// `arg` must be the value passed to the `start_thread` callback.
 void block_server_thread(const void *arg);
 
-/// Called to delete the thread.  This *must* always be called, regardless of whether starting the
-/// thread is successful or not.
+/// Called to release the thread.  This *must* always be called on the thread spawned by
+/// [`Callbacks::start_thread`], regardless of whether [`block_server_thread`] is called or not.
 ///
 /// # Safety
 ///
 /// `arg` must be the value passed to the `start_thread` callback.
-void block_server_thread_delete(const void *arg);
+void block_server_thread_release(const void *arg);
 
 /// # Safety
 ///

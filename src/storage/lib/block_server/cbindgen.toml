@@ -31,6 +31,7 @@ after_includes = """
 namespace block_server::internal {
 
 struct BlockServer;
+struct Session;
 
 class WriteFlags {
  public:

@@ -28,8 +28,8 @@ class FakeServer::FakeInterface : public Interface {
   void StartThread(Thread thread) override {
     std::thread([thread = std::move(thread)]() mutable { thread.Run(); }).detach();
   }
-  void OnNewSession(Session session) override {
-    std::thread([session = std::move(session)]() mutable { session.Run(); }).detach();
+  void OnNewSession(std::unique_ptr<Session> session) override {
+    std::thread([session = std::move(session)]() mutable { session->Run(); }).detach();
   }
   void OnRequests(std::span<Request> requests) override {
     std::vector<uint8_t> buf;
@@ -38,7 +38,7 @@ class FakeServer::FakeInterface : public Interface {
       switch (request.operation.tag) {
         case Operation::Tag::Read:
           len = request.operation.read.block_count * block_size_;
-          buf.reserve(len);
+          buf.resize(len);
           ZX_ASSERT(data_.read(buf.data(), request.operation.read.device_block_offset * block_size_,
                                len) == ZX_OK);
           ZX_ASSERT(request.vmo->write(buf.data(), request.operation.read.vmo_offset, len) ==
@@ -47,7 +47,7 @@ class FakeServer::FakeInterface : public Interface {
 
         case Operation::Tag::Write:
           len = request.operation.write.block_count * block_size_;
-          buf.reserve(len);
+          buf.resize(len);
           ZX_ASSERT(request.vmo->read(buf.data(), request.operation.write.vmo_offset, len) ==
                     ZX_OK);
           ZX_ASSERT(data_.write(buf.data(),
@@ -57,8 +57,11 @@ class FakeServer::FakeInterface : public Interface {
 
         case Operation::Tag::Flush:
         case Operation::Tag::Trim:
-        case Operation::Tag::CloseVmo:
           break;
+        case Operation::Tag::CloseVmo:
+        case Operation::Tag::StartDecompressedRead:
+        case Operation::Tag::ContinueDecompressedRead:
+          __UNREACHABLE;
       }
       const BlockServer* server = server_.server_.get();
       server->SendReply(request.request_id, zx::ok());

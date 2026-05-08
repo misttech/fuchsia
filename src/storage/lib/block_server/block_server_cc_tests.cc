@@ -75,10 +75,10 @@ class TestInterface : public Interface {
     }).detach();
   }
 
-  void OnNewSession(Session session) override {
+  void OnNewSession(std::unique_ptr<Session> session) override {
     std::thread([this, session = std::move(session)]() mutable {
       ++threads_running_;
-      session.Run();
+      session->Run();
 
       // Deliberately add a delay to increase the chances of catching regressions where the server
       // does not wait for the thread to terminate.
@@ -262,7 +262,7 @@ TEST(BlockServer, FailedOnNewSession) {
    public:
     explicit TestInterfaceWithFailedOnNewSession(const block_server::PartitionInfo info)
         : TestInterface(info) {}
-    void OnNewSession(Session session) override {
+    void OnNewSession(std::unique_ptr<Session> session) override {
       // Do nothing.
     }
   };
@@ -976,17 +976,17 @@ TEST(BlockServer, GroupWithSimulatedFuaAndFailedFlush) {
 
 class TestDriverInterface : public DriverInterface {
  public:
-  ShutdownHandler OnDispatcherShutdown() const override {
-    return [shutdown_count = dispatcher_shutdown_count_](fdf_dispatcher_t* dispatcher) {
-      ++(*shutdown_count);
-      fdf_dispatcher_destroy(dispatcher);
-    };
-  }
-
   void OnRequests(std::span<Request> requests) final {}
+  std::string_view SessionSchedulerRole() const override { return "foo"; }
 
   std::shared_ptr<std::atomic<size_t>> dispatcher_shutdown_count() const {
     return dispatcher_shutdown_count_;
+  }
+
+ protected:
+  void OnDispatcherShutdown(fdf_dispatcher_t* dispatcher) const override {
+    ++(*dispatcher_shutdown_count_);
+    fdf_dispatcher_destroy(dispatcher);
   }
 
  private:
@@ -999,11 +999,11 @@ class TestDriverInterface : public DriverInterface {
 // they are asynchronously destroyed.
 TEST(BlockServer, DriverInterfaceDispatcherCleanup) {
   fdf_testing::DriverRuntime runtime;
-  std::shared_ptr<std::atomic<size_t>> dispatcher_shutdown_count;
+  TestDriverInterface test_interface;
+  std::shared_ptr<std::atomic<size_t>> dispatcher_shutdown_count =
+      test_interface.dispatcher_shutdown_count();
 
   {
-    TestDriverInterface test_interface;
-    dispatcher_shutdown_count = test_interface.dispatcher_shutdown_count();
     block_server::BlockServer server(
         PartitionInfo{
             .device_flags = 0,
@@ -1036,6 +1036,75 @@ TEST(BlockServer, DriverInterfaceDispatcherCleanup) {
 
   // Now that the server has been destroyed, we should see its dispatcher also get shutdown.
   runtime.RunUntil([&] { return dispatcher_shutdown_count->load() == 5; });
+}
+
+TEST(BlockServer, DriverInterfaceParallelSessions) {
+  fdf_testing::DriverRuntime runtime;
+  TestDriverInterface test_interface;
+  std::shared_ptr<std::atomic<size_t>> dispatcher_shutdown_count =
+      test_interface.dispatcher_shutdown_count();
+
+  constexpr size_t kNumThreads = 12;
+  constexpr size_t kIterations = 20;
+
+  {
+    block_server::BlockServer server(
+        PartitionInfo{
+            .device_flags = 0,
+            .start_block = 0,
+            .block_count = kBlocks,
+            .block_size = kBlockSize,
+            .type_guid = {1, 2, 3, 4},
+            .instance_guid = {5, 6, 7, 8},
+            .name = "partition",
+            .flags = 0,
+            .max_transfer_size = 0,
+        },
+        &test_interface);
+    auto [block_client, server_end] = fidl::Endpoints<fblock::Block>::Create();
+    server.Serve(std::move(server_end));
+
+    // Spawn multiple threads which will continuously open, use, and close sessions.
+    // There should never be more than `kNumThreads` sessions active at once, which means that we
+    // should never hit the Driver Framework's internal thread limit.
+    // See https://fxbug.dev/510041620 for context.
+    std::atomic<size_t> completed_threads = 0;
+    std::array<std::thread, kNumThreads> threads;
+    for (auto& thread : threads) {
+      thread = std::thread([&] {
+        for (size_t i = 0; i < kIterations; ++i) {
+          auto [session_client, session_server] =
+              fidl::Endpoints<fuchsia_storage_block::Session>::Create();
+          EXPECT_EQ(fidl::WireCall(block_client)->OpenSession(std::move(session_server)).status(),
+                    ZX_OK);
+          fidl::WireResult result = fidl::WireCall(session_client)->GetFifo();
+          EXPECT_EQ(result.status(), ZX_OK);
+          EXPECT_TRUE(result.value().is_ok());
+          fidl::WireResult close_result = fidl::WireCall(session_client)->Close();
+          EXPECT_EQ(close_result.status(), ZX_OK);
+        }
+        ++completed_threads;
+      });
+    }
+
+    // Instead of `thread.join()` which blocks this thread, we need to cycle the runtime loops to
+    // process any background messages and dispatcher teardowns.
+    runtime.RunUntil([&] { return completed_threads.load() == kNumThreads; });
+
+    for (auto& thread : threads) {
+      thread.join();
+    }
+
+    runtime.RunUntil(
+        [&] { return dispatcher_shutdown_count->load() == kNumThreads * kIterations; });
+
+    std::atomic<bool> server_destroyed = false;
+    server.DestroyAsync([&] { server_destroyed = true; });
+    runtime.RunUntil([&] { return server_destroyed.load(); });
+  }
+
+  runtime.RunUntil(
+      [&] { return dispatcher_shutdown_count->load() == (kNumThreads * kIterations) + 1; });
 }
 
 }  // namespace

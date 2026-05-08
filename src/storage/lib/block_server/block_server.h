@@ -27,6 +27,9 @@ using PartitionInfo = internal::PartitionInfo;
 // Represents a session.  New sessions appear via `OnNewSession`.
 class Session {
  public:
+  // public for make_unique
+  explicit Session(const internal::Session* session) : session_(session) {}
+
   Session(Session&& other) : session_(other.session_) { other.session_ = nullptr; }
   Session& operator=(Session&& other);
 
@@ -39,8 +42,6 @@ class Session {
 
  private:
   friend class BlockServer;
-
-  explicit Session(const internal::Session* session) : session_(session) {}
 
   const internal::Session* session_;
 };
@@ -55,7 +56,7 @@ class Thread {
   // care with any code that runs *after* this returns.
   ~Thread() {
     if (arg_)
-      internal::block_server_thread_delete(arg_);
+      internal::block_server_thread_release(arg_);
   }
 
   // Runs the thread (blocking).
@@ -78,7 +79,7 @@ class Interface {
 
   // Called when a new session is started.  The implementation must start a thread and then call
   // `Session::Run`.  The callback takes ownership of `Session`.
-  virtual void OnNewSession(Session) = 0;
+  virtual void OnNewSession(std::unique_ptr<Session>) = 0;
 
   // Called when new requests arrive.  It is OK for this method to block so as to cause push back on
   // the fifo (which is recommended for effective flow control).  Each request must eventually be
@@ -101,6 +102,10 @@ class DriverInterface : public Interface {
  public:
   DriverInterface() = default;
 
+  void StartThread(Thread thread) final;
+  void OnNewSession(std::unique_ptr<Session> session) final;
+  void Log(std::string_view msg) const final { logger().log(fdf::LogSeverity::INFO, "{}", msg); }
+
   // The logger to use for log messages. By default uses the global logger instance.
   virtual fdf::Logger& logger() const {
     ZX_ASSERT(fdf::Logger::HasGlobalInstance());
@@ -111,19 +116,17 @@ class DriverInterface : public Interface {
   virtual std::string_view SessionSchedulerRole() const { return {}; }
 
  protected:
-  using ShutdownHandler = fdf::Dispatcher::ShutdownHandler;
-
-  // Callback registered when creating dispatchers. The callback will run asynchronously after the
-  // dispatcher has been shutdown and is required to destroy the dispatcher instance with
+  // A hook which is run whenever a dispatcher shuts down.  The hook must call
   // `fdf_dispatcher_destroy`.
-  virtual ShutdownHandler OnDispatcherShutdown() const {
-    return [](fdf_dispatcher_t* dispatcher) { fdf_dispatcher_destroy(dispatcher); };
+  virtual void OnDispatcherShutdown(fdf_dispatcher_t* dispatcher) const {
+    fdf_dispatcher_destroy(dispatcher);
   }
 
  private:
-  void StartThread(Thread thread) final;
-  void OnNewSession(Session session) final;
-  void Log(std::string_view msg) const final { logger().log(fdf::LogSeverity::INFO, "{}", msg); }
+  using ShutdownHandler = fdf::Dispatcher::ShutdownHandler;
+
+  ShutdownHandler ThreadDispatcherShutdownHandler() const;
+  ShutdownHandler SessionDispatcherShutdownHandler(std::unique_ptr<Session> session) const;
 };
 
 class BlockServer {

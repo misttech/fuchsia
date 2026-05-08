@@ -73,6 +73,8 @@ uint32_t VirtioRequestType(const block_server::Request& request) {
     case block_server::Operation::Tag::Flush:
       return VIRTIO_BLK_T_FLUSH;
     case block_server::Operation::Tag::CloseVmo:
+    case block_server::Operation::Tag::StartDecompressedRead:
+    case block_server::Operation::Tag::ContinueDecompressedRead:
       __UNREACHABLE;
   }
 }
@@ -637,7 +639,9 @@ zx::result<> BlockDevice::SubmitBlockServerRequest(const block_server::Request& 
       txn->op.command.opcode = BLOCK_OPCODE_FLUSH;
       break;
     case block_server::Operation::Tag::CloseVmo:
-      // The rust block server will never send CloseVmo to its C interface.
+    case block_server::Operation::Tag::StartDecompressedRead:
+    case block_server::Operation::Tag::ContinueDecompressedRead:
+      // The rust block server will never send these to its C interface.
       __UNREACHABLE;
   }
 

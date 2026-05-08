@@ -3,12 +3,15 @@
 // found in the LICENSE file.
 
 use super::{
-    ActiveRequests, DecodedRequest, DeviceInfo, FIFO_MAX_REQUESTS, IntoOrchestrator, OffsetMap,
-    Operation, SessionHelper, TraceFlowId,
+    ActiveRequests, DecodedRequest, DeviceInfo, FIFO_MAX_REQUESTS, HandleRequestResult,
+    IntoOrchestrator, OffsetMap, Operation, SessionHelper, TraceFlowId,
 };
 use anyhow::Error;
 use block_protocol::{BlockFifoRequest, BlockFifoResponse, ReadOptions, WriteFlags, WriteOptions};
+use fidl_fuchsia_storage_block as fblock;
 use fidl_fuchsia_storage_block::DeviceFlag;
+use fuchsia_async as fasync;
+use fuchsia_sync::Mutex;
 use futures::future::{Fuse, FusedFuture, join};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt, select_biased};
@@ -21,7 +24,6 @@ use std::sync::{Arc, OnceLock};
 use std::task::{Poll, ready};
 use storage_device::buffer::Buffer;
 use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
-use {fidl_fuchsia_storage_block as fblock, fuchsia_async as fasync};
 
 pub trait Interface: Send + Sync + Unpin + 'static {
     /// Runs `stream` to completion.
@@ -205,13 +207,20 @@ impl<I: Interface + ?Sized> SessionManager<I> {
         block_size: u32,
     ) -> Result<(), Error> {
         let (helper, fifo) = SessionHelper::new(self.clone(), offset_map, block_size)?;
-        let session = Session { helper: Arc::new(helper), interface: self.interface.clone() };
+        let session = Arc::new(Session {
+            helper: Arc::new(helper),
+            interface: self.interface.clone(),
+            close_callback: Mutex::new(None),
+        });
+
+        let (stop_sender, stop_receiver) = futures::channel::oneshot::channel();
+
         let mut stream = stream.fuse();
         let scope = fasync::Scope::new();
-        let helper = session.helper.clone();
+        let session_clone = session.clone();
         let mut fifo_task = scope
             .spawn(async move {
-                if let Err(status) = session.run_fifo(fifo).await {
+                if let Err(status) = session_clone.run_fifo(fifo, stop_receiver).await {
                     if status != zx::Status::PEER_CLOSED {
                         log::error!(status:?; "FIFO error");
                     }
@@ -221,31 +230,52 @@ impl<I: Interface + ?Sized> SessionManager<I> {
 
         // Make sure we detach VMOs when we go out of scope.
         scopeguard::defer! {
-            for (_, (vmo, _)) in helper.take_vmos() {
+            for (_, (vmo, _)) in session.helper.take_vmos() {
                 self.interface.on_detach_vmo(&vmo);
             }
         }
 
+        let mut closing = false;
+        let mut stop_sender = Some(stop_sender);
+
         loop {
             futures::select! {
-                maybe_req = stream.next() => {
+                maybe_req = if closing {
+                    futures::future::pending().left_future()
+                } else {
+                    stream.next().right_future()
+                } => {
                     if let Some(req) = maybe_req {
-                        helper.handle_request(req?).await?;
+                        match session.helper.handle_request(req?).await? {
+                            HandleRequestResult::Ok => {},
+                            HandleRequestResult::Closed(callback) => {
+                                *session.close_callback.lock() = Some(callback);
+                                // Client explicitly closed stream, stop processing.
+                                if let Some(sender) = stop_sender.take() {
+                                    let _ = sender.send(());
+                                }
+                                closing = true;
+                            }
+                        }
                     } else {
-                        break;
+                        // Client end of stream dropped, stop processing.
+                        if let Some(sender) = stop_sender.take() {
+                            let _ = sender.send(());
+                        }
+                        closing = true;
                     }
                 }
                 _ = fifo_task => break,
             }
         }
-
         Ok(())
     }
 }
 
-struct Session<I: Interface + ?Sized> {
+pub struct Session<I: Interface + ?Sized> {
     interface: Arc<I>,
     helper: Arc<SessionHelper<SessionManager<I>>>,
+    close_callback: Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>,
 }
 
 impl<I: Interface + ?Sized> Session<I> {
@@ -253,6 +283,7 @@ impl<I: Interface + ?Sized> Session<I> {
     async fn run_fifo(
         &self,
         fifo: zx::Fifo<BlockFifoRequest, BlockFifoResponse>,
+        stop_signal: futures::channel::oneshot::Receiver<()>,
     ) -> Result<(), zx::Status> {
         scopeguard::defer! {
             // Ensure that we always clean up active requests for this session upon FIFO
@@ -283,13 +314,27 @@ impl<I: Interface + ?Sized> Session<I> {
         let mut map_future = pin!(Fuse::terminated());
         let mut pending_mappings: VecDeque<DecodedRequest> = VecDeque::new();
 
+        // When `stop_signal` is received, we stop reading from the FIFO and wait for in-flight
+        // tasks to complete.
+        let mut stop_signal = pin!(stop_signal.fuse());
+        let mut is_closed = false;
+
         loop {
             let new_requests = {
                 // We provide some flow control by limiting how many in-flight requests we will
                 // allow.
                 let pending_requests = active_request_futures.len() + responses.len();
+
+                if is_closed
+                    && pending_requests == 0
+                    && map_future.is_terminated()
+                    && pending_mappings.is_empty()
+                {
+                    return Ok(());
+                }
+
                 let count = requests.len().saturating_sub(pending_requests);
-                let mut receive_requests = pin!(if count == 0 {
+                let mut receive_requests = pin!(if count == 0 || is_closed {
                     Fuse::terminated()
                 } else {
                     reader.read_entries(&mut requests[..count]).fuse()
@@ -340,6 +385,10 @@ impl<I: Interface + ?Sized> Session<I> {
                                 map_future.set(self.map_request_or_get_response(request).fuse());
                             }
                         }
+                        0
+                    }
+                    _ = stop_signal => {
+                        is_closed = true;
                         0
                     }
                     count = receive_requests => {
@@ -713,6 +762,15 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
 
     fn active_requests(&self) -> &ActiveRequests<Self::Session> {
         return &self.active_requests;
+    }
+}
+
+impl<I: Interface + ?Sized> Drop for Session<I> {
+    fn drop(&mut self) {
+        let callback = std::mem::take(&mut *self.close_callback.lock());
+        if let Some(callback) = callback {
+            callback();
+        }
     }
 }
 

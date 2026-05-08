@@ -25,7 +25,7 @@ BlockServer::BlockServer(const PartitionInfo& info, Interface* interface)
                      .on_new_session =
                          [](void* context, const internal::Session* session) {
                            reinterpret_cast<BlockServer*>(context)->interface_->OnNewSession(
-                               Session(session));
+                               std::make_unique<Session>(session));
                          },
                      .on_requests =
                          [](void* context, Request* requests, uintptr_t request_count) {
@@ -37,7 +37,9 @@ BlockServer::BlockServer(const PartitionInfo& info, Interface* interface)
                            reinterpret_cast<BlockServer*>(context)->interface_->Log(
                                std::string_view(msg, len));
                          },
-                 })) {}
+                 })) {
+  ZX_ASSERT_MSG(server_, "Failed to create block server");
+}
 
 Session& Session::operator=(Session&& other) {
   if (this == &other)
@@ -88,8 +90,11 @@ Request SplitRequest(Request& request, uint32_t block_offset, uint32_t block_siz
     case Operation::Tag::Trim:
       break;
     case Operation::Tag::Flush:
+      ZX_PANIC("Can't split Flush");
     case Operation::Tag::CloseVmo:
-      ZX_PANIC("Can't split Flush or CloseVmo operations");
+    case Operation::Tag::StartDecompressedRead:
+    case Operation::Tag::ContinueDecompressedRead:
+      __UNREACHABLE;
   }
   head.operation.read.block_count = block_offset;
   request.operation.read.device_block_offset += block_offset;
@@ -114,8 +119,11 @@ zx_status_t CheckIoRange(const Request& request, uint64_t total_block_count) {
       length = request.operation.trim.block_count;
       break;
     case Operation::Tag::Flush:
-    case Operation::Tag::CloseVmo:
       return ZX_OK;
+    case Operation::Tag::CloseVmo:
+    case Operation::Tag::StartDecompressedRead:
+    case Operation::Tag::ContinueDecompressedRead:
+      __UNREACHABLE;
   }
   if (length == 0 || length > total_block_count) {
     return ZX_ERR_OUT_OF_RANGE;
@@ -130,7 +138,7 @@ void DriverInterface::StartThread(Thread thread) {
   // Create a new dispatcher to run `thread` on.
   zx::result new_dispatcher =
       fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
-                                          "Block Server", OnDispatcherShutdown());
+                                          "Block Server", ThreadDispatcherShutdownHandler());
   if (new_dispatcher.is_error()) {
     logger().log(fdf::LogSeverity::ERROR, "Failed to create dispatcher for block server thread: {}",
                  new_dispatcher);
@@ -160,11 +168,17 @@ void DriverInterface::StartThread(Thread thread) {
   }
 }
 
-void DriverInterface::OnNewSession(Session session) {
+void DriverInterface::OnNewSession(std::unique_ptr<Session> session) {
+  // We retain a weak reference to `session` to pass into the task which runs the session, and keep
+  // the strong reference in the dispatcher itself (to be invoked when the dispatcher shutdown
+  // completes, in its shutdown callback).
+  // The weak reference cannot outlive the strong reference because the task is running on the very
+  // dispatcher which holds the strong reference.
+  Session* const session_ptr = session.get();
   // Create a new dispatcher to run `session` on.
   zx::result new_dispatcher = fdf::SynchronizedDispatcher::Create(
-      fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "Block Server", OnDispatcherShutdown(),
-      SessionSchedulerRole());
+      fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "Block Server",
+      SessionDispatcherShutdownHandler(std::move(session)), SessionSchedulerRole());
   if (new_dispatcher.is_error()) {
     logger().log(fdf::LogSeverity::ERROR,
                  "Failed to create dispatcher for block server session: {}", new_dispatcher);
@@ -176,15 +190,10 @@ void DriverInterface::OnNewSession(Session session) {
   // The dispatcher is *always* destroyed via the shutdown handler.
   fdf_dispatcher_t* dispatcher = new_dispatcher->release();
 
-  const zx_status_t status = async::PostTask(
-      async_dispatcher, [active_session = std::move(session), dispatcher]() mutable {
-        {
-          // *NOTE*: Separate scope ensures `session` is destroyed before we shutdown `dispatcher`.
-          Session session = std::move(active_session);
-          session.Run();
-        }
-        fdf_dispatcher_shutdown_async(dispatcher);
-      });
+  const zx_status_t status = async::PostTask(async_dispatcher, [session_ptr, dispatcher]() mutable {
+    session_ptr->Run();
+    fdf_dispatcher_shutdown_async(dispatcher);
+  });
 
   // Make sure we destroy the dispatcher if we fail to post the task.
   if (status != ZX_OK) {
@@ -192,6 +201,23 @@ void DriverInterface::OnNewSession(Session session) {
                  zx_status_get_string(status));
     fdf_dispatcher_shutdown_async(dispatcher);
   }
+}
+
+DriverInterface::ShutdownHandler DriverInterface::ThreadDispatcherShutdownHandler() const {
+  return [this](fdf_dispatcher_t* dispatcher) mutable { OnDispatcherShutdown(dispatcher); };
+}
+
+DriverInterface::ShutdownHandler DriverInterface::SessionDispatcherShutdownHandler(
+    std::unique_ptr<Session> session) const {
+  return [this, session = std::move(session)](fdf_dispatcher_t* dispatcher) mutable {
+    // Destroy the dispatcher *before* dropping the session.  As soon as the Session destructor
+    // runs, the session will terminate and a client which called Close will be unblocked.  Clients
+    // which continuously start and stop sessions could exhaust the dispatcher's pool limit if we do
+    // not destroy the dispatcher before closing the session. See https://fxbug.dev/510041620 for
+    // context.
+    OnDispatcherShutdown(dispatcher);
+    session = nullptr;
+  };
 }
 
 }  // namespace block_server
