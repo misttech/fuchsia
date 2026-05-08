@@ -43,22 +43,15 @@ func (c *ClassifyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...int
 	}
 
 	targetFile := f.Arg(0)
-	absPath, err := filepath.Abs(targetFile)
+	fuchsiaDir, targetFile, err := ResolveAndValidatePath(c.fuchsiaDir, targetFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to resolve absolute path for %s: %v\n", targetFile, err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
 	}
-
-	if c.fuchsiaDir == "" {
-		c.fuchsiaDir = "."
-	}
-	absFuchsiaDir, err := filepath.Abs(c.fuchsiaDir)
-	if err == nil {
-		c.fuchsiaDir = absFuchsiaDir
-	}
+	absPath := filepath.Join(fuchsiaDir, targetFile)
 
 	// Initialize classifier
-	patternsDir := filepath.Join(c.fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
+	patternsDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
 	// We don't filter extensions here since the user explicitly asked to classify this file.
 	classifier, err := classify.NewClassifier(0.8, []string{patternsDir}, nil)
 	if err != nil {
