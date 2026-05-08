@@ -12,6 +12,7 @@ rustc_binary("fake_socket_proxy_svc") {
   testonly = true
 
   deps = [
+    "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//sdk/fidl/fuchsia.net.policy.socketproxy:fuchsia.net.policy.socketproxy_rust",
     "//src/connectivity/policy/tests/integration/fidl:fidl_rust",
     "//src/lib/fuchsia",

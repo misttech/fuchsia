@@ -5,6 +5,12 @@
 #![cfg(test)]
 
 use assert_matches::assert_matches;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_name as fnet_name;
+use fidl_fuchsia_net_policy_properties as fnp_properties;
+use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_policy_testing as fnp_testing;
+use fidl_fuchsia_posix_socket as fposix_socket;
 use fuchsia_async::DurationExt as _;
 use futures::channel::mpsc;
 use futures::future::join;
@@ -24,12 +30,6 @@ use pretty_assertions::assert_eq;
 use std::collections::HashSet;
 use std::pin::pin;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_name as fnet_name,
-    fidl_fuchsia_net_policy_properties as fnp_properties,
-    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
-    fidl_fuchsia_net_policy_testing as fnp_testing, fidl_fuchsia_posix_socket as fposix_socket,
-};
 
 trait TakeNetwork {
     fn take_network(self) -> Option<fnp_properties::NetworkToken>;
@@ -421,8 +421,8 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                     DNS_SERVER_LIST[0..2].to_vec(),
                     DNS_SERVER_LIST.to_vec(),
                 ]);
-                let mut seen_updates = Vec::new();
-
+                let mut last_dns_servers = None;
+                let mut seen_dns_servers = Vec::new();
                 let fake_socket_proxy = realm
                     .connect_to_protocol_from_child::<fnp_testing::FakeSocketProxy_Marker>(
                         realms::constants::fake_socket_proxy::COMPONENT_NAME,
@@ -434,22 +434,24 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                         update = watch => {
                             watch = watch_update(&networks, &network);
                             let update = update.expect("fidl error").expect("protocol error");
-                            let server_count = update[0]
-                                .dns_configuration()
-                                .unwrap()
-                                .servers
-                                .as_ref()
-                                .map(|s|s.len())
-                                .unwrap_or(0);
-                            seen_updates.push(update);
-                            if let Some(list) = dns_sequence.pop_front() {
-                                // Each update is 1 more server than the
-                                // last. Wait until we see the previous
-                                // update.
-                                if list.len() - 1 == server_count {
-                                    update_dns(&fake_socket_proxy, &list).await;
-                                } else {
-                                    dns_sequence.push_front(list);
+                            let dns_config = update[0].dns_configuration().unwrap();
+                            let servers = dns_config.servers.as_ref();
+                            let server_count = servers.map_or(0, |s| s.len());
+
+                            if servers != last_dns_servers.as_ref() {
+                                last_dns_servers = dns_config.servers.clone();
+                                seen_dns_servers.push(
+                                    dns_config.servers.clone().unwrap_or_default()
+                                );
+                                if let Some(list) = dns_sequence.pop_front() {
+                                    // Each update is 1 more server than the
+                                    // last. Wait until we see the previous
+                                    // update.
+                                    if list.len() - 1 == server_count {
+                                        update_dns(&fake_socket_proxy, &list).await;
+                                    } else {
+                                        dns_sequence.push_front(list);
+                                    }
                                 }
                             }
                             // The final update should have all DNS servers.
@@ -468,18 +470,10 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
                     };
                 }
 
-                let dns_servers = seen_updates
+                let dns_servers = seen_dns_servers
                     .into_iter()
-                    .map(|upd| {
-                        upd[0]
-                            .dns_configuration()
-                            .unwrap()
-                            .servers
-                            .as_ref()
-                            .unwrap()
-                            .iter()
-                            .map(|server| server.address)
-                            .collect::<HashSet<_>>()
+                    .map(|servers| {
+                        servers.iter().map(|server| server.address).collect::<HashSet<_>>()
                     })
                     .collect::<Vec<_>>();
 

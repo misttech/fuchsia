@@ -5,15 +5,14 @@
 use std::sync::Arc;
 
 use anyhow::Context as _;
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_policy_testing as fnp_testing;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use futures::lock::Mutex;
 use futures::stream::{StreamExt as _, TryStreamExt as _};
 use log::{debug, error};
-use {
-    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
-    fidl_fuchsia_net_policy_testing as fnp_testing,
-};
 
 async fn handle_provider(
     delegated_networks: Arc<fnp_socketproxy::NetworkRegistryProxy>,
@@ -48,6 +47,7 @@ async fn handle_provider(
 
 async fn handle_fake_socket_proxy(
     responders: Arc<Mutex<Vec<fnp_socketproxy::DnsServerWatcherWatchServersResponder>>>,
+    delegated_networks: Arc<fnp_socketproxy::NetworkRegistryProxy>,
     next_dns_update: Arc<Mutex<Option<Vec<fnp_socketproxy::DnsServerList>>>>,
     rs: fnp_testing::FakeSocketProxy_RequestStream,
 ) -> Result<(), anyhow::Error> {
@@ -55,6 +55,7 @@ async fn handle_fake_socket_proxy(
         .try_for_each(|req| {
             let responders = responders.clone();
             let next_dns_update = next_dns_update.clone();
+            let delegated_networks = delegated_networks.clone();
             async move {
                 match req {
                     fnp_testing::FakeSocketProxy_Request::SetDns { servers, responder } => {
@@ -63,12 +64,57 @@ async fn handle_fake_socket_proxy(
                         // dropped after sending below.
                         std::mem::swap(&mut resp, &mut *responders.lock().await);
                         if resp.is_empty() {
-                            *next_dns_update.lock().await = Some(servers);
+                            *next_dns_update.lock().await = Some(servers.clone());
                         } else {
                             for r in resp {
                                 r.send(&servers)?;
                             }
                         }
+                        // TODO(https://fxbug.dev/475916525): Communicate the DNS servers through
+                        // the NetworkRegistry so that the reliance on DnsServerWatcher is removed.
+                        // This is a temporary workaround that assumes that the network
+                        // corresponding to the DNS server has already been added to the
+                        // NetworkRegistry.
+                        for dns_list in servers {
+                            if let Some(net_id) = dns_list.source_network_id {
+                                let addresses = dns_list.addresses.unwrap_or_default();
+                                let v4: Vec<_> = addresses
+                                    .iter()
+                                    .filter_map(|addr| match addr {
+                                        fnet::SocketAddress::Ipv4(a) => Some(a.address),
+                                        _ => None,
+                                    })
+                                    .collect();
+                                let v6: Vec<_> = addresses
+                                    .iter()
+                                    .filter_map(|addr| match addr {
+                                        fnet::SocketAddress::Ipv6(a) => Some(a.address),
+                                        _ => None,
+                                    })
+                                    .collect();
+
+                                let _ = delegated_networks
+                                    .update(&fnp_socketproxy::Network {
+                                        network_id: Some(net_id as u32),
+                                        dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+                                            v4: Some(v4),
+                                            v6: Some(v6),
+                                            ..Default::default()
+                                        }),
+                                        info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                                            fnp_socketproxy::StarnixNetworkInfo {
+                                                // Use an arbitrary mark. Populating this field
+                                                // is required.
+                                                mark: Some(123),
+                                                ..Default::default()
+                                            },
+                                        )),
+                                        ..Default::default()
+                                    })
+                                    .await;
+                            }
+                        }
+
                         responder.send()?;
                     }
                 }
@@ -164,11 +210,14 @@ async fn main() -> Result<(), anyhow::Error> {
         let next_dns_update = next_dns_update.clone();
         async {
             if let Err(e) = match request {
-                IncomingServices::FakeSocketProxy(rs) => {
-                    handle_fake_socket_proxy(dns_responders, next_dns_update, rs)
-                        .await
-                        .context("fake socket proxy")
-                }
+                IncomingServices::FakeSocketProxy(rs) => handle_fake_socket_proxy(
+                    dns_responders,
+                    delegated_networks,
+                    next_dns_update,
+                    rs,
+                )
+                .await
+                .context("fake socket proxy"),
                 IncomingServices::NetworkRegistry(rs) => {
                     handle_provider(delegated_networks, rs).await.context("network registry")
                 }
