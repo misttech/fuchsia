@@ -763,6 +763,15 @@ func (f *FFXInstance) RunAndGetOutput(ctx context.Context, args ...string) (stri
 	return strings.TrimSpace(s), err
 }
 
+// RunAndGetOutputRaw runs ffx with the provided args and returns the stdout,
+// using the raw machine format.
+func (f *FFXInstance) RunAndGetOutputRaw(ctx context.Context, args ...string) (string, error) {
+	i := f.invoker(args).setCaptureOutput().setMachineFormat(MachineRaw)
+	err := i.run(ctx)
+	s := i.output.String()
+	return strings.TrimSpace(s), err
+}
+
 // GetLastRebootReason returns the last reboot reason of the associated target.
 func (f *FFXInstance) GetLastRebootReason(ctx context.Context) (string, error) {
 	if f.target == "" {
