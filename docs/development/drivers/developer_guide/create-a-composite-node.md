@@ -34,7 +34,7 @@ to the resources managed by these parent nodes. When a driver is bound to
 a composite node, the composite driver can access the combined resources provided
 by the parent drivers.
 
-![composite node](images/composite-driver-01.png "A composite node has multiple parent nodes")
+![Diagram of a composite node connected to multiple parent nodes and their resources.](images/composite-driver-01.png "A composite node has multiple parent nodes")
 
 **Figure 1**. A composite node has access to multiple parent nodes and their
 resources.

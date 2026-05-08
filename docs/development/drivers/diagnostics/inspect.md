@@ -22,7 +22,7 @@ information, see [Implementing drivers as components][roadmap-drivers-components
 
 Consider the following system topology diagram:
 
-![Figure 1: example topology](inspect-topology.png)
+![System topology diagram showing components and drivers exposing inspect data via VMOs and Tree services.](inspect-topology.png)
 
 Diagram legend:
 

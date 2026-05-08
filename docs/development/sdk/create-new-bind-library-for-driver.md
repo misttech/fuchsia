@@ -27,7 +27,7 @@ responsibilities may be interested in using the new bind library: one that
 manages the [parent driver](#update-the-parent-driver) and the other that
 works on the [child driver](#update-the-child-driver).
 
-![alt_text](images/node-topology-sample-bind-library-01.svg "Node topology sample bind library"){: width="600"}
+![Node topology showing 'parent-driver' bound to 'ACPI device 3', and 'child-driver' bound to its child node 'bindlib-child'.](images/node-topology-sample-bind-library-01.svg "Node topology sample bind library"){: width="600"}
 
 **Diagram 1**. A node topology that displays the parent-child relationship
 between two drivers.
