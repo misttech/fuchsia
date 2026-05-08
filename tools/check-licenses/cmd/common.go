@@ -116,7 +116,10 @@ func findProjectBasename(targetPath string, manifestProjectNames map[string]stri
 // or an error if the path escapes the root workspace.
 func ResolveAndValidatePath(fuchsiaDir, inputPath string) (string, string, error) {
 	if fuchsiaDir == "" {
-		fuchsiaDir = "."
+		fuchsiaDir = os.Getenv("FUCHSIA_DIR")
+		if fuchsiaDir == "" {
+			fuchsiaDir = "."
+		}
 	}
 	absFuchsiaDir, err := filepath.Abs(fuchsiaDir)
 	if err != nil {

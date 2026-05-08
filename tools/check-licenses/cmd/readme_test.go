@@ -20,6 +20,10 @@ func TestReadmeCommand_Format(t *testing.T) {
 	tempDir := t.TempDir()
 	testFilePath := filepath.Join(tempDir, "README.fuchsia")
 
+	// Enforce test hermeticity by setting FUCHSIA_DIR to tempDir
+	os.Setenv("FUCHSIA_DIR", tempDir)
+	defer os.Unsetenv("FUCHSIA_DIR")
+
 	// Messy unformatted content
 	content := []byte(`
 Name: test_project
@@ -35,7 +39,7 @@ Description:
 		t.Fatal(err)
 	}
 
-	cmd := &ReadmeCommand{printStdout: false}
+	cmd := &ReadmeCommand{}
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	cmd.SetFlags(fs)
 	fs.Parse([]string{"format", testFilePath})
@@ -63,6 +67,10 @@ Description:
 func TestReadmeCommand_Check(t *testing.T) {
 	tempDir := t.TempDir()
 	testFilePath := filepath.Join(tempDir, "README.fuchsia")
+
+	// Enforce test hermeticity by setting FUCHSIA_DIR to tempDir
+	os.Setenv("FUCHSIA_DIR", tempDir)
+	defer os.Unsetenv("FUCHSIA_DIR")
 
 	// Clean, canonical content
 	content := []byte("Name: test_project\nURL: https://test\nVersion: 1.0\nSecurity Critical: no\n\nLicense File: LICENSE\n  License: MIT\n\nDescription:\n  A test project\n")

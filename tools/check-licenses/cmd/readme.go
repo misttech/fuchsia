@@ -17,59 +17,71 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
 )
 
-type ReadmeCommand struct {
-	printStdout bool
-}
+type ReadmeCommand struct{}
 
 func (*ReadmeCommand) Name() string     { return "readme" }
 func (*ReadmeCommand) Synopsis() string { return "Format or check a README.fuchsia file." }
 func (*ReadmeCommand) Usage() string {
-	return `readme <action> <file_path>:
-  Actions:
-    format   Formats the README.fuchsia file in-place to match the canonical schema.
-             Use -stdout to print the formatted text to stdout without modifying the file.
-    check    Checks if the README.fuchsia file is perfectly formatted, contains no unknown fields,
-             and has all required fields (Name, URL, Version, License File, Security Critical).
+	return `readme <subcommand> [options]:
+  Manage README.fuchsia files.
 
-  Examples:
-    fx check-licenses readme format third_party/foo/README.fuchsia
-    fx check-licenses readme format -stdout third_party/foo/README.fuchsia
-    fx check-licenses readme check third_party/foo/README.fuchsia
+  Subcommands:
+    format   Formats the README.fuchsia file in-place.
+    check    Checks if the README.fuchsia file is valid and formatted.
 `
 }
 
-func (c *ReadmeCommand) SetFlags(f *flag.FlagSet) {
+func (c *ReadmeCommand) SetFlags(f *flag.FlagSet) {}
+
+func (c *ReadmeCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	subFlags := flag.NewFlagSet("readme", flag.ContinueOnError)
+	if err := subFlags.Parse(f.Args()); err != nil {
+		return subcommands.ExitUsageError
+	}
+	subCommander := subcommands.NewCommander(subFlags, "readme")
+	subCommander.Register(&ReadmeFormatCommand{}, "")
+	subCommander.Register(&ReadmeCheckCommand{}, "")
+	return subCommander.Execute(ctx)
+}
+
+type ReadmeFormatCommand struct {
+	printStdout bool
+}
+
+func (*ReadmeFormatCommand) Name() string     { return "format" }
+func (*ReadmeFormatCommand) Synopsis() string { return "Formats the README.fuchsia file in-place." }
+func (*ReadmeFormatCommand) Usage() string {
+	return `format [-stdout] <file_path>:
+  Formats the README.fuchsia file to match the canonical schema.
+  Use -stdout to print the formatted text to stdout without modifying the file.
+`
+}
+
+func (c *ReadmeFormatCommand) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.printStdout, "stdout", false, "Print the formatted text to stdout instead of overwriting the file.")
 }
 
-func (c *ReadmeCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	if f.NArg() != 2 {
-		fmt.Fprintln(os.Stderr, "Error: exactly one action ('format' or 'check') and one file path must be provided.")
+func (c *ReadmeFormatCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	if f.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "Error: exactly one file path must be provided.")
 		return subcommands.ExitUsageError
 	}
 
-	action := f.Arg(0)
-	targetFile := f.Arg(1)
-
-	if action != "format" && action != "check" {
-		fmt.Fprintf(os.Stderr, "Error: unknown action '%s'. Expected 'format' or 'check'.\n", action)
-		return subcommands.ExitUsageError
-	}
-
-	absPath, err := filepath.Abs(targetFile)
+	targetFile := f.Arg(0)
+	fuchsiaDir, targetFile, err := ResolveAndValidatePath("", targetFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to resolve absolute path for %s: %v\n", targetFile, err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	// 1. Read the file
+	absPath := filepath.Join(fuchsiaDir, targetFile)
+
 	data, err := os.ReadFile(absPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to read file: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	// 2. Parse the file into our structured Readme slice
 	readmes, err := readme.Parse(data)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to parse README: %v\n", err)
@@ -77,68 +89,111 @@ func (c *ReadmeCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 	}
 
 	if len(readmes) == 0 {
-		fmt.Fprintf(os.Stderr, "Warning: parsed 0 readmes from file (file might be empty)\n")
+		fmt.Fprintf(os.Stderr, "Warning: parsed 0 readmes from file\n")
 		return subcommands.ExitSuccess
 	}
 
-	// 3. Format it back to canonical text
 	formattedText := readme.Format(readmes)
 	formattedBytes := []byte(formattedText)
 
-	// Run Validation Checks for both 'check' and 'format'
 	errs := readme.Validate(readmes)
 	hasValidationErrors := len(errs) > 0
 	for _, err := range errs {
 		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
 	}
 
-	// Action: Check
-	if action == "check" {
-		// Check 3: Formatting consistency
-		// Trimming whitespace to avoid complaining about trailing newlines on an otherwise perfect file
-		if !bytes.Equal(bytes.TrimSpace(data), bytes.TrimSpace(formattedBytes)) {
-			fmt.Fprintf(os.Stderr, "❌ Error: File is not canonically formatted. Run 'fx check-licenses readme format %s' to fix it.\n", targetFile)
-			hasValidationErrors = true
-		}
-
+	if c.printStdout {
+		fmt.Print(formattedText)
 		if hasValidationErrors {
 			return subcommands.ExitFailure
 		}
-
-		fmt.Printf("✅ README is perfectly formatted and contains no unknown fields: %s\n", targetFile)
 		return subcommands.ExitSuccess
 	}
 
-	// Action: Format
-	if action == "format" {
-		if c.printStdout {
-			// Print to stdout (required for SHAC formatters)
-			fmt.Print(formattedText)
-			if hasValidationErrors {
-				return subcommands.ExitFailure
-			}
-			return subcommands.ExitSuccess
-		}
-
-		if bytes.Equal(data, formattedBytes) {
-			if hasValidationErrors {
-				return subcommands.ExitFailure
-			}
-			fmt.Printf("✅ README is already formatted: %s\n", targetFile)
-			return subcommands.ExitSuccess
-		}
-
-		if err := os.WriteFile(absPath, formattedBytes, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to write formatted README: %v\n", err)
-			return subcommands.ExitFailure
-		}
-
+	if bytes.Equal(data, formattedBytes) {
 		if hasValidationErrors {
 			return subcommands.ExitFailure
 		}
-		fmt.Printf("✏️  Successfully formatted README: %s\n", targetFile)
+		fmt.Printf("✅ README is already formatted: %s\n", targetFile)
 		return subcommands.ExitSuccess
 	}
 
-	return subcommands.ExitFailure
+	if err := os.WriteFile(absPath, formattedBytes, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to write formatted README: %v\n", err)
+		return subcommands.ExitFailure
+	}
+
+	if hasValidationErrors {
+		return subcommands.ExitFailure
+	}
+	fmt.Printf("✏️  Successfully formatted README: %s\n", targetFile)
+	return subcommands.ExitSuccess
+}
+
+type ReadmeCheckCommand struct{}
+
+func (*ReadmeCheckCommand) Name() string { return "check" }
+func (*ReadmeCheckCommand) Synopsis() string {
+	return "Checks if the README.fuchsia file is valid and formatted."
+}
+func (*ReadmeCheckCommand) Usage() string {
+	return `check <file_path>:
+  Checks if the README.fuchsia file is perfectly formatted and contains no unknown fields.
+`
+}
+
+func (c *ReadmeCheckCommand) SetFlags(f *flag.FlagSet) {}
+
+func (c *ReadmeCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	if f.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "Error: exactly one file path must be provided.")
+		return subcommands.ExitUsageError
+	}
+
+	targetFile := f.Arg(0)
+	fuchsiaDir, targetFile, err := ResolveAndValidatePath("", targetFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return subcommands.ExitFailure
+	}
+
+	absPath := filepath.Join(fuchsiaDir, targetFile)
+
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read file: %v\n", err)
+		return subcommands.ExitFailure
+	}
+
+	readmes, err := readme.Parse(data)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to parse README: %v\n", err)
+		return subcommands.ExitFailure
+	}
+
+	if len(readmes) == 0 {
+		fmt.Fprintf(os.Stderr, "Warning: parsed 0 readmes from file\n")
+		return subcommands.ExitSuccess
+	}
+
+	formattedText := readme.Format(readmes)
+	formattedBytes := []byte(formattedText)
+
+	errs := readme.Validate(readmes)
+	hasValidationErrors := len(errs) > 0
+	for _, err := range errs {
+		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
+	}
+
+	if !bytes.Equal(bytes.TrimSpace(data), bytes.TrimSpace(formattedBytes)) {
+		fmt.Fprintf(os.Stderr, "❌ Error: File is not canonically formatted. Run 'fx check-licenses readme format %s' to fix it.\n", targetFile)
+		hasValidationErrors = true
+	}
+
+	if hasValidationErrors {
+		return subcommands.ExitFailure
+	}
+
+	fmt.Printf("✅ README is perfectly formatted and contains no unknown fields: %s\n", targetFile)
+	return subcommands.ExitSuccess
 }
