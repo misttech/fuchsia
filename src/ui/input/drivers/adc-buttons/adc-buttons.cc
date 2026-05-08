@@ -97,7 +97,7 @@ zx::result<> AdcButtons::Start(fdf::DriverContext context) {
   }
 
   device_ = std::make_unique<adc_buttons_device::AdcButtonsDevice>(
-      dispatcher(), std::move(clients), values.value().polling_rate_usec,
+      dispatcher(), std::move(clients), zx::usec(values.value().polling_rate_usec),
       std::move(values.value().buttons));
 
   auto result = outgoing()->component().AddUnmanagedProtocol<fuchsia_input_report::InputDevice>(

@@ -28,7 +28,7 @@ void AdcButtonsDevice::PollingTask(async_dispatcher_t* dispatcher, async::TaskBa
     return;
   }
 
-  polling_task_.PostDelayed(dispatcher_, zx::usec(polling_rate_usec_));
+  polling_task_.PostDelayed(dispatcher_, polling_interval_);
 
   auto report = GetInputReport();
   if (report.is_error()) {
@@ -96,7 +96,7 @@ void AdcButtonsDevice::GetDescriptor(GetDescriptorCompleter::Sync& completer) {
   device_info.vendor_id(static_cast<uint32_t>(fuchsia_input_report::wire::VendorId::kGoogle));
   device_info.product_id(
       static_cast<uint32_t>(fuchsia_input_report::wire::VendorGoogleProductId::kAdcButtons));
-  device_info.polling_rate(polling_rate_usec_);
+  device_info.polling_rate(polling_interval_.get());
 
   fidl::VectorView<fuchsia_input_report::wire::ConsumerControlButton> buttons(allocator,
                                                                               buttons_.size());

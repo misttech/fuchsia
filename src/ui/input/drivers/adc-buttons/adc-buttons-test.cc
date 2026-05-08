@@ -168,7 +168,7 @@ TEST_F(AdcButtonsDeviceTest, GetDescriptorTest) {
             static_cast<uint32_t>(fuchsia_input_report::wire::VendorId::kGoogle));
   EXPECT_EQ(result->descriptor.device_information().product_id(),
             static_cast<uint32_t>(fuchsia_input_report::wire::VendorGoogleProductId::kAdcButtons));
-  EXPECT_EQ(result->descriptor.device_information().polling_rate(), kPollingRateUsec);
+  EXPECT_EQ(result->descriptor.device_information().polling_rate(), zx::usec(kPollingRateUsec).get());
 
   ASSERT_TRUE(result->descriptor.has_consumer_control());
   ASSERT_TRUE(result->descriptor.consumer_control().has_input());

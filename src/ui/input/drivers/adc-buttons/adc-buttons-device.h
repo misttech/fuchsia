@@ -28,10 +28,10 @@ class AdcButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevi
   };
 
   AdcButtonsDevice(async_dispatcher_t* dispatcher, std::vector<AdcButtonClient> clients,
-                   uint32_t polling_rate_usec,
+                   zx::duration polling_interval,
                    std::set<fuchsia_input_report::ConsumerControlButton> buttons)
       : dispatcher_(dispatcher),
-        polling_rate_usec_(polling_rate_usec),
+        polling_interval_(polling_interval),
         clients_(std::move(clients)),
         buttons_(std::move(buttons)) {
     polling_task_.Post(dispatcher_);
@@ -82,7 +82,7 @@ class AdcButtonsDevice : public fidl::WireServer<fuchsia_input_report::InputDevi
   async_dispatcher_t* const dispatcher_;
 
   async::TaskMethod<AdcButtonsDevice, &AdcButtonsDevice::PollingTask> polling_task_{this};
-  uint32_t polling_rate_usec_;
+  zx::duration polling_interval_;
 
   std::vector<AdcButtonClient> clients_;
   std::set<fuchsia_input_report::ConsumerControlButton> buttons_;  // For descriptor
