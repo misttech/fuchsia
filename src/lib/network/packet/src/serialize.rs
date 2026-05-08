@@ -1537,6 +1537,24 @@ pub trait SerializationContext: Sized {
         constraints: PacketConstraints,
         alloc: A,
     ) -> Result<B, SerializeError<A::Error>>;
+
+    /// Updates the context with knowledge that an inner `PartialSerializer` is
+    /// being wrapped by an outer `PartialPacketBuilder`. Must be called any
+    /// time such nesting is encountered during partial serialization.
+    ///
+    /// The context is expected to delegate serialization to
+    /// `inner.partial_serialize(self, constraints, buffer)`, but it may update
+    /// its internal state before and/or after doing so if necessary.
+    ///
+    /// The result of the inner serialization must be returned without
+    /// modification.
+    fn partial_serialize_with_outer<I: PartialSerializer<Self>, O: PartialPacketBuilder<Self>>(
+        &mut self,
+        inner: &I,
+        outer: &O,
+        constraints: PacketConstraints,
+        buffer: &mut [u8],
+    ) -> Result<PartialSerializeResult, SerializeError<Never>>;
 }
 
 // An empty serialization context.
@@ -1574,6 +1592,16 @@ impl SerializationContext for NoOpSerializationContext {
         alloc: A,
     ) -> Result<B, SerializeError<A::Error>> {
         inner.serialize_new_buf(self, constraints, alloc)
+    }
+
+    fn partial_serialize_with_outer<I: PartialSerializer<Self>, O: PartialPacketBuilder<Self>>(
+        &mut self,
+        inner: &I,
+        _outer: &O,
+        constraints: PacketConstraints,
+        buffer: &mut [u8],
+    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
+        inner.partial_serialize(self, constraints, buffer)
     }
 }
 
@@ -2107,9 +2135,7 @@ impl<C: SerializationContext, I: Serializer<C>, O: PacketBuilder<C>> Serializer<
             return Err((SerializeError::SizeLimitExceeded, self));
         };
 
-        // TODO(https://fxbug.dev/485599557): Perform inner serialization within
-        // `context.serialize_with_outer.
-        match self.inner.serialize(context, outer, provider) {
+        match context.serialize_with_outer(self.inner, &self.outer, outer, provider) {
             Ok(mut buf) => {
                 buf.serialize(context, &self.outer);
                 Ok(buf)
@@ -2129,9 +2155,8 @@ impl<C: SerializationContext, I: Serializer<C>, O: PacketBuilder<C>> Serializer<
             return Err(SerializeError::SizeLimitExceeded);
         };
 
-        // TODO(https://fxbug.dev/485599557): Perform inner serialization within
-        // `context.serialize_with_outer.
-        let mut buf = self.inner.serialize_new_buf(context, outer, alloc)?;
+        let mut buf =
+            context.serialize_new_buf_with_outer(&self.inner, &self.outer, outer, alloc)?;
         GrowBufferMut::serialize(&mut buf, context, &self.outer);
         Ok(buf)
     }
@@ -2262,7 +2287,12 @@ impl<C: SerializationContext, I: PartialSerializer<C>, O: PartialPacketBuilder<C
 
         let header_len = header_constraints.header_len();
         let inner_buf = buffer.get_mut(header_len..).unwrap_or(&mut []);
-        let mut result = self.inner.partial_serialize(context, constraints, inner_buf)?;
+        let mut result = context.partial_serialize_with_outer(
+            &self.inner,
+            &self.outer,
+            constraints,
+            inner_buf,
+        )?;
         if header_len <= buffer.len() {
             self.outer.partial_serialize(context, result.total_size, &mut buffer[..header_len]);
             result.bytes_written += header_len;
@@ -2573,10 +2603,10 @@ mod tests {
         }
     }
 
-    impl PacketBuilder<NoOpSerializationContext> for DummyPacketBuilder {
+    impl<C: SerializationContext> PacketBuilder<C> for DummyPacketBuilder {
         fn serialize(
             &self,
-            _context: &mut NoOpSerializationContext,
+            _context: &mut C,
             target: &mut SerializeTarget<'_>,
             body: FragmentedBytesMut<'_, '_>,
         ) {
@@ -2589,13 +2619,8 @@ mod tests {
         }
     }
 
-    impl PartialPacketBuilder<NoOpSerializationContext> for DummyPacketBuilder {
-        fn partial_serialize(
-            &self,
-            _context: &mut NoOpSerializationContext,
-            _body_len: usize,
-            buffer: &mut [u8],
-        ) {
+    impl<C: SerializationContext> PartialPacketBuilder<C> for DummyPacketBuilder {
+        fn partial_serialize(&self, _context: &mut C, _body_len: usize, buffer: &mut [u8]) {
             buffer.fill(self.header_byte)
         }
     }
@@ -3614,5 +3639,100 @@ mod tests {
         assert_eq!(serialize_new(ser2), expect);
         assert_eq!(serialize_new(ser3), expect);
         assert_eq!(serialize_new(ser4), expect);
+    }
+
+    /// SerializationContext that tracks the `header_len()` of the outer
+    /// `PacketBuilder`s it sees.
+    struct TrackingSerializationContext {
+        history: Vec<usize>,
+    }
+
+    impl SerializationContext for TrackingSerializationContext {
+        type ContextState = ();
+
+        fn serialize_with_outer<
+            I: Serializer<Self>,
+            O: PacketBuilder<Self>,
+            B: GrowBufferMut,
+            P: BufferProvider<I::Buffer, B>,
+        >(
+            &mut self,
+            inner: I,
+            outer: &O,
+            constraints: PacketConstraints,
+            provider: P,
+        ) -> Result<B, (SerializeError<P::Error>, I)> {
+            self.history.push(outer.constraints().header_len());
+            inner.serialize(self, constraints, provider)
+        }
+
+        fn serialize_new_buf_with_outer<
+            I: Serializer<Self>,
+            O: PacketBuilder<Self>,
+            B: GrowBufferMut,
+            A: LayoutBufferAlloc<B>,
+        >(
+            &mut self,
+            inner: &I,
+            outer: &O,
+            constraints: PacketConstraints,
+            alloc: A,
+        ) -> Result<B, SerializeError<A::Error>> {
+            self.history.push(outer.constraints().header_len());
+            inner.serialize_new_buf(self, constraints, alloc)
+        }
+
+        fn partial_serialize_with_outer<
+            I: PartialSerializer<Self>,
+            O: PartialPacketBuilder<Self>,
+        >(
+            &mut self,
+            inner: &I,
+            outer: &O,
+            constraints: PacketConstraints,
+            buffer: &mut [u8],
+        ) -> Result<PartialSerializeResult, SerializeError<Never>> {
+            self.history.push(outer.constraints().header_len());
+            inner.partial_serialize(self, constraints, buffer)
+        }
+    }
+
+    #[test]
+    fn nested_serializer_context_aware() {
+        let body = Buf::new(vec![0; 10], ..);
+
+        let outer = DummyPacketBuilder::new(3, 0, 0, usize::MAX);
+        let middle = DummyPacketBuilder::new(2, 0, 0, usize::MAX);
+        let inner = DummyPacketBuilder::new(1, 0, 0, usize::MAX);
+
+        let serializer = body.wrap_in(inner).wrap_in(middle).wrap_in(outer);
+
+        let mut context = TrackingSerializationContext { history: Vec::new() };
+        let _buf = serializer.clone().serialize_vec_outer(&mut context).unwrap();
+        assert_eq!(context.history, vec![3, 2, 1]);
+
+        let mut context = TrackingSerializationContext { history: Vec::new() };
+        let _buf = serializer
+            .serialize_new_buf(&mut context, PacketConstraints::UNCONSTRAINED, new_buf_vec)
+            .unwrap();
+        assert_eq!(context.history, vec![3, 2, 1]);
+    }
+
+    #[test]
+    fn nested_partial_serializer_context_aware() {
+        let body = Buf::new(vec![0; 10], ..);
+
+        let outer = DummyPacketBuilder::new(3, 0, 0, usize::MAX);
+        let middle = DummyPacketBuilder::new(2, 0, 0, usize::MAX);
+        let inner = DummyPacketBuilder::new(1, 0, 0, usize::MAX);
+
+        let serializer = body.wrap_in(inner).wrap_in(middle).wrap_in(outer);
+
+        let mut context = TrackingSerializationContext { history: Vec::new() };
+        let mut buf = vec![0; 100];
+        let _result = serializer
+            .partial_serialize(&mut context, PacketConstraints::UNCONSTRAINED, &mut buf)
+            .unwrap();
+        assert_eq!(context.history, vec![3, 2, 1]);
     }
 }
