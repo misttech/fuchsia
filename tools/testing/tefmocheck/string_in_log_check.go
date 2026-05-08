@@ -620,6 +620,12 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			SkipAllPassedTests:    true,
 			emitSyntheticTestCase: true,
 		},
+		// For https://fxbug.dev/505061097
+		&stringInLogCheck{
+			String:             "Could not find 'aidl/android.hardware.thermal.IThermal/default' for ctl.interface_start",
+			Type:               syslogType,
+			SkipAllPassedTests: true,
+		},
 	}
 
 	oopsExceptBlocks := []*logBlock{
