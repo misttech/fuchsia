@@ -279,10 +279,20 @@ impl EthernetFrameBuilder {
 // sound assumption. If we support them in the future, we will need to update
 // these to compute dynamically.
 
-/// A trait for Ethernet serialization contexts.
-pub trait EthernetSerializationContext: SerializationContext {}
+/// Ethernet frame context relevant to serialization.
+pub struct EthernetEnvelope;
 
-impl EthernetSerializationContext for NoOpSerializationContext {}
+/// A trait for Ethernet serialization contexts.
+pub trait EthernetSerializationContext: SerializationContext {
+    /// Converts an `EthernetEnvelope` into the serialization context's state.
+    fn envelope_to_state(envelope: EthernetEnvelope) -> Self::ContextState;
+}
+
+impl EthernetSerializationContext for NoOpSerializationContext {
+    fn envelope_to_state(_envelope: EthernetEnvelope) -> Self::ContextState {
+        ()
+    }
+}
 
 impl NestablePacketBuilder for EthernetFrameBuilder {
     fn constraints(&self) -> PacketConstraints {
@@ -291,6 +301,10 @@ impl NestablePacketBuilder for EthernetFrameBuilder {
 }
 
 impl<C: EthernetSerializationContext> PacketBuilder<C> for EthernetFrameBuilder {
+    fn context_state(&self) -> C::ContextState {
+        C::envelope_to_state(EthernetEnvelope)
+    }
+
     fn serialize(
         &self,
         _context: &mut C,

@@ -726,10 +726,20 @@ impl<I: IcmpIpExt, B: SplitByteSlice, M: IcmpMessage<I, Body<B> = ndp::Options<B
     }
 }
 
-/// A trait for ICMP serialization contexts.
-pub trait IcmpSerializationContext: SerializationContext {}
+/// ICMP packet context relevant to serialization.
+pub struct IcmpEnvelope;
 
-impl IcmpSerializationContext for NoOpSerializationContext {}
+/// A trait for ICMP serialization contexts.
+pub trait IcmpSerializationContext: SerializationContext {
+    /// Converts an `IcmpEnvelope` into the serialization context's state.
+    fn envelope_to_state(envelope: IcmpEnvelope) -> Self::ContextState;
+}
+
+impl IcmpSerializationContext for NoOpSerializationContext {
+    fn envelope_to_state(_envelope: IcmpEnvelope) -> Self::ContextState {
+        ()
+    }
+}
 
 /// A builder for ICMP packets.
 #[derive(Debug, PartialEq, Clone)]
@@ -835,6 +845,10 @@ impl<I: IcmpIpExt, M: IcmpMessage<I>> NestablePacketBuilder for IcmpPacketBuilde
 impl<I: IcmpIpExt, M: IcmpMessage<I>, C: IcmpSerializationContext> PacketBuilder<C>
     for IcmpPacketBuilder<I, M>
 {
+    fn context_state(&self) -> C::ContextState {
+        C::envelope_to_state(IcmpEnvelope)
+    }
+
     fn serialize(
         &self,
         _context: &mut C,

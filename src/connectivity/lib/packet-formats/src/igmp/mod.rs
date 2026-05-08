@@ -203,10 +203,20 @@ impl<B, M: MessageType<B, VariableBody = ()>> InnerPacketBuilder for IgmpPacketB
     }
 }
 
-/// A trait for IGMP serialization contexts.
-pub trait IgmpSerializationContext: SerializationContext {}
+/// IGMP packet context relevant to serialization.
+pub struct IgmpEnvelope;
 
-impl IgmpSerializationContext for NoOpSerializationContext {}
+/// A trait for IGMP serialization contexts.
+pub trait IgmpSerializationContext: SerializationContext {
+    /// Converts an `IgmpEnvelope` into the serialization context's state.
+    fn envelope_to_state(envelope: IgmpEnvelope) -> Self::ContextState;
+}
+
+impl IgmpSerializationContext for NoOpSerializationContext {
+    fn envelope_to_state(_envelope: IgmpEnvelope) -> Self::ContextState {
+        ()
+    }
+}
 
 impl<B, M: MessageType<B>> NestablePacketBuilder for IgmpPacketBuilder<B, M>
 where
@@ -221,6 +231,10 @@ impl<B, M: MessageType<B>, C: IgmpSerializationContext> PacketBuilder<C> for Igm
 where
     M::VariableBody: IgmpNonEmptyBody,
 {
+    fn context_state(&self) -> C::ContextState {
+        C::envelope_to_state(IgmpEnvelope)
+    }
+
     fn serialize(
         &self,
         _context: &mut C,

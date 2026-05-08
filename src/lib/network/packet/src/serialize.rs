@@ -747,6 +747,11 @@ pub struct SerializeTarget<'a> {
 /// `()` may be used as an "empty" `PacketBuilder` with no header, footer,
 /// minimum body length requirement, or maximum body length requirement.
 pub trait PacketBuilder<C: SerializationContext>: NestablePacketBuilder + Sized {
+    /// Gets the packet-specific state to use with the [`SerializationContext`].
+    fn context_state(&self) -> C::ContextState {
+        C::ContextState::default()
+    }
+
     /// Serializes this packet into an existing buffer.
     ///
     /// *This method is usually called by this crate during the serialization of
@@ -806,6 +811,10 @@ impl<'a, B: NestablePacketBuilder> NestablePacketBuilder for &'a B {
 
 impl<'a, C: SerializationContext, B: PacketBuilder<C>> PacketBuilder<C> for &'a B {
     #[inline]
+    fn context_state(&self) -> C::ContextState {
+        B::context_state(self)
+    }
+    #[inline]
     fn serialize(
         &self,
         context: &mut C,
@@ -824,6 +833,10 @@ impl<'a, B: NestablePacketBuilder> NestablePacketBuilder for &'a mut B {
 }
 
 impl<'a, C: SerializationContext, B: PacketBuilder<C>> PacketBuilder<C> for &'a mut B {
+    #[inline]
+    fn context_state(&self) -> C::ContextState {
+        B::context_state(self)
+    }
     #[inline]
     fn serialize(
         &self,

@@ -516,12 +516,22 @@ impl<B: SplitByteSliceMut> UdpPacketRaw<B> {
 // performed in UdpPacket::parse, provides the invariant that a UdpPacket always
 // has a valid checksum.
 
+/// UDP packet context relevant to serialization.
+pub struct UdpEnvelope;
+
 /// A trait for UDP serialization contexts.
 // TODO(https://fxbug.dev/485599557): Expand the definition of this trait to
 // support checksum offloading.
-pub trait UdpSerializationContext: SerializationContext {}
+pub trait UdpSerializationContext: SerializationContext {
+    /// Converts a `UdpEnvelope` into the serialization context's state.
+    fn envelope_to_state(envelope: UdpEnvelope) -> Self::ContextState;
+}
 
-impl UdpSerializationContext for NoOpSerializationContext {}
+impl UdpSerializationContext for NoOpSerializationContext {
+    fn envelope_to_state(_envelope: UdpEnvelope) -> Self::ContextState {
+        ()
+    }
+}
 
 /// A builder for UDP packets.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -627,6 +637,10 @@ impl<A: IpAddress> NestablePacketBuilder for UdpPacketBuilder<A> {
 }
 
 impl<A: IpAddress, C: UdpSerializationContext> PacketBuilder<C> for UdpPacketBuilder<A> {
+    fn context_state(&self) -> C::ContextState {
+        C::envelope_to_state(UdpEnvelope)
+    }
+
     fn serialize(
         &self,
         _context: &mut C,

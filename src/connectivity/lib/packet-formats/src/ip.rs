@@ -12,6 +12,7 @@ use core::cmp::PartialEq;
 use core::convert::Infallible as Never;
 use core::fmt::{Debug, Display};
 use core::hash::Hash;
+use core::marker::PhantomData;
 
 use net_types::ip::{GenericOverIp, Ip, IpAddr, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
 use packet::{
@@ -58,10 +59,29 @@ impl IpProtoExt for Ipv6 {
     type Proto = Ipv6Proto;
 }
 
-/// A trait for IP serialization contexts.
-pub trait IpSerializationContext<I: IpExt>: SerializationContext {}
+/// IP packet context relevant to serialization.
+pub struct IpEnvelope<I: IpExt> {
+    _marker: PhantomData<I>,
+}
 
-impl<I: IpExt> IpSerializationContext<I> for NoOpSerializationContext {}
+impl<I: IpExt> IpEnvelope<I> {
+    /// Creates a new `IpEnvelope`.
+    pub fn new() -> Self {
+        Self { _marker: PhantomData }
+    }
+}
+
+/// A trait for IP serialization contexts.
+pub trait IpSerializationContext<I: IpExt>: SerializationContext {
+    /// Converts an `IpEnvelope` into the serialization context's state.
+    fn envelope_to_state(envelope: IpEnvelope<I>) -> Self::ContextState;
+}
+
+impl<I: IpExt> IpSerializationContext<I> for NoOpSerializationContext {
+    fn envelope_to_state(_envelope: IpEnvelope<I>) -> Self::ContextState {
+        ()
+    }
+}
 
 /// An extension trait to the `Ip` trait adding associated types relevant for
 /// packet parsing and serialization.

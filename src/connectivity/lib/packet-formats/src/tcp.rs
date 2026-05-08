@@ -704,12 +704,22 @@ impl<B: SplitByteSlice + CloneableByteSlice> TcpSegmentRaw<B> {
 #[derive(Debug)]
 pub struct TcpOptionsTooLongError;
 
+/// TCP segment context relevant to serialization.
+pub struct TcpEnvelope;
+
 /// A trait for TCP serialization contexts.
 // TODO(https://fxbug.dev/485599557): Expand the definition of this trait to
 // support checksum offloading.
-pub trait TcpSerializationContext: SerializationContext {}
+pub trait TcpSerializationContext: SerializationContext {
+    /// Converts a `TcpEnvelope` into the serialization context's state.
+    fn envelope_to_state(envelope: TcpEnvelope) -> Self::ContextState;
+}
 
-impl TcpSerializationContext for NoOpSerializationContext {}
+impl TcpSerializationContext for NoOpSerializationContext {
+    fn envelope_to_state(_envelope: TcpEnvelope) -> Self::ContextState {
+        ()
+    }
+}
 
 /// A builder for TCP segments with options
 #[derive(Debug, Clone)]
@@ -794,6 +804,10 @@ impl<A: IpAddress, O: InnerPacketBuilder> NestablePacketBuilder
 impl<A: IpAddress, O: InnerPacketBuilder, C: TcpSerializationContext> PacketBuilder<C>
     for TcpSegmentBuilderWithOptions<A, O>
 {
+    fn context_state(&self) -> C::ContextState {
+        C::envelope_to_state(TcpEnvelope)
+    }
+
     fn serialize(
         &self,
         context: &mut C,
@@ -995,6 +1009,10 @@ impl<A: IpAddress> NestablePacketBuilder for TcpSegmentBuilder<A> {
 }
 
 impl<A: IpAddress, C: TcpSerializationContext> PacketBuilder<C> for TcpSegmentBuilder<A> {
+    fn context_state(&self) -> C::ContextState {
+        C::envelope_to_state(TcpEnvelope)
+    }
+
     fn serialize(
         &self,
         _context: &mut C,
@@ -2058,6 +2076,10 @@ mod tests {
     impl<A: IpAddress, O: AsRef<[u8]>, C: TcpSerializationContext> PacketBuilder<C>
         for TcpSegmentBuilderWithCustomOption<A, O>
     {
+        fn context_state(&self) -> C::ContextState {
+            C::envelope_to_state(TcpEnvelope)
+        }
+
         fn serialize(
             &self,
             context: &mut C,

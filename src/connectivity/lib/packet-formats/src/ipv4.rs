@@ -33,8 +33,8 @@ use zerocopy::{
 
 use crate::error::ParseError;
 use crate::ip::{
-    DscpAndEcn, FragmentOffset, IpExt, IpPacketBuilder, IpProto, IpSerializationContext, Ipv4Proto,
-    Ipv6Proto, Nat64Error, Nat64TranslationResult,
+    DscpAndEcn, FragmentOffset, IpEnvelope, IpExt, IpPacketBuilder, IpProto,
+    IpSerializationContext, Ipv4Proto, Ipv6Proto, Nat64Error, Nat64TranslationResult,
 };
 use crate::ipv6::Ipv6PacketBuilder;
 use crate::tcp::{TcpParseArgs, TcpSegment};
@@ -894,6 +894,10 @@ where
     I: Iterator + Clone,
     I::Item: Borrow<Ipv4Option<'a>>,
 {
+    fn context_state(&self) -> C::ContextState {
+        C::envelope_to_state(IpEnvelope::new())
+    }
+
     fn serialize(
         &self,
         context: &mut C,
@@ -1094,6 +1098,10 @@ impl NestablePacketBuilder for Ipv4PacketBuilder {
 }
 
 impl<C: IpSerializationContext<Ipv4>> PacketBuilder<C> for Ipv4PacketBuilder {
+    fn context_state(&self) -> C::ContextState {
+        C::envelope_to_state(IpEnvelope::new())
+    }
+
     fn serialize(
         &self,
         _context: &mut C,

@@ -34,8 +34,9 @@ use zerocopy::{
 use crate::error::{IpParseErrorAction, IpParseResult, Ipv6ParseError, ParseError};
 use crate::icmp::Icmpv6ParameterProblemCode;
 use crate::ip::{
-    DscpAndEcn, FragmentOffset, IpExt, IpPacketBuilder, IpProto, IpSerializationContext, Ipv4Proto,
-    Ipv6ExtHdrType, Ipv6Proto, Nat64Error, Nat64TranslationResult,
+    DscpAndEcn, FragmentOffset, IpEnvelope, IpExt, IpPacketBuilder, IpProto,
+    IpSerializationContext, Ipv4Proto, Ipv6ExtHdrType, Ipv6Proto, Nat64Error,
+    Nat64TranslationResult,
 };
 use crate::ipv4::{HDR_PREFIX_LEN, Ipv4PacketBuilder};
 use crate::tcp::{TcpParseArgs, TcpSegment};
@@ -1168,6 +1169,10 @@ macro_rules! impl_packet_builder_base {
 
 macro_rules! impl_packet_builder {
     {} => {
+        fn context_state(&self) -> C::ContextState {
+            C::envelope_to_state(IpEnvelope::new())
+        }
+
         fn serialize(
             &self,
             _context: &mut C,
