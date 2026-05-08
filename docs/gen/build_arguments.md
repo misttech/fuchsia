@@ -1015,7 +1015,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
 }
 }
   lsan = {
@@ -4150,6 +4150,16 @@ in development and not yet ready for use in production.
 
 From //zircon/kernel/params.gni:114
 
+### enable_sestarnix_userspace_tests_on_linux
+
+Enable SEStarnix userspace tests on Linux.
+On CI/CQ this requires internal prebuilts only available in internal checkouts.
+TODO(https://fxbug.dev/510724670): Remove this flag when the prebuilts are available publicly.
+
+**Current value (from the default):** `false`
+
+From //src/starnix/build/args.gni:13
+
 ### escher_test_for_glsl_spirv_mismatch
 
 If true, this enables the |SpirvNotChangedTest| to check if the precompiled
@@ -4250,6 +4260,15 @@ when unblocking once we solve races higher in the stack.
 **Current value (from the default):** `false`
 
 From //zircon/kernel/params.gni:131
+
+### experimental_mem_enabled
+
+If true, experimental memory optimization features like the
+`kernel.oom.experimental_expand_memory_stall` kernel argument will be enabled.
+
+**Current value (from the default):** `false`
+
+From //build/assembly/tools/assembly/BUILD.gn:19
 
 ### experimental_thread_sampler_enabled
 
@@ -9242,7 +9261,7 @@ useful for identifying the stacks that acquired a lock in a deadlock cycle.
 
 **Current value (from the default):** `false`
 
-From //src/starnix/build/args.gni:22
+From //src/starnix/build/args.gni:27
 
 ### starnix_enable_trace_and_debug_logs_in_release
 
@@ -9257,7 +9276,7 @@ https://fuchsia-review.googlesource.com/c/fuchsia/+/929995.
 
 **Current value (from the default):** `false`
 
-From //src/starnix/build/args.gni:18
+From //src/starnix/build/args.gni:23
 
 ### starnix_force_build_host_tests
 
@@ -9274,7 +9293,7 @@ We want to use a newer sysroot than is available by default in $host_toolchain.
 
 **Current value (from the default):** `"//build/toolchain:linux_x64"`
 
-From //src/starnix/build/args.gni:25
+From //src/starnix/build/args.gni:30
 
 ### starnix_kgsl_debug
 
