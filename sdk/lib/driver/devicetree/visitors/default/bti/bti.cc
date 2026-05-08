@@ -92,17 +92,7 @@ zx::result<> BtiVisitor::ReferenceChildVisit(Node& child, ReferenceNode& parent,
                                              PropertyCells reference_cells,
                                              std::optional<std::string> iommu_name) {
   const uint32_t iommu_id = parent.id();
-  auto [_, inserted] = iommu_nodes_.insert(iommu_id);
-  if (inserted) {
-    auto reg = parent.GetProperty<std::vector<uint32_t>>("reg");
-    if (reg.is_ok() && !reg->empty()) {
-      std::ignore = child.RegisterIommu(
-          parent.id(), fuchsia_hardware_platform_bus::Iommu::WithArmSmmu(reg.value()[0]));
-    } else {
-      std::ignore =
-          child.RegisterIommu(parent.id(), fuchsia_hardware_platform_bus::Iommu::WithStubIommu({}));
-    }
-  }
+  iommu_nodes_.insert(iommu_id);
 
   auto iommu_cell = IommuCell(reference_cells);
 
@@ -116,6 +106,21 @@ zx::result<> BtiVisitor::ReferenceChildVisit(Node& child, ReferenceNode& parent,
 
   child.AddBti(bti);
 
+  return zx::ok();
+}
+
+zx::result<> BtiVisitor::FinalizeNode(Node& node) {
+  uint32_t iommu_id = node.id();
+  if (iommu_nodes_.find(iommu_id) != iommu_nodes_.end()) {
+    auto reg = node.GetProperty<std::vector<uint32_t>>("reg");
+    if (reg.is_ok() && !reg->empty()) {
+      std::ignore = node.RegisterIommu(
+          node.id(), fuchsia_hardware_platform_bus::Iommu::WithArmSmmu(reg.value()[0]));
+    } else {
+      std::ignore =
+          node.RegisterIommu(node.id(), fuchsia_hardware_platform_bus::Iommu::WithStubIommu({}));
+    }
+  }
   return zx::ok();
 }
 

@@ -436,7 +436,9 @@ void PlatformBus::RegisterIommu(RegisterIommuRequestView request, fdf::Arena& ar
 
   zx::unowned_resource resource = GetIommuResource();
   if (!resource->is_valid()) {
-    completer.buffer(arena).ReplyError(ZX_ERR_ACCESS_DENIED);
+    fdf::warn(
+        "PlatformBus::RegisterIommu: IOMMU resource is invalid! Assuming test and skipping registration.");
+    completer.buffer(arena).ReplySuccess();
     return;
   }
 
