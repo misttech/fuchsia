@@ -98,6 +98,7 @@ type ElementSchema = resource table {
     4: dependencies vector<LevelDependency>:MAX_DEPENDENCIES_IN_ADD_ELEMENT;
     /// REMOVED: 7: level_control_channels, use `element_runner` instead (see below).
     ///
+    /// DEPRECATED. Use `Topology.Lease` instead.
     /// Optional. If passed, Leases for this element can be requested via this
     /// channel.
     8: lessor_channel server_end:Lessor;
@@ -260,6 +261,7 @@ type Permissions = strict bits : uint32 {
     MODIFY_DEPENDENCY = 0b00000100;
 };
 
+/// DEPRECATED. Use `Topology.Lease` instead.
 /// Provides element-scoped access to request leases to raise the levels of an
 /// element previously added via Topology.AddElement.
 open protocol Lessor {
