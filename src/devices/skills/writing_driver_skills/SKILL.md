@@ -89,7 +89,8 @@ Ensure that related skills are cross-linked.
   except for long URLs. Use best effort for line wrapping code.
 * **Bullet Point Spacing**: Bullet points should be followed by only one space
   (e.g., `* Bullet`).
-* **Trailing Whitespace**: Do not leave trailing whitespaces at the end of lines.
+* **Trailing Whitespace**: Do not leave trailing whitespaces at the end of
+  lines.
 * **Code Block Tags**: Always specify the language for fenced code blocks (e.g.,
   `cpp`, `gn`, `cml`, `bazel`, `bash`) to ensure proper syntax highlighting.
 
@@ -98,7 +99,8 @@ Ensure that related skills are cross-linked.
 * **Pitfalls**: Include a `## Common Pitfalls` section to document known edge
   cases, common errors, or non-obvious requirements.
 * **Further Reading**: Include a `## Further Reading` section if there are any
-  related skills, documentation, or background material to link to.
+  related skills, documentation, background material, or example drivers to
+  link to.
 
 ### 9. Avoid Redundancy
 
@@ -126,5 +128,16 @@ Ensure that related skills are cross-linked.
 
 ### 12. Follow Project Language Rules
 
-* **Adhere to GEMINI.md**: Ensure all code snippets adhere to the Fuchsia-specific
-  coding style and constraints defined in `GEMINI.md`.
+* **Adhere to GEMINI.md**: Ensure all code snippets adhere to the
+  Fuchsia-specific coding style and constraints defined in `GEMINI.md`.
+
+### 13. Tone and Style
+
+* **Avoid Second Person**: Do not use "you" or "your" in instructions or
+  descriptions.
+* **Imperative Mood for Steps**: Use strong imperative verbs for instructions
+  (e.g., "Implement the interface" instead of "You must implement the
+  interface").
+* **"The Driver" for Runtime**: Use "the driver" or "the component" to describe
+  runtime behavior or the code being written (e.g., "The driver connects to the
+  service").
