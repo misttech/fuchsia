@@ -116,7 +116,6 @@ if (virtio_gpu_display_flavor == "cpp") {
       "//sdk/lib/driver/outgoing/cpp",
       "//sdk/lib/driver/runtime:driver_runtime_cpp",
       "//src/devices/lib/driver:driver_runtime",
-      "//src/graphics/display/lib/driver-framework-migration-utils/logging:logging-dfv2",
     ]
   }
 }
