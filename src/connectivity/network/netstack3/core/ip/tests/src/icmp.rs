@@ -10,7 +10,9 @@ use core::num::NonZeroU16;
 use assert_matches::assert_matches;
 use ip_test_macro::ip_test;
 use net_declare::{net_ip_v4, net_ip_v6};
-use net_types::ip::{IpAddress, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet};
+use net_types::ip::{
+    GenericOverIp, Ip, IpAddress, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Subnet,
+};
 use net_types::{SpecifiedAddr, Witness};
 use packet::{Buf, NestablePacketBuilder, NestableSerializer as _, Serializer};
 use packet_formats::ethernet::EthernetFrameLengthCheck;
@@ -26,15 +28,70 @@ use packet_formats::udp::UdpPacketBuilder;
 
 use netstack3_base::testutil::{TEST_ADDRS_V4, TEST_ADDRS_V6, TestIpExt, set_logger_for_test};
 use netstack3_base::{
-    FrameDestination, MarkMatcher, MarkMatchers, Marks, NetworkSerializationContext,
+    CounterCollection as _, CounterContext, FrameDestination, MarkMatcher, MarkMatchers, Marks,
+    NetworkSerializationContext,
 };
 use netstack3_core::device::DeviceId;
 use netstack3_core::ip::MarkDomain;
 use netstack3_core::testutil::{Ctx, CtxPairExt as _, FakeBindingsCtx, FakeCtxBuilder};
 use netstack3_core::{IpExt, StackStateBuilder};
-use netstack3_ip::icmp::Icmpv4StateBuilder;
-use netstack3_ip::{AddableEntry, AddableMetric, RawMetric, Rule, RuleAction, RuleMatcher};
+use netstack3_ip::icmp::{IcmpRxCounters, IcmpTxCounters, Icmpv4StateBuilder};
+use netstack3_ip::{
+    AddableEntry, AddableMetric, IpCounters, RawMetric, Rule, RuleAction, RuleMatcher,
+};
 use test_case::test_case;
+
+#[derive(Default, GenericOverIp)]
+#[generic_over_ip(I, Ip)]
+struct CounterExpectations<I: TestIpExt + IpExt> {
+    ip: IpCounters<I, u64>,
+    icmp_rx: IcmpRxCounters<I, u64>,
+    icmp_tx: IcmpTxCounters<I, u64>,
+}
+
+impl<I: TestIpExt + IpExt> CounterExpectations<I> {
+    fn default_receive_send() -> Self {
+        Self {
+            ip: IpCounters { receive_ip_packet: 1, send_ip_packet: 1, ..Default::default() },
+            ..Default::default()
+        }
+    }
+    fn default_receive_deliver_send() -> Self {
+        Self {
+            ip: IpCounters {
+                receive_ip_packet: 1,
+                dispatch_receive_ip_packet: 1,
+                deliver_unicast: 1,
+                send_ip_packet: 1,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    /// Assert that the counters tracked by `core_ctx` match expectations.
+    #[track_caller]
+    fn assert_counters<
+        CC: CounterContext<IpCounters<I>>
+            + CounterContext<IcmpRxCounters<I>>
+            + CounterContext<IcmpTxCounters<I>>,
+    >(
+        self,
+        core_ctx: &CC,
+    ) {
+        let Self { ip, icmp_rx, icmp_tx } = self;
+
+        assert_eq!(<CC as CounterContext<IpCounters<I>>>::counters(core_ctx).cast::<u64>(), ip);
+        assert_eq!(
+            <CC as CounterContext<IcmpRxCounters<I>>>::counters(core_ctx).cast::<u64>(),
+            icmp_rx
+        );
+        assert_eq!(
+            <CC as CounterContext<IcmpTxCounters<I>>>::counters(core_ctx).cast::<u64>(),
+            icmp_tx
+        );
+    }
+}
 
 /// Test that receiving a particular IP packet results in a particular ICMP
 /// response.
@@ -72,7 +129,7 @@ fn test_receive_ip_packet<
     dst_ip: SpecifiedAddr<I::Addr>,
     ttl: u8,
     proto: I::Proto,
-    assert_counters: &[&str],
+    counter_expects: CounterExpectations<I>,
     expect_message_code: Option<(M, C)>,
     f: F,
     test_mark_reflection: bool,
@@ -135,33 +192,9 @@ fn test_receive_ip_packet<
         );
     }
 
-    let Ctx { core_ctx, bindings_ctx } = &mut ctx;
-    for counter in assert_counters {
-        // TODO(https://fxbug.dev/42084333): Redesign iterating through
-        // assert_counters once CounterContext is removed.
-        let count = match *counter {
-            "send_ipv4_packet" => core_ctx.ipv4().inner.counters().send_ip_packet.get(),
-            "send_ipv6_packet" => core_ctx.ipv6().inner.counters().send_ip_packet.get(),
-            "echo_request" => core_ctx.common_icmp::<I>().rx_counters.echo_request.get(),
-            "timestamp_request" => core_ctx.common_icmp::<I>().rx_counters.timestamp_request.get(),
-            "protocol_unreachable" => {
-                core_ctx.common_icmp::<I>().tx_counters.protocol_unreachable.get()
-            }
-            "port_unreachable" => core_ctx.common_icmp::<I>().tx_counters.port_unreachable.get(),
-            "net_unreachable" => core_ctx.common_icmp::<I>().tx_counters.net_unreachable.get(),
-            "ttl_expired" => {
-                core_ctx.common_icmp::<Ipv4>().tx_counters.time_exceeded.ttl_expired.get()
-            }
-            "hop_limit_exceeded" => {
-                core_ctx.common_icmp::<Ipv6>().tx_counters.time_exceeded.hop_limit_exceeded.get()
-            }
-            "packet_too_big" => core_ctx.common_icmp::<I>().tx_counters.packet_too_big.get(),
-            "error" => core_ctx.common_icmp::<I>().tx_counters.error.get(),
-            c => panic!("unrecognized counter: {c}"),
-        };
-        assert!(count > 0, "counter at zero: {counter}");
-    }
+    counter_expects.assert_counters(&ctx.core_ctx());
 
+    let Ctx { core_ctx: _, bindings_ctx } = &mut ctx;
     if let Some((expect_message, expect_code)) = expect_message_code {
         let frames = bindings_ctx.take_ethernet_frames();
         let (_dev, frame) = assert_matches!(&frames[..], [frame] => frame);
@@ -185,53 +218,56 @@ fn test_receive_ip_packet<
     }
 }
 
+#[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
+#[ip_test(I)]
 #[test_case(true; "reflection")]
 #[test_case(false; "no reflection")]
-fn test_receive_echo(test_mark_reflection: bool) {
+fn test_receive_echo<I: TestIpExt + IpExt>(test_mark_reflection: bool) {
     set_logger_for_test();
 
     // Test that, when receiving an echo request, we respond with an echo
     // reply with the appropriate parameters.
+    let mut counter_expects = CounterExpectations::default_receive_deliver_send();
+    counter_expects.icmp_rx.echo_request = 1;
+    counter_expects.icmp_tx.reply = 1;
 
-    #[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
-    fn test<I: TestIpExt + IpExt>(assert_counters: &[&str], test_mark_reflection: bool) {
-        let req = IcmpEchoRequest::new(0, 0);
-        let req_body = &[1, 2, 3, 4];
-        let mut buffer = Buf::new(req_body.to_vec(), ..)
-            .wrap_in(IcmpPacketBuilder::<I, _>::new(
-                I::TEST_ADDRS.remote_ip.get(),
-                I::TEST_ADDRS.local_ip.get(),
-                IcmpZeroCode,
-                req,
-            ))
-            .serialize_vec_outer(&mut NetworkSerializationContext::default())
-            .unwrap();
-        test_receive_ip_packet::<I, _, _, _, _, _>(
-            |_| {},
-            |_| {},
-            buffer.as_mut(),
-            I::TEST_ADDRS.local_ip,
-            64,
-            I::ICMP_IP_PROTO,
-            assert_counters,
-            Some((req.reply(), IcmpZeroCode)),
-            |packet| {
-                let (inner_header, inner_body) = packet.original_packet().bytes();
-                assert!(inner_body.is_none());
-                assert_eq!(inner_header, req_body)
-            },
-            test_mark_reflection,
-        );
-    }
-
-    test::<Ipv4>(&["echo_request", "send_ipv4_packet"], test_mark_reflection);
-    test::<Ipv6>(&["echo_request", "send_ipv6_packet"], test_mark_reflection);
+    let req = IcmpEchoRequest::new(0, 0);
+    let req_body = &[1, 2, 3, 4];
+    let mut buffer = Buf::new(req_body.to_vec(), ..)
+        .wrap_in(IcmpPacketBuilder::<I, _>::new(
+            I::TEST_ADDRS.remote_ip.get(),
+            I::TEST_ADDRS.local_ip.get(),
+            IcmpZeroCode,
+            req,
+        ))
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
+        .unwrap();
+    test_receive_ip_packet::<I, _, _, _, _, _>(
+        |_| {},
+        |_| {},
+        buffer.as_mut(),
+        I::TEST_ADDRS.local_ip,
+        64,
+        I::ICMP_IP_PROTO,
+        counter_expects,
+        Some((req.reply(), IcmpZeroCode)),
+        |packet| {
+            let (inner_header, inner_body) = packet.original_packet().bytes();
+            assert!(inner_body.is_none());
+            assert_eq!(inner_header, req_body)
+        },
+        test_mark_reflection,
+    );
 }
 
 #[test_case(true; "mark_reflection")]
 #[test_case(false; "no reflection")]
 fn test_receive_timestamp(test_mark_reflection: bool) {
     set_logger_for_test();
+
+    let mut counter_expects = CounterExpectations::default_receive_deliver_send();
+    counter_expects.icmp_rx.timestamp_request = 1;
+    counter_expects.icmp_tx.reply = 1;
 
     let req = Icmpv4TimestampRequest::new(1, 2, 3);
     let mut buffer = Buf::new(Vec::new(), ..)
@@ -253,7 +289,7 @@ fn test_receive_timestamp(test_mark_reflection: bool) {
         TEST_ADDRS_V4.local_ip,
         64,
         Ipv4Proto::Icmp,
-        &["timestamp_request", "send_ipv4_packet"],
+        counter_expects,
         Some((req.reply(0x80000000, 0x80000000), IcmpZeroCode)),
         |_| {},
         test_mark_reflection,
@@ -275,6 +311,11 @@ fn test_protocol_unreachable(test_mark_reflection: bool) {
         let v4proto = Ipv4Proto::from(proto);
         match v4proto {
             Ipv4Proto::Other(_) | Ipv4Proto::Proto(IpProto::Reserved) => {
+                let mut counter_expects =
+                    CounterExpectations::<Ipv4>::default_receive_deliver_send();
+                counter_expects.icmp_tx.dest_unreachable.dest_protocol_unreachable = 1;
+                counter_expects.icmp_tx.error = 1;
+
                 test_receive_ip_packet::<Ipv4, _, _, _, _, _>(
                     |_| {},
                     |_| {},
@@ -282,7 +323,7 @@ fn test_protocol_unreachable(test_mark_reflection: bool) {
                     TEST_ADDRS_V4.local_ip,
                     64,
                     v4proto,
-                    &["protocol_unreachable"],
+                    counter_expects,
                     Some((
                         IcmpDestUnreachable::default(),
                         Icmpv4DestUnreachableCode::DestProtocolUnreachable,
@@ -315,9 +356,15 @@ fn test_protocol_unreachable(test_mark_reflection: bool) {
     }
 }
 
+#[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
+#[ip_test(I)]
 #[test_case(true; "reflection")]
 #[test_case(false; "no reflection")]
-fn test_port_unreachable(test_mark_reflection: bool) {
+fn test_port_unreachable<I: TestIpExt + IpExt>(test_mark_reflection: bool)
+where
+    for<'a> IcmpDestUnreachable:
+        IcmpMessage<I, Code = I::DestUnreachableCode, Body<&'a [u8]> = OriginalPacket<&'a [u8]>>,
+{
     // TODO(joshlf): Test TCP as well.
 
     // Receive an IP packet for an unreachable UDP port (1234). Check to
@@ -325,50 +372,52 @@ fn test_port_unreachable(test_mark_reflection: bool) {
     // the same for a stack which has the UDP `send_port_unreachable` option
     // disable, and make sure that we DON'T respond with an ICMP message.
 
-    #[netstack3_macros::context_ip_bounds(I, FakeBindingsCtx)]
-    fn test<I: TestIpExt + IpExt, C: PartialEq + Debug>(
-        code: C,
-        assert_counters: &[&str],
-        original_packet_len: usize,
-        test_mark_reflection: bool,
-    ) where
-        IcmpDestUnreachable:
-            for<'a> IcmpMessage<I, Code = C, Body<&'a [u8]> = OriginalPacket<&'a [u8]>>,
-    {
-        let mut buffer = Buf::new(vec![0; 128], ..)
-            .wrap_in(UdpPacketBuilder::new(
-                I::TEST_ADDRS.remote_ip.get(),
-                I::TEST_ADDRS.local_ip.get(),
-                None,
-                NonZeroU16::new(1234).unwrap(),
-            ))
-            .serialize_vec_outer(&mut NetworkSerializationContext::default())
-            .unwrap();
-        test_receive_ip_packet::<I, _, _, _, _, _>(
-            |_| {},
-            |_| {},
-            buffer.as_mut(),
-            I::TEST_ADDRS.local_ip,
-            64,
-            IpProto::Udp.into(),
-            assert_counters,
-            Some((IcmpDestUnreachable::default(), code)),
-            // Ensure packet is truncated to the right length.
-            |packet| assert_eq!(packet.original_packet().len(), original_packet_len),
-            test_mark_reflection,
-        );
-    }
-
-    test::<Ipv4, _>(
-        Icmpv4DestUnreachableCode::DestPortUnreachable,
-        &["port_unreachable"],
-        84,
-        test_mark_reflection,
+    let mut counter_expects = CounterExpectations::default_receive_deliver_send();
+    counter_expects.icmp_tx.error = 1;
+    I::map_ip::<_, ()>(
+        &mut counter_expects,
+        |c| {
+            c.icmp_tx.dest_unreachable.dest_port_unreachable = 1;
+        },
+        |c| {
+            c.icmp_tx.dest_unreachable.port_unreachable = 1;
+        },
     );
-    test::<Ipv6, _>(
-        Icmpv6DestUnreachableCode::PortUnreachable,
-        &["port_unreachable"],
-        176,
+
+    #[derive(GenericOverIp)]
+    #[generic_over_ip(I, Ip)]
+    struct CodeWrapper<I: IpExt>(I::DestUnreachableCode);
+    let CodeWrapper(code) = I::map_ip(
+        (),
+        |()| CodeWrapper(Icmpv4DestUnreachableCode::DestPortUnreachable),
+        |()| CodeWrapper(Icmpv6DestUnreachableCode::PortUnreachable),
+    );
+
+    let original_packet_len = match I::VERSION {
+        IpVersion::V4 => 84,
+        IpVersion::V6 => 176,
+    };
+
+    let mut buffer = Buf::new(vec![0; 128], ..)
+        .wrap_in(UdpPacketBuilder::new(
+            I::TEST_ADDRS.remote_ip.get(),
+            I::TEST_ADDRS.local_ip.get(),
+            None,
+            NonZeroU16::new(1234).unwrap(),
+        ))
+        .serialize_vec_outer(&mut NetworkSerializationContext::default())
+        .unwrap();
+    test_receive_ip_packet::<I, _, _, _, _, _>(
+        |_| {},
+        |_| {},
+        buffer.as_mut(),
+        I::TEST_ADDRS.local_ip,
+        64,
+        IpProto::Udp.into(),
+        counter_expects,
+        Some((IcmpDestUnreachable::default(), code)),
+        // Ensure packet is truncated to the right length.
+        |packet| assert_eq!(packet.original_packet().len(), original_packet_len),
         test_mark_reflection,
     );
 }
@@ -378,6 +427,10 @@ fn test_port_unreachable(test_mark_reflection: bool) {
 fn test_net_unreachable(test_mark_reflection: bool) {
     // Receive an IP packet for an unreachable destination address. Check to
     // make sure that we respond with the appropriate ICMP message.
+    let mut counter_expects = CounterExpectations::<Ipv4>::default_receive_send();
+    counter_expects.ip.no_route_to_host = 1;
+    counter_expects.icmp_tx.dest_unreachable.dest_network_unreachable = 1;
+    counter_expects.icmp_tx.error = 1;
     test_receive_ip_packet::<Ipv4, _, _, _, _, _>(
         |_| {},
         |_: &mut StackStateBuilder| {},
@@ -385,12 +438,17 @@ fn test_net_unreachable(test_mark_reflection: bool) {
         SpecifiedAddr::new(Ipv4Addr::new([1, 2, 3, 4])).unwrap(),
         64,
         IpProto::Udp.into(),
-        &["net_unreachable"],
+        counter_expects,
         Some((IcmpDestUnreachable::default(), Icmpv4DestUnreachableCode::DestNetworkUnreachable)),
         // Ensure packet is truncated to the right length.
         |packet| assert_eq!(packet.original_packet().len(), 84),
         test_mark_reflection,
     );
+
+    let mut counter_expects = CounterExpectations::<Ipv6>::default_receive_send();
+    counter_expects.ip.no_route_to_host = 1;
+    counter_expects.icmp_tx.dest_unreachable.no_route = 1;
+    counter_expects.icmp_tx.error = 1;
     test_receive_ip_packet::<Ipv6, _, _, _, _, _>(
         |_| {},
         |_: &mut StackStateBuilder| {},
@@ -399,7 +457,7 @@ fn test_net_unreachable(test_mark_reflection: bool) {
             .unwrap(),
         64,
         IpProto::Udp.into(),
-        &["net_unreachable"],
+        counter_expects,
         Some((IcmpDestUnreachable::default(), Icmpv6DestUnreachableCode::NoRoute)),
         // Ensure packet is truncated to the right length.
         |packet| assert_eq!(packet.original_packet().len(), 168),
@@ -407,6 +465,9 @@ fn test_net_unreachable(test_mark_reflection: bool) {
     );
     // Same test for IPv4 but with a non-initial fragment. No ICMP error
     // should be sent.
+    let mut counter_expects = CounterExpectations::<Ipv4>::default();
+    counter_expects.ip.receive_ip_packet = 1;
+    counter_expects.ip.need_more_fragments = 1;
     test_receive_ip_packet::<Ipv4, _, IcmpDestUnreachable, _, _, _>(
         |pb| pb.fragment_offset(FragmentOffset::new(64).unwrap()),
         |_: &mut StackStateBuilder| {},
@@ -414,7 +475,7 @@ fn test_net_unreachable(test_mark_reflection: bool) {
         SpecifiedAddr::new(Ipv4Addr::new([1, 2, 3, 4])).unwrap(),
         64,
         IpProto::Udp.into(),
-        &[],
+        counter_expects,
         None,
         |_| {},
         test_mark_reflection,
@@ -426,6 +487,11 @@ fn test_net_unreachable(test_mark_reflection: bool) {
 fn test_ttl_expired(test_mark_reflection: bool) {
     // Receive an IP packet with an expired TTL. Check to make sure that we
     // respond with the appropriate ICMP message.
+    let mut counter_expects = CounterExpectations::<Ipv4>::default_receive_send();
+    counter_expects.ip.forward = 1;
+    counter_expects.ip.ttl_expired = 1;
+    counter_expects.icmp_tx.time_exceeded.ttl_expired = 1;
+    counter_expects.icmp_tx.error = 1;
     test_receive_ip_packet::<Ipv4, _, _, _, _, _>(
         |_| {},
         |_: &mut StackStateBuilder| {},
@@ -433,12 +499,18 @@ fn test_ttl_expired(test_mark_reflection: bool) {
         TEST_ADDRS_V4.remote_ip,
         1,
         IpProto::Udp.into(),
-        &["ttl_expired"],
+        counter_expects,
         Some((IcmpTimeExceeded::default(), Icmpv4TimeExceededCode::TtlExpired)),
         // Ensure packet is truncated to the right length.
         |packet| assert_eq!(packet.original_packet().len(), 84),
         test_mark_reflection,
     );
+
+    let mut counter_expects = CounterExpectations::<Ipv6>::default_receive_send();
+    counter_expects.ip.forward = 1;
+    counter_expects.ip.ttl_expired = 1;
+    counter_expects.icmp_tx.time_exceeded.hop_limit_exceeded = 1;
+    counter_expects.icmp_tx.error = 1;
     test_receive_ip_packet::<Ipv6, _, _, _, _, _>(
         |_| {},
         |_: &mut StackStateBuilder| {},
@@ -446,14 +518,18 @@ fn test_ttl_expired(test_mark_reflection: bool) {
         TEST_ADDRS_V6.remote_ip,
         1,
         IpProto::Udp.into(),
-        &["hop_limit_exceeded"],
+        counter_expects,
         Some((IcmpTimeExceeded::default(), Icmpv6TimeExceededCode::HopLimitExceeded)),
         // Ensure packet is truncated to the right length.
         |packet| assert_eq!(packet.original_packet().len(), 168),
         test_mark_reflection,
     );
+
     // Same test for IPv4 but with a non-initial fragment. No ICMP error
     // should be sent.
+    let mut counter_expects = CounterExpectations::<Ipv4>::default();
+    counter_expects.ip.receive_ip_packet = 1;
+    counter_expects.ip.need_more_fragments = 1;
     test_receive_ip_packet::<Ipv4, _, IcmpTimeExceeded, _, _, _>(
         |pb| pb.fragment_offset(FragmentOffset::new(64).unwrap()),
         |_: &mut StackStateBuilder| {},
@@ -461,7 +537,7 @@ fn test_ttl_expired(test_mark_reflection: bool) {
         SpecifiedAddr::new(Ipv4Addr::new([1, 2, 3, 4])).unwrap(),
         64,
         IpProto::Udp.into(),
-        &[],
+        counter_expects,
         None,
         |_| {},
         test_mark_reflection,

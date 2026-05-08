@@ -2531,10 +2531,6 @@ async fn inspect_counters(name: &str) {
                     },
                     "Tx": {
                         Reply: 0u64,
-                        AddressUnreachable: 0u64,
-                        ProtocolUnreachable: 0u64,
-                        PortUnreachable: 0u64,
-                        NetUnreachable: 0u64,
                         PacketTooBig: 0u64,
                         Error: 0u64,
                         "DestUnreachable": {
@@ -2603,10 +2599,6 @@ async fn inspect_counters(name: &str) {
                     },
                     "Tx": {
                         Reply: 0u64,
-                        AddressUnreachable: 0u64,
-                        ProtocolUnreachable: 0u64,
-                        PortUnreachable: 0u64,
-                        NetUnreachable: 0u64,
                         PacketTooBig: 0u64,
                         Error: 0u64,
                         "DestUnreachable": {

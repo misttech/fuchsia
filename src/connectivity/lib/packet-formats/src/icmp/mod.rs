@@ -108,6 +108,12 @@ pub trait IcmpIpExt: IpProtoExt {
         + GenericOverIp<Ipv4, Type = Icmpv4MessageType>
         + GenericOverIp<Ipv6, Type = Icmpv6MessageType>;
 
+    /// The type of an ICMP Destination Unreachable Code.
+    ///
+    /// For `Ipv4`, this is `Icmpv4DestUnreachableCode`, and for `Ipv6` this
+    /// is `Icmpv6DestUnreachableCode`.
+    type DestUnreachableCode: PartialEq + Send + Sync + Debug;
+
     /// The type of an ICMP parameter problem code.
     ///
     /// For `Ipv4`, this is `Icmpv4ParameterProblemCode`, and for `Ipv6` this
@@ -144,6 +150,7 @@ pub trait IcmpIpExt: IpProtoExt {
 impl IcmpIpExt for Ipv4 {
     type IcmpPacketTypeRaw<B: SplitByteSliceMut> = Icmpv4PacketRaw<B>;
     type IcmpMessageType = Icmpv4MessageType;
+    type DestUnreachableCode = Icmpv4DestUnreachableCode;
     type ParameterProblemCode = Icmpv4ParameterProblemCode;
     type ParameterProblemPointer = u8;
 
@@ -164,6 +171,7 @@ impl IcmpIpExt for Ipv4 {
 impl IcmpIpExt for Ipv6 {
     type IcmpPacketTypeRaw<B: SplitByteSliceMut> = Icmpv6PacketRaw<B>;
     type IcmpMessageType = Icmpv6MessageType;
+    type DestUnreachableCode = Icmpv6DestUnreachableCode;
     type ParameterProblemCode = Icmpv6ParameterProblemCode;
     type ParameterProblemPointer = u32;
 

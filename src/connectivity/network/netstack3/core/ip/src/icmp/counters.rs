@@ -4,8 +4,12 @@
 
 //! Counters for the Internet Control Message Protocol (ICMP).
 
+use core::fmt::Debug;
 use net_types::ip::{Ip, Ipv4, Ipv6};
-use netstack3_base::{Counter, CounterRepr, Inspectable, Inspector, InspectorExt};
+use netstack3_base::{
+    Counter, CounterCollectionSpec, CounterRepr, Inspectable, Inspector, InspectorExt,
+    TestOnlyPartialEq,
+};
 use packet_formats::icmp::{
     Icmpv4DestUnreachableCode, Icmpv4ParameterProblemCode, Icmpv4TimeExceededCode,
     Icmpv6DestUnreachableCode, Icmpv6ParameterProblemCode, Icmpv6TimeExceededCode,
@@ -14,58 +18,63 @@ use packet_formats::icmp::{
 /// An IP Extension trait for ICMP Counters.
 pub trait IcmpCountersIpExt: Ip {
     /// Counters for the ICMP Dest Unreachable message type.
-    type DestUnreachableCounters<C: CounterRepr>: Inspectable + Default;
+    type DestUnreachableCounters: CounterCollectionSpec<CounterCollection<Counter>: Inspectable>
+        + Default
+        + Debug
+        + TestOnlyPartialEq;
+
     /// Counters for the ICMP Time Exceeded message type.
-    type TimeExceededCounters<C: CounterRepr>: Inspectable + Default;
+    type TimeExceededCounters: CounterCollectionSpec<CounterCollection<Counter>: Inspectable>
+        + Default
+        + Debug
+        + TestOnlyPartialEq;
+
     /// Counters for the ICMP Parameter Problem message type.
-    type ParameterProblemCounters<C: CounterRepr>: Inspectable + Default;
+    type ParameterProblemCounters: CounterCollectionSpec<CounterCollection<Counter>: Inspectable>
+        + Default
+        + Debug
+        + TestOnlyPartialEq;
 }
 
 impl IcmpCountersIpExt for Ipv4 {
-    type DestUnreachableCounters<C: CounterRepr> = Icmpv4DestUnreachableCounters<C>;
-    type TimeExceededCounters<C: CounterRepr> = Icmpv4TimeExceededCounters<C>;
-    type ParameterProblemCounters<C: CounterRepr> = Icmpv4ParameterProblemCounters<C>;
+    type DestUnreachableCounters = Icmpv4DestUnreachableCounters;
+    type TimeExceededCounters = Icmpv4TimeExceededCounters;
+    type ParameterProblemCounters = Icmpv4ParameterProblemCounters;
 }
 
 impl IcmpCountersIpExt for Ipv6 {
-    type DestUnreachableCounters<C: CounterRepr> = Icmpv6DestUnreachableCounters<C>;
-    type TimeExceededCounters<C: CounterRepr> = Icmpv6TimeExceededCounters<C>;
-    type ParameterProblemCounters<C: CounterRepr> = Icmpv6ParameterProblemCounters<C>;
+    type DestUnreachableCounters = Icmpv6DestUnreachableCounters;
+    type TimeExceededCounters = Icmpv6TimeExceededCounters;
+    type ParameterProblemCounters = Icmpv6ParameterProblemCounters;
 }
 
 /// ICMP tx path counters.
-#[derive(Default)]
-pub struct IcmpTxCounters<I: IcmpCountersIpExt> {
+#[derive(Default, Debug)]
+#[cfg_attr(
+    any(test, feature = "testutils"),
+    derive(PartialEq, netstack3_macros::CounterCollection)
+)]
+pub struct IcmpTxCounters<I: IcmpCountersIpExt, C: CounterRepr = Counter> {
     /// Count of reply messages sent.
-    pub reply: Counter,
-    /// Count of protocol unreachable messages sent.
-    pub protocol_unreachable: Counter,
-    /// Count of host/address unreachable messages sent.
-    pub address_unreachable: Counter,
-    /// Count of port unreachable messages sent.
-    pub port_unreachable: Counter,
-    /// Count of net unreachable messages sent.
-    pub net_unreachable: Counter,
+    pub reply: C,
     /// Count of time exceeded messages sent.
-    pub time_exceeded: I::TimeExceededCounters<Counter>,
+    pub time_exceeded: <I::TimeExceededCounters as CounterCollectionSpec>::CounterCollection<C>,
     /// Count of packet too big messages sent.
-    pub packet_too_big: Counter,
+    pub packet_too_big: C,
     /// Count of parameter problem messages sent.
-    pub parameter_problem: I::ParameterProblemCounters<Counter>,
+    pub parameter_problem:
+        <I::ParameterProblemCounters as CounterCollectionSpec>::CounterCollection<C>,
     /// Count of destination unreachable messages sent.
-    pub dest_unreachable: I::DestUnreachableCounters<Counter>,
+    pub dest_unreachable:
+        <I::DestUnreachableCounters as CounterCollectionSpec>::CounterCollection<C>,
     /// Count of error messages sent.
-    pub error: Counter,
+    pub error: C,
 }
 
 impl<I: IcmpCountersIpExt> Inspectable for IcmpTxCounters<I> {
     fn record<II: Inspector>(&self, inspector: &mut II) {
         let IcmpTxCounters {
             reply,
-            protocol_unreachable,
-            address_unreachable,
-            port_unreachable,
-            net_unreachable,
             time_exceeded,
             packet_too_big,
             parameter_problem,
@@ -73,11 +82,6 @@ impl<I: IcmpCountersIpExt> Inspectable for IcmpTxCounters<I> {
             error,
         } = self;
         inspector.record_counter("Reply", reply);
-        inspector.record_counter("ProtocolUnreachable", protocol_unreachable);
-        inspector.record_counter("PortUnreachable", port_unreachable);
-        inspector.record_counter("AddressUnreachable", address_unreachable);
-        inspector.record_counter("NetUnreachable", net_unreachable);
-
         inspector.record_inspectable("TimeExceeded", time_exceeded);
         inspector.record_counter("PacketTooBig", packet_too_big);
         inspector.record_inspectable("ParameterProblem", parameter_problem);
@@ -87,31 +91,37 @@ impl<I: IcmpCountersIpExt> Inspectable for IcmpTxCounters<I> {
 }
 
 /// ICMP rx path counters.
-#[derive(Default)]
-pub struct IcmpRxCounters<I: IcmpCountersIpExt> {
+#[derive(Default, Debug)]
+#[cfg_attr(
+    any(test, feature = "testutils"),
+    derive(PartialEq, netstack3_macros::CounterCollection)
+)]
+pub struct IcmpRxCounters<I: IcmpCountersIpExt, C: CounterRepr = Counter> {
     /// Count of error messages received.
-    pub error: Counter,
+    pub error: C,
     /// Count of error messages delivered to the transport layer.
-    pub error_delivered_to_transport_layer: Counter,
+    pub error_delivered_to_transport_layer: C,
     /// Count of error messages delivered to a socket.
-    pub error_delivered_to_socket: Counter,
+    pub error_delivered_to_socket: C,
     /// Count of echo request messages received.
-    pub echo_request: Counter,
+    pub echo_request: C,
     /// Count of echo reply messages received.
-    pub echo_reply: Counter,
+    pub echo_reply: C,
     /// Count of timestamp request messages received.
-    pub timestamp_request: Counter,
+    pub timestamp_request: C,
     /// Count of destination unreachable messages received.
-    pub dest_unreachable: I::DestUnreachableCounters<Counter>,
+    pub dest_unreachable:
+        <I::DestUnreachableCounters as CounterCollectionSpec>::CounterCollection<C>,
     /// Count of time exceeded messages received.
-    pub time_exceeded: I::TimeExceededCounters<Counter>,
+    pub time_exceeded: <I::TimeExceededCounters as CounterCollectionSpec>::CounterCollection<C>,
     /// Count of parameter problem messages received.
-    pub parameter_problem: I::ParameterProblemCounters<Counter>,
+    pub parameter_problem:
+        <I::ParameterProblemCounters as CounterCollectionSpec>::CounterCollection<C>,
     /// Count of packet too big messages received.
-    pub packet_too_big: Counter,
+    pub packet_too_big: C,
     /// Count of ICMP Echo datagrams that could not be delivered to the socket
     /// because its receive buffer was full.
-    pub queue_full: Counter,
+    pub queue_full: C,
 }
 
 impl<I: IcmpCountersIpExt> Inspectable for IcmpRxCounters<I> {
@@ -148,8 +158,9 @@ impl<I: IcmpCountersIpExt> Inspectable for IcmpRxCounters<I> {
 ///
 /// As defined by IANA:
 /// https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml#icmp-parameters-codes-3
-#[derive(Default)]
-pub struct Icmpv4DestUnreachableCounters<C: CounterRepr> {
+#[derive(Default, Debug, netstack3_macros::CounterCollection)]
+#[cfg_attr(any(test, feature = "testutils"), derive(PartialEq,))]
+pub struct Icmpv4DestUnreachableCounters<C: CounterRepr = Counter> {
     /// Network Unreachable, code 0
     pub dest_network_unreachable: C,
     /// Host Unreachable, code 1
@@ -257,8 +268,9 @@ impl<C: CounterRepr> Inspectable for Icmpv4DestUnreachableCounters<C> {
 ///
 /// As defined by IANA:
 /// https://www.iana.org/assignments/icmpv6-parameters/icmpv6-parameters.xhtml#icmpv6-parameters-codes-2
-#[derive(Default)]
-pub struct Icmpv6DestUnreachableCounters<C: CounterRepr> {
+#[derive(Default, Debug, netstack3_macros::CounterCollection)]
+#[cfg_attr(any(test, feature = "testutils"), derive(PartialEq,))]
+pub struct Icmpv6DestUnreachableCounters<C: CounterRepr = Counter> {
     /// No route to destination, code 0
     pub no_route: C,
     /// Communication with destination administratively prohibited, code 1
@@ -319,8 +331,9 @@ impl<C: CounterRepr> Inspectable for Icmpv6DestUnreachableCounters<C> {
 ///
 /// As defined by IANA:
 /// https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml#icmp-parameters-codes-11
-#[derive(Default)]
-pub struct Icmpv4TimeExceededCounters<C: CounterRepr> {
+#[derive(Default, Debug, netstack3_macros::CounterCollection)]
+#[cfg_attr(any(test, feature = "testutils"), derive(PartialEq,))]
+pub struct Icmpv4TimeExceededCounters<C: CounterRepr = Counter> {
     /// Time to Live exceeded in Transit, code 0
     pub ttl_expired: C,
     /// Fragment Reassembly Time Exceeded, code 1
@@ -351,8 +364,9 @@ impl<C: CounterRepr> Inspectable for Icmpv4TimeExceededCounters<C> {
 ///
 /// As defined by IANA:
 /// https://www.iana.org/assignments/icmpv6-parameters/icmpv6-parameters.xhtml#icmpv6-parameters-codes-4
-#[derive(Default)]
-pub struct Icmpv6TimeExceededCounters<C: CounterRepr> {
+#[derive(Default, Debug, netstack3_macros::CounterCollection)]
+#[cfg_attr(any(test, feature = "testutils"), derive(PartialEq,))]
+pub struct Icmpv6TimeExceededCounters<C: CounterRepr = Counter> {
     /// Hop limit exceeded in transit, code 0
     pub hop_limit_exceeded: C,
     /// Fragment Reassembly Time Exceeded, code 1
@@ -384,8 +398,9 @@ impl<C: CounterRepr> Inspectable for Icmpv6TimeExceededCounters<C> {
 ///
 /// As defined by IANA:
 /// https://www.iana.org/assignments/icmp-parameters/icmp-parameters.xhtml#icmp-parameters-codes-12
-#[derive(Default)]
-pub struct Icmpv4ParameterProblemCounters<C: CounterRepr> {
+#[derive(Default, Debug, netstack3_macros::CounterCollection)]
+#[cfg_attr(any(test, feature = "testutils"), derive(PartialEq,))]
+pub struct Icmpv4ParameterProblemCounters<C: CounterRepr = Counter> {
     /// Pointer indicates the error, code 0
     pub pointer_indicates_error: C,
     /// Missing a Required Option, code 1
@@ -423,8 +438,9 @@ impl<C: CounterRepr> Inspectable for Icmpv4ParameterProblemCounters<C> {
 ///
 /// As defined by IANA:
 /// https://www.iana.org/assignments/icmpv6-parameters/icmpv6-parameters.xhtml#icmpv6-parameters-codes-5
-#[derive(Default)]
-pub struct Icmpv6ParameterProblemCounters<C = Counter> {
+#[derive(Default, Debug, netstack3_macros::CounterCollection)]
+#[cfg_attr(any(test, feature = "testutils"), derive(PartialEq,))]
+pub struct Icmpv6ParameterProblemCounters<C: CounterRepr = Counter> {
     /// Erroneous header field encountered, code 0
     pub erroneous_header_field: C,
     /// Unrecognized Next Header type encountered, code 1

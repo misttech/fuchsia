@@ -379,25 +379,21 @@ impl Icmpv4Error {
                 counters.time_exceeded.increment_code(Icmpv4TimeExceededCode::TtlExpired);
             }
             Icmpv4Error::NetUnreachable => {
-                counters.net_unreachable.increment();
                 counters
                     .dest_unreachable
                     .increment_code(Icmpv4DestUnreachableCode::DestNetworkUnreachable);
             }
             Icmpv4Error::ProtocolUnreachable => {
-                counters.protocol_unreachable.increment();
                 counters
                     .dest_unreachable
                     .increment_code(Icmpv4DestUnreachableCode::DestProtocolUnreachable);
             }
             Icmpv4Error::PortUnreachable => {
-                counters.port_unreachable.increment();
                 counters
                     .dest_unreachable
                     .increment_code(Icmpv4DestUnreachableCode::DestPortUnreachable);
             }
             Icmpv4Error::HostUnreachable => {
-                counters.address_unreachable.increment();
                 counters
                     .dest_unreachable
                     .increment_code(Icmpv4DestUnreachableCode::DestHostUnreachable);
@@ -544,20 +540,17 @@ impl Icmpv6Error {
                 counters.time_exceeded.increment_code(Icmpv6TimeExceededCode::HopLimitExceeded);
             }
             Icmpv6Error::NetUnreachable => {
-                counters.net_unreachable.increment();
                 counters.dest_unreachable.increment_code(Icmpv6DestUnreachableCode::NoRoute);
             }
             Icmpv6Error::PacketTooBig { mtu: _ } => {
                 counters.packet_too_big.increment();
             }
             Icmpv6Error::PortUnreachable => {
-                counters.port_unreachable.increment();
                 counters
                     .dest_unreachable
                     .increment_code(Icmpv6DestUnreachableCode::PortUnreachable);
             }
             Icmpv6Error::AddressUnreachable => {
-                counters.address_unreachable.increment();
                 counters
                     .dest_unreachable
                     .increment_code(Icmpv6DestUnreachableCode::AddrUnreachable);

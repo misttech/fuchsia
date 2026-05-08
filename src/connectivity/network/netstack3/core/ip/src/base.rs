@@ -3749,7 +3749,6 @@ pub fn receive_ipv4_packet<
             .perform_action_with_buffer(core_ctx, bindings_ctx, buffer);
         }
         ReceivePacketAction::SendNoRouteToDest { dst: dst_ip } => {
-            core_ctx.increment_both(device, |c| &c.no_route_to_host);
             debug!("received IPv4 packet with no known route to destination {}", dst_ip);
 
             let marks = packet_metadata.marks;
@@ -4214,7 +4213,6 @@ pub fn receive_ipv6_packet<
             .perform_action_with_buffer(core_ctx, bindings_ctx, buffer);
         }
         ReceivePacketAction::SendNoRouteToDest { dst: dst_ip } => {
-            core_ctx.increment_both(device, |c| &c.no_route_to_host);
             let (_, _, proto, meta): (Ipv6Addr, Ipv6Addr, _, _) =
                 drop_packet_and_undo_parse!(packet, buffer);
             debug!("received IPv6 packet with no known route to destination {}", dst_ip);
