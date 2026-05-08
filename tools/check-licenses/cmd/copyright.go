@@ -20,43 +20,68 @@ import (
 )
 
 type CopyrightCommand struct {
-	fuchsiaDir  string
-	printStdout bool
+	fuchsiaDir string
 }
 
 func (*CopyrightCommand) Name() string     { return "copyright" }
 func (*CopyrightCommand) Synopsis() string { return "Check or add copyright headers to files." }
 func (*CopyrightCommand) Usage() string {
-	return `copyright [-stdout] <file_path>:
-  Analyzes a file to determine if it contains the Fuchsia copyright header.
-  If the header is missing, it will be prepended and the file overwritten in-place.
-  Use -stdout to print the newly formatted text to stdout without modifying the file.
+	return `copyright <subcommand> [options]:
+  Manage copyright headers.
+
+  Subcommands:
+    add   Add copyright header to file if missing.
+    check Check if file has copyright header.
 `
 }
 
 func (c *CopyrightCommand) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.fuchsiaDir, "fuchsia_dir", os.Getenv("FUCHSIA_DIR"), "Location of the fuchsia root directory (//).")
-	f.BoolVar(&c.printStdout, "stdout", false, "Print the formatted text to stdout instead of overwriting the file.")
 }
 
 func (c *CopyrightCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	subFlags := flag.NewFlagSet("copyright", flag.ContinueOnError)
+	if err := subFlags.Parse(f.Args()); err != nil {
+		return subcommands.ExitUsageError
+	}
+	subCommander := subcommands.NewCommander(subFlags, "copyright")
+	subCommander.Register(&CopyrightAddCommand{fuchsiaDir: c.fuchsiaDir}, "")
+	subCommander.Register(&CopyrightCheckCommand{fuchsiaDir: c.fuchsiaDir}, "")
+	return subCommander.Execute(ctx)
+}
+
+type CopyrightAddCommand struct {
+	fuchsiaDir  string
+	printStdout bool
+}
+
+func (*CopyrightAddCommand) Name() string     { return "add" }
+func (*CopyrightAddCommand) Synopsis() string { return "Add copyright header to file if missing." }
+func (*CopyrightAddCommand) Usage() string {
+	return `add [-stdout] <file_path>:
+  Adds a Fuchsia copyright header to the file if missing.
+  Use -stdout to print result to stdout instead of modifying file.
+`
+}
+
+func (c *CopyrightAddCommand) SetFlags(f *flag.FlagSet) {
+	f.BoolVar(&c.printStdout, "stdout", false, "Print the formatted text to stdout instead of overwriting the file.")
+}
+
+func (c *CopyrightAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "Error: exactly one file path must be provided.")
 		return subcommands.ExitUsageError
 	}
 
 	targetFile := f.Arg(0)
-	absPath, err := filepath.Abs(targetFile)
+	fuchsiaDir, targetFile, err := ResolveAndValidatePath(c.fuchsiaDir, targetFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to resolve absolute path for %s: %v\n", targetFile, err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	if c.fuchsiaDir == "" {
-		c.fuchsiaDir = "."
-	}
-
-	if err := ApplyCopyrightFix(c.fuchsiaDir, absPath, c.printStdout); err != nil {
+	if err := ApplyCopyrightFix(fuchsiaDir, targetFile, c.printStdout); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
 	}
@@ -64,23 +89,63 @@ func (c *CopyrightCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...in
 	return subcommands.ExitSuccess
 }
 
-// ApplyCopyrightFix analyzes a file and adds a Fuchsia copyright header if missing.
-func ApplyCopyrightFix(fuchsiaDir, filePath string, printStdout bool) error {
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return err
+type CopyrightCheckCommand struct {
+	fuchsiaDir string
+}
+
+func (*CopyrightCheckCommand) Name() string     { return "check" }
+func (*CopyrightCheckCommand) Synopsis() string { return "Check if file has copyright header." }
+func (*CopyrightCheckCommand) Usage() string {
+	return `check <file_path>:
+  Checks if the file contains the Fuchsia copyright header.
+  Fails with exit code 1 if missing.
+`
+}
+
+func (c *CopyrightCheckCommand) SetFlags(f *flag.FlagSet) {}
+
+func (c *CopyrightCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	if f.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "Error: exactly one file path must be provided.")
+		return subcommands.ExitUsageError
 	}
 
-	// Find the patterns directory so the classifier knows what "FuchsiaCopyright" looks like
+	targetFile := f.Arg(0)
+	fuchsiaDir, targetFile, err := ResolveAndValidatePath(c.fuchsiaDir, targetFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return subcommands.ExitFailure
+	}
+
+	hasCopyright, err := CheckCopyright(fuchsiaDir, targetFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return subcommands.ExitFailure
+	}
+
+	if !hasCopyright {
+		fmt.Printf("❌ Fuchsia copyright header missing in %s\n", targetFile)
+		return subcommands.ExitFailure
+	}
+
+	fmt.Printf("✅ Fuchsia copyright header found in %s\n", targetFile)
+	return subcommands.ExitSuccess
+}
+
+// CheckCopyright verifies if a file has a Fuchsia copyright header.
+func CheckCopyright(fuchsiaDir, filePath string) (bool, error) {
+	absPath := filePath
+	if !filepath.IsAbs(filePath) {
+		absPath = filepath.Join(fuchsiaDir, filePath)
+	}
+
 	patternsDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
 
-	// Instantiate the v2 stateless Classifier
 	classifier, err := classify.NewClassifier(0.8, []string{patternsDir}, nil)
 	if err != nil {
-		return fmt.Errorf("failed to initialize classifier: %w", err)
+		return false, fmt.Errorf("failed to initialize classifier: %w", err)
 	}
 
-	// Set up the pipeline channels for a single file
 	inChan := make(chan pipeline.FilteredProject, 1)
 	inChan <- pipeline.FilteredProject{
 		Project: pipeline.Project{
@@ -93,27 +158,37 @@ func ApplyCopyrightFix(fuchsiaDir, filePath string, printStdout bool) error {
 	ctx := context.Background()
 	outChan, err := classifier.Run(ctx, inChan)
 	if err != nil {
-		return fmt.Errorf("failed to run classifier: %w", err)
+		return false, fmt.Errorf("failed to run classifier: %w", err)
 	}
 
-	// Consume the result
 	var result pipeline.ClassifiedFile
 	for cf := range outChan {
 		result = cf
 	}
 
-	hasCopyright := false
 	for _, match := range result.Matches {
 		if match.SPDXID == "FuchsiaCopyright" {
-			hasCopyright = true
-			break
+			return true, nil
 		}
+	}
+
+	return false, nil
+}
+
+// ApplyCopyrightFix analyzes a file and adds a Fuchsia copyright header if missing.
+func ApplyCopyrightFix(fuchsiaDir, filePath string, printStdout bool) error {
+	absPath := filePath
+	if !filepath.IsAbs(filePath) {
+		absPath = filepath.Join(fuchsiaDir, filePath)
+	}
+
+	hasCopyright, err := CheckCopyright(fuchsiaDir, absPath)
+	if err != nil {
+		return err
 	}
 
 	if hasCopyright {
 		if printStdout {
-			// Even if it has a copyright, we must print the file content to stdout
-			// so that a SHAC formatter check sees no changes.
 			content, _ := os.ReadFile(absPath)
 			fmt.Print(string(content))
 		} else {
@@ -126,14 +201,12 @@ func ApplyCopyrightFix(fuchsiaDir, filePath string, printStdout bool) error {
 		fmt.Printf("❌ Fuchsia copyright header missing in %s\n", filePath)
 	}
 
-	// Remediation logic: Construct the new file with the copyright header
 	newBytes, err := addCopyright(absPath)
 	if err != nil {
-		return fmt.Errorf("failed to add copyright: %w", err)
+		return err
 	}
 
 	if printStdout {
-		// Print to stdout (required for SHAC formatters)
 		fmt.Print(string(newBytes))
 		return nil
 	}

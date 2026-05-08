@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestCopyrightCommand_Execute(t *testing.T) {
@@ -38,21 +37,18 @@ found in the LICENSE file.`)
 
 	// Initialize the command
 	cmd := &CopyrightCommand{
-		fuchsiaDir:  tempDir,
-		printStdout: false, // Initially just checking and overwriting
+		fuchsiaDir: tempDir,
 	}
 
-	// Simulate parsing flags (the flag package handles creating the struct)
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	cmd.SetFlags(fs)
-	fs.Parse([]string{testFilePath})
+	ctx := context.Background()
 
-	// 3. Test Add (Remediation - Default behavior)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	// 3. Test Add
+	fsAdd := flag.NewFlagSet("test_add", flag.ContinueOnError)
+	cmd.SetFlags(fsAdd)
+	fsAdd.Parse([]string{"-fuchsia_dir", tempDir, "add", testFilePath})
 
-	status := cmd.Execute(ctx, fs)
-	if status != 0 { // subcommands.ExitSuccess is 0
+	status := cmd.Execute(ctx, fsAdd)
+	if status != 0 {
 		t.Errorf("Expected ExitSuccess (0) after adding copyright, got %v", status)
 	}
 
@@ -69,17 +65,24 @@ found in the LICENSE file.`)
 		t.Errorf("Expected C++ file to use '//' comment syntax, got: %s", content)
 	}
 
-	// 4. Test Check (Existing - Default behavior)
-	status = cmd.Execute(ctx, fs)
+	// 4. Test Check
+	fsCheck := flag.NewFlagSet("test_check", flag.ContinueOnError)
+	cmd.SetFlags(fsCheck)
+	fsCheck.Parse([]string{"-fuchsia_dir", tempDir, "check", testFilePath})
+
+	status = cmd.Execute(ctx, fsCheck)
 	if status != 0 {
 		t.Errorf("Expected ExitSuccess (0) for existing copyright, got %v", status)
 	}
 
 	// 5. Test stdout (SHAC mode)
-	cmd.printStdout = true
-	status = cmd.Execute(ctx, fs)
+	fsStdout := flag.NewFlagSet("test_stdout", flag.ContinueOnError)
+	cmd.SetFlags(fsStdout)
+	fsStdout.Parse([]string{"-fuchsia_dir", tempDir, "add", "-stdout", testFilePath})
+
+	status = cmd.Execute(ctx, fsStdout)
 	if status != 0 {
-		t.Errorf("Expected ExitSuccess (0) for existing copyright, got %v", status)
+		t.Errorf("Expected ExitSuccess (0) for stdout mode, got %v", status)
 	}
 }
 
@@ -127,5 +130,41 @@ func TestCopyrightCommand_CommentPrefixes(t *testing.T) {
 				t.Errorf("Expected comment prefix '%s', got content:\n%s", tt.expected, content)
 			}
 		})
+	}
+}
+
+func TestCopyrightCommand_Shebang(t *testing.T) {
+	tempDir := t.TempDir()
+
+	testFilePath := filepath.Join(tempDir, "test.sh")
+	if err := os.WriteFile(testFilePath, []byte("#!/bin/sh\nexit 0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &CopyrightCommand{
+		fuchsiaDir: tempDir,
+	}
+
+	ctx := context.Background()
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fs)
+	fs.Parse([]string{"-fuchsia_dir", tempDir, "add", testFilePath})
+
+	status := cmd.Execute(ctx, fs)
+	if status != 0 {
+		t.Errorf("Expected ExitSuccess (0) after adding copyright, got %v", status)
+	}
+
+	contentBytes, err := os.ReadFile(testFilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(contentBytes)
+
+	if !strings.HasPrefix(content, "#!/bin/sh\n\n") {
+		t.Errorf("Expected file to start with shebang and empty lines, got: %s", content)
+	}
+	if !strings.Contains(content, "# Copyright") {
+		t.Error("Expected file to contain copyright header")
 	}
 }
