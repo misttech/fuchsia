@@ -330,7 +330,7 @@ perform.
 The following diagram depicts the high-level stages of what happens to a change
 after its pushed to Gerrit.
 
-![alt_text](/docs/contribute/community/images/change-resolution.png "Change approval process")
+![Diagram depicting the high-level stages of the change approval process after pushing to Gerrit.](/docs/contribute/community/images/change-resolution.png "Change approval process")
 
 ## Specialized roles {#specialized-roles}
 
