@@ -264,7 +264,7 @@ together with 48 bits of data whose usage varies by record type.
 
 ##### Format
 
-![drawing](images/trace-format/record.png)
+![Diagram showing format of a standard trace record header.](images/trace-format/record.png)
 
 _header word_
 
@@ -277,7 +277,7 @@ _header word_
 Provides support for records larger than 32KB. Large records have a
 32 bit size field rather than the normal 12 bits.
 
-![drawing](images/trace-format/largerecord.png)
+![Diagram showing format of a large trace record header.](images/trace-format/largerecord.png)
 
 _header word_
 
@@ -300,7 +300,7 @@ information.
 
 ##### Format
 
-![drawing](images/trace-format/metadata.png)
+![Diagram showing format of a metadata record.](images/trace-format/metadata.png)
 
 _header word_
 
@@ -320,7 +320,7 @@ same provider.
 
 ##### Format
 
-![drawing](images/trace-format/metadata1.png)
+![Diagram showing format of a provider info metadata record.](images/trace-format/metadata1.png)
 
 _header word_
 
@@ -352,7 +352,7 @@ whenever it encounters a new **provider section metadata** record.
 
 ##### Format
 
-![drawing](images/trace-format/metadata2.png)
+![Diagram showing format of a provider section metadata record.](images/trace-format/metadata2.png)
 
 _header word_
 
@@ -372,7 +372,7 @@ came before it or what comes after it.
 
 ##### Format
 
-![drawing](images/trace-format/metadata3.png)
+![Diagram showing format of a provider event metadata record.](images/trace-format/metadata3.png)
 
 _header word_
 
@@ -440,7 +440,7 @@ of this record, the reader may assume that 1 tick is 1 nanosecond.
 
 ##### Format
 
-![drawing](images/trace-format/initialization.png)
+![Diagram showing format of an initialization record.](images/trace-format/initialization.png)
 
 _header word_
 
@@ -466,7 +466,7 @@ pointless since the empty string can simply be encoded as zero in a string ref.
 
 ##### Format
 
-![drawing](images/trace-format/string.png)
+![Diagram showing format of a string record.](images/trace-format/string.png)
 
 _header word_
 
@@ -495,7 +495,7 @@ must be ignored.
 
 ##### Format
 
-![drawing](images/trace-format/thread.png)
+![Diagram showing format of a thread record.](images/trace-format/thread.png)
 
 _header word_
 
@@ -522,7 +522,7 @@ specific data.
 
 ##### Format
 
-![drawing](images/trace-format/event.png)
+![Diagram showing format of a standard event record.](images/trace-format/event.png)
 
 _header word_
 
@@ -580,7 +580,7 @@ kernel probes.
 
 ##### Format
 
-![drawing](images/trace-format/event0.png)
+![Diagram showing format of an instant event record.](images/trace-format/event0.png)
 
 No event-type specific data required.
 
@@ -592,7 +592,7 @@ stacked area chart.
 
 ##### Format
 
-![drawing](images/trace-format/event1.png)
+![Diagram showing format of a counter event record.](images/trace-format/event1.png)
 
 _counter word_
 
@@ -605,7 +605,7 @@ by a **duration end event**. May be nested.
 
 ##### Format
 
-![drawing](images/trace-format/event23.png)
+![Diagram showing format of a duration begin/end event record.](images/trace-format/event23.png)
 
 No event-type specific data required.
 
@@ -615,7 +615,7 @@ Marks the end of an operation on a particular thread.
 
 ##### Format
 
-![drawing](images/trace-format/event23.png)
+![Diagram showing format of a duration begin/end event record.](images/trace-format/event23.png)
 
 No event-type specific data required.
 
@@ -625,7 +625,7 @@ Marks the beginning and end of an operation on a particular thread.
 
 ##### Format
 
-![drawing](images/trace-format/event4.png)
+![Diagram showing format of a duration complete event record.](images/trace-format/event4.png)
 
 _end time word_
 
@@ -638,7 +638,7 @@ by an **async end event** using the same async correlation id.
 
 ##### Format
 
-![drawing](images/trace-format/event567.png)
+![Diagram showing format of an async begin/instant/end event record.](images/trace-format/event567.png)
 
 _async correlation word_
 
@@ -664,7 +664,7 @@ Marks the end of an operation that may span threads.
 
 ##### Format
 
-![drawing](images/trace-format/event567.png)
+![Diagram showing format of an async begin/instant/end event record.](images/trace-format/event567.png)
 
 _async correlation word_
 
@@ -682,7 +682,7 @@ for this thread; it begins where the enclosing **duration event** ends.
 
 ##### Format
 
-![drawing](images/trace-format/event8910.png)
+![Diagram showing format of a flow begin/step/end event record.](images/trace-format/event8910.png)
 
 _flow correlation word_
 
@@ -698,7 +698,7 @@ at the point where the enclosing **duration event** event ends.
 
 ##### Format
 
-![drawing](images/trace-format/event8910.png)
+![Diagram showing format of a flow begin/step/end event record.](images/trace-format/event8910.png)
 
 _flow correlation word_
 
@@ -713,7 +713,7 @@ thread; the flow resumes where the enclosing **duration event** begins.
 
 ##### Format
 
-![drawing](images/trace-format/event8910.png)
+![Diagram showing format of a flow begin/step/end event record.](images/trace-format/event8910.png)
 
 _flow correlation word_
 
@@ -732,7 +732,7 @@ The BLOB type indicates the representation of the BLOB's content.
 
 ##### Format
 
-![drawing](images/trace-format/blob.png)
+![Diagram showing format of a BLOB record.](images/trace-format/blob.png)
 
 _header word_
 
@@ -779,7 +779,7 @@ description of the referent.
 
 ##### Format
 
-![drawing](images/trace-format/userspace.png)
+![Diagram showing format of a userspace object record.](images/trace-format/userspace.png)
 
 _header word_
 
@@ -819,7 +819,7 @@ to find a description of the referent.
 
 ##### Format
 
-![drawing](images/trace-format/kernel.png)
+![Diagram showing format of a kernel object record.](images/trace-format/kernel.png)
 
 _header word_
 
