@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/google/subcommands"
@@ -132,6 +133,12 @@ func (c *CopyrightCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ 
 	return subcommands.ExitSuccess
 }
 
+var (
+	globalClassifier *classify.Classifier
+	classifierOnce   sync.Once
+	classifierErr    error
+)
+
 // CheckCopyright verifies if a file has a Fuchsia copyright header.
 func CheckCopyright(fuchsiaDir, filePath string) (bool, error) {
 	absPath := filePath
@@ -141,9 +148,11 @@ func CheckCopyright(fuchsiaDir, filePath string) (bool, error) {
 
 	patternsDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
 
-	classifier, err := classify.NewClassifier(0.8, []string{patternsDir}, nil)
-	if err != nil {
-		return false, fmt.Errorf("failed to initialize classifier: %w", err)
+	classifierOnce.Do(func() {
+		globalClassifier, classifierErr = classify.NewClassifier(0.8, []string{patternsDir}, nil)
+	})
+	if classifierErr != nil {
+		return false, fmt.Errorf("failed to initialize classifier: %w", classifierErr)
 	}
 
 	inChan := make(chan pipeline.FilteredProject, 1)
@@ -156,7 +165,7 @@ func CheckCopyright(fuchsiaDir, filePath string) (bool, error) {
 	close(inChan)
 
 	ctx := context.Background()
-	outChan, err := classifier.Run(ctx, inChan)
+	outChan, err := globalClassifier.Run(ctx, inChan)
 	if err != nil {
 		return false, fmt.Errorf("failed to run classifier: %w", err)
 	}
@@ -189,7 +198,10 @@ func ApplyCopyrightFix(fuchsiaDir, filePath string, printStdout bool) error {
 
 	if hasCopyright {
 		if printStdout {
-			content, _ := os.ReadFile(absPath)
+			content, err := os.ReadFile(absPath)
+			if err != nil {
+				return fmt.Errorf("failed to read file %s: %w", absPath, err)
+			}
 			fmt.Print(string(content))
 		} else {
 			fmt.Printf("✅ Fuchsia copyright header found in %s\n", filePath)
