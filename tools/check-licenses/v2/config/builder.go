@@ -24,11 +24,13 @@ type Builder struct {
 
 // NewBuilder creates a new config assembler.
 func NewBuilder(fuchsiaDir string) *Builder {
-	return &Builder{
+	b := &Builder{
 		FuchsiaDir: fuchsiaDir,
 		Config:     NewMasterConfig(),
 		seen:       make(map[string]bool),
 	}
+	b.Config.PatternsDir = filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
+	return b
 }
 
 // Assemble starts the recursive configuration discovery from the root v2 config file,

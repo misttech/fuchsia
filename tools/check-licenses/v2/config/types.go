@@ -35,6 +35,9 @@ type MasterConfig struct {
 	// Value: Physical path (e.g., "assets/readmes/third_party/foo/README.fuchsia")
 	OutOfTreeReadmes map[string]string
 
+	// PatternsDir is the directory containing license patterns.
+	PatternsDir string
+
 	// --- Injected into Classifier (Stage 4) ---
 
 	// TargetExtensions is a map of file extensions (including the dot, e.g., ".cc")

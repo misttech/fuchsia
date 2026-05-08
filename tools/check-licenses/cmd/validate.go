@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/google/subcommands"
@@ -27,9 +26,6 @@ import (
 
 type ValidateCommand struct {
 	fuchsiaDir        string
-	buildDir          string
-	gnPath            string
-	genProjectFile    string
 	outDir            string
 	logLevel          int
 	filesInReadmeOnly bool
@@ -37,22 +33,20 @@ type ValidateCommand struct {
 
 func (*ValidateCommand) Name() string { return "validate" }
 func (*ValidateCommand) Synopsis() string {
-	return "Audits the repository for compliance and automatically updates README.fuchsia files."
+	return "Audits the repository for compliance and verifies README.fuchsia files are up to date."
 }
 func (*ValidateCommand) Usage() string {
 	return `validate [options]:
-  Crawls the repository (or only files listed in READMEs if configured), runs the license
-  classifier, checks policy exceptions, and automatically updates README.fuchsia files if
-  they are out of date. Returns a non-zero exit code if any compliance errors are found.
+  Crawls the entire repository (or only files listed in READMEs if configured),
+  runs the license classifier, checks policy exceptions, and verifies that
+  README.fuchsia files are up to date. Returns a non-zero exit code if any
+  compliance errors are found. Use the 'fix' command to automatically update READMEs.
 `
 }
 
 func (p *ValidateCommand) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&p.fuchsiaDir, "fuchsia_dir", os.Getenv("FUCHSIA_DIR"), "Location of the fuchsia root directory (//).")
-	f.StringVar(&p.buildDir, "build_dir", os.Getenv("FUCHSIA_BUILD_DIR"), "Location of GN build directory.")
 	f.StringVar(&p.outDir, "out_dir", "/tmp/check-licenses", "Directory to write logs.")
-	f.StringVar(&p.gnPath, "gn_path", "{FUCHSIA_DIR}/prebuilt/third_party/gn/{PLATFORM}/gn", "Path to GN executable.")
-	f.StringVar(&p.genProjectFile, "gen_project_file", "{BUILD_DIR}/project.json", "Location of the project.json file.")
 	f.IntVar(&p.logLevel, "log_level", 2, "Log level. 0: none, 1: file, 2: stdout+file.")
 	f.BoolVar(&p.filesInReadmeOnly, "files_in_readme_only", false, "Only classify files explicitly listed in README.fuchsia files (fast mode).")
 }
@@ -66,19 +60,17 @@ func (p *ValidateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...int
 
 	log.SetFlags(0)
 
-	if p.fuchsiaDir == "" {
-		p.fuchsiaDir = "."
-	}
-	absFuchsiaDir, err := filepath.Abs(p.fuchsiaDir)
-	if err == nil {
-		p.fuchsiaDir = absFuchsiaDir
+	fuchsiaDir, _, err := ResolveAndValidatePath(p.fuchsiaDir, ".")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return subcommands.ExitFailure
 	}
 
 	log.Println("Starting v2 compliance validation...")
 	startTime := time.Now()
 
 	// 1. Assembly Phase
-	builder := v2config.NewBuilder(p.fuchsiaDir)
+	builder := v2config.NewBuilder(fuchsiaDir)
 	if err := builder.Assemble(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to assemble configuration: %v\n", err)
 		return subcommands.ExitFailure
@@ -88,32 +80,32 @@ func (p *ValidateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...int
 	log.Printf("Assembled configuration in %v", time.Since(startTime))
 
 	// 2. Instantiate Stages
-	discoverer := v2discover.NewCrawler(p.fuchsiaDir, config.SkipPaths, config.SkipAnywhere)
+	discoverer := v2discover.NewCrawler(fuchsiaDir, config.SkipPaths, config.SkipAnywhere)
 
 	grouper := v2boundary.NewGrouper(
-		p.fuchsiaDir,
+		fuchsiaDir,
 		config.BarrierPaths,
 		config.OutOfTreeReadmes,
 		p.filesInReadmeOnly,
 	)
 
-	var validFiles map[string]bool
-	pruner := v2prune.NewPruner(validFiles)
+	// Validate checks the entire tree, so we don't prune any targets based on the build graph.
+	// Passing nil to NewPruner makes it a no-op.
+	pruner := v2prune.NewPruner(nil)
 
-	patternsDir := filepath.Join(p.fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
-	classifier, err := v2classify.NewClassifier(0.8, []string{patternsDir}, config.TargetExtensions)
+	classifier, err := v2classify.NewClassifier(0.8, []string{config.PatternsDir}, config.TargetExtensions)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize classifier: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	validator := v2validate.NewValidator(p.fuchsiaDir, config.PolicyExceptions, config.AllowedLicenses)
+	validator := v2validate.NewValidator(fuchsiaDir, config.PolicyExceptions, config.AllowedLicenses)
 	// Validate checks readmes but does not overwrite them, nor does it generate SPDX/NOTICE.
-	reporter := v2report.NewReporter(p.fuchsiaDir, p.outDir, true, false, false, config.OutOfTreeReadmes, config.PolicyExceptions["AllProjectsMustHaveALicense"])
+	reporter := v2report.NewReporter(fuchsiaDir, p.outDir, true, false, false, config.OutOfTreeReadmes, config.PolicyExceptions["AllProjectsMustHaveALicense"])
 
 	orchestrator := v2pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, reporter)
 
-	if err := orchestrator.Run(ctx, []string{p.fuchsiaDir}); err != nil {
+	if err := orchestrator.Run(ctx, []string{fuchsiaDir}); err != nil {
 		fmt.Fprintf(os.Stderr, "Validation failed: %v\n", err)
 		return subcommands.ExitFailure
 	}
