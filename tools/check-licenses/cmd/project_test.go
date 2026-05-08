@@ -269,7 +269,7 @@ func TestBelongsToProject(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := belongsToProject(tt.policyPath, tt.projectRoot, fuchsiaDir, outOfTree)
+			result := belongsToProject(tt.policyPath, tt.projectRoot, fuchsiaDir, outOfTree, make(map[string]*readmeResult))
 			if result != tt.expected {
 				t.Errorf("belongsToProject(%q, %q) = %v, want %v", tt.policyPath, tt.projectRoot, result, tt.expected)
 			}

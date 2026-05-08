@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,15 +23,54 @@ import (
 	v2discover "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover"
 )
 
-func (c *ProjectCommand) executeUpdate(ctx context.Context, args []string, config *v2config.MasterConfig, classifier *classify.Classifier) subcommands.ExitStatus {
-	startTime := time.Now()
-	targetDir := args[0]
-	absDir, err := filepath.Abs(targetDir)
+type ProjectUpdateCommand struct {
+	fuchsiaDir  string
+	printStdout bool
+}
+
+func (*ProjectUpdateCommand) Name() string { return "update" }
+func (*ProjectUpdateCommand) Synopsis() string {
+	return "Automatically updates the License File declarations in a README.fuchsia."
+}
+func (*ProjectUpdateCommand) Usage() string {
+	return `update [-stdout] <dir>:
+  Automatically updates the License File declarations in a README.fuchsia.
+  Use -stdout to print result to stdout instead of overwriting file.
+`
+}
+
+func (c *ProjectUpdateCommand) SetFlags(f *flag.FlagSet) {
+	f.BoolVar(&c.printStdout, "stdout", false, "Print the updated README to stdout instead of overwriting the file.")
+}
+
+func (c *ProjectUpdateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	if f.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "Error: exactly one directory path must be provided.")
+		return subcommands.ExitUsageError
+	}
+	targetDir := f.Arg(0)
+	fuchsiaDir, targetPath, err := ResolveAndValidatePath(c.fuchsiaDir, targetDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to resolve absolute path: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return subcommands.ExitFailure
+	}
+	absDir := filepath.Join(fuchsiaDir, targetPath)
+
+	builder := v2config.NewBuilder(fuchsiaDir)
+	if err := builder.Assemble(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to assemble configuration: %v\n", err)
+		return subcommands.ExitFailure
+	}
+	config := builder.Config
+
+	patternsDir := filepath.Join(fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
+	classifier, err := classify.NewClassifier(0.8, []string{patternsDir}, config.TargetExtensions)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize classifier: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
+	startTime := time.Now()
 	readmePath := filepath.Join(absDir, "README.fuchsia")
 	var readmes []*readme.Readme
 	if _, err := os.Stat(readmePath); err == nil {
@@ -48,14 +88,14 @@ func (c *ProjectCommand) executeUpdate(ctx context.Context, args []string, confi
 		}}
 	}
 
-	discoverer := v2discover.NewCrawler(c.fuchsiaDir, config.SkipPaths, config.SkipAnywhere)
+	discoverer := v2discover.NewCrawler(fuchsiaDir, config.SkipPaths, config.SkipAnywhere)
 	rawPaths, err := discoverer.Run(ctx, []string{absDir})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to crawl directory: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
-	grouper := v2boundary.NewGrouper(c.fuchsiaDir, config.BarrierPaths, config.OutOfTreeReadmes, false)
+	grouper := v2boundary.NewGrouper(fuchsiaDir, config.BarrierPaths, config.OutOfTreeReadmes, false)
 	projectsChan, err := grouper.Run(ctx, rawPaths)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to group projects: %v\n", err)
@@ -65,9 +105,6 @@ func (c *ProjectCommand) executeUpdate(ctx context.Context, args []string, confi
 	var targetProject *pipeline.Project
 	for p := range projectsChan {
 		if p.RootPath == absDir {
-			// We found the project boundary that perfectly matches the target directory.
-			// Because the Grouper ran, any files inside nested Barriers (like src/third_party)
-			// will be in their own Project structs, safely excluded from this one!
 			targetProject = &p
 			break
 		}
@@ -119,7 +156,7 @@ func (c *ProjectCommand) executeUpdate(ctx context.Context, args []string, confi
 		}
 	}
 
-	readme.UpdateWithClassifiedFiles(c.fuchsiaDir, absDir, readmes, foundLicenses)
+	readme.UpdateWithClassifiedFiles(fuchsiaDir, absDir, readmes, foundLicenses)
 
 	formatted := readme.Format(readmes)
 
