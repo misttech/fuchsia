@@ -29,8 +29,8 @@ driver_bind_rules("virtio-gpu-display-bind") {
 group("tests") {
   testonly = true
   deps = [
+    ":driver-test-package",
     ":virtio-gpu-display-bind_test",
-    ":virtio-gpu-display-test-package",
   ]
 }
 
@@ -76,7 +76,8 @@ if (virtio_gpu_display_flavor == "cpp") {
     ]
   }
 
-  test("virtio-gpu-display-test") {
+  # The target name must match the auto-generated name for the Rust driver target.
+  test("driver_test") {
     output_name = "virtio-gpu-display-test"
     sources = [
       "cpp/display-engine-test.cc",
@@ -122,6 +123,26 @@ if (virtio_gpu_display_flavor == "cpp") {
 
 if (virtio_gpu_display_flavor == "rust") {
   # TODO(https://fxbug.dev/504722357): Build out a Rust driver.
+  fuchsia_rust_driver("driver") {
+    edition = "2024"
+    with_unit_tests = true
+
+    # TODO(https://fxbug.dev/504722357): Remove the custom value after the Rust
+    # port is completed and moved out of the rust/ subdirectory.
+    source_root = "rust/src/lib.rs"
+
+    output_name = "virtio-gpu-display"
+    sources = [ "rust/src/lib.rs" ]
+    deps = [
+      ":virtio-gpu-display-bind",
+      "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+      "//sdk/lib/driver/component/rust",
+      "//sdk/lib/driver/runtime/rust",
+      "//sdk/rust/zx",
+      "//third_party/rust_crates:log",
+    ]
+    test_deps = [ "//src/lib/fuchsia" ]
+  }
 }
 
 fuchsia_driver_component("component") {
@@ -136,9 +157,9 @@ fuchsia_driver_package("package") {
   driver_components = [ ":component" ]
 }
 
-fuchsia_unittest_package("virtio-gpu-display-test-package") {
+fuchsia_unittest_package("driver-test-package") {
   package_name = "virtio-gpu-display-test"
-  deps = [ ":virtio-gpu-display-test" ]
+  deps = [ ":driver_test" ]
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
