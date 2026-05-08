@@ -1,14 +1,12 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 /dts-v1/;
 
 #include "src/devices/lib/amlogic/include/soc/aml-a311d/a311d-hw.h"
 #include "src/devices/lib/amlogic/include/soc/aml-a311d/a311d-gpio.h"
 #include "sdk/lib/driver/devicetree/visitors/drivers/interrupt-controllers/arm-gic/arm-gicv2.h"
 #include "vim3-iommu.h"
-
 
 / {
 	interrupt-parent = <&gic>;
@@ -24,33 +22,24 @@
 			interrupts = <GIC_SPI 8 GIC_IRQ_MODE_LEVEL_HIGH>;
 			phys = <&ethmac>;
 			iommus = <&stub_iommu DWMAC_BTI>;
-			boot-metadata = <0x43414D6D 0>; /*ZBI_TYPE_DRV_MAC_ADDRESS*/
+			boot-metadata = <0x43414D6D 0>;
+
+			/*ZBI_TYPE_DRV_MAC_ADDRESS*/
 		};
 
 		video-decoder@ffd00000 {
 			compatible = "amlogic,g12b-vdec";
-			reg = <0x0 A311D_FULL_CBUS_BASE 0x0 A311D_FULL_CBUS_LENGTH>,
-				<0x0 A311D_DOS_BASE 0x0 A311D_DOS_LENGTH>,
-				<0x0 A311D_HIU_BASE 0x0 A311D_HIU_LENGTH>,
-				<0x0 A311D_AOBUS_BASE 0x0 0x1000>,
-				<0x0 A311D_DMC_BASE 0x0 A311D_DMC_LENGTH>;
+			reg = <0x0 A311D_FULL_CBUS_BASE 0x0 A311D_FULL_CBUS_LENGTH>, <0x0 A311D_DOS_BASE 0x0 A311D_DOS_LENGTH>, <0x0 A311D_HIU_BASE 0x0 A311D_HIU_LENGTH>, <0x0 A311D_AOBUS_BASE 0x0 0x1000>, <0x0 A311D_DMC_BASE 0x0 A311D_DMC_LENGTH>;
 			iommus = <&stub_iommu VDEC_BTI>;
-			interrupts = <GIC_SPI 23 GIC_IRQ_MODE_EDGE_RISING>,
-				<GIC_SPI 32 GIC_IRQ_MODE_EDGE_RISING>,
-				<GIC_SPI 43 GIC_IRQ_MODE_EDGE_RISING>,
-				<GIC_SPI 44 GIC_IRQ_MODE_EDGE_RISING>;
-
+			interrupts = <GIC_SPI 23 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 32 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 43 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 44 GIC_IRQ_MODE_EDGE_RISING>;
 			amlogic,canvas = <&canvas>;
-
-			clocks = <&clock 0x10005>,
-				 <&clock 0x10007>;
+			clocks = <&clock 0x10005>, <&clock 0x10007>;
 			clock-names = "DOS_GCLK_VDEC", "DOS";
 		};
 
 		ethmac: ethernet-phy@ff634000 {
 			compatible = "amlogic,ethernet-phy";
-			reg = <0x0 0xff634000 0x0 0x1000>,
-				<0x0 0xff63c000 0x0 0x2000>;
+			reg = <0x0 0xff634000 0x0 0x1000>, <0x0 0xff63c000 0x0 0x2000>;
 			gpios = <&gpio A311D_GPIOZ(14) 0>;
 			gpio-names = "ETH_INTERRUPT";
 			pinctrl-0 = <&ethernet_phy_cfg>;
@@ -59,17 +48,8 @@
 
 		gpio: gpio-controller@ff634400 {
 			compatible = "amlogic,meson-g12a-gpio";
-			reg = <0x0 A311D_GPIO_BASE 0x0 A311D_GPIO_LENGTH>,
-				<0x0 A311D_GPIO_AO_BASE 0x0 A311D_GPIO_AO_LENGTH>,
-				<0x0 A311D_GPIO_INTERRUPT_BASE 0x0 A311D_GPIO_INTERRUPT_LENGTH>;
-			interrupts = <GIC_SPI 64 GIC_IRQ_MODE_EDGE_RISING>,
-				<GIC_SPI 65 GIC_IRQ_MODE_EDGE_RISING>,
-				<GIC_SPI 66 GIC_IRQ_MODE_EDGE_RISING>,
-				<GIC_SPI 67 GIC_IRQ_MODE_EDGE_RISING>,
-				<GIC_SPI 68 GIC_IRQ_MODE_EDGE_RISING>,
-				<GIC_SPI 69 GIC_IRQ_MODE_EDGE_RISING>,
-				<GIC_SPI 70 GIC_IRQ_MODE_EDGE_RISING>,
-				<GIC_SPI 71 GIC_IRQ_MODE_EDGE_RISING>;
+			reg = <0x0 A311D_GPIO_BASE 0x0 A311D_GPIO_LENGTH>, <0x0 A311D_GPIO_AO_BASE 0x0 A311D_GPIO_AO_LENGTH>, <0x0 A311D_GPIO_INTERRUPT_BASE 0x0 A311D_GPIO_INTERRUPT_LENGTH>;
+			interrupts = <GIC_SPI 64 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 65 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 66 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 67 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 68 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 69 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 70 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 71 GIC_IRQ_MODE_EDGE_RISING>;
 			interrupt-names = "0", "1", "2", "3", "4", "5", "6", "7";
 			fuchsia,interrupt-wake-vectors = "0";
 			gpio-controller;
@@ -103,8 +83,7 @@
 			};
 
 			emmc_d0_d7_cfg: emmc-d0-d7-cfg {
-				pins = <A311D_GPIOBOOT(0) A311D_GPIOBOOT(1) A311D_GPIOBOOT(2) A311D_GPIOBOOT(3)>,
-						<A311D_GPIOBOOT(4) A311D_GPIOBOOT(5) A311D_GPIOBOOT(6) A311D_GPIOBOOT(7)>;
+				pins = <A311D_GPIOBOOT(0) A311D_GPIOBOOT(1) A311D_GPIOBOOT(2) A311D_GPIOBOOT(3)>, <A311D_GPIOBOOT(4) A311D_GPIOBOOT(5) A311D_GPIOBOOT(6) A311D_GPIOBOOT(7)>;
 				function-id = <0 1>;
 			};
 
@@ -128,36 +107,36 @@
 				output-high;
 			};
 
-			sdcard_d0_d3_cfg: sdcard-d0-d3-cfg{
+			sdcard_d0_d3_cfg: sdcard-d0-d3-cfg {
 				pins = <A311D_GPIOC(0) A311D_GPIOC(1) A311D_GPIOC(2) A311D_GPIOC(3)>;
 				function-id = <0 1>;
 			};
 
-			sdcard_clk_cfg: sdcard-clk-cfg{
+			sdcard_clk_cfg: sdcard-clk-cfg {
 				pins = <A311D_GPIOC(4)>;
 				function-id = <0 1>;
 			};
 
-			sdcard_cmd_cfg: sdcard-cmd-cfg{
+			sdcard_cmd_cfg: sdcard-cmd-cfg {
 				pins = <A311D_GPIOC(5)>;
 				function-id = <0 1>;
 			};
 
-			sdio_d0_d3_cfg: sdio-d0-d3-cfg{
+			sdio_d0_d3_cfg: sdio-d0-d3-cfg {
 				pins = <A311D_GPIOX(0) A311D_GPIOX(1) A311D_GPIOX(2) A311D_GPIOX(3)>;
 				bias-disable;
 				function-id = <0 1>;
 				drive-strength-microamp = <0 4000>;
 			};
 
-			sdio_clk_cfg: sdio-clk-cfg{
+			sdio_clk_cfg: sdio-clk-cfg {
 				pins = <A311D_GPIOX(4)>;
 				bias-disable;
 				function-id = <0 1>;
 				drive-strength-microamp = <0 4000>;
 			};
 
-			sdio_cmd_cfg: sdio-cmd-cfg{
+			sdio_cmd_cfg: sdio-cmd-cfg {
 				pins = <A311D_GPIOX(5)>;
 				bias-disable;
 				function-id = <0 1>;
@@ -165,10 +144,7 @@
 			};
 
 			ethernet_phy_cfg: ethernet-phy-cfg {
-				pins = <A311D_GPIOZ(0) A311D_GPIOZ(1) A311D_GPIOZ(2) A311D_GPIOZ(3)>,
-					<A311D_GPIOZ(4) A311D_GPIOZ(5) A311D_GPIOZ(6) A311D_GPIOZ(7)>,
-					<A311D_GPIOZ(8) A311D_GPIOZ(9) A311D_GPIOZ(10) A311D_GPIOZ(11)>,
-					<A311D_GPIOZ(12) A311D_GPIOZ(13)>;
+				pins = <A311D_GPIOZ(0) A311D_GPIOZ(1) A311D_GPIOZ(2) A311D_GPIOZ(3)>, <A311D_GPIOZ(4) A311D_GPIOZ(5) A311D_GPIOZ(6) A311D_GPIOZ(7)>, <A311D_GPIOZ(8) A311D_GPIOZ(9) A311D_GPIOZ(10) A311D_GPIOZ(11)>, <A311D_GPIOZ(12) A311D_GPIOZ(13)>;
 				function-id = <0 1>;
 				drive-strength-microamp = <0 2500>;
 			};
@@ -177,13 +153,11 @@
 				pins = <A311D_GPIOX(16)>;
 				function-id = <0 1>;
 			};
-
 		};
 
 		cpu_temp: temperature-sensor@ff634800 {
 			compatible = "amlogic,g12a-thermal";
-			reg = <0x0 A311D_TEMP_SENSOR_PLL_BASE 0x0 A311D_TEMP_SENSOR_PLL_LENGTH>,
-				<0x0 A311D_TEMP_SENSOR_PLL_TRIM 0x0 A311D_TEMP_SENSOR_TRIM_LENGTH>;
+			reg = <0x0 A311D_TEMP_SENSOR_PLL_BASE 0x0 A311D_TEMP_SENSOR_PLL_LENGTH>, <0x0 A311D_TEMP_SENSOR_PLL_TRIM 0x0 A311D_TEMP_SENSOR_TRIM_LENGTH>;
 			interrupts = <GIC_SPI 35 GIC_IRQ_MODE_EDGE_RISING>;
 			assigned-clocks = <&clock 0x1000d>;
 			#thermal-sensor-cells = <0>;
@@ -191,8 +165,7 @@
 
 		ddr_temp: temperature-sensor@ff634c00 {
 			compatible = "amlogic,g12a-thermal";
-			reg = <0x0 A311D_TEMP_SENSOR_DDR_BASE 0x0 A311D_TEMP_SENSOR_DDR_LENGTH>,
-				<0x0 A311D_TEMP_SENSOR_DDR_TRIM 0x0 A311D_TEMP_SENSOR_TRIM_LENGTH>;
+			reg = <0x0 A311D_TEMP_SENSOR_DDR_BASE 0x0 A311D_TEMP_SENSOR_DDR_LENGTH>, <0x0 A311D_TEMP_SENSOR_DDR_TRIM 0x0 A311D_TEMP_SENSOR_TRIM_LENGTH>;
 			interrupts = <GIC_SPI 36 GIC_IRQ_MODE_EDGE_RISING>;
 			assigned-clocks = <&clock 0x1000d>;
 			#thermal-sensor-cells = <0>;
@@ -203,13 +176,12 @@
 			reg = <0x0 0xff642000 0x0 0x2000>;
 			iommus = <&stub_iommu AUDIO_BTI>;
 			clocks = <&clock 0x1000b &clock 0x20002>;
-			clock-names = "AUDIO_GATE", "AUDIO_PLL" ;
+			clock-names = "AUDIO_GATE", "AUDIO_PLL";
 			assigned-clocks = <&clock 0x20002>;
 			assigned-clock-rates = <768000000>;
 			gpios = <&gpio A311D_GPIOX(11) 0 &gpio A311D_GPIOA(1) 0>;
 			gpio-names = "TDM_A_SCLK", "TDM_B_SCLK";
-			pinctrl-0 = <&audio_tdm_a_cfg1 &audio_tdm_a_cfg2>,
-						<&audio_tdm_b_cfg1 &audio_tdm_b_cfg2>;
+			pinctrl-0 = <&audio_tdm_a_cfg1 &audio_tdm_a_cfg2>, <&audio_tdm_b_cfg1 &audio_tdm_b_cfg2>;
 		};
 
 		aobus: bus@ff800000 {
@@ -228,22 +200,17 @@
 
 			saradc: adc@9000 {
 				compatible = "amlogic,meson-g12a-saradc";
-				reg = <0x0 0x9000 0x0 0x1000>,
-					<0x0 0x0 0x0 0x1000>;
+				reg = <0x0 0x9000 0x0 0x1000>, <0x0 0x0 0x0 0x1000>;
 				interrupts = <GIC_SPI 200 GIC_IRQ_MODE_EDGE_RISING>;
 				#io-channel-cells = <1>;
 			};
-
 		};
 
 		gic: interrupt-controller@ffc01000 {
 			compatible = "arm,gic-400";
-			reg = <0x0 0xffc01000 0 0x1000>,
-				  <0x0 0xffc02000 0 0x2000>,
-				  <0x0 0xffc04000 0 0x2000>,
-				  <0x0 0xffc06000 0 0x2000>;
+			reg = <0x0 0xffc01000 0 0x1000>, <0x0 0xffc02000 0 0x2000>, <0x0 0xffc04000 0 0x2000>, <0x0 0xffc06000 0 0x2000>;
 			interrupt-controller;
-			interrupts = <GIC_PPI 9 (GIC_CPU_MASK_SIMPLE(8) | GIC_IRQ_MODE_LEVEL_HIGH)>;
+			interrupts = <GIC_PPI 9 ( GIC_CPU_MASK_SIMPLE(8) | GIC_IRQ_MODE_LEVEL_HIGH )>;
 			#interrupt-cells = <3>;
 			#address-cells = <0>;
 		};
@@ -257,18 +224,21 @@
 			hrtimer: hrtimer@0 {
 				compatible = "amlogic,hrtimer";
 				reg = <0x0 0x0 0x0 A311D_TIMER_LENGTH>;
-				interrupts = <GIC_SPI 10 GIC_IRQ_MODE_EDGE_RISING>, // Timer A
-					<GIC_SPI 11 GIC_IRQ_MODE_EDGE_RISING>, // Timer B
-					<GIC_SPI 6 GIC_IRQ_MODE_EDGE_RISING>, // Timer C
-					<GIC_SPI 29 GIC_IRQ_MODE_EDGE_RISING>, // Timer D
-					<GIC_SPI 60 GIC_IRQ_MODE_EDGE_RISING>, // Timer F. Timer E does not trigger IRQ.
-					<GIC_SPI 61 GIC_IRQ_MODE_EDGE_RISING>, // Timer G
-					<GIC_SPI 62 GIC_IRQ_MODE_EDGE_RISING>, // Timer H
-					<GIC_SPI 63 GIC_IRQ_MODE_EDGE_RISING>; // Timer I
-					interrupt-names = "timer-a", "timer-b", "timer-c",
-						"timer-d", "timer-f", "timer-g", "timer-h", "timer-i";
-					fuchsia,interrupt-wake-vectors = "timer-a", "timer-b", "timer-c",
-						"timer-d", "timer-f", "timer-g", "timer-h", "timer-i";
+
+				/*
+				 * Interrupts:
+				 * - Timer A: GIC_SPI 10 GIC_IRQ_MODE_EDGE_RISING
+				 * - Timer B: GIC_SPI 11 GIC_IRQ_MODE_EDGE_RISING
+				 * - Timer C: GIC_SPI 6 GIC_IRQ_MODE_EDGE_RISING
+				 * - Timer D: GIC_SPI 29 GIC_IRQ_MODE_EDGE_RISING
+				 * - Timer F: GIC_SPI 60 GIC_IRQ_MODE_EDGE_RISING (Timer E has no IRQ)
+				 * - Timer G: GIC_SPI 61 GIC_IRQ_MODE_EDGE_RISING
+				 * - Timer H: GIC_SPI 62 GIC_IRQ_MODE_EDGE_RISING
+				 * - Timer I: GIC_SPI 63 GIC_IRQ_MODE_EDGE_RISING
+				 */
+				interrupts = <GIC_SPI 10 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 11 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 6 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 29 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 60 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 61 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 62 GIC_IRQ_MODE_EDGE_RISING>, <GIC_SPI 63 GIC_IRQ_MODE_EDGE_RISING>;
+				interrupt-names = "timer-a", "timer-b", "timer-c", "timer-d", "timer-f", "timer-g", "timer-h", "timer-i";
+				fuchsia,interrupt-wake-vectors = "timer-a", "timer-b", "timer-c", "timer-d", "timer-f", "timer-g", "timer-h", "timer-i";
 			};
 
 			reset: register-controller@1000 {
@@ -289,21 +259,25 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 			};
-
 		};
 
+		/*
+		 * Registers:
+		 * - PWM_AB
+		 * - PWM_CD
+		 * - PWM_EF
+		 * - PWM_A0_AB
+		 * - PWM_A0_CD
+		 */
 		pwm: pwm@ffd1b000 {
 			compatible = "amlogic,meson-g12a-ee-pwm";
-			reg = <0x0 0xffd1b000 0x0 0x1000>, //PWM_AB
-				<0x0 0xffd1a000 0x0 0x1000>, //PWM_CD
-				<0x0 0xffd19000 0x0 0x1000>, //PWM_EF
-				<0x0 0xff807000 0x0 0x1000>, //PWM_A0_AB
-				<0x0 0xff802000 0x0 0x1000>; //PWM_A0_CD
+			reg = <0x0 0xffd1b000 0x0 0x1000>, <0x0 0xffd1a000 0x0 0x1000>, <0x0 0xffd19000 0x0 0x1000>, <0x0 0xff807000 0x0 0x1000>, <0x0 0xff802000 0x0 0x1000>;
 			#pwm-cells = <3>;
 		};
 
+		/* pwms = <&pwm 4 0 0> : A311D_PWM_E */
 		pwm_init: pwm-init {
-			pwms = <&pwm 4 0 0>; //A311D_PWM_E
+			pwms = <&pwm 4 0 0>;
 			gpios = <&gpio A311D_GPIOX(17) 0>;
 			gpio-names = "BT_REG_ON";
 			pinctrl-0 = <&wifi_lpo_pwm>;
@@ -311,10 +285,7 @@
 
 		usb_phy: usb-phy@ffe09000 {
 			compatible = "amlogic,g12b-usb-phy";
-			reg = <0x0 A311D_USBCTRL_BASE 0x0 A311D_USBCTRL_LENGTH>,
-				<0x0 A311D_USBPHY20_BASE 0x0 A311D_USBPHY20_LENGTH>,
-				<0x0 A311D_USBPHY21_BASE 0x0 A311D_USBPHY21_LENGTH>,
-				<0x0 A311D_USB3_PCIE_PHY_BASE 0x0 A311D_USB3_PCIE_PHY_LENGTH>;
+			reg = <0x0 A311D_USBCTRL_BASE 0x0 A311D_USBCTRL_LENGTH>, <0x0 A311D_USBPHY20_BASE 0x0 A311D_USBPHY20_LENGTH>, <0x0 A311D_USBPHY21_BASE 0x0 A311D_USBPHY21_LENGTH>, <0x0 A311D_USB3_PCIE_PHY_BASE 0x0 A311D_USB3_PCIE_PHY_LENGTH>;
 			reg-names = "usb-ctrl", "usb2-phy", "usb2-otg-phy", "usb3-phy";
 			dr_modes = "host", "peripheral", "host";
 			interrupts = <GIC_SPI 16 GIC_IRQ_MODE_EDGE_RISING>;
@@ -322,8 +293,7 @@
 			assigned-clocks = <&clock 0x10008 &clock 0x10009 &clock 0x20001>;
 			assigned-clock-rates = <0 0 100000000>;
 			pinctrl-0 = <&usb_power>;
-			registers = <&reset A311D_RESET1_REGISTER 4 0x0 0x10004>,
-				<&reset A311D_RESET1_LEVEL 4 0x0 0x30000>;
+			registers = <&reset A311D_RESET1_REGISTER 4 0x0 0x10004>, <&reset A311D_RESET1_LEVEL 4 0x0 0x30000>;
 			#phy-cells = <0>;
 		};
 
@@ -341,8 +311,13 @@
 			g-tx-fifo-size = <128 4 128 16>;
 			g-turnaround-time = <9>;
 			dma-burst-len = <5>;
-			boot-metadata = <0x43414D6D 0>, /*ZBI_TYPE_DRV_MAC_ADDRESS*/
-				<0x4e4c5253 0>; /*ZBI_TYPE_SERIAL_NUMBER*/
+
+			/*
+			 * Boot Metadata:
+			 * - 0x43414D6D 0: ZBI_TYPE_DRV_MAC_ADDRESS
+			 * - 0x4e4c5253 0: ZBI_TYPE_SERIAL_NUMBER
+			 */
+			boot-metadata = <0x43414D6D 0>, <0x4e4c5253 0>;
 		};
 
 		xhci: usb@ff500000 {
@@ -386,22 +361,22 @@
 			clocks = <&clock 0x1000C>;
 			gpios = <&gpio A311D_GPIOBOOT(12) 0>;
 			gpio-names = "SDMMC_RESET";
-			pinctrl-0 = <&emmc_d0_d7_cfg &emmc_clk_cfg &emmc_cmd_cfg>,
-						<&emmc_ds_cfg &emmc_cs_cfg>;
+			pinctrl-0 = <&emmc_d0_d7_cfg &emmc_clk_cfg &emmc_cmd_cfg>, <&emmc_ds_cfg &emmc_cs_cfg>;
 			max-frequency = <120000000>;
 			non-removable;
 			no-mmc-hs400;
 			use-fidl;
 		};
 
+		/*
+		 * Registers:
+		 * - MALI GPU: 0xffe40000
+		 * - HUI:      0xff63c000
+		 */
 		aml_gpu: gpu@ffe40000 {
 			compatible = "amlogic,gpu";
-			reg = <0x0 0xffe40000 0x0 0x40000>, // MALI GPU
-				<0x0 0xff63c000 0x0 0x2000>;   // HUI
-			registers = <&reset A311D_RESET0_MASK 4 0x0 0x100000>,
-					<&reset A311D_RESET0_LEVEL 4 0x0 0x100000>,
-					<&reset A311D_RESET2_MASK 4 0x0 0x4000>,
-					<&reset A311D_RESET2_LEVEL 4 0x0 0x4000>;
+			reg = <0x0 0xffe40000 0x0 0x40000>, <0x0 0xff63c000 0x0 0x2000>;
+			registers = <&reset A311D_RESET0_MASK 4 0x0 0x100000>, <&reset A311D_RESET0_LEVEL 4 0x0 0x100000>, <&reset A311D_RESET2_MASK 4 0x0 0x4000>, <&reset A311D_RESET2_LEVEL 4 0x0 0x4000>;
 			#address-cells = <2>;
 			#size-cells = <2>;
 			ranges = <0x0 0x0 0x0 0xffe40000 0x0 0x40000>;
@@ -409,23 +384,16 @@
 			arm_mali: arm-mali@0 {
 				compatible = "arm,mali-gpu";
 				reg = <0x0 0x0 0x0 0x40000>;
-				interrupts = <GIC_SPI 162 GIC_IRQ_MODE_LEVEL_HIGH>,
-					<GIC_SPI 161 GIC_IRQ_MODE_LEVEL_HIGH>,
-					<GIC_SPI 160 GIC_IRQ_MODE_LEVEL_HIGH>;
+				interrupts = <GIC_SPI 162 GIC_IRQ_MODE_LEVEL_HIGH>, <GIC_SPI 161 GIC_IRQ_MODE_LEVEL_HIGH>, <GIC_SPI 160 GIC_IRQ_MODE_LEVEL_HIGH>;
 				mali-gpu-parent = <&aml_gpu>;
 				iommus = <&stub_iommu MALI_BTI>;
 			};
 		};
-
 	};
 
 	nna@ff100000 {
 		compatible = "amlogic,nna";
-		reg = <0x0 A311D_NNA_BASE 0x0 A311D_NNA_LENGTH>,
-				<0x0 A311D_HIU_BASE 0x0 A311D_HIU_LENGTH>,
-				<0x0 A311D_POWER_DOMAIN_BASE 0x0 A311D_POWER_DOMAIN_LENGTH>,
-				<0x0 A311D_MEMORY_PD_BASE 0x0 A311D_MEMORY_PD_LENGTH>,
-				<0x0 A311D_NNA_SRAM_BASE  0x0 A311D_NNA_SRAM_LENGTH>;
+		reg = <0x0 A311D_NNA_BASE 0x0 A311D_NNA_LENGTH>, <0x0 A311D_HIU_BASE 0x0 A311D_HIU_LENGTH>, <0x0 A311D_POWER_DOMAIN_BASE 0x0 A311D_POWER_DOMAIN_LENGTH>, <0x0 A311D_MEMORY_PD_BASE 0x0 A311D_MEMORY_PD_LENGTH>, <0x0 A311D_NNA_SRAM_BASE 0x0 A311D_NNA_SRAM_LENGTH>;
 		interrupts = <GIC_SPI 147 GIC_IRQ_MODE_LEVEL_HIGH>;
 		iommus = <&stub_iommu NNA_BTI>;
 		registers = <&reset A311D_RESET2_LEVEL 4 0x0 0x1000>;
@@ -437,7 +405,9 @@
 
 			trips {
 				cpu_critical: cpu-critical {
-					temperature = <101000>; /* millicelsius */
+					temperature = <101000>;
+
+					/* millicelsius */
 					type = "critical";
 				};
 			};
@@ -448,7 +418,9 @@
 
 			trips {
 				ddr_critical: ddr-critical {
-					temperature = <110000>; /* millicelsius */
+					temperature = <110000>;
+
+					/* millicelsius */
 					type = "critical";
 				};
 			};

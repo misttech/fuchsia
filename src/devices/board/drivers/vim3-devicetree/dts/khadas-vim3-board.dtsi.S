@@ -1,7 +1,6 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 /dts-v1/;
 
 /include/ "amlogic-a311d.dtsi"
@@ -9,7 +8,6 @@
 #include <lib/ddk/platform-defs.h>
 #include <soc/aml-a311d/a311d-hw.h>
 #include <soc/aml-a311d/a311d-gpio.h>
-
 #include "sdk/lib/driver/devicetree/visitors/drivers/interrupt-controllers/arm-gic/arm-gicv2.h"
 #include "vim3-iommu.h"
 
@@ -17,14 +15,14 @@
 	compatible = "khadas,vim3", "amlogic,a311d";
 	model = "Khadas Vim3";
 
-	stub_iommu:iommu {
+	stub_iommu: iommu {
 		/* This device has no hardware IOMMU. Use unique BTI id as iommu   */
 		/* specifier for each consumer device for bookkeeping system BTIs. */
 		#iommu-cells = <0x1>;
 	};
 
 	suspend {
-		compatible="generic,suspend";
+		compatible = "generic,suspend";
 	};
 
 	reserved-memory {
@@ -46,26 +44,32 @@
 			opp-hz = <0 1000000000>;
 			opp-microvolt = <761000>;
 		};
+
 		opp-1200000000 {
 			opp-hz = <0 1200000000>;
 			opp-microvolt = <781000>;
 		};
+
 		opp-1398000000 {
 			opp-hz = <0 1398000000>;
 			opp-microvolt = <811000>;
 		};
+
 		opp-1512000000 {
 			opp-hz = <0 1512000000>;
 			opp-microvolt = <861000>;
 		};
+
 		opp-1608000000 {
 			opp-hz = <0 1608000000>;
 			opp-microvolt = <901000>;
 		};
+
 		opp-1704000000 {
 			opp-hz = <0 1704000000>;
 			opp-microvolt = <951000>;
 		};
+
 		opp-1800000000 {
 			opp-hz = <0 1800000000>;
 			opp-microvolt = <1001000>;
@@ -77,42 +81,51 @@
 			opp-hz = <0 1000000000>;
 			opp-microvolt = <731000>;
 		};
+
 		opp-1200000000 {
 			opp-hz = <0 1200000000>;
 			opp-microvolt = <751000>;
 		};
+
 		opp-1398000000 {
 			opp-hz = <0 1398000000>;
 			opp-microvolt = <771000>;
 		};
+
 		opp-1512000000 {
 			opp-hz = <0 1512000000>;
 			opp-microvolt = <771000>;
 		};
+
 		opp-1608000000 {
 			opp-hz = <0 1608000000>;
 			opp-microvolt = <781000>;
 		};
+
 		opp-1704000000 {
 			opp-hz = <0 1704000000>;
 			opp-microvolt = <791000>;
 		};
+
 		opp-1800000000 {
 			opp-hz = <0 1800000000>;
 			opp-microvolt = <831000>;
 		};
+
 		opp-1908000000 {
 			opp-hz = <0 1908000000>;
 			opp-microvolt = <861000>;
 		};
+
 		opp-2016000000 {
 			opp-hz = <0 2016000000>;
 			opp-microvolt = <911000>;
 		};
+
 		// TODO(b/376586778): This opps doesn't seem stable at the moment, investiage why.
 		// opp-2108000000 {
-		// 	opp-hz = <0 2108000000>;
-		// 	opp-microvolt = <951000>;
+		// opp-hz = <0 2108000000>;
+		// opp-microvolt = <951000>;
 		// };
 		opp-2208000000 {
 			opp-hz = <0 2208000000>;
