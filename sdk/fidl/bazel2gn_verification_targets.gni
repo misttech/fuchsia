@@ -5,9 +5,22 @@
 # A list of verify_bazel2gn targets under //sdk/fidl.
 fidl_bazel2gn_verification_targets = [
   # keep-sorted start
+  "//sdk/fidl/fdf:verify_bazel2gn",
   "//sdk/fidl/fuchsia.accessibility.gesture:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.accessibility.scene:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.accessibility.semantics:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.accessibility.tts:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.accessibility.virtualkeyboard:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.accessibility:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.acpi.chromeos:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.acpi.tables:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.audio.controller:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.audio.device:verify_bazel2gn",
   "//sdk/fidl/fuchsia.audio.effects:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.audio.mixer:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.audio:verify_bazel2gn",
   "//sdk/fidl/fuchsia.auth.oldtokens:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.auth:verify_bazel2gn",
   "//sdk/fidl/fuchsia.bluetooth.a2dp:verify_bazel2gn",
   "//sdk/fidl/fuchsia.bluetooth.affordances:verify_bazel2gn",
   "//sdk/fidl/fuchsia.bluetooth.avdtp.test:verify_bazel2gn",

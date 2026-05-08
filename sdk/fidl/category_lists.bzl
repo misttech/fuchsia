@@ -15,7 +15,11 @@ https://fuchsia.dev/fuchsia-src/contribute/sdk/categories.
 PARTNER_IDK_STABLE_FIDL_LIBRARY_ATOMS_LIST = [
     # buildifier: keep sorted
     "//sdk/fidl/fuchsia.accessibility.gesture:fuchsia.accessibility.gesture_idk",
+    "//sdk/fidl/fuchsia.accessibility.semantics:fuchsia.accessibility.semantics_idk",
+    "//sdk/fidl/fuchsia.accessibility.tts:fuchsia.accessibility.tts_idk",
+    "//sdk/fidl/fuchsia.accessibility.virtualkeyboard:fuchsia.accessibility.virtualkeyboard_idk",
     "//sdk/fidl/fuchsia.audio.effects:fuchsia.audio.effects_idk",
+    "//sdk/fidl/fuchsia.auth:fuchsia.auth_idk",
     "//sdk/fidl/fuchsia.auth.oldtokens:fuchsia.auth.oldtokens_idk",
     "//sdk/fidl/fuchsia.bluetooth.a2dp:fuchsia.bluetooth.a2dp_idk",
     "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_idk",
