@@ -10,12 +10,15 @@ use ::runner::component::StopInfo;
 use cm_types::FLAGS_MAX_POSSIBLE_RIGHTS;
 use errors::OpenExposedDirError;
 use fidl::endpoints::{ProtocolMarker, RequestStream};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_trace::{self as trace, duration, instant};
 use futures::prelude::*;
 use log::{error, warn};
+use routing::component_instance::ComponentInstanceInterface;
 use vfs::directory::entry::OpenRequest;
 use vfs::{Path, ToObjectRequest};
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 pub async fn run_controller(
     weak_component_instance: WeakComponentInstance,
@@ -136,7 +139,8 @@ pub async fn serve_controller(
                         .lock_resolved_state()
                         .await
                         .map_err(|_| fcomponent::Error::InstanceCannotResolve)?;
-                    let exposed_dict = resolved.get_exposed_dict().await.clone();
+                    let exposed_dict =
+                        resolved.get_exposed_dict(component.as_weak().into()).await.clone();
                     Ok(exposed_dict.into())
                 }
                 .await;
@@ -155,7 +159,8 @@ pub async fn serve_controller(
                         .lock_resolved_state()
                         .await
                         .map_err(|_| fcomponent::Error::InstanceCannotResolve)?;
-                    let exposed_dict = resolved.get_exposed_dict().await.clone();
+                    let exposed_dict =
+                        resolved.get_exposed_dict(component.as_weak().into()).await.clone();
                     let (e1, e2) = zx::EventPair::create();
                     component
                         .context

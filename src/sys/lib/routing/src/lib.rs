@@ -7,6 +7,7 @@ pub mod bedrock;
 pub mod component_instance;
 pub mod config;
 pub mod error;
+pub mod error_logging_router;
 pub mod policy;
 pub mod resolving;
 pub mod rights;

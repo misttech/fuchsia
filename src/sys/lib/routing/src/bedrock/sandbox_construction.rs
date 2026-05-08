@@ -439,6 +439,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
                 .target(component)
                 .error_info(first_use)
                 .error_reporter(error_reporter.clone())
+                .log_errors()
                 .build();
                 let prev = program_input
                     .namespace()
@@ -1283,6 +1284,7 @@ fn extend_dict_with_config_use<C: ComponentInstanceInterface + 'static>(
             .target(component)
             .error_info(config_use)
             .error_reporter(error_reporter)
+            .log_errors()
             .into(),
     );
     assert!(prev.is_none(), "failed to insert {}: preexisting value", config_use.target_name);
@@ -1321,7 +1323,8 @@ fn extend_dict_with_event_stream_uses<C: ComponentInstanceInterface + 'static>(
                     .availability(use_event_stream_decl.availability)
                     .target(component)
                     .error_info(RouteRequestErrorInfo::from(use_event_stream_decl.as_ref()))
-                    .error_reporter(error_reporter.clone());
+                    .error_reporter(error_reporter.clone())
+                    .log_errors();
             if let Some(scope) = &use_event_stream_decl.scope {
                 router_builder =
                     router_builder.event_stream_scope((component.moniker().clone(), scope.clone()));
@@ -1461,7 +1464,8 @@ fn extend_dict_with_use<T, C: ComponentInstanceInterface + 'static>(
         .availability(availability)
         .target(&component)
         .error_info(use_)
-        .error_reporter(error_reporter);
+        .error_reporter(error_reporter)
+        .log_errors();
     if let cm_rust::UseDecl::Directory(decl) = use_ {
         router_builder = router_builder
             .rights(Some(decl.rights.into()))

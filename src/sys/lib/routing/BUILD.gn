@@ -80,6 +80,7 @@ rustc_library("routing") {
     "src/component_instance.rs",
     "src/config.rs",
     "src/error.rs",
+    "src/error_logging_router.rs",
     "src/lib.rs",
     "src/policy.rs",
     "src/resolving.rs",

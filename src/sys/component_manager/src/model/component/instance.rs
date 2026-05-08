@@ -35,6 +35,7 @@ use ::routing::component_instance::{
     WeakComponentInstanceInterface,
 };
 use ::routing::error::{ComponentInstanceError, RouteRequestErrorInfo, RoutingError};
+use ::routing::error_logging_router::ErrorLoggingRouter;
 use ::routing::resolving::{ComponentAddress, ComponentResolutionContext, ResolverError};
 use ::routing::subdir::SubDir;
 use ::routing::{DictExt, WeakInstanceTokenExt, WithPorcelain};
@@ -49,7 +50,7 @@ use cm_graph::DependencyNode;
 use cm_rust::offer::{OfferDecl, OfferDeclCommon};
 use cm_rust::{
     Availability, CapabilityDecl, CapabilityTypeName, ChildDecl, CollectionDecl, ComponentDecl,
-    DeliveryType, FidlIntoNative, NativeIntoFidl, UseDecl,
+    DeliveryType, ExposeDeclCommon, FidlIntoNative, NativeIntoFidl, UseDecl,
 };
 use cm_types::{Name, Path, RelativePath};
 use config_encoder::ConfigFields;
@@ -828,11 +829,23 @@ impl ResolvedInstanceState {
     /// Returns a [`Dictionary`] with contents similar to `component_output_dict`, but adds
     /// capabilities backed by legacy routing. This [`Dictionary`] is used to generate the
     /// `exposed_dir`.
-    pub async fn get_exposed_dict(&self) -> &Dictionary {
+    pub async fn get_exposed_dict(&self, self_target: WeakInstanceToken) -> &Dictionary {
         let create_exposed_dict = async || {
+            let decl = self.decl();
             let dict = Dictionary::new();
             for (key, value) in self.sandbox.component_output.capabilities().enumerate() {
-                let _ = dict.insert(key, value);
+                let expose_decl = decl
+                    .exposes
+                    .iter()
+                    .find(|e| e.target_name() == &key)
+                    .expect("output contains entry not in exposes");
+                let error_logging_router = ErrorLoggingRouter::new(
+                    value,
+                    expose_decl,
+                    RoutingFailureErrorReporter::new(),
+                    self_target.clone(),
+                );
+                let _ = dict.insert(key, error_logging_router);
             }
             dict
         };
@@ -841,7 +854,7 @@ impl ResolvedInstanceState {
 
     pub async fn get_exposed_dir(&self, self_target: WeakInstanceToken) -> Arc<dyn DirectoryEntry> {
         let create_exposed_dir = async || {
-            let exposed_dict = self.get_exposed_dict().await.clone();
+            let exposed_dict = self.get_exposed_dict(self_target.clone()).await.clone();
             exposed_dict
                 .try_into_directory_entry(self.execution_scope.clone(), self_target)
                 .expect("converting exposed dict to open should always succeed")

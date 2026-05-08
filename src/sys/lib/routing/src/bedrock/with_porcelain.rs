@@ -33,6 +33,7 @@ struct PorcelainRouter<T: CapabilityBound, R, C: ComponentInstanceInterface, con
     target: WeakExtendedInstanceInterface<C>,
     route_request: RouteRequestErrorInfo,
     error_reporter: R,
+    should_log: bool,
 }
 
 #[async_trait]
@@ -45,13 +46,13 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
         target: WeakInstanceToken,
     ) -> Result<Option<T>, RouterError> {
         match self.route_inner(request, D, target).await {
-            Ok(res) => Ok(res),
-            Err(err) => {
+            Err(err) if self.should_log => {
                 self.error_reporter
                     .report(&self.route_request, &err, self.target.clone().into())
                     .await;
                 Err(err)
             }
+            other_result => other_result,
         }
     }
 
@@ -61,13 +62,13 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
         target: WeakInstanceToken,
     ) -> Result<CapabilitySource, RouterError> {
         match self.route_debug_inner(request, D, target).await {
-            Ok(res) => Ok(res),
-            Err(err) => {
+            Err(err) if self.should_log => {
                 self.error_reporter
                     .report(&self.route_request, &err, self.target.clone().into())
                     .await;
                 Err(err)
             }
+            other_result => other_result,
         }
     }
 }
@@ -111,6 +112,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
             target,
             route_request: _,
             error_reporter: _,
+            should_log: _,
         } = self;
         let mut request = if request != RouteRequest::default() {
             request
@@ -281,6 +283,7 @@ pub struct PorcelainBuilder<
     target: Option<WeakExtendedInstanceInterface<C>>,
     error_info: Option<RouteRequestErrorInfo>,
     error_reporter: Option<R>,
+    should_log: bool,
 }
 
 impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'static, const D: bool>
@@ -298,7 +301,13 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
             target: None,
             error_info: None,
             error_reporter: None,
+            should_log: false,
         }
+    }
+
+    pub fn log_errors(mut self) -> Self {
+        self.should_log = true;
+        self
     }
 
     /// The [Availability] attribute for this route.
@@ -374,6 +383,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
             target: self.target.expect("must set target"),
             route_request: self.error_info.expect("must set route_request"),
             error_reporter: self.error_reporter.expect("must set error_reporter"),
+            should_log: self.should_log,
         })
     }
 }
@@ -616,6 +626,7 @@ mod tests {
             .target(&component)
             .error_info(&error_info())
             .error_reporter(reporter)
+            .log_errors()
             .build();
         let request = RouteRequest {
             availability: Some(Availability::Optional.native_into_fidl()),
@@ -650,6 +661,7 @@ mod tests {
             .target(&component)
             .error_info(&error_info())
             .error_reporter(reporter)
+            .log_errors()
             .build();
         let request = RouteRequest {
             build_type_name: Some(CapabilityTypeName::Service.to_string()),
@@ -687,6 +699,7 @@ mod tests {
             .target(&component)
             .error_info(&error_info())
             .error_reporter(reporter)
+            .log_errors()
             .build();
         let request = RouteRequest {
             build_type_name: Some(CapabilityTypeName::Protocol.to_string()),
