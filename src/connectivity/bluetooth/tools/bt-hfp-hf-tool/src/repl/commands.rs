@@ -78,7 +78,7 @@ macro_rules! gen_commands {
             pub fn help_msg() -> String {
                 let mut string = String::from("Commands:\n");
                 $(
-                    let s = format!("\t{}", $name::$variant.cmd_help());
+                    let s = format!("\t{}\n", $name::$variant.cmd_help());
                     string.push_str(&s);
                 )*
                 string
@@ -131,17 +131,17 @@ gen_commands! {
         ListCalls = (
             "list-calls",
             vec![Optional("call_id")],
-            "List calls or info about one ca.."
+            "List calls or info about one call"
         ),
         DialFromNumber = (
             "dial-from-number",
             vec![Required("peer_id"), Required("string")],
-            "Start a call by dialing an umber"
+            "Start a call by dialing a number"
         ),
         DialFromMemoryLocation = (
             "dial-from-memory-location",
             vec![Required("peer_id"), Required("number")],
-            "Start a call by dailing from a memeroy location"
+            "Start a call by dialing from a memory location"
         ),
         RedialLast = (
             "redial-last",
