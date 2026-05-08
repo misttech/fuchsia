@@ -68,19 +68,20 @@ export_compile_commands = [ "//:default" ]
 default_args = {
   # Specify Pigweed backends for Fuchsia.
   pw_assert_BACKEND = "//third_party/pigweed/backends/pw_assert"
-  pw_log_BACKEND = "//third_party/pigweed/backends/pw_log"
   pw_chrono_SYSTEM_CLOCK_BACKEND =
       "//third_party/pigweed/src/pw_chrono_stl:system_clock"
-  pw_sync_MUTEX_BACKEND = "//third_party/pigweed/src/pw_sync_stl:mutex_backend"
-  pw_sys_io_BACKEND = "//third_party/pigweed/src/pw_sys_io_stdio"
-  pw_thread_SLEEP_BACKEND = "//third_party/pigweed/src/pw_thread_stl:sleep"
-
-  pw_sync_THREAD_NOTIFICATION_BACKEND = "//third_party/pigweed/src/pw_sync:binary_semaphore_thread_notification_backend"
-  pw_sync_TIMED_THREAD_NOTIFICATION_BACKEND = "//third_party/pigweed/src/pw_sync:binary_semaphore_timed_thread_notification_backend"
   pw_chrono_SYSTEM_TIMER_BACKEND =
       "//third_party/pigweed/src/pw_chrono_stl:system_timer"
+  pw_log_BACKEND = "//third_party/pigweed/backends/pw_log"
   pw_sync_BINARY_SEMAPHORE_BACKEND =
       "//third_party/pigweed/src/pw_sync_stl:binary_semaphore_backend"
+  pw_sync_INTERRUPT_SPIN_LOCK_BACKEND =
+      "//third_party/pigweed/src/pw_sync_stl:interrupt_spin_lock"
+  pw_sync_MUTEX_BACKEND = "//third_party/pigweed/src/pw_sync_stl:mutex_backend"
+  pw_sync_THREAD_NOTIFICATION_BACKEND = "//third_party/pigweed/src/pw_sync:binary_semaphore_thread_notification_backend"
+  pw_sync_TIMED_THREAD_NOTIFICATION_BACKEND = "//third_party/pigweed/src/pw_sync:binary_semaphore_timed_thread_notification_backend"
+  pw_sys_io_BACKEND = "//third_party/pigweed/src/pw_sys_io_stdio"
+  pw_thread_SLEEP_BACKEND = "//third_party/pigweed/src/pw_thread_stl:sleep"
 
   # Pigweed configs for Fuchsia.
   pw_function_CONFIG =

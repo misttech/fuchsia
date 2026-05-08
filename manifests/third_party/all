@@ -427,7 +427,7 @@
              path="third_party/pigweed/src"
              remote="https://fuchsia.googlesource.com/third_party/pigweed.googlesource.com/pigweed/pigweed"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="5c525a3e7d9d17a962605281d879ff73eb0b3dce"/>
+             revision="5ca5a43b6873f8d304ea86d19c7063575a760227"/>
     <project name="third_party/github.com/google/python_portpicker"
              path="third_party/python_portpicker/src"
              remote="https://fuchsia.googlesource.com/third_party/github.com/google/python_portpicker"
@@ -615,7 +615,7 @@
              path="third_party/chre/src"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/chre"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="0cef15730b06ea2f67b87014c9e8da048fef1d80"/>
+             revision="8845bc1271be36fc5e5ebb7d48b88441bbf96dcc"/>
     <project name="third_party/pypng"
              path="third_party/pypng/src"
              remote="https://fuchsia.googlesource.com/third_party/gitlab.com/drj11/pypng"

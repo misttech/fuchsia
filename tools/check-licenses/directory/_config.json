@@ -630,10 +630,11 @@
             },
             {
                 "paths": [
-                    "third_party/chre/src/apps/nearby/third_party/contexthub/chre/util"
+                    "third_party/chre/src/apps/nearby/third_party/contexthub/chre/util",
+                    "third_party/chre/src/apps/nearby/third_party/nanopb"
                 ],
                 "notes": [
-                    "Skip third party chre directory that doesn't contain a license file."
+                    "Skip third party chre directories that do not contain a license file."
                 ]
             },
             {
