@@ -10,6 +10,7 @@
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
+#include "src/lib/files/file.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
@@ -574,6 +575,43 @@ TEST(InheritTest, NoAtSecureAllowed) {
 
     ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
+  }));
+}
+
+/// Verifies that the script's domain determines the target domain of the task post-`exec()`, rather
+/// that the domain of the interpreter that is used to run it.
+TEST(InheritTest, ExecveScriptTransition) {
+  constexpr char kInitialTaskContext[] = "test_u:test_r:test_inherit_parent_t:s0";
+  constexpr char kExpectedPostExecContext[] = "test_u:test_r:test_inherit_script_target_t:s0";
+
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  test_helper::ScopedTempDir temp_dir;
+
+  // Create a copy of the is_current_domain helper and label it as the interpreter.
+  const std::string is_current_domain_bin_path = PathForExec("is_current_domain_bin");
+  const std::string interpreter_path = temp_dir.path() + "/interpreter";
+  std::string interpreter_content;
+  ASSERT_TRUE(files::ReadFileToString(is_current_domain_bin_path, &interpreter_content));
+  ASSERT_TRUE(files::WriteFile(interpreter_path, interpreter_content));
+  ASSERT_THAT(chmod(interpreter_path.c_str(), 0755), SyscallSucceeds());
+  constexpr char kInterpreterFileLabel[] = "test_u:object_r:test_inherit_interp_file_t:s0";
+  ASSERT_TRUE(SetLabel(interpreter_path, kInterpreterFileLabel).is_ok());
+
+  // Create a script file that will use our custom "interpreter", and label it as the script.
+  std::string script_path = temp_dir.path() + "/script.sh";
+  std::string script_context = "#!" + interpreter_path + "\n";
+  ASSERT_TRUE(files::WriteFile(script_path, script_context));
+  ASSERT_THAT(chmod(script_path.c_str(), 0755), SyscallSucceeds());
+  constexpr char kScriptLabel[] = "test_u:object_r:test_inherit_script_file_t:s0";
+  ASSERT_TRUE(SetLabel(script_path, kScriptLabel).is_ok());
+
+  ASSERT_TRUE(RunSubprocessAs(kInitialTaskContext, [&] {
+    char* const argv[] = {const_cast<char*>(script_path.c_str()),
+                          const_cast<char*>(kExpectedPostExecContext), nullptr};
+    char* const envp[] = {nullptr};
+
+    SAFE_SYSCALL(execve(script_path.c_str(), argv, envp));
   }));
 }
 

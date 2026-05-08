@@ -293,6 +293,14 @@
             ]
         },
         {
+            "name": "InheritTest.ExecveScriptTransition",
+            "audit_expectations": [
+                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_script_target_t:s0 tclass=process permissive=0",
+                "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_script_target_t:s0 tclass=process permissive=0",
+                "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_script_target_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
             "name": "InheritTest.FdUseAllowed",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_child_allow_use_fd_t:s0 tclass=process permissive=0",

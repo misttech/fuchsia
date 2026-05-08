@@ -161,6 +161,7 @@ test_subprogram_names = [
   "has_ignored_signals",
   "has_pending_signals",
   "is_at_secure_set",
+  "is_current_domain",
   "is_duplicated_fd",
   "is_itimer_real_reset",
   "is_selinux_null_inode",

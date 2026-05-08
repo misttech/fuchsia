@@ -39,6 +39,7 @@ syscall_tests_executables = [
   ":suid_test_exec_child",
   ":syscall_test_exec_child",
   "test_programs:clone_exec_helper",
+  "test_programs:exit_zero",
   "test_programs:print_helper",
   "test_programs:signal_handling_test_exec_parent_after_exit",
   "test_programs:signal_handling_test_exec_parent_before_exit",

@@ -28,6 +28,7 @@
 #include <gtest/gtest.h>
 #include <linux/capability.h>
 #include <linux/sched.h>
+#include <linux/securebits.h>
 
 #include "src/lib/files/directory.h"
 #include "src/lib/files/file.h"
@@ -1287,6 +1288,101 @@ TEST_F(CloneAndExecTest, ChildWithCloneFsCanChangeCwd) {
     _exit(testing::Test::HasFailure());
   });
 
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_F(CloneAndExecTest, ExecveRequiresCallerCanExecuteScriptAndInterp) {
+  test_helper::ScopedTempDir temp_dir;
+
+  const std::string exit_zero_path = GetTestResourcePath("exit_zero");
+  std::string exit_zero_content;
+  ASSERT_TRUE(files::ReadFileToString(exit_zero_path, &exit_zero_content)) << exit_zero_path;
+
+  // Create good (executable) and bad (not executable) "interpreter" binaries by copying the
+  // exit_zero helper.
+  const std::string bad_interpreter_path = temp_dir.path() + "/interpreter";
+  ASSERT_TRUE(files::WriteFile(bad_interpreter_path, exit_zero_content));
+  ASSERT_THAT(chmod(bad_interpreter_path.c_str(), 0644), SyscallSucceeds());
+  const std::string good_interpreter_path = temp_dir.path() + "/interpreter";
+  ASSERT_TRUE(files::WriteFile(good_interpreter_path, exit_zero_content));
+  ASSERT_THAT(chmod(good_interpreter_path.c_str(), 0744), SyscallSucceeds());
+
+  test_helper::ForkHelper helper;
+
+  // Verify that an non-executable script using an executable interpreter cannot be executed.
+  const std::string bad_script_path = temp_dir.path() + "/bad_script";
+  const std::string bad_script = "#!" + good_interpreter_path + "\n";
+  ASSERT_TRUE(files::WriteFile(bad_script_path, bad_script));
+  ASSERT_THAT(chmod(bad_script_path.c_str(), 0644), SyscallSucceeds());
+  helper.RunInForkedProcess([&] {
+    char* const argv[] = {const_cast<char*>(bad_script_path.c_str()), nullptr};
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(execve(bad_script_path.c_str(), argv, envp), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  // Verify that an executable script using a non-executable interpreter cannot be executed.
+  const std::string bad_interp_script_path = temp_dir.path() + "/good_script";
+  const std::string bad_interp_script = "#!" + bad_interpreter_path + "\n";
+  ASSERT_TRUE(files::WriteFile(bad_interp_script_path, bad_interp_script));
+  ASSERT_THAT(chmod(bad_interp_script_path.c_str(), 0744), SyscallSucceeds());
+  helper.RunInForkedProcess([&] {
+    char* const argv[] = {const_cast<char*>(bad_interp_script_path.c_str()), nullptr};
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(execve(bad_interp_script_path.c_str(), argv, envp), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  // Verify that an executable script using an executable interpreter can be executed.
+  const std::string good_script_path = temp_dir.path() + "/good_script";
+  const std::string good_script = "#!" + good_interpreter_path + "\n";
+  ASSERT_TRUE(files::WriteFile(good_script_path, good_script));
+  ASSERT_THAT(chmod(good_script_path.c_str(), 0744), SyscallSucceeds());
+  helper.RunInForkedProcess([&] {
+    char* const argv[] = {const_cast<char*>(good_script_path.c_str()), nullptr};
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(execve(good_script_path.c_str(), argv, envp), SyscallSucceeds());
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_F(CloneAndExecTest, ExecveAsRootRequiresAnyExecutableBitSet) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "test requires root privileges";
+  }
+
+  test_helper::ScopedTempDir temp_dir;
+  const std::string binary_path = temp_dir.path() + "/binary";
+  char* const argv[] = {const_cast<char*>(binary_path.c_str()), nullptr};
+  char* const envp[] = {nullptr};
+
+  const std::string exit_zero_path = GetTestResourcePath("exit_zero");
+  std::string exit_zero_content;
+  ASSERT_TRUE(files::ReadFileToString(exit_zero_path, &exit_zero_content));
+  ASSERT_TRUE(files::WriteFile(binary_path, exit_zero_content));
+
+  test_helper::ForkHelper helper;
+
+  // Root cannot execute a file with no eXecutable bits set.
+  ASSERT_THAT(chmod(binary_path.c_str(), 0644), SyscallSucceeds());
+  helper.RunInForkedProcess(
+      [&] { EXPECT_THAT(execve(binary_path.c_str(), argv, envp), SyscallFailsWithErrno(EACCES)); });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  // Root can execute a file so long as any of user, group, other can execute it.
+  ASSERT_THAT(chmod(binary_path.c_str(), 0744), SyscallSucceeds());
+  helper.RunInForkedProcess(
+      [&] { EXPECT_THAT(execve(binary_path.c_str(), argv, envp), SyscallSucceeds()); });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  ASSERT_THAT(chmod(binary_path.c_str(), 0654), SyscallSucceeds());
+  helper.RunInForkedProcess(
+      [&] { EXPECT_THAT(execve(binary_path.c_str(), argv, envp), SyscallSucceeds()); });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  ASSERT_THAT(chmod(binary_path.c_str(), 0645), SyscallSucceeds());
+  helper.RunInForkedProcess(
+      [&] { EXPECT_THAT(execve(binary_path.c_str(), argv, envp), SyscallSucceeds()); });
   ASSERT_TRUE(helper.WaitForChildren());
 }
 

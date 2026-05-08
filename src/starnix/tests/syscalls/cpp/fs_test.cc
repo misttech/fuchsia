@@ -683,6 +683,65 @@ TEST_F(AccessTest, ChecksAgainstRealCredsOwner) {
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
+TEST_F(AccessTest, X_OK) {
+  test_helper::ForkHelper helper;
+
+  std::string user_exec_file;
+  ASSERT_TRUE(CreateFile("user_exec", 0100, kOwnerUid, kOwnerGid, user_exec_file));
+
+  std::string everyone_exec_file;
+  ASSERT_TRUE(CreateFile("everyone_exec", 0111, kOwnerUid, kOwnerGid, everyone_exec_file));
+
+  std::string no_exec_file;
+  ASSERT_TRUE(CreateFile("no_exec", 0600, kOwnerUid, kOwnerGid, no_exec_file));
+
+  helper.RunInForkedProcess([&] {
+    ASSERT_THAT(setresgid(kNonOwnerGid, kNonOwnerGid, 0), SyscallSucceeds());
+    ASSERT_THAT(setresuid(kNonOwnerUid, kNonOwnerUid, 0), SyscallSucceeds());
+
+    EXPECT_THAT(access(user_exec_file.c_str(), X_OK), SyscallFailsWithErrno(EACCES));
+    EXPECT_THAT(access(everyone_exec_file.c_str(), X_OK), SyscallSucceeds());
+    EXPECT_THAT(access(no_exec_file.c_str(), X_OK), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  helper.RunInForkedProcess([&] {
+    ASSERT_THAT(setresgid(kOwnerGid, kOwnerGid, 0), SyscallSucceeds());
+    ASSERT_THAT(setresuid(kOwnerUid, kOwnerUid, 0), SyscallSucceeds());
+
+    EXPECT_THAT(access(user_exec_file.c_str(), X_OK), SyscallSucceeds());
+    EXPECT_THAT(access(everyone_exec_file.c_str(), X_OK), SyscallSucceeds());
+    EXPECT_THAT(access(no_exec_file.c_str(), X_OK), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  helper.RunInForkedProcess([&] {
+    ASSERT_THAT(setresgid(0, 0, 0), SyscallSucceeds());
+    ASSERT_THAT(setresuid(0, 0, 0), SyscallSucceeds());
+
+    EXPECT_THAT(access(user_exec_file.c_str(), X_OK), SyscallSucceeds());
+    EXPECT_THAT(access(everyone_exec_file.c_str(), X_OK), SyscallSucceeds());
+    EXPECT_THAT(access(no_exec_file.c_str(), X_OK), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  helper.RunInForkedProcess([&] {
+    ASSERT_THAT(setresuid(0, kNonOwnerUid, 0), SyscallSucceeds());
+    test_helper::SetCapabilityEffective(CAP_DAC_OVERRIDE);
+
+    EXPECT_THAT(faccessat(AT_FDCWD, user_exec_file.c_str(), X_OK, AT_EACCESS), SyscallSucceeds());
+    EXPECT_THAT(faccessat(AT_FDCWD, everyone_exec_file.c_str(), X_OK, AT_EACCESS),
+                SyscallSucceeds());
+    EXPECT_THAT(faccessat(AT_FDCWD, no_exec_file.c_str(), X_OK, AT_EACCESS),
+                SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  EXPECT_EQ(unlink(user_exec_file.c_str()), 0);
+  EXPECT_EQ(unlink(everyone_exec_file.c_str()), 0);
+  EXPECT_EQ(unlink(no_exec_file.c_str()), 0);
+}
+
 TEST_F(AccessTest, EaccessChecksAgainstEffectiveCredsNonOwner) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([&] {
