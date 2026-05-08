@@ -149,7 +149,6 @@ python_library("honeydew_no_testonly") {
     "transports/sl4f/__init__.py",
     "transports/sl4f/errors.py",
     "transports/sl4f/sl4f.py",
-    "transports/sl4f/sl4f_impl.py",
     "typing/__init__.py",
     "typing/custom_types.py",
     "utils/__init__.py",

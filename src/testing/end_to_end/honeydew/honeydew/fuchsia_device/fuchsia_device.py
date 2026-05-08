@@ -98,8 +98,7 @@ from honeydew.transports.fuchsia_controller import (
 )
 from honeydew.transports.serial import serial as serial_transport_interface
 from honeydew.transports.serial import serial_using_unix_socket
-from honeydew.transports.sl4f import sl4f as sl4f_transport_interface
-from honeydew.transports.sl4f import sl4f_impl
+from honeydew.transports.sl4f import sl4f as sl4f_transport
 from honeydew.typing import custom_types
 from honeydew.utils import common, properties
 
@@ -444,7 +443,7 @@ class FuchsiaDevice(
         return serial_obj
 
     @properties.Transport
-    def sl4f(self) -> sl4f_transport_interface.SL4F:
+    def sl4f(self) -> sl4f_transport.SL4F:
         """Returns the SL4F transport object.
 
         Returns:
@@ -457,7 +456,7 @@ class FuchsiaDevice(
         if self._device_info.ip_port:
             device_ip = self._device_info.ip_port.ip
 
-        sl4f_obj: sl4f_transport_interface.SL4F = sl4f_impl.Sl4fImpl(
+        sl4f_obj: sl4f_transport.SL4F = sl4f_transport.SL4F(
             device_name=self.device_name,
             device_ip=device_ip,
             ffx_transport=self.ffx,

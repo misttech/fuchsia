@@ -58,7 +58,7 @@ from honeydew.transports.fuchsia_controller import (
 )
 from honeydew.transports.serial import serial as serial_interface
 from honeydew.transports.serial import serial_using_unix_socket
-from honeydew.transports.sl4f import sl4f_impl
+from honeydew.transports.sl4f import sl4f as sl4f_transport
 from honeydew.typing import custom_types
 
 # pylint: disable=protected-access
@@ -273,12 +273,12 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 autospec=True,
             ) as mock_fc_check_connection,
             mock.patch.object(
-                sl4f_impl.Sl4fImpl,
+                sl4f_transport.SL4F,
                 "start_server",
                 autospec=True,
             ) as mock_sl4f_start_server,
             mock.patch.object(
-                sl4f_impl.Sl4fImpl,
+                sl4f_transport.SL4F,
                 "check_connection",
                 autospec=True,
             ) as mock_sl4f_check_connection,
@@ -335,12 +335,12 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 autospec=True,
             ) as mock_fc_check_connection,
             mock.patch.object(
-                sl4f_impl.Sl4fImpl,
+                sl4f_transport.SL4F,
                 "start_server",
                 autospec=True,
             ) as mock_sl4f_start_server,
             mock.patch.object(
-                sl4f_impl.Sl4fImpl,
+                sl4f_transport.SL4F,
                 "check_connection",
                 autospec=True,
             ) as mock_sl4f_check_connection,
@@ -449,15 +449,15 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         transport."""
         with (
             mock.patch.object(
-                sl4f_impl.Sl4fImpl,
+                sl4f_transport.SL4F,
                 "start_server",
                 autospec=True,
             ) as mock_sl4f_start_server,
         ):
-            self.assertIsInstance(self.fd_fc_obj.sl4f, sl4f_impl.Sl4fImpl)
+            self.assertIsInstance(self.fd_fc_obj.sl4f, sl4f_transport.SL4F)
             mock_sl4f_start_server.assert_called_once_with(self.fd_fc_obj.sl4f)
 
-        self.assertIsInstance(self.fd_sl4f_obj.sl4f, sl4f_impl.Sl4fImpl)
+        self.assertIsInstance(self.fd_sl4f_obj.sl4f, sl4f_transport.SL4F)
 
     def test_fuchsia_controller_transport(self) -> None:
         """Test case to make sure fuchsia_device supports fuchsia-controller
@@ -919,7 +919,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.fd_fc_obj._on_device_close_fns = []
 
     @mock.patch.object(
-        sl4f_impl.Sl4fImpl,
+        sl4f_transport.SL4F,
         "check_connection",
         autospec=True,
     )
@@ -945,7 +945,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_sl4f_check_connection.assert_not_called()
 
     @mock.patch.object(
-        sl4f_impl.Sl4fImpl,
+        sl4f_transport.SL4F,
         "check_connection",
         autospec=True,
     )
@@ -1244,7 +1244,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        sl4f_impl.Sl4fImpl,
+        sl4f_transport.SL4F,
         "start_server",
         autospec=True,
     )
@@ -1288,7 +1288,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        sl4f_impl.Sl4fImpl,
+        sl4f_transport.SL4F,
         "start_server",
         autospec=True,
     )
