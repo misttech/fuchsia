@@ -32,7 +32,7 @@ use core::ops::{Deref, DerefMut, RangeInclusive};
 use assert_matches::assert_matches;
 use derivative::Derivative;
 use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
-use log::{debug, error, trace};
+use log::{debug, error};
 use net_types::ip::{
     GenericOverIp, Ip, IpAddr, IpAddress, IpVersion, IpVersionMarker, Ipv4, Ipv4Addr, Ipv6,
     Ipv6Addr,
@@ -4246,14 +4246,14 @@ where
         let orig_src_ip = match SocketIpAddr::try_from(orig_src_ip) {
             Ok(ip) => ip,
             Err(AddrIsMappedError {}) => {
-                trace!("ignoring ICMP error from IPv4-mapped-IPv6 source: {}", orig_src_ip);
+                debug!("ignoring ICMP error from IPv4-mapped-IPv6 source: {}", orig_src_ip);
                 return;
             }
         };
         let orig_dst_ip = match SocketIpAddr::try_from(orig_dst_ip) {
             Ok(ip) => ip,
             Err(AddrIsMappedError {}) => {
-                trace!("ignoring ICMP error to IPv4-mapped-IPv6 destination: {}", orig_dst_ip);
+                debug!("ignoring ICMP error to IPv4-mapped-IPv6 destination: {}", orig_dst_ip);
                 return;
             }
         };
