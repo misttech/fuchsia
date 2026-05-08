@@ -671,6 +671,8 @@ mod tests {
         safe fn simple_async_read_run_counter() -> u32;
         safe fn hanging_sync_read_run_counter() -> u32;
         safe fn hanging_async_read_run_counter() -> u32;
+        safe fn waiting_sync_read_run_counter() -> u32;
+        safe fn waiting_async_read_run_counter() -> u32;
         safe fn rust_sync_read_run_counter() -> u32;
         safe fn rust_async_read_run_counter() -> u32;
     }
@@ -835,8 +837,84 @@ mod tests {
         }
     }
 
-    // TODO(https://fxbug.dev/403545512): Write start_on_stop test once we support passing the
-    // lifecycle channel to sync and async components.
+    // TODO(https://fxbug.dev/492227113): This test needs libfdio thread local support to allow the
+    // component to retrieve the lifecycle handle.
+    #[ignore]
+    #[fuchsia::test]
+    async fn start_and_stop_sync() {
+        fn read_run_counter() -> usize {
+            waiting_sync_read_run_counter() as usize
+        }
+
+        const NUM_REPS: usize = 3;
+        let env = crate::init();
+        let binary = lib_so("libwaiting_sync.so").await;
+
+        let mut components = vec![];
+        for _ in 0..NUM_REPS {
+            components.push(start_component(&env, &binary, Syncness::Sync).await.unwrap());
+        }
+        while read_run_counter() < NUM_REPS {
+            fasync::Timer::new(fasync::MonotonicDuration::from_millis(100)).await
+        }
+        assert_eq!(read_run_counter(), NUM_REPS);
+        for i in 0..NUM_REPS {
+            components[i].controller.stop().unwrap();
+        }
+
+        for i in 0..NUM_REPS {
+            let mut event_stream = components[i].controller.take_event_stream();
+            assert_matches!(
+                event_stream.next().await,
+                Some(Ok(frunner::ComponentControllerEvent::OnStop {
+                    payload: frunner::ComponentStopInfo {
+                        termination_status: Some(0),
+                        exit_code: Some(0),
+                        ..
+                    }
+                }))
+            );
+            assert_matches!(event_stream.next().await, None);
+        }
+    }
+
+    #[fuchsia::test]
+    async fn start_and_stop_async() {
+        fn read_run_counter() -> usize {
+            waiting_async_read_run_counter() as usize
+        }
+
+        const NUM_REPS: usize = 3;
+        let env = crate::init();
+        let binary = lib_so("libwaiting_async.so").await;
+
+        let mut components = vec![];
+        for _ in 0..NUM_REPS {
+            components.push(start_component(&env, &binary, Syncness::Async).await.unwrap());
+        }
+        while read_run_counter() < NUM_REPS {
+            fasync::Timer::new(fasync::MonotonicDuration::from_millis(100)).await
+        }
+        assert_eq!(read_run_counter(), NUM_REPS);
+        for i in 0..NUM_REPS {
+            components[i].controller.stop().unwrap();
+        }
+
+        for i in 0..NUM_REPS {
+            let mut event_stream = components[i].controller.take_event_stream();
+            assert_matches!(
+                event_stream.next().await,
+                Some(Ok(frunner::ComponentControllerEvent::OnStop {
+                    payload: frunner::ComponentStopInfo {
+                        termination_status: Some(0),
+                        exit_code: Some(0),
+                        ..
+                    }
+                }))
+            );
+            assert_matches!(event_stream.next().await, None);
+        }
+    }
 
     #[fuchsia::test]
     async fn start_and_kill_sync() {

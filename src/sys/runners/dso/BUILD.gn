@@ -60,6 +60,8 @@ rustc_binary("bin") {
     ":rust_sync",
     ":simple_async",
     ":simple_sync",
+    ":waiting_async",
+    ":waiting_sync",
     "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
     "//src/lib/fdio/rust:fdio",
     "//third_party/rust_crates:assert_matches",
@@ -105,6 +107,29 @@ fuchsia_cc_dso("hanging_async") {
   sources = [ "test/hanging_async.cc" ]
   async = true
   deps = [ "//zircon/system/ulib/zx" ]
+}
+
+fuchsia_cc_dso("waiting_sync") {
+  testonly = true
+  sources = [ "test/waiting_sync.cc" ]
+  async = false
+  deps = [
+    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
+    "//sdk/lib/async-loop:async-loop-cpp",
+    "//sdk/lib/async-loop:async-loop-default",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
+fuchsia_cc_dso("waiting_async") {
+  testonly = true
+  sources = [ "test/waiting_async.cc" ]
+  async = true
+  deps = [
+    "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
+    "//sdk/lib/async",
+    "//zircon/system/ulib/zx",
+  ]
 }
 
 fuchsia_cc_dso("error_sync") {
