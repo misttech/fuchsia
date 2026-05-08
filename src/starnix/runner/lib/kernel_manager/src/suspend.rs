@@ -240,19 +240,65 @@ async fn suspend_job(kernel_job: &zx::Job) -> Result<Vec<zx::NullableHandle>, Er
             let threads = process.threads().expect("failed to get threads");
             for thread_koid in &threads {
                 fuchsia_trace::duration!("power", "starnix-runner:suspend_kernel", "thread_koid" => *thread_koid);
-                if let Ok(thread) = process.get_child(&thread_koid, zx::Rights::SAME_RIGHTS) {
-                    match thread
-                        .wait_one(
-                            zx::Signals::THREAD_SUSPENDED | zx::Signals::THREAD_TERMINATED,
-                            zx::MonotonicInstant::after(zx::MonotonicDuration::INFINITE),
-                        )
-                        .to_result()
-                    {
-                        Err(e) => {
-                            log::warn!("Error waiting for task suspension: {:?}", e);
-                            return Err(e.into());
+                if let Ok(thread_handle) = process.get_child(&thread_koid, zx::Rights::SAME_RIGHTS)
+                {
+                    let thread_obj = zx::Thread::from(thread_handle);
+                    let mut watchdog_count = 0;
+                    loop {
+                        if let Ok(info) = thread_obj.info() {
+                            if let zx::ThreadState::Blocked(zx::ThreadBlockType::Exception(_)) =
+                                info.state
+                            {
+                                let thread_name = thread_obj
+                                    .get_name()
+                                    .map(|n| n.to_string())
+                                    .unwrap_or_else(|_| "unknown".to_string());
+                                log::warn!(
+                                    "Thread {} (Koid: {:?}) is blocked on exception, skipping suspend wait.",
+                                    thread_name,
+                                    thread_koid
+                                );
+                                break;
+                            }
                         }
-                        _ => {}
+
+                        match thread_obj
+                            .wait_one(
+                                zx::Signals::THREAD_SUSPENDED | zx::Signals::THREAD_TERMINATED,
+                                zx::MonotonicInstant::after(zx::Duration::from_millis(100)),
+                            )
+                            .to_result()
+                        {
+                            Err(zx::Status::TIMED_OUT) => {
+                                watchdog_count += 1;
+                                if watchdog_count == 100 || watchdog_count % 600 == 0 {
+                                    let process_name = process
+                                        .get_name()
+                                        .map(|n| n.to_string())
+                                        .unwrap_or_else(|_| "unknown".to_string());
+                                    let thread_name = thread_obj
+                                        .get_name()
+                                        .map(|n| n.to_string())
+                                        .unwrap_or_else(|_| "unknown".to_string());
+                                    let thread_state = thread_obj
+                                        .info()
+                                        .map(|info| format!("{:?}", info.state))
+                                        .unwrap_or_else(|_| "unknown".to_string());
+                                    log::warn!(
+                                        "[SUSPEND_WATCHDOG] Timeout waiting for task suspension. Thread Koid: {:?} Name: '{}', Process: '{}', State: {}, continuing to wait...",
+                                        thread_koid,
+                                        thread_name,
+                                        process_name,
+                                        thread_state
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("Error waiting for task suspension: {:?}", e);
+                                return Err(e.into());
+                            }
+                            _ => break,
+                        }
                     }
                 }
             }
