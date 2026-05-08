@@ -6,6 +6,7 @@ use crate::Kernels;
 use anyhow::Error;
 use fidl::{HandleBased, Peered};
 use fidl_fuchsia_starnix_runner as fstarnixrunner;
+use fuchsia_inspect::{self as inspect, UintExponentialHistogramProperty, UintProperty};
 use fuchsia_sync::Mutex;
 use log::warn;
 use std::sync::Arc;
@@ -43,10 +44,49 @@ impl WakeSource {
 
 pub type WakeSources = std::collections::HashMap<zx::Koid, WakeSource>;
 
-#[derive(Default)]
 pub struct SuspendContext {
     pub wake_sources: Arc<Mutex<WakeSources>>,
     pub wake_watchers: Arc<Mutex<Vec<zx::EventPair>>>,
+
+    /// Inspect node for suspend-related metrics.
+    pub node: inspect::Node,
+    /// Histogram recording the boot timeline duration (in nanoseconds) of successful container
+    /// suspensions.
+    pub suspend_duration_histogram: UintExponentialHistogramProperty,
+    /// The total number of times the container has attempted to suspend.
+    pub suspend_attempts_count: UintProperty,
+    /// The total number of times the container has successfully suspended.
+    pub suspend_successes_count: UintProperty,
+    /// The total number of times the container has failed to suspend.
+    pub suspend_failures_count: UintProperty,
+}
+
+impl Default for SuspendContext {
+    fn default() -> Self {
+        let inspector = inspect::component::inspector();
+        let node = inspector.root().create_child("suspend");
+        let suspend_duration_histogram = node.create_uint_exponential_histogram(
+            "suspend_duration_boot_ns",
+            inspect::ExponentialHistogramParams {
+                floor: 100_000,
+                initial_step: 100_000,
+                step_multiplier: 2,
+                buckets: 32,
+            },
+        );
+        let suspend_attempts_count = node.create_uint("suspend_attempts_count", 0);
+        let suspend_successes_count = node.create_uint("suspend_successes_count", 0);
+        let suspend_failures_count = node.create_uint("suspend_failures_count", 0);
+        Self {
+            wake_sources: Default::default(),
+            wake_watchers: Default::default(),
+            node,
+            suspend_duration_histogram,
+            suspend_attempts_count,
+            suspend_successes_count,
+            suspend_failures_count,
+        }
+    }
 }
 
 /// Suspends the container specified by the `payload`.

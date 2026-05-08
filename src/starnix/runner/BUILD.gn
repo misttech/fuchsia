@@ -26,6 +26,8 @@ rustc_binary("starnix_runner_bin") {
     "//sdk/fidl/fuchsia.starnix.runner:fuchsia.starnix.runner_rust",
     "//sdk/lib/scheduler/rust",
     "//sdk/rust/zx",
+    "//src/lib/diagnostics/inspect/runtime/rust",
+    "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/trace/rust:trace-provider",

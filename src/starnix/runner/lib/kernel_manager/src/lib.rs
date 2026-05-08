@@ -19,6 +19,7 @@ use fidl_fuchsia_starnix_container as fstarnix;
 use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use fuchsia_async as fasync;
 use fuchsia_component::client as fclient;
+use fuchsia_inspect::{HistogramProperty, NumericProperty};
 use fuchsia_sync::Mutex;
 use futures::TryStreamExt;
 use kernels::Kernels;
@@ -193,16 +194,27 @@ pub async fn run_suspend_worker(
     kernels: &Kernels,
 ) {
     while let Ok(msg) = receiver.recv().await {
+        suspend_context.suspend_attempts_count.add(1);
         match suspend_container(msg.payload, &suspend_context, &kernels).await {
             Ok(response) => {
                 if let Err(e) = match response {
-                    Ok(o) => msg.responder.send(Ok(&o)),
-                    Err(e) => msg.responder.send(Err(e)),
+                    Ok(o) => {
+                        suspend_context.suspend_successes_count.add(1);
+                        if let Some(suspend_time) = o.suspend_time {
+                            suspend_context.suspend_duration_histogram.insert(suspend_time as u64);
+                        }
+                        msg.responder.send(Ok(&o))
+                    }
+                    Err(e) => {
+                        suspend_context.suspend_failures_count.add(1);
+                        msg.responder.send(Err(e))
+                    }
                 } {
                     warn!("error replying to suspend request: {e}");
                 }
             }
             Err(e) => {
+                suspend_context.suspend_failures_count.add(1);
                 warn!("error executing suspend: {e}");
                 let _ = msg.responder.send(Err(fstarnixrunner::SuspendError::SuspendFailure));
             }

@@ -30,6 +30,10 @@ async fn main() -> Result<(), Error> {
         warn!(e:%; "failed to set memory role");
     }
     fuchsia_trace_provider::trace_provider_create_with_fdio();
+    let _inspect_server_task = inspect_runtime::publish(
+        fuchsia_inspect::component::inspector(),
+        inspect_runtime::PublishOptions::default(),
+    );
     let config = starnix_runner_config::Config::take_from_startup_handle();
     if config.enable_data_collection {
         info!("Attempting to set user data sharing consent.");
