@@ -685,12 +685,14 @@ pub fn write_interface_description_block<W: std::io::Write>(
     interface_name: &str,
 ) -> Result<(), std::io::Error> {
     let total_len = InterfaceDescriptionBlockHeader::SIZE
-        + OptionHeader::SIZE
+        + OptionHeader::SIZE // if_name option header
         + u32::try_from(interface_name.len().next_multiple_of(4)).unwrap()
+        + OptionHeader::SIZE // end_of_opt option header
         + BLOCK_LEN_FOOTER_SIZE;
     let idb_header = InterfaceDescriptionBlockHeader::new(link_type, total_len);
     writer.write_all(idb_header.as_bytes())?;
     write_if_name_option(&mut writer, interface_name)?;
+    writer.write_all(OptionHeader::new_end_of_opt().as_bytes())?;
     writer.write_all(&total_len.to_le_bytes())?;
     Ok(())
 }
@@ -835,6 +837,38 @@ mod tests {
             options,
             ParsedInterfaceDescriptionOptions { if_name: Some(Cow::Borrowed("lo")) }
         );
+    }
+
+    #[test]
+    fn test_write_idb_includes_end_of_opt() {
+        let mut buf = Vec::new();
+        let if_name = "lo";
+        write_interface_description_block(&mut buf, LinkType::Ethernet, if_name)
+            .expect("write interface description block");
+
+        // Sanity check with regular parser.
+        let (remaining, _parsed_idb) =
+            parse_block::<ParsedInterfaceDescription<'_>>(&buf).expect("parse block failed");
+        assert!(remaining.is_empty());
+
+        // Now strictly verify EndOfOpt is present by parsing options manually.
+        // IDB header is 16 bytes. Footer is 4 bytes.
+        let option_start_offset = std::mem::size_of::<InterfaceDescriptionBlockHeader>();
+        let option_end_offset = buf.len()
+            - usize::try_from(BLOCK_LEN_FOOTER_SIZE).expect("block len footer size fits in usize");
+        let mut options_buf = &buf[option_start_offset..option_end_offset];
+
+        let mut end_of_opt_found = false;
+        while !options_buf.is_empty() {
+            let (rem, option) = parse_idb_option(options_buf).expect("parse option failed");
+            options_buf = rem;
+            if let InterfaceDescriptionOption::EndOfOpt = option {
+                assert_eq!(options_buf, &[]);
+                end_of_opt_found = true;
+                break;
+            }
+        }
+        assert!(end_of_opt_found);
     }
 
     #[test]
