@@ -105,11 +105,8 @@ where
     let weak_task = WeakRef::from(&task_builder.task);
     let ref_task = weak_task.upgrade().unwrap();
     if let Some(ptrace_state) = ptrace_state {
-        let _ = ptrace_attach_from_state(
-            locked.cast_locked::<TaskRelease>(),
-            &task_builder.task,
-            ptrace_state,
-        );
+        let _ =
+            ptrace_attach_from_state(locked.cast_locked::<TaskRelease>(), &ref_task, ptrace_state);
     }
 
     // Hold a lock on the task's thread slot until we have a chance to initialize it.

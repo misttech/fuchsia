@@ -20,7 +20,7 @@ use starnix_registers::HeapRegs;
 use starnix_sync::{LockBefore, Locked, MmDumpable, ThreadGroupLimits, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::SyscallDecl;
-use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard, WeakRef};
+use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard, TempRef};
 use starnix_uapi::auth::PTRACE_MODE_ATTACH_REALCREDS;
 use starnix_uapi::elf::ElfNoteType;
 use starnix_uapi::errors::Errno;
@@ -1068,37 +1068,33 @@ where
 /// Makes the given thread group trace the given task.
 fn do_attach(
     thread_group: &ThreadGroup,
-    task: WeakRef<Task>,
+    task: &TempRef<'_, Task>,
     attach_type: PtraceAttachType,
     options: PtraceOptions,
 ) -> Result<(), Errno> {
-    if let Some(task_ref) = task.upgrade() {
-        thread_group.ptracees.lock().insert(task_ref.get_tid(), (&task_ref).into());
-        {
-            let process_state = &mut task_ref.thread_group().write();
-            let mut state = task_ref.write();
-            state.set_ptrace(Some(PtraceState::new(
-                thread_group.leader,
-                thread_group.weak_self.clone(),
-                attach_type,
-                options,
-            )))?;
-            // If the tracee is already stopped, make sure that the tracer can
-            // identify that right away.
-            if process_state.is_waitable()
-                && process_state.base.load_stopped() == StopState::GroupStopped
-                && task_ref.load_stopped() == StopState::GroupStopped
-            {
-                if let Some(ptrace) = &mut state.ptrace {
-                    ptrace.last_signal_waitable = true;
-                }
-            }
+    thread_group.ptracees.lock().insert(task.get_tid(), task.into());
+
+    let process_state = &mut task.thread_group().write();
+    let mut state = task.write();
+    state.set_ptrace(Some(PtraceState::new(
+        thread_group.leader,
+        thread_group.weak_self.clone(),
+        attach_type,
+        options,
+    )))?;
+
+    // If the tracee is already stopped, make sure that the tracer can
+    // identify that right away.
+    if process_state.is_waitable()
+        && process_state.base.load_stopped() == StopState::GroupStopped
+        && task.load_stopped() == StopState::GroupStopped
+    {
+        if let Some(ptrace) = &mut state.ptrace {
+            ptrace.last_signal_waitable = true;
         }
-        return Ok(());
     }
-    // The tracee is either the current thread, or there is a live ref to it outside
-    // this function.
-    unreachable!("Tracee thread not found");
+
+    Ok(())
 }
 
 /// Uses the given core ptrace state (including tracer, attach type, etc) to
@@ -1106,7 +1102,7 @@ fn do_attach(
 /// tracee_task.  Typical for when inheriting ptrace state from another task.
 pub fn ptrace_attach_from_state<L>(
     locked: &mut Locked<L>,
-    tracee_task: &OwnedRef<Task>,
+    tracee_task: &TempRef<'_, Task>,
     ptrace_state: PtraceCoreState,
 ) -> Result<(), Errno>
 where
@@ -1116,12 +1112,7 @@ where
         let weak_tg =
             tracee_task.thread_group().kernel.pids.read().get_thread_group(ptrace_state.pid);
         let tracer_tg = weak_tg.ok_or_else(|| errno!(ESRCH))?;
-        do_attach(
-            &tracer_tg,
-            WeakRef::from(tracee_task),
-            ptrace_state.attach_type,
-            ptrace_state.options,
-        )?;
+        do_attach(&tracer_tg, tracee_task, ptrace_state.attach_type, ptrace_state.options)?;
     }
     let mut state = tracee_task.write();
     if let Some(ptrace) = &mut state.ptrace {
@@ -1159,7 +1150,7 @@ pub fn ptrace_traceme(current_task: &mut CurrentTask) -> Result<SyscallResult, E
         }
 
         let task_ref = OwnedRef::temp(&current_task.task);
-        do_attach(&parent, (&task_ref).into(), PtraceAttachType::Attach, PtraceOptions::empty())?;
+        do_attach(&parent, &task_ref, PtraceAttachType::Attach, PtraceOptions::empty())?;
         Ok(starnix_syscalls::SUCCESS)
     } else {
         error!(EPERM)
@@ -1184,7 +1175,7 @@ where
     }
 
     current_task.check_ptrace_access_mode(locked, PTRACE_MODE_ATTACH_REALCREDS, &tracee)?;
-    do_attach(current_task.thread_group(), weak_task.clone(), attach_type, PtraceOptions::empty())?;
+    do_attach(current_task.thread_group(), &tracee, attach_type, PtraceOptions::empty())?;
     if attach_type == PtraceAttachType::Attach {
         send_standard_signal(
             locked.cast_locked::<MmDumpable>(),
