@@ -94,9 +94,8 @@ from honeydew.transports.ffx import ffx
 from honeydew.transports.ffx.config import FfxConfigData
 from honeydew.transports.fuchsia_controller import errors as fc_errors
 from honeydew.transports.fuchsia_controller import (
-    fuchsia_controller as fuchsia_controller_transport_interface,
+    fuchsia_controller as fc_transport,
 )
-from honeydew.transports.fuchsia_controller import fuchsia_controller_impl
 from honeydew.transports.serial import serial as serial_transport_interface
 from honeydew.transports.serial import serial_using_unix_socket
 from honeydew.transports.sl4f import sl4f as sl4f_transport_interface
@@ -388,7 +387,7 @@ class FuchsiaDevice(
     @properties.Transport
     def fuchsia_controller(
         self,
-    ) -> fuchsia_controller_transport_interface.FuchsiaController:
+    ) -> fc_transport.FuchsiaController:
         """Returns the Fuchsia-Controller transport object.
 
         Returns:
@@ -398,8 +397,8 @@ class FuchsiaDevice(
             FuchsiaControllerError: Failed to instantiate.
         """
         fuchsia_controller_obj: (
-            fuchsia_controller_transport_interface.FuchsiaController
-        ) = fuchsia_controller_impl.FuchsiaControllerImpl(
+            fc_transport.FuchsiaController
+        ) = fc_transport.FuchsiaController(
             target_name=self.device_name,
             ffx_config_data=self._ffx_config_data,
             target_ip_port=self._device_info.ip_port,

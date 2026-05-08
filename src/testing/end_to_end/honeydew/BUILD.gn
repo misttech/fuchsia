@@ -142,7 +142,6 @@ python_library("honeydew_no_testonly") {
     "transports/fuchsia_controller/__init__.py",
     "transports/fuchsia_controller/errors.py",
     "transports/fuchsia_controller/fuchsia_controller.py",
-    "transports/fuchsia_controller/fuchsia_controller_impl.py",
     "transports/serial/__init__.py",
     "transports/serial/errors.py",
     "transports/serial/serial.py",

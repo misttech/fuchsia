@@ -16,7 +16,7 @@ from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import ffx
 from honeydew.transports.fuchsia_controller import errors as fc_errors
 from honeydew.transports.fuchsia_controller import (
-    fuchsia_controller_impl as fuchsia_controller_transport,
+    fuchsia_controller as fuchsia_controller_transport,
 )
 from honeydew.transports.sl4f import sl4f as sl4f_transport
 from honeydew.typing import custom_types
@@ -56,7 +56,7 @@ class InitTests(unittest.TestCase):
     )
     @mock.patch.object(ffx.FFX, "check_connection", autospec=True)
     @mock.patch.object(
-        fuchsia_controller_transport.FuchsiaControllerImpl,
+        fuchsia_controller_transport.FuchsiaController,
         "check_connection",
         autospec=True,
     )
@@ -94,7 +94,7 @@ class InitTests(unittest.TestCase):
 
     @mock.patch.object(ffx.FFX, "check_connection", autospec=True)
     @mock.patch.object(
-        fuchsia_controller_transport.FuchsiaControllerImpl,
+        fuchsia_controller_transport.FuchsiaController,
         "check_connection",
         autospec=True,
     )

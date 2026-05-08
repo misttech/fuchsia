@@ -53,7 +53,9 @@ from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
 from honeydew.transports.ffx import ffx
 from honeydew.transports.fuchsia_controller import errors as fc_errors
-from honeydew.transports.fuchsia_controller import fuchsia_controller_impl
+from honeydew.transports.fuchsia_controller import (
+    fuchsia_controller as fc_transport,
+)
 from honeydew.transports.serial import serial as serial_interface
 from honeydew.transports.serial import serial_using_unix_socket
 from honeydew.transports.sl4f import sl4f_impl
@@ -256,7 +258,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 autospec=True,
             ),
             mock.patch.object(
-                fuchsia_controller_impl.FuchsiaControllerImpl,
+                fc_transport.FuchsiaController,
                 "create_context",
                 autospec=True,
             ) as mock_fc_create_context,
@@ -266,7 +268,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 autospec=True,
             ) as mock_ffx_check_connection,
             mock.patch.object(
-                fuchsia_controller_impl.FuchsiaControllerImpl,
+                fc_transport.FuchsiaController,
                 "check_connection",
                 autospec=True,
             ) as mock_fc_check_connection,
@@ -318,7 +320,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 autospec=True,
             ),
             mock.patch.object(
-                fuchsia_controller_impl.FuchsiaControllerImpl,
+                fc_transport.FuchsiaController,
                 "create_context",
                 autospec=True,
             ) as mock_fc_create_context,
@@ -328,7 +330,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 autospec=True,
             ) as mock_ffx_check_connection,
             mock.patch.object(
-                fuchsia_controller_impl.FuchsiaControllerImpl,
+                fc_transport.FuchsiaController,
                 "check_connection",
                 autospec=True,
             ) as mock_fc_check_connection,
@@ -418,12 +420,12 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 autospec=True,
             ) as mock_ffx_check_connection,
             mock.patch.object(
-                fuchsia_controller_impl.FuchsiaControllerImpl,
+                fc_transport.FuchsiaController,
                 "check_connection",
                 autospec=True,
             ),
             mock.patch.object(
-                fuchsia_controller_impl.FuchsiaControllerImpl,
+                fc_transport.FuchsiaController,
                 "create_context",
                 autospec=True,
             ),
@@ -462,7 +464,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         transport."""
         self.assertIsInstance(
             self.fd_fc_obj.fuchsia_controller,
-            fuchsia_controller_impl.FuchsiaControllerImpl,
+            fc_transport.FuchsiaController,
         )
 
     def test_serial_transport(self) -> None:
@@ -922,7 +924,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "check_connection",
         autospec=True,
     )
@@ -948,7 +950,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "check_connection",
         autospec=True,
     )
@@ -976,7 +978,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "check_connection",
         autospec=True,
     )
@@ -1237,7 +1239,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "create_context",
         autospec=True,
     )
@@ -1281,7 +1283,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "create_context",
         autospec=True,
     )
@@ -1403,7 +1405,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         return_value="1",
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "before_usb_disconnect",
         autospec=True,
     )
@@ -1439,7 +1441,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         side_effect=["1", "1"],
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "after_usb_reconnect",
         autospec=True,
     )
@@ -1476,7 +1478,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         return_value="2",
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "after_usb_reconnect",
         autospec=True,
     )
@@ -1684,7 +1686,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         ),
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -1709,7 +1711,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         ),
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -1737,7 +1739,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         return_value=f_hwinfo.DeviceGetInfoResponse(info=_MOCK_DEVICE_INFO),
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -1763,7 +1765,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         return_value=f_hwinfo.DeviceGetInfoResponse(info=_MOCK_DEVICE_INFO),
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -1791,7 +1793,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         return_value=f_hwinfo.ProductGetInfoResponse(info=_MOCK_PRODUCT_INFO),
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -1817,7 +1819,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         return_value=f_hwinfo.ProductGetInfoResponse(info=_MOCK_PRODUCT_INFO),
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -1914,7 +1916,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         new_callable=mock.AsyncMock,
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -1936,7 +1938,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         new_callable=mock.AsyncMock,
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -1964,7 +1966,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         new_callable=mock.AsyncMock,
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -2010,7 +2012,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         ],
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -2020,7 +2022,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "create_context",
         autospec=True,
     )
@@ -2046,7 +2048,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         side_effect=FcTransportStatus(FcTransportStatus.FC_ERR_INVALID_ARGS),
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -2056,7 +2058,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "create_context",
         autospec=True,
     )
@@ -2089,7 +2091,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         side_effect=ZxStatus(ZxStatus.ZX_ERR_INVALID_ARGS),
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -2099,7 +2101,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "create_context",
         autospec=True,
     )
@@ -2131,7 +2133,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         return_value=_file_attr_resp(ZxStatus(ZxStatus.ZX_ERR_INVALID_ARGS), 0),
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -2141,7 +2143,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "create_context",
         autospec=True,
     )
@@ -2179,7 +2181,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         side_effect=ZxStatus(ZxStatus.ZX_ERR_INVALID_ARGS),
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -2189,7 +2191,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "create_context",
         autospec=True,
     )
@@ -2232,7 +2234,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         ],
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "connect_device_proxy",
         autospec=True,
     )
@@ -2242,7 +2244,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         autospec=True,
     )
     @mock.patch.object(
-        fuchsia_controller_impl.FuchsiaControllerImpl,
+        fc_transport.FuchsiaController,
         "create_context",
         autospec=True,
     )

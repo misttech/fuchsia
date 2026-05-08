@@ -13,7 +13,9 @@ import fuchsia_controller_py as fuchsia_controller
 from honeydew import affordances_capable
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.fuchsia_controller import errors as fc_errors
-from honeydew.transports.fuchsia_controller import fuchsia_controller_impl
+from honeydew.transports.fuchsia_controller import (
+    fuchsia_controller as fc_transport,
+)
 from honeydew.typing import custom_types
 
 _TARGET_NAME: str = "fuchsia-emulator"
@@ -61,7 +63,7 @@ class FuchsiaControllerTests(unittest.TestCase):
             autospec=True,
         ) as mock_target_wait:
             self.fuchsia_controller_obj_wo_device_ip = (
-                fuchsia_controller_impl.FuchsiaControllerImpl(
+                fc_transport.FuchsiaController(
                     target_name=_INPUT_ARGS["target_name"],
                     ffx_config_data=_MOCK_ARGS["ffx_config_data"],
                 )
@@ -82,7 +84,7 @@ class FuchsiaControllerTests(unittest.TestCase):
             )
 
             self.fuchsia_controller_obj_with_device_ip = (
-                fuchsia_controller_impl.FuchsiaControllerImpl(
+                fc_transport.FuchsiaController(
                     target_name=_INPUT_ARGS["target_name"],
                     target_ip_port=_INPUT_ARGS["target_ip_port"],
                     ffx_config_data=_MOCK_ARGS["ffx_config_data"],
