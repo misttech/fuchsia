@@ -46,7 +46,6 @@ const BLOB_DIR_FLAGS: fio::Flags = fio::PERM_READABLE.union(fio::PERM_EXECUTABLE
 /// - fuchsia-boot:///path/within/bootfs#meta/component.cm
 #[derive(Clone, Debug)]
 pub struct FuchsiaBootResolver {
-    boot_proxy: fio::DirectoryProxy,
     boot_package_resolver: Option<Arc<FuchsiaBootPackageResolver>>,
 }
 
@@ -79,30 +78,7 @@ impl FuchsiaBootResolver {
     async fn new_from_directory(proxy: fio::DirectoryProxy) -> Result<Self, Error> {
         let boot_package_resolver = FuchsiaBootPackageResolver::try_instantiate(&proxy).await?;
 
-        Ok(Self { boot_proxy: proxy, boot_package_resolver })
-    }
-
-    async fn resolve_unpackaged_component(
-        &self,
-        url: AbsoluteComponentUrl,
-    ) -> Result<fresolution::Component, fresolution::ResolverError> {
-        // When a component is unpacked, the root of its namespace is the root
-        // of the /boot directory.
-        let namespace_root = ".";
-
-        // Set up the fuchsia-boot path as the component's "package" namespace.
-        let path_proxy = fuchsia_fs::directory::open_directory_async(
-            &self.boot_proxy,
-            namespace_root,
-            BLOB_DIR_FLAGS,
-        )
-        .map_err(|_| fresolution::ResolverError::Internal)?;
-
-        // Unpackaged components resolved from the zbi are assigned the platform abi revision
-        let abi_revision = version_history_data::HISTORY.get_abi_revision_for_platform_components();
-
-        self.construct_component(path_proxy, &ComponentUrl::Absolute(url), Some(abi_revision), None)
-            .await
+        Ok(Self { boot_package_resolver })
     }
 
     async fn resolve_packaged_absolute_component(
@@ -117,17 +93,9 @@ impl FuchsiaBootResolver {
                     .await
                     .map_err(package_to_component_error)?;
 
-                // TODO(https://fxbug.dev/42179754): when all bootfs components are packaged,
-                // abi_revision setting can be moved into `construct_component()`.
-                let abi_revision = fidl_fuchsia_component_abi_ext::read_abi_revision_optional(
-                    &proxy,
-                    AbiRevision::PATH,
-                )
-                .await?;
                 self.construct_component(
                     proxy,
                     &ComponentUrl::Absolute(url.clone()),
-                    abi_revision,
                     Some(fresolution::Context { bytes: context.bytes }),
                 )
                 .await
@@ -158,17 +126,9 @@ impl FuchsiaBootResolver {
                     .await
                     .map_err(package_to_component_error)?;
 
-                // TODO(https://fxbug.dev/42179754): when all bootfs components are packaged,
-                // abi_revision setting can be moved into `construct_component()`.
-                let abi_revision = fidl_fuchsia_component_abi_ext::read_abi_revision_optional(
-                    &proxy,
-                    AbiRevision::PATH,
-                )
-                .await?;
                 self.construct_component(
                     proxy,
                     &ComponentUrl::Relative(url.clone()),
-                    abi_revision,
                     Some(fresolution::Context { bytes: context.bytes }),
                 )
                 .await
@@ -186,10 +146,13 @@ impl FuchsiaBootResolver {
         &self,
         proxy: fio::DirectoryProxy,
         url: &ComponentUrl,
-        abi_revision: Option<AbiRevision>,
         resolution_context: Option<fresolution::Context>,
     ) -> Result<fresolution::Component, fresolution::ResolverError> {
         let manifest = url.resource();
+
+        let abi_revision =
+            fidl_fuchsia_component_abi_ext::read_abi_revision_optional(&proxy, AbiRevision::PATH)
+                .await?;
 
         // Read the component manifest (.cm file) from the package-root.
         let data = mem_util::open_file_data(&proxy, &manifest)
@@ -253,10 +216,7 @@ impl FuchsiaBootResolver {
         &self,
         url: AbsoluteComponentUrl,
     ) -> Result<fresolution::Component, fresolution::ResolverError> {
-        match url.path() {
-            None => self.resolve_unpackaged_component(url).await,
-            Some(_) => self.resolve_packaged_absolute_component(&url).await,
-        }
+        self.resolve_packaged_absolute_component(&url).await
     }
 
     async fn resolve_url(
@@ -670,15 +630,15 @@ mod tests {
     use fidl_fuchsia_component_decl as fdecl;
     use fidl_fuchsia_data as fdata;
     use fuchsia_async::Task;
-    use fuchsia_fs::directory::open_in_namespace;
     use routing::bedrock::structured_dict::ComponentInput;
     use std::io::Read as _;
     use std::sync::Weak;
+    use vfs::ToObjectRequest;
     use vfs::directory::entry_container::Directory;
+    use vfs::directory::helper::DirectlyMutable;
     use vfs::execution_scope::ExecutionScope;
     use vfs::file::vmo::read_only;
     use vfs::path::Path as VfsPath;
-    use vfs::{ToObjectRequest, pseudo_directory};
 
     fn serve_vfs_dir(root: Arc<impl Directory>) -> (Task<()>, fio::DirectoryProxy) {
         let fs_scope = ExecutionScope::new();
@@ -692,16 +652,55 @@ mod tests {
 
     #[fuchsia::test]
     async fn hello_world_test() -> Result<(), Error> {
-        let bootfs = open_in_namespace("/pkg", fio::PERM_READABLE | fio::PERM_EXECUTABLE).unwrap();
+        let manifest_bytes = std::fs::read("/pkg/meta/hello-world-rust.cm").expect("read cm");
+        let bin_bytes = std::fs::read("/pkg/bin/hello_world_rust").expect("read bin");
+
+        let package = fuchsia_pkg_testing::PackageBuilder::new_with_abi_revision(
+            "hello-world-rust",
+            0x9F57AD4916246E87.into(),
+        )
+        .add_resource_at("meta/hello-world-rust.cm", manifest_bytes.as_slice())
+        .add_resource_at("bin/hello_world_rust", bin_bytes.as_slice())
+        .build()
+        .await
+        .unwrap();
+
+        let index = PathHashMapping::<Bootfs>::from([(
+            "hello-world-rust/0".parse().unwrap(),
+            *package.hash(),
+        )]);
+        let mut index_bytes = vec![];
+        index.serialize(&mut index_bytes).unwrap();
+
+        let mut meta_far_contents = vec![];
+        package.meta_far().unwrap().read_to_end(&mut meta_far_contents).unwrap();
+
+        let blob_dir = vfs::pseudo_directory! {
+            &package.hash().to_string() => vfs::file::vmo::read_only(meta_far_contents),
+        };
+
+        let (_, blobs) = package.contents();
+        for (hash, bytes) in blobs {
+            blob_dir.add_entry(hash.to_string(), vfs::file::vmo::read_only(bytes)).unwrap();
+        }
+
+        let root = vfs::pseudo_directory! {
+            "data" => vfs::pseudo_directory! {
+                "bootfs_packages" => vfs::file::vmo::read_only(index_bytes),
+            },
+            "blob" => blob_dir
+        };
+
+        let (_task, bootfs) = serve_vfs_dir(root);
         let resolver = FuchsiaBootResolver::new_from_directory(bootfs).await.unwrap();
 
-        let url = "fuchsia-boot:///#meta/hello-world-rust.cm".parse().unwrap();
+        let url = "fuchsia-boot:///hello-world-rust#meta/hello-world-rust.cm".parse().unwrap();
         let component = resolver.resolve(&ComponentAddress::from_absolute_url(&url)?).await?;
 
         // Check that both the returned component manifest and the component manifest in
         // the returned package dir match the expected value. This also tests that
         // the resolver returned the right package dir.
-        let ResolvedComponent { decl, package, abi_revision, .. } = component;
+        let ResolvedComponent { decl, package: resolved_package, abi_revision, .. } = component;
         version_history_data::HISTORY
             .check_abi_revision_for_runtime(
                 abi_revision.expect("boot component should present ABI revision"),
@@ -735,8 +734,11 @@ mod tests {
         // sure that we were able to resolve.
         assert_eq!(decl.program, expected_program);
 
-        let ResolvedPackage { url: package_url, directory: package_dir, .. } = package.unwrap();
-        assert_eq!(package_url, "fuchsia-boot://");
+        let ResolvedPackage { url: package_url, directory: package_dir, .. } =
+            resolved_package.unwrap();
+
+        // Ensure the returned package URL matches the new packaged format
+        assert_eq!(package_url, "fuchsia-boot:///hello-world-rust");
 
         let dir_proxy = package_dir.into_proxy();
         let path = "meta/hello-world-rust.cm";
@@ -751,14 +753,9 @@ mod tests {
 
         assert_eq!(decl.program, expected_program);
 
-        // Try to load an executable file, like a binary, reusing the library_loader helper that
-        // opens with OPEN_RIGHT_EXECUTABLE and gets a VMO with VmoFlags::EXECUTE.
-        library_loader::load_vmo(&dir_proxy, "bin/hello_world_rust")
-            .await
-            .expect("failed to open executable file");
-
-        let url = "fuchsia-boot:///contains/a/package#meta/hello-world-rust.cm".parse().unwrap();
-        let err = resolver.resolve(&ComponentAddress::from_absolute_url(&url)?).await.unwrap_err();
+        let bad_url = "fuchsia-boot:///missing-package#meta/hello-world-rust.cm".parse().unwrap();
+        let err =
+            resolver.resolve(&ComponentAddress::from_absolute_url(&bad_url)?).await.unwrap_err();
         assert_matches!(err, ResolverError::PackageNotFound { .. });
         Ok(())
     }
@@ -795,16 +792,44 @@ mod tests {
         };
         let manifest_encoded = persist(&manifest).unwrap();
         let values_data_encoded = persist(&values_data).unwrap();
-        let root = pseudo_directory! {
-            "meta" => pseudo_directory! {
-                "has_config.cm" => read_only(manifest_encoded),
-                "has_config.cvf" => read_only(values_data_encoded),
-            }
+
+        let package = fuchsia_pkg_testing::PackageBuilder::new("has_config_pkg")
+            .add_resource_at("meta/has_config.cm", manifest_encoded.as_slice())
+            .add_resource_at("meta/has_config.cvf", values_data_encoded.as_slice())
+            .build()
+            .await
+            .unwrap();
+
+        let index = PathHashMapping::<Bootfs>::from([(
+            "has_config_pkg/0".parse().unwrap(),
+            *package.hash(),
+        )]);
+        let mut index_bytes = vec![];
+        index.serialize(&mut index_bytes).unwrap();
+
+        let mut meta_far_contents = vec![];
+        package.meta_far().unwrap().read_to_end(&mut meta_far_contents).unwrap();
+
+        let blob_dir = vfs::pseudo_directory! {
+            &package.hash().to_string() => read_only(meta_far_contents),
         };
+
+        let (_, blobs) = package.contents();
+        for (hash, bytes) in blobs {
+            blob_dir.add_entry(hash.to_string(), read_only(bytes)).unwrap();
+        }
+
+        let root = vfs::pseudo_directory! {
+            "data" => vfs::pseudo_directory! {
+                "bootfs_packages" => read_only(index_bytes),
+            },
+            "blob" => blob_dir
+        };
+
         let (_task, bootfs) = serve_vfs_dir(root);
         let resolver = FuchsiaBootResolver::new_from_directory(bootfs).await.unwrap();
 
-        let url = "fuchsia-boot:///#meta/has_config.cm".parse().unwrap();
+        let url = "fuchsia-boot:///has_config_pkg#meta/has_config.cm".parse().unwrap();
         let component =
             resolver.resolve(&ComponentAddress::from_absolute_url(&url).unwrap()).await.unwrap();
 
@@ -847,14 +872,36 @@ mod tests {
             ),
             ..Default::default()
         };
+
         let manifest_encoded = persist(&manifest).unwrap();
-        let root = pseudo_directory! {
-            "meta" => pseudo_directory! {
-                "has_config.cm" => read_only(manifest_encoded),
+
+        let package = fuchsia_pkg_testing::PackageBuilder::new("has_config_pkg")
+            .add_resource_at("meta/has_config.cm", manifest_encoded.as_slice())
+            .build()
+            .await
+            .unwrap();
+
+        let mut meta_far_contents = vec![];
+        package.meta_far().unwrap().read_to_end(&mut meta_far_contents).unwrap();
+
+        let index = PathHashMapping::<Bootfs>::from([(
+            "has_config_pkg/0".parse().unwrap(),
+            *package.hash(),
+        )]);
+        let mut index_bytes = vec![];
+        index.serialize(&mut index_bytes).unwrap();
+
+        let bootfs = vfs::pseudo_directory! {
+            "data" => vfs::pseudo_directory! {
+                "bootfs_packages" => read_only(index_bytes),
+            },
+            "blob" => vfs::pseudo_directory! {
+                package.hash().to_string().as_str() => read_only(meta_far_contents),
             }
         };
-        let (_task, bootfs) = serve_vfs_dir(root);
-        let resolver = FuchsiaBootResolver::new_from_directory(bootfs).await.unwrap();
+
+        let (_task, bootfs_proxy) = serve_vfs_dir(bootfs);
+        let resolver = FuchsiaBootResolver::new_from_directory(bootfs_proxy).await.unwrap();
 
         let root = ComponentInstance::new_root(
             ComponentInput::default(),
@@ -864,11 +911,13 @@ mod tests {
         )
         .await;
 
-        let url = "fuchsia-boot:///#meta/has_config.cm".parse().unwrap();
+        let url = "fuchsia-boot:///has_config_pkg#meta/has_config.cm".parse().unwrap();
+
         let err = resolver
             .resolve(&ComponentAddress::from_url(&url, &root).await.unwrap())
             .await
             .unwrap_err();
+
         assert_matches!(err, ResolverError::ConfigValuesIo { .. });
     }
 
@@ -883,23 +932,52 @@ mod tests {
             ..Default::default()
         })
         .unwrap();
-        let root = pseudo_directory! {
-            "meta" => pseudo_directory! {
-                // Provide a cm that will fail due to a missing runner.
-                "invalid.cm" => read_only(manifest_encoded),
-            },
+
+        let package = fuchsia_pkg_testing::PackageBuilder::new("invalid-pkg")
+            .add_resource_at("meta/invalid.cm", manifest_encoded.as_slice())
+            .build()
+            .await
+            .unwrap();
+
+        let index =
+            PathHashMapping::<Bootfs>::from([("invalid-pkg/0".parse().unwrap(), *package.hash())]);
+        let mut index_bytes = vec![];
+        index.serialize(&mut index_bytes).unwrap();
+
+        let mut meta_far_contents = vec![];
+        package.meta_far().unwrap().read_to_end(&mut meta_far_contents).unwrap();
+
+        let blob_dir = vfs::pseudo_directory! {
+            &package.hash().to_string() => read_only(meta_far_contents),
         };
+
+        let (_, blobs) = package.contents();
+        for (hash, bytes) in blobs {
+            blob_dir.add_entry(hash.to_string(), read_only(bytes)).unwrap();
+        }
+
+        let root = vfs::pseudo_directory! {
+            "data" => vfs::pseudo_directory! {
+                "bootfs_packages" => read_only(index_bytes),
+            },
+            "blob" => blob_dir,
+        };
+
         let (_task, bootfs) = serve_vfs_dir(root);
         let resolver = FuchsiaBootResolver::new_from_directory(bootfs).await.unwrap();
+
         let root = ComponentInstance::new_root(
             ComponentInput::default(),
             Arc::new(ModelContext::new_for_test()),
             Weak::new(),
-            "fuchsia-boot:///#meta/root.cm".parse().unwrap(),
+            "fuchsia-boot:///root-pkg#meta/root.cm".parse().unwrap(),
         )
         .await;
-        let url = "fuchsia-boot:///#meta/invalid.cm".parse().unwrap();
+
+        let url = "fuchsia-boot:///invalid-pkg#meta/invalid.cm".parse().unwrap();
+
         let res = resolver.resolve(&ComponentAddress::from_url(&url, &root).await.unwrap()).await;
+
         assert_matches!(res, Err(ResolverError::ManifestInvalid { .. }));
     }
 
