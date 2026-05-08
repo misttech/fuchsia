@@ -165,8 +165,8 @@ impl<T: ?Sized, A: Allocator> Box<T, A> {
     }
 
     /// Returns the raw pointer.
-    pub fn as_ptr(&self) -> *mut T {
-        self.ptr.as_ptr()
+    pub fn as_ptr(this: &Self) -> *mut T {
+        this.ptr.as_ptr()
     }
 
     /// Consumes the `Box`, returning a mutable reference to `T`.
@@ -178,21 +178,12 @@ impl<T: ?Sized, A: Allocator> Box<T, A> {
     /// The allocator `A` is also leaked. This is intentional and matches the
     /// behavior of `std::boxed::Box::leak`, ensuring that a stateful allocator
     /// remains valid as long as the leaked reference.
-    pub fn leak<'a>(self) -> &'a mut T
-    where
-        A: 'a,
-    {
-        let (ptr, allocator) = self.into_raw_with_allocator();
-        core::mem::forget(allocator);
-        // SAFETY: `ptr` is valid for `'a` because we leaked the memory and the allocator.
-        unsafe { &mut *ptr }
-    }
 
     /// Consumes the `Box`, returning a raw pointer and the allocator.
     ///
     /// The memory will be leaked, and never deallocated unless reconstructed.
-    pub fn into_raw_with_allocator(self) -> (*mut T, A) {
-        let me = core::mem::ManuallyDrop::new(self);
+    pub fn into_raw_with_allocator(this: Self) -> (*mut T, A) {
+        let me = core::mem::ManuallyDrop::new(this);
         let ptr = me.ptr.as_ptr();
         // SAFETY: We are moving the allocator out of `me`, and `me` is ManuallyDrop
         // so its Drop implementation (which would deallocate) will not run.
@@ -229,8 +220,9 @@ impl<T: ?Sized> Box<T, DefaultAllocator> {
     /// Consumes the `Box`, returning a raw pointer.
     ///
     /// The memory will be leaked, and never deallocated unless reconstructed.
-    pub fn into_raw(self) -> *mut T {
-        self.leak()
+    pub fn into_raw(this: Self) -> *mut T {
+        let (ptr, _) = Box::into_raw_with_allocator(this);
+        ptr
     }
 }
 
@@ -290,7 +282,7 @@ impl<T, A: Allocator> Box<[MaybeUninit<T>], A> {
     ///
     /// The caller must guarantee that the values are initialized.
     pub unsafe fn assume_init(self) -> Box<[T], A> {
-        let (ptr, allocator) = self.into_raw_with_allocator();
+        let (ptr, allocator) = Box::into_raw_with_allocator(self);
         let ptr = ptr as *mut [core::mem::MaybeUninit<T>] as *mut [T];
         // SAFETY: The caller must guarantee that the values are initialized.
         unsafe { Box::from_raw_in(ptr, allocator) }
@@ -298,9 +290,9 @@ impl<T, A: Allocator> Box<[MaybeUninit<T>], A> {
 
     /// Tries to grow the slice to a new length.
     /// Returns Err if allocation fails, and the box is unchanged.
-    pub fn try_grow(&mut self, new_len: usize) -> Result<(), AllocError> {
-        // SAFETY: `self.ptr` was allocated by this allocator.
-        self.ptr = unsafe { grow_slice::<T, A>(&self.allocator, self.ptr, new_len)? };
+    pub fn try_grow(this: &mut Self, new_len: usize) -> Result<(), AllocError> {
+        // SAFETY: `this.ptr` was allocated by this allocator.
+        this.ptr = unsafe { grow_slice::<T, A>(&this.allocator, this.ptr, new_len)? };
         Ok(())
     }
 
@@ -313,9 +305,9 @@ impl<T, A: Allocator> Box<[MaybeUninit<T>], A> {
     /// The caller must guarantee that any elements above `new_len` are either
     /// uninitialized or have already been dropped. This method discards them
     /// without running their destructors.
-    pub unsafe fn try_shrink(&mut self, new_len: usize) -> Result<(), AllocError> {
-        // SAFETY: `self.ptr` was allocated by this allocator.
-        self.ptr = unsafe { shrink_slice::<T, A>(&self.allocator, self.ptr, new_len)? };
+    pub unsafe fn try_shrink(this: &mut Self, new_len: usize) -> Result<(), AllocError> {
+        // SAFETY: `this.ptr` was allocated by this allocator.
+        this.ptr = unsafe { shrink_slice::<T, A>(&this.allocator, this.ptr, new_len)? };
         Ok(())
     }
 }
@@ -383,7 +375,7 @@ impl<T, A: Allocator> Box<MaybeUninit<T>, A> {
     ///
     /// The caller must guarantee that the value is initialized.
     pub unsafe fn assume_init(self) -> Box<T, A> {
-        let (ptr, allocator) = self.into_raw_with_allocator();
+        let (ptr, allocator) = Box::into_raw_with_allocator(self);
         // SAFETY: The caller must guarantee that the value is initialized.
         unsafe { Box::from_raw_in(ptr as *mut T, allocator) }
     }
@@ -439,7 +431,7 @@ mod tests {
     fn test_box_empty_slice() {
         let b = Box::<[u32]>::empty_slice();
         assert_eq!(b.len(), 0);
-        assert!(b.as_ptr() as *mut u8 == NonNull::<u32>::dangling().as_ptr() as *mut u8);
+        assert!(Box::as_ptr(&b) as *mut u8 == NonNull::<u32>::dangling().as_ptr() as *mut u8);
     }
 
     #[test]
@@ -465,15 +457,15 @@ mod tests {
     #[test]
     fn test_box_as_ptr() {
         let b = Box::<[u32]>::try_new_uninit_slice(10).unwrap();
-        let ptr = b.as_ptr();
+        let ptr = Box::as_ptr(&b);
         assert!(!ptr.is_null());
     }
 
     #[test]
     fn test_box_from_raw() {
         let b = Box::<[u32]>::try_new_uninit_slice(10).unwrap();
-        let reference = b.leak();
-        let fat_ptr = reference as *mut [core::mem::MaybeUninit<u32>] as *mut [u32];
+        let raw_ptr = Box::into_raw(b);
+        let fat_ptr = raw_ptr as *mut [u32];
 
         // Create a new box from the pointer
         let b2: Box<[u32]> = unsafe { Box::from_raw(fat_ptr) };
@@ -583,7 +575,7 @@ mod tests {
             b[1].as_mut_ptr().write(20);
         }
 
-        b.try_grow(5).unwrap();
+        Box::try_grow(&mut b, 5).unwrap();
         assert_eq!(b.len(), 5);
         assert_eq!(unsafe { b[0].assume_init() }, 10);
         assert_eq!(unsafe { b[1].assume_init() }, 20);
@@ -598,7 +590,7 @@ mod tests {
         }
 
         unsafe {
-            b.try_shrink(2).unwrap();
+            Box::try_shrink(&mut b, 2).unwrap();
         }
         assert_eq!(b.len(), 2);
         assert_eq!(unsafe { b[0].assume_init() }, 10);
@@ -620,19 +612,6 @@ mod tests {
     }
 
     #[test]
-    fn test_box_leak() {
-        let b = Box::try_new(42u32).unwrap();
-        let reference = Box::leak(b);
-        assert_eq!(*reference, 42);
-        *reference = 100;
-        assert_eq!(*reference, 100);
-
-        // Reconstruct the box to avoid leaking memory in tests.
-        let b = unsafe { Box::from_raw(reference as *mut u32) };
-        assert_eq!(*b, 100);
-    }
-
-    #[test]
     fn test_box_into_raw() {
         let b = Box::try_new(42u32).unwrap();
         let ptr = Box::into_raw(b);
@@ -650,7 +629,7 @@ mod tests {
     #[test]
     fn test_box_into_raw_with_allocator() {
         let b = Box::try_new(42u32).unwrap();
-        let (ptr, allocator) = b.into_raw_with_allocator();
+        let (ptr, allocator) = Box::into_raw_with_allocator(b);
         assert_eq!(unsafe { *ptr }, 42);
 
         // Reconstruct the box to avoid leaking memory in tests.
@@ -777,9 +756,9 @@ mod tests {
             let mut b = Box::<[core::mem::MaybeUninit<u32>], TrackingAllocator>::empty_slice_in(
                 alloc.clone(),
             );
-            b.try_grow(5).unwrap();
+            Box::try_grow(&mut b, 5).unwrap();
             // Now it should be in the tracking allocator.
-            let addr = b.as_ptr() as *mut u8 as usize;
+            let addr = Box::as_ptr(&b) as *mut u8 as usize;
             assert!(alloc.allocated.borrow().contains(&addr));
         } // Drops here, should call deallocate and succeed.
 
@@ -787,11 +766,11 @@ mod tests {
         {
             let mut b =
                 Box::<[u32], TrackingAllocator>::try_new_uninit_slice_in(5, alloc.clone()).unwrap();
-            let addr = b.as_ptr() as *mut u8 as usize;
+            let addr = Box::as_ptr(&b) as *mut u8 as usize;
             assert!(alloc.allocated.borrow().contains(&addr));
 
             unsafe {
-                b.try_shrink(0).unwrap();
+                Box::try_shrink(&mut b, 0).unwrap();
             }
             assert_eq!(b.len(), 0);
             // The old memory should have been deallocated by try_shrink calling deallocate_slice.

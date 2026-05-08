@@ -8,6 +8,7 @@ rustc_library("zr") {
   edition = "2024"
   sources = [
     "src/lib.rs",
+    "src/opaque.rs",
     "src/static_assert.rs",
   ]
 }

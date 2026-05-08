@@ -238,12 +238,12 @@ impl<T, A: Allocator> Vector<T, A> {
         assert!(new_capacity >= self.size);
 
         if new_capacity > self.buf.len() {
-            self.buf.try_grow(new_capacity)?;
+            Box::try_grow(&mut self.buf, new_capacity)?;
         } else if new_capacity < self.buf.len() {
             // SAFETY: We ensure in Vector that elements above `new_capacity`
             // are uninitialized or already dropped.
             unsafe {
-                self.buf.try_shrink(new_capacity)?;
+                Box::try_shrink(&mut self.buf, new_capacity)?;
             }
         }
         Ok(())

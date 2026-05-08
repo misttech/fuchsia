@@ -6,7 +6,7 @@
 
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
-use kalloc::{Allocator, DefaultAllocator};
+use kalloc::{AllocError, Allocator, Box, DefaultAllocator};
 
 /// Runtime-determined, fixed size arrays that are "inlined" (e.g., on the stack) if the size at
 /// most `N` or heap-allocated otherwise.
@@ -47,11 +47,7 @@ zr::static_assert!(core::mem::align_of::<InlineArray<u32, 4>>() == 8);
 impl<T, const N: usize, A: Allocator> InlineArray<T, N, A> {
     /// Tries to create a new `InlineArray` of the given length with a specific allocator,
     /// initializing elements with the provided closure.
-    pub fn try_new_in_with<F>(
-        count: usize,
-        allocator: A,
-        mut f: F,
-    ) -> Result<Self, kalloc::AllocError>
+    pub fn try_new_in_with<F>(count: usize, allocator: A, mut f: F) -> Result<Self, AllocError>
     where
         F: FnMut() -> T,
     {
@@ -62,12 +58,13 @@ impl<T, const N: usize, A: Allocator> InlineArray<T, N, A> {
             }
             Ok(InlineArray { count, ptr: core::ptr::null_mut(), inline_storage, allocator })
         } else {
-            let mut heap_data = kalloc::Box::try_new_uninit_slice_in(count, allocator)?;
+            let mut heap_data = Box::try_new_uninit_slice_in(count, allocator)?;
             for i in 0..count {
                 heap_data[i].write(f());
             }
             // SAFETY: We just initialized all the values.
-            let (fat_ptr, allocator) = unsafe { heap_data.assume_init() }.into_raw_with_allocator();
+            let (fat_ptr, allocator) =
+                Box::into_raw_with_allocator(unsafe { heap_data.assume_init() });
             let ptr = fat_ptr as *mut T;
             Ok(InlineArray {
                 count,
@@ -80,7 +77,7 @@ impl<T, const N: usize, A: Allocator> InlineArray<T, N, A> {
 
     /// Tries to create a new `InlineArray` of the given length with a specific allocator.
     /// Elements are initialized using `T::default()`.
-    pub fn try_new_in(count: usize, allocator: A) -> Result<Self, kalloc::AllocError>
+    pub fn try_new_in(count: usize, allocator: A) -> Result<Self, AllocError>
     where
         T: Default,
     {
@@ -128,7 +125,7 @@ impl<T, const N: usize, A: Allocator> InlineArray<T, N, A> {
 impl<T, const N: usize> InlineArray<T, N, DefaultAllocator> {
     /// Tries to create a new `InlineArray` of the given length using the default allocator.
     /// Elements are initialized using `T::default()`.
-    pub fn try_new(count: usize) -> Result<Self, kalloc::AllocError>
+    pub fn try_new(count: usize) -> Result<Self, AllocError>
     where
         T: Default,
     {
@@ -137,7 +134,7 @@ impl<T, const N: usize> InlineArray<T, N, DefaultAllocator> {
 
     /// Tries to create a new `InlineArray` of the given length using the default allocator,
     /// initializing elements with the provided closure.
-    pub fn try_new_with<F>(count: usize, f: F) -> Result<Self, kalloc::AllocError>
+    pub fn try_new_with<F>(count: usize, f: F) -> Result<Self, AllocError>
     where
         F: FnMut() -> T,
     {
@@ -169,7 +166,7 @@ impl<T, const N: usize, A: Allocator> Drop for InlineArray<T, N, A> {
             // SAFETY: In non-inline mode, ptr is guaranteed to be valid and non-null because we
             // only set it on successful allocation in try_new_in.
             unsafe {
-                let _ = kalloc::Box::from_raw_in(
+                let _ = Box::from_raw_in(
                     core::ptr::slice_from_raw_parts_mut(self.ptr, self.count),
                     self.allocator.clone(),
                 );
@@ -183,7 +180,6 @@ mod tests {
     use super::*;
     use core::cell::Cell;
     use core::ptr::NonNull;
-    use kalloc::AllocError;
 
     #[derive(Debug, PartialEq, Eq)]
     struct TestState {
@@ -211,7 +207,7 @@ mod tests {
         state: &'a TestState,
     }
 
-    impl<'a> kalloc::Allocator for TestAllocator<'a> {
+    impl<'a> Allocator for TestAllocator<'a> {
         fn allocate(&self, layout: core::alloc::Layout) -> Result<NonNull<[u8]>, AllocError> {
             let current = self.state.alloc_count.get();
             self.state.alloc_count.set(current + 1);

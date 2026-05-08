@@ -16,12 +16,17 @@ rustc_library("fbl") {
     "src/confine_array_index.rs",
     "src/inline_array.rs",
     "src/lib.rs",
+    "src/opaque_ref_counted.rs",
+    "src/recyclable.rs",
+    "src/ref_counted.rs",
+    "src/ref_ptr.rs",
     "src/ring_buffer.rs",
     "src/vector.rs",
   ]
   with_unit_tests = true
   test_deps = [ ":test_support" ]
   deps = [
+    "fbl-macros",
     "//src/lib/kalloc",
     "//src/lib/zr",
   ]
@@ -29,7 +34,12 @@ rustc_library("fbl") {
 
 source_set("test_support") {
   testonly = true
-  sources = [ "test/canary.cc" ]
+  public_configs = [ "//build/config/fuchsia:static_cpp_standard_library" ]
+  sources = [
+    "test/canary_test.cc",
+    "test/opaque_ref_counted_test.cc",
+    "test/ref_ptr_test.cc",
+  ]
   deps = [ "//zircon/system/ulib/fbl" ]
 }
 

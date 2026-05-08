@@ -4,4 +4,7 @@
 
 #![no_std]
 
+mod opaque;
 mod static_assert;
+
+pub use opaque::Opaque;
