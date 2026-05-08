@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"os"
@@ -32,6 +33,9 @@ Description:
   A test project
 `)
 	if err := os.WriteFile(testFilePath, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "LICENSE"), []byte("MIT"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -69,6 +73,9 @@ func TestReadmeCommand_Check(t *testing.T) {
 	if err := os.WriteFile(testFilePath, content, 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(tempDir, "LICENSE"), []byte("MIT"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	cmd := &ReadmeCommand{}
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -100,9 +107,71 @@ func TestReadmeCommand_Check(t *testing.T) {
 	if err := os.WriteFile(testFilePath, badSubProjectContent, 0644); err != nil {
 		t.Fatal(err)
 	}
+	os.MkdirAll(filepath.Join(tempDir, "sub"), 0755)
+	if err := os.WriteFile(filepath.Join(tempDir, "sub", "LICENSE"), []byte("MIT"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	fs.Parse([]string{"-fuchsia_dir", tempDir, "check", testFilePath})
 	status = cmd.Execute(ctx, fs)
 	if status != subcommands.ExitFailure {
 		t.Errorf("Expected ExitFailure (1) for checking file with missing Location on sub-project, got %v", status)
+	}
+	// Test missing License File existence
+	missingLicenseContent := []byte("Name: test_project\nURL: https://test\nVersion: 1.0\nSecurity Critical: no\nLicense File: NON_EXISTENT_FILE\n  License: MIT\n")
+	if err := os.WriteFile(testFilePath, missingLicenseContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+	fs.Parse([]string{"-fuchsia_dir", tempDir, "check", testFilePath})
+	status = cmd.Execute(ctx, fs)
+	if status != subcommands.ExitFailure {
+		t.Errorf("Expected ExitFailure (1) for checking file with missing license file, got %v", status)
+	}
+}
+
+func TestReadmeCommand_Stdout(t *testing.T) {
+	tempDir := t.TempDir()
+	testFilePath := filepath.Join(tempDir, "README.fuchsia")
+
+	// Messy content
+	messyContent := []byte("Name: test\nURL: https://test\nVersion: 1.0\nSecurity Critical: no\nLicense File: LICENSE\n    License: MIT\n")
+	if err := os.WriteFile(testFilePath, messyContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "LICENSE"), []byte("MIT"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &ReadmeCommand{}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fs)
+	fs.Parse([]string{"-fuchsia_dir", tempDir, "format", "-stdout", testFilePath})
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	ctx := context.Background()
+	status := cmd.Execute(ctx, fs)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	output := buf.String()
+
+	if status != 0 {
+		t.Errorf("Expected ExitSuccess (0), got %v", status)
+	}
+
+	if !strings.Contains(output, "  License: MIT") {
+		t.Errorf("Expected output to be formatted, got: %s", output)
+	}
+
+	// Verify file was NOT modified
+	currentContent, _ := os.ReadFile(testFilePath)
+	if !bytes.Equal(currentContent, messyContent) {
+		t.Error("Expected file to remain unmodified in stdout mode")
 	}
 }

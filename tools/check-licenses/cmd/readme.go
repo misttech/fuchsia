@@ -101,7 +101,7 @@ func (c *ReadmeFormatCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 	formattedText := readme.Format(readmes)
 	formattedBytes := []byte(formattedText)
 
-	errs := readme.Validate(readmes)
+	errs := readme.Validate(fuchsiaDir, absPath, readmes)
 	hasValidationErrors := len(errs) > 0
 	for _, err := range errs {
 		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
@@ -183,18 +183,10 @@ func (c *ReadmeCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 		return subcommands.ExitSuccess
 	}
 
-	formattedText := readme.Format(readmes)
-	formattedBytes := []byte(formattedText)
-
-	errs := readme.Validate(readmes)
+	errs := readme.Validate(fuchsiaDir, absPath, readmes)
 	hasValidationErrors := len(errs) > 0
 	for _, err := range errs {
 		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
-	}
-
-	if !bytes.Equal(bytes.TrimSpace(data), bytes.TrimSpace(formattedBytes)) {
-		fmt.Fprintf(os.Stderr, "❌ Error: File is not canonically formatted. Run 'fx check-licenses readme format %s' to fix it.\n", targetFile)
-		hasValidationErrors = true
 	}
 
 	if hasValidationErrors {

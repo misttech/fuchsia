@@ -6,14 +6,33 @@ package readme
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 )
 
 // Validate checks if the README.fuchsia file structures contain all required fields
-// and no unknown fields. Returns a slice of all encountered errors.
-func Validate(readmes []*Readme) []error {
+// and no unknown fields. It also verifies that referenced paths exist on disk.
+// Returns a slice of all encountered errors.
+func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme) []error {
 	var errs []error
 
+	readmeDir := filepath.Dir(readmeFilePath)
+
 	for i, r := range readmes {
+		var baseDir string
+		if i == 0 {
+			baseDir = readmeDir
+		} else {
+			if r.Location != "" {
+				baseDir = filepath.Join(fuchsiaDir, r.Location)
+				if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+					errs = append(errs, fmt.Errorf("Readme %d: 'Location' directory does not exist: %s", i+1, baseDir))
+				}
+			} else {
+				baseDir = readmeDir // Fallback
+			}
+		}
+
 		// Check 1: Unknown fields
 		if len(r.UnknownFields) > 0 {
 			errs = append(errs, fmt.Errorf("Readme %d: Found unknown/invalid fields: %+v", i+1, r.UnknownFields))
@@ -42,6 +61,26 @@ func Validate(readmes []*Readme) []error {
 				if lf.License == "" {
 					errs = append(errs, fmt.Errorf("Readme %d: License File '%s' is missing required '  License:' metadata", i+1, lf.Path))
 				}
+				filePath := filepath.Join(baseDir, lf.Path)
+				if _, err := os.Stat(filePath); os.IsNotExist(err) {
+					errs = append(errs, fmt.Errorf("Readme %d: License File does not exist: %s", i+1, filePath))
+				}
+			}
+		}
+
+		// Path Existence Checks for Source Files
+		for _, sf := range r.SourceFiles {
+			filePath := filepath.Join(baseDir, sf.Path)
+			if _, err := os.Stat(filePath); os.IsNotExist(err) {
+				errs = append(errs, fmt.Errorf("Readme %d: Source File does not exist: %s", i+1, filePath))
+			}
+		}
+
+		// Path Existence Checks for Non-License Files
+		for _, nlf := range r.NonLicenseFiles {
+			filePath := filepath.Join(baseDir, nlf.Path)
+			if _, err := os.Stat(filePath); os.IsNotExist(err) {
+				errs = append(errs, fmt.Errorf("Readme %d: Non-License File does not exist: %s", i+1, filePath))
 			}
 		}
 	}
