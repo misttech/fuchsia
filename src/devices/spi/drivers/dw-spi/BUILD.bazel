@@ -23,6 +23,7 @@ fuchsia_driver_bind_bytecode(
         "@fuchsia_sdk//bind/fuchsia.gpio",
         "@fuchsia_sdk//bind/fuchsia.platform",
         "@fuchsia_sdk//fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_bindlib",
+        "@fuchsia_sdk//fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
         "@fuchsia_sdk//fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain_bindlib",
         "@fuchsia_sdk//fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_bindlib",
     ],

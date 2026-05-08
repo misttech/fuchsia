@@ -10,6 +10,7 @@ using fuchsia.hardware.clock;
 using fuchsia.hardware.reset;
 using fuchsia.hardware.powerdomain;
 using fuchsia.gpio;
+using fuchsia.hardware.gpio;
 
 primary parent "pdev" {
   fuchsia.devicetree.FIRST_COMPATIBLE == "google,spi";
@@ -33,6 +34,17 @@ parent "power-domain" {
   fuchsia.hardware.powerdomain.Service == fuchsia.hardware.powerdomain.Service.ZirconTransport;
 }
 
-optional parent "gpio-init" {
+optional parent "gpio-cs-0" {
+  fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
+  fuchsia.gpio.FUNCTION == "fuchsia.gpio.FUNCTION.cs-0";
+}
+
+optional parent "gpio-init-0" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+  fuchsia.BIND_GPIO_CONTROLLER == 0;
+}
+
+optional parent "gpio-init-1" {
+  fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
+  fuchsia.BIND_GPIO_CONTROLLER == 1;
 }
