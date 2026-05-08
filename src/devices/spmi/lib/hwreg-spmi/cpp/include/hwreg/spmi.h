@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_SPMI_LIB_HWREG_SPMI_INCLUDE_HWREG_SPMI_H_
-#define SRC_DEVICES_SPMI_LIB_HWREG_SPMI_INCLUDE_HWREG_SPMI_H_
+#ifndef SRC_DEVICES_SPMI_LIB_HWREG_SPMI_CPP_INCLUDE_HWREG_SPMI_H_
+#define SRC_DEVICES_SPMI_LIB_HWREG_SPMI_CPP_INCLUDE_HWREG_SPMI_H_
 
 #include <endian.h>
 #include <fidl/fuchsia.hardware.spmi/cpp/wire.h>
@@ -253,4 +253,4 @@ class SpmiRegisterArray {
 
 }  // namespace hwreg
 
-#endif  // SRC_DEVICES_SPMI_LIB_HWREG_SPMI_INCLUDE_HWREG_SPMI_H_
+#endif  // SRC_DEVICES_SPMI_LIB_HWREG_SPMI_CPP_INCLUDE_HWREG_SPMI_H_

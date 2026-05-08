@@ -190,7 +190,8 @@ bazel_test_package_group("bazel_tests") {
       }
     },
     {
-      test_package_target = "//src/devices/spmi/lib/hwreg-spmi:spmi-hwreg-test"
+      test_package_target =
+          "//src/devices/spmi/lib/hwreg-spmi/cpp:spmi-hwreg-cpp-test"
       test_package_name = "spmi-hwreg-test"
       test_component_names = [ "spmi-hwreg-test-bin" ]
     },
