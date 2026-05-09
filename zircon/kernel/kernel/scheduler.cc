@@ -2556,6 +2556,7 @@ void Scheduler::UpdateActivation(Thread* thread, SchedTime now) {
     state->finish_time_ = state->start_time_ + period_ns;
     state->time_slice_ns_ = capacity_ns;
     state->time_slice_used_ns_ = SchedDuration{0};
+    state->activation_count_++;
   }
   DEBUG_ASSERT(state->remaining_time_slice_ns() > 0);
 

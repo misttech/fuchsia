@@ -576,6 +576,7 @@ class SchedulerState {
   SchedTime start_time() const { return start_time_; }
   SchedTime finish_time() const { return finish_time_; }
   SchedDuration effective_period() const { return finish_time() - start_time(); }
+  uint64_t activation_count() const { return activation_count_; }
 
   cpu_mask_t hard_affinity() const { return hard_affinity_; }
   cpu_mask_t soft_affinity() const { return soft_affinity_; }
@@ -622,6 +623,9 @@ class SchedulerState {
   // virtual finish time for fair tasks and the absolute deadline for deadline
   // tasks.
   SchedTime finish_time_{0};
+
+  // Counts how many times this thread has been activated since it was created.
+  uint64_t activation_count_{0};
 
   struct SubtreeInvariants {
     // Minimum finish time of all the descendants of this node in the run queue.
