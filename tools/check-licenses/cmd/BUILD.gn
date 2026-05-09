@@ -43,6 +43,7 @@ if (is_host) {
       "copyright.go",
       "fix.go",
       "generate.go",
+      "generate_old.go",
       "main.go",
       "policy.go",
       "project.go",
