@@ -34,6 +34,18 @@ open protocol Channel {
         message vector<uint8>:MAX;
     }) -> () error zx.Status;
 
+    /// Writes the request to the mailbox, interrupts the destination core, and
+    /// waits for the destination core to send a response.
+    ///
+    /// Returns `ZX_ERR_OUT_OF_RANGE` if `request` is larger than what the hardware can support.
+    /// Returns `ZX_ERR_NOT_SUPPORTED` if the destination core does not support correlating
+    /// requests to responses.
+    flexible SendRequest(struct {
+        request vector<uint8>:MAX;
+    }) -> (struct {
+        response vector<uint8>:MAX;
+    }) error zx.Status;
+
     /// Registers a listener for incoming messages on this channel. Multiple listeners may NOT be
     /// registered at a time. If a listener is already registered, this call will fail with
     /// `ZX_ERR_ALREADY_BOUND`.
