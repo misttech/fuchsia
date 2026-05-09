@@ -603,6 +603,7 @@ void Node::OnBind() {
     bind_wait_completer_(
         zx::ok(fdf::wire::DriverResult::WithDriverStartedNodeToken(std::move(node_token.value()))));
   }
+  node_manager_.value()->OnNodeBound(shared_from_this());
 }
 
 void Node::OnMatchError(zx_status_t status) {

@@ -45,6 +45,8 @@ source_set("component_owner") {
 
 source_set("driver_runner") {
   sources = [
+    "all_drivers_element.cc",
+    "all_drivers_element.h",
     "async_sharder.cc",
     "async_sharder.h",
     "bind/bind_manager.cc",

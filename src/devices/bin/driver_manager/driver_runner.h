@@ -29,6 +29,7 @@
 
 #include "fidl/fuchsia.power.broker/cpp/natural_types.h"
 #include "src/devices/bin/driver_loader/loader.h"
+#include "src/devices/bin/driver_manager/all_drivers_element.h"
 #include "src/devices/bin/driver_manager/bind/bind_manager.h"
 #include "src/devices/bin/driver_manager/bootup_tracker.h"
 #include "src/devices/bin/driver_manager/composite/composite_manager_bridge.h"
@@ -50,6 +51,7 @@
 // TODO(https://fxbug.dev/479569256) Refactor DriverRunner to separate out power-related code
 // with the goal of making things more maintainable and readable.
 namespace driver_manager {
+
 class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::CompositeNodeManager>,
                      public fidl::WireServer<fuchsia_driver_index::DriverNotifier>,
                      public fidl::WireServer<fuchsia_driver_crash::CrashIntrospect>,
@@ -221,6 +223,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   std::shared_ptr<Node> root_node() const { return root_node_; }
 
+  fidl::Client<fuchsia_power_broker::Topology>& power_topology() { return power_topology_; }
+
   // Only exposed for testing.
   void BootupDoneForTesting() { bootup_tracker_->BootupDoneForTesting(); }
   CompositeNodeSpecManager& composite_node_spec_manager() { return composite_node_spec_manager_; }
@@ -237,6 +241,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   }
 
   void AddLeaseControlChannel(fidl::ClientEnd<fuchsia_power_broker::LeaseControl> lease) override;
+  void ClearBootupLeases() { bootup_leases_.clear(); }
   std::optional<fuchsia_power_broker::DependencyToken> StorageElementToken() override;
 
   void CreateStoragePowerElement(fuchsia_power_broker::DependencyToken driver_token,
@@ -286,6 +291,11 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                                     fit::callback<void(zx::result<>)> callback) override;
 
   void OnBindingStateChanged() override { bootup_tracker_->NotifyBindingChanged(); }
+  void OnNodeBound(std::shared_ptr<const Node> node) override {
+    if (all_drivers_) {
+      all_drivers_->OnNodeBound(std::move(node));
+    }
+  }
 
   zx::result<> CreateDriverHostComponent(std::string moniker,
                                          fidl::ServerEnd<fuchsia_io::Directory> exposed_dir,
@@ -301,7 +311,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
       std::optional<fuchsia_power_broker::DependencyToken> cpu_token_override,
       fit::callback<void(zx::result<bool>)> cb) override;
 
-  void RegisterStorageWithSag();
+  void CreateAllDriversPowerElement();
 
   void OnBootupComplete();
 
@@ -351,7 +361,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   fidl::Client<fuchsia_power_broker::Topology> power_topology_;
 
   fidl::ClientEnd<fuchsia_power_broker::Lessor> storage_lessor_;
-  std::vector<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> leases_;
+  std::vector<fidl::ClientEnd<fuchsia_power_broker::LeaseControl>> bootup_leases_;
 
   MemoryAttributor memory_attributor_;
 
@@ -364,6 +374,9 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   std::variant<CallbackSet, PowerDependencyToken> cpu_callbacks_or_token_ = CallbackSet();
 
   bool wait_for_storage_token_from_driver_;
+
+  std::optional<fuchsia_power_broker::DependencyToken> all_drivers_token_;
+  std::optional<AllDriversElement> all_drivers_;
 };
 
 Collection ToCollection(const Node& node, fuchsia_driver_framework::DriverPackageType package_type);

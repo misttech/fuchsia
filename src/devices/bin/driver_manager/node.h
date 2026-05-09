@@ -115,6 +115,8 @@ class NodeManager {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
+  virtual void OnNodeBound(std::shared_ptr<const Node> node) {}
+
   virtual DriverHost* GetDriverHost(std::string_view driver_name_name_for_colocation) = 0;
 
   virtual zx::result<DriverHost*> CreateDriverHost(
@@ -325,6 +327,18 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
   // characters not allowed by the component framework.
   // E.g: dev.sys.topo.path
   std::string MakeComponentMoniker() const;
+
+  // Returns a duplicate of the node's power element token, if available.
+  // If the node has no power token, this will return an invalid zx::event.
+  zx::event DuplicatePowerToken() const {
+    if (!power_element_token_.is_valid()) {
+      return zx::event();
+    }
+    zx::event dupe;
+    zx_status_t dupe_result = power_element_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &dupe);
+    ZX_ASSERT_MSG(dupe_result == ZX_OK, "Element token duplication failed.");
+    return dupe;
+  }
 
   // Exposed for testing.
   Node* GetPrimaryParent() const {
@@ -649,19 +663,6 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
       fit::callback<void(zx::result<>)> cb);
 
   zx::result<zx::event> DuplicateNodeToken();
-
-  // Returns a duplicate of the node's power element token, if available.
-  //
-  // If the node has no power token, this will return an invalid zx::event.
-  zx::event DuplicatePowerToken() {
-    if (!power_element_token_.is_valid()) {
-      return zx::event();
-    }
-    zx::event dupe;
-    zx_status_t dupe_result = power_element_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &dupe);
-    ZX_ASSERT_MSG(dupe_result == ZX_OK, "Element token duplication failed.");
-    return dupe;
-  }
 
   // Return the handle ID of the power token. This should only be used for
   // examining handle identity, not for any actual operations on the Zircon
