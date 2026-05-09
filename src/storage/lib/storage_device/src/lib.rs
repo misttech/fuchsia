@@ -20,6 +20,7 @@ use futures::channel::oneshot::{Sender, channel};
 use std::future::Future;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, Range};
+use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 
 pub mod buffer;
@@ -58,8 +59,12 @@ pub trait Device: Send + Sync {
     }
 
     /// Fills |buffer| with blocks read from |offset|.
-    async fn read(&self, offset: u64, buffer: MutableBufferRef<'_>) -> Result<(), Error> {
-        self.read_with_opts(offset, buffer, ReadOptions::default()).await
+    fn read<'a>(
+        &'a self,
+        offset: u64,
+        buffer: MutableBufferRef<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'a>> {
+        self.read_with_opts(offset, buffer, ReadOptions::default())
     }
 
     /// Fills |buffer| with blocks read from |offset|.
@@ -71,8 +76,12 @@ pub trait Device: Send + Sync {
     ) -> Result<(), Error>;
 
     /// Writes the contents of |buffer| to the device at |offset|.
-    async fn write(&self, offset: u64, buffer: BufferRef<'_>) -> Result<(), Error> {
-        self.write_with_opts(offset, buffer, WriteOptions::default()).await
+    fn write<'a>(
+        &'a self,
+        offset: u64,
+        buffer: BufferRef<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'a>> {
+        self.write_with_opts(offset, buffer, WriteOptions::default())
     }
 
     /// Writes the contents of |buffer| to the device at |offset|.
