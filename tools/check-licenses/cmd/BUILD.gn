@@ -84,6 +84,7 @@ if (is_host) {
       "config_test.go",
       "copyright_test.go",
       "fix_test.go",
+      "generate_test.go",
       "policy_test.go",
       "project_test.go",
       "readme_test.go",

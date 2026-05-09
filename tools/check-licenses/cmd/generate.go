@@ -10,13 +10,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/subcommands"
@@ -27,8 +27,12 @@ import (
 	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
 	v2readme "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
+	v2boundary "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary"
 	v2classify "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify"
+	v2discover "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover"
+	v2prune "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/prune"
 	v2report "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report"
+	v2validate "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
 )
 
 type GenerateCommand struct {
@@ -325,154 +329,39 @@ func (p *GenerateCommand) executeV2Pipeline(target string) error {
 		log.Printf("Build graph resolution complete in %v (Found %d valid files)", time.Since(gnStart), len(validFiles))
 	}
 
-	// Reporter generates artifacts but skips virtual diff (verifyReadmes=false) since this is the fast path
-	reporter := v2report.NewReporter(p.fuchsiaDir, p.outDir, false, p.overwriteReadmeFiles, true, config.OutOfTreeReadmes, config.PolicyExceptions["AllProjectsMustHaveALicense"])
+	// 3. Instantiate Stages
+	discoverer := v2discover.NewCrawler(p.fuchsiaDir, config.SkipPaths, config.SkipAnywhere)
+
+	// Pass true for filesInReadmeOnly to match current behavior!
+	grouper := v2boundary.NewGrouper(p.fuchsiaDir, config.BarrierPaths, config.OutOfTreeReadmes, true)
+
+	pruner := v2prune.NewPruner(validFiles)
 
 	patternsDir := filepath.Join(p.fuchsiaDir, "tools", "check-licenses", "assets", "patterns")
-	classifier, err := v2classify.NewClassifier(0.8, []string{patternsDir}, config.TargetExtensions)
+	baseClassifier, err := v2classify.NewClassifier(0.8, []string{patternsDir}, config.TargetExtensions)
 	if err != nil {
 		return fmt.Errorf("failed to initialize classifier: %w", err)
 	}
 
-	cFilesChan := make(chan pipeline.ClassifiedFile)
-	errChan := make(chan pipeline.ComplianceError)
-
-	go func() {
-		defer close(cFilesChan)
-		defer close(errChan)
-
-		// 1. Find all physical and virtual READMEs
-		_ = filepath.WalkDir(p.fuchsiaDir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-
-			// check SkipPaths
-			base := d.Name()
-			for _, skip := range config.SkipAnywhere {
-				if base == skip {
-					if d.IsDir() {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-			}
-			relPath, _ := filepath.Rel(p.fuchsiaDir, path)
-			for _, skip := range config.SkipPaths {
-				if relPath == skip || strings.HasPrefix(relPath, skip+string(filepath.Separator)) {
-					if d.IsDir() {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-			}
-
-			if !d.IsDir() && (base == "README.fuchsia" || base == "Cargo.toml") {
-				readmes, err := v2readme.ParseFile(path)
-				if err != nil {
-					return nil
-				}
-
-				dir := filepath.Dir(path)
-				for _, r := range readmes {
-					entries := append([]v2readme.LicenseEntry{}, r.LicenseFiles...)
-					entries = append(entries, r.SourceFiles...)
-
-					for _, lf := range entries {
-						if lf.Path == "" {
-							continue
-						}
-
-						absLicensePath := filepath.Join(dir, lf.Path)
-
-						// Prune
-						if len(validFiles) > 0 && !validFiles[absLicensePath] {
-							continue
-						}
-
-						// Use the classifier to securely extract the license block without leaking source code
-						isLicenseFile := v2classify.IsLicenseFilename(absLicensePath)
-						classified, err := classifier.ClassifyFile(absLicensePath, filepath.Join(dir, r.Location), isLicenseFile, lf.LicenseType)
-						if err != nil {
-							continue
-						}
-
-						// If the classifier didn't find a match, but the user explicitly stated
-						// the license in the README, use the whole extracted text.
-						if len(classified.Matches) == 0 && lf.License != "" {
-							spdxIDs := strings.Split(lf.License, ",")
-							for _, id := range spdxIDs {
-								id = strings.TrimSpace(id)
-								if id != "" {
-									classified.Matches = append(classified.Matches, pipeline.LicenseMatch{
-										SPDXID: id,
-										Text:   classified.AnalyzedText,
-									})
-								}
-							}
-						}
-
-						cFilesChan <- *classified
-					}
-				}
-			}
-			return nil
-		})
-
-		// Also handle Virtual READMEs
-		for logPath, physPath := range config.OutOfTreeReadmes {
-			readmes, err := v2readme.ParseFile(physPath)
-			if err != nil {
-				continue
-			}
-			absLogPath := filepath.Join(p.fuchsiaDir, logPath)
-
-			for _, r := range readmes {
-				entries := append([]v2readme.LicenseEntry{}, r.LicenseFiles...)
-				entries = append(entries, r.SourceFiles...)
-
-				for _, lf := range entries {
-					if lf.Path == "" {
-						continue
-					}
-
-					absLicensePath := filepath.Join(absLogPath, lf.Path)
-					if len(validFiles) > 0 && !validFiles[absLicensePath] {
-						continue
-					}
-
-					// Use the classifier to securely extract the license block without leaking source code
-					isLicenseFile := v2classify.IsLicenseFilename(absLicensePath)
-					classified, err := classifier.ClassifyFile(absLicensePath, filepath.Join(absLogPath, r.Location), isLicenseFile, lf.LicenseType)
-					if err != nil {
-						continue
-					}
-
-					// If the classifier didn't find a match, but the user explicitly stated
-					// the license in the README, use the whole extracted text.
-					if len(classified.Matches) == 0 && lf.License != "" {
-						spdxIDs := strings.Split(lf.License, ",")
-						for _, id := range spdxIDs {
-							id = strings.TrimSpace(id)
-							if id != "" {
-								classified.Matches = append(classified.Matches, pipeline.LicenseMatch{
-									SPDXID: id,
-									Text:   classified.AnalyzedText,
-								})
-							}
-						}
-					}
-
-					cFilesChan <- *classified
-				}
-			}
-		}
-	}()
-
-	log.Println("Generating reports...")
-	if err := reporter.Run(ctx, cFilesChan, errChan); err != nil {
-		return fmt.Errorf("reporting stage failed: %w", err)
+	// Wrap in CustomClassifier!
+	classifier := &CustomClassifier{
+		Base:       baseClassifier,
+		FuchsiaDir: p.fuchsiaDir,
 	}
+
+	validator := v2validate.NewValidator(p.fuchsiaDir, config.PolicyExceptions, config.AllowedLicenses)
+
+	// Reporter: p.overwriteReadmeFiles is passed!
+	reporter := v2report.NewReporter(p.fuchsiaDir, p.outDir, false, p.overwriteReadmeFiles, true, config.OutOfTreeReadmes, config.PolicyExceptions["AllProjectsMustHaveALicense"])
+
+	orchestrator := pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, reporter)
+
+	if err := orchestrator.Run(ctx, []string{p.fuchsiaDir}); err != nil {
+		return fmt.Errorf("pipeline execution failed: %w", err)
+	}
+
+	// Print errors collected by CustomClassifier
+	classifier.PrintErrors()
 
 	endTrack()
 
@@ -546,4 +435,139 @@ func printMetricsSummary(checkNames []string, isV2 bool, logLevel int, outDir st
 	}
 
 	return nil
+}
+
+type CustomClassifier struct {
+	Base       *v2classify.Classifier
+	FuchsiaDir string
+	Errors     []string
+	mu         sync.Mutex
+}
+
+func (c *CustomClassifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject) (<-chan pipeline.ClassifiedFile, error) {
+	out := make(chan pipeline.ClassifiedFile)
+	go func() {
+		defer close(out)
+		for proj := range in {
+			// Read README.fuchsia to distinguish files
+			readmePath := filepath.Join(proj.RootPath, "README.fuchsia")
+			var readmes []*v2readme.Readme
+			var err error
+			if _, err := os.Stat(readmePath); err == nil {
+				readmes, err = v2readme.ParseFile(readmePath)
+			}
+
+			licenseFiles := make(map[string]bool)
+			sourceFiles := make(map[string]bool)
+			if err == nil {
+				for _, r := range readmes {
+					for _, lf := range r.LicenseFiles {
+						licenseFiles[filepath.Join(proj.RootPath, lf.Path)] = true
+					}
+					for _, sf := range r.SourceFiles {
+						sourceFiles[filepath.Join(proj.RootPath, sf.Path)] = true
+					}
+				}
+			}
+
+			for _, f := range proj.Files {
+				if licenseFiles[f.Path] {
+					// Dedicated License File: copy verbatim!
+					data, err := os.ReadFile(f.Path)
+					if err != nil {
+						log.Printf("Error reading license file %s: %v", f.Path, err)
+						continue
+					}
+					// Find license type from README if possible
+					licenseType := ""
+					if err == nil {
+						for _, r := range readmes {
+							for _, lf := range r.LicenseFiles {
+								if filepath.Join(proj.RootPath, lf.Path) == f.Path {
+									licenseType = lf.License
+									break
+								}
+							}
+						}
+					}
+
+					matches := []pipeline.LicenseMatch{}
+					if licenseType != "" {
+						spdxIDs := strings.Split(licenseType, ",")
+						for _, id := range spdxIDs {
+							id = strings.TrimSpace(id)
+							if id != "" {
+								matches = append(matches, pipeline.LicenseMatch{
+									SPDXID: id,
+									Text:   data,
+								})
+							}
+						}
+					} else {
+						// Fallback if no type in README
+						matches = append(matches, pipeline.LicenseMatch{
+							SPDXID: "Unknown",
+							Text:   data,
+						})
+					}
+
+					out <- pipeline.ClassifiedFile{
+						Path:          f.Path,
+						ProjectRoot:   proj.RootPath,
+						IsLicenseFile: true,
+						AnalyzedText:  data,
+						Matches:       matches,
+					}
+				} else if sourceFiles[f.Path] {
+					// Source File: must classify!
+					isLicenseFile := v2classify.IsLicenseFilename(f.Path)
+					// Find license type from README if possible
+					licenseType := ""
+					if err == nil {
+						for _, r := range readmes {
+							for _, sf := range r.SourceFiles {
+								if filepath.Join(proj.RootPath, sf.Path) == f.Path {
+									licenseType = sf.License
+									break
+								}
+							}
+						}
+					}
+
+					classified, err := c.Base.ClassifyFile(f.Path, proj.RootPath, isLicenseFile, licenseType)
+					if err != nil {
+						log.Printf("Error classifying source file %s: %v", f.Path, err)
+						continue
+					}
+
+					if len(classified.Matches) == 0 {
+						c.mu.Lock()
+						c.Errors = append(c.Errors, fmt.Sprintf("❌ Error: Classifier could not detect a license in Source File: %s", f.Path))
+						c.mu.Unlock()
+						continue
+					}
+					out <- *classified
+				} else {
+					// Not in README, fallback to standard classification
+					isLicenseFile := v2classify.IsLicenseFilename(f.Path)
+					classified, err := c.Base.ClassifyFile(f.Path, proj.RootPath, isLicenseFile, "")
+					if err == nil {
+						out <- *classified
+					}
+				}
+			}
+		}
+	}()
+	return out, nil
+}
+
+func (c *CustomClassifier) PrintErrors() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.Errors) > 0 {
+		fmt.Fprintln(os.Stderr, "\n[CustomClassifier] Errors:")
+		for _, err := range c.Errors {
+			fmt.Fprintln(os.Stderr, err)
+		}
+	}
 }
