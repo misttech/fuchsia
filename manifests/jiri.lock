@@ -901,43 +901,43 @@
     },
     {
         "package": "infra/tools/bb/linux-amd64",
-        "version": "git_revision:9a762959c9763a8c76c17974b357029712224bda",
-        "instance_id": "U3b0l2rHZrGseg_4k6n04EnAvpRzS54I6ERGf5zVp1kC"
+        "version": "git_revision:c0d9a7db3308d7192000932f3fb5c2056d553c27",
+        "instance_id": "MSogVuzkXrmpYayDWe64aMO7bosiDnGVpOLg-8JE-LcC"
     },
     {
         "package": "infra/tools/bb/linux-arm64",
-        "version": "git_revision:9a762959c9763a8c76c17974b357029712224bda",
-        "instance_id": "hPtBKq6jRAZ7ziJbJ_3Y6B5pg9_PTqeg-EefGTeVaO0C"
+        "version": "git_revision:c0d9a7db3308d7192000932f3fb5c2056d553c27",
+        "instance_id": "x_60bOHftGwo5Q4k7FlLcCeREnbqrizR2dir2xeMZdEC"
     },
     {
         "package": "infra/tools/luci/cas/linux-amd64",
-        "version": "git_revision:9a762959c9763a8c76c17974b357029712224bda",
-        "instance_id": "4fByzsQBiXz6b3wt22IDmv5hp7BRhDaWaeKLcBE8JkMC"
+        "version": "git_revision:c0d9a7db3308d7192000932f3fb5c2056d553c27",
+        "instance_id": "OMBLyCE0_V0dHCgVz_fLyP02vZ9GnrivBKg8KASGJ9gC"
     },
     {
         "package": "infra/tools/luci/cas/linux-arm64",
-        "version": "git_revision:9a762959c9763a8c76c17974b357029712224bda",
-        "instance_id": "ysQ9-ElZNhyubF3_zRZG1DrFoBN-fiJ_ct2Dhm0FnpAC"
+        "version": "git_revision:c0d9a7db3308d7192000932f3fb5c2056d553c27",
+        "instance_id": "CCgA7McTWIETKVy2-OdtlrSh1Z6Vpozw3ViL9WtJjhMC"
     },
     {
         "package": "infra/tools/luci/gsutil/linux-amd64",
-        "version": "git_revision:9a762959c9763a8c76c17974b357029712224bda",
-        "instance_id": "XOvwwdfFrdBr5rVsNeK9-x5CUXrVT8xVE1xG63wuAdcC"
+        "version": "git_revision:c0d9a7db3308d7192000932f3fb5c2056d553c27",
+        "instance_id": "RFVTtqynd-rKzSKVrU58z-qZyZ4v9Mdg7rdUlkk2BOMC"
     },
     {
         "package": "infra/tools/luci/gsutil/linux-arm64",
-        "version": "git_revision:9a762959c9763a8c76c17974b357029712224bda",
-        "instance_id": "jF4vOPtR-4oiNIbK8Qn3hAmf4qQuYvdG3PnJuM6VfJYC"
+        "version": "git_revision:c0d9a7db3308d7192000932f3fb5c2056d553c27",
+        "instance_id": "54Ez6LSBXpRgWnqGgLeeuRY9tZmARUvTCijpGdtLgA4C"
     },
     {
         "package": "infra/tools/luci/logdog/logdog/linux-amd64",
-        "version": "git_revision:9a762959c9763a8c76c17974b357029712224bda",
-        "instance_id": "YmXoH7MiKFOPN0h9fOvPUf6dkV-rfLNeh3lA6YXVgj4C"
+        "version": "git_revision:c0d9a7db3308d7192000932f3fb5c2056d553c27",
+        "instance_id": "ucr9f8-YhW7FPc3E2RUu0nvLQik2CG4zeuWy3k8SpFgC"
     },
     {
         "package": "infra/tools/luci/logdog/logdog/linux-arm64",
-        "version": "git_revision:9a762959c9763a8c76c17974b357029712224bda",
-        "instance_id": "3tyXPDcNX83uNXLd-S7qFyyhAjtrwJiQn4gIjkC6__0C"
+        "version": "git_revision:c0d9a7db3308d7192000932f3fb5c2056d553c27",
+        "instance_id": "ZxTW419B9JiGJGswelCf6_r1mbdI0PHYuO9patxcHkQC"
     },
     {
         "package": "infra/tools/luci/vpython3/linux-amd64",
