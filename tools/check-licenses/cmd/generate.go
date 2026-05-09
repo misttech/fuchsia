@@ -121,53 +121,55 @@ func (p *GenerateCommand) executeImpl(f *flag.FlagSet) error {
 	configVars := make(map[string]string)
 
 	// fuchsiaDir
-	if p.fuchsiaDir == "" {
-		p.fuchsiaDir = "."
+	fuchsiaDir, _, err := ResolveAndValidatePath(p.fuchsiaDir, ".")
+	if err != nil {
+		return err
 	}
-	if p.fuchsiaDir, err = filepath.Abs(p.fuchsiaDir); err != nil {
-		return fmt.Errorf("Failed to get absolute directory for fuchsiaDir %s: %w", p.fuchsiaDir, err)
+	p.fuchsiaDir = fuchsiaDir
+	configVars["{FUCHSIA_DIR}"] = fuchsiaDir
+
+	// Helper to resolve and optionally create directories
+	resolvePath := func(path string, mkdir bool) (string, error) {
+		if path == "" {
+			return "", nil
+		}
+		absPath := path
+		if !filepath.IsAbs(path) {
+			absPath = filepath.Join(fuchsiaDir, path)
+		}
+		absPath, err = filepath.Abs(absPath)
+		if err != nil {
+			return "", err
+		}
+		if mkdir {
+			if _, err := os.Stat(absPath); os.IsNotExist(err) {
+				if err := os.MkdirAll(absPath, 0755); err != nil {
+					return "", err
+				}
+			}
+		}
+		return absPath, nil
 	}
-	configVars["{FUCHSIA_DIR}"] = p.fuchsiaDir
 
 	// buildDir
-	if len(p.buildDir) > 0 {
-		if p.buildDir, err = filepath.Abs(p.buildDir); err != nil {
-			return fmt.Errorf("Failed to get absolute directory for buildDir %s: %w", p.buildDir, err)
-		}
+	p.buildDir, err = resolvePath(p.buildDir, false)
+	if err != nil {
+		return fmt.Errorf("failed to resolve buildDir: %w", err)
 	}
 	configVars["{BUILD_DIR}"] = p.buildDir
 
 	// outDir
-	rootOutDir := p.outDir
-	if len(p.outDir) > 0 {
-		p.outDir, err = filepath.Abs(p.outDir)
-		if err != nil {
-			return fmt.Errorf("Failed to get absolute directory for outDir %s: %w", p.outDir, err)
-		}
-		rootOutDir = p.outDir
-
-		if _, err := os.Stat(p.outDir); os.IsNotExist(err) {
-			err := os.MkdirAll(p.outDir, PERMISSIONS_ALLRW_OWNERX)
-			if err != nil {
-				return fmt.Errorf("Failed to create out directory [%s]: %w\n", p.outDir, err)
-			}
-		}
+	p.outDir, err = resolvePath(p.outDir, true)
+	if err != nil {
+		return fmt.Errorf("failed to resolve outDir: %w", err)
 	}
 	configVars["{OUT_DIR}"] = p.outDir
-	configVars["{ROOT_OUT_DIR}"] = rootOutDir
+	configVars["{ROOT_OUT_DIR}"] = p.outDir
 
 	// licensesOutDir
-	if p.licensesOutDir != "" {
-		p.licensesOutDir, err = filepath.Abs(p.licensesOutDir)
-		if err != nil {
-			return fmt.Errorf("Failed to get absolute directory for licensesOutDir %s: %w", p.licensesOutDir, err)
-		}
-		if _, err := os.Stat(p.licensesOutDir); os.IsNotExist(err) {
-			err := os.MkdirAll(p.licensesOutDir, PERMISSIONS_ALLRW_OWNERX)
-			if err != nil {
-				return fmt.Errorf("Failed to create licenses out directory [%s]: %w\n", p.licensesOutDir, err)
-			}
-		}
+	p.licensesOutDir, err = resolvePath(p.licensesOutDir, true)
+	if err != nil {
+		return fmt.Errorf("failed to resolve licensesOutDir: %w", err)
 	}
 	configVars["{LICENSES_OUT_DIR}"] = p.licensesOutDir
 
@@ -179,23 +181,23 @@ func (p *GenerateCommand) executeImpl(f *flag.FlagSet) error {
 	if len(p.gnPath) > 0 {
 		p.gnPath = strings.ReplaceAll(p.gnPath, "{FUCHSIA_DIR}", p.fuchsiaDir)
 		p.gnPath = strings.ReplaceAll(p.gnPath, "{PLATFORM}", platform)
-		p.gnPath, err = filepath.Abs(p.gnPath)
+		p.gnPath, err = resolvePath(p.gnPath, false)
 		if err != nil {
-			return fmt.Errorf("Failed to get absolute directory for gnPath %s: %w", p.gnPath, err)
+			return fmt.Errorf("failed to resolve gnPath: %w", err)
 		}
 	}
 
 	if len(p.genIntermediateFile) > 0 {
 		p.genIntermediateFile = strings.ReplaceAll(p.genIntermediateFile, "{BUILD_DIR}", p.buildDir)
-		p.genIntermediateFile, err = filepath.Abs(p.genIntermediateFile)
+		p.genIntermediateFile, err = resolvePath(p.genIntermediateFile, false)
 		if err != nil {
-			return fmt.Errorf("Failed to get absolute directory for genIntermediateFile %s: %w", p.genIntermediateFile, err)
+			return fmt.Errorf("failed to resolve genIntermediateFile: %w", err)
 		}
 	}
 	p.genProjectFile = strings.ReplaceAll(p.genProjectFile, "{BUILD_DIR}", p.buildDir)
-	p.genProjectFile, err = filepath.Abs(p.genProjectFile)
+	p.genProjectFile, err = resolvePath(p.genProjectFile, false)
 	if err != nil {
-		return fmt.Errorf("Failed to get absolute directory for genProjectFile %s: %w", p.genProjectFile, err)
+		return fmt.Errorf("failed to resolve genProjectFile: %w", err)
 	}
 
 	configVars["{GN_PATH}"] = p.gnPath
