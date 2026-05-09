@@ -363,6 +363,13 @@ TEST(Resource, Ioports) {
   EXPECT_EQ(zx_ioports_release(one_io.get(), 0x80, 1), ZX_OK);
 }
 
+TEST(Resource, IoportDeniedByDefault) {
+  // Ensure that access without requesting it via resource leads to a general protection fault
+  // (#GP).
+  ASSERT_DEATH([]() { outb(/*port=*/0x80, /*data=*/1); },
+               "I/O port access should be forbidden by default and trigger a crash");
+}
+
 // Regression test for https://fxbug.dev/502277149
 TEST(Resource, MexecPagerPanic) {
   const zx::unowned_resource system = get_system();

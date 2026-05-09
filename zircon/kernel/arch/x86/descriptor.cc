@@ -64,6 +64,7 @@ void x86_initialize_percpu_tss(void) {
   // Need to have an extra byte at the end of the bitmap because it will always potentially read two
   // bytes
   tss->tss_bitmap[IO_BITMAP_BYTES] = 0xff;
+  x86_reset_tss_io_bitmap();
 
   x86_ltr(TSS_SELECTOR(cpu_num));
 }

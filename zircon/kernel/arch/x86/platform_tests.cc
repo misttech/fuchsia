@@ -435,6 +435,30 @@ bool test_nmi_spam() {
   END_TEST;
 }
 
+static bool test_x64_tss_io_bitmap() {
+  BEGIN_TEST;
+
+  // Validate the Boot CPU's default TSS bitmap is fully set to restrict access.
+  for (size_t i = 0; i < IO_BITMAP_BYTES; ++i) {
+    ASSERT_EQ(bp_percpu.default_tss.tss_bitmap[i], 0xFF,
+              "TSS bitmap byte was not initialized correctly on BSP");
+  }
+
+  // Validate all initialized Application Processor (AP) TSS bitmaps are similarly protected.
+  if (ap_percpus != nullptr) {
+    for (cpu_num_t cpu_idx = 0; cpu_idx < (arch_max_num_cpus() - 1); ++cpu_idx) {
+      for (size_t i = 0; i < IO_BITMAP_BYTES; ++i) {
+        ASSERT_EQ(ap_percpus[cpu_idx].default_tss.tss_bitmap[i], 0xFF,
+                  "TSS bitmap byte not set on AP");
+      }
+    }
+  }
+
+  ASSERT_EQ(bp_percpu.default_tss.tss_bitmap[IO_BITMAP_BYTES], 0xFF, "TSS guard byte missing.");
+
+  END_TEST;
+}
+
 }  // anonymous namespace
 
 UNITTEST_START_TESTCASE(x64_platform_tests)
@@ -450,4 +474,5 @@ UNITTEST("test spectre v2 mitigation building blocks", test_spectre_v2_mitigatio
 UNITTEST("test mds mitigation building blocks", test_mds_taa_mitigation)
 UNITTEST("test gdt is mapped", test_gdt_mapping)
 UNITTEST("test nmi spam", test_nmi_spam)
+UNITTEST("test tss io bitmap", test_x64_tss_io_bitmap)
 UNITTEST_END_TESTCASE(x64_platform_tests, "x64_platform_tests", "")

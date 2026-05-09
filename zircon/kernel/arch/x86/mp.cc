@@ -211,7 +211,6 @@ void x86_init_percpu(cpu_num_t cpu_num) {
   arch::DisableLdt();
 
   x86_initialize_percpu_tss();
-
   // Setup the post early boot IDT.
   if (cpu_num == 0) {
     idt_setup(&_idt);
