@@ -14,27 +14,18 @@
 #include <ktl/algorithm.h>
 #include <ktl/type_traits.h>
 
-// PiOperation is an inner class of Scheduler and the base class of each of the
-// various PI operations we need to implement.  Its primary jobs are:
+// Pi is an inner class of Scheduler that provides access to scheduler state
+// while hiding the implementation details from the main scheduler header. Its
+// primary jobs are:
 //
 // 1) Provide accessors abstract the distinction between a thread and an owned
-//    wait queue when working with templated methods who operate on an UpstreamType
-//    and a TargetType, where each type might be either a Thread or an
+//    wait queue when working with templated methods who operate on an upstream
+//    type and a target type, where each type might be either a Thread or an
 //    OwnedWaitQueue.
 // 2) Implement the common PI handler responsible for obtaining the proper
 //    locks, and removing/re-inserting a target from/to its container while
 //    updating the targets dynamic scheduling parameters.
-// 3) Do all of this using CRTP instead of lambdas, allowing us to preserve
-//    our static annotations all of the way through the operation instead of
-//    needing to dynamically assert that we hold certain capabilities throughout
-//    the operation.
-template <typename Op, typename TargetType>
-class Scheduler::PiOperation {
- protected:
-  PiOperation(TargetType& target, const SchedulerState::EffectiveProfile* old_target_ep)
-      TA_REQ(target.get_lock())
-      : target_(target), old_target_ep_(old_target_ep) {}
-
+struct Scheduler::Pi {
   static void AssertEpDirtyState(const Thread& thread, SchedulerState::ProfileDirtyFlag expected)
       TA_REQ(thread.get_lock()) {
     thread.scheduler_state().effective_profile().AssertDirtyState(expected);
@@ -82,11 +73,11 @@ class Scheduler::PiOperation {
   // EffectiveProfileHeper (see below) during a PI interaction.  We can get away
   // with this because OWQs:
   //
-  // 1) Cannot exist in any collections where their position is determined by effective profile
-  //    (otherwise we would need to remove and re-insert the node in the collection during an
-  //    update).
-  // 2) Cannot contribute to a scheduler's bookkeeping (because OWQs are not things which get
-  //    scheduled).
+  // 1) Cannot exist in any collections where their position is determined by
+  //    effective profile (otherwise we would need to remove and re-insert the
+  //    node in the collection during an update).
+  // 2) Cannot contribute to a scheduler's bookkeeping (because OWQs are not
+  //    things which get scheduled).
   //
   static void AssertEpDirtyState(const OwnedWaitQueue& owq,
                                  SchedulerState::ProfileDirtyFlag expected) TA_REQ(owq.get_lock()) {
@@ -129,15 +120,21 @@ class Scheduler::PiOperation {
            owq.inherited_scheduler_state_storage()->time_slice_used_ns;
   }
 
-  inline void HandlePiInteractionCommon() TA_REQ(chainlock_transaction_token, target_.get_lock());
+  template <typename Upstream, typename UpdateDynamicParams>
+  static inline void Common(Upstream& upstream, Thread& thread,
+                            UpdateDynamicParams update_dynamic_params,
+                            const SchedulerState::EffectiveProfile* old_target_ep = nullptr)
+      TA_REQ(chainlock_transaction_token, upstream.get_lock(), thread.get_lock());
 
-  TargetType& target_;
-  const SchedulerState::EffectiveProfile* old_target_ep_;
+  template <typename Upstream, typename UpdateDynamicParams>
+  static inline void Common(Upstream& upstream, OwnedWaitQueue& owq,
+                            UpdateDynamicParams update_dynamic_params,
+                            const SchedulerState::EffectiveProfile* old_target_ep = nullptr)
+      TA_REQ(chainlock_transaction_token, upstream.get_lock(), owq.get_lock());
 };
 
 namespace {
-// Notes about ComputeEffectiveProfile and the EffectiveProfileHelper:
-//
+
 // Threads contain internal storage which holds their "effective profile", the
 // combination of their base profile and all of their inherited profile
 // pressure, as well as set of dirty/clean flags.
@@ -183,239 +180,127 @@ namespace {
 // local EP instance when we could have used a const reference to the thread's
 // internal storage instead.
 //
-// The ComputeEffectiveProfile function and EffectiveProfileHelper class (below)
-// help out with this situation.  ComputeEffectiveProfile defines the logic for
-// determining what an OWQ's effective profile is based on its IPVs.  It is used
-// in the OWQ specific version of HandlePiCommon to provide the old/new ep
-// arguments to the callback.
-//
-// For local lambda captures, we use the EffectiveProfileHelper. The Thread
-// specialized version just stores the pointer (something the compiler was going
-// to cache in a register anyway), while the OWQ version actually allocates
-// storage and uses ComputeEffectiveProfile to populate that storage when
-// needed.
-//
-SchedulerState::EffectiveProfile ComputeEffectiveProfile(const OwnedWaitQueue& owq)
+// The GetEffectiveProfile functions provide a uniform way to compute an OWQ's
+// effective profile, based on its IPVs, or to retrieve a thread's existing
+// effective profile. Callsites can bind the result of GetEffectiveProfile to a
+// const reference to make the code uniform, taking advantage of const
+// reference lifetime extension for the temporary returned in the OWQ case.
+SchedulerState::EffectiveProfile GetEffectiveProfile(const OwnedWaitQueue& owq)
     TA_REQ(owq.get_lock()) {
   DEBUG_ASSERT(owq.inherited_scheduler_state_storage() != nullptr);
   return owq.GetEffectiveProfile();
 }
 
-template <typename T>
-class EffectiveProfileHelper;
+const SchedulerState::EffectiveProfile& GetEffectiveProfile(const Thread& thread)
+    TA_REQ(thread.get_lock()) {
+  return thread.scheduler_state().effective_profile();
+}
 
-template <>
-class EffectiveProfileHelper<Thread> {
- public:
-  EffectiveProfileHelper(const Thread& thread) TA_REQ(thread.get_lock())
-      : effective_profile_ref_{thread.scheduler_state().effective_profile()} {}
-
-  const SchedulerState::EffectiveProfile& operator()() const { return effective_profile_ref_; }
-
- private:
-  const SchedulerState::EffectiveProfile& effective_profile_ref_;
-};
-
-template <>
-class EffectiveProfileHelper<OwnedWaitQueue> {
- public:
-  EffectiveProfileHelper(const OwnedWaitQueue& owq) TA_REQ(owq.get_lock())
-      : effective_profile_{ComputeEffectiveProfile(owq)} {}
-
-  const SchedulerState::EffectiveProfile& operator()() const { return effective_profile_; }
-
- private:
-  const SchedulerState::EffectiveProfile effective_profile_;
-};
-
-template <typename T>
-EffectiveProfileHelper(const T&) -> EffectiveProfileHelper<T>;
-
-// Definition of the ThreadBaseProfileChanged operation.  Used to update a
-// thread's effective profile and position in its container at the start of a
-// base profile update operation, regardless of whether or not the target thread
-// is currently blocked or currently assigned to a scheduler.
-//
-// Later on, if the thread happens to be an upstream member of a PI graph whose
-// target is either an OwnedWaitQueue or another thread, the
-// UpstreamThreadBaseProfileChanged operation will be triggered to handle the
-// downstream target of the graph.
-class ThreadBaseProfileChangedOp
-    : public Scheduler::PiOperation<ThreadBaseProfileChangedOp, Thread> {
- public:
-  using Base = Scheduler::PiOperation<ThreadBaseProfileChangedOp, Thread>;
-  ThreadBaseProfileChangedOp(Thread& target) TA_REQ(target.get_lock()) : Base{target, nullptr} {}
-
-  void UpdateDynamicParams(const SchedulerState::EffectiveProfile& target_old_ep,
-                           const SchedulerState::EffectiveProfile& target_new_ep,
-                           SchedTime mono_now)
-      TA_REQ(chainlock_transaction_token, target_.get_lock()) {
+struct ThreadBaseProfileChangedOp : public Scheduler::Pi {
+  static void UpdateDynamicParams(const Thread&, Thread& target,
+                                  const SchedulerState::EffectiveProfile& target_old_ep,
+                                  const SchedulerState::EffectiveProfile& target_new_ep,
+                                  SchedTime mono_now)
+      TA_REQ(chainlock_transaction_token, target.get_lock()) {
     // Make sure the start and finish times are consistent with the bandwidth
     // parameters of the deadline profile. Consistency in fair profiles is
     // handled by Scheduler::AdjustFairBandwidth.
     if (target_new_ep.IsDeadline()) {
-      GetStartTime(target_) = GetFinishTime(target_) - target_new_ep.deadline().deadline_ns;
+      GetStartTime(target) = GetFinishTime(target) - target_new_ep.deadline().deadline_ns;
     }
-  }
-
-  void DoOperation() TA_REQ(chainlock_transaction_token) {
-    // We held this lock at construction time and should never drop any locks
-    // during our object's lifetime.  We should be able to simply Mark that we
-    // hold it now instead of using a full Assert.
-    target_.get_lock().MarkHeld();
-
-    // The base profile of this thread has changed.  While there may or may not be
-    // something downstream of this thread, we need to start by dealing with
-    // updating this threads static and dynamic scheduling parameters first.
-    AssertEpDirtyState(target_, SchedulerState::ProfileDirtyFlag::BaseDirty);
-    HandlePiInteractionCommon();
   }
 };
 
-// Definition of the UpstreamThreadBaseProfileChange operation.  Called when a
-// thread in a graph whose target is either an OwnedWaitQueue or a different
-// Thread changes its base profile in order update the target's new effective
-// profile, position in container, and dynamic scheduling parameters.
-//
-template <typename TargetType>
-class UpstreamThreadBaseProfileChangedOp
-    : public Scheduler::PiOperation<UpstreamThreadBaseProfileChangedOp<TargetType>, TargetType> {
- public:
-  UpstreamThreadBaseProfileChangedOp(const Thread& upstream, TargetType& target)
-      TA_REQ(upstream.get_lock(), target.get_lock())
-      : Base{target, nullptr}, upstream_{upstream} {}
-
-  void UpdateDynamicParams(const SchedulerState::EffectiveProfile& target_old_ep,
-                           const SchedulerState::EffectiveProfile& target_new_ep,
-                           SchedTime mono_now) TA_REQ(target_.get_lock()) {
+struct UpstreamThreadBaseProfileChangedOp : public Scheduler::Pi {
+  template <typename TargetType>
+  static void UpdateDynamicParams(const Thread& upstream, TargetType& target,
+                                  const SchedulerState::EffectiveProfile& target_old_ep,
+                                  const SchedulerState::EffectiveProfile& target_new_ep,
+                                  SchedTime mono_now)
+      TA_REQ(upstream.get_lock(), target.get_lock()) {
     // Make sure the start and finish times are consistent with the bandwidth
     // parameters of the deadline profile. Consistency in fair profiles is
     // handled by Scheduler::AdjustFairBandwidth.
     if (target_new_ep.IsDeadline()) {
-      GetStartTime(target_) = GetFinishTime(target_) - target_new_ep.deadline().deadline_ns;
+      GetStartTime(target) = GetFinishTime(target) - target_new_ep.deadline().deadline_ns;
     }
   }
-
-  void DoOperation() TA_REQ(chainlock_transaction_token) {
-    // We held these locks at construction time and should never drop any locks
-    // during our object's lifetime.  We should be able to simply Mark that we
-    // hold them now instead of using a full Assert.
-    upstream_.get_lock().MarkHeld();
-    target_.get_lock().MarkHeld();
-
-    // The base profile of a thread upstream of this target node has changed.  We need to
-    // do the following:
-    //
-    // 1) Recompute the target's effective profile.
-    // 2) Handle any bookkeeping updates for the scheduler's state, if the target
-    //    is a thread which is either RUNNING or READY, and therefore has a
-    //    scheduler assigned to it.
-    // 3) Handle any updates to the target's dynamic scheduling parameters (eg,
-    //    start time, finish time, time slice remaining)
-    if constexpr (ktl::is_same_v<Thread, TargetType>) {
-      DEBUG_ASSERT(&upstream_ != &target_);
-    }
-
-    AssertEpDirtyState(target_, SchedulerState::ProfileDirtyFlag::InheritedDirty);
-    AssertEpDirtyState(upstream_, SchedulerState::ProfileDirtyFlag::Clean);
-    Base::HandlePiInteractionCommon();
-  }
-
- private:
-  using Base = Scheduler::PiOperation<UpstreamThreadBaseProfileChangedOp<TargetType>, TargetType>;
-  using Base::AssertEpDirtyState;
-  using Base::GetFinishTime;
-  using Base::GetRemainingTimeSliceNs;
-  using Base::GetStartTime;
-  using Base::GetTimeSliceNs;
-  using Base::GetTimeSliceUsedNs;
-  using Base::target_;
-  const Thread& upstream_;
 };
 
-// Definition of the Join operation.  Called when a new edge is added connecting
-// the target of one PI graph (the upstream node) to a different PI graph.
-//
-template <typename UpstreamType, typename TargetType>
-class JoinNodeToPiGraphOp
-    : public Scheduler::PiOperation<JoinNodeToPiGraphOp<UpstreamType, TargetType>, TargetType> {
- public:
-  JoinNodeToPiGraphOp(const UpstreamType& upstream, TargetType& target,
-                      ForceInheritance force_inheritance)
-      TA_REQ(upstream.get_lock(), target.get_lock())
-      : Base{target, nullptr}, upstream_{upstream} {}
-
-  void UpdateDynamicParams(const SchedulerState::EffectiveProfile& target_old_ep,
-                           const SchedulerState::EffectiveProfile& target_new_ep,
-                           SchedTime mono_now)
-      TA_REQ(chainlock_transaction_token, target_.get_lock()) {
-    // See DoOperation for why it is ok to simply Mark instead of Assert here.
-    upstream_.get_lock().MarkHeld();
-    const EffectiveProfileHelper upstream_ep{upstream_};
+struct JoinNodeToPiGraphOp : public Scheduler::Pi {
+  template <typename UpstreamType, typename TargetType>
+  static void UpdateDynamicParams(const UpstreamType& upstream, TargetType& target,
+                                  const SchedulerState::EffectiveProfile& target_old_ep,
+                                  const SchedulerState::EffectiveProfile& target_new_ep,
+                                  SchedTime mono_now)
+      TA_REQ(chainlock_transaction_token, upstream.get_lock(), target.get_lock()) {
+    const SchedulerState::EffectiveProfile& upstream_ep = GetEffectiveProfile(upstream);
 
     // If our upstream node is fair, then we have nothing more to do in the
-    // common path.  Our target_'s effective profile has already been updated
-    // appropriately, and no changes to the target_'s dynamic deadline scheduling
+    // common path. Our target's effective profile has already been updated
+    // appropriately, and no changes to the target's dynamic deadline scheduling
     // parameters needs to be done (since new pressure from a fair thread
-    // currently has no effect on deadline utilization).  Any scheduler specific
+    // currently has no effect on deadline utilization). Any scheduler specific
     // side effects will be handled by the active thread path (below) if the
-    // target_ is an active thread.
-    // TODO(https://fxbug.dev/42182908): Implement fair-to-fair priority inheritance.
-    if (upstream_ep().IsFair()) {
+    // target is an active thread.
+    // TODO(https://fxbug.dev/42182908): Implement fair-to-fair priority
+    // inheritance.
+    if (upstream_ep.IsFair()) {
       return;
     }
 
-    // Our upstream node is not a fair node, therefore it must be a deadline node.
-    // In addition, no matter what it was before, our target_ node must now be a
-    // deadline node.
-    DEBUG_ASSERT(upstream_ep().IsDeadline());
+    // Our upstream node is not a fair node, therefore it must be a deadline
+    // node. In addition, no matter what it was before, our target node must now
+    // be a deadline node.
+    DEBUG_ASSERT(upstream_ep.IsDeadline());
     DEBUG_ASSERT(target_new_ep.IsDeadline());
 
     // Verify the start/finish times of the upstream node have the required
     // relationship.
     // TODO(https://fxbug.dev/448121736): Start time == finish time.
-    DEBUG_ASSERT_MSG(GetStartTime(upstream_) < GetFinishTime(upstream_),
+    DEBUG_ASSERT_MSG(GetStartTime(upstream) < GetFinishTime(upstream),
                      "upstream_ep: start_time=%" PRId64 " finish_time=%" PRId64
                      " deadline_ns=%" PRId64,
-                     GetStartTime(upstream_).raw_value(), GetFinishTime(upstream_).raw_value(),
-                     upstream_ep().deadline().deadline_ns.raw_value());
+                     GetStartTime(upstream).raw_value(), GetFinishTime(upstream).raw_value(),
+                     upstream_ep.deadline().deadline_ns.raw_value());
 
     if (target_old_ep.IsFair()) {
-      // If the target_ has just now become deadline, we can simply transfer the
-      // dynamic deadline parameters from upstream to the target_.
-      GetStartTime(target_) = GetStartTime(upstream_);
-      GetFinishTime(target_) = GetFinishTime(upstream_);
-      GetTimeSliceNs(target_) = GetTimeSliceNs(upstream_);
-      GetTimeSliceUsedNs(target_) = GetTimeSliceUsedNs(upstream_);
+      // If target has just now become deadline, we can simply transfer the
+      // dynamic deadline parameters from upstream to the target.
+      GetStartTime(target) = GetStartTime(upstream);
+      GetFinishTime(target) = GetFinishTime(upstream);
+      GetTimeSliceNs(target) = GetTimeSliceNs(upstream);
+      GetTimeSliceUsedNs(target) = GetTimeSliceUsedNs(upstream);
     } else {
-      // The target_ was already a deadline thread, then we need to recompute the
-      // target_'s dynamic deadline parameters using the lag equation.
-      // Compute the remaining periods of the target and upstream threads.
+      // The target was already a deadline thread, then we need to recompute the
+      // target's dynamic deadline parameters using the lag equation. Compute
+      // the remaining periods of the target and upstream threads.
       const SchedDuration target_remaining_period =
-          ktl::max<SchedDuration>(GetFinishTime(target_) - mono_now, SchedDuration{0});
+          ktl::max<SchedDuration>(GetFinishTime(target) - mono_now, SchedDuration{0});
       const SchedDuration upstream_remaining_period =
-          ktl::max<SchedDuration>(GetFinishTime(upstream_) - mono_now, SchedDuration{0});
+          ktl::max<SchedDuration>(GetFinishTime(upstream) - mono_now, SchedDuration{0});
       const SchedDuration min_remaining_period =
           ktl::min(target_remaining_period, upstream_remaining_period);
 
-      GetFinishTime(target_) = ktl::min(GetFinishTime(target_), GetFinishTime(upstream_));
-      GetStartTime(target_) = GetFinishTime(target_) - target_new_ep.deadline().deadline_ns;
+      GetFinishTime(target) = ktl::min(GetFinishTime(target), GetFinishTime(upstream));
+      GetStartTime(target) = GetFinishTime(target) - target_new_ep.deadline().deadline_ns;
 
       // Verify the start/finish times of the target node have the required
       // relationship.
       // TODO(https://fxbug.dev/448121736): Start time == finish time.
-      DEBUG_ASSERT_MSG(GetStartTime(target_) < GetFinishTime(target_),
+      DEBUG_ASSERT_MSG(GetStartTime(target) < GetFinishTime(target),
                        "target_new_ep: start_time=%" PRId64 " finish_time=%" PRId64
                        " deadline_ns=%" PRId64,
-                       GetStartTime(target_).raw_value(), GetFinishTime(target_).raw_value(),
+                       GetStartTime(target).raw_value(), GetFinishTime(target).raw_value(),
                        target_new_ep.deadline().deadline_ns.raw_value());
 
       // TODO(eieio): If a period is expired, the full bandwidth contribution of
       // the respective task is available to the target and downstream, if any.
       const SchedDuration new_remaining_time_slice =
-          GetRemainingTimeSliceNs(target_) + GetRemainingTimeSliceNs(upstream_) +
-          target_old_ep.deadline().utilization * (min_remaining_period - target_remaining_period) +
-          upstream_ep().deadline().utilization * (min_remaining_period - upstream_remaining_period);
+          GetRemainingTimeSliceNs(target) + GetRemainingTimeSliceNs(upstream) +
+          (target_old_ep.deadline().utilization *
+           (min_remaining_period - target_remaining_period)) +
+          (upstream_ep.deadline().utilization * (min_remaining_period - upstream_remaining_period));
 
       // Limit the TSR.  It cannot be less than zero nor can it be more than the
       // time until the absolute deadline of the new combined thread.
@@ -424,222 +309,149 @@ class JoinNodeToPiGraphOp
       // needs to turn into carried lag.
       const SchedDuration clamped_remaining_time_slice = ktl::clamp<SchedDuration>(
           new_remaining_time_slice, SchedDuration{0}, min_remaining_period);
-      GetTimeSliceNs(target_) = target_new_ep.deadline().capacity_ns;
-      GetTimeSliceUsedNs(target_) =
+      GetTimeSliceNs(target) = target_new_ep.deadline().capacity_ns;
+      GetTimeSliceUsedNs(target) =
           target_new_ep.deadline().capacity_ns - clamped_remaining_time_slice;
-      DEBUG_ASSERT_MSG(GetRemainingTimeSliceNs(target_) >= 0,
+      DEBUG_ASSERT_MSG(GetRemainingTimeSliceNs(target) >= 0,
                        "capacity=%" PRId64 " remaining_time_slice=%" PRId64
                        " remaining_period=%" PRId64,
                        target_new_ep.deadline().capacity_ns.raw_value(),
                        new_remaining_time_slice.raw_value(), min_remaining_period.raw_value());
     }
   }
-
-  void DoOperation() TA_REQ(chainlock_transaction_token) {
-    // We held these locks at construction time and should never drop any locks
-    // during our object's lifetime.  We should be able to simply Mark that we
-    // hold them now instead of using a full Assert.
-    upstream_.get_lock().MarkHeld();
-    target_.get_lock().MarkHeld();
-
-    if constexpr (ktl::is_same_v<UpstreamType, TargetType>) {
-      DEBUG_ASSERT(&upstream_ != &target_);
-    }
-
-    AssertEpDirtyState(target_, SchedulerState::ProfileDirtyFlag::InheritedDirty);
-    AssertEpDirtyState(upstream_, SchedulerState::ProfileDirtyFlag::Clean);
-    Base::HandlePiInteractionCommon();
-  }
-
- private:
-  using Base = Scheduler::PiOperation<JoinNodeToPiGraphOp<UpstreamType, TargetType>, TargetType>;
-  using Base::AssertEpDirtyState;
-  using Base::GetFinishTime;
-  using Base::GetRemainingTimeSliceNs;
-  using Base::GetStartTime;
-  using Base::GetTimeSliceNs;
-  using Base::GetTimeSliceUsedNs;
-  using Base::target_;
-
-  const UpstreamType& upstream_;
 };
 
-// Definition of the Split operation.  Called when an upstream node has its
-// downstream edge removed, splitting it from the PI graph it was a member of
-// and becoming the target of a new graph in the process.
-//
-template <typename UpstreamType, typename TargetType>
-class SplitNodeFromPiGraphOp
-    : public Scheduler::PiOperation<SplitNodeFromPiGraphOp<UpstreamType, TargetType>, TargetType> {
- public:
-  SplitNodeFromPiGraphOp(UpstreamType& upstream, TargetType& target,
-                         const SchedulerState::EffectiveProfile* old_target_ep)
-      TA_REQ(upstream.get_lock(), target.get_lock())
-      : Base{target, old_target_ep}, upstream_{upstream} {}
+struct SplitNodeFromPiGraphOp : public Scheduler::Pi {
+  template <typename UpstreamType, typename TargetType>
+  static void UpdateDynamicParams(UpstreamType& upstream, TargetType& target,
+                                  const SchedulerState::EffectiveProfile& target_old_ep,
+                                  const SchedulerState::EffectiveProfile& target_new_ep,
+                                  SchedTime mono_now)
+      TA_REQ(chainlock_transaction_token, upstream.get_lock(), target.get_lock()) {
+    const SchedulerState::EffectiveProfile& upstream_ep = GetEffectiveProfile(upstream);
 
-  void UpdateDynamicParams(const SchedulerState::EffectiveProfile& target_old_ep,
-                           const SchedulerState::EffectiveProfile& target_new_ep,
-                           SchedTime mono_now)
-      TA_REQ(chainlock_transaction_token, target_.get_lock()) {
-    // During construction, we statically required that we were holding
-    // upstream_.get_lock().  It should be OK to Mark it as held here.
-    upstream_.get_lock().MarkHeld();
-    const EffectiveProfileHelper upstream_ep{upstream_};
-
-    // Was the target_ node a fair node?  If so, there is really nothing for us
-    // to do here.
+    // Was the target node a fair node? If so, there is really nothing for us to
+    // do here.
     if (target_old_ep.IsFair()) {
       return;
     }
 
     DEBUG_ASSERT(target_old_ep.IsDeadline());
     if (target_new_ep.IsFair()) {
-      // If target_ node is now a fair node, then the upstream_ node must have been
-      // a deadline node.  This split operation is what caused the target_ node to
-      // change from deadline to fair, all of the deadline pressure must have been
-      // coming from the upstream_ node.  Assert all of this.
-      DEBUG_ASSERT(upstream_ep().IsDeadline());
-      DEBUG_ASSERT_MSG(target_old_ep.deadline().capacity_ns == upstream_ep().deadline().capacity_ns,
+      // If target node is now a fair node, then the upstream node must have
+      // been a deadline node. This split operation is what caused the target
+      // node to change from deadline to fair, all of the deadline pressure must
+      // have been coming from the upstream node. Assert all of this.
+      DEBUG_ASSERT(upstream_ep.IsDeadline());
+      DEBUG_ASSERT_MSG(target_old_ep.deadline().capacity_ns == upstream_ep.deadline().capacity_ns,
                        "toep.deadline.capacity=%" PRId64 " uep.deadline.capacity=%" PRId64,
                        target_old_ep.deadline().capacity_ns.raw_value(),
-                       upstream_ep().deadline().capacity_ns.raw_value());
-      DEBUG_ASSERT_MSG(target_old_ep.deadline().deadline_ns == upstream_ep().deadline().deadline_ns,
+                       upstream_ep.deadline().capacity_ns.raw_value());
+      DEBUG_ASSERT_MSG(target_old_ep.deadline().deadline_ns == upstream_ep.deadline().deadline_ns,
                        "toep.deadline.deadline=%" PRId64 " uep.deadline.deadline=%" PRId64,
                        target_old_ep.deadline().deadline_ns.raw_value(),
-                       upstream_ep().deadline().deadline_ns.raw_value());
+                       upstream_ep.deadline().deadline_ns.raw_value());
 
       // Verify the start/finish times of the target node have the required
       // relationship.
       // TODO(https://fxbug.dev/448121736): Start time == finish time.
-      DEBUG_ASSERT_MSG(GetStartTime(target_) < GetFinishTime(target_),
+      DEBUG_ASSERT_MSG(GetStartTime(target) < GetFinishTime(target),
                        "target_old_ep: start_time=%" PRId64 " finish_time=%" PRId64
                        " deadline_ns=%" PRId64,
-                       GetStartTime(target_).raw_value(), GetFinishTime(target_).raw_value(),
+                       GetStartTime(target).raw_value(), GetFinishTime(target).raw_value(),
                        target_old_ep.deadline().deadline_ns.raw_value());
 
-      // Give the dynamic deadline parameters over to the upstream_ node.
-      GetStartTime(upstream_) = GetStartTime(target_);
-      GetFinishTime(upstream_) = GetFinishTime(target_);
-      GetTimeSliceNs(upstream_) = GetTimeSliceNs(target_);
-      GetTimeSliceUsedNs(upstream_) = GetTimeSliceUsedNs(target_);
+      // Give the dynamic deadline parameters over to the upstream node.
+      GetStartTime(upstream) = GetStartTime(target);
+      GetFinishTime(upstream) = GetFinishTime(target);
+      GetTimeSliceNs(upstream) = GetTimeSliceNs(target);
+      GetTimeSliceUsedNs(upstream) = GetTimeSliceUsedNs(target);
 
       // TODO(eieio): Just expire the time slice for now. This should actually
       // be split out the same way as for deadline threads.
-      GetTimeSliceUsedNs(target_) = GetTimeSliceNs(target_);
+      GetTimeSliceUsedNs(target) = GetTimeSliceNs(target);
     } else {
-      // OK, the target_ node is still a deadline node.  If the upstream_ node
-      // is a fair node, we don't have to do anything at all.  A fair node
-      // splitting off from a deadline node should not change the deadline
-      // node's dynamic parameters.  If the upstream_ fair node is a thread, it is
-      // going to arrive in a new scheduler queue Real Soon Now, and have new
-      // dynamic parameters computed for it.
+      // OK, the target node is still a deadline node. If the upstream node is a
+      // fair node, we don't have to do anything at all. A fair node splitting
+      // off from a deadline node should not change the deadline node's dynamic
+      // parameters. If the upstream fair node is a thread, it is going to
+      // arrive in a new scheduler queue Real Soon Now, and have new dynamic
+      // parameters computed for it.
       //
-      // If _both_ nodes are deadline nodes, then we need to invoke the lag
+      // If both nodes are deadline nodes, then we need to invoke the lag
       // equation in order to figure out what the new time slice remaining and
       // absolute deadlines are.
-      if (upstream_ep().IsDeadline()) {
+      if (upstream_ep.IsDeadline()) {
         // Compute the time until absolute deadline of the target and upstream.
         const SchedDuration target_remaining_period =
-            ktl::max<SchedDuration>(GetFinishTime(target_) - mono_now, SchedDuration{0});
+            ktl::max<SchedDuration>(GetFinishTime(target) - mono_now, SchedDuration{0});
         const SchedDuration upstream_remaining_period =
-            ktl::max<SchedDuration>(GetFinishTime(upstream_) - mono_now, SchedDuration{0});
+            ktl::max<SchedDuration>(GetFinishTime(upstream) - mono_now, SchedDuration{0});
 
         // Figure out what the uncapped utilization of the combined thread
-        // _would_ have been based on the utilizations of the target_ and
-        // upstream_ nodes after the split.  It is important when scaling
+        // would have been based on the utilizations of the target and
+        // upstream nodes after the split. It is important when scaling
         // timeslices to be sure that we divide by a utilization value which
         // is the sum of the two (now separated) utilization values.
         const SchedUtilization combined_uncapped_utilization =
-            target_new_ep.deadline().utilization + upstream_ep().deadline().utilization;
-
+            target_new_ep.deadline().utilization + upstream_ep.deadline().utilization;
         const SchedUtilization upstream_utilization_ratio =
-            upstream_ep().deadline().utilization / combined_uncapped_utilization;
+            upstream_ep.deadline().utilization / combined_uncapped_utilization;
         const SchedDuration new_upstream_remaining_time_slice =
-            upstream_utilization_ratio * GetRemainingTimeSliceNs(target_) +
-            upstream_ep().deadline().utilization *
-                (upstream_remaining_period - target_remaining_period);
+            (upstream_utilization_ratio * GetRemainingTimeSliceNs(target)) +
+            (upstream_ep.deadline().utilization *
+             (upstream_remaining_period - target_remaining_period));
 
-        // TODO(johngro): This also changes when carried lag comes into
-        // play.
-        GetTimeSliceNs(upstream_) = upstream_ep().deadline().capacity_ns;
-        GetTimeSliceUsedNs(upstream_) =
-            upstream_ep().deadline().capacity_ns -
+        // TODO(johngro): This also changes when carried lag comes into play.
+        GetTimeSliceNs(upstream) = upstream_ep.deadline().capacity_ns;
+        GetTimeSliceUsedNs(upstream) =
+            upstream_ep.deadline().capacity_ns -
             ktl::max(new_upstream_remaining_time_slice, SchedDuration{0});
 
-        // TODO(johngro): Fix this.  Logically, it is not correct to
-        // preserve the abs deadline of the target_ after the split.  The
-        // target_'s bookkeeping should be equivalent to the values which
-        // would be obtained by joining all of the threads which exist
-        // upstream_ of this node together.  Because of this, our new target_
-        // finish time should be equal to the min across all finish times
-        // immediately upstream_ of this node.
+        // TODO(johngro): Fix this. Logically, it is not correct to preserve the
+        // abs deadline of the target after the split. The target's bookkeeping
+        // should be equivalent to the values which would be obtained by joining
+        // all of the threads which exist upstream of this node together.
+        // Because of this, our new target finish time should be equal to the
+        // min across all finish times immediately upstream of this node.
         //
-        // Now handle the target_ node.  We preserve the absolute deadline of
-        // the target_ node before and after the split, so we need to
-        // recompute its start time so that the distance between the
-        // absolute deadline and the start time is equal to the new relative
-        // deadline of the target_.
-        GetStartTime(target_) = GetFinishTime(target_) - target_new_ep.deadline().deadline_ns;
+        // Now handle the target node. We preserve the absolute deadline of the
+        // target node before and after the split, so we need to recompute its
+        // start time so that the distance between the absolute deadline and the
+        // start time is equal to the new relative deadline of the target node.
+        GetStartTime(target) = GetFinishTime(target) - target_new_ep.deadline().deadline_ns;
 
         // Verify the start/finish times of the target node have the required
         // relationship.
         // TODO(https://fxbug.dev/448121736): Start time == finish time.
-        DEBUG_ASSERT_MSG(GetStartTime(target_) < GetFinishTime(target_),
+        DEBUG_ASSERT_MSG(GetStartTime(target) < GetFinishTime(target),
                          "target_new_ep: start_time=%" PRId64 " finish_time=%" PRId64
                          " deadline_ns=%" PRId64,
-                         GetStartTime(target_).raw_value(), GetFinishTime(target_).raw_value(),
+                         GetStartTime(target).raw_value(), GetFinishTime(target).raw_value(),
                          target_new_ep.deadline().deadline_ns.raw_value());
 
-        // The time till absolute deadline of the pre and post split target_
+        // The time till absolute deadline of the pre and post split target
         // remains the same, so the ttad contributions to the timeslice
         // remaining simply drop out of the lag equation.
         //
-        // Note that fixed point division takes the precision of the
-        // assignee into account to provide headroom in certain situations.
-        // Use an intermediate with the same fractional precision as the
-        // utilization operands before scaling the non-fractional timeslice.
+        // Note that fixed point division takes the precision of the assignee
+        // into account to provide headroom in certain situations. Use an
+        // intermediate with the same fractional precision as the utilization
+        // operands before scaling the non-fractional timeslice.
         const SchedUtilization target_utilization_ratio =
             target_new_ep.deadline().utilization / combined_uncapped_utilization;
         const SchedDuration new_target_remaining_time_slice =
-            GetRemainingTimeSliceNs(target_) * target_utilization_ratio;
+            GetRemainingTimeSliceNs(target) * target_utilization_ratio;
 
-        GetTimeSliceNs(target_) = target_new_ep.deadline().capacity_ns;
-        GetTimeSliceUsedNs(target_) = target_new_ep.deadline().capacity_ns -
-                                      ktl::max(new_target_remaining_time_slice, SchedDuration{0});
+        GetTimeSliceNs(target) = target_new_ep.deadline().capacity_ns;
+        GetTimeSliceUsedNs(target) = target_new_ep.deadline().capacity_ns -
+                                     ktl::max(new_target_remaining_time_slice, SchedDuration{0});
       }
     }
   }
-
-  void DoOperation() TA_REQ(chainlock_transaction_token) {
-    // We held these locks at construction time and should never drop any locks
-    // during our object's lifetime.  We should be able to simply Mark that we
-    // hold them now instead of using a full Assert.
-    upstream_.get_lock().MarkHeld();
-    target_.get_lock().MarkHeld();
-
-    if constexpr (ktl::is_same_v<UpstreamType, TargetType>) {
-      DEBUG_ASSERT(&upstream_ != &target_);
-    }
-
-    AssertEpDirtyState(target_, SchedulerState::ProfileDirtyFlag::InheritedDirty);
-    AssertEpDirtyState(upstream_, SchedulerState::ProfileDirtyFlag::Clean);
-    Base::HandlePiInteractionCommon();
-  }
-
- private:
-  using Base = Scheduler::PiOperation<SplitNodeFromPiGraphOp<UpstreamType, TargetType>, TargetType>;
-  using Base::AssertEpDirtyState;
-  using Base::GetFinishTime;
-  using Base::GetRemainingTimeSliceNs;
-  using Base::GetStartTime;
-  using Base::GetTimeSliceNs;
-  using Base::GetTimeSliceUsedNs;
-  using Base::target_;
-
-  UpstreamType& upstream_;
 };
 
-}  // namespace
+}  // anonymous namespace
 
 // Handle all of the common tasks associated with each of the possible PI
 // interactions.  The outline of this is:
@@ -663,216 +475,255 @@ class SplitNodeFromPiGraphOp
 //      in it's wait queue if the target is a thread which is currently
 //      blocked in a wait queue.
 // 2.2) Recompute the target's dynamic scheduler parameters.
-template <typename Op, typename TargetType>
-inline void Scheduler::PiOperation<Op, TargetType>::HandlePiInteractionCommon() {
-  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "HandlePiInteractionCommon");
 
-  if constexpr (ktl::is_same_v<TargetType, Thread>) {
-    SchedulerState& state = target_.scheduler_state();
+// PI common path for threads.
+template <typename Upstream, typename UpdateDynamicParams>
+inline void Scheduler::Pi::Common(Upstream& upstream, Thread& thread,
+                                  UpdateDynamicParams update_dynamic_params,
+                                  const SchedulerState::EffectiveProfile* old_target_ep) {
+  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "Pi::Common(Thread)");
 
-    if (const cpu_num_t curr_cpu = state.curr_cpu_; curr_cpu != INVALID_CPU) {
-      DEBUG_ASSERT_MSG((target_.state() == THREAD_RUNNING) || (target_.state() == THREAD_READY),
-                       "Unexpected target_ state %u for tid %" PRIu64 "\n", target_.state(),
-                       target_.tid());
+  SchedulerState& state = thread.scheduler_state();
 
-      Scheduler& scheduler = *Get(curr_cpu);
-      Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&scheduler.queue_lock_, SOURCE_TAG};
-      scheduler.ValidateInvariants();
-      scheduler.AssertInScheduler(target_);
+  if (const cpu_num_t curr_cpu = state.curr_cpu_; curr_cpu != INVALID_CPU) {
+    DEBUG_ASSERT_MSG((thread.state() == THREAD_RUNNING) || (thread.state() == THREAD_READY),
+                     "Unexpected target_ state %u for tid %" PRIu64 "\n", thread.state(),
+                     thread.tid());
 
-      // Sample the current time after acquiring the queue lock to avoid large skews under
-      // contention.
-      const SchedMonoTimeAndBootTicks now = CurrentMonoTimeAndBootTicks();
+    Scheduler& scheduler = *Get(curr_cpu);
+    Guard<MonitoredSpinLock, NoIrqSave> queue_guard{&scheduler.queue_lock_, SOURCE_TAG};
+    scheduler.ValidateInvariants();
+    scheduler.AssertInScheduler(thread);
 
-      // Keep track of the original disposition. See SchedulerQueueState for
-      // more details on how the disposition and thread state indicate which
-      // operations are permitted on the thread and its associated scheduler
-      // bookkeeping.
-      const Disposition disposition = target_.disposition();
-      DEBUG_ASSERT_MSG(disposition != Disposition::Unassociated,
-                       "Found unassociated thread %s with tid %lu in state %d, curr_cpu is: %u\n",
-                       target_.name(), target_.tid(), target_.state(),
-                       target_.scheduler_state().curr_cpu());
+    // Sample the current time after acquiring the queue lock to avoid large
+    // skews under contention.
+    const SchedMonoTimeAndBootTicks now = CurrentMonoTimeAndBootTicks();
 
-      if (target_.state() == THREAD_READY) {
-        if (disposition == Disposition::Enqueued) {
-          scheduler.EraseFromQueue(&target_);
-        } else {
-          CountUpdateInTransition();
-        }
+    // Keep track of the original disposition. See SchedulerQueueState for
+    // more details on how the disposition and thread state indicate which
+    // operations are permitted on the thread and its associated scheduler
+    // bookkeeping.
+    const Disposition disposition = thread.disposition();
+    DEBUG_ASSERT_MSG(disposition != Disposition::Unassociated,
+                     "Found unassociated thread %s with tid %lu in state %d, curr_cpu is: %u\n",
+                     thread.name(), thread.tid(), thread.state(),
+                     thread.scheduler_state().curr_cpu());
+
+    if (thread.state() == THREAD_READY) {
+      if (disposition == Disposition::Enqueued) {
+        scheduler.EraseFromQueue(&thread);
       } else {
-        DEBUG_ASSERT(disposition == Disposition::Associated);
-        ktrace::Scope trace_update = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "Update Timeslice",
-                                                              ("target cpu", scheduler.this_cpu()));
-
-        // Update the time slice before updating other bookkeeping.
-        const SchedDuration actual_runtime_ns =
-            ktl::max<SchedDuration>(now.mono_time - state.last_started_running_, SchedDuration{0});
-        const SchedDuration scaled_actual_runtime_ns = state.effective_profile().IsDeadline()
-                                                           ? scheduler.ScaleDown(actual_runtime_ns)
-                                                           : actual_runtime_ns;
-
-        state.runtime_ns_ += actual_runtime_ns;
-        state.time_slice_used_ns_ += scaled_actual_runtime_ns;
-        state.last_started_running_ = now.mono_time;
-        scheduler.start_of_current_time_slice_ns_ = now.mono_time;
-        scheduler.UpdateEstimatedEnergyConsumption(&target_, now, actual_runtime_ns);
-
-        trace_update = KTRACE_END_SCOPE(("mono_now", now.mono_time), ("boot_ticks", now.boot_ticks),
-                                        ("actual_runtime_ns", actual_runtime_ns));
+        CountUpdateInTransition();
       }
-
-      // Copy the original effective profile before updating it to compute the
-      // changes to the scheduler bookkeeping.
-      const EffectiveProfile old_ep = state.effective_profile();
-      target_.RecomputeEffectiveProfile();
-      const EffectiveProfile& new_ep = state.effective_profile();
-
-      // Update the scheduler bookkeeping, if necessary.
-      bool bandwidth_demand_changed = false;
-      if (disposition == Disposition::Associated || disposition == Disposition::Enqueued) {
-        SchedWeight weight_delta{0};
-        SchedUtilization utilization_delta{0};
-        SchedUtilization critical_utilization_delta{0};
-
-        if (old_ep.IsFair()) {
-          weight_delta -= old_ep.weight();
-        } else {
-          utilization_delta -= old_ep.deadline().utilization;
-          if (old_ep.is_critical()) {
-            critical_utilization_delta -= old_ep.deadline().utilization;
-          }
-        }
-        if (new_ep.IsFair()) {
-          weight_delta += new_ep.weight();
-        } else {
-          utilization_delta += new_ep.deadline().utilization;
-          if (new_ep.is_critical()) {
-            critical_utilization_delta += new_ep.deadline().utilization;
-          }
-        }
-
-        if (weight_delta != 0) {
-          bandwidth_demand_changed = true;
-          scheduler.weight_total_ += weight_delta;
-          scheduler.UpdateFairBandwidthPeriod(now.mono_time);
-        }
-        if (utilization_delta != 0) {
-          bandwidth_demand_changed = true;
-          scheduler.UpdateTotalDeadlineUtilization(utilization_delta);
-        }
-        scheduler.critical_deadline_utilization_ += critical_utilization_delta;
-      }
-
-      DEBUG_ASSERT(scheduler.weight_total_ >= SchedWeight{0});
-      DEBUG_ASSERT(scheduler.critical_deadline_utilization_ >= SchedUtilization{0});
-      DEBUG_ASSERT(scheduler.power_level_control_.normalized_utilization() >= SchedUtilization{0});
-
-      static_cast<Op*>(this)->UpdateDynamicParams(old_ep, new_ep, now.mono_time);
-
-      if (target_.state() == THREAD_READY) {
-        if (disposition == Disposition::Enqueued) {
-          scheduler.QueueThread(&target_, Placement::Adjustment);
-        }
-      } else {
-        DEBUG_ASSERT(target_.state() == THREAD_RUNNING);
-        if (new_ep.IsFair()) {
-          scheduler.target_preemption_time_ns_ =
-              scheduler.start_of_current_time_slice_ns_ + state.remaining_time_slice_ns();
-        } else {
-          const SchedDuration scaled_remaining_time_slice_ns =
-              scheduler.ScaleUp(state.remaining_time_slice_ns());
-          scheduler.target_preemption_time_ns_ = ktl::min<SchedTime>(
-              scheduler.start_of_current_time_slice_ns_ + scaled_remaining_time_slice_ns,
-              state.finish_time_);
-        }
-
-        // Emit a context switch event to and from the same thread to update the
-        // visualized schedling parameters if the bandwidth demand actually
-        // changed.
-        if (bandwidth_demand_changed) {
-          SchedTraceContextSwitch(&target_, &target_, curr_cpu);
-        }
-      }
-
-      // Check that target is left in the same disposition.
-      DEBUG_ASSERT(disposition == target_.disposition());
-
-      // We have made a change to this scheduler's state, we need to trigger a
-      // reschedule operation as soon as we can.
-      RescheduleMask(cpu_num_to_mask(state.curr_cpu_));
-      scheduler.ValidateInvariants();
     } else {
-      // We are dealing with a target_ which is a non-active thread (it has no
-      // scheduler assigned). If the thread is blocked in a wait queue, update
-      // its position in the wait queue while also updating its effective
-      // profile.  Otherwise, simply update its effective profile.  Once that is
-      // all done, update the dynamic parameters of the target_ using the
-      // callback provided by the specific operation.
-      SchedulerState::EffectiveProfile old_ep = state.effective_profile_;
-      if (WaitQueue* wq = target_.wait_queue_state().blocking_wait_queue_; wq != nullptr) {
-        // Note that to update our position in the WaitQueue this thread is
-        // blocked in, we need to holding that wait queue's lock.  (It has to be
-        // a WaitQueue and not an OwnedWaitQueue, or the PI operation's target_
-        // would be the final OWQ, not the blocked Thread.)
-        //
-        // This should always be the case.  We need to holding the entire PI
-        // chain during PI propagation.  That said, this is pretty much an
-        // impossible thing to represent using static annotations, so we need to
-        // fall back on a dynamic assert here instead.  We know that we are
-        // holding the thread locked (because of all of the static annotations),
-        // so we can use the token that is currently locking the thread's lock
-        // to verify that the WaitQueue is both locked, and part of the same
-        // locked chain that this operation owns and is currently locking the
-        // thread.
-        wq->get_lock().AssertHeld();
-        wq->UpdateBlockedThreadEffectiveProfile(target_);
-      } else {
-        target_.RecomputeEffectiveProfile();
-      }
-      static_cast<Op*>(this)->UpdateDynamicParams(old_ep, state.effective_profile_, CurrentTime());
+      DEBUG_ASSERT(disposition == Disposition::Associated);
+      ktrace::Scope trace_update = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "Update Timeslice",
+                                                            ("target cpu", scheduler.this_cpu()));
+
+      // Update the time slice before updating other bookkeeping.
+      const SchedDuration actual_runtime_ns =
+          ktl::max<SchedDuration>(now.mono_time - state.last_started_running_, SchedDuration{0});
+      const SchedDuration scaled_actual_runtime_ns = state.effective_profile().IsDeadline()
+                                                         ? scheduler.ScaleDown(actual_runtime_ns)
+                                                         : actual_runtime_ns;
+
+      state.runtime_ns_ += actual_runtime_ns;
+      state.time_slice_used_ns_ += scaled_actual_runtime_ns;
+      state.last_started_running_ = now.mono_time;
+      scheduler.start_of_current_time_slice_ns_ = now.mono_time;
+      scheduler.UpdateEstimatedEnergyConsumption(&thread, now, actual_runtime_ns);
+
+      trace_update = KTRACE_END_SCOPE(("mono_now", now.mono_time), ("boot_ticks", now.boot_ticks),
+                                      ("actual_runtime_ns", actual_runtime_ns));
     }
+
+    // Copy the original effective profile before updating it to compute the
+    // changes to the scheduler bookkeeping.
+    const EffectiveProfile old_ep = state.effective_profile();
+    thread.RecomputeEffectiveProfile();
+    const EffectiveProfile& new_ep = state.effective_profile();
+
+    // Update the scheduler bookkeeping, if necessary.
+    bool bandwidth_demand_changed = false;
+    if (disposition == Disposition::Associated || disposition == Disposition::Enqueued) {
+      SchedWeight weight_delta{0};
+      SchedUtilization utilization_delta{0};
+      SchedUtilization critical_utilization_delta{0};
+
+      if (old_ep.IsFair()) {
+        weight_delta -= old_ep.weight();
+      } else {
+        utilization_delta -= old_ep.deadline().utilization;
+        if (old_ep.is_critical()) {
+          critical_utilization_delta -= old_ep.deadline().utilization;
+        }
+      }
+      if (new_ep.IsFair()) {
+        weight_delta += new_ep.weight();
+      } else {
+        utilization_delta += new_ep.deadline().utilization;
+        if (new_ep.is_critical()) {
+          critical_utilization_delta += new_ep.deadline().utilization;
+        }
+      }
+
+      if (weight_delta != 0) {
+        bandwidth_demand_changed = true;
+        scheduler.weight_total_ += weight_delta;
+        scheduler.UpdateFairBandwidthPeriod(now.mono_time);
+      }
+      if (utilization_delta != 0) {
+        bandwidth_demand_changed = true;
+        scheduler.UpdateTotalDeadlineUtilization(utilization_delta);
+      }
+      scheduler.critical_deadline_utilization_ += critical_utilization_delta;
+    }
+
+    DEBUG_ASSERT(scheduler.weight_total_ >= SchedWeight{0});
+    DEBUG_ASSERT(scheduler.critical_deadline_utilization_ >= SchedUtilization{0});
+    DEBUG_ASSERT(scheduler.power_level_control_.normalized_utilization() >= SchedUtilization{0});
+
+    update_dynamic_params(upstream, thread, old_ep, new_ep, now.mono_time);
+
+    if (thread.state() == THREAD_READY) {
+      if (disposition == Disposition::Enqueued) {
+        scheduler.QueueThread(&thread, Placement::Adjustment);
+      }
+    } else {
+      DEBUG_ASSERT(thread.state() == THREAD_RUNNING);
+      if (new_ep.IsFair()) {
+        scheduler.target_preemption_time_ns_ =
+            scheduler.start_of_current_time_slice_ns_ + state.remaining_time_slice_ns();
+      } else {
+        const SchedDuration scaled_remaining_time_slice_ns =
+            scheduler.ScaleUp(state.remaining_time_slice_ns());
+        scheduler.target_preemption_time_ns_ = ktl::min<SchedTime>(
+            scheduler.start_of_current_time_slice_ns_ + scaled_remaining_time_slice_ns,
+            state.finish_time_);
+      }
+
+      // Emit a context switch event to and from the same thread to update the
+      // visualized schedling parameters if the bandwidth demand actually
+      // changed.
+      if (bandwidth_demand_changed) {
+        SchedTraceContextSwitch(&thread, &thread, curr_cpu);
+      }
+    }
+
+    // Check that target is left in the same disposition.
+    DEBUG_ASSERT(disposition == thread.disposition());
+
+    // Reschedule to reflect the updated state.
+    RescheduleMask(cpu_num_to_mask(state.curr_cpu_));
+    scheduler.ValidateInvariants();
   } else {
-    static_assert(ktl::is_same_v<TargetType, OwnedWaitQueue>,
-                  "Targets of PI operations must either be Threads or OwnedWaitQueues");
-    const SchedulerState::EffectiveProfile& old_ep =
-        old_target_ep_ ? *old_target_ep_ : ComputeEffectiveProfile(target_);
-    SchedulerState::EffectiveProfile new_ep = ComputeEffectiveProfile(target_);
-    static_cast<Op*>(this)->UpdateDynamicParams(old_ep, new_ep, CurrentTime());
+    // The target thread is not runnable; update its effective profile and the
+    // scheduler bookkeeping.
+    SchedulerState::EffectiveProfile old_ep = state.effective_profile_;
+    if (WaitQueue* wq = thread.wait_queue_state().blocking_wait_queue_; wq != nullptr) {
+      wq->get_lock().AssertHeld();
+      wq->UpdateBlockedThreadEffectiveProfile(thread);
+    } else {
+      thread.RecomputeEffectiveProfile();
+    }
+    update_dynamic_params(upstream, thread, old_ep, state.effective_profile_, CurrentTime());
   }
 
-  // The finish time should not be negative, but the start time can be when it
-  // is re-calculated relative to the finish time.
-  DEBUG_ASSERT_MSG(SchedTime finish_time = GetFinishTime(target_);
+  DEBUG_ASSERT_MSG(SchedTime finish_time = GetFinishTime(thread);
                    finish_time >= 0, "finish_time %ld\n", finish_time.raw_value());
 }
 
-void Scheduler::ThreadBaseProfileChanged(Thread& thread) {
-  ThreadBaseProfileChangedOp op{thread};
-  op.DoOperation();
+// PI common path for owned wait queues.
+template <typename Upstream, typename UpdateDynamicParams>
+inline void Scheduler::Pi::Common(Upstream& upstream, OwnedWaitQueue& owq,
+                                  UpdateDynamicParams update_dynamic_params,
+                                  const SchedulerState::EffectiveProfile* old_target_ep) {
+  ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "Pi::Common(OwnedWaitQueue)");
+
+  const SchedulerState::EffectiveProfile& old_ep =
+      old_target_ep ? *old_target_ep : GetEffectiveProfile(owq);
+  SchedulerState::EffectiveProfile new_ep = GetEffectiveProfile(owq);
+  update_dynamic_params(upstream, owq, old_ep, new_ep, CurrentTime());
+
+  DEBUG_ASSERT_MSG(SchedTime finish_time = GetFinishTime(owq);
+                   finish_time >= 0, "finish_time %ld\n", finish_time.raw_value());
 }
 
+// Updates a thread's effective profile and position in its container at the
+// start of a base profile update operation, regardless of whether or not the
+// target thread is currently blocked or currently assigned to a scheduler.
+//
+// Later on, if the thread happens to be an upstream member of a PI graph whose
+// target is either an OwnedWaitQueue or another thread, the
+// UpstreamThreadBaseProfileChanged operation will be triggered to handle the
+// downstream target of the graph.
+void Scheduler::ThreadBaseProfileChanged(Thread& thread) {
+  // The base profile of this thread has changed.  While there may or may not be
+  // something downstream of this thread, we need to start by dealing with
+  // updating this threads static and dynamic scheduling parameters first.
+  Pi::AssertEpDirtyState(thread, SchedulerState::ProfileDirtyFlag::BaseDirty);
+  Pi::Common(thread, thread, ThreadBaseProfileChangedOp::UpdateDynamicParams);
+}
+
+// Called when a thread in a graph whose target is either an OwnedWaitQueue or
+// a different Thread changes its base profile in order update the target's new
+// effective profile, position in container, and dynamic scheduling parameters.
 template <typename TargetType>
 void Scheduler::UpstreamThreadBaseProfileChanged(const Thread& upstream, TargetType& target) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_pi: base profile changed");
-  UpstreamThreadBaseProfileChangedOp op{upstream, target};
-  op.DoOperation();
+  // The base profile of a thread upstream of this target node has changed.  We need to
+  // do the following:
+  //
+  // 1) Recompute the target's effective profile.
+  // 2) Handle any bookkeeping updates for the scheduler's state, if the target
+  //    is a thread which is either RUNNING or READY, and therefore has a
+  //    scheduler assigned to it.
+  // 3) Handle any updates to the target's dynamic scheduling parameters (eg,
+  //    start time, finish time, time slice remaining)
+  if constexpr (ktl::is_same_v<Thread, TargetType>) {
+    DEBUG_ASSERT(&upstream != &target);
+  }
+
+  Pi::AssertEpDirtyState(target, SchedulerState::ProfileDirtyFlag::InheritedDirty);
+  Pi::AssertEpDirtyState(upstream, SchedulerState::ProfileDirtyFlag::Clean);
+
+  Pi::Common(upstream, target, UpstreamThreadBaseProfileChangedOp::UpdateDynamicParams<TargetType>);
 }
 
+// Called when a new edge is added connecting the target of one PI graph (the
+// upstream node) to a different PI graph.
 template <typename UpstreamType, typename TargetType>
 void Scheduler::JoinNodeToPiGraph(const UpstreamType& upstream, TargetType& target,
                                   ForceInheritance force_inheritance) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_pi: join");
-  JoinNodeToPiGraphOp op{upstream, target, force_inheritance};
-  op.DoOperation();
+
+  if constexpr (ktl::is_same_v<UpstreamType, TargetType>) {
+    DEBUG_ASSERT(&upstream != &target);
+  }
+
+  Pi::AssertEpDirtyState(target, SchedulerState::ProfileDirtyFlag::InheritedDirty);
+  Pi::AssertEpDirtyState(upstream, SchedulerState::ProfileDirtyFlag::Clean);
+
+  Pi::Common(upstream, target, JoinNodeToPiGraphOp::UpdateDynamicParams<UpstreamType, TargetType>);
 }
 
+// Called when an upstream node has its downstream edge removed, splitting it
+// from the PI graph it was a member of and becoming the target of a new graph
+// in the process.
 template <typename UpstreamType, typename TargetType>
 void Scheduler::SplitNodeFromPiGraph(UpstreamType& upstream, TargetType& target,
                                      const SchedulerState::EffectiveProfile* old_target_ep) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(COMMON, "sched_pi: split");
-  SplitNodeFromPiGraphOp op{upstream, target, old_target_ep};
-  op.DoOperation();
+
+  if constexpr (ktl::is_same_v<UpstreamType, TargetType>) {
+    DEBUG_ASSERT(&upstream != &target);
+  }
+
+  Pi::AssertEpDirtyState(target, SchedulerState::ProfileDirtyFlag::InheritedDirty);
+  Pi::AssertEpDirtyState(upstream, SchedulerState::ProfileDirtyFlag::Clean);
+
+  Pi::Common(upstream, target,
+             SplitNodeFromPiGraphOp::UpdateDynamicParams<UpstreamType, TargetType>, old_target_ep);
 }
 
 template void Scheduler::UpstreamThreadBaseProfileChanged(const Thread&, Thread&);

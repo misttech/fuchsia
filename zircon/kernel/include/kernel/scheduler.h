@@ -85,10 +85,9 @@ class Scheduler {
   // option or gn arg.
   static bool EnableNewWakeupAccounting();
 
-  // fwd decl of a helper class used to implement various PI operations.  See
+  // Helper type used to implement various PI operations. See
   // //zircon/kernel/kernel/scheduler_pi.cc to see how it is used.
-  template <typename Op, typename TargetType>
-  class PiOperation;
+  struct Pi;
 
   // Minimum fair time slice. Set to avoid excessive reschedule overhead.
   // TODO(eieio): This needs to be revised and/or scaled for lower OPPs.
