@@ -1634,6 +1634,11 @@ pub fn sys_seccomp(
             {
                 return error!(EINVAL);
             }
+            if (flags & SECCOMP_FILTER_FLAG_TSYNC == 0)
+                && (flags & SECCOMP_FILTER_FLAG_TSYNC_ESRCH != 0)
+            {
+                return error!(EINVAL);
+            }
             if (flags & SECCOMP_FILTER_FLAG_NEW_LISTENER != 0)
                 && (flags & SECCOMP_FILTER_FLAG_TSYNC != 0)
                 && (flags & SECCOMP_FILTER_FLAG_TSYNC_ESRCH == 0)
