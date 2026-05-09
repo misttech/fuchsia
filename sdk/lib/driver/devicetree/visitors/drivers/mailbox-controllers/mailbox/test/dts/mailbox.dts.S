@@ -31,4 +31,16 @@
 		reg = <0xabd00000 0x1000>;
 		mboxes = <&mailbox_2 0x1234>;
 	};
+
+	mailbox_3: mailbox@abcf1000 {
+		compatible = "vendor3,mailbox";
+		reg = <0xabcf1000 0x1000>;
+		#mbox-cells = <2>;
+	};
+
+	node@abd10000 {
+		reg = <0xabd10000 0x1000>;
+		mboxes = <&mailbox_3 0x1111 0x2222>;
+		mbox-names = "mailbox-3-1111-2222";
+	};
 };

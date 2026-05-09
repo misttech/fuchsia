@@ -7,6 +7,8 @@ library fuchsia.hardware.mailbox;
 type ChannelInfo = table {
     /// Channel number, unique for this controller. Required.
     1: channel uint32;
+    /// Client service ID, unique for this channel. Optional.
+    2: client uint32;
 };
 
 /// `ControllerInfo` is passed to mailbox controller drivers via metadata.

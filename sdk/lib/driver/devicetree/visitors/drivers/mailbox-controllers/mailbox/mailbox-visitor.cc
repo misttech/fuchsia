@@ -26,13 +26,30 @@ constexpr char kMailboxesProperty[] = "mboxes";
 constexpr char kMailboxNamesProperty[] = "mbox-names";
 constexpr char kMailboxCellsProperty[] = "#mbox-cells";
 
-zx::result<uint32_t> ParseChannel(fdf_devicetree::Reference& reference) {
-  const std::optional<uint32_t> channel =
-      devicetree::PropertyValue(reference.property_cells()).AsUint32();
-  if (!channel) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
+struct MailboxSpec {
+  uint32_t channel;
+  std::optional<uint32_t> client;
+};
+
+zx::result<MailboxSpec> ParseMailbox(fdf_devicetree::Reference& reference) {
+  auto cells = reference.property_cells();
+  if (cells.size_bytes() == sizeof(uint32_t)) {
+    const std::optional<uint32_t> channel = devicetree::PropertyValue(cells).AsUint32();
+    if (!channel) {
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+    return zx::ok(MailboxSpec{.channel = *channel});
   }
-  return zx::ok(*channel);
+
+  if (cells.size_bytes() == 2 * sizeof(uint32_t)) {
+    using MailboxElement = devicetree::PropEncodedArrayElement<2>;
+    devicetree::PropEncodedArray<MailboxElement> mailbox_cells(cells, 1, 1);
+    return zx::ok(MailboxSpec{
+        .channel = static_cast<uint32_t>(*mailbox_cells[0][0]),
+        .client = static_cast<uint32_t>(*mailbox_cells[0][1]),
+    });
+  }
+  return zx::error(ZX_ERR_INVALID_ARGS);
 }
 
 }  // namespace
@@ -42,7 +59,7 @@ namespace mailbox_dt {
 MailboxVisitor::MailboxVisitor() {
   fdf_devicetree::Properties mailbox_properties = {};
   mailbox_properties.emplace_back(std::make_unique<fdf_devicetree::ReferenceProperty>(
-      kMailboxesProperty, 1u, /*required=*/false));
+      kMailboxesProperty, kMailboxCellsProperty, /*required=*/false));
   mailbox_parser_ = std::make_unique<fdf_devicetree::PropertyParser>(std::move(mailbox_properties));
 }
 
@@ -85,11 +102,11 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
   uint32_t current_controller_id = 0;
 
   for (auto& reference : *channels) {
-    zx::result<uint32_t> channel = ParseChannel(reference);
-    if (channel.is_error()) {
+    zx::result<MailboxSpec> spec = ParseMailbox(reference);
+    if (spec.is_error()) {
       fdf::error("Failed to parse mailbox channel reference for node \"{}\"", node.name());
 
-      return channel.take_error();
+      return spec.take_error();
     }
 
     // Map the node ID to a controller index to be used only in the node properties. This way
@@ -99,7 +116,12 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
     }
     const uint32_t local_controller_id = controller_ids[reference.reference_node().id()];
 
-    controller_info_[reference.reference_node().id()].push_back({{.channel = *channel}});
+    fuchsia_hardware_mailbox::ChannelInfo channel_info;
+    channel_info.channel(spec->channel);
+    if (spec->client) {
+      channel_info.client(*spec->client);
+    }
+    controller_info_[reference.reference_node().id()].push_back(std::move(channel_info));
 
     fuchsia_driver_framework::ParentSpec2 parent_spec{{
         .bind_rules =
@@ -108,16 +130,23 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
                                         bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
                 fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID,
                                         reference.reference_node().id()),
-                fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CHANNEL, *channel),
+                fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CHANNEL, spec->channel),
             },
         .properties =
             {
                 fdf::MakeProperty2(bind_fuchsia_hardware_mailbox::SERVICE,
                                    bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
                 fdf::MakeProperty2(bind_fuchsia_mailbox::CONTROLLER_ID, local_controller_id),
-                fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL, *channel),
+                fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL, spec->channel),
             },
     }};
+
+    if (spec->client) {
+      parent_spec.bind_rules().push_back(
+          fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CLIENT, *spec->client));
+      parent_spec.properties().push_back(
+          fdf::MakeProperty2(bind_fuchsia_mailbox::CLIENT, *spec->client));
+    }
 
     if (channel_name_it != channel_names.cend()) {
       parent_spec.properties().push_back(
@@ -146,7 +175,7 @@ zx::result<> MailboxVisitor::FinalizeNode(fdf_devicetree::Node& node) {
     return mbox_cells.take_error();
   }
 
-  if (*mbox_cells != 1) {
+  if (*mbox_cells != 1 && *mbox_cells != 2) {
     fdf::error("Invalid #mbox-cells property for node \"{}\"", node.name());
 
     return zx::error(ZX_ERR_INVALID_ARGS);

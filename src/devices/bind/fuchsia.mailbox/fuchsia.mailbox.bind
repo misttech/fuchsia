@@ -7,4 +7,5 @@ library fuchsia.mailbox;
 uint CONTROLLER_ID;
 
 uint CHANNEL;
+uint CLIENT;
 string CHANNEL_NAME;

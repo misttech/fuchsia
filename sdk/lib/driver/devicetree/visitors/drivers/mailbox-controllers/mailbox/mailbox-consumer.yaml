@@ -19,7 +19,7 @@ select: true
 properties:
   mboxes:
     $ref: /schemas/types.yaml#/definitions/phandle-array
-    description: 1st cell for phandle and 2nd cell for channel.
+    description: Phandle and specifier list. Specifier contains channel (1 cell) or channel and client ID (2 cells).
 
   mbox-names:
     $ref: /schemas/types.yaml#/definitions/non-unique-string-array
@@ -41,4 +41,16 @@ examples:
       reg = <0xabce0000 0x1000>;
       mboxes = <&mailbox 1>, <&mailbox 2>;
       mbox-names = "channel-1", "channel-2";
+    };
+  - |
+    mailbox_2: mailbox@abcd1000 {
+      compatible = "example,mailbox-controller-2";
+      reg = <0xabcd1000 0x1000>;
+      #mbox-cells = <2>;
+    };
+
+    node@abd00000 {
+      reg = <0xabd00000 0x1000>;
+      mboxes = <&mailbox_2 1 0x100>, <&mailbox_2 2 0x200>;
+      mbox-names = "channel-1-client-100", "channel-2-client-200";
     };
