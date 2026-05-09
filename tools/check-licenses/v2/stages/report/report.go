@@ -102,13 +102,13 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 			relProjRoot, _ := filepath.Rel(r.FuchsiaDir, proj)
 			_, allowed := r.MissingLicenseExceptions[relProjRoot]
 			if allowed {
-				metrics.AllowlistHits.Inc("AllProjectsMustHaveALicense")
+				metrics.AllowlistHits.Inc(v2config.PolicyCheckAllProjectsMustHaveALicense)
 				continue
 			}
 
 			// We emit this directly into the error slice so it fails the build
 			errs = append(errs, pipeline.ComplianceError{
-				CheckName: "AllProjectsMustHaveALicense",
+				CheckName: v2config.PolicyCheckAllProjectsMustHaveALicense,
 				Project:   proj,
 				FilePath:  "",
 				Issue:     fmt.Sprintf("Project has no recognized license files. Every third-party project must contain a license file. If this project is an exception, allow it by running:\n    fx check-licenses policy add -bug <BugID> AllProjectsMustHaveALicense %s", relProjRoot),
@@ -168,14 +168,14 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 			if r.WriteReadmes {
 				if err := os.WriteFile(readmePath, []byte(newFormatted), 0644); err != nil {
 					errs = append(errs, pipeline.ComplianceError{
-						CheckName: "ReadmeFuchsiaNeedsUpdate",
+						CheckName: v2config.CheckNameReadmeFuchsiaNeedsUpdate,
 						Project:   projRoot,
 						FilePath:  readmePath,
 						Issue:     fmt.Sprintf("README.fuchsia is out of date, but failed to automatically update it: %v", err),
 					})
 				} else {
 					errs = append(errs, pipeline.ComplianceError{
-						CheckName: "ReadmeFuchsiaNeedsUpdate",
+						CheckName: v2config.CheckNameReadmeFuchsiaNeedsUpdate,
 						Project:   projRoot,
 						FilePath:  readmePath,
 						Issue:     "README.fuchsia was out of date and has been automatically updated. Please review and commit the changes.",
@@ -183,7 +183,7 @@ func (r *Reporter) Run(ctx context.Context, files <-chan pipeline.ClassifiedFile
 				}
 			} else {
 				errs = append(errs, pipeline.ComplianceError{
-					CheckName: "ReadmeFuchsiaNeedsUpdate",
+					CheckName: v2config.CheckNameReadmeFuchsiaNeedsUpdate,
 					Project:   projRoot,
 					FilePath:  readmePath,
 					Issue:     "README.fuchsia is out of date. Run 'fx check-licenses fix' to update it.",

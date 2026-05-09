@@ -153,6 +153,16 @@ func (b *Builder) parseConfigFile(path string) error {
 		}
 	}
 
+	// 2.5 Process CopyrightExtensions
+	if f.CopyrightExtensions != nil {
+		for _, ext := range f.CopyrightExtensions.Extensions {
+			if !strings.HasPrefix(ext, ".") {
+				ext = "." + ext
+			}
+			b.Config.CopyrightExtensions[ext] = true
+		}
+	}
+
 	// 3. Process Barriers
 	for _, barrier := range f.Barriers {
 		if barrier.Bug == "" && filepath.Base(path) != "default.json" && filepath.Base(path) != "hidden_dirs.json" && filepath.Base(path) != "test_dirs.json" && filepath.Base(path) != "bazel_vendor.json" {

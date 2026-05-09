@@ -45,6 +45,10 @@ func TestFixCommand_Execute(t *testing.T) {
 	os.MkdirAll(gplConfigDir, 0755)
 	os.WriteFile(filepath.Join(gplConfigDir, "default.json"), []byte("{}"), 0644)
 
+	copyrightExtDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs", "copyright_extensions")
+	os.MkdirAll(copyrightExtDir, 0755)
+	os.WriteFile(filepath.Join(copyrightExtDir, "default.json"), []byte(`{"copyright_extensions": {"extensions": [".cc"]}}`), 0644)
+
 	// 2. Create a project with multiple issues
 	// 1st project: Root (First-party)
 	// Issue 1: Missing Copyright Header
@@ -142,7 +146,11 @@ func TestFixCommand_Failure(t *testing.T) {
 	os.MkdirAll(filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs"), 0755)
 	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
 	os.MkdirAll(filepath.Dir(seedConfig), 0755)
-	os.WriteFile(seedConfig, []byte(`{}`), 0644)
+	os.WriteFile(seedConfig, []byte(`{"includes": ["tools/check-licenses/assets"]}`), 0644)
+
+	copyrightExtDir2 := filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs", "copyright_extensions")
+	os.MkdirAll(copyrightExtDir2, 0755)
+	os.WriteFile(filepath.Join(copyrightExtDir2, "default.json"), []byte(`{"copyright_extensions": {"extensions": [".cc"]}}`), 0644)
 
 	// Create a minimal README.fuchsia to define the project
 	readmePath := filepath.Join(tempDir, "README.fuchsia")

@@ -26,15 +26,21 @@ type Validator struct {
 
 	// AllowedLicenses maps a highly restricted SPDX ID (e.g., "GPL-2.0", "FTL") to a set of allowed project paths.
 	AllowedLicenses map[string]map[string]v2config.RuleMetadata
+
+	// CopyrightExtensions tracks extensions that require Fuchsia copyright headers.
+	CopyrightExtensions map[string]bool
 }
 
 // NewValidator creates a new stateless policy engine.
-func NewValidator(fuchsiaDir string, policyExceptions map[string]map[string]v2config.RuleMetadata, allowedLicenses map[string]map[string]v2config.RuleMetadata) *Validator {
+func NewValidator(fuchsiaDir string, policyExceptions map[string]map[string]v2config.RuleMetadata, allowedLicenses map[string]map[string]v2config.RuleMetadata, copyrightExtensions map[string]bool) *Validator {
 	if policyExceptions == nil {
 		policyExceptions = make(map[string]map[string]v2config.RuleMetadata)
 	}
 	if allowedLicenses == nil {
 		allowedLicenses = make(map[string]map[string]v2config.RuleMetadata)
+	}
+	if copyrightExtensions == nil {
+		copyrightExtensions = make(map[string]bool)
 	}
 
 	// Ensure FuchsiaDir is absolute for consistent comparison
@@ -44,9 +50,10 @@ func NewValidator(fuchsiaDir string, policyExceptions map[string]map[string]v2co
 	}
 
 	return &Validator{
-		FuchsiaDir:       fuchsiaDir,
-		PolicyExceptions: policyExceptions,
-		AllowedLicenses:  allowedLicenses,
+		FuchsiaDir:          fuchsiaDir,
+		PolicyExceptions:    policyExceptions,
+		AllowedLicenses:     allowedLicenses,
+		CopyrightExtensions: copyrightExtensions,
 	}
 }
 
@@ -81,17 +88,17 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 			if cf.IsLicenseFile {
 				if len(cf.Matches) == 0 {
 					allowed := false
-					if list, ok := v.PolicyExceptions["AllLicenseTextsMustBeRecognized"]; ok {
+					if list, ok := v.PolicyExceptions[v2config.PolicyCheckAllLicenseTextsMustBeRecognized]; ok {
 						if _, ok := list[relPath]; ok {
 							allowed = true
-							metrics.AllowlistHits.Inc("AllLicenseTextsMustBeRecognized")
+							metrics.AllowlistHits.Inc(v2config.PolicyCheckAllLicenseTextsMustBeRecognized)
 						}
 					}
 
 					if !allowed {
-						metrics.ValidationErrors.Inc("AllLicenseTextsMustBeRecognized")
+						metrics.ValidationErrors.Inc(v2config.PolicyCheckAllLicenseTextsMustBeRecognized)
 						err := pipeline.ComplianceError{
-							CheckName: "AllLicenseTextsMustBeRecognized",
+							CheckName: v2config.PolicyCheckAllLicenseTextsMustBeRecognized,
 							Project:   cf.ProjectRoot,
 							FilePath:  cf.Path,
 							Issue:     fmt.Sprintf("Unrecognized license text: no SPDX ID could be matched. If this file is an exception, allow it by running:\n    fx check-licenses policy add -bug <BugID> AllLicenseTextsMustBeRecognized %s", relPath),
@@ -121,12 +128,12 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 
 				if !hasFuchsiaCopyright {
 					allowed := false
-					if list, ok := v.PolicyExceptions["AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders"]; ok {
+					if list, ok := v.PolicyExceptions[v2config.PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders]; ok {
 						// The v1 logic sometimes uses paths relative to FuchsiaDir, sometimes just base.
 						// We use the relative file path for consistency.
 						if _, ok := list[relPath]; ok {
 							allowed = true
-							metrics.AllowlistHits.Inc("AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders")
+							metrics.AllowlistHits.Inc(v2config.PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders)
 						}
 					}
 
@@ -139,11 +146,11 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 						// To avoid flagging every single JSON/XML/config file, we only enforce this on
 						// common source code files that support comments.
 						// The Crawler's TargetExtensions naturally handles this, but we do a sanity check.
-						ext := filepath.Ext(cf.Path)
-						if isSourceCodeExt(ext) {
-							metrics.ValidationErrors.Inc("AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders")
+						ext := strings.ToLower(filepath.Ext(cf.Path))
+						if v.CopyrightExtensions[ext] {
+							metrics.ValidationErrors.Inc(v2config.PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders)
 							err := pipeline.ComplianceError{
-								CheckName: "AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders",
+								CheckName: v2config.PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders,
 								Project:   cf.ProjectRoot,
 								FilePath:  cf.Path,
 								Issue:     fmt.Sprintf("Missing Fuchsia copyright header in first-party source file. Fix this automatically by running:\n    fx check-licenses copyright %s", relPath),
@@ -189,7 +196,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 						if !allowed {
 							metrics.ValidationErrors.Inc("UnapprovedLicenseUsage")
 							err := pipeline.ComplianceError{
-								CheckName: "AllLicensePatternUsagesMustBeApproved",
+								CheckName: v2config.CheckNameAllLicensePatternUsagesMustBeApproved,
 								LicenseID: match.SPDXID,
 								Project:   cf.ProjectRoot,
 								FilePath:  cf.Path,
@@ -208,12 +215,4 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 	}()
 
 	return out, nil
-}
-func isSourceCodeExt(ext string) bool {
-	ext = strings.ToLower(ext)
-	switch ext {
-	case ".cc", ".cpp", ".h", ".hh", ".hpp", ".c", ".rs", ".go", ".py", ".sh", ".gn", ".gni", ".dart", ".java", ".kt":
-		return true
-	}
-	return false
 }

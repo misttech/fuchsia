@@ -349,10 +349,10 @@ func (p *GenerateCommand) executeV2Pipeline(target string) error {
 		FuchsiaDir: p.fuchsiaDir,
 	}
 
-	validator := v2validate.NewValidator(p.fuchsiaDir, config.PolicyExceptions, config.AllowedLicenses)
+	validator := v2validate.NewValidator(p.fuchsiaDir, config.PolicyExceptions, config.AllowedLicenses, config.CopyrightExtensions)
 
 	// Reporter: p.overwriteReadmeFiles is passed!
-	reporter := v2report.NewReporter(p.fuchsiaDir, p.outDir, false, p.overwriteReadmeFiles, true, config.OutOfTreeReadmes, config.PolicyExceptions["AllProjectsMustHaveALicense"])
+	reporter := v2report.NewReporter(p.fuchsiaDir, p.outDir, false, p.overwriteReadmeFiles, true, config.OutOfTreeReadmes, config.PolicyExceptions[v2config.PolicyCheckAllProjectsMustHaveALicense])
 
 	orchestrator := pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, reporter)
 

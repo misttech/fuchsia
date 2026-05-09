@@ -33,7 +33,12 @@ func TestValidator_Run(t *testing.T) {
 		},
 	}
 
-	validator := NewValidator(fuchsiaDir, policyExceptions, allowedLicenses)
+	copyrightExtensions := map[string]bool{
+		".cc": true,
+		".py": true,
+	}
+
+	validator := NewValidator(fuchsiaDir, policyExceptions, allowedLicenses, copyrightExtensions)
 
 	inChan := make(chan pipeline.ClassifiedFile, 15)
 

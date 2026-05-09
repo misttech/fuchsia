@@ -48,6 +48,16 @@ func TestBuilder_Assemble(t *testing.T) {
 	})
 	os.WriteFile(filepath.Join(osConfigs, "target_extensions", "test_ext.json"), osExtBytes, 0644)
 
+	if err := os.MkdirAll(filepath.Join(osConfigs, "copyright_extensions"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	osCopyExtBytes, _ := json.Marshal(ConfigFile{
+		CopyrightExtensions: &ExtensionEntry{
+			Extensions: []string{".cc", "py"}, // intentionally missing dot on py
+		},
+	})
+	os.WriteFile(filepath.Join(osConfigs, "copyright_extensions", "test_copy_ext.json"), osCopyExtBytes, 0644)
+
 	if err := os.MkdirAll(filepath.Join(osAssets, "readmes", "third_party", "foo", "src"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +99,11 @@ func TestBuilder_Assemble(t *testing.T) {
 	expectedExts := map[string]bool{".cc": true, ".rs": true}
 	if !reflect.DeepEqual(config.TargetExtensions, expectedExts) {
 		t.Errorf("Expected extensions %v, got %v", expectedExts, config.TargetExtensions)
+	}
+
+	expectedCopyExts := map[string]bool{".cc": true, ".py": true}
+	if !reflect.DeepEqual(config.CopyrightExtensions, expectedCopyExts) {
+		t.Errorf("Expected copyright extensions %v, got %v", expectedCopyExts, config.CopyrightExtensions)
 	}
 
 	logicalPath := filepath.Join("third_party", "foo")

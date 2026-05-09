@@ -46,6 +46,10 @@ type MasterConfig struct {
 	// to save CPU/memory, but they still exist in the Project struct for compliance reporting.
 	TargetExtensions map[string]bool
 
+	// CopyrightExtensions is a map of file extensions (including the dot, e.g., ".cc")
+	// that require Fuchsia copyright headers if owned by Fuchsia.
+	CopyrightExtensions map[string]bool
+
 	// --- Injected into Validator (Stage 5) ---
 
 	// PolicyExceptions maps a Policy Check Name (e.g., "AllProjectsMustHaveALicense") to a set of allowed project paths.
@@ -97,6 +101,7 @@ func NewMasterConfig() *MasterConfig {
 		SkipPaths:               make([]string, 0),
 		SkipAnywhere:            make([]string, 0),
 		TargetExtensions:        make(map[string]bool),
+		CopyrightExtensions:     make(map[string]bool),
 		BarrierPaths:            make([]string, 0),
 		OutOfTreeReadmes:        make(map[string]string),
 		PolicyExceptions:        make(map[string]map[string]RuleMetadata),
@@ -112,12 +117,13 @@ func NewMasterConfig() *MasterConfig {
 // of these fields, allowing configuration to be organized by project or by theme.
 
 type ConfigFile struct {
-	Includes         []string                    `json:"includes,omitempty"`
-	Skips            []SkipEntry                 `json:"skips,omitempty"`
-	TargetExtensions *ExtensionEntry             `json:"target_extensions,omitempty"`
-	Barriers         []BarrierEntry              `json:"barriers,omitempty"`
-	PolicyExceptions map[string][]AllowlistEntry `json:"policy_exceptions,omitempty"`
-	AllowedLicenses  map[string][]AllowlistEntry `json:"allowed_licenses,omitempty"`
+	Includes            []string                    `json:"includes,omitempty"`
+	Skips               []SkipEntry                 `json:"skips,omitempty"`
+	TargetExtensions    *ExtensionEntry             `json:"target_extensions,omitempty"`
+	CopyrightExtensions *ExtensionEntry             `json:"copyright_extensions,omitempty"`
+	Barriers            []BarrierEntry              `json:"barriers,omitempty"`
+	PolicyExceptions    map[string][]AllowlistEntry `json:"policy_exceptions,omitempty"`
+	AllowedLicenses     map[string][]AllowlistEntry `json:"allowed_licenses,omitempty"`
 }
 
 type SkipEntry struct {
@@ -148,6 +154,8 @@ const (
 	PolicyCheckAllLicenseTextsMustBeRecognized                     = "AllLicenseTextsMustBeRecognized"
 	PolicyCheckAllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders = "AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders"
 	PolicyCheckAllProjectsMustHaveALicense                         = "AllProjectsMustHaveALicense"
+	CheckNameReadmeFuchsiaNeedsUpdate                              = "ReadmeFuchsiaNeedsUpdate"
+	CheckNameAllLicensePatternUsagesMustBeApproved                 = "AllLicensePatternUsagesMustBeApproved"
 )
 
 var ValidPolicyChecks = map[string]bool{
