@@ -237,7 +237,7 @@ func (p *GenerateCommand) executeImpl(f *flag.FlagSet) error {
 	}
 
 	if p.runV2 {
-		if err := p.executeV2Pipeline(); err != nil {
+		if err := p.executeV2Pipeline(target); err != nil {
 			return fmt.Errorf("failed to execute v2 pipeline: %w", err)
 		}
 		return nil
@@ -300,7 +300,7 @@ func getLogWriters(logLevel int, outDir string) (io.Writer, error) {
 }
 
 // executeV2Pipeline runs the experimental v2 compliance engine.
-func (p *GenerateCommand) executeV2Pipeline() error {
+func (p *GenerateCommand) executeV2Pipeline(target string) error {
 	log.Println("Starting v2 fast compliance pipeline...")
 	startTime := time.Now()
 	ctx := context.Background()
@@ -318,11 +318,11 @@ func (p *GenerateCommand) executeV2Pipeline() error {
 
 	// We still use the GN parsing logic for now to establish the build graph map
 	var validFiles map[string]bool
-	if Config.OutputLicenseFile {
+	if p.outputLicenseFile {
 		gnStart := time.Now()
 		log.Printf("Generating GN project file to extract build graph... (This may take a while)")
 
-		gn, err := util.NewGn(Config.Project.GnPath, Config.Project.BuildDir)
+		gn, err := util.NewGn(p.gnPath, p.buildDir)
 		if err != nil {
 			return err
 		}
@@ -331,13 +331,13 @@ func (p *GenerateCommand) executeV2Pipeline() error {
 		}
 
 		log.Printf("Loading and parsing GN project.json file...")
-		gen, err := util.LoadGen(Config.Project.GenProjectFile)
+		gen, err := util.LoadGen(p.genProjectFile)
 		if err != nil {
 			return err
 		}
 
 		log.Printf("Extracting transitive files from build graph...")
-		validFiles, err = gen.GetTransitiveFiles(Config.Project.Target, p.fuchsiaDir)
+		validFiles, err = gen.GetTransitiveFiles(target, p.fuchsiaDir)
 		if err != nil {
 			return err
 		}
@@ -496,7 +496,7 @@ func (p *GenerateCommand) executeV2Pipeline() error {
 	endTrack()
 
 	log.Printf("v2 pipeline completed successfully in %v\n", time.Since(startTime))
-	return printMetricsSummary(nil, true, p.logLevel, Config.OutDir)
+	return printMetricsSummary(nil, true, p.logLevel, p.outDir)
 }
 
 // executePipeline kicks-off the check-licenses runthrough.
