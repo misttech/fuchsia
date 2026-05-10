@@ -66,6 +66,38 @@ void RecordPcmFormat(inspect::Node& node, fuchsia_audio::SampleType sample_type,
   node.RecordString(kSampleFormat, stream.str());
 }
 
+// Save a string to an inspect property _that might already exist_.
+void SaveNodeString(inspect::Node& node, std::optional<inspect::StringProperty>& prop,
+                    const std::string& key, const std::string& value) {
+  if (!prop) {
+    prop = node.CreateString(key, value);
+  } else {
+    prop->Set(value);
+  }
+}
+
+// Save an optional bool to an inspect property _that might already exist_ -- as a string.
+bool SaveBooleanToNodeStringProperty(inspect::Node& node,
+                                     std::optional<inspect::StringProperty>& prop,
+                                     const std::string& key, std::optional<bool> value,
+                                     const std::string& default_str) {
+  if (value.has_value()) {
+    std::string value_str = *value ? "true" : "false";
+    SaveNodeString(node, prop, key, value_str);
+    return true;
+  }
+  SaveNodeString(node, prop, key, default_str);
+  return false;
+}
+
+// Save an optional int64 to an inspect property _that might already exist_ -- as a string.
+bool SaveIntToNodeStringProperty(inspect::Node& node, std::optional<inspect::StringProperty>& prop,
+                                 const std::string& key, std::optional<int64_t> value,
+                                 const std::string& default_str) {
+  SaveNodeString(node, prop, key, value.has_value() ? std::to_string(*value) : default_str);
+  return value.has_value();
+}
+
 }  // namespace
 
 ///////////////////////////////////////
@@ -614,6 +646,8 @@ Element::Element(inspect::Node element_node, ElementId element_id, const fhasp::
   props_node_ = element_node_.CreateChild(kProperties);
 
   if (element.type().has_value()) {
+    element_type_ = *element.type();
+
     std::ostringstream stream;
     stream << *element.type();
     props_node_.RecordString(kType, stream.str());
@@ -647,6 +681,60 @@ Element::Element(inspect::Node element_node, ElementId element_id, const fhasp::
 }
 
 Element::~Element() { ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_; }
+
+void Element::SaveString(std::optional<inspect::StringProperty>& prop, const std::string& key,
+                         const std::string& value) {
+  SaveNodeString(state_node_, prop, key, value);
+}
+
+// Helper to record an optional bool as a string ("true", "false", or default_val).
+bool Element::SaveBooleanToStringProperty(std::optional<inspect::StringProperty>& prop,
+                                          const std::string& key, std::optional<bool> value,
+                                          const std::string& default_str) {
+  return SaveBooleanToNodeStringProperty(state_node_, prop, key, value, default_str);
+}
+
+// Helper to record an optional int64 as a string or default_val.
+bool Element::SaveIntToStringProperty(std::optional<inspect::StringProperty>& prop,
+                                      const std::string& key, std::optional<int64_t> value,
+                                      const std::string& default_str) {
+  return SaveIntToNodeStringProperty(state_node_, prop, key, value, default_str);
+}
+
+void Element::RecordElementState(
+    const fuchsia_hardware_audio_signalprocessing::ElementState& element_state) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+
+  if (!state_node_) {
+    state_node_ = element_node_.CreateChild(kState);
+  }
+
+  if (!SaveBooleanToStringProperty(started_prop_, std::string(kStarted), element_state.started(),
+                                   kNoneNonCompliant)) {
+    ADR_WARN_METHOD() << "No element_state.started for element " << element_id_;
+  }
+  SaveBooleanToStringProperty(bypassed_prop_, std::string(kBypassed), element_state.bypassed(),
+                              kNone + " (not bypassed)");
+
+  SaveIntToStringProperty(turn_on_delay_prop_, std::string(kTurnOnDelay),
+                          element_state.turn_on_delay(), kNone);
+  SaveIntToStringProperty(turn_off_delay_prop_, std::string(kTurnOffDelay),
+                          element_state.turn_off_delay(), kNone);
+  SaveIntToStringProperty(processing_delay_prop_, std::string(kProcessingDelay),
+                          element_state.processing_delay(), kNone);
+
+  if (element_state.vendor_specific_data().has_value()) {
+    std::string value_str =
+        "uint8[" + std::to_string(element_state.vendor_specific_data()->size()) + "]";
+    SaveString(vendor_specific_data_prop_, std::string(kVendorSpecificData), value_str);
+    ADR_LOG_METHOD(kTraceInspector) << "Received vendor_specific_data " << value_str;
+  } else {
+    if (element_type_ == fhasp::ElementType::kVendorSpecific) {
+      SaveString(vendor_specific_data_prop_, std::string(kVendorSpecificData), kNoneNonCompliant);
+      ADR_WARN_METHOD() << "No element_state.vendor_specific_data for element " << element_id_;
+    }
+  }
+}
 
 void Element::RecordTypeSpecificElement(
     fhasp::ElementType type, const std::optional<fhasp::TypeSpecificElement>& type_specific) {
@@ -1135,6 +1223,19 @@ void DeviceInspectInstance::RecordActiveTopology(fhasp::TopologyId topology_id) 
   } else {
     current_topology_id_.Set(topology_id);
   }
+}
+
+void DeviceInspectInstance::RecordElementState(
+    fuchsia_hardware_audio_signalprocessing::ElementId element_id,
+    const fuchsia_hardware_audio_signalprocessing::ElementState& element_state) {
+  ADR_LOG_METHOD(kTraceInspector) << "id " << element_id;
+  auto element = std::ranges::find_if(
+      elements_, [element_id](const auto& e) { return (e->element_id() == element_id); });
+  if (element == elements_.end()) {
+    ADR_WARN_OBJECT() << "Cannot record element state: element_id " << element_id << " not found";
+    return;
+  }
+  element->get()->RecordElementState(element_state);
 }
 
 ///////////////////////////////////////

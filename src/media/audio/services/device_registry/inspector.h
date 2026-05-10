@@ -61,6 +61,14 @@ static constexpr std::string_view kTypeSpecific = "type_specific";
 static constexpr std::string_view kCanStop = "can_stop";
 static constexpr std::string_view kCanBypass = "can_bypass";
 
+static constexpr std::string_view kState = "state";
+static constexpr std::string_view kVendorSpecificData = "vendor_specific_data";
+static constexpr std::string_view kStarted = "started";
+static constexpr std::string_view kBypassed = "bypassed";
+static constexpr std::string_view kTurnOnDelay = "turn_on_delay_ns";
+static constexpr std::string_view kTurnOffDelay = "turn_off_delay_ns";
+static constexpr std::string_view kProcessingDelay = "processing_delay_ns";
+
 // DAI-specific
 static constexpr std::string_view kPlugDetectCapabilities = "plug_detect_capabilities";
 // Dynamics- and Equalizer-specific
@@ -390,6 +398,9 @@ class Element {
   inspect::Node& inspect_node() { return element_node_; }
   ElementId element_id() const { return element_id_; }
 
+  void RecordElementState(
+      const fuchsia_hardware_audio_signalprocessing::ElementState& element_state);
+
  protected:
   void RecordTypeSpecificElement(
       fuchsia_hardware_audio_signalprocessing::ElementType type,
@@ -416,6 +427,15 @@ class Element {
       const std::optional<fuchsia_hardware_audio_signalprocessing::TypeSpecificElement>&
           type_specific);
 
+  void SaveString(std::optional<inspect::StringProperty>& prop, const std::string& key,
+                  const std::string& value);
+
+  bool SaveBooleanToStringProperty(std::optional<inspect::StringProperty>& prop,
+                                   const std::string& key, std::optional<bool> value,
+                                   const std::string& default_str);
+  bool SaveIntToStringProperty(std::optional<inspect::StringProperty>& prop, const std::string& key,
+                               std::optional<int64_t> value, const std::string& default_str);
+
  private:
   static constexpr std::string_view kClassName = "Element";
 
@@ -424,7 +444,16 @@ class Element {
   std::optional<inspect::Node> type_specific_node_ = std::nullopt;
   std::optional<inspect::UintArray> bands_arr_;
 
+  inspect::Node state_node_;
+  std::optional<inspect::StringProperty> started_prop_;
+  std::optional<inspect::StringProperty> bypassed_prop_;
+  std::optional<inspect::StringProperty> turn_on_delay_prop_;
+  std::optional<inspect::StringProperty> turn_off_delay_prop_;
+  std::optional<inspect::StringProperty> processing_delay_prop_;
+  std::optional<inspect::StringProperty> vendor_specific_data_prop_;
+
   ElementId element_id_;
+  std::optional<fuchsia_hardware_audio_signalprocessing::ElementType> element_type_ = std::nullopt;
 };
 
 // This represents a hardware topology as expressed in the signalprocessing API.
@@ -469,6 +498,9 @@ class DeviceInspectInstance {
       fuchsia_hardware_audio_signalprocessing::ElementId element_id,
       const fuchsia_hardware_audio_signalprocessing::Element& element);
   void RecordActiveTopology(fuchsia_hardware_audio_signalprocessing::TopologyId topology_id);
+  void RecordElementState(
+      fuchsia_hardware_audio_signalprocessing::ElementId element_id,
+      const fuchsia_hardware_audio_signalprocessing::ElementState& element_state);
 
   std::shared_ptr<Dai> RecordDai(ElementId element_id,
                                  const std::optional<std::string>& element_name);

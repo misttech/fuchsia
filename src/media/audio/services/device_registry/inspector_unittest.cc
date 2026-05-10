@@ -1485,6 +1485,233 @@ TEST_F(InspectorTest, AbsentTopology) {
   }
 }
 
+// Validate the initial non-TypeSpecific ElementState
+//
+// Elements:
+//   1:
+//     element_id = 5432
+//     properties:
+//       ...
+//     state:
+//       bypassed = false
+//       processing_delay = <none>
+//       started = true
+//       turn_off_delay = <none>
+//       turn_on_delay = 0
+TEST_F(InspectorTest, InitialElementStateGeneral) {
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  auto elements_node = GetChild(device_node, kElements);
+  ASSERT_NE(elements_node, nullptr);
+  ASSERT_FALSE(elements_node->children().empty());
+
+  // Let's find the Source PacketStream element.
+  for (const auto& element_node : elements_node->children()) {
+    auto properties_node = GetChild(&element_node, kProperties);
+    ASSERT_NE(properties_node, nullptr);
+    ASSERT_TRUE(
+        properties_node->node().get_property<inspect::StringPropertyValue>(std::string(kType)));
+
+    auto element_id_prop =
+        element_node.node().get_property<inspect::UintPropertyValue>(std::string(kElementId));
+    ASSERT_TRUE(element_id_prop);
+
+    if (element_id_prop->value() == FakeComposite::kSourcePsElementId) {
+      auto state_node = GetChild(&element_node, kState);
+      ASSERT_NE(state_node, nullptr);
+
+      // Verify initial started state against the source of truth in FakeComposite.
+      ASSERT_TRUE(
+          state_node->node().get_property<inspect::StringPropertyValue>(std::string(kStarted)));
+      EXPECT_EQ(state_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kStarted))
+                    ->value(),
+                *FakeComposite::kSourcePsElementInitState.started() ? "true" : "false");
+
+      // Verify initial bypassed state against the source of truth in FakeComposite.
+      ASSERT_TRUE(
+          state_node->node().get_property<inspect::StringPropertyValue>(std::string(kBypassed)));
+      EXPECT_EQ(state_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kBypassed))
+                    ->value(),
+                *FakeComposite::kSourcePsElementInitState.bypassed() ? "true" : "false");
+
+      ASSERT_TRUE(state_node->node().get_property<inspect::StringPropertyValue>(
+          std::string(kProcessingDelay)));
+      EXPECT_EQ(state_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kProcessingDelay))
+                    ->value(),
+                std::to_string(FakeComposite::kSourcePsElementProcessingDelay.get()));
+      break;
+    }
+  }
+}
+
+// Validate that the non-TypeSpecific ElementState can be changed after it is initially populated.
+//
+// Elements:
+//   1:
+//     element_id = 5432
+//     properties:
+//       ...
+//     state:
+//       bypassed = true        -> false
+//       processing_delay = 456 -> 0
+//       started = false        -> true
+//       turn_off_delay = 345   -> 0
+//       turn_on_delay = 234    -> 0
+TEST_F(InspectorTest, ChangedElementState) {
+  // Boot up the device with the normal initial state.
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  bool new_started = true, new_bypassed = false;
+  {
+    // Check that the Equalizer element is by default bypassed and stopped.
+    auto hierarchy = GetHierarchy();
+    ASSERT_FALSE(hierarchy.children().empty());
+    auto devices_node = GetChild(&hierarchy, kDevices);
+    ASSERT_NE(devices_node, nullptr);
+    ASSERT_FALSE(devices_node->children().empty());
+
+    auto device_node = &devices_node->children().front();
+    auto elements_node = GetChild(device_node, kElements);
+    ASSERT_NE(elements_node, nullptr);
+    ASSERT_FALSE(elements_node->children().empty());
+
+    // Let's find the Equalizer element and make sure it is bypassed and stopped.
+    for (const auto& element_node : elements_node->children()) {
+      auto properties_node = GetChild(&element_node, kProperties);
+      ASSERT_NE(properties_node, nullptr);
+      ASSERT_TRUE(
+          properties_node->node().get_property<inspect::StringPropertyValue>(std::string(kType)));
+      auto element_id_prop =
+          element_node.node().get_property<inspect::UintPropertyValue>(std::string(kElementId));
+      ASSERT_TRUE(element_id_prop);
+      if (element_id_prop->value() == FakeComposite::kEqualizerElementId) {
+        auto state_node = GetChild(&element_node, kState);
+        ASSERT_NE(state_node, nullptr);
+        ASSERT_TRUE(
+            state_node->node().get_property<inspect::StringPropertyValue>(std::string(kStarted)));
+        ASSERT_TRUE(
+            state_node->node().get_property<inspect::StringPropertyValue>(std::string(kBypassed)));
+        ASSERT_TRUE(state_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kTurnOnDelay)));
+        ASSERT_TRUE(state_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kTurnOffDelay)));
+        ASSERT_TRUE(state_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kProcessingDelay)));
+
+        EXPECT_EQ(state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kStarted))
+                      ->value(),
+                  *FakeComposite::kEqualizerElementInitState.started() ? "true" : "false");
+        EXPECT_EQ(state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kBypassed))
+                      ->value(),
+                  *FakeComposite::kEqualizerElementInitState.bypassed() ? "true" : "false");
+        EXPECT_NE(state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kTurnOnDelay))
+                      ->value(),
+                  "0");
+        EXPECT_NE(state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kTurnOffDelay))
+                      ->value(),
+                  "0");
+        EXPECT_NE(state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kProcessingDelay))
+                      ->value(),
+                  "0");
+
+        new_started = state_node->node()
+                          .get_property<inspect::StringPropertyValue>(std::string(kStarted))
+                          ->value() == "false";
+        new_bypassed = state_node->node()
+                           .get_property<inspect::StringPropertyValue>(std::string(kBypassed))
+                           ->value() != "true";
+        break;
+      }
+    }
+  }
+
+  // Change this element's state. Both started and bypassed can be toggled for this Element.
+  fhasp::ElementState new_state = {{
+      .type_specific = FakeComposite::kEqualizerElementInitState.type_specific(),
+      .started = new_started,
+      .bypassed = new_bypassed,
+      .turn_on_delay = 0,
+      .turn_off_delay = 0,
+      .processing_delay = 0,
+  }};
+  fake_driver->InjectElementStateChange(FakeComposite::kEqualizerElementId, new_state);
+  RunLoopUntilIdle();
+
+  {
+    auto hierarchy = GetHierarchy();
+    ASSERT_FALSE(hierarchy.children().empty());
+    auto devices_node = GetChild(&hierarchy, kDevices);
+    ASSERT_NE(devices_node, nullptr);
+    ASSERT_FALSE(devices_node->children().empty());
+
+    auto device_node = &devices_node->children().front();
+    auto elements_node = GetChild(device_node, kElements);
+    ASSERT_NE(elements_node, nullptr);
+    ASSERT_FALSE(elements_node->children().empty());
+    for (const auto& element_node : elements_node->children()) {
+      auto properties_node = GetChild(&element_node, kProperties);
+      ASSERT_NE(properties_node, nullptr);
+      ASSERT_TRUE(
+          properties_node->node().get_property<inspect::StringPropertyValue>(std::string(kType)));
+      auto element_id_prop =
+          element_node.node().get_property<inspect::UintPropertyValue>(std::string(kElementId));
+      ASSERT_TRUE(element_id_prop);
+      if (element_id_prop->value() == FakeComposite::kEqualizerElementId) {
+        auto state_node = GetChild(&element_node, kState);
+        ASSERT_NE(state_node, nullptr);
+        ASSERT_TRUE(
+            state_node->node().get_property<inspect::StringPropertyValue>(std::string(kStarted)));
+        ASSERT_TRUE(
+            state_node->node().get_property<inspect::StringPropertyValue>(std::string(kBypassed)));
+        ASSERT_TRUE(state_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kTurnOnDelay)));
+        ASSERT_TRUE(state_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kTurnOffDelay)));
+        ASSERT_TRUE(state_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kProcessingDelay)));
+
+        EXPECT_EQ(state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kStarted))
+                      ->value(),
+                  new_started ? "true" : "false");
+        EXPECT_EQ(state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kBypassed))
+                      ->value(),
+                  new_bypassed ? "true" : "false");
+        EXPECT_EQ(state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kTurnOnDelay))
+                      ->value(),
+                  "0");
+        EXPECT_EQ(state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kTurnOffDelay))
+                      ->value(),
+                  "0");
+        EXPECT_EQ(state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kProcessingDelay))
+                      ->value(),
+                  "0");
+        break;
+      }
+    }
+  }
+}
+
 // Validate the overall SupportedFormatSets for each RingBuffer element. Schema is as follows:
 // Devices
 //   12345678

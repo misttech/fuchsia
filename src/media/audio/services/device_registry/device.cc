@@ -1362,7 +1362,7 @@ void Device::RetrieveSignalProcessingElementState(ElementId element_id) {
           return;
         }
 
-        // Save the state and notify Observers, but only if this is a change in element state.
+        // Save the state and notify Observers, but only if this is a CHANGE in element state.
         auto element_record = sig_proc_element_map_.find(*element.id());
         if (element_record->second.state.has_value() &&
             *element_record->second.state == element_state) {
@@ -1370,6 +1370,7 @@ void Device::RetrieveSignalProcessingElementState(ElementId element_id) {
               << "Not sending ElementStateIsChanged: state is unchanged.";
         } else {
           element_record->second.state = element_state;
+          inspect()->RecordElementState(element_id, element_state);
           // Notify any Observers of this change in element state.
           ADR_LOG_OBJECT(kLogNotifyMethods)
               << "ForEachObserver => ElementStateIsChanged(" << element_id << ")";

@@ -378,7 +378,7 @@ bool ValidateCodecProperties(const fha::CodecProperties& codec_props,
   }
 
   // If we already have this device's PlugState, double-check against that.
-  if (plug_state.has_value() && !(*plug_state->plugged()) &&
+  if (plug_state.has_value() && !*plug_state->plugged() &&
       *codec_props.plug_detect_capabilities() == fha::PlugDetectCapabilities::kHardwired) {
     FX_LOGS(WARNING) << "GetProperties reports HARDWIRED, but Codec reports as UNPLUGGED";
     return false;
@@ -1413,7 +1413,7 @@ bool ValidateSettableGainElementState(const fhasp::SettableElementState& element
           element.type_specific()->gain()->min_gain() ||
       *element_state.type_specific()->gain()->gain() >
           element.type_specific()->gain()->max_gain()) {
-    FX_LOGS(WARNING) << "Invalid Gain-specific fields in ElementState";
+    FX_LOGS(WARNING) << "Invalid Gain-specific fields in SettableElementState";
     return false;
   }
   return true;
@@ -1463,7 +1463,7 @@ bool ValidateSettableVendorSpecificElementState(const fhasp::SettableElementStat
       !element_state.vendor_specific_data().has_value() ||
       // vendor_specific_data is opaque: we have no structured checks; just check for empty.
       element_state.vendor_specific_data()->empty()) {
-    FX_LOGS(WARNING) << "Invalid VendorSpecific fields in ElementState";
+    FX_LOGS(WARNING) << "Invalid VendorSpecific fields in SettableElementState";
     return false;
   }
   return true;
