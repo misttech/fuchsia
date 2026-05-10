@@ -213,7 +213,7 @@ void AdminTest::RequestRingBufferChannel() {
     // If a ring_buffer_id exists, request it - but don't fail if the driver has no ring buffer.
     if (ring_buffer_id().has_value()) {
       fuchsia::hardware::audio::Format2 format2;
-      format2.set_pcm_format(std::move(*rb_format.mutable_pcm_format()));
+      format2.set_pcm_format(*rb_format.mutable_pcm_format());
       composite()->CreateRingBuffer(
           *ring_buffer_id(), std::move(format2), ring_buffer_handle.NewRequest(),
           // Unlike in other driver types, Composite::CreateRingBuffer has a completion. However,
@@ -2257,7 +2257,7 @@ void AdminTest::TestSetElementState(const fhasp::Element& element,
     bool can_stop = element.has_can_stop() && element.can_stop();
     bool can_bypass = element.has_can_bypass() && element.can_bypass();
     // We only call this method for elements that can stop or bypass.
-    ASSERT_TRUE(can_stop || can_bypass);
+    ASSERT_TRUE(can_stop || can_bypass) << "element_id " << element.id();
 
     fhasp::SettableElementState state;
     if (can_stop) {
@@ -2280,8 +2280,10 @@ void AdminTest::TestSetElementState(const fhasp::Element& element,
                           [&element, new_started, new_bypassed](const fhasp::ElementState& result) {
                             ValidateElementState(element, result);
 
-                            EXPECT_EQ(new_started, !result.has_started() || result.started());
-                            EXPECT_EQ(new_bypassed, result.has_bypassed() && result.bypassed());
+                            EXPECT_EQ(new_started, !result.has_started() || result.started())
+                                << "element_id " << element.id();
+                            EXPECT_EQ(new_bypassed, result.has_bypassed() && result.bypassed())
+                                << "element_id " << element.id();
                           }));
 
     signal_processing()->SetElementState(
@@ -2292,7 +2294,7 @@ void AdminTest::TestSetElementState(const fhasp::Element& element,
               EXPECT_FALSE(result.is_err()) << "SetElementState(element " << id << ") failed";
             }));
     ASSERT_TRUE(signal_processing().is_bound())
-        << "SignalProcessing failed to set the ElementState";
+        << "SignalProcessing failed to set the ElementState(id " << element.id() << ")";
     ExpectCallbacks();
   }
 
@@ -2309,9 +2311,11 @@ void AdminTest::TestSetElementState(const fhasp::Element& element,
                                ValidateElementState(element, result);
 
                                EXPECT_EQ(!initial_state.has_started() || initial_state.started(),
-                                         !result.has_started() || result.started());
+                                         !result.has_started() || result.started())
+                                   << "element_id " << element.id();
                                EXPECT_EQ(initial_state.has_bypassed() && initial_state.bypassed(),
-                                         result.has_bypassed() && result.bypassed());
+                                         result.has_bypassed() && result.bypassed())
+                                   << "element_id " << element.id();
                              }));
 
     signal_processing()->SetElementState(
@@ -2322,7 +2326,7 @@ void AdminTest::TestSetElementState(const fhasp::Element& element,
               EXPECT_FALSE(result.is_err()) << "SetElementState(element " << id << ") failed";
             }));
     ASSERT_TRUE(signal_processing().is_bound())
-        << "SignalProcessing failed to restore the ElementState";
+        << "SignalProcessing failed to restore the ElementState(id " << element.id() << ")";
     ExpectCallbacks();
   }
 }
@@ -2340,57 +2344,58 @@ void AdminTest::TestSetDynamicsElementState(const fhasp::Element& element,
     std::vector<::fuchsia::hardware::audio::signalprocessing::DynamicsBandState> new_band_states;
     for (const auto& old_band_state : initial_state.type_specific().dynamics().band_states()) {
       fhasp::DynamicsBandState new_band_state;
-      uint32_t id = static_cast<uint32_t>(old_band_state.id());
-      new_band_state.set_id(id);
-      new_band_state.set_min_frequency(20 + id);
-      new_band_state.set_max_frequency(10'000 + id);
-      new_band_state.set_threshold_db(static_cast<float>(id));
-      new_band_state.set_ratio(2.0f + static_cast<float>(id));
+      uint32_t band_id = static_cast<uint32_t>(old_band_state.id());
+      new_band_state.set_id(band_id);
+      new_band_state.set_min_frequency(20 + band_id);
+      new_band_state.set_max_frequency(10'000 + band_id);
+      new_band_state.set_threshold_db(static_cast<float>(band_id));
+      new_band_state.set_ratio(2.0f + static_cast<float>(band_id));
 
       if (element.type_specific().dynamics().has_supported_controls() &&
-          (element.type_specific().dynamics().supported_controls() &
-           fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::THRESHOLD_TYPE)) {
+          element.type_specific().dynamics().supported_controls() &
+              fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::
+                  THRESHOLD_TYPE) {
         new_band_state.set_threshold_type(fhasp::ThresholdType::ABOVE);
       }
       if (element.type_specific().dynamics().has_supported_controls() &&
-          (element.type_specific().dynamics().supported_controls() &
-           fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::KNEE_WIDTH)) {
-        new_band_state.set_knee_width_db(1.0f + static_cast<float>(id));
+          element.type_specific().dynamics().supported_controls() &
+              fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::KNEE_WIDTH) {
+        new_band_state.set_knee_width_db(1.0f + static_cast<float>(band_id));
       }
       if (element.type_specific().dynamics().has_supported_controls() &&
-          (element.type_specific().dynamics().supported_controls() &
-           fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::ATTACK)) {
-        new_band_state.set_attack(1'000'000 + id);
+          element.type_specific().dynamics().supported_controls() &
+              fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::ATTACK) {
+        new_band_state.set_attack(1'000'000 + band_id);
       }
       if (element.type_specific().dynamics().has_supported_controls() &&
-          (element.type_specific().dynamics().supported_controls() &
-           fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::RELEASE)) {
-        new_band_state.set_release(5'000'000 + id);
+          element.type_specific().dynamics().supported_controls() &
+              fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::RELEASE) {
+        new_band_state.set_release(5'000'000 + band_id);
       }
       if (element.type_specific().dynamics().has_supported_controls() &&
-          (element.type_specific().dynamics().supported_controls() &
-           fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::OUTPUT_GAIN)) {
-        new_band_state.set_output_gain_db(-3.0f + static_cast<float>(id));
+          element.type_specific().dynamics().supported_controls() &
+              fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::OUTPUT_GAIN) {
+        new_band_state.set_output_gain_db(-3.0f + static_cast<float>(band_id));
       }
       if (element.type_specific().dynamics().has_supported_controls() &&
-          (element.type_specific().dynamics().supported_controls() &
-           fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::INPUT_GAIN)) {
-        new_band_state.set_input_gain_db(-5.0f + static_cast<float>(id));
+          element.type_specific().dynamics().supported_controls() &
+              fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::INPUT_GAIN) {
+        new_band_state.set_input_gain_db(-5.0f + static_cast<float>(band_id));
       }
       if (element.type_specific().dynamics().has_supported_controls() &&
-          (element.type_specific().dynamics().supported_controls() &
-           fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::LEVEL_TYPE)) {
+          element.type_specific().dynamics().supported_controls() &
+              fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::LEVEL_TYPE) {
         new_band_state.set_level_type(fhasp::LevelType::PEAK);
       }
       if (element.type_specific().dynamics().has_supported_controls() &&
-          (element.type_specific().dynamics().supported_controls() &
-           fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::LOOKAHEAD)) {
-        new_band_state.set_lookahead(2'000'000 + id);
+          element.type_specific().dynamics().supported_controls() &
+              fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::LOOKAHEAD) {
+        new_band_state.set_lookahead(2'000'000 + band_id);
       }
       if (element.type_specific().dynamics().has_supported_controls() &&
-          (element.type_specific().dynamics().supported_controls() &
-           fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::
-               LINKED_CHANNELS)) {
+          element.type_specific().dynamics().supported_controls() &
+              fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::
+                  LINKED_CHANNELS) {
         new_band_state.set_linked_channels(true);
       }
 
@@ -2417,18 +2422,18 @@ void AdminTest::TestSetDynamicsElementState(const fhasp::Element& element,
               const auto& rs = received_state.type_specific().dynamics().band_states();
               ASSERT_TRUE(!rs.empty());
               for (auto idx = 0u; idx < rs.size(); ++idx) {
-                uint32_t id = static_cast<uint32_t>(dyn_copy.band_states()[idx].id());
+                uint32_t band_id = static_cast<uint32_t>(dyn_copy.band_states()[idx].id());
                 ASSERT_TRUE(rs[idx].has_id());
-                EXPECT_EQ(rs[idx].id(), id);
+                EXPECT_EQ(rs[idx].id(), band_id);
 
                 ASSERT_TRUE(rs[idx].has_min_frequency());
-                EXPECT_EQ(rs[idx].min_frequency(), 20 + id);
+                EXPECT_EQ(rs[idx].min_frequency(), 20 + band_id);
 
                 ASSERT_TRUE(rs[idx].has_max_frequency());
-                EXPECT_EQ(rs[idx].max_frequency(), 10'000 + id);
+                EXPECT_EQ(rs[idx].max_frequency(), 10'000 + band_id);
 
                 ASSERT_TRUE(rs[idx].has_threshold_db());
-                EXPECT_EQ(rs[idx].threshold_db(), static_cast<float>(id));
+                EXPECT_EQ(rs[idx].threshold_db(), static_cast<float>(band_id));
 
                 if (element.type_specific().dynamics().supported_controls() &
                     fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::
@@ -2440,13 +2445,13 @@ void AdminTest::TestSetDynamicsElementState(const fhasp::Element& element,
                 }
 
                 ASSERT_TRUE(rs[idx].has_ratio());
-                EXPECT_EQ(rs[idx].ratio(), 2.0f + static_cast<float>(id));
+                EXPECT_EQ(rs[idx].ratio(), 2.0f + static_cast<float>(band_id));
 
                 if (element.type_specific().dynamics().supported_controls() &
                     fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::
                         KNEE_WIDTH) {
                   ASSERT_TRUE(rs[idx].has_knee_width_db());
-                  EXPECT_EQ(rs[idx].knee_width_db(), 1.0f + static_cast<float>(id));
+                  EXPECT_EQ(rs[idx].knee_width_db(), 1.0f + static_cast<float>(band_id));
                 } else {
                   EXPECT_FALSE(rs[idx].has_knee_width_db());
                 }
@@ -2454,7 +2459,7 @@ void AdminTest::TestSetDynamicsElementState(const fhasp::Element& element,
                 if (element.type_specific().dynamics().supported_controls() &
                     fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::ATTACK) {
                   ASSERT_TRUE(rs[idx].has_attack());
-                  EXPECT_EQ(rs[idx].attack(), 1'000'000 + id);
+                  EXPECT_EQ(rs[idx].attack(), 1'000'000 + band_id);
                 } else {
                   EXPECT_FALSE(rs[idx].has_attack());
                 }
@@ -2463,7 +2468,7 @@ void AdminTest::TestSetDynamicsElementState(const fhasp::Element& element,
                     fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::
                         RELEASE) {
                   ASSERT_TRUE(rs[idx].has_release());
-                  EXPECT_EQ(rs[idx].release(), 5'000'000 + id);
+                  EXPECT_EQ(rs[idx].release(), 5'000'000 + band_id);
                 } else {
                   EXPECT_FALSE(rs[idx].has_release());
                 }
@@ -2472,7 +2477,7 @@ void AdminTest::TestSetDynamicsElementState(const fhasp::Element& element,
                     fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::
                         OUTPUT_GAIN) {
                   ASSERT_TRUE(rs[idx].has_output_gain_db());
-                  EXPECT_EQ(rs[idx].output_gain_db(), -3.0f + static_cast<float>(id));
+                  EXPECT_EQ(rs[idx].output_gain_db(), -3.0f + static_cast<float>(band_id));
                 } else {
                   EXPECT_FALSE(rs[idx].has_output_gain_db());
                 }
@@ -2481,7 +2486,7 @@ void AdminTest::TestSetDynamicsElementState(const fhasp::Element& element,
                     fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::
                         INPUT_GAIN) {
                   ASSERT_TRUE(rs[idx].has_input_gain_db());
-                  EXPECT_EQ(rs[idx].input_gain_db(), -5.0f + static_cast<float>(id));
+                  EXPECT_EQ(rs[idx].input_gain_db(), -5.0f + static_cast<float>(band_id));
                 } else {
                   EXPECT_FALSE(rs[idx].has_input_gain_db());
                 }
@@ -2499,7 +2504,7 @@ void AdminTest::TestSetDynamicsElementState(const fhasp::Element& element,
                     fuchsia::hardware::audio::signalprocessing::DynamicsSupportedControls::
                         LOOKAHEAD) {
                   ASSERT_TRUE(rs[idx].has_lookahead());
-                  EXPECT_EQ(rs[idx].lookahead(), 2'000'000 + id);
+                  EXPECT_EQ(rs[idx].lookahead(), 2'000'000 + band_id);
                 } else {
                   EXPECT_FALSE(rs[idx].has_lookahead());
                 }
@@ -2631,27 +2636,41 @@ void AdminTest::TestSetEqualizerElementState(const fhasp::Element& element,
   {
     std::vector<::fuchsia::hardware::audio::signalprocessing::EqualizerBandState> new_band_states;
     for (const auto& old_band_state : initial_state.type_specific().equalizer().band_states()) {
-      uint32_t id = static_cast<uint32_t>(old_band_state.id());
+      uint32_t band_id = static_cast<uint32_t>(old_band_state.id());
       fhasp::EqualizerBandState new_band_state;
-      new_band_state.set_id(id);
+      new_band_state.set_id(band_id);
       if (element.type_specific().equalizer().has_supported_controls() &&
-          (element.type_specific().equalizer().supported_controls() &
-           fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::
-               SUPPORTS_TYPE_PEAK)) {
+          element.type_specific().equalizer().supported_controls() &
+              fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::
+                  SUPPORTS_TYPE_PEAK) {
         new_band_state.set_type(fhasp::EqualizerBandType::PEAK);
+      } else if (element.type_specific().equalizer().has_supported_controls() &&
+                 element.type_specific().equalizer().supported_controls() &
+                     fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::
+                         SUPPORTS_TYPE_LOW_SHELF) {
+        new_band_state.set_type(fhasp::EqualizerBandType::LOW_SHELF);
+      } else if (element.type_specific().equalizer().has_supported_controls() &&
+                 element.type_specific().equalizer().supported_controls() &
+                     fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::
+                         SUPPORTS_TYPE_HIGH_SHELF) {
+        new_band_state.set_type(fhasp::EqualizerBandType::HIGH_SHELF);
       }
       if (element.type_specific().equalizer().has_supported_controls() &&
-          (element.type_specific().equalizer().supported_controls() &
-           fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::
-               CAN_CONTROL_FREQUENCY)) {
-        new_band_state.set_frequency(400 + id);
+          element.type_specific().equalizer().supported_controls() &
+              fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::
+                  CAN_CONTROL_FREQUENCY) {
+        // Set this value based on the band_id.
+        new_band_state.set_frequency(400 + band_id);
       }
       if (element.type_specific().equalizer().has_supported_controls() &&
-          (element.type_specific().equalizer().supported_controls() &
-           fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::CAN_CONTROL_Q)) {
-        new_band_state.set_q(static_cast<float>(id));
+          element.type_specific().equalizer().supported_controls() &
+              fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::
+                  CAN_CONTROL_Q) {
+        // Set this value based on the band_id.
+        new_band_state.set_q(static_cast<float>(band_id));
       }
-      new_band_state.set_gain_db(10.0f + static_cast<float>(id));
+      // Set this value based on the band_id.
+      new_band_state.set_gain_db(10.0f + static_cast<float>(band_id));
       new_band_state.set_enabled(true);
       new_band_states.emplace_back(std::move(new_band_state));
     }
@@ -2678,29 +2697,46 @@ void AdminTest::TestSetEqualizerElementState(const fhasp::Element& element,
               for (auto idx = 0u; idx < rs.size(); ++idx) {
                 ASSERT_TRUE(rs[idx].has_id());
                 EXPECT_EQ(rs[idx].id(), eq_copy.band_states()[idx].id());
+                const auto& band_id = rs[idx].id();
+
                 if (element.type_specific().equalizer().has_supported_controls() &&
-                    (element.type_specific().equalizer().supported_controls() &
-                     fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::
-                         SUPPORTS_TYPE_PEAK)) {
+                    element.type_specific().equalizer().supported_controls() &
+                        fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::
+                            SUPPORTS_TYPE_PEAK) {
                   ASSERT_TRUE(rs[idx].has_type());
                   EXPECT_EQ(rs[idx].type(), fhasp::EqualizerBandType::PEAK);
+                } else if (element.type_specific().equalizer().has_supported_controls() &&
+                           element.type_specific().equalizer().supported_controls() &
+                               fuchsia::hardware::audio::signalprocessing::
+                                   EqualizerSupportedControls::SUPPORTS_TYPE_LOW_SHELF) {
+                  ASSERT_TRUE(rs[idx].has_type());
+                  EXPECT_EQ(rs[idx].type(), fhasp::EqualizerBandType::LOW_SHELF);
+                } else if (element.type_specific().equalizer().has_supported_controls() &&
+                           element.type_specific().equalizer().supported_controls() &
+                               fuchsia::hardware::audio::signalprocessing::
+                                   EqualizerSupportedControls::SUPPORTS_TYPE_HIGH_SHELF) {
+                  ASSERT_TRUE(rs[idx].has_type());
+                  EXPECT_EQ(rs[idx].type(), fhasp::EqualizerBandType::HIGH_SHELF);
                 }
                 if (element.type_specific().equalizer().has_supported_controls() &&
-                    (element.type_specific().equalizer().supported_controls() &
-                     fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::
-                         CAN_CONTROL_FREQUENCY)) {
+                    element.type_specific().equalizer().supported_controls() &
+                        fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::
+                            CAN_CONTROL_FREQUENCY) {
                   ASSERT_TRUE(rs[idx].has_frequency());
-                  EXPECT_EQ(rs[idx].frequency(), 400 + static_cast<uint32_t>(idx));
+                  // This value was set based on the band_id.
+                  EXPECT_EQ(rs[idx].frequency(), 400 + static_cast<uint32_t>(band_id));
                 }
                 if (element.type_specific().equalizer().has_supported_controls() &&
-                    (element.type_specific().equalizer().supported_controls() &
-                     fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::
-                         CAN_CONTROL_Q)) {
+                    element.type_specific().equalizer().supported_controls() &
+                        fuchsia::hardware::audio::signalprocessing::EqualizerSupportedControls::
+                            CAN_CONTROL_Q) {
                   ASSERT_TRUE(rs[idx].has_q());
-                  EXPECT_EQ(rs[idx].q(), static_cast<float>(idx));
+                  // This value was set based on the band_id.
+                  EXPECT_EQ(rs[idx].q(), static_cast<float>(band_id));
                 }
                 ASSERT_TRUE(rs[idx].has_gain_db());
-                EXPECT_EQ(rs[idx].gain_db(), 10.0f + static_cast<float>(idx));
+                // This value was set based on the band_id.
+                EXPECT_EQ(rs[idx].gain_db(), 10.0f + static_cast<float>(band_id));
                 ASSERT_TRUE(rs[idx].has_enabled());
                 EXPECT_TRUE(rs[idx].enabled());
               }
