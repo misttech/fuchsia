@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <set>
+#include <string>
 
 #include <gtest/gtest.h>
 
@@ -217,7 +218,7 @@ TEST_F(InspectorTest, DetectedDevice) {
   ASSERT_TRUE(device_node->node().get_property<StringPropertyValue>(std::string(kUniqueId)));
   EXPECT_EQ(device_node->node().get_property<StringPropertyValue>(std::string(kUniqueId))->value(),
             UidToString(FakeComposite::kDefaultUniqueInstanceId));
-  ASSERT_EQ(device_node->children().size(), 4u);
+  ASSERT_EQ(device_node->children().size(), 5u);
 
   auto ring_buffers_node = GetChild(device_node, kRingBuffers);
   ASSERT_NE(ring_buffers_node, nullptr);
@@ -993,6 +994,353 @@ TEST_F(InspectorTest, Topologies) {
           std::string(kEdgeToElementId)));
     }
   }
+}
+
+// Validate the overall Element list. Schema is as follows:
+//  Devices
+//    12345678
+//      Elements
+//        0:
+//          element_id = 8
+//          properties:
+//            can_bypass = <none> (cannot be bypassed)
+//            can_stop = true
+//            description = speaker_dai
+//            type = DAI_INTERCONNECT
+//            type_specific = ...
+//        1:
+//          ...
+TEST_F(InspectorTest, Elements) {
+  // Boot up the device and check the elements
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  ASSERT_FALSE(device_node->node().properties().empty());
+  ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
+  ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
+
+  auto elements_node = GetChild(device_node, kElements);
+  ASSERT_NE(elements_node, nullptr);
+  ASSERT_FALSE(elements_node->children().empty());
+  EXPECT_LE(elements_node->children().size(), fhasp::kMaxCountProcessingElements);
+
+  for (auto i = 0u; i < elements_node->children().size(); i++) {
+    auto& element_node = elements_node->children().at(i);
+    EXPECT_EQ(element_node.name(), std::to_string(i));
+    EXPECT_EQ(element_node.node().properties().size(), 1u);
+    EXPECT_TRUE(
+        element_node.node().get_property<inspect::UintPropertyValue>(std::string(kElementId)));
+
+    auto properties_node = GetChild(&element_node, kProperties);
+    EXPECT_EQ(properties_node->node().properties().size(), 4u);
+    EXPECT_TRUE(
+        properties_node->node().get_property<inspect::StringPropertyValue>(std::string(kType)));
+    EXPECT_TRUE(properties_node->node().get_property<inspect::StringPropertyValue>(
+        std::string(kDescription)));
+    EXPECT_TRUE(
+        properties_node->node().get_property<inspect::StringPropertyValue>(std::string(kCanStop)));
+    EXPECT_TRUE(properties_node->node().get_property<inspect::StringPropertyValue>(
+        std::string(kCanBypass)));
+
+    // Don't check type_specific in this test case.
+  }
+}
+
+// On device-add, there should be a DYNAMICS element with specific properties. Here is the schema:
+//  Devices:
+//    1903763576:
+//      Elements:
+//        0:
+//          element_id = 321
+//          properties:
+//            can_bypass = true
+//            can_stop = <none> (cannot be stopped)
+//            description = Dynamics node description
+//            type = DYNAMICS
+//            type_specific:
+//              bands = [3, 0]
+//              supported_controls = KNEE_WIDTH | ATTACK | RELEASE | OUTPUT_GAIN | INPUT_GAIN |
+//                                   LOOKAHEAD | LEVEL_TYPE | LINKED_CHANNELS | THRESHOLD_TYPE
+TEST_F(InspectorTest, TypeSpecificElementDynamics) {
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  auto elements_node = GetChild(device_node, kElements);
+  ASSERT_NE(elements_node, nullptr);
+  ASSERT_FALSE(elements_node->children().empty());
+
+  std::ostringstream type;
+  type << fhasp::ElementType::kDynamics;
+  const std::string& type_str = type.str();
+  for (const auto& element_node : elements_node->children()) {
+    auto properties_node = GetChild(&element_node, kProperties);
+    ASSERT_NE(properties_node, nullptr);
+    ASSERT_TRUE(
+        properties_node->node().get_property<inspect::StringPropertyValue>(std::string(kType)));
+    // Check all the DYNAMICS elements (not just the first).
+    if (properties_node->node()
+            .get_property<inspect::StringPropertyValue>(std::string(kType))
+            ->value() == type_str) {
+      auto type_specific_node = GetChild(properties_node, kTypeSpecific);
+      ASSERT_NE(type_specific_node, nullptr);
+
+      const auto& bands = type_specific_node->node()
+                              .get_property<inspect::UintArrayValue>(std::string(kBands))
+                              ->value();
+      EXPECT_EQ(bands.size(), 2u);
+      EXPECT_EQ(bands.at(0), FakeComposite::kDynamicsBandId1);
+      EXPECT_EQ(bands.at(1), FakeComposite::kDynamicsBandId2);
+
+      auto supported_controls_prop =
+          type_specific_node->node().get_property<inspect::StringPropertyValue>(
+              std::string(kSupportedControls));
+      ASSERT_TRUE(supported_controls_prop);
+      std::ostringstream stream;
+      stream << FakeComposite::kDynamicsSupportedControls;
+      EXPECT_EQ(supported_controls_prop->value(), stream.str());
+    }
+  }
+}
+
+// On device-add, there should be a EQUALIZER element with specific properties. Here is the schema:
+//  Devices:
+//    1903763576:
+//      Elements:
+//        0:
+//          element_id = 321
+//            can_bypass = <none> (cannot be bypassed)
+//            can_stop = <none> (cannot be stopped)
+//            description = Equalizer node description
+//            type = EQUALIZER
+//            type_specific:
+//              bands = [3, 0]
+//              can_disable_bands = true | <none>
+//              max_frequency = 20000
+//              max_gain_db = 20.0 | <none> (depends on supported_controls)
+//              max_q = 1.0 | <none>
+//              min_frequency = 20
+//              min_gain_db = -20.0 | <none> (depends on supported_controls)
+//              supported_controls = KNEE_WIDTH | ATTACK | RELEASE | OUTPUT_GAIN | INPUT_GAIN |
+//                                   LOOKAHEAD | LEVEL_TYPE | LINKED_CHANNELS | THRESHOLD_TYPE |
+//                                   <none>
+TEST_F(InspectorTest, TypeSpecificElementEqualizer) {
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  auto elements_node = GetChild(device_node, kElements);
+  ASSERT_NE(elements_node, nullptr);
+  ASSERT_FALSE(elements_node->children().empty());
+
+  std::ostringstream type;
+  type << fhasp::ElementType::kEqualizer;
+  const std::string& type_str = type.str();
+  for (const auto& element_node : elements_node->children()) {
+    auto properties_node = GetChild(&element_node, kProperties);
+    ASSERT_NE(properties_node, nullptr);
+    ASSERT_TRUE(
+        properties_node->node().get_property<inspect::StringPropertyValue>(std::string(kType)));
+    // Check all the EQUALIZER elements (not just the first)
+    if (properties_node->node()
+            .get_property<inspect::StringPropertyValue>(std::string(kType))
+            ->value() == type_str) {
+      auto type_specific_node = GetChild(properties_node, kTypeSpecific);
+      ASSERT_NE(type_specific_node, nullptr);
+
+      const auto& bands = type_specific_node->node()
+                              .get_property<inspect::UintArrayValue>(std::string(kBands))
+                              ->value();
+      EXPECT_EQ(bands.size(), 2u);
+      EXPECT_EQ(bands.at(0), FakeComposite::kEqualizerBandId1);
+      EXPECT_EQ(bands.at(1), FakeComposite::kEqualizerBandId2);
+
+      auto supported_controls_prop =
+          type_specific_node->node().get_property<inspect::StringPropertyValue>(
+              std::string(kSupportedControls));
+      ASSERT_TRUE(supported_controls_prop);
+      std::ostringstream stream;
+      stream << FakeComposite::kEqualizerSupportedControls;
+      EXPECT_EQ(supported_controls_prop->value(), stream.str());
+
+      ASSERT_TRUE(type_specific_node->node().get_property<inspect::BoolPropertyValue>(
+          std::string(kCanDisableBands)));
+      EXPECT_TRUE(type_specific_node->node()
+                      .get_property<inspect::BoolPropertyValue>(std::string(kCanDisableBands))
+                      ->value());
+
+      ASSERT_TRUE(type_specific_node->node().get_property<inspect::StringPropertyValue>(
+          std::string(kMinFrequency)));
+      EXPECT_EQ(type_specific_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kMinFrequency))
+                    ->value(),
+                std::to_string(FakeComposite::kEqualizerMinFrequency));
+
+      ASSERT_TRUE(type_specific_node->node().get_property<inspect::StringPropertyValue>(
+          std::string(kMaxFrequency)));
+      EXPECT_EQ(type_specific_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kMaxFrequency))
+                    ->value(),
+                std::to_string(FakeComposite::kEqualizerMaxFrequency));
+
+      ASSERT_TRUE(type_specific_node->node().get_property<inspect::DoublePropertyValue>(
+          std::string(kMaxQ)));
+      EXPECT_EQ(type_specific_node->node()
+                    .get_property<inspect::DoublePropertyValue>(std::string(kMaxQ))
+                    ->value(),
+                FakeComposite::kEqualizerMaxQ);
+
+      ASSERT_TRUE(type_specific_node->node().get_property<inspect::DoublePropertyValue>(
+          std::string(kMinGainDb)));
+      EXPECT_EQ(type_specific_node->node()
+                    .get_property<inspect::DoublePropertyValue>(std::string(kMinGainDb))
+                    ->value(),
+                FakeComposite::kEqualizerMinGainDb);
+
+      ASSERT_TRUE(type_specific_node->node().get_property<inspect::DoublePropertyValue>(
+          std::string(kMaxGainDb)));
+      EXPECT_EQ(type_specific_node->node()
+                    .get_property<inspect::DoublePropertyValue>(std::string(kMaxGainDb))
+                    ->value(),
+                FakeComposite::kEqualizerMaxGainDb);
+    }
+  }
+}
+
+// On device-add, there should be a GAIN element with specific properties. Here is the schema:
+//  Devices:
+//    1903763576:
+//      Elements:
+//        0:
+//          element_id = 321
+//          properties:
+//            can_bypass = true
+//            can_stop = <none> (cannot be stopped)
+//            description = Gain node description
+//            type = GAIN
+//            type_specific:
+//              gain_type = PERCENT | DECIBELS | <none> (non-compliant)
+//              gain_domain = DIGITAL | ANALOG | MIXED | <none>
+//              min_gain = -40.0 | <none> (non-compliant)
+//              max_gain = 10.0 | <none> (non-compliant)
+//              min_gain_step = 0.1 | <none> (non-compliant)
+TEST_F(InspectorTest, TypeSpecificElementGain) {
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  ASSERT_FALSE(device_node->node().properties().empty());
+  ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
+  ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
+
+  auto elements_node = GetChild(device_node, kElements);
+  ASSERT_NE(elements_node, nullptr);
+  ASSERT_FALSE(elements_node->children().empty());
+  ASSERT_LE(elements_node->children().size(), fhasp::kMaxCountProcessingElements);
+
+  std::ostringstream type;
+  type << fhasp::ElementType::kGain;
+  const std::string& type_str = type.str();
+  for (const auto& element_node : elements_node->children()) {
+    auto properties_node = GetChild(&element_node, kProperties);
+    ASSERT_NE(properties_node, nullptr);
+    ASSERT_TRUE(
+        properties_node->node().get_property<inspect::StringPropertyValue>(std::string(kType)));
+    // Check all the GAIN elements (not just the first)
+    if (properties_node->node()
+            .get_property<inspect::StringPropertyValue>(std::string(kType))
+            ->value() == type_str) {
+      auto type_specific_node = GetChild(properties_node, kTypeSpecific);
+      ASSERT_NE(type_specific_node, nullptr);
+
+      EXPECT_EQ(type_specific_node->node().properties().size(), 5u);
+      {
+        ASSERT_TRUE(type_specific_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kGainType)));
+        std::ostringstream stream;
+        stream << FakeComposite::kGainType;
+        EXPECT_EQ(type_specific_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kGainType))
+                      ->value(),
+                  stream.str());
+      }
+      {
+        ASSERT_TRUE(type_specific_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kGainDomain)));
+        std::ostringstream stream;
+        stream << FakeComposite::kGainDomain;
+        EXPECT_EQ(type_specific_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kGainDomain))
+                      ->value(),
+                  stream.str());
+      }
+      {
+        ASSERT_TRUE(type_specific_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kMinGain)));
+        EXPECT_EQ(type_specific_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kMinGain))
+                      ->value(),
+                  std::to_string(FakeComposite::kGainMin));
+      }
+      {
+        ASSERT_TRUE(type_specific_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kMaxGain)));
+        EXPECT_EQ(type_specific_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kMaxGain))
+                      ->value(),
+                  std::to_string(FakeComposite::kGainMax));
+      }
+      {
+        ASSERT_TRUE(type_specific_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kMinGainStep)));
+        EXPECT_EQ(type_specific_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kMinGainStep))
+                      ->value(),
+                  std::to_string(FakeComposite::kGainStep));
+      }
+    }
+  }
+}
+
+// On device-add, there should be a VENDOR_SPECIFIC element with a specific schema:
+//  Devices:
+//    1903763576:
+//      Elements:
+//        0:
+//          element_id = 321
+//          properties:
+//            can_bypass = true
+//            can_stop = <none> (cannot be stopped)
+//            description = Vendor-specific node description
+//            type = VENDOR_SPECIFIC
+//            type_specific:  (VendorSpecific)
+TEST_F(InspectorTest, DISABLED_TypeSpecificElementVendorSpecific) {
+  // There don't seem to be additional things that we can validate. ?
 }
 
 // On device-add, initial_topology_id and current_topology_id should be populated (and equal).

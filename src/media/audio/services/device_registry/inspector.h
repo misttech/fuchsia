@@ -52,8 +52,33 @@ static constexpr std::string_view kEdgePairs = "edge_pairs";
 static constexpr std::string_view kEdgeFromElementId = "from_element_id";
 static constexpr std::string_view kEdgeToElementId = "to_element_id";
 
+static constexpr std::string_view kElements = "Elements";
+static constexpr std::string_view kProperties = "properties";
+static constexpr std::string_view kType = "type";
 static constexpr std::string_view kElementId = "element_id";
 static constexpr std::string_view kDescription = "description";
+static constexpr std::string_view kTypeSpecific = "type_specific";
+static constexpr std::string_view kCanStop = "can_stop";
+static constexpr std::string_view kCanBypass = "can_bypass";
+
+// DAI-specific
+static constexpr std::string_view kPlugDetectCapabilities = "plug_detect_capabilities";
+// Dynamics- and Equalizer-specific
+static constexpr std::string_view kBands = "bands";
+static constexpr std::string_view kBandId = "band_id";
+static constexpr std::string_view kSupportedControls = "supported_controls";
+// Equalizer-specific
+static constexpr std::string_view kCanDisableBands = "can_disable_bands";
+static constexpr std::string_view kMaxQ = "max_q";
+static constexpr std::string_view kMinGainDb = "min_gain_db";
+static constexpr std::string_view kMaxGainDb = "max_gain_db";
+// Gain-specific
+static constexpr std::string_view kGainType = "gain_type";
+static constexpr std::string_view kGainDomain = "gain_domain";
+static constexpr std::string_view kMinGain = "min_gain";
+static constexpr std::string_view kMaxGain = "max_gain";
+static constexpr std::string_view kMinGainStep = "min_gain_step";
+// Vendor-specific element fields are all custom.
 
 static constexpr std::string_view kDAIs = "DAIs";
 static constexpr std::string_view kRingBuffers = "RingBuffers";
@@ -355,6 +380,53 @@ class Edge {
   ElementId to_element_id_;
 };
 
+// This represents a hardware element as expressed in the signalprocessing API.
+class Element {
+ public:
+  Element(inspect::Node element_node, ElementId element_id,
+          const fuchsia_hardware_audio_signalprocessing::Element& element);
+  ~Element();
+
+  inspect::Node& inspect_node() { return element_node_; }
+  ElementId element_id() const { return element_id_; }
+
+ protected:
+  void RecordTypeSpecificElement(
+      fuchsia_hardware_audio_signalprocessing::ElementType type,
+      const std::optional<fuchsia_hardware_audio_signalprocessing::TypeSpecificElement>&
+          type_specific);
+  void RecordDaiInterconnectElement(
+      fuchsia_hardware_audio_signalprocessing::ElementType type,
+      const std::optional<fuchsia_hardware_audio_signalprocessing::TypeSpecificElement>&
+          type_specific);
+  void RecordDynamicsElement(
+      fuchsia_hardware_audio_signalprocessing::ElementType type,
+      const std::optional<fuchsia_hardware_audio_signalprocessing::TypeSpecificElement>&
+          type_specific);
+  void RecordEqualizerElement(
+      fuchsia_hardware_audio_signalprocessing::ElementType type,
+      const std::optional<fuchsia_hardware_audio_signalprocessing::TypeSpecificElement>&
+          type_specific);
+  void RecordGainElement(
+      fuchsia_hardware_audio_signalprocessing::ElementType type,
+      const std::optional<fuchsia_hardware_audio_signalprocessing::TypeSpecificElement>&
+          type_specific);
+  void RecordVendorSpecificElement(
+      fuchsia_hardware_audio_signalprocessing::ElementType type,
+      const std::optional<fuchsia_hardware_audio_signalprocessing::TypeSpecificElement>&
+          type_specific);
+
+ private:
+  static constexpr std::string_view kClassName = "Element";
+
+  inspect::Node element_node_;
+  inspect::Node props_node_;
+  std::optional<inspect::Node> type_specific_node_ = std::nullopt;
+  std::optional<inspect::UintArray> bands_arr_;
+
+  ElementId element_id_;
+};
+
 // This represents a hardware topology as expressed in the signalprocessing API.
 class Topology {
  public:
@@ -393,6 +465,9 @@ class DeviceInspectInstance {
   std::shared_ptr<Topology> RecordTopology(
       fuchsia_hardware_audio_signalprocessing::TopologyId topology_id,
       const std::vector<fuchsia_hardware_audio_signalprocessing::EdgePair>& edge_pairs);
+  std::shared_ptr<Element> RecordElement(
+      fuchsia_hardware_audio_signalprocessing::ElementId element_id,
+      const fuchsia_hardware_audio_signalprocessing::Element& element);
   void RecordActiveTopology(fuchsia_hardware_audio_signalprocessing::TopologyId topology_id);
 
   std::shared_ptr<Dai> RecordDai(ElementId element_id,
@@ -428,6 +503,7 @@ class DeviceInspectInstance {
   std::string name_;
 
   inspect::Node topologies_root_node_;
+  inspect::Node elements_root_node_;
 
   inspect::Node dais_root_node_;
   inspect::Node ring_buffers_root_node_;
@@ -442,6 +518,7 @@ class DeviceInspectInstance {
   std::vector<std::shared_ptr<RingBuffer>> ring_buffers_;
   std::vector<std::shared_ptr<PacketStream>> packet_streams_;
   std::vector<std::shared_ptr<Topology>> topologies_;
+  std::vector<std::shared_ptr<Element>> elements_;
 };
 
 // This represents a client connection to one of the seven ADR FIDL protocols:

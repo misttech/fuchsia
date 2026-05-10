@@ -8,6 +8,7 @@
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/inspect/cpp/vmo/types.h>
+#include <zircon/compiler.h>
 
 #include <algorithm>
 #include <memory>
@@ -23,6 +24,37 @@ namespace fha = fuchsia_hardware_audio;
 namespace fhasp = fuchsia_hardware_audio_signalprocessing;
 
 namespace {
+
+// `ElementType` is a fiexible enum, recently containing 13 distinct values. For the five types
+// specified below, we define additional parameters in `Element`.
+// The `.type_specific` field refers to union `TypeSpecificElement` containing these parameters.
+bool TypeRequiresTypeSpecific(fhasp::ElementType type) {
+  switch (type) {
+    case fhasp::ElementType::kDaiInterconnect:
+    case fhasp::ElementType::kDynamics:
+    case fhasp::ElementType::kEqualizer:
+    case fhasp::ElementType::kGain:
+    case fhasp::ElementType::kVendorSpecific:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// `TypeSpecificElement` is a flexible union, so we use this to future-proof against newer variants
+// that we do not yet handle. If a new variant is added, this function will need to be updated.
+bool TypeSpecificTagIsRecognized(fhasp::TypeSpecificElement::Tag tag) {
+  switch (tag) {
+    case fhasp::TypeSpecificElement::Tag::kDaiInterconnect:
+    case fhasp::TypeSpecificElement::Tag::kDynamics:
+    case fhasp::TypeSpecificElement::Tag::kEqualizer:
+    case fhasp::TypeSpecificElement::Tag::kGain:
+    case fhasp::TypeSpecificElement::Tag::kVendorSpecific:
+      return true;
+    default:
+      return false;
+  }
+}
 
 void RecordPcmFormat(inspect::Node& node, fuchsia_audio::SampleType sample_type,
                      uint32_t channel_count, uint32_t frames_per_second) {
@@ -573,6 +605,280 @@ void Dai::RecordSetDaiFormat(const zx::time& set_at,
 }
 
 ///////////////////////////////////////
+// Element methods
+Element::Element(inspect::Node element_node, ElementId element_id, const fhasp::Element& element)
+    : element_node_(std::move(element_node)), element_id_(element_id) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+
+  element_node_.RecordUint(kElementId, element_id);
+  props_node_ = element_node_.CreateChild(kProperties);
+
+  if (element.type().has_value()) {
+    std::ostringstream stream;
+    stream << *element.type();
+    props_node_.RecordString(kType, stream.str());
+  } else {
+    props_node_.RecordString(kType, kNoneNonCompliant);
+    ADR_WARN_METHOD() << "No element_type for element " << element_id_;
+  }
+
+  if (element.description().has_value()) {
+    props_node_.RecordString(kDescription, *element.description());
+  }
+
+  if (element.can_stop().has_value()) {
+    props_node_.RecordString(kCanStop, *element.can_stop() ? "true" : "false");
+  } else {
+    props_node_.RecordString(kCanStop, kNone + " (cannot be stopped)");
+  }
+
+  if (element.can_bypass().has_value()) {
+    if (*element.can_bypass() && (*element.type() == fhasp::ElementType::kDaiInterconnect ||
+                                  *element.type() == fhasp::ElementType::kPacketStream ||
+                                  *element.type() == fhasp::ElementType::kRingBuffer)) {
+      props_node_.RecordString(kCanBypass, "true" + kNonCompliant);
+    } else {
+      props_node_.RecordString(kCanBypass, *element.can_bypass() ? "true" : "false");
+    }
+  } else {
+    props_node_.RecordString(kCanBypass, kNone + " (cannot be bypassed)");
+  }
+  RecordTypeSpecificElement(*element.type(), element.type_specific());
+}
+
+Element::~Element() { ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_; }
+
+void Element::RecordTypeSpecificElement(
+    fhasp::ElementType type, const std::optional<fhasp::TypeSpecificElement>& type_specific) {
+  if (!type_specific.has_value()) {
+    if (TypeRequiresTypeSpecific(type)) {
+      props_node_.RecordString(kTypeSpecific, kNoneNonCompliant);
+    }
+    return;
+  }
+  if (!TypeSpecificTagIsRecognized(type_specific->Which())) {
+    props_node_.RecordString(kTypeSpecific, "Unknown TypeSpecific variant");
+    return;
+  }
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+
+  type_specific_node_ = props_node_.CreateChild(kTypeSpecific);
+  switch (type_specific->Which()) {
+    case fhasp::TypeSpecificElement::Tag::kDaiInterconnect: {
+      RecordDaiInterconnectElement(type, *type_specific);
+      break;
+    }
+    case fhasp::TypeSpecificElement::Tag::kDynamics: {
+      RecordDynamicsElement(type, *type_specific);
+      break;
+    }
+
+    case fhasp::TypeSpecificElement::Tag::kEqualizer: {
+      RecordEqualizerElement(type, *type_specific);
+      break;
+    }
+
+    case fhasp::TypeSpecificElement::Tag::kGain: {
+      RecordGainElement(type, *type_specific);
+      break;
+    }
+
+    case fhasp::TypeSpecificElement::Tag::kVendorSpecific: {
+      RecordVendorSpecificElement(type, *type_specific);
+      break;
+    }
+
+    default:
+      __UNREACHABLE;
+  }
+}
+
+void Element::RecordDaiInterconnectElement(
+    fhasp::ElementType type, const std::optional<fhasp::TypeSpecificElement>& type_specific) {
+  std::ostringstream stream;
+  if (type != fhasp::ElementType::kDaiInterconnect) {
+    ADR_WARN_METHOD() << "element " << element_id_ << ": " << type
+                      << " with TypeSpecific::DaiInterconnect";
+    return;
+  }
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+
+  stream << type_specific->dai_interconnect()->plug_detect_capabilities();
+  type_specific_node_->RecordString(kPlugDetectCapabilities, stream.str());
+}
+
+void Element::RecordDynamicsElement(
+    fhasp::ElementType type, const std::optional<fhasp::TypeSpecificElement>& type_specific) {
+  std::ostringstream stream;
+  if (type != fhasp::ElementType::kDynamics) {
+    ADR_WARN_METHOD() << "element " << element_id_ << ": " << type
+                      << " with TypeSpecific::Dynamics";
+    return;
+  }
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+
+  const auto& bands = type_specific->dynamics()->bands();
+  if (bands.has_value() && !bands->empty()) {
+    bands_arr_ = type_specific_node_->CreateUintArray(kBands, bands->size());
+    for (size_t i = 0; i < bands->size(); ++i) {
+      if (bands->at(i).id().has_value()) {
+        bands_arr_->Set(i, *bands->at(i).id());
+      } else {
+        ADR_WARN_METHOD() << "No band_id for Dynamics element " << element_id_ << ", band[" << i
+                          << "]";
+      }
+    }
+  } else {
+    bands_arr_ = type_specific_node_->CreateUintArray(kBands, 0);
+    ADR_WARN_METHOD() << "No bands for Dynamics element " << element_id_;
+  }
+
+  if (type_specific->dynamics()->supported_controls().has_value()) {
+    stream << *type_specific->dynamics()->supported_controls();
+    type_specific_node_->RecordString(kSupportedControls, stream.str());
+  }
+}
+
+void Element::RecordEqualizerElement(
+    fhasp::ElementType type, const std::optional<fhasp::TypeSpecificElement>& type_specific) {
+  std::ostringstream stream;
+  if (type != fhasp::ElementType::kEqualizer) {
+    ADR_WARN_METHOD() << "element " << element_id_ << ": " << type
+                      << " with TypeSpecific::Equalizer";
+    return;
+  }
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+
+  const auto& bands = type_specific->equalizer()->bands();
+  if (bands.has_value() && !bands->empty()) {
+    bands_arr_ = type_specific_node_->CreateUintArray(kBands, bands->size());
+    for (size_t i = 0; i < bands->size(); ++i) {
+      if (bands->at(i).id().has_value()) {
+        bands_arr_->Set(i, *bands->at(i).id());
+      } else {
+        ADR_WARN_METHOD() << "No band_id for Equalizer element " << element_id_ << ", band[" << i
+                          << "]";
+      }
+    }
+  } else {
+    bands_arr_ = type_specific_node_->CreateUintArray(kBands, 0);
+    ADR_WARN_METHOD() << "No bands for Equalizer element " << element_id_;
+  }
+
+  bool uses_min_max_gain_db = false;
+  if (type_specific->equalizer()->supported_controls().has_value()) {
+    stream << *type_specific->equalizer()->supported_controls();
+    type_specific_node_->RecordString(kSupportedControls, stream.str());
+
+    // We need this later. Calculate this here while we are looking at supported_controls.
+    uses_min_max_gain_db = *type_specific->equalizer()->supported_controls() &
+                               fhasp::EqualizerSupportedControls::kSupportsTypePeak ||
+                           *type_specific->equalizer()->supported_controls() &
+                               fhasp::EqualizerSupportedControls::kSupportsTypeLowShelf ||
+                           *type_specific->equalizer()->supported_controls() &
+                               fhasp::EqualizerSupportedControls::kSupportsTypeHighShelf;
+  }
+  if (type_specific->equalizer()->can_disable_bands().has_value()) {
+    type_specific_node_->RecordBool(kCanDisableBands,
+                                    *type_specific->equalizer()->can_disable_bands());
+  }
+  if (type_specific->equalizer()->min_frequency().has_value()) {
+    type_specific_node_->RecordString(kMinFrequency,
+                                      std::to_string(*type_specific->equalizer()->min_frequency()));
+  } else {
+    type_specific_node_->RecordString(kMinFrequency, kNoneNonCompliant);
+    ADR_WARN_METHOD() << "No min_frequency for Equalizer element " << element_id_;
+  }
+  if (type_specific->equalizer()->max_frequency().has_value()) {
+    type_specific_node_->RecordString(kMaxFrequency,
+                                      std::to_string(*type_specific->equalizer()->max_frequency()));
+  } else {
+    type_specific_node_->RecordString(kMaxFrequency, kNoneNonCompliant);
+    ADR_WARN_METHOD() << "No max_frequency for Equalizer element " << element_id_;
+  }
+  if (type_specific->equalizer()->max_q().has_value()) {
+    type_specific_node_->RecordDouble(kMaxQ, *type_specific->equalizer()->max_q());
+  }
+  if (type_specific->equalizer()->min_gain_db().has_value()) {
+    type_specific_node_->RecordDouble(kMinGainDb, *type_specific->equalizer()->min_gain_db());
+    if (!uses_min_max_gain_db) {
+      ADR_WARN_METHOD()
+          << "No supported_control requires min_gain_db; it should be omitted (element "
+          << element_id_ << ")";
+    }
+  } else {
+    if (uses_min_max_gain_db) {
+      ADR_WARN_METHOD() << "min_gain_db was omitted, but a supported_control requires it (element "
+                        << element_id_ << ")";
+    }
+  }
+  if (type_specific->equalizer()->max_gain_db().has_value()) {
+    type_specific_node_->RecordDouble(kMaxGainDb, *type_specific->equalizer()->max_gain_db());
+    if (!uses_min_max_gain_db) {
+      ADR_WARN_METHOD()
+          << "No supported_control requires max_gain_db; it should be omitted (element "
+          << element_id_ << ")";
+    }
+  } else {
+    if (uses_min_max_gain_db) {
+      ADR_WARN_METHOD() << "max_gain_db was omitted, but a supported_control requires it (element "
+                        << element_id_ << ")";
+    }
+  }
+}
+
+void Element::RecordGainElement(fhasp::ElementType type,
+                                const std::optional<fhasp::TypeSpecificElement>& type_specific) {
+  std::ostringstream stream;
+  if (type != fhasp::ElementType::kGain) {
+    ADR_WARN_METHOD() << "element " << element_id_ << ": " << type << " with TypeSpecific::Gain";
+    return;
+  }
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+
+  stream << type_specific->gain()->type();
+  type_specific_node_->RecordString(kGainType, stream.str());
+
+  stream.str("");
+  stream.clear();
+  stream << type_specific->gain()->domain();
+  type_specific_node_->RecordString(kGainDomain, stream.str());
+
+  if (type_specific->gain()->min_gain().has_value()) {
+    type_specific_node_->RecordString(kMinGain, std::to_string(*type_specific->gain()->min_gain()));
+  } else {
+    type_specific_node_->RecordString(kMinGain, kNoneNonCompliant);
+  }
+
+  if (type_specific->gain()->max_gain().has_value()) {
+    type_specific_node_->RecordString(kMaxGain, std::to_string(*type_specific->gain()->max_gain()));
+  } else {
+    type_specific_node_->RecordString(kMaxGain, kNoneNonCompliant);
+  }
+
+  if (type_specific->gain()->min_gain_step().has_value()) {
+    type_specific_node_->RecordString(kMinGainStep,
+                                      std::to_string(*type_specific->gain()->min_gain_step()));
+  } else {
+    type_specific_node_->RecordString(kMinGainStep, kNoneNonCompliant);
+  }
+}
+
+void Element::RecordVendorSpecificElement(
+    fhasp::ElementType type,
+    [[maybe_unused]] const std::optional<fhasp::TypeSpecificElement>& type_specific) {
+  std::ostringstream stream;
+  if (type != fhasp::ElementType::kVendorSpecific) {
+    ADR_WARN_METHOD() << "element " << element_id_ << ": " << type
+                      << " with TypeSpecific::VendorSpecific";
+    return;
+  }
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+
+  // Nothing else VendorSpecific-specific to capture!
+}
+
+///////////////////////////////////////
 // Edge methods
 Edge::Edge(inspect::Node edge_node, ElementId from_element_id, ElementId to_element_id)
     : edge_node_(std::move(edge_node)),
@@ -804,6 +1110,20 @@ std::shared_ptr<Topology> DeviceInspectInstance::RecordTopology(
 
   topologies_.push_back(topology_node_ptr);
   return topology_node_ptr;
+}
+
+std::shared_ptr<Element> DeviceInspectInstance::RecordElement(fhasp::ElementId element_id,
+                                                              const fhasp::Element& element) {
+  ADR_LOG_METHOD(kTraceInspector) << "id " << element_id;
+
+  if (elements_.empty()) {
+    elements_root_node_ = device_node_.CreateChild(kElements);
+  }
+  auto element_node = elements_root_node_.CreateChild(std::to_string(elements_.size()));
+  auto element_node_ptr = std::make_shared<Element>(std::move(element_node), element_id, element);
+
+  elements_.push_back(element_node_ptr);
+  return element_node_ptr;
 }
 
 void DeviceInspectInstance::RecordActiveTopology(fhasp::TopologyId topology_id) {

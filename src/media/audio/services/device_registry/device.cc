@@ -1193,8 +1193,14 @@ void Device::RetrieveSignalProcessingElements() {
           OnError(ZX_ERR_INVALID_ARGS);
           return;
         }
-        for (const auto& [element_id, _] : sig_proc_element_map_) {
+        for (const auto& [element_id, element] : sig_proc_element_map_) {
           element_ids_.insert(element_id);
+
+          auto element_ptr = inspect()->RecordElement(element_id, element.element);
+          if (!element_ptr) {
+            ADR_WARN_OBJECT() << "Failed to record element";
+            continue;
+          }
         }
         OnSignalProcessingInitializationResponse();
 
