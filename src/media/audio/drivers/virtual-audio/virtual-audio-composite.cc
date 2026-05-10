@@ -3,6 +3,7 @@
 
 #include "src/media/audio/drivers/virtual-audio/virtual-audio-composite.h"
 
+#include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/common_types.h>
 #include <fidl/fuchsia.hardware.audio/cpp/fidl.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <zircon/device/audio.h>
@@ -12,6 +13,8 @@
 #include <fbl/algorithm.h>
 
 #include "src/media/audio/drivers/lib/audio-proto-utils/include/audio-proto-utils/format-utils.h"
+
+namespace fhasp = fuchsia_hardware_audio_signalprocessing;
 
 namespace virtual_audio {
 
@@ -67,9 +70,10 @@ fuchsia_virtualaudio::Configuration VirtualAudioComposite::GetDefaultConfig() {
   fuchsia_hardware_audio::DaiSupportedFormats format_set = {};
   format_set.number_of_channels(std::vector<uint32_t>{2});
   format_set.sample_formats(std::vector{fuchsia_hardware_audio::DaiSampleFormat::kPcmSigned});
-  format_set.frame_formats(
-      std::vector{fuchsia_hardware_audio::DaiFrameFormat::WithFrameFormatStandard(
-          fuchsia_hardware_audio::DaiFrameFormatStandard::kI2S)});
+  format_set.frame_formats(std::vector{
+      fuchsia_hardware_audio::DaiFrameFormat::WithFrameFormatStandard(
+          fuchsia_hardware_audio::DaiFrameFormatStandard::kI2S),
+  });
   format_set.frame_rates(std::vector<uint32_t>{48'000});
   format_set.bits_per_slot(std::vector<uint8_t>{32});
   format_set.bits_per_sample(std::vector<uint8_t>{16});
@@ -105,26 +109,39 @@ fuchsia_virtualaudio::Configuration VirtualAudioComposite::GetDefaultConfig() {
   composite.dai_interconnects(std::move(composite_dai_interconnects));
 
   // Topology with one ring buffer (through Gain) and one packet stream into one DAI interconnect.
-  fuchsia_hardware_audio_signalprocessing::Topology topology;
+  fhasp::Topology topology;
   topology.id(kDefaultTopologyId);
-  fuchsia_hardware_audio_signalprocessing::EdgePair edge_rb_to_gain;
-  fuchsia_hardware_audio_signalprocessing::EdgePair edge_gain_to_dai;
-  fuchsia_hardware_audio_signalprocessing::EdgePair edge_ps_to_dai;
+  fhasp::EdgePair edge_rb_to_vendor_specific;
+  fhasp::EdgePair edge_vendor_specific_to_dynamics;
+  fhasp::EdgePair edge_dynamics_to_equalizer;
+  fhasp::EdgePair edge_equalizer_to_gain;
+  fhasp::EdgePair edge_gain_to_dai;
+  fhasp::EdgePair edge_ps_to_dai;
 
-  edge_rb_to_gain.processing_element_id_from(kDefaultRingBufferId)
-      .processing_element_id_to(kGainId);
+  edge_rb_to_vendor_specific.processing_element_id_from(kDefaultRingBufferId)
+      .processing_element_id_to(kVendorSpecificId);
+  edge_vendor_specific_to_dynamics.processing_element_id_from(kVendorSpecificId)
+      .processing_element_id_to(kDynamicsId);
+  edge_dynamics_to_equalizer.processing_element_id_from(kDynamicsId)
+      .processing_element_id_to(kEqualizerId);
+  edge_equalizer_to_gain.processing_element_id_from(kEqualizerId).processing_element_id_to(kGainId);
   edge_gain_to_dai.processing_element_id_from(kGainId).processing_element_id_to(kDefaultDaiId);
   edge_ps_to_dai.processing_element_id_from(kDefaultPacketStreamId)
       .processing_element_id_to(kDefaultDaiId);
-  topology.processing_elements_edge_pairs(std::vector(
-      {std::move(edge_rb_to_gain), std::move(edge_gain_to_dai), std::move(edge_ps_to_dai)}));
-  composite.topologies(
-      std::optional<std::vector<fuchsia_hardware_audio_signalprocessing::Topology>>{
-          std::in_place,
-          {
-              std::move(topology),
-          },
-      });
+  topology.processing_elements_edge_pairs(std::vector({
+      std::move(edge_rb_to_vendor_specific),
+      std::move(edge_vendor_specific_to_dynamics),
+      std::move(edge_dynamics_to_equalizer),
+      std::move(edge_equalizer_to_gain),
+      std::move(edge_gain_to_dai),
+      std::move(edge_ps_to_dai),
+  }));
+  composite.topologies(std::optional<std::vector<fhasp::Topology>>{
+      std::in_place,
+      {
+          std::move(topology),
+      },
+  });
 
   fuchsia_virtualaudio::CompositePacketStream composite_packet_stream = {};
   fuchsia_virtualaudio::PacketStream packet_stream = {};
@@ -198,7 +215,7 @@ fuchsia_virtualaudio::RingBuffer& VirtualAudioComposite::GetRingBuffer(uint64_t 
   auto& ring_buffers = config_.device_specific()->composite()->ring_buffers().value();
   ZX_ASSERT(ring_buffers.size() == 1);
   ZX_ASSERT(ring_buffers[0].ring_buffer().has_value());
-  return ring_buffers[0].ring_buffer().value();
+  return *ring_buffers[0].ring_buffer();
 }
 
 void VirtualAudioComposite::GetFormat(GetFormatCompleter::Sync& completer) {
@@ -212,7 +229,7 @@ void VirtualAudioComposite::GetFormat(GetFormatCompleter::Sync& completer) {
   auto& ring_buffer = GetRingBuffer(kRingBufferId);
   int64_t external_delay = 0;
   if (ring_buffer.external_delay().has_value()) {
-    external_delay = ring_buffer.external_delay().value();
+    external_delay = *ring_buffer.external_delay();
   };
 
   auto sample_format = audio::utils::GetSampleFormat(pcm_format->valid_bits_per_sample(),
@@ -325,7 +342,7 @@ void VirtualAudioComposite::SetDaiFormat(SetDaiFormatRequest& request,
   ZX_ASSERT(composite_config().dai_interconnects()->size() == 2);
 
   fuchsia_virtualaudio::CompositeDaiInterconnect& dai_interconnect =
-      (composite_config().dai_interconnects()->at(0).id() == request.processing_element_id())
+      composite_config().dai_interconnects()->at(0).id() == request.processing_element_id()
           ? composite_config().dai_interconnects()->at(0)
           : composite_config().dai_interconnects()->at(1);
 
@@ -552,7 +569,8 @@ void VirtualAudioComposite::GetPacketStreamFormats(
     pcm_formats.valid_bits_per_sample(std::vector<uint8_t>{16});
 
     pcm_formats.sample_formats(std::vector<fuchsia_hardware_audio::SampleFormat>{
-        fuchsia_hardware_audio::SampleFormat::kPcmSigned});
+        fuchsia_hardware_audio::SampleFormat::kPcmSigned,
+    });
 
     all_formats.push_back(
         fuchsia_hardware_audio::SupportedFormats2::WithPcmSupportedFormats(std::move(pcm_formats)));
@@ -576,7 +594,8 @@ void VirtualAudioComposite::GetPacketStreamFormats(
 
     encoded_formats.decoded_frame_rates(std::vector<uint32_t>{48000});
     encoded_formats.encoding_types(std::vector<fuchsia_hardware_audio::EncodingType>{
-        fuchsia_hardware_audio::EncodingType::kAac});
+        fuchsia_hardware_audio::EncodingType::kAac,
+    });
 
     all_formats.push_back(fuchsia_hardware_audio::SupportedFormats2::WithSupportedEncodings(
         std::move(encoded_formats)));
@@ -596,7 +615,7 @@ void VirtualAudioComposite::CreatePacketStream(CreatePacketStreamRequest& reques
   // Find the PacketStream config for this element ID.
   // We assume only one exists for now, and it matches kPacketStreamId.
   ZX_ASSERT(composite_config().packet_streams().has_value());
-  auto& packet_streams = composite_config().packet_streams().value();
+  auto& packet_streams = *composite_config().packet_streams();
   ZX_ASSERT(!packet_streams.empty());
 
   // Assuming the first and only packet stream config is for this ID.
@@ -669,69 +688,124 @@ void VirtualAudioComposite::SetupSignalProcessing() {
 
 // signalprocessing Element handling
 //
-// This driver is limited to a ring buffer, a packet stream, a DAI interconnect and a gain
-// element.
-// TODO(https://fxbug.dev/42075676): Add support for more elements provided by the driver
-// (additional processing element types), enabling configuration and observability via the
-// virtual_audio FIDL API.
+// This driver exposes signalprocessing Elements of various types: ring buffers, a packet stream,
+// DAI interconnects, and otherprocessing elements (Dynamics, Equalizer, Gain, VendorSpecific).
+//
+// TODO(https://fxbug.dev/42075676): Add support for more topologies and elements, so that
+// everything is configurable and observable via the virtual_audio FIDL API.
 void VirtualAudioComposite::SetupSignalProcessingElements() {
   element_map_.clear();
   elements_.clear();
 
   // Configure RING_BUFFER element
-  fuchsia_hardware_audio_signalprocessing::Element ring_buffer;
-  ring_buffer.id(kRingBufferId)
-      .type(fuchsia_hardware_audio_signalprocessing::ElementType::kRingBuffer);
+  fhasp::Element ring_buffer;
+  ring_buffer.id(kRingBufferId).type(fhasp::ElementType::kRingBuffer);
 
   // Configure DAI element
-  fuchsia_hardware_audio_signalprocessing::Element dai;
-  fuchsia_hardware_audio_signalprocessing::DaiInterconnect dai_interconnect;
+  fhasp::Element dai;
+  fhasp::DaiInterconnect dai_interconnect;
   // Connect this to the existing virtualaudio FIDL method for dynamic plug_state changes?
-  dai_interconnect.plug_detect_capabilities(
-      fuchsia_hardware_audio_signalprocessing::PlugDetectCapabilities::kHardwired);
+  dai_interconnect.plug_detect_capabilities(fhasp::PlugDetectCapabilities::kHardwired);
   dai.id(kDaiId)
-      .type(fuchsia_hardware_audio_signalprocessing::ElementType::kDaiInterconnect)
+      .type(fhasp::ElementType::kDaiInterconnect)
+      .type_specific(fhasp::TypeSpecificElement::WithDaiInterconnect(std::move(dai_interconnect)));
+
+  // Configure VENDOR_SPECIFIC element
+  fhasp::Element vendor_specific;
+  fhasp::VendorSpecific vendor_specific_type_specific;
+  vendor_specific.id(kVendorSpecificId)
+      .type(fhasp::ElementType::kVendorSpecific)
       .type_specific(
-          fuchsia_hardware_audio_signalprocessing::TypeSpecificElement::WithDaiInterconnect(
-              std::move(dai_interconnect)));
+          fhasp::TypeSpecificElement::WithVendorSpecific(std::move(vendor_specific_type_specific)));
+
+  // Configure DYNAMICS element
+  fhasp::Element dynamics;
+  fhasp::Dynamics dynamics_type_specific;
+  std::vector<fhasp::DynamicsBand> dynamics_bands;
+  dynamics_bands.emplace_back(fhasp::DynamicsBand{{.id = 42}});
+  dynamics_bands.emplace_back(fhasp::DynamicsBand{{.id = 68}});
+  dynamics_type_specific.bands(std::move(dynamics_bands))
+      .supported_controls(fhasp::DynamicsSupportedControls::kKneeWidth |
+                          fhasp::DynamicsSupportedControls::kAttack |
+                          fhasp::DynamicsSupportedControls::kRelease |
+                          fhasp::DynamicsSupportedControls::kOutputGain |
+                          fhasp::DynamicsSupportedControls::kInputGain |
+                          fhasp::DynamicsSupportedControls::kLookahead |
+                          fhasp::DynamicsSupportedControls::kLevelType |
+                          fhasp::DynamicsSupportedControls::kLinkedChannels |
+                          fhasp::DynamicsSupportedControls::kThresholdType);
+  dynamics
+      .can_bypass(true)  // This element can be tested for bypass.
+      .can_stop(false)   // This element cannot be tested for stop.
+      .id(kDynamicsId)
+      .type(fhasp::ElementType::kDynamics)
+      .type_specific(fhasp::TypeSpecificElement::WithDynamics(std::move(dynamics_type_specific)));
+
+  // Configure EQUALIZER element
+  fhasp::Element equalizer;
+  fhasp::Equalizer equalizer_type_specific;
+  std::vector<fhasp::EqualizerBand> equalizer_bands;
+  equalizer_bands.emplace_back(fhasp::EqualizerBand{{.id = 62}});
+  equalizer_bands.emplace_back(fhasp::EqualizerBand{{.id = 48}});
+  equalizer_type_specific.bands(std::move(equalizer_bands))
+      .supported_controls(fhasp::EqualizerSupportedControls::kCanControlFrequency |
+                          fhasp::EqualizerSupportedControls::kCanControlQ |
+                          fhasp::EqualizerSupportedControls::kSupportsTypePeak |
+                          fhasp::EqualizerSupportedControls::kSupportsTypeNotch |
+                          fhasp::EqualizerSupportedControls::kSupportsTypeLowCut |
+                          fhasp::EqualizerSupportedControls::kSupportsTypeHighCut |
+                          fhasp::EqualizerSupportedControls::kSupportsTypeLowShelf |
+                          fhasp::EqualizerSupportedControls::kSupportsTypeHighShelf)
+      .can_disable_bands(true)
+      .min_frequency(0)
+      .max_frequency(19876)
+      .max_q(2.5)
+      .min_gain_db(-96.0)
+      .max_gain_db(96.0);
+  equalizer
+      .can_bypass(true)  // This element can be tested for bypass.
+      .can_stop(true)    // This element can be tested for stop.
+      .id(kEqualizerId)
+      .type(fhasp::ElementType::kEqualizer)
+      .type_specific(fhasp::TypeSpecificElement::WithEqualizer(std::move(equalizer_type_specific)));
 
   // Configure GAIN element
-  fuchsia_hardware_audio_signalprocessing::Element gain;
-  fuchsia_hardware_audio_signalprocessing::Gain gain_type_specific;
-  gain_type_specific.type(fuchsia_hardware_audio_signalprocessing::GainType::kDecibels)
-      .domain(fuchsia_hardware_audio_signalprocessing::GainDomain::kDigital)
+  fhasp::Element gain;
+  fhasp::Gain gain_type_specific;
+  gain_type_specific.type(fhasp::GainType::kDecibels)
+      .domain(fhasp::GainDomain::kDigital)
       .min_gain(-68.0)
       .max_gain(+6.0)
       .min_gain_step(0.5);
-  gain.can_bypass(true)  // This is the only element that can be tested for bypass.
+  gain.can_bypass(true)  // This element can be tested for bypass.
       .id(kGainId)
-      .type(fuchsia_hardware_audio_signalprocessing::ElementType::kGain)
-      .type_specific(fuchsia_hardware_audio_signalprocessing::TypeSpecificElement::WithGain(
-          gain_type_specific));
+      .type(fhasp::ElementType::kGain)
+      .type_specific(fhasp::TypeSpecificElement::WithGain(gain_type_specific));
 
   // Configure standalone (self-referential) DAI element
-  fuchsia_hardware_audio_signalprocessing::Element single_dai;
-  fuchsia_hardware_audio_signalprocessing::DaiInterconnect single_dai_interconnect;
-  single_dai_interconnect.plug_detect_capabilities(
-      fuchsia_hardware_audio_signalprocessing::PlugDetectCapabilities::kHardwired);
+  fhasp::Element single_dai;
+  fhasp::DaiInterconnect single_dai_interconnect;
+  single_dai_interconnect.plug_detect_capabilities(fhasp::PlugDetectCapabilities::kHardwired);
   single_dai.id(kSingleDaiId)
-      .type(fuchsia_hardware_audio_signalprocessing::ElementType::kDaiInterconnect)
+      .type(fhasp::ElementType::kDaiInterconnect)
       .type_specific(
-          fuchsia_hardware_audio_signalprocessing::TypeSpecificElement::WithDaiInterconnect(
-              std::move(single_dai_interconnect)))
+          fhasp::TypeSpecificElement::WithDaiInterconnect(std::move(single_dai_interconnect)))
       .description("Single-element DAI")
       .can_stop(false)
       .can_bypass(false);
 
   // Configure PACKET_STREAM element
-  fuchsia_hardware_audio_signalprocessing::Element packet_stream;
+  fhasp::Element packet_stream;
   packet_stream.id(kPacketStreamId)
-      .type(fuchsia_hardware_audio_signalprocessing::ElementType::kPacketStream)
+      .type(fhasp::ElementType::kPacketStream)
       .description("Packet Stream Endpoint");
 
   elements_ = {{
       ring_buffer,
       dai,
+      vendor_specific,
+      dynamics,
+      equalizer,
       gain,
       single_dai,
       packet_stream,
@@ -748,24 +822,34 @@ void VirtualAudioComposite::GetElements(GetElementsCompleter::Sync& completer) {
 // signalprocessing Topology handling
 //
 // We expose three topologies:
-// - kPlaybackTopologyId: { Rb -> Gain -> Dai } and { PacketStream -> Dai }
+// - kPlaybackTopologyId: { Rb -> VendorSpecific -> Dynamics -> Equalizer -> Gain -> Dai }
+//                    and { PacketStream -> Dai }
 // - kCaptureTopologyId: { Dai -> Gain -> Rb }
 // - kSingleElementTopologyId: { SingleDai -> SingleDai }
-// TODO(https://fxbug.dev/42075676): Add more complex topologies, including elements that are only
-// in some topologies (not all). Include signalprocessing configuration/observability in the
+//
+// TODO(https://fxbug.dev/42075676): Include signalprocessing configuration/observability in the
 // virtual_audio FIDL API.
 void VirtualAudioComposite::SetupSignalProcessingTopologies() {
   topologies_.clear();
 
   {
-    fuchsia_hardware_audio_signalprocessing::Topology topology;
+    fhasp::Topology topology;
     topology.id(kPlaybackTopologyId);
-    fuchsia_hardware_audio_signalprocessing::EdgePair edge1, edge2, edge3;
-    edge1.processing_element_id_from(kRingBufferId).processing_element_id_to(kGainId);
-    edge2.processing_element_id_from(kGainId).processing_element_id_to(kDaiId);
-    edge3.processing_element_id_from(kPacketStreamId).processing_element_id_to(kDaiId);
-    topology.processing_elements_edge_pairs(
-        std::vector({std::move(edge1), std::move(edge2), std::move(edge3)}));
+    fhasp::EdgePair edge1, edge2, edge3, edge4, edge5, edge6;
+    edge1.processing_element_id_from(kRingBufferId).processing_element_id_to(kVendorSpecificId);
+    edge2.processing_element_id_from(kVendorSpecificId).processing_element_id_to(kDynamicsId);
+    edge3.processing_element_id_from(kDynamicsId).processing_element_id_to(kEqualizerId);
+    edge4.processing_element_id_from(kEqualizerId).processing_element_id_to(kGainId);
+    edge5.processing_element_id_from(kGainId).processing_element_id_to(kDaiId);
+    edge6.processing_element_id_from(kPacketStreamId).processing_element_id_to(kDaiId);
+    topology.processing_elements_edge_pairs(std::vector({
+        std::move(edge1),
+        std::move(edge2),
+        std::move(edge3),
+        std::move(edge4),
+        std::move(edge5),
+        std::move(edge6),
+    }));
 
     // By default (in the topology of kPlaybackTopologyId), our ring buffer will be an outgoing one.
     current_topology_id_ = kPlaybackTopologyId;
@@ -773,21 +857,26 @@ void VirtualAudioComposite::SetupSignalProcessingTopologies() {
   }
 
   {
-    fuchsia_hardware_audio_signalprocessing::Topology topology;
+    fhasp::Topology topology;
     topology.id(kCaptureTopologyId);
-    fuchsia_hardware_audio_signalprocessing::EdgePair edge1, edge2;
+    fhasp::EdgePair edge1, edge2;
     edge1.processing_element_id_from(kDaiId).processing_element_id_to(kGainId);
     edge2.processing_element_id_from(kGainId).processing_element_id_to(kRingBufferId);
-    topology.processing_elements_edge_pairs(std::vector({std::move(edge1), std::move(edge2)}));
+    topology.processing_elements_edge_pairs(std::vector({
+        std::move(edge1),
+        std::move(edge2),
+    }));
     topologies_.emplace_back(std::move(topology));
   }
 
   {
-    fuchsia_hardware_audio_signalprocessing::Topology topology;
+    fhasp::Topology topology;
     topology.id(kSingleElementTopologyId);
-    fuchsia_hardware_audio_signalprocessing::EdgePair edge1;
+    fhasp::EdgePair edge1;
     edge1.processing_element_id_from(kSingleDaiId).processing_element_id_to(kSingleDaiId);
-    topology.processing_elements_edge_pairs(std::vector({std::move(edge1)}));
+    topology.processing_elements_edge_pairs(std::vector({
+        std::move(edge1),
+    }));
     topologies_.emplace_back(std::move(topology));
   }
 }
@@ -838,56 +927,162 @@ void VirtualAudioComposite::MaybeCompleteWatchTopology() {
 //
 // This driver is limited to a ring buffer, a DAI interconnect and a gain element. Of these, DAI and
 // Gain return type-specific ElementState; only the Gain element has _settable_ type-specific state.
-// TODO(https://fxbug.dev/42075676): Add support for diverse element types, as well as dynamic
-// (unsolicited) state changes, with complex state that can be configured and observed via the
-// virtual_audio FIDL API.
+// DaiInterconnect, Dynamics, Equalizer, Gain and VendorSpecific return type-specific ElementState;
+// all but DaiInterconnect also support having this type-specific ElementState _set by a client_.
+//
+// TODO(https://fxbug.dev/42075676): Add support for more topologies and elements, so that
+// everything is configurable and observable via the virtual_audio FIDL API. This includes the
+// ability for a client to trigger 'unsolicited' state changes (e.g. un/plugging the DAI).
 void VirtualAudioComposite::SetupSignalProcessingElementStates() {
   element_states_.clear();
 
-  fuchsia_hardware_audio_signalprocessing::DaiInterconnectElementState dai_state;
-  fuchsia_hardware_audio_signalprocessing::PlugState plug_state;
+  fhasp::DaiInterconnectElementState dai_state;
+  fhasp::PlugState plug_state;
   plug_state.plugged(true).plug_state_time(0);
   dai_state.plug_state(std::move(plug_state));
   ElementSnapshot dai_snapshot;
   dai_snapshot.current.started(true).bypassed(false).type_specific(
-      fuchsia_hardware_audio_signalprocessing::TypeSpecificElementState::WithDaiInterconnect(
-          std::move(dai_state)));
+      fhasp::TypeSpecificElementState::WithDaiInterconnect(std::move(dai_state)));
   dai_snapshot.last_notified.reset();
   dai_snapshot.completer.reset();
-  element_states_.insert({kDaiId, std::move(dai_snapshot)});
+  element_states_.insert({
+      kDaiId,
+      std::move(dai_snapshot),
+  });
 
   ElementSnapshot rb_snapshot;
   rb_snapshot.current.started(true).bypassed(false).processing_delay(0);
   rb_snapshot.last_notified.reset();
   rb_snapshot.completer.reset();
-  element_states_.insert({kRingBufferId, std::move(rb_snapshot)});
+  element_states_.insert({
+      kRingBufferId,
+      std::move(rb_snapshot),
+  });
 
-  fuchsia_hardware_audio_signalprocessing::GainElementState gain_state;
+  fhasp::VendorSpecificState vendor_specific_state;
+  ElementSnapshot vendor_specific_snapshot;
+  std::vector<uint8_t> vendor_specific_vec{1, 2, 3, 4, 5, 6, 7, 8};
+  vendor_specific_snapshot.current.started(true)
+      .bypassed(false)
+      .turn_on_delay(0)
+      .vendor_specific_data(std::move(vendor_specific_vec))
+      .type_specific(
+          fhasp::TypeSpecificElementState::WithVendorSpecific(std::move(vendor_specific_state)));
+  vendor_specific_snapshot.last_notified.reset();
+  vendor_specific_snapshot.completer.reset();
+  element_states_.insert({
+      kVendorSpecificId,
+      std::move(vendor_specific_snapshot),
+  });
+
+  fhasp::DynamicsElementState dynamics_state;
+  std::vector<fhasp::DynamicsBandState> dyn_band_states;
+  dyn_band_states.emplace_back(fhasp::DynamicsBandState{{
+      .id = 42,
+      .min_frequency = 12,
+      .max_frequency = 12000,
+      .threshold_db = -4.0,
+      .threshold_type = fhasp::ThresholdType::kBelow,
+      .ratio = 0.333,
+      .knee_width_db = 4.0,
+      .attack = zx::msec(40).get(),
+      .release = zx::msec(160).get(),
+      .output_gain_db = 0.0,
+      .input_gain_db = 0.0,
+      .level_type = fhasp::LevelType::kPeak,
+      .lookahead = zx::msec(200).get(),
+      .linked_channels = true,
+  }});
+  dyn_band_states.emplace_back(fhasp::DynamicsBandState{{
+      .id = 68,
+      .min_frequency = 23,
+      .max_frequency = 16000,
+      .threshold_db = -48.0,
+      .threshold_type = fhasp::ThresholdType::kAbove,
+      .ratio = 0.888,
+      .knee_width_db = 6.0,
+      .attack = zx::usec(200).get(),
+      .release = zx::usec(300).get(),
+      .output_gain_db = -2.0,
+      .input_gain_db = -4.0,
+      .level_type = fhasp::LevelType::kRms,
+      .lookahead = zx::msec(400).get(),
+      .linked_channels = false,
+  }});
+  dynamics_state.band_states(std::move(dyn_band_states));
+  ElementSnapshot dynamics_snapshot;
+  dynamics_snapshot.current.started(true).bypassed(false).turn_on_delay(0).type_specific(
+      fhasp::TypeSpecificElementState::WithDynamics(std::move(dynamics_state)));
+  dynamics_snapshot.last_notified.reset();
+  dynamics_snapshot.completer.reset();
+  element_states_.insert({
+      kDynamicsId,
+      std::move(dynamics_snapshot),
+  });
+
+  fhasp::EqualizerElementState equalizer_state;
+  std::vector<fhasp::EqualizerBandState> eq_band_states;
+  eq_band_states.emplace_back(fhasp::EqualizerBandState{{
+      .id = 62,
+      .type = fhasp::EqualizerBandType::kPeak,
+      .frequency = 2000,
+      .q = 2,
+      .gain_db = 3.0,
+      .enabled = true,
+  }});
+  eq_band_states.emplace_back(fhasp::EqualizerBandState{{
+      .id = 48,
+      .type = fhasp::EqualizerBandType::kLowShelf,
+      .frequency = 120,
+      .q = 3.0,
+      .gain_db = -6.0,
+      .enabled = true,
+  }});
+  equalizer_state.band_states(std::move(eq_band_states));
+  ElementSnapshot equalizer_snapshot;
+  equalizer_snapshot.current.started(true).bypassed(false).turn_on_delay(0).type_specific(
+      fhasp::TypeSpecificElementState::WithEqualizer(std::move(equalizer_state)));
+  equalizer_snapshot.last_notified.reset();
+  equalizer_snapshot.completer.reset();
+  element_states_.insert({
+      kEqualizerId,
+      std::move(equalizer_snapshot),
+  });
+
+  fhasp::GainElementState gain_state;
   gain_state.gain(-6.0);
   ElementSnapshot gain_snapshot;
   gain_snapshot.current.started(true).bypassed(false).turn_on_delay(0).type_specific(
-      fuchsia_hardware_audio_signalprocessing::TypeSpecificElementState::WithGain(gain_state));
+      fhasp::TypeSpecificElementState::WithGain(gain_state));
   gain_snapshot.last_notified.reset();
   gain_snapshot.completer.reset();
-  element_states_.insert({kGainId, std::move(gain_snapshot)});
+  element_states_.insert({
+      kGainId,
+      std::move(gain_snapshot),
+  });
 
   ElementSnapshot ps_snapshot;
   ps_snapshot.current.started(true).bypassed(false).processing_delay(0);
   ps_snapshot.last_notified.reset();
   ps_snapshot.completer.reset();
-  element_states_.insert({kPacketStreamId, std::move(ps_snapshot)});
+  element_states_.insert({
+      kPacketStreamId,
+      std::move(ps_snapshot),
+  });
 
-  fuchsia_hardware_audio_signalprocessing::DaiInterconnectElementState single_dai_state;
-  fuchsia_hardware_audio_signalprocessing::PlugState single_dai_plug_state;
+  fhasp::DaiInterconnectElementState single_dai_state;
+  fhasp::PlugState single_dai_plug_state;
   single_dai_plug_state.plugged(true).plug_state_time(0);
   single_dai_state.plug_state(std::move(single_dai_plug_state));
   ElementSnapshot single_dai_snapshot;
   single_dai_snapshot.current.started(true).bypassed(false).type_specific(
-      fuchsia_hardware_audio_signalprocessing::TypeSpecificElementState::WithDaiInterconnect(
-          std::move(single_dai_state)));
+      fhasp::TypeSpecificElementState::WithDaiInterconnect(std::move(single_dai_state)));
   single_dai_snapshot.last_notified.reset();
   single_dai_snapshot.completer.reset();
-  element_states_.insert({kSingleDaiId, std::move(single_dai_snapshot)});
+  element_states_.insert({
+      kSingleDaiId,
+      std::move(single_dai_snapshot),
+  });
 }
 
 // Note that the range of type-specific state for an element is greater than the range of
@@ -918,7 +1113,7 @@ void VirtualAudioComposite::SetElementState(SetElementStateRequest& request,
   const auto& ele = element_map_[element_id];
 
   // Error: this element cannot Stop as requested.
-  if (request.state().started().has_value() && !(*request.state().started()) &&
+  if (request.state().started().has_value() && !*request.state().started() &&
       !ele->can_stop().value_or(false)) {
     fdf::error("SetElementState({}): element cannot be stopped", element_id);
     completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
@@ -950,6 +1145,363 @@ void VirtualAudioComposite::SetElementState(SetElementStateRequest& request,
                    element_id);
         completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
         return;
+      }
+      break;
+    case kDynamicsId:
+      if (request.state().type_specific().has_value()) {
+        // For this element, clients can specify type-specific state but it must be dynamics.
+        if (!request.state().type_specific()->dynamics().has_value()) {
+          // Error: type_specific state in this request does not match this element type.
+          fdf::error(
+              "SetElementState({}): TypeSpecificElementState does not match this element type",
+              element_id);
+          completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+          return;
+        }
+        // Error: SetElementState value is missing or non-finite.
+        if (!request.state().type_specific()->dynamics()->band_states().has_value() ||
+            request.state().type_specific()->dynamics()->band_states()->empty()) {
+          fdf::error("SetElementState({}): Dynamics requires non-empty band_states", element_id);
+          completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+          return;
+        }
+        for (const auto& band_state : *request.state().type_specific()->dynamics()->band_states()) {
+          if (!band_state.id().has_value()) {
+            fdf::error(
+                "SetElementState({}): DynamicsElementState band_state does not specify band_id",
+                element_id);
+            completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+            return;
+          }
+          if (!band_state.min_frequency().has_value()) {
+            fdf::error(
+                "SetElementState({}): DynamicsElementState band_state does not specify min_frequency",
+                element_id);
+            completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+            return;
+          }
+          if (!band_state.max_frequency().has_value()) {
+            fdf::error(
+                "SetElementState({}): DynamicsElementState band_state does not specify max_frequency",
+                element_id);
+            completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+            return;
+          }
+          if (!band_state.threshold_db().has_value() || !isfinite(*band_state.threshold_db())) {
+            fdf::error(
+                "SetElementState({}): Dynamics band_state does not specify a finite threshold_db {}",
+                element_id, *band_state.threshold_db());
+            completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+            return;
+          }
+          fhasp::DynamicsSupportedControls ctrls =
+              ele->type_specific()->dynamics()->supported_controls().value_or(
+                  static_cast<fhasp::DynamicsSupportedControls>(0));
+          if (band_state.threshold_type().has_value() &&
+              !(ctrls & fhasp::DynamicsSupportedControls::kThresholdType)) {
+            fdf::error(
+                "SetElementState({}): Dynamics band_state specifies threshold_type (unsupported)",
+                element_id);
+            completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+            return;
+          }
+          if (!band_state.ratio().has_value() || !isfinite(*band_state.ratio())) {
+            fdf::error(
+                "SetElementState({}): Dynamics band_state does not specify a finite ratio {}",
+                element_id, *band_state.ratio());
+            completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+            return;
+          }
+          if (band_state.knee_width_db().has_value()) {
+            if (!(ctrls & fhasp::DynamicsSupportedControls::kKneeWidth)) {
+              fdf::error(
+                  "SetElementState({}): Dynamics band_state specifies knee_width_db (unsupported)",
+                  element_id);
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+            if (!isfinite(*band_state.knee_width_db()) || *band_state.knee_width_db() < 0) {
+              fdf::error(
+                  "SetElementState({}): Dynamics band_state does not specify a positive finite knee_width_db {}",
+                  element_id, *band_state.knee_width_db());
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+          }
+          if (band_state.attack().has_value()) {
+            if (!(ctrls & fhasp::DynamicsSupportedControls::kAttack)) {
+              fdf::error("SetElementState({}): Dynamics band_state specifies attack (unsupported)",
+                         element_id);
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+            if (*band_state.attack() < 0) {
+              fdf::error(
+                  "SetElementState({}): Dynamics band_state does not specify a non-negative attack time {}",
+                  element_id, *band_state.attack());
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+          }
+          if (band_state.release().has_value()) {
+            if (!(ctrls & fhasp::DynamicsSupportedControls::kRelease)) {
+              fdf::error("SetElementState({}): Dynamics band_state specifies release (unsupported)",
+                         element_id);
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+            if (*band_state.release() < 0) {
+              fdf::error(
+                  "SetElementState({}): Dynamics band_state does not specify a non-negative release time {}",
+                  element_id, *band_state.release());
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+          }
+          if (band_state.output_gain_db().has_value()) {
+            if (!(ctrls & fhasp::DynamicsSupportedControls::kOutputGain)) {
+              fdf::error(
+                  "SetElementState({}): Dynamics band_state specifies output_gain_db (unsupported)",
+                  element_id);
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+            if (!isfinite(*band_state.output_gain_db())) {
+              fdf::error(
+                  "SetElementState({}): Dynamics band_state does not specify a finite output_gain_db {}",
+                  element_id, *band_state.output_gain_db());
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+          }
+          if (band_state.input_gain_db().has_value()) {
+            if (!(ctrls & fhasp::DynamicsSupportedControls::kInputGain)) {
+              fdf::error(
+                  "SetElementState({}): Dynamics band_state specifies input_gain_db (unsupported)",
+                  element_id);
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+            if (!isfinite(*band_state.input_gain_db())) {
+              fdf::error(
+                  "SetElementState({}): Dynamics band_state does not specify a finite input_gain_db {}",
+                  element_id, *band_state.input_gain_db());
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+          }
+          if (band_state.level_type().has_value() &&
+              !(ctrls & fhasp::DynamicsSupportedControls::kLevelType)) {
+            fdf::error(
+                "SetElementState({}): Dynamics band_state specifies level_type (unsupported)",
+                element_id);
+            completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+            return;
+          }
+          if (band_state.lookahead().has_value()) {
+            if (!(ctrls & fhasp::DynamicsSupportedControls::kLookahead)) {
+              fdf::error(
+                  "SetElementState({}): Dynamics band_state specifies lookahead (unsupported)",
+                  element_id);
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+            if (*band_state.lookahead() < 0) {
+              fdf::error(
+                  "SetElementState({}): Dynamics band_state does not specify a non-negative lookahead time {}",
+                  element_id, *band_state.lookahead());
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+          }
+          if (band_state.linked_channels().has_value() &&
+              !(ctrls & fhasp::DynamicsSupportedControls::kLinkedChannels)) {
+            fdf::error(
+                "SetElementState({}): Dynamics band_state specifies linked_channels (unsupported)",
+                element_id);
+            completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+            return;
+          }
+        }
+        // We passed every check so we can record this state change. First: type-specific changes.
+        element_states_.at(element_id)
+            .current.type_specific(fhasp::TypeSpecificElementState::WithDynamics(
+                request.state().type_specific()->dynamics().value()));
+      }
+      break;
+    case kEqualizerId:
+      if (request.state().type_specific().has_value()) {
+        // For this element, clients can specify type-specific state but it must be equalizer.
+        if (!request.state().type_specific()->equalizer().has_value()) {
+          // Error: type_specific state in this request does not match this element type.
+          fdf::error(
+              "SetElementState({}): TypeSpecificElementState does not match this element type",
+              element_id);
+          completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+          return;
+        }
+        if (!request.state().type_specific()->equalizer()->band_states().has_value() ||
+            request.state().type_specific()->equalizer()->band_states()->empty()) {
+          fdf::error("SetElementState({}): Equalizer requires non-empty band_states", element_id);
+          completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+          return;
+        }
+
+        for (const auto& band_state :
+             *request.state().type_specific()->equalizer()->band_states()) {
+          // id
+          if (!band_state.id().has_value()) {
+            fdf::error("SetElementState({}): Equalizer band_state does not specify band id",
+                       element_id);
+            completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+            return;
+          }
+
+          // type
+          if (!band_state.type().has_value()) {
+            fdf::error("SetElementState({}): Equalizer band_state does not specify band type",
+                       element_id);
+            completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+            return;
+          }
+          const auto& controls = *ele->type_specific()->equalizer()->supported_controls();
+          constexpr fhasp::EqualizerSupportedControls kIncapable =
+              fhasp::EqualizerSupportedControls(0);
+          bool capable = false;
+          switch (*band_state.type()) {
+            case fhasp::EqualizerBandType::kPeak:
+              capable =
+                  (controls & fhasp::EqualizerSupportedControls::kSupportsTypePeak) != kIncapable;
+              break;
+            case fhasp::EqualizerBandType::kLowShelf:
+              capable = (controls & fhasp::EqualizerSupportedControls::kSupportsTypeLowShelf) !=
+                        kIncapable;
+              break;
+            case fhasp::EqualizerBandType::kHighShelf:
+              capable = (controls & fhasp::EqualizerSupportedControls::kSupportsTypeHighShelf) !=
+                        kIncapable;
+              break;
+            case fhasp::EqualizerBandType::kNotch:
+              capable =
+                  (controls & fhasp::EqualizerSupportedControls::kSupportsTypeNotch) != kIncapable;
+              break;
+            case fhasp::EqualizerBandType::kLowCut:
+              capable =
+                  (controls & fhasp::EqualizerSupportedControls::kSupportsTypeLowCut) != kIncapable;
+              break;
+            case fhasp::EqualizerBandType::kHighCut:
+              capable = (controls & fhasp::EqualizerSupportedControls::kSupportsTypeHighCut) !=
+                        kIncapable;
+              break;
+            default:
+              capable = false;
+              fdf::error("SetElementState({}): Equalizer band_state unknown band_type enum {}",
+                         element_id, static_cast<uint64_t>(*band_state.type()));
+              break;
+          }
+          if (!capable) {
+            fdf::error("SetElementState({}): Equalizer band_state type {} not supported",
+                       element_id, static_cast<uint64_t>(*band_state.type()));
+            completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+            return;
+          }
+
+          // frequency
+          if (!band_state.frequency().has_value()) {
+            fdf::error("SetElementState({}): Equalizer band_state does not specify frequency",
+                       element_id);
+            completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+            return;
+          }
+          uint32_t current_frequency = 0;
+          if (!element_states_.at(element_id).current.IsEmpty()) {
+            const auto& curr_band_states =
+                *element_states_.at(element_id).current.type_specific()->equalizer()->band_states();
+            for (const auto& curr_band_state : curr_band_states) {
+              if (*curr_band_state.id() == *band_state.id()) {
+                current_frequency = *curr_band_state.frequency();
+                break;
+              }
+            }
+          }
+          if (*band_state.frequency() != current_frequency &&
+              !(controls & fhasp::EqualizerSupportedControls::kCanControlFrequency)) {
+            fdf::error(
+                "SetElementState({}): Equalizer band_state specifies frequency change (unsupported)",
+                element_id);
+            completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+            return;
+          }
+
+          // Q
+          if (band_state.q().has_value()) {
+            if (!(controls & fhasp::EqualizerSupportedControls::kCanControlQ)) {
+              fdf::error("SetElementState({}): Equalizer band_state specifies Q (unsupported)",
+                         element_id);
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+            if (!isfinite(*band_state.q())) {
+              fdf::error("SetElementState({}): Equalizer band_state Q {} must be finite",
+                         element_id, *band_state.q());
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+          }
+
+          // gain_db
+          if (band_state.gain_db().has_value()) {
+            if (*band_state.type() != fhasp::EqualizerBandType::kPeak &&
+                *band_state.type() != fhasp::EqualizerBandType::kLowShelf &&
+                *band_state.type() != fhasp::EqualizerBandType::kHighShelf) {
+              fdf::error(
+                  "SetElementState({}): Equalizer band_state specifies gain_db (unsupported)",
+                  element_id);
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+            if (!isfinite(*band_state.gain_db())) {
+              fdf::error("SetElementState({}): Equalizer band_state gain_db {} must be finite",
+                         element_id, *band_state.gain_db());
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+          } else {
+            if (*band_state.type() != fhasp::EqualizerBandType::kPeak &&
+                *band_state.type() != fhasp::EqualizerBandType::kLowShelf &&
+                *band_state.type() != fhasp::EqualizerBandType::kHighShelf) {
+              fdf::error(
+                  "SetElementState({}): Equalizer band_state does not specify gain_db (required)",
+                  element_id);
+              completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+              return;
+            }
+          }
+
+          // enabled
+          // Nothing to validate (can always be set/cleared/omitted)
+        }
+
+        // We passed every check so we can record the state change. First: type-specific changes.
+        element_states_.at(element_id)
+            .current.type_specific(
+                fhasp::TypeSpecificElementState::WithEqualizer(fhasp::EqualizerElementState{{
+                    .band_states =
+                        std::move(*request.state().type_specific()->equalizer()->band_states()),
+                }}));
+      }
+      break;
+    case kVendorSpecificId:
+      if (request.state().type_specific().has_value()) {
+        // For this element, clients can specify type-specific state but it must be vendor-specific.
+        if (!request.state().type_specific()->vendor_specific().has_value()) {
+          // Error: type_specific state in this request does not match this element type.
+          fdf::error(
+              "SetElementState({}): TypeSpecificElementState does not match this element type",
+              element_id);
+          completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+          return;
+        }
       }
       break;
     case kGainId:
@@ -985,9 +1537,8 @@ void VirtualAudioComposite::SetElementState(SetElementStateRequest& request,
 
         // We passed every check so we can record this state change. First: type-specific changes.
         element_states_.at(element_id)
-            .current.type_specific(
-                fuchsia_hardware_audio_signalprocessing::TypeSpecificElementState::WithGain(
-                    request.state().type_specific()->gain().value()));
+            .current.type_specific(fhasp::TypeSpecificElementState::WithGain(
+                request.state().type_specific()->gain().value()));
       }
       break;
     default:
@@ -1038,8 +1589,7 @@ void VirtualAudioComposite::WatchElementState(WatchElementStateRequest& request,
 
 // WatchElementState or SetElementState were called for this element (or it changed state for some
 // other reason). If there is a pending WatchElementState to complete, do so.
-void VirtualAudioComposite::MaybeCompleteWatchElementState(
-    fuchsia_hardware_audio_signalprocessing::ElementId element_id) {
+void VirtualAudioComposite::MaybeCompleteWatchElementState(fhasp::ElementId element_id) {
   if (!element_states_.at(element_id).completer.has_value()) {
     fdf::debug("We don't have a completer, so we can't complete this");
     return;
@@ -1062,7 +1612,7 @@ void VirtualAudioComposite::MaybeCompleteWatchElementState(
 // Driver doesn't support a new SignalProcessing method. Complain loudly but don't disconnect, since
 // this test fixture might be used with a client that is built with a newer SDK version.
 void VirtualAudioComposite::handle_unknown_method(
-    fidl::UnknownMethodMetadata<fuchsia_hardware_audio_signalprocessing::SignalProcessing> metadata,
+    fidl::UnknownMethodMetadata<fhasp::SignalProcessing> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
   fdf::error("VirtualAudioComposite::handle_unknown_method (SignalProcessing) ordinal {}",
              metadata.method_ordinal);
