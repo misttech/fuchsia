@@ -66,6 +66,46 @@ void RecordPcmFormat(inspect::Node& node, fuchsia_audio::SampleType sample_type,
   node.RecordString(kSampleFormat, stream.str());
 }
 
+// Save a boolean to an inspect property _that might already exist_.
+void SaveNodeBoolean(inspect::Node& node, std::optional<inspect::BoolProperty>& prop,
+                     const std::string& key, std::optional<bool> value) {
+  if (!prop) {
+    prop = node.CreateBool(key, *value);
+  } else {
+    prop->Set(*value);
+  }
+}
+
+// Save a uint64 to an inspect property _that might already exist_.
+void SaveNodeUint(inspect::Node& node, std::optional<inspect::UintProperty>& prop,
+                  const std::string& key, std::optional<uint64_t> value) {
+  if (!prop) {
+    prop = node.CreateUint(key, *value);
+  } else {
+    prop->Set(*value);
+  }
+}
+
+// Save a int64 to an inspect property _that might already exist_.
+void SaveNodeInt(inspect::Node& node, std::optional<inspect::IntProperty>& prop,
+                 const std::string& key, std::optional<int64_t> value) {
+  if (!prop) {
+    prop = node.CreateInt(key, *value);
+  } else {
+    prop->Set(*value);
+  }
+}
+
+// Save a double to an inspect property _that might already exist_.
+void SaveNodeDouble(inspect::Node& node, std::optional<inspect::DoubleProperty>& prop,
+                    const std::string& key, std::optional<double> value) {
+  if (!prop) {
+    prop = node.CreateDouble(key, *value);
+  } else {
+    prop->Set(*value);
+  }
+}
+
 // Save a string to an inspect property _that might already exist_.
 void SaveNodeString(inspect::Node& node, std::optional<inspect::StringProperty>& prop,
                     const std::string& key, const std::string& value) {
@@ -699,6 +739,21 @@ Element::Element(inspect::Node element_node, ElementId element_id, const fhasp::
 
 Element::~Element() { ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_; }
 
+void Element::SaveBoolean(std::optional<inspect::BoolProperty>& prop, const std::string& key,
+                          std::optional<bool> value) {
+  SaveNodeBoolean(state_node_, prop, key, value);
+}
+
+void Element::SaveUint(std::optional<inspect::UintProperty>& prop, const std::string& key,
+                       std::optional<uint64_t> value) {
+  SaveNodeUint(state_node_, prop, key, value);
+}
+
+void Element::SaveInt(std::optional<inspect::IntProperty>& prop, const std::string& key,
+                      std::optional<int64_t> value) {
+  SaveNodeInt(state_node_, prop, key, value);
+}
+
 void Element::SaveString(std::optional<inspect::StringProperty>& prop, const std::string& key,
                          const std::string& value) {
   SaveNodeString(state_node_, prop, key, value);
@@ -823,6 +878,7 @@ void Element::RecordTypeSpecificElementState(
     }
 
     case fhasp::TypeSpecificElementState::Tag::kDynamics: {
+      RecordDynamicsElementState(type_specific_state->dynamics().value());
       break;
     }
 
@@ -914,6 +970,7 @@ void Element::RecordDynamicsElement(
   const auto& bands = type_specific->dynamics()->bands();
   if (bands.has_value() && !bands->empty()) {
     bands_arr_ = type_specific_node_->CreateUintArray(kBands, bands->size());
+    dynamics_band_state_props_.resize(bands->size());
     for (size_t i = 0; i < bands->size(); ++i) {
       if (bands->at(i).id().has_value()) {
         bands_arr_->Set(i, *bands->at(i).id());
@@ -930,6 +987,115 @@ void Element::RecordDynamicsElement(
   if (type_specific->dynamics()->supported_controls().has_value()) {
     stream << *type_specific->dynamics()->supported_controls();
     type_specific_node_->RecordString(kSupportedControls, stream.str());
+  }
+}
+
+void Element::RecordDynamicsElementState(
+    const fuchsia_hardware_audio_signalprocessing::DynamicsElementState& dynamics_element_state) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+  if (*element_type_ != fhasp::ElementType::kDynamics) {
+    ADR_WARN_METHOD() << "element " << element_id_ << ": " << *element_type_
+                      << " with TypeSpecific::kDynamicsState";
+    return;
+  }
+
+  if (!dynamics_element_state.band_states().has_value() ||
+      dynamics_element_state.band_states()->empty()) {
+    type_specific_state_node_->RecordString(kBandStates, kNoneNonCompliant);
+    return;
+  }
+
+  if (!dyn_band_states_node_) {
+    dyn_band_states_node_ = type_specific_state_node_->CreateChild(kBandStates);
+  }
+
+  const auto& band_states = *dynamics_element_state.band_states();
+  if (band_states.size() != dynamics_band_state_props_.size()) {
+    ADR_WARN_METHOD() << "Band states size mismatch: " << band_states.size() << " vs "
+                      << dynamics_band_state_props_.size();
+    return;
+  }
+
+  for (size_t i = 0; i < band_states.size(); ++i) {
+    const auto& band_state = band_states.at(i);
+    auto& props = dynamics_band_state_props_.at(i);
+
+    if (!props.band_node) {
+      props.band_node = dyn_band_states_node_->CreateChild(std::to_string(i));
+    }
+    auto& node = *props.band_node;
+
+    // Band ID
+    if (!SaveUintToNodeStringProperty(node, props.band_id, std::string(kBandId), band_state.id(),
+                                      kNoneNonCompliant)) {
+      ADR_WARN_METHOD() << "No band id for element " << element_id_ << ", band[" << i << "]";
+    }
+
+    // Min Frequency
+    if (!SaveUintToNodeStringProperty(node, props.min_frequency, std::string(kMinFrequency),
+                                      band_state.min_frequency(), kNoneNonCompliant)) {
+      ADR_WARN_METHOD() << "No min_frequency for element " << element_id_ << ", band[" << i << "]";
+    }
+    // Max Frequency
+    if (!SaveUintToNodeStringProperty(node, props.max_frequency, std::string(kMaxFrequency),
+                                      band_state.max_frequency(), kNoneNonCompliant)) {
+      ADR_WARN_METHOD() << "No max_frequency for element " << element_id_ << ", band[" << i << "]";
+    }
+
+    // Threshold
+    if (!SaveFloatToNodeStringProperty(node, props.threshold_db, std::string(kThresholdDb),
+                                       band_state.threshold_db(), kNoneNonCompliant)) {
+      ADR_WARN_METHOD() << "No threshold_db for element " << element_id_ << ", band[" << i << "]";
+    }
+
+    // Threshold Type
+    if (band_state.threshold_type().has_value()) {
+      std::ostringstream stream;
+      stream << *band_state.threshold_type();
+      SaveNodeString(node, props.threshold_type, std::string(kThresholdType), stream.str());
+    } else {
+      SaveNodeString(node, props.threshold_type, std::string(kThresholdType), kNoneNonCompliant);
+      ADR_WARN_METHOD() << "No threshold_type for element " << element_id_ << ", band[" << i << "]";
+    }
+
+    // Ratio
+    if (!SaveFloatToNodeStringProperty(node, props.ratio, std::string(kRatio), band_state.ratio(),
+                                       kNoneNonCompliant)) {
+      ADR_WARN_METHOD() << "No ratio for element " << element_id_ << ", band[" << i << "]";
+    }
+
+    // Knee Width
+    SaveNodeDouble(node, props.knee_width_db, std::string(kKneeWidthDb),
+                   band_state.knee_width_db());
+
+    // Attack
+    SaveNodeInt(node, props.attack_ns, std::string(kAttackNs), band_state.attack());
+
+    // Release
+    SaveNodeInt(node, props.release_ns, std::string(kReleaseNs), band_state.release());
+
+    // Output Gain
+    SaveNodeDouble(node, props.output_gain_db, std::string(kOutputGainDb),
+                   band_state.output_gain_db());
+
+    // Input Gain
+    SaveNodeDouble(node, props.input_gain_db, std::string(kInputGainDb),
+                   band_state.input_gain_db());
+
+    // Level Type
+    if (band_state.level_type().has_value()) {
+      std::ostringstream stream;
+      stream << *band_state.level_type();
+      std::string level_type_str = stream.str();
+      SaveNodeString(node, props.level_type, std::string(kLevelType), level_type_str);
+    }
+
+    // Lookahead
+    SaveNodeInt(node, props.lookahead_ns, std::string(kLookaheadNs), band_state.lookahead());
+
+    // Linked Channels
+    SaveNodeBoolean(node, props.linked_channels, std::string(kLinkedChannels),
+                    band_state.linked_channels());
   }
 }
 

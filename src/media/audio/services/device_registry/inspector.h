@@ -78,10 +78,23 @@ static constexpr std::string_view kExternalDelay = "external_delay_ns";
 static constexpr std::string_view kPlugState = "plug_state";
 static constexpr std::string_view kPlugged = "plugged";
 static constexpr std::string_view kPlugStateTime = "plug_state_time";
+// Dynamics-specific
+static constexpr std::string_view kThresholdDb = "threshold_db";
+static constexpr std::string_view kThresholdType = "threshold_type";
+static constexpr std::string_view kRatio = "ratio";
+static constexpr std::string_view kKneeWidthDb = "knee_width_db";
+static constexpr std::string_view kAttackNs = "attack_ns";
+static constexpr std::string_view kReleaseNs = "release_ns";
+static constexpr std::string_view kOutputGainDb = "output_gain_db";
+static constexpr std::string_view kInputGainDb = "input_gain_db";
+static constexpr std::string_view kLevelType = "level_type";
+static constexpr std::string_view kLookaheadNs = "lookahead_ns";
+static constexpr std::string_view kLinkedChannels = "linked_channels";
 // Dynamics- and Equalizer-specific
 static constexpr std::string_view kBands = "bands";
 static constexpr std::string_view kBandId = "band_id";
 static constexpr std::string_view kSupportedControls = "supported_controls";
+static constexpr std::string_view kBandStates = "band_states";
 // Equalizer-specific
 static constexpr std::string_view kCanDisableBands = "can_disable_bands";
 static constexpr std::string_view kMaxQ = "max_q";
@@ -396,6 +409,24 @@ class Edge {
   ElementId to_element_id_;
 };
 
+struct DynamicsBandStateProps {
+  std::optional<inspect::Node> band_node;
+  std::optional<inspect::StringProperty> band_id;
+  std::optional<inspect::StringProperty> min_frequency;
+  std::optional<inspect::StringProperty> max_frequency;
+  std::optional<inspect::StringProperty> threshold_db;
+  std::optional<inspect::StringProperty> threshold_type;
+  std::optional<inspect::StringProperty> ratio;
+  std::optional<inspect::DoubleProperty> knee_width_db;
+  std::optional<inspect::IntProperty> attack_ns;
+  std::optional<inspect::IntProperty> release_ns;
+  std::optional<inspect::DoubleProperty> output_gain_db;
+  std::optional<inspect::DoubleProperty> input_gain_db;
+  std::optional<inspect::StringProperty> level_type;
+  std::optional<inspect::IntProperty> lookahead_ns;
+  std::optional<inspect::BoolProperty> linked_channels;
+};
+
 // This represents a hardware element as expressed in the signalprocessing API.
 class Element {
  public:
@@ -441,19 +472,27 @@ class Element {
   void RecordDaiInterconnectElementState(
       const fuchsia_hardware_audio_signalprocessing::DaiInterconnectElementState&
           dai_interconnect_state);
+  void RecordDynamicsElementState(
+      const fuchsia_hardware_audio_signalprocessing::DynamicsElementState& dynamics_element_state);
   void RecordGainElementState(
       const fuchsia_hardware_audio_signalprocessing::GainElementState& gain_element_state);
   void RecordVendorSpecificElementState(
       const fuchsia_hardware_audio_signalprocessing::VendorSpecificState&
           vendor_specific_element_state);
 
+  void SaveUint(std::optional<inspect::UintProperty>& prop, const std::string& key,
+                std::optional<uint64_t> value);
   void SaveString(std::optional<inspect::StringProperty>& prop, const std::string& key,
                   const std::string& value);
 
+  void SaveBoolean(std::optional<inspect::BoolProperty>& prop, const std::string& key,
+                   std::optional<bool> value);
   bool SaveBooleanToStringProperty(std::optional<inspect::StringProperty>& prop,
                                    const std::string& key, std::optional<bool> value,
                                    const std::string& default_str);
 
+  void SaveInt(std::optional<inspect::IntProperty>& prop, const std::string& key,
+               std::optional<int64_t> value);
   bool SaveIntToStringProperty(std::optional<inspect::StringProperty>& prop, const std::string& key,
                                std::optional<int64_t> value, const std::string& default_str);
 
@@ -478,6 +517,9 @@ class Element {
   std::optional<inspect::Node> plug_state_node_;
   std::optional<inspect::StringProperty> plug_state_prop_;
   std::optional<inspect::StringProperty> plug_state_time_prop_;
+
+  std::optional<inspect::Node> dyn_band_states_node_;
+  std::vector<DynamicsBandStateProps> dynamics_band_state_props_;
 
   std::optional<inspect::StringProperty> gain_db_prop_;
 
