@@ -1780,6 +1780,99 @@ TEST_F(InspectorTest, InitialElementStateDynamics) {
   }
 }
 
+// Validate the initial Equalizer-specific ElementState
+//
+// Elements:
+//   1:
+//     element_id = 5432
+//     properties:
+//       type = EQUALIZER
+//       ...
+//       type_specific:
+//         bands = [ ... ]
+//         supported_controls = { ... }
+//         ...
+//     state:
+//       ...
+//       type_specific:
+//         band_states:
+//           0:
+//             id = 7
+//             enabled = true
+//             frequency = 200
+//             gain_db = 3.000000
+//             q_factor = 2.000000
+//             type = NOTCH
+//           1:
+//             ...
+TEST_F(InspectorTest, InitialElementStateEqualizer) {
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  auto elements_node = GetChild(device_node, kElements);
+  ASSERT_NE(elements_node, nullptr);
+
+  for (const auto& element_node : elements_node->children()) {
+    auto element_id_prop =
+        element_node.node().get_property<inspect::UintPropertyValue>(std::string(kElementId));
+    ASSERT_TRUE(element_id_prop);
+
+    if (element_id_prop->value() == FakeComposite::kEqualizerElementId) {
+      auto state_node = GetChild(&element_node, kState);
+      ASSERT_NE(state_node, nullptr);
+
+      auto type_specific_node = GetChild(state_node, kTypeSpecific);
+      ASSERT_NE(type_specific_node, nullptr);
+
+      auto band_states_node = GetChild(type_specific_node, kBandStates);
+      ASSERT_NE(band_states_node, nullptr);
+
+      const auto& expected_bands =
+          *FakeComposite::kEqualizerElement.type_specific()->equalizer()->bands();
+      EXPECT_EQ(band_states_node->children().size(), expected_bands.size());
+
+      // Verify Band 0
+      auto band_0_node = GetChild(band_states_node, "0");
+      ASSERT_NE(band_0_node, nullptr);
+      EXPECT_EQ(band_0_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kBandId))
+                    ->value(),
+                std::to_string(FakeComposite::kEqualizerBandId1));
+      EXPECT_EQ(band_0_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kType))
+                    ->value(),
+                "LOW_SHELF");
+      EXPECT_EQ(band_0_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kFrequency))
+                    ->value(),
+                std::to_string(FakeComposite::kEqualizerFrequency1));
+
+      // Verify Band 1
+      auto band_1_node = GetChild(band_states_node, "1");
+      ASSERT_NE(band_1_node, nullptr);
+      EXPECT_EQ(band_1_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kBandId))
+                    ->value(),
+                std::to_string(FakeComposite::kEqualizerBandId2));
+      EXPECT_EQ(band_1_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kType))
+                    ->value(),
+                "NOTCH");
+      EXPECT_EQ(band_1_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kFrequency))
+                    ->value(),
+                std::to_string(FakeComposite::kEqualizerFrequency2));
+    }
+  }
+}
+
 // Validate the initial Gain-specific ElementState
 //
 // Elements:
@@ -2272,6 +2365,110 @@ TEST_F(InspectorTest, ChangedElementStateDynamics) {
                       .get_property<inspect::StringPropertyValue>(std::string(kMinFrequency))
                       ->value(),
                   std::to_string(new_min_frequency));
+        break;
+      }
+    }
+  }
+}
+
+TEST_F(InspectorTest, ChangedElementStateEqualizer) {
+  auto fake_driver = CreateAndAddFakeComposite();
+  RunLoopUntilIdle();
+
+  {
+    // Verify initial state.
+    auto hierarchy = GetHierarchy();
+    ASSERT_FALSE(hierarchy.children().empty());
+    auto devices_node = GetChild(&hierarchy, kDevices);
+    ASSERT_NE(devices_node, nullptr);
+    ASSERT_FALSE(devices_node->children().empty());
+
+    auto device_node = &devices_node->children().front();
+    auto elements_node = GetChild(device_node, kElements);
+    ASSERT_NE(elements_node, nullptr);
+
+    for (const auto& element_node : elements_node->children()) {
+      auto element_id_prop =
+          element_node.node().get_property<inspect::UintPropertyValue>(std::string(kElementId));
+      ASSERT_TRUE(element_id_prop);
+
+      if (element_id_prop->value() == FakeComposite::kEqualizerElementId) {
+        auto state_node = GetChild(&element_node, kState);
+        ASSERT_NE(state_node, nullptr);
+
+        auto type_specific_node = GetChild(state_node, kTypeSpecific);
+        ASSERT_NE(type_specific_node, nullptr);
+
+        auto band_states_node = GetChild(type_specific_node, kBandStates);
+        ASSERT_NE(band_states_node, nullptr);
+
+        // Verify Band 0 initial values.
+        auto band_0_node = GetChild(band_states_node, "0");
+        ASSERT_NE(band_0_node, nullptr);
+        EXPECT_EQ(band_0_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kFrequency))
+                      ->value(),
+                  std::to_string(500));
+        break;
+      }
+    }
+  }
+
+  // Inject state change.
+  uint32_t new_frequency = 200;
+  fhasp::EqualizerBandState bs1;
+  bs1.id(FakeComposite::kEqualizerBandId1);
+  bs1.type(fhasp::EqualizerBandType::kPeak);
+  bs1.frequency(new_frequency);
+  bs1.q(1.0);
+  bs1.gain_db(0.0);
+  bs1.enabled(true);
+
+  // We must provide state for ALL bands!
+  fhasp::EqualizerBandState bs2;
+  bs2.id(FakeComposite::kEqualizerBandId2);
+  bs2.type(fhasp::EqualizerBandType::kPeak);
+  bs2.frequency(1000);
+  bs2.q(1.0);
+  bs2.gain_db(0.0);
+  bs2.enabled(true);
+
+  std::vector<fhasp::EqualizerBandState> band_states;
+  band_states.push_back(std::move(bs1));
+  band_states.push_back(std::move(bs2));
+
+  fhasp::EqualizerElementState ees;
+  ees.band_states(std::move(band_states));
+
+  fhasp::ElementState new_state = {{
+      .type_specific = fhasp::TypeSpecificElementState::WithEqualizer(std::move(ees)),
+      .started = true,
+      .bypassed = false,
+  }};
+  fake_driver->InjectElementStateChange(FakeComposite::kEqualizerElementId, new_state);
+  RunLoopUntilIdle();
+
+  {
+    // Verify updated state.
+    auto hierarchy = GetHierarchy();
+    auto devices_node = GetChild(&hierarchy, kDevices);
+    auto device_node = &devices_node->children().front();
+    auto elements_node = GetChild(device_node, kElements);
+
+    for (const auto& element_node : elements_node->children()) {
+      auto element_id_prop =
+          element_node.node().get_property<inspect::UintPropertyValue>(std::string(kElementId));
+      if (element_id_prop->value() == FakeComposite::kEqualizerElementId) {
+        auto state_node = GetChild(&element_node, kState);
+        auto type_specific_node = GetChild(state_node, kTypeSpecific);
+        auto band_states_node = GetChild(type_specific_node, kBandStates);
+
+        auto band_0_node = GetChild(band_states_node, "0");
+        ASSERT_NE(band_0_node, nullptr);
+        EXPECT_EQ(band_0_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kFrequency))
+                      ->value(),
+                  std::to_string(new_frequency));
         break;
       }
     }

@@ -100,6 +100,9 @@ static constexpr std::string_view kCanDisableBands = "can_disable_bands";
 static constexpr std::string_view kMaxQ = "max_q";
 static constexpr std::string_view kMinGainDb = "min_gain_db";
 static constexpr std::string_view kMaxGainDb = "max_gain_db";
+static constexpr std::string_view kFrequency = "frequency";
+static constexpr std::string_view kQ = "q_factor";
+static constexpr std::string_view kEnabled = "enabled";
 // Gain-specific
 static constexpr std::string_view kGainType = "gain_type";
 static constexpr std::string_view kGainDomain = "gain_domain";
@@ -427,6 +430,16 @@ struct DynamicsBandStateProps {
   std::optional<inspect::BoolProperty> linked_channels;
 };
 
+struct EqualizerBandStateProps {
+  std::optional<inspect::Node> band_node;
+  std::optional<inspect::StringProperty> band_id;
+  std::optional<inspect::StringProperty> type;
+  std::optional<inspect::StringProperty> frequency;
+  std::optional<inspect::DoubleProperty> q;
+  std::optional<inspect::StringProperty> gain_db;
+  std::optional<inspect::StringProperty> enabled;
+};
+
 // This represents a hardware element as expressed in the signalprocessing API.
 class Element {
  public:
@@ -474,6 +487,9 @@ class Element {
           dai_interconnect_state);
   void RecordDynamicsElementState(
       const fuchsia_hardware_audio_signalprocessing::DynamicsElementState& dynamics_element_state);
+  void RecordEqualizerElementState(
+      const fuchsia_hardware_audio_signalprocessing::EqualizerElementState&
+          equalizer_element_state);
   void RecordGainElementState(
       const fuchsia_hardware_audio_signalprocessing::GainElementState& gain_element_state);
   void RecordVendorSpecificElementState(
@@ -520,6 +536,9 @@ class Element {
 
   std::optional<inspect::Node> dyn_band_states_node_;
   std::vector<DynamicsBandStateProps> dynamics_band_state_props_;
+
+  std::optional<inspect::Node> eq_band_states_node_;
+  std::vector<EqualizerBandStateProps> equalizer_band_state_props_;
 
   std::optional<inspect::StringProperty> gain_db_prop_;
 

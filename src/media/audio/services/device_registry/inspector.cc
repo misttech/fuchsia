@@ -883,6 +883,7 @@ void Element::RecordTypeSpecificElementState(
     }
 
     case fhasp::TypeSpecificElementState::Tag::kEqualizer: {
+      RecordEqualizerElementState(type_specific_state->equalizer().value());
       break;
     }
 
@@ -1112,6 +1113,7 @@ void Element::RecordEqualizerElement(
   const auto& bands = type_specific->equalizer()->bands();
   if (bands.has_value() && !bands->empty()) {
     bands_arr_ = type_specific_node_->CreateUintArray(kBands, bands->size());
+    equalizer_band_state_props_.resize(bands->size());
     for (size_t i = 0; i < bands->size(); ++i) {
       if (bands->at(i).id().has_value()) {
         bands_arr_->Set(i, *bands->at(i).id());
@@ -1183,6 +1185,103 @@ void Element::RecordEqualizerElement(
     if (uses_min_max_gain_db) {
       ADR_WARN_METHOD() << "max_gain_db was omitted, but a supported_control requires it (element "
                         << element_id_ << ")";
+    }
+  }
+}
+
+void Element::RecordEqualizerElementState(
+    const fuchsia_hardware_audio_signalprocessing::EqualizerElementState& equalizer_element_state) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+  if (*element_type_ != fhasp::ElementType::kEqualizer) {
+    ADR_WARN_METHOD() << "element " << element_id_ << ": " << *element_type_
+                      << " with TypeSpecific::kEqualizerState";
+    return;
+  }
+
+  if (!equalizer_element_state.band_states().has_value() ||
+      equalizer_element_state.band_states()->empty()) {
+    type_specific_state_node_->RecordString(kBandStates, kNoneNonCompliant);
+    return;
+  }
+
+  if (!eq_band_states_node_) {
+    eq_band_states_node_ = type_specific_state_node_->CreateChild(kBandStates);
+  }
+
+  const auto& band_states = *equalizer_element_state.band_states();
+  if (band_states.size() != equalizer_band_state_props_.size()) {
+    ADR_WARN_METHOD() << "Band states size mismatch: " << band_states.size() << " vs "
+                      << equalizer_band_state_props_.size();
+    return;
+  }
+
+  for (size_t i = 0; i < band_states.size(); ++i) {
+    const auto& band_state = band_states.at(i);
+    auto& props = equalizer_band_state_props_.at(i);
+
+    if (!props.band_node) {
+      props.band_node = eq_band_states_node_->CreateChild(std::to_string(i));
+    }
+    auto& node = *props.band_node;
+
+    // Band ID (Required)
+    if (!SaveUintToNodeStringProperty(node, props.band_id, std::string(kBandId), band_state.id(),
+                                      kNoneNonCompliant)) {
+      ADR_WARN_METHOD() << "No ID for Equalizer band[" << i << "] in element " << element_id_;
+    }
+
+    // Type (Required)
+    if (band_state.type().has_value()) {
+      std::ostringstream stream;
+      stream << *band_state.type();
+      std::string band_type_str = stream.str();
+      SaveNodeString(node, props.type, std::string(kType), band_type_str);
+    } else {
+      SaveNodeString(node, props.type, std::string(kType), kNoneNonCompliant);
+      ADR_WARN_METHOD() << "No type for Equalizer band[" << i << "] in element " << element_id_;
+    }
+
+    // Frequency (Required)
+    if (!SaveUintToNodeStringProperty(node, props.frequency, std::string(kFrequency),
+                                      band_state.frequency(), kNoneNonCompliant)) {
+      ADR_WARN_METHOD() << "No frequency for Equalizer band[" << i << "] in element "
+                        << element_id_;
+    }
+
+    // Q
+    SaveNodeDouble(node, props.q, std::string(kQ), band_state.q());
+
+    // Gain DB
+    std::string gain_db_str;
+    if (band_state.gain_db().has_value()) {
+      gain_db_str = std::to_string(*band_state.gain_db());
+      // Should not have been set, if Notch or Cut
+      if (band_state.type().has_value() &&
+          (*band_state.type() == fhasp::EqualizerBandType::kNotch ||
+           *band_state.type() == fhasp::EqualizerBandType::kLowCut ||
+           *band_state.type() == fhasp::EqualizerBandType::kHighCut)) {
+        gain_db_str += kNonCompliant;
+        ADR_WARN_METHOD() << "gain_db set for Equalizer band[" << i << "] in element "
+                          << element_id_;
+      }
+    } else {
+      gain_db_str = kNone;
+      // Should have been set, if Peak or Shelf
+      if (band_state.type().has_value() &&
+          (*band_state.type() == fhasp::EqualizerBandType::kPeak ||
+           *band_state.type() == fhasp::EqualizerBandType::kLowShelf ||
+           *band_state.type() == fhasp::EqualizerBandType::kHighShelf)) {
+        gain_db_str += kNonCompliant;
+        ADR_WARN_METHOD() << "No gain_db for Equalizer band[" << i << "] in element "
+                          << element_id_;
+      }
+    }
+    SaveNodeString(node, props.gain_db, std::string(kGainDb), gain_db_str);
+
+    // Enabled
+    if (band_state.enabled().has_value()) {
+      std::string enabled_str = *band_state.enabled() ? "true" : "false";
+      SaveNodeString(node, props.enabled, std::string(kEnabled), enabled_str);
     }
   }
 }
