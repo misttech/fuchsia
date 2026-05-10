@@ -6,6 +6,8 @@
 #define SRC_MEDIA_AUDIO_SERVICES_DEVICE_REGISTRY_INSPECTOR_H_
 
 #include <fidl/fuchsia.audio.device/cpp/natural_types.h>
+#include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/common_types.h>
+#include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/natural_types.h>
 #include <fidl/fuchsia.hardware.audio/cpp/natural_types.h>
 #include <lib/async/dispatcher.h>
 #include <lib/inspect/component/cpp/component.h>
@@ -41,6 +43,12 @@ static constexpr std::string_view kUniqueId = "unique_id";
 static constexpr std::string_view kClockDomain = "clock_domain";
 static constexpr std::string_view kDriverTimeout = "driver_timeouts";
 static constexpr std::string_view kDriverLateResponse = "driver_late_responses";
+
+static constexpr std::string_view kTopologies = "Topologies";
+static constexpr std::string_view kTopologyId = "topology_id";
+static constexpr std::string_view kEdgePairs = "edge_pairs";
+static constexpr std::string_view kEdgeFromElementId = "from_element_id";
+static constexpr std::string_view kEdgeToElementId = "to_element_id";
 
 static constexpr std::string_view kElementId = "element_id";
 static constexpr std::string_view kDescription = "description";
@@ -92,6 +100,10 @@ static constexpr std::string_view kProviderServerInstances = "ProviderServer_ins
 static constexpr std::string_view kCreatedAt = "created_at";
 static constexpr std::string_view kDestroyedAt = "destroyed_at";
 static constexpr std::string_view kAddedDevices = "Added_devices";
+
+static constexpr std::string kNone = "<none>";
+static constexpr std::string kNonCompliant = " (non-compliant)";
+static constexpr std::string kNoneNonCompliant = kNone + kNonCompliant;
 
 //
 // These classes encapsulate the creation and update of the fuchsia Inspect data store. The parent
@@ -309,7 +321,6 @@ class Dai : public IoNode {
  public:
   Dai(inspect::Node dai_node, ElementId element_id, const std::optional<std::string>& element_name);
   ~Dai();
-
   void RecordSetDaiFormat(const zx::time& set_at,
                           const fuchsia_hardware_audio::DaiFormat& dai_format);
   void RecordSupportedFormatSets(
@@ -317,7 +328,46 @@ class Dai : public IoNode {
 
  private:
   static constexpr std::string_view kClassName = "Dai";
+
   std::vector<DaiFormatSetRecord> dai_format_sets_;
+};
+
+// This represents an EdgePair within a hardware topology.
+class Edge {
+ public:
+  Edge(inspect::Node edge_node, ElementId from_element_id, ElementId to_element_id);
+  ~Edge();
+
+  Edge(Edge&& other) = default;
+  Edge& operator=(Edge&& other) = default;
+
+  inspect::Node& inspect_node() { return edge_node_; }
+  ElementId from_element_id() const { return from_element_id_; }
+  ElementId to_element_id() const { return to_element_id_; }
+
+ private:
+  static constexpr std::string_view kClassName = "Edge";
+
+  inspect::Node edge_node_;
+  ElementId from_element_id_;
+  ElementId to_element_id_;
+};
+
+// This represents a hardware topology as expressed in the signalprocessing API.
+class Topology {
+ public:
+  Topology(inspect::Node topology_node, TopologyId topology_id,
+           const std::vector<fuchsia_hardware_audio_signalprocessing::EdgePair>& edge_pairs);
+  ~Topology();
+
+ private:
+  static constexpr std::string_view kClassName = "Topology";
+
+  inspect::Node topology_node_;
+  TopologyId topology_id_;
+
+  inspect::Node edges_node_;
+  std::vector<Edge> edges_;
 };
 
 // This represents an audio driver and its device. It is created when an audio device is detected in
@@ -337,6 +387,10 @@ class DeviceInspectInstance {
                         std::optional<std::string> product,
                         std::optional<std::string> unique_instance_id,
                         std::optional<ClockDomain> clock_domain);
+
+  std::shared_ptr<Topology> RecordTopology(
+      fuchsia_hardware_audio_signalprocessing::TopologyId topology_id,
+      const std::vector<fuchsia_hardware_audio_signalprocessing::EdgePair>& edge_pairs);
 
   std::shared_ptr<Dai> RecordDai(ElementId element_id,
                                  const std::optional<std::string>& element_name);
@@ -370,6 +424,8 @@ class DeviceInspectInstance {
   inspect::Node device_node_;
   std::string name_;
 
+  inspect::Node topologies_root_node_;
+
   inspect::Node dais_root_node_;
   inspect::Node ring_buffers_root_node_;
   inspect::Node packet_streams_root_node_;
@@ -381,6 +437,7 @@ class DeviceInspectInstance {
   std::vector<std::shared_ptr<Dai>> dais_;
   std::vector<std::shared_ptr<RingBuffer>> ring_buffers_;
   std::vector<std::shared_ptr<PacketStream>> packet_streams_;
+  std::vector<std::shared_ptr<Topology>> topologies_;
 };
 
 // This represents a client connection to one of the seven ADR FIDL protocols:

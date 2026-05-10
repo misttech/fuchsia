@@ -4,6 +4,7 @@
 
 #include "src/media/audio/services/device_registry/inspector.h"
 
+#include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/common_types.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/inspect/cpp/vmo/types.h>
@@ -35,11 +36,12 @@ void RecordPcmFormat(inspect::Node& node, fuchsia_audio::SampleType sample_type,
 
 }  // namespace
 
-// static
+///////////////////////////////////////
+// static members and methods
+//
 // This singleton handles Inspect for the entire service.
 std::unique_ptr<Inspector> Inspector::singleton_ = nullptr;
 
-// static
 void Inspector::Initialize(async_dispatcher_t* dispatcher) {
   ADR_LOG_STATIC(kTraceInspector);
   // Should only be called once.
@@ -49,6 +51,8 @@ void Inspector::Initialize(async_dispatcher_t* dispatcher) {
     FX_LOGS(ERROR) << "Inspector::Initialize should only be called once";
   }
 }
+// end of static members and methods
+///////////////////////////////////////
 
 ///////////////////////////////////////
 // SetActiveChannelsInspectInstance methods
@@ -328,7 +332,7 @@ void PacketStreamInspectInstance::RecordBuffer(
     stream << "|INLINE";
   }
   auto type_str = stream.str();
-  buffer_node_.RecordString(kBufferType, type_str.empty() ? "<none>" : type_str.substr(1));
+  buffer_node_.RecordString(kBufferType, type_str.empty() ? kNone : type_str.substr(1));
 
   if (!vmo_infos.empty()) {
     vmo_infos_node_ = buffer_node_.CreateChild(kVmoInfos);
@@ -569,6 +573,37 @@ void Dai::RecordSetDaiFormat(const zx::time& set_at,
 }
 
 ///////////////////////////////////////
+// Edge methods
+Edge::Edge(inspect::Node edge_node, ElementId from_element_id, ElementId to_element_id)
+    : edge_node_(std::move(edge_node)),
+      from_element_id_(from_element_id),
+      to_element_id_(to_element_id) {
+  ADR_LOG_METHOD(kTraceInspector) << from_element_id_ << " -> " << to_element_id_;
+  edge_node_.RecordUint(kEdgeFromElementId, from_element_id_);
+  edge_node_.RecordUint(kEdgeToElementId, to_element_id_);
+}
+
+Edge::~Edge() { ADR_LOG_METHOD(kTraceInspector) << from_element_id_ << " -> " << to_element_id_; }
+
+///////////////////////////////////////
+// Topology methods
+Topology::Topology(inspect::Node topology_node, TopologyId topology_id,
+                   const std::vector<fhasp::EdgePair>& edge_pairs)
+    : topology_node_(std::move(topology_node)), topology_id_(topology_id) {
+  ADR_LOG_METHOD(kTraceInspector) << "id " << topology_id_ << ", edge_pairs[" << edge_pairs.size()
+                                  << "]";
+
+  topology_node_.RecordUint(kTopologyId, topology_id);
+  edges_node_ = topology_node_.CreateChild(kEdgePairs);
+  for (const auto& edge : edge_pairs) {
+    edges_.emplace_back(edges_node_.CreateChild(std::to_string(edges_.size())),
+                        edge.processing_element_id_from(), edge.processing_element_id_to());
+  }
+}
+
+Topology::~Topology() { ADR_LOG_METHOD(kTraceInspector) << "id " << topology_id_; }
+
+///////////////////////////////////////
 // DeviceInspectInstance methods
 DeviceInspectInstance::DeviceInspectInstance(inspect::Node device_node, std::string device_name,
                                              fuchsia_audio_device::DeviceType device_type,
@@ -754,6 +789,21 @@ void DeviceInspectInstance::RecordError(const zx::time& failed_at) {
 void DeviceInspectInstance::RecordRemoval(const zx::time& removed_at) {
   ADR_LOG_METHOD(kTraceInspector) << "'" << name_ << "'";
   device_node_.RecordInt(kRemovedAt, removed_at.get());
+}
+
+std::shared_ptr<Topology> DeviceInspectInstance::RecordTopology(
+    fhasp::TopologyId topology_id, const std::vector<fhasp::EdgePair>& edge_pairs) {
+  ADR_LOG_METHOD(kTraceInspector) << "id " << topology_id;
+
+  if (topologies_.empty()) {
+    topologies_root_node_ = device_node_.CreateChild(kTopologies);
+  }
+  auto topology_node = topologies_root_node_.CreateChild(std::to_string(topologies_.size()));
+  auto topology_node_ptr =
+      std::make_shared<Topology>(std::move(topology_node), topology_id, edge_pairs);
+
+  topologies_.push_back(topology_node_ptr);
+  return topology_node_ptr;
 }
 
 ///////////////////////////////////////

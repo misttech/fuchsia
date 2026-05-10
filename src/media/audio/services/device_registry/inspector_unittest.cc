@@ -5,6 +5,7 @@
 #include "src/media/audio/services/device_registry/inspector_unittest.h"
 
 #include <fidl/fuchsia.audio.device/cpp/natural_types.h>
+#include <fidl/fuchsia.hardware.audio.signalprocessing/cpp/natural_types.h>
 #include <lib/inspect/cpp/health.h>
 #include <lib/inspect/cpp/hierarchy.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -24,6 +25,7 @@ using ::inspect::StringPropertyValue;
 using ::inspect::UintPropertyValue;
 
 namespace fad = fuchsia_audio_device;
+namespace fhasp = fuchsia_hardware_audio_signalprocessing;
 
 namespace media_audio {
 
@@ -215,7 +217,7 @@ TEST_F(InspectorTest, DetectedDevice) {
   ASSERT_TRUE(device_node->node().get_property<StringPropertyValue>(std::string(kUniqueId)));
   EXPECT_EQ(device_node->node().get_property<StringPropertyValue>(std::string(kUniqueId))->value(),
             UidToString(FakeComposite::kDefaultUniqueInstanceId));
-  ASSERT_EQ(device_node->children().size(), 3u);
+  ASSERT_EQ(device_node->children().size(), 4u);
 
   auto ring_buffers_node = GetChild(device_node, kRingBuffers);
   ASSERT_NE(ring_buffers_node, nullptr);
@@ -920,6 +922,79 @@ TEST_F(InspectorDaiTest, SetDaiFormat) {
       sample_fmt_stream.str());
 }
 
+// Validate the overall Topologies list. Schema is as follows:
+//  Devices:
+//    12345678:
+//      Topologies:
+//        0:
+//          topology_id = 1
+//          edge_pairs:
+//            0:
+//              from_element_id = 1
+//              to_element_id = 2
+//            1:
+//              from_element_id = 2
+//              to_element_id = 3
+//        1:
+//          topology_id = 0
+//          edge_pairs:
+//            0:
+//              from_element_id = 2
+//              to_element_id = 1
+TEST_F(InspectorTest, Topologies) {
+  // Boot up the device and check the topologies
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  ASSERT_FALSE(device_node->node().properties().empty());
+  ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
+  ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
+
+  auto topologies_node = GetChild(device_node, kTopologies);
+  ASSERT_NE(topologies_node, nullptr);
+  ASSERT_FALSE(topologies_node->children().empty());
+  ASSERT_LE(topologies_node->children().size(), fhasp::kMaxCountTopologies);
+
+  for (size_t i = 0; i < topologies_node->children().size(); i++) {
+    auto topology_node = &topologies_node->children().at(i);
+    EXPECT_EQ(topology_node->name(), std::to_string(i));
+    EXPECT_EQ(topology_node->node().properties().size(), 1u);
+    ASSERT_TRUE(
+        topology_node->node().get_property<inspect::UintPropertyValue>(std::string(kTopologyId)));
+    EXPECT_GE(topology_node->node()
+                  .get_property<inspect::UintPropertyValue>(std::string(kTopologyId))
+                  ->value(),
+              media_audio::FakeComposite::kStartTopologyId);
+    EXPECT_LT(topology_node->node()
+                  .get_property<inspect::UintPropertyValue>(std::string(kTopologyId))
+                  ->value(),
+              media_audio::FakeComposite::kEndTopologyId);
+
+    ASSERT_FALSE(topology_node->children().empty());
+    EXPECT_EQ(topology_node->children().size(), 1u);
+    auto edge_pair_node = &topology_node->children().front();
+    EXPECT_EQ(edge_pair_node->name(), kEdgePairs);
+    for (auto j = 0u; j < edge_pair_node->children().size(); ++j) {
+      auto& edge_pair_child_node = edge_pair_node->children().at(j);
+      EXPECT_EQ(edge_pair_child_node.name(), std::to_string(j));
+      ASSERT_FALSE(edge_pair_child_node.node().properties().empty());
+      EXPECT_EQ(edge_pair_child_node.node().properties().size(), 2u);
+      // At least check that the fields exist (eventually check whether ElementIds are known).
+      EXPECT_TRUE(edge_pair_child_node.node().get_property<inspect::UintPropertyValue>(
+          std::string(kEdgeFromElementId)));
+      EXPECT_TRUE(edge_pair_child_node.node().get_property<inspect::UintPropertyValue>(
+          std::string(kEdgeToElementId)));
+    }
+  }
+}
+
 // Validate the overall SupportedFormatSets for each RingBuffer element. Schema is as follows:
 // Devices
 //   12345678
@@ -1429,7 +1504,9 @@ TEST_F(InspectorPacketStreamTest, PacketStreamInstance) {
   }
   ASSERT_NE(target_ps_element_node, nullptr);
   ASSERT_EQ(target_ps_element_node->children().size(), 2u);
-  EXPECT_EQ(GetChild(target_ps_element_node, kSupportedFormats)->name(), kSupportedFormats);
+  auto* supported_formats_node = GetChild(target_ps_element_node, kSupportedFormats);
+  ASSERT_NE(supported_formats_node, nullptr);
+  EXPECT_EQ(supported_formats_node->name(), kSupportedFormats);
   auto* instance_node = GetChild(target_ps_element_node, "instance_0");
   ASSERT_NE(instance_node, nullptr);
   EXPECT_EQ(instance_node->node()

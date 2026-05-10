@@ -1262,6 +1262,10 @@ void Device::RetrieveSignalProcessingTopologies() {
 
         for (const auto& [topology_id, edge_pairs] : sig_proc_topology_map_) {
           topology_ids_.insert(topology_id);
+          auto topology_ptr = inspect()->RecordTopology(topology_id, edge_pairs);
+          if (!topology_ptr) {
+            ADR_WARN_OBJECT() << "Failed to record topology (id " << topology_id << ")";
+          }
         }
         OnSignalProcessingInitializationResponse();
 
