@@ -1693,6 +1693,54 @@ TEST_F(InspectorTest, InitialElementStateGain) {
   }
 }
 
+// Validate the initial VendorSpecific ElementState
+//
+// Elements:
+//   2:
+//     element_id = 3210
+//     properties:
+//       type = VENDOR_SPECIFIC
+//       ...
+//       type_specific:
+//     state:
+//       ...
+//       vendor_specific_data = uint8[256]
+//       type_specific:
+TEST_F(InspectorTest, InitialElementStateVendorSpecific) {
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  auto elements_node = GetChild(device_node, kElements);
+  ASSERT_NE(elements_node, nullptr);
+
+  for (const auto& element_node : elements_node->children()) {
+    auto element_id_prop =
+        element_node.node().get_property<inspect::UintPropertyValue>(std::string(kElementId));
+    ASSERT_TRUE(element_id_prop);
+
+    if (element_id_prop->value() == FakeComposite::kVendorSpecificElementId) {
+      auto state_node = GetChild(&element_node, kState);
+      ASSERT_NE(state_node, nullptr);
+
+      ASSERT_TRUE(state_node->node().get_property<inspect::StringPropertyValue>(
+          std::string(kVendorSpecificData)));
+      std::string expected_val =
+          "uint8[" + std::to_string(FakeComposite::kVendorSpecificDataLength) + "]";
+      EXPECT_EQ(state_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kVendorSpecificData))
+                    ->value(),
+                expected_val);
+    }
+  }
+}
+
 // Validate that the non-TypeSpecific ElementState can be changed after it is initially populated.
 //
 // Elements:

@@ -443,6 +443,9 @@ class Element {
           dai_interconnect_state);
   void RecordGainElementState(
       const fuchsia_hardware_audio_signalprocessing::GainElementState& gain_element_state);
+  void RecordVendorSpecificElementState(
+      const fuchsia_hardware_audio_signalprocessing::VendorSpecificState&
+          vendor_specific_element_state);
 
   void SaveString(std::optional<inspect::StringProperty>& prop, const std::string& key,
                   const std::string& value);

@@ -836,6 +836,7 @@ void Element::RecordTypeSpecificElementState(
     }
 
     case fhasp::TypeSpecificElementState::Tag::kVendorSpecific: {
+      RecordVendorSpecificElementState(type_specific_state->vendor_specific().value());
       break;
     }
 
@@ -1083,6 +1084,19 @@ void Element::RecordVendorSpecificElement(
     return;
   }
   ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+
+  // Nothing else VendorSpecific-specific to capture!
+}
+
+void Element::RecordVendorSpecificElementState(
+    [[maybe_unused]] const fuchsia_hardware_audio_signalprocessing::VendorSpecificState&
+        vendor_specific_element_state) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+  if (*element_type_ != fhasp::ElementType::kVendorSpecific) {
+    ADR_WARN_METHOD() << "element " << element_id_ << ": " << *element_type_
+                      << " with TypeSpecific::kVendorSpecificState";
+    return;
+  }
 
   // Nothing else VendorSpecific-specific to capture!
 }
