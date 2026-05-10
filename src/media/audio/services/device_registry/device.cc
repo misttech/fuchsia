@@ -1469,6 +1469,7 @@ void Device::RetrieveSignalProcessingTopology() {
 
         // Save the topology and notify Observers, but only if this is a change in topology.
         if (!current_topology_id_.has_value() || *current_topology_id_ != topology_id) {
+          inspect()->RecordActiveTopology(topology_id);
           current_topology_id_ = topology_id;
           ADR_LOG_OBJECT(kLogNotifyMethods)
               << "ForEachObserver => TopologyIsChanged: " << topology_id;

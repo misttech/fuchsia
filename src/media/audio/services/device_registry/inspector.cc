@@ -806,6 +806,17 @@ std::shared_ptr<Topology> DeviceInspectInstance::RecordTopology(
   return topology_node_ptr;
 }
 
+void DeviceInspectInstance::RecordActiveTopology(fhasp::TopologyId topology_id) {
+  ADR_LOG_METHOD(kTraceInspector) << "id " << topology_id;
+  if (!current_topology_id_) {
+    device_node_.RecordUint(kInitialTopologyId, topology_id);
+    // Create the property once here, then we'll update it subsequently.
+    current_topology_id_ = device_node_.CreateUint(kCurrentTopologyId, topology_id);
+  } else {
+    current_topology_id_.Set(topology_id);
+  }
+}
+
 ///////////////////////////////////////
 // FidlServerInspectInstance methods
 FidlServerInspectInstance::FidlServerInspectInstance(inspect::Node instance_node,

@@ -995,6 +995,148 @@ TEST_F(InspectorTest, Topologies) {
   }
 }
 
+// On device-add, initial_topology_id and current_topology_id should be populated (and equal).
+// These are properties directly below the device instance.
+//  Devices:
+//    12345678:
+//      initial_topology_id = 0
+//      current_topology_id = 0
+TEST_F(InspectorTest, InitialTopology) {
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  ASSERT_FALSE(device_node->node().properties().empty());
+  ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
+  ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
+
+  ASSERT_TRUE(device_node->node().get_property<inspect::UintPropertyValue>(
+      std::string(kInitialTopologyId)));
+  EXPECT_EQ(device_node->node()
+                .get_property<inspect::UintPropertyValue>(std::string(kInitialTopologyId))
+                ->value(),
+            media_audio::FakeComposite::kDefaultTopologyId);
+
+  ASSERT_TRUE(device_node->node().get_property<inspect::UintPropertyValue>(
+      std::string(kCurrentTopologyId)));
+  EXPECT_EQ(device_node->node()
+                .get_property<inspect::UintPropertyValue>(std::string(kCurrentTopologyId))
+                ->value(),
+            media_audio::FakeComposite::kDefaultTopologyId);
+}
+
+// Validate that current_topology_id changes, and initial_topology_id does not.
+//  Devices:
+//    12345678:
+//      initial_topology_id = 42
+//      current_topology_id = 68
+TEST_F(InspectorTest, ChangedTopology) {
+  // Boot up the device and check the initial/current topology IDs.
+  auto fake_driver = CreateAndAddFakeComposite();
+  RunLoopUntilIdle();
+
+  // Change the topology. 'current_topology_id' should change; 'initial_topology_id' should not.
+  // (kSubsequentTopologyId is guaranteed to differ from kDefaultTopologyId)
+  fake_driver->InjectTopologyChange(media_audio::FakeComposite::kSubsequentTopologyId);
+  RunLoopUntilIdle();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  ASSERT_FALSE(device_node->node().properties().empty());
+  ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
+  ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
+
+  ASSERT_TRUE(device_node->node().get_property<inspect::UintPropertyValue>(
+      std::string(kInitialTopologyId)));
+  EXPECT_EQ(device_node->node()
+                .get_property<inspect::UintPropertyValue>(std::string(kInitialTopologyId))
+                ->value(),
+            media_audio::FakeComposite::kDefaultTopologyId);
+
+  ASSERT_TRUE(device_node->node().get_property<inspect::UintPropertyValue>(
+      std::string(kCurrentTopologyId)));
+  EXPECT_EQ(device_node->node()
+                .get_property<inspect::UintPropertyValue>(std::string(kCurrentTopologyId))
+                ->value(),
+            media_audio::FakeComposite::kSubsequentTopologyId);
+}
+
+// Drivers are not required to respond IMMEDIATELY to WatchTopology with their power-up topology.
+// In that case, Inspect should not be populated. Once a topology is set, they should be populated.
+TEST_F(InspectorTest, AbsentTopology) {
+  // Boot the device in a mode where it does not complete the initial WatchTopology() ... yet.
+  auto fake_driver = CreateFakeComposite();
+  fake_driver->InjectTopologyChange(std::nullopt);
+  adr_service()->AddDevice(Device::Create(
+      adr_service(), dispatcher(), "Test composite name",
+      fuchsia_audio_device::DeviceType::kComposite,
+      fuchsia_audio_device::DriverClient::WithComposite(fake_driver->Enable()), kClassName));
+  RunLoopUntilIdle();
+
+  {
+    auto hierarchy = GetHierarchy();
+    ASSERT_FALSE(hierarchy.children().empty());
+    auto devices_node = GetChild(&hierarchy, kDevices);
+    ASSERT_NE(devices_node, nullptr);
+    ASSERT_FALSE(devices_node->children().empty());
+
+    auto device_node = &devices_node->children().front();
+    ASSERT_FALSE(device_node->node().properties().empty());
+    ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
+    ASSERT_TRUE(
+        device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
+
+    // These properties should be absent.
+    EXPECT_FALSE(device_node->node().get_property<inspect::UintPropertyValue>(
+        std::string(kInitialTopologyId)));
+    EXPECT_FALSE(device_node->node().get_property<inspect::UintPropertyValue>(
+        std::string(kCurrentTopologyId)));
+  }
+
+  // Now set the topology. Pended WatchTopology should complete, and Inspect should be populated.
+  fake_driver->InjectTopologyChange(media_audio::FakeComposite::kDefaultTopologyId);
+  RunLoopUntilIdle();
+
+  {
+    auto hierarchy = GetHierarchy();
+    ASSERT_FALSE(hierarchy.children().empty());
+    auto devices_node = GetChild(&hierarchy, kDevices);
+    ASSERT_NE(devices_node, nullptr);
+    ASSERT_FALSE(devices_node->children().empty());
+
+    auto device_node = &devices_node->children().front();
+    ASSERT_FALSE(device_node->node().properties().empty());
+    ASSERT_TRUE(device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy)));
+    ASSERT_TRUE(
+        device_node->node().get_property<BoolPropertyValue>(std::string(kHealthy))->value());
+
+    ASSERT_TRUE(device_node->node().get_property<inspect::UintPropertyValue>(
+        std::string(kInitialTopologyId)));
+    EXPECT_EQ(device_node->node()
+                  .get_property<inspect::UintPropertyValue>(std::string(kInitialTopologyId))
+                  ->value(),
+              media_audio::FakeComposite::kDefaultTopologyId);
+
+    ASSERT_TRUE(device_node->node().get_property<inspect::UintPropertyValue>(
+        std::string(kCurrentTopologyId)));
+    EXPECT_EQ(device_node->node()
+                  .get_property<inspect::UintPropertyValue>(std::string(kCurrentTopologyId))
+                  ->value(),
+              media_audio::FakeComposite::kDefaultTopologyId);
+  }
+}
+
 // Validate the overall SupportedFormatSets for each RingBuffer element. Schema is as follows:
 // Devices
 //   12345678

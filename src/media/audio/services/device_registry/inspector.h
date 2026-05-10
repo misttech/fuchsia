@@ -46,6 +46,8 @@ static constexpr std::string_view kDriverLateResponse = "driver_late_responses";
 
 static constexpr std::string_view kTopologies = "Topologies";
 static constexpr std::string_view kTopologyId = "topology_id";
+static constexpr std::string_view kInitialTopologyId = "initial_topology_id";
+static constexpr std::string_view kCurrentTopologyId = "current_topology_id";
 static constexpr std::string_view kEdgePairs = "edge_pairs";
 static constexpr std::string_view kEdgeFromElementId = "from_element_id";
 static constexpr std::string_view kEdgeToElementId = "to_element_id";
@@ -391,6 +393,7 @@ class DeviceInspectInstance {
   std::shared_ptr<Topology> RecordTopology(
       fuchsia_hardware_audio_signalprocessing::TopologyId topology_id,
       const std::vector<fuchsia_hardware_audio_signalprocessing::EdgePair>& edge_pairs);
+  void RecordActiveTopology(fuchsia_hardware_audio_signalprocessing::TopologyId topology_id);
 
   std::shared_ptr<Dai> RecordDai(ElementId element_id,
                                  const std::optional<std::string>& element_name);
@@ -433,6 +436,7 @@ class DeviceInspectInstance {
   inspect::BoolProperty healthy_;
   inspect::UintProperty count_timeout_;
   inspect::UintProperty count_late_response_;
+  inspect::UintProperty current_topology_id_;
 
   std::vector<std::shared_ptr<Dai>> dais_;
   std::vector<std::shared_ptr<RingBuffer>> ring_buffers_;
