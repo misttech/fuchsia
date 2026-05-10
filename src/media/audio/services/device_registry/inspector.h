@@ -93,6 +93,7 @@ static constexpr std::string_view kGainDomain = "gain_domain";
 static constexpr std::string_view kMinGain = "min_gain";
 static constexpr std::string_view kMaxGain = "max_gain";
 static constexpr std::string_view kMinGainStep = "min_gain_step";
+static constexpr std::string_view kGainDb = "gain_db";
 // Vendor-specific element fields are all custom.
 
 static constexpr std::string_view kDAIs = "DAIs";
@@ -440,6 +441,8 @@ class Element {
   void RecordDaiInterconnectElementState(
       const fuchsia_hardware_audio_signalprocessing::DaiInterconnectElementState&
           dai_interconnect_state);
+  void RecordGainElementState(
+      const fuchsia_hardware_audio_signalprocessing::GainElementState& gain_element_state);
 
   void SaveString(std::optional<inspect::StringProperty>& prop, const std::string& key,
                   const std::string& value);
@@ -472,6 +475,8 @@ class Element {
   std::optional<inspect::Node> plug_state_node_;
   std::optional<inspect::StringProperty> plug_state_prop_;
   std::optional<inspect::StringProperty> plug_state_time_prop_;
+
+  std::optional<inspect::StringProperty> gain_db_prop_;
 
   ElementId element_id_;
   std::optional<fuchsia_hardware_audio_signalprocessing::ElementType> element_type_ = std::nullopt;

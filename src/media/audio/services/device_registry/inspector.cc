@@ -106,6 +106,15 @@ bool SaveIntToNodeStringProperty(inspect::Node& node, std::optional<inspect::Str
   return value.has_value();
 }
 
+// Save an optional float to an inspect property _that might already exist_ -- as a string.
+bool SaveFloatToNodeStringProperty(inspect::Node& node,
+                                   std::optional<inspect::StringProperty>& prop,
+                                   const std::string& key, std::optional<float> value,
+                                   const std::string& default_str) {
+  SaveNodeString(node, prop, key, value.has_value() ? std::to_string(*value) : default_str);
+  return value.has_value();
+}
+
 }  // namespace
 
 ///////////////////////////////////////
@@ -822,6 +831,7 @@ void Element::RecordTypeSpecificElementState(
     }
 
     case fhasp::TypeSpecificElementState::Tag::kGain: {
+      RecordGainElementState(type_specific_state->gain().value());
       break;
     }
 
@@ -1044,6 +1054,22 @@ void Element::RecordGainElement(fhasp::ElementType type,
                                       std::to_string(*type_specific->gain()->min_gain_step()));
   } else {
     type_specific_node_->RecordString(kMinGainStep, kNoneNonCompliant);
+  }
+}
+
+void Element::RecordGainElementState(
+    const fuchsia_hardware_audio_signalprocessing::GainElementState& gain_element_state) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+  if (*element_type_ != fhasp::ElementType::kGain) {
+    ADR_WARN_METHOD() << "element " << element_id_ << ": " << *element_type_
+                      << " with TypeSpecific::kGainState";
+    return;
+  }
+
+  if (!SaveFloatToNodeStringProperty(*type_specific_state_node_, gain_db_prop_,
+                                     std::string(kGainDb), gain_element_state.gain(),
+                                     kNoneNonCompliant)) {
+    ADR_WARN_METHOD() << "element " << element_id_ << ": GainElementState has no gain_db";
   }
 }
 
