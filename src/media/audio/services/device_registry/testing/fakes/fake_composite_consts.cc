@@ -419,16 +419,16 @@ const fhasp::Element FakeComposite::kDynamicsElement = []() {
   std::vector<fhasp::DynamicsBand> bands;
 
   fhasp::DynamicsBand band1;
-  band1.id(FakeComposite::kDynamicsBandId1);
+  band1.id(kDynamicsBandId1);
   bands.push_back(std::move(band1));
 
   fhasp::DynamicsBand band2;
-  band2.id(FakeComposite::kDynamicsBandId2);
+  band2.id(kDynamicsBandId2);
   bands.push_back(std::move(band2));
 
   fhasp::Dynamics dynamics;
   dynamics.bands(std::move(bands));
-  dynamics.supported_controls(FakeComposite::kDynamicsSupportedControls);
+  dynamics.supported_controls(kDynamicsSupportedControls);
 
   return fhasp::Element{{
       .id = kDynamicsElementId,
@@ -451,22 +451,22 @@ const fhasp::Element FakeComposite::kEqualizerElement = []() {
   std::vector<fhasp::EqualizerBand> bands;
 
   fhasp::EqualizerBand band1;
-  band1.id(FakeComposite::kEqualizerBandId1);
+  band1.id(kEqualizerBandId1);
   bands.push_back(std::move(band1));
 
   fhasp::EqualizerBand band2;
-  band2.id(FakeComposite::kEqualizerBandId2);
+  band2.id(kEqualizerBandId2);
   bands.push_back(std::move(band2));
 
   fhasp::Equalizer equalizer;
   equalizer.bands(std::move(bands));
-  equalizer.supported_controls(FakeComposite::kEqualizerSupportedControls);
+  equalizer.supported_controls(kEqualizerSupportedControls);
   equalizer.can_disable_bands(true);
-  equalizer.min_frequency(FakeComposite::kEqualizerMinFrequency);
-  equalizer.max_frequency(FakeComposite::kEqualizerMaxFrequency);
-  equalizer.max_q(FakeComposite::kEqualizerMaxQ);
-  equalizer.min_gain_db(FakeComposite::kEqualizerMinGainDb);
-  equalizer.max_gain_db(FakeComposite::kEqualizerMaxGainDb);
+  equalizer.min_frequency(kEqualizerMinFrequency);
+  equalizer.max_frequency(kEqualizerMaxFrequency);
+  equalizer.max_q(kEqualizerMaxQ);
+  equalizer.min_gain_db(kEqualizerMinGainDb);
+  equalizer.max_gain_db(kEqualizerMaxGainDb);
 
   return fhasp::Element{{
       .id = kEqualizerElementId,
@@ -485,11 +485,11 @@ const fhasp::Element FakeComposite::kGainElement{{
     .id = kGainElementId,
     .type = fhasp::ElementType::kGain,
     .type_specific = fhasp::TypeSpecificElement::WithGain(fhasp::Gain{{
-        .type = FakeComposite::kGainType,
-        .domain = FakeComposite::kGainDomain,
-        .min_gain = FakeComposite::kGainMin,
-        .max_gain = FakeComposite::kGainMax,
-        .min_gain_step = FakeComposite::kGainStep,
+        .type = kGainType,
+        .domain = kGainDomain,
+        .min_gain = kGainMin,
+        .max_gain = kGainMax,
+        .min_gain_step = kGainStep,
     }}),
     .description = kGainElementDescription,
     .can_stop = false,
@@ -589,7 +589,14 @@ const fhasp::ElementState FakeComposite::kSourceDualSupportPsElementInitState{{
 
 const fhasp::ElementState FakeComposite::kVendorSpecificElementInitState{{
     .type_specific = fhasp::TypeSpecificElementState::WithVendorSpecific({}),
-    .vendor_specific_data = std::vector<uint8_t>{1, 2, 3, 4, 5, 6, 7, 8},
+    .vendor_specific_data =
+        []() {
+          std::vector<uint8_t> data(kVendorSpecificDataLength);
+          for (uint8_t i = 0; i < kVendorSpecificDataLength; ++i) {
+            data[i] = i;
+          }
+          return data;
+        }(),
     .started = true,
     .bypassed = true,
 }};
@@ -598,21 +605,21 @@ const fhasp::ElementState FakeComposite::kDynamicsElementInitState = []() {
   std::vector<fhasp::DynamicsBandState> band_states;
 
   fhasp::DynamicsBandState bs1;
-  bs1.id(FakeComposite::kDynamicsBandId1);
-  bs1.min_frequency(0);
-  bs1.max_frequency(20000);
-  bs1.threshold_db(0.0f);
-  bs1.threshold_type(fhasp::ThresholdType::kAbove);
-  bs1.ratio(1.0f);
+  bs1.id(kDynamicsBandId1);
+  bs1.min_frequency(kDynamicsMinFrequency1);
+  bs1.max_frequency(kDynamicsMaxFrequency1);
+  bs1.threshold_db(kDynamicsThresholdDb1);
+  bs1.threshold_type(kDynamicsThresholdType1);
+  bs1.ratio(kDynamicsRatio1);
   band_states.push_back(std::move(bs1));
 
   fhasp::DynamicsBandState bs2;
-  bs2.id(FakeComposite::kDynamicsBandId2);
-  bs2.min_frequency(1000);
-  bs2.max_frequency(5000);
-  bs2.threshold_db(-10.0f);
-  bs2.threshold_type(fhasp::ThresholdType::kBelow);
-  bs2.ratio(2.0f);
+  bs2.id(kDynamicsBandId2);
+  bs2.min_frequency(kDynamicsMinFrequency2);
+  bs2.max_frequency(kDynamicsMaxFrequency2);
+  bs2.threshold_db(kDynamicsThresholdDb2);
+  bs2.threshold_type(kDynamicsThresholdType2);
+  bs2.ratio(kDynamicsRatio2);
   band_states.push_back(std::move(bs2));
 
   fhasp::DynamicsElementState des;
@@ -625,24 +632,27 @@ const fhasp::ElementState FakeComposite::kDynamicsElementInitState = []() {
   }};
 }();
 
+const zx::duration FakeComposite::kEqualizerTurnOnDelay = zx::nsec(234);
+const zx::duration FakeComposite::kEqualizerTurnOffDelay = zx::nsec(345);
+const zx::duration FakeComposite::kEqualizerProcessingDelay = zx::nsec(456);
 const fhasp::ElementState FakeComposite::kEqualizerElementInitState = []() {
   std::vector<fhasp::EqualizerBandState> band_states;
 
   fhasp::EqualizerBandState bs1;
-  bs1.id(FakeComposite::kEqualizerBandId1);
-  bs1.type(fhasp::EqualizerBandType::kLowShelf);
-  bs1.frequency(500);
-  bs1.q(1.0f);
-  bs1.gain_db(-6.0f);
-  bs1.enabled(true);
+  bs1.id(kEqualizerBandId1);
+  bs1.type(kEqualizerType1);
+  bs1.frequency(kEqualizerFrequency1);
+  bs1.q(kEqualizerQ1);
+  bs1.gain_db(kEqualizerGainDb1);
+  bs1.enabled(kEqualizerEnabled1);
   band_states.push_back(std::move(bs1));
 
   fhasp::EqualizerBandState bs2;
-  bs2.id(FakeComposite::kEqualizerBandId2);
-  bs2.type(fhasp::EqualizerBandType::kNotch);
-  bs2.frequency(1000);
-  bs2.q(10.0f);
-  bs2.enabled(true);
+  bs2.id(kEqualizerBandId2);
+  bs2.type(kEqualizerType2);
+  bs2.frequency(kEqualizerFrequency2);
+  bs2.q(kEqualizerQ2);
+  bs2.enabled(kEqualizerEnabled2);
   band_states.push_back(std::move(bs2));
 
   fhasp::EqualizerElementState ees;
@@ -652,12 +662,15 @@ const fhasp::ElementState FakeComposite::kEqualizerElementInitState = []() {
       .type_specific = fhasp::TypeSpecificElementState::WithEqualizer(std::move(ees)),
       .started = false,
       .bypassed = true,
+      .turn_on_delay = kEqualizerTurnOnDelay.get(),
+      .turn_off_delay = kEqualizerTurnOffDelay.get(),
+      .processing_delay = kEqualizerProcessingDelay.get(),
   }};
 }();
 
 const fhasp::ElementState FakeComposite::kGainElementInitState{{
     .type_specific = fhasp::TypeSpecificElementState::WithGain({{
-        .gain = 0.0,
+        .gain = kGainInitValue,
     }}),
     .started = true,
     .bypassed = false,

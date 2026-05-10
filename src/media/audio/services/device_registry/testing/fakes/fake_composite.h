@@ -255,19 +255,29 @@ class FakeComposite final
   static const fuchsia_hardware_audio_signalprocessing::Element kDestPsElement;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kDestPsElementInitState;
 
-  static const std::string kVendorSpecificElementDescription;
-  static const fuchsia_hardware_audio_signalprocessing::Element kVendorSpecificElement;
-  static const fuchsia_hardware_audio_signalprocessing::ElementState
-      kVendorSpecificElementInitState;
-
+  // Dynamics element properties
   static const std::string kDynamicsElementDescription;
   static constexpr uint64_t kDynamicsBandId1 = 42;
   static constexpr uint64_t kDynamicsBandId2 = 68;
   static const fuchsia_hardware_audio_signalprocessing::DynamicsSupportedControls
       kDynamicsSupportedControls;
   static const fuchsia_hardware_audio_signalprocessing::Element kDynamicsElement;
+  // Dynamics initial state
+  static constexpr uint32_t kDynamicsMinFrequency1 = 0;
+  static constexpr uint32_t kDynamicsMaxFrequency1 = 20000;
+  static constexpr float kDynamicsThresholdDb1 = 0.0f;
+  static constexpr float kDynamicsRatio1 = 1.0f;
+  static constexpr uint32_t kDynamicsMinFrequency2 = 1000;
+  static constexpr uint32_t kDynamicsMaxFrequency2 = 5000;
+  static constexpr float kDynamicsThresholdDb2 = -10.0f;
+  static constexpr float kDynamicsRatio2 = 2.0f;
+  static constexpr fuchsia_hardware_audio_signalprocessing::ThresholdType kDynamicsThresholdType1 =
+      fuchsia_hardware_audio_signalprocessing::ThresholdType::kAbove;
+  static constexpr fuchsia_hardware_audio_signalprocessing::ThresholdType kDynamicsThresholdType2 =
+      fuchsia_hardware_audio_signalprocessing::ThresholdType::kBelow;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kDynamicsElementInitState;
 
+  // Equalizer element properties
   static const std::string kEqualizerElementDescription;
   static constexpr uint64_t kEqualizerBandId1 = 10;
   static constexpr uint64_t kEqualizerBandId2 = 20;
@@ -279,8 +289,24 @@ class FakeComposite final
   static constexpr float kEqualizerMinGainDb = -20.0f;
   static constexpr float kEqualizerMaxGainDb = 20.0f;
   static const fuchsia_hardware_audio_signalprocessing::Element kEqualizerElement;
+  // Equalizer initial state
+  static constexpr uint32_t kEqualizerFrequency1 = 500;
+  static constexpr float kEqualizerQ1 = 1.0f;
+  static constexpr float kEqualizerGainDb1 = -6.0f;
+  static constexpr bool kEqualizerEnabled1 = true;
+  static constexpr fuchsia_hardware_audio_signalprocessing::EqualizerBandType kEqualizerType1 =
+      fuchsia_hardware_audio_signalprocessing::EqualizerBandType::kLowShelf;
+  static constexpr uint32_t kEqualizerFrequency2 = 1000;
+  static constexpr float kEqualizerQ2 = 10.0f;
+  static constexpr bool kEqualizerEnabled2 = true;
+  static constexpr fuchsia_hardware_audio_signalprocessing::EqualizerBandType kEqualizerType2 =
+      fuchsia_hardware_audio_signalprocessing::EqualizerBandType::kNotch;
+  static const zx::duration kEqualizerTurnOnDelay;
+  static const zx::duration kEqualizerTurnOffDelay;
+  static const zx::duration kEqualizerProcessingDelay;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kEqualizerElementInitState;
 
+  // Gain element properties
   static const std::string kGainElementDescription;
   static const fuchsia_hardware_audio_signalprocessing::GainType kGainType;
   static const fuchsia_hardware_audio_signalprocessing::GainDomain kGainDomain;
@@ -288,10 +314,22 @@ class FakeComposite final
   static constexpr float kGainMax = 12.0f;
   static constexpr float kGainStep = 0.25f;
   static const fuchsia_hardware_audio_signalprocessing::Element kGainElement;
+  // Gain initial state
+  static constexpr float kGainInitValue = 0.0f;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kGainElementInitState;
 
+  // Vendor-specific element properties
+  static const std::string kVendorSpecificElementDescription;
+  static const fuchsia_hardware_audio_signalprocessing::Element kVendorSpecificElement;
+  // Vendor-specific initial state
+  static constexpr size_t kVendorSpecificDataLength = 42;
+  static const fuchsia_hardware_audio_signalprocessing::ElementState
+      kVendorSpecificElementInitState;
+
+  // Mute element properties
   static const std::string kMuteElementDescription;
   static const fuchsia_hardware_audio_signalprocessing::Element kMuteElement;
+  // Mute initial state
   static const fuchsia_hardware_audio_signalprocessing::ElementState kMuteElementInitState;
 
   static const std::vector<fuchsia_hardware_audio_signalprocessing::Element> kElements;
