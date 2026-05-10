@@ -1555,6 +1555,92 @@ TEST_F(InspectorTest, InitialElementStateGeneral) {
   }
 }
 
+// Validate the initial DaiInterconnect-specific ElementState
+//
+// 4:
+//   element_id = 555
+//   properties:
+//     type = DAI_INTERCONNECT
+//     can_bypass = false
+//     ...
+//     type_specific:
+//       plug_detect_capabilities = HARDWIRED
+//   state:
+//     bypassed = false
+//     ...
+//     type_specific:
+//       external_delay = 654321
+//       plug_state:
+//         plugged = plugged-in
+//         plug_state_time = 12345678
+TEST_F(InspectorTest, InitialElementStateDaiInterconnect) {
+  auto fake_driver = CreateAndAddFakeComposite();
+
+  auto hierarchy = GetHierarchy();
+  ASSERT_FALSE(hierarchy.children().empty());
+
+  auto devices_node = GetChild(&hierarchy, kDevices);
+  ASSERT_NE(devices_node, nullptr);
+  ASSERT_FALSE(devices_node->children().empty());
+
+  auto device_node = &devices_node->children().front();
+  auto elements_node = GetChild(device_node, kElements);
+  ASSERT_NE(elements_node, nullptr);
+  ASSERT_FALSE(elements_node->children().empty());
+
+  // Let's find the Dest DaiInterconnect element.
+  for (const auto& element_node : elements_node->children()) {
+    auto properties_node = GetChild(&element_node, kProperties);
+    ASSERT_NE(properties_node, nullptr);
+
+    auto element_id_prop =
+        element_node.node().get_property<inspect::UintPropertyValue>(std::string(kElementId));
+    ASSERT_TRUE(element_id_prop);
+
+    if (element_id_prop->value() == FakeComposite::kDestDaiElementId) {
+      auto state_node = GetChild(&element_node, kState);
+      ASSERT_NE(state_node, nullptr);
+
+      auto type_specific_state_node = GetChild(state_node, kTypeSpecific);
+      ASSERT_NE(type_specific_state_node, nullptr);
+
+      ASSERT_TRUE(type_specific_state_node->node().get_property<inspect::StringPropertyValue>(
+          std::string(kExternalDelay)));
+      EXPECT_EQ(type_specific_state_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kExternalDelay))
+                    ->value(),
+                std::to_string(FakeComposite::kDestDaiElementExternalDelay.get()));
+
+      auto plug_state_node = GetChild(type_specific_state_node, kPlugState);
+      ASSERT_NE(plug_state_node, nullptr);
+
+      ASSERT_TRUE(plug_state_node->node().get_property<inspect::StringPropertyValue>(
+          std::string(kPlugged)));
+      bool expected_plugged = *FakeComposite::kDestDaiElementInitState.type_specific()
+                                   ->dai_interconnect()
+                                   ->plug_state()
+                                   ->plugged();
+      EXPECT_EQ(plug_state_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kPlugged))
+                    ->value(),
+                expected_plugged ? kPluggedInStr : kUnpluggedStr);
+
+      ASSERT_TRUE(plug_state_node->node().get_property<inspect::StringPropertyValue>(
+          std::string(kPlugStateTime)));
+      std::string expected_time_str =
+          std::to_string(*FakeComposite::kDestDaiElementInitState.type_specific()
+                              ->dai_interconnect()
+                              ->plug_state()
+                              ->plug_state_time());
+      EXPECT_EQ(plug_state_node->node()
+                    .get_property<inspect::StringPropertyValue>(std::string(kPlugStateTime))
+                    ->value(),
+                expected_time_str);
+      break;
+    }
+  }
+}
+
 // Validate that the non-TypeSpecific ElementState can be changed after it is initially populated.
 //
 // Elements:
@@ -1706,6 +1792,140 @@ TEST_F(InspectorTest, ChangedElementState) {
                       .get_property<inspect::StringPropertyValue>(std::string(kProcessingDelay))
                       ->value(),
                   "0");
+        break;
+      }
+    }
+  }
+}
+
+TEST_F(InspectorTest, ChangedElementStateDaiInterconnect) {
+  // Boot up the device with normal initial state.
+  auto fake_driver = CreateAndAddFakeComposite();
+  RunLoopUntilIdle();
+
+  {
+    // Verify initial state for Dest DaiInterconnect element.
+    auto hierarchy = GetHierarchy();
+    ASSERT_FALSE(hierarchy.children().empty());
+    auto devices_node = GetChild(&hierarchy, kDevices);
+    ASSERT_NE(devices_node, nullptr);
+    ASSERT_FALSE(devices_node->children().empty());
+
+    auto device_node = &devices_node->children().front();
+    auto elements_node = GetChild(device_node, kElements);
+    ASSERT_NE(elements_node, nullptr);
+    ASSERT_FALSE(elements_node->children().empty());
+
+    for (const auto& element_node : elements_node->children()) {
+      auto element_id_prop =
+          element_node.node().get_property<inspect::UintPropertyValue>(std::string(kElementId));
+      ASSERT_TRUE(element_id_prop);
+
+      if (element_id_prop->value() == FakeComposite::kDestDaiElementId) {
+        auto state_node = GetChild(&element_node, kState);
+        ASSERT_NE(state_node, nullptr);
+
+        auto type_specific_node = GetChild(state_node, kTypeSpecific);
+        ASSERT_NE(type_specific_node, nullptr);
+
+        auto plug_state_node = GetChild(type_specific_node, kPlugState);
+        ASSERT_NE(plug_state_node, nullptr);
+
+        // Verify initial plugged state.
+        ASSERT_TRUE(plug_state_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kPlugged)));
+        EXPECT_EQ(plug_state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kPlugged))
+                      ->value(),
+                  kPluggedInStr);
+
+        // Verify initial plug state time.
+        ASSERT_TRUE(plug_state_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kPlugStateTime)));
+        EXPECT_EQ(plug_state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kPlugStateTime))
+                      ->value(),
+                  std::to_string(0u));
+
+        // Verify initial external delay.
+        ASSERT_TRUE(type_specific_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kExternalDelay)));
+        EXPECT_EQ(type_specific_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kExternalDelay))
+                      ->value(),
+                  std::to_string(FakeComposite::kDestDaiElementExternalDelay.get()));
+        break;
+      }
+    }
+  }
+
+  // Compute new values.
+  bool new_plugged = false;
+  uint64_t new_plug_state_time = 999;
+  zx::duration new_external_delay = zx::nsec(456);
+
+  // Inject state change.
+  fhasp::ElementState new_state = {{
+      .type_specific = fhasp::TypeSpecificElementState::WithDaiInterconnect({{
+          .plug_state = fhasp::PlugState{{
+              .plugged = new_plugged,
+              .plug_state_time = new_plug_state_time,
+          }},
+          .external_delay = new_external_delay.get(),
+      }}),
+      .started = true,
+      .bypassed = false,
+  }};
+  fake_driver->InjectElementStateChange(FakeComposite::kDestDaiElementId, new_state);
+  RunLoopUntilIdle();
+
+  {
+    // Verify updated state.
+    auto hierarchy = GetHierarchy();
+    ASSERT_FALSE(hierarchy.children().empty());
+    auto devices_node = GetChild(&hierarchy, kDevices);
+    ASSERT_NE(devices_node, nullptr);
+    ASSERT_FALSE(devices_node->children().empty());
+    auto device_node = &devices_node->children().front();
+    auto elements_node = GetChild(device_node, kElements);
+    ASSERT_NE(elements_node, nullptr);
+    ASSERT_FALSE(elements_node->children().empty());
+
+    for (const auto& element_node : elements_node->children()) {
+      auto element_id_prop =
+          element_node.node().get_property<inspect::UintPropertyValue>(std::string(kElementId));
+      ASSERT_TRUE(element_id_prop);
+      if (element_id_prop->value() == FakeComposite::kDestDaiElementId) {
+        auto state_node = GetChild(&element_node, kState);
+        ASSERT_NE(state_node, nullptr);
+        auto type_specific_node = GetChild(state_node, kTypeSpecific);
+        ASSERT_NE(type_specific_node, nullptr);
+        auto plug_state_node = GetChild(type_specific_node, kPlugState);
+        ASSERT_NE(plug_state_node, nullptr);
+
+        // Verify updated plugged state.
+        ASSERT_TRUE(plug_state_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kPlugged)));
+        EXPECT_EQ(plug_state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kPlugged))
+                      ->value(),
+                  kUnpluggedStr);
+
+        // Verify updated plug state time.
+        ASSERT_TRUE(plug_state_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kPlugStateTime)));
+        EXPECT_EQ(plug_state_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kPlugStateTime))
+                      ->value(),
+                  std::to_string(new_plug_state_time));
+
+        // Verify updated external delay.
+        ASSERT_TRUE(type_specific_node->node().get_property<inspect::StringPropertyValue>(
+            std::string(kExternalDelay)));
+        EXPECT_EQ(type_specific_node->node()
+                      .get_property<inspect::StringPropertyValue>(std::string(kExternalDelay))
+                      ->value(),
+                  std::to_string(new_external_delay.get()));
         break;
       }
     }

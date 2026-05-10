@@ -244,6 +244,7 @@ class FakeComposite final
 
   static const std::string kDestDaiElementDescription;
   static const fuchsia_hardware_audio_signalprocessing::Element kDestDaiElement;
+  static const zx::duration kDestDaiElementExternalDelay;
   static const zx::duration kDestDaiElementProcessingDelay;
   static const fuchsia_hardware_audio_signalprocessing::ElementState kDestDaiElementInitState;
 

@@ -90,6 +90,14 @@ bool SaveBooleanToNodeStringProperty(inspect::Node& node,
   return false;
 }
 
+// Save an optional uint64 to an inspect property _that might already exist_ -- as a string.
+bool SaveUintToNodeStringProperty(inspect::Node& node, std::optional<inspect::StringProperty>& prop,
+                                  const std::string& key, std::optional<uint64_t> value,
+                                  const std::string& default_str) {
+  SaveNodeString(node, prop, key, value.has_value() ? std::to_string(*value) : default_str);
+  return value.has_value();
+}
+
 // Save an optional int64 to an inspect property _that might already exist_ -- as a string.
 bool SaveIntToNodeStringProperty(inspect::Node& node, std::optional<inspect::StringProperty>& prop,
                                  const std::string& key, std::optional<int64_t> value,
@@ -734,6 +742,8 @@ void Element::RecordElementState(
       ADR_WARN_METHOD() << "No element_state.vendor_specific_data for element " << element_id_;
     }
   }
+
+  RecordTypeSpecificElementState(element_state.type_specific());
 }
 
 void Element::RecordTypeSpecificElement(
@@ -781,6 +791,52 @@ void Element::RecordTypeSpecificElement(
   }
 }
 
+void Element::RecordTypeSpecificElementState(
+    const std::optional<fhasp::TypeSpecificElementState>& type_specific_state) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+
+  if (!type_specific_state.has_value()) {
+    type_specific_state_node_.reset();
+    if (TypeRequiresTypeSpecific(*element_type_)) {
+      state_node_.RecordString(kTypeSpecific, kNoneNonCompliant);
+    }
+    return;
+  }
+
+  if (!type_specific_state_node_.has_value()) {
+    type_specific_state_node_ = state_node_.CreateChild(kTypeSpecific);
+  }
+  // Check that the type_specific element's type matches the element's type.
+  switch (type_specific_state->Which()) {
+    case fhasp::TypeSpecificElementState::Tag::kDaiInterconnect: {
+      RecordDaiInterconnectElementState(type_specific_state->dai_interconnect().value());
+      break;
+    }
+
+    case fhasp::TypeSpecificElementState::Tag::kDynamics: {
+      break;
+    }
+
+    case fhasp::TypeSpecificElementState::Tag::kEqualizer: {
+      break;
+    }
+
+    case fhasp::TypeSpecificElementState::Tag::kGain: {
+      break;
+    }
+
+    case fhasp::TypeSpecificElementState::Tag::kVendorSpecific: {
+      break;
+    }
+
+    default: {
+      type_specific_state_node_.reset();
+      state_node_.RecordString(kTypeSpecific, "Unknown TypeSpecific variant");
+      return;
+    }
+  }
+}
+
 void Element::RecordDaiInterconnectElement(
     fhasp::ElementType type, const std::optional<fhasp::TypeSpecificElement>& type_specific) {
   std::ostringstream stream;
@@ -793,6 +849,45 @@ void Element::RecordDaiInterconnectElement(
 
   stream << type_specific->dai_interconnect()->plug_detect_capabilities();
   type_specific_node_->RecordString(kPlugDetectCapabilities, stream.str());
+}
+
+void Element::RecordDaiInterconnectElementState(
+    const fuchsia_hardware_audio_signalprocessing::DaiInterconnectElementState&
+        dai_interconnect_state) {
+  ADR_LOG_METHOD(kTraceInspector) << "element " << element_id_;
+  if (*element_type_ != fhasp::ElementType::kDaiInterconnect) {
+    ADR_WARN_METHOD() << "element " << element_id_ << ": " << *element_type_
+                      << " with TypeSpecific::kDaiInterconnectState";
+    return;
+  }
+
+  if (dai_interconnect_state.plug_state().has_value()) {
+    if (!plug_state_node_) {
+      plug_state_node_ = type_specific_state_node_->CreateChild(kPlugState);
+    }
+
+    if (dai_interconnect_state.plug_state()->plugged().has_value()) {
+      std::string plugged_str = *dai_interconnect_state.plug_state()->plugged()
+                                    ? std::string(kPluggedInStr)
+                                    : std::string(kUnpluggedStr);
+      SaveNodeString(*plug_state_node_, plug_state_prop_, std::string(kPlugged), plugged_str);
+    } else {
+      SaveNodeString(*plug_state_node_, plug_state_prop_, std::string(kPlugged),
+                     kNoneNonCompliant + " (plugged-in)");
+    }
+
+    SaveUintToNodeStringProperty(
+        *plug_state_node_, plug_state_time_prop_, std::string(kPlugStateTime),
+        dai_interconnect_state.plug_state()->plug_state_time(), kNoneNonCompliant);
+  } else {
+    plug_state_node_.reset();
+    plug_state_prop_ = {};
+    plug_state_time_prop_ = {};
+  }
+
+  SaveIntToNodeStringProperty(*type_specific_state_node_, external_delay_prop_,
+                              std::string(kExternalDelay), *dai_interconnect_state.external_delay(),
+                              kNone);
 }
 
 void Element::RecordDynamicsElement(

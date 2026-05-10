@@ -44,6 +44,9 @@ static constexpr std::string_view kClockDomain = "clock_domain";
 static constexpr std::string_view kDriverTimeout = "driver_timeouts";
 static constexpr std::string_view kDriverLateResponse = "driver_late_responses";
 
+static constexpr std::string_view kPluggedInStr = "plugged-in";
+static constexpr std::string_view kUnpluggedStr = "unplugged";
+
 static constexpr std::string_view kTopologies = "Topologies";
 static constexpr std::string_view kTopologyId = "topology_id";
 static constexpr std::string_view kInitialTopologyId = "initial_topology_id";
@@ -71,6 +74,10 @@ static constexpr std::string_view kProcessingDelay = "processing_delay_ns";
 
 // DAI-specific
 static constexpr std::string_view kPlugDetectCapabilities = "plug_detect_capabilities";
+static constexpr std::string_view kExternalDelay = "external_delay_ns";
+static constexpr std::string_view kPlugState = "plug_state";
+static constexpr std::string_view kPlugged = "plugged";
+static constexpr std::string_view kPlugStateTime = "plug_state_time";
 // Dynamics- and Equalizer-specific
 static constexpr std::string_view kBands = "bands";
 static constexpr std::string_view kBandId = "band_id";
@@ -427,12 +434,20 @@ class Element {
       const std::optional<fuchsia_hardware_audio_signalprocessing::TypeSpecificElement>&
           type_specific);
 
+  void RecordTypeSpecificElementState(
+      const std::optional<fuchsia_hardware_audio_signalprocessing::TypeSpecificElementState>&
+          type_specific_state);
+  void RecordDaiInterconnectElementState(
+      const fuchsia_hardware_audio_signalprocessing::DaiInterconnectElementState&
+          dai_interconnect_state);
+
   void SaveString(std::optional<inspect::StringProperty>& prop, const std::string& key,
                   const std::string& value);
 
   bool SaveBooleanToStringProperty(std::optional<inspect::StringProperty>& prop,
                                    const std::string& key, std::optional<bool> value,
                                    const std::string& default_str);
+
   bool SaveIntToStringProperty(std::optional<inspect::StringProperty>& prop, const std::string& key,
                                std::optional<int64_t> value, const std::string& default_str);
 
@@ -451,6 +466,12 @@ class Element {
   std::optional<inspect::StringProperty> turn_off_delay_prop_;
   std::optional<inspect::StringProperty> processing_delay_prop_;
   std::optional<inspect::StringProperty> vendor_specific_data_prop_;
+  std::optional<inspect::Node> type_specific_state_node_ = std::nullopt;
+
+  std::optional<inspect::StringProperty> external_delay_prop_;
+  std::optional<inspect::Node> plug_state_node_;
+  std::optional<inspect::StringProperty> plug_state_prop_;
+  std::optional<inspect::StringProperty> plug_state_time_prop_;
 
   ElementId element_id_;
   std::optional<fuchsia_hardware_audio_signalprocessing::ElementType> element_type_ = std::nullopt;

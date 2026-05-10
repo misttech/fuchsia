@@ -545,6 +545,7 @@ const fhasp::ElementState FakeComposite::kSourcePsElementInitState{{
     .processing_delay = kSourcePsElementProcessingDelay.get(),
 }};
 
+const zx::duration FakeComposite::kDestDaiElementExternalDelay = zx::nsec(123);
 const zx::duration FakeComposite::kDestDaiElementProcessingDelay = zx::nsec(123);
 const fhasp::ElementState FakeComposite::kDestDaiElementInitState{{
     .type_specific = fhasp::TypeSpecificElementState::WithDaiInterconnect({{
@@ -552,7 +553,7 @@ const fhasp::ElementState FakeComposite::kDestDaiElementInitState{{
             .plugged = true,
             .plug_state_time = 0,
         }},
-        .external_delay = 123,
+        .external_delay = kDestDaiElementExternalDelay.get(),
     }}),
     .vendor_specific_data =
         std::vector<uint8_t>{
