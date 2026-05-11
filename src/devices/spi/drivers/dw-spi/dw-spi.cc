@@ -17,7 +17,7 @@
 
 namespace dw_spi {
 
-constexpr size_t kFifoSize = 16;
+constexpr size_t kFifoSize = 256;  // The TX and RX FIFO sizes in bytes.
 
 void DwSpi::InitRegisters() {
   // Disable SSI
@@ -48,48 +48,48 @@ void DwSpi::ExchangePio(const uint8_t* txdata, uint8_t* out_rxdata, size_t size)
   // This is a placeholder indicating where DMA support would be added.
   // For now, we only implement PIO.
 
-  size_t sent = 0;
-  size_t received = 0;
+  // A target must be selected before the transfer can begin.
+  Ser::Get().FromValue(0).set_ser(1).WriteTo(&mmio_);
 
-  while (received < size) {
-    // Fill TX FIFO up to available space or remaining data
-    while (sent < size && sent - received < kFifoSize) {
-      uint32_t data = txdata ? txdata[sent] : 0xFF;
-      mmio_.Write32(data, DW_SPI_DR0);
-      sent++;
+  while (size > 0) {
+    if (Sr::Get().ReadFrom(&mmio_).rfne()) {
+      fdf::warn("RX FIFO is not empty before starting transfer");
     }
 
-    // Enable Transmit FIFO Empty interrupt to wait for data to be sent.
-    // This satisfies the requirement to use interrupts.
-    auto imr = Imr::Get().ReadFrom(&mmio_).set_txeim(1).WriteTo(&mmio_);
+    // Wait for the TX FIFO to be empty.
+    while (!Sr::Get().ReadFrom(&mmio_).tfe()) {
+    }
 
-    // Wait for interrupt (blocks current thread).
-    // In a more complex driver, we would use an async dispatcher to avoid blocking.
-    interrupt_.wait(nullptr);
+    const size_t transfer_size = std::min(size, kFifoSize);
 
-    // Mask interrupt again
-    imr.set_txeim(0).WriteTo(&mmio_);
+    // Fill the TX FIFO up to available space or remaining data.
+    for (size_t i = 0; i < transfer_size; i++) {
+      uint32_t data = txdata ? txdata[i] : 0xFF;
+      mmio_.Write32(data, DW_SPI_DR0);
+    }
 
-    // Enable Receive FIFO Full interrupt to wait for data to be received.
-    auto imr_rx = Imr::Get().ReadFrom(&mmio_).set_rxfim(1).WriteTo(&mmio_);
+    // Read the RX FIFO for the bytes we just sent.
+    for (size_t i = 0; i < transfer_size; i++) {
+      // Wait for at least one byte to be in the RX FIFO.
+      while (!Sr::Get().ReadFrom(&mmio_).rfne()) {
+      }
 
-    // Read RX FIFO for the bytes we just sent
-    while (received < sent) {
-      if (Sr::Get().ReadFrom(&mmio_).rfne()) {
-        uint32_t rx_data = mmio_.Read32(DW_SPI_DR0);
-        if (out_rxdata) {
-          out_rxdata[received] = static_cast<uint8_t>(rx_data);
-        }
-        received++;
-      } else {
-        // FIFO is empty, wait for interrupt
-        interrupt_.wait(nullptr);
+      uint32_t rx_data = mmio_.Read32(DW_SPI_DR0);
+      if (out_rxdata) {
+        out_rxdata[i] = static_cast<uint8_t>(rx_data);
       }
     }
 
-    // Mask interrupt again
-    imr_rx.set_rxfim(0).WriteTo(&mmio_);
+    size -= transfer_size;
+    if (txdata) {
+      txdata += transfer_size;
+    }
+    if (out_rxdata) {
+      out_rxdata += transfer_size;
+    }
   }
+
+  Ser::Get().FromValue(0).set_ser(0).WriteTo(&mmio_);
 }
 
 void DwSpi::TransmitVector(fuchsia_hardware_spiimpl::wire::SpiImplTransmitVectorRequest* request,

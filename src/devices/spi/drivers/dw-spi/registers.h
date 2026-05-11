@@ -69,7 +69,7 @@ class SsiEnr : public hwreg::RegisterBase<SsiEnr, uint32_t, hwreg::EnablePrinter
 
 class Ser : public hwreg::RegisterBase<Ser, uint32_t, hwreg::EnablePrinter> {
  public:
-  // Bits are slave select lines, up to 16.
+  // Bits are target select lines, up to 16.
   DEF_FIELD(15, 0, ser);
 
   static auto Get() { return hwreg::RegisterAddr<Ser>(DW_SPI_SER); }
