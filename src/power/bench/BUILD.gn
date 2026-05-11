@@ -2,118 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-import("//build/rust/rustc_binary.gni")
-import("//build/testing/perf/test.gni")
-
-if (is_fuchsia) {
-  rustc_binary("power-framework-benchmarks") {
-    name = "power_framework_microbenchmarks"
-    with_unit_tests = false
-    testonly = true
-    edition = "2024"
-    sources = [
-      "src/daemon_work.rs",
-      "src/main.rs",
-      "src/sag_work.rs",
-    ]
-    deps = [
-      "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
-      "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
-      "//sdk/fidl/fuchsia.power.topology.test:fuchsia.power.topology.test_rust",
-      "//sdk/rust/zx",
-      "//src/developer/fuchsia-criterion",
-      "//src/lib/fidl/rust/fidl",
-      "//src/lib/fuchsia-component",
-      "//third_party/rust_crates:anyhow",
-      "//third_party/rust_crates:criterion",
-      "//third_party/rust_crates:rand",
-    ]
-
-    configs += [ "//build/config/rust/lints:deny_unused_results" ]
-    configs += [ ":benchmark" ]
-  }
-
-  fuchsia_package_with_single_component("power_framework_microbenchmarks") {
-    deps = [
-      ":power-framework-benchmarks",
-      "//src/power/broker:component",
-      "//src/power/system-activity-governor:component",
-      "//src/power/testing/fake-shutdown-shim",
-      "//src/power/testing/topology-test-daemon:component",
-    ]
-    testonly = true
-    manifest = "meta/power-framework-microbenchmarks.cml"
-    subpackages = [ "//src/power/system-activity-governor:config-no-suspender" ]
-  }
-}
-
-rustc_test("bin") {
-  name = "integration"
-  edition = "2024"
-
-  deps = [
-    "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
-    "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
-    "//sdk/fidl/fuchsia.power.topology.test:fuchsia.power.topology.test_rust",
-    "//sdk/rust/zx",
-    "//src/lib/diagnostics/hierarchy/rust",
-    "//src/lib/diagnostics/reader/rust",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-component",
-    "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:argh",
-    "//third_party/rust_crates:criterion",
-    "//third_party/rust_crates:rand",
-  ]
-
-  sources = [
-    "src/daemon_work.rs",
-    "src/lib.rs",
-    "src/sag_work.rs",
-  ]
-}
-
-fuchsia_component("component") {
-  testonly = true
-  component_name = "integration"
-  manifest = "meta/integration.cml"
-  deps = [ ":bin" ]
-}
-
-config("benchmark") {
-  rustflags = [ "--cfg=benchmark" ]
-}
-
-# Run with `fx test power-framework-bench-integration-tests`.
-fuchsia_test_package("package") {
-  package_name = "power-framework-bench-integration-tests"
-  test_components = [ ":component" ]
-  deps = [
-    "//src/power/broker:component",
-    "//src/power/system-activity-governor:component",
-    "//src/power/testing/fake-shutdown-shim",
-    "//src/power/testing/topology-test-daemon:component",
-  ]
-  subpackages = [ "//src/power/system-activity-governor:config-no-suspender" ]
-}
-
 group("integration") {
   testonly = true
-  deps = [ ":package" ]
-}
-
-if (is_host) {
-  fuchsia_component_perf_test("power_framework_microbenchmarks") {
-    package = ":power_framework_microbenchmarks"
-    component_name = "power_framework_microbenchmarks"
-    expected_metric_names_filepath =
-        "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.power.txt"
-  }
+  deps = [ "power_framework:integration" ]
 }
 
 group("bench") {
   testonly = true
-  deps = [ ":power_framework_microbenchmarks($host_toolchain)" ]
+  deps = [ "power_framework:bench" ]
 }

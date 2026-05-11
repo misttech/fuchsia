@@ -63,7 +63,7 @@ benchmarks via a Lacewing wrapper. For example:
 1. `fx set` and build
 
     ```
-    fx set workbench_eng.x64 --release --with-test //src/tests/end_to_end/power_framework:tests
+    fx set workbench_eng.x64 --release --with-test //src/power/bench/power_framework:tests
     fx build
     ```
 

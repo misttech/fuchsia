@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 {
     include: [
-        "//src/power/bench/meta/share.cml",
+        "//src/power/bench/power_framework/meta/share.cml",
         "sys/testing/elf_test_runner.shard.cml",
         "trace/client.shard.cml",
     ],
