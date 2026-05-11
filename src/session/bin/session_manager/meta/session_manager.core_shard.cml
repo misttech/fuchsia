@@ -164,6 +164,7 @@
             ],
             from: "#system-update",
             to: "#session-manager",
+            availability: "same_as_target",
         },
 
         // The routes listed below originate from `parent` or from `self`.
