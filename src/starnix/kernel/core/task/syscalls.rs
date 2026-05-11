@@ -165,33 +165,38 @@ pub fn sys_clone3(
     do_clone(locked, current_task, &clone_args)
 }
 
+// Reads a vector of C strings from user memory. Returns the vector of `CString` and the total
+// size in bytes consumed by the pointers and the string data (including null terminators).
 fn read_c_string_vector(
     mm: &CurrentTask,
     user_vector: UserCStringPtr,
     elem_limit: usize,
-    vec_limit: usize,
-) -> Result<(Vec<CString>, usize), Errno> {
+    total_limit: &mut usize,
+) -> Result<Vec<CString>, Errno> {
     let mut user_current = user_vector;
     let mut vector: Vec<CString> = vec![];
-    let mut vec_size: usize = 0;
+    let ptr_size = std::mem::size_of::<*const u8>();
+
     loop {
+        // Account for the size of the pointer in the vector.
+        *total_limit = total_limit.checked_sub(ptr_size).ok_or_else(|| errno!(E2BIG))?;
+
         let user_string = mm.read_multi_arch_ptr(user_current)?;
         if user_string.is_null() {
-            break;
+            return Ok(vector);
         }
         let string = mm
             .read_c_string_to_vec(user_string, elem_limit)
             .map_err(|e| if e.code == ENAMETOOLONG { errno!(E2BIG) } else { e })?;
         let cstring = CString::new(string).map_err(|_| errno!(EINVAL))?;
-        vec_size =
-            vec_size.checked_add(cstring.as_bytes_with_nul().len()).ok_or_else(|| errno!(E2BIG))?;
-        if vec_size > vec_limit {
-            return error!(E2BIG);
-        }
+        let arg_size = cstring.as_bytes_with_nul().len();
+
+        // Account for the size of the string data.
+        *total_limit = total_limit.checked_sub(arg_size).ok_or_else(|| errno!(E2BIG))?;
+
         vector.push(cstring);
         user_current = user_current.next()?;
     }
-    Ok((vector, vec_size))
 }
 
 pub fn sys_execve(
@@ -221,27 +226,22 @@ pub fn sys_execveat(
     // See the Limits sections in https://man7.org/linux/man-pages/man2/execve.2.html
     const PAGE_LIMIT: usize = 32;
     let page_limit_size: usize = PAGE_LIMIT * *PAGE_SIZE as usize;
-    let rlimit = current_task.thread_group().get_rlimit(locked, Resource::STACK);
-    let stack_limit = rlimit / 4;
-    let argv_env_limit = cmp::max(page_limit_size, stack_limit as usize);
+    let stack_rlimit = current_task.thread_group().get_rlimit(locked, Resource::STACK);
+    let stack_limit = stack_rlimit / 4;
+    let mut argv_env_limit = cmp::max(page_limit_size, stack_limit as usize);
 
     // The limit per argument or environment variable is 32 pages.
     // See the Limits sections in https://man7.org/linux/man-pages/man2/execve.2.html
-    let (argv, argv_size) = if user_argv.is_null() {
-        (Vec::new(), 0)
+    let argv = if user_argv.is_null() {
+        Vec::new()
     } else {
-        read_c_string_vector(current_task, user_argv, page_limit_size, argv_env_limit)?
+        read_c_string_vector(current_task, user_argv, page_limit_size, &mut argv_env_limit)?
     };
 
-    let (environ, _) = if user_environ.is_null() {
-        (Vec::new(), 0)
+    let environ = if user_environ.is_null() {
+        Vec::new()
     } else {
-        read_c_string_vector(
-            current_task,
-            user_environ,
-            page_limit_size,
-            argv_env_limit - argv_size,
-        )?
+        read_c_string_vector(current_task, user_environ, page_limit_size, &mut argv_env_limit)?
     };
 
     let path = &current_task.read_path(user_path)?;
@@ -2571,17 +2571,65 @@ mod tests {
                 .write_multi_arch_ptr(argv_addr.next().unwrap().addr(), null_usercstr)
                 .expect("failed to write UserCString");
 
-            // The arguments size limit should include the null terminator.
-            assert!(read_c_string_vector(&current_task, argv_addr, 100, arg.len()).is_ok());
+            // The arguments size limit should include the null terminator as well as the pointers.
+            let expected_ptr_cost = 2 * std::mem::size_of::<*const u8>(); // 16 bytes
+            let mut limit = arg.len() + expected_ptr_cost;
+            assert!(read_c_string_vector(&current_task, argv_addr, 100, &mut limit).is_ok());
+
+            let mut limit =
+                std::str::from_utf8(arg).unwrap().trim_matches('\0').len() + expected_ptr_cost;
             assert_eq!(
-                read_c_string_vector(
-                    &current_task,
-                    argv_addr,
-                    100,
-                    std::str::from_utf8(arg).unwrap().trim_matches('\0').len()
-                ),
+                read_c_string_vector(&current_task, argv_addr, 100, &mut limit),
                 error!(E2BIG)
             );
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_read_c_string_vector_limit() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let string_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task.write_memory(string_addr, &[0]).expect("write_memory");
+            let empty_string = UserCString::new(current_task, string_addr);
+
+            let vector_addr = UserCStringPtr::new(
+                current_task,
+                map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE),
+            );
+
+            // Write 2 pointers to the empty string, followed by a null terminator.
+            let base_addr = vector_addr.addr();
+            current_task.write_multi_arch_ptr(base_addr, empty_string).expect("write");
+            current_task
+                .write_multi_arch_ptr(UserAddress::from(base_addr.ptr() as u64 + 8), empty_string)
+                .expect("write");
+            current_task
+                .write_multi_arch_ptr(
+                    UserAddress::from(base_addr.ptr() as u64 + 16),
+                    UserCString::null(current_task),
+                )
+                .expect("write");
+
+            // Cost breakdown:
+            // Element 1: 8 bytes (ptr) + 1 byte (str \0) = 9 bytes
+            // Element 2: 8 bytes (ptr) + 1 byte (str \0) = 9 bytes
+            // Null terminator ptr: 8 bytes
+            // Total size consumed: 9 + 9 + 8 = 26 bytes
+
+            // With a limit of 25, it should fail when trying to account for the final null pointer.
+            let mut limit = 25;
+            assert_eq!(
+                read_c_string_vector(&current_task, vector_addr, 100, &mut limit),
+                error!(E2BIG)
+            );
+
+            // With a limit of 26, it should succeed.
+            let mut limit = 26;
+            let vec =
+                read_c_string_vector(&current_task, vector_addr, 100, &mut limit).expect("read");
+            assert_eq!(vec.len(), 2);
+            assert_eq!(limit, 0);
         })
         .await;
     }
