@@ -112,6 +112,7 @@ fuchsia_driver_component("bus-pci") {
 fuchsia_driver_package("bus-pci-package") {
   package_name = "bus-pci"
   driver_components = [ ":bus-pci" ]
+  export_to_bazel = true
 }
 
 # bus-kpci is used by boards that use kernel PCI support.
