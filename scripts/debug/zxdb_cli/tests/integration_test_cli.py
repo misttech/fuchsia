@@ -222,6 +222,18 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
         )
         os.close(read_fd)
 
+        # Perform handshake to ensure daemon is connected to DAP server
+        reader, writer = await asyncio.open_unix_connection(UDS_PATH)
+        req = HelloRequest(version=PROTOCOL_VERSION)
+        writer.write(serialize(req).encode("utf-8"))
+        await writer.drain()
+        response = await asyncio.wait_for(reader.readline(), timeout=5.0)
+        writer.close()
+        await writer.wait_closed()
+
+        resp_dict = json.loads(response.decode("utf-8"))
+        self.assertTrue(resp_dict.get("success"))
+
         return proc, port
 
     async def test_daemon_lifecycle(self) -> None:
@@ -261,8 +273,11 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
                 await writer.drain()
 
                 try:
+                    # TODO(https://fxbug.dev/509581944): this is intentionally kept longer than the
+                    # daemon's internal "handle_hello" timeout, which doesn't feel very good. This
+                    # should be improved along with the rest of the general timeout error handling.
                     response = await asyncio.wait_for(
-                        reader.readline(), timeout=5.0
+                        reader.readline(), timeout=15.0
                     )
                 except asyncio.TimeoutError:
                     self.fail("Timed out waiting for response from daemon")
