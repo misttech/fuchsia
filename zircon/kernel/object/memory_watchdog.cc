@@ -221,15 +221,29 @@ bool MemoryWatchdog::IsEvictionRequired(PressureLevel idx) const {
 }
 
 void MemoryWatchdog::WorkerThread() {
+  // Tracks whether we have logged entering the OOM state. Used to rate limit logs when bouncing in
+  // and out of OOM rapidly. Hysteresis delays confirming the transition to a lower pressure state,
+  // so we can re-enter OOM multiple times before that happens.
+  bool oom_entry_logged = false;
+  // Accumulates the total number of pages evicted during a contiguous OOM period (which may involve
+  // multiple bounces in and out of OOM level).
+  uint64_t total_oom_evicted_pages = 0;
+
   while (true) {
     // If we've hit OOM level perform some immediate synchronous eviction to attempt to avoid OOM.
     if (mem_event_idx_ == PressureLevel::kOutOfMemory) {
       OOM_KTRACE_DURATION(1, "MemoryWatchdog::OutOfMemory");
-      printf("memory-pressure: beginning reclamation to avoid OOM. Allocations are now disabled\n");
+
+      // Log only the first time we enter OOM in this period to avoid spam.
+      if (!oom_entry_logged) {
+        printf(
+            "memory-pressure: beginning reclamation to avoid OOM. Allocations are now disabled\n");
+        oom_entry_logged = true;
+      }
+
       CountPressureEvent(mem_event_idx_);
       // Keep trying to perform eviction for as long as we are evicting non-zero pages and we remain
       // in the out of memory state.
-      uint64_t total_evicted_pages = 0;
       while (mem_event_idx_ == PressureLevel::kOutOfMemory) {
         const uint64_t evicted_pages =
             pmm_evictor()
@@ -241,12 +255,9 @@ void MemoryWatchdog::WorkerThread() {
           printf("memory-pressure: found no pages to evict\n");
           break;
         }
-        total_evicted_pages += evicted_pages;
+        // Accumulate total pages evicted across all bounces in this OOM period.
+        total_oom_evicted_pages += evicted_pages;
         mem_event_idx_ = CalculatePressureLevel();
-      }
-      if (total_evicted_pages > 0) {
-        printf("memory-pressure: reclaimed %s to avoid OOM\n",
-               FormattedBytes(total_evicted_pages * kPageSize).c_str());
       }
     }
 
@@ -271,6 +282,18 @@ void MemoryWatchdog::WorkerThread() {
 
     if (IsSignalDue(mem_event_idx_, time_now)) {
       CountPressureEvent(mem_event_idx_);
+
+      // Log the total pages reclaimed during this OOM period (if any) and reset the OOM logging
+      // flag.
+      if (oom_entry_logged) {
+        if (total_oom_evicted_pages > 0) {
+          printf("memory-pressure: reclaimed %s to avoid OOM\n",
+                 FormattedBytes(total_oom_evicted_pages * kPageSize).c_str());
+          total_oom_evicted_pages = 0;
+        }
+        oom_entry_logged = false;
+      }
+
       printf("memory-pressure: memory availability state - %s\n",
              PressureLevelToString(mem_event_idx_));
       pmm_page_queues()->Dump();
