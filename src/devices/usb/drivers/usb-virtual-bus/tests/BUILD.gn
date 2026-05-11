@@ -74,7 +74,6 @@ test("usb-virtual-bus-unit-test-bin") {
   output_name = "usb-virtual-bus-unit-test"
   deps = [
     "..:common",
-    "//sdk/banjo/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci_banjo_cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/lib/fxl/test:gtest_main",
   ]

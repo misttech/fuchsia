@@ -7,7 +7,6 @@
 
 #include <fidl/fuchsia.hardware.usb.virtual.bus/cpp/fidl.h>
 #include <fuchsia/hardware/usb/bus/cpp/banjo.h>
-#include <fuchsia/hardware/usb/dci/cpp/banjo.h>
 #include <fuchsia/hardware/usb/hci/cpp/banjo.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
@@ -17,6 +16,7 @@
 #include <format>
 #include <memory>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "src/devices/usb/drivers/usb-virtual-bus/usb-virtual-device.h"
@@ -116,7 +116,11 @@ class UsbVirtualBus : public fdf::DriverBase2,
       return;
     }
 
-    get<T>()->compat_server().reset();
+    // Only the host-side contains a compat server.
+    if constexpr (std::is_same_v<T, UsbVirtualHost>) {
+      get<T>()->compat_server().reset();
+    }
+
     zx::result result = outgoing()->RemoveService<typename T::Service>();
     if (result.is_error()) {
       fdf::error("Failed to remove device service: {}", result);
@@ -150,8 +154,8 @@ class UsbVirtualBus : public fdf::DriverBase2,
   void Serve(fidl::ServerEnd<fuchsia_hardware_usb_virtual_bus::Bus> request);
   void Disable(fit::callback<void(zx_status_t)> callback);
 
-  template <typename T>
-  zx::result<std::unique_ptr<T>> CreateChild();
+  zx::result<std::unique_ptr<UsbVirtualHost>> CreateHost();
+  zx::result<std::unique_ptr<UsbVirtualDevice>> CreateDevice();
   template <typename T>
   zx::result<> RemoveChild(std::unique_ptr<T>& child);
 

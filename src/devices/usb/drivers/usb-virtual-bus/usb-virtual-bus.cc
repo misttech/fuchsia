@@ -31,16 +31,16 @@ const uint32_t kDeviceSlotId = 0;
 const uint32_t kDeviceHubId = 0;
 const fusb::UsbSpeed kDeviceSpeed = fusb::UsbSpeed::kHigh;
 
-template <typename T>
-zx::result<std::unique_ptr<T>> UsbVirtualBus::CreateChild() {
+zx::result<std::unique_ptr<UsbVirtualHost>> UsbVirtualBus::CreateHost() {
   fbl::AllocChecker ac;
-  auto child = fbl::make_unique_checked<T>(&ac, this);
+  auto child = fbl::make_unique_checked<UsbVirtualHost>(&ac, this);
   if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
   {
-    zx::result result = outgoing()->AddService<typename T::Service>(child->GetInstanceHandler());
+    zx::result result =
+        outgoing()->AddService<UsbVirtualHost::Service>(child->GetInstanceHandler());
     if (result.is_error()) {
       fdf::error("Failed to add service {}", result);
       return result.take_error();
@@ -48,24 +48,59 @@ zx::result<std::unique_ptr<T>> UsbVirtualBus::CreateChild() {
   }
 
   {
-    zx::result result =
-        child->compat_server().Initialize(incoming(), outgoing(), node_name(), T::kName.c_str(),
-                                          compat::ForwardMetadata::None(), child->GetBanjoConfig());
+    zx::result result = child->compat_server().Initialize(
+        incoming(), outgoing(), node_name(), UsbVirtualHost::kName.c_str(),
+        compat::ForwardMetadata::None(), child->GetBanjoConfig());
     if (result.is_error()) {
       return result.take_error();
     }
   }
 
   std::vector offers = child->compat_server().CreateOffers2();
-  offers.push_back(fdf::MakeOffer2<typename T::Service>());
-  auto properties = T::GetProperties();
+  offers.push_back(fdf::MakeOffer2<UsbVirtualHost::Service>());
+  auto properties = UsbVirtualHost::GetProperties();
   properties.push_back(fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
                                           bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST));
   properties.push_back(fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
                                           bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_USB));
 
   {
-    zx::result result = AddChild(T::kName.c_str(), properties, offers);
+    zx::result result = AddChild(UsbVirtualHost::kName.c_str(), properties, offers);
+    if (result.is_error()) {
+      fdf::error("Failed to add child: {}", result);
+      return result.take_error();
+    }
+    child->controller().Bind(std::move(*result));
+  }
+  return zx::ok(std::move(child));
+}
+
+zx::result<std::unique_ptr<UsbVirtualDevice>> UsbVirtualBus::CreateDevice() {
+  fbl::AllocChecker ac;
+  auto child = fbl::make_unique_checked<UsbVirtualDevice>(&ac, this);
+  if (!ac.check()) {
+    return zx::error(ZX_ERR_NO_MEMORY);
+  }
+
+  {
+    zx::result result =
+        outgoing()->AddService<UsbVirtualDevice::Service>(child->GetInstanceHandler());
+    if (result.is_error()) {
+      fdf::error("Failed to add service {}", result);
+      return result.take_error();
+    }
+  }
+
+  std::vector<fdfw::Offer> offers;
+  offers.push_back(fdf::MakeOffer2<UsbVirtualDevice::Service>());
+  auto properties = UsbVirtualDevice::GetProperties();
+  properties.push_back(fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
+                                          bind_fuchsia_test_platform::BIND_PLATFORM_DEV_VID_TEST));
+  properties.push_back(fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
+                                          bind_fuchsia_test_platform::BIND_PLATFORM_DEV_PID_USB));
+
+  {
+    zx::result result = AddChild(UsbVirtualDevice::kName.c_str(), properties, offers);
     if (result.is_error()) {
       fdf::error("Failed to add child: {}", result);
       return result.take_error();
@@ -413,7 +448,7 @@ zx::result<> UsbVirtualBus::SetDciInterface(fidl::ClientEnd<fdci::UsbDciInterfac
 
 void UsbVirtualBus::Enable(EnableCompleter::Sync& completer) {
   if (host_ == nullptr) {
-    zx::result result = CreateChild<UsbVirtualHost>();
+    zx::result result = CreateHost();
     if (result.is_error()) {
       fdf::error("Failed to create host {}", result);
       completer.Reply(result.error_value());
@@ -422,7 +457,7 @@ void UsbVirtualBus::Enable(EnableCompleter::Sync& completer) {
     host_ = std::move(*result);
   }
   if (device_ == nullptr) {
-    zx::result result = CreateChild<UsbVirtualDevice>();
+    zx::result result = CreateDevice();
     if (result.is_error()) {
       fdf::error("Failed to create device {}", result);
       completer.Reply(result.error_value());

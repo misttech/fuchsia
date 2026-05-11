@@ -6,9 +6,8 @@
 #define SRC_DEVICES_USB_DRIVERS_USB_VIRTUAL_BUS_USB_VIRTUAL_DEVICE_H_
 
 #include <fidl/fuchsia.driver.framework/cpp/natural_types.h>
+#include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
-#include <fuchsia/hardware/usb/dci/cpp/banjo.h>
-#include <lib/driver/compat/cpp/banjo_server.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
@@ -22,8 +21,7 @@ class UsbVirtualBus;
 
 // This class implements the virtual USB device controller protocol.
 class UsbVirtualDevice
-    : public ddk::UsbDciProtocol<UsbVirtualDevice>,
-      public fidl::Server<fuchsia_hardware_usb_dci::UsbDci>,
+    : public fidl::Server<fuchsia_hardware_usb_dci::UsbDci>,
       public fidl::WireAsyncEventHandler<fuchsia_driver_framework::NodeController> {
  public:
   using Service = fuchsia_hardware_usb_dci::UsbDciService;
@@ -35,25 +33,8 @@ class UsbVirtualDevice
 
   explicit UsbVirtualDevice(UsbVirtualBus* bus) : bus_(bus) {}
 
-  // USB device controller protocol implementation.
-  void UsbDciRequestQueue(usb_request_t* usb_request,
-                          const usb_request_complete_callback_t* complete_cb);
-  zx_status_t UsbDciSetInterface(const usb_dci_interface_protocol_t* interface);
-  zx_status_t UsbDciConfigEp(const usb_endpoint_descriptor_t* ep_desc,
-                             const usb_ss_ep_comp_descriptor_t* ss_comp_desc);
-  zx_status_t UsbDciDisableEp(uint8_t ep_address);
-  zx_status_t UsbDciEpSetStall(uint8_t ep_address);
-  zx_status_t UsbDciEpClearStall(uint8_t ep_address);
-  zx_status_t UsbDciCancelAll(uint8_t endpoint);
-  size_t UsbDciGetRequestSize();
-
   fuchsia_hardware_usb_dci::UsbDciService::InstanceHandler GetInstanceHandler();
-  compat::DeviceServer::BanjoConfig GetBanjoConfig() {
-    compat::DeviceServer::BanjoConfig banjo_config;
-    banjo_config.callbacks[ZX_PROTOCOL_USB_DCI] = banjo_server_.callback();
-    return banjo_config;
-  }
-  compat::SyncInitializedDeviceServer& compat_server() { return compat_server_; }
+
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController>& controller() {
     return controller_;
   }
@@ -89,8 +70,6 @@ class UsbVirtualDevice
   UsbVirtualBus* bus_;
 
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> controller_;
-  compat::SyncInitializedDeviceServer compat_server_;
-  compat::BanjoServer banjo_server_{ZX_PROTOCOL_USB_DCI, this, &usb_dci_protocol_ops_};
   fidl::ServerBindingGroup<fuchsia_hardware_usb_dci::UsbDci> bindings_;
 };
 

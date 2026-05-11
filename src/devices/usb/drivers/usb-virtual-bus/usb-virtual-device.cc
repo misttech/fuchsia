@@ -18,67 +18,6 @@ fuchsia_hardware_usb_dci::UsbDciService::InstanceHandler UsbVirtualDevice::GetIn
   });
 }
 
-void UsbVirtualDevice::UsbDciRequestQueue(usb_request_t* usb_request,
-                                          const usb_request_complete_callback_t* complete_cb) {
-  Request request(usb_request, *complete_cb, sizeof(usb_request_t));
-
-  uint8_t index = EpAddressToIndex(request.request()->header.ep_address);
-  if (index >= USB_MAX_EPS) {
-    fdf::error("usb_virtual_bus_device_queue bad endpoint {}\n",
-               request.request()->header.ep_address);
-    request.Complete(ZX_ERR_INVALID_ARGS, 0);
-    return;
-  }
-
-  bus_->ep(index).device_.QueueRequest(std::move(request));
-}
-
-zx_status_t UsbVirtualDevice::UsbDciSetInterface(const usb_dci_interface_protocol_t* interface) {
-  return ZX_ERR_NOT_SUPPORTED;
-}
-
-zx_status_t UsbVirtualDevice::UsbDciConfigEp(const usb_endpoint_descriptor_t* ep_desc,
-                                             const usb_ss_ep_comp_descriptor_t* ss_comp_desc) {
-  uint8_t index = EpAddressToIndex(usb_ep_num(ep_desc));
-  if (index >= USB_MAX_EPS) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  bus_->ep(index).max_packet_size_ = usb_ep_max_packet(ep_desc);
-  return ZX_OK;
-}
-
-zx_status_t UsbVirtualDevice::UsbDciDisableEp(uint8_t ep_address) { return ZX_OK; }
-
-zx_status_t UsbVirtualDevice::UsbDciEpSetStall(uint8_t ep_address) {
-  uint8_t index = EpAddressToIndex(ep_address);
-  if (index >= USB_MAX_EPS) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  return bus_->ep(index).SetStall(true).status_value();
-}
-
-zx_status_t UsbVirtualDevice::UsbDciEpClearStall(uint8_t ep_address) {
-  uint8_t index = EpAddressToIndex(ep_address);
-  if (index >= USB_MAX_EPS) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-  return bus_->ep(index).SetStall(false).status_value();
-}
-
-zx_status_t UsbVirtualDevice::UsbDciCancelAll(uint8_t endpoint) {
-  uint8_t index = EpAddressToIndex(endpoint);
-  if (index >= USB_MAX_EPS) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  bus_->ep(index).device_.CommonCancelAll();
-  return ZX_OK;
-}
-
-size_t UsbVirtualDevice::UsbDciGetRequestSize() {
-  return Request::RequestSize(Request::RequestSize(sizeof(usb_request_t)));
-}
-
 void UsbVirtualDevice::ConnectToEndpoint(ConnectToEndpointRequest& request,
                                          ConnectToEndpointCompleter::Sync& completer) {
   uint8_t index = EpAddressToIndex(request.ep_addr());
@@ -132,17 +71,17 @@ void UsbVirtualDevice::ConfigureEndpoint(ConfigureEndpointRequest& request,
 
 void UsbVirtualDevice::DisableEndpoint(DisableEndpointRequest& request,
                                        DisableEndpointCompleter::Sync& completer) {
-  zx_status_t status = UsbDciDisableEp(request.ep_address());
-  if (status != ZX_OK) {
-    completer.Reply(zx::error(status));
-    return;
-  }
   completer.Reply(zx::ok());
 }
 
 void UsbVirtualDevice::EndpointSetStall(EndpointSetStallRequest& request,
                                         EndpointSetStallCompleter::Sync& completer) {
-  zx_status_t status = UsbDciEpSetStall(request.ep_address());
+  uint8_t index = EpAddressToIndex(request.ep_address());
+  if (index >= USB_MAX_EPS) {
+    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+  zx_status_t status = bus_->ep(index).SetStall(true).status_value();
   if (status != ZX_OK) {
     completer.Reply(zx::error(status));
     return;
@@ -152,7 +91,12 @@ void UsbVirtualDevice::EndpointSetStall(EndpointSetStallRequest& request,
 
 void UsbVirtualDevice::EndpointClearStall(EndpointClearStallRequest& request,
                                           EndpointClearStallCompleter::Sync& completer) {
-  zx_status_t status = UsbDciEpClearStall(request.ep_address());
+  uint8_t index = EpAddressToIndex(request.ep_address());
+  if (index >= USB_MAX_EPS) {
+    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
+    return;
+  }
+  zx_status_t status = bus_->ep(index).SetStall(false).status_value();
   if (status != ZX_OK) {
     completer.Reply(zx::error(status));
     return;
@@ -161,11 +105,13 @@ void UsbVirtualDevice::EndpointClearStall(EndpointClearStallRequest& request,
 }
 
 void UsbVirtualDevice::CancelAll(CancelAllRequest& request, CancelAllCompleter::Sync& completer) {
-  zx_status_t status = UsbDciCancelAll(request.ep_address());
-  if (status != ZX_OK) {
-    completer.Reply(zx::error(status));
+  uint8_t index = EpAddressToIndex(request.ep_address());
+  if (index >= USB_MAX_EPS) {
+    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
     return;
   }
+
+  bus_->ep(index).device_.CommonCancelAll();
   completer.Reply(zx::ok());
 }
 
