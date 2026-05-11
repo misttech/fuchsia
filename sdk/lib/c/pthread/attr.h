@@ -22,11 +22,13 @@ constexpr pthread_attr_t ToPthreadAttr(ThreadAttributes attr) {
   };
 }
 
-constexpr ThreadAttributes FromPthreadAttr(const pthread_attr_t* attr) {
+inline ThreadAttributes FromPthreadAttr(const pthread_attr_t* attr) {
   ThreadAttributes attrs;
   if (attr) {
-    attrs.stack = PageRoundedSize{attr->_a_stacksize};
-    attrs.guard = PageRoundedSize{attr->_a_guardsize};
+    // These have been checked for overflow in pthread_attr_set so this is unconditionally safe
+    // here.
+    attrs.stack = *PageRoundedSize::From(attr->_a_stacksize);
+    attrs.guard = *PageRoundedSize::From(attr->_a_guardsize);
     attrs.detached = attr->_a_detach;
     if (attr->__name) {
       attrs.name = ZxName{attr->__name};

@@ -9,7 +9,7 @@ namespace LIBC_NAMESPACE_DECL {
 
 PageRoundedSize InitialStackSize() {
   // The value was collected or defaulted in dls3 (dynlink.c).
-  return PageRoundedSize{_dl_stack_size()};
+  return *PageRoundedSize::From(_dl_stack_size());
 }
 
 }  // namespace LIBC_NAMESPACE_DECL

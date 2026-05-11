@@ -27,7 +27,12 @@ template <>
 zx::result<std::span<std::byte>> GuardedPageBlock::Allocate<std::byte>(  //
     zx::unowned_vmar allocate_from, AllocationVmo& vmo, PageRoundedSize data_size,
     PageRoundedSize guard_below, PageRoundedSize guard_above) {
-  const PageRoundedSize vmar_size = guard_below + data_size + guard_above;
+  std::optional<PageRoundedSize> vmar_size_opt = guard_below + data_size + guard_above;
+  if (!vmar_size_opt) {
+    return zx::error{ZX_ERR_NO_RESOURCES};
+  }
+  PageRoundedSize vmar_size = *vmar_size_opt;
+
   zx::vmar vmar;
   if (zx::result result = zx::make_result(
           allocate_from->allocate(kVmarOptions, 0, vmar_size.get(), &vmar, &start_));

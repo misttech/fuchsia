@@ -46,10 +46,10 @@ struct ThreadAttributes {
     return result;
   }
 
-  PageRoundedSize stack = InitialStackSize();  // Default to main thread's size.
-  PageRoundedSize guard{1};                    // Default to a one-page guard.
-  bool detached = false;                       // If set, start detached.
-  ZxName name;                                 // Optional.
+  PageRoundedSize stack = InitialStackSize();       // Default to main thread's size.
+  PageRoundedSize guard = PageRoundedSize::Page();  // Default to a one-page guard.
+  bool detached = false;                            // If set, start detached.
+  ZxName name;                                      // Optional.
 };
 
 // This has the same actual ABI as both int(void*), as used in C11

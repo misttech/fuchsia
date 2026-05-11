@@ -27,9 +27,13 @@ void Unmap(zx::unowned_vmar& vmar, uintptr_t& base, PageRoundedSize size) {
 }  // namespace
 
 void ThreadStorage::FreeStacks() {
-  auto unmap = [size = stack_size_ + guard_size_](zx::unowned_vmar& vmar, uintptr_t& base) {
-    Unmap(vmar, base, size);
-  };
+  std::optional<PageRoundedSize> size = stack_size_ + guard_size_;
+  ZX_DEBUG_ASSERT_MSG(
+      size.has_value(),
+      "Overflow in FreeStacks: stack_size=%zu, guard_size=%zu. This should never overflow since this should be a valid combination on a successful ThreadStorage::Allocate.",
+      stack_size_.get(), guard_size_.get());
+
+  auto unmap = [size = *size](zx::unowned_vmar& vmar, uintptr_t& base) { Unmap(vmar, base, size); };
   OnStacks(unmap, vmar_, address_);
 }
 
@@ -132,10 +136,16 @@ std::span<uint64_t> ThreadStorage::ThreadShadowCallstack(const Thread& thread) {
 
 std::span<std::byte> ThreadStorage::ThreadThreadBlock(const Thread& thread) {
   const PageRoundedSize page_size = PageRoundedSize::Page();
+  std::optional<PageRoundedSize> size_opt =
+      PageRoundedSize::From(thread.storage_thread_block_size) - PageRoundedSize::Pages(2);
+  ZX_DEBUG_ASSERT_MSG(size_opt.has_value(),
+                      "Overflow in ThreadThreadBlock: storage_thread_block_size=%zu, Pages(2)=%zu",
+                      thread.storage_thread_block_size, PageRoundedSize::Pages(2)->get());
+  PageRoundedSize size = *size_opt;
   return {
       reinterpret_cast<std::byte*>(  //
           thread.storage_thread_block_address + page_size.get()),
-      thread.storage_thread_block_size - (page_size * 2).get(),
+      size.get(),
   };
 }
 

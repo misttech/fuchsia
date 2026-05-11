@@ -28,31 +28,28 @@ TEST(LibcVmarTests, PageRoundedSize) {
   static constinit PageRoundedSize kConstinitZero{};
   EXPECT_EQ(kConstinitZero.get(), 0u);
 
-  const PageRoundedSize two_page{2 * zx_system_get_page_size()};
+  const PageRoundedSize two_page = *PageRoundedSize::Pages(2);
   EXPECT_EQ(two_page.get(), 2 * zx_system_get_page_size());
   EXPECT_EQ(two_page, two_page);
   EXPECT_GT(two_page, kConstexprZero);
   EXPECT_LT(kConstexprZero, two_page);
   EXPECT_LE(kConstexprZero, two_page);
 
-  const PageRoundedSize min{1};
+  const PageRoundedSize min = *PageRoundedSize::From(1);
   EXPECT_EQ(min.get(), zx_system_get_page_size());
   EXPECT_EQ(min, min);
   EXPECT_NE(min, kConstexprZero);
 
-  PageRoundedSize incr = min;
-  incr += PageRoundedSize{1};
-  EXPECT_EQ(incr.get(), 2 * zx_system_get_page_size());
-
-  incr = min + min;
-  EXPECT_EQ(incr.get(), 2 * zx_system_get_page_size());
+  std::optional<PageRoundedSize> incr = std::optional{min} + std::optional{min};
+  ASSERT_TRUE(incr);
+  EXPECT_EQ(incr->get(), 2 * zx_system_get_page_size());
 }
 
 TEST(LibcVmarTests, GuardedPageBlock) {
   constexpr PageRoundedSize kNoGuard{};
-  const PageRoundedSize kOnePage{1};
-  const PageRoundedSize kTwoPages = kOnePage + kOnePage;
-  const PageRoundedSize kFourPages = kTwoPages + kTwoPages;
+  const PageRoundedSize kOnePage = PageRoundedSize::Page();
+  const PageRoundedSize kTwoPages = *PageRoundedSize::Pages(2);
+  const PageRoundedSize kFourPages = *PageRoundedSize::Pages(4);
 
   zx::result<AllocationVmo> vmo = AllocationVmo::New(kFourPages);
   ASSERT_TRUE(vmo.is_ok()) << vmo.status_string();
@@ -187,9 +184,10 @@ TEST(LibcVmarTests, GuardedPageBlock) {
 }
 
 TEST(LibcVmarTests, GuardedPageBlockTooLarge) {
-  const PageRoundedSize kOnePage{1};
-  const PageRoundedSize kTwoPages = kOnePage + kOnePage;
+  const PageRoundedSize kOnePage = PageRoundedSize::Page();
   constexpr PageRoundedSize kNoGuard{};
+
+  const PageRoundedSize kTwoPages = *PageRoundedSize::Pages(2);
 
   zx::vmar child_vmar;
   uintptr_t child_base;
@@ -207,7 +205,7 @@ TEST(LibcVmarTests, GuardedPageBlockTooLarge) {
 }
 
 TEST(LibcVmarTests, GuardedPageBlockVmarFull) {
-  const PageRoundedSize kOnePage{1};
+  const PageRoundedSize kOnePage = PageRoundedSize::Page();
   constexpr PageRoundedSize kNoGuard{};
 
   zx::vmar child_vmar;
@@ -229,6 +227,39 @@ TEST(LibcVmarTests, GuardedPageBlockVmarFull) {
   EXPECT_EQ(result2.status_value(), ZX_ERR_NO_RESOURCES)
       << "Expected ZX_ERR_NO_RESOURCES when the allocation vmar is full: "
       << result2.status_string();
+}
+
+TEST(LibcVmarTests, GuardedPageBlockOverflow) {
+  const PageRoundedSize kOnePage = PageRoundedSize::Page();
+  constexpr PageRoundedSize kNoPage{};
+
+  zx::result<AllocationVmo> vmo = AllocationVmo::New(kOnePage);
+  ASSERT_TRUE(vmo.is_ok()) << vmo.status_string();
+
+  // Use a very large size that will cause overflow when added.
+  // We use half of UINT64_MAX + 1 to guarantee overflow when two are added.
+  constexpr uint64_t kHugeSize = std::numeric_limits<uint64_t>::max() / 2 + 1;
+  const PageRoundedSize huge = *PageRoundedSize::From(kHugeSize);
+
+  // Test combinations where the sum of sizes overflows.
+  {
+    // Huge data + huge guard below + no guard above
+    GuardedPageBlock block;
+    zx::result result = block.Allocate(AllocationVmar(), *vmo, huge, huge, kNoPage);
+    EXPECT_EQ(result.status_value(), ZX_ERR_NO_RESOURCES);
+  }
+  {
+    // Huge data + no guard below + huge guard above
+    GuardedPageBlock block;
+    zx::result result = block.Allocate(AllocationVmar(), *vmo, huge, kNoPage, huge);
+    EXPECT_EQ(result.status_value(), ZX_ERR_NO_RESOURCES);
+  }
+  {
+    // No data + huge guard below + huge guard above
+    GuardedPageBlock block;
+    zx::result result = block.Allocate(AllocationVmar(), *vmo, kNoPage, huge, huge);
+    EXPECT_EQ(result.status_value(), ZX_ERR_NO_RESOURCES);
+  }
 }
 
 }  // namespace

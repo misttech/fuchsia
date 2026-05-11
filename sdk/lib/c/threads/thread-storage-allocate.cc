@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/elfldltl/machine.h>
+#include <lib/fit/defer.h>
 
 #include <cassert>
 #include <concepts>
@@ -189,7 +190,7 @@ struct ThreadBlockSize {
 
 template <class TlsTraits = elfldltl::TlsTraits<>>
   requires(TlsTraits::kTlsNegative)
-ThreadBlockSize ComputeThreadBlockSize(TlsLayout static_tls_layout) {
+zx::result<ThreadBlockSize> ComputeThreadBlockSize(TlsLayout static_tls_layout) {
   // This layout is used only on x86 (both EM_386 and EM_X86_64).  To be
   // pedantic, the ABI requirement kTpSelfPointer indicates is orthogonal;
   // but it's related, and also unique to x86.  kTlsLocalExecOffset is also
@@ -244,16 +245,23 @@ ThreadBlockSize ComputeThreadBlockSize(TlsLayout static_tls_layout) {
   const size_t tls_size = static_tls_layout.Align(  //
       static_tls_layout.size_bytes(), alignof(Thread));
   const size_t aligned_thread_size = static_tls_layout.Align(sizeof(Thread), alignof(Thread));
-  const PageRoundedSize allocation_size{tls_size + aligned_thread_size};
-  return {
+
+  std::optional<PageRoundedSize> allocation_size_opt =
+      PageRoundedSize::From(tls_size) + aligned_thread_size;
+  if (!allocation_size_opt.has_value()) [[unlikely]] {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
+
+  const PageRoundedSize allocation_size = *allocation_size_opt;
+  return zx::ok(ThreadBlockSize{
       .size = allocation_size,
       .tp_offset = allocation_size.get() - aligned_thread_size,
-  };
+  });
 }
 
 template <class TlsTraits = elfldltl::TlsTraits<>>
   requires(!TlsTraits::kTlsNegative)
-ThreadBlockSize ComputeThreadBlockSize(TlsLayout static_tls_layout) {
+zx::result<ThreadBlockSize> ComputeThreadBlockSize(TlsLayout static_tls_layout) {
   // This style of layout is used on all machines other than x86.
   // The kTlsLocalExecOffset value differs by machine.
   //
@@ -332,20 +340,27 @@ ThreadBlockSize ComputeThreadBlockSize(TlsLayout static_tls_layout) {
   // is included in the size.
   assert(tls_size == 0 || tls_size > TlsTraits::kTlsLocalExecOffset);
 
-  const size_t block_size = aligned_tcb_allocation_size + tls_size;
+  size_t block_size;
+  if (add_overflow(aligned_tcb_allocation_size, tls_size, block_size)) [[unlikely]] {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
 
   // Check fundamental invariants: whatever block size we use, it must always
   // minimally be able to fit the whole Thread object (excluding the straddle),
   // and the TLS.
   assert(block_size >= sizeof(Thread) - TlsTraits::kTlsLocalExecOffset + tls_size);
 
-  return {
-      .size{block_size},  // This is aligned up to the nearest page size.
+  std::optional<PageRoundedSize> allocation_size_opt = PageRoundedSize::From(block_size);
+  if (!allocation_size_opt.has_value()) [[unlikely]] {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
+  return zx::ok(ThreadBlockSize{
+      .size = *allocation_size_opt,
 
       // The location of $tp relative to the start of this thread block is simply
       // the TCB allocation size, which we ensured as maximally aligned earlier.
       .tp_offset = aligned_tcb_allocation_size,
-  };
+  });
 }
 
 }  // namespace
@@ -377,19 +392,40 @@ zx::result<Thread*> ThreadStorage::Allocate(thrd_zx_create_handles_t allocate_fr
 
   // The thread block size is a complex calculation, while the others depend
   // only on the stack and guard sizes.
-  auto [thread_block_size, tp_offset] = ComputeThreadBlockSize(GetTlsLayout());
+  zx::result<ThreadBlockSize> block_size_result = ComputeThreadBlockSize(GetTlsLayout());
+  if (block_size_result.is_error()) [[unlikely]] {
+    return block_size_result.take_error();
+  }
+  auto [thread_block_size, tp_offset] = *block_size_result;
 
   stack_size_ = stack;
   guard_size_ = guard;
-  thread_block_size_ = thread_block_size + (PageRoundedSize::Page() * 2);
+
+  // Reset the stack and guard if Allocate ever fails.
+  auto reset_stack_guard = fit::defer([&stack_size = stack_size_, &guard_size = guard_size_]() {
+    stack_size = PageRoundedSize{};
+    guard_size = PageRoundedSize{};
+  });
+
+  const std::optional<PageRoundedSize> thread_block_size_opt =
+      PageRoundedSize::Pages(2) + thread_block_size;
+  if (!thread_block_size_opt) {
+    return zx::error{ZX_ERR_NO_RESOURCES};
+  }
+  thread_block_size_ = *thread_block_size_opt;
 
   std::span<std::byte> thread_block;
 
   // The VMO space and mapping is handled the same for each block.
   auto allocate_blocks = [&](ThreadBlock tcb, BlockType auto... stacks) -> zx::result<> {
     // Allocate a single VMO for all the blocks.
-    const PageRoundedSize vmo_size =
-        tcb.VmoSize(*this, thread_block_size) + (stacks.VmoSize(*this, thread_block_size) + ...);
+    std::optional<PageRoundedSize> vmo_size_opt =
+        (tcb.VmoSize(*this, thread_block_size) + ... + stacks.VmoSize(*this, thread_block_size));
+    if (!vmo_size_opt) {
+      return zx::error{ZX_ERR_NO_RESOURCES};
+    }
+    PageRoundedSize vmo_size = *vmo_size_opt;
+
     zx::result vmo = AllocationVmo::New(vmo_size);
     if (vmo.is_error()) [[unlikely]] {
       return vmo.take_error();
@@ -457,6 +493,7 @@ zx::result<Thread*> ThreadStorage::Allocate(thrd_zx_create_handles_t allocate_fr
   // machine register, so it can be initialized right here.
   thread->abi.unsafe_sp = reinterpret_cast<uintptr_t>(unsafe_sp());
 
+  reset_stack_guard.cancel();
   return zx::ok(thread);
 }
 

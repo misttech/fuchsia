@@ -11,9 +11,9 @@ namespace LIBC_NAMESPACE_DECL {
 
 PageRoundedSize InitialStackSize() {
   if (_ld_abi.stack_size == 0) {
-    return PageRoundedSize{ZIRCON_DEFAULT_STACK_SIZE};
+    return *PageRoundedSize::From(ZIRCON_DEFAULT_STACK_SIZE);
   }
-  return PageRoundedSize{_ld_abi.stack_size};
+  return *PageRoundedSize::From(_ld_abi.stack_size);
 }
 
 }  // namespace LIBC_NAMESPACE_DECL

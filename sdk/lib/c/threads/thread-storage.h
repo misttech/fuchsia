@@ -7,6 +7,7 @@
 
 #include <lib/elfldltl/tls-layout.h>
 #include <lib/zx/result.h>
+#include <zircon/assert.h>
 #include <zircon/threads.h>
 
 #include <cassert>
@@ -157,9 +158,16 @@ class ThreadStorage {
 
   std::span<std::byte> thread_block() const {
     const PageRoundedSize page_size = PageRoundedSize::Page();
+    std::optional<PageRoundedSize> size_opt =
+        std::optional{thread_block_size_} - PageRoundedSize::Pages(2);
+    ZX_DEBUG_ASSERT_MSG(
+        size_opt.has_value(),
+        "Overflow in thread_block: thread_block_size=%zu, Pages(2)=%zu. This should never overflow since the thread_block_size_ should be large enough to contain the guard pages which is handled by Allocate.",
+        thread_block_size_.get(), PageRoundedSize::Pages(2)->get());
+    PageRoundedSize size = *size_opt;
     return {
         reinterpret_cast<std::byte*>(address_.thread_block + page_size.get()),
-        (thread_block_size_ - (page_size * 2)).get(),
+        size.get(),
     };
   }
 

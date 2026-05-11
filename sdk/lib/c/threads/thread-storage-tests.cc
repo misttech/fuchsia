@@ -70,7 +70,7 @@ class LibcThreadTests : public ::zxtest::Test {
  public:
   // Place everything inside a constrained VMAR that's always destroyed at the
   // end of the test, just in case.
-  static inline const PageRoundedSize kTestVmarSize{1 << 30};
+  static inline const PageRoundedSize kTestVmarSize = *PageRoundedSize::From(1 << 30);
 
   // Tests can set these so ThreadStorage::Allocate will use them.
   // They're reset for each test.
@@ -108,8 +108,8 @@ class LibcThreadTests : public ::zxtest::Test {
 
 constexpr std::string_view kVmoName = "thread-storage-test";
 
-const PageRoundedSize kOnePage{1};
-const PageRoundedSize kManyPages = kOnePage * 256;
+const PageRoundedSize kOnePage = *PageRoundedSize::Pages(1);
+const PageRoundedSize kManyPages = *PageRoundedSize::Pages(256);
 
 constexpr size_t kStackCount = 1 + (kSafeStackAbi ? 1 : 0) + (kShadowCallStackAbi ? 1 : 0);
 
@@ -368,7 +368,7 @@ TEST_F(LibcThreadTests, ThreadStorageNoGuard) {
   // the blocks fit, then there can't be any guard pages.  Each stack is one
   // page with no guards.  The thread block always gets two one-page guards, so
   // the minimal one is three pages.
-  const PageRoundedSize vmar_size = (kOnePage * kStackCount) + (kOnePage * 3);
+  const PageRoundedSize vmar_size = *PageRoundedSize::Pages(kStackCount + 3);
   auto result = storage.Allocate(CreateHandles(vmar_size), kVmoName, kOnePage, kNoGuard);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
 }
@@ -613,7 +613,7 @@ TEST_F(LibcThreadTests, ThreadStorageStackTooSmall) {
   constexpr size_t kStackSizes[] = {0, PTHREAD_STACK_MIN - 1};
 
   for (size_t stack_size : kStackSizes) {
-    const PageRoundedSize rounded_stack{stack_size};
+    const PageRoundedSize rounded_stack = *PageRoundedSize::From(stack_size);
     if (rounded_stack.get() >= PTHREAD_STACK_MIN) {
       continue;
     }
@@ -628,10 +628,29 @@ TEST_F(LibcThreadTests, ThreadStorageStackTooSmall) {
 
 TEST_F(LibcThreadTests, ThreadStorageSizeLargerThanVmar) {
   ThreadStorage storage;
-  const PageRoundedSize vmar_size = PageRoundedSize::Page() * 10;
-  const PageRoundedSize large_stack = PageRoundedSize::Page() * 20;
+  const PageRoundedSize vmar_size = *PageRoundedSize::Pages(10);
+  const PageRoundedSize large_stack = *PageRoundedSize::Pages(20);
   auto result = storage.Allocate(CreateHandles(vmar_size), kVmoName, large_stack, kOnePage);
   EXPECT_EQ(result.status_value(), ZX_ERR_NO_RESOURCES);
+}
+
+TEST_F(LibcThreadTests, SizeOverflow) {
+  // If adding any sizes together would result in an overflow, then it should be
+  // treated as if we ran out of space in the allocating VMAR since an overflow
+  // means we couldn't possibly fit this total size into the VMAR.
+  // Use sizes that are valid but sum to overflow.
+  const auto stack_size_opt = PageRoundedSize::From(0x8000000000000000);
+  const auto guard_size_opt = PageRoundedSize::From(0x8000000000000000);
+  ASSERT_TRUE(stack_size_opt);
+  ASSERT_TRUE(guard_size_opt);
+  const PageRoundedSize stack_size_rounded = *stack_size_opt;
+  const PageRoundedSize guard_size_rounded = *guard_size_opt;
+
+  ThreadStorage thread_storage;
+  auto result =
+      thread_storage.Allocate(CreateHandles(), kVmoName, stack_size_rounded, guard_size_rounded);
+
+  EXPECT_EQ(result.error_value(), ZX_ERR_NO_RESOURCES);
 }
 
 }  // namespace

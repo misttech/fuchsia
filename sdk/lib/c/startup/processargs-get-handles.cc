@@ -13,6 +13,7 @@
 
 #include "../zircon/vmar.h"
 #include "processargs.h"
+#include "src/__support/math_extras.h"
 
 namespace LIBC_NAMESPACE_DECL {
 namespace {
@@ -33,27 +34,53 @@ uint32_t StrtabStart(const Buffer& buffer, Buffer::Actual actual) {
   return std::min(first_strtab, actual.bytes);
 }
 
-size_t AllocationSize(const Buffer& buffer, Buffer::Actual actual, uint32_t strtab_off) {
+zx::result<size_t> AllocationSize(const Buffer& buffer, Buffer::Actual actual,
+                                  uint32_t strtab_off) {
+  // Each of these members is uint32_t, but promoting them to size_t should
+  // prevent some overflow when size_t is 64 bits.
+  size_t args_num = buffer.header.args_num;
+  size_t environ_num = buffer.header.environ_num;
+  size_t handles = actual.handles;
+  size_t bytes = actual.bytes;
+
   size_t size = sizeof(Processargs);
+  size_t total_ptrs;
 
-  // There are nullptr terminators after argv().last() and envp.last().
-  size += (buffer.header.args_num + 1) * sizeof(char*);
-  size += (buffer.header.environ_num + 1) * sizeof(char*);
+  // We group all pointer counts together to reduce operations.
+  if (add_overflow(args_num, environ_num, total_ptrs))
+    return zx::error(ZX_ERR_NO_RESOURCES);
 
-  // That's followed by two more zero words to stand in for the traditional
+  // +1 for nullptr terminator after argv().last()
+  // +1 for nullptr terminator after envp().last()
+  // +2 for two more zero words to stand in for the traditional
   // ELF-based Unix layout where the envp array is followed by the auxv array
   // of two-word entries AT_NULL (zero) being the terminator.  This wastes
   // only two words just in case some program tries to look past envp[envc]
   // for an absent auxv.
-  size += 2 * sizeof(char*);
+  if (add_overflow(total_ptrs, size_t{4}, total_ptrs))
+    return zx::error(ZX_ERR_NO_RESOURCES);
+
+  size_t total_ptrs_size;
+  if (mul_overflow(total_ptrs, sizeof(char*), total_ptrs_size))
+    return zx::error(ZX_ERR_NO_RESOURCES);
+  if (add_overflow(size, total_ptrs_size, size))
+    return zx::error(ZX_ERR_NO_RESOURCES);
 
   // Then there's space for the handle-indexed arrays.
-  size += actual.handles * (sizeof(uint32_t) + sizeof(zx_handle_t));
+  size_t handles_part_size = sizeof(uint32_t) + sizeof(zx_handle_t);
+  if (mul_overflow(handles, handles_part_size, handles_part_size))
+    return zx::error(ZX_ERR_NO_RESOURCES);
+  if (add_overflow(size, handles_part_size, size))
+    return zx::error(ZX_ERR_NO_RESOURCES);
 
   // And finally the strings.
-  size += actual.bytes - strtab_off;
+  size_t strings_size;
+  if (sub_overflow(bytes, static_cast<size_t>(strtab_off), strings_size))
+    return zx::error(ZX_ERR_NO_RESOURCES);
+  if (add_overflow(size, strings_size, size))
+    return zx::error(ZX_ERR_NO_RESOURCES);
 
-  return size;
+  return zx::ok(size);
 }
 
 }  // namespace
@@ -150,9 +177,16 @@ zx_startup_handles_t Processargs::GetHandles(zx_handle_t bootstrap_handle) {
   }
 
   // Allocate a block to contain the saved data.
-  PageRoundedSize guard_size{1};
+  PageRoundedSize guard_size = PageRoundedSize::Page();
   const uint32_t strtab_off = StrtabStart(*message, actual);
-  const PageRoundedSize block_size{AllocationSize(*message, actual, strtab_off)};
+
+  zx::result<size_t> size_result = AllocationSize(*message, actual, strtab_off);
+  if (size_result.is_error()) [[unlikely]] {
+    ZX_PANIC("process arguments allocation size overflow: environ_num=%" PRIu32
+             ", args_num=%" PRIu32 ", bytes=%" PRIu32 ", strtab_off=%" PRIu32,
+             message->header.environ_num, message->header.args_num, actual.bytes, strtab_off);
+  }
+  const PageRoundedSize block_size = *PageRoundedSize::From(*size_result);
   zx::result vmo = AllocationVmo::New(block_size);
   if (vmo.is_error()) [[unlikely]] {
     ZX_PANIC("cannot allocate VMO %zu bytes for process arguments", block_size.get());
