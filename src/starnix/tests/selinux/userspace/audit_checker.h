@@ -29,7 +29,6 @@ class AuditChecker : public testing::EmptyTestEventListener {
   void OnTestStart(const testing::TestInfo& test_info) override;
   void OnTestEnd(const testing::TestInfo& test_info) override;
 
- private:
   struct AuditLogEntry {
     bool denied;
     std::set<std::string> permission;
@@ -47,6 +46,7 @@ class AuditChecker : public testing::EmptyTestEventListener {
     std::string ToString() const;
   };
 
+ private:
   // Parses the JSON expectations file.
   bool ParseExpectationsFile(const std::string& file_path);
 
@@ -54,15 +54,11 @@ class AuditChecker : public testing::EmptyTestEventListener {
   fit::result<std::string, std::vector<AuditChecker::AuditLogEntry>> ReadAuditLogs(
       const std::string& test_name);
 
-  // Parses a single audit log.
-  fit::result<std::string, AuditChecker::AuditLogEntry> ParseAuditLogString(
-      const std::string& line);
-
   // Checks if a given test should be skipped based on its name.
-  bool ShouldOnlyDrainAudits(const std::string& test_name);
+  bool ShouldOnlyDrainAudits(const std::string& test_name) const;
 
   // Checks if a give test is in the expected failures.
-  bool IsExpectedToFail(const std::string& test_name);
+  bool IsExpectedToFail(const std::string& test_name) const;
 
   // The main method to perform the audit check against the expectations file
   // provided in the constructor.

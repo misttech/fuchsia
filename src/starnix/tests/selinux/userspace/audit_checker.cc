@@ -66,6 +66,24 @@ void PrintWithTab(int multiplier, const char* format, ...) {
   va_end(args);
 }
 
+fit::result<std::string, AuditChecker::AuditLogEntry> ParseAuditLogString(const std::string& line) {
+  std::smatch matches;
+  if (std::regex_search(line, matches, kAuditLogRegex) && matches.size() == 6) {
+    auto perms =
+        fxl::SplitStringCopy(matches[2].str(), " ", fxl::WhiteSpaceHandling::kTrimWhitespace,
+                             fxl::SplitResult::kSplitWantNonEmpty);
+    bool permissive = strstr(line.c_str(), "permissive=1") != 0;
+    return fit::ok(
+        AuditChecker::AuditLogEntry{.denied = matches[1].str() == "denied",
+                                    .permission = std::set<std::string>{perms.begin(), perms.end()},
+                                    .scontext = matches[3].str(),
+                                    .tcontext = matches[4].str(),
+                                    .tclass = matches[5].str(),
+                                    .permissive = permissive});
+  }
+  return fit::error("Failed to parse audit log string: " + line);
+}
+
 void ExpectationsToJSON(std::vector<std::string> logs, const std::string& test_name) {
   printf("\n{\n");
   PrintWithTab(1, "\"%s\": \"%s\",\n", kTestNameKey, test_name.c_str());
@@ -170,24 +188,6 @@ AuditChecker* AuditChecker::with_json_generation() {
   auto checker = new AuditChecker;
   checker->generate_json_ = true;
   return checker;
-}
-
-fit::result<std::string, AuditChecker::AuditLogEntry> AuditChecker::ParseAuditLogString(
-    const std::string& line) {
-  std::smatch matches;
-  if (std::regex_search(line, matches, kAuditLogRegex) && matches.size() == 6) {
-    auto perms =
-        fxl::SplitStringCopy(matches[2].str(), " ", fxl::WhiteSpaceHandling::kTrimWhitespace,
-                             fxl::SplitResult::kSplitWantNonEmpty);
-    bool permissive = strstr(line.c_str(), "permissive=1") != 0;
-    return fit::ok(AuditLogEntry{.denied = matches[1].str() == "denied",
-                                 .permission = std::set<std::string>{perms.begin(), perms.end()},
-                                 .scontext = matches[3].str(),
-                                 .tcontext = matches[4].str(),
-                                 .tclass = matches[5].str(),
-                                 .permissive = permissive});
-  }
-  return fit::error("Failed to parse audit log string: " + line);
 }
 
 bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
@@ -353,12 +353,12 @@ fit::result<std::string, std::vector<AuditChecker::AuditLogEntry>> AuditChecker:
   return fit::ok(parsed_logs);
 }
 
-bool AuditChecker::ShouldOnlyDrainAudits(const std::string& test_name) {
+bool AuditChecker::ShouldOnlyDrainAudits(const std::string& test_name) const {
   auto found = std::ranges::find(skipped_tests_, test_name);
   return found != skipped_tests_.end();
 }
 
-bool AuditChecker::IsExpectedToFail(const std::string& test_name) {
+bool AuditChecker::IsExpectedToFail(const std::string& test_name) const {
   if (!test_helper::IsStarnix()) {
     return false;
   }
