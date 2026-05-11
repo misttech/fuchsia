@@ -42,10 +42,7 @@ source_set("handles_internal") {
 }
 
 executable("ps") {
-  visibility = [
-    ":*",
-    "//build/images/zedboot:*",
-  ]
+  visibility = [ ":*" ]
   output_dir = "$root_out_dir/zircon-migrated"
   sources = [ "ps.c" ]
   deps = [
@@ -77,10 +74,7 @@ executable("kill") {
 }
 
 executable("killall") {
-  visibility = [
-    ":*",
-    "//build/images/zedboot:*",
-  ]
+  visibility = [ ":*" ]
   sources = [ "killall.c" ]
   deps = [
     "//sdk/lib/fdio",
@@ -160,10 +154,7 @@ executable("kstats") {
 }
 
 executable("threads") {
-  visibility = [
-    ":*",
-    "//build/images/zedboot:*",
-  ]
+  visibility = [ ":*" ]
   sources = [ "threads.cc" ]
   deps = [
     "//sdk/lib/fdio",

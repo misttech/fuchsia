@@ -464,12 +464,10 @@ Different assemblies are located at different paths in the build graph. Common
 locations include the following:
 
 *   **GN-assembled products**:
-    *   `bringup` products: `//build/images/bringup/*`
-    *   `core` products: `//build/images/fuchsia/*`
-    *   `zedboot`: `//build/images/zedboot/*`
     *   `guest`: `//build/images/guest/*`
-*   **Bazel-assembled products** (`minimal`, `terminal`, `workbench`, etc.):
+*   **Bazel-assembled products** (`bringup`, `core`, `minimal`, `terminal`, `workbench`, etc.):
     *   Boards in `fuchsia.git`: `//products/<name>/*`
+    *   Vendor boards: `//vendor/<vendor>/products/<name>/*`
 
 [gn-label-patterns]: https://gn.googlesource.com/gn/+/master/docs/reference.md#label_pattern
 [PlatformSettings-config]: /reference/assembly/PlatformSettings/index.md

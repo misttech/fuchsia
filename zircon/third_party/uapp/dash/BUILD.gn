@@ -7,7 +7,6 @@ import("//build/assembly/bootfs_files_for_assembly.gni")
 executable("dash") {
   visibility = [
     ":*",
-    "//build/images/zedboot:*",
 
     # Several unittests use dash.
     "//src/bringup/bin/netsvc:*",
