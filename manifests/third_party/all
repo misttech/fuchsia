@@ -307,7 +307,7 @@
     <project name="llvm-project/libc"
              path="third_party/llvm-libc/src"
              remote="https://llvm.googlesource.com/llvm-project/libc"
-             revision="bc5615b9ba456b6d00cd834e360b5b3e2fdb2d89"/>
+             revision="fed86f2a84acc7c066de1d36efe518d26e7cf288"/>
     <project name="third_party/luci-go"
              path="third_party/luci-go"
              revision="f1e55bc43069e289b762596dbf98d0d9d9d1f592"
