@@ -450,7 +450,9 @@ pub enum LogError {
     DeprecatedFlag { flag: &'static str, new_flag: &'static str },
     #[error("Fuzzy matching failed due to too many matches, please re-try with one of these:\n{0}")]
     FuzzyMatchTooManyMatches(String),
-    #[error("No running components were found matching {0}")]
+    #[error(
+        "No running components were found matching {0}. Please ensure the component is running and the moniker is correct. Run 'ffx component list' to see running components."
+    )]
     SearchParameterNotFound(String),
 }
 

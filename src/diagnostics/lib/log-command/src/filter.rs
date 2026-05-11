@@ -735,6 +735,38 @@ mod test {
     }
 
     #[fuchsia::test]
+    async fn test_criteria_component_filter_not_found() {
+        let cmd = LogCommand {
+            component: vec!["non_existent_component".to_string()],
+            ..empty_dump_command()
+        };
+
+        struct FakeInstanceGetterEmpty;
+        #[async_trait::async_trait(?Send)]
+        impl InstanceGetter for FakeInstanceGetterEmpty {
+            async fn get_monikers_from_query(
+                &self,
+                _query: &str,
+            ) -> Result<Vec<moniker::Moniker>, LogError> {
+                Ok(vec![])
+            }
+        }
+
+        let mut criteria = LogFilterCriteria::from(cmd);
+        let result = criteria.expand_monikers(&FakeInstanceGetterEmpty).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, LogError::SearchParameterNotFound(_)));
+
+        let error_message = format!("{}", err);
+        assert_eq!(
+            error_message,
+            "No running components were found matching non_existent_component. Please ensure the component is running and the moniker is correct. Run 'ffx component list' to see running components."
+        );
+    }
+
+    #[fuchsia::test]
     async fn test_tid_filter() {
         let mut cmd = empty_dump_command();
         cmd.tid = Some(123);
