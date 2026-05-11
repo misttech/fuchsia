@@ -1735,7 +1735,7 @@ mod test {
                 .expect("Could not make RCS test connector"),
             host_address: Deferred::from_output(Ok(HostAddrHolder::from("1.2.3.4".to_string()))),
             target_spec: Deferred::from_output(Ok(TargetInfoQueryHolder::from(
-                TargetInfoQuery::from("".to_string()),
+                TargetInfoQuery::try_from("".to_string()).unwrap(),
             ))),
         };
 
@@ -1902,9 +1902,9 @@ mod test {
             test_utils::make_empty_pm_repo_dir(tmp_repo_path);
 
             Box::pin(serve_impl(
-                Deferred::from_output(Ok(TargetInfoQueryHolder::from(TargetInfoQuery::from(
-                    "".to_string(),
-                )))),
+                Deferred::from_output(Ok(TargetInfoQueryHolder::from(
+                    TargetInfoQuery::try_from("".to_string()).unwrap(),
+                ))),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
                 Deferred::from_output(Ok(HostAddrHolder::from("1.2.3.4".to_string()))),
                 StartCommand {
@@ -2252,9 +2252,9 @@ mod test {
         // Run main in background
         let _task = fasync::Task::local(async move {
             Box::pin(serve_impl(
-                Deferred::from_output(Ok(TargetInfoQueryHolder::from(TargetInfoQuery::from(
-                    "".to_string(),
-                )))),
+                Deferred::from_output(Ok(TargetInfoQueryHolder::from(
+                    TargetInfoQuery::try_from("".to_string()).unwrap(),
+                ))),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
                 Deferred::from_output(Ok(HostAddrHolder::from("1.2.3.4".to_string()))),
                 StartCommand {
@@ -2502,9 +2502,9 @@ mod test {
         let (mut tx, _rx) = futures::channel::mpsc::unbounded();
         assert_eq!(
             Box::pin(serve_impl(
-                Deferred::from_output(Ok(TargetInfoQueryHolder::from(TargetInfoQuery::from(
-                    "127.0.1.1".to_string()
-                )))),
+                Deferred::from_output(Ok(TargetInfoQueryHolder::from(
+                    TargetInfoQuery::try_from("127.0.1.1".to_string()).unwrap()
+                ))),
                 Connector::try_from_env(&env).await.expect("Could not make RCS test connector"),
                 Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string()))),
                 serve_cmd_without_root,
@@ -2613,9 +2613,9 @@ mod test {
         // Run main in background
         let _task = fasync::Task::local(async move {
             Box::pin(serve_impl(
-                Deferred::from_output(Ok(TargetInfoQueryHolder::from(TargetInfoQuery::from(
-                    "test_target_info".to_string(),
-                )))),
+                Deferred::from_output(Ok(TargetInfoQueryHolder::from(
+                    TargetInfoQuery::try_from("test_target_info".to_string()).unwrap(),
+                ))),
                 connector,
                 Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string()))),
                 serve_cmd_with_root,

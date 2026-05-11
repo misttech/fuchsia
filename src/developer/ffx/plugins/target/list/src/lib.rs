@@ -40,7 +40,9 @@ impl FfxMain for ListTool {
             || self.context.get_direct_connection_mode()
             || !ffx_target::is_discovery_enabled(&self.context);
 
-        let list_query = TargetInfoQuery::from(self.cmd.nodename.clone());
+        let list_query =
+            TargetInfoQuery::try_from(self.cmd.nodename.clone()).map_err(|e| anyhow::anyhow!(e))?;
+
         let mut infos = if direct_mode {
             self.list_targets_direct(list_query).await?
         } else {
@@ -49,7 +51,8 @@ impl FfxMain for ListTool {
         };
 
         let spec = ffx_target::get_target_specifier(&self.context)?;
-        let default_query = TargetInfoQuery::from(spec);
+        let default_query = TargetInfoQuery::try_from(spec).map_err(|e| anyhow::anyhow!(e))?;
+
         for ti in infos.iter_mut() {
             ti.is_default = (!matches!(default_query, TargetInfoQuery::First)
                 && ti.match_query(&default_query))
@@ -169,13 +172,14 @@ async fn list_targets(
 }
 
 fn query_type(query: &str) -> &str {
-    match query.into() {
-        TargetInfoQuery::NodenameOrSerial(_) => "nodename_or_serial",
-        TargetInfoQuery::Serial(_) => "serial",
-        TargetInfoQuery::Addr(_) => "addr",
-        TargetInfoQuery::VSock(_) => "vsock",
-        TargetInfoQuery::Usb(_) => "usb",
-        TargetInfoQuery::First => "first",
+    match TargetInfoQuery::try_from(query) {
+        Ok(TargetInfoQuery::NodenameOrSerial(_)) => "nodename_or_serial",
+        Ok(TargetInfoQuery::Serial(_)) => "serial",
+        Ok(TargetInfoQuery::Addr(_)) => "addr",
+        Ok(TargetInfoQuery::VSock(_)) => "vsock",
+        Ok(TargetInfoQuery::Usb(_)) => "usb",
+        Ok(TargetInfoQuery::First) => "first",
+        Err(_) => "invalid",
     }
 }
 

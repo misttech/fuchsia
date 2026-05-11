@@ -345,7 +345,14 @@ impl TargetCollection {
     }
 
     pub fn remove_target(&self, target_id: String) -> bool {
-        if let Ok(Some(t)) = self.query_any_single_target(&target_id.clone().into(), |_| true) {
+        let query = match TargetInfoQuery::try_from(target_id.clone()) {
+            Ok(q) => q,
+            Err(e) => {
+                log::debug!("Invalid target specifier for removal '{}': {}", target_id, e);
+                return false;
+            }
+        };
+        if let Ok(Some(t)) = self.query_any_single_target(&query, |_| true) {
             self.remove_target_from_list(t.id());
             log::debug!("TargetCollection: removed target {}", target_id);
             true
@@ -1202,7 +1209,7 @@ mod tests {
         let env = ffx_config::test_init().unwrap();
         let tc = TargetCollection::new_with_queue(&env.context);
         let nodename = String::from("what");
-        let query = nodename.clone().into();
+        let query = TargetInfoQuery::try_from(nodename.clone()).unwrap();
         let t = Target::new_with_time(
             &tc.context,
             &nodename,
@@ -1220,7 +1227,7 @@ mod tests {
         let env = ffx_config::test_init().unwrap();
         let tc = TargetCollection::new_with_queue(&env.context);
         let nodename = String::from("what");
-        let query = nodename.clone().into();
+        let query = TargetInfoQuery::try_from(nodename.clone()).unwrap();
         let t = Target::new_with_time(
             &tc.context,
             &nodename,
@@ -1228,7 +1235,7 @@ mod tests {
         );
         tc.merge_insert(t.clone());
         assert_eq!(expect_target(&tc, &query), t);
-        expect_no_target(&tc, &"oihaoih".into())
+        expect_no_target(&tc, &TargetInfoQuery::try_from("oihaoih").unwrap())
     }
 
     #[fuchsia::test]
@@ -1625,11 +1632,11 @@ mod tests {
         let tc = TargetCollection::new_with_queue(&env.context);
         tc.merge_insert(t.clone());
 
-        let query = TargetInfoQuery::from(default.to_owned());
+        let query = TargetInfoQuery::try_from(default.to_owned()).unwrap();
         assert_eq!(tc.discover_target(&query).await.unwrap(), t);
         assert_eq!(tc.discover_target(&TargetInfoQuery::First).await.unwrap(), t);
 
-        let query2 = TargetInfoQuery::from(t2.nodename());
+        let query2 = TargetInfoQuery::try_from(t2.nodename()).unwrap();
         tc.merge_insert(t2.clone());
 
         assert_eq!(tc.discover_target(&query).await.unwrap(), t);
@@ -1640,9 +1647,11 @@ mod tests {
 
         // Find by partial match
         assert_eq!(
-            tc.discover_target(&TargetInfoQuery::from("clam-chowder-is-tasty".to_owned()))
-                .await
-                .unwrap(),
+            tc.discover_target(
+                &TargetInfoQuery::try_from("clam-chowder-is-tasty".to_owned()).unwrap()
+            )
+            .await
+            .unwrap(),
             t
         );
 
@@ -1734,7 +1743,9 @@ mod tests {
         let target_name = "fesenjoon-is-my-jam";
         let wait_fut = Box::pin(async {
             tc.use_target(
-                tc.discover_target(&TargetInfoQuery::from(target_name.to_owned())).await.unwrap(),
+                tc.discover_target(&TargetInfoQuery::try_from(target_name.to_owned()).unwrap())
+                    .await
+                    .unwrap(),
                 "test",
             )
         });
@@ -2226,14 +2237,14 @@ mod tests {
     #[fuchsia::test]
     async fn test_target_query_matches_nodename() {
         let env = ffx_config::test_init().unwrap();
-        let query = TargetInfoQuery::from("foo");
+        let query = TargetInfoQuery::try_from("foo").unwrap();
         let target = Rc::new(Target::new_named(&env.context, "foo"));
         assert!(query.match_description(&target.target_info()));
     }
 
     #[test]
     fn test_target_query_from_socketaddr_both_zero_port() {
-        let tq = TargetInfoQuery::from("127.0.0.1:0");
+        let tq = TargetInfoQuery::try_from("127.0.0.1:0").unwrap();
         let desc = Description {
             addresses: vec![TargetAddr::new(Ipv4Addr::LOCALHOST.into(), 0, 0)],
             ssh_port: None,
@@ -2247,7 +2258,7 @@ mod tests {
 
     #[test]
     fn test_target_query_from_socketaddr_zero_port_to_standard_ssh_port() {
-        let tq = TargetInfoQuery::from("127.0.0.1:0");
+        let tq = TargetInfoQuery::try_from("127.0.0.1:0").unwrap();
         let desc = Description {
             addresses: vec![TargetAddr::new(Ipv4Addr::LOCALHOST.into(), 0, 0)],
             ssh_port: Some(22),
@@ -2261,7 +2272,7 @@ mod tests {
 
     #[test]
     fn test_target_query_from_socketaddr_standard_port_to_no_port() {
-        let tq = TargetInfoQuery::from("127.0.0.1:22");
+        let tq = TargetInfoQuery::try_from("127.0.0.1:22").unwrap();
         let desc = Description {
             addresses: vec![TargetAddr::new(Ipv4Addr::LOCALHOST.into(), 0, 0)],
             ssh_port: None,
@@ -2275,7 +2286,7 @@ mod tests {
 
     #[test]
     fn test_target_query_from_socketaddr_both_standard_port() {
-        let tq = TargetInfoQuery::from("127.0.0.1:22");
+        let tq = TargetInfoQuery::try_from("127.0.0.1:22").unwrap();
         let desc = Description {
             addresses: vec![TargetAddr::new("127.0.0.1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: Some(22),
@@ -2289,7 +2300,7 @@ mod tests {
 
     #[test]
     fn test_target_query_from_socketaddr_random_port_no_target_port() {
-        let tq = TargetInfoQuery::from("127.0.0.1:2342");
+        let tq = TargetInfoQuery::try_from("127.0.0.1:2342").unwrap();
         let desc = Description {
             addresses: vec![TargetAddr::new("127.0.0.1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: None,
@@ -2303,7 +2314,7 @@ mod tests {
 
     #[test]
     fn test_target_query_from_socketaddr_zero_port_to_random_target_port() {
-        let tq = TargetInfoQuery::from("127.0.0.1:0");
+        let tq = TargetInfoQuery::try_from("127.0.0.1:0").unwrap();
         let desc = Description {
             addresses: vec![TargetAddr::new("127.0.0.1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: Some(2223),
@@ -2317,7 +2328,7 @@ mod tests {
 
     #[test]
     fn test_target_query_from_sockaddr() {
-        let tq = TargetInfoQuery::from("127.0.0.1:8022");
+        let tq = TargetInfoQuery::try_from("127.0.0.1:8022").unwrap();
         let desc = Description {
             addresses: vec![TargetAddr::new("127.0.0.1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: Some(8022),
@@ -2328,7 +2339,7 @@ mod tests {
         );
         assert!(tq.match_description(&desc));
 
-        let tq = TargetInfoQuery::from("[::1]:8022");
+        let tq = TargetInfoQuery::try_from("[::1]:8022").unwrap();
         let desc = Description {
             addresses: vec![TargetAddr::new("::1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: Some(8022),
@@ -2339,7 +2350,7 @@ mod tests {
         );
         assert!(tq.match_description(&desc));
 
-        let tq = TargetInfoQuery::from("[::1]");
+        let tq = TargetInfoQuery::try_from("[::1]").unwrap();
         let desc = Description {
             addresses: vec![TargetAddr::new("::1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: None,
@@ -2350,7 +2361,7 @@ mod tests {
         );
         assert!(tq.match_description(&desc));
 
-        let tq = TargetInfoQuery::from("[fe80::1]:22");
+        let tq = TargetInfoQuery::try_from("[fe80::1]:22").unwrap();
         let desc = Description {
             addresses: vec![TargetAddr::new("fe80::1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: Some(22),
@@ -2361,7 +2372,7 @@ mod tests {
         );
         assert!(tq.match_description(&desc));
 
-        let tq = TargetInfoQuery::from("192.168.0.1:22");
+        let tq = TargetInfoQuery::try_from("192.168.0.1:22").unwrap();
         let desc = Description {
             addresses: vec![TargetAddr::new("192.168.0.1".parse::<IpAddr>().unwrap(), 0, 0)],
             ssh_port: Some(22),
@@ -2373,7 +2384,7 @@ mod tests {
         assert!(tq.match_description(&desc));
 
         // Note: socketaddr only supports numeric scopes
-        let tq = TargetInfoQuery::from("[fe80::1%1]:22");
+        let tq = TargetInfoQuery::try_from("[fe80::1%1]:22").unwrap();
         let desc = Description {
             addresses: vec![TargetAddr::new("fe80::1".parse::<IpAddr>().unwrap(), 1, 0)],
             ssh_port: Some(22),
@@ -2387,7 +2398,7 @@ mod tests {
 
     #[test]
     fn test_target_query_from_empty_string() {
-        let query = TargetInfoQuery::from(Some(""));
+        let query = TargetInfoQuery::try_from("").unwrap();
         assert!(matches!(query, TargetInfoQuery::First));
     }
 
@@ -2398,7 +2409,7 @@ mod tests {
             3,
             0,
         );
-        let tq = TargetInfoQuery::from("fe80::dead:beef:beef:beef");
+        let tq = TargetInfoQuery::try_from("fe80::dead:beef:beef:beef").unwrap();
         assert!(tq.match_description(&Description { addresses: vec![addr], ..Default::default() }))
     }
 

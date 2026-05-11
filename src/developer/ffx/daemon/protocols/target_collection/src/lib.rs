@@ -148,7 +148,14 @@ async fn remove_manual_target(
     target_id: String,
 ) -> bool {
     // TODO(dwayneslater): Move into TargetCollection, return false if multiple targets.
-    if let Ok(Some(target)) = tc.query_single_enabled_target(&target_id.clone().into()) {
+    let query = match TargetInfoQuery::try_from(target_id.clone()) {
+        Ok(q) => q,
+        Err(e) => {
+            log::debug!("Invalid target specifier for removal '{}': {}", target_id, e);
+            return false;
+        }
+    };
+    if let Ok(Some(target)) = tc.query_single_enabled_target(&query) {
         // TODO(b/299141238): This code won't work if the socket address format in the config does
         // not match the format Rust outputs. Which means a manual target cannot be removed without
         // editing the config.
@@ -294,6 +301,9 @@ pub enum TargetCollectionError {
     #[error("FIDL error: {0}")]
     Fidl(#[from] fidl::Error),
 
+    #[error("Invalid target specifier: {0}")]
+    InvalidTargetSpecifier(#[from] discovery::error::Error),
+
     #[error("Failed to get overnet node: {0}")]
     GetOvernetNode(#[from] protocols::OvernetNodeError),
 
@@ -342,7 +352,7 @@ impl FidlProtocol for TargetCollectionProtocol {
             ffx::TargetCollectionRequest::ListTargets { reader, query, .. } => {
                 let reader = reader.into_proxy();
                 let query = match query.string_matcher.clone() {
-                    Some(query) if !query.is_empty() => Some(TargetInfoQuery::from(query)),
+                    Some(query) if !query.is_empty() => Some(TargetInfoQuery::try_from(query)?),
                     _ => None,
                 };
 
@@ -368,7 +378,8 @@ impl FidlProtocol for TargetCollectionProtocol {
             ffx::TargetCollectionRequest::OpenTarget { query, responder, target_handle } => {
                 log::trace!("Open Target {query:?}");
 
-                let query = TargetInfoQuery::from(query.string_matcher.clone());
+                let query = TargetInfoQuery::try_from(query.string_matcher.clone())?;
+
                 log::debug!("Open Target parsed query: {query:?}");
 
                 let node = cx.overnet_node()?;
@@ -671,10 +682,7 @@ impl FidlProtocol for TargetCollectionProtocol {
                         EmulatorTargetAction::Remove(emu_target) => {
                             if let Some(id) = emu_target.nodename {
                                 if tc2.remove_target(id.clone()) {
-                                    log::info!(
-                                        "Successfully removed emulator instance ['{}']",
-                                        id
-                                    );
+                                    log::info!("Successfully removed emulator instance ['{}']", id);
                                 } else {
                                     log::error!("Unable to remove emulator instance ['{}']", id);
                                 };
@@ -1466,7 +1474,7 @@ mod tests {
             .expect("Problem loading manual targets");
 
         let target = target_collection
-            .query_single_enabled_target(&"127.0.0.1:8022".into())
+            .query_single_enabled_target(&TargetInfoQuery::try_from("127.0.0.1:8022").unwrap())
             .unwrap()
             .expect("Could not find target");
         assert_eq!(target.ssh_address(), Some("127.0.0.1:8022".parse::<SocketAddr>().unwrap()));

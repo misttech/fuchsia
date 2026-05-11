@@ -1705,7 +1705,7 @@ async fn check_targets_locally<W: Write>(
     retry_delay: Duration,
 ) -> Result<()> {
     let discovery_node = ledger.add_node("Searching for targets", LedgerMode::Automatic)?;
-    let query = TargetInfoQuery::from(target_str);
+    let query = TargetInfoQuery::try_from(target_str)?;
     let find_res = find_targets_locally(env_context, query).await;
     let targets = check_target_discovery(ledger, find_res)?;
     ledger.close(discovery_node)?;

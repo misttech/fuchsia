@@ -58,7 +58,7 @@ async fn get_target_info(
             format!("{addr}:{}", addr.port().unwrap())
         };
         log::debug!("Trying to make a connection to spec {spec:?}");
-        match try_get_target_info(spec.into(), context)
+        match try_get_target_info(spec.try_into()?, context)
             .on_timeout(ssh_timeout, || {
                 Err(KnockError::NonCritical(KnockNonCriticalError::Timeout {
                     detail: "knock_rcs() timed out".to_string(),
@@ -119,7 +119,8 @@ async fn handles_to_infos(
     ctx: &EnvironmentContext,
     connect: bool,
 ) -> Result<Vec<TargetInfo>> {
-    let default = TargetInfoQuery::from(crate::get_target_specifier(ctx)?);
+    let default = TargetInfoQuery::try_from(crate::get_target_specifier(ctx)?)?;
+
     let info_futures = stream.then(|t| handle_to_info(ctx, t, connect, default.clone()));
     let infos: Vec<Result<TargetInfo>> = info_futures.collect().await;
     let targets = infos.into_iter().collect::<Result<Vec<_>>>()?;
@@ -326,7 +327,7 @@ mod test {
         let env = ffx_config::test_init().unwrap();
         let matching_nodename = "matching-node".to_string();
         let non_matching_nodename = "non-matching-node".to_string();
-        let query = TargetInfoQuery::from(Some(matching_nodename.clone()));
+        let query = TargetInfoQuery::try_from(matching_nodename.clone()).unwrap();
 
         // Test with a matching target
         let matching_handle = discovery::TargetHandle {

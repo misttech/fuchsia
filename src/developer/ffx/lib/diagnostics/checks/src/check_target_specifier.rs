@@ -57,7 +57,8 @@ where
         _notifier: &'a mut Self::Notifier,
     ) -> CheckFut<'a, Self::Output> {
         Box::pin(std::future::ready(
-            ffx_target::get_target_specifier(self.0).map(Into::<Self::Output>::into),
+            ffx_target::get_target_specifier(self.0)
+                .and_then(|opt_s| TargetInfoQuery::try_from(opt_s).map_err(anyhow::Error::from)),
         ))
     }
 }

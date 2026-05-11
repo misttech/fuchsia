@@ -21,7 +21,7 @@ use ffx_emulator_common::tuntap::{TAP_INTERFACE_NAME, tap_ready};
 use ffx_emulator_common::{config, dump_log_to_out, host_is_mac, process};
 use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
 use ffx_ssh::SshKeyFiles;
-use ffx_target::KnockError;
+use ffx_target::{KnockError, TargetInfoQuery};
 use fho::{FfxContext, Result, bug, return_bug, return_user_error, user_error};
 use fidl_fuchsia_developer_ffx as ffx;
 use fuchsia_async::Timer;
@@ -748,7 +748,8 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
             let mut connection_errors = Vec::new();
             while start.elapsed().as_secs() <= startup_timeout {
                 let compat_res = ffx_target::knock_target_daemonless(
-                    &name.clone().into(),
+                    &TargetInfoQuery::try_from(name.clone())
+                        .map_err(|e| user_error!("Invalid target specifier: {}", e))?,
                     &context,
                     Some(KNOCK_TARGET_TIMEOUT),
                 )

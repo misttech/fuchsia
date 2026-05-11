@@ -240,9 +240,14 @@ impl DaemonProtocolProvider for Daemon {
         &self,
         target_identifier: Option<String>,
     ) -> Result<ffx::TargetInfo, DaemonError> {
+        let query = ffx_target::TargetInfoQuery::try_from(target_identifier).map_err(|e| {
+            log::error!("Invalid target specifier in daemon: {}", e);
+            DaemonError::TargetNotFound
+        })?;
+
         let target = self
             .target_collection
-            .query_single_enabled_target(&target_identifier.into())
+            .query_single_enabled_target(&query)
             .map_err(|_| DaemonError::TargetAmbiguous)?
             .ok_or(DaemonError::TargetNotFound)?;
         Ok(target.as_ref().into())
@@ -576,7 +581,11 @@ impl Daemon {
     /// provided, otherwise the default target from the target collection.
     async fn get_target(&self, matcher: Option<String>) -> Result<Rc<Target>, DaemonError> {
         // TODO(72818): make target match timeout configurable / paramterable
-        let query = matcher.into();
+        let query = ffx_target::TargetInfoQuery::try_from(matcher).map_err(|e| {
+            log::error!("Invalid target specifier in daemon: {}", e);
+            DaemonError::TargetNotFound
+        })?;
+
         let target_collection = &self.target_collection;
 
         // Get a previously used target first, otherwise fall back to discovery + open.

@@ -4,7 +4,8 @@
 
 use discovery::query::TargetInfoQuery;
 use discovery::{DiscoverySources, TargetState};
-use {fidl_fuchsia_developer_ffx as ffx, fidl_fuchsia_net as fnet};
+use fidl_fuchsia_developer_ffx as ffx;
+use fidl_fuchsia_net as fnet;
 
 pub trait AsDiagnosticMessage {
     fn as_diagnostic_message(&self) -> String;
@@ -185,6 +186,21 @@ pub fn format_mdns_event(event: &ffx::MdnsEventType) -> String {
             event.port.as_ref().map(|p| format!("binding on socket: {p}")).unwrap_or_else(|| {
                 format!("mDNS bind event to unspecified socket (this is highly unexpected)")
             })
+        }
+    }
+}
+
+/// Extension trait for `TargetInfoQuery` to provide analytics tags.
+/// This exists to avoid a circular dependency between the `discovery` and `ffx_diagnostics_formatting` crates.
+pub trait TargetInfoQueryExt {
+    fn to_analytics_tag(&self) -> String;
+}
+
+impl TargetInfoQueryExt for TargetInfoQuery {
+    fn to_analytics_tag(&self) -> String {
+        match self {
+            TargetInfoQuery::First => "unspecified".to_owned(),
+            _ => format_query(self).kind.to_owned(),
         }
     }
 }

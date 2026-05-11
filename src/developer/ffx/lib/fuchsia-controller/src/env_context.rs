@@ -108,7 +108,9 @@ impl EnvContext {
         logging::init_logging(&context);
         logging::LOG_SINK.add_log_output(&context)?;
         log::info!("Logging setup for EnvContext instance: {}", logging::log_id(&context));
-        let target_spec: TargetInfoQuery = ffx_target::get_target_specifier(&context)?.into();
+        let target_spec: TargetInfoQuery =
+            TargetInfoQuery::try_from(ffx_target::get_target_specifier(&context)?)?;
+
         let device_connection = if matches!(target_spec, TargetInfoQuery::First) {
             log::info!("No target specified. Creating local/testing FDomain.");
             Mutex::new(Some(Arc::new(Connection::from_fdomain_client(

@@ -41,6 +41,12 @@ pub enum Error {
 
     #[error("cache error: {0}")]
     Cache(#[from] CacheError),
+
+    #[error("invalid scope ID: {0}")]
+    InvalidScopeId(#[from] netext::NetExtError),
+
+    #[error("invalid target specifier: {0}")]
+    ParseError(String),
 }
 
 #[derive(Debug, Error)]

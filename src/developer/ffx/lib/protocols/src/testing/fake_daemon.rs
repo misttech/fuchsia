@@ -215,7 +215,11 @@ impl DaemonProtocolProvider for FakeDaemon {
         &self,
         target_identifier: Option<String>,
     ) -> Result<ffx::TargetInfo, DaemonError> {
-        let query = target_identifier.into();
+        let query = ffx_target::TargetInfoQuery::try_from(target_identifier).map_err(|e| {
+            log::error!("Invalid target specifier in fake daemon: {}", e);
+            DaemonError::TargetNotFound
+        })?;
+
         Ok(ffx::TargetInfo::from(
             &*self
                 .target_collection

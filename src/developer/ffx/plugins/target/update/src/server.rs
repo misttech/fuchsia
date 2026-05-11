@@ -514,7 +514,7 @@ pub(crate) mod tests {
             let host_address =
                 Deferred::from_output(Ok(HostAddrHolder::from("127.0.0.1".to_string())));
             let target_spec = Deferred::from_output(Ok(TargetInfoQueryHolder::from(
-                TargetInfoQuery::from("1.1.1.1".to_string()),
+                TargetInfoQuery::try_from("1.1.1.1".to_string()).unwrap(),
             )));
             Self {
                 context: test_env.context.clone(),

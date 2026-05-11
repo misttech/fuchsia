@@ -7,6 +7,7 @@ use compat_info::CompatibilityInfo;
 use discovery::{DiscoverySources, TargetHandle};
 use errors::ffx_bail;
 use ffx_config::keys::TARGET_DEFAULT_KEY;
+
 use ffx_config::{ConfigLevel, EnvironmentContext};
 use fidl::endpoints::create_proxy;
 use fidl::prelude::*;
@@ -363,7 +364,15 @@ async fn wait_for_device_inner(
             // Note that we transform the target_spec into a query every time
             // through the loop, because while we are waiting for the device, we
             // may have to wait for a valid scope-id to appear.
-            let query: TargetInfoQuery = target_spec_clone.clone().into();
+            let query = match TargetInfoQuery::try_from(target_spec_clone.clone()) {
+                Ok(q) => q,
+                Err(e) => {
+                    log::debug!("Waiting for valid target specifier: {e}");
+                    Timer::new(Duration::from_millis(DOWN_REPOLL_DELAY_MS)).await;
+                    continue;
+                }
+            };
+
             break match knocker.knock_rcs(&query, &env).await {
                 Err(e) => {
                     log::debug!("unable to knock target: {e:?}");

@@ -7,6 +7,7 @@ use discovery::query::TargetInfoQuery;
 use discovery::{DiscoverySources, TargetHandle};
 use ffx_config::EnvironmentContext;
 use ffx_diagnostics::{Check, CheckFut, Notifier};
+use ffx_diagnostics_formatting::TargetInfoQueryExt;
 use futures::stream::StreamExt;
 use std::marker::PhantomData;
 use std::path::PathBuf;
@@ -135,7 +136,7 @@ where
         // There should also not be certain errors if the device is formatted a given way. For
         // example: if the device is an IP address, we should not attempt to resolve the device via
         // mDNS, as we already have the IP address.
-        Box::pin(async {
+        Box::pin(async move {
             let sources = sources_from_query(&input);
             // There should be some kind of error here if the device resolves to an empty array.
             notify_for_discovery_sources(self.ctx, sources, notifier)?;
@@ -150,7 +151,7 @@ where
             use ffx_diagnostics_analytics::ResultExt;
             let mut targets: Vec<discovery::TargetHandle> = targets
                 .or_analytics(ffx_target::analytics::PointOfFailure::DiscoveryFailure {
-                    query: input.clone(),
+                    query: Some(input.to_analytics_tag()),
                     discovery_sources: sources,
                 })
                 .await?;
@@ -200,7 +201,7 @@ where
                 }
                 ffx_diagnostics_analytics::mark_point_of_failure(
                     ffx_target::analytics::PointOfFailure::NoMatchingTargets {
-                        query: input.clone(),
+                        query: Some(input.to_analytics_tag()),
                         discovery_sources: sources,
                     },
                 )
@@ -210,7 +211,7 @@ where
             if targets.len() > 1 {
                 ffx_diagnostics_analytics::mark_point_of_failure(
                     ffx_target::analytics::PointOfFailure::TooManyMatchingTargets {
-                        query: input,
+                        query: Some(input.to_analytics_tag()),
                         discovery_sources: sources,
                     },
                 )

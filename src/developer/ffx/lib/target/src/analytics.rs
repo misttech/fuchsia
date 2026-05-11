@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 use crate::ConnectionError;
 use crate::target_connector::TargetConnectionError;
-use discovery::query::TargetInfoQuery;
+
 use discovery::{DiscoverySources, TargetState};
+
 use ffx_diagnostics_analytics::CustomEvent;
 
 /// An enum to make easy-use of the ffx_diagnostics_analytics library code. Implements
@@ -23,13 +24,20 @@ pub enum PointOfFailure<'a> {
     FailedToConnectRCS { error: &'a ConnectionError },
 
     /// This denotes a failure when we run `DiagnosticsResolver::discovered_targets`, specifically.
-    DiscoveryFailure { query: TargetInfoQuery, discovery_sources: DiscoverySources },
+    DiscoveryFailure { query: Option<String>, discovery_sources: DiscoverySources },
 
     /// We were not able to find any matching targets.
-    NoMatchingTargets { query: TargetInfoQuery, discovery_sources: DiscoverySources },
+    NoMatchingTargets { query: Option<String>, discovery_sources: DiscoverySources },
 
     /// We were not able to find any matching targets.
-    TooManyMatchingTargets { query: TargetInfoQuery, discovery_sources: DiscoverySources },
+    TooManyMatchingTargets { query: Option<String>, discovery_sources: DiscoverySources },
+}
+
+fn query_or_unspecified(query: &Option<String>) -> Option<String> {
+    match query {
+        Some(s) => Some(s.clone()),
+        None => Some("unspecified".to_owned()),
+    }
 }
 
 fn sanitize_connection_error(error: &ConnectionError) -> String {
@@ -94,7 +102,8 @@ impl Into<CustomEvent> for PointOfFailure<'_> {
             },
             Self::DiscoveryFailure { query, discovery_sources } => CustomEvent {
                 category: "discovery_failed",
-                action: Some(ffx_diagnostics_formatting::format_query(&query).kind.to_owned()),
+                action: query_or_unspecified(&query),
+
                 custom_dimensions: [(
                     "discovery_sources",
                     (discovery_sources.bits() as u64).into(),
@@ -114,7 +123,8 @@ impl Into<CustomEvent> for PointOfFailure<'_> {
             },
             Self::NoMatchingTargets { query, discovery_sources } => CustomEvent {
                 category: "no_matching_targets",
-                action: Some(ffx_diagnostics_formatting::format_query(&query).kind.to_owned()),
+                action: query_or_unspecified(&query),
+
                 custom_dimensions: [(
                     "discovery_sources",
                     (discovery_sources.bits() as u64).into(),
@@ -124,7 +134,8 @@ impl Into<CustomEvent> for PointOfFailure<'_> {
             },
             Self::TooManyMatchingTargets { query, discovery_sources } => CustomEvent {
                 category: "too_many_matching_targets",
-                action: Some(ffx_diagnostics_formatting::format_query(&query).kind.to_owned()),
+                action: query_or_unspecified(&query),
+
                 custom_dimensions: [(
                     "discovery_sources",
                     (discovery_sources.bits() as u64).into(),
@@ -142,14 +153,14 @@ mod tests {
 
     #[test]
     fn test_too_many_matching_targets_conversion() {
-        let query = TargetInfoQuery::from("some-nodename");
         let pof = PointOfFailure::TooManyMatchingTargets {
-            query: query.clone(),
+            query: Some("nodename or serial".to_string()),
             discovery_sources: DiscoverySources::all(),
         };
         let event: CustomEvent = pof.into();
         assert_eq!(event.category, "too_many_matching_targets");
         assert_eq!(event.action, Some("nodename or serial".to_owned()));
+
         assert_eq!(
             event.custom_dimensions.get("discovery_sources"),
             Some(&(DiscoverySources::all().bits() as u64).into())
@@ -158,14 +169,14 @@ mod tests {
 
     #[test]
     fn test_no_matching_targets_conversion() {
-        let query = TargetInfoQuery::from("some-nodename");
         let pof = PointOfFailure::NoMatchingTargets {
-            query: query.clone(),
+            query: Some("nodename or serial".to_string()),
             discovery_sources: DiscoverySources::all(),
         };
         let event: CustomEvent = pof.into();
         assert_eq!(event.category, "no_matching_targets");
         assert_eq!(event.action, Some("nodename or serial".to_owned()));
+
         assert_eq!(
             event.custom_dimensions.get("discovery_sources"),
             Some(&(DiscoverySources::all().bits() as u64).into())
@@ -174,18 +185,41 @@ mod tests {
 
     #[test]
     fn test_discovery_failure_conversion() {
-        let query = TargetInfoQuery::from("some-nodename");
         let pof = PointOfFailure::DiscoveryFailure {
-            query: query.clone(),
+            query: Some("nodename or serial".to_string()),
             discovery_sources: DiscoverySources::all(),
         };
         let event: CustomEvent = pof.into();
         assert_eq!(event.category, "discovery_failed");
         assert_eq!(event.action, Some("nodename or serial".to_owned()));
+
         assert_eq!(
             event.custom_dimensions.get("discovery_sources"),
             Some(&(DiscoverySources::all().bits() as u64).into())
         );
+    }
+
+    #[test]
+    fn test_invalid_query_conversion() {
+        let pof = PointOfFailure::NoMatchingTargets {
+            query: Some("invalid".to_string()),
+            discovery_sources: DiscoverySources::all(),
+        };
+
+        let event: CustomEvent = pof.into();
+        assert_eq!(event.category, "no_matching_targets");
+        assert_eq!(event.action, Some("invalid".to_owned()));
+    }
+
+    #[test]
+    fn test_none_query_conversion() {
+        let pof = PointOfFailure::NoMatchingTargets {
+            query: None,
+            discovery_sources: DiscoverySources::all(),
+        };
+        let event: CustomEvent = pof.into();
+        assert_eq!(event.category, "no_matching_targets");
+        assert_eq!(event.action, Some("unspecified".to_owned()));
     }
 
     #[test]

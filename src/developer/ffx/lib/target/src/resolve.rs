@@ -10,6 +10,7 @@ use fdomain_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteContro
 use ffx_command_error::{NonFatalError, user_error};
 use ffx_config::{EnvironmentContext, TryFromEnvContext, keys};
 use ffx_diagnostics_analytics::ResultExt;
+use ffx_diagnostics_formatting::TargetInfoQueryExt;
 use fidl_fuchsia_developer_ffx::{self as ffx};
 use fuchsia_async::TimeoutExt;
 use futures::future::LocalBoxFuture;
@@ -90,7 +91,7 @@ async fn locally_resolve_target_spec<T: TargetResolver>(
         }
     };
 
-    Ok(Some(explicit_spec).into())
+    Ok(TargetInfoQuery::try_from(explicit_spec)?)
 }
 
 fn target_error_to_analytics<'a>(
@@ -102,7 +103,11 @@ fn target_error_to_analytics<'a>(
             target,
             ..
         } => Some(crate::analytics::PointOfFailure::NoMatchingTargets {
-            query: target.clone().into(),
+            query: target.as_ref().map(|s| {
+                TargetInfoQuery::try_from(s.clone())
+                    .map(|q| q.to_analytics_tag())
+                    .unwrap_or_else(|_| "invalid".to_owned())
+            }),
             discovery_sources: DiscoverySources::all(),
         }),
         FfxTargetError::OpenTargetError {
@@ -110,7 +115,11 @@ fn target_error_to_analytics<'a>(
             target,
             ..
         } => Some(crate::analytics::PointOfFailure::TooManyMatchingTargets {
-            query: target.clone().into(),
+            query: target.as_ref().map(|s| {
+                TargetInfoQuery::try_from(s.clone())
+                    .map(|q| q.to_analytics_tag())
+                    .unwrap_or_else(|_| "invalid".to_owned())
+            }),
             discovery_sources: DiscoverySources::all(),
         }),
         _ => None,
@@ -146,7 +155,8 @@ where
 /// etc).
 pub async fn discover_single_default_target(ctx: &EnvironmentContext) -> Result<TargetHandle> {
     let query_s = get_target_specifier(ctx)?;
-    let query = TargetInfoQuery::from(query_s);
+    let query = TargetInfoQuery::try_from(query_s)?;
+
     // Note: this will use the target cache if it exists
     let handles = get_discovered_targets(query.clone(), true, true, ctx).await?;
     expect_single_target(&query, handles)
@@ -504,7 +514,10 @@ impl TargetResolver for DefaultTargetResolver {
         }
         get_discovered_targets_with_sources(query.clone(), sources, ctx)
             .await
-            .or_analytics(PointOfFailure::DiscoveryFailure { query, discovery_sources: sources })
+            .or_analytics(PointOfFailure::DiscoveryFailure {
+                query: Some(query.to_analytics_tag()),
+                discovery_sources: sources,
+            })
             .await
     }
 
@@ -899,7 +912,9 @@ impl TryFromEnvContext for Resolution {
                 target_spec.as_ref().unwrap_or(&unspecified_target)
             };
             log::trace!("resolving target spec address from {}", target_spec_unwrapped);
-            let spec: TargetInfoQuery = target_spec.into();
+            let spec: TargetInfoQuery = TargetInfoQuery::try_from(target_spec)
+                .map_err(|e| user_error!("Invalid target specifier: {}", e))?;
+
             let resolution = resolve_target_address(&spec, true, env)
                 .await
                 .map_err(|e| ffx_command_error::Error::User(NonFatalError(e.into()).into()))?;
@@ -1064,8 +1079,12 @@ mod test {
         };
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         resolver.expect_discovered_targets().return_once(move |_, _| Ok(vec![th]));
-        let target_spec =
-            locally_resolve_target_spec(&(sn.clone().into()), &resolver, &test_env.context).await;
+        let target_spec = locally_resolve_target_spec(
+            &(TargetInfoQuery::try_from(sn.clone()).unwrap()),
+            &resolver,
+            &test_env.context,
+        )
+        .await;
         assert!(target_spec.is_err())
     }
 
@@ -1080,9 +1099,12 @@ mod test {
         let th2 = make_target_handle_for_product(&name, sa);
         resolver.expect_try_resolve_manual_target().return_once(move |_, _| Ok(None));
         resolver.expect_discovered_targets().return_once(move |_, _| Ok(vec![th1, th2]));
-        let target_spec_res =
-            locally_resolve_target_spec(&("foo".to_string().into()), &resolver, &test_env.context)
-                .await;
+        let target_spec_res = locally_resolve_target_spec(
+            &(TargetInfoQuery::try_from("foo".to_string()).unwrap()),
+            &resolver,
+            &test_env.context,
+        )
+        .await;
         assert!(target_spec_res.is_err());
         assert!(dbg!(target_spec_res.unwrap_err().to_string()).contains("multiple targets"));
     }

@@ -29,7 +29,10 @@ impl TryFromEnv for TargetInfoQueryHolder {
     async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
         let env_context = env.environment_context();
         let target_spec = ffx_target::get_target_specifier(&env_context)?;
-        let tiq = TargetInfoQuery::from(target_spec);
+        let tiq = TargetInfoQuery::try_from(target_spec).map_err(|e| {
+            ffx_command_error::user_error!("Invalid default target specifier: {}", e)
+        })?;
+
         Ok(Self::from(tiq))
     }
 }

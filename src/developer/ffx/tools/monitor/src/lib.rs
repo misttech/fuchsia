@@ -485,7 +485,8 @@ async fn collect_target_status(
     context: &EnvironmentContext,
     cmd: StartCommand,
 ) -> Result<Vec<JsonTarget>> {
-    let query = ffx_target::TargetInfoQuery::from(cmd.nodename.clone());
+    let query = ffx_target::TargetInfoQuery::try_from(cmd.nodename.clone())?;
+
     let infos =
         ffx_target::list_targets(context, query, !cmd.no_usb, !cmd.no_mdns, !cmd.no_probe).await?;
     let formatter = JsonTargetFormatter::try_from(infos)?;

@@ -138,33 +138,39 @@ impl From<TargetInfoQuery> for Option<String> {
     }
 }
 
-impl From<&str> for TargetInfoQuery {
-    fn from(s: &str) -> Self {
-        String::from(s).into()
+impl TryFrom<&str> for TargetInfoQuery {
+    type Error = crate::error::Error;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        String::from(s).try_into()
     }
 }
 
-impl From<String> for TargetInfoQuery {
+impl TryFrom<String> for TargetInfoQuery {
+    type Error = crate::error::Error;
+
     /// If the string can be parsed as some kind of IP address, will attempt to
     /// match based on that, else fall back to the nodename or serial matches.
-    fn from(s: String) -> Self {
+    fn try_from(s: String) -> Result<Self, Self::Error> {
         if s == "" {
-            return Self::First;
+            return Ok(Self::First);
         }
         if s.starts_with("serial:") {
             // "serial:" is used when we _know_ something is a serial number,
             // and want to to preserve that across the client/daemon boundary
-            return Self::Serial(String::from(&s[7..]));
+            return Ok(Self::Serial(String::from(&s[7..])));
         }
         if s.starts_with("usb:cid:") {
-            if let Ok(cid) = s["usb:cid:".len()..].parse() {
-                return Self::Usb(cid);
-            }
+            let cid = s["usb:cid:".len()..]
+                .parse()
+                .map_err(|e| crate::error::Error::ParseError(format!("Invalid USB CID: {e}")))?;
+            return Ok(Self::Usb(cid));
         }
         if s.starts_with("vsock:cid:") {
-            if let Ok(cid) = s["vsock:cid:".len()..].parse() {
-                return Self::VSock(cid);
-            }
+            let cid = s["vsock:cid:".len()..]
+                .parse()
+                .map_err(|e| crate::error::Error::ParseError(format!("Invalid VSock CID: {e}")))?;
+            return Ok(Self::VSock(cid));
         }
 
         let (addr, scope, port) = match netext::parse_address_parts(s.as_str()) {
@@ -174,15 +180,24 @@ impl From<String> for TargetInfoQuery {
                     "Failed to parse address from '{s}'. Interpreting as nodename: {:?}",
                     e
                 );
-                return Self::NodenameOrSerial(s);
+                return Ok(Self::NodenameOrSerial(s));
             }
         };
-        // If no such interface exists, just return 0 for a best effort search.
-        // This does mean it might be possible to include arbitrary inaccurate scope names for
-        // looking up a target, however (like `fe80::1%nonsense`).
-        let scope = scope.map(|s| netext::get_verified_scope_id(s).unwrap_or(0)).unwrap_or(0);
+
+        let scope = if let Some(s) = scope { netext::get_verified_scope_id(s)? } else { 0 };
         let addr = TargetIpAddr::new(addr, scope, port.unwrap_or(0)).into();
-        Self::Addr(addr)
+        Ok(Self::Addr(addr))
+    }
+}
+
+impl TryFrom<Option<String>> for TargetInfoQuery {
+    type Error = crate::error::Error;
+
+    fn try_from(o: Option<String>) -> Result<Self, Self::Error> {
+        match o {
+            Some(s) => TargetInfoQuery::try_from(s),
+            None => Ok(TargetInfoQuery::First),
+        }
     }
 }
 
@@ -248,7 +263,7 @@ mod test {
 
     #[test]
     fn test_discovery_sources() {
-        let query = TargetInfoQuery::from("name");
+        let query = TargetInfoQuery::try_from("name").unwrap();
         let sources = query.discovery_sources();
         assert_eq!(
             sources,
@@ -260,7 +275,7 @@ mod test {
         );
 
         // IP Address shouldn't use USB source
-        let query = TargetInfoQuery::from("1.2.3.4");
+        let query = TargetInfoQuery::try_from("1.2.3.4").unwrap();
         let sources = query.discovery_sources();
         assert_eq!(
             sources,
@@ -268,7 +283,7 @@ mod test {
         );
 
         // Serial # should only use USB source
-        let query = TargetInfoQuery::from("serial:abcdef");
+        let query = TargetInfoQuery::try_from("serial:abcdef").unwrap();
         let sources = query.discovery_sources();
         assert_eq!(sources, DiscoverySources::USB_FASTBOOT);
     }
@@ -276,7 +291,7 @@ mod test {
     #[test]
     fn test_serial_query() {
         let serial = "abcdef";
-        let q = TargetInfoQuery::from(format!("serial:{serial}"));
+        let q = TargetInfoQuery::try_from(format!("serial:{serial}")).unwrap();
         match q {
             TargetInfoQuery::Serial(s) if s == serial => {}
             _ => panic!("parsing of serial query failed"),
@@ -286,7 +301,7 @@ mod test {
     #[test]
     fn test_vsock_query() {
         const CID: u32 = 3;
-        let q = TargetInfoQuery::from(format!("vsock:cid:{CID}"));
+        let q = TargetInfoQuery::try_from(format!("vsock:cid:{CID}")).unwrap();
         match q {
             TargetInfoQuery::VSock(cid) if cid == CID => {}
             _ => panic!("parsing of vsock query failed"),
@@ -301,7 +316,7 @@ mod test {
     #[test]
     fn test_usb_query() {
         const CID: u32 = 3;
-        let q = TargetInfoQuery::from(format!("usb:cid:{CID}"));
+        let q = TargetInfoQuery::try_from(format!("usb:cid:{CID}")).unwrap();
         match q {
             TargetInfoQuery::Usb(cid) if cid == CID => {}
             _ => panic!("parsing of serial query failed"),
@@ -409,7 +424,7 @@ mod test {
         "Test Address"
     )]
     fn test_from_to_string_isomorphic(str_input: &str) {
-        let tiq = TargetInfoQuery::from(str_input);
+        let tiq = TargetInfoQuery::try_from(str_input).unwrap();
         let tiq_string = String::from(tiq);
         assert_eq!(tiq_string, str_input);
     }
@@ -447,5 +462,24 @@ mod test {
     fn test_into_option(query: TargetInfoQuery, want: Option<String>) {
         let got: Option<String> = query.into();
         assert_eq!(got, want);
+    }
+
+    #[test]
+    fn test_try_from_option() {
+        let q = TargetInfoQuery::try_from(Some("name".to_string())).unwrap();
+        assert_eq!(q, TargetInfoQuery::NodenameOrSerial("name".to_string()));
+
+        let q = TargetInfoQuery::try_from(None as Option<String>).unwrap();
+        assert_eq!(q, TargetInfoQuery::First);
+
+        let q = TargetInfoQuery::try_from(Some("".to_string())).unwrap();
+        assert_eq!(q, TargetInfoQuery::First);
+    }
+
+    #[test]
+    fn test_from_string_invalid_scope() {
+        let str_input = "[fe80::1%invalidscope]:8022";
+        let res = TargetInfoQuery::try_from(str_input);
+        assert!(res.is_err());
     }
 }

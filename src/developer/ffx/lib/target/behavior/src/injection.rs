@@ -133,7 +133,8 @@ impl Injection {
         target_info: &mut Option<TargetInfo>,
     ) -> anyhow::Result<RemoteControlProxy> {
         let daemon_proxy = self.daemon_factory().await?;
-        let target_spec: TargetInfoQuery = self.target_spec.clone().into();
+        let target_spec: TargetInfoQuery = TargetInfoQuery::try_from(self.target_spec.clone())?;
+
         let proxy_timeout = self.env_context.get_proxy_timeout().await?;
         get_remote_proxy(
             &target_spec,
@@ -150,7 +151,7 @@ impl Injection {
         // See if we need to do local resolution. (Do it here not in
         // open_target_with_fut because o_t_w_f is not async)
         let target_spec = ffx_target::maybe_locally_resolve_target_spec(
-            &self.target_spec.clone().into(),
+            &TargetInfoQuery::try_from(self.target_spec.clone())?,
             &self.env_context,
         )
         .await?;
