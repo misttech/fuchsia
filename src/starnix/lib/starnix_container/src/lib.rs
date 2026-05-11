@@ -96,7 +96,7 @@ impl StarnixContainerGenerator {
 
         let image_outdir = outdir.join(name);
         std::fs::create_dir_all(&image_outdir)
-            .with_context(|| format!("Preparing directory for image files: {}", &image_outdir))?;
+            .with_context(|| format!("Preparing directory for image files: {}", image_outdir))?;
         let mut image_files = ext4_extract(image_path.as_str(), image_outdir.as_str()).with_context(
             || format!("Failed to extract EXT4 image from {}. Please ensure the file is a valid EXT4 filesystem image.", image_path),
         )?;
