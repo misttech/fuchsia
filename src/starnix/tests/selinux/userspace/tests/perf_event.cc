@@ -76,6 +76,9 @@ class OpenTypeHardware : public PerfEventTest,
                          public testing::WithParamInterface<std::tuple<int, int>> {};
 
 TEST_P(OpenTypeHardware, OpenEventsAllPermissions) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "Skipping HW counter tests on Linux";
+  }
   /// When all permissions are provided, perf_event_open with type Hardware succeeds.
   auto enforce = ScopedEnforcement::SetEnforcing();
   auto& [config, pid] = GetParam();
@@ -87,6 +90,9 @@ TEST_P(OpenTypeHardware, OpenEventsAllPermissions) {
 }
 
 TEST_P(OpenTypeHardware, OpenEventsNoKernel) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "Skipping HW counter tests on Linux";
+  }
   /// When exclude_kernel is 1, perf_event_open doesn't require the kernel permission.
   auto enforce = ScopedEnforcement::SetEnforcing();
   auto& [config, pid] = GetParam();
@@ -98,6 +104,9 @@ TEST_P(OpenTypeHardware, OpenEventsNoKernel) {
 }
 
 TEST_P(OpenTypeHardware, OpenEventsNoKernelFails) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "Skipping HW counter tests on Linux";
+  }
   /// When exclude_kernel is 0, and kernel permission is missing, expect a failure.
   auto enforce = ScopedEnforcement::SetEnforcing();
   auto& [config, pid] = GetParam();
@@ -166,6 +175,9 @@ class OpenTypeHWCacheOrTracepoint : public PerfEventTest,
 TEST_P(OpenTypeHWCacheOrTracepoint, OpenEventsAllPermissions) {
   // perf_event_open succeeds over different values of `pid` and `exclude_kernel`.
   const auto perf_type = OpenTypeHWCacheOrTracepoint::GetParam();
+  if (perf_type == PERF_TYPE_HW_CACHE && !test_helper::IsStarnix()) {
+    GTEST_SKIP() << "Skipping HW cache tests on Linux";
+  }
   const auto config = GetConfigForPerfType(perf_type);
 
   auto enforce = ScopedEnforcement::SetEnforcing();
@@ -195,6 +207,9 @@ TEST_P(OpenTypeHWCacheOrTracepoint, OpenEventsAllPermissions) {
 TEST_P(OpenTypeHWCacheOrTracepoint, OpenEventsNoKernel) {
   // Without the kernel permission, perf_event_open only succeeds when `exclude_kernel` == 1.
   const auto perf_type = OpenTypeHWCacheOrTracepoint::GetParam();
+  if (perf_type == PERF_TYPE_HW_CACHE && !test_helper::IsStarnix()) {
+    GTEST_SKIP() << "Skipping HW cache tests on Linux";
+  }
   const auto config = GetConfigForPerfType(perf_type);
 
   auto enforce = ScopedEnforcement::SetEnforcing();
@@ -224,6 +239,9 @@ TEST_P(OpenTypeHWCacheOrTracepoint, OpenEventsNoKernel) {
 TEST_P(OpenTypeHWCacheOrTracepoint, OpenEventsNoCpu) {
   // Without the CPU permission, perf_event_open only succeeds when `pid` == 0.
   const auto perf_type = OpenTypeHWCacheOrTracepoint::GetParam();
+  if (perf_type == PERF_TYPE_HW_CACHE && !test_helper::IsStarnix()) {
+    GTEST_SKIP() << "Skipping HW cache tests on Linux";
+  }
   const auto config = GetConfigForPerfType(perf_type);
 
   auto enforce = ScopedEnforcement::SetEnforcing();
@@ -409,6 +427,9 @@ TEST(PerfEventTest, OpenEventsBreakpointNoCpu) {
 }
 
 TEST(PerfEventTest, OpenEventsRaw) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "Skipping Raw event tests on Linux";
+  }
   auto enforce = ScopedEnforcement::SetEnforcing();
   // Define the raw event code (Event 0x24, Umask 0x41, combined)
   auto RAW_L2_RQSTS_EVENT = 0x4124;
@@ -436,6 +457,9 @@ TEST(PerfEventTest, OpenEventsRaw) {
 }
 
 TEST(PerfEventTest, OpenEventsRawNoKernel) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "Skipping Raw event tests on Linux";
+  }
   auto enforce = ScopedEnforcement::SetEnforcing();
   // Define the raw event code (Event 0x24, Umask 0x41, combined)
   auto RAW_L2_RQSTS_EVENT = 0x4124;
@@ -463,6 +487,9 @@ TEST(PerfEventTest, OpenEventsRawNoKernel) {
 }
 
 TEST(PerfEventTest, OpenEventsRawNoCpu) {
+  if (!test_helper::IsStarnix()) {
+    GTEST_SKIP() << "Skipping Raw event tests on Linux";
+  }
   auto enforce = ScopedEnforcement::SetEnforcing();
   // Define the raw event code (Event 0x24, Umask 0x41, combined)
   auto RAW_L2_RQSTS_EVENT = 0x4124;
