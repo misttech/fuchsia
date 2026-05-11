@@ -8,7 +8,7 @@
 #include <usb-endpoint/usb-endpoint-client.h>
 
 #include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester/host.h"
-#include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester/virtual_bus_tester_fidl_config.h"
+#include "src/devices/usb/drivers/usb-virtual-bus/tests/virtual-bus-tester/virtual_bus_tester_config.h"
 
 namespace virtualbus {
 
@@ -26,7 +26,7 @@ class FidlDevice : public Device {
   void OutComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
   void InComplete(std::vector<fuchsia_hardware_usb_endpoint::Completion> completions);
 
-  std::optional<virtual_bus_tester_fidl_config::Config> config_;
+  std::optional<virtual_bus_tester_config::Config> config_;
   fdf::SynchronizedDispatcher dispatcher_;
 
   usb::EndpointClient<FidlDevice> bulk_out_ep_{usb::EndpointType::BULK, this,

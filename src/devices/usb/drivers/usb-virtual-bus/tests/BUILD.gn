@@ -45,24 +45,10 @@ source_set("usb-virtual-bus-test-common") {
   ]
 }
 
-fuchsia_unittest_package("usb-virtual-bus-banjo-test") {
-  deps = [
-    ":usb-virtual-bus-test-common",
-    "virtual-bus-tester:virtual-bus-tester-banjo",
-    "virtual-bus-tester-function:virtual-bus-tester-function-banjo",
-  ]
-  test_specs = {
-    log_settings = {
-      # Will fail to bind to default configuration.
-      max_severity = "ERROR"
-    }
-  }
-}
-
-fuchsia_structured_config_values("virtual-bus-tester-fidl-default-config") {
+fuchsia_structured_config_values("virtual-bus-tester-default-config") {
   testonly = true
-  cm_label = "virtual-bus-tester:virtual-bus-tester-fidl-manifest"
-  component_name = "virtual-bus-tester-fidl"
+  cm_label = "virtual-bus-tester:virtual-bus-tester-manifest"
+  component_name = "virtual-bus-tester"
   values = {
     vmo_data_size = 20
   }
@@ -71,9 +57,9 @@ fuchsia_structured_config_values("virtual-bus-tester-fidl-default-config") {
 fuchsia_unittest_package("usb-virtual-bus-fidl-test") {
   deps = [
     ":usb-virtual-bus-test-common",
-    ":virtual-bus-tester-fidl-default-config",
-    "virtual-bus-tester:virtual-bus-tester-fidl",
-    "virtual-bus-tester-function:virtual-bus-tester-function-fidl",
+    ":virtual-bus-tester-default-config",
+    "virtual-bus-tester",
+    "virtual-bus-tester-function",
   ]
   test_specs = {
     log_settings = {

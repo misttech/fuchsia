@@ -29,27 +29,9 @@ source_set("virtual-bus-tester-function-common") {
   ]
 }
 
-fuchsia_cc_driver("virtual-bus-tester-function-banjo-driver") {
+fuchsia_cc_driver("virtual-bus-tester-function-driver") {
   testonly = true
-  output_name = "virtual-bus-tester-function-banjo"
-  sources = [ "peripheral-banjo.cc" ]
-  deps = [
-    ":virtual-bus-tester-function-common",
-    "//sdk/banjo/fuchsia.hardware.usb.function:fuchsia.hardware.usb.function_banjo_cpp",
-  ]
-}
-
-fuchsia_driver_component("virtual-bus-tester-function-banjo") {
-  testonly = true
-  info = "meta/virtual-bus-tester-function-info.json"
-  component_name = "virtual-bus-tester-function-banjo"
-  deps = [ ":virtual-bus-tester-function-banjo-driver" ]
-  manifest = "meta/virtual-bus-tester-function-banjo.cml"
-}
-
-fuchsia_cc_driver("virtual-bus-tester-function-fidl-driver") {
-  testonly = true
-  output_name = "virtual-bus-tester-function-fidl"
+  output_name = "virtual-bus-tester-function"
   sources = [ "peripheral-fidl.cc" ]
   deps = [
     ":virtual-bus-tester-function-common",
@@ -58,10 +40,10 @@ fuchsia_cc_driver("virtual-bus-tester-function-fidl-driver") {
   ]
 }
 
-fuchsia_driver_component("virtual-bus-tester-function-fidl") {
+fuchsia_driver_component("virtual-bus-tester-function") {
   testonly = true
   info = "meta/virtual-bus-tester-function-info.json"
-  component_name = "virtual-bus-tester-function-fidl"
-  deps = [ ":virtual-bus-tester-function-fidl-driver" ]
+  component_name = "virtual-bus-tester-function"
+  deps = [ ":virtual-bus-tester-function-driver" ]
   manifest = "meta/virtual-bus-tester-function-fidl.cml"
 }

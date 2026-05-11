@@ -122,7 +122,7 @@ void FidlDevice::InComplete(std::vector<fendpoint::Completion> completions) {
 }
 
 zx::result<> FidlDevice::Start(fdf::DriverContext context) {
-  config_ = context.take_config<virtual_bus_tester_fidl_config::Config>();
+  config_ = context.take_config<virtual_bus_tester_config::Config>();
   zx::result result = Device::Start(std::move(context));
   if (result.is_error()) {
     fdf::error("Failed to start {}", result);
