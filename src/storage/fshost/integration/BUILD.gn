@@ -269,6 +269,27 @@ template("fshost_integration_test_package") {
   }
 
   #
+  # Inline Encryption Routing Tests
+  #
+  if (fshost_options.data_filesystem_format == "fxfs") {
+    _inline_encryption_component_target = "${target_name}_inline_encryption"
+    _test_components += [ ":$_inline_encryption_component_target" ]
+    fshost_integration_test_component(_inline_encryption_component_target) {
+      fshost_target = _fshost_target
+      data_filesystem_format = fshost_options.data_filesystem_format
+      data_filesystem_variant = invoker.data_filesystem_variant
+      source_root = "tests/inline_encryption_routing.rs"
+      deps = [
+        "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-component",
+        "//src/storage/lib/block_server/vmo_backed:test_vmo_backed_block_server",
+      ]
+    }
+  }
+
+  #
   # System Volume Manipulation Tests
   #
   if (invoker.enable_system_volume_manipulation_tests) {

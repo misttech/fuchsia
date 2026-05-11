@@ -20,9 +20,12 @@ use vfs::execution_scope::ExecutionScope;
 use fidl_fuchsia_boot as fboot;
 use fidl_fuchsia_feedback as ffeedback;
 use fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner;
+use fidl_fuchsia_hardware_block_volume as fvolume;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_security_keymint as fkeymint;
 use fidl_fuchsia_storage_partitions as fpartitions;
+use test_vmo_backed_block_server::VmoBackedServer;
+use vfs::directory::helper::DirectlyMutable;
 
 /// Identifier for ramdisk storage. Defined in sdk/lib/zbi-format/include/lib/zbi-format/zbi.h.
 const ZBI_TYPE_STORAGE_RAMDISK: u32 = 0x4b534452;
@@ -32,18 +35,21 @@ pub fn new_mocks(
     crash_reports_sink: mpsc::Sender<ffeedback::CrashReport>,
     force_fxfs_provisioner_failure: bool,
     keymint: Arc<FakeKeymint>,
+    simulated_gpt: Option<Arc<VmoBackedServer>>,
 ) -> impl Fn(LocalComponentHandles) -> BoxFuture<'static, Result<(), Error>> + Sync + Send + 'static
 {
     let vmo = vmo.map(Arc::new);
     let mock = move |handles: LocalComponentHandles| {
         let vmo_clone = vmo.clone();
         let keymint_clone = keymint.clone();
+        let simulated_gpt_clone = simulated_gpt.clone();
         run_mocks(
             handles,
             vmo_clone,
             crash_reports_sink.clone(),
             force_fxfs_provisioner_failure,
             keymint_clone,
+            simulated_gpt_clone,
         )
         .boxed()
     };
@@ -57,36 +63,65 @@ async fn run_mocks(
     crash_reports_sink: mpsc::Sender<ffeedback::CrashReport>,
     force_fxfs_provisioner_failure: bool,
     keymint_instance: Arc<FakeKeymint>,
+    simulated_gpt: Option<Arc<VmoBackedServer>>,
 ) -> Result<(), Error> {
     let keymint_for_sealing = keymint_instance.clone();
     let keymint_for_admin = keymint_instance.clone();
 
+    let svc_dir = vfs::pseudo_directory! {
+        fkeymint::SealingKeysMarker::PROTOCOL_NAME => vfs::service::host(
+            move |stream| {
+                run_keymint(stream, keymint_for_sealing.clone()).boxed()
+            }
+        ),
+        fkeymint::AdminMarker::PROTOCOL_NAME => vfs::service::host(
+            move |stream| {
+                run_keymint_admin(stream, keymint_for_admin.clone()).boxed()
+            }
+        ),
+        fboot::ItemsMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
+            let vmo_clone = vmo.clone();
+            run_boot_items(stream, vmo_clone)
+        }),
+        ffeedback::CrashReporterMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
+            run_crash_reporter(stream, crash_reports_sink.clone())
+        }),
+        ffxfsprovisioner::FxfsProvisionerMarker::PROTOCOL_NAME => vfs::service::host(
+            move |stream| {
+                run_fxfs_provisioner(
+                    stream, force_fxfs_provisioner_failure, keymint_instance.clone())
+            }
+        ),
+    };
+
+    if let Some(server) = simulated_gpt {
+        let server_clone1 = server.clone();
+        let server_clone2 = server.clone();
+        svc_dir
+            .add_entry(
+                fvolume::ServiceMarker::SERVICE_NAME,
+                vfs::pseudo_directory! {
+                    "system_gpt" => vfs::pseudo_directory! {
+                        "volume" => vfs::service::host(move |stream| {
+                            let server = server_clone1.clone();
+                            async move {
+                                let _ = server.serve(stream).await;
+                            }
+                        }),
+                        "inline_encryption" => vfs::service::host(move |stream| {
+                            let server = server_clone2.clone();
+                            async move {
+                                server.serve_insecure_inline_encryption(stream, [0; 16]).await;
+                            }
+                        }),
+                    },
+                },
+            )
+            .unwrap();
+    }
+
     let export = vfs::pseudo_directory! {
-        "svc" => vfs::pseudo_directory! {
-            fkeymint::SealingKeysMarker::PROTOCOL_NAME => vfs::service::host(
-                move |stream| {
-                    run_keymint(stream, keymint_for_sealing.clone()).boxed()
-                }
-            ),
-            fkeymint::AdminMarker::PROTOCOL_NAME => vfs::service::host(
-                move |stream| {
-                    run_keymint_admin(stream, keymint_for_admin.clone()).boxed()
-                }
-            ),
-            fboot::ItemsMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
-                let vmo_clone = vmo.clone();
-                run_boot_items(stream, vmo_clone)
-            }),
-            ffeedback::CrashReporterMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
-                run_crash_reporter(stream, crash_reports_sink.clone())
-            }),
-            ffxfsprovisioner::FxfsProvisionerMarker::PROTOCOL_NAME => vfs::service::host(
-                move |stream| {
-                    run_fxfs_provisioner(
-                        stream, force_fxfs_provisioner_failure, keymint_instance.clone())
-                }
-            ),
-        },
+        "svc" => svc_dir,
     };
 
     let scope = ExecutionScope::new();

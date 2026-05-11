@@ -29,7 +29,9 @@ use futures::channel::mpsc;
 use futures::{FutureExt as _, StreamExt as _};
 use ramdevice_client::{RamdiskClient, RamdiskClientBuilder};
 use std::pin::pin;
+use std::sync::Arc;
 use std::time::Duration;
+use test_vmo_backed_block_server::VmoBackedServer;
 
 pub mod disk_builder;
 mod mocks;
@@ -77,6 +79,7 @@ pub struct TestFixtureBuilder {
     force_fxfs_provisioner_failure: bool,
     keymint: std::sync::Arc<FakeKeymint>,
     crypt_policy: crypt_policy::Policy,
+    simulated_gpt: Option<Arc<VmoBackedServer>>,
 }
 
 impl TestFixtureBuilder {
@@ -90,6 +93,7 @@ impl TestFixtureBuilder {
             force_fxfs_provisioner_failure: false,
             keymint: std::sync::Arc::new(FakeKeymint::default()),
             crypt_policy: crypt_policy::Policy::Null,
+            simulated_gpt: None,
         }
     }
 
@@ -143,6 +147,11 @@ impl TestFixtureBuilder {
 
     pub fn with_disk_from(mut self, disk: Disk) -> Self {
         self.disk = Some(disk);
+        self
+    }
+
+    pub fn with_simulated_gpt(mut self, server: Arc<VmoBackedServer>) -> Self {
+        self.simulated_gpt = Some(server);
         self
     }
 
@@ -207,6 +216,7 @@ impl TestFixtureBuilder {
             tx,
             self.force_fxfs_provisioner_failure,
             self.keymint.clone(),
+            self.simulated_gpt.clone(),
         );
 
         let mocks = builder
@@ -230,6 +240,15 @@ impl TestFixtureBuilder {
                     .capability(Capability::protocol::<ffxfsprovisioner::FxfsProvisionerMarker>())
                     .capability(Capability::protocol::<fkeymint::SealingKeysMarker>())
                     .capability(Capability::protocol::<fkeymint::AdminMarker>())
+                    .from(&mocks)
+                    .to(&fshost),
+            )
+            .await
+            .unwrap();
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::service::<fvolume::ServiceMarker>())
                     .from(&mocks)
                     .to(&fshost),
             )
