@@ -13,6 +13,10 @@
             protocol: "fuchsia.update.channel.Provider",
             delivery: "on_readable",
         },
+        {
+            protocol: "fuchsia.update.Listener",
+            delivery: "on_readable",
+        },
     ],
     use: [
         {
@@ -39,7 +43,10 @@
     ],
     expose: [
         {
-            protocol: "fuchsia.update.channel.Provider",
+            protocol: [
+                "fuchsia.update.channel.Provider",
+                "fuchsia.update.Listener",
+            ],
             from: "self",
         },
     ],

@@ -34,13 +34,15 @@
     ],
     expose: [
         {
-            protocol: [ "fuchsia.update.channel.Provider" ],
+            protocol: [
+                "fuchsia.update.channel.Provider",
+                "fuchsia.update.Listener",
+            ],
             from: "#null-update-checker",
         },
         {
             protocol: [
                 "fuchsia.update.channelcontrol.ChannelControl",
-                "fuchsia.update.Listener",
                 "fuchsia.update.Manager",
             ],
             from: "void",

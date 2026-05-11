@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 use assert_matches::assert_matches;
+use fidl::endpoints::{ControlHandle as _, Proxy as _, RequestStream as _};
+use fidl_fuchsia_update as fupdate;
 use fidl_fuchsia_update_channel as fupdate_channel;
 use fuchsia_async::{self as fasync};
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
@@ -74,6 +76,7 @@ impl TestEnvBuilder {
             .add_route(
                 Route::new()
                     .capability(Capability::protocol::<fupdate_channel::ProviderMarker>())
+                    .capability(Capability::protocol::<fupdate::ListenerMarker>())
                     .from(&null_update_checker)
                     .to(Ref::parent()),
             )
@@ -135,6 +138,11 @@ impl TestEnv {
     fn fresh_channel_provider_proxy(&self) -> fupdate_channel::ProviderProxy {
         self.realm_instance.root.connect_to_protocol_at_exposed_dir().unwrap()
     }
+
+    /// Obtains a new connection to fuchsia.update/Listener.
+    fn fresh_listener_proxy(&self) -> fupdate::ListenerProxy {
+        self.realm_instance.root.connect_to_protocol_at_exposed_dir().unwrap()
+    }
 }
 
 #[test_case(-1i64; "never idle")]
@@ -148,6 +156,35 @@ async fn query_current_channel(idle_timeout_millis: i64) {
         .await;
 
     assert_eq!(env.channel_provider.get_current().await.unwrap(), "injected-by-test");
+}
+
+#[test_case(-1i64; "never idle")]
+#[test_case(0i64; "rapid idle")]
+#[fasync::run_singlethreaded(test)]
+async fn listener_closes(idle_timeout_millis: i64) {
+    let env = TestEnv::builder()
+        .idle_timeout_millis(idle_timeout_millis)
+        .current_ota_channel("injected-by-test")
+        .build()
+        .await;
+    let listener = env.fresh_listener_proxy();
+    let (notifier_client, notifier_server) =
+        fidl::endpoints::create_request_stream::<fupdate::NotifierMarker>();
+
+    let () = listener
+        .notify_on_first_update_check(fupdate::ListenerNotifyOnFirstUpdateCheckRequest {
+            notifier: Some(notifier_client),
+            ..Default::default()
+        })
+        .unwrap();
+
+    // The preceding call to `notify_on_first_update_check` should cause the server to close the
+    // connection with `NOT_SUPPORTED`, but all the methods are one-way, so there's no way to check
+    // the epitaph, we can just make sure it closed.
+    let _: zx::Signals = listener.on_closed().await.unwrap();
+
+    // The server should close the notifier client end as well.
+    let _: zx::Signals = notifier_server.control_handle().on_closed().await.unwrap();
 }
 
 // If configured, when the null-update-checker is idle (when there has not been any activity on
@@ -194,6 +231,20 @@ async fn stop_on_idle_resume_on_use() {
 
     // The old connection should still work.
     assert_eq!(env.channel_provider.get_current().await.unwrap(), "threeve");
+    env.wait_for_started(&mut event_stream).await;
+    env.wait_for_clean_stopped(&mut event_stream).await;
+
+    // Listener connections should start the server, but keeping the notifier server end alive
+    // should not prevent the server from idling.
+    let listener = env.fresh_listener_proxy();
+    let (notifier_client, _notifier_server) =
+        fidl::endpoints::create_endpoints::<fupdate::NotifierMarker>();
+    let () = listener
+        .notify_on_first_update_check(fupdate::ListenerNotifyOnFirstUpdateCheckRequest {
+            notifier: Some(notifier_client),
+            ..Default::default()
+        })
+        .unwrap();
     env.wait_for_started(&mut event_stream).await;
     env.wait_for_clean_stopped(&mut event_stream).await;
 }

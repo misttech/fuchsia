@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::Context as _;
-use fidl::endpoints::RequestStream as _;
+use fidl::endpoints::{ControlHandle as _, RequestStream as _};
 use fidl_fuchsia_process_lifecycle as fprocess_lifecycle;
+use fidl_fuchsia_update as fupdate;
 use fidl_fuchsia_update_channel as fupdate_channel;
 use fuchsia_component::server::ServiceFs;
 use futures::future::FutureExt as _;
@@ -23,6 +24,7 @@ pub async fn main() -> Result<(), anyhow::Error> {
 
     let mut fs = ServiceFs::new_local();
     fs.dir("svc").add_fidl_service(Services::ChannelProvider);
+    fs.dir("svc").add_fidl_service(Services::Listener);
     fs.take_and_serve_directory_handle().context("taking directory handle")?;
     let fs = fs.until_stalled(idle_timeout);
     let mut service_fut = async move {
@@ -38,6 +40,9 @@ pub async fn main() -> Result<(), anyhow::Error> {
                                 .unwrap_or_else(|e| {
                                     warn!("handling ChannelProvider stream {e:#}");
                                 });
+                    }
+                    Item::Request(Services::Listener(stream), _active_guard) => {
+                        let () = handle_listener(stream);
                     }
                     Item::Stalled(outgoing_dir) => {
                         *out_dir.lock() = Some(outgoing_dir);
@@ -107,6 +112,7 @@ pub async fn main() -> Result<(), anyhow::Error> {
 
 enum Services {
     ChannelProvider(fupdate_channel::ProviderRequestStream),
+    Listener(fupdate::ListenerRequestStream),
 }
 
 async fn handle_channel_provider(
@@ -132,4 +138,8 @@ async fn handle_channel_provider(
     }
 
     Ok(())
+}
+
+fn handle_listener(stream: fupdate::ListenerRequestStream) {
+    let () = stream.control_handle().shutdown_with_epitaph(zx::Status::NOT_SUPPORTED);
 }

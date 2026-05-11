@@ -12,7 +12,10 @@ rustc_test("bin") {
 
   deps = [
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
+    "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
     "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_rust",
+    "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component-test",
     "//src/sys/lib/cm_rust",

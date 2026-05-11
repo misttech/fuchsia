@@ -12,6 +12,7 @@ rustc_binary("bin") {
   deps = [
     ":null_update_checker_config",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
+    "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
     "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_rust",
     "//sdk/rust/zx",
     "//src/lib/detect-stall",
