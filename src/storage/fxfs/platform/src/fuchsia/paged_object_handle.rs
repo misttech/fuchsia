@@ -817,17 +817,57 @@ impl PagedObjectHandle {
     async fn flush_data(
         &self,
         flush_state: &mut FlushState,
+        content_size: u64,
+        previous_content_size: u64,
+        crtime: Option<Timestamp>,
+        mtime: Option<Timestamp>,
+        mut flush_batches: Vec<FlushBatch>,
+    ) -> Result<(), Error> {
+        // We capture the result here because the follow up cannot be done with the scopeguard or
+        // any other normal cleanup method because they are all synchronous, while this requires
+        // async in order to await the `page_in_barrier()`.
+        let res = self
+            .flush_data_impl(
+                flush_state,
+                content_size,
+                previous_content_size,
+                crtime,
+                mtime,
+                &mut flush_batches,
+            )
+            .await;
+        // We need to ensure that all page-ins complete before we finish marking the pages as
+        // clean. Otherwise the kernel could evict it and allow a page-in to resupply it with
+        // stale data. This ensures that any eviction and re-supply comes from a page-in that
+        // started after the data was updated and will find up-to-date data.
+        if flush_batches.len() > 0 {
+            Pager::page_in_barrier().await;
+            for batch in flush_batches {
+                batch.writeback_end(self.vmo(), self.pager());
+            }
+        }
+        res
+    }
+
+    /// `flush_batches will attempt to be flushed, and batches that could not be flushed will be
+    /// removed from the set. The ones remaining will need to have `writeback_end()` called on them.
+    async fn flush_data_impl(
+        &self,
+        flush_state: &mut FlushState,
         mut content_size: u64,
         mut previous_content_size: u64,
         crtime: Option<Timestamp>,
         mtime: Option<Timestamp>,
-        flush_batches: Vec<FlushBatch>,
+        flush_batches: &mut Vec<FlushBatch>,
     ) -> Result<(), Error> {
-        let pager = self.pager();
-        let vmo = self.vmo();
+        // Drop the batches that don't get finished.
+        let mut guard = scopeguard::guard((0, flush_batches), |(num_batches_complete, batches)| {
+            batches.truncate(num_batches_complete);
+        });
+        let (num_batches_complete, batches_to_flush) = &mut *guard;
 
-        let last_batch_index = flush_batches.len() - 1;
-        for (i, batch) in flush_batches.into_iter().enumerate() {
+        let last_batch_index = batches_to_flush.len() - 1;
+        for (i, batch) in batches_to_flush.iter().enumerate() {
             let first_batch = i == 0;
             let last_batch = i == last_batch_index;
 
@@ -836,7 +876,7 @@ impl PagedObjectHandle {
             } else {
                 self.new_transaction(None).await?
             };
-            batch.writeback_begin(vmo, pager);
+            batch.writeback_begin(self.vmo(), self.pager());
 
             let size = if last_batch {
                 if batch.end() > content_size {
@@ -880,17 +920,11 @@ impl PagedObjectHandle {
             transaction.commit().await.context("Failed to commit transaction")?;
             flush_state.did_flush_pages(batch.dirty_pages());
 
-            // We need to ensure that all page-ins complete before we finish marking the pages as
-            // clean. Otherwise the kernel could evict it and allow a page-in to resupply it with
-            // stale data. This ensures that any eviction and re-supply comes from a page-in that
-            // started after the data was updated and will find up-to-date data.
-            Pager::page_in_barrier().await;
-
             if first_batch {
                 self.inner.lock().end_flush();
             }
 
-            batch.writeback_end(vmo, pager);
+            *num_batches_complete += 1;
         }
 
         Ok(())
