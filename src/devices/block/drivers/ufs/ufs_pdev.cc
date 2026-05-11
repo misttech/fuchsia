@@ -164,4 +164,15 @@ void UfsPdev::DmeSet(DmeSetRequest& request, DmeSetCompleter::Sync& completer) {
   }
 }
 
+void UfsPdev::DmeGet(DmeGetRequest& request, DmeGetCompleter::Sync& completer) {
+  DmeGetUicCommand dme_get(*this, request.mib_attribute(), request.gen_selector_index());
+  auto result = dme_get.SendCommand();
+  if (result.is_error()) {
+    fdf::error("DME_GET 0x{:x} failed: {}", request.mib_attribute(), result);
+    completer.Reply(zx::error(result.status_value()));
+  } else {
+    completer.Reply(zx::ok(*result.value()));
+  }
+}
+
 }  // namespace ufs

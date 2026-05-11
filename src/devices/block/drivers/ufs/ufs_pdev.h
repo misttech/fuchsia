@@ -31,6 +31,7 @@ class UfsPdev final : public Ufs, public fidl::Server<fuchsia_hardware_ufs_phy::
 
   // Ufshci Server methods
   void DmeSet(DmeSetRequest& request, DmeSetCompleter::Sync& completer) override;
+  void DmeGet(DmeGetRequest& request, DmeGetCompleter::Sync& completer) override;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_ufs_phy::Ufshci> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
     fdf::error("Unknown method in Ufshci server: {}", metadata.method_ordinal);
