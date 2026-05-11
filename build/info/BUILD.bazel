@@ -6,6 +6,11 @@ load(":info.bzl", "gen_latest_date_and_timestamp", "get_build_info_version", "ge
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files([
+    "jiri_generated/integration_daily_commit_hash.txt",
+    "jiri_generated/integration_daily_commit_stamp.txt",
+])
+
 # A single _private_ target that generates 3 output files.
 # These are then made available independently through three
 # public targets defined below.

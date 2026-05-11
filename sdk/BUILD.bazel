@@ -17,6 +17,10 @@ load(
     "build_in_all_idk_api_level_and_cpu_combinations",
 )
 load(
+    "//build/sdk:sdk_version_history.bzl",
+    "sdk_version_history",
+)
+load(
     ":atom_lists.bzl",
     "ALL_CC_PREBUILT_LIBRARY_ATOMS",
     "ALL_CC_SOURCE_LIBRARY_ATOMS",
@@ -24,6 +28,14 @@ load(
     "DATA_ATOMS",
     "NON_BUILD_HOST_TOOLS_ATOMS",
     "NOOP_ATOMS_LIST",
+)
+
+sdk_version_history(
+    name = "version_history",
+    category = "partner",
+    id = "sdk://version_history",
+    source = ":version_history.json",
+    visibility = ["//visibility:public"],
 )
 
 # Defines the contents of the Fuchsia IDK.

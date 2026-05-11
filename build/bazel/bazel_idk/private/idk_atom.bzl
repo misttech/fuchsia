@@ -35,7 +35,7 @@ ConfigurableInfo = provider(
     },
 )
 
-visibility(["//build/bazel/bazel_idk/...", "//build/bazel/rules/fidl/..."])
+visibility(["//build/bazel/bazel_idk/...", "//build/bazel/rules/fidl/...", "//build/sdk/..."])
 
 _TYPES_SUPPORTING_UNSTABLE_ATOMS = [
     # LINT.IfChange(unstable_atom_types)
