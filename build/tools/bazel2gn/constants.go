@@ -52,6 +52,10 @@ var bazelRuleToGNTemplate = map[string]string{
 	"go_library": "go_library",
 	"go_test":    "go_test",
 
+	// Python
+	"py_library": "python_library",
+	"py_binary":  "python_binary",
+
 	// Rust
 	"rust_binary":      "rustc_binary",
 	"rust_library":     "rustc_library",
@@ -121,6 +125,11 @@ var attrsToOmitByRules = map[string]map[string]bool{
 		// This is safe to do because incorrectly configured importpath would cause Go compilation to
 		// fail, so we will be alerted when importpaths are wrong in Bazel.
 		"importpath": true,
+	},
+	"py_library": {
+		// `imports` attribute is a Bazel-only concept. Our GN python_library.gni template
+		// handles import paths differently than Bazel.
+		"imports": true,
 	},
 	"genrule": {
 		// bazel2gn ignores the `tools` attribute of genrule, and tries to parse it out of the `cmd`
@@ -243,9 +252,17 @@ var idkFIDLAttrMap = mustMergeMaps(idkAttrMap, fidlAttrMap)
 // idkRustBinAttrMap maps from attribute name in Bazel IDK Rust binary rules to GN parameter names.
 var idkRustBinAttrMap = mustMergeMaps(idkAttrMap, rustBinAttrMap)
 
+// pythonBinAttrMap maps from attribute name in Bazel Python binary rules to GN parameter names.
+var pythonBinAttrMap = map[string]string{
+	"main": "main_source",
+}
+
 // A mapping from Bazel rule names to attribute mappings.
 // Attribute mappings map from Bazel rule attributes that use different names in GN.
 var attrMapsByRules = map[string]map[string]string{
+	// Python
+	"py_binary": pythonBinAttrMap,
+
 	// C++
 	"cc_library":    ccLibAttrMap,
 	"cc_binary":     ccCommonAttrMap,

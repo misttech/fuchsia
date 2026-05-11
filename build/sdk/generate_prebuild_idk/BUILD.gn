@@ -46,7 +46,7 @@ if (is_host) {
     # LINT.IfChange(idk_generator_lib_deps)
     deps = [
       "//build/cpp",
-      "//build/sdk/generate_version_history",
+      "//build/sdk/generate_version_history:generate_version_history_bin",
       "//build/sdk/sdk_common",
       "//third_party/pyyaml:yaml",
     ]

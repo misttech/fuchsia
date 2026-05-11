@@ -38,7 +38,8 @@ template("sdk_version_history") {
                              "visibility",
                            ])
 
-    binary_label = "//build/sdk/generate_version_history"
+    binary_label =
+        "//build/sdk/generate_version_history:generate_version_history_bin"
 
     deps = [ "//build/info:build_info_files($default_toolchain)" ]
 

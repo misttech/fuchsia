@@ -140,6 +140,37 @@ go_test("bazel2gn_tests") {
 	testonly = true
 }`,
 		},
+		{
+			name: "Simple Python targets",
+			bazel: `load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+	name = "generate_version_history",
+	srcs = ["__init__.py"],
+	imports = [".."],
+)
+
+py_binary(
+	name = "generate_version_history_bin",
+	srcs = ["cmd.py"],
+	main = "cmd.py",
+	deps = [":generate_version_history"],
+)`,
+			wantGN: `python_library("generate_version_history") {
+	sources = [
+		"__init__.py",
+	]
+}
+python_binary("generate_version_history_bin") {
+	sources = [
+		"cmd.py",
+	]
+	main_source = "cmd.py"
+	deps = [
+		":generate_version_history",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
