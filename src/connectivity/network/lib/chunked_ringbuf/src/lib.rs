@@ -17,8 +17,6 @@
 //! tail pointer is recorded to delimit chunks. When there is not enough room
 //! for a write, the next chunk is discarded to make room for the write.
 
-#![allow(dead_code)]
-
 use std::collections::VecDeque;
 
 use thiserror::Error;
@@ -199,6 +197,16 @@ impl<'a> Drop for Transaction<'a> {
         if !self.completed {
             self.buffer.rollback(self.start);
         }
+    }
+}
+
+impl<'a> std::io::Write for Transaction<'a> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.write(buf).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 

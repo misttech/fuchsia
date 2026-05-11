@@ -100,6 +100,9 @@ tests = [
     long = true
   },
   {
+    label = "packet-capture"
+  },
+  {
     label = "multicast-forwarding"
     err_logs = true
     long = true

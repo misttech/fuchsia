@@ -16,6 +16,7 @@
     capabilities: [
         {
             protocol: [
+                "fuchsia.net.debug.PacketCaptureProvider",
                 "fuchsia.net.filter.Control",
                 "fuchsia.net.filter.SocketControl",
                 "fuchsia.net.filter.State",
@@ -44,6 +45,7 @@
     expose: [
         {
             protocol: [
+                "fuchsia.net.debug.PacketCaptureProvider",
                 "fuchsia.net.filter.Control",
                 "fuchsia.net.filter.SocketControl",
                 "fuchsia.net.filter.State",

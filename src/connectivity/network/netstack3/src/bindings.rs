@@ -35,6 +35,7 @@ mod name_worker;
 mod ndp_watcher;
 mod neighbor_worker;
 mod netdevice_worker;
+mod packet_capture_worker;
 mod persistence;
 mod power;
 mod reference_notifier;
@@ -1260,6 +1261,7 @@ pub(crate) enum Service {
     NeighborController(fidl_fuchsia_net_neighbor::ControllerRequestStream),
     Neighbor(fidl_fuchsia_net_neighbor::ViewRequestStream),
     PacketSocket(fidl_fuchsia_posix_socket_packet::ProviderRequestStream),
+    PacketCapture(fidl_fuchsia_net_debug::PacketCaptureProviderRequestStream),
     RawSocket(fidl_fuchsia_posix_socket_raw::ProviderRequestStream),
     RootFilter(fidl_fuchsia_net_root::FilterRequestStream),
     RootInterfaces(fidl_fuchsia_net_root::InterfacesRequestStream),
@@ -1608,6 +1610,10 @@ impl NetstackSeed {
                 Service::DebugDiagnostics(debug_diagnostics) => {
                     diagnostics_handler.serve_diagnostics(debug_diagnostics)
                 }
+                Service::PacketCapture(packet_capture) => services_handle
+                    .spawn_request_stream_handler(packet_capture, |rs| {
+                        packet_capture_worker::serve_packet_captures(netstack.ctx.clone(), rs)
+                    }),
                 Service::DnsServerWatcher(dns) => services_handle
                     .spawn_request_stream_handler(dns, |rs| {
                         name_worker::serve(netstack.clone(), rs)

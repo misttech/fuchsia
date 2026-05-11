@@ -11,6 +11,7 @@ use fidl_fuchsia_posix_socket as fpsocket;
 use fidl_fuchsia_posix_socket_packet as fppacket;
 use fuchsia_async as fasync;
 
+use chunked_ringbuf::RingBuffer;
 use fidl::Peered as _;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, RequestStream as _};
 use futures::TryStreamExt as _;
@@ -45,13 +46,70 @@ use crate::bindings::util::{
 };
 use crate::bindings::{BindingsCtx, Ctx};
 
+#[derive(Debug)]
+enum Queue {
+    MessageQueue(Mutex<MessageQueue<Message, zx::EventPair>>),
+    RollingPcap {
+        ring_buffer: Mutex<RingBuffer>,
+        snap_len: usize,
+        start_system_time: std::time::SystemTime,
+        start_boot_time: zx::BootInstant,
+    },
+}
+
+impl Queue {
+    fn unwrap_message_queue(&self) -> &Mutex<MessageQueue<Message, zx::EventPair>> {
+        let Queue::MessageQueue(mq) = self else {
+            panic!("queue type must be message queue when backing socket");
+        };
+        mq
+    }
+
+    fn into_rolling_pcap_buffer(self) -> RingBuffer {
+        let Queue::RollingPcap {
+            ring_buffer,
+            snap_len: _,
+            start_system_time: _,
+            start_boot_time: _,
+        } = self
+        else {
+            panic!("queue type must be rolling pcap");
+        };
+        ring_buffer.into_inner()
+    }
+}
+
 /// State held in the bindings context for a single socket.
 #[derive(Debug)]
 pub(crate) struct SocketState {
-    /// The received messages for the socket.
-    queue: Mutex<MessageQueue<Message, zx::EventPair>>,
+    queue: Queue,
     kind: fppacket::Kind,
     bpf_filter: RwLock<Option<SocketFilterProgram>>,
+}
+
+impl SocketState {
+    pub(crate) fn new_rolling_pcap(
+        ring_buffer: RingBuffer,
+        snap_len: usize,
+        start_system_time: std::time::SystemTime,
+        start_boot_time: zx::BootInstant,
+        kind: fppacket::Kind,
+    ) -> Self {
+        Self {
+            queue: Queue::RollingPcap {
+                ring_buffer: Mutex::new(ring_buffer),
+                snap_len,
+                start_system_time,
+                start_boot_time,
+            },
+            kind,
+            bpf_filter: RwLock::new(None),
+        }
+    }
+
+    pub(crate) fn into_rolling_pcap_buffer(self) -> RingBuffer {
+        self.queue.into_rolling_pcap_buffer()
+    }
 }
 
 impl DeviceSocketTypes for BindingsCtx {
@@ -104,10 +162,44 @@ impl DeviceSocketBindingsContext<DeviceId<Self>> for BindingsCtx {
             fppacket::Kind::Network => frame.into_body(),
             fppacket::Kind::Link => raw,
         };
-        let truncated_size = body.len().min(truncated_size);
-        let body = body[..truncated_size].to_vec();
-        let message = Message { data, body };
-        queue.lock().receive(message).map_err(|NoSpace {}| ReceiveFrameError::QueueFull)
+        match queue {
+            Queue::MessageQueue(mq) => {
+                let truncated_size = body.len().min(truncated_size);
+                let body = body[..truncated_size].to_vec();
+                let message = Message { data, body };
+                mq.lock().receive(message).map_err(|NoSpace {}| ReceiveFrameError::QueueFull)
+            }
+            Queue::RollingPcap { ring_buffer, snap_len, start_system_time, start_boot_time } => {
+                // Skip outgoing packets on loopback because such packets will
+                // be observed on packet sockets on receive and we don't want
+                // the duplicate.
+                if matches!((frame, device), (Frame::Sent(_), DeviceId::Loopback(_))) {
+                    return Ok(());
+                }
+                let original_packet_length = body.len();
+                let truncated_size = original_packet_length.min(*snap_len).min(truncated_size);
+
+                let current_boot_time = zx::BootInstant::get();
+                let delta_nanos = current_boot_time.into_nanos() - start_boot_time.into_nanos();
+                let delta = std::time::Duration::from_nanos(
+                    delta_nanos.try_into().expect("delta is negative"),
+                );
+                let packet_time = *start_system_time + delta;
+
+                let mut ring_buffer = ring_buffer.lock();
+                let mut tx = ring_buffer.start_transaction();
+                pcap::write_enhanced_packet_block(
+                    &mut tx,
+                    0,
+                    packet_time,
+                    &body[..truncated_size],
+                    original_packet_length.try_into().expect("fits in u32"),
+                )
+                .expect("write failed");
+                tx.commit();
+                Ok(())
+            }
+        }
     }
 }
 
@@ -230,11 +322,11 @@ impl BindingData {
         }
 
         let state = SocketState {
-            queue: Mutex::new(MessageQueue::new(
+            queue: Queue::MessageQueue(Mutex::new(MessageQueue::new(
                 local_event,
                 None, /* notifier */
                 ctx.bindings_ctx().settings.device.read().packet_receive_buffer.default(),
-            )),
+            ))),
             kind,
             bpf_filter: RwLock::new(None),
         };
@@ -372,6 +464,7 @@ impl<'a> RequestHandler<'a> {
         let Self { ctx: _, data: BindingData { peer_event: _, id } } = self;
 
         let SocketState { queue, .. } = id.socket_state();
+        let queue = queue.unwrap_message_queue();
         let mut queue = queue.lock();
         queue.pop().ok_or_else(|| ErrnoError::new(fposix::EWOULDBLOCK, "receive queue empty"))
     }
@@ -380,6 +473,7 @@ impl<'a> RequestHandler<'a> {
         let Self { ctx, data: BindingData { peer_event: _, id } } = self;
 
         let SocketState { queue, .. } = id.socket_state();
+        let queue = queue.unwrap_message_queue();
         let mut queue = queue.lock();
         queue.set_max_available_messages_size(
             size.try_into().unwrap_or(usize::MAX),
@@ -391,6 +485,7 @@ impl<'a> RequestHandler<'a> {
         let Self { ctx: _, data: BindingData { peer_event: _, id } } = self;
 
         let SocketState { queue, .. } = id.socket_state();
+        let queue = queue.unwrap_message_queue();
         let queue = queue.lock();
         queue.max_available_messages_size().get().try_into().unwrap_or(u64::MAX)
     }

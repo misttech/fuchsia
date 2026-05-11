@@ -212,7 +212,8 @@ fn parse_idb_option<'a>(input: &'a [u8]) -> PcapResult<'a, InterfaceDescriptionO
 /// [pcapng RFC Section 4.2]: https://www.ietf.org/archive/id/draft-ietf-opsawg-pcapng-05.html#name-interface-description-block
 #[derive(Debug, PartialEq, Eq)]
 pub struct ParsedInterfaceDescriptionOptions<'a> {
-    if_name: Option<Cow<'a, str>>,
+    /// The interface name option.
+    pub if_name: Option<Cow<'a, str>>,
 }
 
 fn parse_idb_options<'a>(
@@ -694,6 +695,17 @@ pub fn write_interface_description_block<W: std::io::Write>(
     write_if_name_option(&mut writer, interface_name)?;
     writer.write_all(OptionHeader::new_end_of_opt().as_bytes())?;
     writer.write_all(&total_len.to_le_bytes())?;
+    Ok(())
+}
+
+/// Writes a Section Header Block and an Interface Description Block.
+pub fn write_prelude<W: std::io::Write>(
+    mut writer: W,
+    link_type: LinkType,
+    interface_name: &str,
+) -> Result<(), std::io::Error> {
+    writer.write_all(SectionHeaderBlock::new().as_bytes())?;
+    write_interface_description_block(&mut writer, link_type, interface_name)?;
     Ok(())
 }
 

@@ -81,6 +81,7 @@ pub fn main() {
         .add_fidl_service(Service::Neighbor)
         .add_fidl_service(Service::NeighborController)
         .add_fidl_service(Service::PacketSocket)
+        .add_fidl_service(Service::PacketCapture)
         .add_fidl_service(Service::RawSocket)
         .add_fidl_service(Service::RootFilter)
         .add_fidl_service(Service::RootInterfaces)
