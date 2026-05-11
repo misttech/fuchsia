@@ -7,7 +7,8 @@
 #include <fidl/fuchsia.hardware.clock/cpp/wire.h>
 #include <fidl/fuchsia.hardware.gpu.mali/cpp/driver/wire.h>
 #include <fidl/fuchsia.hardware.registers/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -56,15 +57,14 @@ typedef struct {
 namespace aml_gpu {
 class TestAmlGpu;
 
-class AmlGpu final : public fdf::DriverBase,
+class AmlGpu final : public fdf::DriverBase2,
                      public fdf::WireServer<fuchsia_hardware_gpu_mali::ArmMali> {
  public:
-  AmlGpu(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  explicit AmlGpu();
 
   ~AmlGpu();
 
-  zx::result<> Start() override;
-  void Stop() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   void GetProperties(fdf::Arena& arena, GetPropertiesCompleter::Sync& completer) override;
   void EnterProtectedMode(fdf::Arena& arena, EnterProtectedModeCompleter::Sync& completer) override;
@@ -76,7 +76,7 @@ class AmlGpu final : public fdf::DriverBase,
  private:
   friend class TestAmlGpu;
 
-  zx_status_t Gp0Init();
+  zx_status_t Gp0Init(const fdf::Namespace& incoming);
   void InitClock();
   void SetClkFreqSource(int32_t clk_source);
   void SetInitialClkFreqSource(int32_t clk_source);
@@ -101,6 +101,7 @@ class AmlGpu final : public fdf::DriverBase,
   int32_t current_clk_source_ = -1;
   // bootstrap/driver_manager:root/aml-gpu
   inspect::Node root_;
+  inspect::Inspector inspector_;
   fdf::SynchronizedDispatcher loop_dispatcher_;
   bool gp0_init_succeeded_ = false;
 

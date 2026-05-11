@@ -7,7 +7,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.goldfish.pipe/cpp/wire.h>
 #include <fidl/fuchsia.hardware.goldfish/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -24,15 +24,13 @@
 
 namespace goldfish {
 
-PipeDriver::PipeDriver(fdf::DriverStartArgs start_args,
-                       fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("goldfish-pipe", std::move(start_args), std::move(driver_dispatcher)) {}
+PipeDriver::PipeDriver() : fdf::DriverBase2("goldfish-pipe") {}
 
 PipeDriver::~PipeDriver() = default;
 
-zx::result<> PipeDriver::Start() {
+zx::result<> PipeDriver::Start(fdf::DriverContext context) {
   zx::result<fidl::ClientEnd<fuchsia_hardware_acpi::Device>> acpi_client =
-      incoming()->Connect<fuchsia_hardware_acpi::Service::Device>("acpi");
+      context.incoming().Connect<fuchsia_hardware_acpi::Service::Device>("acpi");
   if (acpi_client.is_error()) {
     fdf::error("Failed to connect to ACPI service: {}", acpi_client);
     return acpi_client.take_error();
@@ -98,7 +96,7 @@ zx::result<> PipeDriver::Start() {
   return zx::ok();
 }
 
-void PipeDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void PipeDriver::Stop(fdf::StopCompleter completer) {
   zx::result<> result = pipe_device_->PrepareStop();
   if (result.is_error()) {
     fdf::error("Failed to prepare pipe device for stop: {}", result);
@@ -113,4 +111,4 @@ void PipeDriver::ServePipeDevice(fidl::ServerEnd<fuchsia_hardware_goldfish::Pipe
 
 }  // namespace goldfish
 
-FUCHSIA_DRIVER_EXPORT(goldfish::PipeDriver);
+FUCHSIA_DRIVER_EXPORT2(goldfish::PipeDriver);

@@ -7,7 +7,8 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <fidl/fuchsia.hardware.goldfish/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/node/cpp/add_child.h>
 #include <lib/zx/result.h>
@@ -21,10 +22,10 @@
 
 namespace goldfish {
 
-class PipeDriver : public fdf::DriverBase {
+class PipeDriver : public fdf::DriverBase2 {
  public:
-  PipeDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher);
-  virtual ~PipeDriver();
+  explicit PipeDriver();
+  ~PipeDriver() override;
 
   PipeDriver(const PipeDriver&) = delete;
   PipeDriver& operator=(const PipeDriver&) = delete;
@@ -32,8 +33,8 @@ class PipeDriver : public fdf::DriverBase {
   PipeDriver& operator=(PipeDriver&&) = delete;
 
   // `fdf::DriverBase`:
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
  private:
   void ServePipeDevice(fidl::ServerEnd<fuchsia_hardware_goldfish::PipeDevice> server);

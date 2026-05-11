@@ -93,10 +93,9 @@ cc_test_executable("aml-gpu-test-bin") {
   deps = [
     ":common",
     "//sdk/lib/async-loop:async-loop-cpp",
-    "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/async_patterns/testing/cpp",
     "//sdk/lib/driver/runtime/testing/cpp",
     "//sdk/lib/driver/testing/cpp",
+    "//sdk/lib/driver/testing/cpp:scoped_global_logger",
     "//src/devices/registers/testing/mock-registers",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/driver/testing/cpp/minimal_compat_environment.h>
 #include <lib/magma_service/mock/mock_msd.h>
@@ -18,10 +18,8 @@ namespace msd {
 
 class FakeTestDriver : public MagmaDriverBase {
  public:
-  FakeTestDriver(fdf::DriverStartArgs start_args,
-                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : MagmaDriverBase("fake_test_driver", std::move(start_args), std::move(driver_dispatcher)) {}
-  zx::result<> MagmaStart() override {
+  FakeTestDriver() : MagmaDriverBase("fake_test_driver") {}
+  zx::result<> MagmaStart(fdf::DriverContext& context) override {
     std::lock_guard lock(magma_mutex());
 
     set_magma_driver(msd::Driver::MsdCreate());
@@ -50,9 +48,8 @@ namespace {
 
 class FakeDriver : public MagmaDriverBase {
  public:
-  FakeDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : MagmaDriverBase("fake_driver", std::move(start_args), std::move(driver_dispatcher)) {}
-  zx::result<> MagmaStart() override {
+  FakeDriver() : MagmaDriverBase("fake_driver") {}
+  zx::result<> MagmaStart(fdf::DriverContext& context) override {
     std::lock_guard lock(magma_mutex());
 
     set_magma_driver(msd::Driver::MsdCreate());
@@ -97,8 +94,7 @@ TEST(MagmaDriver, CreateTestDriver) {
   env.SyncCall([&](fdf::OutgoingDirectory* env) {
     SetUpIncomingDirectory(*env, std::move(start_args->incoming_directory_server));
   });
-  FakeTestDriver driver{std::move(start_args->start_args),
-                        fdf::UnownedSynchronizedDispatcher(fdf::Dispatcher::GetCurrent()->get())};
+  FakeTestDriver driver{};
 }
 
 // Check that the driver class can be instantiated (not started).
@@ -113,8 +109,7 @@ TEST(MagmaDriver, CreateDriver) {
   env.SyncCall([&](fdf::OutgoingDirectory* env) {
     SetUpIncomingDirectory(*env, std::move(start_args->incoming_directory_server));
   });
-  FakeDriver driver{std::move(start_args->start_args),
-                    fdf::UnownedSynchronizedDispatcher(fdf::Dispatcher::GetCurrent()->get())};
+  FakeDriver driver{};
 }
 
 class FixtureConfig final {
@@ -211,4 +206,4 @@ TEST_F(MagmaDriverStarted, DependencyInjection) {
 
 // Export the |FakeTestDriver| for the |fdf_testing::internal::DriverUnderTest<FakeTestDriver>| to
 // use.
-FUCHSIA_DRIVER_EXPORT(msd::FakeTestDriver);
+FUCHSIA_DRIVER_EXPORT2(msd::FakeTestDriver);

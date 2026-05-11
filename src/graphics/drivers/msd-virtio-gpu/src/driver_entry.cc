@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.gpu.virtio/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/magma/platform/platform_bus_mapper.h>
 #include <lib/magma_service/msd.h>
@@ -13,16 +13,17 @@
 
 class VirtioDriver : public msd::MagmaDriverBase, VirtioGpuControlFidl {
  public:
-  explicit VirtioDriver(fdf::DriverStartArgs start_args,
-                        fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : msd::MagmaDriverBase("virtio", std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit VirtioDriver() : msd::MagmaDriverBase("virtio") {}
 
-  zx::result<> MagmaStart() override;
+  zx::result<> MagmaStart(fdf::DriverContext& context) override;
 
-  void Stop() override { fdf::info("VirtioDevice::Stop"); }
+  void Stop(fdf::StopCompleter completer) override {
+    fdf::info("VirtioDevice::Stop");
+    completer(zx::ok());
+  }
 };
 
-zx::result<> VirtioDriver::MagmaStart() {
+zx::result<> VirtioDriver::MagmaStart(fdf::DriverContext& context) {
   fdf::info("VirtioDevice::Start");
 
   zx::result info_resource = GetInfoResource();
@@ -60,4 +61,4 @@ zx::result<> VirtioDriver::MagmaStart() {
   return zx::ok();
 }
 
-FUCHSIA_DRIVER_EXPORT(VirtioDriver);
+FUCHSIA_DRIVER_EXPORT2(VirtioDriver);

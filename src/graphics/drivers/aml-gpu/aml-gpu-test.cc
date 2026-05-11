@@ -6,10 +6,7 @@
 
 #include <fidl/fuchsia.hardware.gpu.amlogic/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
-#include <lib/async-loop/default.h>
-#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
-#include <lib/driver/testing/cpp/driver_runtime.h>
-#include <lib/driver/testing/cpp/test_node.h>
+#include <lib/driver/testing/cpp/scoped_global_logger.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/zx/vmo.h>
 
@@ -20,18 +17,6 @@
 #include "src/devices/registers/testing/mock-registers/mock-registers.h"
 
 namespace aml_gpu {
-
-class TestEnvironmentWrapper {
- public:
-  fdf::DriverStartArgs Setup() {
-    zx::result start_args_result = node_.CreateStartArgsAndServe();
-    EXPECT_EQ(ZX_OK, start_args_result.status_value());
-    return std::move(start_args_result->start_args);
-  }
-
- private:
-  fdf_testing::TestNode node_{"root"};
-};
 
 class TestAmlGpu {
  public:
@@ -108,15 +93,9 @@ class TestAmlGpu {
     EXPECT_EQ(ZX_OK, reset_mock.VerifyAll());
   }
 
-  fdf_testing::DriverRuntime runtime_;
-  // This dispatcher is used by the test environment, and hosts the incoming directory.
-  fdf::UnownedSynchronizedDispatcher test_env_dispatcher_{runtime_.StartBackgroundDispatcher()};
-  async_patterns::TestDispatcherBound<TestEnvironmentWrapper> test_environment_{
-      test_env_dispatcher_->async_dispatcher(), std::in_place};
+  fdf_testing::ScopedGlobalLogger logger_;
 
-  aml_gpu::AmlGpu aml_gpu_{
-      test_environment_.SyncCall(&TestEnvironmentWrapper::Setup),
-      fdf::UnownedSynchronizedDispatcher(fdf_dispatcher_get_current_dispatcher())};
+  aml_gpu::AmlGpu aml_gpu_;
 };
 }  // namespace aml_gpu
 

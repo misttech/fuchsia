@@ -6,12 +6,13 @@
 
 namespace msd {
 
-zx::result<> MagmaDriverBase::Start() {
+zx::result<> MagmaDriverBase::Start(fdf::DriverContext context) {
+  incoming_ = context.take_incoming();
   teardown_logger_callback_ =
       magma::InitializePlatformLoggerForDFv2(&logger(), std::string(name()));
 
-  if (zx::result result = MagmaStart(); result.is_error()) {
-    node().reset();
+  if (zx::result result = MagmaStart(context); result.is_error()) {
+    take_node().reset();
     return result.take_error();
   }
 
@@ -39,7 +40,7 @@ zx::result<> MagmaDriverBase::Start() {
   return zx::ok();
 }
 
-void MagmaDriverBase::Stop() {
+void MagmaDriverBase::Stop(fdf::StopCompleter completer) {
   std::lock_guard lock(magma_->magma_mutex);
   if (magma_->magma_system_device) {
     magma_->magma_system_device->Shutdown();
@@ -47,6 +48,7 @@ void MagmaDriverBase::Stop() {
   magma_->magma_system_device.reset();
   magma_->magma_driver.reset();
   teardown_logger_callback_.call();
+  completer(zx::ok());
 }
 
 void MagmaDriverBase::GetClockSpeedLevel(
@@ -65,7 +67,7 @@ void MagmaDriverBase::handle_unknown_method(
     fidl::UnknownMethodCompleter::Sync& completer) {}
 
 zx::result<zx::resource> MagmaDriverBase::GetInfoResource() {
-  auto info_resource = incoming()->template Connect<fuchsia_kernel::InfoResource>();
+  auto info_resource = incoming_->template Connect<fuchsia_kernel::InfoResource>();
 
   if (info_resource.is_error()) {
     MAGMA_LOG(INFO, "Error requesting info resource: %s", info_resource.status_string());
@@ -200,7 +202,12 @@ void MagmaDriverBase::InitializeInspector() {
   std::lock_guard lock(magma_->magma_mutex);
   auto inspector = magma_driver()->MsdDuplicateInspector();
   if (inspector) {
-    InitInspectorExactlyOnce(inspector.value());
+    component_inspector_.emplace(
+        dispatcher(), inspect::PublishOptions{
+                          .inspector = std::move(inspector.value()),
+                          .tree_name = {std::string(name())},
+                          .client_end = incoming_->Connect<fuchsia_inspect::InspectSink>().value(),
+                      });
   }
 }
 

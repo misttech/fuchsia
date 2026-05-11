@@ -7,7 +7,8 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.gpu.magma/cpp/fidl.h>
 #include <fidl/fuchsia.kernel/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/fit/thread_safety.h>
 #include <lib/magma/platform/zircon/zircon_platform_logger_dfv2.h>
@@ -59,24 +60,23 @@ class MagmaCombinedDeviceServer : public fidl::WireServer<fuchsia_gpu_magma::Com
   MagmaClientType client_type_;
 };
 
-class MagmaDriverBase : public fdf::DriverBase,
+class MagmaDriverBase : public fdf::DriverBase2,
                         public fidl::WireServer<fuchsia_gpu_magma::PowerElementProvider>,
                         public fidl::WireServer<fuchsia_gpu_magma::DebugUtils>,
-                        internal::DependencyInjectionServer::Owner {
+                        public internal::DependencyInjectionServer::Owner {
  public:
-  MagmaDriverBase(std::string_view name, fdf::DriverStartArgs start_args,
-                  fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(name, std::move(start_args), std::move(driver_dispatcher)),
+  explicit MagmaDriverBase(std::string_view name)
+      : DriverBase2(name),
         magma_(std::make_shared<MagmaObjects>()),
         combined_device_server_(magma_, MagmaClientType::kUntrusted),
         trusted_combined_device_server_(magma_, MagmaClientType::kTrusted),
         magma_devfs_connector_(fit::bind_member<&MagmaDriverBase::BindConnector>(this)) {}
 
-  zx::result<> Start() override;
-  void Stop() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // Initialize MagmaDriver and MagmaSystemDevice.
-  virtual zx::result<> MagmaStart() = 0;
+  virtual zx::result<> MagmaStart(fdf::DriverContext& context) = 0;
 
   void GetPowerGoals(GetPowerGoalsCompleter::Sync& completer) override { completer.Reply({}); }
 
@@ -115,6 +115,9 @@ class MagmaDriverBase : public fdf::DriverBase,
       fidl::WireServer<::fuchsia_gpu_magma::DebugUtils>::SetPowerStateCompleter::Sync& completer)
       override;
 
+ protected:
+  std::shared_ptr<fdf::Namespace> incoming() { return incoming_; }
+
  private:
   zx::result<> CreateDevfsNode();
 
@@ -130,6 +133,8 @@ class MagmaDriverBase : public fdf::DriverBase,
   fit::deferred_callback teardown_logger_callback_;
 
   std::shared_ptr<MagmaObjects> magma_;
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<inspect::ComponentInspector> component_inspector_;
   MagmaCombinedDeviceServer combined_device_server_;
   MagmaCombinedDeviceServer trusted_combined_device_server_;
   driver_devfs::Connector<fuchsia_gpu_magma::CombinedDevice> magma_devfs_connector_;

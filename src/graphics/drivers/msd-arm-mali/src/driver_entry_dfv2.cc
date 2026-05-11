@@ -7,7 +7,7 @@
 #include <fidl/fuchsia.hardware.gpu.mali/cpp/wire.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fit/thread_safety.h>
 #include <lib/magma/platform/platform_bus_mapper.h>
 #include <lib/magma/platform/zircon/zircon_platform_logger_dfv2.h>
@@ -29,17 +29,16 @@ constexpr char kDriverName[] = "mali";
 
 class MaliDriver : public msd::MagmaDriverBase {
  public:
-  MaliDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : msd::MagmaDriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit MaliDriver() : msd::MagmaDriverBase(kDriverName) {}
 
-  zx::result<> MagmaStart() override {
+  zx::result<> MagmaStart(fdf::DriverContext& context) override {
     zx::result info_resource = GetInfoResource();
     // Info resource may not be available on user builds.
     if (info_resource.is_ok()) {
       magma::PlatformBusMapper::SetInfoResource(std::move(*info_resource));
     }
 
-    parent_device_ = ParentDeviceDFv2::Create(incoming(), take_config<config::Config>());
+    parent_device_ = ParentDeviceDFv2::Create(incoming(), context.take_config<config::Config>());
     if (!parent_device_) {
       MAGMA_LOG(ERROR, "Failed to create ParentDeviceDFv2");
       return zx::error(ZX_ERR_INTERNAL);
@@ -74,9 +73,9 @@ class MaliDriver : public msd::MagmaDriverBase {
     return zx::ok();
   }
 
-  void Stop() override {
-    msd::MagmaDriverBase::Stop();
+  void Stop(fdf::StopCompleter completer) override {
     magma::PlatformBusMapper::SetInfoResource(zx::resource{});
+    msd::MagmaDriverBase::Stop(std::move(completer));
   }
 
  private:
@@ -87,4 +86,4 @@ class MaliDriver : public msd::MagmaDriverBase {
 #endif
 };
 
-FUCHSIA_DRIVER_EXPORT(MaliDriver);
+FUCHSIA_DRIVER_EXPORT2(MaliDriver);

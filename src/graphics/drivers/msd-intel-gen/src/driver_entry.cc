@@ -6,7 +6,7 @@
 #include <fuchsia/hardware/intelgpucore/cpp/banjo.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/magma/platform/platform_bus_mapper.h>
 #include <lib/magma/platform/zircon/zircon_platform_status.h>
 #include <lib/magma/util/dlog.h>
@@ -31,14 +31,13 @@ constexpr char kDriverName[] = "magma-gpu";
 
 class IntelDevice : public msd::MagmaDriverBase {
  public:
-  IntelDevice(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : msd::MagmaDriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit IntelDevice() : msd::MagmaDriverBase(kDriverName) {}
 
-  zx::result<> MagmaStart() override;
+  zx::result<> MagmaStart(fdf::DriverContext& context) override;
 
-  void Stop() override {
-    msd::MagmaDriverBase::Stop();
+  void Stop(fdf::StopCompleter completer) override {
     magma::PlatformBusMapper::SetInfoResource(zx::resource{});
+    msd::MagmaDriverBase::Stop(std::move(completer));
   }
 
  private:
@@ -48,7 +47,7 @@ class IntelDevice : public msd::MagmaDriverBase {
 #endif
 };
 
-zx::result<> IntelDevice::MagmaStart() {
+zx::result<> IntelDevice::MagmaStart(fdf::DriverContext& context) {
   zx::result info_resource = GetInfoResource();
   // Info resource may not be available on user builds.
   if (info_resource.is_ok()) {
@@ -94,4 +93,4 @@ zx::result<> IntelDevice::MagmaStart() {
   return zx::ok();
 }
 
-FUCHSIA_DRIVER_EXPORT(IntelDevice);
+FUCHSIA_DRIVER_EXPORT2(IntelDevice);

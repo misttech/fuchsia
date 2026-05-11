@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.hardware.gpu.mali/cpp/wire.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/driver/compat/cpp/metadata.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -32,13 +32,9 @@
 
 namespace aml_gpu {
 
-AmlGpu::AmlGpu(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("aml-gpu", std::move(start_args), std::move(driver_dispatcher)) {}
+AmlGpu::AmlGpu() : fdf::DriverBase2("aml-gpu") {}
 
 AmlGpu::~AmlGpu() {}
-
-void AmlGpu::Stop() {}
 
 void AmlGpu::SetClkFreqSource(int32_t clk_source) {
   if (current_clk_source_ == clk_source) {
@@ -107,8 +103,8 @@ void AmlGpu::UpdateClockProperties() {
                 current_clk_freq_hz);
 }
 
-zx_status_t AmlGpu::Gp0Init() {
-  auto clock_client = incoming()->Connect<fuchsia_hardware_clock::Service::Clock>("clock-gp0-pll");
+zx_status_t AmlGpu::Gp0Init(const fdf::Namespace& incoming) {
+  auto clock_client = incoming.Connect<fuchsia_hardware_clock::Service::Clock>("clock-gp0-pll");
   if (clock_client.is_error() || !clock_client.value().is_valid()) {
     fdf::error("could not get clock fragment");
     return ZX_ERR_NO_RESOURCES;
@@ -291,7 +287,7 @@ void AmlGpu::FinishExitProtectedMode(fdf::Arena& arena,
     completer.buffer(arena).ReplyError(status);
   }
 }
-zx::result<> AmlGpu::Start() {
+zx::result<> AmlGpu::Start(fdf::DriverContext context) {
   zx::result loop_dispatcher = fdf::SynchronizedDispatcher::Create(
       fdf::SynchronizedDispatcher::Options{}, "aml-gpu-thread", [](fdf_dispatcher_t* dispatcher) {},
       "fuchsia.graphics.drivers.aml-gpu");
@@ -301,7 +297,7 @@ zx::result<> AmlGpu::Start() {
     return loop_dispatcher.take_error();
   }
   loop_dispatcher_ = *std::move(loop_dispatcher);
-  root_ = inspector().root().CreateChild("aml-gpu");
+  root_ = inspector_.GetRoot().CreateChild("aml-gpu");
   current_clk_source_property_ = root_.CreateUint("current_clk_source", current_clk_source_);
   current_clk_mux_source_property_ = root_.CreateUint("current_clk_mux_source", 0);
   current_clk_freq_hz_property_ = root_.CreateUint("current_clk_freq_hz", 0);
@@ -310,7 +306,7 @@ zx::result<> AmlGpu::Start() {
   auto builder = fuchsia_hardware_gpu_mali::wire::MaliProperties::Builder(arena_);
 
   zx::result pdev_client_end =
-      incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+      context.incoming().Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev_client_end.is_error()) {
     fdf::error("Failed to connect to platform device: {}", pdev_client_end);
     return pdev_client_end.take_error();
@@ -392,7 +388,7 @@ zx::result<> AmlGpu::Start() {
   }
 
   auto reset_register_client =
-      incoming()->Connect<fuchsia_hardware_registers::Service::Device>("register-reset");
+      context.incoming().Connect<fuchsia_hardware_registers::Service::Device>("register-reset");
   if (reset_register_client.is_error() || !reset_register_client.value().is_valid()) {
     fdf::error("could not get register-reset fragment");
     return zx::error(ZX_ERR_NO_RESOURCES);
@@ -413,7 +409,7 @@ zx::result<> AmlGpu::Start() {
   }
 
   if (gpu_block_->enable_gp0) {
-    zx_status_t status = Gp0Init();
+    zx_status_t status = Gp0Init(context.incoming());
     if (status != ZX_OK) {
       fdf::error("aml_gp0_init failed: {}. Falling back to lower clock.", status);
       return zx::error(status);
@@ -452,4 +448,4 @@ zx::result<> AmlGpu::Start() {
 }  // namespace aml_gpu
 
 // clang-format off
-FUCHSIA_DRIVER_EXPORT(aml_gpu::AmlGpu);
+FUCHSIA_DRIVER_EXPORT2(aml_gpu::AmlGpu);

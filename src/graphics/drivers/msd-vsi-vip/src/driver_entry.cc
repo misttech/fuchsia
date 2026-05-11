@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.gpu.magma/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fidl/cpp/wire/arena.h>
 #include <lib/fit/thread_safety.h>
 #include <lib/magma/platform/platform_handle.h>
@@ -34,11 +34,9 @@ constexpr char kDriverName[] = "vsi-vip";
 
 class NpuDevice : public msd::MagmaDriverBase {
  public:
-  NpuDevice(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : msd::MagmaDriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)),
-        parent_{.incoming_ = incoming()} {}
+  explicit NpuDevice() : msd::MagmaDriverBase(kDriverName) {}
 
-  zx::result<> MagmaStart() override;
+  zx::result<> MagmaStart(fdf::DriverContext& context) override;
 
  private:
 #if MAGMA_TEST_DRIVER
@@ -48,7 +46,8 @@ class NpuDevice : public msd::MagmaDriverBase {
   ParentDeviceDfv2 parent_;
 };
 
-zx::result<> NpuDevice::MagmaStart() {
+zx::result<> NpuDevice::MagmaStart(fdf::DriverContext& context) {
+  parent_.incoming_ = incoming();
   std::lock_guard lock(magma_mutex());
   set_magma_driver(msd::Driver::MsdCreate());
   if (!magma_driver()) {
@@ -78,4 +77,4 @@ zx::result<> NpuDevice::MagmaStart() {
   return zx::ok();
 }
 
-FUCHSIA_DRIVER_EXPORT(NpuDevice);
+FUCHSIA_DRIVER_EXPORT2(NpuDevice);
