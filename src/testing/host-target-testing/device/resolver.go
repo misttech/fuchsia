@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
@@ -56,7 +57,11 @@ func (r ConstantHostResolver) NodeName() string {
 }
 
 func (r ConstantHostResolver) ResolveSshAddress(ctx context.Context) (string, error) {
-	return net.JoinHostPort(r.host, strconv.Itoa(r.sshPort)), nil
+	host := r.host
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	return net.JoinHostPort(host, strconv.Itoa(r.sshPort)), nil
 }
 
 func (r ConstantHostResolver) WaitToFindDeviceInFastboot(ctx context.Context) (string, error) {
@@ -125,37 +130,40 @@ func (r *MdnsResolver) WaitToFindDeviceInNetboot(ctx context.Context) (string, e
 
 // FfxResolver uses `ffx target list` to resolve a nodename into a hostname.
 type FfxResolver struct {
-	ffx         *ffx.FFXTool
-	nodeName    string
-	oldNodeName string
+	ffx      *ffx.FFXTool
+	nodeName string
 }
 
-// NewFffResolver constructs a new `FfxResolver` for the specific nodename.
+// NewFfxResolver constructs a new `FfxResolver` for the specific nodename.
 func NewFfxResolver(
 	ctx context.Context,
-	ffxTool *ffx.FFXTool,
+	ffxInst *ffx.FFXTool,
 	nodeName string,
-) (*FfxResolver, error) {
-	if nodeName == "" {
-		var entries []ffx.TargetEntry
-		var err error
-		for i := 0; i < 10; i++ {
-			entries, err = ffxTool.TargetList(ctx)
-
-			if err != nil {
-				return nil, fmt.Errorf("failed to list devices: %w", err)
-			}
-
-			if len(entries) > 0 {
-				break
-			}
-
-			logger.Infof(ctx, "no devices found, retrying")
-			time.Sleep(5 * time.Second)
+	address string,
+) (DeviceResolver, error) {
+	if nodeName == "" && address != "" {
+		ffxInst.SetTarget(address)
+		if err := ffxInst.TargetWait(ctx, address); err != nil {
+			return nil, fmt.Errorf("failed waiting for target with address %s: %w", address, err)
 		}
-
+		entries, errList := ffxInst.TargetList(ctx, address, 0)
+		if errList != nil {
+			return nil, fmt.Errorf("failed to list devices: %w", errList)
+		}
 		if len(entries) == 0 {
-			return nil, fmt.Errorf("no devices found")
+			return nil, fmt.Errorf("failed to find target with address: %s after wait", address)
+		}
+		logger.Infof(ctx, "resolved device name %v from address %v", entries[0].NodeName, address)
+		nodeName = entries[0].NodeName
+	}
+
+	if nodeName == "" {
+		if err := ffxInst.TargetWait(ctx, ""); err != nil {
+			return nil, fmt.Errorf("failed waiting for target: %w", err)
+		}
+		entries, listErr := ffxInst.TargetList(ctx, "", 0)
+		if listErr != nil {
+			return nil, fmt.Errorf("failed to list devices: %w", listErr)
 		}
 
 		if len(entries) != 1 {
@@ -166,7 +174,7 @@ func NewFfxResolver(
 	}
 
 	return &FfxResolver{
-		ffx:      ffxTool,
+		ffx:      ffxInst,
 		nodeName: nodeName,
 	}, nil
 }
@@ -179,7 +187,7 @@ func (r *FfxResolver) ResolveName(ctx context.Context) (string, error) {
 	nodeName := r.NodeName()
 	logger.Infof(ctx, "resolving the nodename %v hostname", nodeName)
 
-	targets, err := r.ffx.TargetListForNode(ctx, nodeName)
+	targets, err := r.ffx.TargetList(ctx, nodeName, 0)
 	if err != nil {
 		return "", err
 	}
@@ -213,12 +221,23 @@ func (r *FfxResolver) ResolveSshAddress(ctx context.Context) (string, error) {
 	nodeName := r.NodeName()
 	logger.Infof(ctx, "resolving the nodename %v ssh address", nodeName)
 
-	addr, err := r.ffx.TargetGetSshAddress(ctx, nodeName)
+	targets, err := r.ffx.TargetList(ctx, nodeName, 0)
 	if err != nil {
-		return "", fmt.Errorf("no ssh address found for nodename %v: %w", nodeName, err)
+		return "", fmt.Errorf("failed to list devices: %w", err)
 	}
 
-	return addr, nil
+	for _, target := range targets {
+		for _, addr := range target.Addresses {
+			if addr.Type == "Ip" {
+				if addr.SSHPort != 0 {
+					return net.JoinHostPort(addr.IP, strconv.Itoa(int(addr.SSHPort))), nil
+				}
+				return net.JoinHostPort(addr.IP, "22"), nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no IP address found for nodename %v", nodeName)
 }
 
 func (r *FfxResolver) WaitToFindDeviceInFastboot(ctx context.Context) (string, error) {
@@ -231,32 +250,40 @@ func (r *FfxResolver) WaitToFindDeviceInFastboot(ctx context.Context) (string, e
 	for {
 		attempt += 1
 
-		if entries, err := r.ffx.TargetListForNode(ctx, nodeName); err == nil {
+		entries, err := r.ffx.TargetList(ctx, "", 12*time.Second)
+		if err == nil {
 			for _, entry := range entries {
-				logger.Infof(ctx, "device is in %v", entry.TargetState)
-				if entry.TargetState == "Fastboot" {
-					logger.Infof(ctx, "device %v is listening on %q", entry.NodeName, entry)
+				logger.Infof(ctx, "device %s is in %v", entry.NodeName, entry.TargetState)
+				if entry.NodeName == nodeName && entry.TargetState == "Fastboot" {
+					logger.Infof(ctx, "device %v is listening on %v", entry.NodeName, entry)
+					if entry.Serial != "" {
+						return entry.Serial, nil
+					}
+					if len(entry.Addresses) > 0 {
+						addr := entry.Addresses[0].IP
+						if strings.Contains(addr, ":") && !strings.HasPrefix(addr, "[") {
+							addr = fmt.Sprintf("[%s]", addr)
+						}
+						return addr, nil
+					}
 					return entry.NodeName, nil
 				}
 			}
-
 			logger.Infof(ctx, "attempt %d waiting for device to boot into fastboot", attempt)
 			time.Sleep(5 * time.Second)
 		} else {
 			logger.Infof(ctx, "attempt %d failed to resolve nodename %v: %v", attempt, nodeName, err)
+			time.Sleep(5 * time.Second)
 		}
-
 	}
 }
 
 func (r *FfxResolver) WaitToFindDeviceInNetboot(ctx context.Context) (string, error) {
 	// Exit early if ffx is not configured to listen for devices in zedboot.
-	supportsZedbootDiscovery, err := r.ffx.SupportsZedbootDiscovery(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	if !supportsZedbootDiscovery {
+	// With strict mode, zedboot discovery is generally off or unneeded unless extra config
+	// is explicitly provided upfront. Let's stub logically if unsupported.
+	supported, err := r.ffx.SupportsZedbootDiscovery(ctx)
+	if err == nil && !supported {
 		logger.Warningf(ctx, "ffx not configured to listen for devices in zedboot, assuming nodename is %s", r.nodeName)
 		return r.nodeName, nil
 	}
@@ -270,20 +297,20 @@ func (r *FfxResolver) WaitToFindDeviceInNetboot(ctx context.Context) (string, er
 	for {
 		attempt += 1
 
-		if entries, err := r.ffx.TargetListForNode(ctx, nodeName); err == nil {
+		entries, err := r.ffx.TargetList(ctx, nodeName, 0)
+		if err == nil {
 			for _, entry := range entries {
 				logger.Infof(ctx, "device is in %v", entry.TargetState)
 				if entry.TargetState == "Zedboot (R)" {
-					logger.Infof(ctx, "device %v is listening on %q", entry.NodeName, entry)
+					logger.Infof(ctx, "device %v is listening on %v", entry.NodeName, entry)
 					return entry.NodeName, nil
 				}
 			}
-
 			logger.Infof(ctx, "attempt %d waiting for device to boot into zedboot", attempt)
 			time.Sleep(5 * time.Second)
 		} else {
 			logger.Infof(ctx, "attempt %d failed to resolve nodename %v: %v", attempt, nodeName, err)
+			time.Sleep(5 * time.Second)
 		}
-
 	}
 }

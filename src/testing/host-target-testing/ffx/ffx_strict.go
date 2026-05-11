@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -87,6 +86,15 @@ func (f *ffxStrict) SetTarget(target string) {
 	f.ffxInstance.SetTarget(target)
 }
 
+func (f *ffxStrict) TargetWait(ctx context.Context, target string) error {
+	resolvedTarget, err := f.resolveTargetIfNeeded(ctx, target)
+	if err != nil {
+		return err
+	}
+	f.ffxInstance.SetTarget(resolvedTarget)
+	return f.ffxInstance.TargetWait(ctx)
+}
+
 func (f *ffxStrict) ConfigSet(ctx context.Context, key, value string) error {
 	return f.ffxInstance.ConfigSet(ctx, key, value)
 }
@@ -125,7 +133,7 @@ func (f *ffxStrict) resolveTargetIfNeeded(ctx context.Context, target string) (s
 	}
 
 	// Target looks like a node name. Resolve it using TargetList.
-	entries, err := f.targetListInternal(ctx, target, 0)
+	entries, err := f.TargetList(ctx, target, 0)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve node name %q to an IP address: %w", target, err)
 	}
@@ -143,11 +151,7 @@ func (f *ffxStrict) resolveTargetIfNeeded(ctx context.Context, target string) (s
 	return "", fmt.Errorf("no IP address found for node name %q", target)
 }
 
-func (f *ffxStrict) TargetList(ctx context.Context) ([]TargetEntry, error) {
-	return f.targetListInternal(ctx, "", 0)
-}
-
-func (f *ffxStrict) targetListInternal(ctx context.Context, target string, timeout time.Duration) ([]TargetEntry, error) {
+func (f *ffxStrict) TargetList(ctx context.Context, target string, timeout time.Duration) ([]TargetEntry, error) {
 	args := []string{
 		"--machine",
 		"json",
@@ -181,7 +185,7 @@ func (f *ffxStrict) targetListInternal(ctx context.Context, target string, timeo
 }
 
 func (f *ffxStrict) GetDisambiguatedTarget(ctx context.Context) (TargetEntry, error) {
-	targets, err := f.targetListInternal(ctx, "", 0)
+	targets, err := f.TargetList(ctx, "", 0)
 	if err != nil {
 		return TargetEntry{}, err
 	}
@@ -206,7 +210,7 @@ func (f *ffxStrict) GetDisambiguatedTarget(ctx context.Context) (TargetEntry, er
 }
 
 func (f *ffxStrict) TargetListForNode(ctx context.Context, nodeName string) ([]TargetEntry, error) {
-	entries, err := f.targetListInternal(ctx, nodeName, 0)
+	entries, err := f.TargetList(ctx, nodeName, 0)
 	if err != nil {
 		return []TargetEntry{}, err
 	}
@@ -224,7 +228,7 @@ func (f *ffxStrict) TargetListForNode(ctx context.Context, nodeName string) ([]T
 
 func (f *ffxStrict) WaitForTarget(ctx context.Context, address string) (TargetEntry, error) {
 	for attempt := 0; attempt < 10; attempt++ {
-		entries, err := f.targetListInternal(ctx, "", 0)
+		entries, err := f.TargetList(ctx, "", 0)
 		if err != nil {
 			return TargetEntry{}, fmt.Errorf("failed to get target list: %w", err)
 		}
@@ -336,7 +340,8 @@ func (f *ffxStrict) TargetUpdateCheckNowMonitor(ctx context.Context, target stri
 		"--monitor",
 	}
 
-	return f.runFFXCmd(ctx, args...)
+	stdout, err := f.ffxInstance.RunAndGetOutputRaw(ctx, args...)
+	return []byte(stdout), err
 }
 
 func (f *ffxStrict) TargetUpdateForceInstallNoReboot(ctx context.Context, target string, url string) error {
@@ -360,9 +365,7 @@ func (f *ffxStrict) TargetUpdateForceInstallNoReboot(ctx context.Context, target
 	return err
 }
 
-func (f *ffxStrict) RebootToBootloader(ctx context.Context, target string, runSSH func(ctx context.Context, cmd []string, stdout io.Writer, stderr io.Writer) error) error {
-	// Note: runSSH is unused in strict mode because we use "ffx target reboot -b" instead.
-	// It is kept to satisfy the interface that is introduced in a follow-up CL.
+func (f *ffxStrict) RebootToBootloader(ctx context.Context, target string) error {
 	resolvedTarget, err := f.resolveTargetIfNeeded(ctx, target)
 	if err != nil {
 		return err
@@ -438,7 +441,6 @@ func (f *ffxStrict) runFFXCmd(ctx context.Context, args ...string) ([]byte, erro
 
 	// Add default flags to match daemon implementation
 	args = append([]string{"--log-level", "trace"}, args...)
-
 	logger.Infof(ctx, "running with strict ffx: %s %v", path, args)
 	stdoutStr, err := f.ffxInstance.RunAndGetOutput(ctx, args...)
 	stdout := []byte(stdoutStr)
@@ -514,7 +516,12 @@ func (f *ffxStrict) DecompressBlobs(ctx context.Context, delivery_blobs []string
 	return err
 }
 
-func (f *ffxStrict) RegisterPackageRepository(ctx context.Context, repo_url string) error {
+func (f *ffxStrict) RegisterPackageRepository(ctx context.Context, target string, repo_url string) error {
+	resolvedTarget, err := f.resolveTargetIfNeeded(ctx, target)
+	if err != nil {
+		return err
+	}
+
 	args := []string{
 		"target",
 		"repository",
@@ -523,7 +530,11 @@ func (f *ffxStrict) RegisterPackageRepository(ctx context.Context, repo_url stri
 		repo_url,
 	}
 
-	_, err := f.runFFXCmd(ctx, args...)
+	if resolvedTarget != "" {
+		args = append([]string{"--target", resolvedTarget}, args...)
+	}
+
+	_, err = f.runFFXCmd(ctx, args...)
 	return err
 }
 
@@ -542,14 +553,17 @@ func (f *ffxStrict) GetTarget() string {
 	return f.ffxInstance.GetTarget()
 }
 
-func (f *ffxStrict) TargetGetSshAddress(ctx context.Context, target string) (string, error) {
-	return f.resolveTargetIfNeeded(ctx, target)
-}
-
-func (f *ffxStrict) StopDaemon(ctx context.Context) error {
+func (f *ffxStrict) Close(ctx context.Context) error {
 	return nil
 }
 
-func (f *ffxStrict) TargetAdd(ctx context.Context, target string) error {
-	return fmt.Errorf("TargetAdd not supported in strict mode")
+// EnsureOutputDirsExist ensures that the output directory for strict mode logs exists.
+// This is needed if the run directory was cleared by ClearRunDir, as strict mode
+// requires the log directory to exist to start.
+func (f *ffxStrict) EnsureOutputDirsExist(ctx context.Context) error {
+	outputDir := filepath.Join(f.runDir.path, "strict-output")
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create strict output dir: %w", err)
+	}
+	return nil
 }

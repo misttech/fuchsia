@@ -21,6 +21,26 @@ import (
 
 var hostDir = map[string]string{"arm64": "host_arm64", "amd64": "host_x64"}[runtime.GOARCH]
 
+const testPrivateKey = `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtz
+c2gtZWQyNTUxOQAAACD1kR/9hRovUqG4rOa+v+vG3yMhR8P1fVdFkX43d1EWRQ
+AAAJD6P+w0+j/sNAAAAAtzc2gtZWQyNTUxOQAAACD1kR/9hRovUqG4rOa+v+vG
+3yMhR8P1fVdFkX43d1EWRQAAAEA9HkX9hRovUqG4rOa+v+vG3yMhR8P1fVdFkX
+43d1EWRQAAACD1kR/9hRovUqG4rOa+v+vG3yMhR8P1fVdFkX43d1EWRQAAAAEA
+AAAEc2xncgECAwQFBgcI
+-----END OPENSSH PRIVATE KEY-----`
+
+const testPublicKey = `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPWRH/2FGi9Sobis5r6/68bfIyFHw/V9V0WRfjd3URZF test@example.com`
+
+func generatePlaceholderSshKey(t *testing.T, path string) {
+	if err := os.WriteFile(path, []byte(testPrivateKey), 0600); err != nil {
+		t.Fatalf("failed to write placeholder ssh key: %s", err)
+	}
+	if err := os.WriteFile(path+".pub", []byte(testPublicKey), 0644); err != nil {
+		t.Fatalf("failed to write placeholder ssh public key: %s", err)
+	}
+}
+
 // createTestPackage fills the given directory with a new repository.
 func createTestPackage(t *testing.T, dir string) (*Repository, build.MerkleRoot) {
 	ctx := context.Background()
@@ -63,13 +83,17 @@ func createTestPackage(t *testing.T, dir string) (*Repository, build.MerkleRoot)
 	}
 
 	// Publish the config to the repo.
-	isolateDir := ffx.NewRunDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
-	ffx, err := ffx.NewFFXTool("host-tools/ffx", isolateDir)
+	keyPath := filepath.Join(t.TempDir(), "placeholder_ssh_key")
+	generatePlaceholderSshKey(t, keyPath)
+	t.Setenv("FUCHSIA_SSH_KEY", keyPath)
+
+	runDir := ffx.NewRunDir(filepath.Join(t.TempDir(), "ffx-run-dir"))
+	ffxTool, err := ffx.NewFFXTool("host-tools/ffx", runDir)
 	if err != nil {
 		t.Fatalf("failed to create FFXTool: %s", err)
 	}
 	keysDir := filepath.Join(hostDir, "test_data/ffx_lib_pkg/empty-repo/keys")
-	err = ffx.RepositoryCreate(ctx, dir, keysDir)
+	err = ffxTool.RepositoryCreate(ctx, dir, keysDir)
 	if err != nil {
 		t.Fatalf("failed to create repository: %s", err)
 	}
@@ -77,8 +101,13 @@ func createTestPackage(t *testing.T, dir string) (*Repository, build.MerkleRoot)
 	if err != nil {
 		t.Fatalf("failed to copy keys: %s", err)
 	}
+	blobsDir = filepath.Join(dir, "blobs")
+	if err := os.MkdirAll(blobsDir, os.ModePerm); err != nil {
+		t.Fatalf("failed to create blobs directory: %s", err)
+	}
 	blobType := 1
-	pkgRepo, err := NewRepository(ctx, dir, NewDirBlobStore(blobsDir), ffx, &blobType)
+
+	pkgRepo, err := NewRepository(ctx, dir, NewDirBlobStore(blobsDir), ffxTool, &blobType)
 	if err != nil {
 		t.Fatalf("failed to read repo: %s", err)
 	}
@@ -219,12 +248,16 @@ func TestPublish(t *testing.T) {
 		t.Fatalf("Delivery blob does not exist '%s'. %s", actualPkg.Merkle(), err)
 	}
 
-	isolateDir := ffx.NewRunDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
-	ffx, err := ffx.NewFFXTool("host-tools/ffx", isolateDir)
+	keyPath2 := filepath.Join(t.TempDir(), "placeholder_ssh_key2")
+	generatePlaceholderSshKey(t, keyPath2)
+	t.Setenv("FUCHSIA_SSH_KEY", keyPath2)
+
+	runDir := ffx.NewRunDir(filepath.Join(t.TempDir(), "ffx-run-dir"))
+	ffxTool, err := ffx.NewFFXTool("host-tools/ffx", runDir)
 	if err != nil {
 		t.Fatalf("failed to create FFXTool: %s", err)
 	}
-	pkgRepo, err = NewRepository(ctx, pkgRepo.rootDir, pkgRepo.blobStore, ffx, &deliveryBlobType)
+	pkgRepo, err = NewRepository(ctx, pkgRepo.rootDir, pkgRepo.blobStore, ffxTool, &deliveryBlobType)
 
 	// Confirm that the package is published and updated.
 	pkg, err = pkgRepo.OpenPackage(ctx, fullPkgName)

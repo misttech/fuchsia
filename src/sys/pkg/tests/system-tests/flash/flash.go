@@ -12,7 +12,7 @@ import (
 
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/artifacts"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/device"
-	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
+	ffxpkg "go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 	"golang.org/x/crypto/ssh"
 )
@@ -20,16 +20,16 @@ import (
 func FlashDevice(
 	ctx context.Context,
 	d *device.Client,
-	ffxTool *ffx.FFXTool,
+	ffxTool *ffxpkg.FFXTool,
 	build artifacts.Build,
 	publicKey ssh.PublicKey,
-	version ffx.FfxVersionPolicy,
+	version ffxpkg.FfxVersionPolicy,
 ) error {
 	logger.Infof(ctx, "Starting to flash device")
 	startTime := time.Now()
 
 	// Fetch the FFX tool associated with the build we are flashing to use for reconnection after the device reboots.
-	nextFfx, err := build.GetFfx(ctx, ffxTool.RunDir(), version)
+	nextFfxTool, err := build.GetFfx(ctx, ffxTool.RunDir(), version)
 	if err != nil {
 		return fmt.Errorf("failed to get ffx from build: %w", err)
 	}
@@ -38,7 +38,7 @@ func FlashDevice(
 		return fmt.Errorf("device failed to flash: %w", err)
 	}
 
-	if err := d.Reconnect(ctx, nextFfx); err != nil {
+	if err := d.Reconnect(ctx, nextFfxTool); err != nil {
 		return fmt.Errorf("device failed to connect after flash: %w", err)
 	}
 

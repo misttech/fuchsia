@@ -6,6 +6,8 @@ package ffx
 
 import (
 	"context"
+	"encoding/json"
+	"os/exec"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
@@ -17,6 +19,9 @@ type FfxVersionPolicy string
 const (
 	FfxVersionPolicyLatest       FfxVersionPolicy = "latest"
 	FfxVersionPolicyFromApiLevel FfxVersionPolicy = "fromApiLevel"
+
+	// strictModeApiLevelThreshold is the API level above which ffx strict mode is supported.
+	strictModeApiLevelThreshold = 31
 )
 
 // RunDir represents the execution directory for ffx.
@@ -62,13 +67,13 @@ type TargetEntry struct {
 // FFXToolImpl is the interface that abstracts the operations performed by the ffx tool implementations.
 type FFXToolImpl interface {
 	runFFXCmd(ctx context.Context, args ...string) ([]byte, error)
-	TargetList(ctx context.Context) ([]TargetEntry, error)
+	TargetList(ctx context.Context, target string, timeout time.Duration) ([]TargetEntry, error)
 	GetDisambiguatedTarget(ctx context.Context) (TargetEntry, error)
 	TargetListForNode(ctx context.Context, nodeName string) ([]TargetEntry, error)
 	WaitForTarget(ctx context.Context, address string) (TargetEntry, error)
-	TargetGetSshAddress(ctx context.Context, target string) (string, error)
+
 	SupportsZedbootDiscovery(ctx context.Context) (bool, error)
-	TargetAdd(ctx context.Context, target string) error
+
 	TargetGetSshTime(ctx context.Context, target string) (time.Duration, error)
 	TargetUpdateChannelSet(ctx context.Context, target string, channel string) error
 	TargetUpdateCheckNowMonitor(ctx context.Context, target string) ([]byte, error)
@@ -78,31 +83,82 @@ type FFXToolImpl interface {
 	RepositoryPublish(ctx context.Context, repoDir string, packageManifests []string, additionalArgs ...string) error
 	SupportsPackageBlob(ctx context.Context) bool
 	DecompressBlobs(ctx context.Context, deliveryBlobs []string, outDir string) error
-	RegisterPackageRepository(ctx context.Context, repoURL string) error
+	RegisterPackageRepository(ctx context.Context, target string, repoURL string) error
 	TargetGetLastRebootReason(ctx context.Context, target string) (string, error)
+	Close(ctx context.Context) error
 	RunDir() RunDir
 	Run(ctx context.Context, args ...string) error
 	RunAndGetOutput(ctx context.Context, args ...string) (string, error)
-	StopDaemon(ctx context.Context) error
 	ClearRunDir()
+	SetTarget(target string)
+	GetTarget() string
+	TargetWait(ctx context.Context, target string) error
+	RebootToBootloader(ctx context.Context, target string) error
+	EnsureOutputDirsExist(ctx context.Context) error
 }
 
 var _ FFXToolImpl = (*FFXTool)(nil)
 
 // FFXTool is a concrete object that contains the implementation.
 type FFXTool struct {
-	impl FFXToolImpl
+	version      FfxVersionPolicy
+	buildVersion string
+	impl         FFXToolImpl
 }
 
 func NewFFXToolForVersion(ctx context.Context, ffxPath string, runDir RunDir, versionPolicy FfxVersionPolicy) (*FFXTool, error) {
 	logger.Infof(ctx, "NewFFXToolForVersion called with version policy: %q", versionPolicy)
-	// Note: The version policy is currently only used for logging in this CL.
-	// It will be used in a follow-up CL to switch between daemon and strict mode.
-	impl, err := newFfxDaemon(ctx, ffxPath, runDir)
+	// Query the build version and API level of the ffx binary.
+	// Fallback to "unknown" if it fails (robustness).
+	buildVersion := "unknown (likely old)"
+	apiLevel := 0
+
+	cmd := exec.CommandContext(ctx, ffxPath, "--machine", "json", "version", "-v")
+	output, errRun := cmd.Output()
+	if errRun != nil {
+		logger.Infof(ctx, "Failed to query ffx version (expected on old binaries): %v", errRun)
+	} else {
+		var versionInfo struct {
+			ToolVersion struct {
+				ApiLevel     int    `json:"api_level"`
+				BuildVersion string `json:"build_version"`
+			} `json:"tool_version"`
+		}
+		if errJSON := json.Unmarshal(output, &versionInfo); errJSON != nil {
+			logger.Infof(ctx, "Failed to parse ffx version JSON: %v", errJSON)
+		} else {
+			apiLevel = versionInfo.ToolVersion.ApiLevel
+			buildVersion = versionInfo.ToolVersion.BuildVersion
+			logger.Infof(ctx, "Detected ffx API level: %d, build version: %q", apiLevel, buildVersion)
+		}
+	}
+
+	var impl FFXToolImpl
+	var err error
+	if versionPolicy == FfxVersionPolicyLatest {
+		logger.Infof(ctx, "Using strict mode directly for version policy: latest")
+		impl, err = newFfxStrict(ctx, ffxPath, runDir)
+	} else if versionPolicy == FfxVersionPolicyFromApiLevel {
+		if apiLevel > strictModeApiLevelThreshold {
+			logger.Infof(ctx, "API Level > %d, using strict mode", strictModeApiLevelThreshold)
+			impl, err = newFfxStrict(ctx, ffxPath, runDir)
+		} else {
+			logger.Infof(ctx, "API Level <= %d, using daemon mode", strictModeApiLevelThreshold)
+			impl, err = newFfxDaemon(ctx, ffxPath, runDir)
+		}
+	} else {
+		logger.Infof(ctx, "Falling back to daemon mode for version policy: %q", versionPolicy)
+		impl, err = newFfxDaemon(ctx, ffxPath, runDir)
+	}
 	if err != nil {
 		return nil, err
 	}
-	return &FFXTool{impl: impl}, nil
+
+	return &FFXTool{
+		version:      versionPolicy,
+		buildVersion: buildVersion,
+		impl:         impl,
+	}, nil
 }
 
 func NewFFXTool(ffxPath string, runDir RunDir) (*FFXTool, error) {
@@ -113,8 +169,8 @@ func (t *FFXTool) runFFXCmd(ctx context.Context, args ...string) ([]byte, error)
 	return t.impl.runFFXCmd(ctx, args...)
 }
 
-func (t *FFXTool) TargetList(ctx context.Context) ([]TargetEntry, error) {
-	return t.impl.TargetList(ctx)
+func (t *FFXTool) TargetList(ctx context.Context, target string, timeout time.Duration) ([]TargetEntry, error) {
+	return t.impl.TargetList(ctx, target, timeout)
 }
 
 // GetDisambiguatedTarget is like TargetList, but returns exactly one target, enforcing the
@@ -134,16 +190,8 @@ func (t *FFXTool) WaitForTarget(ctx context.Context, address string) (TargetEntr
 	return t.impl.WaitForTarget(ctx, address)
 }
 
-func (t *FFXTool) TargetGetSshAddress(ctx context.Context, target string) (string, error) {
-	return t.impl.TargetGetSshAddress(ctx, target)
-}
-
 func (t *FFXTool) SupportsZedbootDiscovery(ctx context.Context) (bool, error) {
 	return t.impl.SupportsZedbootDiscovery(ctx)
-}
-
-func (t *FFXTool) TargetAdd(ctx context.Context, target string) error {
-	return t.impl.TargetAdd(ctx, target)
 }
 
 func (t *FFXTool) TargetGetSshTime(ctx context.Context, target string) (time.Duration, error) {
@@ -182,12 +230,20 @@ func (t *FFXTool) DecompressBlobs(ctx context.Context, delivery_blobs []string, 
 	return t.impl.DecompressBlobs(ctx, delivery_blobs, out_dir)
 }
 
-func (t *FFXTool) RegisterPackageRepository(ctx context.Context, repo_url string) error {
-	return t.impl.RegisterPackageRepository(ctx, repo_url)
+func (t *FFXTool) RegisterPackageRepository(ctx context.Context, target string, repo_url string) error {
+	return t.impl.RegisterPackageRepository(ctx, target, repo_url)
 }
 
 func (t *FFXTool) TargetGetLastRebootReason(ctx context.Context, target string) (string, error) {
 	return t.impl.TargetGetLastRebootReason(ctx, target)
+}
+
+func (t *FFXTool) Close(ctx context.Context) error {
+	return t.impl.Close(ctx)
+}
+
+func (t *FFXTool) EnsureOutputDirsExist(ctx context.Context) error {
+	return t.impl.EnsureOutputDirsExist(ctx)
 }
 
 func (t *FFXTool) RunDir() RunDir {
@@ -202,10 +258,22 @@ func (t *FFXTool) RunAndGetOutput(ctx context.Context, args ...string) (string, 
 	return t.impl.RunAndGetOutput(ctx, args...)
 }
 
-func (t *FFXTool) StopDaemon(ctx context.Context) error {
-	return t.impl.StopDaemon(ctx)
-}
-
 func (t *FFXTool) ClearRunDir() {
 	t.impl.ClearRunDir()
+}
+
+func (t *FFXTool) SetTarget(target string) {
+	t.impl.SetTarget(target)
+}
+
+func (t *FFXTool) GetTarget() string {
+	return t.impl.GetTarget()
+}
+
+func (t *FFXTool) TargetWait(ctx context.Context, target string) error {
+	return t.impl.TargetWait(ctx, target)
+}
+
+func (t *FFXTool) RebootToBootloader(ctx context.Context, target string) error {
+	return t.impl.RebootToBootloader(ctx, target)
 }

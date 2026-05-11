@@ -123,7 +123,7 @@ func (c *DeviceConfig) deviceResolver(
 			return nil, fmt.Errorf("device name cannot be empty when using ffx resolver")
 		}
 		logger.Infof(ctx, "ffx resolver uses device name '%v'", c.deviceName)
-		return device.NewFfxResolver(ctx, ffx, c.deviceName)
+		return device.NewFfxResolver(ctx, ffx, c.deviceName, c.deviceHostname)
 	case MdnsResolver:
 		logger.Infof(ctx, "mDNS resolver uses device name '%v'", c.deviceName)
 		return device.NewMdnsResolver(
@@ -169,10 +169,6 @@ func (c *DeviceConfig) NewDeviceClient(
 	ctx context.Context,
 	ffx *ffx.FFXTool,
 ) (*device.Client, error) {
-	deviceResolver, err := c.deviceResolver(ctx, ffx)
-	if err != nil {
-		return nil, err
-	}
 
 	sshPrivateKey, err := c.SSHPrivateKey()
 	if err != nil {
@@ -192,7 +188,10 @@ func (c *DeviceConfig) NewDeviceClient(
 	client, err := device.NewClient(
 		ctx,
 		c.repoPort,
-		deviceResolver,
+		c.deviceResolverMode,
+		c.deviceName,
+		c.deviceHostname,
+		c.deviceSshPort,
 		sshPrivateKey,
 		connectBackoff,
 		c.WorkaroundBrokenTimeSkip,

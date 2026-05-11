@@ -186,6 +186,13 @@ func NewRepeatableBuildConfig(
 	return c
 }
 
+func (c *RepeatableBuildConfig) Validate() error {
+	if len(c.builds) == 0 && c.defaultBuildID == "" {
+		return fmt.Errorf("no builds configured")
+	}
+	return nil
+}
+
 func (c *RepeatableBuildConfig) GetBuilds(
 	ctx context.Context,
 	deviceClient *device.Client,

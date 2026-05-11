@@ -38,8 +38,8 @@ func createAndRunFlasher(t *testing.T, setupFlasher func(t *testing.T, flasher *
 		t.Fatal(err)
 	}
 
-	ffxIsolateDir := NewRunDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
-	ffx, err := NewFFXTool(ffxPath, ffxIsolateDir)
+	ffxRunDir := NewRunDir(filepath.Join(t.TempDir(), "ffx-run-dir"))
+	ffx, err := NewFFXTool(ffxPath, ffxRunDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +72,16 @@ func TestSSHKeys(t *testing.T) {
 	segs := strings.Fields(result)
 	result = strings.Join(segs[:len(segs)-3], " ")
 	expected_result := "target flash --timeout-rate 1 --min-timeout-secs 600 --authorized-keys"
+	if !strings.HasPrefix(result, "ffx") || !strings.HasSuffix(result, expected_result) {
+		t.Fatalf("target flash result mismatched: " + result)
+	}
+}
+
+func TestDiscoveryTimeout(t *testing.T) {
+	result := createAndRunFlasher(t, func(t *testing.T, flasher *Flasher) {
+		flasher.SetDiscoveryTimeout(12000)
+	})
+	expected_result := "-c discovery.timeout=12000 target flash --timeout-rate 1 --min-timeout-secs 600 --manifest dir/flash.json"
 	if !strings.HasPrefix(result, "ffx") || !strings.HasSuffix(result, expected_result) {
 		t.Fatalf("target flash result mismatched: " + result)
 	}

@@ -23,6 +23,7 @@ type otaData struct {
 	build         artifacts.Build
 	repo          *packages.Repository
 	updatePackage *packages.UpdatePackage
+	version       ffx.FfxVersionPolicy
 }
 
 func (o *otaData) String() string {
@@ -44,6 +45,8 @@ func newOtas(
 	// `cycleTimeout` time limit.
 	otas := []*otaData{}
 	for i, buildWithVersion := range builds {
+		build := buildWithVersion.Build
+		version := buildWithVersion.Version
 		var name string
 		nth := len(builds) - 1 - i
 		if nth == 0 {
@@ -72,12 +75,12 @@ func newOtas(
 			ctx,
 			rand,
 			latestFfx,
-			buildWithVersion.Build,
+			build,
 			name,
 			blobFetchMode,
 			addRandomData,
 			ffxRunDir,
-			buildWithVersion.Version,
+			version,
 		)
 		if err != nil {
 			return []*otaData{}, err
@@ -87,17 +90,16 @@ func newOtas(
 	}
 
 	// Finally, redo the last build as our prime build.
-	lastBuildWithVersion := builds[len(builds)-1]
 	ota, err := newOta(
 		ctx,
 		rand,
 		latestFfx,
-		lastBuildWithVersion.Build,
+		builds[len(builds)-1].Build,
 		"N-prime",
 		artifacts.LazilyFetchBlobs,
 		true,
 		ffxRunDir,
-		lastBuildWithVersion.Version,
+		builds[len(builds)-1].Version,
 	)
 	if err != nil {
 		return []*otaData{}, err
@@ -124,7 +126,12 @@ func newOta(
 	logger.Debugf(ctx, "Creating OTA %s", name)
 
 	latestFfx.ClearRunDir()
-
+	// Recreate the directory structure after clearing it. This is necessary
+	// because ffx strict mode fails if the log output directory does not exist,
+	// and if GetPackageRepository hits the cache, it will skip recreating it.
+	if err := latestFfx.EnsureOutputDirsExist(ctx); err != nil {
+		return nil, fmt.Errorf("failed to recreate output dirs: %w", err)
+	}
 	repo, err := build.GetPackageRepository(ctx, blobFetchMode, ffxRunDir, version)
 	if err != nil {
 		return nil, fmt.Errorf("error getting repository: %w", err)
@@ -166,6 +173,7 @@ func newOta(
 		build:         build,
 		repo:          repo,
 		updatePackage: updatePackage,
+		version:       version,
 	}
 
 	logger.Infof(ctx, "OTA %s update package: %s", ota, ota.updatePackage)

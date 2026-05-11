@@ -33,12 +33,12 @@ func TestTargetListEmpty(t *testing.T) {
 
 	ffxtoolScript := createScript(t, string(data))
 
-	isolateDir := NewRunDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
-	ffx, err := NewFFXTool(ffxtoolScript, isolateDir)
+	runDir := NewRunDir(filepath.Join(t.TempDir(), "ffx-run-dir"))
+	ffx, err := NewFFXTool(ffxtoolScript, runDir)
 	if err != nil {
 		t.Fatalf("Failed to create ffx tool: %s", err)
 	}
-	entries, err := ffx.TargetList(context.Background())
+	entries, err := ffx.TargetList(context.Background(), "", 0)
 	if err != nil {
 		t.Fatalf("Failed to run target list: %s", err)
 	}
@@ -60,12 +60,12 @@ func TestTargetList(t *testing.T) {
 
 	ffxtoolScript := createScript(t, string(data))
 
-	isolateDir := NewRunDir(filepath.Join(t.TempDir(), "ffx-isolate-dir"))
-	ffx, err := NewFFXTool(ffxtoolScript, isolateDir)
+	runDir := NewRunDir(filepath.Join(t.TempDir(), "ffx-run-dir"))
+	ffx, err := NewFFXTool(ffxtoolScript, runDir)
 	if err != nil {
 		t.Fatalf("Failed to create ffx tool: %s", err)
 	}
-	entries, err := ffx.TargetList(context.Background())
+	entries, err := ffx.TargetList(context.Background(), "", 0)
 	if err != nil {
 		t.Fatalf("Failed to run target list: %s", err)
 	}
@@ -109,12 +109,35 @@ func TestTargetListStrict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create ffx strict: %s", err)
 	}
-
-	entries, err := ffxStrict.TargetList(context.Background())
+	entries, err := ffxStrict.TargetList(context.Background(), "", 0)
 	if err != nil {
 		t.Fatalf("Failed to run target list: %s", err)
 	}
 	if diff := cmp.Diff(entries, expectedEntries); diff != "" {
 		t.Fatalf("unexpected entries, diff:\n%s", diff)
+	}
+}
+
+func TestCloseDaemon(t *testing.T) {
+	ffxtoolScript := createScript(t, "")
+	runDir := RunDir{path: t.TempDir()}
+	ffx, err := newFfxDaemon(context.Background(), ffxtoolScript, runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ffx.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %s", err)
+	}
+}
+
+func TestCloseStrict(t *testing.T) {
+	ffxtoolScript := createScript(t, "")
+	runDir := RunDir{path: t.TempDir()}
+	ffxStrict, err := newFfxStrict(context.Background(), ffxtoolScript, runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ffxStrict.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %s", err)
 	}
 }

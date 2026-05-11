@@ -154,6 +154,7 @@ func doTestPave(
 		return fmt.Errorf("failed to get paver to pave device: %w", err)
 	}
 
+	// Use the latest FFX version from the upgrade build to ensure we can communicate with the device after it is upgraded.
 	upgradeFfxTool, err := upgradeBuild.GetFfx(ctx, ffxRunDir, ffxpkg.FfxVersionPolicyLatest)
 	if err != nil {
 		return fmt.Errorf("failed to get ffx from build %s: %w", upgradeBuild, err)

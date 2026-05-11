@@ -18,7 +18,7 @@ type config struct {
 	archiveConfig    *cli.ArchiveConfig
 	deviceConfig     *cli.DeviceConfig
 	installerConfig  *cli.InstallerConfig
-	buildConfig      *cli.BuildConfig
+	buildConfig      *cli.RepeatableBuildConfig
 	packagesPath     string
 	paveTimeout      time.Duration
 	cycleCount       int
@@ -45,7 +45,7 @@ func newConfig(fs *flag.FlagSet) (*config, error) {
 		archiveConfig:   archiveConfig,
 		deviceConfig:    deviceConfig,
 		installerConfig: installerConfig,
-		buildConfig:     cli.NewBuildConfig(fs, archiveConfig, deviceConfig, os.Getenv("BUILDBUCKET_ID")),
+		buildConfig:     cli.NewRepeatableBuildConfig(fs, archiveConfig, deviceConfig, os.Getenv("BUILDBUCKET_ID"), ""),
 	}
 
 	fs.IntVar(&c.cycleCount, "cycle-count", 1, "How many cycles to run the test before completing (default is 1)")

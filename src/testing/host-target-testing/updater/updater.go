@@ -48,7 +48,6 @@ type client interface {
 	DisconnectionListener() <-chan struct{}
 	ServePackageRepository(
 		ctx context.Context,
-		ffxTool *ffx.FFXTool,
 		repo *packages.Repository,
 		name string) (*packages.Server, error)
 	RegisterPackageRepository(
@@ -57,7 +56,8 @@ type client interface {
 		repo *packages.Server,
 		repoName string,
 		createRewriteRule bool,
-		rewritePackages []string) error
+		rewritePackages []string,
+		sshAddr string) error
 	Run(ctx context.Context, command []string, stdout io.Writer, stderr io.Writer) error
 	SetUpdateChannel(ctx context.Context, ffxTool *ffx.FFXTool, target string, channel string) error
 	MonitorUpdate(ctx context.Context, ffxTool *ffx.FFXTool, target string) (string, error)
@@ -119,13 +119,13 @@ func checkSyslogForUnknownFirmware(ctx context.Context, c client) error {
 
 // SystemUpdateChecker uses `update check-now` to install a package.
 type SystemUpdateChecker struct {
-	updatePackage          *packages.UpdatePackage
-	checkForUnkownFirmware bool
+	updatePackage           *packages.UpdatePackage
+	checkForUnknownFirmware bool
 }
 
-func NewSystemUpdateChecker(checkForUnkownFirmware bool) *SystemUpdateChecker {
+func NewSystemUpdateChecker(checkForUnknownFirmware bool) *SystemUpdateChecker {
 	return &SystemUpdateChecker{
-		checkForUnkownFirmware: checkForUnkownFirmware,
+		checkForUnknownFirmware: checkForUnknownFirmware,
 	}
 }
 
@@ -146,7 +146,7 @@ func (u *SystemUpdateChecker) Update(
 			target,
 			srcUpdatePackage.Repository(),
 			true,
-			u.checkForUnkownFirmware,
+			u.checkForUnknownFirmware,
 		)
 	}
 
@@ -194,7 +194,7 @@ func (u *SystemUpdateChecker) Update(
 		target,
 		tempRepo,
 		true,
-		u.checkForUnkownFirmware,
+		u.checkForUnknownFirmware,
 	)
 }
 
@@ -205,7 +205,7 @@ func updateCheckNow(
 	target string,
 	repo *packages.Repository,
 	createRewriteRule bool,
-	checkForUnkownFirmware bool,
+	checkForUnknownFirmware bool,
 ) error {
 	logger.Infof(ctx, "Triggering OTA")
 
@@ -232,7 +232,7 @@ func updateCheckNow(
 		// We pass createRewriteRule=true for versions of system-update-checker prior to
 		// fxrev.dev/504000. Newer versions need to have `update channel set` called below.
 		repoName := "trigger-ota"
-		server, err := c.ServePackageRepository(ctx, ffxTool, repo, repoName)
+		server, err := c.ServePackageRepository(ctx, repo, repoName)
 		if err != nil {
 			return fmt.Errorf("error setting up server: %w", err)
 		}
@@ -246,7 +246,7 @@ func updateCheckNow(
 		for i := 0; i < 3; i++ {
 			childCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
-			if err := c.RegisterPackageRepository(childCtx, ffxTool, server, repoName, createRewriteRule, nil); err == nil {
+			if err := c.RegisterPackageRepository(childCtx, ffxTool, server, repoName, createRewriteRule, nil, target); err == nil {
 				break
 			}
 			if i == 2 {
@@ -308,7 +308,7 @@ func updateCheckNow(
 			}
 			logger.Debugf(ctx, "Output from check-now monitor: %s", stdout)
 
-			if err == nil && checkForUnkownFirmware {
+			if err == nil && checkForUnknownFirmware {
 				// FIXME(https://fxbug.dev/42077484): We wouldn't have to ignore disconnects
 				// if we could trigger an update without it automatically rebooting.
 				err = checkSyslogForUnknownFirmware(ctx, c)
@@ -367,12 +367,12 @@ func updateCheckNow(
 
 // SystemUpdater uses the `system-updater` to install a package.
 type SystemUpdater struct {
-	checkForUnkownFirmware bool
+	checkForUnknownFirmware bool
 }
 
-func NewSystemUpdater(checkForUnkownFirmware bool) *SystemUpdater {
+func NewSystemUpdater(checkForUnknownFirmware bool) *SystemUpdater {
 	return &SystemUpdater{
-		checkForUnkownFirmware: checkForUnkownFirmware,
+		checkForUnknownFirmware: checkForUnknownFirmware,
 	}
 }
 
@@ -395,12 +395,12 @@ func (u *SystemUpdater) Update(
 		return fmt.Errorf("error rehosting the update package: %w", err)
 	}
 
-	server, err := c.ServePackageRepository(ctx, ffxTool, dstUpdate.Repository(), repoName)
+	server, err := c.ServePackageRepository(ctx, dstUpdate.Repository(), repoName)
 	if err != nil {
 		return fmt.Errorf("error setting up server: %w", err)
 	}
 	defer server.Shutdown(ctx)
-	if err := c.RegisterPackageRepository(ctx, ffxTool, server, repoName, true, nil); err != nil {
+	if err := c.RegisterPackageRepository(ctx, ffxTool, server, repoName, true, nil, target); err != nil {
 		return fmt.Errorf("error registering repository with target: %w", err)
 	}
 
@@ -450,7 +450,7 @@ type OmahaUpdater struct {
 	avbTool                     *avb.AVBTool
 	zbiTool                     *zbi.ZBITool
 	workaroundOtaNoRewriteRules bool
-	checkForUnkownFirmware      bool
+	checkForUnknownFirmware     bool
 }
 
 func NewOmahaUpdater(
@@ -458,14 +458,14 @@ func NewOmahaUpdater(
 	avbTool *avb.AVBTool,
 	zbiTool *zbi.ZBITool,
 	workaroundOtaNoRewriteRules bool,
-	checkForUnkownFirmware bool,
+	checkForUnknownFirmware bool,
 ) *OmahaUpdater {
 	return &OmahaUpdater{
 		omahaTool:                   omahaTool,
 		avbTool:                     avbTool,
 		zbiTool:                     zbiTool,
 		workaroundOtaNoRewriteRules: workaroundOtaNoRewriteRules,
-		checkForUnkownFirmware:      checkForUnkownFirmware,
+		checkForUnknownFirmware:     checkForUnknownFirmware,
 	}
 }
 
@@ -537,6 +537,6 @@ func (u *OmahaUpdater) Update(
 		target,
 		dstUpdate.Repository(),
 		!u.workaroundOtaNoRewriteRules,
-		u.checkForUnkownFirmware,
+		u.checkForUnknownFirmware,
 	)
 }

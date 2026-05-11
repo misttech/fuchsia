@@ -24,10 +24,15 @@ if (is_host) {
     ]
     sources = [
       "device.go",
+      "device_test.go",
       "finder.go",
       "monotonic.go",
       "resolver.go",
       "serial.go",
     ]
+  }
+
+  go_test("host-target-testing-device-test") {
+    embed = [ ":device" ]
   }
 }

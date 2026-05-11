@@ -87,7 +87,7 @@ func doTest(ctx context.Context) error {
 	// from the build under test.
 	latestFfx, ffxCleanup, err := c.ffxConfig.NewFfxTool(ctx, c.deviceConfig.SSHKeyFile())
 	if err != nil {
-		return fmt.Errorf("failed to create ffx: %w", err)
+		return fmt.Errorf("failed to create latest ffx: %w", err)
 	}
 	defer ffxCleanup()
 
@@ -173,6 +173,7 @@ func doTest(ctx context.Context) error {
 			deviceClient,
 			latestFfx,
 			otas[0],
+			ffxRunDir,
 		)
 		ch <- currentBootSlot
 		return err
@@ -184,14 +185,14 @@ func doTest(ctx context.Context) error {
 
 	currentBootSlot := <-ch
 
-	targetStr := deviceClient.Name()
-	if targetStr == "" {
-		targetStr = c.deviceConfig.DeviceAddress()
+	target := deviceClient.Name()
+	if target == "" {
+		target = c.deviceConfig.DeviceAddress()
 	}
 	return testOTAs(
 		ctx,
 		deviceClient,
-		targetStr,
+		target,
 		ffxRunDir,
 		otas,
 		currentBootSlot,
@@ -206,14 +207,11 @@ func testOTAs(
 	otas []*otaData,
 	currentBootSlot *sl4f.Configuration,
 ) error {
-	// Perform the OTA cycles.
 	for i := uint(1); i <= c.cycleCount; i++ {
 		logger.Infof(ctx, "OTA Attempt Cycle %d. Time out in %s", i, c.cycleTimeout)
-
 		startTime := time.Now()
 
 		if err := util.RunWithTimeout(ctx, c.cycleTimeout, func() error {
-			// Actually OTA through all the builds.
 			for i := 1; i < len(otas); i++ {
 				srcOta := otas[i-1]
 				dstOta := otas[i]
@@ -249,6 +247,7 @@ func initializeDevice(
 	device *device.Client,
 	latestFfxTool *ffx.FFXTool,
 	ota *otaData,
+	ffxRunDir ffx.RunDir,
 ) (*sl4f.Configuration, error) {
 	logger.Infof(ctx, "Initializing device")
 
@@ -259,7 +258,6 @@ func initializeDevice(
 		return nil, err
 	}
 
-	// Only pave if the device is not running the expected version.
 	upToDate, err := check.IsDeviceUpToDate(ctx, device, systemImage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if up to date during initialization: %w", err)
@@ -280,7 +278,7 @@ func initializeDevice(
 				latestFfxTool,
 				ota.build,
 				sshPrivateKey.PublicKey(),
-				ffx.FfxVersionPolicyLatest,
+				ota.version,
 			); err != nil {
 				return nil, fmt.Errorf("failed to flash device during initialization: %w", err)
 			}
@@ -291,7 +289,7 @@ func initializeDevice(
 				latestFfxTool,
 				ota.build,
 				sshPrivateKey.PublicKey(),
-				ffx.FfxVersionPolicyLatest,
+				ota.version,
 			); err != nil {
 				return nil, fmt.Errorf("failed to pave device during initialization: %w", err)
 			}
@@ -299,18 +297,17 @@ func initializeDevice(
 	}
 
 	// The device was initialized, so use the ffx from the build to communicate with it.
-	ffxTool, err := ota.build.GetFfx(ctx, latestFfxTool.RunDir(), ffx.FfxVersionPolicyLatest)
+	ffxLegacy, err := ota.build.GetFfx(ctx, ffxRunDir, ota.version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ffx from build: %w", err)
 	}
 
-	// We always boot into the A partition after initialization.
 	config := sl4f.ConfigurationA
 	currentBootSlot := &config
 
 	if err := check.ValidateDevice(
 		ctx,
-		ffxTool,
+		ffxLegacy,
 		device,
 		systemImage,
 		currentBootSlot,
@@ -336,8 +333,12 @@ func systemOTA(
 ) error {
 	var err error
 
-	// We should use this ffx after we reboot.
-	nextFfxTool, err := dstOta.build.GetFfx(ctx, ffxRunDir, ffx.FfxVersionPolicyLatest)
+	currentFfx, err := srcOta.build.GetFfx(ctx, ffxRunDir, srcOta.version)
+	if err != nil {
+		return fmt.Errorf("failed to get ffx from build %s: %w", srcOta, err)
+	}
+
+	nextFfx, err := dstOta.build.GetFfx(ctx, ffxRunDir, dstOta.version)
 	if err != nil {
 		return fmt.Errorf("failed to get ffx from build %s: %w", dstOta, err)
 	}
@@ -360,7 +361,8 @@ func systemOTA(
 
 		if err = otaToPackage(
 			ctx,
-			nextFfxTool,
+			currentFfx,
+			nextFfx,
 			device,
 			target,
 			dstOta,
@@ -386,11 +388,9 @@ func systemOTA(
 			err,
 		)
 
-		// Reset our client state since the device has _potentially_
-		// rebooted
 		device.Close()
 
-		newClient, err := c.deviceConfig.NewDeviceClient(ctx, nextFfxTool)
+		newClient, err := c.deviceConfig.NewDeviceClient(ctx, nextFfx)
 		if err != nil {
 			return fmt.Errorf("failed to create ota test client: %w", err)
 		}
@@ -408,7 +408,8 @@ func systemOTA(
 
 func otaToPackage(
 	ctx context.Context,
-	nextFfxTool *ffx.FFXTool,
+	currentFfx *ffx.FFXTool,
+	nextFfx *ffx.FFXTool,
 	device *device.Client,
 	target string,
 	ota *otaData,
@@ -425,9 +426,13 @@ func otaToPackage(
 		return err
 	}
 
-	if err := u.Update(ctx, nextFfxTool, device, target, ota.updatePackage); err != nil {
+	if err := u.Update(ctx, currentFfx, device, target, ota.updatePackage); err != nil {
 		return fmt.Errorf("failed to download OTA: %w", err)
 	}
+
+	// We have now rebooted into the new OS. Update the client's active FFX tool
+	// so any subsequent IP resolutions use the correct binary.
+	device.SetFFXTool(nextFfx)
 
 	logger.Infof(ctx, "Validating device")
 
@@ -449,7 +454,7 @@ func otaToPackage(
 
 	if err := check.ValidateDevice(
 		ctx,
-		nextFfxTool,
+		nextFfx,
 		device,
 		systemImage,
 		currentBootSlot,

@@ -11,6 +11,7 @@ import (
 
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/util"
+	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
 
 type FfxConfig struct {
@@ -64,7 +65,9 @@ func (c *FfxConfig) NewFfxTool(ctx context.Context, sshPrivateKeyPath string) (*
 	}
 
 	return ffxTool, func() {
-		ffxTool.StopDaemon(ctx)
+		if err := ffxTool.Close(ctx); err != nil {
+			logger.Warningf(ctx, "failed to close ffx tool: %v", err)
+		}
 		cleanupDir()
 	}, nil
 }

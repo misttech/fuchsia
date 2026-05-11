@@ -21,7 +21,7 @@ import (
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/artifacts"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/device"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/errutil"
-	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
+	ffxpkg "go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/sl4f"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/util"
 	"go.fuchsia.dev/fuchsia/tools/lib/color"
@@ -96,30 +96,32 @@ func doTest(ctx context.Context) error {
 	l.SetFlags(logger.Ldate | logger.Ltime | logger.LUTC | logger.Lshortfile)
 	ctx = logger.WithLogger(ctx, l)
 
-	build, err := c.buildConfig.GetBuild(ctx, deviceClient, outputDir)
+	builds, err := c.buildConfig.GetBuilds(ctx, deviceClient, outputDir)
 	if err != nil {
-		return fmt.Errorf("failed to get downgrade build: %w", err)
+		return fmt.Errorf("failed to get builds: %w", err)
 	}
-	if build == nil {
-		return fmt.Errorf("no build configured")
+	if len(builds) == 0 {
+		return fmt.Errorf("no builds configured")
 	}
+	build := builds[0].Build
+	version := builds[0].Version
 
 	if err := util.RunWithTimeout(ctx, c.paveTimeout, func() error {
-		return initializeDevice(ctx, deviceClient, ffxTool, build)
+		return initializeDevice(ctx, deviceClient, ffxTool, build, version)
 	}); err != nil {
 		return fmt.Errorf("initialization failed: %w", err)
 	}
 
-	return testRecovery(ctx, ffxTool, deviceClient, ffxTool.RunDir(), build, ffx.FfxVersionPolicyLatest)
+	return testRecovery(ctx, ffxTool, deviceClient, ffxTool.RunDir(), build, version)
 }
 
 func testRecovery(
 	ctx context.Context,
-	ffxTool *ffx.FFXTool,
+	ffxTool *ffxpkg.FFXTool,
 	device *device.Client,
-	ffxRunDir ffx.RunDir,
+	ffxRunDir ffxpkg.RunDir,
 	build artifacts.Build,
-	version ffx.FfxVersionPolicy,
+	version ffxpkg.FfxVersionPolicy,
 ) error {
 	for i := 1; i <= c.cycleCount; i++ {
 		logger.Infof(ctx, "Recovery Attempt %d", i)
@@ -139,11 +141,11 @@ func testRecovery(
 
 func doTestRecovery(
 	ctx context.Context,
-	ffxTool *ffx.FFXTool,
+	ffxTool *ffxpkg.FFXTool,
 	device *device.Client,
-	ffxRunDir ffx.RunDir,
+	ffxRunDir ffxpkg.RunDir,
 	build artifacts.Build,
-	version ffx.FfxVersionPolicy,
+	version ffxpkg.FfxVersionPolicy,
 ) error {
 	// We don't install an OTA, so we don't need to prefetch the blobs.
 	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffxRunDir, version)
@@ -151,6 +153,7 @@ func doTestRecovery(
 		return fmt.Errorf("unable to get repository: %w", err)
 	}
 
+	// We should use this ffx after we reboot.
 	// Get the FFX tool matching the version of the build we are testing to use for reconnection.
 	nextFfxTool, err := build.GetFfx(ctx, ffxRunDir, version)
 	if err != nil {
@@ -162,7 +165,6 @@ func doTestRecovery(
 		return fmt.Errorf("error opening update/0: %w", err)
 	}
 
-	// Install version N on the device if it is not already on that version.
 	expectedSystemImage, err := updatePackage.OpenSystemImagePackage(ctx)
 	if err != nil {
 		return fmt.Errorf("error extracting expected system image: %w", err)
@@ -213,12 +215,13 @@ func doTestRecovery(
 func initializeDevice(
 	ctx context.Context,
 	device *device.Client,
-	ffxTool *ffx.FFXTool,
+	ffx *ffxpkg.FFXTool,
 	build artifacts.Build,
+	version ffxpkg.FfxVersionPolicy,
 ) error {
 	logger.Infof(ctx, "Initializing device")
 
-	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffxTool.RunDir(), ffx.FfxVersionPolicyLatest)
+	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffx.RunDir(), version)
 	if err != nil {
 		return err
 	}
@@ -228,13 +231,11 @@ func initializeDevice(
 		return fmt.Errorf("error opening update/0: %w", err)
 	}
 
-	// Install version N on the device if it is not already on that version.
 	expectedSystemImage, err := updatePackage.OpenSystemImagePackage(ctx)
 	if err != nil {
 		return fmt.Errorf("error extracting expected system image merkle: %w", err)
 	}
 
-	// Only provision if the device is not running the expected version.
 	upToDate, err := check.IsDeviceUpToDate(ctx, device, expectedSystemImage)
 	if err != nil {
 		return fmt.Errorf("failed to check if up to date during initialization: %w", err)
@@ -248,18 +249,17 @@ func initializeDevice(
 		}
 
 		if c.useFlash {
-			if err := flash.FlashDevice(ctx, device, ffxTool, build, sshPrivateKey.PublicKey(), ffx.FfxVersionPolicyLatest); err != nil {
+			if err := flash.FlashDevice(ctx, device, ffx, build, sshPrivateKey.PublicKey(), version); err != nil {
 				return fmt.Errorf("failed to flash device during initialization: %w", err)
 			}
 		} else {
-			if err := pave.PaveDevice(ctx, device, ffxTool, build, sshPrivateKey.PublicKey(), ffx.FfxVersionPolicyLatest); err != nil {
+			if err := pave.PaveDevice(ctx, device, ffx, build, sshPrivateKey.PublicKey(), version); err != nil {
 				return fmt.Errorf("failed to pave device during initialization: %w", err)
 			}
 		}
 	}
 
-	// Check if we support ABR. If so, we always boot into A after a pave.
-	expectedConfig, err := check.DetermineCurrentABRConfig(ctx, ffxTool, device, repo)
+	expectedConfig, err := check.DetermineCurrentABRConfig(ctx, ffx, device, repo)
 	if err != nil {
 		return err
 	}
@@ -271,7 +271,7 @@ func initializeDevice(
 
 	if err := check.ValidateDevice(
 		ctx,
-		ffxTool,
+		ffx,
 		device,
 		expectedSystemImage,
 		expectedConfig,

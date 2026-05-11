@@ -29,6 +29,7 @@ type ffxDaemon struct {
 	runDir              RunDir
 	supportsPackageBlob *bool
 	supportsDirect      bool
+	target              string
 }
 
 var directSupportCache sync.Map
@@ -81,7 +82,45 @@ func (f *ffxDaemon) appendDirectFlag(args []string) []string {
 	return args
 }
 
-func (f *ffxDaemon) StopDaemon(ctx context.Context) error {
+func (f *ffxDaemon) SetTarget(target string) {
+	f.target = target
+}
+
+func (f *ffxDaemon) GetTarget() string {
+	return f.target
+}
+
+func (f *ffxDaemon) TargetWait(ctx context.Context, target string) error {
+	if target == "" {
+		target = f.target
+	}
+	for i := 0; i < 10; i++ {
+		entries, err := f.TargetList(ctx, target, 0)
+		if err != nil {
+			return fmt.Errorf("failed to list devices: %w", err)
+		}
+
+		if len(entries) > 0 {
+			if f.target == "" {
+				return nil
+			}
+			for _, entry := range entries {
+				if entry.NodeName == f.target {
+					return nil
+				}
+			}
+		}
+		time.Sleep(5 * time.Second)
+	}
+	return fmt.Errorf("timed out waiting for target %q", f.target)
+}
+
+func (f *ffxDaemon) RebootToBootloader(ctx context.Context, target string) error {
+	_, err := f.runFFXCmd(ctx, "--target", target, "target", "reboot", "-b")
+	return err
+}
+
+func (f *ffxDaemon) Close(ctx context.Context) error {
 	// TODO(https://fxbug.dev/415899721): We put a time
 	// limit because the command fails when run inside an nsjail.
 	// Remove when bug is fixed.
@@ -90,9 +129,25 @@ func (f *ffxDaemon) StopDaemon(ctx context.Context) error {
 	return err
 }
 
-func (f *ffxDaemon) TargetList(ctx context.Context) ([]TargetEntry, error) {
+// EnsureOutputDirsExist ensures that the isolate directory exists.
+func (f *ffxDaemon) EnsureOutputDirsExist(ctx context.Context) error {
+	if err := os.MkdirAll(f.runDir.path, 0755); err != nil {
+		return fmt.Errorf("failed to create isolate dir: %w", err)
+	}
+	return nil
+}
+
+func (f *ffxDaemon) TargetList(ctx context.Context, target string, timeout time.Duration) ([]TargetEntry, error) {
 	args := f.appendDirectFlag([]string{})
 	args = append(args, "--machine", "json", "target", "list")
+
+	if timeout > 0 {
+		args = append([]string{"-c", fmt.Sprintf("discovery.timeout=%d", timeout.Milliseconds())}, args...)
+	}
+
+	if target != "" {
+		args = append(args, target)
+	}
 
 	stdout, err := f.runFFXCmd(ctx, args...)
 	if err != nil {
@@ -112,7 +167,7 @@ func (f *ffxDaemon) TargetList(ctx context.Context) ([]TargetEntry, error) {
 }
 
 func (f *ffxDaemon) GetDisambiguatedTarget(ctx context.Context) (TargetEntry, error) {
-	targets, err := f.TargetList(ctx)
+	targets, err := f.TargetList(ctx, "", 0)
 	if err != nil {
 		return TargetEntry{}, err
 	}
@@ -133,7 +188,7 @@ func (f *ffxDaemon) GetDisambiguatedTarget(ctx context.Context) (TargetEntry, er
 }
 
 func (f *ffxDaemon) TargetListForNode(ctx context.Context, nodeName string) ([]TargetEntry, error) {
-	entries, err := f.TargetList(ctx)
+	entries, err := f.TargetList(ctx, nodeName, 0)
 	if err != nil {
 		return []TargetEntry{}, err
 	}
@@ -151,7 +206,7 @@ func (f *ffxDaemon) TargetListForNode(ctx context.Context, nodeName string) ([]T
 
 func (f *ffxDaemon) WaitForTarget(ctx context.Context, address string) (TargetEntry, error) {
 	for attempt := 0; attempt < 10; attempt++ {
-		entries, err := f.TargetList(ctx)
+		entries, err := f.TargetList(ctx, "", 0)
 		if err != nil {
 			return TargetEntry{}, fmt.Errorf("failed to get target list: %w", err)
 		}
@@ -207,12 +262,6 @@ func (f *ffxDaemon) SupportsZedbootDiscovery(ctx context.Context) (bool, error) 
 	}
 
 	return false, nil
-}
-
-func (f *ffxDaemon) TargetAdd(ctx context.Context, target string) error {
-	args := []string{"target", "add", "--nowait", target}
-	_, err := f.runFFXCmd(ctx, args...)
-	return err
 }
 
 func (f *ffxDaemon) TargetGetSshTime(ctx context.Context, target string) (time.Duration, error) {
@@ -386,15 +435,11 @@ func (f *ffxDaemon) DecompressBlobs(ctx context.Context, deliveryBlobs []string,
 	return err
 }
 
-func (f *ffxDaemon) RegisterPackageRepository(ctx context.Context, repo_url string) error {
-	args := []string{
-		"target",
-		"repository",
-		"register",
-		"--json-uri",
-		repo_url,
+func (f *ffxDaemon) RegisterPackageRepository(ctx context.Context, target string, repo_url string) error {
+	args := []string{"target", "repository", "register", "--json-uri", repo_url}
+	if target != "" {
+		args = append([]string{"--target", target}, args...)
 	}
-
 	_, err := f.runFFXCmd(ctx, args...)
 	return err
 }

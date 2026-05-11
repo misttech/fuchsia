@@ -19,7 +19,7 @@ type config struct {
 	archiveConfig    *cli.ArchiveConfig
 	deviceConfig     *cli.DeviceConfig
 	installerConfig  *cli.InstallerConfig
-	buildConfig      *cli.BuildConfig
+	buildConfig      *cli.RepeatableBuildConfig
 	packagesPath     string
 	paveTimeout      time.Duration
 	cycleCount       int
@@ -48,7 +48,7 @@ func newConfig(fs *flag.FlagSet) (*config, error) {
 		archiveConfig:   archiveConfig,
 		deviceConfig:    deviceConfig,
 		installerConfig: installerConfig,
-		buildConfig:     cli.NewBuildConfig(fs, archiveConfig, deviceConfig, os.Getenv("BUILDBUCKET_ID")),
+		buildConfig:     cli.NewRepeatableBuildConfig(fs, archiveConfig, deviceConfig, os.Getenv("BUILDBUCKET_ID"), ""),
 	}
 
 	fs.IntVar(&c.cycleCount, "cycle-count", 1, "How many cycles to run the test before completing (default is 1)")
@@ -67,23 +67,18 @@ func (c *config) validate() error {
 	if err := c.ffxConfig.Validate(); err != nil {
 		return err
 	}
-
 	if err := c.buildConfig.Validate(); err != nil {
 		return err
 	}
-
 	if err := c.installerConfig.Validate(); err != nil {
 		return err
 	}
-
 	if err := c.deviceConfig.Validate(); err != nil {
 		return err
 	}
-
 	if err := util.ValidatePath(c.afterInitScript); err != nil {
 		return err
 	}
-
 	if err := util.ValidatePath(c.afterTestScript); err != nil {
 		return err
 	}
