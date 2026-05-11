@@ -339,9 +339,9 @@ impl LayerKey for ObjectKey {
     fn next_key(&self) -> Option<Self> {
         match &self.data {
             ObjectKeyData::Attribute(attr_id, AttributeKey::Extent(ExtentKey { range })) => {
-                // We want a key such that cmp_lower_bound returns Greater for any key which
-                // starts after end, and a key such that if you search for it, you'll get an
-                // extent whose end > range.end.
+                // This key comes before (or is equal to) any extent starting at or after the
+                // end of `self`. Searching for its `search_key` finds extents that end after
+                // the end of `self`.
                 Some(ObjectKey {
                     object_id: self.object_id,
                     data: ObjectKeyData::Attribute(
@@ -1038,7 +1038,7 @@ mod tests {
         assert_eq!(ObjectKey::extent(1, 0, 99..100).cmp_upper_bound(&next_key), Ordering::Less);
         assert_eq!(ObjectKey::extent(1, 0, 100..101).cmp_upper_bound(&next_key), Ordering::Equal);
         assert_eq!(ObjectKey::extent(1, 0, 100..200).cmp_upper_bound(&next_key), Ordering::Greater);
-        assert_eq!(ObjectKey::extent(1, 0, 50..101).cmp_upper_bound(&next_key), Ordering::Equal);
+        assert_eq!(ObjectKey::extent(1, 0, 50..101).cmp_upper_bound(&next_key), Ordering::Less);
         assert_eq!(ObjectKey::extent(1, 0, 50..200).cmp_upper_bound(&next_key), Ordering::Greater);
     }
     #[test]

@@ -578,6 +578,7 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> LayerIterator<K, V>
         let current_key;
         let mut next_key = None;
         let mut next_key_bound = Bound::Unbounded;
+        let owned_search_key;
         if !self.pending_iterators.is_empty() {
             if let Some(ItemRef { key, .. }) = self.get() {
                 next_key = key.next_key();
@@ -588,7 +589,10 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> LayerIterator<K, V>
                         current_key = Some(key.clone());
                         next_key_bound = Bound::Excluded(current_key.as_ref().unwrap());
                     }
-                    Some(ref key) => next_key_bound = Bound::Included(key),
+                    Some(ref key) => {
+                        owned_search_key = Some(key.search_key());
+                        next_key_bound = Bound::Included(owned_search_key.as_ref().unwrap());
+                    }
                 }
             }
         }

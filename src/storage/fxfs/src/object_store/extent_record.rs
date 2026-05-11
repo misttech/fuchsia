@@ -116,13 +116,12 @@ impl ExtentKey {
 // OrdLowerBound orders by the start of an extent.
 impl OrdUpperBound for ExtentKey {
     fn cmp_upper_bound(&self, other: &ExtentKey) -> std::cmp::Ordering {
-        // The comparison uses the end of the range so that we can more easily do queries.  Whilst
-        // it might be tempting to break ties by comparing the range start, next_key currently
-        // relies on keys with the same end being equal, and since we do not support overlapping
-        // keys within the same layer, ties can always be broken using layer index.  Insertions into
+        // The comparison uses the end of the range so that we can more easily do queries. Ties
+        // are broken by comparing the range start. Since we do not support overlapping keys
+        // within the same layer, ties can always be broken using layer index. Insertions into
         // the mutable layer should always be done using merge_into, which will ensure keys don't
         // end up overlapping.
-        self.range.end.cmp(&other.range.end)
+        self.range.end.cmp(&other.range.end).then(self.range.start.cmp(&other.range.start))
     }
 }
 
@@ -314,13 +313,13 @@ mod tests {
         let extent = ExtentKey::new(100..150);
         assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(0..100)), Ordering::Greater);
         assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(0..110)), Ordering::Greater);
-        assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(0..150)), Ordering::Equal);
-        assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(99..150)), Ordering::Equal);
+        assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(0..150)), Ordering::Greater);
+        assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(99..150)), Ordering::Greater);
         assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(100..150)), Ordering::Equal);
         assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(0..151)), Ordering::Less);
         assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(100..151)), Ordering::Less);
         assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(150..1000)), Ordering::Less);
-        assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(101..150)), Ordering::Equal);
+        assert_eq!(extent.cmp_upper_bound(&ExtentKey::new(101..150)), Ordering::Less);
     }
 
     #[test]

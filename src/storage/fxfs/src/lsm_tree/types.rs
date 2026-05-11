@@ -271,13 +271,15 @@ pub trait LayerKey: Clone {
     /// If you search and find the 0..100 key, then only layer 0 will be touched.  If you then want
     /// to advance to the 100..200 record, you can find it in layer 0 but unless you know that it
     /// immediately follows the 0..100 key i.e. that there is no possible key, K, such that
-    /// 0..100 < K < 100..200, the merger has to consult all other layers to check.  next_key should
+    /// 0..100 < K < 100..200, the merger has to consult all other layers to check. next_key should
     /// return a key, N, such that if the merger encounters a key that is <= N (using
-    /// OrdLowerBound), it can stop touching more layers.  The key N should also be the the key to
-    /// search for in other layers if the merger needs to do so.  In the example above, it should be
-    /// a key that is > 0..100 and 99..100, but <= 100..200 (using OrdUpperBound).  In practice,
-    /// what this means is that for range based keys, OrdUpperBound should use the end of the range,
-    /// OrdLowerBound should use the start of the range, and next_key should return end..end + 1.
+    /// OrdLowerBound), it can stop touching more layers. If the merger decides that a new layer
+    /// needs to be consulted, it will use `search_key` on the result of `next_key` and use that to
+    /// find the appropriate starting record in the new layer.
+    ///
+    /// In practice, what this means for extents is `cmp_upper_bound` should sort by
+    /// (end, start), `cmp_lower_bound` should sort by (start) and `next_key` should be
+    /// (end, end + 1)."
     /// This is purely an optimisation; the default None will be correct but not performant.
     fn next_key(&self) -> Option<Self> {
         None
