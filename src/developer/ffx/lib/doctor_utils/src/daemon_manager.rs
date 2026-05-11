@@ -151,10 +151,12 @@ impl DaemonManager for DefaultDaemonManager {
     }
 
     async fn spawn(&self) -> Result<()> {
-        spawn_daemon(&self.context).await
+        spawn_daemon(&self.context).await.map_err(anyhow::Error::new)
     }
 
     async fn find_and_connect(&self) -> Result<DaemonProxy> {
-        find_and_connect(&self.context, &self.node, self.socket_path.clone()).await
+        find_and_connect(&self.context, &self.node, self.socket_path.clone())
+            .await
+            .map_err(anyhow::Error::new)
     }
 }

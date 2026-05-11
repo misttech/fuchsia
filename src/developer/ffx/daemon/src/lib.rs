@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::constants::DAEMON_LOG_BASENAME;
-use anyhow::{Context, Result, anyhow, bail};
 use daemonize::daemonize;
 use errors::{FfxError, ffx_error};
 use ffx_config::EnvironmentContext;
@@ -19,6 +18,58 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum DaemonError {
+    #[error("Failed to create channel: {0}")]
+    CreateChannel(#[from] fidl::Error),
+
+    #[error("Failed to connect to service: {0}")]
+    ConnectToService(#[source] anyhow::Error),
+
+    #[error("Failed to connect to unix socket {0}: {1}")]
+    ConnectSocket(std::path::PathBuf, #[source] std::io::Error),
+
+    #[error("Timed out connecting to ascendd socket at {0}")]
+    Timeout(std::path::PathBuf),
+
+    #[error("Failed to read from socket: {0}")]
+    ReadSocket(#[source] std::io::Error),
+
+    #[error("Failed to write to socket: {0}")]
+    WriteSocket(#[source] std::io::Error),
+
+    #[error("Failed to get rerun prefix: {0}")]
+    RerunPrefix(#[from] ffx_config::environment::ContextError),
+
+    #[error("Failed to start daemon: {0}")]
+    StartDaemon(#[source] anyhow::Error),
+
+    #[error("Failed to kill daemon: {0}")]
+    KillDaemon(#[source] nix::Error),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("System time error: {0}")]
+    SystemTime(#[from] std::time::SystemTimeError),
+
+    #[error("Circuit error: {0}")]
+    Circuit(String),
+
+    #[error("Overnet error: {0}")]
+    Overnet(String),
+
+    #[error("Ffx error: {0}")]
+    Ffx(#[from] errors::FfxError),
+
+    #[error("Failed to get ascendd path: {0}")]
+    GetAscenddPath(#[source] anyhow::Error),
+
+    #[error("Failed to open log file: {0}")]
+    LogFile(#[from] ffx_config::logging::LoggingError),
+}
 
 mod config;
 mod constants;
@@ -35,10 +86,12 @@ const CONFIG_DAEMON_CONNECT_TIMEOUT_MS: &str = "ffx.daemon_timeout";
 async fn create_daemon_proxy(
     node: &Arc<overnet_core::Router>,
     id: &mut NodeId,
-) -> Result<DaemonProxy> {
+) -> Result<DaemonProxy, DaemonError> {
     let (s, p) = fidl::Channel::create();
     log::debug!("Connecting to daemon service on {id:?}");
-    node.connect_to_service((*id).into(), DaemonMarker::PROTOCOL_NAME, s).await?;
+    node.connect_to_service((*id).into(), DaemonMarker::PROTOCOL_NAME, s)
+        .await
+        .map_err(DaemonError::ConnectToService)?;
     log::debug!("Connected to daemon service on {id:?}");
     let proxy = fidl::AsyncChannel::from_channel(p);
     Ok(DaemonProxy::new(proxy))
@@ -51,21 +104,21 @@ async fn create_daemon_proxy(
 pub async fn run_single_ascendd_link(
     node: Arc<overnet_core::Router>,
     sockpath: PathBuf,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), DaemonError> {
     const MAX_SINGLE_CONNECT_TIME: u64 = 1;
 
     log::trace!(ascendd_path:% = sockpath.display(); "running ascendd link");
     let now = SystemTime::now();
 
     let unix_socket = loop {
-        let safe_socket_path = ascendd::short_socket_path(&sockpath)?;
+        let safe_socket_path = ascendd::short_socket_path(&sockpath).map_err(DaemonError::Io)?;
         let started = std::time::Instant::now();
         log::debug!("Connecting to ascendd (starting at {started:?})");
         let conn = tokio::net::UnixStream::connect(&safe_socket_path)
             .on_timeout(Duration::from_secs(30), || {
                 Err(std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
-                    anyhow::format_err!(
+                    format!(
                         "Timed out (30s) connecting to ascendd socket at {}",
                         sockpath.display()
                     ),
@@ -84,20 +137,14 @@ pub async fn run_single_ascendd_link(
             }
             // There was an error connecting that's likely due to the daemon not being ready yet.
             Err(e) if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) => {
-                log::debug!("ConnectionRefused when connecting to ascendd");
+                log::debug!("Connection error when connecting to ascendd: {}", e);
                 if now.elapsed()?.as_secs() > MAX_SINGLE_CONNECT_TIME {
-                    bail!(
-                        "took too long connecting to ascendd socket at {}. Last error: {e:#?}",
-                        sockpath.display(),
-                    );
+                    return Err(DaemonError::Timeout(sockpath.clone()));
                 }
             }
             // There was an unknown error connecting.
             Err(e) => {
-                bail!(
-                    "unexpected error while trying to connect to ascendd socket at {}: {e:?}",
-                    sockpath.display()
-                );
+                return Err(DaemonError::ConnectSocket(sockpath.clone(), e));
             }
         }
     };
@@ -113,10 +160,10 @@ async fn run_ascendd_connection<'a>(
     node: Arc<overnet_core::Router>,
     rx: &'a mut (dyn AsyncRead + Unpin + Send),
     tx: &'a mut (dyn AsyncWrite + Unpin + Send),
-) -> Result<(), anyhow::Error> {
+) -> Result<(), DaemonError> {
     log::debug!("Starting ascendd connection");
     let (errors_sender, errors) = futures::channel::mpsc::unbounded();
-    tx.write_all(&ascendd::CIRCUIT_ID).await?;
+    tx.write_all(&ascendd::CIRCUIT_ID).await.map_err(DaemonError::WriteSocket)?;
     futures::future::join(
         circuit::multi_stream::multi_stream_node_connection_to_async(
             node.circuit_node(),
@@ -135,7 +182,7 @@ async fn run_ascendd_connection<'a>(
     )
     .map(|(result, ())| result)
     .await
-    .map_err(anyhow::Error::from)
+    .map_err(|e| DaemonError::Circuit(e.to_string()))
 }
 
 pub async fn get_daemon_proxy_single_link(
@@ -143,7 +190,10 @@ pub async fn get_daemon_proxy_single_link(
     node: &Arc<overnet_core::Router>,
     socket_path: PathBuf,
     exclusions: Option<Vec<NodeId>>,
-) -> Result<(NodeId, DaemonProxy, Pin<Box<impl Future<Output = Result<()>> + use<>>>), FfxError> {
+) -> Result<
+    (NodeId, DaemonProxy, Pin<Box<impl Future<Output = Result<(), DaemonError>> + use<>>>),
+    FfxError,
+> {
     // Start a race betwen:
     // - The unix socket link being lost
     // - A timeout
@@ -177,11 +227,11 @@ pub async fn get_daemon_proxy_single_link(
 async fn find_next_daemon<'a>(
     node: &Arc<overnet_core::Router>,
     exclusions: Option<Vec<NodeId>>,
-) -> Result<(NodeId, DaemonProxy)> {
+) -> Result<(NodeId, DaemonProxy), DaemonError> {
     let lpc = node.new_list_peers_context().await;
     loop {
         log::debug!("Waiting for ListPeers");
-        let peers = lpc.list_peers().await?;
+        let peers = lpc.list_peers().await.map_err(|e| DaemonError::Overnet(e.to_string()))?;
         for peer in peers.iter() {
             log::debug!("Looking at peer {peer:?}");
             if !peer.services.iter().any(|name| *name == DaemonMarker::PROTOCOL_NAME) {
@@ -196,9 +246,8 @@ async fn find_next_daemon<'a>(
                 None => {}
             }
             log::debug!("Creating daemon proxy for {:?}", peer.node_id);
-            return create_daemon_proxy(node, &mut peer.node_id.into())
-                .await
-                .map(|proxy| (peer.node_id.into(), proxy));
+            let proxy = create_daemon_proxy(node, &mut peer.node_id.into()).await?;
+            return Ok((peer.node_id.into(), proxy));
         }
     }
 }
@@ -208,7 +257,7 @@ pub async fn find_and_connect(
     context: &EnvironmentContext,
     node: &Arc<overnet_core::Router>,
     socket_path: PathBuf,
-) -> Result<DaemonProxy> {
+) -> Result<DaemonProxy, DaemonError> {
     // This function is due for deprecation/removal. It should only be used
     // currently by the doctor daemon_manager, which should instead learn to
     // understand the link state in future revisions.
@@ -218,16 +267,16 @@ pub async fn find_and_connect(
             fuchsia_async::Task::local(link_fut.map(|_| ())).detach();
             proxy
         })
-        .context("connecting to the ffx daemon")
+        .map_err(DaemonError::Ffx)
 }
 
-async fn daemon_args(context: &EnvironmentContext) -> Result<Vec<String>> {
-    let socket_path = context.get_ascendd_path().await.context("No socket path configured")?;
+async fn daemon_args(context: &EnvironmentContext) -> Result<Vec<String>, DaemonError> {
+    let socket_path = context.get_ascendd_path().await.map_err(DaemonError::GetAscenddPath)?;
     Ok(vec!["daemon".into(), "start".into(), "--path".into(), socket_path.to_str().unwrap().into()])
 }
 
 // This daemonizes the process, disconnecting it from the controlling terminal, etc.
-pub async fn spawn_daemon(context: &EnvironmentContext) -> Result<()> {
+pub async fn spawn_daemon(context: &EnvironmentContext) -> Result<(), DaemonError> {
     // daemonize the given command, and do not keep the current directory for the new process
     // (start) the daemon in the  / directory.
     daemonize(
@@ -237,12 +286,12 @@ pub async fn spawn_daemon(context: &EnvironmentContext) -> Result<()> {
         false,
     )
     .await
-    .map_err(|e| anyhow!(e))
+    .map_err(DaemonError::StartDaemon)
 }
 
 // This function is only used by isolate dir implementations. This allows cleaning up the daemon process
 // when the isolate is dropped.
-pub async fn run_daemon(context: &EnvironmentContext) -> Result<std::process::Child> {
+pub async fn run_daemon(context: &EnvironmentContext) -> Result<std::process::Child, DaemonError> {
     let mut cmd = context.rerun_prefix()?;
     let mut stdout = std::process::Stdio::null();
     let mut stderr = std::process::Stdio::null();
@@ -269,15 +318,15 @@ pub async fn run_daemon(context: &EnvironmentContext) -> Result<std::process::Ch
         .env("RUST_BACKTRACE", "full");
     cmd.args(daemon_args(context).await?.as_slice());
 
-    log::info!("Starting new ffx daemon from {:?}", cmd.get_program());
-    let child = cmd.spawn().context("running daemon start")?;
+    log::info!("Starting new ffx daemon from {:?}", &cmd.get_program());
+    let child = cmd.spawn().map_err(|e| DaemonError::StartDaemon(e.into()))?;
     Ok(child)
 }
 
 // Time between polling to see if process has exited
 const STOP_WAIT_POLL_TIME: Duration = Duration::from_millis(50);
 
-pub async fn try_to_kill_pid(pid: u32) -> Result<()> {
+pub async fn try_to_kill_pid(pid: u32) -> Result<(), DaemonError> {
     // UNIX defines a pid as a _signed_ int -- who knew?
     let nix_pid = nix::unistd::Pid::from_raw(pid as i32);
     let res = signal::kill(nix_pid, Some(signal::Signal::SIGTERM));
@@ -285,7 +334,7 @@ pub async fn try_to_kill_pid(pid: u32) -> Result<()> {
         // No longer there
         Err(nix::errno::Errno::ESRCH) => return Ok(()),
         // Kill failed for some other reason
-        Err(e) => bail!("Could not kill daemon: {e}"),
+        Err(e) => return Err(DaemonError::KillDaemon(e)),
         // The kill() worked, i.e. the process was still around
         _ => (),
     }
@@ -301,19 +350,20 @@ pub async fn try_to_kill_pid(pid: u32) -> Result<()> {
         // No longer there
         Err(nix::errno::Errno::ESRCH) => return Ok(()),
         // Kill failed for some other reason
-        Err(e) => bail!("Could not kill daemon: {e}"),
+        Err(e) => return Err(DaemonError::KillDaemon(e)),
         // The kill() worked, i.e. the process was still around
         _ => {
             // Let's find out what happened
             let stat_file = format!("/proc/{pid}/status");
-            let status = match std::fs::read_to_string(&stat_file)
-                .with_context(|| format!("could not cat {stat_file}"))
-            {
+            let status = match std::fs::read_to_string(&stat_file) {
                 Ok(s) => s,
                 Err(e) => format!("[Failed to read /proc] {e}"),
             };
-
-            bail!("Daemon did not exit. Giving up.  Proc status: {status}")
+            // Since kill returned success but the process is still there,
+            // we can use a generic error like EIO to represent this failure
+            // to terminate.
+            log::error!("Daemon did not exit. Giving up.  Proc status: {status}");
+            return Err(DaemonError::KillDaemon(nix::errno::Errno::EIO));
         }
     }
 }

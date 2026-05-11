@@ -140,7 +140,8 @@ async fn connect_to_rcs(
     let (_node, daemon_proxy, daemon_fut) =
         ffx_daemon::get_daemon_proxy_single_link(context, &node, ascendd_path.to_owned(), None)
             .await?;
-    let daemon_task = fasync::Task::spawn(daemon_fut);
+    use futures::FutureExt;
+    let daemon_task = fasync::Task::spawn(daemon_fut.map(|res| res.map_err(anyhow::Error::from)));
     let rcs_proxy = ffx_target::get_remote_proxy(
         &ffx_target::TargetInfoQuery::try_from(nodename.to_string())?,
         daemon_proxy,
