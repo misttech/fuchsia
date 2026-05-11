@@ -16,6 +16,7 @@
 
 #include <map>
 #include <memory>
+#include <memory_resource>
 #include <optional>
 #include <span>
 #include <string>
@@ -401,10 +402,14 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // Must be managed by a shared_ptr because the implementation uses weak_from_this().
   std::shared_ptr<escher::FenceQueue> fence_queue_ = std::make_shared<escher::FenceQueue>();
 
+  // Pool allocator shared between `transforms_` and `content_handles_` to recycle their
+  // identically-sized nodes and prevent heap churn. Must be declared above the maps.
+  std::pmr::unsynchronized_pool_resource pool_;
+
   // A map from user-generated ID to global handle. This map constitutes the set of transforms that
   // can be referenced by the user through method calls. Keep in mind that additional transforms may
   // be kept alive through child references.
-  std::unordered_map<TransformId, TransformHandle> transforms_;
+  std::pmr::unordered_map<TransformId, TransformHandle> transforms_;
 
   // A graph representing this flatland instance's local transforms and their relationships.
   TransformGraph transform_graph_;
@@ -423,7 +428,7 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // A mapping from user-generated ID to the TransformHandle that owns that piece of Content.
   // Attaching Content to a Transform consists of setting one of these "Content Handles" as the
   // priority child of the Transform.
-  std::unordered_map<ContentId, TransformHandle> content_handles_;
+  std::pmr::unordered_map<ContentId, TransformHandle> content_handles_;
 
   // The set of link operations that are pending a call to Present(). Unlike other operations,
   // whose effects are only visible when a new UberStruct is published, Link destruction operations
