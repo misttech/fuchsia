@@ -400,6 +400,11 @@ void AuditChecker::OnTestEnd(const testing::TestInfo& test_info) {
     DrainAuditLog();
     return;
   }
+  // Skip the audit check if the test is skipped at runtime.
+  if (::testing::Test::IsSkipped()) {
+    DrainAuditLog();
+    return;
+  }
   SendEndSentinel();
   bool result = CheckAuditExpectations(test_name);
   if (!result && generate_json_) {
