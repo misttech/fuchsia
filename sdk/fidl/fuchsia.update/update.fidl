@@ -331,6 +331,9 @@ open protocol Listener {
     /// Subscribe for a notification when the software update checker has
     /// completed its post-boot check (with or without error) and is not trying
     /// to reboot.
+    /// If the update checker will never perform an update check, then it will close the connection
+    /// with epitaph `ZX_ERR_NOT_SUPPORTED` and close the `notifier` connection without calling
+    /// [`fuchsia.update/Notifier.Notify`].
     strict NotifyOnFirstUpdateCheck(resource table {
         /// Entity notified after post-boot check. This is a required field.
         1: notifier client_end:Notifier;
