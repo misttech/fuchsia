@@ -12,7 +12,11 @@ def _skill_format(ctx):
     )
     exe_script = "%s/scripts/skill_linter/skill_linter.py" % get_fuchsia_dir(ctx)
 
-    skill_files = ctx.scm.affected_files(glob = [".agents/skills/**/SKILL.md", "zircon/skills/**/SKILL.md"])
+    skill_files = ctx.scm.affected_files(glob = [
+        ".agents/skills/**/SKILL.md",
+        "zircon/skills/**/SKILL.md",
+        "src/devices/skills/**/SKILL.md",
+    ])
 
     if not skill_files:
         return

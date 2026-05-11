@@ -1,7 +1,8 @@
 ---
 name: devicetree-debugging
-description: Debugging devicetree issues, including compilation, golden
-  mismatches, and driver binding.
+description: >
+  Debugging devicetree issues, including compilation, golden mismatches, and
+  driver binding.
 ---
 
 # Devicetree Debugging
@@ -36,19 +37,19 @@ If you want to see exactly what's in the compiled binary devicetree blob (.dtb):
   ```
 - **Location**: Compiled DTBs are usually found in the build directory under the
   board driver's object path:
-  `out/default/obj/<path/to/board/driver>/<target_name>.dtb`.
-  For example, for VIM3 it is
+  `out/default/obj/<path/to/board/driver>/<target_name>.dtb`. For example, for
+  VIM3 it is
   `out/default/obj/src/devices/board/drivers/vim3-devicetree/vim3.dtb`.
 
 ### 3. Driver Binding Issues
 
 If a driver is not binding to a node created from devicetree:
-- **Tool**: `ffx driver doctor`, `ffx driver node list`, and
-  `ffx driver composite list`.
-- **Action**: Check if the node exists (use `ffx driver node list`) and what
-  its properties are (use `ffx driver node show <device>`). For composite nodes,
-  use `ffx driver composite list` or `ffx driver composite show -v` to see
-  the parent specs and bind rules.
+- **Tool**: `ffx driver doctor`, `ffx driver node list`, and `ffx driver
+  composite list`.
+- **Action**: Check if the node exists (use `ffx driver node list`) and what its
+  properties are (use `ffx driver node show <device>`). For composite nodes, use
+  `ffx driver composite list` or `ffx driver composite show -v` to see the
+  parent specs and bind rules.
 - **Check Node Topology**: Use `ffx driver node list --only ancestors:<node>` to
   see the current node topology on the running target.
 
@@ -59,7 +60,8 @@ and any parsing errors.
 - **Enable Debug Logs**: In the board driver's `Start()` method, add
   `fdf::Logger::GlobalInstance()->SetSeverity(FUCHSIA_LOG_DEBUG);`. This will
   output verbose information from all visitors during parsing.
-- **Command**: `ffx log --filter devicetree` or `ffx log --tag devicetree-manager`.
+- **Command**: `ffx log --filter devicetree` or `ffx log --tag
+  devicetree-manager`.
 - **Search for**:
   - "Visitor loaded: <name>"
   - "Failed to parse property"
@@ -78,7 +80,8 @@ isolated environment.
   property, or that the driver's bind rules match the compatible string.
 - **Composite Binding Failure**:
   - Detailed debugging of composite binding can be found in the
-    [`debug_driver_binding`](/src/devices/skills/debug_driver_binding/SKILL.md) skill.
+    [`debug_driver_binding`](/src/devices/skills/debug_driver_binding/SKILL.md)
+    skill.
   - **How it becomes composite**: A node becomes composite when it depends on
     other nodes (e.g., GPIO, PWM, Clocks). Visitors for these dependencies
     (e.g., `gpio-visitor`) will add bind properties to the dependent node so it
@@ -87,12 +90,12 @@ isolated environment.
     bind to that specific GPIO pin. Because it now depends on another node to
     bind, it becomes a composite node.
   - **Why it fails**: If any single parent spec of a composite node fails to
-    bind, the entire composite device will not be created. Use
-    `ffx driver composite show -v` to check the requirements.
+    bind, the entire composite device will not be created. Use `ffx driver
+    composite show -v` to check the requirements.
 - **Phandle Resolution**: phandles in the DTS must be correctly resolved by the
   compiler. Avoid setting phandles manually; let the compiler handle it.
-- **Node Ordering**: Devicetree does not guarantee the order of peer nodes in the
-  DTB. Visitors should not rely on the order of sibling nodes.
+- **Node Ordering**: Devicetree does not guarantee the order of peer nodes in
+  the DTB. Visitors should not rely on the order of sibling nodes.
 - **DTS Syntax/Preprocessing Errors**:
   - Errors like `syntax error` often come from missing semicolons or missing
     `#include` for C macros.
@@ -100,13 +103,13 @@ isolated environment.
   bus nodes. Nodes with only bind properties are non-pbus nodes. This affects
   how they are published and which visitors might interact with them.
 - **Stale Checked-in DTB Files**:
-  - **Symptom**: Changes to `.dts` files do not appear in `driver dump` or
-    logs after building and flashing.
-  - **Cause**: Some board configurations (ones which do not contain devicetree_parsed)
-    may use a checked-in binary `.dtb` file as an overlay or base, instead of
-    compiling the source `.dts` files on the fly. Changes to the `.dts` source
-    files will have no effect until the binary `.dtb` file is recompiled and
-    committed or updated in the workspace.
+  - **Symptom**: Changes to `.dts` files do not appear in `driver dump` or logs
+    after building and flashing.
+  - **Cause**: Some board configurations (ones which do not contain
+    devicetree_parsed) may use a checked-in binary `.dtb` file as an overlay or
+    base, instead of compiling the source `.dts` files on the fly. Changes to
+    the `.dts` source files will have no effect until the binary `.dtb` file is
+    recompiled and committed or updated in the workspace.
   - **Action**: Check the board configuration (e.g., `BUILD.bazel` or
     `BUILD.gn`) to see if it references a `.dtb` file directly. If so, you may
     need to use the prebuilt `dtc` tool to manually compile the `.dts` into
@@ -114,8 +117,8 @@ isolated environment.
 - **Base Devicetree Source Location**:
   - **Symptom**: Cannot find where I2C or other devices are defined in the
     expected directory.
-  - **Details**: For custom hardware targets, the base devicetree source
-    files (often ending in `.dtsi` or `.dts.S`) might not be in the same
-    directory as the final `.dts` or `.dtb` files. For example, in some
-    internal targets, they are located in the board driver's source directory
-    (e.g., `vendor/google/<target>/board/drivers/<target>/dts/`).
+  - **Details**: For custom hardware targets, the base devicetree source files
+    (often ending in `.dtsi` or `.dts.S`) might not be in the same directory as
+    the final `.dts` or `.dtb` files. For example, in some internal targets,
+    they are located in the board driver's source directory (e.g.,
+    `vendor/google/<target>/board/drivers/<target>/dts/`).

@@ -21,8 +21,10 @@ Tools](https://github.com/devicetree-org/dt-schema) meta-schema.
 
 ### Key Fields
 
-- **$id**: A unique URI for the schema (e.g., `http://devicetree.org/schemas/smc.yaml#`).
-- **$schema**: The meta-schema URI (usually `http://devicetree.org/meta-schemas/core.yaml#`).
+- **$id**: A unique URI for the schema (e.g.,
+  `http://devicetree.org/schemas/smc.yaml#`).
+- **$schema**: The meta-schema URI (usually
+  `http://devicetree.org/meta-schemas/core.yaml#`).
 - **title**: A brief title for the binding.
 - **maintainers**: List of maintainers.
 - **description**: Detailed description of the binding and its properties.
@@ -73,15 +75,16 @@ examples:
 
 ## Best Practices
 
-1.  **Follow Industry Standards**: Reference established devicetree bindings from
-    the [dt-schema repository](https://github.com/devicetree-org/dt-schema/tree/main/dtschema/schemas)
+1.  **Follow Industry Standards**: Reference established devicetree bindings
+    from the [dt-schema
+    repository](https://github.com/devicetree-org/dt-schema/tree/main/dtschema/schemas)
     for common patterns and best practices.
 2.  **Use Precise Definitions**: Define the type and constraints for all
-    properties explicitly. Use fields like `minItems`, `maxItems`, `enum`,
-    and `$ref` to create robust, self-describing schemas.
+    properties explicitly. Use fields like `minItems`, `maxItems`, `enum`, and
+    `$ref` to create robust, self-describing schemas.
 3.  **Reference Local Examples**: Look at existing Fuchsia schemas in
-    `sdk/lib/driver/devicetree/visitors/` to see how libraries and drivers
-    are documented.
+    `sdk/lib/driver/devicetree/visitors/` to see how libraries and drivers are
+    documented.
 4.  **Verify with Examples**: Always provide a complete and valid DTS snippet in
     the `examples` section of your schema.
 

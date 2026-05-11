@@ -1,5 +1,5 @@
 ---
-name: writing_driver_skills
+name: writing-driver-skills
 description: Create and edit Fuchsia driver skills.
 ---
 
@@ -9,8 +9,8 @@ description: Create and edit Fuchsia driver skills.
 
 ### 1. Use Task-First Directory Structure
 
-This structure is **optional but recommended**. Organize skills by the
-specific task and target language.
+This structure is **optional but recommended**. Organize skills by the specific
+task and target language.
 * **Pattern**: `action/language`
 * **Example**:
   * `debugging/SKILL.md`
@@ -61,7 +61,8 @@ protocol vs a service), use bolded conditional headers to guide the user.
 
 Always provide clickable links for file paths, API definitions, and skills.
 * **Pattern**: Use links relative to the Fuchsia root (starting with `/`).
-* **Example**: `[`fdf_metadata::GetMetadata()`](/sdk/lib/driver/metadata/cpp/metadata.h)`
+* **Example**:
+  `[`fdf_metadata::GetMetadata()`](/sdk/lib/driver/metadata/cpp/metadata.h)`
 * **Rule**: Do not use absolute paths containing the user's home directory.
 * **Rule**: Always add clickable links when referencing specific libraries or
   data types to help users navigate to the definitions.
@@ -99,8 +100,8 @@ Ensure that related skills are cross-linked.
 * **Pitfalls**: Include a `## Common Pitfalls` section to document known edge
   cases, common errors, or non-obvious requirements.
 * **Further Reading**: Include a `## Further Reading` section if there are any
-  related skills, documentation, background material, or example drivers to
-  link to.
+  related skills, documentation, background material, or example drivers to link
+  to.
 
 ### 9. Avoid Redundancy
 

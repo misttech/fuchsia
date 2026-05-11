@@ -1,12 +1,14 @@
 ---
-name: migrate_dfv1_to_dfv2
+name: migrate-dfv1-to-dfv2
 description: Migrate drivers from DFv1 to DFv2.
 ---
+
 # Driver Migration (DFv1 to DFv2)
 
 ## Mandatory Workflow Checklist
 
-Before declaring a migration complete, you MUST complete all steps in this checklist:
+Before declaring a migration complete, you MUST complete all steps in this
+checklist:
 - [ ] Code changes implemented (DriverBase, Start, FIDL, etc.)
 - [ ] Build dependencies updated in `BUILD.gn`
 - [ ] Component manifest updated (`.cml`)
@@ -21,8 +23,8 @@ Before declaring a migration complete, you MUST complete all steps in this check
 Before starting a migration, confirm that the driver is indeed a DFv1 driver.
 
 For a comprehensive guide on distinguishing DFv1 from DFv2 drivers (including
-codebase indicators and runtime checks), see the
-[Driver Version Identification Skill](/src/devices/skills/driver_version_identification/SKILL.md).
+codebase indicators and runtime checks), see the [Driver Version Identification
+Skill](/src/devices/skills/driver_version_identification/SKILL.md).
 
 ## Update Build Dependencies
 
@@ -81,14 +83,13 @@ showing the transformation:
 ### C. Implement Start Method
 
 In DFv1, initialization happens in the constructor, `Bind` static method, and
-`DdkInit`.
-In DFv2, all this logic should be moved to the `Start()` method.
+`DdkInit`. In DFv2, all this logic should be moved to the `Start()` method.
 
 * Return `zx::ok()` on success.
 * Use `incoming()` to access incoming services (replacing
-    `device_get_protocol`). For details on how to connect to parent FIDL
-    connections in C++, see the
-    [Driver FIDL Usage Implementation Skill (C++)](/src/devices/skills/driver_fidl_usage/implementation/cpp/SKILL.md).
+  `device_get_protocol`). For details on how to connect to parent FIDL
+  connections in C++, see the [Driver FIDL Usage Implementation Skill
+  (C++)](/src/devices/skills/driver_fidl_usage/implementation/cpp/SKILL.md).
 
 ### D. Update Macros
 
@@ -103,10 +104,9 @@ the change:
 
 ### E. Update Logging
 
-Migrate `zxlogf` to `fdf::info`, `fdf::error`, etc.
-Refer to the
-[migrate_logging Skill](/src/devices/skills/migrate_logging/SKILL.md)
-for detailed instructions on logging migration, including `std::format` syntax.
+Migrate `zxlogf` to `fdf::info`, `fdf::error`, etc. Refer to the
+[migrate_logging Skill](/src/devices/skills/migrate_logging/SKILL.md) for
+detailed instructions on logging migration, including `std::format` syntax.
 
 ### F. Connect to Banjo or FIDL
 
@@ -124,8 +124,8 @@ zx::result<ddk::MiscProtocolClient> client =
 If the driver uses `ddk::IoBuffer` for DMA operations, migrate it to the
 `dma-buffer` library.
 
-For detailed steps on migrating DMA buffers, see the
-[DMA Migration Skill](/src/devices/skills/migrate_dfv1_to_dfv2/dma/SKILL.md).
+For detailed steps on migrating DMA buffers, see the [DMA Migration
+Skill](/src/devices/skills/migrate_dfv1_to_dfv2/dma/SKILL.md).
 
 ### H. Stop and Suspend the Driver
 
@@ -149,20 +149,19 @@ methods in `fdf::DriverBase`.
 
 #### Suspend
 
-*   In DFv2, suspend and power management are handled differently (often via the
-    Power Broker or specific FIDL protocols). That said, any code that was in
-    `DdkSuspend` or hardware power-down logic should be moved into
-    `PrepareStop`, as it is called before the driver dispatchers are shut down,
-    allowing you to still perform asynchronous work or send messages to the
-    hardware.
+* In DFv2, suspend and power management are handled differently (often via the
+  Power Broker or specific FIDL protocols). That said, any code that was in
+  `DdkSuspend` or hardware power-down logic should be moved into `PrepareStop`,
+  as it is called before the driver dispatchers are shut down, allowing you to
+  still perform asynchronous work or send messages to the hardware.
 
 ### I. Use Platform Device (pdev)
 
 Many drivers need to connect to a Platform Device to access MMIOs, interrupts,
 or BTIs. In DFv2, you use the `fdf::PDev` helper class.
 
-For details on how to use `fdf::PDev` to acquire resources, see the
-[PDev Usage Skill](/src/devices/skills/driver_pdev/implementation/cpp/SKILL.md).
+For details on how to use `fdf::PDev` to acquire resources, see the [PDev Usage
+Skill](/src/devices/skills/driver_pdev/implementation/cpp/SKILL.md).
 
 ## Update Component Manifest (.cml)
 
@@ -198,12 +197,12 @@ Here is a diff showing the transformation:
 After migration, you must verify that the driver builds and passes tests:
 
 ### Include in Build Graph
-Many drivers may not be in the default build graph. To ensure the driver
-source code is compiled during `fx build`:
+Many drivers may not be in the default build graph. To ensure the driver source
+code is compiled during `fx build`:
 1.  Add the driver target (e.g.,
     `//src/devices/rtc/drivers/pl031-rtc:pl031-rtc`) to the build graph.
-2.  You can use `fx set ... --with //path/to/driver:target` or manually add
-    it to `build_only_labels` in `out/default/args.gn` to force compilation.
+2.  You can use `fx set ... --with //path/to/driver:target` or manually add it
+    to `build_only_labels` in `out/default/args.gn` to force compilation.
 
 ### Build Driver
 Run `fx build` to ensure the driver compiles successfully.
@@ -214,8 +213,8 @@ Migrating tests from DFv1 to DFv2 can be challenging. If tests exist, update
 them to use DFv2 testing libraries (e.g., `sdk/lib/driver/testing/cpp`) and run
 them with `fx test`.
 
-A helpful guide for DFv2 unit testing can be found at
-[Driver Unit Testing Quick Start](/docs/development/sdk/driver-testing/driver-unit-testing-quick-start.md).
+A helpful guide for DFv2 unit testing can be found at [Driver Unit Testing Quick
+Start](/docs/development/sdk/driver-testing/driver-unit-testing-quick-start.md).
 
 ## 6. Clean Up and Commit
 
@@ -226,9 +225,8 @@ Fuchsia style guidelines.
 ### Commit Changes
 Make a local commit after a logical chunk of work. You do not necessarily need a
 commit for every individual driver if you are migrating multiple similar
-drivers, but each commit should represent a coherent state.
-Follow the Git commit message guidelines in `GEMINI.md` or the project style
-guide.
+drivers, but each commit should represent a coherent state. Follow the Git
+commit message guidelines in `GEMINI.md` or the project style guide.
 
 ## Common Pitfalls
 
@@ -245,11 +243,13 @@ guide.
   `dispatcher()` (which returns `fdf::UnownedSynchronizedDispatcher`) can often
   be used directly or converted as needed.
 
-
 ## Further Reading
 
 * [Overview](/docs/development/drivers/migration/migrate-from-dfv1-to-dfv2/overview.md)
-* [Update DDK Interfaces](/docs/development/drivers/migration/migrate-from-dfv1-to-dfv2/update-ddk-interfaces-to-dfv2.md)
+* [Update DDK
+  Interfaces](/docs/development/drivers/migration/migrate-from-dfv1-to-dfv2/update-ddk-interfaces-to-dfv2.md)
 * [FAQ](/docs/development/drivers/migration/migrate-from-dfv1-to-dfv2/faq.md)
-* [Update Other Services](/docs/development/drivers/migration/migrate-from-dfv1-to-dfv2/update-other-services-to-dfv2.md)
-* [Driver Unit Testing Quick Start](/docs/development/sdk/driver-testing/driver-unit-testing-quick-start.md)
+* [Update Other
+  Services](/docs/development/drivers/migration/migrate-from-dfv1-to-dfv2/update-other-services-to-dfv2.md)
+* [Driver Unit Testing Quick
+  Start](/docs/development/sdk/driver-testing/driver-unit-testing-quick-start.md)

@@ -1,7 +1,8 @@
 ---
 name: devicetree-visitor
-description: Creating a new Fuchsia devicetree visitor to parse devicetree
-  nodes into driver metadata and bind rules.
+description: >
+  Creating a new Fuchsia devicetree visitor to parse devicetree nodes into
+  driver metadata and bind rules.
 ---
 
 # Devicetree Visitor Creation
@@ -29,8 +30,8 @@ driver-specific metadata and bind rules.
 
 1.  Determine which directory the visitor will be added. Typically
     `sdk/lib/driver/devicetree/visitors/drivers/`.
-2.  Run `fx create devicetree visitor --lang cpp --path <VISITOR_PATH>` to create
-    a scaffolding visitor.
+2.  Run `fx create devicetree visitor --lang cpp --path <VISITOR_PATH>` to
+    create a scaffolding visitor.
 3.  Create a `README.md` in the visitor directory to explain inputs and outputs.
 4.  Create a `tasks.md` in the visitor directory to track progress.
 

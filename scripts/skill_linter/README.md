@@ -64,7 +64,7 @@ python3 scripts/skill_linter/skill_linter_test.py
   in the code review UI.
 
 Note: The [skills.star](scripts/shac/skills.star) integration is configured to
-scan for `SKILL.md` files within the `.agents/skills/` and `zircon/skills/`
+scan for `SKILL.md` files within the `.agents/skills/` and several other
 directories. This scope can be expanded to include other directories in the
 future as needed.
 

@@ -1,5 +1,5 @@
 ---
-name: driver_version_identification
+name: driver-version-identification
 description: Identify a driver's version (DFv1 vs DFv2).
 ---
 
@@ -7,9 +7,9 @@ description: Identify a driver's version (DFv1 vs DFv2).
 
 ## 1. Check Component Manifest (.cml)
 
-The most reliable indicator is the driver's component manifest file. Both
-DFv2 and DFv1 (running via compat) drivers use `runner: "driver"`, but they
-differ in how they specify the driver library:
+The most reliable indicator is the driver's component manifest file. Both DFv2
+and DFv1 (running via compat) drivers use `runner: "driver"`, but they differ in
+how they specify the driver library:
 
 * **DFv2 Driver**: Uses the `binary` key.
   ```json5
@@ -66,22 +66,20 @@ differ in how they specify the driver library:
 
 ## 4. Identify at Runtime
 
-If the driver is already running on a device, use host tools to
-identify its type:
+If the driver is already running on a device, use host tools to identify its
+type:
 
-* **Using `ffx component show`**:
-  Run `ffx component show <driver_component_name>`. Look at the `program` block:
-  * **DFv2 Driver**: Shows the `binary` key
-    (e.g., `binary: 'driver/my_driver.so'`).
-  * **DFv1 Driver (Compat)**: Shows the `compat` key
-    (e.g., `compat: 'driver/my_driver.so'`).
-* **Using `ffx driver show`**:
-  Run `ffx driver show <driver_url>`. This command displays details about the
-  driver. The presence of `compat` in the manifest details or arguments
-  indicates a wrapped DFv1 driver.
-* **Log Analysis**:
-  DFv1 drivers running in the shim may produce logs from the compat runner or
-  still use legacy `zxlogf` style output.
+* **Using `ffx component show`**: Run `ffx component show
+  <driver_component_name>`. Look at the `program` block:
+  * **DFv2 Driver**: Shows the `binary` key (e.g., `binary:
+    'driver/my_driver.so'`).
+  * **DFv1 Driver (Compat)**: Shows the `compat` key (e.g., `compat:
+    'driver/my_driver.so'`).
+* **Using `ffx driver show`**: Run `ffx driver show <driver_url>`. This command
+  displays details about the driver. The presence of `compat` in the manifest
+  details or arguments indicates a wrapped DFv1 driver.
+* **Log Analysis**: DFv1 drivers running in the shim may produce logs from the
+  compat runner or still use legacy `zxlogf` style output.
 
 ## Summary of Differences
 
@@ -106,5 +104,5 @@ identify its type:
 
 ## Further Reading
 
-* For guidance on migrating a driver from DFv1 to DFv2, see the
-  [Migrating DFv1 to DFv2](/src/devices/skills/migrate_dfv1_to_dfv2/SKILL.md) skill.
+* For guidance on migrating a driver from DFv1 to DFv2, see the [Migrating DFv1
+  to DFv2](/src/devices/skills/migrate_dfv1_to_dfv2/SKILL.md) skill.

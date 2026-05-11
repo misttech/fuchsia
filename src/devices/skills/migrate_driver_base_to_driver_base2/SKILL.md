@@ -1,5 +1,5 @@
 ---
-name: migrate_driver_base_to_driver_base2
+name: migrate-driver-base-to-driver-base2
 description: Migrate Fuchsia drivers from fdf::DriverBase to fdf::DriverBase2.
 ---
 
@@ -31,7 +31,10 @@ class MyDriver : public fdf::DriverBase2 { ... };
 
 ## Update Constructor
 
-The constructor must take no arguments (be default constructible), but it still needs to forward the driver name to `DriverBase2`. You no longer receive `DriverContext` or `UnownedSynchronizedDispatcher` in the constructor; they are provided in `Start()` or handled internally.
+The constructor must take no arguments (be default constructible), but it still
+needs to forward the driver name to `DriverBase2`. You no longer receive
+`DriverContext` or `UnownedSynchronizedDispatcher` in the constructor; they are
+provided in `Start()` or handled internally.
 
 ```cpp
 // Before
@@ -82,12 +85,11 @@ zx::result<> Start(fdf::DriverContext context) override {
 
 ### Handle Incoming Namespace
 
-If you need to access the incoming namespace after the `Start` method
-completes, you must take ownership of it from the context. Make sure that
-this is the last call to the context where it might need to use this
-incoming namespace for its own purposes. For example `CreateInspector`
-requires accessing the namespace, so it must be called before taking away
-the incoming namespace.
+If you need to access the incoming namespace after the `Start` method completes,
+you must take ownership of it from the context. Make sure that this is the last
+call to the context where it might need to use this incoming namespace for its
+own purposes. For example `CreateInspector` requires accessing the namespace, so
+it must be called before taking away the incoming namespace.
 
 > [!NOTE]
 > Some SDK APIs (like `compat::DeviceServer::Initialize` or `compat::ConnectBanjo`) still require a `std::shared_ptr<fdf::Namespace>`. You can create one by converting the unique pointer returned by `context.take_incoming()`:
@@ -120,8 +122,8 @@ inspector.Health().Ok();
 `fdf::DriverBase2` simplifies the stopping lifecycle.
 
 * `PrepareStop(PrepareStopCompleter)` is renamed to `Stop(StopCompleter)`.
-* The synchronous `Stop()` method is removed. Use the destructor for
-  synchronous cleanup.
+* The synchronous `Stop()` method is removed. Use the destructor for synchronous
+  cleanup.
 
 ### Async Stop
 
@@ -155,7 +157,10 @@ void Stop() override {
 
 ## Common Pitfalls
 
-* **Constructor Logging**: Calling `fdf::info` or similar logging macros in the constructor will crash the driver. The logger is not initialized until `DriverBaseInternalInit` is called by the framework (which happens after construction but before `Start`). Perform any logging in `Start` instead.
+* **Constructor Logging**: Calling `fdf::info` or similar logging macros in the
+  constructor will crash the driver. The logger is not initialized until
+  `DriverBaseInternalInit` is called by the framework (which happens after
+  construction but before `Start`). Perform any logging in `Start` instead.
 
 * **Missing Incoming Namespace**: Accessing `incoming()` after `Start` without
   having called `context.take_incoming()` will fail.
@@ -168,5 +173,4 @@ void Stop() override {
 
 * [driver_base.h](/sdk/lib/driver/component/cpp/driver_base.h)
 * [driver_base2.h](/sdk/lib/driver/component/cpp/driver_base2.h)
-
 

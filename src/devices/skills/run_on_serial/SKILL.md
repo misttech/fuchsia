@@ -1,17 +1,19 @@
 ---
 name: run-on-serial
-description: >-
-  Runs serial commands on a Fuchsia device and filters output. 
-  Use when `ffx` fails or when direct serial access is needed.
+description: >
+  Runs serial commands on a Fuchsia device and filters output.  Use when `ffx`
+  fails or when direct serial access is needed.
 ---
 
 # Run on Serial
 
-Guidance for running serial commands on a Fuchsia device using the `scripts/run_serial_cmd.sh` script.
+Guidance for running serial commands on a Fuchsia device using the
+`scripts/run_serial_cmd.sh` script.
 
 ## Prerequisites
 
-The script relies on environment variables to find the serial socket and log file.
+The script relies on environment variables to find the serial socket and log
+file.
 
 Required:
 - `FUCHSIA_SERIAL_UNIX_SOCKET`
@@ -37,7 +39,8 @@ src/devices/skills/run_on_serial/scripts/run_serial_cmd.sh "driver list"
 
 Serial output is a shared stream. Use judgement to filter noise.
 
-- **Ignore**: Lines with timestamps and pids (e.g., `[24462.203] 1234:5678>`). These are background device logs.
+- **Ignore**: Lines with timestamps and pids (e.g., `[24462.203] 1234:5678>`).
+  These are background device logs.
 - **Keep**: Lines matching the expected output of your command.
 
 ```copy-paste-checklist
