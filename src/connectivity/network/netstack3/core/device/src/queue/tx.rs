@@ -4,8 +4,9 @@
 
 //! TX device queues.
 
-use alloc::vec::Vec;
 use core::convert::Infallible as Never;
+
+use alloc::vec::Vec;
 
 use derivative::Derivative;
 use log::trace;
@@ -13,26 +14,23 @@ use netstack3_base::sync::Mutex;
 use netstack3_base::{
     Device, DeviceIdContext, ErrorAndSerializer, NetworkSerializationContext, NetworkSerializer,
 };
-use packet::{
-    Buf, BufferAlloc, ContiguousBuffer, FragmentedBuffer as _, GrowBufferMut,
-    NoReuseBufferProvider, ReusableBuffer, new_buf_vec,
-};
+use packet::{Buf, FragmentedBuffer as _, NoReuseBufferProvider, ReusableBuffer, new_buf_vec};
 
-use crate::internal::base::DeviceSendFrameError;
-use crate::internal::queue::{DequeueState, EnqueueResult, TransmitQueueFrameError, fifo};
+use crate::internal::base::{DeviceBufferBindingsTypes, DeviceSendFrameError};
+use crate::internal::queue::{
+    DequeueState, DeviceBufferSpec, EnqueueResult, TransmitQueueFrameError, fifo,
+};
 use crate::internal::socket::{DeviceSocketHandler, ParseSentFrameError, SentFrame};
 
 /// State associated with a device transmit queue.
 #[derive(Derivative)]
 #[derivative(Default(bound = "Allocator: Default"))]
 pub struct TransmitQueueState<Meta, Buffer, Allocator> {
-    pub(super) allocator: Allocator,
+    pub(super) allocator: ByteSliceAllocator<Allocator, Buffer>,
     pub(super) queue: Option<fifo::Queue<Meta, Buffer>>,
 }
 
 /// Holds queue and dequeue state for the transmit queue.
-#[derive(Derivative)]
-#[derivative(Default(bound = "Allocator: Default"))]
 pub struct TransmitQueue<Meta, Buffer, Allocator> {
     /// The state for dequeued packets that will be handled.
     ///
@@ -45,8 +43,20 @@ pub struct TransmitQueue<Meta, Buffer, Allocator> {
     pub(crate) queue: Mutex<TransmitQueueState<Meta, Buffer, Allocator>>,
 }
 
+impl<Meta, Buffer, Allocator> TransmitQueue<Meta, Buffer, Allocator> {
+    pub(crate) fn new(allocator: Allocator) -> Self {
+        Self {
+            deque: Mutex::new(DequeueState::default()),
+            queue: Mutex::new(TransmitQueueState {
+                allocator: ByteSliceAllocator::new(allocator),
+                queue: None,
+            }),
+        }
+    }
+}
+
 /// The bindings context for the transmit queue.
-pub trait TransmitQueueBindingsContext<DeviceId> {
+pub trait TransmitQueueBindingsContext<DeviceId>: DeviceBufferBindingsTypes {
     /// Signals to bindings that TX frames are available and ready to be sent
     /// over the device.
     ///
@@ -60,10 +70,7 @@ pub trait TransmitQueueBindingsContext<DeviceId> {
 pub trait TransmitQueueCommon<D: Device, C>: DeviceIdContext<D> {
     /// The metadata associated with every packet in the queue.
     type Meta;
-    /// An allocator of [`Self::Buffer`].
-    type Allocator;
-    /// The buffer type stored in the queue.
-    type Buffer: GrowBufferMut + ContiguousBuffer;
+
     /// The context given to `send_frame` when dequeueing.
     type DequeueContext;
 
@@ -75,11 +82,11 @@ pub trait TransmitQueueCommon<D: Device, C>: DeviceIdContext<D> {
 }
 
 /// The execution context for a transmit queue.
-pub trait TransmitQueueContext<D: Device, BC>: TransmitQueueCommon<D, BC> {
+pub trait TransmitQueueContext<D: DeviceBufferSpec<BC>, BC>: TransmitQueueCommon<D, BC> {
     /// Calls `cb` with mutable access to the queue state.
     fn with_transmit_queue_mut<
         O,
-        F: FnOnce(&mut TransmitQueueState<Self::Meta, Self::Buffer, Self::Allocator>) -> O,
+        F: FnOnce(&mut TransmitQueueState<Self::Meta, D::TxBuffer, D::TxAllocator>) -> O,
     >(
         &mut self,
         device_id: &Self::DeviceId,
@@ -89,7 +96,7 @@ pub trait TransmitQueueContext<D: Device, BC>: TransmitQueueCommon<D, BC> {
     /// Calls `cb` with immutable access to the queue state.
     fn with_transmit_queue<
         O,
-        F: FnOnce(&TransmitQueueState<Self::Meta, Self::Buffer, Self::Allocator>) -> O,
+        F: FnOnce(&TransmitQueueState<Self::Meta, D::TxBuffer, D::TxAllocator>) -> O,
     >(
         &mut self,
         device_id: &Self::DeviceId,
@@ -106,18 +113,17 @@ pub trait TransmitQueueContext<D: Device, BC>: TransmitQueueCommon<D, BC> {
         device_id: &Self::DeviceId,
         dequeue_context: Option<&mut Self::DequeueContext>,
         meta: Self::Meta,
-        buf: Self::Buffer,
+        buf: D::TxBuffer,
     ) -> Result<(), DeviceSendFrameError>;
 }
 
 /// The core execution context for dequeueing TX frames from the transmit queue.
-pub trait TransmitDequeueContext<D: Device, BC>: TransmitQueueContext<D, BC> {
+pub trait TransmitDequeueContext<D: DeviceBufferSpec<BC>, BC>: TransmitQueueContext<D, BC> {
     /// The inner context providing dequeuing.
     type TransmitQueueCtx<'a>: TransmitQueueContext<
             D,
             BC,
             Meta = Self::Meta,
-            Buffer = Self::Buffer,
             DequeueContext = Self::DequeueContext,
             DeviceId = Self::DeviceId,
         > + DeviceSocketHandler<D, BC>;
@@ -125,7 +131,7 @@ pub trait TransmitDequeueContext<D: Device, BC>: TransmitQueueContext<D, BC> {
     /// Calls the function with the TX deque state and the TX queue context.
     fn with_dequed_packets_and_tx_queue_ctx<
         O,
-        F: FnOnce(&mut DequeueState<Self::Meta, Self::Buffer>, &mut Self::TransmitQueueCtx<'_>) -> O,
+        F: FnOnce(&mut DequeueState<Self::Meta, D::TxBuffer>, &mut Self::TransmitQueueCtx<'_>) -> O,
     >(
         &mut self,
         device_id: &Self::DeviceId,
@@ -157,29 +163,36 @@ pub trait TransmitQueueHandler<D: Device, BC>: TransmitQueueCommon<D, BC> {
 }
 
 pub(super) fn deliver_to_device_sockets<
-    D: Device,
+    D: DeviceBufferSpec<BC>,
     BC: TransmitQueueBindingsContext<CC::DeviceId>,
     CC: TransmitQueueCommon<D, BC> + DeviceSocketHandler<D, BC>,
 >(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     device_id: &CC::DeviceId,
-    buffer: &CC::Buffer,
+    buffer: &D::TxBuffer,
     meta: &CC::Meta,
 ) {
-    let bytes = buffer.as_ref();
-    match CC::parse_outgoing_frame(bytes, meta) {
-        Ok(sent_frame) => DeviceSocketHandler::handle_frame(
-            core_ctx,
-            bindings_ctx,
-            device_id,
-            sent_frame.into(),
-            bytes,
-        ),
-        Err(ParseSentFrameError) => {
-            trace!("failed to parse outgoing frame on {:?} ({} bytes)", device_id, bytes.len())
+    buffer.with_bytes(|b| {
+        let mut handle_parsed = |bytes: &[u8]| match CC::parse_outgoing_frame(bytes, meta) {
+            Ok(sent_frame) => DeviceSocketHandler::handle_frame(
+                core_ctx,
+                bindings_ctx,
+                device_id,
+                sent_frame.into(),
+                bytes,
+            ),
+            Err(ParseSentFrameError) => {
+                trace!("failed to parse outgoing frame on {:?} ({} bytes)", device_id, bytes.len())
+            }
+        };
+
+        if let Some(bytes) = b.try_get_contiguous() {
+            handle_parsed(bytes)
+        } else {
+            handle_parsed(&b.to_flattened_vec())
         }
-    }
+    })
 }
 
 impl EnqueueResult {
@@ -203,16 +216,16 @@ enum EnqueueStatus<Meta, Buffer> {
 // Extracted to a function without the generic serializer parameter to ease code
 // generation.
 fn insert_and_notify<
-    D: Device,
+    D: DeviceBufferSpec<BC>,
     BC: TransmitQueueBindingsContext<CC::DeviceId>,
     CC: TransmitQueueContext<D, BC> + DeviceSocketHandler<D, BC>,
 >(
     bindings_ctx: &mut BC,
     device_id: &CC::DeviceId,
-    inserter: Option<fifo::QueueTxInserter<'_, CC::Meta, CC::Buffer>>,
+    inserter: Option<fifo::QueueTxInserter<'_, CC::Meta, D::TxBuffer>>,
     meta: CC::Meta,
-    body: CC::Buffer,
-) -> EnqueueStatus<CC::Meta, CC::Buffer> {
+    body: D::TxBuffer,
+) -> EnqueueStatus<CC::Meta, D::TxBuffer> {
     match inserter {
         // No TX queue so send the frame immediately.
         None => EnqueueStatus::NotAttempted(meta, body),
@@ -226,14 +239,14 @@ fn insert_and_notify<
 // Extracted to a function without the generic serializer parameter to ease code
 // generation.
 fn handle_post_enqueue<
-    D: Device,
+    D: DeviceBufferSpec<BC>,
     BC: TransmitQueueBindingsContext<CC::DeviceId>,
     CC: TransmitQueueContext<D, BC> + DeviceSocketHandler<D, BC>,
 >(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     device_id: &CC::DeviceId,
-    status: EnqueueStatus<CC::Meta, CC::Buffer>,
+    status: EnqueueStatus<CC::Meta, D::TxBuffer>,
 ) -> Result<(), DeviceSendFrameError> {
     match status {
         EnqueueStatus::NotAttempted(meta, body) => {
@@ -249,13 +262,10 @@ fn handle_post_enqueue<
 }
 
 impl<
-    D: Device,
+    D: DeviceBufferSpec<BC>,
     BC: TransmitQueueBindingsContext<CC::DeviceId>,
     CC: TransmitQueueContext<D, BC> + DeviceSocketHandler<D, BC>,
 > TransmitQueueHandler<D, BC> for CC
-where
-    for<'a> &'a mut CC::Allocator: BufferAlloc<CC::Buffer>,
-    CC::Buffer: ReusableBuffer,
 {
     fn queue_tx_frame<S>(
         &mut self,
@@ -270,6 +280,7 @@ where
     {
         let (len, result) =
             self.with_transmit_queue_mut(device_id, |TransmitQueueState { allocator, queue }| {
+                let queue_len = queue.as_ref().map_or(0, |q| q.len());
                 let inserter = match queue {
                     None => None,
                     Some(q) => match q.tx_inserter() {
@@ -280,17 +291,27 @@ where
                 let body = body
                     .serialize_outer(
                         &mut NetworkSerializationContext::default(),
-                        NoReuseBufferProvider(allocator),
+                        NoReuseBufferProvider(BufferAllocAdaptor {
+                            allocator: &mut *allocator,
+                            queue_len,
+                        }),
                     )
                     .map_err(|(e, serializer)| {
                         TransmitQueueFrameError::SerializeError(ErrorAndSerializer {
                             serializer,
-                            error: e.map_alloc(|_| ()),
+                            error: e.map_alloc(
+                                |_: <D::TxAllocator as TxBufferAllocator<D::TxBuffer>>::Error| (),
+                            ),
                         })
                     })?;
                 let len = body.len();
-                let result =
-                    insert_and_notify::<_, _, CC>(bindings_ctx, device_id, inserter, meta, body);
+                let result = insert_and_notify::<_, _, CC>(
+                    bindings_ctx,
+                    device_id,
+                    inserter,
+                    meta,
+                    allocator.get_buffer(),
+                );
                 Ok((len, result))
             })?;
 
@@ -300,14 +321,77 @@ where
     }
 }
 
+/// Allocator for Tx buffers to be stored in Tx queue.
+pub trait TxBufferAllocator<Buffer> {
+    /// Error for allocating a Tx buffer.
+    type Error;
+
+    /// Allocate Tx buffer. This method is only called while the TX queue is
+    /// locked. `queue_len` is the current length of the TX queue.
+    fn alloc(&mut self, len: usize, queue_len: usize) -> Result<Buffer, Self::Error>;
+}
+
+/// Turns a `TxBufferAllocator` into a buffer allocator for `Buf<&mut [u8]>`.
+/// The caller can serialize into the returned `Buf<&mut [u8]>` and retrieve
+/// the buffer after serialization. This avoids the binary bloat by not adding
+/// serialization code for different buffer types.
+#[derive(Derivative)]
+#[derivative(Default(bound = "A: Default"))]
+pub(super) struct ByteSliceAllocator<A, B> {
+    allocator: A,
+    buffer: Option<B>,
+}
+
+impl<A, B> ByteSliceAllocator<A, B> {
+    fn new(allocator: A) -> Self {
+        Self { allocator, buffer: None }
+    }
+}
+
+impl<A: TxBufferAllocator<B>, B: AsMut<[u8]>> ByteSliceAllocator<A, B> {
+    /// Returns a borrowed slice that the caller can serialize into.
+    fn alloc_buf_slice(
+        &mut self,
+        len: usize,
+        queue_len: usize,
+    ) -> Result<Buf<&mut [u8]>, A::Error> {
+        let old = self.buffer.replace(self.allocator.alloc(len, queue_len)?);
+        debug_assert!(old.is_none());
+        Ok(Buf::new(self.buffer.as_mut().expect("must be set").as_mut(), ..))
+    }
+
+    /// This is intended to obtain the ownership of the buffer and store it
+    /// into the tx queue.
+    fn get_buffer(&mut self) -> B {
+        self.buffer.take().expect("must be allocated")
+    }
+}
+
+struct BufferAllocAdaptor<'a, A, B> {
+    allocator: &'a mut ByteSliceAllocator<A, B>,
+    queue_len: usize,
+}
+
+impl<'a, A, B> packet::BufferAlloc<Buf<&'a mut [u8]>> for BufferAllocAdaptor<'a, A, B>
+where
+    B: AsMut<[u8]>,
+    A: TxBufferAllocator<B>,
+{
+    type Error = A::Error;
+
+    fn alloc(self, len: usize) -> Result<Buf<&'a mut [u8]>, Self::Error> {
+        self.allocator.alloc_buf_slice(len, self.queue_len)
+    }
+}
+
 /// An allocator of [`Buf<Vec<u8>>`] .
 #[derive(Default)]
 pub struct BufVecU8Allocator;
 
-impl<'a> BufferAlloc<Buf<Vec<u8>>> for &'a mut BufVecU8Allocator {
+impl TxBufferAllocator<Buf<Vec<u8>>> for BufVecU8Allocator {
     type Error = Never;
 
-    fn alloc(self, len: usize) -> Result<Buf<Vec<u8>>, Self::Error> {
+    fn alloc(&mut self, len: usize, _qlen: usize) -> Result<Buf<Vec<u8>>, Self::Error> {
         new_buf_vec(len)
     }
 }
@@ -324,6 +408,11 @@ mod tests {
     use netstack3_base::testutil::{
         FakeBindingsCtx, FakeCoreCtx, FakeLinkDevice, FakeLinkDeviceId,
     };
+
+    impl<BT> DeviceBufferSpec<BT> for FakeLinkDevice {
+        type TxBuffer = packet::Buf<Vec<u8>>;
+        type TxAllocator = BufVecU8Allocator;
+    }
     use netstack3_base::{
         ContextPair, CounterContext, CtxPair, ResourceCounterContext, WorkQueueReport,
     };
@@ -367,8 +456,6 @@ mod tests {
     impl TransmitQueueCommon<FakeLinkDevice, FakeBindingsCtxImpl> for FakeCoreCtxImpl {
         type DequeueContext = DequeueContext;
         type Meta = ();
-        type Buffer = Buf<Vec<u8>>;
-        type Allocator = BufVecU8Allocator;
 
         fn parse_outgoing_frame<'a, 'b>(
             buf: &'a [u8],
@@ -457,10 +544,7 @@ mod tests {
 
         fn with_dequed_packets_and_tx_queue_ctx<
             O,
-            F: FnOnce(
-                &mut DequeueState<Self::Meta, Self::Buffer>,
-                &mut Self::TransmitQueueCtx<'_>,
-            ) -> O,
+            F: FnOnce(&mut DequeueState<(), Buf<Vec<u8>>>, &mut Self::TransmitQueueCtx<'_>) -> O,
         >(
             &mut self,
             &FakeLinkDeviceId: &FakeLinkDeviceId,

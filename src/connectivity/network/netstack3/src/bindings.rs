@@ -55,6 +55,7 @@ mod waker;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use assert_matches::assert_matches;
 use fidl::endpoints::DiscoverableProtocolMarker;
@@ -70,7 +71,7 @@ use fuchsia_inspect::health::Reporter as _;
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt as _, StreamExt as _};
 use log::{debug, error, info, warn};
-use packet::{Buf, BufferMut};
+use packet::BufferMut;
 use rand::rngs::OsRng;
 use rand::{CryptoRng, RngCore, TryRngCore as _};
 use util::{ConversionContext, IntoFidl as _};
@@ -89,6 +90,7 @@ use resource_removal::{ResourceRemovalSink, ResourceRemovalWorker};
 
 use crate::bindings::bpf::{EbpfManager, SocketFilterProgram};
 use crate::bindings::counters::BindingsCounters;
+use crate::bindings::devices::TxBuffer;
 pub use crate::bindings::interface_config::InterfaceConfigDefaults;
 use crate::bindings::interface_config::InterfaceConfigType;
 use crate::bindings::interfaces_watcher::AddressPropertiesUpdate;
@@ -587,7 +589,7 @@ impl DeviceLayerEventDispatcher for BindingsCtx {
     fn send_ethernet_frame(
         &mut self,
         device: &EthernetDeviceId<Self>,
-        frame: Buf<Vec<u8>>,
+        frame: TxBuffer,
         dequeue_context: Option<&mut Self::DequeueContext>,
     ) -> Result<(), DeviceSendFrameError> {
         let EthernetInfo {
@@ -611,7 +613,7 @@ impl DeviceLayerEventDispatcher for BindingsCtx {
     fn send_ip_packet(
         &mut self,
         device: &PureIpDeviceId<Self>,
-        packet: Buf<Vec<u8>>,
+        packet: TxBuffer,
         ip_version: IpVersion,
         dequeue_context: Option<&mut Self::DequeueContext>,
     ) -> Result<(), DeviceSendFrameError> {
@@ -642,7 +644,7 @@ fn send_netdevice_frame(
                 addresses: _,
             },
     }: &DynamicNetdeviceInfo,
-    frame: Buf<Vec<u8>>,
+    frame: TxBuffer,
     frame_type: fhardware_network::FrameType,
     dequeue_context: Option<&mut TxTaskState>,
 ) -> Result<(), DeviceSendFrameError> {
@@ -652,30 +654,46 @@ fn send_netdevice_frame(
         return Ok(());
     }
 
-    let tx_buffer = match dequeue_context.and_then(|TxTaskState { tx_buffers }| tx_buffers.pop()) {
-        Some(b) => b,
-        None => {
-            match handler.alloc_tx_buffer() {
-                Ok(Some(b)) => b,
-                Ok(None) => {
-                    return Err(DeviceSendFrameError::NoBuffers);
-                }
-                Err(e) => {
-                    error!("failed to allocate frame to {handler:?}: {e:?}");
-                    // There's nothing core can do with this error, pretend like
-                    // everything's okay.
-
-                    // TODO(https://fxbug.dev/353718697): Consider signalling
-                    // back through the handler that we want to shutdown this
-                    // interface.
-                    return Ok(());
-                }
+    let tx_buffer = match frame {
+        packet::Either::A(netdev_tx_buffer) => {
+            let tx_buffer = netdev_tx_buffer.into_inner();
+            if let Some(TxTaskState { alloc_state, .. }) = dequeue_context {
+                let _ = alloc_state.device_buffers_in_queue.fetch_sub(1, Ordering::Relaxed);
             }
+            tx_buffer
+        }
+        packet::Either::B(buf_vec) => {
+            let mut tx_buffer =
+                match dequeue_context.and_then(|TxTaskState { tx_buffers, .. }| tx_buffers.pop()) {
+                    Some(b) => b,
+                    None => {
+                        match handler.alloc_tx_buffer() {
+                            Ok(Some(b)) => b,
+                            Ok(None) => {
+                                return Err(DeviceSendFrameError::NoBuffers);
+                            }
+                            Err(e) => {
+                                error!("failed to allocate frame to {handler:?}: {e:?}");
+                                // There's nothing core can do with this error, pretend like
+                                // everything's okay.
+
+                                // TODO(https://fxbug.dev/353718697): Consider signalling
+                                // back through the handler that we want to shutdown this
+                                // interface.
+                                return Ok(());
+                            }
+                        }
+                    }
+                };
+            if let Err(err) = tx_buffer.write_at(0, buf_vec.as_ref()) {
+                warn!("failed to write to tx buffer: {:?}", err);
+                return Ok(());
+            }
+            tx_buffer
         }
     };
-
     handler
-        .send(frame.as_ref(), frame_type, tx_buffer)
+        .send(frame_type, tx_buffer)
         .unwrap_or_else(|e| warn!("failed to send frame to {:?}: {:?}", handler, e));
     Ok(())
 }
@@ -1201,6 +1219,7 @@ impl Netstack {
             LoopbackCreationProperties { mtu: DEFAULT_LOOPBACK_MTU },
             RawMetric(LOOPBACK_INTERFACE_METRIC),
             loopback_info,
+            Default::default(),
         );
 
         let LoopbackInfo { static_common_info: _, dynamic_common_info: _, rx_notifier } =

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use alloc::vec::Vec;
 use core::fmt::{Debug, Display};
 use core::num::NonZeroU64;
 
@@ -20,7 +19,6 @@ use netstack3_filter::FilterBindingsTypes;
 use netstack3_hashmap::HashMap;
 use netstack3_ip::device::Ipv6LinkLayerAddr;
 use netstack3_ip::nud::{LinkResolutionContext, NudCounters};
-use packet::Buf;
 
 use crate::blackhole::{BlackholeDeviceId, BlackholePrimaryDeviceId};
 use crate::internal::arp::ArpCounters;
@@ -32,7 +30,7 @@ use crate::internal::id::{
 use crate::internal::loopback::{LoopbackDeviceId, LoopbackPrimaryDeviceId};
 use crate::internal::pure_ip::{PureIpDeviceId, PureIpPrimaryDeviceId};
 use crate::internal::queue::rx::ReceiveQueueBindingsContext;
-use crate::internal::queue::tx::TransmitQueueBindingsContext;
+use crate::internal::queue::tx::{TransmitQueueBindingsContext, TxBufferAllocator};
 use crate::internal::socket::{self, DeviceSocketCounters, HeldSockets};
 use crate::internal::state::DeviceStateSpec;
 
@@ -430,13 +428,22 @@ pub trait DeviceIdAndNameMatcher {
     fn name_matches(&self, name: &str) -> bool;
 }
 
+/// Trait for associated types used in the device layer.
+pub trait DeviceBufferBindingsTypes: 'static {
+    /// The buffer type stored in transmit queues.
+    type TxBuffer: packet::FragmentedBuffer + AsMut<[u8]> + Send + 'static;
+    /// The allocator for transmit queue buffers.
+    type TxAllocator: TxBufferAllocator<Self::TxBuffer> + Send + 'static;
+}
+
 /// Provides associated types used in the device layer.
 ///
 /// This trait groups together state types used throughout the device layer. It
 /// is blanket-implemented for all types that implement
 /// [`socket::DeviceSocketTypes`] and [`DeviceLayerStateTypes`].
 pub trait DeviceLayerTypes:
-    DeviceLayerStateTypes
+    DeviceBufferBindingsTypes
+    + DeviceLayerStateTypes
     + socket::DeviceSocketTypes
     + LinkResolutionContext<EthernetLinkDevice>
     + TimerBindingsTypes
@@ -452,7 +459,8 @@ impl<
         + TimerBindingsTypes
         + ReferenceNotifiers
         + TxMetadataBindingsTypes
-        + 'static,
+        + 'static
+        + DeviceBufferBindingsTypes,
 > DeviceLayerTypes for BC
 {
 }
@@ -485,7 +493,7 @@ pub trait DeviceLayerEventDispatcher:
     fn send_ethernet_frame(
         &mut self,
         device: &EthernetDeviceId<Self>,
-        frame: Buf<Vec<u8>>,
+        frame: Self::TxBuffer,
         dequeue_context: Option<&mut Self::DequeueContext>,
     ) -> Result<(), DeviceSendFrameError>;
 
@@ -501,7 +509,7 @@ pub trait DeviceLayerEventDispatcher:
     fn send_ip_packet(
         &mut self,
         device: &PureIpDeviceId<Self>,
-        packet: Buf<Vec<u8>>,
+        packet: Self::TxBuffer,
         ip_version: IpVersion,
         dequeue_context: Option<&mut Self::DequeueContext>,
     ) -> Result<(), DeviceSendFrameError>;
@@ -516,9 +524,12 @@ pub enum DeviceSendFrameError {
 
 #[cfg(any(test, feature = "testutils"))]
 pub mod testutil {
-    use super::*;
-
+    use alloc::vec::Vec;
+    use netstack3_base::testutil::FakeBindingsCtx;
     use netstack3_base::{CounterCollection, ResourceCounterContext};
+
+    use super::*;
+    use crate::internal::queue::tx::BufVecU8Allocator;
 
     /// Expected values of [`DeviceCounters`].
     pub type DeviceCounterExpectations = DeviceCounters<u64>;
@@ -538,6 +549,13 @@ pub mod testutil {
                 "per-device counters"
             );
         }
+    }
+
+    impl<TimerId: 'static, Event: Debug + 'static, State: 'static, FrameMeta: 'static>
+        DeviceBufferBindingsTypes for FakeBindingsCtx<TimerId, Event, State, FrameMeta>
+    {
+        type TxBuffer = packet::Buf<Vec<u8>>;
+        type TxAllocator = BufVecU8Allocator;
     }
 }
 

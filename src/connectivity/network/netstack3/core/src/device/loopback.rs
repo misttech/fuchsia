@@ -47,7 +47,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::LoopbackRxQueue>>
 {
     fn with_receive_queue_mut<
         O,
-        F: FnOnce(&mut ReceiveQueueState<Self::Meta, Self::Buffer>) -> O,
+        F: FnOnce(&mut ReceiveQueueState<Self::Meta, Buf<Vec<u8>>>) -> O,
     >(
         &mut self,
         device_id: &LoopbackDeviceId<BC>,
@@ -84,8 +84,6 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::LoopbackTxQueue>>
     TransmitQueueCommon<LoopbackDevice, BC> for CoreCtx<'_, BC, L>
 {
     type Meta = LoopbackTxQueueMeta<WeakDeviceId<BC>, BC>;
-    type Allocator = BufVecU8Allocator;
-    type Buffer = Buf<Vec<u8>>;
     type DequeueContext = Never;
 
     fn parse_outgoing_frame<'a, 'b>(
@@ -101,7 +99,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::LoopbackTxQueue>>
 {
     fn with_transmit_queue_mut<
         O,
-        F: FnOnce(&mut TransmitQueueState<Self::Meta, Self::Buffer, Self::Allocator>) -> O,
+        F: FnOnce(&mut TransmitQueueState<Self::Meta, Buf<Vec<u8>>, BufVecU8Allocator>) -> O,
     >(
         &mut self,
         device_id: &LoopbackDeviceId<BC>,
@@ -114,7 +112,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::LoopbackTxQueue>>
 
     fn with_transmit_queue<
         O,
-        F: FnOnce(&TransmitQueueState<Self::Meta, Self::Buffer, Self::Allocator>) -> O,
+        F: FnOnce(&TransmitQueueState<Self::Meta, Buf<Vec<u8>>, BufVecU8Allocator>) -> O,
     >(
         &mut self,
         device_id: &LoopbackDeviceId<BC>,
@@ -131,7 +129,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::LoopbackTxQueue>>
         device_id: &Self::DeviceId,
         dequeue_context: Option<&mut Never>,
         meta: Self::Meta,
-        buf: Self::Buffer,
+        buf: Buf<Vec<u8>>,
     ) -> Result<(), DeviceSendFrameError> {
         // Loopack does not support dequeueing context from bindings.
         match dequeue_context {
@@ -166,7 +164,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::LoopbackTxDequeue>
 
     fn with_dequed_packets_and_tx_queue_ctx<
         O,
-        F: FnOnce(&mut DequeueState<Self::Meta, Self::Buffer>, &mut Self::TransmitQueueCtx<'_>) -> O,
+        F: FnOnce(&mut DequeueState<Self::Meta, Buf<Vec<u8>>>, &mut Self::TransmitQueueCtx<'_>) -> O,
     >(
         &mut self,
         device_id: &Self::DeviceId,

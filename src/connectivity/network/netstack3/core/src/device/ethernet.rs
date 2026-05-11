@@ -25,8 +25,8 @@ use netstack3_device::ethernet::{
     EthernetWeakDeviceId, StaticEthernetDeviceState,
 };
 use netstack3_device::queue::{
-    BufVecU8Allocator, DequeueState, TransmitDequeueContext, TransmitQueueCommon,
-    TransmitQueueContext, TransmitQueueState,
+    DequeueState, TransmitDequeueContext, TransmitQueueCommon, TransmitQueueContext,
+    TransmitQueueState,
 };
 use netstack3_device::socket::{ParseSentFrameError, SentFrame};
 use netstack3_device::{
@@ -509,8 +509,6 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::EthernetTxQueue>>
     TransmitQueueCommon<EthernetLinkDevice, BC> for CoreCtx<'_, BC, L>
 {
     type Meta = BC::TxMetadata;
-    type Allocator = BufVecU8Allocator;
-    type Buffer = Buf<Vec<u8>>;
     type DequeueContext = BC::DequeueContext;
 
     fn parse_outgoing_frame<'a, 'b>(
@@ -526,7 +524,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::EthernetTxQueue>>
 {
     fn with_transmit_queue_mut<
         O,
-        F: FnOnce(&mut TransmitQueueState<Self::Meta, Self::Buffer, Self::Allocator>) -> O,
+        F: FnOnce(&mut TransmitQueueState<Self::Meta, BC::TxBuffer, BC::TxAllocator>) -> O,
     >(
         &mut self,
         device_id: &EthernetDeviceId<BC>,
@@ -539,7 +537,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::EthernetTxQueue>>
 
     fn with_transmit_queue<
         O,
-        F: FnOnce(&TransmitQueueState<Self::Meta, Self::Buffer, Self::Allocator>) -> O,
+        F: FnOnce(&TransmitQueueState<Self::Meta, BC::TxBuffer, BC::TxAllocator>) -> O,
     >(
         &mut self,
         device_id: &EthernetDeviceId<BC>,
@@ -556,7 +554,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::EthernetTxQueue>>
         device_id: &Self::DeviceId,
         dequeue_context: Option<&mut BC::DequeueContext>,
         _meta: Self::Meta,
-        buf: Self::Buffer,
+        buf: BC::TxBuffer,
     ) -> Result<(), DeviceSendFrameError> {
         DeviceLayerEventDispatcher::send_ethernet_frame(
             bindings_ctx,
@@ -575,7 +573,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::EthernetTxDequeue>
 
     fn with_dequed_packets_and_tx_queue_ctx<
         O,
-        F: FnOnce(&mut DequeueState<Self::Meta, Self::Buffer>, &mut Self::TransmitQueueCtx<'_>) -> O,
+        F: FnOnce(&mut DequeueState<Self::Meta, BC::TxBuffer>, &mut Self::TransmitQueueCtx<'_>) -> O,
     >(
         &mut self,
         device_id: &Self::DeviceId,
@@ -615,11 +613,11 @@ impl<BT: BindingsTypes> LockLevelFor<IpLinkDeviceState<EthernetLinkDevice, BT>>
 impl<BT: BindingsTypes> LockLevelFor<IpLinkDeviceState<EthernetLinkDevice, BT>>
     for crate::lock_ordering::EthernetTxQueue
 {
-    type Data = TransmitQueueState<BT::TxMetadata, Buf<Vec<u8>>, BufVecU8Allocator>;
+    type Data = TransmitQueueState<BT::TxMetadata, BT::TxBuffer, BT::TxAllocator>;
 }
 
 impl<BT: BindingsTypes> LockLevelFor<IpLinkDeviceState<EthernetLinkDevice, BT>>
     for crate::lock_ordering::EthernetTxDequeue
 {
-    type Data = DequeueState<BT::TxMetadata, Buf<Vec<u8>>>;
+    type Data = DequeueState<BT::TxMetadata, BT::TxBuffer>;
 }

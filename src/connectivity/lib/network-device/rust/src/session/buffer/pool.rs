@@ -173,6 +173,32 @@ impl Pool {
         receiver.await.unwrap()
     }
 
+    /// Tries to allocate a [`SinglePartTxBuffer`].
+    ///
+    /// Returns `Ok(None)` if there is no available buffer, or `Err(Error::TxLength)`
+    /// if the requested size cannot meet the device requirement.
+    pub(in crate::session) fn try_alloc_single_part_tx_buffer(
+        self: &Arc<Self>,
+        num_bytes: usize,
+    ) -> Result<Option<SinglePartTxBuffer>> {
+        let BufferLayout { min_tx_data: _, min_tx_head, min_tx_tail, length: buffer_length } =
+            self.buffer_layout;
+        if num_bytes > buffer_length - usize::from(min_tx_head) - usize::from(min_tx_tail) {
+            return Err(Error::TxLength);
+        }
+        self.tx_alloc_state
+            .lock()
+            .free_list
+            .try_alloc(ChainLength::try_from(1u8).unwrap(), &self.descriptors)
+            .map(|allocated| -> Result<SinglePartTxBuffer> {
+                let mut alloc = AllocGuard::new(allocated, self.clone());
+                alloc.init(num_bytes)?;
+                let buffer = Buffer::from(alloc);
+                Ok(SinglePartTxBuffer::new(buffer, num_bytes).expect("must be single part"))
+            })
+            .transpose()
+    }
+
     /// Allocates a tx [`Buffer`].
     ///
     /// The returned buffer will have `num_bytes` as its capacity, the method
@@ -465,6 +491,14 @@ impl<K: AllocKind> Buffer<K> {
         Ok(())
     }
 
+    /// Returns the buffer as an immutable slice if it's not fragmented.
+    pub fn as_slice(&self) -> Option<&[u8]> {
+        if self.parts.len() > 1 {
+            return None;
+        }
+        Some(self.parts[0].as_slice())
+    }
+
     /// Returns this buffer as a mutable slice if it's not fragmented.
     pub fn as_slice_mut(&mut self) -> Option<&mut [u8]> {
         match &mut (*self.parts)[..] {
@@ -519,6 +553,67 @@ impl<K: AllocKind> Buffer<K> {
     /// Retrieves the buffer's source port.
     pub fn port(&self) -> Port {
         self.alloc.descriptor().port()
+    }
+}
+
+/// A witness type that proves the buffer is backed by one part only
+/// and thus can be converted into `&[u8]`.
+pub struct SinglePartTxBuffer(Buffer<Tx>);
+
+impl SinglePartTxBuffer {
+    /// Creates a new [`SinglePartTxBuffer`] from a [`Buffer<Tx>`] if it is
+    /// backed by one part only.
+    ///
+    /// Returns [`None`] if the buffer is not backed by 1 part or it cannot fit
+    /// `len` bytes.
+    pub fn new(mut buffer: Buffer<Tx>, len: usize) -> Option<Self> {
+        if buffer.parts.len() != 1 {
+            None
+        } else {
+            let part = &mut buffer.parts[0];
+            if part.cap < len {
+                return None;
+            }
+            part.len = len;
+            Some(Self(buffer))
+        }
+    }
+
+    /// Converts back to a Tx buffer.
+    pub fn into_inner(self) -> Buffer<Tx> {
+        let Self(buffer) = self;
+        buffer
+    }
+}
+
+impl AsRef<[u8]> for SinglePartTxBuffer {
+    fn as_ref(&self) -> &[u8] {
+        // Safety: we have checked that there is 1 buffer part, so it must have
+        // been initialized.
+        unsafe { self.0.parts.storage[0].assume_init_ref().as_slice() }
+    }
+}
+
+impl AsMut<[u8]> for SinglePartTxBuffer {
+    fn as_mut(&mut self) -> &mut [u8] {
+        // Safety: we have checked that there is 1 buffer part, so it must have
+        // been initialized.
+        unsafe { self.0.parts.storage[0].assume_init_mut().as_slice_mut() }
+    }
+}
+
+impl packet::FragmentedBuffer for SinglePartTxBuffer {
+    fn len(&self) -> usize {
+        // Safety: we have checked that there is 1 buffer part, so it must have
+        // been initialized.
+        unsafe { self.0.parts.storage[0].assume_init_ref().len }
+    }
+
+    fn with_bytes<'a, R, F>(&'a self, f: F) -> R
+    where
+        F: for<'b> FnOnce(packet::FragmentedBytes<'b, 'a>) -> R,
+    {
+        f(packet::FragmentedBytes::new(&mut [self.as_ref()][..]))
     }
 }
 
@@ -911,6 +1006,14 @@ impl BufferPart {
         // create outlives its instance. BufferPart itself is not copy or clone
         // so we can rely on unsafety of `new` to uphold this.
         unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
+
+    /// Returns the buffer part as an immutable slice.
+    fn as_slice(&self) -> &[u8] {
+        // SAFETY: BufferPart requires the caller to guarantee the ptr used to
+        // create outlives its instance. BufferPart itself is not copy or clone
+        // so we can rely on unsafety of `new` to uphold this.
+        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
     }
 }
 

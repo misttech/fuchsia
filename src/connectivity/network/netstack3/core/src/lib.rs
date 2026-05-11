@@ -74,13 +74,14 @@ pub mod device {
     };
     pub use netstack3_device::queue::{
         BatchSize, ReceiveQueueBindingsContext, TransmitQueueBindingsContext,
-        TransmitQueueConfiguration,
+        TransmitQueueConfiguration, TxBufferAllocator,
     };
     pub use netstack3_device::{
-        ArpConfiguration, ArpConfigurationUpdate, DeviceClassMatcher, DeviceConfiguration,
-        DeviceConfigurationUpdate, DeviceConfigurationUpdateError, DeviceCounters, DeviceId,
-        DeviceIdAndNameMatcher, DeviceLayerEventDispatcher, DeviceLayerStateTypes, DeviceProvider,
-        DeviceSendFrameError, NdpConfiguration, NdpConfigurationUpdate, WeakDeviceId,
+        ArpConfiguration, ArpConfigurationUpdate, DeviceBufferBindingsTypes, DeviceClassMatcher,
+        DeviceConfiguration, DeviceConfigurationUpdate, DeviceConfigurationUpdateError,
+        DeviceCounters, DeviceId, DeviceIdAndNameMatcher, DeviceLayerEventDispatcher,
+        DeviceLayerStateTypes, DeviceProvider, DeviceSendFrameError, NdpConfiguration,
+        NdpConfigurationUpdate, WeakDeviceId,
     };
 }
 

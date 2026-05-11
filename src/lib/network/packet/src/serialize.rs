@@ -332,6 +332,14 @@ impl Buf<Vec<u8>> {
     }
 }
 
+impl<B> Buf<B> {
+    /// Extracts the underlying buffer and the range.
+    pub fn into_parts(self) -> (B, Range<usize>) {
+        let Buf { buf, body } = self;
+        (buf, body)
+    }
+}
+
 impl<B: AsRef<[u8]>> Buf<B> {
     /// Constructs a new `Buf`.
     ///

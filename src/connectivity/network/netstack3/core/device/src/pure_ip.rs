@@ -4,7 +4,6 @@
 
 //! A pure IP device, capable of directly sending/receiving IPv4 & IPv6 packets.
 
-use alloc::vec::Vec;
 use core::convert::Infallible as Never;
 use core::fmt::Debug;
 
@@ -19,16 +18,15 @@ use netstack3_base::{
     WeakDeviceIdentifier,
 };
 use netstack3_ip::{DeviceIpLayerMetadata, IpPacketDestination};
-use packet::{Buf, BufferMut};
+use packet::BufferMut;
 
 use crate::internal::base::{
-    DeviceCounters, DeviceLayerTypes, DeviceReceiveFrameSpec, PureIpDeviceCounters,
+    DeviceBufferBindingsTypes, DeviceCounters, DeviceLayerTypes, DeviceReceiveFrameSpec,
+    PureIpDeviceCounters,
 };
 use crate::internal::id::{BaseDeviceId, BasePrimaryDeviceId, BaseWeakDeviceId, DeviceId};
-use crate::internal::queue::tx::{
-    BufVecU8Allocator, TransmitQueue, TransmitQueueHandler, TransmitQueueState,
-};
-use crate::internal::queue::{DequeueState, TransmitQueueFrameError};
+use crate::internal::queue::tx::{TransmitQueue, TransmitQueueHandler, TransmitQueueState};
+use crate::internal::queue::{DequeueState, DeviceBufferSpec, TransmitQueueFrameError};
 use crate::internal::socket::{
     DeviceSocketHandler, DeviceSocketMetadata, DeviceSocketSendTypes, Frame, IpFrame, ReceivedFrame,
 };
@@ -79,12 +77,15 @@ pub struct PureIpHeaderParams {
 }
 
 /// State for a pure IP device.
-pub struct PureIpDeviceState<BT: TxMetadataBindingsTypes> {
+pub struct PureIpDeviceState<BT: DeviceLayerTypes> {
     /// The device's dynamic state.
     dynamic_state: RwLock<DynamicPureIpDeviceState>,
     /// The device's transmit queue.
-    pub tx_queue:
-        TransmitQueue<PureIpDeviceTxQueueFrameMetadata<BT>, Buf<Vec<u8>>, BufVecU8Allocator>,
+    pub tx_queue: TransmitQueue<
+        PureIpDeviceTxQueueFrameMetadata<BT>,
+        <PureIpDevice as DeviceBufferSpec<BT>>::TxBuffer,
+        <PureIpDevice as DeviceBufferSpec<BT>>::TxAllocator,
+    >,
     /// Counters specific to pure IP devices.
     pub counters: PureIpDeviceCounters,
 }
@@ -96,6 +97,11 @@ pub struct DynamicPureIpDeviceState {
 }
 
 impl Device for PureIpDevice {}
+
+impl<BT: DeviceBufferBindingsTypes> DeviceBufferSpec<BT> for PureIpDevice {
+    type TxBuffer = BT::TxBuffer;
+    type TxAllocator = BT::TxAllocator;
+}
 
 impl DeviceStateSpec for PureIpDevice {
     type State<BT: DeviceLayerTypes> = PureIpDeviceState<BT>;
@@ -113,10 +119,14 @@ impl DeviceStateSpec for PureIpDevice {
         _bindings_ctx: &mut BC,
         _self_id: CC::WeakDeviceId,
         PureIpDeviceCreationProperties { mtu }: Self::CreationProperties,
-    ) -> Self::State<BC> {
+        tx_allocator: <Self as DeviceBufferSpec<BC>>::TxAllocator,
+    ) -> Self::State<BC>
+    where
+        Self: DeviceBufferSpec<BC>,
+    {
         PureIpDeviceState {
             dynamic_state: RwLock::new(DynamicPureIpDeviceState { mtu }),
-            tx_queue: Default::default(),
+            tx_queue: TransmitQueue::new(tx_allocator),
             counters: PureIpDeviceCounters::default(),
         }
     }
@@ -351,11 +361,11 @@ impl<BT: DeviceLayerTypes> OrderedLockAccess<DynamicPureIpDeviceState>
 
 impl<BT: DeviceLayerTypes>
     OrderedLockAccess<
-        TransmitQueueState<PureIpDeviceTxQueueFrameMetadata<BT>, Buf<Vec<u8>>, BufVecU8Allocator>,
+        TransmitQueueState<PureIpDeviceTxQueueFrameMetadata<BT>, BT::TxBuffer, BT::TxAllocator>,
     > for IpLinkDeviceState<PureIpDevice, BT>
 {
     type Lock = Mutex<
-        TransmitQueueState<PureIpDeviceTxQueueFrameMetadata<BT>, Buf<Vec<u8>>, BufVecU8Allocator>,
+        TransmitQueueState<PureIpDeviceTxQueueFrameMetadata<BT>, BT::TxBuffer, BT::TxAllocator>,
     >;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.tx_queue.queue)
@@ -363,10 +373,10 @@ impl<BT: DeviceLayerTypes>
 }
 
 impl<BT: DeviceLayerTypes>
-    OrderedLockAccess<DequeueState<PureIpDeviceTxQueueFrameMetadata<BT>, Buf<Vec<u8>>>>
+    OrderedLockAccess<DequeueState<PureIpDeviceTxQueueFrameMetadata<BT>, BT::TxBuffer>>
     for IpLinkDeviceState<PureIpDevice, BT>
 {
-    type Lock = Mutex<DequeueState<PureIpDeviceTxQueueFrameMetadata<BT>, Buf<Vec<u8>>>>;
+    type Lock = Mutex<DequeueState<PureIpDeviceTxQueueFrameMetadata<BT>, BT::TxBuffer>>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.tx_queue.deque)
     }

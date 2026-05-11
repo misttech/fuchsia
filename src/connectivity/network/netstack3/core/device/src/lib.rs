@@ -103,9 +103,11 @@ pub mod queue {
     pub use crate::internal::queue::tx::{
         BufVecU8Allocator, TransmitDequeueContext, TransmitQueueBindingsContext,
         TransmitQueueCommon, TransmitQueueConfiguration, TransmitQueueContext,
-        TransmitQueueHandler, TransmitQueueState,
+        TransmitQueueHandler, TransmitQueueState, TxBufferAllocator,
     };
-    pub use crate::internal::queue::{BatchSize, DequeueState, ReceiveQueueFullError};
+    pub use crate::internal::queue::{
+        BatchSize, DequeueState, DeviceBufferSpec, ReceiveQueueFullError,
+    };
 }
 
 pub use internal::api::{DeviceAnyApi, DeviceApi};
@@ -114,10 +116,10 @@ pub use internal::arp::{
     ArpNudCtx, ArpSenderContext, ArpState, send_arp_request,
 };
 pub use internal::base::{
-    DeviceClassMatcher, DeviceCollectionContext, DeviceCounters, DeviceIdAndNameMatcher,
-    DeviceLayerEventDispatcher, DeviceLayerState, DeviceLayerStateTypes, DeviceLayerTimerId,
-    DeviceLayerTypes, DeviceSendFrameError, Devices, DevicesIter, Ipv6DeviceLinkLayerAddr,
-    OriginTracker, OriginTrackerContext,
+    DeviceBufferBindingsTypes, DeviceClassMatcher, DeviceCollectionContext, DeviceCounters,
+    DeviceIdAndNameMatcher, DeviceLayerEventDispatcher, DeviceLayerState, DeviceLayerStateTypes,
+    DeviceLayerTimerId, DeviceLayerTypes, DeviceSendFrameError, Devices, DevicesIter,
+    Ipv6DeviceLinkLayerAddr, OriginTracker, OriginTrackerContext,
 };
 pub use internal::config::{
     ArpConfiguration, ArpConfigurationUpdate, DeviceConfiguration, DeviceConfigurationContext,

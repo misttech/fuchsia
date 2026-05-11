@@ -4,7 +4,6 @@
 
 //! The Ethernet protocol.
 
-use alloc::vec::Vec;
 use core::fmt::Debug;
 use core::num::NonZeroU32;
 use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
@@ -22,12 +21,10 @@ use netstack3_base::{
     SendFrameErrorReason, SendableFrameMeta, TimerContext, TimerHandler, TxMetadataBindingsTypes,
     WeakDeviceIdentifier, WrapBroadcastMarker,
 };
-use netstack3_ip::nud::{
-    LinkResolutionContext, NudBindingsTypes, NudHandler, NudState, NudTimerId, NudUserConfig,
-};
+use netstack3_ip::nud::{LinkResolutionContext, NudHandler, NudState, NudTimerId, NudUserConfig};
 use netstack3_ip::{DeviceIpLayerMetadata, IpPacketDestination};
 use netstack3_trace::trace_duration;
-use packet::{Buf, BufferMut, NestablePacketBuilder as _, NestableSerializer as _};
+use packet::{BufferMut, NestablePacketBuilder as _, NestableSerializer as _};
 use packet_formats::arp::{ArpHardwareType, ArpNetworkType, peek_arp_types};
 use packet_formats::ethernet::{
     ETHERNET_HDR_LEN_NO_TAG, EtherType, EthernetFrame, EthernetFrameBuilder,
@@ -36,13 +33,12 @@ use packet_formats::ethernet::{
 
 use crate::internal::arp::{ArpFrameMetadata, ArpPacketHandler, ArpState, ArpTimerId};
 use crate::internal::base::{
-    DeviceCounters, DeviceLayerTypes, DeviceReceiveFrameSpec, EthernetDeviceCounters,
+    DeviceBufferBindingsTypes, DeviceCounters, DeviceLayerTypes, DeviceReceiveFrameSpec,
+    EthernetDeviceCounters,
 };
 use crate::internal::id::{DeviceId, EthernetDeviceId};
-use crate::internal::queue::tx::{
-    BufVecU8Allocator, TransmitQueue, TransmitQueueHandler, TransmitQueueState,
-};
-use crate::internal::queue::{DequeueState, TransmitQueueFrameError};
+use crate::internal::queue::tx::{TransmitQueue, TransmitQueueHandler, TransmitQueueState};
+use crate::internal::queue::{DequeueState, DeviceBufferSpec, TransmitQueueFrameError};
 use crate::internal::socket::{
     DeviceSocketHandler, DeviceSocketMetadata, DeviceSocketSendTypes, EthernetHeaderParams,
     ReceivedFrame,
@@ -314,13 +310,17 @@ pub struct StaticEthernetDeviceState {
 }
 
 /// The state associated with an Ethernet device.
-pub struct EthernetDeviceState<BT: NudBindingsTypes<EthernetLinkDevice>> {
+pub struct EthernetDeviceState<BT: DeviceLayerTypes> {
     /// Ethernet device counters.
     pub counters: EthernetDeviceCounters,
     /// Immutable Ethernet device state.
     pub static_state: StaticEthernetDeviceState,
     /// Ethernet device transmit queue.
-    pub tx_queue: TransmitQueue<BT::TxMetadata, Buf<Vec<u8>>, BufVecU8Allocator>,
+    pub tx_queue: TransmitQueue<
+        BT::TxMetadata,
+        <EthernetLinkDevice as DeviceBufferSpec<BT>>::TxBuffer,
+        <EthernetLinkDevice as DeviceBufferSpec<BT>>::TxAllocator,
+    >,
     ipv4_arp: Mutex<ArpState<EthernetLinkDevice, BT>>,
     ipv6_nud: Mutex<NudState<Ipv6, EthernetLinkDevice, BT>>,
     ipv4_nud_config: RwLock<IpMarked<Ipv4, NudUserConfig>>,
@@ -369,19 +369,19 @@ impl<BT: DeviceLayerTypes> OrderedLockAccess<ArpState<EthernetLinkDevice, BT>>
 }
 
 impl<BT: DeviceLayerTypes>
-    OrderedLockAccess<TransmitQueueState<BT::TxMetadata, Buf<Vec<u8>>, BufVecU8Allocator>>
+    OrderedLockAccess<TransmitQueueState<BT::TxMetadata, BT::TxBuffer, BT::TxAllocator>>
     for IpLinkDeviceState<EthernetLinkDevice, BT>
 {
-    type Lock = Mutex<TransmitQueueState<BT::TxMetadata, Buf<Vec<u8>>, BufVecU8Allocator>>;
+    type Lock = Mutex<TransmitQueueState<BT::TxMetadata, BT::TxBuffer, BT::TxAllocator>>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.tx_queue.queue)
     }
 }
 
-impl<BT: DeviceLayerTypes> OrderedLockAccess<DequeueState<BT::TxMetadata, Buf<Vec<u8>>>>
+impl<BT: DeviceLayerTypes> OrderedLockAccess<DequeueState<BT::TxMetadata, BT::TxBuffer>>
     for IpLinkDeviceState<EthernetLinkDevice, BT>
 {
-    type Lock = Mutex<DequeueState<BT::TxMetadata, Buf<Vec<u8>>>>;
+    type Lock = Mutex<DequeueState<BT::TxMetadata, BT::TxBuffer>>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.link.tx_queue.deque)
     }
@@ -878,6 +878,11 @@ impl LinkDevice for EthernetLinkDevice {
     type Address = Mac;
 }
 
+impl<BT: DeviceBufferBindingsTypes> DeviceBufferSpec<BT> for EthernetLinkDevice {
+    type TxBuffer = BT::TxBuffer;
+    type TxAllocator = BT::TxAllocator;
+}
+
 impl DeviceStateSpec for EthernetLinkDevice {
     type State<BT: DeviceLayerTypes> = EthernetDeviceState<BT>;
     type External<BT: DeviceLayerTypes> = BT::EthernetDeviceState;
@@ -892,7 +897,11 @@ impl DeviceStateSpec for EthernetLinkDevice {
         bindings_ctx: &mut BC,
         self_id: CC::WeakDeviceId,
         EthernetCreationProperties { mac, max_frame_size }: Self::CreationProperties,
-    ) -> Self::State<BC> {
+        tx_allocator: <Self as DeviceBufferSpec<BC>>::TxAllocator,
+    ) -> Self::State<BC>
+    where
+        Self: DeviceBufferSpec<BC>,
+    {
         let ipv4_arp = Mutex::new(ArpState::new::<_, NestedIntoCoreTimerCtx<CC, _>>(
             bindings_ctx,
             self_id.clone(),
@@ -907,7 +916,7 @@ impl DeviceStateSpec for EthernetLinkDevice {
             ipv6_nud_config: Default::default(),
             static_state: StaticEthernetDeviceState { mac, max_frame_size },
             dynamic_state: RwLock::new(DynamicEthernetDeviceState::new(max_frame_size)),
-            tx_queue: Default::default(),
+            tx_queue: TransmitQueue::new(tx_allocator),
         }
     }
     const IS_LOOPBACK: bool = false;
@@ -926,6 +935,7 @@ pub(crate) mod testutil {
 #[cfg(test)]
 mod tests {
     use alloc::vec;
+    use alloc::vec::Vec;
     use core::convert::Infallible as Never;
     use netstack3_hashmap::HashSet;
 
@@ -938,16 +948,17 @@ mod tests {
     use netstack3_ip::nud::{
         self, DelegateNudContext, DynamicNeighborUpdateSource, NeighborApi, UseDelegateNudContext,
     };
+    use packet::Buf;
     use packet_formats::testutil::parse_ethernet_frame;
 
     use super::*;
     use crate::internal::arp::{
         ArpConfigContext, ArpContext, ArpCounters, ArpNudCtx, ArpSenderContext,
     };
-    use crate::internal::base::DeviceSendFrameError;
+    use crate::internal::base::{DeviceBufferBindingsTypes, DeviceSendFrameError};
     use crate::internal::ethernet::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
     use crate::internal::queue::tx::{
-        TransmitQueueBindingsContext, TransmitQueueCommon, TransmitQueueContext,
+        BufVecU8Allocator, TransmitQueueBindingsContext, TransmitQueueCommon, TransmitQueueContext,
     };
     use crate::internal::socket::{Frame, ParseSentFrameError, SentFrame};
 
@@ -1309,8 +1320,7 @@ mod tests {
 
     impl TransmitQueueCommon<EthernetLinkDevice, FakeBindingsCtx> for FakeCoreCtx {
         type Meta = FakeTxMetadata;
-        type Allocator = BufVecU8Allocator;
-        type Buffer = Buf<Vec<u8>>;
+
         type DequeueContext = Never;
 
         fn parse_outgoing_frame<'a>(
@@ -1323,8 +1333,7 @@ mod tests {
 
     impl TransmitQueueCommon<EthernetLinkDevice, FakeBindingsCtx> for FakeInnerCtx {
         type Meta = FakeTxMetadata;
-        type Allocator = BufVecU8Allocator;
-        type Buffer = Buf<Vec<u8>>;
+
         type DequeueContext = Never;
 
         fn parse_outgoing_frame<'a, 'b>(
@@ -1338,7 +1347,9 @@ mod tests {
     impl TransmitQueueContext<EthernetLinkDevice, FakeBindingsCtx> for FakeCoreCtx {
         fn with_transmit_queue_mut<
             O,
-            F: FnOnce(&mut TransmitQueueState<Self::Meta, Self::Buffer, Self::Allocator>) -> O,
+            F: FnOnce(
+                &mut TransmitQueueState<Self::Meta, packet::Buf<Vec<u8>>, BufVecU8Allocator>,
+            ) -> O,
         >(
             &mut self,
             device_id: &Self::DeviceId,
@@ -1349,7 +1360,7 @@ mod tests {
 
         fn with_transmit_queue<
             O,
-            F: FnOnce(&TransmitQueueState<Self::Meta, Self::Buffer, Self::Allocator>) -> O,
+            F: FnOnce(&TransmitQueueState<Self::Meta, packet::Buf<Vec<u8>>, BufVecU8Allocator>) -> O,
         >(
             &mut self,
             device_id: &Self::DeviceId,
@@ -1364,7 +1375,7 @@ mod tests {
             device_id: &Self::DeviceId,
             dequeue_context: Option<&mut Never>,
             tx_meta: Self::Meta,
-            buf: Self::Buffer,
+            buf: packet::Buf<Vec<u8>>,
         ) -> Result<(), DeviceSendFrameError> {
             TransmitQueueContext::send_frame(
                 &mut self.inner,
@@ -1377,10 +1388,19 @@ mod tests {
         }
     }
 
-    impl TransmitQueueContext<EthernetLinkDevice, FakeBindingsCtx> for FakeInnerCtx {
+    impl TransmitQueueContext<EthernetLinkDevice, FakeBindingsCtx> for FakeInnerCtx
+    where
+        Self: TransmitQueueCommon<EthernetLinkDevice, FakeBindingsCtx, Meta = FakeTxMetadata>,
+    {
         fn with_transmit_queue_mut<
             O,
-            F: FnOnce(&mut TransmitQueueState<Self::Meta, Self::Buffer, Self::Allocator>) -> O,
+            F: FnOnce(
+                &mut TransmitQueueState<
+                    Self::Meta,
+                    <FakeBindingsCtx as DeviceBufferBindingsTypes>::TxBuffer,
+                    <FakeBindingsCtx as DeviceBufferBindingsTypes>::TxAllocator,
+                >,
+            ) -> O,
         >(
             &mut self,
             _device_id: &Self::DeviceId,
@@ -1391,7 +1411,13 @@ mod tests {
 
         fn with_transmit_queue<
             O,
-            F: FnOnce(&TransmitQueueState<Self::Meta, Self::Buffer, Self::Allocator>) -> O,
+            F: FnOnce(
+                &TransmitQueueState<
+                    Self::Meta,
+                    <FakeBindingsCtx as DeviceBufferBindingsTypes>::TxBuffer,
+                    <FakeBindingsCtx as DeviceBufferBindingsTypes>::TxAllocator,
+                >,
+            ) -> O,
         >(
             &mut self,
             _device_id: &Self::DeviceId,
@@ -1406,7 +1432,7 @@ mod tests {
             device_id: &Self::DeviceId,
             dequeue_context: Option<&mut Never>,
             _tx_meta: Self::Meta,
-            buf: Self::Buffer,
+            buf: packet::Buf<Vec<u8>>,
         ) -> Result<(), DeviceSendFrameError> {
             match dequeue_context {
                 Some(never) => match *never {},
@@ -1448,7 +1474,7 @@ mod tests {
                 )
                 .unwrap();
             let CtxPair { core_ctx, bindings_ctx } = &mut ctx;
-            let result = send_ip_frame(
+            let result = send_ip_frame::<FakeBindingsCtx, FakeCoreCtx, Ipv4, _>(
                 core_ctx,
                 bindings_ctx,
                 &FakeDeviceId,
@@ -1475,7 +1501,7 @@ mod tests {
     fn broadcast() {
         let mut ctx = new_context();
         let CtxPair { core_ctx, bindings_ctx } = &mut ctx;
-        send_ip_frame(
+        send_ip_frame::<FakeBindingsCtx, FakeCoreCtx, Ipv4, _>(
             core_ctx,
             bindings_ctx,
             &FakeDeviceId,

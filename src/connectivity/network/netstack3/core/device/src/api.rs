@@ -40,6 +40,7 @@ use crate::internal::id::{
 };
 use crate::internal::loopback::LoopbackDevice;
 use crate::internal::pure_ip::PureIpDevice;
+use crate::internal::queue::DeviceBufferSpec;
 use crate::internal::state::{BaseDeviceState, DeviceStateSpec, IpLinkDeviceStateInner};
 
 /// Pending device configuration update.
@@ -66,7 +67,7 @@ impl<D, C> DeviceApi<D, C> {
 
 impl<D, C> DeviceApi<D, C>
 where
-    D: Device + DeviceStateSpec + DeviceReceiveFrameSpec,
+    D: Device + DeviceStateSpec + DeviceReceiveFrameSpec + DeviceBufferSpec<C::BindingsContext>,
     C: ContextPair,
     C::CoreContext: DeviceApiCoreContext<D, C::BindingsContext>,
     C::BindingsContext: DeviceApiBindingsContext,
@@ -92,6 +93,7 @@ where
         properties: D::CreationProperties,
         metric: RawMetric,
         external_state: D::External<C::BindingsContext>,
+        tx_allocator: D::TxAllocator,
     ) -> <C::CoreContext as DeviceIdContext<D>>::DeviceId
     where
         C::CoreContext: DeviceApiIpLayerCoreContext<D, C::BindingsContext>,
@@ -105,6 +107,7 @@ where
                     bindings_ctx,
                     weak_ref.clone(),
                     properties,
+                    tx_allocator,
                 );
                 IpLinkDeviceStateInner::new::<_, C::CoreContext>(
                     bindings_ctx,
@@ -137,8 +140,15 @@ where
         <C::BindingsContext as DeviceLayerStateTypes>::DeviceIdentifier: Default,
         D::External<C::BindingsContext>: Default,
         C::CoreContext: DeviceApiIpLayerCoreContext<D, C::BindingsContext>,
+        D::TxAllocator: Default,
     {
-        self.add_device(Default::default(), properties, metric, Default::default())
+        self.add_device(
+            Default::default(),
+            properties,
+            metric,
+            Default::default(),
+            Default::default(),
+        )
     }
 
     /// Removes `device` from the stack.

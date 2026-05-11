@@ -22,7 +22,7 @@ use crate::error::{Error, Result};
 use crate::session::Port;
 use types::{ChainLength, DESCID_NO_NEXT};
 
-pub use pool::{AllocKind, Buffer, Rx, Tx};
+pub use pool::{AllocKind, Buffer, Rx, SinglePartTxBuffer, Tx};
 /// Network device descriptor version.
 pub const NETWORK_DEVICE_DESCRIPTOR_VERSION: u8 = sys::__NETWORK_DEVICE_DESCRIPTOR_VERSION as u8;
 pub(super) use types::DescId;

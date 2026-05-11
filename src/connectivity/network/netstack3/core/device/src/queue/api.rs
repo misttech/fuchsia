@@ -20,7 +20,7 @@ use crate::internal::queue::tx::{
     self, TransmitDequeueContext, TransmitQueueBindingsContext, TransmitQueueCommon,
     TransmitQueueConfiguration, TransmitQueueContext as _, TransmitQueueState,
 };
-use crate::internal::queue::{BatchSize, DequeueResult, DequeueState, fifo};
+use crate::internal::queue::{BatchSize, DequeueResult, DequeueState, DeviceBufferSpec, fifo};
 use crate::internal::socket::DeviceSocketHandler;
 use log::debug;
 
@@ -36,7 +36,7 @@ impl<D, C> TransmitQueueApi<D, C> {
 
 impl<D, C> TransmitQueueApi<D, C>
 where
-    D: Device,
+    D: DeviceBufferSpec<C::BindingsContext>,
     C: ContextPair,
     C::CoreContext:
         TransmitDequeueContext<D, C::BindingsContext> + DeviceSocketHandler<D, C::BindingsContext>,
@@ -129,9 +129,22 @@ where
         &mut self,
         device_id: &<C::CoreContext as DeviceIdContext<D>>::DeviceId,
     ) -> Option<usize> {
-        self.core_ctx().with_transmit_queue(device_id, |TransmitQueueState { queue, .. }| {
-            queue.as_ref().map(|q| q.len())
-        })
+        self.with_count(device_id, |count| count)
+    }
+
+    /// Calls `f` with the number of frames in `device_id`'s TX queue while the
+    /// Tx queue is locked.
+    pub fn with_count<R>(
+        &mut self,
+        device_id: &<C::CoreContext as DeviceIdContext<D>>::DeviceId,
+        f: impl FnOnce(Option<usize>) -> R,
+    ) -> R {
+        let count = self
+            .core_ctx()
+            .with_transmit_queue(device_id, |TransmitQueueState { queue, .. }| {
+                queue.as_ref().map(|q| q.len())
+            });
+        f(count)
     }
 
     /// Sets the queue configuration for the device.

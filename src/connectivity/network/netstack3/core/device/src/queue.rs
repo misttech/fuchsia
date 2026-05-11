@@ -10,6 +10,7 @@ use netstack3_base::{ErrorAndSerializer, WorkQueueReport};
 use packet::SerializeError;
 
 use crate::internal::base::DeviceSendFrameError;
+use crate::internal::queue::tx::TxBufferAllocator;
 
 pub(crate) mod api;
 mod fifo;
@@ -106,4 +107,12 @@ impl Default for BatchSize {
     fn default() -> Self {
         Self(Self::MAX)
     }
+}
+
+/// Specifies the buffer types for a device.
+pub trait DeviceBufferSpec<BT>: netstack3_base::Device + Send + Sync {
+    /// Used to for Tx Buffers.
+    type TxBuffer: packet::FragmentedBuffer + AsMut<[u8]>;
+    /// Used to allocate Tx Buffers.
+    type TxAllocator: TxBufferAllocator<Self::TxBuffer>;
 }

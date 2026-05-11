@@ -221,6 +221,7 @@ async fn run_blackhole_interface(
             metric.unwrap_or(crate::bindings::DEFAULT_INTERFACE_METRIC),
         ),
         info,
+        (),
     );
     let core_id = DeviceId::Blackhole(core_id);
     ns.ctx.apply_interface_defaults(&core_id);

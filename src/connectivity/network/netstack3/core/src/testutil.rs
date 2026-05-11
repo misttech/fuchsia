@@ -54,8 +54,9 @@ use netstack3_device::socket::{
 };
 use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
 use netstack3_device::{
-    self as device, DeviceId, DeviceLayerEventDispatcher, DeviceLayerStateTypes, DeviceLayerTypes,
-    DeviceProvider, DeviceSendFrameError, WeakDeviceId, for_any_device_id,
+    self as device, DeviceBufferBindingsTypes, DeviceId, DeviceLayerEventDispatcher,
+    DeviceLayerStateTypes, DeviceLayerTypes, DeviceProvider, DeviceSendFrameError, WeakDeviceId,
+    for_any_device_id,
 };
 use netstack3_filter::testutil::NoOpSocketOpsFilter;
 use netstack3_filter::{FilterTimerId, SocketOpsFilter, SocketOpsFilterBindingContext};
@@ -774,6 +775,11 @@ impl FakeBindingsCtx {
 impl MatcherBindingsTypes for FakeBindingsCtx {
     type DeviceClass = ();
     type BindingsPacketMatcher = Never;
+}
+
+impl DeviceBufferBindingsTypes for FakeBindingsCtx {
+    type TxBuffer = packet::Buf<Vec<u8>>;
+    type TxAllocator = netstack3_device::queue::BufVecU8Allocator;
 }
 
 impl SocketOpsFilterBindingContext<DeviceId<FakeBindingsCtx>> for FakeBindingsCtx {

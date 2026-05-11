@@ -17,6 +17,7 @@ use netstack3_ip::RawMetric;
 use netstack3_ip::device::{DualStackIpDeviceState, IpDeviceTimerId};
 
 use crate::internal::base::{DeviceCounters, DeviceLayerTypes, OriginTracker};
+use crate::internal::queue::DeviceBufferSpec;
 use crate::internal::socket::HeldDeviceSockets;
 
 /// Provides the specifications for device state held by [`BaseDeviceId`] in
@@ -41,7 +42,10 @@ pub trait DeviceStateSpec: Device + Sized + Send + Sync + 'static {
         bindings_ctx: &mut BC,
         self_id: CC::WeakDeviceId,
         properties: Self::CreationProperties,
-    ) -> Self::State<BC>;
+        tx_allocator: <Self as DeviceBufferSpec<BC>>::TxAllocator,
+    ) -> Self::State<BC>
+    where
+        Self: DeviceBufferSpec<BC>;
 
     /// Marker for loopback devices.
     const IS_LOOPBACK: bool;

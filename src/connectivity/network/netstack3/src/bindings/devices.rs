@@ -7,6 +7,8 @@ use std::convert::Infallible as Never;
 use std::fmt::{self, Debug, Display};
 use std::num::NonZeroU64;
 use std::ops::{Deref as _, DerefMut as _};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::DeviceIdExt;
 use super::util::NeedsDataWatcher;
@@ -19,8 +21,8 @@ use net_types::ethernet::Mac;
 use net_types::ip::{IpAddr, Mtu};
 use net_types::{SpecifiedAddr, UnicastAddr};
 use netstack3_core::device::{
-    BatchSize, DeviceClassMatcher, DeviceId, DeviceIdAndNameMatcher, DeviceSendFrameError,
-    EthernetLinkDevice, LoopbackDeviceId, PureIpDevice,
+    BatchSize, DeviceBufferBindingsTypes, DeviceClassMatcher, DeviceId, DeviceIdAndNameMatcher,
+    DeviceSendFrameError, EthernetLinkDevice, LoopbackDeviceId, PureIpDevice, TxBufferAllocator,
 };
 use netstack3_core::sync::RwLock as CoreRwLock;
 use netstack3_core::trace::trace_duration;
@@ -387,6 +389,7 @@ pub(crate) struct TxTask {
     ctx: Ctx,
     device_id: DeviceId<BindingsCtx>,
     watcher: NeedsDataWatcher,
+    task_state: TxTaskState,
 }
 
 impl TxTask {
@@ -394,19 +397,84 @@ impl TxTask {
         ctx: Ctx,
         device_id: DeviceId<BindingsCtx>,
         watcher: NeedsDataWatcher,
+        task_state: TxTaskState,
     ) -> Self {
-        Self { ctx, device_id, watcher }
+        Self { ctx, device_id, watcher, task_state }
     }
 
     pub(crate) async fn run(self) -> Result<Never, TxTaskError> {
-        let Self { ctx, device_id, watcher } = self;
-        tx_task(ctx, device_id, watcher).await
+        let Self { ctx, device_id, watcher, task_state } = self;
+        tx_task(ctx, device_id, watcher, task_state).await
     }
+}
+
+/// Allocator state shared with the TxTask.
+#[derive(Default)]
+pub(crate) struct TxAllocatorState {
+    /// Count of netdevice buffers that has been allocated but not sent yet.
+    /// This is used to guide how many TxBuffers are needed in the dequeue
+    /// context, because netdevice buffers do not need another TxBuffer to
+    /// be allocated for dequeue.
+    ///
+    /// Note that we can track the number of netdevice buffers but can't track
+    /// the `Vec` buffers because sending those might fail with the `NoBuffer`
+    /// error and get dropped. For netdevice buffers, when failed to send, we
+    /// have a bad session and should stop the data plane.
+    pub(super) device_buffers_in_queue: AtomicUsize,
+}
+
+pub(crate) struct NetdeviceAllocator {
+    session: netdevice_client::Session,
+    alloc_state: Arc<TxAllocatorState>,
+    /// Track whether `Buf<Vec<u8>>` are currently in use. No new netdevice
+    /// buffers will be allocated to Core before all the existing Vec-based
+    /// buffers are sent out. If we allocate netdevice buffers to Core causing
+    /// them to be queued after the existing Vec-based buffers, it will only
+    /// delay the draining of those buffers.
+    use_device_buffer: bool,
+}
+
+impl NetdeviceAllocator {
+    pub(crate) fn new(session: netdevice_client::Session) -> (Self, TxTaskState) {
+        let alloc_state = Arc::new(TxAllocatorState::default());
+        (
+            Self { session, alloc_state: alloc_state.clone(), use_device_buffer: true },
+            TxTaskState { tx_buffers: Default::default(), alloc_state },
+        )
+    }
+}
+
+pub(crate) type TxBuffer =
+    packet::Either<netdevice_client::SinglePartTxBuffer, packet::Buf<Vec<u8>>>;
+
+impl TxBufferAllocator<TxBuffer> for NetdeviceAllocator {
+    type Error = netdevice_client::Error;
+
+    fn alloc(&mut self, len: usize, queue_len: usize) -> Result<TxBuffer, Self::Error> {
+        if !self.use_device_buffer && queue_len == 0 {
+            self.use_device_buffer = true;
+        }
+
+        if self.use_device_buffer {
+            if let Some(buffer) = self.session.try_alloc_single_part_tx_buffer(len)? {
+                let _ = self.alloc_state.device_buffers_in_queue.fetch_add(1, Ordering::Relaxed);
+                return Ok(packet::Either::A(buffer));
+            }
+        }
+        self.use_device_buffer = false;
+        Ok(packet::Either::B(packet::new_buf_vec(len).unwrap_or_else(|never| match never {})))
+    }
+}
+
+impl DeviceBufferBindingsTypes for BindingsCtx {
+    type TxBuffer = TxBuffer;
+    type TxAllocator = NetdeviceAllocator;
 }
 
 #[derive(Default)]
 pub(crate) struct TxTaskState {
     pub(crate) tx_buffers: Vec<netdevice_client::TxBuffer>,
+    pub(crate) alloc_state: Arc<TxAllocatorState>,
 }
 
 impl TxTaskState {
@@ -441,9 +509,9 @@ pub(crate) async fn tx_task(
     mut ctx: Ctx,
     device_id: DeviceId<BindingsCtx>,
     mut watcher: NeedsDataWatcher,
+    mut task_state: TxTaskState,
 ) -> Result<Never, TxTaskError> {
     let mut yield_fut = futures::future::OptionFuture::default();
-    let mut task_state = TxTaskState::default();
     let mut suspension_handler = TransmitSuspensionHandler::new(&ctx, device_id.downgrade()).await;
 
     // This control loop selects an action which may be:
@@ -508,13 +576,26 @@ pub(crate) async fn tx_task(
                 match queue_len {
                     Some(queue_len) => {
                         if queue_len != 0 {
-                            let collected = task_state
-                                .collect_buffers(
-                                    &netdevice.handler,
-                                    BatchSize::new_saturating(queue_len),
-                                )
-                                .await?;
-                            BatchSize::new_saturating(collected)
+                            let device_buffers_in_queue = task_state
+                                .alloc_state
+                                .device_buffers_in_queue
+                                .load(Ordering::Relaxed);
+                            // If we have more buffers in queue, then Vec-based buffers must be in
+                            // use, we try to collect buffers to dequeue context. Note that we now
+                            // can't be blocked on `collect_buffers` because it is possible that
+                            // all available Tx device buffers are already in the queue and we
+                            // dead lock.
+                            if device_buffers_in_queue == 0 {
+                                let collected = task_state
+                                    .collect_buffers(
+                                        &netdevice.handler,
+                                        BatchSize::new_saturating(queue_len),
+                                    )
+                                    .await?;
+                                BatchSize::new_saturating(collected)
+                            } else {
+                                BatchSize::new_saturating(device_buffers_in_queue)
+                            }
                         } else {
                             // We got woken up to do tx work but core says we
                             // have zero buffers in the queue, go back to
@@ -562,7 +643,7 @@ pub(crate) async fn tx_task(
             WorkQueueReport::Pending
         });
 
-        let TxTaskState { tx_buffers } = &mut task_state;
+        let TxTaskState { tx_buffers, alloc_state: _ } = &mut task_state;
         // If for some reason we have buffers left here, return them so other
         // interfaces on the same device can use the buffers.
         tx_buffers.clear();

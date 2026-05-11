@@ -275,6 +275,34 @@ pub trait CoreTxMetadataContext<T, BT: TxMetadataBindingsTypes> {
     fn convert_tx_meta(&self, tx_meta: T) -> BT::TxMetadata;
 }
 
+/// A buffer that is never used.
+///
+/// Note that this is needed because of the [`AsMut<[u8]>`] bound required.
+/// It is not possible work around this with a local trait. That approach
+/// requires a blanket impl which the compiler will complain that the core
+/// crate can eventually add a impl for the `Infallible` type. When that
+/// happens, we can remove this local type.
+pub struct NeverBuffer(core::convert::Infallible);
+
+impl packet::FragmentedBuffer for NeverBuffer {
+    fn len(&self) -> usize {
+        match self.0 {}
+    }
+
+    fn with_bytes<'a, R, F>(&'a self, _f: F) -> R
+    where
+        F: for<'b> FnOnce(packet::FragmentedBytes<'b, 'a>) -> R,
+    {
+        match self.0 {}
+    }
+}
+
+impl AsMut<[u8]> for NeverBuffer {
+    fn as_mut(&mut self) -> &mut [u8] {
+        match self.0 {}
+    }
+}
+
 #[cfg(any(test, feature = "testutils"))]
 pub(crate) mod testutil {
     use super::*;

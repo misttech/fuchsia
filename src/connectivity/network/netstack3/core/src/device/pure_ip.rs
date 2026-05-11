@@ -5,7 +5,6 @@
 //! Implementations of traits defined in foreign modules for the types defined
 //! in the pure_ip module.
 
-use alloc::vec::Vec;
 use lock_order::lock::LockLevelFor;
 use lock_order::relation::LockBefore;
 use lock_order::wrap::LockedWrapperApi;
@@ -16,8 +15,8 @@ use netstack3_device::pure_ip::{
     PureIpDeviceTxQueueFrameMetadata, PureIpPrimaryDeviceId, PureIpWeakDeviceId,
 };
 use netstack3_device::queue::{
-    BufVecU8Allocator, DequeueState, TransmitDequeueContext, TransmitQueueCommon,
-    TransmitQueueContext, TransmitQueueState,
+    DequeueState, TransmitDequeueContext, TransmitQueueCommon, TransmitQueueContext,
+    TransmitQueueState,
 };
 use netstack3_device::socket::{IpFrame, ParseSentFrameError, SentFrame};
 use netstack3_device::{
@@ -25,7 +24,6 @@ use netstack3_device::{
     DeviceSendFrameError, IpLinkDeviceState,
 };
 use netstack3_ip::nud::NudUserConfig;
-use packet::Buf;
 
 use crate::device::integration;
 use crate::{BindingsContext, BindingsTypes, CoreCtx};
@@ -79,8 +77,6 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::PureIpDeviceTxQueu
     TransmitQueueCommon<PureIpDevice, BC> for CoreCtx<'_, BC, L>
 {
     type Meta = PureIpDeviceTxQueueFrameMetadata<BC>;
-    type Allocator = BufVecU8Allocator;
-    type Buffer = Buf<Vec<u8>>;
     type DequeueContext = BC::DequeueContext;
 
     fn parse_outgoing_frame<'a, 'b>(
@@ -100,7 +96,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::PureIpDeviceTxQueu
 {
     fn with_transmit_queue_mut<
         O,
-        F: FnOnce(&mut TransmitQueueState<Self::Meta, Self::Buffer, Self::Allocator>) -> O,
+        F: FnOnce(&mut TransmitQueueState<Self::Meta, BC::TxBuffer, BC::TxAllocator>) -> O,
     >(
         &mut self,
         device_id: &Self::DeviceId,
@@ -113,7 +109,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::PureIpDeviceTxQueu
 
     fn with_transmit_queue<
         O,
-        F: FnOnce(&TransmitQueueState<Self::Meta, Self::Buffer, Self::Allocator>) -> O,
+        F: FnOnce(&TransmitQueueState<Self::Meta, BC::TxBuffer, BC::TxAllocator>) -> O,
     >(
         &mut self,
         device_id: &Self::DeviceId,
@@ -130,7 +126,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::PureIpDeviceTxQueu
         device_id: &Self::DeviceId,
         dequeue_context: Option<&mut BC::DequeueContext>,
         meta: Self::Meta,
-        buf: Self::Buffer,
+        buf: BC::TxBuffer,
     ) -> Result<(), DeviceSendFrameError> {
         let PureIpDeviceTxQueueFrameMetadata {
             ip_version,
@@ -154,7 +150,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::PureIpDeviceTxDequ
 
     fn with_dequed_packets_and_tx_queue_ctx<
         O,
-        F: FnOnce(&mut DequeueState<Self::Meta, Self::Buffer>, &mut Self::TransmitQueueCtx<'_>) -> O,
+        F: FnOnce(&mut DequeueState<Self::Meta, BC::TxBuffer>, &mut Self::TransmitQueueCtx<'_>) -> O,
     >(
         &mut self,
         device_id: &Self::DeviceId,
@@ -177,13 +173,13 @@ impl<BT: BindingsTypes> LockLevelFor<IpLinkDeviceState<PureIpDevice, BT>>
     for crate::lock_ordering::PureIpDeviceTxQueue
 {
     type Data =
-        TransmitQueueState<PureIpDeviceTxQueueFrameMetadata<BT>, Buf<Vec<u8>>, BufVecU8Allocator>;
+        TransmitQueueState<PureIpDeviceTxQueueFrameMetadata<BT>, BT::TxBuffer, BT::TxAllocator>;
 }
 
 impl<BT: BindingsTypes> LockLevelFor<IpLinkDeviceState<PureIpDevice, BT>>
     for crate::lock_ordering::PureIpDeviceTxDequeue
 {
-    type Data = DequeueState<PureIpDeviceTxQueueFrameMetadata<BT>, Buf<Vec<u8>>>;
+    type Data = DequeueState<PureIpDeviceTxQueueFrameMetadata<BT>, BT::TxBuffer>;
 }
 
 impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::PureIpDeviceDynamicState>>

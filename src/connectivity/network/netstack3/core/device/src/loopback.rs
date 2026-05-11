@@ -36,7 +36,7 @@ use crate::internal::queue::rx::{
 use crate::internal::queue::tx::{
     BufVecU8Allocator, TransmitQueue, TransmitQueueHandler, TransmitQueueState,
 };
-use crate::internal::queue::{DequeueState, TransmitQueueFrameError};
+use crate::internal::queue::{DequeueState, DeviceBufferSpec, TransmitQueueFrameError};
 use crate::internal::socket::{
     DeviceSocketHandler, DeviceSocketMetadata, DeviceSocketSendTypes, EthernetHeaderParams,
     ReceivedFrame,
@@ -70,6 +70,11 @@ pub enum LoopbackDevice {}
 
 impl Device for LoopbackDevice {}
 
+impl<BT> DeviceBufferSpec<BT> for LoopbackDevice {
+    type TxBuffer = Buf<Vec<u8>>;
+    type TxAllocator = BufVecU8Allocator;
+}
+
 impl DeviceStateSpec for LoopbackDevice {
     type State<BT: DeviceLayerTypes> = LoopbackDeviceState<WeakDeviceId<BT>, BT>;
     type External<BT: DeviceLayerTypes> = BT::LoopbackDeviceState;
@@ -84,12 +89,16 @@ impl DeviceStateSpec for LoopbackDevice {
         _bindings_ctx: &mut BC,
         _self_id: CC::WeakDeviceId,
         LoopbackCreationProperties { mtu }: Self::CreationProperties,
-    ) -> Self::State<BC> {
+        tx_allocator: <Self as DeviceBufferSpec<BC>>::TxAllocator,
+    ) -> Self::State<BC>
+    where
+        Self: DeviceBufferSpec<BC>,
+    {
         LoopbackDeviceState {
             counters: Default::default(),
             mtu,
             rx_queue: Default::default(),
-            tx_queue: Default::default(),
+            tx_queue: TransmitQueue::new(tx_allocator),
         }
     }
 
@@ -113,7 +122,11 @@ pub struct LoopbackDeviceState<D: WeakDeviceIdentifier, BT: TxMetadataBindingsTy
     /// Loopback device receive queue.
     pub rx_queue: ReceiveQueue<LoopbackRxQueueMeta<D, BT>, Buf<Vec<u8>>>,
     /// Loopback device transmit queue.
-    pub tx_queue: TransmitQueue<LoopbackTxQueueMeta<D, BT>, Buf<Vec<u8>>, BufVecU8Allocator>,
+    pub tx_queue: TransmitQueue<
+        LoopbackTxQueueMeta<D, BT>,
+        <LoopbackDevice as DeviceBufferSpec<BT>>::TxBuffer,
+        <LoopbackDevice as DeviceBufferSpec<BT>>::TxAllocator,
+    >,
 }
 
 #[derive(Derivative)]

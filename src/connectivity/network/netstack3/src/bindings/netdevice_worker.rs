@@ -28,7 +28,7 @@ use netstack3_core::sync::RwLock as CoreRwLock;
 use netstack3_core::trace::trace_duration;
 use thiserror::Error;
 
-use crate::bindings::devices::{StaticCommonInfo, TxTask};
+use crate::bindings::devices::{NetdeviceAllocator, StaticCommonInfo, TxTask};
 use crate::bindings::interfaces_admin::{InterfaceOptions, maybe_create_local_route_tables};
 use crate::bindings::stats_sampler::{InterfaceStatusBufferedState, InterfaceStatusSampler};
 use crate::bindings::util::{IntoFidl, NeedsDataNotifier, ScopeExt as _};
@@ -412,7 +412,7 @@ impl DeviceHandler {
     > {
         let port = netdevice_client::Port::try_from(port)?;
 
-        let DeviceHandler { inner: Inner { state, device, session: _ } } = self;
+        let DeviceHandler { inner: Inner { state, device, session } } = self;
         let port_proxy = device.connect_port(port)?;
         let netdevice_client::client::PortInfo { id: _, base_info } =
             port_proxy.get_info().await?.try_into().map_err(Error::InvalidPortInfo)?;
@@ -579,6 +579,8 @@ impl DeviceHandler {
                 ),
             };
 
+            let (tx_allocator, tx_task_state) = NetdeviceAllocator::new(session.clone());
+
             let (core_id, link_multicast_task) = match properties {
                 DeviceProperties::Ethernet { max_frame_size, mac, mac_proxy } => {
                     let (link_multicast_task, link_multicast_sink) =
@@ -603,6 +605,7 @@ impl DeviceHandler {
                         EthernetCreationProperties { mac, max_frame_size },
                         RawMetric(metric.unwrap_or(DEFAULT_INTERFACE_METRIC)),
                         info,
+                        tx_allocator,
                     );
                     state_entry.insert(WeakNetdeviceId::Ethernet(core_ethernet_id.downgrade()));
 
@@ -628,13 +631,14 @@ impl DeviceHandler {
                         PureIpDeviceCreationProperties { mtu: max_frame_size },
                         RawMetric(metric.unwrap_or(DEFAULT_INTERFACE_METRIC)),
                         info,
+                        tx_allocator,
                     );
                     state_entry.insert(WeakNetdeviceId::PureIp(core_pure_ip_id.downgrade()));
                     (DeviceId::from(core_pure_ip_id), None)
                 }
             };
 
-            let tx_task = TxTask::new(ctx.clone(), core_id.clone(), tx_watcher);
+            let tx_task = TxTask::new(ctx.clone(), core_id.clone(), tx_watcher, tx_task_state);
             match &core_id {
                 DeviceId::PureIp(device) => {
                     ctx.api().transmit_queue::<PureIpDevice>().set_configuration(
@@ -800,7 +804,6 @@ impl PortHandler {
 
     pub(crate) fn send(
         &self,
-        frame: &[u8],
         frame_type: fhardware_network::FrameType,
         mut tx: netdevice_client::TxBuffer,
     ) -> Result<(), netdevice_client::Error> {
@@ -808,7 +811,6 @@ impl PortHandler {
         let Self { port_id, inner: Inner { session, .. }, .. } = self;
         tx.set_port(*port_id);
         tx.set_frame_type(frame_type);
-        tx.write_at(0, frame)?;
         session.send(tx)?;
         Ok(())
     }

@@ -6,11 +6,13 @@
 
 use core::convert::Infallible as Never;
 
-use netstack3_base::Device;
+use netstack3_base::{Device, NeverBuffer};
 
 use crate::internal::base::{BlackholeDeviceCounters, DeviceReceiveFrameSpec};
-use crate::internal::id::{BasePrimaryDeviceId, BaseWeakDeviceId};
-use crate::{BaseDeviceId, DeviceStateSpec};
+use crate::internal::id::{BaseDeviceId, BasePrimaryDeviceId, BaseWeakDeviceId};
+use crate::internal::queue::DeviceBufferSpec;
+use crate::internal::queue::tx::TxBufferAllocator;
+use crate::internal::state::DeviceStateSpec;
 
 /// A weak device ID identifying a blackhole device.
 ///
@@ -39,6 +41,19 @@ pub enum BlackholeDevice {}
 
 impl Device for BlackholeDevice {}
 
+impl TxBufferAllocator<NeverBuffer> for () {
+    type Error = ();
+
+    fn alloc(&mut self, _len: usize, _qlen: usize) -> Result<NeverBuffer, ()> {
+        Err(())
+    }
+}
+
+impl<BT> DeviceBufferSpec<BT> for BlackholeDevice {
+    type TxBuffer = NeverBuffer;
+    type TxAllocator = ();
+}
+
 impl DeviceStateSpec for BlackholeDevice {
     type State<BT: crate::DeviceLayerTypes> = BlackholeDeviceState;
 
@@ -58,7 +73,11 @@ impl DeviceStateSpec for BlackholeDevice {
         _bindings_ctx: &mut BC,
         _self_id: CC::WeakDeviceId,
         _properties: Self::CreationProperties,
-    ) -> Self::State<BC> {
+        _tx_allocator: <Self as DeviceBufferSpec<BC>>::TxAllocator,
+    ) -> Self::State<BC>
+    where
+        Self: DeviceBufferSpec<BC>,
+    {
         BlackholeDeviceState {}
     }
 

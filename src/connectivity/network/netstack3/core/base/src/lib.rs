@@ -64,7 +64,7 @@ pub use error::{
 };
 pub use event::EventContext;
 pub use frame::{
-    CoreTxMetadataContext, FrameDestination, ReceivableFrameMeta, RecvFrameContext,
+    CoreTxMetadataContext, FrameDestination, NeverBuffer, ReceivableFrameMeta, RecvFrameContext,
     RecvIpFrameMeta, SendFrameContext, SendFrameError, SendFrameErrorReason, SendableFrameMeta,
     TxMetadata, TxMetadataBindingsTypes,
 };

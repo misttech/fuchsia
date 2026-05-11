@@ -30,7 +30,7 @@ use buffer::pool::{Pool, RxLeaseWatcher};
 use buffer::{
     AllocKind, DescId, NETWORK_DEVICE_DESCRIPTOR_LENGTH, NETWORK_DEVICE_DESCRIPTOR_VERSION,
 };
-pub use buffer::{Buffer, Rx, Tx};
+pub use buffer::{Buffer, Rx, SinglePartTxBuffer, Tx};
 
 /// A session between network device client and driver.
 #[derive(Clone)]
@@ -82,6 +82,17 @@ impl Session {
     /// The returned buffer will have at least `num_bytes` as size.
     pub async fn alloc_tx_buffer(&self, num_bytes: usize) -> Result<Buffer<Tx>> {
         self.inner.pool.alloc_tx_buffer(num_bytes).await
+    }
+
+    /// Tries to allocate a [`SinglePartTxBuffer`].
+    ///
+    /// Returns `Ok(None)` if there is no available buffer, or `Err(Error::TxLength)`
+    /// if the requested size cannot meet the device requirement.
+    pub fn try_alloc_single_part_tx_buffer(
+        &self,
+        num_bytes: usize,
+    ) -> Result<Option<SinglePartTxBuffer>> {
+        self.inner.pool.try_alloc_single_part_tx_buffer(num_bytes)
     }
 
     /// Waits for at least one TX buffer to be available and returns an iterator
