@@ -17,14 +17,14 @@ const DEFAULT_INTREE_RELATIVE_CONFIG_FILES: [&str; 2] =
 const DEFAULT_CONFIG_PATHS_VARIABLE: &str = "triage.config_paths";
 
 /// Gets the closest enclosing fuchsia checkout.
-/// We look for .jiri_root to determine whether a directory
+/// We look for .fx-root to determine whether a directory
 /// is a fuchsia checkout.
 /// Returns None if not working in tree.
-fn get_closed_enclosing_fuchsia_dir(current_dir: PathBuf) -> Result<Option<PathBuf>> {
+fn get_closest_enclosing_fuchsia_dir(current_dir: PathBuf) -> Result<Option<PathBuf>> {
     let mut current_dir = current_dir;
     loop {
-        let jiri_root_path = current_dir.join(".jiri_root/");
-        if jiri_root_path.exists() {
+        let fx_root_path = current_dir.join(".fx-root");
+        if fx_root_path.is_file() {
             return Ok(Some(current_dir));
         }
         if !current_dir.pop() {
@@ -42,7 +42,7 @@ pub async fn get_or_default_config_files(
     current_dir: PathBuf,
 ) -> Result<Vec<PathBuf>> {
     let config_paths: Vec<PathBuf> = if config.is_empty() {
-        if let Some(fuchsia_dir) = get_closed_enclosing_fuchsia_dir(current_dir)? {
+        if let Some(fuchsia_dir) = get_closest_enclosing_fuchsia_dir(current_dir)? {
             DEFAULT_INTREE_RELATIVE_CONFIG_FILES
                 .iter()
                 .map(|default_file| {
@@ -106,23 +106,23 @@ mod tests {
         let tempdir = tempdir().expect("Unable to create tempdir for testing.");
         let root = tempdir.path();
 
-        let outer_jiri_root = root.join(".jiri_root");
+        let outer_fx_root = root.join(".fx-root");
         let inner_dir = root.join("fake");
         let innermost_checkout = inner_dir.join("fuchsia");
-        let inner_jiri_root = innermost_checkout.join(".jiri_root");
+        let inner_fx_root = innermost_checkout.join(".fx-root");
         let inner_subdir = innermost_checkout.join("subdir");
 
-        fs::create_dir_all(&outer_jiri_root).expect("Unable to create outer jiri root directory.");
-        fs::create_dir_all(&inner_jiri_root).expect("Unable to create inner jiri root directory.");
         fs::create_dir_all(&inner_subdir).expect("Unable to create inner subdir root directory.");
+        fs::File::create(&outer_fx_root).expect("Unable to create outer fx root file.");
+        fs::File::create(&inner_fx_root).expect("Unable to create inner fx root file.");
 
         let canonical_inner_subdir = fs::canonicalize(&inner_subdir)
             .expect("Unable to get canonical path to fuchsia checkout.");
 
         // Directory structure is
-        // $root/.jiri_root
+        // $root/.fx-root
         // $root/fake/fuchsia/
-        // $root/fake/fuchsia/.jiri_root
+        // $root/fake/fuchsia/.fx-root
         // We invoke the plugin from $root/fake/fuchsia/subdir/
 
         let config_files =
@@ -167,7 +167,7 @@ mod tests {
             .await
             .expect("Unable to get config files.");
 
-        // One reason of failure might be the existence of .jiri_root/ in the $TEMPDIR parent
+        // One reason of failure might be the existence of .fx-root in the $TEMPDIR parent
         // path due to which OOT configs are not picked up.
         assert_eq!(config_files, oot_test_default_configs);
     }

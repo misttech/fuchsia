@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, format_err, Result};
+use anyhow::{Result, bail, format_err};
 use argh::FromArgs;
-use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use std::fs::{File, OpenOptions};
-use std::io::{stdin, stdout, BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read, Write, stdin, stdout};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -397,8 +397,8 @@ fn string_list(input_authors: String) -> Vec<String> {
 fn get_fuchsia_dir_root(current_dir: PathBuf) -> Result<Option<PathBuf>> {
     let mut current_dir = current_dir;
     loop {
-        let jiri_root_path = current_dir.join(".jiri_root/");
-        if jiri_root_path.exists() {
+        let fx_root_path = current_dir.join(".fx-root");
+        if fx_root_path.is_file() {
             return Ok(Some(current_dir));
         }
         if !current_dir.pop() {
@@ -463,7 +463,7 @@ mod test {
     use super::*;
     use pretty_assertions::assert_eq;
     use std::fs;
-    use tempfile::{tempdir, TempDir};
+    use tempfile::{TempDir, tempdir};
 
     const CMD_NAME: &'static [&'static str] = &["rfc"];
 
@@ -486,7 +486,7 @@ mod test {
             let rfcs_path = root.path().join(RFCS_PATH);
             fs::create_dir_all(&rfcs_path).expect("create root");
 
-            fs::create_dir_all(root.path().join(".jiri_root")).expect("create .jiri_root");
+            File::create(root.path().join(".fx-root")).expect("create .fx-root");
             init_file(rfcs_path.join(META_FILE), include_str!("../test_data/rfcs.before.yaml"));
             init_file(rfcs_path.join(TOC_FILE), include_str!("../test_data/toc.before.yaml"));
             init_file(rfcs_path.join(AREAS_FILE), include_str!("../test_data/areas.yaml"));

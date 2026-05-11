@@ -730,25 +730,25 @@ def get_fuchsia_root() -> Path:
     """Finds the Fuchsia root directory.
 
     Checks FUCHSIA_DIR environment variable first.
-    If not set, traverses up from the script directory until .jiri_root is found.
+    If not set, traverses up from the script directory until .fx-root is found.
     """
     if "FUCHSIA_DIR" in os.environ:
         return Path(os.environ["FUCHSIA_DIR"])
 
-    # Traverse up looking for .jiri_root
+    # Traverse up looking for .fx-root
     current = Path(__file__).resolve().parent
     while current != current.parent:
-        if (current / ".jiri_root").exists():
+        if (current / ".fx-root").is_file():
             return current
         current = current.parent
 
-    # Fallback to the original relative method if .jiri_root is missing (unlikely in a checkout)
-    # This maintains behavior if the script is run in a weird environment without .jiri_root
+    # Fallback to the original relative method if .fx-root is missing (unlikely in a checkout)
+    # This maintains behavior if the script is run in a weird environment without .fx-root
     print(
-        "Warning: Could not find .jiri_root, falling back to relative path assumption.",
+        "Warning: Could not find .fx-root, falling back to relative path assumption.",
         file=sys.stderr,
     )
-    return Path(__file__).resolve().parents[3]
+    return Path(__file__).resolve().parents[4]
 
 
 def main():

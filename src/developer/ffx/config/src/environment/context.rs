@@ -320,8 +320,8 @@ impl EnvironmentContext {
             // - a config-domain: we found a fuchsia-env file
             let domain = ConfigDomain::load_from(&domain_path)?;
             Ok(Self::config_domain(exe_kind, domain, runtime_args, None, no_environment))
-        } else if let Some(tree_root) = Self::find_jiri_root(current_dir)? {
-            // - in-tree: we found a jiri root, and...
+        } else if let Some(tree_root) = Self::find_fx_root(current_dir)? {
+            // - in-tree: we found `.fx-root`, and...
             // look for a .fx-build-dir file and use that instead.
             let build_dir = Self::load_fx_build_dir(&tree_root)?;
 
@@ -552,13 +552,13 @@ impl EnvironmentContext {
         Ok(cmd)
     }
 
-    /// Searches for the .jiri_root that should be at the top of the tree. Returns
-    /// Ok(Some(parent_of_jiri_root)) if one is found.
-    fn find_jiri_root(from: &Path) -> Result<Option<PathBuf>, EnvironmentDetectError> {
+    /// Searches for the .fx-root that should be at the top of the tree. Returns
+    /// Ok(Some(parent_of_fx_root)) if one is found.
+    fn find_fx_root(from: &Path) -> Result<Option<PathBuf>, EnvironmentDetectError> {
         let mut from = Some(std::fs::canonicalize(from)?);
         while let Some(next) = from {
-            let jiri_path = next.join(".jiri_root");
-            if jiri_path.is_dir() {
+            let fx_root_path = next.join(".fx-root");
+            if fx_root_path.is_file() {
                 return Ok(Some(next));
             } else {
                 from = next.parent().map(Path::to_owned);

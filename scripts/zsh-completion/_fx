@@ -48,13 +48,11 @@ _fx() {
     if [[ ! -d "$parent" ]]; then
       return 1
     fi
-    # TODO(https://fxbug.dev/505045726): Migrate off of `.jiri_root` as a marker for the root of a
-    # fuchsia checkout.
-    while [[ ! -f "${parent}/.fx-root" && ! -d "${parent}/.jiri_root" ]]; do
-      parent="$(dirname "${parent}")"
+    while [[ ! -f "${parent}/.fx-root" ]]; do
       if [[ "$parent" == "/" ]]; then
         return 1
       fi
+      parent="$(dirname "${parent}")"
     done
     echo "$parent"
   }

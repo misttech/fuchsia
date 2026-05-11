@@ -9,21 +9,18 @@ set -e
 SCRIPT_SRC_DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd)"
 TEST_DIR="$PWD"
 
-# Find the root of the project
-get_jiri_root() {
-  local root_dir=""
-  root_dir="${SCRIPT_SRC_DIR}"
-  # TODO(https://fxbug.dev/505045726): Migrate off of `.jiri_root` as a marker for the root of a
-  # fuchsia checkout.
-  while [[ ! -d "${root_dir}/.jiri_root" ]]; do
-    root_dir="$(dirname "${root_dir}")"
-    if [[ ${#root_dir} -eq 1 ]]; then
-      echo >&2 "Error! could not find the root of the project starting from $SCRIPT_SRC_DIR. The current working directory needs to be under the root of the project"
-      find "${TEST_DIR}"
-      exit 1
+function find_tree_root {
+  local parent="$1"
+  if [[ ! -d "$parent" ]]; then
+    return 1
+  fi
+  while [[ ! -f "${parent}/.fx-root" ]]; do
+    if [[ "$parent" == "/" ]]; then
+      return 1
     fi
+    parent="$(dirname "${parent}")"
   done
-  echo "${root_dir}"
+  echo "$parent"
 }
 
 launch_script() {
@@ -34,11 +31,14 @@ launch_script() {
   local bt_deps_root="${TEST_DIR}";
 
   # Check the local directory as the root of the test framework first,
-  # then fall back to jiri_root.
+  # then fall back to locating //.fx-root.
   local test_framework_path="${bt_deps_root}/tools/devshell/tests/lib/bash_test_framework.sh"
   if [[ ! -e "${test_framework_path}" ]]; then
     echo "Could not find $test_framework_path"
-    bt_deps_root="$(get_jiri_root)"
+    if ! bt_deps_root="$(find_tree_root "${SCRIPT_SRC_DIR}")"; then
+      echo >&2 "ERROR: Cannot find the Platform Source Tree in a parent of the test directory: ${SCRIPT_SRC_DIR}"
+      exit 1
+    fi
     test_framework_path="${bt_deps_root}/tools/devshell/tests/lib/bash_test_framework.sh"
   fi
 

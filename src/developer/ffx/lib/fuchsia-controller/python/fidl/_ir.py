@@ -16,12 +16,12 @@ LIB_MAP: Dict[str, str] = {}
 MAP_INIT = False
 
 
-def find_jiri_root(starting_dir: str | os.PathLike[str]) -> str | None:
-    """Returns the path to a `.jiri_root` if it can be found, else `None`."""
+def find_fx_root(starting_dir: str | os.PathLike[str]) -> str | None:
+    """Returns the Fuchsia checkout root using `.fx-root` if it can be found, else `None`."""
     current_dir = os.path.realpath(starting_dir)
     while True:
-        jiri_path = os.path.join(current_dir, ".jiri_root")
-        if os.path.isdir(jiri_path):
+        fx_root_path = os.path.join(current_dir, ".fx-root")
+        if os.path.isfile(fx_root_path):
             return current_dir
         else:
             next_dir = os.path.join(current_dir, os.pardir)
@@ -52,8 +52,8 @@ def get_fidl_ir_map() -> Mapping[str, str]:
             # there's a possibility the user is running multiple fuchsia
             # checkouts. We just want to check where we're running the command.
             #
-            # This is the same approach as for the `.jiri_root/bin/ffx` script.
-            if root_dir := find_jiri_root(os.curdir):
+            # This is the same approach as for the `//scripts/fx` script.
+            if root_dir := find_fx_root(os.curdir):
                 with open(os.path.join(root_dir, ".fx-build-dir"), "r") as f:
                     build_dir = f.readlines()[0].strip()
                     default_ir_path = os.path.join(
