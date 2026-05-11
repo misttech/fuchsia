@@ -834,11 +834,11 @@ group("handlebars-4.3.5") {
 }
 
 group("hashbrown") {
-  public_deps = [ ":hashbrown-v0_16_1" ]
+  public_deps = [ ":hashbrown-v0_17_1" ]
 }
 
-group("hashbrown-0.16.1") {
-  public_deps = [ ":hashbrown-v0_16_1" ]
+group("hashbrown-0.17.1") {
+  public_deps = [ ":hashbrown-v0_17_1" ]
 }
 
 group("hashlink") {
@@ -9795,6 +9795,40 @@ rustc_library("hashbrown-v0_16_1") {
 
   deps = []
   deps += [ ":foldhash-v0_2_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=cd7a074e7a5f21d9",
+    "-Cextra-filename=-cd7a074e7a5f21d9",
+    "--cfg=feature=\"default-hasher\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":hashbrown-v0_16_1.license" ]
+}
+
+license("hashbrown-v0_17_1.license") {
+  public_package_name = "hashbrown"
+  license_files = [
+    "//third_party/rust_crates/vendor/hashbrown-0.17.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/hashbrown-0.17.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("hashbrown-v0_17_1") {
+  crate_name = "hashbrown"
+  source_root = "//third_party/rust_crates/vendor/hashbrown-0.17.1/src/lib.rs"
+  output_name = "hashbrown-1ab733e54c5afb1f"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":foldhash-v0_2_0" ]
   deps += [ ":serde_core-v1_0_228" ]
   if (true) {
     deps += [ ":serde-v1_0_228" ]
@@ -9804,8 +9838,8 @@ rustc_library("hashbrown-v0_16_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=cd7a074e7a5f21d9",
-    "-Cextra-filename=-cd7a074e7a5f21d9",
+    "-Cmetadata=1ab733e54c5afb1f",
+    "-Cextra-filename=-1ab733e54c5afb1f",
     "--cfg=feature=\"default-hasher\"",
     "--cfg=feature=\"inline-more\"",
     "--cfg=feature=\"serde\"",
@@ -9813,39 +9847,7 @@ rustc_library("hashbrown-v0_16_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":hashbrown-v0_16_1.license" ]
-}
-
-license("hashbrown-v0_17_0.license") {
-  public_package_name = "hashbrown"
-  license_files = [
-    "//third_party/rust_crates/vendor/hashbrown-0.17.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/hashbrown-0.17.0/LICENSE-MIT",
-  ]
-}
-
-rustc_library("hashbrown-v0_17_0") {
-  crate_name = "hashbrown"
-  source_root = "//third_party/rust_crates/vendor/hashbrown-0.17.0/src/lib.rs"
-  output_name = "hashbrown-7683c295378ee004"
-  edition = "2024"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=7683c295378ee004",
-    "-Cextra-filename=-7683c295378ee004",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":hashbrown-v0_17_0.license" ]
+  applicable_licenses = [ ":hashbrown-v0_17_1.license" ]
 }
 
 license("hashlink-v0_11_0.license") {
@@ -17161,7 +17163,7 @@ rustc_library("rkyv-v0_8_16") {
   deps = []
   deps += [ ":bytecheck-v0_8_2" ]
   deps += [ ":bytes-v1_11_1" ]
-  deps += [ ":hashbrown-v0_17_0" ]
+  deps += [ ":hashbrown-v0_17_1" ]
   deps += [ ":indexmap-v2_13_0" ]
   deps += [ ":munge-v0_4_4" ]
   deps += [ ":ptr_meta-v0_3_1" ]

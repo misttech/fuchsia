@@ -1195,14 +1195,14 @@ alias(
 )
 
 alias(
-    name = "hashbrown-0.16.1",
-    actual = "//third_party/rust_crates/vendor/hashbrown-0.16.1:hashbrown",
+    name = "hashbrown-0.17.1",
+    actual = "//third_party/rust_crates/vendor/hashbrown-0.17.1:hashbrown",
     tags = ["manual"],
 )
 
 alias(
     name = "hashbrown",
-    actual = "//third_party/rust_crates/vendor/hashbrown-0.16.1:hashbrown",
+    actual = "//third_party/rust_crates/vendor/hashbrown-0.17.1:hashbrown",
     tags = ["manual"],
 )
 

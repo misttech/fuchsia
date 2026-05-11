@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "hashbrown",
     package_url = "https://github.com/rust-lang/hashbrown",
-    package_version = "0.17.0",
+    package_version = "0.17.1",
 )
 
 license(
@@ -52,6 +52,11 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
+    crate_features = [
+        "default-hasher",
+        "inline-more",
+        "serde",
+    ],
     crate_root = "src/lib.rs",
     edition = "2024",
     rustc_flags = [
@@ -72,5 +77,9 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.17.0",
+    version = "0.17.1",
+    deps = [
+        "//third_party/rust_crates/vendor/foldhash-0.2.0:foldhash",
+        "//third_party/rust_crates/vendor/serde_core-1.0.228:serde_core",
+    ],
 )
