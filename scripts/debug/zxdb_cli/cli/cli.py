@@ -35,6 +35,11 @@ async def main(args: list[str]) -> int:
     # It supports a raw JSON input or specific subcommands.
     parser = argparse.ArgumentParser(description="fx debug cli")
     parser.add_argument("--json", help="JSON request string")
+    parser.add_argument(
+        "--ack-seq",
+        type=int,
+        help="Acknowledge events up to this sequence number",
+    )
     subparsers = parser.add_subparsers(dest="command", required=False)
 
     start_parser = subparsers.add_parser("start", help="Start the daemon")
@@ -67,6 +72,22 @@ async def main(args: list[str]) -> int:
     )
     stack_trace_parser.add_argument(
         "thread_id", type=int, help="Thread ID to get stack trace for"
+    )
+
+    wait_parser = subparsers.add_parser(
+        "wait-for-event", help="Wait for event (default shows all events)"
+    )
+    wait_parser.add_argument(
+        "--last-seen-seq",
+        type=int,
+        default=0,
+        help="Last seen sequence number",
+    )
+    wait_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=10,
+        help="Timeout in seconds (default=10 seconds)",
     )
 
     parsed_args = parser.parse_args(args)

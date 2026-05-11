@@ -6,7 +6,7 @@ import dataclasses
 import json
 from typing import Any
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -14,6 +14,8 @@ class BaseRequest:
     """Base class for all requests containing the command name."""
 
     command: str
+    last_seen_seq: int | None = None
+    ack_seq: int | None = None
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -44,6 +46,12 @@ class GetStateRequest(BaseRequest):
     """Request current state of threads."""
 
     command: str = "get-state"
+
+
+@dataclasses.dataclass(kw_only=True)
+class WaitForEventRequest(BaseRequest):
+    timeout: int | None = None
+    command: str = "wait-for-event"
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -110,6 +118,7 @@ class Response:
     success: bool
     message: str | None = None
     body: dict[str, Any] | None = None
+    events: list[dict[str, Any]] | None = None
 
 
 def serialize(obj: BaseRequest | Response) -> str:
@@ -121,44 +130,73 @@ def make_request(data: dict[str, Any]) -> BaseRequest:
     """Dispatches raw dictionary data into appropriate request objects."""
 
     command = data.get("command")
+    req: BaseRequest
     match command:
         case "start":
-            return StartRequest(port=data.get("port"))
+            req = StartRequest(port=data.get("port"))
         case "hello":
             version = data.get("version")
             if version is None:
                 raise ValueError("Version must be specified for hello")
-            return HelloRequest(version=version)
+            req = HelloRequest(version=version)
         case "stop":
-            return StopRequest()
+            req = StopRequest()
         case "get-state":
-            return GetStateRequest()
+            req = GetStateRequest()
         case "attach":
             process_filter = data.get("filter")
             if process_filter is None:
                 raise ValueError("Filter must be specified for attach")
-            return AttachRequest(filter=process_filter)
+            req = AttachRequest(filter=process_filter)
         case "threads":
-            return ThreadsRequest()
+            req = ThreadsRequest()
         case "pause":
             thread_id = data.get("thread_id")
             if thread_id is None:
                 raise ValueError("Thread ID must be specified for pause")
-            return PauseRequest(thread_id=thread_id)
+            req = PauseRequest(thread_id=thread_id)
         case "continue":
             thread_id = data.get("thread_id")
             if thread_id is None:
                 raise ValueError("Thread ID must be specified for continue")
-            return ContinueRequest(
+            req = ContinueRequest(
                 thread_id=thread_id, single_thread=data.get("single_thread")
             )
         case "stackTrace":
             thread_id = data.get("thread_id")
             if thread_id is None:
                 raise ValueError("Thread ID must be specified for stackTrace")
-            return StackTraceRequest(thread_id=thread_id)
+            req = StackTraceRequest(thread_id=thread_id)
+        case "wait-for-event":
+            last_seen = data.get("last_seen_seq")
+            timeout = data.get("timeout")
+            if last_seen is not None:
+                try:
+                    last_seen_seq = int(last_seen)
+                except ValueError:
+                    raise ValueError("last_seen_seq must be an integer")
+            else:
+                last_seen_seq = None
+
+            try:
+                timeout_val = int(timeout) if timeout is not None else None
+            except ValueError:
+                raise ValueError("timeout must be an integer")
+
+            req = WaitForEventRequest(
+                last_seen_seq=last_seen_seq, timeout=timeout_val
+            )
         case _:
             raise ValueError(f"Unknown command: {command}")
+
+    ack_seq = data.get("ack_seq")
+    if ack_seq is not None:
+        try:
+            req.ack_seq = int(ack_seq)
+        except ValueError:
+            raise ValueError("ack_seq must be an integer")
+
+    return req
 
 
 def deserialize_request(line: str) -> BaseRequest:

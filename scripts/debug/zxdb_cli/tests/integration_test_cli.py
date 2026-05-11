@@ -8,6 +8,7 @@ import json
 import os
 import signal
 import subprocess
+import sys
 import unittest
 from io import StringIO
 from typing import Any
@@ -375,6 +376,48 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
 
         finally:
             await _cleanup_process_group(proc)
+
+    async def test_wait_for_event(self) -> None:
+        proc, _port = await self._setup_daemon_and_server()
+
+        try:
+            # Trigger an event by sending pause command
+            exit_code = await main(["pause", "1"])
+            self.assertEqual(exit_code, 0)
+
+            # Capture stdout to read the JSON response from wait-for-event
+            saved_stdout = sys.stdout
+            try:
+                out = StringIO()
+                sys.stdout = out
+
+                # Give daemon time to process the event
+                await asyncio.sleep(0.1)
+
+                exit_code = await main(
+                    ["wait-for-event", "--last-seen-seq", "0"]
+                )
+                self.assertEqual(exit_code, 0)
+
+                output = out.getvalue().strip()
+            finally:
+                sys.stdout = saved_stdout
+
+            # Parse output
+            resp = json.loads(output)
+            self.assertTrue(resp.get("success"))
+            events = resp.get("events", [])
+            self.assertGreater(len(events), 0)
+            self.assertEqual(events[0]["event"], "stopped")
+
+            # Stop via CLI
+            exit_code = await main(["stop"])
+            self.assertEqual(exit_code, 0)
+
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+                proc.wait()
 
 
 if __name__ == "__main__":

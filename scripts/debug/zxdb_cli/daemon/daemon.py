@@ -32,6 +32,7 @@ from shared.protocol import (
     StackTraceRequest,
     StopRequest,
     ThreadsRequest,
+    WaitForEventRequest,
     deserialize_request,
     serialize,
 )
@@ -40,6 +41,7 @@ from shared.protocol import (
 UDS_PATH: Final[Path] = Path("/tmp/fx-debug-daemon.sock")
 
 DEFAULT_DAP_PORT: Final[int] = 15678
+MAX_EVENT_HISTORY_SIZE: Final[int] = 100
 
 
 class CommandHandlerRegistry:
@@ -132,6 +134,13 @@ class Daemon:
         self.stop_event = asyncio.Event()
         self.shutdown_complete_event = asyncio.Event()
         self.dap_ready_event = asyncio.Event()
+        # We use a regular dict to store events, keyed by sequence number which preserves insertion
+        # order. This is relevant because it allows us to efficiently prune old events by iterating
+        # from the beginning of the dict keys and breaking early when we reach a key that shouldn't
+        # be pruned yet.
+        self.all_events: dict[int, dict[str, Any]] = {}
+        self.latest_seq = 0
+        self.new_event_condition = asyncio.Condition()
         self.zxdb_writer: asyncio.StreamWriter | None = None
         self.zxdb_reader: asyncio.StreamReader | None = None
         self.port = port
@@ -164,6 +173,10 @@ class Daemon:
         self.registry.register(
             "stackTrace",
             self.handle_stack_trace,
+        )
+        self.registry.register(
+            "wait-for-event",
+            self.handle_wait_for_event,
         )
 
     # TODO(https://fxbug.dev/509967647): This should be part of a thread object abstraction that
@@ -322,6 +335,54 @@ class Daemon:
             return Response(
                 success=False, message=f"Failed to get stack trace: {e}"
             )
+
+    async def handle_wait_for_event(self, req: BaseRequest) -> Response:
+        """Blocks until there are events with sequence number greater than last_seen_seq.
+
+        Args:
+            req: The request containing last_seen_seq.
+
+        Returns:
+            A Response containing the new events.
+        """
+        if req.last_seen_seq is None:
+            return Response(
+                success=False,
+                message="last_seen_seq is required for wait-for-event",
+            )
+
+        timeout = req.timeout if isinstance(req, WaitForEventRequest) else None
+
+        async with self.new_event_condition:
+            try:
+                # Wait until there is an event with seq > last_seen_seq.
+                # We check the last event's sequence number.
+                while self.latest_seq <= req.last_seen_seq:
+                    if timeout is not None:
+                        await asyncio.wait_for(
+                            self.new_event_condition.wait(), timeout=timeout
+                        )
+                    else:
+                        await self.new_event_condition.wait()
+            except asyncio.TimeoutError:
+                return Response(
+                    success=False, message="Timed out waiting for event"
+                )
+
+        events = []
+        for seq in range(req.last_seen_seq + 1, self.latest_seq + 1):
+            if seq in self.all_events:
+                events.append(self.all_events[seq])
+
+        message = None
+        if (
+            self.all_events
+            and self.all_events[next(iter(self.all_events))].get("seq", 0)
+            > req.last_seen_seq + 1
+        ):
+            message = "Warning: Some events were pruned from history"
+
+        return Response(success=True, events=events, message=message)
 
     async def run(self) -> int:
         if UDS_PATH.exists():
@@ -492,7 +553,23 @@ class Daemon:
             if req.command != "stop":
                 self.active_handlers.add(current_task)
 
+            if req.ack_seq is not None:
+                # Note: this relies on the insertion order of dictionaries being preserved.
+                for seq in list(self.all_events.keys()):
+                    if seq <= req.ack_seq:
+                        del self.all_events[seq]
+                    else:
+                        break
+
             resp = await self.registry.handle(req.command, req)
+
+            # Add events that have transpired since |last_seen_seq|.
+            if req.last_seen_seq is not None:
+                resp.events = []
+                for seq in range(req.last_seen_seq + 1, self.latest_seq + 1):
+                    if seq in self.all_events:
+                        resp.events.append(self.all_events[seq])
+
             writer.write(serialize(resp).encode("utf-8"))
             await writer.drain()
 
@@ -508,8 +585,18 @@ class Daemon:
             await writer.wait_closed()
 
     async def _process_events(self) -> None:
+        allowed_events = {
+            "stopped",
+            "continued",
+            "exited",
+            "terminated",
+            "thread",
+            "process",
+        }
         while True:
             event = await self.event_queue.get()
+
+            # Internal daemon actions on all events
             if event.get("event") == "stopped":
                 thread_id = event.get("body", {}).get("threadId")
                 self.stopped_threads.add(thread_id)
@@ -517,3 +604,18 @@ class Daemon:
             elif event.get("event") == "continued":
                 thread_id = event.get("body", {}).get("threadId")
                 self.stopped_threads.discard(thread_id)
+
+            # Only enqueue and sequence allowed events for surfacing to the CLI client
+            if event.get("event") in allowed_events:
+                self.latest_seq += 1
+                event["seq"] = self.latest_seq
+                self.all_events[self.latest_seq] = event
+
+                # Enforce max size
+                if len(self.all_events) > MAX_EVENT_HISTORY_SIZE:
+                    # Pop the oldest item. Dict keys are in insertion order.
+                    oldest_seq = next(iter(self.all_events))
+                    del self.all_events[oldest_seq]
+
+            async with self.new_event_condition:
+                self.new_event_condition.notify_all()
