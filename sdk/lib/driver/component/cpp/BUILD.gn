@@ -101,6 +101,7 @@ source_set("test_base") {
 cc_test_executable("cpp_test") {
   testonly = true
   sources = [
+    "tests/driver_base2_test.cc",
     "tests/driver_base_test.cc",
     "tests/driver_fidl_test.cc",
     "tests/fixture_based_tests.cc",

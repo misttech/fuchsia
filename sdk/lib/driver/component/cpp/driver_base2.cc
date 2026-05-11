@@ -98,7 +98,8 @@ std::optional<fuchsia_power_broker::DependencyToken> DriverContext::power_elemen
 bool DriverContext::has_power_args() { return start_args_.power_element_args().has_value(); }
 #endif
 
-DriverBase2::DriverBase2(std::string_view name) : name_(name) {}
+DriverBase2::DriverBase2(std::string_view name)
+    : name_(name), driver_dispatcher_(fdf_dispatcher_get_current_dispatcher()) {}
 
 void DriverBase2::DriverBaseInternalInit(DriverContext& context,
                                          fdf::UnownedSynchronizedDispatcher driver_dispatcher) {
