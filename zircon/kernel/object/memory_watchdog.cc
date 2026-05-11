@@ -296,9 +296,9 @@ void MemoryWatchdog::WorkerThread() {
 
       printf("memory-pressure: memory availability state - %s\n",
              PressureLevelToString(mem_event_idx_));
-      pmm_page_queues()->Dump();
 
       if (IsEvictionRequired(mem_event_idx_)) {
+        pmm_page_queues()->Dump();
         // Clear any previous eviction trigger. Once Cancel completes we know that we will not race
         // with the callback and are free to update the targets. Cancel will return true if the
         // timer was canceled before it was scheduled on a cpu, i.e. an eviction was outstanding.

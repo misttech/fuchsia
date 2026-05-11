@@ -540,13 +540,10 @@ void PageQueues::Dump() {
   }
   zx_instant_mono_t current = current_mono_time();
   timespec age_time = zx_timespec_from_duration(zx_time_sub_time(current, last_age_time));
-  printf("pq: MRU generation is %" PRIu64
-         " set %ld.%lds ago due to \"%s\", LRU generation is %" PRIu64 "\n",
-         mru_gen, age_time.tv_sec, age_time.tv_nsec, string_from_age_reason(last_age_reason),
-         lru_gen);
-  printf("pq: Pager buckets %s evict first: %zu\n", buf, inactive_count);
-  printf("pq: active/inactive totals: %zu/%zu dirty: %zu failed reclaim: %zu\n",
-         activeinactive.active, activeinactive.inactive, dirty, failed_reclaim);
+  printf("pq: MRU:%" PRIu64 " (%ld.%lds ago, %s) LRU:%" PRIu64 " Act/Inact:%zu/%zu\n", mru_gen,
+         age_time.tv_sec, age_time.tv_nsec, string_from_age_reason(last_age_reason), lru_gen,
+         activeinactive.active, activeinactive.inactive);
+  printf("pq: %s Isolate:%zu Dirty:%zu Fail:%zu\n", buf, inactive_count, dirty, failed_reclaim);
 }
 
 // This runs the aging thread. Aging, unlike lru processing, scanning or eviction, requires very
