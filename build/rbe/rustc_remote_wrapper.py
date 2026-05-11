@@ -804,7 +804,9 @@ class RustRemoteAction(object):
         # This is why we need to includes link_arg_files unconditionally,
         # whereas the linker tools themselves can be dropped until linking binaries.
         yield from self.yield_verbose(
-            "link arg files", self._rust_action.link_arg_files
+            "link arg files",
+            list(self._rust_action.link_arg_files)
+            + list(self._rust_action.linker_scripts),
         )
 
         if self.needs_linker:

@@ -443,7 +443,9 @@ class RustAction(object):
         self._link_reproducer: Path | None = None
         self._want_sysroot_libgcc = False
         self._link_arg_files: Sequence[Path] = []
-        for arg in self._link_arg_flags:
+        self._linker_scripts: Sequence[Path] = []
+        link_arg_iter = iter(self._link_arg_flags)
+        for arg in link_arg_iter:
             if arg == "-lgcc":
                 self._want_sysroot_libgcc = True
                 continue
@@ -462,6 +464,28 @@ class RustAction(object):
             if left == "--reproduce":
                 self._link_reproducer = Path(right)
                 continue
+
+            # Linker scripts can be passed via -T or --script.
+            # They can be fused (-Tpath) or separate (-T path).
+            script_path = None
+            if arg == "-T" or arg == "--script":
+                try:
+                    script_path = next(link_arg_iter)
+                except StopIteration:
+                    # Trailing -T without arg, ignore for now
+                    pass
+            elif arg.startswith("-T"):
+                script_path = arg[2:]
+            elif arg.startswith("--script="):
+                script_path = arg[len("--script=") :]
+
+            if script_path:
+                # Filter out symbol assignments like -Tfoo=0x1234.
+                # Same logic as C++ wrapper.
+                if "=" not in script_path:
+                    self._linker_scripts.append(Path(script_path))
+                continue
+
             if is_linkable(arg):
                 self._link_arg_files.append(Path(arg))
 
@@ -588,6 +612,10 @@ class RustAction(object):
     def linker(self) -> Optional[Path]:
         d = cl_utils.last_value_of_dict_flag(self._C_flags, "linker")
         return Path(d) if d else None
+
+    @property
+    def linker_scripts(self) -> Sequence[Path]:
+        return [Path(p) for p in self._linker_scripts]
 
     @property
     def _link_arg_flags(self) -> Sequence[str]:

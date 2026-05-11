@@ -148,7 +148,7 @@ class RustRemoteActionPrepareTests(unittest.TestCase):
             rustc_remote_wrapper, "_tool_is_executable", return_value=True
         )
 
-        if compiler_shlibs:
+        if compiler_shlibs is not None:
             yield mock.patch.object(
                 rustc_remote_wrapper.RustRemoteAction,
                 "_remote_rustc_shlibs",
@@ -1336,6 +1336,45 @@ class RustRemoteActionPrepareTests(unittest.TestCase):
             r._rewrite_remote_or_local_depfile()
             new_deps = _read_file_contents(depfile_abspath)
             self.assertEqual(new_deps, "obj/foo.rlib: src/lib.rs\n")
+
+    def test_prepare_linker_scripts(self) -> None:
+        exec_root = Path("/home/project")
+        working_dir = exec_root / "build-here"
+        compiler = Path("../tools/bin/rustc")
+        source = Path("../foo/lib.rs")
+        output = Path("foo.rlib")
+        script = Path("../bar/my_script.ld")
+        command = _strs(
+            [compiler, source, f"-Clink-arg=-T{script}", "-o", output]
+        )
+        r = rustc_remote_wrapper.RustRemoteAction(
+            ["--", *command],
+            exec_root=exec_root,
+            working_dir=working_dir,
+            auto_reproxy=False,
+        )
+        mocks = list(
+            self.generate_prepare_mocks(
+                source_files_path_contents=[source],
+                compilation_deps_path_contents=[],
+                compiler_shlibs=[],
+            )
+        )
+        with contextlib.ExitStack() as stack:
+            for m in mocks:
+                stack.enter_context(m)
+
+            # mock remote_ld_path which check for existence
+            with mock.patch.object(
+                rustc_remote_wrapper.RustRemoteAction,
+                "remote_ld_path",
+                new_callable=mock.PropertyMock,
+                return_value=None,
+            ):
+                self.assertEqual(r.prepare(), 0)
+
+        # script should be in remote_action inputs
+        self.assertIn(script, r.remote_action.inputs_relative_to_working_dir)
 
 
 class MainTests(unittest.TestCase):

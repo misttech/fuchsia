@@ -440,6 +440,35 @@ class RustActionTests(unittest.TestCase):
             )
             self.assertEqual(r.link_arg_files, link_args)
 
+    def test_linker_scripts(self) -> None:
+        scripts = list(_paths(["obj/foo/this.ld", "obj/bar/that.ld"]))
+        for opts in (
+            [f"-Clink-arg=-T{scripts[0]}", f"-Clink-arg=--script={scripts[1]}"],
+            [
+                "-C",
+                f"link-arg=-T{scripts[0]}",
+                "-C",
+                f"link-arg=--script={scripts[1]}",
+            ],
+            [
+                "-Clink-arg=-T",
+                f"-Clink-arg={scripts[0]}",
+                "-Clink-arg=--script",
+                f"-Clink-arg={scripts[1]}",
+            ],
+        ):
+            r = rustc.RustAction(
+                ["../tools/rustc"] + opts + ["../foo/lib.rs", "-o", "foo.rlib"]
+            )
+            self.assertEqual(r.linker_scripts, scripts)
+
+    def test_linker_script_symbol_assignment_filtered(self) -> None:
+        opts = ["-Clink-arg=-Tfoo=0x1234"]
+        r = rustc.RustAction(
+            ["../tools/rustc"] + opts + ["../foo/lib.rs", "-o", "foo.rlib"]
+        )
+        self.assertEqual(r.linker_scripts, [])
+
     def test_link_map_output(self) -> None:
         r = rustc.RustAction(
             [
