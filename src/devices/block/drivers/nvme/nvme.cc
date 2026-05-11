@@ -143,24 +143,38 @@ void Nvme::ProcessIoSubmissions() {
     }
 
     zx_status_t status;
-    const auto opcode = io_cmd->op.command.opcode;
-    if (opcode == BLOCK_OPCODE_FLUSH) {
-      NvmIoFlushSubmission submission;
-      submission.namespace_id = io_cmd->namespace_id;
-
-      status = io_queue_->Submit(submission, std::nullopt, 0, 0, io_cmd);
-    } else {
-      NvmIoSubmission submission(opcode == BLOCK_OPCODE_WRITE);
-      submission.namespace_id = io_cmd->namespace_id;
-      submission.set_start_lba(io_cmd->op.rw.offset_dev).set_block_count(io_cmd->op.rw.length - 1);
-      if (io_cmd->op.command.flags & BLOCK_IO_FLAG_FORCE_ACCESS) {
-        submission.set_force_unit_access(true);
+    switch (io_cmd->operation.tag) {
+      case block_server::Operation::Tag::Flush: {
+        NvmIoFlushSubmission submission;
+        submission.namespace_id = io_cmd->namespace_id;
+        status = io_queue_->Submit(submission, std::nullopt, 0, 0, io_cmd);
+        break;
       }
+      case block_server::Operation::Tag::Read:
+      case block_server::Operation::Tag::Write: {
+        bool is_write = io_cmd->operation.tag == block_server::Operation::Tag::Write;
+        NvmIoSubmission submission(is_write);
+        submission.namespace_id = io_cmd->namespace_id;
 
-      // Convert op.rw.offset_vmo and op.rw.length to bytes.
-      status = io_queue_->Submit(submission, zx::unowned_vmo(io_cmd->op.rw.vmo),
-                                 io_cmd->op.rw.offset_vmo * io_cmd->block_size_bytes,
-                                 io_cmd->op.rw.length * io_cmd->block_size_bytes, io_cmd);
+        uint64_t device_block_offset = io_cmd->operation.read.device_block_offset;
+        uint32_t block_count = io_cmd->operation.read.block_count;
+        uint64_t vmo_offset = io_cmd->operation.read.vmo_offset;
+        bool force_access =
+            is_write ? io_cmd->operation.write.options.flags.is_force_access() : false;
+
+        submission.set_start_lba(device_block_offset).set_block_count(block_count - 1);
+        if (force_access) {
+          submission.set_force_unit_access(true);
+        }
+
+        status = io_queue_->Submit(submission, zx::unowned_vmo(io_cmd->vmo->get()), vmo_offset,
+                                   block_count * io_cmd->block_size_bytes, io_cmd);
+        break;
+      }
+      default:
+        fdf::error("Unsupported operation tag: {}", static_cast<uint32_t>(io_cmd->operation.tag));
+        io_cmd->Complete(ZX_ERR_NOT_SUPPORTED);
+        continue;
     }
     switch (status) {
       case ZX_OK:
@@ -200,9 +214,9 @@ void Nvme::ProcessIoCompletions() {
                  static_cast<const void*>(io_cmd));
       io_cmd->Complete(ZX_OK);
     } else {
-      fdf::error("Completed transaction #{} command {} ERROR: status type={:01x}, status={:02x}",
-                 completion->command_id(), static_cast<const void*>(io_cmd),
-                 static_cast<uint32_t>(completion->status_code_type()), completion->status_code());
+      fdf::warn("Completed transaction #{} command {} ERROR: status type={:01x}, status={:02x}",
+                completion->command_id(), static_cast<const void*>(io_cmd),
+                static_cast<uint32_t>(completion->status_code_type()), completion->status_code());
       io_cmd->Complete(ZX_ERR_IO);
     }
   }
@@ -238,6 +252,10 @@ int Nvme::IoLoop() {
 void Nvme::QueueIoCommand(IoCommand* io_cmd) {
   {
     std::lock_guard<std::mutex> lock(commands_lock_);
+    if (driver_shutdown_) {
+      io_cmd->Complete(ZX_ERR_PEER_CLOSED);
+      return;
+    }
     list_add_tail(&pending_commands_, &io_cmd->node);
   }
 
@@ -246,7 +264,37 @@ void Nvme::QueueIoCommand(IoCommand* io_cmd) {
 
 void Nvme::PrepareStop(fdf::PrepareStopCompleter completer) {
   fdf::debug("Preparing to stop driver.");
-  driver_shutdown_ = true;
+  {
+    std::lock_guard<std::mutex> lock(commands_lock_);
+    driver_shutdown_ = true;
+  }
+
+  if (namespaces_.empty()) {
+    PerformTeardown();
+    completer(zx::ok());
+    return;
+  }
+
+  struct Context {
+    Context(size_t count, fdf::PrepareStopCompleter comp)
+        : pending_count(count), completer(std::move(comp)) {}
+    std::atomic<size_t> pending_count;
+    fdf::PrepareStopCompleter completer;
+  };
+
+  auto ctx = std::make_shared<Context>(namespaces_.size(), std::move(completer));
+
+  for (auto& ns : namespaces_) {
+    ns->StopBlockServer([this, ctx]() {
+      if (ctx->pending_count.fetch_sub(1) == 1) {
+        PerformTeardown();
+        ctx->completer(zx::ok());
+      }
+    });
+  }
+}
+
+void Nvme::PerformTeardown() {
   if (pci_.is_valid()) {
     pci_.SetBusMastering(false);
   }
@@ -260,6 +308,8 @@ void Nvme::PrepareStop(fdf::PrepareStopCompleter completer) {
   }
 
   // Error out any pending commands
+  // TODO(https://fxbug.dev/510806838): We also need to error out any commands which were already
+  // submitted to the device (which this driver currently does not keep track of).
   {
     std::lock_guard<std::mutex> lock(commands_lock_);
     IoCommand* io_cmd;
@@ -267,8 +317,6 @@ void Nvme::PrepareStop(fdf::PrepareStopCompleter completer) {
       io_cmd->Complete(ZX_ERR_PEER_CLOSED);
     }
   }
-
-  completer(zx::ok());
 }
 
 static zx_status_t WaitForReset(bool desired_ready_state, fdf::MmioBuffer* mmio) {

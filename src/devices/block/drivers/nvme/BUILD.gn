@@ -28,16 +28,18 @@ group("tests") {
 
 common_deps = [
   ":nvme_bind",
-  "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-  "//sdk/lib/driver/compat/cpp",
+  "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+  "//sdk/lib/driver/component/cpp",
   "//sdk/lib/driver/mmio/cpp",
   "//sdk/lib/driver/runtime:driver_runtime_cpp",
   "//sdk/lib/inspect/component/cpp",
   "//src/devices/block/lib/common",
+  "//src/devices/lib/dev-operation",
   "//src/devices/lib/dma-buffer",
   "//src/devices/lib/driver:driver_runtime",
   "//src/devices/pci/lib/device-protocol-pci",
   "//src/devices/pci/lib/pci",
+  "//src/storage/lib/block_server:block_server_cc",
   "//zircon/system/ulib/fbl",
   "//zircon/system/ulib/fzl",
   "//zircon/system/ulib/hwreg",
@@ -139,6 +141,7 @@ test("nvme-unit-tests-bin") {
            "//src/devices/testing/fake-bti",
            "//src/lib/fxl/test:gtest_main",
            "//src/lib/testing/predicates",
+           "//src/storage/lib/block_client/cpp",
          ]
 }
 

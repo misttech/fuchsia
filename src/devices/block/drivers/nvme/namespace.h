@@ -5,28 +5,54 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_NVME_NAMESPACE_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_NVME_NAMESPACE_H_
 
-#include <fuchsia/hardware/block/driver/cpp/banjo.h>
-#include <lib/driver/compat/cpp/compat.h>
+#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
+#include <fidl/fuchsia.storage.block/cpp/wire.h>
+#include <lib/fdf/cpp/dispatcher.h>
+#include <lib/fit/function.h>
+#include <lib/zircon-internal/thread_annotations.h>
 
+#include <bitset>
+#include <functional>
+
+#include <fbl/auto_lock.h>
+#include <fbl/condition_variable.h>
+#include <fbl/mutex.h>
 #include <fbl/string_printf.h>
-#include <sdk/lib/driver/logging/cpp/logger.h>
+
+#include "src/devices/block/drivers/nvme/io-command.h"
+#include "src/storage/lib/block_server/block_server.h"
 
 namespace nvme {
 
 class Nvme;
 
-class Namespace : public ddk::BlockImplProtocol<Namespace> {
+class Namespace : public block_server::DriverInterface,
+                  public fidl::WireServer<fuchsia_hardware_block_volume::Node> {
  public:
   explicit Namespace(Nvme* controller, uint32_t namespace_id)
       : controller_(controller), namespace_id_(namespace_id) {}
+  ~Namespace();
 
   // Create a namespace on |controller| with |namespace_id|.
   static zx::result<std::unique_ptr<Namespace>> Bind(Nvme* controller, uint32_t namespace_id);
   fbl::String NamespaceName() const { return fbl::StringPrintf("namespace-%u", namespace_id_); }
 
-  // ddk::BlockImplProtocol implementations.
-  void BlockImplQuery(block_info_t* out_info, uint64_t* out_block_op_size);
-  void BlockImplQueue(block_op_t* op, block_impl_queue_callback callback, void* cookie);
+  void OnRequests(std::span<block_server::Request> requests) override;
+  fdf::Logger& logger() const override;
+
+  // fidl::WireServer<fuchsia_hardware_block_volume::Node> implementations.
+  void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
+
+  void CompleteIoCommand(IoCommand* io_cmd, zx_status_t status);
+
+  void ServeRequests(fidl::ServerEnd<fuchsia_storage_block::Block> server_end);
+
+  void StopBlockServer(fit::callback<void()> callback);
+
+  bool HasInflightCommands() {
+    fbl::AutoLock lock(&lock_);
+    return io_command_bitmap_.any();
+  }
 
  private:
   // Invokes AddChild().
@@ -35,18 +61,27 @@ class Namespace : public ddk::BlockImplProtocol<Namespace> {
   // Main driver initialization.
   zx_status_t Init();
 
-  fdf::Logger& logger();
+  zx::result<std::reference_wrapper<IoCommand>> AllocateIoCommand() TA_REQ(lock_);
+  void FreeIoCommand(IoCommand* io_cmd) TA_REQ(lock_);
 
   Nvme* const controller_;
   const uint32_t namespace_id_;
 
-  block_info_t block_info_ = {};
+  block_server::PartitionInfo block_info_ = {};
   uint32_t max_transfer_blocks_;
 
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
+  fidl::WireSyncClient<fuchsia_driver_framework::Node> driver_node_;
 
-  compat::BanjoServer block_impl_server_{ZX_PROTOCOL_BLOCK_IMPL, this, &block_impl_protocol_ops_};
-  compat::SyncInitializedDeviceServer compat_server_;
+  std::optional<block_server::BlockServer> block_server_ TA_GUARDED(lock_);
+  fidl::ServerBindingGroup<fuchsia_hardware_block_volume::Node> node_bindings_;
+
+  static constexpr size_t kMaxRequests = 64;
+  std::array<IoCommand, kMaxRequests> io_command_pool_;
+  std::bitset<kMaxRequests> io_command_bitmap_ TA_GUARDED(lock_);
+  fbl::Mutex lock_;
+  fbl::ConditionVariable pool_cond_ TA_GUARDED(lock_);
+  bool shutdown_ TA_GUARDED(lock_) = false;
 };
 
 }  // namespace nvme

@@ -9,6 +9,7 @@
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/zx/result.h>
+#include <zircon/assert.h>
 
 #include <atomic>
 #include <memory>
@@ -154,27 +155,24 @@ class BlockServer {
   // (including in the callback itself).
   template <typename Callback>
   void DestroyAsync(Callback callback) {
-    if (server_) {
-      internal::BlockServer* server = server_;
+    ZX_ASSERT_MSG(server_, "DestroyAsync called multiple times!");
+    internal::BlockServer* server = server_;
 
-      struct State {
-        BlockServer* self;
-        Callback callback;
-      };
+    struct State {
+      BlockServer* self;
+      Callback callback;
+    };
 
-      auto state = std::make_unique<State>(State{this, std::move(callback)});
+    auto state = std::make_unique<State>(State{this, std::move(callback)});
 
-      block_server_delete_async(
-          server,
-          [](void* arg) {
-            auto state = std::unique_ptr<State>(reinterpret_cast<State*>(arg));
-            state->self->server_ = nullptr;
-            state->callback();
-          },
-          state.release());
-    } else {
-      callback();
-    }
+    block_server_delete_async(
+        server,
+        [](void* arg) {
+          auto state = std::unique_ptr<State>(reinterpret_cast<State*>(arg));
+          state->self->server_ = nullptr;
+          state->callback();
+        },
+        state.release());
   }
 
   // Serves a new connection.  The FIDL handling is multiplexed onto a single per-server thread.

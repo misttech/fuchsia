@@ -5,7 +5,6 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_NVME_NVME_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_NVME_NVME_H_
 
-#include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <lib/device-protocol/pci.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
@@ -20,6 +19,7 @@
 #include <mutex>
 
 #include "src/devices/block/drivers/nvme/commands.h"
+#include "src/devices/block/drivers/nvme/io-command.h"
 #include "src/devices/block/drivers/nvme/namespace.h"
 #include "src/devices/block/drivers/nvme/queue-pair.h"
 #include "src/devices/block/drivers/nvme/registers.h"
@@ -29,19 +29,6 @@ class FakeController;
 }
 
 namespace nvme {
-
-struct IoCommand {
-  void Complete(zx_status_t status) { completion_cb(cookie, status, &op); }
-
-  block_op_t op;
-  block_impl_queue_callback completion_cb;
-  void* cookie;
-
-  uint32_t namespace_id;
-  uint32_t block_size_bytes;
-
-  list_node_t node;
-};
 
 class Nvme : public fdf::DriverBase {
  public:
@@ -105,6 +92,7 @@ class Nvme : public fdf::DriverBase {
   void ProcessIoSubmissions();
   // Process pending IO completions. Called in the IoLoop().
   void ProcessIoCompletions();
+  void PerformTeardown();
 
   inspect::Node inspect_node_;
 

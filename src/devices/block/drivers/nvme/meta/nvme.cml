@@ -14,7 +14,16 @@
         colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
+    capabilities: [
+        { service: "fuchsia.hardware.block.volume.Service" },
+    ],
     use: [
         { service: "fuchsia.hardware.pci.Service" },
+    ],
+    expose: [
+        {
+            service: "fuchsia.hardware.block.volume.Service",
+            from: "self",
+        },
     ],
 }
