@@ -11,3 +11,11 @@ source_set("init") {
     "//zircon/kernel/phys:handoff",
   ]
 }
+
+group("kernel-tests") {
+  testonly = true
+  deps = []
+  if (current_cpu == "arm64") {
+    deps += [ "interrupt/gic/v2:kernel-tests" ]
+  }
+}

@@ -195,7 +195,6 @@ source_set("x86") {
   ]
   deps = [
     ":syscall",
-    ":tests",
     "cpuid",
     "retpoline",
     "user-copy",
@@ -279,6 +278,7 @@ source_set("syscall") {
 }
 
 source_set("tests") {
+  testonly = true
   sources = [
     "hwp_tests.cc",
     "idle_states_test.cc",
@@ -288,6 +288,7 @@ source_set("tests") {
   ]
   deps = [
     ":headers",
+    "cpuid:kernel-tests",
     "//zircon/kernel/lib/arch/testing",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/console:headers",
@@ -295,4 +296,9 @@ source_set("tests") {
     "//zircon/kernel/lib/topology:headers",
     "//zircon/kernel/lib/unittest",
   ]
+}
+
+group("kernel-tests") {
+  testonly = true
+  deps = [ ":tests" ]
 }

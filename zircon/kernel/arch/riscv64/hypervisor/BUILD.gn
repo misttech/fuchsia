@@ -6,3 +6,7 @@
 
 group("hypervisor") {
 }
+
+group("kernel-tests") {
+  testonly = true
+}

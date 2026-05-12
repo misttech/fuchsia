@@ -27,7 +27,7 @@ group("tests") {
 }
 
 source_set("kernel-tests") {
-  # TODO: testonly = true
+  testonly = true
   sources = [ "cbuf_tests.cc" ]
   deps = [
     ".",

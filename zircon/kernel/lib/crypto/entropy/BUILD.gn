@@ -49,7 +49,7 @@ static_library("entropy") {
 }
 
 source_set("kernel-tests") {
-  # TODO: testonly = true
+  testonly = true
   sources = [ "collector_unittest.cc" ]
   deps = [
     ":entropy",

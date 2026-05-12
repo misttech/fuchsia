@@ -67,7 +67,6 @@ source_set("object") {
     "wait_signal_observer.cc",
   ]
   deps = [
-    ":tests",
     "//sdk/lib/fit",
     "//sdk/lib/iob",
     "//zircon/kernel/dev/interrupt",
@@ -135,7 +134,7 @@ library_headers("headers") {
 }
 
 source_set("tests") {
-  # TODO: testonly = true
+  testonly = true
   sources = [
     "test/buffer_chain_tests.cc",
     "test/exceptionate_tests.cc",
@@ -160,4 +159,9 @@ source_set("tests") {
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/unittest",
   ]
+}
+
+group("kernel-tests") {
+  testonly = true
+  deps = [ ":tests" ]
 }

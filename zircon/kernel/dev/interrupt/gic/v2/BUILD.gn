@@ -25,7 +25,6 @@ source_set("v2") {
   ]
   public_deps = [ ":headers" ]
   deps = [
-    ":test",
     "//zircon/kernel/dev/interrupt",
     "//zircon/kernel/dev/interrupt/gic/common",
     "//zircon/kernel/dev/pcie",
@@ -43,11 +42,16 @@ source_set("v2") {
 }
 
 source_set("test") {
-  # TODO: testonly = true
+  testonly = true
   sources = [ "arm_gicv2_test.cc" ]
   deps = [
     ":headers",
     "//zircon/kernel/lib/fbl",
     "//zircon/kernel/lib/unittest",
   ]
+}
+
+group("kernel-tests") {
+  testonly = true
+  deps = [ ":test" ]
 }

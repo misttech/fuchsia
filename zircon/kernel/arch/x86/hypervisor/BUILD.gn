@@ -15,7 +15,6 @@ source_set("hypervisor") {
     "vmx_cpu_state.cc",
   ]
   deps = [
-    ":tests",
     "//zircon/kernel/arch/x86:headers",
     "//zircon/kernel/hypervisor:headers",
     "//zircon/kernel/lib/boot-options",
@@ -26,10 +25,15 @@ source_set("hypervisor") {
 }
 
 source_set("tests") {
-  # TODO: testonly = true
+  testonly = true
   sources = [ "vmx_test.cc" ]
   deps = [
     "//zircon/kernel/hypervisor:headers",
     "//zircon/kernel/lib/unittest",
   ]
+}
+
+group("kernel-tests") {
+  testonly = true
+  deps = [ ":tests" ]
 }

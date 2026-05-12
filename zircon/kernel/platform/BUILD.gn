@@ -15,14 +15,12 @@ source_set("platform") {
     "efi.cc",
     "efi_bootbyte.cc",
     "efi_crashlog.cc",
-    "efi_test.cc",
     "halt_helper.cc",
     "mapped_crashlog.cc",
     "mexec.cc",
     "power.cc",
   ]
   deps = [
-    ":tests",
     "//sdk/lib/zbi-format",
     "//src/lib/zbitl",
     "//zircon/kernel/dev/interrupt",
@@ -41,7 +39,6 @@ source_set("platform") {
     "//zircon/kernel/lib/page",
     "//zircon/kernel/lib/persistent-debuglog",
     "//zircon/kernel/lib/root_resource_filter",
-    "//zircon/kernel/lib/unittest",
     "//zircon/kernel/phys:boot-constants",
     "//zircon/kernel/phys:handoff",
     "//zircon/kernel/phys/lib/memalloc",
@@ -59,7 +56,26 @@ library_headers("headers") {
 }
 
 source_set("tests") {
-  # TODO: testonly = true
-  sources = [ "suspend_cpu_tests.cc" ]
-  deps = [ "//zircon/kernel/lib/unittest" ]
+  testonly = true
+  sources = [
+    "efi_test.cc",
+    "suspend_cpu_tests.cc",
+  ]
+  deps = [
+    ":platform",
+    "//zircon/kernel/lib/efi",
+    "//zircon/kernel/lib/unittest",
+  ]
+}
+
+group("kernel-tests") {
+  testonly = true
+  deps = [ ":tests" ]
+  if (current_cpu == "arm64") {
+    deps += [ "generic-arm:kernel-tests" ]
+  } else if (current_cpu == "riscv64") {
+    deps += [ "generic-riscv64:kernel-tests" ]
+  } else if (current_cpu == "x64") {
+    deps += [ "pc:kernel-tests" ]
+  }
 }

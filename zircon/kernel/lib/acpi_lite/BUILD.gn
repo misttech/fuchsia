@@ -58,7 +58,7 @@ library_headers("headers") {
 }
 
 source_set("kernel-tests") {
-  # TODO: testonly=true
+  testonly = true
   sources = [ "zircon_test.cc" ]
   deps = [
     ".",

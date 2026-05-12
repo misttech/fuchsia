@@ -64,7 +64,7 @@ group("boot_tests") {
 
 if (is_kernel) {
   source_set("kernel-tests") {
-    # TODO: testonly = true
+    testonly = true
     sources = [ "power-management-tests.cc" ]
     deps = [
       ":power-management",

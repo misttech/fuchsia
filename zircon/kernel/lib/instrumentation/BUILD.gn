@@ -44,7 +44,7 @@ group("boot_tests") {
 
 if (is_kernel) {
   group("kernel-tests") {
-    # TODO: testonly = true
+    testonly = true
     deps = [ "test:tests" ]
   }
 

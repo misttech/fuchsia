@@ -30,7 +30,7 @@ group("tests") {
 }
 
 source_set("kernel-tests") {
-  # TODO: testonly = true
+  testonly = true
   sources = [ "system-topology_test.cc" ]
   deps = [
     ".",

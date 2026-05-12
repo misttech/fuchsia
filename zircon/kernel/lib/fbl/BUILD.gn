@@ -42,7 +42,7 @@ group("tests") {
 }
 
 source_set("kernel-tests") {
-  #TODO: testonly = true
+  testonly = true
   visibility = [
     ":*",
     "//zircon/kernel/lib:kernel-tests",

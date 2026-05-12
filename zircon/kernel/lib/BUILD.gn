@@ -105,7 +105,7 @@ group("tests") {
 
 # This reaches unittest code for the kernel proper only, in the kernel toolchain.
 group("kernel-tests") {
-  # TODO: testonly = true
+  testonly = true
   deps = []
   foreach(lib, all_libs) {
     deps += [ "$lib:kernel-tests" ]

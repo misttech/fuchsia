@@ -28,7 +28,6 @@ source_set("pc") {
   ]
 
   deps = [
-    ":tests",
     "//sdk/lib/zbi-format",
     "//src/lib/zbitl",
     "//zircon/kernel/arch/x86:headers",
@@ -53,7 +52,6 @@ source_set("pc") {
     "//zircon/kernel/lib/pow2_range_allocator",
     "//zircon/kernel/lib/root_resource_filter",
     "//zircon/kernel/lib/topology",
-    "//zircon/kernel/lib/unittest",
     "//zircon/kernel/phys:handoff",
     "//zircon/kernel/phys/lib/memalloc:range",
     "//zircon/kernel/platform:headers",
@@ -86,7 +84,7 @@ library_headers("headers") {
 }
 
 source_set("tests") {
-  # TODO: testonly = true
+  testonly = true
   sources = [ "interrupts_test.cc" ]
   deps = [
     ":headers",
@@ -95,4 +93,9 @@ source_set("tests") {
     "//zircon/kernel/lib/pow2_range_allocator",
     "//zircon/kernel/lib/unittest",
   ]
+}
+
+group("kernel-tests") {
+  testonly = true
+  deps = [ ":tests" ]
 }

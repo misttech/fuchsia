@@ -41,3 +41,7 @@ source_set("generic-riscv64") {
 
   public_deps = [ "//zircon/system/ulib/affine" ]
 }
+
+group("kernel-tests") {
+  testonly = true
+}

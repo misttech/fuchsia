@@ -205,7 +205,7 @@ group("tests") {
 }
 
 group("kernel-tests") {
-  # TODO: testonly = true
+  testonly = true
 }
 
 group("phys-tests") {

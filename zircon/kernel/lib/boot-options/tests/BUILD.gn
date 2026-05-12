@@ -6,7 +6,7 @@
 
 if (is_kernel) {
   source_set("kernel-tests") {
-    # TODO(https://fxbug.dev/42145882): testonly = true
+    testonly = true
     sources = [ "kernel-tests.cc" ]
 
     deps = [

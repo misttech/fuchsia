@@ -34,7 +34,6 @@ source_set("kernel") {
   ]
 
   deps = [
-    ":tests",
     "//sdk/lib/fit",
     "//zircon/kernel/dev/interrupt",
     "//zircon/kernel/dev/pdev/hw_watchdog",
@@ -80,7 +79,7 @@ source_set("kernel") {
 }
 
 source_set("tests") {
-  # TODO: testonly = true
+  testonly = true
   sources = [
     "intensive_thread_test.cc",
     "mutex_tests.cc",
@@ -94,4 +93,9 @@ source_set("tests") {
     "//zircon/kernel/lib/unittest",
     "//zircon/system/ulib/zircon-internal",
   ]
+}
+
+group("kernel-tests") {
+  testonly = true
+  deps = [ ":tests" ]
 }

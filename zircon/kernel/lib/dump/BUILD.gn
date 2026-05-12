@@ -14,7 +14,6 @@ library_headers("dump_headers") {
 source_set("dump") {
   sources = [ "dump.cc" ]
   public_deps = [ ":dump_headers" ]
-  deps = [ "tests" ]
 }
 
 group("tests") {
@@ -22,7 +21,8 @@ group("tests") {
 }
 
 group("kernel-tests") {
-  # TODO: testonly = true
+  testonly = true
+  deps = [ "tests" ]
 }
 
 group("phys-tests") {

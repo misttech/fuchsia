@@ -29,3 +29,8 @@ source_set("hypervisor") {
     "//zircon/system/ulib/affine",
   ]
 }
+
+group("kernel-tests") {
+  testonly = true
+  deps = []
+}

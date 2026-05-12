@@ -5,7 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 source_set("tests") {
-  # TODO: testonly = true
+  testonly = true
   sources = [ "object_cache_tests.cc" ]
   deps = [
     "//zircon/kernel/lib/object_cache:headers",

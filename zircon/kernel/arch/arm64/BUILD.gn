@@ -102,7 +102,6 @@ if (toolchain_environment == "kernel.phys" ||
       "uspace_entry.S",
     ]
     deps = [
-      ":tests",
       "user-copy",
       "//sdk/lib/fit",
       "//zircon/kernel/dev/coresight",
@@ -148,6 +147,7 @@ if (toolchain_environment == "kernel.phys" ||
   }
 
   source_set("tests") {
+    testonly = true
     sources = [ "cache_test.cc" ]
     deps = [
       "//zircon/kernel/lib/arch",
@@ -155,5 +155,10 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/kernel/lib/unittest",
       "//zircon/kernel/vm",
     ]
+  }
+
+  group("kernel-tests") {
+    testonly = true
+    deps = [ ":tests" ]
   }
 }

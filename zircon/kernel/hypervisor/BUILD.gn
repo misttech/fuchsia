@@ -13,7 +13,6 @@ source_set("hypervisor") {
   sources = [
     "aspace.cc",
     "cpu.cc",
-    "hypervisor_unittest.cc",
     "ktrace.cc",
     "trap_map.cc",
   ]
@@ -23,7 +22,6 @@ source_set("hypervisor") {
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/ktrace",
     "//zircon/kernel/lib/page",
-    "//zircon/kernel/lib/unittest",
     "//zircon/system/ulib/bitmap",
   ]
 }
@@ -42,5 +40,22 @@ library_headers("headers") {
 
     # <hypervisor/page.h> has #include <lib/page/size.h>
     "//zircon/kernel/lib/page:headers",
+  ]
+}
+
+source_set("tests") {
+  testonly = true
+  sources = [ "hypervisor_unittest.cc" ]
+  deps = [
+    ":hypervisor",
+    "//zircon/kernel/lib/unittest",
+  ]
+}
+
+group("kernel-tests") {
+  testonly = true
+  deps = [
+    ":tests",
+    "//zircon/kernel/arch/$zircon_cpu/hypervisor:kernel-tests",
   ]
 }

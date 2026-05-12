@@ -72,7 +72,7 @@ group("tests") {
 }
 
 source_set("kernel-tests") {
-  # TODO: testonly = true
+  testonly = true
   sources = [
     "global_prng_unittest.cc",
     "prng_unittest.cc",

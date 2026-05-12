@@ -159,6 +159,9 @@ template("kernel_switchset") {
         # <arch/*/hypervisor.h> has #include <lib/id_allocator.h>.
         "//zircon/kernel/lib/id_allocator:headers.config",
 
+        # <platform/efi.h> as #include <lib/instrumentation/asan.h>
+        "//zircon/kernel/lib/instrumentation:headers.config",
+
         # Everywhere has #include <lib/fit/result.h>
         # Everywhere has #include <lib/zx/result.h>
         "//zircon/system/ulib/zx:headers.config",

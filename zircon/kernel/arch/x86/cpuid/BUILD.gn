@@ -18,15 +18,17 @@ static_library("cpuid") {
   public_deps = [ ":headers" ]
 
   sources = [ "cpuid.cc" ]
-  deps = [
-    ":test",
-    "//zircon/system/ulib/fbl",
-  ]
+  deps = [ "//zircon/system/ulib/fbl" ]
 }
 
 source_set("test") {
-  # TODO(https://fxbug.dev/42145882): testonly = true
+  testonly = true
   sources = [ "cpuid_test.cc" ]
   deps = [ "//zircon/kernel/lib/unittest" ]
   public_deps = [ ":headers" ]
+}
+
+group("kernel-tests") {
+  testonly = true
+  deps = [ ":test" ]
 }

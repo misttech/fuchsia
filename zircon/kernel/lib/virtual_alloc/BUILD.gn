@@ -39,8 +39,6 @@ source_set("virtual_alloc") {
       "HOST_PAGE_SIZE_SHIFT=$virtual_alloc_host_size_shift",
     ]
   } else if (is_kernel) {
-    deps += [ "tests" ]
-
     # Crypto headers are needed as a transitive dependency on being able to include vm_aspace.h
     public_deps += [ "//zircon/kernel/lib/crypto:headers" ]
   }
@@ -51,7 +49,8 @@ group("tests") {
 }
 
 group("kernel-tests") {
-  # TODO: testonly = true
+  testonly = true
+  deps = [ "tests" ]
 }
 
 group("phys-tests") {

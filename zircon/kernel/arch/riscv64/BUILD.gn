@@ -119,4 +119,8 @@ if (toolchain_base_environment == "kernel") {
       "//zircon/system/ulib/pretty",
     ]
   }
+
+  group("kernel-tests") {
+    testonly = true
+  }
 }

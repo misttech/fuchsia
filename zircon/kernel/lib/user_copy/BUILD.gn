@@ -29,7 +29,7 @@ group("tests") {
 }
 
 source_set("kernel-tests") {
-  #TODO: testonly = true
+  testonly = true
 
   sources = [ "user_copy_tests.cc" ]
   deps = [

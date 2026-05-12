@@ -56,3 +56,7 @@ source_set("generic-arm") {
     "//zircon/system/ulib/uart",
   ]
 }
+
+group("kernel-tests") {
+  testonly = true
+}
