@@ -9,7 +9,7 @@
 
 #include "src/lib/fxl/command_line.h"
 
-const char* kGpuClassPath = "/dev/class/gpu";
+const char* kGpuClassPath = "/svc/fuchsia.gpu.magma.Service";
 
 int main(int argc, char** argv) {
   auto command_line = fxl::CommandLineFromArgcArgv(argc, argv);
@@ -20,7 +20,8 @@ int main(int argc, char** argv) {
   std::string gpu_device_value;
   if (!command_line.GetOptionValue(kGpuDeviceFlag, &gpu_device_value)) {
     for (auto& p : std::filesystem::directory_iterator(kGpuClassPath)) {
-      gpu_device_value = p.path();
+      gpu_device_value = static_cast<std::string>(p.path()) + "/device";
+      break;
     }
     if (gpu_device_value.empty()) {
       fprintf(stderr, "No magma device found\n");
