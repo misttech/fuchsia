@@ -14,7 +14,7 @@ From //zircon/system/ulib/acpica/acpica.gni:7
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:56
+From //build/images/args.gni:53
 
 ### add_qemu_to_build_archives
 
@@ -23,7 +23,7 @@ archives.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:62
+From //build/images/args.gni:59
 
 ### additional_bazel_sdk_labels
 
@@ -44,7 +44,7 @@ with specific boards, due to driver and hardware challenges.
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:68
+From //build/images/args.gni:65
 
 ### additional_default_targets
 
@@ -106,7 +106,7 @@ Build boot images that prefer Zedboot over local boot (only for EFI).
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:77
+From //build/images/args.gni:74
 
 ### amlogic_decoder_firmware_path
 
@@ -164,7 +164,7 @@ suitable for flashing through fastboot for eMMC devices.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:85
+From //build/images/args.gni:82
 
 ### assembly_generate_fvm_nand
 
@@ -176,7 +176,7 @@ room to initialize on boot.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:92
+From //build/images/args.gni:89
 
 ### assembly_partitions_configs
 
@@ -281,7 +281,7 @@ From //boards/arm64.gni:25
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:140
+From //build/images/args.gni:128
 
 **Current value for `target_cpu = "riscv64"`:** `"riscv64"`
 
@@ -289,7 +289,7 @@ From //boards/riscv64.gni:32
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:140
+From //build/images/args.gni:128
 
 **Current value for `target_cpu = "x64"`:** `"x64"`
 
@@ -297,7 +297,7 @@ From //boards/x64.gni:28
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:140
+From //build/images/args.gni:128
 
 ### bazel_product_bundle_full
 
@@ -326,7 +326,7 @@ The actual bazel_product_bundle used for Bazel assembly is:
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:137
+From //build/images/args.gni:125
 
 ### bazel_product_bundle_prefix
 
@@ -336,7 +336,7 @@ From //products/core.gni:26
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:139
+From //build/images/args.gni:127
 
 **Current value for `target_cpu = "riscv64"`:** `"//products/minimal:product_bundle"`
 
@@ -344,7 +344,7 @@ From //products/minimal.gni:33
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:139
+From //build/images/args.gni:127
 
 **Current value for `target_cpu = "x64"`:** `"//products/core:product_bundle"`
 
@@ -352,13 +352,13 @@ From //products/core.gni:26
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:139
+From //build/images/args.gni:127
 
 ### bazel_product_bundle_root
 
 **Current value (from the default):** `"//"`
 
-From //build/images/args.gni:138
+From //build/images/args.gni:126
 
 ### bazel_rbe_download_outputs
 
@@ -805,7 +805,7 @@ This is primarily meant to be used by the clang canary builders.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:37
+From //build/images/args.gni:34
 
 ### chromium_build_dir
 
@@ -1024,12 +1024,12 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -1698,7 +1698,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/x86_64-unknown-fuchsia/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -2316,7 +2316,7 @@ This arg is for local developer only, products should not set this arg.
 
 **Current value (from the default):** `1`
 
-From //build/images/args.gni:74
+From //build/images/args.gni:71
 
 ### deny_warnings
 
@@ -3852,7 +3852,7 @@ The netboot zbi has been deprecated.  This GN arg is now used to generate a warn
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:31
+From //build/images/args.gni:175
 
 ### enable_netstack2_tracing
 
@@ -4320,7 +4320,7 @@ useful for including verification and other Bazel assembly specific targets.
 
 **Current value (from the default):** `[]`
 
-From //build/images/args.gni:144
+From //build/images/args.gni:132
 
 ### extra_bazel_build_action_labels
 
@@ -4363,7 +4363,7 @@ From //build/config/BUILDCONFIG.gn:537
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:57
+From //build/images/args.gni:54
 
 ### fat_lto_objects
 
@@ -4485,7 +4485,7 @@ From //zircon/kernel/params.gni:59
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:54
+From //build/images/args.gni:51
 
 ### fxfs_blob
 
@@ -4501,7 +4501,7 @@ From //src/storage/fshost/generated_fshost_config.gni:17
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:55
+From //build/images/args.gni:52
 
 ### gcc_tool_dir
 
@@ -5059,7 +5059,7 @@ Include an account partition in the FVM image if set to true.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:80
+From //build/images/args.gni:77
 
 ### include_clippy
 
@@ -5162,7 +5162,7 @@ From //build/config/BUILDCONFIG.gn:29
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:185
+From //build/images/args.gni:169
 
 ### is_perfetto_build_generator
 
@@ -5665,7 +5665,7 @@ build is not desired.
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:148
+From //build/images/args.gni:136
 
 ### max_log_disk_usage
 
@@ -6526,7 +6526,7 @@ From //build/config/profile/config.gni:45
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:58
+From //build/images/args.gni:55
 
 ### prebuilt_dart_sdk
 
@@ -8559,20 +8559,6 @@ provided value for 'board_configuration_label'
 
 From //build/board.gni:46
 
-### recovery_label
-
-Allows a product to specify the recovery image used in the zircon_r slot.
-Default recovery image is zedboot. Overriding this value will keep zedboot
-in the build but will not include it as the default zirconr image.
-Recovery images can provide an update target by specifying the metadata item
-"update_target" in the format <target>=<path>. (Such as `update_target =
-[ "recovery=" + rebase_path(recovery_path, root_build_dir) ]`)
-Example value: "//build/images/recovery"
-
-**Current value (from the default):** `"//build/images/zedboot"`
-
-From //build/images/args.gni:101
-
 ### recovery_only
 
 This is really a build for a recovery image, and so the fuchsia image that
@@ -9743,7 +9729,7 @@ From //products/core.gni:27
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:113
+From //build/images/args.gni:101
 
 **Current value for `target_cpu = "riscv64"`:** `true`
 
@@ -9751,7 +9737,7 @@ From //products/minimal.gni:38
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:113
+From //build/images/args.gni:101
 
 **Current value for `target_cpu = "x64"`:** `true`
 
@@ -9759,7 +9745,7 @@ From //products/core.gni:27
 
 **Overridden from the default:** `false`
 
-From //build/images/args.gni:113
+From //build/images/args.gni:101
 
 ### use_blink
 
@@ -9938,19 +9924,19 @@ From //build/fuchsia/sdk.gni:8
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:51
+From //build/images/args.gni:48
 
 ### vbmeta_b_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:52
+From //build/images/args.gni:49
 
 ### vbmeta_r_partition
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:53
+From //build/images/args.gni:50
 
 ### verbose_image_assembly
 
@@ -9960,7 +9946,7 @@ is meant solely for developer debugging.
 
 **Current value (from the default):** `false`
 
-From //build/images/args.gni:106
+From //build/images/args.gni:94
 
 ### verify_depfile
 
@@ -10156,7 +10142,7 @@ doesn't require the FVM or SSH keys.
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:48
+From //build/images/args.gni:45
 
 ### zircon_asserts
 
@@ -10176,7 +10162,7 @@ From //build/config/fuchsia/zircon_asserts.gni:13
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:49
+From //build/images/args.gni:46
 
 ### zircon_kernel_disable_asserts
 
@@ -10192,7 +10178,7 @@ From //build/zircon/build_args.gni:9
 
 **Current value (from the default):** `""`
 
-From //build/images/args.gni:50
+From //build/images/args.gni:47
 
 ### zircon_toolchain
 
