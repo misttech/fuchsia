@@ -17,8 +17,7 @@ use crate::lib::light_sensor_handler::{
 use crate::lib::media_buttons_handler::MediaButtonsHandler;
 use crate::lib::modifier_handler::{ModifierHandler, ModifierMeaningHandler};
 use crate::lib::mouse_injector_handler::MouseInjectorHandler;
-use crate::lib::pointer_display_scale_handler::PointerDisplayScaleHandler;
-use crate::lib::pointer_sensor_scale_handler::PointerSensorScaleHandler;
+
 use crate::lib::text_settings_handler::TextSettingsHandler;
 use crate::lib::touch_injector_handler::TouchInjectorHandler;
 use crate::lib::{
@@ -362,34 +361,6 @@ async fn register_mouse_related_input_handlers(
         metrics_logger.clone(),
     );
 
-    // Add handler to scale pointer motion based on speed of sensor
-    // motion. This allows touchpads and mice to be easily used for
-    // both precise pointing, and quick motion across the width
-    // (or height) of the screen.
-    //
-    // This handler must come before the PointerMotionDisplayScaleHandler.
-    // Otherwise the display scale will be applied quadratically in some
-    // cases.
-    assembly =
-        add_pointer_sensor_scale_handler(assembly, input_handlers_node, metrics_logger.clone());
-
-    // Add handler to scale pointer motion on high-DPI displays.
-    //
-    // * This handler is added _after_ the click-drag handler, since the
-    //   motion denoising done by click drag handler is a property solely
-    //   of the trackpad, and not of the display.
-    //
-    // * This handler is added _before_ the mouse handler, since _all_
-    //   mouse events should be scaled.
-    let pointer_scale =
-        scene_manager.lock().await.get_display_metrics().physical_pixel_ratio().max(1.0);
-    assembly = add_pointer_display_scale_handler(
-        assembly,
-        pointer_scale,
-        input_handlers_node,
-        metrics_logger.clone(),
-    );
-
     // mouse injector handler is the last handler for mouse event handling, it sends out mouse
     // events to scenic. Please double check tracing events, when changing the handlers assembly
     // order.
@@ -608,29 +579,6 @@ async fn add_ime(
         assembly = assembly.add_handler(ime_handler);
     }
     assembly
-}
-
-fn add_pointer_display_scale_handler(
-    assembly: InputPipelineAssembly,
-    scale_factor: f32,
-    input_handlers_node: &inspect::Node,
-    metrics_logger: metrics::MetricsLogger,
-) -> InputPipelineAssembly {
-    match PointerDisplayScaleHandler::new(scale_factor, input_handlers_node, metrics_logger) {
-        Ok(handler) => assembly.add_handler(handler),
-        Err(e) => {
-            error!("Failed to install pointer scaler: {}", e);
-            assembly
-        }
-    }
-}
-
-fn add_pointer_sensor_scale_handler(
-    assembly: InputPipelineAssembly,
-    input_handlers_node: &inspect::Node,
-    metrics_logger: metrics::MetricsLogger,
-) -> InputPipelineAssembly {
-    assembly.add_handler(PointerSensorScaleHandler::new(input_handlers_node, metrics_logger))
 }
 
 fn add_touchpad_gestures_handler(

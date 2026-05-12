@@ -163,8 +163,6 @@ _input_pipeline = {
     "src/mouse_model_database/mod.rs",
     "src/mouse_model_database/xorg_conf_parser.rs",
     "src/observe_fake_events_input_handler.rs",
-    "src/pointer_display_scale_handler.rs",
-    "src/pointer_sensor_scale_handler.rs",
     "src/testing_utilities.rs",
     "src/text_settings_handler.rs",
     "src/touch_binding.rs",
