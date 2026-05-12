@@ -6,12 +6,14 @@ use anyhow::Context;
 use chrono::{Datelike, TimeZone, Timelike};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_hardware_rtc::{DeviceRequest, DeviceRequestStream};
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_metrics::MetricEvent;
 use fidl_fuchsia_metrics_test::{LogMethod, MetricEventLoggerQuerierProxy};
 use fidl_fuchsia_testing::{FakeClockControlProxy, FakeClockProxy};
 use fidl_fuchsia_time::{MaintenanceRequest, MaintenanceRequestStream};
 use fidl_fuchsia_time_external::{PushSourceMarker, Status, TimeSample};
 use fidl_test_time::{TimeSourceControlRequest, TimeSourceControlRequestStream};
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, ChildRef, LocalComponentHandles, RealmBuilder, RealmInstance, Ref,
@@ -26,8 +28,7 @@ use std::ops::Deref;
 use std::sync::{Arc, LazyLock};
 use time_metrics_registry::PROJECT_ID;
 use vfs::pseudo_directory;
-use zx::{self as zx, HandleBased, Rights};
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
+use zx::Rights;
 
 /// URL for timekeeper.
 const TIMEKEEPER_URL: &str = "#meta/timekeeper_for_integration.cm";

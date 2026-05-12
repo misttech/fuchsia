@@ -6,7 +6,7 @@
 
 use circuit::multi_stream::multi_stream_node_connection;
 use circuit::stream::stream;
-use fidl::HandleBased;
+use fidl::NullableHandle;
 use fuchsia_async::Task;
 use futures::prelude::*;
 use overnet_core::{NodeId, NodeIdGenerator, Router, log_errors};
@@ -146,15 +146,19 @@ impl Fixture {
         Fixture { dist_a_to_b, dist_b, dist_a_to_c, dist_c, test_name, _service_task: service_task }
     }
 
-    async fn distribute_handle<H: HandleBased>(&self, h: H, target: Target) -> H {
-        let h = h.into_handle();
+    async fn distribute_handle<H: Into<NullableHandle> + From<NullableHandle>>(
+        &self,
+        h: H,
+        target: Target,
+    ) -> H {
+        let h: NullableHandle = h.into();
         log::info!(test_name:% = self.test_name; "distribute_handle: make {:?} on {:?}", h, target);
         let (dist_local, dist_remote) = match target {
             Target::A => return H::from(h),
             Target::B => (&self.dist_a_to_b, &self.dist_b),
             Target::C => (&self.dist_a_to_c, &self.dist_c),
         };
-        assert!(dist_local.write(&[], &mut vec![h]) == Ok(()));
+        assert!(dist_local.write(&[], &mut vec![h.into()]) == Ok(()));
         let mut msg = fidl::MessageBufEtc::new();
         dist_remote.recv_etc_msg(&mut msg).await.unwrap();
         let (bytes, handles) = msg.split_mut();
@@ -162,7 +166,8 @@ impl Fixture {
         assert_eq!(handles.len(), 1);
         let h = std::mem::replace(handles, vec![]).into_iter().next().unwrap();
         log::info!(test_name:% = self.test_name; "distribute_handle: remote is {:?}", h);
-        return H::from(h.handle);
+        let handle: NullableHandle = h.handle.into();
+        return H::from(handle);
     }
 
     pub fn log(&mut self, msg: &str) {

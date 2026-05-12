@@ -33,9 +33,6 @@ use std::io::Read;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use syncio::{zxio_node_attr_has_t, zxio_node_attributes_t};
-use zx::{
-    HandleBased, {self as zx},
-};
 
 const REMOTE_BUNDLE_NODE_LRU_CAPACITY: usize = 1024;
 

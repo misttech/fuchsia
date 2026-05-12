@@ -21,7 +21,6 @@ use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use futures::FutureExt as _;
 use ramdevice_client::RamdiskClientBuilder;
 use vmo_backed_block_server::VmoBackedServer;
-use zx::HandleBased as _;
 
 const BLOCK_SIZE: u64 = 512;
 const NUM_BLOCKS: u64 = 128;

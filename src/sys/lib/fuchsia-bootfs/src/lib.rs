@@ -265,7 +265,6 @@ mod tests {
     use std::fs::File;
     use std::io::prelude::*;
     use std::sync::LazyLock;
-    use zx::HandleBased;
 
     static GOLDEN_DIR: &str = "/pkg/data/golden/";
     static BASIC_BOOTFS_UNCOMPRESSED_FILE: &str = "/pkg/data/basic.bootfs.uncompressed";

@@ -578,7 +578,6 @@ impl<'a> SupplyHelper<'a> {
 mod tests {
     use super::{Filesystem, Pager, PagerExtent};
 
-    use fidl::HandleBased;
     use std::sync::Arc;
     use std::time::Duration;
 

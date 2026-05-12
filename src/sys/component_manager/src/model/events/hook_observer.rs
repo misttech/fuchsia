@@ -15,7 +15,6 @@ use hooks::{Event, EventPayload, EventType, HasEventType, Hook, HooksRegistratio
 use moniker::{ExtendedMoniker, Moniker};
 use std::sync::{Arc, Weak};
 use vfs::WeakExecutionScope;
-use zx::HandleBased;
 
 /// A HookObserver will register itself to receive hooks (through which events are dispatched), and
 /// watch the stream of events. When it discovers an event that matches the scope described in the

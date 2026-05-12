@@ -5,6 +5,13 @@
 use crate::Container;
 use anyhow::{Context as _, Error};
 use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_element as felement;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_memory_attribution as fattribution;
+use fidl_fuchsia_posix as fposix;
+use fidl_fuchsia_starnix_binder as fbinder;
+use fidl_fuchsia_starnix_container as fstarcontainer;
 use fuchsia_async::{
     DurationExt, {self as fasync},
 };
@@ -33,12 +40,6 @@ use starnix_uapi::signals::UncheckedSignal;
 use starnix_uapi::{errno, error, uapi};
 use std::ffi::CString;
 use std::ops::DerefMut;
-use {
-    fidl_fuchsia_component_runner as frunner, fidl_fuchsia_element as felement,
-    fidl_fuchsia_io as fio, fidl_fuchsia_memory_attribution as fattribution,
-    fidl_fuchsia_posix as fposix, fidl_fuchsia_starnix_binder as fbinder,
-    fidl_fuchsia_starnix_container as fstarcontainer,
-};
 
 use super::start_component;
 
@@ -241,7 +242,7 @@ pub async fn serve_container_controller(
                     let _result = responder.send(fstarcontainer::ControllerGetJobHandleResponse {
                         job: Some(
                             fuchsia_runtime::job_default()
-                                .duplicate(zx::Rights::SAME_RIGHTS)
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
                                 .expect("Failed to dup handle"),
                         ),
                         ..Default::default()
@@ -584,9 +585,8 @@ pub async fn serve_lutex_controller(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::HandleBased;
+    use fidl_fuchsia_posix as fposix;
     use starnix_core::testing::*;
-    use {fidl_fuchsia_posix as fposix, zx};
 
     #[fuchsia::test]
     async fn lutex_controller_test() {

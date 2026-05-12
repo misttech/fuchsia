@@ -550,7 +550,6 @@ mod tests {
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_storage_block as fblock;
     use fuchsia_async as fasync;
-    use zx::HandleBased;
 
     struct MockInterface {
         request_sender: std::sync::mpsc::Sender<Request>,

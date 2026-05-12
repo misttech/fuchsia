@@ -49,7 +49,6 @@ use std::str::FromStr;
 use std::sync::{Arc, OnceLock, Weak};
 use strum::VariantArray as _;
 use zerocopy::{Immutable, IntoBytes};
-use zx::{self as zx, HandleBased as _};
 
 /// The version of the SELinux "status" file this implementation implements.
 const SELINUX_STATUS_VERSION: u32 = 1;

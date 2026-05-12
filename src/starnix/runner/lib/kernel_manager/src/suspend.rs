@@ -4,7 +4,7 @@
 
 use crate::Kernels;
 use anyhow::Error;
-use fidl::{HandleBased, Peered};
+use fidl::Peered;
 use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use fuchsia_inspect::{self as inspect, UintExponentialHistogramProperty, UintProperty};
 use fuchsia_sync::Mutex;

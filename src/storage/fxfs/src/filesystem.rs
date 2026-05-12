@@ -2379,7 +2379,6 @@ mod tests {
         use async_trait::async_trait;
         use fuchsia_async::TestExecutor;
         use futures::StreamExt;
-        use zx::HandleBased;
 
         TestExecutor::advance_to(fasync::MonotonicInstant::ZERO).await;
 

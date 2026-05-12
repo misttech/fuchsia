@@ -7,8 +7,8 @@
 #![allow(clippy::bad_bit_mask)] // TODO(https://fxbug.dev/42080521): stop using bitflags for ResourceKind
 
 use crate::{
-    AsHandleRef, Event, HandleBased, HandleRef, MonotonicDuration, NullableHandle, ObjectQuery,
-    Status, Topic, ok,
+    AsHandleRef, Event, HandleRef, MonotonicDuration, NullableHandle, ObjectQuery, Status, Topic,
+    ok,
 };
 use bitflags::bitflags;
 use zx_sys::{self as sys, ZX_MAX_NAME_LEN, zx_duration_mono_t, zx_duration_t};

@@ -17,8 +17,8 @@ pub use fuchsia_async::{Channel as AsyncChannel, OnSignalsRef, Socket as AsyncSo
 pub mod fuchsia_handles {
 
     pub use zx::{
-        AsHandleRef, HandleBased, HandleDisposition, HandleInfo, HandleOp, HandleRef, Koid,
-        MessageBufEtc, NullableHandle, ObjectType, Peered, Rights, Signals, Status,
+        AsHandleRef, HandleDisposition, HandleInfo, HandleOp, HandleRef, Koid, MessageBufEtc,
+        NullableHandle, ObjectType, Peered, Rights, Signals, Status,
     };
 
     pub use fuchsia_async::invoke_for_handle_types;
@@ -45,7 +45,6 @@ pub mod fuchsia_handles {
                     x.0
                 }
             }
-            impl zx::HandleBased for $x {}
         };
         ($x:tt, $docname:expr, $name:ident, $value:expr, $availability:tt) => {
             pub use zx::$x;
@@ -61,9 +60,9 @@ pub mod fuchsia_handles {
 #[cfg(not(target_os = "fuchsia"))]
 pub mod non_fuchsia_handles {
     pub use fuchsia_async::emulated_handle::{
-        AsHandleRef, EmulatedHandleRef, Handle, Handle as NullableHandle, HandleBased,
-        HandleDisposition, HandleInfo, HandleOp, HandleRef, Koid, MessageBufEtc, ObjectType,
-        Peered, Rights, Signals, SocketOpts,
+        AsHandleRef, EmulatedHandleRef, Handle, Handle as NullableHandle, HandleDisposition,
+        HandleInfo, HandleOp, HandleRef, Koid, MessageBufEtc, ObjectType, Peered, Rights, Signals,
+        SocketOpts,
     };
     pub use zx_status::Status;
 
@@ -85,7 +84,6 @@ pub mod non_fuchsia_handles {
                     $crate::handle::NullableHandle::invalid()
                 }
             }
-            impl HandleBased for $name {}
             impl AsHandleRef for $name {
                 fn as_handle_ref(&self) -> HandleRef<'_> {
                     HandleRef::invalid()
@@ -134,7 +132,7 @@ pub fn convert_handle_dispositions_to_infos(
                 match hd.take_op() {
                     HandleOp::Move(h) if hd.rights == Rights::SAME_RIGHTS => h,
                     HandleOp::Move(h) => {
-                        h.replace(hd.rights).map_err(crate::Error::HandleReplace)?
+                        h.replace_handle(hd.rights).map_err(crate::Error::HandleReplace)?
                     }
                     HandleOp::Duplicate(_) => panic!("unexpected HandleOp::Duplicate"),
                 },

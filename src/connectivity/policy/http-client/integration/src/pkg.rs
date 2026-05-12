@@ -4,12 +4,13 @@
 
 use component_events::events::*;
 use component_events::matcher::*;
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_pkg_http as fpkg_http;
+use fuchsia_async as fasync;
 use futures::future::FutureExt as _;
 use futures::select;
 use futures::stream::{StreamExt as _, TryStreamExt as _};
 use std::net::SocketAddr;
-use zx::HandleBased as _;
-use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_pkg_http as fpkg_http, fuchsia_async as fasync};
 
 async fn serve_blob_writer_request_stream(mut stream: ffxfs::BlobWriterRequestStream) -> Vec<u8> {
     let (vmo, size) = match stream.next().await.unwrap().unwrap() {

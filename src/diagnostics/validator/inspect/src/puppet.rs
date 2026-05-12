@@ -6,10 +6,11 @@ use super::PUPPET_MONIKER;
 use super::data::{self, Data, LazyNode};
 use super::metrics::Metrics;
 use anyhow::{Error, format_err};
+use fidl_diagnostics_validate as validate;
+use fidl_fuchsia_inspect as fidl_inspect;
 use fuchsia_component::client as fclient;
 use serde::Serialize;
 use zx::{self as zx, Vmo};
-use {fidl_diagnostics_validate as validate, fidl_fuchsia_inspect as fidl_inspect};
 
 pub const VMO_SIZE: u64 = 4096;
 
@@ -212,7 +213,6 @@ pub(crate) mod tests {
     use futures::prelude::*;
     use log::info;
     use std::collections::HashMap;
-    use zx::HandleBased;
 
     #[fuchsia::test]
     async fn test_fidl_loopback() -> Result<(), Error> {

@@ -8,12 +8,13 @@
 //! Wrapper types for [`fidl_fuchsia_pkg::PackageCacheProxy`] and its related protocols.
 
 use crate::types::{BlobId, BlobInfo};
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_pkg as fpkg;
 use fuchsia_pkg::PackageDirectory;
 use futures::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use zx_status::Status;
-use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_pkg as fpkg};
 
 /// An open connection to a provider of the `fuchsia.pkg.PackageCache`.
 #[derive(Debug, Clone)]
@@ -724,7 +725,6 @@ mod tests {
         PackageCacheGetResponder, PackageCacheMarker, PackageCacheRequest,
         PackageCacheRequestStream,
     };
-    use zx::HandleBased as _;
 
     struct MockPackageCache {
         stream: PackageCacheRequestStream,

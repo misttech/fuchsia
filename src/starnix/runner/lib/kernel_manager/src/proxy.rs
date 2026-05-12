@@ -229,7 +229,6 @@ fn trace_instant(event: &'static str, name: &str) {
 #[cfg(test)]
 mod test {
     use super::{ChannelProxy, fasync, start_proxy};
-    use fidl::HandleBased;
     use std::cell::RefCell;
     use std::mem::MaybeUninit;
     use std::rc::Rc;

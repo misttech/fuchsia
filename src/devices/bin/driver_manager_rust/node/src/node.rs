@@ -14,6 +14,10 @@ use driver_manager_types::{
     Collection, NodeOffer, OfferTransport, ShutdownState, StartRequestReceiver,
 };
 use fidl_fuchsia_component_sandbox::AggregateSource;
+use fidl_fuchsia_device_fs as fdevfs;
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_host as fdh;
 use flyweights::FlyStr;
 use fuchsia_async::{self as fasync};
 use futures::channel::oneshot;
@@ -21,10 +25,6 @@ use log::{debug, warn};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
-use {
-    fidl_fuchsia_device_fs as fdevfs, fidl_fuchsia_driver_development as fdd,
-    fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_host as fdh,
-};
 
 #[derive(Clone)]
 pub enum NodePropertyValue {
@@ -980,7 +980,10 @@ impl Node {
             .expect("handles")
             .iter()
             .map(|h| fidl_fuchsia_process::HandleInfo {
-                handle: h.handle.duplicate(zx::Rights::SAME_RIGHTS).expect("duplicate handle"),
+                handle: h
+                    .handle
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .expect("duplicate handle"),
                 id: h.id,
             })
             .collect::<Vec<_>>()

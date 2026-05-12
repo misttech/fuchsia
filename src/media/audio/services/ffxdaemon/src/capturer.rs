@@ -7,16 +7,15 @@ use crate::error::ControllerError;
 use crate::wav_socket::WavSocket;
 use anyhow::{Context, Error, anyhow};
 use fidl::endpoints::{ServerEnd, create_proxy};
+use fidl_fuchsia_audio_controller as fac;
+use fidl_fuchsia_media as fmedia;
+use fidl_fuchsia_media_audio as fmedia_audio;
+use fidl_fuchsia_ultrasound as fultrasound;
 use fuchsia_audio::{Format, stop_listener};
 use fuchsia_component::client::connect_to_protocol;
 use futures::{AsyncWriteExt, TryStreamExt};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use zx::{self as zx, HandleBased};
-use {
-    fidl_fuchsia_audio_controller as fac, fidl_fuchsia_media as fmedia,
-    fidl_fuchsia_media_audio as fmedia_audio, fidl_fuchsia_ultrasound as fultrasound,
-};
 
 pub struct Capturer {
     proxy: fmedia::AudioCapturerProxy,

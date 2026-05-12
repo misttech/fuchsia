@@ -1118,7 +1118,6 @@ mod tests {
     use super::*;
     use crate::BinderFs;
     use crate::tests::tests::run_process_accessor;
-    use fidl::HandleBased;
     use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
     use rand::distr::{Alphanumeric, SampleString};
     use starnix_core::mm::MemoryAccessor;
@@ -1185,7 +1184,7 @@ mod tests {
                         fs,
                         |locked, pid, process_group| {
                             let process = fuchsia_runtime::process_self()
-                                .duplicate(zx::Rights::SAME_RIGHTS)
+                                .duplicate_handle(zx::Rights::SAME_RIGHTS)
                                 .expect("process");
                             let thread_group = ThreadGroup::for_test(
                                 locked,
@@ -1301,7 +1300,7 @@ mod tests {
             let (binder, binder_server_end) = create_proxy::<fbinder::BinderMarker>();
 
             let process = fuchsia_runtime::process_self()
-                .duplicate(zx::Rights::SAME_RIGHTS)
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
                 .expect("process");
             let dev_binder =
                 fbinder::DevBinderSynchronousProxy::new(dev_binder_client_end.into_channel());

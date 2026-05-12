@@ -188,7 +188,7 @@ where
         unsafe { zx::Unowned::<'_, zx::Thread>::from_raw_handle(thrd_get_zx_handle(pthread)) };
     *task_thread_guard = Some(Arc::new(
         raw_thread_handle
-            .duplicate(zx::Rights::SAME_RIGHTS)
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
             .expect("must have RIGHT_DUPLICATE on handle we created"),
     ));
     // Now that the task has a thread handle, update the thread's role using the policy configured.

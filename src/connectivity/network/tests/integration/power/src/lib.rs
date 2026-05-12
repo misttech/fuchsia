@@ -10,7 +10,6 @@ use std::marker::PhantomData;
 use std::pin::pin;
 
 use assert_matches::assert_matches;
-use fidl::HandleBased as _;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, Proxy as _, ServiceMarker as _};
 use fidl_fuchsia_hardware_network as fhardware_network;
 use fidl_fuchsia_hardware_power_suspend as fhsuspend;

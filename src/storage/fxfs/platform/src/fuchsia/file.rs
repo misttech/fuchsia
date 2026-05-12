@@ -34,7 +34,7 @@ use vfs::execution_scope::ExecutionScope;
 use vfs::file::{File, FileOptions, GetVmo, StreamIoConnection, SyncMode};
 use vfs::name::Name;
 use vfs::{ObjectRequestRef, ProtocolsExt, attributes};
-use zx::{HandleBased, Status};
+use zx::Status;
 
 /// In many operating systems, it is possible to delete a file with open handles. In this case the
 /// file will continue to use space on disk but will not openable and the storage it uses will be

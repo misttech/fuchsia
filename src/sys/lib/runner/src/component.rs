@@ -21,7 +21,7 @@ use log::*;
 use namespace::Namespace;
 use std::sync::LazyLock;
 use thiserror::Error;
-use zx::{self as zx, HandleBased, Status};
+use zx::Status;
 
 pub static PKG_PATH: LazyLock<NamespacePath> = LazyLock::new(|| "/pkg".parse().unwrap());
 
@@ -471,7 +471,6 @@ mod tests {
     use namespace::{Namespace, NamespaceError};
     use std::pin::Pin;
     use std::task::Poll;
-    use zx::{self as zx, HandleBased};
 
     #[test]
     fn test_truncate_str() {

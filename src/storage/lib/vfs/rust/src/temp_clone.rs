@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::HandleBased;
 use fuchsia_sync::{Condvar, Mutex};
 use std::cell::UnsafeCell;
 use std::collections::hash_map::Entry;
@@ -23,16 +22,16 @@ use zx::sys::zx_handle_t;
 /// there's no performance overhead to use them just as you would without the wrapper, except for a
 /// small overhead when they are dropped. The wrapper ensures that the handle is only dropped when
 /// there are no references.
-pub struct TempClonable<T: HandleBased>(ManuallyDrop<T>);
+pub struct TempClonable<T: fidl::AsHandleRef>(ManuallyDrop<T>);
 
-impl<T: HandleBased> TempClonable<T> {
+impl<T: fidl::AsHandleRef> TempClonable<T> {
     /// Returns a new handle that can be temporarily cloned.
     pub fn new(handle: T) -> Self {
         Self(ManuallyDrop::new(handle))
     }
 }
 
-impl<T: HandleBased> Deref for TempClonable<T> {
+impl<T: fidl::AsHandleRef> Deref for TempClonable<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -40,7 +39,7 @@ impl<T: HandleBased> Deref for TempClonable<T> {
     }
 }
 
-impl<T: HandleBased> TempClonable<T> {
+impl<T: fidl::AsHandleRef> TempClonable<T> {
     /// Creates a temporary clone of the handle. The clone should only exist temporarily.
     ///
     /// # Panics
@@ -77,7 +76,7 @@ impl<T: HandleBased> TempClonable<T> {
     }
 }
 
-impl<T: HandleBased> Drop for TempClonable<T> {
+impl<T: fidl::AsHandleRef> Drop for TempClonable<T> {
     fn drop(&mut self) {
         if let Some(handle) =
             clones().lock().remove(&self.0.as_handle_ref().raw_handle()).and_then(|c| c.upgrade())

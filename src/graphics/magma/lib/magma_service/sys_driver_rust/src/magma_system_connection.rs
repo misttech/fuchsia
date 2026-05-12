@@ -12,8 +12,6 @@ use std::sync::Arc;
 
 use std::collections::HashMap;
 
-use zx::{self, HandleBased};
-
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum MagmaObjectType {
     Buffer,
@@ -513,8 +511,6 @@ mod tests {
             tx,
         )
     }
-
-    use zx::HandleBased;
 
     #[fuchsia::test]
     fn execute_command_buffers_normal() {

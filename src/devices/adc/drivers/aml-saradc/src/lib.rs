@@ -203,7 +203,7 @@ impl<K: zx::InterruptKind> AmlSaradcDevice<K> {
         }
 
         // Wait for interrupt
-        let irq_clone = self.irq.duplicate(zx::Rights::SAME_RIGHTS)?;
+        let irq_clone = self.irq.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let mut interrupt = std::pin::pin!(fasync::OnInterrupt::new(irq_clone));
         let _ = interrupt.next().await;
 
@@ -238,9 +238,8 @@ impl adcimpl::DeviceLocalServerHandler for DeviceServer {
 
     async fn get_sample(&mut self, request: Request<GetSample>, responder: Responder<GetSample>) {
         let channel_id = request.payload().channel_id;
-        if let Err(e) = self
-            .tx
-            .unbounded_send(AdcRequest::GetSample { channel: channel_id as u8, responder })
+        if let Err(e) =
+            self.tx.unbounded_send(AdcRequest::GetSample { channel: channel_id as u8, responder })
         {
             error!("Failed to send message to actor: {e:?}");
             let req = e.into_inner();
@@ -399,7 +398,7 @@ mod tests {
 
         let irq: zx::Interrupt<zx::VirtualInterruptKind, zx::BootTimeline> =
             zx::Interrupt::create_virtual().unwrap();
-        let irq_clone = irq.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+        let irq_clone = irq.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
 
         let mut device = AmlSaradcDevice {
             adc_regs: AdcRegsBlock::new(adc_mmio),

@@ -4,8 +4,8 @@
 
 //! Extensions for fuchsia.net.interfaces.admin.
 
+use fidl::Rights;
 use fidl::endpoints::ProtocolMarker as _;
-use fidl::{HandleBased, Rights};
 use fidl_fuchsia_net_interfaces as fnet_interfaces;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_resources as fnet_resources;

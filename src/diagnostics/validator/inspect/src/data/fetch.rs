@@ -99,7 +99,6 @@ mod tests {
     use futures::{TryFutureExt, TryStreamExt};
     use log::{error, warn};
     use std::sync::Arc;
-    use zx::{self as zx, HandleBased};
 
     const MAX_TREE_NAME_LIST_SIZE: usize = 1;
     const SHARED_VMO: &str = "SHARED";

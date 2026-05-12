@@ -270,8 +270,6 @@ mod tests {
     use super::*;
     use crate::format::CHUNK_HEADER_SIZE;
     use crate::reader::SparseReader;
-    #[cfg(target_os = "fuchsia")]
-    use zx::HandleBased as _;
 
     #[test]
     fn test_chunked_range() {

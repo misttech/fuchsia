@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::HandleBased;
 use fuchsia_inspect::{InspectType, Inspector};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_sync::Mutex;
@@ -124,7 +123,7 @@ impl IfacesTree {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{assert_data_tree, TreeAssertion};
+    use diagnostics_assertions::{TreeAssertion, assert_data_tree};
 
     fn create_inspect_vmo() -> fidl::Vmo {
         let inspector = Inspector::new(Default::default());

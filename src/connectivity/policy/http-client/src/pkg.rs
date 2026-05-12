@@ -3,13 +3,15 @@
 // found in the LICENSE file.
 
 use anyhow::anyhow;
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_pkg_http as fpkg_http;
+use fuchsia_async as fasync;
+use fuchsia_hyper as fhyper;
+use fuchsia_inspect as finspect;
 use fuchsia_inspect::Property as _;
+use fuchsia_trace as ftrace;
 use futures::stream::TryStreamExt as _;
 use log::warn;
-use {
-    fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_pkg_http as fpkg_http, fuchsia_async as fasync,
-    fuchsia_hyper as fhyper, fuchsia_inspect as finspect, fuchsia_trace as ftrace,
-};
 
 const TCP_KEEPALIVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
@@ -232,7 +234,6 @@ impl DownloadBlobError {
 mod tests {
     use super::*;
     use futures::stream::StreamExt as _;
-    use zx::HandleBased as _;
 
     // Takes an async fn that maps requests to responses and returns an http server and the address
     // the server is listening on.

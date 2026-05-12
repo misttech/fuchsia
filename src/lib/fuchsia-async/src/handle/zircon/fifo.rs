@@ -277,7 +277,6 @@ mod tests {
     use futures::future::try_join;
     use futures::prelude::*;
     use zerocopy::{Immutable, KnownLayout};
-    use zx::prelude::*;
 
     #[derive(
         Copy, Clone, Debug, PartialEq, Eq, Default, IntoBytes, KnownLayout, FromBytes, Immutable,

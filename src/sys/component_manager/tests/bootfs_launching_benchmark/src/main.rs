@@ -3,6 +3,10 @@
 // found in the LICENSE file.
 
 use fidl::endpoints::{self, DiscoverableProtocolMarker};
+use fidl_fidl_examples_routing_echo as fecho;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_process as fprocess;
+use fuchsia_async as fasync;
 use fuchsia_component::runtime;
 use fuchsia_component_test::ScopedInstance;
 use fuchsia_criterion::{FuchsiaCriterion, criterion};
@@ -12,11 +16,6 @@ use futures::{StreamExt, TryStreamExt};
 use std::fs::File;
 use std::io::Read;
 use std::time::Duration;
-use zx::{self as zx, HandleBased};
-use {
-    fidl_fidl_examples_routing_echo as fecho, fidl_fuchsia_component as fcomponent,
-    fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
-};
 
 const ZBI_PATH: &str = "/pkg/data/tests/uncompressed_bootfs";
 

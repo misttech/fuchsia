@@ -15,7 +15,6 @@ use futures::future::{FusedFuture, OptionFuture};
 use futures::{FutureExt as _, TryStreamExt as _};
 use log::{debug, info, warn};
 use netstack3_core::sync::Mutex;
-use zx::HandleBased;
 
 use crate::bindings::util::{DataNotifier, DataWatcher, ResultExt as _, ScopeExt as _};
 

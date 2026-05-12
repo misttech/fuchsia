@@ -18,7 +18,6 @@ rustc_library("memory_pinning") {
   deps = [
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_rust",
     "//sdk/rust/zx",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
     "//src/starnix/lib/starnix_logging",
@@ -26,6 +25,7 @@ rustc_library("memory_pinning") {
   ]
 
   test_deps = [
+    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:futures",
   ]

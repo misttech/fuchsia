@@ -4,7 +4,7 @@
 
 use anyhow::Error;
 use fidl_fuchsia_ui_views::{ViewRef, ViewRefControl};
-use zx::{EventPair, HandleBased, Rights, Status};
+use zx::{EventPair, Rights, Status};
 
 pub struct ViewRefPair {
     pub control_ref: ViewRefControl,
@@ -18,10 +18,10 @@ impl ViewRefPair {
         // Remove duplication from the control ref. This is the same
         // as `ZX_DEFAULT_EVENTPAIR_RIGHTS & (~ZX_RIGHT_DUPLICATE)`
         let new_rights = (Rights::BASIC | Rights::SIGNAL | Rights::SIGNAL_PEER) - Rights::DUPLICATE;
-        let control_ref = raw_control_ref.into_handle().replace(new_rights)?;
+        let control_ref = raw_control_ref.into_handle().replace_handle(new_rights)?;
 
         // Remove signaling from the view_ref
-        let view_ref = raw_view_ref.into_handle().replace(Rights::BASIC)?;
+        let view_ref = raw_view_ref.into_handle().replace_handle(Rights::BASIC)?;
 
         Ok(ViewRefPair {
             control_ref: ViewRefControl { reference: control_ref.into() },
@@ -41,7 +41,7 @@ impl From<ViewRefPair> for fidl_fuchsia_ui_views::ViewIdentityOnCreation {
 
 /// Given a ViewRef, returns a new version which has been duplicated.
 pub fn duplicate_view_ref(view_ref: &ViewRef) -> Result<ViewRef, Status> {
-    let handle = view_ref.reference.as_handle_ref().duplicate(Rights::SAME_RIGHTS)?;
+    let handle = view_ref.reference.as_handle_ref().duplicate_handle(Rights::SAME_RIGHTS)?;
     Ok(ViewRef { reference: handle.into() })
 }
 

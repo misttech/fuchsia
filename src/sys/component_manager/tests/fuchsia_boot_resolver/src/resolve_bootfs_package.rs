@@ -12,7 +12,6 @@ use {
     fuchsia_component_test::ScopedInstance,
     fuchsia_runtime::{HandleInfo, HandleType},
     std::{fs::File, io::Read},
-    zx::HandleBased,
 };
 
 const ZBI_PATH: &str = "/pkg/data/tests/uncompressed_bootfs";

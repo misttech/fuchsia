@@ -5,14 +5,15 @@
 use crate::{elf_load, process_args, util};
 use anyhow::{Context, anyhow};
 use fidl::endpoints::{ClientEnd, Proxy};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_ldsvc as fldsvc;
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::prelude::*;
 use std::ffi::{CStr, CString};
 use std::{iter, mem};
 use thiserror::Error;
-use zx::{AsHandleRef, HandleBased};
-use {fidl_fuchsia_io as fio, fidl_fuchsia_ldsvc as fldsvc};
+use zx::AsHandleRef;
 
 /// Error type returned by ProcessBuilder methods.
 #[derive(Error, Debug)]
@@ -766,7 +767,7 @@ impl CommonMessageHandles {
         handle_type: HandleType,
     ) -> Result<(), ProcessBuilderError> {
         let dup = handle
-            .duplicate(zx::Rights::SAME_RIGHTS)
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
             .map_err(|s| ProcessBuilderError::DuplicateHandle(handle_type, s))?;
         msg.handles.push(process_args::StartupHandle {
             handle: dup,
@@ -945,12 +946,13 @@ mod tests {
     use anyhow::Error;
     use assert_matches::assert_matches;
     use fidl::prelude::*;
+    use fidl_fuchsia_io as fio;
     use fidl_test_processbuilder::{UtilMarker, UtilProxy};
+    use fuchsia_async as fasync;
     use std::sync::LazyLock;
     use vfs::file::vmo::read_only;
     use vfs::pseudo_directory;
     use zerocopy::Ref;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     unsafe extern "C" {
         fn dl_clone_loader_service(handle: *mut zx::sys::zx_handle_t) -> zx::sys::zx_status_t;
@@ -1008,7 +1010,7 @@ mod tests {
         let mut builder = create_test_util_builder()?;
         if set_loader {
             builder.add_handles(vec![process_args::StartupHandle {
-                handle: clone_loader_service()?.into_handle(),
+                handle: clone_loader_service()?.into_channel().into(),
                 info: HandleInfo::new(HandleType::LdsvcLoader, 0),
             }])?;
         }

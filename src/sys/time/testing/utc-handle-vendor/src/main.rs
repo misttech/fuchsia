@@ -8,12 +8,12 @@
 //! Fuchsia, except under special circumstances.
 
 use anyhow::{Context, Result};
+use fidl_fuchsia_time as fftime;
 use fuchsia_component::server::ServiceFs;
+use fuchsia_runtime as fxr;
 use fuchsia_runtime::UtcClock;
 use futures::stream::StreamExt;
 use std::rc::Rc;
-use zx::HandleBased;
-use {fidl_fuchsia_time as fftime, fuchsia_runtime as fxr};
 
 enum Protocols {
     /// `fuchsia.time/Maintenance`.

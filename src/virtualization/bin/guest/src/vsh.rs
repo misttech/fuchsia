@@ -6,17 +6,17 @@ mod pty;
 mod termina;
 mod util;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use blocking::Unblock;
+use fidl_fuchsia_device as fdevice;
+use fidl_fuchsia_hardware_pty as fpty;
 use fidl_fuchsia_virtualization::{GuestMarker, HostVsockEndpointMarker};
 use fuchsia_async::{self as fasync, MonotonicDuration, Timer};
 use futures::future::Fuse;
-use futures::{pin_mut, select, AsyncReadExt, AsyncWriteExt, FutureExt};
+use futures::{AsyncReadExt, AsyncWriteExt, FutureExt, pin_mut, select};
 use guest_cli::platform::{GuestConsole, PlatformServices, UnbufferedStdio};
 use guest_cli_args::GuestType;
 use vsh_rust_proto::vm_tools::vsh;
-use zx::{self as zx, HandleBased};
-use {fidl_fuchsia_device as fdevice, fidl_fuchsia_hardware_pty as fpty};
 
 // Some guest message helpers
 

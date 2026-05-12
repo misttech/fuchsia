@@ -227,7 +227,8 @@ mod tests {
     fn make_fake_component() -> ElfComponent {
         let runtime_dir = RuntimeDirectory::empty();
         let job = Job::Single(fuchsia_runtime::job_default().create_child_job().unwrap());
-        let process = fuchsia_runtime::process_self().duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+        let process =
+            fuchsia_runtime::process_self().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         let lifecycle_channel = None;
         let main_process_critical = false;
         let component_url = "hello".to_string();

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::HandleBased;
 use fidl::endpoints::{ControlHandle, ServerEnd, SynchronousProxy};
 use fidl_fuchsia_ldsvc as fldsvc;
 use futures::{TryFutureExt, TryStreamExt};
@@ -94,8 +93,11 @@ impl Loader {
         // SAFETY: We are the only thing that is able to mess with the loader service in the
         // driver_host. We always re-install the original one, so there is always a valid one
         // currently installed.
-        let old_loader =
-            unsafe { zx::NullableHandle::from_raw(dl_set_loader_service(client_end.into_raw())) };
+        let old_loader = unsafe {
+            zx::NullableHandle::from_raw(dl_set_loader_service(
+                client_end.into_channel().into_raw(),
+            ))
+        };
 
         let loader = Rc::new(Loader {
             lock_guard,

@@ -6,16 +6,15 @@
 
 use anyhow::Error;
 use fidl::prelude::*;
+use fidl_fuchsia_hardware_hidbus as fhidbus;
+use fidl_fuchsia_hardware_input as finput;
+use fidl_fuchsia_hardware_power_statecontrol as statecontrol;
+use fidl_fuchsia_test_pwrbtn as test_pwrbtn;
+use fuchsia_async as fasync;
 use fuchsia_component::server as fserver;
 use futures::channel::mpsc;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use log::{info, warn};
-use zx::HandleBased;
-use {
-    fidl_fuchsia_hardware_hidbus as fhidbus, fidl_fuchsia_hardware_input as finput,
-    fidl_fuchsia_hardware_power_statecontrol as statecontrol,
-    fidl_fuchsia_test_pwrbtn as test_pwrbtn, fuchsia_async as fasync,
-};
 
 fn event_handle_rights() -> zx::Rights {
     zx::Rights::BASIC | zx::Rights::SIGNAL

@@ -31,7 +31,6 @@ use starnix_uapi::{errno, error};
 use std::ops::DerefMut;
 use std::pin::pin;
 use std::sync::{Arc, Weak};
-use zx::HandleBased;
 
 /// Creates the /proc/pressure directory. https://docs.kernel.org/accounting/psi.html
 pub fn pressure_directory(kernel: &Kernel, fs: &FileSystemHandle) -> Option<FsNodeHandle> {

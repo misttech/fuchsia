@@ -4,14 +4,15 @@
 
 use async_trait::async_trait;
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_fuzzer as fuzzer;
+use fidl_fuchsia_process as fproc;
+use fuchsia_runtime as runtime;
 use std::sync::LazyLock;
 use test_runners_elf_lib::launcher::ComponentLauncher;
 use test_runners_lib::elf::{Component, KernelError};
 use test_runners_lib::errors::*;
 use test_runners_lib::launch;
 use test_runners_lib::logs::LoggerStream;
-use zx::HandleBased;
-use {fidl_fuchsia_fuzzer as fuzzer, fidl_fuchsia_process as fproc, fuchsia_runtime as runtime};
 
 static VDSO_VMO: LazyLock<zx::NullableHandle> = LazyLock::new(|| {
     runtime::take_startup_handle(runtime::HandleInfo::new(runtime::HandleType::VdsoVmo, 0))

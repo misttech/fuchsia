@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use fidl::HandleBased as _;
 use fidl::endpoints::{
     DiscoverableProtocolMarker as _, Proxy, create_proxy, create_request_stream,
 };

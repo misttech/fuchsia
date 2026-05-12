@@ -6,9 +6,8 @@
 
 use crate::sys::{self as sys, PadByte, ZX_OBJ_TYPE_UPPER_BOUND, zx_handle_t};
 use crate::{
-    AsHandleRef, HandleBased, HandleRef, Job, Koid, MapInfo, MonotonicInstant, Name,
-    NullableHandle, ObjectQuery, Property, PropertyQuery, Rights, Status, Task, Thread, Topic,
-    Vmar, VmoInfo, ok,
+    AsHandleRef, HandleRef, Job, Koid, MapInfo, MonotonicInstant, Name, NullableHandle,
+    ObjectQuery, Property, PropertyQuery, Rights, Status, Task, Thread, Topic, Vmar, VmoInfo, ok,
 };
 use bitflags::bitflags;
 use static_assertions::const_assert_eq;

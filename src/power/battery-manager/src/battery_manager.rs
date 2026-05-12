@@ -7,7 +7,6 @@ use crate::history_logger::{
 };
 use crate::polisher::Polisher;
 use anyhow::Error;
-use fidl::HandleBased;
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_power_battery as fpower;
 use fidl_fuchsia_power_system as fsystem;

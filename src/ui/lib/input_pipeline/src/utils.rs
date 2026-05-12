@@ -10,7 +10,7 @@ use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 pub fn duplicate_view_ref_next(
     view_ref: &fidl_next_fuchsia_ui_views::ViewRef,
 ) -> Result<fidl_next_fuchsia_ui_views::ViewRef, fidl::Status> {
-    let handle = view_ref.reference.as_handle_ref().duplicate(fidl::Rights::SAME_RIGHTS)?;
+    let handle = view_ref.reference.as_handle_ref().duplicate_handle(fidl::Rights::SAME_RIGHTS)?;
     Ok(fidl_next_fuchsia_ui_views::ViewRef { reference: handle.into() })
 }
 

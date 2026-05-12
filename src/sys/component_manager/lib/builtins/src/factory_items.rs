@@ -9,7 +9,6 @@ use fuchsia_zbi::{ZbiParser, ZbiParserError, ZbiResult};
 use futures::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
-use zx::{self as zx, HandleBased};
 
 // The default rights for an immutable VMO. For details see
 // https://fuchsia.dev/fuchsia-src/reference/syscalls/vmo_create#description.

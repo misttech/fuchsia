@@ -36,7 +36,6 @@ use std::pin::{Pin, pin};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::task::{Context, Poll};
-use zx::HandleBased as _;
 
 /// Fakes the hardware side of the Command Queue interface.
 pub struct FakeCqhci {
@@ -74,7 +73,7 @@ impl FakeCqhci {
         host.task_handler.spawn(&scope);
 
         let handles = TestHandles {
-            hardware_irq: host.task_handler.irq.duplicate(zx::Rights::SAME_RIGHTS).unwrap(),
+            hardware_irq: host.task_handler.irq.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
             non_cq_interrupt_receiver,
             rpmb_request_receiver,
         };

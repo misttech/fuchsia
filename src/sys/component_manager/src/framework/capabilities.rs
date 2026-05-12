@@ -728,7 +728,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use vfs::ExecutionScope;
-    use zx::{AsHandleRef, HandleBased};
+    use zx::AsHandleRef;
 
     fn new_connection()
     -> (fruntime::CapabilitiesProxy, Arc<RemotedRuntimeCapabilities>, ExecutionScope) {

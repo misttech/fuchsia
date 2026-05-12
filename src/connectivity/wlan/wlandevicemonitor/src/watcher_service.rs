@@ -467,7 +467,7 @@ mod tests {
         // Make a channel without a WRITE permission to make sure sending an event fails
         let server_handle: zx::NullableHandle = server_chan.into();
         let reduced_chan: zx::Channel =
-            server_handle.replace(zx::Rights::READ | zx::Rights::WAIT).unwrap().into();
+            server_handle.replace_handle(zx::Rights::READ | zx::Rights::WAIT).unwrap().into();
 
         helper.service.add_watcher(ServerEnd::new(reduced_chan)).expect("add_watcher failed");
         if let Poll::Ready(Err(e)) = TestExecutor::poll_until_stalled(&mut future).await {

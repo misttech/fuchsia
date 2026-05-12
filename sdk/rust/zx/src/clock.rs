@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon clock objects.
 
 use crate::{
-    AsHandleRef, BootTimeline, ClockUpdate, HandleBased, HandleRef, Instant, MonotonicTimeline,
-    NullableHandle, ObjectQuery, SyntheticTimeline, Ticks, Timeline, Topic, ok, sys,
+    AsHandleRef, BootTimeline, ClockUpdate, HandleRef, Instant, MonotonicTimeline, NullableHandle,
+    ObjectQuery, SyntheticTimeline, Ticks, Timeline, Topic, ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
@@ -218,8 +218,6 @@ impl<Reference: Timeline, Output: Timeline> From<Clock<Reference, Output>> for N
         x.0
     }
 }
-
-impl<Reference: Timeline, Output: Timeline> HandleBased for Clock<Reference, Output> {}
 
 struct MappedSizeQuery;
 unsafe impl ObjectQuery for MappedSizeQuery {

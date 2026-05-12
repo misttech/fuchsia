@@ -5,6 +5,7 @@
 use crate::async_interface::Interface;
 use crate::{BlockServer, ReadOptions, TraceFlowId, WriteOptions};
 use block_protocol::{BlockFifoCommand, BlockFifoRequest, BlockFifoResponse};
+use fidl_fuchsia_storage_block as fblock;
 use fidl_fuchsia_storage_block::{BlockIoFlag, BlockMarker, BlockOpcode};
 use fuchsia_async::{self as fasync, TimeoutExt};
 use futures::StreamExt;
@@ -15,8 +16,7 @@ use std::borrow::Cow;
 use std::num::NonZero;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use zx::{self as zx, HandleBased};
-use {fidl_fuchsia_storage_block as fblock, zstd};
+use zstd;
 
 const BLOCK_SIZE: u32 = 512;
 

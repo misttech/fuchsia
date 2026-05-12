@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon interrupts.
 
 use crate::{
-    AsHandleRef, BootTimeline, HandleBased, HandleRef, Instant, MonotonicTimeline, NullableHandle,
-    Port, Status, Timeline, ok, sys,
+    AsHandleRef, BootTimeline, HandleRef, Instant, MonotonicTimeline, NullableHandle, Port, Status,
+    Timeline, ok, sys,
 };
 use std::marker::PhantomData;
 
@@ -148,8 +148,6 @@ impl<K: InterruptKind, T: Timeline> From<Interrupt<K, T>> for NullableHandle {
         x.0
     }
 }
-
-impl<K: InterruptKind, T: Timeline> HandleBased for Interrupt<K, T> {}
 
 mod private {
     pub trait Sealed {}

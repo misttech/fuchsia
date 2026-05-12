@@ -26,7 +26,7 @@ use netstack3_core::sync::Mutex;
 use packet::Buf;
 use packet_formats::ip::IpPacket as _;
 use zerocopy::SplitByteSlice;
-use zx::{HandleBased, Peered};
+use zx::Peered;
 
 use crate::bindings::settings::IpLayerSettings;
 use crate::bindings::socket::queue::{BodyLen, MessageQueue, NoSpace};

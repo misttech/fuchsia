@@ -9,8 +9,8 @@ pub mod suspend;
 
 use crate::pager::{Pager, run_pager};
 use anyhow::{Error, anyhow};
+use fidl::Peered;
 use fidl::endpoints::{DiscoverableProtocolMarker, Proxy, ServerEnd};
-use fidl::{HandleBased, Peered};
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_runner as frunner;

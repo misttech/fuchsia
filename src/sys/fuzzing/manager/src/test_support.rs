@@ -8,6 +8,11 @@ use fidl::endpoints::{
     ClientEnd, ControlHandle, ServerEnd, create_proxy, create_proxy_and_stream,
     create_request_stream,
 };
+use fidl_fuchsia_diagnostics as fdiagnostics;
+use fidl_fuchsia_fuzzer as fuzz;
+use fidl_fuchsia_mem as fmem;
+use fidl_fuchsia_test_manager as test_manager;
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::future::join_all;
 use futures::{
@@ -18,12 +23,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use test_manager::*;
-use zx::HandleBased;
-use {
-    fidl_fuchsia_diagnostics as fdiagnostics, fidl_fuchsia_fuzzer as fuzz,
-    fidl_fuchsia_mem as fmem, fidl_fuchsia_test_manager as test_manager, fuchsia_async as fasync,
-    zx,
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Test fixtures.

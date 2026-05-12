@@ -4,7 +4,6 @@
 
 use anyhow::{Error, anyhow};
 use fidl_fuchsia_audio_controller as fac;
-use zx::{self as zx, HandleBased};
 
 pub fn create_reference_clock(clock_type: fac::ClockType) -> Result<Option<zx::Clock>, Error> {
     match clock_type {

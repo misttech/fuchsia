@@ -1,16 +1,17 @@
+use fidl::endpoints;
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl::handle::Signals;
-use fidl::{HandleBased, endpoints};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fprocess;
+use fuchsia_async as fasync;
 use fuchsia_component_test::{RealmBuilder, RealmBuilderParams};
 use fuchsia_criterion::{FuchsiaCriterion, criterion};
 use fuchsia_runtime::{HandleInfo, HandleType};
 use fuchsia_sync::Mutex;
 use std::sync::Arc;
 use std::time::Duration;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
-};
 
 #[fuchsia::main]
 fn main() {

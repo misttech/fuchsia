@@ -4,7 +4,7 @@
 
 //! Type-safe bindings for Zircon profile objects.
 
-use crate::{AsHandleRef, HandleBased, HandleRef, NullableHandle};
+use crate::{AsHandleRef, HandleRef, NullableHandle};
 
 /// An object representing a Zircon
 /// [profile](https://fuchsia.dev/fuchsia-src/concepts/objects/profile.md).

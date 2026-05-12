@@ -4,12 +4,12 @@
 
 //! Mock implementation of blobfs for blobfs::Client.
 
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_io as fio;
 use fuchsia_hash::Hash;
 use futures::StreamExt as _;
 use std::collections::HashSet;
 use std::convert::TryInto as _;
-use zx::HandleBased as _;
-use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio};
 
 /// A testing server implementation of /blob.
 ///

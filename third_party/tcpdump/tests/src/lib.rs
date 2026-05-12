@@ -33,7 +33,7 @@ use regex::Regex;
 use std::convert::TryInto as _;
 use std::ffi::{CStr, CString};
 use std::num::NonZeroU16;
-use zx::{HandleBased as _, ProcessInfo};
+use zx::ProcessInfo;
 
 const BINARY_PATH: &str = "/pkg/bin/tcpdump";
 
@@ -139,7 +139,7 @@ async fn start_tcpdump_and_wait_for_patterns<
         vec![
             SpawnAction::add_namespace_entry(
                 CString::new("/svc").expect("CString /svc").as_c_str(),
-                svc_client_end.into_handle(),
+                svc_client_end.into_channel().into(),
             ),
             SpawnAction::add_handle(
                 HandleInfo::new(HandleType::ClockUtc, 0),

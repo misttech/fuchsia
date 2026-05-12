@@ -37,7 +37,6 @@ mod tests {
     use super::*;
     use crate::mock::MockDriver;
     use crate::traits::Driver;
-    use zx::HandleBased;
 
     #[fuchsia::test]
     fn create() {

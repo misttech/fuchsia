@@ -42,7 +42,6 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
-use zx::HandleBased;
 
 use crate::maps::buffer::VmoOrName;
 

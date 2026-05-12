@@ -11,7 +11,6 @@ use fuchsia_criterion::FuchsiaCriterion;
 use fuchsia_criterion::criterion::{self as criterion, Criterion};
 use fuchsia_runtime as frt;
 use mapped_clock::MappedClock;
-use zx::HandleBased;
 
 fn main() {
     let mut c = FuchsiaCriterion::default();

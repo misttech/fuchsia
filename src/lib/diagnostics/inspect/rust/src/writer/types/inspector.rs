@@ -14,8 +14,6 @@ use std::sync::Arc;
 
 #[cfg(target_os = "fuchsia")]
 use inspect_format::{BlockAccessorExt, Header};
-#[cfg(target_os = "fuchsia")]
-use zx::HandleBased;
 
 /// Root of the Inspect API. Through this API, further nodes can be created and inspect can be
 /// served.

@@ -41,7 +41,6 @@ where
 mod test {
     use super::*;
     use crate::testing::*;
-    use zx::HandleBased;
 
     #[fuchsia::test]
     async fn test_create_from_invalid_handle() {

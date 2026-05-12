@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon threads.
 
 use crate::{
-    AsHandleRef, ExceptionReport, HandleBased, HandleRef, MonotonicDuration, NullableHandle,
-    ObjectQuery, Profile, Status, Task, Topic, ok, sys,
+    AsHandleRef, ExceptionReport, HandleRef, MonotonicDuration, NullableHandle, ObjectQuery,
+    Profile, Status, Task, Topic, ok, sys,
 };
 use bitflags::bitflags;
 

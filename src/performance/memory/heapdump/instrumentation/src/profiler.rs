@@ -64,7 +64,7 @@ impl Default for Profiler {
 impl Profiler {
     pub fn bind(&self, registry_channel: zx::Channel) {
         let process_dup = fuchsia_runtime::process_self()
-            .duplicate(zx::Rights::SAME_RIGHTS)
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
             .expect("failed to duplicate process handle");
 
         let (snapshot_sink_server, allocations_table_dup, resources_table_dup) = {

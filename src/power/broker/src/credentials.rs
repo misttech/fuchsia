@@ -48,7 +48,6 @@ impl From<DependencyToken> for Token {
 
 impl From<&DependencyToken> for Token {
     fn from(token: &DependencyToken) -> Self {
-        use zx::HandleBased;
         Token { token: token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap() }
     }
 }
@@ -221,7 +220,6 @@ mod tests {
             permissions: Permissions::MODIFY_DEPENDENT,
         };
         registry.register(element_kryptonite, credential_to_register).expect("register failed");
-        use zx::HandleBased;
         let token_kryptonite_dup =
             token_kryptonite.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("dup failed");
         let credential = registry.lookup(&Token::from(&token_kryptonite_dup)).unwrap();

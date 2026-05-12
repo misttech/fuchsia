@@ -121,7 +121,7 @@ mod tests {
     use std::fs;
     use std::sync::Arc;
     use test_vmo_backed_block_server::VmoBackedServer;
-    use zx::{HandleBased, Status, Vmo};
+    use zx::{Status, Vmo};
 
     const BLOCK_SIZE: u32 = 512;
 

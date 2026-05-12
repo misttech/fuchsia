@@ -8,7 +8,7 @@ use super::{
 use crate::coding::{decode_fidl, encode_fidl};
 use crate::peer::PeerConnRef;
 use anyhow::{Context as _, Error};
-use fidl::{AsHandleRef, AsyncChannel, HandleBased, Peered, Signals};
+use fidl::{AsHandleRef, AsyncChannel, Peered, Signals};
 use fidl_fuchsia_overnet_protocol::{ZirconChannelMessage, ZirconHandle};
 use futures::prelude::*;
 use futures::ready;

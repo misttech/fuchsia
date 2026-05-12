@@ -5,6 +5,9 @@
 #![recursion_limit = "256"]
 
 use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_unknown as funknown;
+use fuchsia_async as fasync;
 use futures::StreamExt;
 use smallvec::smallvec;
 use starnix_core::fs::fuchsia::new_remote_file;
@@ -20,8 +23,6 @@ use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserAddress;
-use zx::HandleBased;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_unknown as funknown, fuchsia_async as fasync, zx};
 
 async fn mock_remote_file_server(server: zx::Channel, stream: Option<zx::Stream>) {
     let mut stream_req =
@@ -252,12 +253,9 @@ impl<'a, M: starnix_core::mm::TaskMemoryAccessor + std::fmt::Debug> OutputBuffer
 async fn test_vectored_stream_io() {
     let vmo = zx::Vmo::create(1024).unwrap();
     let vmo_clone = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-    let stream = zx::Stream::create(
-        zx::StreamOptions::MODE_READ | zx::StreamOptions::MODE_WRITE,
-        &vmo,
-        0,
-    )
-    .unwrap();
+    let stream =
+        zx::Stream::create(zx::StreamOptions::MODE_READ | zx::StreamOptions::MODE_WRITE, &vmo, 0)
+            .unwrap();
 
     let (client, server) = zx::Channel::create();
     fasync::Task::spawn(mock_remote_file_server(server, Some(stream))).detach();
@@ -271,8 +269,7 @@ async fn test_vectored_stream_io() {
 
         // Verify that they are non-adjacent.
         assert!(
-            addr1.checked_add(100).unwrap() <= addr2
-                || addr2.checked_add(100).unwrap() <= addr1
+            addr1.checked_add(100).unwrap() <= addr2 || addr2.checked_add(100).unwrap() <= addr1
         );
 
         // Test vectored write.

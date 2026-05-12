@@ -28,7 +28,6 @@ use std::sync::{Arc, LazyLock};
 use std::task::{Context, Poll, Waker};
 use storage_trace as trace;
 use zx::sys::zx_handle_t;
-use zx::{self as zx, HandleBased as _};
 
 pub use cache::Cache;
 

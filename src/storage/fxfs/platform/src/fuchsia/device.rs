@@ -7,7 +7,9 @@ use crate::fuchsia::node::OpenedNode;
 use anyhow::Error;
 use block_client::{BlockFifoRequest, BlockFifoResponse};
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block::{self as block, BlockMarker, BlockRequest};
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::stream::TryStreamExt;
 use futures::try_join;
@@ -18,7 +20,6 @@ use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use vfs::file::File;
 use vfs::node::Node;
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 // Multiple Block I/O request may be sent as a group.
 // Notes:
@@ -479,7 +480,6 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::join;
     use rustc_hash::FxHashSet as HashSet;
-    use zx::HandleBased as _;
 
     const TEST_DEVICE_FILE_SIZE: u64 = 4 * 1024 * 1024;
     const TEST_DEVICE_FILE_NAME: &'static str = "block_device";

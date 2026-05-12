@@ -9,8 +9,7 @@ use zerocopy::{FromBytes, Immutable};
 use zx_sys::zx_paddr_t;
 
 use crate::{
-    AsHandleRef, HandleBased, HandleRef, Iommu, NullableHandle, ObjectQuery, Pmt, Status, Topic,
-    Vmo, ok, sys,
+    AsHandleRef, HandleRef, Iommu, NullableHandle, ObjectQuery, Pmt, Status, Topic, Vmo, ok, sys,
 };
 
 /// An object representing a Zircon Bus Transaction Initiator object.

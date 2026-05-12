@@ -4,16 +4,16 @@
 
 use std::collections::HashSet;
 
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_developer_console as fconsole;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fprocess;
+use fuchsia_async as fasync;
 use futures::io::BufReader;
 use futures::{
     AsyncBufReadExt as _, AsyncReadExt, AsyncWriteExt as _, StreamExt as _, TryStreamExt as _,
 };
 use test_case::test_case;
-use zx::HandleBased as _;
-use {
-    fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_developer_console as fconsole,
-    fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
-};
 
 fn connect_launcher() -> fconsole::LauncherProxy {
     fuchsia_component::client::connect_to_protocol::<fconsole::LauncherMarker>()

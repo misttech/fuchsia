@@ -29,7 +29,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::collections::VecDeque;
 use std::fmt;
-use zx::{HandleBased, Peered};
+use zx::Peered;
 
 /// Wake source persistent info, exposed in inspect diagnostics.
 #[derive(Debug, Default)]
@@ -164,12 +164,12 @@ impl SuspendResumeManager {
             .add_wake_source(frunner::ManagerAddWakeSourceRequest {
                 container_job: Some(
                     fuchsia_runtime::job_default()
-                        .duplicate(zx::Rights::SAME_RIGHTS)
+                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
                         .expect("Failed to dup handle"),
                 ),
                 name: Some(name.clone()),
                 handle: Some(
-                    handle.duplicate(zx::Rights::SAME_RIGHTS).map_err(|e| errno!(EIO, e))?,
+                    handle.duplicate_handle(zx::Rights::SAME_RIGHTS).map_err(|e| errno!(EIO, e))?,
                 ),
                 signals: Some(signals.bits()),
                 ..Default::default()
@@ -180,7 +180,9 @@ impl SuspendResumeManager {
         self.lock().external_wake_sources.insert(
             koid,
             ExternalWakeSource {
-                handle: handle.duplicate(zx::Rights::SAME_RIGHTS).map_err(|e| errno!(EIO, e))?,
+                handle: handle
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .map_err(|e| errno!(EIO, e))?,
                 signals,
                 name,
             },
@@ -199,7 +201,7 @@ impl SuspendResumeManager {
             .remove_wake_source(frunner::ManagerRemoveWakeSourceRequest {
                 container_job: Some(
                     fuchsia_runtime::job_default()
-                        .duplicate(zx::Rights::SAME_RIGHTS)
+                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
                         .expect("Failed to dup handle"),
                 ),
                 handle: Some(handle),
@@ -603,7 +605,7 @@ impl SuspendResumeManager {
 
         let container_job = Some(
             fuchsia_runtime::job_default()
-                .duplicate(zx::Rights::SAME_RIGHTS)
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
                 .expect("Failed to dup handle"),
         );
         let wake_lock_event = Some(self.duplicate_lock_event());
@@ -762,7 +764,7 @@ pub fn create_proxy_for_wake_events_counter_zero(
         .proxy_wake_channel(frunner::ManagerProxyWakeChannelRequest {
             container_job: Some(
                 fuchsia_runtime::job_default()
-                    .duplicate(zx::Rights::SAME_RIGHTS)
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("Failed to dup handle"),
             ),
             container_channel: Some(kernel_channel),
@@ -988,7 +990,6 @@ mod test {
     use fuchsia_async as fasync;
     use fuchsia_inspect as inspect;
     use futures::StreamExt;
-    use zx::{self, HandleBased};
 
     #[::fuchsia::test]
     fn test_counter_zero_initialization() {
@@ -1187,7 +1188,7 @@ mod test {
         // However, we can verify that if it was registered, the suspend check respects it.
 
         let res = manager.add_external_wake_source(
-            event.duplicate(zx::Rights::SAME_RIGHTS).unwrap().into_handle(),
+            event.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap().into_handle(),
             signals,
             "test_external".to_string(),
         );

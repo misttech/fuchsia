@@ -17,7 +17,6 @@ use futures::channel::mpsc;
 use futures::{TryFutureExt, TryStreamExt, future};
 use std::fmt;
 use std::sync::Arc;
-use zx::{self as zx, HandleBased};
 
 use crate::INVALID_EVENT_ID;
 use crate::config::{DisplayConfig, LayerConfig};
@@ -437,13 +436,11 @@ mod tests {
     use anyhow::{Context, Result, format_err};
     use assert_matches::assert_matches;
     use display_mocks::{MockCoordinator, create_proxy_and_mock};
+    use fidl_fuchsia_hardware_display as display;
+    use fidl_fuchsia_hardware_display_types as display_types;
     use fuchsia_async::TestExecutor;
     use futures::task::Poll;
     use futures::{FutureExt, StreamExt, pin_mut, select};
-    use {
-        fidl_fuchsia_hardware_display as display,
-        fidl_fuchsia_hardware_display_types as display_types,
-    };
 
     async fn init_with_proxy_and_listener_requests(
         coordinator_proxy: display::CoordinatorProxy,

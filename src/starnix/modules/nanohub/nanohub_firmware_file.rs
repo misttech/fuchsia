@@ -17,7 +17,6 @@ use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::ResolveFlags;
 use starnix_uapi::{errno, error};
-use zx::HandleBased;
 
 pub struct NanohubFirmwareFile {}
 

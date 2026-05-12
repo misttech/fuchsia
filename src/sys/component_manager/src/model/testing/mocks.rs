@@ -34,7 +34,7 @@ use vfs::directory::entry::OpenRequest;
 use vfs::file::vmo::read_only;
 use vfs::pseudo_directory;
 use vfs::service::endpoint;
-use zx::{self as zx, AsHandleRef, HandleBased, Koid};
+use zx::{AsHandleRef, Koid};
 
 #[cfg(not(feature = "src_model_tests"))]
 use {crate::model::program::Program, fidl::endpoints::create_endpoints};

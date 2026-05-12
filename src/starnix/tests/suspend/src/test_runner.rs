@@ -7,7 +7,7 @@ use fuchsia_async as fasync;
 use fuchsia_component_test::{RealmBuilder, RealmBuilderParams, RealmInstance};
 use futures::task::Poll;
 use std::pin::pin;
-use zx::{HandleBased, Peered};
+use zx::Peered;
 
 const AWAKE_SIGNAL: zx::Signals = zx::Signals::USER_0;
 const ASLEEP_SIGNAL: zx::Signals = zx::Signals::USER_1;

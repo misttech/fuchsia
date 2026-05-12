@@ -347,12 +347,6 @@ impl AsHandleRef for NullableHandle {
     }
 }
 
-impl HandleBased for NullableHandle {
-    fn into_raw(self) -> sys::zx_handle_t {
-        if let Some(inner) = self.0 { inner.into_raw() } else { sys::ZX_HANDLE_INVALID }
-    }
-}
-
 impl NullableHandle {
     /// Initialize a handle backed by ZX_HANDLE_INVALID, the only safe non-handle.
     #[inline(always)]
@@ -394,14 +388,14 @@ impl NullableHandle {
         self.0.is_none()
     }
 
-    pub fn duplicate(&self, rights: Rights) -> Result<Self, Status> {
+    pub fn duplicate_handle(&self, rights: Rights) -> Result<Self, Status> {
         self.0
             .as_ref()
             .map(|h| h.duplicate(rights).map(|new| Self(Some(new))))
             .unwrap_or(Err(Status::BAD_HANDLE))
     }
 
-    pub fn replace(mut self, rights: Rights) -> Result<Self, Status> {
+    pub fn replace_handle(mut self, rights: Rights) -> Result<Self, Status> {
         if let Some(inner) = self.0.take() {
             let inner = inner.replace(rights)?;
             Ok(Self(Some(inner)))
@@ -490,6 +484,25 @@ impl NullableHandle {
     }
 }
 
+impl From<Handle> for NullableHandle {
+    fn from(h: Handle) -> Self {
+        Self(Some(h))
+    }
+}
+
+impl From<Option<Handle>> for NullableHandle {
+    fn from(h: Option<Handle>) -> Self {
+        Self(h)
+    }
+}
+
+impl TryFrom<NullableHandle> for Handle {
+    type Error = Status;
+    fn try_from(h: NullableHandle) -> Result<Self, Self::Error> {
+        h.0.ok_or(Status::BAD_HANDLE)
+    }
+}
+
 struct NameProperty();
 unsafe impl PropertyQuery for NameProperty {
     const PROPERTY: Property = Property::NAME;
@@ -500,7 +513,7 @@ unsafe impl PropertyQuery for NameProperty {
 
 /// A borrowed value of type `T`.
 ///
-/// This is primarily used for working with borrowed values of `HandleBased` types.
+/// This is primarily used for working with borrowed values of handle wrapper types.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
 pub struct Unowned<'a, T> {
@@ -522,7 +535,7 @@ impl<'a, T: AsHandleRef> AsHandleRef for Unowned<'a, T> {
     }
 }
 
-impl<T: HandleBased> Clone for Unowned<'_, T> {
+impl<T: AsHandleRef + From<NullableHandle> + Into<NullableHandle>> Clone for Unowned<'_, T> {
     fn clone(&self) -> Self {
         unsafe { Self::from_raw_handle(self.inner.as_handle_ref().raw_handle()) }
     }
@@ -549,7 +562,7 @@ impl<'a, T: Into<NullableHandle>> Unowned<'a, T> {
     }
 }
 
-impl<'a, T: HandleBased> Unowned<'a, T> {
+impl<'a, T: AsHandleRef + From<NullableHandle> + Into<NullableHandle>> Unowned<'a, T> {
     /// Create a `HandleRef` from a raw handle. Use this method when you are given a raw handle but
     /// should not take ownership of it. Examples include process-global handles like the root
     /// VMAR. This method should be called with an explicitly provided lifetime that must not
@@ -661,7 +674,9 @@ impl WaitResult {
 
 impl<'a> Unowned<'a, NullableHandle> {
     /// Convert this HandleRef to one of a specific type.
-    pub fn cast<T: HandleBased>(self) -> Unowned<'a, T> {
+    pub fn cast<T: AsHandleRef + From<NullableHandle> + Into<NullableHandle>>(
+        self,
+    ) -> Unowned<'a, T> {
         // SAFETY: this function's guarantees are upheld by the self input.
         unsafe { Unowned::from_raw_handle(self.raw_handle()) }
     }
@@ -680,46 +695,8 @@ impl<T: AsHandleRef> AsHandleRef for &T {
     }
 }
 
-/// A trait implemented by all handle-based types.
-///
-/// Note: it is reasonable for user-defined objects wrapping a handle to implement
-/// this trait. For example, a specific interface in some protocol might be
-/// represented as a newtype of `Channel`, and implement the `as_handle_ref`
-/// method and the `From<Handle>` trait to facilitate conversion from and to the
-/// interface.
-pub trait HandleBased: AsHandleRef + From<NullableHandle> + Into<NullableHandle> {
-    /// Duplicate a handle, possibly reducing the rights available. Wraps the
-    /// [zx_handle_duplicate](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_duplicate.md)
-    /// syscall.
-    fn duplicate_handle(&self, rights: Rights) -> Result<Self, Status> {
-        self.as_handle_ref().duplicate(rights).map(|handle| Self::from(handle))
-    }
-
-    /// Create a replacement for a handle, possibly reducing the rights available. This invalidates
-    /// the original handle. Wraps the
-    /// [zx_handle_replace](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_replace.md)
-    /// syscall.
-    fn replace_handle(self, rights: Rights) -> Result<Self, Status> {
-        <Self as Into<NullableHandle>>::into(self).replace(rights).map(|handle| Self::from(handle))
-    }
-
-    /// Converts the value into its inner handle.
-    ///
-    /// This is a convenience function which simply forwards to the `Into` trait.
-    fn into_handle(self) -> NullableHandle {
-        self.into()
-    }
-
-    /// Converts the handle into it's raw representation.
-    ///
-    /// The caller takes ownership over the raw handle, and must close or transfer it to avoid a handle leak.
-    fn into_raw(self) -> sys::zx_handle_t {
-        self.into_handle().into_raw()
-    }
-}
-
 /// A trait implemented by all handles for objects which have a peer.
-pub trait Peered: HandleBased {
+pub trait Peered: AsHandleRef {
     /// Set and clear userspace-accessible signal bits on the object's peer. Wraps the
     /// [zx_object_signal_peer][osp] syscall.
     ///
@@ -1001,8 +978,8 @@ mod tests {
     // The unit tests are built with a different crate name, but fuchsia_runtime returns a "real"
     // zx::Vmar that we need to use.
     use zx::{
-        Channel, HandleBased, HandleDisposition, HandleInfo, HandleOp, Name, NullableHandle,
-        ObjectType, Rights, Vmo,
+        Channel, HandleDisposition, HandleInfo, HandleOp, Name, NullableHandle, ObjectType, Rights,
+        Vmo,
     };
     use zx_sys as sys;
 

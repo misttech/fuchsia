@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Result, bail};
+use fidl_fuchsia_fuzzer as fuzz;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use std::str::from_utf8;
-use zx::{HandleBased, Peered, Task};
-use {fidl_fuchsia_fuzzer as fuzz, fuchsia_async as fasync};
+use zx::{Peered, Task};
 
 #[fuchsia::main(logging = true)]
 async fn main() -> Result<()> {

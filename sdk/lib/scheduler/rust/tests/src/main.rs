@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use std::thread;
-use zx::{HandleBased, Status};
+use zx::Status;
 
 #[fuchsia::test]
 fn test_set_role_for_this_thread() -> Result<()> {

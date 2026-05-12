@@ -11,7 +11,6 @@
 //! `.cml`.
 
 use anyhow::anyhow;
-use fidl::HandleBased;
 use fidl::endpoints::{create_proxy, create_request_stream};
 use fidl_fuchsia_element as felement;
 use fidl_fuchsia_images2 as fimages2;

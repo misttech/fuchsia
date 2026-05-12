@@ -95,7 +95,7 @@ mod tests {
     use fuchsia_sync::Mutex;
     use futures::pin_mut;
     use futures::task::Poll;
-    use zx::{EventPair, HandleBased, Peered};
+    use zx::{EventPair, Peered};
 
     struct TestObserver {
         events: Mutex<Vec<CommitEvent>>,

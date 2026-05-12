@@ -10,7 +10,6 @@ use crate::vfs::{
     DirectoryEntryType, DirentSink, FileHandle, FileObject, FsStr, FsString, LookupContext,
     NamespaceNode, RenameFlags, SeekTarget, UnlinkKind,
 };
-use fidl::HandleBased;
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl_fuchsia_io as fio;
 use fuchsia_runtime::UtcInstant;
@@ -977,7 +976,7 @@ mod tests {
             // transferred to the other thread.
             let fs_dev_id = fs.dev_id;
             std::thread::spawn(move || {
-                let root_zxio = Zxio::create(root_handle.into_handle()).expect("create");
+                let root_zxio = Zxio::create(root_handle.into_channel().into()).expect("create");
 
                 assert_directory_content(&root_zxio, &[b"."]);
                 // Check that one can reiterate from the start.
@@ -1156,7 +1155,7 @@ mod tests {
                 serve_file(current_task, &file_to_serve, Credentials::root()).expect("serve");
 
             fuchsia_async::unblock(|| {
-                let zxio = Zxio::create(client_end.into_handle()).expect("create");
+                let zxio = Zxio::create(client_end.into_channel().into()).expect("create");
                 let mut attr = syncio::zxio_node_attributes_t::default();
                 attr.has.content_size = true;
                 let attr = zxio.attr_get(attr.has).expect("attr_get");
@@ -1207,7 +1206,7 @@ mod tests {
             .expect("serve");
 
             fuchsia_async::unblock(move || {
-                let zxio = Zxio::create(client_end.into_handle()).expect("create");
+                let zxio = Zxio::create(client_end.into_channel().into()).expect("create");
                 // truncate should succeed because the FD is open for writing, even though the file
                 // is being served with a different user.
                 zxio.truncate(2).expect("truncate");
@@ -1240,7 +1239,7 @@ mod tests {
 
             std::thread::spawn(move || {
                 let root_zxio =
-                    Zxio::create(root_handle.into_handle()).expect("zxio create failed");
+                    Zxio::create(root_handle.into_channel().into()).expect("zxio create failed");
 
                 assert_directory_content(&root_zxio, &[b"."]);
                 assert_eq!(
@@ -1344,7 +1343,7 @@ mod tests {
 
             std::thread::spawn(move || {
                 let root_zxio =
-                    Zxio::create(root_handle.into_handle()).expect("zxio create failed");
+                    Zxio::create(root_handle.into_channel().into()).expect("zxio create failed");
 
                 assert_directory_content(&root_zxio, &[b".", b"test"]);
                 assert_eq!(

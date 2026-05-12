@@ -131,7 +131,7 @@ mod tests {
     use futures::pin_mut;
     use itertools::assert_equal;
     use stacktrack_vmo::threads_table_v1::StacktrackWriter;
-    use zx::{HandleBased, Task};
+    use zx::Task;
 
     use crate::registry::Registry;
 

@@ -5,6 +5,14 @@
 use anyhow::{Context, Error};
 use driver_manager_types::StartedComponent;
 use fidl::endpoints::{ClientEnd, ServerEnd, create_endpoints};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_driver_loader as floader;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fprocess;
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use fuchsia_runtime::{HandleType, take_startup_handle};
 use futures::TryStreamExt;
@@ -14,13 +22,6 @@ use rand::Rng;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
-use zx::HandleBased;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_runner as frunner, fidl_fuchsia_data as fdata,
-    fidl_fuchsia_driver_loader as floader, fidl_fuchsia_io as fio,
-    fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
-};
 
 const TOKEN_ID: u32 =
     fuchsia_runtime::HandleInfo::new(fuchsia_runtime::HandleType::User0, 0).as_raw();
@@ -240,7 +241,7 @@ impl DriverHostRunner {
 
     fn create_driver_host_process(&self, name: &str) -> Result<Rc<DriverHost>, zx::Status> {
         let job = fuchsia_runtime::job_default()
-            .duplicate(zx::Rights::SAME_RIGHTS)
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
             .map_err(|_| zx::Status::INTERNAL)?;
         let (process, root_vmar) =
             job.create_child_process(zx::ProcessOptions::empty(), name.as_bytes())?;

@@ -582,9 +582,6 @@ mod tests {
     use starnix_sync::Unlocked;
     use starnix_uapi::vfs::{EpollEvent, FdEvents};
     use syncio::Zxio;
-    use zx::{
-        HandleBased, {self as zx},
-    };
 
     #[::fuchsia::test]
     async fn test_epoll_read_ready() {

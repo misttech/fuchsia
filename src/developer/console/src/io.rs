@@ -4,7 +4,6 @@
 
 use std::pin::pin;
 
-use fidl::HandleBased as _;
 use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_device as fdevice;
 use fidl_fuchsia_hardware_pty as fpty;
@@ -69,8 +68,8 @@ impl IoHandles {
 
         let handles = Self {
             stdin: Some(client.into_channel().unwrap().into_zx_channel().into_handle()),
-            stdout: Some(stdout.into_handle()),
-            stderr: Some(stderr.into_handle()),
+            stdout: Some(stdout.into_channel().into()),
+            stderr: Some(stderr.into_channel().into()),
         };
 
         let scope = fasync::Scope::current();

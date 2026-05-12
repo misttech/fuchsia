@@ -35,7 +35,6 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use zx::HandleBased;
 
 pub struct StoredWakeLease {
     pub name: String,

@@ -6,7 +6,12 @@ use crate::offer_injection::OfferInjector;
 use driver_manager_types::{
     NodeOffer, OfferTransport, StartRequest, StartRequestReceiver, StartedComponent,
 };
-use fidl::HandleBased;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_process as fprocess;
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use futures::TryStreamExt;
 use futures::channel::mpsc;
@@ -14,11 +19,6 @@ use log::{error, warn};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_runner as frunner, fidl_fuchsia_component_sandbox as fsandbox,
-    fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
-};
 
 const TOKEN_ID: u32 =
     fuchsia_runtime::HandleInfo::new(fuchsia_runtime::HandleType::User0, 0).as_raw();

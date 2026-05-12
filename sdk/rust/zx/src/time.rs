@@ -4,9 +4,7 @@
 
 //! Type-safe bindings for Zircon timer objects.
 
-use crate::{
-    AsHandleRef, HandleBased, HandleRef, NullableHandle, ObjectQuery, Status, Topic, ok, sys,
-};
+use crate::{AsHandleRef, HandleRef, NullableHandle, ObjectQuery, Status, Topic, ok, sys};
 use std::cmp::{Eq, Ord, PartialEq, PartialOrd};
 use std::hash::Hash;
 use std::{ops, time as stdtime};
@@ -551,8 +549,6 @@ impl<T: Timeline> From<Timer<T>> for NullableHandle {
         x.0
     }
 }
-
-impl<T: Timeline> HandleBased for Timer<T> {}
 
 #[cfg(test)]
 mod tests {

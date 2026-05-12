@@ -8,8 +8,8 @@
 
 use anyhow::Context as _;
 use async_utils::stream::{Tagged, WithTag as _};
+use fidl::Peered as _;
 use fidl::endpoints::{ControlHandle as _, RequestStream as _};
-use fidl::{HandleBased as _, Peered as _};
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext as fnet_ext;
 use fidl_fuchsia_posix as fposix;

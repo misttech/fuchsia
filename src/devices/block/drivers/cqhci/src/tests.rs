@@ -27,7 +27,6 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 use test_case::test_case;
-use zx::HandleBased as _;
 
 use fake_cqhci::{Blocker, FakeCqhci};
 

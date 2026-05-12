@@ -3,9 +3,11 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use fidl_fuchsia_process as fproc;
 use fidl_fuchsia_test::{
     self as ftest, Invocation, Result_ as TestResult, RunListenerProxy, Status,
 };
+use fuchsia_async as fasync;
 use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::future::{AbortHandle, Future, abortable};
 use futures::lock::Mutex;
@@ -24,8 +26,6 @@ use test_runners_lib::elf::{
 use test_runners_lib::errors::*;
 use test_runners_lib::launch;
 use test_runners_lib::logs::{LogError, LogStreamReader, LoggerStream, SocketLogWriter};
-use zx::HandleBased as _;
-use {fidl_fuchsia_process as fproc, fuchsia_async as fasync};
 
 /// Implements `fuchsia.test.Suite` and runs provided test.
 pub struct TestServer {

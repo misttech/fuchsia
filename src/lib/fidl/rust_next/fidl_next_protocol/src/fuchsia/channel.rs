@@ -315,7 +315,7 @@ impl NonBlockingTransport for Channel {
 mod tests {
     use fidl_next_codec::{AsDecoder as _, DecoderExt as _, EncoderExt as _};
     use fuchsia_async as fasync;
-    use zx::{Channel, HandleBased as _, Instant, NullableHandle, Signals, WaitResult};
+    use zx::{Channel, Instant, NullableHandle, Signals, WaitResult};
 
     use crate::fuchsia::channel::Buffer;
     use crate::testing::*;

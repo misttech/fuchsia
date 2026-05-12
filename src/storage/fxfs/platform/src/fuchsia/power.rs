@@ -11,7 +11,6 @@ use futures::stream::{BoxStream, StreamExt};
 use fxfs::filesystem::{PowerManager, WakeLease};
 use fxfs::log::*;
 use std::sync::Arc;
-use zx::HandleBased;
 
 pub struct FuchsiaPowerManager {}
 

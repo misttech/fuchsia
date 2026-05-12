@@ -5,22 +5,20 @@
 use anyhow::{Context, Result, bail};
 use attribution_server::{AttributionServer, AttributionServerHandle, Observer, Publisher};
 use fidl::endpoints::{ControlHandle, RequestStream};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_memory_attribution as fattribution;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use futures::{StreamExt, TryStreamExt};
+use log::{info, warn};
 use runner::component::{Controllable, Controller, StopInfo};
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_memory_attribution as fattribution, fuchsia_async as fasync,
-};
-
-use log::{info, warn};
-use zx::{HandleBased, Koid};
+use zx::Koid;
 
 mod program;
 
@@ -223,9 +221,10 @@ fn start(
 mod tests {
     use super::*;
     use fidl::endpoints::Proxy;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_examples_colocated as fcolocated;
     use fidl_fuchsia_process::HandleInfo;
     use fuchsia_runtime::HandleType;
-    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_examples_colocated as fcolocated};
 
     #[fuchsia::test]
     async fn test_start_stop_component() {

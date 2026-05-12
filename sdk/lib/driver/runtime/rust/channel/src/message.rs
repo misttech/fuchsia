@@ -290,7 +290,6 @@ impl Message<[MaybeUninit<u8>]> {
 mod test {
     use crate::channel::Channel;
     use fdf_core::handle::MixedHandleType;
-    use zx::HandleBased;
 
     use super::*;
 

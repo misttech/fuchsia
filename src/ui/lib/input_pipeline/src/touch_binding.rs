@@ -13,7 +13,6 @@ use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use zx;
 
-use fidl::HandleBased;
 use fidl_fuchsia_input_report as fidl_input_report;
 use fidl_fuchsia_ui_input as fidl_ui_input;
 use fidl_next_fuchsia_ui_pointerinjector as pointerinjector;

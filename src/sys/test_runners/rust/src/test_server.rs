@@ -3,7 +3,11 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use fidl_fuchsia_process as fproc;
+use fidl_fuchsia_test as ftest;
 use ftest::{Invocation, RunListenerProxy};
+use fuchsia_async as fasync;
+use fuchsia_runtime as runtime;
 use futures::future::{AbortHandle, FutureExt as _, abortable, join3};
 use futures::lock::Mutex;
 use futures::prelude::*;
@@ -20,11 +24,7 @@ use test_runners_lib::elf::{
 use test_runners_lib::errors::*;
 use test_runners_lib::launch;
 use test_runners_lib::logs::{LogStreamReader, LoggerStream, SocketLogWriter};
-use zx::{self as zx, HandleBased, Task};
-use {
-    fidl_fuchsia_process as fproc, fidl_fuchsia_test as ftest, fuchsia_async as fasync,
-    fuchsia_runtime as runtime,
-};
+use zx::Task;
 
 static VDSO_VMO: LazyLock<zx::NullableHandle> = LazyLock::new(|| {
     runtime::take_startup_handle(runtime::HandleInfo::new(runtime::HandleType::VdsoVmo, 0))

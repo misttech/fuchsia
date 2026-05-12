@@ -24,7 +24,7 @@ use fuchsia_component::server::{ServiceFs, ServiceObj};
 use futures::StreamExt;
 use std::marker::PhantomData;
 use std::sync::{Arc, Weak, mpsc};
-use zx::{HandleBased, Status};
+use zx::Status;
 
 /// The main test harness for running a driver unit test.
 pub struct TestHarness<D> {

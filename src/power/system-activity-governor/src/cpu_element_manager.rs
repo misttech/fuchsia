@@ -18,7 +18,7 @@ use futures::future::LocalBoxFuture;
 use power_broker_client::PowerElementContext;
 use std::cell::Cell;
 use std::rc::Rc;
-use zx::{HandleBased, Rights};
+use zx::Rights;
 
 /// SystemActivityGovernorFactory is a function trait used to construct a new
 /// SystemActivityGovernor instance. The parameters are provided by an instance

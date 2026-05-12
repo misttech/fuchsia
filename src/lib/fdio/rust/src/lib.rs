@@ -22,7 +22,6 @@ use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::raw;
 use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::str::Utf8Error;
-use zx::HandleBased as _;
 
 /// Connects a channel to a named service.
 pub fn service_connect(service_path: &str, channel: zx::Channel) -> Result<(), zx::Status> {
@@ -712,7 +711,7 @@ impl Namespace {
         let path = path.as_ptr();
 
         // The channel is always consumed.
-        let channel = channel.into_raw();
+        let channel = channel.into_channel().into_raw();
         let status = unsafe { fdio_sys::fdio_ns_bind(ns, path, channel) };
         zx::Status::ok(status)
     }

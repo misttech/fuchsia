@@ -17,8 +17,20 @@ use driver_manager_shutdown::NodeRemovalTracker;
 use driver_manager_types::{Collection, to_bind_rule2, to_property2};
 use driver_manager_utils::DictionaryUtil;
 use fidl::endpoints::{ServerEnd, create_endpoints};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_driver_crash as fcrash;
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_host as fdh;
+use fidl_fuchsia_driver_index as fdi;
+use fidl_fuchsia_driver_token as fdt;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
+use fuchsia_inspect as inspect;
 use fuchsia_inspect::ArrayProperty;
 use futures::StreamExt;
 use futures::channel::oneshot;
@@ -30,14 +42,6 @@ use std::collections::HashSet;
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_driver_crash as fcrash,
-    fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf,
-    fidl_fuchsia_driver_host as fdh, fidl_fuchsia_driver_index as fdi,
-    fidl_fuchsia_driver_token as fdt, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-    fuchsia_inspect as inspect,
-};
 
 pub struct DriverRunner {
     pub(crate) driver_index: fdi::DriverIndexProxy,
@@ -659,7 +663,6 @@ impl DriverRunner {
         process_koid: zx::Koid,
         thread_koid: zx::Koid,
     ) -> Result<fcrash::DriverCrashInfo, zx::Status> {
-        use zx::HandleBased;
         let hosts = self.driver_hosts.borrow().clone();
         for host in hosts {
             if let Some(host) = host.upgrade()
@@ -989,7 +992,7 @@ mod tests {
         // We need the node to have a token and be found by find_node_by_token_koid.
         // Node::token_koid() returns Some(koid) if it's in DriverComponent state.
         let token = zx::Event::create();
-        let token_remote = token.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+        let token_remote = token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         let koid = token.koid().unwrap();
 
         node.set_state_for_testing(driver_manager_node::types::NodeState::DriverComponent(
@@ -1047,7 +1050,7 @@ mod tests {
         node.set_host(host.clone());
 
         let token = zx::Event::create();
-        let token_remote = token.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+        let token_remote = token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         let koid = token.koid().unwrap();
 
         node.set_state_for_testing(driver_manager_node::types::NodeState::DriverComponent(

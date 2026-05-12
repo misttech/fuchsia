@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::CapabilityBound;
-use fidl::handle::{self, HandleBased};
+use fidl::handle;
 use fuchsia_sync::Mutex;
 use std::sync::Arc;
 
@@ -48,7 +48,6 @@ mod tests {
     use crate::fidl::IntoFsandboxCapability;
     use crate::{Capability, WeakInstanceToken};
     use assert_matches::assert_matches;
-    use fidl::handle::HandleBased;
     use fidl_fuchsia_component_sandbox as fsandbox;
 
     // Tests converting the Handle to FIDL and back.

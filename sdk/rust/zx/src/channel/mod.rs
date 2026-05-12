@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon channel objects.
 
 use crate::{
-    AsHandleRef, HandleBased, HandleDisposition, HandleInfo, HandleRef, MonotonicInstant,
-    NullableHandle, Peered, Status, ok, sys,
+    AsHandleRef, HandleDisposition, HandleInfo, HandleRef, MonotonicInstant, NullableHandle,
+    Peered, Status, ok, sys,
 };
 use std::mem::MaybeUninit;
 

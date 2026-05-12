@@ -10,7 +10,6 @@ use futures::lock::Mutex;
 use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt, pin_mut, select};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use zx::HandleBased;
 
 /// Provides coverage data from multiple instrumented processes to the fuzzing engine.
 ///
@@ -302,18 +301,20 @@ mod tests {
     use super::{Aggregator, collect_data, provide_data};
     use anyhow::{Context as _, Result, bail};
     use fidl::endpoints::create_proxy_and_stream;
+    use fidl_fuchsia_fuzzer as fuzz;
+    use fuchsia_async as fasync;
     use fuchsia_runtime::process_self;
     use futures::{FutureExt, pin_mut, select, try_join};
     use zx::Peered;
-    use {fidl_fuchsia_fuzzer as fuzz, fuchsia_async as fasync};
 
     // Test fixtures.
 
     // Connect and get the options. Wait for a signal and then add the given number of modules.
     async fn producer(proxy: &fuzz::CoverageDataCollectorProxy, num_modules: usize) -> Result<()> {
         let (local, eventpair) = zx::EventPair::create();
-        let process =
-            process_self().duplicate(zx::Rights::SAME_RIGHTS).context("failed to get process")?;
+        let process = process_self()
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .context("failed to get process")?;
         let options = proxy
             .initialize(eventpair, process)
             .await
@@ -380,7 +381,7 @@ mod tests {
         let initialize = async move {
             let (_, eventpair) = zx::EventPair::create();
             let process = process_self()
-                .duplicate(zx::Rights::SAME_RIGHTS)
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
                 .context("failed to get process")?;
             let options = proxy
                 .initialize(eventpair, process)
@@ -445,8 +446,9 @@ mod tests {
 
         // Check that they were set.
         let (_, eventpair) = zx::EventPair::create();
-        let process =
-            process_self().duplicate(zx::Rights::SAME_RIGHTS).context("failed to get process")?;
+        let process = process_self()
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .context("failed to get process")?;
         let (_, options) =
             aggregator.initialize(eventpair, process).await.context("failed to get options")?;
         assert_eq!(options.seed, Some(4));

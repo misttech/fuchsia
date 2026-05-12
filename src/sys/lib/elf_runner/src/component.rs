@@ -8,7 +8,9 @@ use crate::runtime_dir::RuntimeDirectory;
 use async_trait::async_trait;
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_component_runner::ComponentControllerOnEscrowRequest;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_process_lifecycle::{LifecycleEvent, LifecycleProxy};
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
 use futures::future::{BoxFuture, FutureExt};
@@ -19,8 +21,7 @@ use runner::component::Controllable;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use vfs::ExecutionScope;
-use zx::{HandleBased, Process, Task};
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
+use zx::{Process, Task};
 
 /// Immutable information about the component.
 ///

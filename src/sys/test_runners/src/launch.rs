@@ -8,13 +8,15 @@ use crate::logs::{LoggerError, LoggerStream, create_log_stream, create_std_combi
 use anyhow::Error;
 use cm_types::NamespacePath;
 use fidl_fuchsia_component::IntrospectorMarker;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fproc;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::directory::AsRefDirectory;
+use fuchsia_runtime as runtime;
 use namespace::Namespace;
 use runtime::{HandleInfo, HandleType};
 use thiserror::Error;
-use zx::{HandleBased, Process, Rights, Task};
-use {fidl_fuchsia_io as fio, fidl_fuchsia_process as fproc, fuchsia_runtime as runtime};
+use zx::{Process, Rights, Task};
 
 /// The basic rights to use when creating or duplicating a UTC clock. Restrict these
 /// on a case-by-case basis only.
@@ -210,8 +212,10 @@ async fn launch_process_impl(
         .await
         .map_err(LaunchError::LoadInfo)?;
 
-    let component_job =
-        launch_info.job.duplicate(zx::Rights::SAME_RIGHTS).expect("handle duplication failed!");
+    let component_job = launch_info
+        .job
+        .duplicate_handle(zx::Rights::SAME_RIGHTS)
+        .expect("handle duplication failed!");
 
     let (status, process) = launcher.launch(launch_info).await.map_err(LaunchError::LaunchCall)?;
 
@@ -300,12 +304,11 @@ impl Drop for ScopedJob {
 mod tests {
     use super::*;
     use fidl::endpoints::{ClientEnd, Proxy, create_proxy_and_stream};
+    use fidl_fuchsia_component_runner as fcrunner;
+    use fidl_fuchsia_io as fio;
+    use fuchsia_async as fasync;
     use fuchsia_runtime::{job_default, process_self, swap_utc_clock_handle};
     use futures::prelude::*;
-    use {
-        fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio, fuchsia_async as fasync,
-        zx,
-    };
 
     #[test]
     fn scoped_job_works() {
@@ -396,7 +399,7 @@ mod tests {
                                 zx::Status::OK.into_raw(),
                                 Some(
                                     process_self()
-                                        .duplicate(zx::Rights::SAME_RIGHTS)
+                                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
                                         .expect("failed to duplicate process handle"),
                                 ),
                             )

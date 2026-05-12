@@ -4049,7 +4049,7 @@ pub mod tests {
 
         spawn_kernel_and_run(async |locked, task| {
             let process = fuchsia_runtime::process_self()
-                .duplicate(zx::Rights::SAME_RIGHTS)
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
                 .expect("process");
             let remote_creds = Credentials::root();
             let remote_binder_task =
@@ -4157,7 +4157,7 @@ pub mod tests {
 
         spawn_kernel_and_run(async |locked, task| {
             let process = fuchsia_runtime::process_self()
-                .duplicate(zx::Rights::SAME_RIGHTS)
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
                 .expect("process");
             let remote_creds = Credentials::root();
             let remote_binder_task =
@@ -4559,7 +4559,7 @@ pub mod tests {
             let event_clone = event.clone();
 
             let proc_a_thread_handle =
-                proc_a.thread.thread.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+                proc_a.thread.thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
             let (tx, rx) = std::sync::mpsc::channel();
 
             let blocked_thread = std::thread::spawn(move || {

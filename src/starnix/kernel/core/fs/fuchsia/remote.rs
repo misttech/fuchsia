@@ -59,7 +59,7 @@ use syncio::{
     AllocateMode, XattrSetMode, Zxio, zxio_fsverity_descriptor_t, zxio_node_attr_has_t,
     zxio_node_attributes_t,
 };
-use zx::{Counter, HandleBased as _};
+use zx::Counter;
 
 fn is_special(file_info: &fio::FileInfo) -> bool {
     matches!(
@@ -1824,7 +1824,7 @@ impl FileOps for RemoteFileObject {
         // To avoid cache coherency and security issues, we proxy remote files via the Starnix file
         // server.  This will incur a performance penalty which we can optimize later if we need to.
         serve_file_tagged(current_task, file, current_task.current_creds().clone(), "remote_files")
-            .map(|c| Some(c.0.into_handle().into()))
+            .map(|c| Some(c.0.into_channel().into()))
     }
 
     fn ioctl(
@@ -2437,7 +2437,6 @@ mod test {
     use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
-    use zx::HandleBased;
 
     #[::fuchsia::test]
     async fn test_remote_uds() {

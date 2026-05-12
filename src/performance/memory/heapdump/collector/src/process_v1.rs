@@ -4,6 +4,8 @@
 
 use async_trait::async_trait;
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_memory_heapdump_client as fheapdump_client;
+use fidl_fuchsia_memory_heapdump_process as fheapdump_process;
 use futures::StreamExt;
 use futures::lock::Mutex;
 use heapdump_vmo::allocations_table_v1::AllocationsTableReader;
@@ -13,10 +15,6 @@ use log::{info, warn};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use zx::Koid;
-use {
-    fidl_fuchsia_memory_heapdump_client as fheapdump_client,
-    fidl_fuchsia_memory_heapdump_process as fheapdump_process,
-};
 
 use crate::process::{Process, Snapshot};
 use crate::snapshot_storage::SnapshotStorage;
@@ -297,7 +295,6 @@ mod tests {
     use std::pin::Pin;
     use std::rc::Rc;
     use test_case::test_case;
-    use zx::HandleBased;
 
     use crate::registry::Registry;
 
@@ -333,7 +330,8 @@ mod tests {
         // SAFETY: All readers of this VMO will synchronize by means of the ResourceKeys.
         let resources_writer = unsafe { ResourcesTableWriter::new(&resources_vmo) }.unwrap();
 
-        let process = fuchsia_runtime::process_self().duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+        let process =
+            fuchsia_runtime::process_self().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         let koid = process.koid().unwrap();
 
         // Create channels and send the registration message.

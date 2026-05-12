@@ -31,7 +31,6 @@ mod timers;
 use crate::emu::EmulationTimerOps;
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
-use fidl::HandleBased;
 use fidl::encoding::ProxyChannelBox;
 use fidl::endpoints::RequestStream;
 use fidl_fuchsia_driver_token as fdt;
@@ -78,7 +77,7 @@ const TIMEOUT_SECONDS: i64 = 40;
 async fn request_stack_trace() {
     if let Some(ev) = DEBUG_STACK_TRACE_TOKEN.get() {
         log::warn!("*** DRIVER STACK TRACE REQUESTED: expect a driver stack trace below.");
-        let ev_dup = clone_handle(ev);
+        let ev_dup = ev.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         let debug_proxy = fuchsia_component::client::connect_to_protocol::<fdt::DebugMarker>();
         match debug_proxy {
             Ok(proxy) => {
@@ -512,7 +511,13 @@ pub async fn serve(timer_loop: Rc<Loop>, requests: fta::WakeAlarmsRequestStream)
 async fn handle_cancel(alarm_id: String, conn_id: zx::Koid, cmd: &mut mpsc::Sender<Cmd>) {
     let done = zx::Event::create();
     let timer_id = timers::Id::new(alarm_id.clone(), conn_id);
-    if let Err(e) = cmd.send(Cmd::StopById { timer_id, done: clone_handle(&done) }).await {
+    if let Err(e) = cmd
+        .send(Cmd::StopById {
+            timer_id,
+            done: done.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("infallible"),
+        })
+        .await
+    {
         warn!("handle_request: error while trying to cancel: {}: {:?}", alarm_id, e);
     }
     wait_signaled(&done).await;
@@ -750,12 +755,11 @@ async fn monitor_utc_clock_changes(utc_clock: fxr::UtcClock, mut cmd: mpsc::Send
 ///
 /// # Returns
 /// A new handle with the same rights as the original.
-pub fn clone_handle<H: HandleBased>(handle: &H) -> H {
-    handle.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("infallible")
-}
 
-async fn wait_signaled<H: HandleBased>(handle: &H) {
-    fasync::OnSignals::new(handle, zx::Signals::EVENT_SIGNALED).await.expect("infallible");
+async fn wait_signaled<H: fidl::AsHandleRef>(handle: &H) {
+    fasync::OnSignals::new(&handle.as_handle_ref(), zx::Signals::EVENT_SIGNALED)
+        .await
+        .expect("infallible");
 }
 
 pub(crate) fn signal(event: &zx::Event) {
@@ -1629,11 +1633,12 @@ async fn schedule_hrtimer(
             timer_config.id,
             &ffhh::Resolution::Duration(resolution_nanos),
             useful_ticks,
-            clone_handle(&hrtimer_scheduled),
+            hrtimer_scheduled.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("infallible"),
         )
     };
 
-    let hrtimer_scheduled_if_error = clone_handle(&hrtimer_scheduled);
+    let hrtimer_scheduled_if_error =
+        hrtimer_scheduled.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("infallible");
     let hrtimer_task = scope.spawn_local(async move {
         debug!("hrtimer_task: waiting for hrtimer driver response");
         trace::instant!("alarms", "hrtimer:started", trace::Scope::Process);
@@ -1772,7 +1777,7 @@ fn notify_all(
             format_timer(now.into()),
             format_duration(slack),
         );
-        let lease = clone_handle(lease_prototype);
+        let lease = lease_prototype.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("infallible");
         trace::instant!("alarms", "notify", trace::Scope::Process, "alarm_id" => &alarm_id[..], "conn_id" => conn_id);
         if let Some(Err(e)) = timer_node.get_responder().send(alarm, Ok(lease)) {
             error!("could not signal responder: {:?}", e);
@@ -2139,7 +2144,7 @@ mod tests {
                                         // be sleeping in fake time.
                                         fasync::Timer::new(sleep_duration).await;
                                         *timer_running_clone.borrow_mut() = false;
-                                        responder.send(Ok(clone_handle(wake_lease.borrow().as_ref().unwrap()))).unwrap();
+                                        responder.send(Ok(wake_lease.borrow().as_ref().unwrap().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())).unwrap();
                                         debug!("StartAndWait: hrtimer expired");
                                     });
                                 }

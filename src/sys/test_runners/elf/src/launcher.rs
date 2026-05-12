@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use fidl_fuchsia_process as fproc;
+use fuchsia_runtime as runtime;
 use std::sync::LazyLock;
 use test_runners_lib::elf::{Component, KernelError};
 use test_runners_lib::errors::*;
 use test_runners_lib::launch;
 use test_runners_lib::logs::LoggerStream;
-use zx::{self as zx, HandleBased};
-use {fidl_fuchsia_process as fproc, fuchsia_runtime as runtime};
 
 static NEXT_VDSO: LazyLock<zx::NullableHandle> = LazyLock::new(|| {
     runtime::take_startup_handle(runtime::HandleInfo::new(runtime::HandleType::VdsoVmo, 0))

@@ -4,11 +4,10 @@
 
 use fidl_fuchsia_hardware_audio::*;
 use fuchsia_async as fasync;
-use futures::task::{Context, Poll, Waker};
 use futures::FutureExt;
+use futures::task::{Context, Poll, Waker};
 use log::debug;
 use std::pin::Pin;
-use zx::{self as zx, HandleBased};
 
 use crate::stream_config::frames_from_duration;
 use crate::types::{AudioSampleFormat, Error, Result};

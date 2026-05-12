@@ -671,7 +671,7 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicU8, Ordering};
     use std::time::Instant;
-    use zx::{self as zx, HandleBased, Peered};
+    use zx::Peered;
 
     // We do periodic update check roughly every hour.
     const PERIODIC_INTERVAL_FOR_TEST: Duration = Duration::from_secs(60 * 60);

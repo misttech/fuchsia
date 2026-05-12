@@ -5,7 +5,6 @@
 use anyhow::Context;
 use fidl_fuchsia_gpu_magma as fidl_magma;
 use futures::TryStreamExt;
-use zx::{self, HandleBased};
 
 pub struct PerformanceCountersServer {
     event: zx::Event,

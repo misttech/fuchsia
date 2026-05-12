@@ -6,9 +6,11 @@
 use assert_matches::assert_matches;
 use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownOptions, ShutdownReason};
 use fidl_fuchsia_paver::Configuration;
+use fidl_fuchsia_update as fidl_update;
 use fidl_fuchsia_update_ext::{
     InstallationErrorData, InstallationProgress, InstallingData, State, UpdateInfo,
 };
+use fidl_fuchsia_update_installer as fidl_installer;
 use fidl_fuchsia_update_installer_ext::{self as installer};
 use fuchsia_async::{self as fasync, TimeoutExt as _};
 use fuchsia_component::server::ServiceFs;
@@ -24,8 +26,7 @@ use mock_reboot::MockRebootService;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
 use std::time::Duration;
-use zx::{self as zx, EventPair, HandleBased, Peered};
-use {fidl_fuchsia_update as fidl_update, fidl_fuchsia_update_installer as fidl_installer};
+use zx::{EventPair, Peered};
 
 const BINARY_PATH: &str = "/pkg/bin/update";
 

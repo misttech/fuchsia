@@ -10,7 +10,7 @@ use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
 use std::sync::Arc;
-use zx::{self as zx, HandleBased, Peered};
+use zx::Peered;
 
 enum IncomingServices {
     CommitStatusProvider(CommitStatusProviderRequestStream),

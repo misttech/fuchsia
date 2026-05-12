@@ -8,7 +8,7 @@ use super::{
 };
 use crate::peer::PeerConnRef;
 use anyhow::Error;
-use fidl::{AsHandleRef, AsyncSocket, HandleBased, Peered, Signals};
+use fidl::{AsHandleRef, AsyncSocket, Peered, Signals};
 use futures::io::{AsyncRead, AsyncWrite};
 use futures::ready;
 use std::pin::Pin;

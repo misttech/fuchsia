@@ -18,7 +18,6 @@ use fuchsia_async as _;
 use futures::FutureExt as _;
 use log;
 use test_vmo_backed_block_server::{VmoBackedServer, VmoBackedServerConnector};
-use zx::HandleBased as _;
 
 #[fuchsia::test]
 async fn shred_data_volume_when_mounted_keymint() {

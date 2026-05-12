@@ -9,7 +9,6 @@ use std::mem::{align_of, size_of};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use zerocopy::{Immutable, IntoBytes};
-use zx::HandleBased as _;
 
 const SEQUENCE_SIZE: usize = size_of::<AtomicU32>();
 

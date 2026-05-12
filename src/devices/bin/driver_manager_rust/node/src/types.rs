@@ -75,7 +75,7 @@ impl DriverComponent {
     }
 
     pub fn duplicate_instance_handle(&self) -> zx::Event {
-        self.component_instance.duplicate(zx::Rights::SAME_RIGHTS).unwrap()
+        self.component_instance.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()
     }
 
     pub fn close_node(&mut self) {

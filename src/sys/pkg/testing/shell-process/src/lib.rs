@@ -29,7 +29,7 @@ use fuchsia_runtime::{HandleInfo, HandleType, job_default};
 use futures::prelude::*;
 use libc::{STDERR_FILENO, STDOUT_FILENO};
 use std::ffi::{CStr, CString};
-use zx::{self as zx, HandleBased, ProcessInfo};
+use zx::ProcessInfo;
 
 /// A struct to contain the results of a shell process.
 pub struct ProcessOutput {

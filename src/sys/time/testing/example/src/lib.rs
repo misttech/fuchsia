@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use anyhow::Context;
-use fidl::{HandleBased, endpoints};
+use fidl::endpoints;
+use fidl_fuchsia_testing_harness as ftth;
+use fidl_fuchsia_time as fft;
 use fidl_fuchsia_time_external::TimeSample;
+use fidl_test_time_realm as fttr;
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use std::sync::LazyLock;
-use {
-    fidl_fuchsia_testing_harness as ftth, fidl_fuchsia_time as fft, fidl_test_time_realm as fttr,
-    fuchsia_async as fasync,
-};
 
 // A sample backstop time.
 static BACKSTOP_TIME: LazyLock<zx::SyntheticInstant> =

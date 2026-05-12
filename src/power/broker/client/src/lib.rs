@@ -7,7 +7,7 @@ use fidl_fuchsia_power_broker as fbroker;
 use fuchsia_inspect::{self, Property};
 use futures::TryStreamExt;
 use futures::future::LocalBoxFuture;
-use zx::{HandleBased, Rights};
+use zx::Rights;
 
 /// A well-known set of PowerLevels to be specified as the valid_levels for a
 /// power element. This is the set of levels in fbroker::BinaryPowerLevel.

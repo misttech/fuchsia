@@ -236,7 +236,7 @@ impl DirConnectable for DirectoryProxyForwarder {
 mod tests {
     use super::*;
     use fidl::endpoints;
-    use fidl::handle::{HandleBased, Rights};
+    use fidl::handle::Rights;
     use fidl_fuchsia_component_sandbox as fsandbox;
     use futures::StreamExt;
 

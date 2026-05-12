@@ -29,7 +29,6 @@ use std::pin::{Pin, pin};
 use std::sync::Arc;
 use std::{mem, ptr, thread};
 use vfs::ExecutionScope;
-use zx::HandleBased;
 
 pub(super) type TerminateCallback = Box<dyn FnOnce(&str) + Send>;
 
@@ -238,7 +237,7 @@ impl Component {
         for (i, entry) in ns.into_iter().enumerate() {
             let namespace::Entry { path, directory } = entry;
             names_alloc.push(CString::new(format!("{path}")).unwrap());
-            handle.push(directory.into_handle().into_raw());
+            handle.push(directory.into_channel().into_raw());
             let info = fuchsia_runtime::HandleInfo::new(
                 fuchsia_runtime::HandleType::NamespaceDirectory,
                 i as u16,

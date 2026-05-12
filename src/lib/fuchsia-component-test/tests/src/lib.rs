@@ -9,6 +9,13 @@ use cm_rust_testing::*;
 use fidl::endpoints::ClientEnd;
 use fidl_fidl_examples_routing_echo::{self as fecho, EchoMarker as EchoClientStatsMarker};
 use fidl_fuchsia_component::{self as fcomponent, EventStreamMarker};
+use fidl_fuchsia_component_decl as fcdecl;
+use fidl_fuchsia_component_test as ftest;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_examples_services as fex_services;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fprocess;
+use fuchsia_async as fasync;
 use fuchsia_component::server as fserver;
 use fuchsia_component_test::error::Error as RealmBuilderError;
 use fuchsia_component_test::{
@@ -20,12 +27,6 @@ use futures::future::pending;
 use futures::lock::Mutex;
 use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt};
 use std::sync::Arc;
-use zx::HandleBased;
-use {
-    fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_component_test as ftest,
-    fidl_fuchsia_data as fdata, fidl_fuchsia_examples_services as fex_services,
-    fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
-};
 
 const V2_ECHO_CLIENT_ABSOLUTE_URL: &'static str =
     "fuchsia-pkg://fuchsia.com/fuchsia-component-test-tests#meta/echo_client.cm";

@@ -128,10 +128,11 @@ impl futures::Stream for ExceptionsStream {
 mod tests {
     use super::*;
     use anyhow::{Context, Error, format_err};
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_process as fprocess;
     use fuchsia_component::client as fclient;
+    use fuchsia_runtime as fruntime;
     use futures::TryStreamExt;
-    use zx::HandleBased;
-    use {fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess, fuchsia_runtime as fruntime};
 
     #[fasync::run_singlethreaded(test)]
     async fn catch_exception() -> Result<(), Error> {
@@ -173,7 +174,7 @@ mod tests {
             .context("failed to get VMO of executable")?;
 
         // Launch the process
-        let child_job_dup = child_job.duplicate(zx::Rights::SAME_RIGHTS)?;
+        let child_job_dup = child_job.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let launch_info = fprocess::LaunchInfo {
             executable: vmo,
             job: child_job_dup,

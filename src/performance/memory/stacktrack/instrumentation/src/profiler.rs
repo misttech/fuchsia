@@ -5,7 +5,6 @@
 use fuchsia_runtime;
 use stacktrack_vmo::threads_table_v1::{Frame, MAX_FRAMES, NODE_INVALID, StacktrackWriter};
 use std::sync::Mutex;
-use zx::{self as zx, HandleBased};
 
 use crate::unwind::unwind_if_deeper;
 

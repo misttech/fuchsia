@@ -17,7 +17,7 @@ impl RootJob {
     ) -> Result<(), Error> {
         let job = job_default();
         while let Some(fkernel::RootJobRequest::Get { responder }) = stream.try_next().await? {
-            responder.send(job.duplicate(rights)?)?;
+            responder.send(job.duplicate_handle(rights)?)?;
         }
         Ok(())
     }

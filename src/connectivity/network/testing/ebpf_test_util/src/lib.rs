@@ -5,7 +5,6 @@
 use ebpf_api::{AttachType, ProgramType, StructId};
 use fidl_fuchsia_ebpf as febpf;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
-use zx::HandleBased;
 
 // The structs below must match the structs in `ebpf_test_progs.c`.
 // LINT.IfChange

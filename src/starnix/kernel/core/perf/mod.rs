@@ -14,7 +14,6 @@ use std::error::Error;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, mpsc as sync_mpsc};
 use zerocopy::{Immutable, IntoBytes};
-use zx::HandleBased;
 
 use futures::io::{AsyncReadExt, Cursor};
 use fxt::TraceRecord;
@@ -412,7 +411,7 @@ impl FileOps for PerfEventFile {
                 let vmo_copy = perf_event_file
                     .perf_data_vmo
                     .as_handle_ref()
-                    .duplicate(zx::Rights::SAME_RIGHTS)
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .map_err(|status| from_status_like_fdio!(status))?;
                 // SAFETY: See safety requirements on `create_seq_lock`.
                 Ok(unsafe { create_seq_lock(&vmo_copy, buffer_size) })
@@ -423,7 +422,11 @@ impl FileOps for PerfEventFile {
         // Write to a MemoryObject and return it (expected return type for get_memory()).
         security::check_perf_event_read_access(current_task, &self)?;
         let perf_event_file = self.perf_event_file.read();
-        match perf_event_file.perf_data_vmo.as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS) {
+        match perf_event_file
+            .perf_data_vmo
+            .as_handle_ref()
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+        {
             Ok(vmo) => {
                 let vmo: zx::Vmo = vmo.into();
                 let memory = MemoryObject::from(vmo);
@@ -1013,7 +1016,7 @@ pub fn sys_perf_event_open(
 
     // Set up notifier for handling ioctl calls to enable/disable sampling.
     let mut vmo_handle_copy =
-        perf_event_file.perf_data_vmo.as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS);
+        perf_event_file.perf_data_vmo.as_handle_ref().duplicate_handle(zx::Rights::SAME_RIGHTS);
 
     // SAFETY: sample_period is a u64 field in a union with u64 sample_freq.
     // This is always sound regardless of the union's tag.
@@ -1061,7 +1064,7 @@ pub fn sys_perf_event_open(
                             .as_mut()
                             .expect("Failed to get VMO handle")
                             .as_handle_ref()
-                            .duplicate(zx::Rights::SAME_RIGHTS)
+                            .duplicate_handle(zx::Rights::SAME_RIGHTS)
                             .unwrap();
 
                         if let Err(e) = stop_and_collect_samples(

@@ -26,7 +26,6 @@ use std::sync::Arc;
 use test_case::test_case;
 use vfs::file::vmo::read_only;
 use vfs::pseudo_directory;
-use zx::HandleBased;
 
 const COLLECTION_NAME: &'static str = "col";
 const STATIC_CHILD_NAME: &'static str = "static_child";

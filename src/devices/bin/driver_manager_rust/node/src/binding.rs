@@ -6,11 +6,12 @@ use crate::node::Node;
 use crate::types::NodeState;
 use driver_manager_shutdown::{RemovalSet, ShutdownIntent};
 use driver_manager_types::{BindResultTracker, ShutdownState};
+use fidl_fuchsia_driver_development as fdd;
+use fidl_fuchsia_driver_framework as fdf;
 use futures::channel::oneshot;
 use log::{error, warn};
 use std::cell::RefCell;
 use std::rc::Rc;
-use {fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf};
 
 impl Node {
     pub async fn complete_bind(self: &Rc<Self>, result: Result<(), zx::Status>) {
@@ -218,7 +219,7 @@ impl Node {
         if let Some(node_token) = self.token_handle() {
             if let Some(controller_ref) = self.node_controller_ref() {
                 let event = fdf::NodeControllerOnBindRequest {
-                    node_token: Some(node_token.duplicate(zx::Rights::SAME_RIGHTS).unwrap()),
+                    node_token: Some(node_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
                     ..Default::default()
                 };
                 if let Err(e) = controller_ref.send_on_bind(event) {

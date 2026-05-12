@@ -8,13 +8,14 @@ use fidl::endpoints::{create_proxy, create_request_stream};
 use fidl_fuchsia_virtualization::{
     GuestManagerProxy, GuestMarker, GuestStatus, HostVsockAcceptorMarker, HostVsockEndpointMarker,
 };
+use fuchsia_async as fasync;
 use futures::{AsyncReadExt, AsyncWriteExt, FutureExt, TryStreamExt, select, try_join};
+use guest_cli_args as arguments;
 use prettytable::format::consts::FORMAT_CLEAN;
 use prettytable::{Table, cell, row};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::Write;
-use {fuchsia_async as fasync, guest_cli_args as arguments, zx_status};
 
 const LATENCY_CHECK_SIZE_BYTES: usize = 4096;
 const THROUGHPUT_SIZE_MEBIBYTES: usize = 128;
@@ -360,8 +361,6 @@ async fn run_single_stream_bidirectional_test(
     control_socket: &mut fasync::Socket,
     measurements: &mut Measurements,
 ) -> Result<(), Error> {
-    use fidl::HandleBased;
-
     println!("Starting single stream bidirectional round trip throughput test...");
 
     let mut write_socket = fasync::Socket::from_socket(

@@ -27,7 +27,6 @@ use starnix_uapi::{
 };
 use std::collections::HashSet;
 use std::sync::Arc;
-use zx::HandleBased;
 
 // Implementation of the sync framework described at:
 // https://source.android.com/docs/core/graphics/sync

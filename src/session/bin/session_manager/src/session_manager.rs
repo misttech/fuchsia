@@ -5,18 +5,18 @@
 use crate::{power, startup};
 use anyhow::{Context as _, Error, anyhow};
 use fidl::endpoints::{ClientEnd, ServerEnd, create_proxy};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_power_broker as fbroker;
+use fidl_fuchsia_session as fsession;
+use fidl_fuchsia_session_power as fpower;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_sync::Mutex;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use log::{error, warn};
 use std::sync::Arc;
-use zx::HandleBased;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_io as fio, fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_session as fsession,
-    fidl_fuchsia_session_power as fpower,
-};
 
 /// Maximum number of concurrent connections to the protocols served by `SessionManager`.
 const MAX_CONCURRENT_CONNECTIONS: usize = 10_000;
@@ -562,16 +562,15 @@ mod tests {
     use anyhow::{Error, anyhow};
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fidl::endpoints::{ServerEnd, create_proxy_and_stream};
+    use fidl_fuchsia_component as fcomponent;
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_session as fsession;
     use fidl_test_util::spawn_stream_handler;
     use futures::channel::mpsc;
     use futures::prelude::*;
     use session_testing::{spawn_directory_server, spawn_noop_directory_server, spawn_server};
     use std::sync::LazyLock;
     use test_util::Counter;
-    use {
-        fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio,
-        fidl_fuchsia_session as fsession,
-    };
 
     fn serve_launcher(session_manager: SessionManager) -> fsession::LauncherProxy {
         let (launcher_proxy, launcher_stream) =

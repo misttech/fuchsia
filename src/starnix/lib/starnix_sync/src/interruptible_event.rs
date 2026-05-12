@@ -239,8 +239,6 @@ mod test {
 
     #[test]
     fn futex_ownership_is_transferred() {
-        use zx::HandleBased;
-
         let event = Arc::new(InterruptibleEvent::new());
 
         let (root_thread_handle, root_thread_koid) = fuchsia_runtime::with_thread_self(|thread| {
@@ -267,8 +265,6 @@ mod test {
 
     #[test]
     fn stale_pi_owner_is_noop() {
-        use zx::HandleBased;
-
         let mut new_owner = None;
         std::thread::scope(|s| {
             s.spawn(|| {

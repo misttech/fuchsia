@@ -4,7 +4,7 @@
 
 //! Type-safe bindings for Zircon event pairs.
 
-use crate::{AsHandleRef, HandleBased, HandleRef, NullableHandle, Peered, ok};
+use crate::{AsHandleRef, HandleRef, NullableHandle, Peered, ok};
 
 /// An object representing a Zircon
 /// [event_pair](https://fuchsia.dev/fuchsia-src/concepts/kernel/concepts#events_event_pairs)

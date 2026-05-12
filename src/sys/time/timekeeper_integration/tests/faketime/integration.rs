@@ -3,12 +3,17 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
-use fidl::{HandleBased, endpoints};
+use fidl::endpoints;
 use fidl_fuchsia_metrics_test::{LogMethod, MetricEventLoggerQuerierProxy};
 use fidl_fuchsia_testing::Increment;
 use fidl_fuchsia_time_external::{Status, TimeSample};
 use fuchsia_component::client;
 
+use fidl_fuchsia_testing as ffte;
+use fidl_fuchsia_testing_harness as ffth;
+use fidl_fuchsia_time as fft;
+use fidl_test_time_realm as fttr;
+use fuchsia_async as fasync;
 use futures::{Future, StreamExt};
 use std::sync::Arc;
 use test_util::assert_geq;
@@ -19,10 +24,6 @@ use time_metrics_registry::{
 use timekeeper_integration_lib::{
     FakeClockController, RemotePushSourcePuppet, STD_DEV, VALID_TIME, create_cobalt_event_stream,
     new_nonshareable_clock, poll_until_async, poll_until_async_2,
-};
-use {
-    fidl_fuchsia_testing as ffte, fidl_fuchsia_testing_harness as ffth, fidl_fuchsia_time as fft,
-    fidl_test_time_realm as fttr, fuchsia_async as fasync,
 };
 
 use fidl_fuchsia_testing as _; // TODO: fmil - Figure out why this is needed.

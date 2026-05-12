@@ -10,7 +10,6 @@ use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::{Inspector, InspectorConfig};
 use futures::{StreamExt, TryStreamExt};
 use inspect_runtime::PublishOptions;
-use zx::{self as zx, HandleBased};
 
 enum IncomingService {
     InspectPuppet(validate::InspectPuppetRequestStream),

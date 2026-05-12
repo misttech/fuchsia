@@ -7,15 +7,14 @@ use crate::types::{DriverComponent, DriverState, NodeState};
 use driver_manager_driver_host::{DriverLoadArgs, DriverStartArgs};
 use driver_manager_types::{ShutdownState, StartRequestReceiver};
 use fidl::endpoints::{ServerEnd, create_endpoints};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_host as fdh;
 use futures::StreamExt;
 use log::{debug, error, warn};
 use std::rc::Rc;
-use zx::HandleBased;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as frunner,
-    fidl_fuchsia_data as fdata, fidl_fuchsia_driver_framework as fdf,
-    fidl_fuchsia_driver_host as fdh,
-};
 
 impl Node {
     pub async fn send_start_request(&self) -> Result<(), zx::Status> {

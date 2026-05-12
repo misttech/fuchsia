@@ -182,7 +182,7 @@ mod tests {
     use crate::{Data, Dictionary, DirConnector, Handle, serve_capability_store};
     use assert_matches::assert_matches;
     use fidl::endpoints::{Proxy, create_proxy, create_proxy_and_stream};
-    use fidl::handle::{Channel, HandleBased, Status};
+    use fidl::handle::{Channel, Status};
     use fidl_fuchsia_io as fio;
     use fuchsia_async as fasync;
     use fuchsia_fs::directory;

@@ -8,7 +8,7 @@ use fidl_fuchsia_feedback::{Attachment, CrashReport, CrashReporterProxy};
 use fidl_fuchsia_hardware_bluetooth::VendorCrashParameters;
 use fidl_fuchsia_mem as fmem;
 use log::{error, info, warn};
-use zx::{HandleBased, Vmo};
+use zx::Vmo;
 
 use crate::packet_logs::{
     PCAP_GLOBAL_HEADER_SIZE, PCAP_PACKET_HEADER_SIZE, write_pcap_header, write_pcap_packet_header,

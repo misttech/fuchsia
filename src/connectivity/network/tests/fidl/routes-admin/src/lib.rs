@@ -35,7 +35,6 @@ use netstack_testing_macros::netstack_test;
 use routes_common::{TestSetup, test_route};
 use std::pin::pin;
 use test_case::{test_case, test_matrix};
-use zx::HandleBased as _;
 
 const METRIC_TRACKS_INTERFACE: fnet_routes::SpecifiedMetric =
     fnet_routes::SpecifiedMetric::InheritedFromInterface(fnet_routes::Empty);

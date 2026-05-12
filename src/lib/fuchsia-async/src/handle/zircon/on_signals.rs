@@ -100,7 +100,7 @@ impl<'a, H: AsHandleRef + 'a> OnSignals<'a, H> {
     /// Takes the handle.
     pub fn take_handle(mut self: Pin<&mut Self>) -> H
     where
-        H: zx::HandleBased,
+        H: From<zx::NullableHandle>,
     {
         if self.registration.is_registered() {
             self.as_mut().unregister();

@@ -45,7 +45,6 @@ use sdmmc_spec::{
     SDHCI_ISGE_OFFSET, SDHCI_ISTE_OFFSET, SdhciInterruptSignalEnableRegister,
     SdhciInterruptStatusEnableRegister, SdhciInterruptStatusRegister,
 };
-use zx::HandleBased as _;
 
 use crate::dma_buffer::{ContiguousDmaBuffer, DiscontiguousDmaBuffer, DmaBuffer};
 use crate::transfer_manager::{Transfer, TransferManager, TransferOptions};

@@ -10,8 +10,7 @@ use anyhow::Error;
 use fidl_fuchsia_sysmem2::{BufferCollectionSynchronousProxy, CoherencyDomain};
 use fuchsia_trace::duration;
 use mapped_vmo::Mapping;
-use zx::prelude::*;
-use zx::{self as zx, sys};
+use zx::sys;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct FormaImage(pub(crate) usize);

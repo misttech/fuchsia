@@ -6,7 +6,7 @@
 
 use crate::memory::Memory;
 use crate::region::MmioRegion;
-use core::ptr::{with_exposed_provenance_mut, NonNull};
+use core::ptr::{NonNull, with_exposed_provenance_mut};
 use zx::{CachePolicy, VmarFlags, Vmo};
 use zx_status::Status;
 
@@ -101,7 +101,7 @@ impl Drop for VmoMapping {
 mod tests {
     use super::*;
     use crate::Mmio;
-    use zx::{HandleBased, Rights};
+    use zx::Rights;
 
     #[test]
     fn test_mapping() {

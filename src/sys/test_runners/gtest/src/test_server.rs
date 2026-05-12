@@ -5,9 +5,13 @@
 use anyhow::Context as _;
 use async_trait::async_trait;
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fproc;
 use fidl_fuchsia_test::{
     self as ftest, Invocation, Result_ as TestResult, RunListenerProxy, Status,
 };
+use fuchsia_async as fasync;
+use fuchsia_runtime as runtime;
 use futures::TryStreamExt;
 use futures::future::{AbortHandle, FutureExt as _, abortable, join};
 use futures::lock::Mutex;
@@ -26,11 +30,6 @@ use test_runners_lib::elf::{
 use test_runners_lib::errors::*;
 use test_runners_lib::launch;
 use test_runners_lib::logs::{LogError, LogStreamReader, LoggerStream, SocketLogWriter};
-use zx::HandleBased;
-use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_process as fproc, fuchsia_async as fasync,
-    fuchsia_runtime as runtime,
-};
 
 const DYNAMIC_SKIP_RESULT: &str = "SKIPPED";
 

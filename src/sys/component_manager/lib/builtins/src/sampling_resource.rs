@@ -6,7 +6,7 @@ use anyhow::{Error, format_err};
 use fidl_fuchsia_kernel as fkernel;
 use futures::prelude::*;
 use std::sync::Arc;
-use zx::{self as zx, HandleBased, Resource};
+use zx::Resource;
 
 /// An implementation of fuchsia.kernel.SamplingResource protocol.
 pub struct SamplingResource {
@@ -42,8 +42,9 @@ impl SamplingResource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl_fuchsia_kernel as fkernel;
+    use fuchsia_async as fasync;
     use fuchsia_component::client::connect_to_protocol;
-    use {fidl_fuchsia_kernel as fkernel, fuchsia_async as fasync};
 
     async fn get_sampling_resource() -> Result<Resource, Error> {
         let sampling_resource_provider = connect_to_protocol::<fkernel::SamplingResourceMarker>()?;

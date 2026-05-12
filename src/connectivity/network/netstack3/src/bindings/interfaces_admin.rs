@@ -59,7 +59,7 @@ use netstack3_core::ip::{
     UpdateIpConfigurationError,
 };
 use thiserror::Error;
-use zx::{self as zx, HandleBased, Rights};
+use zx::Rights;
 
 use fidl_fuchsia_hardware_network as fhardware_network;
 use fidl_fuchsia_net as fnet;

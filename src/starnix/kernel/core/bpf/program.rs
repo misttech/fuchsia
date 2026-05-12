@@ -23,7 +23,6 @@ use starnix_uapi::auth::{CAP_BPF, CAP_NET_ADMIN, CAP_PERFMON, CAP_SYS_ADMIN};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{bpf_attr__bindgen_ty_4, errno, error};
 use std::sync::{Arc, Weak};
-use zx::HandleBased;
 
 #[derive(Clone, Debug)]
 pub struct ProgramInfo {

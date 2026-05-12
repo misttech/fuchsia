@@ -4,7 +4,6 @@
 
 use crate::LoggingFixture;
 use async_trait::async_trait;
-use fidl::HandleBased;
 
 fn reverse<T>(value: (T, T)) -> (T, T) {
     (value.1, value.0)

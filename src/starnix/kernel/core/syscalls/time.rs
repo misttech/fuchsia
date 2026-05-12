@@ -651,7 +651,7 @@ mod test {
     use starnix_uapi::user_address::UserAddress;
     use std::sync::Arc;
     use test_util::{assert_geq, assert_leq};
-    use zx::{self as zx, BootTimeline, Clock, ClockUpdate, HandleBased};
+    use zx::{BootTimeline, Clock, ClockUpdate};
 
     // TODO(https://fxbug.dev/356911500): Use types below from fuchsia_runtime
     type UtcClock = Clock<BootTimeline, UtcTimeline>;

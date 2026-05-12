@@ -4,6 +4,8 @@
 
 use attribution_server::{AttributionServer, AttributionServerHandle};
 use fidl::endpoints::RequestStream;
+use fidl_fuchsia_memory_attribution as fma;
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use fuchsia_sync::Mutex;
 use futures::StreamExt;
@@ -11,8 +13,6 @@ use log::warn;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
-use zx::HandleBased;
-use {fidl_fuchsia_memory_attribution as fma, fuchsia_async as fasync};
 
 struct DriverInfo {
     component_token: zx::Event,

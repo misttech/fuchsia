@@ -5,14 +5,14 @@
 use super::config::StreamSink;
 use super::logger::{LogWriter, OutputLevel, SyslogWriter, create_namespace_logger};
 use diagnostics_log::Publisher;
+use fidl_fuchsia_process as fproc;
+use fuchsia_async as fasync;
 use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::{Future, StreamExt};
 use log::warn;
 use namespace::Namespace;
 use socket_parsing::{NewlineChunker, NewlineChunkerError};
 use vfs::ExecutionScope;
-use zx::HandleBased;
-use {fidl_fuchsia_process as fproc, fuchsia_async as fasync};
 
 const STDOUT_FD: i32 = 1;
 const STDERR_FD: i32 = 2;

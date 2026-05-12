@@ -12,7 +12,7 @@ use crate::future_help::Observer;
 use crate::labels::{Endpoint, NodeId, TransferKey};
 use crate::router::{FoundTransfer, Router};
 use anyhow::{Context as _, Error, bail, format_err};
-use fidl::{Channel, HandleBased};
+use fidl::Channel;
 use fidl_fuchsia_overnet_protocol::{
     ChannelHandle, ConfigRequest, ConfigResponse, ConnectToService, ConnectToServiceOptions,
     OpenTransfer, PeerDescription, PeerMessage, PeerReply, StreamId, ZirconHandle,

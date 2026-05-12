@@ -181,7 +181,7 @@ impl DiagnosticsHandler {
                 }
                 fnet_debug::DiagnosticsRequest::GetProcessHandleForInspection { responder } => {
                     let process = fuchsia_runtime::process_self()
-                        .duplicate(zx::Rights::INSPECT | zx::Rights::TRANSFER)
+                        .duplicate_handle(zx::Rights::INSPECT | zx::Rights::TRANSFER)
                         .expect("duplicate process handle");
                     responder.send(process)
                 }

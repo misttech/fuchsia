@@ -75,7 +75,7 @@ impl<'a> HandleRef<'a> {
 
     /// Duplicate this handle. The new handle will have the given `rights`, which must be a subset
     /// of the rights the existing handle has.
-    pub fn duplicate(&self, mut rights: Rights) -> Result<Handle, Status> {
+    pub fn duplicate_handle(&self, mut rights: Rights) -> Result<Handle, Status> {
         let mut table = HANDLE_TABLE.lock();
         let entry = table.get(&self.raw_handle()).ok_or(Status::BAD_HANDLE)?;
 
@@ -216,7 +216,7 @@ impl<T: AsHandleRef> AsHandleRef for &T {
 }
 
 /// A trait implemented by all handles for objects which have a peer.
-pub trait Peered: HandleBased {
+pub trait Peered: AsHandleRef {
     /// Set and clear userspace-accessible signal bits on the object's peer. Wraps the
     /// [zx_object_signal_peer](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_signal.md)
     /// syscall.
@@ -300,28 +300,6 @@ impl AsHandleRef for HandleRef<'_> {
     }
 }
 
-/// A trait implemented by all handle-based types.
-pub trait HandleBased: AsHandleRef + From<Handle> + Into<Handle> {
-    /// Duplicate a handle, possibly reducing the rights available.
-    fn duplicate_handle(&self, rights: Rights) -> Result<Self, Status> {
-        self.as_handle_ref().duplicate(rights).map(|handle| Self::from(handle))
-    }
-
-    /// Converts the value into its inner handle.
-    ///
-    /// This is a convenience function which simply forwards to the `Into` trait.
-    fn into_handle(self) -> Handle {
-        self.into()
-    }
-
-    /// Converts the handle into it's raw representation.
-    ///
-    /// The caller takes ownership over the raw handle, and must close it.
-    fn into_raw(self) -> u32 {
-        self.into_handle().raw_take()
-    }
-}
-
 /// Representation of a handle-like object
 #[derive(PartialEq, Eq, Debug, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
@@ -339,8 +317,6 @@ impl AsHandleRef for Handle {
     }
 }
 
-impl HandleBased for Handle {}
-
 impl Handle {
     /// Return an invalid handle
     #[inline(always)]
@@ -351,6 +327,16 @@ impl Handle {
     /// Return true if this handle is invalid
     pub fn is_invalid(&self) -> bool {
         self.0 == INVALID_HANDLE
+    }
+
+    /// Duplicate the handle.
+    pub fn duplicate_handle(&self, rights: Rights) -> Result<Self, Status> {
+        self.as_handle_ref().duplicate_handle(rights)
+    }
+
+    /// Convert to the raw handle value.
+    pub fn into_raw(mut self) -> u32 {
+        self.raw_take()
     }
 
     /// If a raw handle is obtained from some other source, this method converts
@@ -404,7 +390,7 @@ impl Handle {
     /// the original handle. Wraps the
     /// [zx_handle_replace](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_replace.md)
     /// syscall.
-    pub fn replace(self, target_rights: Rights) -> Result<Handle, zx_status::Status> {
+    pub fn replace_handle(self, target_rights: Rights) -> Result<Handle, zx_status::Status> {
         if target_rights == Rights::SAME_RIGHTS {
             return Ok(self);
         }
@@ -458,7 +444,6 @@ impl From<Channel> for Handle {
         out
     }
 }
-impl HandleBased for Channel {}
 impl AsHandleRef for Channel {
     fn as_handle_ref<'a>(&'a self) -> HandleRef<'a> {
         HandleRef(self.0, std::marker::PhantomData)
@@ -477,6 +462,22 @@ impl Channel {
     /// Return true if this handle is invalid
     pub fn is_invalid(&self) -> bool {
         self.0 == INVALID_HANDLE
+    }
+
+    /// Duplicate the handle.
+    pub fn duplicate_handle(&self, rights: Rights) -> Result<Self, Status> {
+        self.as_handle_ref().duplicate_handle(rights).map(Self::from)
+    }
+
+    /// Convert to the inner handle.
+    pub fn into_handle(self) -> Handle {
+        self.into()
+    }
+
+    /// Convert to the raw handle value.
+    pub fn into_raw(self) -> u32 {
+        let mut h = self.into_handle();
+        h.raw_take()
     }
 
     /// Create a channel, resulting in a pair of `Channel` objects representing both
@@ -733,7 +734,7 @@ impl Channel {
                 {
                     return Err(zx_status::Status::INVALID_ARGS);
                 }
-                handles_vec.push(handle.replace(hd.rights)?);
+                handles_vec.push(handle.replace_handle(hd.rights)?);
             } else {
                 panic!("unimplemented HandleOp");
             }
@@ -800,7 +801,6 @@ impl From<Socket> for Handle {
         out
     }
 }
-impl HandleBased for Socket {}
 impl AsHandleRef for Socket {
     fn as_handle_ref<'a>(&'a self) -> HandleRef<'a> {
         HandleRef(self.0, std::marker::PhantomData)
@@ -830,6 +830,22 @@ impl Socket {
     /// Return true if this handle is invalid
     pub fn is_invalid(&self) -> bool {
         self.0 == INVALID_HANDLE
+    }
+
+    /// Duplicate the handle.
+    pub fn duplicate_handle(&self, rights: Rights) -> Result<Self, Status> {
+        self.as_handle_ref().duplicate_handle(rights).map(Self::from)
+    }
+
+    /// Convert to the inner handle.
+    pub fn into_handle(self) -> Handle {
+        self.into()
+    }
+
+    /// Convert to the raw handle value.
+    pub fn into_raw(self) -> u32 {
+        let mut h = self.into_handle();
+        h.raw_take()
     }
 
     /// Create a streaming socket.
@@ -1050,7 +1066,6 @@ impl From<EventPair> for Handle {
         out
     }
 }
-impl HandleBased for EventPair {}
 impl AsHandleRef for EventPair {
     fn as_handle_ref<'a>(&'a self) -> HandleRef<'a> {
         HandleRef(self.0, std::marker::PhantomData)
@@ -1069,6 +1084,22 @@ impl EventPair {
     /// Return true if this handle is invalid
     pub fn is_invalid(&self) -> bool {
         self.0 == INVALID_HANDLE
+    }
+
+    /// Duplicate the handle.
+    pub fn duplicate_handle(&self, rights: Rights) -> Result<Self, Status> {
+        self.as_handle_ref().duplicate_handle(rights).map(Self::from)
+    }
+
+    /// Convert to the inner handle.
+    pub fn into_handle(self) -> Handle {
+        self.into()
+    }
+
+    /// Convert to the raw handle value.
+    pub fn into_raw(self) -> u32 {
+        let mut h = self.into_handle();
+        h.raw_take()
     }
 
     /// Create an event pair.
@@ -1112,7 +1143,6 @@ impl From<Event> for Handle {
         out
     }
 }
-impl HandleBased for Event {}
 impl AsHandleRef for Event {
     fn as_handle_ref<'a>(&'a self) -> HandleRef<'a> {
         HandleRef(self.0, std::marker::PhantomData)
@@ -1129,6 +1159,22 @@ impl Event {
     /// Return true if this handle is invalid
     pub fn is_invalid(&self) -> bool {
         self.0 == INVALID_HANDLE
+    }
+
+    /// Duplicate the handle.
+    pub fn duplicate_handle(&self, rights: Rights) -> Result<Self, Status> {
+        self.as_handle_ref().duplicate_handle(rights).map(Self::from)
+    }
+
+    /// Convert to the inner handle.
+    pub fn into_handle(self) -> Handle {
+        self.into()
+    }
+
+    /// Convert to the raw handle value.
+    pub fn into_raw(self) -> u32 {
+        let mut h = self.into_handle();
+        h.raw_take()
     }
 
     /// Create an event.
@@ -2595,7 +2641,7 @@ mod test {
         let c2_basic_info = c2.basic_info().unwrap();
         assert_eq!(c1_basic_info.rights, Rights::CHANNEL_DEFAULT);
 
-        let new_handle = c1.into_handle().replace(Rights::TRANSFER | Rights::WRITE).unwrap();
+        let new_handle = c1.into_handle().replace_handle(Rights::TRANSFER | Rights::WRITE).unwrap();
 
         let new_c1_basic_info = new_handle.basic_info().unwrap();
         assert_eq!(new_c1_basic_info.koid, c1_basic_info.koid);
@@ -2613,13 +2659,13 @@ mod test {
     #[test]
     fn handle_replace_invalid() {
         assert_eq!(
-            Handle::invalid().replace(Rights::TRANSFER).unwrap_err(),
+            Handle::invalid().replace_handle(Rights::TRANSFER).unwrap_err(),
             zx_status::Status::BAD_HANDLE
         );
 
         let closed_handle = unsafe { mimic_closed_handle() };
         assert_eq!(
-            ManuallyDrop::into_inner(closed_handle).replace(Rights::TRANSFER).unwrap_err(),
+            ManuallyDrop::into_inner(closed_handle).replace_handle(Rights::TRANSFER).unwrap_err(),
             zx_status::Status::BAD_HANDLE
         );
     }
@@ -2630,7 +2676,7 @@ mod test {
         let orig_basic_info = c1.basic_info().unwrap();
         assert_eq!(orig_basic_info.rights, Rights::CHANNEL_DEFAULT);
         assert_eq!(
-            c1.into_handle().replace(Rights::DUPLICATE).unwrap_err(),
+            c1.into_handle().replace_handle(Rights::DUPLICATE).unwrap_err(),
             zx_status::Status::INVALID_ARGS
         );
     }
@@ -2642,7 +2688,7 @@ mod test {
         assert_eq!(orig_basic_info.rights, Rights::CHANNEL_DEFAULT);
         let orig_raw = c1.raw_handle();
 
-        let new_handle = c1.into_handle().replace(Rights::SAME_RIGHTS).unwrap();
+        let new_handle = c1.into_handle().replace_handle(Rights::SAME_RIGHTS).unwrap();
         assert_eq!(new_handle.raw_handle(), orig_raw);
 
         let new_basic_info = new_handle.basic_info().unwrap();
@@ -2713,15 +2759,18 @@ mod test {
     #[test]
     fn user_signal_no_rights() {
         let (c1, _) = EventPair::create();
-        let c1 = c1.into_handle().replace(Rights::EVENTPAIR_DEFAULT & !Rights::SIGNAL).unwrap();
+        let c1 =
+            c1.into_handle().replace_handle(Rights::EVENTPAIR_DEFAULT & !Rights::SIGNAL).unwrap();
         assert_eq!(c1.signal(Signals::empty(), Signals::USER_1), Err(Status::ACCESS_DENIED));
     }
 
     #[test]
     fn user_signal_peer_no_rights() {
         let (c1, _) = EventPair::create();
-        let c1 =
-            c1.into_handle().replace(Rights::EVENTPAIR_DEFAULT & !Rights::SIGNAL_PEER).unwrap();
+        let c1 = c1
+            .into_handle()
+            .replace_handle(Rights::EVENTPAIR_DEFAULT & !Rights::SIGNAL_PEER)
+            .unwrap();
         let c1 = EventPair::from(c1);
         assert_eq!(c1.signal_peer(Signals::empty(), Signals::USER_1), Err(Status::ACCESS_DENIED));
     }
@@ -2793,7 +2842,7 @@ mod test {
     fn event_replace_rights() {
         let e = Event::create();
         assert_eq!(e.basic_info().unwrap().rights, Rights::EVENT_DEFAULT);
-        let e = e.into_handle().replace(Rights::TRANSFER).unwrap();
+        let e = e.into_handle().replace_handle(Rights::TRANSFER).unwrap();
         assert_eq!(e.basic_info().unwrap().rights, Rights::TRANSFER);
     }
 

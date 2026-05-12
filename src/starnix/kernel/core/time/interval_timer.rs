@@ -469,9 +469,9 @@ mod tests {
     use super::*;
     use crate::time::utc::UtcClockOverrideGuard;
     use assert_matches::assert_matches;
+    use fuchsia_async as fasync;
+    use fuchsia_runtime as fxr;
     use std::task::Poll;
-    use zx::HandleBased;
-    use {fuchsia_async as fasync, fuchsia_runtime as fxr};
 
     struct TestContext {
         _initial_time_mono: zx::MonotonicInstant,

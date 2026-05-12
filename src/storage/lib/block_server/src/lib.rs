@@ -17,7 +17,6 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use storage_device::buffer::Buffer;
-use zx::HandleBased;
 
 pub mod async_interface;
 pub mod c_interface;
@@ -1358,7 +1357,6 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::task::{Context, Poll};
-    use zx::HandleBased as _;
 
     #[derive(Default)]
     struct MockInterface {

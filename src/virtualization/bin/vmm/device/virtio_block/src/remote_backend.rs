@@ -150,8 +150,6 @@ mod tests {
     use super::*;
     use crate::backend_test::{BackendController, BackendTest};
 
-    use zx::HandleBased as _;
-
     struct RemoteBackendController {
         vmo: zx::Vmo,
         // This is unused directly, but we need to hold on to it to keep the ramdisk around.

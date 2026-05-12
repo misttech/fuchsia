@@ -33,7 +33,7 @@ use thiserror::Error;
 use vfs::directory::entry::{OpenRequest, serve_directory};
 use vfs::execution_scope::ExecutionScope;
 use vfs::service::endpoint;
-use zx::{HandleBased, Task};
+use zx::Task;
 
 use crate::builtin::runner::BuiltinRunnerFactory;
 use crate::model::component::WeakComponentInstance;
@@ -1079,8 +1079,10 @@ mod tests {
         let token = elf_runner_resources.instance_registry.add_for_tests(moniker);
 
         // Avoids using the system clock for the test.
-        let utc_clock_clone =
-            new_utc_clock_for_tests().as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+        let utc_clock_clone = new_utc_clock_for_tests()
+            .as_handle_ref()
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .unwrap();
 
         let start_info = StartInfo {
             url: "fuchsia://signal-then-hang.cm".to_string(),

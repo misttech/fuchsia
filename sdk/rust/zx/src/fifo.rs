@@ -4,7 +4,7 @@
 
 //! Type-safe bindings for Zircon fifo objects.
 
-use crate::{AsHandleRef, HandleBased, HandleRef, NullableHandle, Status, ok, sys};
+use crate::{AsHandleRef, HandleRef, NullableHandle, Status, ok, sys};
 use std::mem::MaybeUninit;
 use zerocopy::{FromBytes, IntoBytes};
 
@@ -201,8 +201,6 @@ impl<R: FromBytes + IntoBytes, W: FromBytes + IntoBytes> From<Fifo> for Fifo<R, 
         untyped.cast()
     }
 }
-
-impl<R, W> HandleBased for Fifo<R, W> {}
 
 impl<R, W> std::fmt::Debug for Fifo<R, W> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -642,7 +642,6 @@ mod tests {
     use super::*;
     use fake_bti::FakeBti;
     use sdmmc_spec::{CQHCI_TASK_DESCRIPTOR_LIST_NUM_SLOTS, CQHCI_TASK_DESCRIPTOR_LIST_SIZE};
-    use zx::HandleBased as _;
 
     const TDL_BASE: zx_paddr_t = 2 * 1024 * 1024;
     const EXTRA_DESCRIPTORS_BASE: zx_paddr_t = 3 * 1024 * 1024;

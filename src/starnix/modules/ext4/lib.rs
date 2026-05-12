@@ -30,7 +30,6 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{EXT4_SUPER_MAGIC, errno, error, ino_t, off_t, statfs};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use zx::HandleBased;
 
 mod pager;
 

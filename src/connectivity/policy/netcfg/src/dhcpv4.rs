@@ -24,7 +24,6 @@ use futures::stream::StreamExt as _;
 use log::{info, warn};
 use net_types::SpecifiedAddr;
 use net_types::ip::Ipv4Addr;
-use zx::HandleBased;
 
 use crate::{InterfaceId, dns, errors, network};
 

@@ -8,7 +8,6 @@ use fuchsia_async as fasync;
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _, future};
 use std::num::NonZeroUsize;
 use thiserror::Error;
-use zx::HandleBased as _;
 
 /// Buffer size for socket read calls to `LoggerStream::buffer_and_drain`.
 const SOCKET_BUFFER_SIZE: usize = 2048;

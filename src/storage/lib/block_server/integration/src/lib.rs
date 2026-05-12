@@ -16,7 +16,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use test_case::test_case;
 use test_vmo_backed_block_server::{InitialContents, Observer, VmoBackedServerOptions, WriteCache};
-use zx::HandleBased as _;
 
 // Make the block device big enough so that we can have a request which creates more than
 // block_server::MAX_REQUESTS.

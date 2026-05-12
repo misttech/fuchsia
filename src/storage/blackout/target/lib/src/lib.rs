@@ -8,7 +8,6 @@
 
 use anyhow::{Context as _, Result, anyhow};
 use async_trait::async_trait;
-use fidl::HandleBased as _;
 use fidl_fuchsia_blackout_test::{ControllerRequest, ControllerRequestStream};
 use fidl_fuchsia_device::ControllerMarker;
 use fidl_fuchsia_io as fio;

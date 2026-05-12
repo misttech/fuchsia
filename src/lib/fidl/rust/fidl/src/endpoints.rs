@@ -6,8 +6,7 @@
 
 use crate::epitaph::ChannelEpitaphExt;
 use crate::{
-    AsHandleRef, AsyncChannel, Channel, Error, HandleBased, HandleRef, NullableHandle,
-    OnSignalsRef, ServeInner,
+    AsHandleRef, AsyncChannel, Channel, Error, HandleRef, NullableHandle, OnSignalsRef, ServeInner,
 };
 use futures::{Stream, TryStream};
 use std::marker::PhantomData;
@@ -403,8 +402,6 @@ impl<T: ProtocolMarker> ::std::fmt::Debug for ClientEnd<T> {
     }
 }
 
-impl<T> HandleBased for ClientEnd<T> {}
-
 /// Trait implemented by types that can be converted from a client.
 pub trait FromClient {
     /// The protocol.
@@ -525,8 +522,6 @@ impl<T: ProtocolMarker> ::std::fmt::Debug for ServerEnd<T> {
         write!(f, "ServerEnd(name={}, channel={:?})", T::DEBUG_NAME, self.inner)
     }
 }
-
-impl<T> HandleBased for ServerEnd<T> {}
 
 /// Creates client and server endpoints connected to by a channel.
 pub fn create_endpoints<T: ProtocolMarker>() -> (ClientEnd<T>, ServerEnd<T>) {

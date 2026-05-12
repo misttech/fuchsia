@@ -28,7 +28,7 @@ impl Clone for ImageInfo {
             token: self.token.as_ref().map(|token| fuicomp::BufferCollectionImportToken {
                 value: token
                     .value
-                    .duplicate(zx::Rights::SAME_RIGHTS)
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("Failed to duplicate the buffer token."),
             }),
         }

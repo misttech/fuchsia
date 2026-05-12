@@ -57,7 +57,7 @@ impl Connectable for Connector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::handle::{Channel, HandleBased, Rights};
+    use fidl::handle::{Channel, Rights};
     use fidl_fuchsia_component_sandbox as fsandbox;
 
     // NOTE: sending-and-receiving tests are written in `receiver.rs`.

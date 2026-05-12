@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use blocking::Unblock;
 use fidl_fuchsia_virtualization::{GuestManagerProxy, GuestMarker, GuestProxy, LinuxManagerProxy};
@@ -149,7 +149,6 @@ pub trait PlatformServices {
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl::HandleBased;
 
     #[fasync::run_singlethreaded(test)]
     async fn guest_console_copies_async_stream() {

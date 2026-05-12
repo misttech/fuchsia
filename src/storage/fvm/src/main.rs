@@ -2420,7 +2420,7 @@ mod tests {
             final_block_count * block_size as u64,
         )
         .unwrap();
-        let vmo_dup = vmo.as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+        let vmo_dup = vmo.as_handle_ref().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         let vmo_dup = zx::Vmo::from(vmo_dup);
 
         vmo.set_size(initial_block_count * block_size as u64).unwrap();
@@ -2544,7 +2544,7 @@ mod tests {
             final_block_count * block_size as u64,
         )
         .unwrap();
-        let vmo_dup = vmo.as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+        let vmo_dup = vmo.as_handle_ref().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         let vmo_dup = zx::Vmo::from(vmo_dup);
 
         vmo.set_size(initial_block_count * block_size as u64).unwrap();
@@ -2640,7 +2640,7 @@ mod tests {
             final_block_count * block_size as u64,
         )
         .unwrap();
-        let vmo_dup = vmo.as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+        let vmo_dup = vmo.as_handle_ref().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         let vmo_dup = zx::Vmo::from(vmo_dup);
 
         vmo.set_size(initial_block_count * block_size as u64).unwrap();

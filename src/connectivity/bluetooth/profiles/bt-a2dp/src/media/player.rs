@@ -27,7 +27,6 @@ use log::{info, warn};
 use std::collections::HashSet;
 use std::io;
 use std::pin::Pin;
-use zx::{self as zx, HandleBased};
 
 use crate::DEFAULT_SAMPLE_RATE;
 use crate::latm::AudioMuxElement;

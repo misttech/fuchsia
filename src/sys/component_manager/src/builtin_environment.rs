@@ -112,7 +112,6 @@ use {
     cm_config::TraceProvider,
     fidl::endpoints::{self},
     fidl_fuchsia_tracing_provider as ftp,
-    zx::HandleBased,
 };
 
 // Allow shutdown to take up to an hour.
@@ -953,7 +952,9 @@ impl BuiltinEnvironment {
             .await
         {
             Ok(()) => {
-                fuchsia_trace_provider::trace_provider_create_with_service(client_end.into_raw());
+                fuchsia_trace_provider::trace_provider_create_with_service(
+                    client_end.into_channel().into_raw(),
+                );
                 fuchsia_trace_provider::trace_provider_wait_for_init();
             }
             Err(e) => info!("Unable to open Registry server for tracing: {}", e),

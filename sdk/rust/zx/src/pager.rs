@@ -4,9 +4,7 @@
 
 //! Type-safe bindings for Zircon pager objects.
 
-use crate::{
-    AsHandleRef, HandleBased, HandleRef, NullableHandle, Port, Status, Vmo, VmoOptions, ok, sys,
-};
+use crate::{AsHandleRef, HandleRef, NullableHandle, Port, Status, Vmo, VmoOptions, ok, sys};
 use bitflags::bitflags;
 
 /// An object representing a Zircon

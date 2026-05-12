@@ -5,7 +5,7 @@
 //! This crate contains utility functions used in GIDL tests and benchmarks.
 
 use fidl::encoding::{Context, Decode, Decoder, DefaultFuchsiaResourceDialect, TypeMarker};
-use fidl::{HandleBased, HandleDisposition, HandleInfo, HandleOp, NullableHandle, Rights};
+use fidl::{HandleDisposition, HandleInfo, HandleOp, NullableHandle, Rights};
 use zx_status::Status;
 use zx_types;
 
@@ -45,7 +45,7 @@ pub fn create_handles(defs: &[HandleDef]) -> Vec<zx_types::zx_handle_info_t> {
         handle_infos.push(zx_types::zx_handle_info_t {
             handle: match def.rights {
                 Rights::SAME_RIGHTS => default_rights_handle,
-                rights => default_rights_handle.replace(rights).unwrap(),
+                rights => default_rights_handle.replace_handle(rights).unwrap(),
             }
             .into_raw(),
             ty: def.subtype.obj_type(),
@@ -84,7 +84,7 @@ impl HandleFactory {
 }
 
 /// Copies a raw handle into an owned `HandleBased` handle.
-pub fn copy_handle<T: HandleBased>(handle_info: &zx_types::zx_handle_info_t) -> T {
+pub fn copy_handle<T: From<NullableHandle>>(handle_info: &zx_types::zx_handle_info_t) -> T {
     // Safety: The `from_raw` method is only unsafe because it can lead to
     // handles being double-closed if used incorrectly. GIDL-generated code
     // ensures that handles are only closed once.

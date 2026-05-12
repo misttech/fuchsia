@@ -13,7 +13,7 @@ use starnix_uapi::errors::Errno;
 use std::mem::MaybeUninit;
 use std::sync::{Arc, OnceLock};
 use zerocopy::FromBytes;
-use zx::{HandleBased, Koid};
+use zx::Koid;
 
 // This tracks a VMO handle along with basic information about the handle.
 #[derive(Debug)]

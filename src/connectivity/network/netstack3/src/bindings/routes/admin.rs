@@ -21,7 +21,6 @@ use net_types::ip::Ip;
 use netstack3_core::device::DeviceId;
 use netstack3_core::routes::AddableEntry;
 use thiserror::Error;
-use zx::HandleBased as _;
 
 use crate::bindings::devices::StaticCommonInfo;
 use crate::bindings::routes::interface_local::LocalRouteTable;

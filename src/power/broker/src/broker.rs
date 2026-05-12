@@ -1674,7 +1674,6 @@ mod tests {
     use fuchsia_inspect::hierarchy::DiagnosticsHierarchy;
 
     use power_broker_client::BINARY_POWER_LEVELS;
-    use zx::{self as zx, HandleBased};
 
     // Convenience aliases.
     const OFF: IndexedPowerLevel =

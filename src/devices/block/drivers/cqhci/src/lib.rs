@@ -30,7 +30,7 @@ use fuchsia_sync::Mutex;
 use futures::StreamExt as _;
 use futures::channel::oneshot;
 use log::{debug, error, info, warn};
-use zx::{HandleBased as _, Status};
+use zx::Status;
 
 mod command_queue;
 mod dma_buffer;

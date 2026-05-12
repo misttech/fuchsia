@@ -11,7 +11,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use explicit::ResultExt as _;
-use fidl::HandleBased as _;
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker as _, RequestStream as _};
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_posix as fposix;

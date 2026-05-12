@@ -3,17 +3,16 @@
 // found in the LICENSE file.
 
 use crate::wire;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl_fuchsia_ui_composition::BufferCollectionImportToken;
 use virtio_device::mem::DeviceRange;
-use zx::{self as zx, HandleBased};
 
 #[cfg(not(test))]
 use {
     anyhow::Context,
     fidl_fuchsia_ui_composition::{AllocatorMarker, RegisterBufferCollectionArgs},
     fuchsia_component::client::connect_to_protocol,
-    fuchsia_framebuffer::{sysmem::BufferCollectionAllocator, FrameUsage},
+    fuchsia_framebuffer::{FrameUsage, sysmem::BufferCollectionAllocator},
     fuchsia_scenic::BufferCollectionTokenPair,
 };
 

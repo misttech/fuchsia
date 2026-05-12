@@ -129,7 +129,6 @@ impl<T> Drop for PageBuf<T> {
 mod tests {
     use super::*;
     use fuchsia_runtime::vmar_root_self;
-    use zx::HandleBased;
 
     #[track_caller]
     fn fill_buf(buf: &mut PageBuf<[u8; 16]>) {

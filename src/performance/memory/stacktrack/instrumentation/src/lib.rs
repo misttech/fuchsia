@@ -40,7 +40,8 @@ pub extern "C" fn stacktrack_bind_with_channel(channel: zx::sys::zx_handle_t) {
         with_profiler(|profiler, _thread_data| {
             let Ok(vmo_for_registry) = profiler.get_vmo() else { return };
 
-            let Ok(process) = fuchsia_runtime::process_self().duplicate(zx::Rights::SAME_RIGHTS)
+            let Ok(process) =
+                fuchsia_runtime::process_self().duplicate_handle(zx::Rights::SAME_RIGHTS)
             else {
                 return;
             };

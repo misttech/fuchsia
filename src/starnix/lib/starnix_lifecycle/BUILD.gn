@@ -21,7 +21,6 @@ rustc_library("starnix_lifecycle") {
 
   deps = [
     "//sdk/rust/zx",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/starnix/lib/starnix_types",
   ]

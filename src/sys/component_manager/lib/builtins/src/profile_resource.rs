@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_kernel as fkernel;
 use futures::prelude::*;
 use std::sync::Arc;
-use zx::{self as zx, HandleBased, Resource};
+use zx::Resource;
 
 /// An implementation of fuchsia.kernel.ProfileResource protocol.
 pub struct ProfileResource {
@@ -42,8 +42,9 @@ impl ProfileResource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl_fuchsia_kernel as fkernel;
+    use fuchsia_async as fasync;
     use fuchsia_component::client::connect_to_protocol;
-    use {fidl_fuchsia_kernel as fkernel, fuchsia_async as fasync};
 
     async fn get_profile_resource() -> Result<Resource, Error> {
         let profile_resource_provider = connect_to_protocol::<fkernel::ProfileResourceMarker>()?;

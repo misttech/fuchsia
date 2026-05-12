@@ -518,7 +518,6 @@ mod tests {
     use test_vmo_backed_block_server::{
         InitialContents, Observer, VmoBackedServer, VmoBackedServerOptions, WriteAction, WriteCache,
     };
-    use zx::HandleBased;
 
     async fn connect_to_server(
         server: VmoBackedServer,

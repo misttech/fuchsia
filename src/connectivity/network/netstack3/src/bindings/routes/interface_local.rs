@@ -17,7 +17,6 @@ use crate::bindings::Ctx;
 use crate::bindings::routes::admin::{RouteTable, UserRouteSet};
 use crate::bindings::routes::{self, RouteWorkItem, TableId, TableIdOverflowsError};
 use crate::bindings::util::ScopeExt as _;
-use zx::HandleBased as _;
 
 #[derive(Derivative, GenericOverIp)]
 #[derivative(Debug)]

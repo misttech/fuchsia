@@ -6,7 +6,6 @@ use anyhow::{Context, Error};
 use fidl_fuchsia_update as fupdate;
 use futures::prelude::*;
 use std::sync::Arc;
-use zx::HandleBased as _;
 
 pub struct FuchsiaUpdateFidlServer {
     p_external: zx::EventPair,

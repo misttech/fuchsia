@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Result};
-use fidl::HandleBased;
-
 use cm_rust::FidlIntoNative;
 use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_test as ftest;

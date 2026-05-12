@@ -22,7 +22,6 @@ use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
-use zx::HandleBased;
 
 use super::socket_fs;
 
@@ -185,7 +184,8 @@ impl FileOps for SocketFile {
         if let Some(handle) = self.socket.to_handle(file, current_task)? {
             Ok(Some(handle))
         } else {
-            serve_file(current_task, file, Credentials::root()).map(|c| Some(c.0.into_handle()))
+            serve_file(current_task, file, Credentials::root())
+                .map(|c| Some(c.0.into_channel().into()))
         }
     }
 }

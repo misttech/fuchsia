@@ -5,7 +5,6 @@
 //! Implements a clock backed by memory mapped into this process' virtual address
 //! space.  See [MappedClock] for details.
 
-use zx::HandleBased;
 use zx_status::Status;
 
 /// The size of the memory region used by the memory mapped clock. While in theory this size could
@@ -207,7 +206,6 @@ impl<Reference: zx::Timeline, Output: zx::Timeline> MappedClock<Reference, Outpu
 mod tests {
     use super::*;
     use fuchsia_runtime as frt;
-    use zx::HandleBased;
 
     #[test]
     fn try_mapping() {

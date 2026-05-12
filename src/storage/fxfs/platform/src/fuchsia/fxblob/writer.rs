@@ -33,7 +33,7 @@ use fxfs::round::{round_down, round_up};
 use fxfs_trace::{TraceFutureExt, trace_future_args};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock};
-use zx::{self as zx, HandleBased as _, Status};
+use zx::Status;
 
 static RING_BUFFER_SIZE: LazyLock<u64> = LazyLock::new(|| 64 * (zx::system_get_page_size() as u64));
 

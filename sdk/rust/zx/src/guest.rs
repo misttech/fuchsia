@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{
-    AsHandleRef, HandleBased, HandleRef, NullableHandle, Port, Resource, Status, Vmar, ok, sys,
-};
+use crate::{AsHandleRef, HandleRef, NullableHandle, Port, Resource, Status, Vmar, ok, sys};
 
 /// Wrapper type for guest physical addresses.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]

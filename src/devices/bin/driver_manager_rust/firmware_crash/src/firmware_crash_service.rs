@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_firmware_crash as ffc;
+use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use futures::StreamExt;
 use log::warn;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
-use zx::HandleBased;
-use {fidl_fuchsia_firmware_crash as ffc, fuchsia_async as fasync};
 
 pub struct FirmwareCrashService {
     inner: Rc<RefCell<FirmwareCrashInner>>,

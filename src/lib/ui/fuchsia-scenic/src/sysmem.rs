@@ -4,8 +4,9 @@
 
 use anyhow::Error;
 use fidl::endpoints::{ClientEnd, create_endpoints};
+use fidl_fuchsia_sysmem2 as fsysmem2;
+use fidl_fuchsia_ui_composition as fland;
 use fsysmem2::BufferCollectionTokenDuplicateRequest;
-use {fidl_fuchsia_sysmem2 as fsysmem2, fidl_fuchsia_ui_composition as fland};
 
 // Pair of tokens to be used with Scenic Allocator FIDL protocol.
 pub struct BufferCollectionTokenPair {
@@ -27,7 +28,7 @@ impl BufferCollectionTokenPair {
 pub fn duplicate_buffer_collection_import_token(
     import_token: &fland::BufferCollectionImportToken,
 ) -> Result<fland::BufferCollectionImportToken, Error> {
-    let handle = import_token.value.as_handle_ref().duplicate(zx::Rights::SAME_RIGHTS)?;
+    let handle = import_token.value.as_handle_ref().duplicate_handle(zx::Rights::SAME_RIGHTS)?;
     Ok(fland::BufferCollectionImportToken { value: handle.into() })
 }
 

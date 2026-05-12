@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon event objects.
 
 use crate::{
-    AsHandleRef, HandleBased, HandleRef, NullableHandle, Process, Property, PropertyQuery, Status,
-    Thread, ok, sys,
+    AsHandleRef, HandleRef, NullableHandle, Process, Property, PropertyQuery, Status, Thread, ok,
+    sys,
 };
 
 /// An object representing a Zircon

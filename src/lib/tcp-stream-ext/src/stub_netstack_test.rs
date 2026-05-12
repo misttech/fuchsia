@@ -5,10 +5,10 @@
 #![cfg(test)]
 
 use fidl::endpoints::{ControlHandle as _, DiscoverableProtocolMarker as _, Responder as _};
+use fidl_fuchsia_posix_socket as fposix_socket;
+use fuchsia_async as fasync;
 use futures::stream::StreamExt as _;
 use tcp_stream_ext::TcpStreamExt as _;
-use zx::{self as zx, HandleBased as _};
-use {fidl_fuchsia_posix_socket as fposix_socket, fuchsia_async as fasync};
 
 const TCP_USER_TIMEOUT_OPTION_VALUE: i32 = -13;
 
@@ -48,7 +48,7 @@ fn with_tcp_stream(f: impl FnOnce(std::net::TcpStream) -> ()) {
             },
         ))
     });
-    let () = f(fdio::create_fd(client.into_handle()).expect("endpoint into handle").into());
+    let () = f(fdio::create_fd(client.into_channel().into()).expect("endpoint into handle").into());
     handle.join().expect("thread join")
 }
 

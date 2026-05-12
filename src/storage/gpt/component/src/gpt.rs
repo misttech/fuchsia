@@ -682,7 +682,6 @@ mod tests {
         WriteFlags,
     };
     use block_server::{BlockInfo, DeviceInfo, WriteOptions};
-    use fidl::HandleBased as _;
     use fidl_fuchsia_io as fio;
     use fidl_fuchsia_storage_block as fblock;
     use fidl_fuchsia_storage_partitions as fpartitions;

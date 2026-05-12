@@ -3,10 +3,14 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
-use fidl::{HandleBased, endpoints};
+use fidl::endpoints;
 use fidl_fuchsia_metrics::MetricEvent;
 use fidl_fuchsia_metrics_test::{LogMethod, MetricEventLoggerQuerierProxy};
+use fidl_fuchsia_testing_harness as ftth;
+use fidl_fuchsia_time as fft;
 use fidl_fuchsia_time_external::TimeSample;
+use fidl_test_time_realm as fttr;
+use fuchsia_async as fasync;
 use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_component::client;
 use futures::Future;
@@ -28,10 +32,6 @@ use timekeeper_integration_lib::{
     BACKSTOP_TIME, BEFORE_BACKSTOP_TIME, BETWEEN_SAMPLES, RemotePushSourcePuppet, RemoteRtcUpdates,
     STD_DEV, VALID_RTC_TIME, VALID_TIME, VALID_TIME_2, create_cobalt_event_stream,
     new_nonshareable_clock, poll_until, poll_until_some_async, rtc_time_to_zx_time,
-};
-use {
-    fidl_fuchsia_testing_harness as ftth, fidl_fuchsia_time as fft, fidl_test_time_realm as fttr,
-    fuchsia_async as fasync,
 };
 
 /// Run a test against an instance of timekeeper. Timekeeper will maintain the provided clock.

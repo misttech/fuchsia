@@ -30,7 +30,7 @@ use fuchsia_runtime::{
 use mapped_clock::MappedClock;
 use starnix_logging::{log_info, log_warn};
 use std::sync::LazyLock;
-use zx::{self as zx, HandleBased, Rights, Unowned};
+use zx::{Rights, Unowned};
 
 type MemoryMappedClock = MappedClock<zx::BootTimeline, fuchsia_runtime::UtcTimeline>;
 
@@ -95,7 +95,7 @@ fn utc_clock() -> Unowned<'static, UtcClockHandle> {
 }
 
 fn duplicate_utc_clock_handle(rights: zx::Rights) -> Result<UtcClockHandle, zx::Status> {
-    utc_clock().duplicate(rights)
+    utc_clock().duplicate_handle(rights)
 }
 
 // Check whether the UTC clock is started based on actual clock read. If you need something

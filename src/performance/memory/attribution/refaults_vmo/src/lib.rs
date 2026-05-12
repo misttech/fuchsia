@@ -4,7 +4,7 @@
 
 use memory_mapped_vmo::MemoryMappedVmo;
 use std::sync::atomic::{AtomicU64, Ordering};
-use zx::{HandleBased, Rights};
+use zx::Rights;
 
 pub struct PageRefaultCounter {
     vmo: zx::Vmo,

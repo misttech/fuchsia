@@ -33,8 +33,13 @@ use component_events::matcher::*;
 use component_events::sequence::{EventSequence, Ordering};
 use fcomponent::{IntrospectorProxy, RealmProxy};
 use fdecl::StartupMode;
-use fidl::HandleBased;
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_sys2 as fsys2;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, RealmBuilder, RealmBuilderParams, RealmInstance, Ref, Route,
@@ -45,11 +50,6 @@ use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures_util::{FutureExt, StreamExt, TryStreamExt};
 use std::sync::Arc;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-    fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys2,
-    fuchsia_async as fasync,
-};
 
 struct SenderReceiver {
     sender: Mutex<mpsc::UnboundedSender<fcrunner::ComponentRunnerRequest>>,

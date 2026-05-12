@@ -15,8 +15,7 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::sync::LazyLock;
-use zx::prelude::*;
-use zx::{self, Vmo};
+use zx::Vmo;
 
 static KEY_VALIDATION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[A-Za-z]\w+[A-Za-z0-9]$").expect("Key validation regex failed to compile")

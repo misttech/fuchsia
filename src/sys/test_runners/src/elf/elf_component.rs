@@ -7,6 +7,9 @@ use crate::errors::ArgumentError;
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use fidl::endpoints::{ClientEnd, ProtocolMarker, Proxy, ServerEnd, create_proxy};
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_runner as fcrunner;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_ldsvc::LoaderMarker;
 use fidl_fuchsia_test_runner::{
     LibraryLoaderCacheBuilderMarker, LibraryLoaderCacheMarker, LibraryLoaderCacheProxy,
@@ -28,11 +31,7 @@ use thiserror::Error;
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::vmo::read_only;
 use vfs::tree_builder::TreeBuilder;
-use zx::{HandleBased, Task};
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as fcrunner,
-    fidl_fuchsia_io as fio,
-};
+use zx::Task;
 
 static PKG_PATH: &'static str = "/pkg";
 
@@ -314,7 +313,7 @@ impl Component {
             None => Ok(None),
             Some(vmo) => Ok(Some(
                 vmo.as_handle_ref()
-                    .duplicate(zx::Rights::SAME_RIGHTS)
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .map_err(|_| {
                         ComponentError::VmoChild(
                             self.url.clone(),

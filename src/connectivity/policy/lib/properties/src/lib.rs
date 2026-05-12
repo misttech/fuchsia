@@ -8,7 +8,6 @@
 #![deny(missing_docs)]
 
 use fidl_fuchsia_net_policy_properties as fnp_properties;
-use zx::HandleBased as _;
 
 /// Extensions for [`fnp_properties::NetworkToken`].
 pub trait NetworkTokenExt: Sized {

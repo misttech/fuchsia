@@ -360,7 +360,6 @@ mod tests {
     use starnix_sync::Unlocked;
     use starnix_uapi::vfs::EpollEvent;
     use syncio::Zxio;
-    use zx::HandleBased;
 
     #[::fuchsia::test]
     async fn test_vsock_socket() {

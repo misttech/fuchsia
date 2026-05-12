@@ -159,7 +159,6 @@ mod tests {
     use fuchsia_sync::Mutex;
     use futures::{FutureExt, pin_mut, select};
     use std::sync::Arc;
-    use zx::HandleBased;
 
     const VMO_SIZE: usize = 4096;
 

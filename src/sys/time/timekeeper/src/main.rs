@@ -29,6 +29,12 @@ use crate::time_source::{TimeSource, TimeSourceLauncher};
 use crate::time_source_manager::TimeSourceManager;
 use anyhow::{Context as _, Result};
 use chrono::prelude::*;
+use fidl_fuchsia_net_reachability as ffnr;
+use fidl_fuchsia_time as ftime;
+use fidl_fuchsia_time_alarms as fta;
+use fidl_fuchsia_time_external as ffte;
+use fidl_fuchsia_time_test as fftt;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::health;
 use fuchsia_inspect::health::Reporter;
@@ -45,11 +51,6 @@ use std::sync::Arc;
 use time_adjust::Command;
 use time_metrics_registry::TimeMetricDimensionExperiment;
 use zx::BootTimeline;
-use {
-    fidl_fuchsia_net_reachability as ffnr, fidl_fuchsia_time as ftime,
-    fidl_fuchsia_time_alarms as fta, fidl_fuchsia_time_external as ffte,
-    fidl_fuchsia_time_test as fftt, fuchsia_async as fasync,
-};
 
 type UtcTransform = time_util::Transform<BootTimeline, UtcTimeline>;
 
@@ -287,7 +288,8 @@ async fn main() -> Result<()> {
         .await
         .context("failed to get UTC clock from maintainer")?
         .cast();
-    let utc_clock_for_alarms = alarms::clone_handle(&utc_clock);
+    let utc_clock_for_alarms =
+        utc_clock.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("failed to duplicate clock");
     debug!("utc_clock handle with koid: {}", koid_of(&utc_clock));
 
     let time_source_urls = TimeSourceUrls {

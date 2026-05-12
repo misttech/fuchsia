@@ -3,21 +3,22 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Error, anyhow};
+use fidl::endpoints;
 use fidl::endpoints::{Proxy, create_proxy};
-use fidl::{HandleBased, endpoints};
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fprocess;
 use fidl_fuchsia_test::{self as ftest};
 use frunner::ComponentNamespaceEntry;
 use ftest::CaseListenerProxy;
+use fuchsia_runtime as fruntime;
 use fuchsiaperf::FuchsiaPerfBenchmarkResult;
 use futures::StreamExt;
 use gtest_runner_lib::parser::read_file;
 use log::debug;
 use namespace::Namespace;
 use std::collections::HashMap;
-use {
-    fidl_fuchsia_component_runner as frunner, fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio,
-    fidl_fuchsia_process as fprocess, fuchsia_runtime as fruntime,
-};
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum TestType {

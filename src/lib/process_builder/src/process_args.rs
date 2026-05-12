@@ -243,7 +243,6 @@ mod tests {
     use anyhow::Error;
     use fuchsia_runtime::HandleType;
     use std::iter;
-    use zx::HandleBased;
 
     #[test]
     fn build_and_write_message() -> Result<(), Error> {

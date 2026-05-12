@@ -3,6 +3,9 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_boot::BootfsFileVmo;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_kernel as fkernel;
+use fuchsia_async as fasync;
 use fuchsia_bootfs::{
     BootfsParser, BootfsParserError, zbi_bootfs_is_aligned, zbi_bootfs_page_align,
 };
@@ -18,8 +21,7 @@ use vfs::directory::immutable::connection::ImmutableConnection;
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::vmo;
 use vfs::tree_builder::{self, TreeBuilder};
-use zx::{self as zx, HandleBased, Resource};
-use {fidl_fuchsia_io as fio, fidl_fuchsia_kernel as fkernel, fuchsia_async as fasync};
+use zx::Resource;
 
 // Used to create executable VMOs.
 const BOOTFS_VMEX_NAME: &str = "bootfs_vmex";

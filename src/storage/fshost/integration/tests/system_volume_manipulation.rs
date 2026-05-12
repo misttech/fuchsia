@@ -26,7 +26,6 @@ use std::sync::Arc;
 use storage_device::DeviceHolder;
 use storage_device::block_device::BlockDevice;
 use test_vmo_backed_block_server::VmoBackedServer;
-use zx::HandleBased as _;
 
 const TEST_BLOBS: [&[u8]; 3] =
     ["Goodbye, stranger!".as_bytes(), "Hello, world!".as_bytes(), &['a' as u8; 16_384]];

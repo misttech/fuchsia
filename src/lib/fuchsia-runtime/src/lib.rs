@@ -418,7 +418,7 @@ fn utc_clock() -> Unowned<'static, UtcClock> {
 
 /// Duplicate the UTC `Clock` registered with the runtime.
 pub fn duplicate_utc_clock_handle(rights: Rights) -> Result<UtcClock, Status> {
-    utc_clock().duplicate(rights)
+    utc_clock().duplicate_handle(rights)
 }
 
 /// Swaps the current process-global UTC clock with `new_clock`, returning

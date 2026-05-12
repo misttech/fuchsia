@@ -4,7 +4,7 @@
 
 //! Type-safe bindings for Zircon pmt objects.
 
-use crate::{AsHandleRef, HandleBased, HandleRef, NullableHandle, Status, ok, sys};
+use crate::{AsHandleRef, HandleRef, NullableHandle, Status, ok, sys};
 use std::mem;
 
 /// An object representing a Zircon Pinned Memory Token.

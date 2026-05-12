@@ -41,7 +41,6 @@ use netstack3_core::{IpExt, icmp, udp};
 use packet::{Buf, BufferMut};
 use packet_formats::ip::DscpAndEcn;
 use thiserror::Error;
-use zx::prelude::HandleBased as _;
 
 use crate::bindings::errno::ErrnoError;
 use crate::bindings::error::Error;

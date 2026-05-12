@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::HandleBased;
 use fidl::endpoints::{ControlHandle, ServerEnd};
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_ldsvc as fldsvc;
@@ -99,9 +98,10 @@ impl Loader {
         // there is always a valid one currently installed.
         //
         // SAFETY: `ld_client` is the peer of a valid loader serve hosted in `loader_thread` below.
-        let old_loader: zx::Channel =
-            unsafe { zx::NullableHandle::from_raw(dl_set_loader_service(ld_client.into_raw())) }
-                .into();
+        let old_loader: zx::Channel = unsafe {
+            zx::NullableHandle::from_raw(dl_set_loader_service(ld_client.into_channel().into_raw()))
+        }
+        .into();
         // The loader service needs to run on a separate thread because the `dlopen` operation will
         // make a sync call back into the loader service we just installed.
         let loader_thread = thread::spawn(move || {

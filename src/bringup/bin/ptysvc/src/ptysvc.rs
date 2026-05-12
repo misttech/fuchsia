@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::rc::Rc;
-use zx::{HandleBased, Peered};
+use zx::Peered;
 
 const FEATURE_RAW: u32 = 1;
 

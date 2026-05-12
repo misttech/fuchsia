@@ -4,7 +4,7 @@
 
 //! Type-safe bindings for Zircon cuonter objects.
 
-use crate::{AsHandleRef, HandleBased, HandleRef, NullableHandle, Status, ok, sys};
+use crate::{AsHandleRef, HandleRef, NullableHandle, Status, ok, sys};
 
 /// An object representing a Zircon
 /// [counter](https://fuchsia.dev/fuchsia-src/concepts/objects/counter.md).

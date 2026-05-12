@@ -15,7 +15,7 @@ use storage_isolated_driver_manager::create_random_guid;
 use zx::{Rights, Vmo};
 
 async fn create_ramdisk(vmo: &Vmo, ramdisk_block_size: u64) -> RamdiskClient {
-    let duplicated_handle = vmo.as_handle_ref().duplicate(Rights::SAME_RIGHTS).unwrap();
+    let duplicated_handle = vmo.as_handle_ref().duplicate_handle(Rights::SAME_RIGHTS).unwrap();
     let duplicated_vmo = Vmo::from(duplicated_handle);
 
     RamdiskClientBuilder::new_with_vmo(duplicated_vmo, Some(ramdisk_block_size))

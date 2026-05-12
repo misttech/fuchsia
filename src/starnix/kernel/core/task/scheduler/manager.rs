@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::task::{RoleOverrides, Task};
-use fidl::HandleBased;
 use fidl_fuchsia_scheduler::{
     RoleManagerGetProfileForRoleRequest, RoleManagerMarker, RoleManagerSetRoleRequest,
     RoleManagerSynchronousProxy, RoleName, RoleTarget, RoleType,

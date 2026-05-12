@@ -875,7 +875,6 @@ mod tokens_store {
     use starnix_rcu::rcu_hash_map::Entry;
     use starnix_uapi::uid_t;
     use std::sync::{Arc, OnceLock, Weak};
-    use zx::HandleBased as _;
 
     /// Trait for the `Kernel` functionality used in `SocketTokensStore`. Mocked
     /// in tests.

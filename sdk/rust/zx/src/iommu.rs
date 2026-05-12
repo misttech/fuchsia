@@ -4,7 +4,7 @@
 
 //! Type-safe bindings for Zircon iommu objects.
 
-use crate::{AsHandleRef, HandleBased, HandleRef, NullableHandle, Resource, Status, ok, sys};
+use crate::{AsHandleRef, HandleRef, NullableHandle, Resource, Status, ok, sys};
 
 /// An object representing a Zircon iommu
 ///

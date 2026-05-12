@@ -94,7 +94,6 @@ pub(crate) trait WithRights {
 impl WithRights for fidl::Channel {
     type Rights = ChannelRights;
     fn with_rights(self, rights: ChannelRights) -> Result<Self, Error> {
-        use zx::HandleBased;
         let mut zx_rights = self.basic_info()?.rights;
         zx_rights.set(zx::Rights::READ, rights.contains(ChannelRights::READ));
         zx_rights.set(zx::Rights::WRITE, rights.contains(ChannelRights::WRITE));
@@ -107,7 +106,6 @@ impl WithRights for fidl::Channel {
 impl WithRights for fidl::Socket {
     type Rights = SocketRights;
     fn with_rights(self, rights: SocketRights) -> Result<Self, Error> {
-        use zx::HandleBased;
         let mut zx_rights = self.basic_info()?.rights;
         zx_rights.set(zx::Rights::READ, rights.contains(SocketRights::READ));
         zx_rights.set(zx::Rights::WRITE, rights.contains(SocketRights::WRITE));

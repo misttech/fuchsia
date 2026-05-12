@@ -7,16 +7,18 @@ use async_trait::async_trait;
 use driver_manager_types::to_deprecated_property;
 use driver_manager_utils::{open_lib_dir, open_pkg_file};
 use fidl::endpoints::ClientEnd;
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_host as fdh;
+use fidl_fuchsia_driver_loader as floader;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_ldsvc as fldsvc;
+use fidl_fuchsia_mem as fmem;
 use log::error;
 use std::sync::Arc;
 use vfs::directory::simple::Simple;
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fuchsia_component_runner as frunner, fidl_fuchsia_data as fdata,
-    fidl_fuchsia_driver_framework as fdf, fidl_fuchsia_driver_host as fdh,
-    fidl_fuchsia_driver_loader as floader, fidl_fuchsia_io as fio, fidl_fuchsia_ldsvc as fldsvc,
-    fidl_fuchsia_mem as fmem,
-};
 
 pub struct DriverStartArgs {
     pub node: ClientEnd<fdf::NodeMarker>,
@@ -371,7 +373,6 @@ impl DriverHost for DriverHostComponent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fidl::HandleBased;
 
     #[test]
     fn test_get_filename() {

@@ -21,7 +21,6 @@ use futures::prelude::*;
 use inspect_runtime::{TreeServerSendPreference, service};
 use log::{error, info, warn};
 use std::collections::HashMap;
-use zx::HandleBased;
 
 #[derive(Debug)]
 enum Property {

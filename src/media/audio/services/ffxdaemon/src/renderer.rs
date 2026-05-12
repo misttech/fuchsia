@@ -7,17 +7,16 @@ use crate::error::ControllerError;
 use crate::wav_socket::WavSocket;
 use anyhow::{Context, Error, anyhow};
 use fidl::endpoints::create_proxy;
+use fidl_fuchsia_audio_controller as fac;
+use fidl_fuchsia_media as fmedia;
+use fidl_fuchsia_media_audio as fmedia_audio;
+use fidl_fuchsia_ultrasound as fultrasound;
+use fuchsia_async as fasync;
 use fuchsia_audio::Format;
 use fuchsia_component::client::connect_to_protocol;
 use futures::future::BoxFuture;
 use futures::{FutureExt, TryStreamExt};
 use std::cmp::min;
-use zx::{self as zx, HandleBased};
-use {
-    fidl_fuchsia_audio_controller as fac, fidl_fuchsia_media as fmedia,
-    fidl_fuchsia_media_audio as fmedia_audio, fidl_fuchsia_ultrasound as fultrasound,
-    fuchsia_async as fasync,
-};
 
 /// Default number of packets to send to the `AudioRenderer`.
 const DEFAULT_PACKET_COUNT: u32 = 4;

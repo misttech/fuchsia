@@ -16,7 +16,6 @@ use fidl_fuchsia_sysmem2::{
     BufferCollectionProxy, BufferCollectionTokenMarker, BufferCollectionTokenProxy,
 };
 use fuchsia_component::client::connect_to_protocol;
-use zx::HandleBased;
 
 use crate::controller::Coordinator;
 use crate::error::{Error, Result};

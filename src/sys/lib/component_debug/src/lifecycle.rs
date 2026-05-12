@@ -4,15 +4,14 @@
 
 use cm_types::{BorrowedLongName, BorrowedName};
 use flex_client::ProxyHasDomain;
+use flex_fuchsia_component as fcomponent;
+use flex_fuchsia_component_decl as fdecl;
+use flex_fuchsia_sys2 as fsys;
 use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt};
 use moniker::Moniker;
 use thiserror::Error;
-use {
-    flex_fuchsia_component as fcomponent, flex_fuchsia_component_decl as fdecl,
-    flex_fuchsia_sys2 as fsys,
-};
 
 /// Errors that apply to all lifecycle actions.
 #[derive(Error, Debug)]
@@ -272,7 +271,6 @@ pub async fn unresolve_instance(
 mod test {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::HandleBased;
     use fidl::endpoints::create_proxy_and_stream;
     use flex_fuchsia_process as fprocess;
     use futures::TryStreamExt;

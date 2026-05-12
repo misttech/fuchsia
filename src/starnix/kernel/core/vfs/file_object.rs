@@ -27,7 +27,6 @@ use starnix_types::ownership::ReleaseGuard;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::user_address::ArchSpecific;
 
-use fidl::HandleBased;
 use fidl::endpoints::ProtocolMarker as _;
 use linux_uapi::{FSCRYPT_MODE_AES_256_CTS, FSCRYPT_MODE_AES_256_XTS};
 use starnix_logging::{
@@ -398,7 +397,7 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
         serve_file(current_task, file, current_task.current_creds().clone())
-            .map(|c| Some(c.0.into_handle().into()))
+            .map(|c| Some(c.0.into_channel().into()))
     }
 
     // Return a vector of handles. This is used in situations where there is more than one handle

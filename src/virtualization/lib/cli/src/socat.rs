@@ -7,8 +7,8 @@ use fidl_fuchsia_virtualization::{
     HostVsockEndpointProxy,
 };
 use futures::TryStreamExt;
+use guest_cli_args as arguments;
 use std::fmt;
-use {guest_cli_args as arguments, zx_status};
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum SocatResult {
@@ -76,8 +76,6 @@ impl std::convert::From<fidl::Error> for SocatError {
 fn duplicate_socket(_socket: fidl::Socket) -> Result<(fidl::Socket, fidl::Socket), SocatError> {
     #[cfg(target_os = "fuchsia")]
     {
-        use fidl::HandleBased;
-
         let other = _socket.duplicate_handle(fidl::Rights::SAME_RIGHTS)?;
         Ok((_socket, other))
     }
@@ -224,8 +222,8 @@ mod test {
     use super::*;
     use fidl::endpoints::create_proxy_and_stream;
     use fuchsia_async as fasync;
-    use futures::future::join;
     use futures::StreamExt;
+    use futures::future::join;
 
     #[fasync::run_until_stalled(test)]
     async fn socat_listen_invalid_host_returns_err() {

@@ -8,7 +8,6 @@ use fidl_fuchsia_starnix_psi::{
 };
 use std::sync::Arc;
 use test_case::test_case;
-use zx::HandleBased;
 
 mod event_waiter;
 use event_waiter::{EventWaiter, make_epoll_waiter, make_poll_waiter};

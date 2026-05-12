@@ -302,7 +302,6 @@ fn elf_to_vmar_perm_flags(elf_flags: &elf_parse::SegmentFlags) -> zx::VmarFlags 
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::HandleBased;
     use std::cell::RefCell;
     use std::mem::size_of;
     use std::sync::LazyLock;
@@ -377,7 +376,7 @@ mod tests {
             flags: zx::VmarFlags,
         ) -> Result<usize, zx::Status> {
             self.0.borrow_mut().push(RecordedMapping {
-                vmo: vmo.duplicate(zx::Rights::SAME_RIGHTS).unwrap(),
+                vmo: vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
                 vmo_offset,
                 length,
                 flags,

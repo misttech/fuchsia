@@ -23,7 +23,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::pin::pin;
 use std::rc::Rc;
-use zx::{Duration, HandleBased, Peered};
+use zx::{Duration, Peered};
 
 use crate::broker::{Broker, CurrentLevelSubscriber, LeaseID};
 use crate::topology::{ElementID, IndexedPowerLevel};
@@ -708,8 +708,7 @@ impl ElementRunnerHandler {
     fn start(&mut self, broker: Rc<RefCell<Broker>>, element_runner: fpb::ElementRunnerProxy) {
         let element_id = self.element_id;
         let element_name = self.element_name.clone();
-        let debug_info =
-            format!("ElementRunnerHandler<{}:{}>", self.element_name, self.element_id);
+        let debug_info = format!("ElementRunnerHandler<{}:{}>", self.element_name, self.element_id);
         // Use a shutdown event to ensure any in progress level transition handshakes are completed
         // before terminating the task.
         let mut shutdown = self.shutdown.wait_or_dropped();

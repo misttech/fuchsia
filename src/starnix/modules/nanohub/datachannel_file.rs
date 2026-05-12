@@ -19,7 +19,7 @@ use starnix_uapi::errors::{EIO, Errno, errno};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
 use std::sync::Arc;
-use zx::{HandleBased, Rights, WaitResult};
+use zx::{Rights, WaitResult};
 
 #[derive(Clone)]
 pub struct DataChannelDevice {
@@ -67,15 +67,16 @@ impl DataChannelFile {
         suspend_manager: SuspendResumeManagerHandle,
     ) -> Result<Self, Errno> {
         let event = zx::Event::create();
-        let event_dup = event.duplicate(Rights::SAME_RIGHTS).map_err(|e: zx::Status| {
+        let event_dup = event.duplicate_handle(Rights::SAME_RIGHTS).map_err(|e: zx::Status| {
             log_error!("Failed to duplicate event handle: {:?}", e);
             Errno::new(EIO)
         })?;
 
-        let wake_source_event = event.duplicate(Rights::SAME_RIGHTS).map_err(|e: zx::Status| {
-            log_error!("Failed to duplicate event handle for wake source: {:?}", e);
-            Errno::new(EIO)
-        })?;
+        let wake_source_event =
+            event.duplicate_handle(Rights::SAME_RIGHTS).map_err(|e: zx::Status| {
+                log_error!("Failed to duplicate event handle for wake source: {:?}", e);
+                Errno::new(EIO)
+            })?;
         suspend_manager
             .add_external_wake_source(
                 wake_source_event.into_handle(),
@@ -116,7 +117,8 @@ impl FileOps for DataChannelFile {
         _file: &FileObjectState,
         _current_task: &CurrentTask,
     ) {
-        let event = self.event.duplicate(Rights::SAME_RIGHTS).expect("Failed to duplicate event");
+        let event =
+            self.event.duplicate_handle(Rights::SAME_RIGHTS).expect("Failed to duplicate event");
         let _ =
             self.suspend_manager.remove_external_wake_source(event.into_handle()).map_err(|_| {
                 log_error!("Failed to remove wake source");

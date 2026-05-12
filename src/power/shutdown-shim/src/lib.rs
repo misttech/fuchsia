@@ -7,21 +7,23 @@ mod shutdown_watcher;
 use crate::reboot_reasons::ShutdownOptionsWrapper;
 use crate::shutdown_watcher::ShutdownWatcher;
 use anyhow::{Context, format_err};
-use fidl::HandleBased;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_hardware_power_statecontrol::{
     AdminMexecRequest, AdminRequest, AdminRequestStream, AdminShutdownResponder,
     RebootMethodsWatcherRegisterRequestStream, ShutdownAction, ShutdownOptions, ShutdownReason,
     ShutdownWatcherRegisterRequestStream,
 };
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_power::CollaborativeRebootInitiatorRequestStream;
 use fidl_fuchsia_power_internal::{
     CollaborativeRebootReason, CollaborativeRebootSchedulerRequestStream,
 };
+use fidl_fuchsia_power_system as fsystem;
 use fidl_fuchsia_sys2::SystemControllerMarker;
 use fidl_fuchsia_system_state::{
     SystemPowerState, SystemStateTransitionRequest, SystemStateTransitionRequestStream,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::client;
 use fuchsia_component::directory::{AsRefDirectory, Directory};
 use fuchsia_component::server::ServiceFs;
@@ -34,7 +36,6 @@ use shutdown_shim_config::Config;
 use std::pin::pin;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_power_system as fsystem, fuchsia_async as fasync};
 
 mod collaborative_reboot;
 

@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon jobs.
 
 use crate::{
-    AsHandleRef, HandleBased, HandleRef, Koid, MonotonicDuration, NullableHandle, ObjectQuery,
-    Process, ProcessOptions, Rights, Status, Task, Topic, Vmar, ok, sys,
+    AsHandleRef, HandleRef, Koid, MonotonicDuration, NullableHandle, ObjectQuery, Process,
+    ProcessOptions, Rights, Status, Task, Topic, Vmar, ok, sys,
 };
 use bitflags::bitflags;
 

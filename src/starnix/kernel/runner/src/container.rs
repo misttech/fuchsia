@@ -72,7 +72,6 @@ use std::sync::Weak;
 
 use crate::serve_memory_attribution_provider_container;
 use attribution_server::{AttributionServer, AttributionServerHandle};
-use fidl::HandleBased;
 
 /// Manages the memory attribution protocol for a Starnix container.
 struct ContainerMemoryAttributionManager {

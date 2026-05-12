@@ -9,7 +9,6 @@ use std::ops::RangeInclusive;
 use std::sync::{Arc, Mutex};
 
 use ffx_target_net::SocketProvider;
-use fidl::HandleBased as _;
 use fidl_fuchsia_net_ext::SocketAddress as SocketAddressExt;
 use fuchsia_async::emulated_handle::Peered as _;
 use futures::channel::mpsc;

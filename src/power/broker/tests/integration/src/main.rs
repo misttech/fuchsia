@@ -15,7 +15,6 @@ use futures_util::TryStreamExt;
 use power_broker_client::BINARY_POWER_LEVELS;
 use std::thread;
 use std::time::Duration;
-use zx::{self as zx, HandleBased};
 
 async fn build_power_broker_realm() -> Result<RealmInstance, Error> {
     let builder = RealmBuilder::new().await?;

@@ -12,7 +12,7 @@ use crate::lifecycle::{
 use anyhow::{Result, bail, format_err};
 #[allow(unused)]
 use flex_client::ProxyHasDomain;
-use flex_client::{HandleBased, Socket};
+use flex_client::Socket;
 use flex_fuchsia_component as fcomponent;
 use flex_fuchsia_component_decl as fdecl;
 use flex_fuchsia_process as fprocess;
@@ -78,6 +78,7 @@ impl Stdio {
 
     #[cfg(feature = "fdomain")]
     fn new(client: &std::sync::Arc<flex_client::Client>) -> (Self, Vec<fprocess::HandleInfo>) {
+        use flex_client::HandleBased;
         let (local_in, remote_in) = client.create_stream_socket();
         let (local_out, remote_out) = client.create_stream_socket();
         let (local_err, remote_err) = client.create_stream_socket();

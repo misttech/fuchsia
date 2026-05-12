@@ -32,7 +32,6 @@ use storage_isolated_driver_manager::{BlockDeviceMatcher, find_block_device};
 use test_vmo_backed_block_server::{VmoBackedServer, VmoBackedServerConnector};
 use uuid::Uuid;
 use zerocopy::{Immutable, IntoBytes};
-use zx::{self as zx, HandleBased};
 
 pub const TEST_DISK_BLOCK_SIZE: u32 = 512;
 pub const FVM_SLICE_SIZE: u64 = 32 * 1024;

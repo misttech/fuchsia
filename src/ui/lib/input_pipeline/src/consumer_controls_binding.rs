@@ -13,7 +13,6 @@ use fuchsia_inspect::health::Reporter;
 
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
-use zx::HandleBased;
 
 /// A [`ConsumerControlsEvent`] represents an event where one or more consumer control buttons
 /// were pressed.

@@ -30,7 +30,6 @@ use starnix_uapi::{errno, error};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, OnceLock};
-use zx::HandleBased;
 
 type IoctlInvokeFdPtr = MultiArchUserRef<
     linux_uapi::fastrpc_ioctl_invoke_fd,
@@ -1002,7 +1001,6 @@ pub mod tests {
     use starnix_sync::OrderedMutex;
     use starnix_types::PAGE_SIZE;
     use starnix_uapi::user_address::UserAddress;
-    use zx::HandleBased;
 
     #[fuchsia::test]
     fn merge_buffers_test_empty_input() {

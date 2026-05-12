@@ -6,7 +6,6 @@ use crate::dispatcher::TaskHandle;
 use crate::input_handler::{Handler, InputHandlerStatus, UnhandledInputHandler};
 use crate::{Dispatcher, consumer_controls_binding, input_device, metrics};
 use async_trait::async_trait;
-use fidl::HandleBased;
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_input_report as fidl_input_report;
 use fidl_fuchsia_ui_input as fidl_ui_input;

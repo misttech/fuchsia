@@ -93,7 +93,7 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> TaskInfo<T> {
         cpu_cores: i64,
     ) -> Result<Self, zx::Status> {
         let koid = task.koid()?;
-        let maybe_handle = task.handle_ref().duplicate(zx::Rights::SAME_RIGHTS).ok();
+        let maybe_handle = task.handle_ref().duplicate_handle(zx::Rights::SAME_RIGHTS).ok();
         let task_state = Arc::new(Mutex::new(TaskState::from(task)));
         let weak_task_state = Arc::downgrade(&task_state);
         let most_recent_measurement_nanos = Arc::new(Mutex::new(None));

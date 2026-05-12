@@ -34,7 +34,6 @@ use {
     crate::file::common::get_backing_memory_validate_flags,
     crate::temp_clone::{TempClonable, unblock},
     std::io::SeekFrom,
-    zx::{self as zx, HandleBased},
 };
 
 /// Initializes a file connection and returns a future which will process the connection.

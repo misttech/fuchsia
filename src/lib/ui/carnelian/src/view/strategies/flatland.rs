@@ -31,7 +31,7 @@ use futures::prelude::*;
 use futures::{StreamExt, TryStreamExt};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ffi::CStr;
-use zx::{self as zx, Event, HandleBased, MonotonicInstant, Signals};
+use zx::{Event, MonotonicInstant, Signals};
 
 fn setup_handle_flatland_events(
     event_stream: flatland::FlatlandEventStream,

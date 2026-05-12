@@ -569,7 +569,7 @@ mod tests {
     use crate::{Data, DirConnectable, Handle};
     use assert_matches::assert_matches;
     use fidl::endpoints::{ServerEnd, create_endpoints};
-    use fidl::{AsHandleRef, HandleBased, endpoints};
+    use fidl::{AsHandleRef, endpoints};
     use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
     #[fuchsia::test]

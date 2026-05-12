@@ -7,8 +7,8 @@
 use crate::clock::Clock;
 use crate::iob::Iob;
 use crate::{
-    AsHandleRef, HandleBased, HandleRef, Koid, Name, NullableHandle, ObjectQuery, Status, Timeline,
-    Topic, Vmo, ok, sys,
+    AsHandleRef, HandleRef, Koid, Name, NullableHandle, ObjectQuery, Status, Timeline, Topic, Vmo,
+    ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;

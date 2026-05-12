@@ -46,7 +46,8 @@ pub(crate) async fn recv<Hdl, CreateType>(
 >
 where
     Hdl: 'static + for<'a> ProxyableRW<'a>,
-    CreateType: fidl::HandleBased + IntoProxied<Proxied = Hdl> + std::fmt::Debug + WithRights,
+    CreateType:
+        Into<fidl::NullableHandle> + IntoProxied<Proxied = Hdl> + std::fmt::Debug + WithRights,
 {
     Ok(match stream_ref {
         StreamRef::Creating(StreamId { id: stream_id }) => {
@@ -55,7 +56,7 @@ where
             let (stream_writer, stream_reader) = conn.bind_id(stream_id).await?;
             let overnet_chan = overnet_chan.into_proxied()?;
             (
-                app_chan.into_handle(),
+                app_chan.into(),
                 Some(super::main::run_main_loop(
                     Proxy::new(overnet_chan, router),
                     initiate_transfer,
@@ -76,11 +77,7 @@ where
                 conn.bind_uni_id(stream_id).await?.into();
             let opened_transfer = Weak::upgrade(&router)
                 .ok_or_else(|| format_err!("No router to handle draining stream ref"))?
-                .open_transfer(
-                    new_destination_node.into(),
-                    transfer_key,
-                    overnet_chan.into_handle(),
-                )
+                .open_transfer(new_destination_node.into(), transfer_key, overnet_chan.into())
                 .await?;
             match opened_transfer {
                 OpenedTransfer::Fused => {
@@ -93,7 +90,7 @@ where
                     )
                 }
                 OpenedTransfer::Remote(stream_writer, stream_reader, overnet_chan) => (
-                    app_chan.into_handle(),
+                    app_chan.into(),
                     Some(super::main::run_main_loop(
                         Proxy::new(Hdl::from_fidl_handle(overnet_chan)?, router),
                         initiate_transfer,
@@ -127,7 +124,7 @@ where
                 FoundTransfer::Remote(stream_writer, stream_reader) => {
                     let (app_chan, overnet_chan) = create_handles()?;
                     (
-                        app_chan.with_rights(rights)?.into_handle(),
+                        app_chan.with_rights(rights)?.into(),
                         Some(super::main::run_main_loop(
                             Proxy::new(overnet_chan.into_proxied()?, router),
                             initiate_transfer,

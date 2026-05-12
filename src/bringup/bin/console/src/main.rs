@@ -7,12 +7,12 @@ mod fifo;
 use anyhow::{Context, Error};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_hardware_pty::{self as pty, WindowSize};
+use fidl_fuchsia_kernel as fkernel;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use zx::HandleBased;
-use {fidl_fuchsia_kernel as fkernel, fuchsia_async as fasync};
 
 // This should be std::ascii::Char::EndOfText once stabilized.
 const END_OF_TEXT: u8 = 3;

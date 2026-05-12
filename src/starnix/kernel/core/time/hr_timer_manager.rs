@@ -26,7 +26,7 @@ use starnix_uapi::{errno, from_status_like_fdio};
 use std::collections::{HashMap, VecDeque};
 use std::pin::pin;
 use std::sync::{Arc, OnceLock, Weak};
-use zx::{HandleBased, HandleRef};
+use zx::HandleRef;
 
 /// Max value for inspect event history.
 const INSPECT_EVENT_BUFFER_SIZE: usize = 128;
@@ -44,10 +44,6 @@ fn signal_event(
     event
         .signal(clear_mask, set_mask)
         .inspect_err(|err| log_error!(err:?, clear_mask:?, set_mask:?; "while signaling event"))
-}
-
-fn duplicate_handle<H: HandleBased>(h: &H) -> Result<H, Errno> {
-    h.duplicate_handle(zx::Rights::SAME_RIGHTS).map_err(|status| from_status_like_fdio!(status))
 }
 
 const TIMEOUT_SECONDS: i64 = 40;
@@ -122,7 +118,7 @@ macro_rules! log_long_op {
 }
 
 /// Waits forever asynchronously for EVENT_SIGNALED.
-async fn wait_signaled<H: HandleBased>(handle: &H) -> Result<()> {
+async fn wait_signaled<H: zx::AsHandleRef>(handle: &H) -> Result<()> {
     log_long_op!(fasync::OnSignals::new(handle, zx::Signals::EVENT_SIGNALED))
         .context("hr_timer_manager:wait_signaled")?;
     Ok(())
@@ -556,10 +552,13 @@ impl HrTimerManager {
     ) -> Result<TimelineChangeObserver, Errno> {
         let timer_id = timer.get_id();
         let counter = zx::Counter::create();
-        let counter_clone = duplicate_handle(&counter).map_err(|err| {
-            log_error!("could not duplicate handle: {err:?}");
-            errno!(EINVAL, format!("could not duplicate handle: {err}, {timer_id:?}"))
-        })?;
+        let counter_clone = counter
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .map_err(|status| from_status_like_fdio!(status))
+            .map_err(|err| {
+                log_error!("could not duplicate handle: {err:?}");
+                errno!(EINVAL, format!("could not duplicate handle: {err}, {timer_id:?}"))
+            })?;
         let (send, recv) = mpsc::unbounded();
         self.get_sender()
             .unbounded_send(Cmd::MonitorUtc { timer: timer.clone(), counter, recv })
@@ -596,7 +595,9 @@ impl HrTimerManager {
         // Ensure that all internal init has completed in `watch_new_hrtimer_loop`
         // before proceeding from here.
         let setup_done = zx::Event::create();
-        let setup_done_clone = duplicate_handle(&setup_done)?;
+        let setup_done_clone = setup_done
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .map_err(|status| from_status_like_fdio!(status))?;
 
         let closure = async move |locked_and_task: LockedAndTask<'_>| {
             let current_thread = std::thread::current();
@@ -645,7 +646,7 @@ impl HrTimerManager {
         self: &HrTimerManagerHandle,
         system_task: &CurrentTask,
         triggered_node: &HrTimerNodeHandle,
-        lease: impl HandleBased,
+        lease: zx::EventPair,
     ) -> Result<bool> {
         let timer_id = triggered_node.hr_timer.get_id();
         {
@@ -901,12 +902,20 @@ impl HrTimerManager {
                         }
                         TargetTime::BootInstant(boot_instant) => device_async_proxy.set_and_wait(
                             boot_instant,
-                            fta::SetMode::NotifySetupDone(duplicate_handle(&setup_event)?),
+                            fta::SetMode::NotifySetupDone(
+                                setup_event
+                                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                    .map_err(|status| from_status_like_fdio!(status))?,
+                            ),
                             &wake_alarm_id,
                         ),
                         TargetTime::RealTime(utc_instant) => device_async_proxy.set_and_wait_utc(
                             &fta::InstantUtc { timestamp_utc: utc_instant.into_nanos() },
-                            fta::SetMode::NotifySetupDone(duplicate_handle(&setup_event)?),
+                            fta::SetMode::NotifySetupDone(
+                                setup_event
+                                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                                    .map_err(|status| from_status_like_fdio!(status))?,
+                            ),
                             &wake_alarm_id,
                         ),
                     };
@@ -1127,7 +1136,9 @@ impl HrTimerManager {
         let sender = self.get_sender();
         let new_timer_node = HrTimerNode::new(deadline, wake_source, new_timer.clone());
         let wake_alarm_scheduled = zx::Event::create();
-        let wake_alarm_scheduled_clone = duplicate_handle(&wake_alarm_scheduled)?;
+        let wake_alarm_scheduled_clone = wake_alarm_scheduled
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .map_err(|status| from_status_like_fdio!(status))?;
         let timer_id = new_timer.get_id();
         sender
             .unbounded_send(Cmd::Start {
@@ -1156,7 +1167,9 @@ impl HrTimerManager {
 
         let sender = self.get_sender();
         let done = zx::Event::create();
-        let done_clone = duplicate_handle(&done)?;
+        let done_clone = done
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .map_err(|status| from_status_like_fdio!(status))?;
         let timer_id = timer.get_id();
         sender
             .unbounded_send(Cmd::Stop {
@@ -1376,9 +1389,9 @@ mod tests {
             start_next_sender: Default::default(),
         });
         let counter = zx::Counter::create();
-        let counter_clone = duplicate_handle(&counter).unwrap();
+        let counter_clone = counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         let wake_channel = connect_factory(counter_clone, response_type);
-        let counter_clone = duplicate_handle(&counter).unwrap();
+        let counter_clone = counter.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         manager
             .init_internal(&current_task, Some(wake_channel), Some(counter_clone))
             .expect("infallible");

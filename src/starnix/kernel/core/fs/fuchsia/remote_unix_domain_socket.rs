@@ -13,6 +13,8 @@ use crate::vfs::socket::{
 };
 use crate::vfs::{AncillaryData, FileHandle, MessageReadInfo, UnixControlData};
 use fidl::endpoints::SynchronousProxy;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_starnix_binder as fbinder;
 use linux_uapi::{SO_LINGER, SOL_SOCKET};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::auth::Credentials;
@@ -21,7 +23,6 @@ use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, error, from_status_like_fdio, uapi, ucred};
 use std::sync::Arc;
 use zerocopy::IntoBytes;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_starnix_binder as fbinder};
 static READABLE_SIGNAL: zx::Signals =
     zx::Signals::from_bits_retain(fio::FileSignal::READABLE.bits());
 static WRITABLE_SIGNAL: zx::Signals =
@@ -357,11 +358,11 @@ mod tests {
     use crate::vfs::socket::SocketFile;
     use crate::vfs::{VecInputBuffer, VecOutputBuffer};
     use fidl::endpoints::{DiscoverableProtocolMarker as _, RequestStream};
+    use fidl_fuchsia_unknown as funknown;
+    use fuchsia_async as fasync;
     use futures::StreamExt;
     use starnix_sync::Mutex;
     use std::sync::Arc;
-    use zx::HandleBased;
-    use {fidl_fuchsia_unknown as funknown, fuchsia_async as fasync};
 
     #[derive(Debug)]
     struct Data {

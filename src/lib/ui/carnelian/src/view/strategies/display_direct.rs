@@ -30,7 +30,7 @@ use fuchsia_trace::{duration, instant};
 use futures::channel::mpsc::UnboundedSender;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
-use zx::{Event, HandleBased, MonotonicDuration, MonotonicInstant, Status};
+use zx::{Event, MonotonicDuration, MonotonicInstant, Status};
 
 type WaitEvents = BTreeMap<ImageId, (Event, EventId)>;
 
@@ -106,7 +106,7 @@ async fn create_and_import_event(
 ) -> Result<(Event, EventId), Error> {
     let event = Event::create();
 
-    let their_event = event.duplicate(zx::Rights::SAME_RIGHTS)?;
+    let their_event = event.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
     let event_id_value = event.koid()?.raw_koid();
     let event_id = EventId(event_id_value);
     coordinator.import_event(their_event, &event_id.into())?;

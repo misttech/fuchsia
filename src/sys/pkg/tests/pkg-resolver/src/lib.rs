@@ -51,7 +51,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
 use vfs::directory::helper::DirectlyMutable as _;
-use zx::HandleBased as _;
 
 // If the body of an https response is not large enough, hyper will download the body
 // along with the header in the initial fuchsia_hyper::HttpsClient.request(). This means

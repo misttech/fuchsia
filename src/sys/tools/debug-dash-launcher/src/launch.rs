@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::{layout, trampoline};
-use fidl::HandleBased;
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_dash::LauncherError;
 use fidl_fuchsia_hardware_pty as pty;
@@ -127,10 +126,8 @@ fn split_pty_into_handles(
     pty.clone(to_pty_stderr).map_err(|_| LauncherError::Pty)?;
 
     let stdin = pty.into_channel().unwrap().into_zx_channel().into_handle();
-    let stdout = stdout.into_handle();
-    let stderr = stderr.into_handle();
 
-    Ok((stdin, stdout, stderr))
+    Ok((stdin, stdout.into(), stderr.into()))
 }
 
 fn create_handle_infos(
@@ -140,17 +137,17 @@ fn create_handle_infos(
     stderr: zx::NullableHandle,
 ) -> Result<Vec<fproc::HandleInfo>, LauncherError> {
     let stdin_handle = fproc::HandleInfo {
-        handle: stdin.into_handle(),
+        handle: stdin,
         id: HandleId::new(HandleType::FileDescriptor, 0).as_raw(),
     };
 
     let stdout_handle = fproc::HandleInfo {
-        handle: stdout.into_handle(),
+        handle: stdout,
         id: HandleId::new(HandleType::FileDescriptor, 1).as_raw(),
     };
 
     let stderr_handle = fproc::HandleInfo {
-        handle: stderr.into_handle(),
+        handle: stderr,
         id: HandleId::new(HandleType::FileDescriptor, 2).as_raw(),
     };
 

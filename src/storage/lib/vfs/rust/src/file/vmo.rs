@@ -15,7 +15,7 @@ use crate::file::{File, FileLike, FileOptions, GetVmo, StreamIoConnection, SyncM
 use crate::node::Node;
 use fidl_fuchsia_io as fio;
 use std::sync::Arc;
-use zx::{self as zx, HandleBased as _, Status, Vmo};
+use zx::{Status, Vmo};
 
 /// Creates a new read-only `VmoFile` with the specified `content`.
 ///

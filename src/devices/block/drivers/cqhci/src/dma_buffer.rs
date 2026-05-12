@@ -220,7 +220,6 @@ mod tests {
     use super::*;
 
     use fake_bti::FakeBti;
-    use zx::HandleBased as _;
 
     #[test]
     fn contiguous() {

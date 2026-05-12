@@ -24,7 +24,7 @@ use moniker::{ExtendedMoniker, Moniker};
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Debug;
 use std::sync::{Arc, Weak};
-use zx::{self as zx, HandleBased, sys as zx_sys};
+use zx::sys as zx_sys;
 
 macro_rules! maybe_return {
     ($e:expr) => {

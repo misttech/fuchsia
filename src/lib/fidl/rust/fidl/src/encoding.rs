@@ -10,8 +10,7 @@ pub use static_assertions::const_assert_eq;
 
 use crate::endpoints::ProtocolMarker;
 use crate::handle::{
-    HandleBased, HandleDisposition, HandleInfo, HandleOp, NullableHandle, ObjectType, Rights,
-    Status,
+    HandleDisposition, HandleInfo, HandleOp, NullableHandle, ObjectType, Rights, Status,
 };
 use crate::time::{Instant, Ticks, Timeline};
 use crate::{Error, MethodType, Result};
@@ -477,7 +476,7 @@ impl HandleInfoFor<DefaultFuchsiaResourceDialect> for HandleInfo {
                     missing_rights: expected_rights - received_rights,
                 });
             }
-            return match handle_info.handle.replace(expected_rights) {
+            return match handle_info.handle.replace_handle(expected_rights) {
                 Ok(r) => Ok(r),
                 Err(status) => Err(Error::HandleReplace(status)),
             };
@@ -2203,7 +2202,7 @@ fn check_string_length(actual_bytes: usize, max_bytes: usize) -> Result<()> {
 // Handles
 ////////////////////////////////////////////////////////////////////////////////
 
-impl<T: HandleBased> EncodableAsHandle for T {
+impl<T: From<NullableHandle> + Into<NullableHandle>> EncodableAsHandle for T {
     type Dialect = DefaultFuchsiaResourceDialect;
 }
 

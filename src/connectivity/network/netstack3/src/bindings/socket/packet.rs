@@ -29,7 +29,6 @@ use netstack3_core::device_socket::{
 use netstack3_core::sync::{Mutex, RwLock};
 use packet::Buf;
 use packet_formats::ethernet::EtherType;
-use zx::{self as zx, HandleBased as _};
 
 use crate::bindings::bpf::{
     SocketFilterProgram, SocketFilterResult, SocketFilterSkBuff, ValidVerifiedProgram,

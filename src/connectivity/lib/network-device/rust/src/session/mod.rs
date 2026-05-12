@@ -859,7 +859,6 @@ mod tests {
     use fuchsia_async::Fifo;
     use test_case::test_case;
     use zerocopy::{FromBytes, Immutable, IntoBytes};
-    use zx::HandleBased as _;
 
     use crate::session::DerivableConfig;
 

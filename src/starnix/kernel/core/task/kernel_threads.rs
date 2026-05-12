@@ -59,7 +59,7 @@ impl KernelThreads {
     pub fn new(kernel: Weak<Kernel>) -> Self {
         KernelThreads {
             starnix_process: fuchsia_runtime::process_self()
-                .duplicate(zx::Rights::SAME_RIGHTS)
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
                 .expect("Failed to duplicate process self"),
             ehandle: fasync::EHandle::local(),
             spawner: Default::default(),

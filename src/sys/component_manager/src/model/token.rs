@@ -6,7 +6,7 @@ use fuchsia_sync::Mutex;
 use moniker::Moniker;
 use std::collections::HashMap;
 use std::sync::Arc;
-use zx::{HandleBased, Koid};
+use zx::Koid;
 
 use super::context::ModelContext;
 

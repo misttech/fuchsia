@@ -34,9 +34,6 @@ use std::ffi::{CStr, CString};
 use std::mem::size_of;
 use std::ops::Deref as _;
 use std::sync::Arc;
-use zx::{
-    HandleBased, {self as zx},
-};
 
 #[derive(Debug)]
 struct StackResult {

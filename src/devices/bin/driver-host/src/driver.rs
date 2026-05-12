@@ -10,6 +10,10 @@ use fdf_component::Incoming;
 use fidl::client::decode_transaction_body;
 use fidl::encoding::{DefaultFuchsiaResourceDialect, EmptyStruct, ResultType, clear_tls_buf};
 use fidl::endpoints::{ClientEnd, RequestStream, ServerEnd};
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_driver_framework as fidl_fdf;
+use fidl_fuchsia_driver_host as fdh;
+use fidl_fuchsia_power_broker as fpb;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::{FutureExt, TryStreamExt};
@@ -18,11 +22,7 @@ use namespace::Namespace;
 use std::ffi::c_char;
 use std::ptr::NonNull;
 use std::sync::{Arc, Weak};
-use zx::{HandleBased, Status};
-use {
-    fidl_fuchsia_data as fdata, fidl_fuchsia_driver_framework as fidl_fdf,
-    fidl_fuchsia_driver_host as fdh, fidl_fuchsia_power_broker as fpb,
-};
+use zx::Status;
 
 unsafe extern "C" {
     fn driver_host_find_symbol(

@@ -534,7 +534,7 @@ impl Router {
     where
         Hdl: 'static + for<'a> crate::proxy::ProxyableRW<'a>,
         CreateType: 'static
-            + fidl::HandleBased
+            + Into<fidl::NullableHandle>
             + IntoProxied<Proxied = Hdl>
             + std::fmt::Debug
             + crate::handle_info::WithRights,

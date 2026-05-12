@@ -7,16 +7,16 @@ use crate::inspect::container::{
     InspectArtifactsContainer, InspectHandle, UnpopulatedInspectDataContainer,
 };
 use crate::pipeline::{Pipeline, StaticHierarchyAllowlist};
-use fidl::HandleBased;
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_diagnostics::Selector;
+use fidl_fuchsia_inspect as finspect;
 use flyweights::FlyStr;
+use fuchsia_async as fasync;
 use fuchsia_sync::{RwLock, RwLockWriteGuard};
 use log::{debug, warn};
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Weak};
-use {fidl_fuchsia_inspect as finspect, fuchsia_async as fasync};
 
 static INSPECT_ESCROW_NAME: zx::Name = zx::Name::new_lossy("InspectEscrowedVmo");
 

@@ -6,7 +6,6 @@ use std::collections::HashSet;
 use std::pin::pin;
 
 use assert_matches::assert_matches;
-use fidl::HandleBased;
 use fidl::endpoints::{ProtocolMarker, Proxy as _};
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;

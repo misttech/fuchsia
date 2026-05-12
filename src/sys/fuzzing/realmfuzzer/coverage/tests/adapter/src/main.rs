@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Result};
+use fidl_fuchsia_fuzzer as fuzz;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_runtime::process_self;
 use futures::{StreamExt, TryFutureExt, TryStreamExt, try_join};
 use log::warn;
-use zx::{HandleBased, Peered};
-use {fidl_fuchsia_fuzzer as fuzz, fuchsia_async as fasync};
+use zx::Peered;
 
 struct Instrumentation {
     _collector: fuzz::CoverageDataCollectorProxy,
@@ -23,7 +24,7 @@ impl Instrumentation {
             .context("failed to connect to fuchsia.fuzzer.CoverageDataCollector")?;
         let (local, eventpair) = zx::EventPair::create();
         let process = process_self()
-            .duplicate(zx::Rights::SAME_RIGHTS)
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
             .context("failed to duplicate process handle")?;
         let options = collector
             .initialize(eventpair, process)

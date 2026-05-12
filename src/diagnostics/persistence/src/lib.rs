@@ -32,7 +32,7 @@ use scheduler::Scheduler;
 use serde::{Deserialize, Serialize};
 use std::pin::pin;
 use std::sync::{Arc, LazyLock};
-use zx::{BootInstant, HandleBased};
+use zx::BootInstant;
 
 /// The name of the subcommand and the logs-tag.
 pub const PROGRAM_NAME: &str = "persistence";

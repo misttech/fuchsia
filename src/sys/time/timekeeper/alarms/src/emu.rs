@@ -4,6 +4,8 @@
 //
 use crate::{SawResponseFut, TimerConfig, TimerOps, TimerOpsError, signal};
 use async_trait::async_trait;
+use fidl_fuchsia_hardware_hrtimer as ffhh;
+use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::sink::SinkExt;
 use futures::{Future, StreamExt, select};
@@ -12,7 +14,6 @@ use scopeguard::defer;
 use std::cell::RefCell;
 use std::pin::Pin;
 use std::rc::Rc;
-use {fidl_fuchsia_hardware_hrtimer as ffhh, fuchsia_async as fasync};
 
 // TimerOps for platforms that do not support wake alarms.
 //
@@ -113,7 +114,6 @@ impl<F: Future<Output = FRet>> Future for ForwardingFuture<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::clone_handle;
     use assert_matches::assert_matches;
     use std::task::Poll;
 
@@ -137,7 +137,7 @@ mod tests {
             // 10us total.
             &ffhh::Resolution::Duration(1000),
             10,
-            clone_handle(&setup_event),
+            setup_event.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         );
 
         // Try polling now - future isn't ready yet.
@@ -174,7 +174,7 @@ mod tests {
             // 10us total.
             &ffhh::Resolution::Duration(1000),
             10,
-            clone_handle(&setup_event),
+            setup_event.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         );
 
         // Try polling now - future isn't ready yet.
@@ -206,7 +206,7 @@ mod tests {
             // 10us total.
             &ffhh::Resolution::Duration(1000), // 1us per tick
             10,
-            clone_handle(&setup_event),
+            setup_event.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         );
 
         // Try polling now - future isn't ready yet.
@@ -218,7 +218,7 @@ mod tests {
             FAKE_ID,
             &ffhh::Resolution::Duration(1000),
             10,
-            clone_handle(&setup_event),
+            setup_event.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         );
         let res = executor.run_until_stalled(&mut start_fut_2);
         assert_matches!(res, Poll::Ready(Err(TimerOpsError::Driver(ffhh::DriverError::BadState))));
@@ -235,7 +235,7 @@ mod tests {
             // 10us total.
             &ffhh::Resolution::Duration(1000),
             10,
-            clone_handle(&setup_event),
+            setup_event.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         );
 
         executor.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000));
@@ -253,7 +253,7 @@ mod tests {
             // 10us total.
             &ffhh::Resolution::Duration(1000),
             10,
-            clone_handle(&setup_event),
+            setup_event.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         );
 
         let res = executor.run_until_stalled(&mut start_fut);
@@ -276,7 +276,7 @@ mod tests {
             // 10us total.
             &ffhh::Resolution::Duration(1000),
             10,
-            clone_handle(&setup_event),
+            setup_event.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         );
         let res = executor.run_until_stalled(&mut start_fut);
         assert_matches!(res, Poll::Pending);
@@ -292,7 +292,7 @@ mod tests {
             // 10us total.
             &ffhh::Resolution::Duration(1000),
             10,
-            clone_handle(&setup_event),
+            setup_event.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         );
         let res = executor.run_until_stalled(&mut start_fut);
         assert_matches!(res, Poll::Pending);

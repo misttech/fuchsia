@@ -77,13 +77,12 @@ async fn record_exception(
 mod tests {
     use super::*;
     use anyhow::{Context as _, Error};
+    use fidl_fuchsia_io as fio;
+    use fidl_fuchsia_process as fprocess;
+    use fuchsia_async as fasync;
     use fuchsia_component::client as fclient;
+    use fuchsia_runtime as fruntime;
     use vfs::ExecutionScope;
-    use zx::HandleBased;
-    use {
-        fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess, fuchsia_async as fasync,
-        fuchsia_runtime as fruntime,
-    };
 
     #[fuchsia::test]
     async fn crash_test() -> Result<(), Error> {

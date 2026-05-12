@@ -5,7 +5,7 @@
 //! Type-safe bindings for Zircon port objects.
 
 use crate::{
-    AsHandleRef, GPAddr, HandleBased, HandleRef, MonotonicInstant, NullableHandle, Signals, Status,
+    AsHandleRef, GPAddr, HandleRef, MonotonicInstant, NullableHandle, Signals, Status,
     VcpuContents, guest, ok, sys,
 };
 use bitflags::bitflags;

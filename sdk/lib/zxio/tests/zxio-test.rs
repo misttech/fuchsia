@@ -4,7 +4,9 @@
 
 use assert_matches::assert_matches;
 use fidl::endpoints::Proxy as _;
+use fidl_fuchsia_io as fio;
 use fsverity_merkle::{FsVerityHasher, FsVerityHasherOptions, MerkleTreeBuilder};
+use fuchsia_async as fasync;
 use fxfs_testing::TestFixture;
 use std::mem::MaybeUninit;
 use std::sync::Arc;
@@ -20,8 +22,7 @@ use vfs::path::Path;
 use vfs::remote::RemoteLike;
 use vfs::symlink::Symlink;
 use vfs::{ObjectRequestRef, pseudo_directory};
-use zx::{self as zx, HandleBased, Status};
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
+use zx::Status;
 
 #[fuchsia::test]
 async fn test_symlink() {

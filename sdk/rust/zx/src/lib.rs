@@ -104,7 +104,7 @@ pub use zx_status_ext::*;
 /// Prelude containing common utility traits.
 /// Designed for use like `use zx::prelude::*;`
 pub mod prelude {
-    pub use crate::{AsHandleRef, HandleBased, Peered};
+    pub use crate::{AsHandleRef, Peered};
 }
 
 pub mod sys {

@@ -5,7 +5,6 @@
 use std::sync::Arc;
 
 use block_client::{BlockClient as _, MutableBufferSlice, RemoteBlockClient};
-use fidl::HandleBased as _;
 use fidl::endpoints::ServiceMarker as _;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block as fblock;

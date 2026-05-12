@@ -302,7 +302,9 @@ impl TouchInjectorHandler {
             device_info: event.device_info.clone(),
             pressed_buttons: event.pressed_buttons.clone(),
             wake_lease: event.wake_lease.as_ref().map(|lease| {
-                lease.duplicate(zx::Rights::SAME_RIGHTS).expect("failed to duplicate event pair")
+                lease
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .expect("failed to duplicate event pair")
             }),
             trace_flow_id: Some(trace_flow_id.into()),
             ..Default::default()

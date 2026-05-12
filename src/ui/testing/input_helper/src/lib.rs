@@ -33,7 +33,6 @@ use keymaps::inverse_keymap::{InverseKeymap, Shift};
 use keymaps::usages::{Usages, hid_usage_to_input3_key};
 use log::{error, info, warn};
 use std::time::Duration;
-use zx::{self, HandleBased};
 
 mod input_device;
 mod input_device_registry;
@@ -853,7 +852,7 @@ fn send_media_button_press_and_release(
         ConsumerControlInputReport { pressed_buttons: Some(vec![button]), ..Default::default() };
 
     let release_wake_lease =
-        wake_lease.as_ref().and_then(|lease| lease.duplicate(zx::Rights::SAME_RIGHTS).ok());
+        wake_lease.as_ref().and_then(|lease| lease.duplicate_handle(zx::Rights::SAME_RIGHTS).ok());
 
     let input_report = InputReport {
         event_time: Some(fasync::MonotonicInstant::now().into_nanos()),

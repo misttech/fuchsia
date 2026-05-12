@@ -5,7 +5,7 @@
 //! Implementation of [`TokenRegistry`].
 
 use crate::directory::entry_container::MutableDirectory;
-use fidl::{Event, HandleBased, NullableHandle, Rights};
+use fidl::{Event, NullableHandle, Rights};
 use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use pin_project::{pin_project, pinned_drop};
@@ -162,7 +162,7 @@ impl<T: TokenInterface> PinnedDrop for Tokenizable<T> {
 mod tests {
     use self::mocks::{MockChannel, MockDirectory};
     use super::{DEFAULT_TOKEN_RIGHTS, TokenRegistry, Tokenizable};
-    use fidl::{HandleBased, Rights};
+    use fidl::Rights;
     use fidl_fuchsia_io as fio;
     use futures::pin_mut;
     use std::sync::Arc;

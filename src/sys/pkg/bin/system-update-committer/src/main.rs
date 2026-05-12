@@ -6,7 +6,13 @@
 
 use ::fidl::endpoints::RequestStream as _;
 use anyhow::{Context as _, Error, anyhow};
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_paver as fpaver;
+use fidl_fuchsia_process_lifecycle as flifecycle;
+use fidl_fuchsia_update as fupdate;
 use fidl_fuchsia_update_verify::HealthVerificationMarker;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::health::Reporter as _;
@@ -16,12 +22,6 @@ use futures::future::{FutureExt as _, TryFutureExt as _};
 use futures::stream::StreamExt as _;
 use log::{error, info, warn};
 use std::sync::Arc;
-use zx::HandleBased as _;
-use {
-    fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio,
-    fidl_fuchsia_paver as fpaver, fidl_fuchsia_process_lifecycle as flifecycle,
-    fidl_fuchsia_update as fupdate, fuchsia_async as fasync,
-};
 
 mod fidl;
 mod metadata;

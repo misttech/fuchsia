@@ -33,7 +33,6 @@ mod everything {
     use futures::{Future, Stream, StreamExt};
     use std::pin::{Pin, pin};
     use std::task::{Context, Poll};
-    use zx::HandleBased;
 
     /// The value of a data capability. Can be stored in or retrieved from a [`Data`].
     #[derive(Debug, PartialEq, Clone)]

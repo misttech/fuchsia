@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
-use zx::{HandleBased, Rights};
+use zx::Rights;
 
 const ELEMENTS_COLLECTION: &'static str = "elements";
 

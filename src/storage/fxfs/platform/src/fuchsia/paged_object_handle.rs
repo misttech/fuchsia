@@ -3097,7 +3097,8 @@ mod tests {
         let fixture = TestFixture::new_unencrypted().await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
-            let stream2 = stream.duplicate(zx::Rights::SAME_RIGHTS).expect("Duplicating stream");
+            let stream2 =
+                stream.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicating stream");
 
             let page_size = zx::system_get_page_size() as u64;
             stream.write_at(zx::StreamWriteOptions::empty(), 0, &[1u8]).expect("First dirty page");
@@ -3176,7 +3177,8 @@ mod tests {
         let fixture = TestFixture::new_unencrypted().await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
-            let stream2 = stream.duplicate(zx::Rights::SAME_RIGHTS).expect("Duplicating stream");
+            let stream2 =
+                stream.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicating stream");
             let page_size = zx::system_get_page_size() as u64;
 
             // Pre-allocate 4 pages to make them unreserved.
@@ -3497,7 +3499,7 @@ mod tests {
             proxy.resize(0).await.unwrap().expect("Truncating");
             {
                 let stream2 =
-                    stream.duplicate(zx::Rights::SAME_RIGHTS).expect("Duplicating stream");
+                    stream.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicating stream");
                 let _guard = CALLBACK_BEFORE_RANGE_COLLECTION.set(move || {
                     stream2.write_at(zx::StreamWriteOptions::empty(), 0, &[2u8]).unwrap();
                 });
@@ -3571,7 +3573,7 @@ mod tests {
 
             let flush_counter = Arc::new(AtomicU64::new(0));
             let flush_counter_clone = flush_counter.clone();
-            let stream_dup = stream.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+            let stream_dup = stream.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
             let _guard = CALLBACK_BEFORE_RANGE_COLLECTION.set(move || {
                 // Dirty one more page.
                 if flush_counter_clone.fetch_add(1, Ordering::Relaxed) == 0 {
@@ -3680,7 +3682,7 @@ mod tests {
             {
                 // Allocate a batch where it gets dirtied as COW between the sync that allocate does
                 // and the actual allocation. Dirty one page as cow afterwards as well.
-                let stream2 = stream.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+                let stream2 = stream.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
                 let _guard = CALLBACK_AFTER_RANGE_COLLECTION.set(move || {
                     for i in 0..(batch_pages + 2) {
                         stream2
@@ -3697,7 +3699,7 @@ mod tests {
             }
             // Trigger a background flush with a race to force taking dirty pages again.
             {
-                let stream2 = stream.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+                let stream2 = stream.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
                 let _guard = CALLBACK_BEFORE_RANGE_COLLECTION.set(move || {
                     stream2
                         .write_at(
@@ -3735,7 +3737,7 @@ mod tests {
             {
                 // Allocate a batch where it gets dirtied as COW between the sync that allocate does
                 // and the actual allocation. Dirty one page as cow afterwards as well.
-                let stream2 = stream.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+                let stream2 = stream.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
                 let _guard = CALLBACK_AFTER_RANGE_COLLECTION.set(move || {
                     for i in 0..(batch_pages + 2) {
                         stream2
@@ -3752,7 +3754,7 @@ mod tests {
             }
             // Trigger a background flush with a race to force taking dirty pages again.
             {
-                let stream2 = stream.duplicate(zx::Rights::SAME_RIGHTS).unwrap();
+                let stream2 = stream.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
                 let _guard = CALLBACK_BEFORE_RANGE_COLLECTION.set(move || {
                     stream2
                         .write_at(

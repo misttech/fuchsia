@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#[cfg(target_os = "fuchsia")]
-use fidl::HandleBased;
 use fidl::{AsHandleRef, Peered, SocketOpts};
 use fidl_fuchsia_fdomain as proto;
 
@@ -280,7 +278,7 @@ impl AnyHandle {
     pub fn duplicate(&self, rights: fidl::Rights) -> Result<AnyHandle, proto::Error> {
         let handle = self
             .as_handle_ref()
-            .duplicate(rights)
+            .duplicate_handle(rights)
             .map_err(|e| proto::Error::TargetError(e.into_raw()))?;
 
         Ok(match self {
@@ -315,7 +313,7 @@ impl AnyHandle {
                 h.replace_handle(rights).map_err(|e| proto::Error::TargetError(e.into_raw()))?,
             ),
             AnyHandle::Unknown(Unknown(h, ty)) => AnyHandle::Unknown(Unknown(
-                h.replace(rights).map_err(|e| proto::Error::TargetError(e.into_raw()))?,
+                h.replace_handle(rights).map_err(|e| proto::Error::TargetError(e.into_raw()))?,
                 ty,
             )),
         })

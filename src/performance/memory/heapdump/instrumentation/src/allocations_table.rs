@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 
 use heapdump_vmo::allocations_table_v1::{AllocationsTableWriter, ResourceKey};
-use zx::HandleBased;
-
 /// We cap the size of our backing VMO at 2 GiB, then preallocate it and map it entirely.
 /// Actual memory for each page will only be committed when we first write to that page.
 const VMO_SIZE: usize = 1 << 31;

@@ -4,6 +4,8 @@
 
 use anyhow::{Context, Error, format_err};
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_component_test as ftest;
+use fidl_fuchsia_io as fio;
 use log::*;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -11,8 +13,6 @@ use vfs::directory::helper::DirectlyMutable;
 use vfs::directory::immutable::simple as simpledir;
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::vmo::VmoFile;
-use zx::{self as zx, HandleBased};
-use {fidl_fuchsia_component_test as ftest, fidl_fuchsia_io as fio};
 
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
 use {
@@ -222,10 +222,11 @@ async fn storage_helper(
 mod tests {
     use super::*;
     use fidl::endpoints::create_proxy;
+    use fidl_fuchsia_mem as fmem;
+    use fuchsia_async as fasync;
     use futures::TryStreamExt;
     use maplit::hashset;
     use std::collections::HashSet;
-    use {fidl_fuchsia_mem as fmem, fuchsia_async as fasync};
 
     #[fuchsia::test]
     async fn read_only_directory_contains_expected_files() {

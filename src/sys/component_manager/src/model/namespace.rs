@@ -21,7 +21,6 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 use vfs::execution_scope::ExecutionScope;
-use zx::HandleBased;
 
 pub static PKG_PATH: LazyLock<PathBuf> = LazyLock::new(|| PathBuf::from("/pkg"));
 

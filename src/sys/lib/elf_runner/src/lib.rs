@@ -54,7 +54,6 @@ use std::mem;
 use std::path::Path;
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
-use zx::HandleBased;
 
 // Maximum time that the runner will wait for break_on_start eventpair to signal.
 // This is set to prevent debuggers from blocking us for too long, either intentionally
@@ -989,7 +988,7 @@ mod tests {
 
     pub fn new_elf_runner_for_test() -> Arc<ElfRunner> {
         Arc::new(ElfRunner::new(
-            job_default().duplicate(zx::Rights::SAME_RIGHTS).unwrap(),
+            job_default().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
             Box::new(process_launcher::BuiltInConnector {}),
             Some(new_utc_clock_for_tests()),
             CrashRecords::new(),
@@ -1780,7 +1779,7 @@ mod tests {
 
         let connector = LauncherConnectorForTest { sender: payload_tx };
         let runner = ElfRunner::new(
-            job_default().duplicate(zx::Rights::SAME_RIGHTS).unwrap(),
+            job_default().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
             Box::new(connector),
             Some(new_utc_clock_for_tests()),
             CrashRecords::new(),
@@ -2069,7 +2068,7 @@ mod tests {
         additional_environ: Vec<&str>,
     ) {
         let runner = Arc::new(ElfRunner::new(
-            job_default().duplicate(zx::Rights::SAME_RIGHTS).unwrap(),
+            job_default().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
             Box::new(process_launcher::BuiltInConnector {}),
             Some(new_utc_clock_for_tests()),
             CrashRecords::new(),

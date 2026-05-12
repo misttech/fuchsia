@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Implements the HandleBased traits for a Handle newtype struct
+// Implements the common traits for a Handle newtype struct
 macro_rules! impl_handle_based {
     ($type_name:path) => {
         impl AsHandleRef for $type_name {
@@ -22,8 +22,6 @@ macro_rules! impl_handle_based {
                 x.0
             }
         }
-
-        impl HandleBased for $type_name {}
 
         impl $type_name {
             delegated_concrete_handle_based_impls!(Self);
@@ -67,15 +65,20 @@ macro_rules! delegated_concrete_handle_based_impls {
         /// Wraps the
         /// [`zx_handle_duplicate`](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_duplicate)
         /// syscall.
-        pub fn duplicate(&self, rights: $crate::Rights) -> Result<Self, $crate::Status> {
-            self.0.duplicate(rights).map($ctor)
+        pub fn duplicate_handle(&self, rights: $crate::Rights) -> Result<Self, $crate::Status> {
+            self.0.duplicate_handle(rights).map($ctor)
         }
 
         /// Wraps the
         /// [`zx_handle_replace`](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_replace)
         /// syscall.
-        pub fn replace(self, rights: $crate::Rights) -> Result<Self, $crate::Status> {
-            self.0.replace(rights).map($ctor)
+        pub fn replace_handle(self, rights: $crate::Rights) -> Result<Self, $crate::Status> {
+            self.0.replace_handle(rights).map($ctor)
+        }
+
+        /// Converts the value into its inner handle.
+        pub fn into_handle(self) -> $crate::NullableHandle {
+            self.into()
         }
 
         /// Wraps the

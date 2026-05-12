@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{AsHandleRef, Guest, HandleBased, HandleRef, NullableHandle, Packet, Status, ok, sys};
+use crate::{AsHandleRef, Guest, HandleRef, NullableHandle, Packet, Status, ok, sys};
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]

@@ -13,7 +13,7 @@ use vfs::file::{
 };
 use vfs::node::Node;
 use vfs::{ObjectRequestRef, immutable_attributes};
-use zx::{self, HandleBased as _, Status, Vmo};
+use zx::{Status, Vmo};
 
 use crate::types::ExtAttributes;
 use ext4_lib::processor::Ext4Processor;

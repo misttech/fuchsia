@@ -34,7 +34,7 @@ mod tests {
     use fidl_fuchsia_update::{CommitStatusProviderMarker, CommitStatusProviderRequest};
     use fuchsia_async::{self as fasync};
     use futures::StreamExt;
-    use zx::{HandleBased, Peered};
+    use zx::Peered;
 
     // Verifies that query_commit_status returns the expected CommitStatus.
     #[fasync::run_singlethreaded(test)]

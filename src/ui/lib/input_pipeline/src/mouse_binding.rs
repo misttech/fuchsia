@@ -7,7 +7,6 @@ use crate::utils::{self, Position};
 use crate::{Transport, metrics, mouse_model_database};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
-use fidl::HandleBased;
 use fidl_fuchsia_input_report as fidl_input_report;
 use fidl_next_fuchsia_input_report::InputReport;
 use fuchsia_inspect::ArrayProperty;
