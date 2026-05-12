@@ -9,7 +9,6 @@
 #include <fidl/fuchsia.hardware.usb.function/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
 #include <fuchsia/hardware/usb/dci/cpp/banjo.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>

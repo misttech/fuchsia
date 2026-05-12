@@ -9,7 +9,6 @@
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/fidl.h>
 #include <fuchsia/hardware/usb/dci/cpp/banjo.h>
-#include <fuchsia/hardware/usb/function/cpp/banjo.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/compat/cpp/compat.h>
@@ -27,8 +26,7 @@ class UsbPeripheral;
 
 // This class represents a USB function in the peripheral role configurations.
 // USB function drivers bind to this.
-class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
-                    public fidl::Server<fuchsia_hardware_usb_function::UsbFunction>,
+class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFunction>,
                     public std::enable_shared_from_this<UsbFunction> {
  public:
   UsbFunction(size_t index, UsbPeripheral* peripheral,
@@ -41,20 +39,6 @@ class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
         dispatcher_(dispatcher),
         name_(std::format("function-{:03d}", index)) {}
   ~UsbFunction() override;
-
-  // UsbFunctionProtocol implementation.
-  zx_status_t UsbFunctionSetInterface(const usb_function_interface_protocol_t* interface);
-  zx_status_t UsbFunctionAllocInterface(uint8_t* out_intf_num);
-  zx_status_t UsbFunctionAllocEp(uint8_t direction, uint8_t* out_address);
-  zx_status_t UsbFunctionConfigEp(const usb_endpoint_descriptor_t* ep_desc,
-                                  const usb_ss_ep_comp_descriptor_t* ss_comp_desc);
-  zx_status_t UsbFunctionDisableEp(uint8_t address);
-  zx_status_t UsbFunctionAllocStringDesc(const char* str, uint8_t* out_index);
-  void UsbFunctionRequestQueue(usb_request_t* usb_request,
-                               const usb_request_complete_callback_t* complete_cb);
-  zx_status_t UsbFunctionEpSetStall(uint8_t ep_address);
-  zx_status_t UsbFunctionEpClearStall(uint8_t ep_address);
-  size_t UsbFunctionGetRequestSize();
 
   void SetConfigured(bool configured, usb_speed_t speed,
                      fit::callback<void(zx_status_t)> completer);
@@ -103,7 +87,7 @@ class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
   zx::result<> AddChild(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent,
                         const std::shared_ptr<fdf::Namespace>& incoming,
                         const std::shared_ptr<fdf::OutgoingDirectory>& outgoing);
-  bool registered() const { return function_intf_.is_valid() || function_intf_fidl_.is_valid(); }
+  bool registered() const { return function_intf_.is_valid(); }
 
  private:
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbFunction);
@@ -149,17 +133,11 @@ class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
 
   const size_t index_;
   uint8_t configuration_;
-  // This is a cheeky guard to prevent FIDL-releated side-effects until function
-  // drivers are all moved to FIDL. It prevents us from releasing allocated
-  // resources if they have not been allocated via the FIDL API.
-  //
-  // TODO(https://fxbug.dev/439593030): Remove this flag once we decide to move
-  // all resources to the FIDL interface.
-  bool alloc_resources_over_fidl_ = false;
+
   std::optional<bool> last_configured_;
   UsbPeripheral* peripheral_;
-  ddk::UsbFunctionInterfaceProtocolClient function_intf_;
-  fidl::WireSharedClient<fuchsia_hardware_usb_function::UsbFunctionInterface> function_intf_fidl_;
+
+  fidl::WireSharedClient<fuchsia_hardware_usb_function::UsbFunctionInterface> function_intf_;
   int CompletionThread();
   const fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor function_descriptor_;
 
@@ -170,7 +148,7 @@ class UsbFunction : public ddk::UsbFunctionProtocol<UsbFunction>,
   fidl::ServerBindingGroup<fuchsia_hardware_usb_function::UsbFunction> bindings_;
   fidl::WireSharedClient<fuchsia_driver_framework::NodeController> child_;
   compat::SyncInitializedDeviceServer compat_server_;
-  compat::BanjoServer banjo_server_{ZX_PROTOCOL_USB_FUNCTION, this, &usb_function_protocol_ops_};
+
   std::optional<fdf_metadata::MetadataServer<fuchsia_boot_metadata::MacAddressMetadata>>
       mac_address_metadata_server_;
   std::optional<fdf_metadata::MetadataServer<fuchsia_boot_metadata::SerialNumberMetadata>>

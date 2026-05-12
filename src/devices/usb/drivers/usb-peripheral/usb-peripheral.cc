@@ -7,7 +7,6 @@
 #include <assert.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
 #include <fuchsia/hardware/usb/dci/c/banjo.h>
-#include <fuchsia/hardware/usb/function/c/banjo.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/fit/defer.h>
