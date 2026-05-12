@@ -2559,9 +2559,7 @@ group("discoverable_packages") {
   # the discoverable package set, as generally-available platform tools,
   # as all products were including them in discoverable_package_labels
   # anyway.
-  if (!use_bringup_assembly) {
-    public_deps += [ "//bundles/tools" ]
-  }
+  public_deps += [ "//bundles/tools" ]
   assert_no_deps = [
     "//build/validate:config_data_tag",
     "//build/validate:shell_command_tag",
@@ -2588,9 +2586,7 @@ group("host") {
     ":developer_host_tools",
   ]
 
-  if (!use_bringup_assembly) {
-    public_deps += [ "//bundles/tools:host_tools" ]
-  }
+  public_deps += [ "//bundles/tools:host_tools" ]
 
   if (has_board) {
     # This indicates that we're building a product, rather than the SDK. In
@@ -2681,7 +2677,7 @@ group("root_targets") {
   }
 
   # Required by `fx publish` at runtime. Only included when package serving processes are needed.
-  if (has_board && !use_bringup_assembly) {
+  if (has_board) {
     deps += [ "//build/images/updates:prepare_publish" ]
   }
 }

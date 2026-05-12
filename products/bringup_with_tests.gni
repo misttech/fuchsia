@@ -25,6 +25,3 @@
 # bringup products have their own assemble_system() instantiation.
 bazel_product_bundle_prefix = "//products/bringup:product_bundle_with_tests"
 use_bazel_images_only = true
-
-use_bringup_assembly = true
-bootfs_only = true

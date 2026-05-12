@@ -111,6 +111,7 @@ group("default-images") {
   testonly = true
 
   deps = default_image_deps
+  deps += [ "//build/images/updates" ]
 
   if (use_bazel_images_only && bazel_product_bundle_target != "") {
     deps += [
@@ -120,22 +121,11 @@ group("default-images") {
     ]
   }
 
-  if (!use_bringup_assembly) {
-    deps += [ ":record_filesystem_sizes" ]
-  }
-
-  # TODO(https://fxbug.dev/42123048): The build graph for "bringup" (use_bringup_assembly)
-  # MUST only contain one zircon-a metadata target, which means that anything
-  # reaching fuchsia.zbi must be excluded from the build graph.
-  if (!use_bringup_assembly) {
-    deps += [ "//build/images/updates" ]
-  }
-
   if (check_vtables_in_rodata) {
     deps += [ ":check_vtables_in_rodata" ]
   }
 
-  if (!use_bringup_assembly && bazel_product_bundle_target != "") {
+  if (bazel_product_bundle_target != "") {
     deps += [ bazel_product_bundle_target ]
     deps += extra_bazel_assembly_targets
   }

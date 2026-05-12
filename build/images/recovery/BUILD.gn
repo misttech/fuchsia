@@ -19,8 +19,6 @@ if (is_host) {
 if (is_fuchsia) {
   assert(current_toolchain == default_toolchain,
          "//build/images/* are only valid in the Fuchsia toolchain")
-  assert(!bootfs_only,
-         "The recovery image is only valid for products other than bringup.")
 
   group("recovery") {
     testonly = true

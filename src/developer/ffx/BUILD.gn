@@ -324,10 +324,8 @@ if (is_host) {
     # ffx e2e host tests have a few constraints:
     #
     # 1. the assembly targets don't build correctly on mac bots
-    # 2. bringup bots can't depend on the main assembly that's used for ffx e2e tests
     # 3. the minfs-no_hardware bot doesn't launch the emulator correctly
-    if (is_linux && !use_bringup_assembly &&
-        data_filesystem_format != "minfs") {
+    if (is_linux && data_filesystem_format != "minfs") {
       deps += [
         "lib:host_tests",
         "plugins:host_tests",
