@@ -84,7 +84,7 @@ void UsbMassStorageDevice::ExecuteCommandAsync(uint8_t target, uint16_t lun, iov
   sync_completion_signal(&txn_completion_);
 }
 
-void UsbMassStorageDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
+void UsbMassStorageDevice::Stop(fdf::StopCompleter completer) {
   dead_ = true;
   // wait for worker loop to finish before removing devices
   if (worker_dispatcher_.get()) {
@@ -762,8 +762,9 @@ void UsbMassStorageDevice::WorkerLoop() {
   }
 }
 
-zx::result<> UsbMassStorageDevice::Start() {
-  parent_node_.Bind(std::move(node()));
+zx::result<> UsbMassStorageDevice::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  node_name_ = context.node_name();
 
   auto [controller_client_end, controller_server_end] =
       fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
@@ -779,8 +780,8 @@ zx::result<> UsbMassStorageDevice::Start() {
       fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, name()).Build();
 
   // Add root device, which will contain block devices for logical units
-  auto result =
-      parent_node_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
+  auto result = fidl::WireCall(node().borrow())
+                    ->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
   if (!result.ok()) {
     fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());

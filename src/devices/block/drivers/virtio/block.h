@@ -10,7 +10,8 @@
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <lib/dma-buffer/buffer.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/sync/completion.h>
 #include <lib/virtio/backends/backend.h>
 #include <lib/virtio/device.h>
@@ -279,18 +280,17 @@ class BlockDevice : public virtio::Device, public block_server::DriverInterface 
   fdf::Logger& logger_;
 };
 
-class BlockDriver : public fdf::DriverBase,
+class BlockDriver : public fdf::DriverBase2,
                     public ddk::BlockImplProtocol<BlockDriver>,
                     public fidl::WireServer<fuchsia_hardware_block_volume::Node> {
  public:
   static constexpr char kDriverName[] = "virtio-block";
 
-  BlockDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+  explicit BlockDriver() : fdf::DriverBase2(kDriverName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // ddk::BlockImplProtocol functions passed through to BlockDevice.
   void BlockImplQuery(block_info_t* info, size_t* bopsz);
@@ -301,7 +301,8 @@ class BlockDriver : public fdf::DriverBase,
 
  protected:
   // Override to inject dependency for unit testing.
-  virtual zx::result<std::unique_ptr<BlockDevice>> CreateBlockDevice();
+  virtual zx::result<std::unique_ptr<BlockDevice>> CreateBlockDevice(
+      const fdf::Namespace& incoming);
   // Exposed for testing
   BlockDevice& block_device() const { return *block_device_; }
 

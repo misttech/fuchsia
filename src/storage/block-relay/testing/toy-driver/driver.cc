@@ -5,23 +5,22 @@
 #include <fidl/fuchsia.hardware.block.volume/cpp/fidl.h>
 #include <fidl/fuchsia.storage.block/cpp/fidl.h>
 #include <fidl/fuchsia.testing.simple/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 
 namespace toy_driver {
 
-class ToyDriver : public fdf::DriverBase, public fidl::WireServer<fuchsia_testing_simple::Simple> {
+class ToyDriver : public fdf::DriverBase2, public fidl::WireServer<fuchsia_testing_simple::Simple> {
  public:
-  ToyDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("toy_driver", std::move(start_args), std::move(driver_dispatcher)) {}
+  ToyDriver() : fdf::DriverBase2("toy_driver") {}
 
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     fdf::info("ToyDriver::Start()");
 
     // Connect to the volume service.
     zx::result connect_result =
-        incoming()->Connect<fuchsia_hardware_block_volume::Service::Volume>();
+        context.incoming().Connect<fuchsia_hardware_block_volume::Service::Volume>();
     if (connect_result.is_error()) {
       fdf::error("Failed to connect to Volume service: {}", connect_result);
       return connect_result.take_error();
@@ -61,4 +60,4 @@ class ToyDriver : public fdf::DriverBase, public fidl::WireServer<fuchsia_testin
 
 }  // namespace toy_driver
 
-FUCHSIA_DRIVER_EXPORT(toy_driver::ToyDriver);
+FUCHSIA_DRIVER_EXPORT2(toy_driver::ToyDriver);

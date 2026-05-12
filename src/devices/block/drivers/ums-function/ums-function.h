@@ -7,7 +7,8 @@
 
 #include <endian.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/zx/result.h>
 
@@ -25,7 +26,7 @@
 
 namespace ums {
 
-class UmsFunction : public fdf::DriverBase,
+class UmsFunction : public fdf::DriverBase2,
                     public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
   static constexpr char kDriverName[] = "usb-ums-function";
@@ -35,12 +36,11 @@ class UmsFunction : public fdf::DriverBase,
   static constexpr size_t kDataReqSize = 16384;
   static constexpr uint16_t kBulkMaxPacket = 512;
 
-  UmsFunction(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+  explicit UmsFunction() : fdf::DriverBase2(kDriverName) {}
   ~UmsFunction() = default;
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // fuchsia_hardware_usb_function::UsbFunctionInterface impl.
   void Control(ControlRequest& req, ControlCompleter::Sync& completer) override;
@@ -70,7 +70,7 @@ class UmsFunction : public fdf::DriverBase,
   zx::result<> ConfigureEndpoint(const usb_endpoint_info_descriptor_t& desc);
 
   // Main driver initialization.
-  zx_status_t Init();
+  zx_status_t Init(fdf::DriverContext& context);
 
   void QueueData(usb::FidlRequest* req);
   void QueueCsw(uint8_t status, bool also_cbw = true);
@@ -180,7 +180,7 @@ class UmsFunction : public fdf::DriverBase,
 
   std::atomic_bool active_;
   std::atomic_int pending_request_count_ = 0;
-  std::optional<fdf::PrepareStopCompleter> prepare_stop_completer_;
+  std::optional<fdf::StopCompleter> stop_completer_;
 };
 
 }  // namespace ums

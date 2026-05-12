@@ -12,7 +12,8 @@
 #include <lib/async/cpp/wait.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/dma-buffer/buffer.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/sdmmc/hw.h>
@@ -30,7 +31,7 @@
 
 namespace sdhci {
 
-class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sdmmc::Sdmmc> {
+class Sdhci : public fdf::DriverBase2, public fdf::WireServer<fuchsia_hardware_sdmmc::Sdmmc> {
  public:
   // Visible for testing.
   struct AdmaDescriptor96 {
@@ -55,8 +56,8 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
 
   static constexpr char kDriverName[] = "sdhci";
 
-  Sdhci(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)),
+  explicit Sdhci()
+      : fdf::DriverBase2(kDriverName),
         irq_handler_{this},
         virtual_irq_handler_{this},
         virtual_irq_lifeline_wait_{this},
@@ -75,8 +76,8 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
             // clang-format on
         } {}
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   void HostInfo(fdf::Arena& arena, HostInfoCompleter::Sync& completer) override;
   void SetSignalVoltage(SetSignalVoltageRequestView request, fdf::Arena& arena,
@@ -313,7 +314,8 @@ class Sdhci : public fdf::DriverBase, public fdf::WireServer<fuchsia_hardware_sd
 
   fdf::ServerBindingGroup<fuchsia_hardware_sdmmc::Sdmmc> bindings_;
 
-  std::optional<fdf::PrepareStopCompleter> stop_completer_ TA_GUARDED(mtx_);
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<fdf::StopCompleter> stop_completer_ TA_GUARDED(mtx_);
   bool shutdown_ TA_GUARDED(mtx_) = false;
 };
 

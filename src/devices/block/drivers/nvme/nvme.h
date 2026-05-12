@@ -6,7 +6,8 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_NVME_NVME_H_
 
 #include <lib/device-protocol/pci.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/mmio/cpp/mmio-buffer.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -30,16 +31,15 @@ class FakeController;
 
 namespace nvme {
 
-class Nvme : public fdf::DriverBase {
+class Nvme : public fdf::DriverBase2 {
  public:
   static constexpr char kDriverName[] = "nvme";
 
-  Nvme(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+  explicit Nvme() : fdf::DriverBase2(kDriverName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // Perform an admin command synchronously (i.e., blocks for the command to complete or timeout).
   // Returns the command completion.
@@ -49,7 +49,7 @@ class Nvme : public fdf::DriverBase {
   // Queue an IO command to be performed asynchronously.
   void QueueIoCommand(IoCommand* io_cmd);
 
-  inspect::Inspector& inspect() { return inspector().inspector(); }
+  inspect::Inspector& inspect() { return component_inspector_->inspector(); }
   inspect::Node& inspect_node() { return inspect_node_; }
 
   QueuePair* io_queue() const { return io_queue_.get(); }
@@ -64,9 +64,9 @@ class Nvme : public fdf::DriverBase {
   // compat::DeviceServer.
   fidl::WireSyncClient<fuchsia_driver_framework::Node>& root_node() { return root_node_; }
   std::string_view driver_name() const { return name(); }
-  const std::shared_ptr<fdf::Namespace>& driver_incoming() const { return incoming(); }
+  const std::shared_ptr<fdf::Namespace>& driver_incoming() const { return incoming_; }
   std::shared_ptr<fdf::OutgoingDirectory>& driver_outgoing() { return outgoing(); }
-  const std::optional<std::string>& driver_node_name() const { return node_name(); }
+  const std::optional<std::string>& driver_node_name() const { return node_name_; }
 
  protected:
   // Returns a function for releasing the initialized resources. Override to inject dependency for
@@ -94,6 +94,9 @@ class Nvme : public fdf::DriverBase {
   void ProcessIoCompletions();
   void PerformTeardown();
 
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<inspect::ComponentInspector> component_inspector_;
+  std::optional<std::string> node_name_;
   inspect::Node inspect_node_;
 
   std::mutex commands_lock_;

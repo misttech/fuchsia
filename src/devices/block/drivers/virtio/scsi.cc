@@ -144,8 +144,9 @@ void ScsiDevice::IrqRingUpdate() {
   request_queue_.IrqRingUpdate(free_chain);
 }
 
-zx::result<> ScsiDriver::Start() {
-  parent_node_.Bind(std::move(node()));
+zx::result<> ScsiDriver::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  node_name_ = context.node_name();
 
   auto [controller_client_end, controller_server_end] =
       fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
@@ -161,15 +162,15 @@ zx::result<> ScsiDriver::Start() {
       fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, name()).Build();
 
   // Add root device, which will contain block devices for logical units
-  auto result =
-      parent_node_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
+  auto result = fidl::WireCall(node().borrow())
+                    ->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
   if (!result.ok()) {
     fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
   }
 
   zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci_client_result =
-      incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
+      driver_incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_result.is_error()) {
     fdf::error("Failed to get pci client: {}", pci_client_result);
     return pci_client_result.take_error();
@@ -195,7 +196,7 @@ zx::result<> ScsiDriver::Start() {
   return zx::ok();
 }
 
-void ScsiDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void ScsiDriver::Stop(fdf::StopCompleter completer) {
   if (scsi_device_) {
     scsi_device_->Release();
   }

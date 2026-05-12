@@ -269,13 +269,15 @@ zx_status_t NandDriver::NandGetFactoryBadBlockList(uint32_t* bad_blocks, size_t 
   return ZX_ERR_NOT_SUPPORTED;
 }
 
-void NandDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void NandDriver::Stop(fdf::StopCompleter completer) {
   prepare_stop_completer_.emplace(std::move(completer));
   transaction_performer_dispatcher_.ShutdownAsync();
 }
 
-zx::result<> NandDriver::Start() {
-  zx::result raw_nand = compat::ConnectBanjo<ddk::RawNandProtocolClient>(incoming());
+zx::result<> NandDriver::Start(fdf::DriverContext context) {
+  component_inspector_ = context.CreateInspector(this);
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  zx::result raw_nand = compat::ConnectBanjo<ddk::RawNandProtocolClient>(incoming);
   if (raw_nand.is_error()) {
     fdf::error("Failed to connect to raw-nand banjo protocol: {}", raw_nand);
     return raw_nand.take_error();
@@ -294,7 +296,7 @@ zx::result<> NandDriver::Start() {
 
   num_nand_pages_ = nand_info_.num_blocks * nand_info_.pages_per_block;
 
-  root_ = inspector().root().CreateChild("nand");
+  root_ = component_inspector_->root().CreateChild("nand");
   // 32 buckets: 0-31. Current devices only use up to BCH30.
   // Will populate read failures as ecc bits + 1.
   read_ecc_bit_flips_ = root_.CreateLinearUintHistogram("read_ecc_bit_flips", 0, 1, 32);
@@ -313,7 +315,7 @@ zx::result<> NandDriver::Start() {
       fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "transaction-performer",
       [this](fdf_dispatcher_t*) {
         if (prepare_stop_completer_.has_value()) {
-          fdf::PrepareStopCompleter completer = std::move(prepare_stop_completer_).value();
+          fdf::StopCompleter completer = std::move(prepare_stop_completer_).value();
           completer(zx::ok());
         }
       },
@@ -328,7 +330,7 @@ zx::result<> NandDriver::Start() {
   banjo_config.callbacks[ZX_PROTOCOL_NAND] = nand_server_.callback();
 
   zx::result result = compat_server_.Initialize(
-      incoming(), outgoing(), node_name(), kChildNodeName,
+      incoming, outgoing(), context.node_name(), kChildNodeName,
       compat::ForwardMetadata::Some({DEVICE_METADATA_PRIVATE}), std::move(banjo_config));
   if (result.is_error()) {
     fdf::error("Failed to initialize compat server: {}", result);
@@ -336,7 +338,7 @@ zx::result<> NandDriver::Start() {
   }
 
   if (zx::result result =
-          partition_map_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming());
+          partition_map_metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming);
       result.is_error()) {
     fdf::error("Failed to forward partition map: {}", result);
     return result.take_error();
@@ -366,4 +368,4 @@ zx::result<> NandDriver::Start() {
 
 }  // namespace nand
 
-FUCHSIA_DRIVER_EXPORT(nand::NandDriver);
+FUCHSIA_DRIVER_EXPORT2(nand::NandDriver);

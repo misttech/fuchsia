@@ -4,7 +4,7 @@
 
 #include "block.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/driver/testing/cpp/minimal_compat_environment.h>
@@ -199,13 +199,13 @@ class TestBlockDriver : public virtio::BlockDriver {
   // Modify to configure the behaviour of this test driver.
   static uint8_t backend_status_;
 
-  TestBlockDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : BlockDriver(std::move(start_args), std::move(dispatcher)) {}
+  explicit TestBlockDriver() : BlockDriver() {}
 
   virtio::BlockDevice& block_device() const { return virtio::BlockDriver::block_device(); }
 
  protected:
-  zx::result<std::unique_ptr<virtio::BlockDevice>> CreateBlockDevice() override {
+  zx::result<std::unique_ptr<virtio::BlockDevice>> CreateBlockDevice(
+      const fdf::Namespace& incoming) override {
     zx::bti bti(ZX_HANDLE_INVALID);
     zx_status_t status = fake_bti_create(bti.reset_and_get_address());
     if (status != ZX_OK) {
@@ -474,6 +474,6 @@ TEST_F(BlockDriverTest, BarriersError) {
   ASSERT_EQ(ZX_ERR_IO, client->FifoTransaction(requests, 1));
 }
 
-FUCHSIA_DRIVER_EXPORT(TestBlockDriver);
+FUCHSIA_DRIVER_EXPORT2(TestBlockDriver);
 
 }  // anonymous namespace

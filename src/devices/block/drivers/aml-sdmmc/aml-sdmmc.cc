@@ -62,13 +62,25 @@ inline uint32_t AbsDifference(uint32_t a, uint32_t b) { return a > b ? a - b : b
 
 namespace aml_sdmmc {
 
-zx::result<> AmlSdmmc::Start() {
-  parent_.Bind(std::move(node()));
+zx::result<> AmlSdmmc::Start(fdf::DriverContext context) {
+  component_inspector_ = context.CreateInspector(this);
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  config_ = context.take_config<aml_sdmmc_config::Config>();
+  if (context.power_element_token().has_value()) {
+    hardware_power_assertive_token_ = std::move(context.power_element_token().value());
+  }
+  power_element_runner_ = context.take_power_element_runner();
+  if (config_.enable_suspend()) {
+    zx::result<> result = InitializeSuspend(dispatcher(), *incoming, name());
+    if (result.is_error()) {
+      fdf::warn("Failed to initialize suspend: {}", result);
+    }
+  }
 
   // Initialize our compat server.
   {
     zx::result<> result =
-        compat_server_.Initialize(incoming(), outgoing(), node_name(), name(),
+        compat_server_.Initialize(incoming, outgoing(), context.node_name(), name(),
                                   compat::ForwardMetadata::None(), get_banjo_config());
     if (result.is_error()) {
       return result.take_error();
@@ -76,13 +88,13 @@ zx::result<> AmlSdmmc::Start() {
   }
 
   {
-    zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+    zx::result pdev = incoming->Connect<fuchsia_hardware_platform_device::Service::Device>();
     if (pdev.is_error() || !pdev->is_valid()) {
       fdf::error("Failed to connect to platform device: {}", pdev);
       return pdev.take_error();
     }
 
-    if (zx::result status = InitResources(std::move(pdev.value())); status.is_error()) {
+    if (zx::result status = InitResources(std::move(pdev.value()), *incoming); status.is_error()) {
       return status.take_error();
     }
   }
@@ -134,7 +146,8 @@ zx::result<> AmlSdmmc::Start() {
                         .offers2(arena, std::move(offers))
                         .Build();
 
-  auto result = parent_->AddChild(args, std::move(controller_server_end), {});
+  auto result =
+      fidl::WireCall(node().borrow())->AddChild(args, std::move(controller_server_end), {});
   if (!result.ok()) {
     fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
@@ -146,7 +159,8 @@ zx::result<> AmlSdmmc::Start() {
 }
 
 zx::result<> AmlSdmmc::InitResources(
-    fidl::ClientEnd<fuchsia_hardware_platform_device::Device> pdev_client_end) {
+    fidl::ClientEnd<fuchsia_hardware_platform_device::Device> pdev_client_end,
+    fdf::Namespace& incoming) {
   fdf::PDev pdev{std::move(pdev_client_end)};
 
   if (zx::result result = metadata_server_.SetMetadataFromPDevIfExists(pdev); result.is_error()) {
@@ -201,7 +215,7 @@ zx::result<> AmlSdmmc::InitResources(
   // Optional protocol.
   const char* kGpioFragmentName = "gpio-reset";
   zx::result gpio_result =
-      incoming()->Connect<fuchsia_hardware_gpio::Service::Device>(kGpioFragmentName);
+      incoming.Connect<fuchsia_hardware_gpio::Service::Device>(kGpioFragmentName);
   if (gpio_result.is_ok() && gpio_result->is_valid()) {
     auto gpio = fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio>(std::move(gpio_result.value()));
     if (gpio->Read().ok()) {
@@ -220,7 +234,7 @@ zx::result<> AmlSdmmc::InitResources(
     }
   }
 
-  zx::result result = incoming()->Connect<fuchsia_hardware_clock::Service::Clock>("clock-gate");
+  zx::result result = incoming.Connect<fuchsia_hardware_clock::Service::Clock>("clock-gate");
   if (result.is_ok() && result->is_valid()) {
     auto clock = fidl::WireSyncClient<fuchsia_hardware_clock::Clock>(std::move(result.value()));
     const fidl::WireResult result = clock->Enable();
@@ -272,8 +286,7 @@ zx::result<> AmlSdmmc::InitResources(
   // should not be any children asking us directly for tokens.
   {
     // Always use the power element token if we have it.
-    if (power_element_token().has_value()) {
-      hardware_power_assertive_token_ = std::move(power_element_token().value());
+    if (hardware_power_assertive_token_.is_valid()) {
       fdf::info("Configured power management successfully.");
     } else if (config_.enable_suspend()) {
       // If we don't have a valid token and suspend is enabled, this is an error.
@@ -392,6 +405,18 @@ void AmlSdmmc::ServeDelayedRequests() {
 void AmlSdmmc::Serve(fdf::ServerEnd<fuchsia_hardware_sdmmc::Sdmmc> request) {
   fdf::BindServer(worker_dispatcher_.get(), std::move(request), this);
 }
+
+void AmlSdmmc::Suspend(fdf_power::SuspendCompleter completer) {
+  SetLevel(kPowerLevelOff);
+  completer();
+}
+
+void AmlSdmmc::Resume(fdf_power::ResumeCompleter completer) {
+  SetLevel(kPowerLevelOn);
+  completer();
+}
+
+bool AmlSdmmc::SuspendEnabled() { return config_.enable_suspend(); }
 
 zx_status_t AmlSdmmc::WaitForInterruptImpl() {
   zx::time_boot timestamp;
@@ -1616,13 +1641,14 @@ zx_status_t AmlSdmmc::Init(const std::string& instance_identifier) {
 
   dev_info_.max_transfer_size = kMaxDmaDescriptors * zx_system_get_page_size();
 
-  inspect_.Init(instance_identifier, inspector().root(), power_suspended_);
+  ZX_ASSERT(component_inspector_.has_value());
+  inspect_.Init(instance_identifier, component_inspector_->root(), power_suspended_);
   inspect_.max_delay.Set(AmlSdmmcClock::kMaxDelay + 1);
 
   return ZX_OK;
 }
 
-void AmlSdmmc::PrepareStop(fdf::PrepareStopCompleter completer) {
+void AmlSdmmc::Stop(fdf::StopCompleter completer) {
   // If there's a pending request, wait for it to complete (and any pages to be unpinned).
   {
     std::lock_guard<std::mutex> lock(lock_);

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/driver/testing/cpp/minimal_compat_environment.h>
@@ -370,8 +370,7 @@ class TestController : public Controller {
 
   static constexpr uint32_t kTestLogicalBlockCount = 1024;
 
-  TestController(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : Controller(std::move(start_args), std::move(dispatcher)) {}
+  explicit TestController() : Controller() {}
 
   zx::result<std::unique_ptr<Bus>> CreateBus() override {
     // Create a fake bus.
@@ -424,7 +423,7 @@ class TestController : public Controller {
     return zx::ok(std::move(fake_bus));
   }
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override {
+  void Stop(fdf::StopCompleter completer) override {
     if (test_dispatcher_.get()) {
       test_dispatcher_.ShutdownAsync();
       test_shutdown_completion_.Wait();
@@ -801,4 +800,4 @@ INSTANTIATE_TEST_SUITE_P(NativeCommandQueuingSupportTest, AhciTest, ::testing::B
 }  // namespace
 }  // namespace ahci
 
-FUCHSIA_DRIVER_EXPORT(ahci::TestController);
+FUCHSIA_DRIVER_EXPORT2(ahci::TestController);

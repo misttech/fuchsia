@@ -547,7 +547,9 @@ void Ufs::PopulateVersionInspect(inspect::Node* inspect_node) {
   properties_.minor_version_number =
       version.CreateUint("minor_version_number", version_reg.minor_version_number());
   properties_.version_suffix = version.CreateUint("version_suffix", version_reg.version_suffix());
-  inspector().inspector().emplace(std::move(version));
+  if (component_inspector_) {
+    component_inspector_->inspector().emplace(std::move(version));
+  }
 
   fdf::info("Controller version {}.{} found", version_reg.major_version_number(),
             version_reg.minor_version_number());
@@ -576,7 +578,9 @@ void Ufs::PopulateCapabilitiesInspect(inspect::Node* inspect_node) {
                       caps_reg.number_of_outstanding_rtt_requests_supported());
   properties_.number_of_utp_transfer_request_slots = caps.CreateUint(
       "number_of_utp_transfer_request_slots", caps_reg.number_of_utp_transfer_request_slots());
-  inspector().inspector().emplace(std::move(caps));
+  if (component_inspector_) {
+    component_inspector_->inspector().emplace(std::move(caps));
+  }
 }
 
 zx::result<> Ufs::InitMmioBuffer() {
@@ -596,9 +600,11 @@ zx_status_t Ufs::Init() {
     return result.error_value();
   }
 
-  inspect_node_ = inspector().root().CreateChild("ufs");
-  PopulateVersionInspect(&inspect_node_);
-  PopulateCapabilitiesInspect(&inspect_node_);
+  if (component_inspector_) {
+    inspect_node_ = component_inspector_->root().CreateChild("ufs");
+    PopulateVersionInspect(&inspect_node_);
+    PopulateCapabilitiesInspect(&inspect_node_);
+  }
 
   auto controller_node = inspect_node_.CreateChild("controller");
   auto wp_node = controller_node.CreateChild("write_protect");
@@ -667,10 +673,12 @@ zx_status_t Ufs::Init() {
       "wake_latency_us", /*floor=*/1, /*initial_step=*/1, /*step_multiplier=*/2,
       /*buckets=*/14);
 
-  inspector().inspector().emplace(std::move(controller_node));
-  inspector().inspector().emplace(std::move(wp_node));
-  inspector().inspector().emplace(std::move(wb_node));
-  inspector().inspector().emplace(std::move(bkop_node));
+  if (component_inspector_) {
+    component_inspector_->inspector().emplace(std::move(controller_node));
+    component_inspector_->inspector().emplace(std::move(wp_node));
+    component_inspector_->inspector().emplace(std::move(wb_node));
+    component_inspector_->inspector().emplace(std::move(bkop_node));
+  }
   fdf::info("Bind Success");
 
   return ZX_OK;
@@ -920,8 +928,10 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
 
   // TODO(https://fxbug.dev/42075643): Set bMaxNumOfRTT (Read-to-transfer)
 
-  inspector().inspector().emplace(std::move(unipro_node));
-  inspector().inspector().emplace(std::move(attributes_node));
+  if (component_inspector_) {
+    component_inspector_->inspector().emplace(std::move(unipro_node));
+    component_inspector_->inspector().emplace(std::move(attributes_node));
+  }
 
   return zx::ok();
 }
@@ -1258,8 +1268,10 @@ void Ufs::HardwareElementRunner::handle_unknown_method(
   fdf::error("ElementRunner received unknown method {}", metadata.method_ordinal);
 }
 
-zx::result<> Ufs::Start() {
-  parent_node_.Bind(std::move(node()));
+zx::result<> Ufs::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  node_name_ = context.node_name();
+  config_ = context.take_config<ufs_config::Config>();
 
   if (zx::result<> status = InitResources(); status.is_error()) {
     return status.take_error();
@@ -1279,8 +1291,8 @@ zx::result<> Ufs::Start() {
       fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, name()).Build();
 
   // Add root device, which will contain block devices for logical units
-  auto result =
-      parent_node_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
+  auto result = fidl::WireCall(node().borrow())
+                    ->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
   if (!result.ok()) {
     fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
@@ -1288,6 +1300,16 @@ zx::result<> Ufs::Start() {
 
   if (!host_controller_callback_) {
     SetHostControllerCallback(NotifyEventCallback);
+  }
+
+  auto connect_result = incoming_->Connect<fuchsia_inspect::InspectSink>();
+  if (connect_result.is_ok()) {
+    component_inspector_.emplace(dispatcher(), inspect::PublishOptions{
+                                                   .tree_name = "ufs",
+                                                   .client_end = std::move(connect_result.value()),
+                                               });
+  } else {
+    fdf::warn("Failed to connect to InspectSink: {}", connect_result.status_string());
   }
 
   if (zx_status_t status = Init(); status != ZX_OK) {
@@ -1312,7 +1334,7 @@ zx::result<> Ufs::Start() {
   return zx::ok();
 }
 
-void Ufs::PrepareStop(fdf::PrepareStopCompleter completer) {
+void Ufs::Stop(fdf::StopCompleter completer) {
   {
     std::lock_guard<std::mutex> lock(lock_);
     driver_shutdown_ = true;

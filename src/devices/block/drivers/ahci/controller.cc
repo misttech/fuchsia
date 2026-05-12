@@ -105,14 +105,14 @@ void Controller::Queue(uint32_t portnr, SataTransaction* txn) {
   }
 }
 
-void Controller::PrepareStop(fdf::PrepareStopCompleter completer) {
+void Controller::Stop(fdf::StopCompleter completer) {
   if (sata_devices_.empty()) {
     Shutdown();
     completer(zx::ok());
     return;
   }
 
-  auto shared_completer = std::make_shared<fdf::PrepareStopCompleter>(std::move(completer));
+  auto shared_completer = std::make_shared<fdf::StopCompleter>(std::move(completer));
   auto count = std::make_shared<std::atomic<size_t>>(sata_devices_.size());
 
   for (auto& device : sata_devices_) {
@@ -209,7 +209,9 @@ zx_status_t Controller::Init() {
   const uint32_t capabilities = RegRead(kHbaCapabilities);
   const bool use_command_queue = capabilities & AHCI_CAP_NCQ;
   const uint32_t max_command_tag = (capabilities >> 8) & 0x1f;
-  inspect_node_ = inspector().root().CreateChild(kDriverName);
+  if (component_inspector_) {
+    inspect_node_ = component_inspector_->root().CreateChild(kDriverName);
+  }
   inspect_node_.RecordBool("native_command_queuing", use_command_queue);
   inspect_node_.RecordUint("max_command_tag", max_command_tag);
 
@@ -330,7 +332,7 @@ void Controller::Shutdown() {
 }
 
 zx::result<std::unique_ptr<Bus>> Controller::CreateBus() {
-  auto pci_client_end = incoming()->Connect<fuchsia_hardware_pci::Service::Device>("pci");
+  auto pci_client_end = incoming_->Connect<fuchsia_hardware_pci::Service::Device>("pci");
   if (!pci_client_end.is_ok()) {
     fdf::error("Failed to connect to PCI device service: {}", pci_client_end);
     return pci_client_end.take_error();
@@ -346,8 +348,9 @@ zx::result<std::unique_ptr<Bus>> Controller::CreateBus() {
   return zx::ok(std::move(bus));
 }
 
-zx::result<> Controller::Start() {
-  parent_node_.Bind(std::move(node()));
+zx::result<> Controller::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  node_name_ = context.node_name();
 
   if (AHCI_PAGE_SIZE != zx_system_get_page_size()) {
     fdf::error("System page size of {} does not match expected page size of {}\n",
@@ -380,11 +383,21 @@ zx::result<> Controller::Start() {
   const auto args =
       fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, name()).Build();
 
-  auto result =
-      parent_node_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
+  auto result = fidl::WireCall(node().borrow())
+                    ->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
   if (!result.ok()) {
     fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
+  }
+
+  auto connect_result = incoming_->Connect<fuchsia_inspect::InspectSink>();
+  if (connect_result.is_ok()) {
+    component_inspector_.emplace(dispatcher(), inspect::PublishOptions{
+                                                   .tree_name = "ahci",
+                                                   .client_end = std::move(connect_result.value()),
+                                               });
+  } else {
+    fdf::warn("Failed to connect to InspectSink: {}", connect_result.status_string());
   }
 
   status = Init();

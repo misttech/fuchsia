@@ -63,8 +63,9 @@ void CompletionCallback(void* cookie, zx_status_t status, nand_operation_t* nand
 
 }  // namespace
 
-zx::result<> Driver::Start() {
-  zx::result nand_result = compat::ConnectBanjo<ddk::NandProtocolClient>(incoming());
+zx::result<> Driver::Start(fdf::DriverContext context) {
+  std::shared_ptr<fdf::Namespace> incoming = context.take_incoming();
+  zx::result nand_result = compat::ConnectBanjo<ddk::NandProtocolClient>(incoming);
   if (nand_result.is_error()) {
     fdf::error("Failed to connect to nand banjo protocol: {}", nand_result);
     return nand_result.take_error();
@@ -80,7 +81,7 @@ zx::result<> Driver::Start() {
 
   // Query parent for nand configuration info.
   zx::result nand_config =
-      compat::GetMetadata<fuchsia_hardware_nand::Config>(incoming(), DEVICE_METADATA_PRIVATE);
+      compat::GetMetadata<fuchsia_hardware_nand::Config>(incoming, DEVICE_METADATA_PRIVATE);
   if (!nand_config.is_ok()) {
     fdf::error("Failed to get metadata: {}", nand_config.status_string());
     return nand_config.take_error();
@@ -97,7 +98,7 @@ zx::result<> Driver::Start() {
   }
 
   // Query parent for partition map.
-  zx::result metadata = fdf_metadata::GetMetadata<fuchsia_boot_metadata::PartitionMap>(incoming());
+  zx::result metadata = fdf_metadata::GetMetadata<fuchsia_boot_metadata::PartitionMap>(incoming);
   if (metadata.is_error()) {
     fdf::error("Failed to get metadata: {}", metadata.status_string());
     return metadata.take_error();
@@ -140,7 +141,8 @@ zx::result<> Driver::Start() {
         break;
       }
     }
-    zx::result result = device->Init(copy_count, node(), node_name(), incoming(), outgoing());
+    zx::result result =
+        device->Init(copy_count, node().borrow(), context.node_name(), incoming, outgoing());
     if (result.is_error()) {
       fdf::error("Failed to initialize nand-part device \"{}\": {}", part.name(), result);
 
@@ -290,4 +292,4 @@ zx_status_t NandPartDevice::BadBlockMarkBlockBad(uint32_t block) {
 
 }  // namespace nand
 
-FUCHSIA_DRIVER_EXPORT(nand::Driver);
+FUCHSIA_DRIVER_EXPORT2(nand::Driver);

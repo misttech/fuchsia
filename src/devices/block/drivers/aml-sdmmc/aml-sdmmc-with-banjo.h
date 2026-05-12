@@ -14,8 +14,7 @@ namespace aml_sdmmc {
 
 class AmlSdmmcWithBanjo : public AmlSdmmc, public ddk::SdmmcProtocol<AmlSdmmcWithBanjo> {
  public:
-  AmlSdmmcWithBanjo(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : AmlSdmmc(std::move(start_args), std::move(dispatcher)) {}
+  explicit AmlSdmmcWithBanjo() : AmlSdmmc() {}
 
   // ddk::SdmmcProtocol implementation
   zx_status_t SdmmcHostInfo(sdmmc_host_info_t* out_info);

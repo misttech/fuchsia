@@ -5,7 +5,8 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_AHCI_CONTROLLER_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_AHCI_CONTROLLER_H_
 
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/sync/cpp/completion.h>
@@ -23,20 +24,19 @@
 
 namespace ahci {
 
-class Controller : public fdf::DriverBase {
+class Controller : public fdf::DriverBase2 {
  public:
   static constexpr char kDriverName[] = "ahci";
 
-  Controller(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+  Controller() : fdf::DriverBase2(kDriverName) {}
 
   ~Controller() = default;
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(Controller);
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) __TA_EXCLUDES(lock_) override;
+  void Stop(fdf::StopCompleter completer) __TA_EXCLUDES(lock_) override;
 
   virtual zx::result<std::unique_ptr<Bus>> CreateBus();
 
@@ -58,7 +58,7 @@ class Controller : public fdf::DriverBase {
 
   void SignalWorker() { worker_event_completion_.Signal(); }
 
-  inspect::Inspector& inspect() { return inspector().inspector(); }
+  inspect::Inspector& inspect() { return component_inspector_->inspector(); }
   inspect::Node& inspect_node() { return inspect_node_; }
 
   Bus* bus() { return bus_.get(); }
@@ -69,9 +69,11 @@ class Controller : public fdf::DriverBase {
   // compat::DeviceServer.
   fidl::WireSyncClient<fuchsia_driver_framework::Node>& root_node() { return root_node_; }
   std::string_view driver_name() const { return name(); }
-  const std::shared_ptr<fdf::Namespace>& driver_incoming() const { return incoming(); }
+  const std::shared_ptr<fdf::Namespace>& driver_incoming() const { return incoming_; }
   std::shared_ptr<fdf::OutgoingDirectory>& driver_outgoing() { return outgoing(); }
-  const std::optional<std::string>& driver_node_name() const { return node_name(); }
+  const std::optional<std::string>& driver_node_name() const { return node_name_; }
+
+
 
  private:
   void WorkerLoop();
@@ -82,6 +84,9 @@ class Controller : public fdf::DriverBase {
 
   bool ShouldExit() __TA_EXCLUDES(lock_);
 
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<inspect::ComponentInspector> component_inspector_;
+  std::optional<std::string> node_name_;
   inspect::Node inspect_node_;
 
   std::mutex lock_;

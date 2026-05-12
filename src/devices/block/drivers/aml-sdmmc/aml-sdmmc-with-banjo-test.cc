@@ -46,9 +46,7 @@ class TestAmlSdmmcWithBanjo : public AmlSdmmcWithBanjo {
  public:
   static constexpr char kInstance[] = "-mmc@ff000000";
 
-  TestAmlSdmmcWithBanjo(fdf::DriverStartArgs start_args,
-                        fdf::UnownedSynchronizedDispatcher dispatcher)
-      : AmlSdmmcWithBanjo(std::move(start_args), std::move(dispatcher)) {}
+  explicit TestAmlSdmmcWithBanjo() : AmlSdmmcWithBanjo() {}
 
   void* SetTestHooks() {
     view_.emplace(mmio().View(0));
@@ -56,7 +54,7 @@ class TestAmlSdmmcWithBanjo : public AmlSdmmcWithBanjo {
   }
 
   const inspect::Hierarchy* GetInspectRoot(const std::string& suffix) {
-    inspector_.ReadInspect(inspector().inspector());
+    inspector_.ReadInspect(component_inspector_->inspector());
     return inspector_.hierarchy().GetByPath({"aml-sdmmc-port" + suffix});
   }
 
@@ -2251,4 +2249,4 @@ TEST_F(AmlSdmmcWithBanjoTest, PowerTokenProvider) {
 
 }  // namespace aml_sdmmc
 
-FUCHSIA_DRIVER_EXPORT(aml_sdmmc::TestAmlSdmmcWithBanjo);
+FUCHSIA_DRIVER_EXPORT2(aml_sdmmc::TestAmlSdmmcWithBanjo);

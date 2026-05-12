@@ -31,7 +31,9 @@ void NandBanjoFromFidl(const fuchsia_hardware_nand::wire::Info& source, nand_inf
 
 namespace ram_nand {
 
-zx::result<> RamNandCtl::Start() {
+zx::result<> RamNandCtl::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  node_name_ = context.node_name();
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
     fdf::error("Failed to bind devfs connector: {}", connector);
@@ -63,7 +65,7 @@ void RamNandCtl::CreateDevice(CreateDeviceRequestView request,
                                              [this, device_id]() { devices_.erase(device_id); });
 
   const zx::result device_name =
-      device->Init(request->info, child_.node_, incoming(), outgoing(), node_name());
+      device->Init(request->info, child_.node_, incoming(), outgoing(), node_name_);
   if (device_name.is_error()) {
     fdf::error("Failed to initialize device: {}", device_name);
     completer.Reply(device_name.status_value(), fidl::StringView());
@@ -80,4 +82,4 @@ void RamNandCtl::DevfsConnect(fidl::ServerEnd<fuchsia_hardware_nand::RamNandCtl>
 
 }  // namespace ram_nand
 
-FUCHSIA_DRIVER_EXPORT(ram_nand::RamNandCtl);
+FUCHSIA_DRIVER_EXPORT2(ram_nand::RamNandCtl);

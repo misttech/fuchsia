@@ -5,7 +5,7 @@
 #include "src/devices/block/drivers/nvme/nvme.h"
 
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/driver/testing/cpp/minimal_compat_environment.h>
 #include <lib/fake-bti/bti.h>
@@ -35,8 +35,7 @@ class TestNvme : public Nvme {
   // Modify to configure the behaviour of this test driver.
   static fake_nvme::FakeController controller_;
 
-  TestNvme(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : Nvme(std::move(start_args), std::move(dispatcher)) {}
+  TestNvme() = default;
 
  protected:
   zx::result<fit::function<void()>> InitResources() override {
@@ -426,4 +425,4 @@ TEST_F(NvmeTest, IoPushback) {
 
 }  // namespace nvme
 
-FUCHSIA_DRIVER_EXPORT(nvme::TestNvme);
+FUCHSIA_DRIVER_EXPORT2(nvme::TestNvme);

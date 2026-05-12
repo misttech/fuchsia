@@ -9,7 +9,8 @@
 #include <fuchsia/hardware/nand/c/banjo.h>
 #include <fuchsia/hardware/nand/cpp/banjo.h>
 #include <lib/driver/compat/cpp/banjo_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <zircon/types.h>
 
 #include "bad-block.h"
@@ -73,15 +74,15 @@ class NandPartDevice : public ddk::NandProtocol<NandPartDevice>,
   compat::SyncInitializedDeviceServer compat_server_;
 };
 
-class Driver : public fdf::DriverBase {
+class Driver : public fdf::DriverBase2 {
  public:
   static constexpr std::string_view kDriverName = "nandpart";
 
-  Driver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit Driver() : fdf::DriverBase2(kDriverName) {}
 
   // fdf::DriverBase implementation.
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+
 
  private:
   std::vector<std::unique_ptr<NandPartDevice>> devices_;

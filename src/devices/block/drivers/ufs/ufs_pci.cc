@@ -11,7 +11,7 @@
 namespace ufs {
 
 zx::result<> UfsPci::InitResources() {
-  auto pci_client_end = incoming()->Connect<fuchsia_hardware_pci::Service::Device>("pci");
+  auto pci_client_end = driver_incoming()->Connect<fuchsia_hardware_pci::Service::Device>("pci");
   if (!pci_client_end.is_ok()) {
     fdf::error("Failed to connect to PCI device service: {}", pci_client_end);
     return pci_client_end.take_error();

@@ -262,7 +262,7 @@ void Nvme::QueueIoCommand(IoCommand* io_cmd) {
   sync_completion_signal(&io_signal_);
 }
 
-void Nvme::PrepareStop(fdf::PrepareStopCompleter completer) {
+void Nvme::Stop(fdf::StopCompleter completer) {
   fdf::debug("Preparing to stop driver.");
   {
     std::lock_guard<std::mutex> lock(commands_lock_);
@@ -276,10 +276,10 @@ void Nvme::PrepareStop(fdf::PrepareStopCompleter completer) {
   }
 
   struct Context {
-    Context(size_t count, fdf::PrepareStopCompleter comp)
+    Context(size_t count, fdf::StopCompleter comp)
         : pending_count(count), completer(std::move(comp)) {}
     std::atomic<size_t> pending_count;
-    fdf::PrepareStopCompleter completer;
+    fdf::StopCompleter completer;
   };
 
   auto ctx = std::make_shared<Context>(namespaces_.size(), std::move(completer));
@@ -455,9 +455,12 @@ zx_status_t Nvme::Init() {
   VersionReg version_reg = VersionReg::Get().ReadFrom(&*mmio_);
   CapabilityReg caps_reg = CapabilityReg::Get().ReadFrom(&*mmio_);
 
-  inspect_node_ = inspector().root().CreateChild("nvme");
-  PopulateVersionInspect(version_reg, &inspect_node_, &inspect());
-  PopulateCapabilitiesInspect(caps_reg, version_reg, &inspect_node_, &inspect());
+  if (component_inspector_) {
+    inspect_node_ = component_inspector_->root().CreateChild("nvme");
+    PopulateVersionInspect(version_reg, &inspect_node_, &component_inspector_->inspector());
+    PopulateCapabilitiesInspect(caps_reg, version_reg, &inspect_node_,
+                                &component_inspector_->inspector());
+  }
 
   const size_t kPageSize = zx_system_get_page_size();
   zx_status_t status =
@@ -700,7 +703,7 @@ zx_status_t Nvme::Init() {
 
 zx::result<fit::function<void()>> Nvme::InitResources() {
   zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci_client_result =
-      incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
+      incoming_->Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_result.is_error()) {
     fdf::error("Failed to get pci client: {}", pci_client_result.status_string());
     return pci_client_result.take_error();
@@ -748,8 +751,9 @@ zx::result<fit::function<void()>> Nvme::InitResources() {
   return zx::ok(std::move(release));
 }
 
-zx::result<> Nvme::Start() {
-  parent_node_.Bind(std::move(node()));
+zx::result<> Nvme::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  node_name_ = context.node_name();
 
   zx::result<fit::function<void()>> release = InitResources();
   if (release.is_error()) {
@@ -770,13 +774,22 @@ zx::result<> Nvme::Start() {
   const auto args =
       fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, name()).Build();
 
-  auto result =
-      parent_node_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
+  auto result = fidl::WireCall(node().borrow())
+                    ->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
   if (!result.ok()) {
     fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
   }
 
+  auto connect_result = incoming_->Connect<fuchsia_inspect::InspectSink>();
+  if (connect_result.is_ok()) {
+    component_inspector_.emplace(dispatcher(), inspect::PublishOptions{
+                                                   .tree_name = "nvme",
+                                                   .client_end = std::move(connect_result.value()),
+                                               });
+  } else {
+    fdf::warn("Failed to connect to InspectSink: {}", connect_result.status_string());
+  }
   zx_status_t status = Init();
   if (status != ZX_OK) {
     fdf::error("Driver initialization failed: {}", zx_status_get_string(status));

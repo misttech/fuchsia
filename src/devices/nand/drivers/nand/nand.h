@@ -9,7 +9,8 @@
 #include <fuchsia/hardware/nand/cpp/banjo.h>
 #include <fuchsia/hardware/rawnand/cpp/banjo.h>
 #include <lib/driver/compat/cpp/banjo_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -29,7 +30,7 @@ namespace nand {
 
 using Transaction = nand::BorrowedOperation<>;
 
-class NandDriver : public fdf::DriverBase, public ddk::NandProtocol<NandDriver> {
+class NandDriver : public fdf::DriverBase2, public ddk::NandProtocol<NandDriver> {
  public:
   static constexpr std::string_view kDriverName = "nand";
   static constexpr std::string_view kChildNodeName = "nand";
@@ -39,18 +40,20 @@ class NandDriver : public fdf::DriverBase, public ddk::NandProtocol<NandDriver> 
   // undetected ECC failures which makes debugging and triage difficult.
   static constexpr size_t kNandReadRetries = 10;
 
-  NandDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit NandDriver() : fdf::DriverBase2(kDriverName) {}
 
   // fdf::DriverBase implementation.
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // Nand protocol implementation.
   void NandQuery(nand_info_t* info_out, size_t* nand_op_size_out);
   void NandQueue(nand_operation_t* op, nand_queue_callback completion_cb, void* cookie);
   zx_status_t NandGetFactoryBadBlockList(uint32_t* bad_blocks, size_t bad_block_len,
                                          size_t* num_bad_blocks);
+
+ protected:
+  std::optional<inspect::ComponentInspector>& component_inspector() { return component_inspector_; }
 
  private:
   // Maps the data and oob vmos from the specified |nand_op| into memory.
@@ -101,11 +104,12 @@ class NandDriver : public fdf::DriverBase, public ddk::NandProtocol<NandDriver> 
   fdf::SynchronizedDispatcher transaction_performer_dispatcher_;
 
   // Completed by `transaction_performer_dispatcher_` when the dispatcher is shutdown.
-  std::optional<fdf::PrepareStopCompleter> prepare_stop_completer_;
+  std::optional<fdf::StopCompleter> prepare_stop_completer_;
 
   compat::BanjoServer nand_server_{ZX_PROTOCOL_NAND, this, &nand_protocol_ops_};
   compat::SyncInitializedDeviceServer compat_server_;
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_;
+  std::optional<inspect::ComponentInspector> component_inspector_;
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::PartitionMap> partition_map_metadata_server_;
 };
 

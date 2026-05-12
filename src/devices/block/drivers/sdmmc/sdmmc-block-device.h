@@ -155,7 +155,7 @@ class SdmmcBlockDevice : public fdf::WireServer<fuchsia_hardware_cqhci::Cqhci>,
 
   zx_status_t AddDevice() TA_EXCL(queue_lock_);
 
-  void StopWorkerDispatcher(std::optional<fdf::PrepareStopCompleter> completer = std::nullopt)
+  void StopWorkerDispatcher(std::optional<fdf::StopCompleter> completer = std::nullopt)
       TA_EXCL(queue_lock_);
   void SendPowerOffNotification();
 

@@ -1573,7 +1573,7 @@ zx_status_t Sdhci::Init() {
   }};
 
   zx::result existing_metadata =
-      fdf_metadata::GetMetadataIfExists<fuchsia_hardware_sdmmc::SdmmcMetadata>(incoming());
+      fdf_metadata::GetMetadataIfExists<fuchsia_hardware_sdmmc::SdmmcMetadata>(*incoming_);
   if (existing_metadata.is_error()) {
     fdf::error("Failed to get metadata: {}", existing_metadata.status_string());
     return existing_metadata.status_value();
@@ -1702,9 +1702,10 @@ zx_status_t Sdhci::InitCqhciMmio() {
   return ZX_OK;
 }
 
-zx::result<> Sdhci::Start() {
+zx::result<> Sdhci::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   {
-    zx::result sdhci = incoming()->Connect<fuchsia_hardware_sdhci::Service::Device>();
+    zx::result sdhci = incoming_->Connect<fuchsia_hardware_sdhci::Service::Device>();
     if (sdhci.is_error()) {
       fdf::error("Failed to connect to sdhci: {}", sdhci);
       return sdhci.take_error();
@@ -1780,7 +1781,7 @@ zx::result<> Sdhci::Start() {
       .inline_crypto =
           [this](fdf::ServerEnd<fuchsia_hardware_sdhci::Service::InlineCrypto::ProtocolType>
                      server_end) {
-            zx::result result = incoming()->Connect<fuchsia_hardware_sdhci::Service::InlineCrypto>(
+            zx::result result = incoming_->Connect<fuchsia_hardware_sdhci::Service::InlineCrypto>(
                 std::move(server_end));
             if (result.is_error()) {
               fdf::warn("Failed to connect to inline encryption service: {}", result);
@@ -1803,12 +1804,12 @@ zx::result<> Sdhci::Start() {
   // The SDHCI core driver does not have to take any action when the SDMMC device or controller
   // power elements change state. Therefore we can simply forward PowerTokenService from our parent
   // to our child so that we are not in the loop for state changes.
-  if (take_config<sdhci_config::Config>().enable_suspend()) {
+  if (context.take_config<sdhci_config::Config>().enable_suspend()) {
     fuchsia_hardware_power::PowerTokenService::InstanceHandler handler({
         .token_provider =
             [this](fidl::ServerEnd<fuchsia_hardware_power::PowerTokenProvider> server) {
               zx::result<> result =
-                  incoming()->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
+                  incoming_->Connect<fuchsia_hardware_power::PowerTokenService::TokenProvider>(
                       std::move(server));
               if (result.is_error()) {
                 fdf::warn("Failed to connect to power token service: {}", result);
@@ -1838,7 +1839,7 @@ zx::result<> Sdhci::Start() {
   return zx::ok();
 }
 
-void Sdhci::PrepareStop(fdf::PrepareStopCompleter completer) {
+void Sdhci::Stop(fdf::StopCompleter completer) {
   std::lock_guard<std::mutex> lock(mtx_);
   shutdown_ = true;
   if (pending_request_) {

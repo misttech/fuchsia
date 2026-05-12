@@ -301,8 +301,7 @@ zx_status_t SdioControllerDevice::AddDevice() {
   return ZX_OK;
 }
 
-void SdioControllerDevice::StopSdioIrqDispatcher(
-    std::optional<fdf::PrepareStopCompleter> completer) {
+void SdioControllerDevice::StopSdioIrqDispatcher(std::optional<fdf::StopCompleter> completer) {
   shutdown_ = true;
 
   {

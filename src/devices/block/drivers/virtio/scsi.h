@@ -6,7 +6,8 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_VIRTIO_SCSI_H_
 
 #include <lib/dma-buffer/buffer.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/scsi/block-device.h>
 #include <lib/scsi/controller.h>
@@ -106,23 +107,22 @@ class ScsiDevice : public virtio::Device {
   uint64_t scsi_transport_tag_ __TA_GUARDED(lock_);
 };
 
-class ScsiDriver : public fdf::DriverBase, public scsi::Controller {
+class ScsiDriver : public fdf::DriverBase2, public scsi::Controller {
  public:
   static constexpr char kDriverName[] = "virtio-scsi";
 
-  ScsiDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+  explicit ScsiDriver() : fdf::DriverBase2(kDriverName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // scsi::Controller overrides
   fidl::WireSyncClient<fuchsia_driver_framework::Node>& root_node() override { return root_node_; }
   std::string_view driver_name() const override { return name(); }
-  const std::shared_ptr<fdf::Namespace>& driver_incoming() const override { return incoming(); }
+  const std::shared_ptr<fdf::Namespace>& driver_incoming() const override { return incoming_; }
   std::shared_ptr<fdf::OutgoingDirectory>& driver_outgoing() override { return outgoing(); }
-  const std::optional<std::string>& driver_node_name() const override { return node_name(); }
+  const std::optional<std::string>& driver_node_name() const override { return node_name_; }
   fdf::Logger& driver_logger() override { return logger(); }
   size_t BlockOpSize() override {
     // No additional metadata required for each command transaction.
@@ -134,8 +134,14 @@ class ScsiDriver : public fdf::DriverBase, public scsi::Controller {
                            uint32_t block_size_bytes, scsi::DeviceOp* device_op,
                            iovec data) override;
 
+ protected:
+
+
  private:
   std::unique_ptr<ScsiDevice> scsi_device_;
+
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<std::string> node_name_;
 
   fidl::WireSyncClient<fuchsia_driver_framework::Node> parent_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> root_node_;

@@ -9,7 +9,8 @@
 #include <fidl/fuchsia.hardware.ufs/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -152,7 +153,7 @@ using HostControllerCallback = fit::function<zx::result<>(NotifyEvent, uint64_t 
 //
 // This class is the parent class for both UfsPci and UfsPdev drivers, which bind the UFS
 // controller via PCI and PDev respectively.
-class Ufs : public fdf::DriverBase, public scsi::Controller {
+class Ufs : public fdf::DriverBase2, public scsi::Controller {
  public:
   static constexpr char kDriverName[] = "ufs";
   static constexpr char kHardwarePowerElementName[] = "ufs-hardware";
@@ -161,23 +162,20 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
   static constexpr fuchsia_power_broker::PowerLevel kPowerLevelOn = 1;
   static constexpr fuchsia_power_broker::PowerLevel kPowerLevelBoot = 2;
 
-  Ufs(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)),
-        hardware_power_element_runner_server_(*this),
-        config_(take_config<ufs_config::Config>()) {}
+  explicit Ufs() : fdf::DriverBase2(kDriverName), hardware_power_element_runner_server_(*this) {}
   ~Ufs() override = default;
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // scsi::Controller
   fidl::WireSyncClient<fuchsia_driver_framework::Node> &root_node() override { return root_node_; }
   std::string_view driver_name() const override { return name(); }
-  const std::shared_ptr<fdf::Namespace> &driver_incoming() const override { return incoming(); }
+  const std::shared_ptr<fdf::Namespace> &driver_incoming() const override { return incoming_; }
   std::shared_ptr<fdf::OutgoingDirectory> &driver_outgoing() override { return outgoing(); }
   async_dispatcher_t *driver_async_dispatcher() const { return dispatcher(); }
-  const std::optional<std::string> &driver_node_name() const override { return node_name(); }
+  const std::optional<std::string> &driver_node_name() const override { return node_name_; }
   fdf::Logger &driver_logger() override { return logger(); }
   const ufs_config::Config &config() const { return config_; }
 
@@ -252,9 +250,10 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
 
   bool IsResumed() const { return device_manager_->IsResumed(); }
 
-  const inspect::Inspector &inspect() { return inspector().inspector(); }
+  const inspect::Inspector &inspect() { return component_inspector_->inspector(); }
 
  protected:
+
   // Initialize the UFS controller and bind the logical units.
   // Declare this as virtual to delay driver initialization in tests.
   virtual zx_status_t Init();
@@ -400,6 +399,10 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
 
   // Record the variable inspects.
   InspectProperties properties_;
+
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<inspect::ComponentInspector> component_inspector_;
+  std::optional<std::string> node_name_;
 
   fidl::WireSyncClient<fuchsia_driver_framework::Node> parent_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> root_node_;

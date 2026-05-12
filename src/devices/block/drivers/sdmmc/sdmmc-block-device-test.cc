@@ -18,7 +18,7 @@
 #include <lib/async-loop/default.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/power/cpp/testing/fake_element_control.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
@@ -59,9 +59,7 @@ class TestSdmmcRootDevice : public SdmmcRootDevice {
   static bool is_sd_;
   static FakeSdmmcDevice sdmmc_;
 
-  TestSdmmcRootDevice(fdf::DriverStartArgs start_args,
-                      fdf::UnownedSynchronizedDispatcher dispatcher)
-      : SdmmcRootDevice(std::move(start_args), std::move(dispatcher)) {}
+  explicit TestSdmmcRootDevice() : SdmmcRootDevice() {}
 
  protected:
   zx_status_t Init(const fuchsia_hardware_sdmmc::SdmmcMetadata& metadata) override {
@@ -1133,7 +1131,7 @@ TEST_P(SdmmcBlockDeviceTest, CompleteTransactionsOnStop) {
   ASSERT_OK(StartDriverForMmc());
   // Stop the worker dispatcher so queued requests don't get completed.
   sync_completion_t completion;
-  block_device_->StopWorkerDispatcher(fdf::PrepareStopCompleter([&](zx::result<> result) {
+  block_device_->StopWorkerDispatcher(fdf::StopCompleter([&](zx::result<> result) {
     EXPECT_OK(result);
     sync_completion_signal(&completion);
   }));
@@ -1693,7 +1691,7 @@ TEST_P(SdmmcBlockDeviceTest, RpmbRequestLimit) {
   ASSERT_OK(StartDriverForMmc());
   BindRpmbClient();
   sync_completion_t completion;
-  block_device_->StopWorkerDispatcher(fdf::PrepareStopCompleter([&](zx::result<> result) {
+  block_device_->StopWorkerDispatcher(fdf::StopCompleter([&](zx::result<> result) {
     EXPECT_OK(result);
     sync_completion_signal(&completion);
   }));
@@ -3130,4 +3128,4 @@ INSTANTIATE_TEST_SUITE_P(SdmmcProtocolUsingFidlTest, SdmmcBlockDeviceTest, zxtes
 
 }  // namespace sdmmc
 
-FUCHSIA_DRIVER_EXPORT(sdmmc::TestSdmmcRootDevice);
+FUCHSIA_DRIVER_EXPORT2(sdmmc::TestSdmmcRootDevice);

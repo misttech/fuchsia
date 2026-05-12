@@ -182,16 +182,14 @@ class NandTestEnvironment : public fdf_testing::Environment {
 // Wrapper around `NandDriver` needed in order to expose the driver's inspect data.
 class TestNandDriver : public NandDriver {
  public:
-  TestNandDriver(fdf::DriverStartArgs start_args,
-                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : NandDriver(std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit TestNandDriver() : NandDriver() {}
 
   static DriverRegistration GetDriverRegistration() {
-    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer<TestNandDriver>::initialize,
-                                          fdf_internal::DriverServer<TestNandDriver>::destroy);
+    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer2<TestNandDriver>::initialize,
+                                          fdf_internal::DriverServer2<TestNandDriver>::destroy);
   }
 
-  inspect::ComponentInspector& inspector() { return NandDriver::inspector(); }
+  inspect::ComponentInspector& inspector() { return component_inspector().value(); }
 };
 
 class FixtureConfig final {

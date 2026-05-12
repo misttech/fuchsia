@@ -4,7 +4,7 @@
 
 #include "../usb-mass-storage.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
 #include <variant>
@@ -556,9 +556,7 @@ static void CompletionCallback(void* ctx, zx_status_t status, block_op_t* op) {
 
 class TestUsbMassStorageDevice : public ums::UsbMassStorageDevice {
  public:
-  TestUsbMassStorageDevice(fdf::DriverStartArgs start_args,
-                           fdf::UnownedSynchronizedDispatcher dispatcher)
-      : UsbMassStorageDevice(std::move(start_args), std::move(dispatcher)) {
+  explicit TestUsbMassStorageDevice() : UsbMassStorageDevice() {
     auto timer = fbl::MakeRefCounted<FakeTimer>();
     timer->set_timeout_handler([&](sync_completion_t* completion, zx_duration_t duration) {
       if (duration == 0) {
@@ -572,9 +570,9 @@ class TestUsbMassStorageDevice : public ums::UsbMassStorageDevice {
     set_waiter(std::move(timer));
   }
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override {
+  void Stop(fdf::StopCompleter completer) override {
     ASSERT_FALSE(has_zero_duration_);
-    UsbMassStorageDevice::PrepareStop(std::move(completer));
+    UsbMassStorageDevice::Stop(std::move(completer));
   }
 
  private:
@@ -795,6 +793,6 @@ TEST_F(UmsTest, CbwStallDoesNotFreezeDriver) { StartDriver(RejectCacheCbw); }
 
 TEST_F(UmsTest, DataStageStallDoesNotFreezeDriver) { StartDriver(RejectCacheDataStage); }
 
-FUCHSIA_DRIVER_EXPORT(TestUsbMassStorageDevice);
+FUCHSIA_DRIVER_EXPORT2(TestUsbMassStorageDevice);
 
 }  // namespace

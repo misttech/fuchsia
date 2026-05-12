@@ -6,7 +6,8 @@
 #define SRC_DEVICES_NAND_DRIVERS_RAM_NAND_RAM_NAND_CTL_H_
 
 #include <fidl/fuchsia.hardware.nand/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <zircon/types.h>
 
@@ -16,24 +17,29 @@
 
 namespace ram_nand {
 
-class RamNandCtl : public fdf::DriverBase,
+class RamNandCtl : public fdf::DriverBase2,
                    public fidl::WireServer<fuchsia_hardware_nand::RamNandCtl> {
  public:
   static constexpr std::string_view kDriverName = "ram_nand";
   static constexpr std::string_view kChildNodeName = "nand-ctl";
 
-  RamNandCtl(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  explicit RamNandCtl() : fdf::DriverBase2(kDriverName) {}
 
   // fdf::DriverBase implementation.
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // fidl::WireServer<fuchsia_hardware_nand::RamNandCtl> implementation.
   void CreateDevice(CreateDeviceRequestView request,
                     CreateDeviceCompleter::Sync& completer) override;
 
+ protected:
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
+
  private:
   void DevfsConnect(fidl::ServerEnd<fuchsia_hardware_nand::RamNandCtl> server);
+
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<std::string> node_name_;
 
   NandDevice::Id next_device_id_ = 0;
   std::unordered_map<NandDevice::Id, std::unique_ptr<NandDevice>> devices_;

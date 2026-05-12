@@ -7,7 +7,8 @@
 
 #include <fidl/fuchsia.hardware.sdmmc/cpp/wire.h>
 #include <fuchsia/hardware/sdmmc/cpp/banjo.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/power/cpp/suspend.h>
 #include <lib/zx/result.h>
 
@@ -21,29 +22,28 @@ constexpr uint32_t kInitializationFrequencyHz = 400'000;
 
 class SdmmcDevice;
 
-class SdmmcRootDevice : public fdf::DriverBase, public fdf_power::Suspendable<SdmmcRootDevice> {
+class SdmmcRootDevice : public fdf::DriverBase2, public fdf_power::Suspendable<SdmmcRootDevice> {
  public:
-  SdmmcRootDevice(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("sdmmc", std::move(start_args), std::move(dispatcher)),
-        config_(take_config<sdmmc_config::Config>()) {}
+  explicit SdmmcRootDevice() : fdf::DriverBase2("sdmmc") {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // Called by children (or grandchildren) of this device for invoking AddChild() or instantiating
   // compat::DeviceServer.
   fidl::WireSyncClient<fuchsia_driver_framework::Node>& root_node() { return root_node_; }
   std::string_view driver_name() const { return name(); }
-  const std::shared_ptr<fdf::Namespace>& driver_incoming() const { return incoming(); }
+  const std::shared_ptr<fdf::Namespace>& driver_incoming() const { return incoming_; }
   std::shared_ptr<fdf::OutgoingDirectory>& driver_outgoing() { return outgoing(); }
   async_dispatcher_t* driver_async_dispatcher() const { return dispatcher(); }
   const fdf::UnownedSynchronizedDispatcher& driver_dispatcher() const {
-    return fdf::DriverBase::driver_dispatcher();
+    return DriverBase2::driver_dispatcher();
   }
-  const std::optional<std::string>& driver_node_name() const { return node_name(); }
-  inspect::ComponentInspector& driver_inspector() { return inspector(); }
+  const std::optional<std::string>& driver_node_name() const { return node_name_; }
+  inspect::ComponentInspector& driver_inspector() { return *component_inspector_; }
   const sdmmc_config::Config& config() const { return config_; }
+  const zx::event& power_element_token() const { return power_element_token_; }
 
   // Visible for testing.
   const std::variant<std::monostate, std::unique_ptr<SdioControllerDevice>,
@@ -85,9 +85,15 @@ class SdmmcRootDevice : public fdf::DriverBase, public fdf_power::Suspendable<Sd
     completer();
   }
 
-  bool SuspendEnabled() override { return has_power_args(); }
+  bool SuspendEnabled() override { return config_.enable_suspend(); }
+  // Used by fdf_power::Suspendable.
+  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> take_power_element_runner() {
+    return std::move(power_element_runner_);
+  }
+
 
  protected:
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
   virtual zx_status_t Init(const fuchsia_hardware_sdmmc::SdmmcMetadata& metadata);
 
   std::variant<std::monostate, std::unique_ptr<SdioControllerDevice>,
@@ -104,6 +110,12 @@ class SdmmcRootDevice : public fdf::DriverBase, public fdf_power::Suspendable<Sd
       const std::string& name, std::unique_ptr<SdmmcDevice> sdmmc,
       const fuchsia_hardware_sdmmc::SdmmcMetadata& metadata);
 
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<std::string> node_name_;
+  zx::event power_element_token_;
+  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> power_element_runner_;
+
+  std::optional<inspect::ComponentInspector> component_inspector_;
   sdmmc_config::Config config_;
 
   fidl::WireSyncClient<fuchsia_driver_framework::Node> parent_node_;

@@ -4,7 +4,7 @@
 
 #include "unit-lib.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fake-bti/bti.h>
 
@@ -104,4 +104,4 @@ zx::result<fdf::MmioBuffer> TestUfs::CreateMmioBuffer(zx_off_t offset, size_t si
 
 }  // namespace ufs
 
-FUCHSIA_DRIVER_EXPORT(ufs::TestUfs);
+FUCHSIA_DRIVER_EXPORT2(ufs::TestUfs);

@@ -919,19 +919,20 @@ void BlockDevice::CleanupPendingTxns() {
   }
 }
 
-zx::result<> BlockDriver::Start() {
+zx::result<> BlockDriver::Start(fdf::DriverContext context) {
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   {
     compat::DeviceServer::BanjoConfig banjo_config;
     banjo_config.callbacks[ZX_PROTOCOL_BLOCK_IMPL] = block_impl_server_.callback();
     zx::result<> result =
-        compat_server_.Initialize(incoming(), outgoing(), node_name(), name(),
+        compat_server_.Initialize(incoming, outgoing(), context.node_name(), name(),
                                   compat::ForwardMetadata::None(), std::move(banjo_config));
     if (result.is_error()) {
       return result.take_error();
     }
   }
 
-  zx::result device = CreateBlockDevice();
+  zx::result device = CreateBlockDevice(*incoming);
   if (device.is_error()) {
     return device.take_error();
   }
@@ -941,8 +942,6 @@ zx::result<> BlockDriver::Start() {
   if (status != ZX_OK) {
     return zx::error(status);
   }
-
-  node_.Bind(std::move(node()));
 
   auto [controller_client_end, controller_server_end] =
       fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
@@ -963,7 +962,8 @@ zx::result<> BlockDriver::Start() {
                         .properties2(properties)
                         .Build();
 
-  auto result = node_->AddChild(args, std::move(controller_server_end), {});
+  auto result =
+      fidl::WireCall(node().borrow())->AddChild(args, std::move(controller_server_end), {});
   if (!result.ok()) {
     fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
@@ -987,9 +987,10 @@ zx::result<> BlockDriver::Start() {
   return zx::ok();
 }
 
-zx::result<std::unique_ptr<BlockDevice>> BlockDriver::CreateBlockDevice() {
+zx::result<std::unique_ptr<BlockDevice>> BlockDriver::CreateBlockDevice(
+    const fdf::Namespace& incoming) {
   zx::result<fidl::ClientEnd<fuchsia_hardware_pci::Device>> pci_client_result =
-      incoming()->Connect<fuchsia_hardware_pci::Service::Device>();
+      incoming.Connect<fuchsia_hardware_pci::Service::Device>();
   if (pci_client_result.is_error()) {
     fdf::error("Failed to get pci client: {}", pci_client_result);
     return pci_client_result.take_error();
@@ -1006,7 +1007,7 @@ zx::result<std::unique_ptr<BlockDevice>> BlockDriver::CreateBlockDevice() {
   return zx::ok(std::make_unique<BlockDevice>(std::move(bti), std::move(backend), logger()));
 }
 
-void BlockDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void BlockDriver::Stop(fdf::StopCompleter completer) {
   if (block_device_) {
     block_device_->Release();
   }

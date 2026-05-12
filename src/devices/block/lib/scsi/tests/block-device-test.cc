@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 #include <endian.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/driver/testing/cpp/minimal_compat_environment.h>
@@ -24,16 +25,17 @@
 namespace scsi {
 
 // Controller for test; allows us to set expectations and fakes command responses.
-class TestController : public fdf::DriverBase, public Controller {
+class TestController : public fdf::DriverBase2, public Controller {
  public:
   using IOCallbackType = fit::function<zx_status_t(uint8_t, uint16_t, iovec, bool, iovec)>;
   static constexpr char kDriverName[] = "scsi-test";
 
-  TestController(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+  TestController() : fdf::DriverBase2(kDriverName) {}
 
-  zx::result<> Start() override {
-    parent_node_.Bind(std::move(node()));
+  zx::result<> Start(fdf::DriverContext context) override {
+    incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+    node_name_ = context.node_name();
+    parent_node_.Bind(take_node());
 
     auto [controller_client_end, controller_server_end] =
         fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
@@ -94,10 +96,10 @@ class TestController : public fdf::DriverBase, public Controller {
 
   fidl::WireSyncClient<fuchsia_driver_framework::Node>& root_node() override { return root_node_; }
   std::string_view driver_name() const override { return name(); }
-  const std::shared_ptr<fdf::Namespace>& driver_incoming() const override { return incoming(); }
+  const std::shared_ptr<fdf::Namespace>& driver_incoming() const override { return incoming_; }
   std::shared_ptr<fdf::OutgoingDirectory>& driver_outgoing() override { return outgoing(); }
   async_dispatcher_t* driver_async_dispatcher() const { return dispatcher(); }
-  const std::optional<std::string>& driver_node_name() const override { return node_name(); }
+  const std::optional<std::string>& driver_node_name() const override { return node_name_; }
   fdf::Logger& driver_logger() override { return logger(); }
 
   size_t BlockOpSize() override {
@@ -228,6 +230,9 @@ class TestController : public fdf::DriverBase, public Controller {
   fidl::WireSyncClient<fuchsia_driver_framework::Node> parent_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> root_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
+
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<std::string> node_name_;
 };
 
 class TestConfig final {
@@ -740,4 +745,4 @@ TEST_F(BlockDeviceTest, CheckSenseData) {
 
 }  // namespace scsi
 
-FUCHSIA_DRIVER_EXPORT(scsi::TestController);
+FUCHSIA_DRIVER_EXPORT2(scsi::TestController);

@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.power.broker/cpp/test_base.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/test_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fdio/include/lib/fdio/directory.h>
@@ -47,9 +47,7 @@ class TestSdmmcRootDevice : public SdmmcRootDevice {
   // Modify these static variables to configure the behaviour of this test device.
   static FakeSdmmcDevice sdmmc_;
 
-  TestSdmmcRootDevice(fdf::DriverStartArgs start_args,
-                      fdf::UnownedSynchronizedDispatcher dispatcher)
-      : SdmmcRootDevice(std::move(start_args), std::move(dispatcher)) {}
+  explicit TestSdmmcRootDevice() : SdmmcRootDevice() {}
 
  protected:
   zx_status_t Init(const fuchsia_hardware_sdmmc::SdmmcMetadata& metadata) override {
@@ -2902,4 +2900,4 @@ TEST_F(SdioControllerDeviceTest, ProbeAfterControllerOffToOn) {
 
 }  // namespace sdmmc
 
-FUCHSIA_DRIVER_EXPORT(sdmmc::TestSdmmcRootDevice);
+FUCHSIA_DRIVER_EXPORT2(sdmmc::TestSdmmcRootDevice);

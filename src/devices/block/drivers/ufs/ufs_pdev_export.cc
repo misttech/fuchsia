@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 #include "src/devices/block/drivers/ufs/ufs_pdev.h"
 
-FUCHSIA_DRIVER_EXPORT(ufs::UfsPdev);
+FUCHSIA_DRIVER_EXPORT2(ufs::UfsPdev);

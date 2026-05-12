@@ -9,7 +9,8 @@
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <fuchsia/hardware/usb/c/banjo.h>
 #include <inttypes.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/scsi/block-device.h>
 #include <lib/scsi/controller.h>
@@ -64,25 +65,23 @@ struct UsbRequestContext {
   usb_request_complete_callback_t completion;
 };
 
-class UsbMassStorageDevice : public fdf::DriverBase, public scsi::Controller {
+class UsbMassStorageDevice : public fdf::DriverBase2, public scsi::Controller {
  public:
   static constexpr char kDriverName[] = "ums";
 
-  UsbMassStorageDevice(fdf::DriverStartArgs start_args,
-                       fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)) {}
+  explicit UsbMassStorageDevice() : fdf::DriverBase2(kDriverName) {}
   ~UsbMassStorageDevice() override = default;
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // scsi::Controller
   fidl::WireSyncClient<fuchsia_driver_framework::Node>& root_node() override { return root_node_; }
   std::string_view driver_name() const override { return name(); }
-  const std::shared_ptr<fdf::Namespace>& driver_incoming() const override { return incoming(); }
+  const std::shared_ptr<fdf::Namespace>& driver_incoming() const override { return incoming_; }
   std::shared_ptr<fdf::OutgoingDirectory>& driver_outgoing() override { return outgoing(); }
-  const std::optional<std::string>& driver_node_name() const override { return node_name(); }
+  const std::optional<std::string>& driver_node_name() const override { return node_name_; }
   fdf::Logger& driver_logger() override { return logger(); }
   size_t BlockOpSize() override { return sizeof(Transaction); }
   zx_status_t ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
@@ -100,6 +99,7 @@ class UsbMassStorageDevice : public fdf::DriverBase, public scsi::Controller {
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbMassStorageDevice);
 
  protected:
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
   void set_waiter(fbl::RefPtr<WaiterInterface> waiter) { waiter_ = std::move(waiter); }
 
  private:
@@ -184,6 +184,8 @@ class UsbMassStorageDevice : public fdf::DriverBase, public scsi::Controller {
   std::mutex txn_lock_;   // Synchronizes RequestQueue completion.
   std::mutex luns_lock_;  // Synchronizes the checking of whether LUNs are ready.
 
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<std::string> node_name_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> parent_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::Node> root_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;

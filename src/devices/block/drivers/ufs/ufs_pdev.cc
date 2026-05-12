@@ -16,7 +16,7 @@
 namespace ufs {
 
 zx::result<> UfsPdev::InitResources() {
-  auto pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+  auto pdev = driver_incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (!pdev.is_ok()) {
     fdf::error("Failed to connect to platform device service: {}", pdev);
     return pdev.take_error();
@@ -53,11 +53,11 @@ zx::result<> UfsPdev::InitResources() {
     irq_ = std::move(irq_result.value());
   }
 
-  auto phy_client_end = incoming()->Connect<fuchsia_hardware_ufs_phy::Service::Phy>("phy");
+  auto phy_client_end = driver_incoming()->Connect<fuchsia_hardware_ufs_phy::Service::Phy>("phy");
   if (phy_client_end.is_ok()) {
     ufs_phy_.Bind(std::move(phy_client_end.value()));
   } else {
-    auto default_phy_client_end = incoming()->Connect<fuchsia_hardware_ufs_phy::Service::Phy>();
+    auto default_phy_client_end = driver_incoming()->Connect<fuchsia_hardware_ufs_phy::Service::Phy>();
     if (default_phy_client_end.is_ok()) {
       ufs_phy_.Bind(std::move(default_phy_client_end.value()));
     } else {

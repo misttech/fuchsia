@@ -16,8 +16,15 @@
 
 namespace sdmmc {
 
-zx::result<> SdmmcRootDevice::Start() {
-  parent_node_.Bind(std::move(node()));
+zx::result<> SdmmcRootDevice::Start(fdf::DriverContext context) {
+  component_inspector_ = context.CreateInspector(this);
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  node_name_ = context.node_name();
+  config_ = context.take_config<sdmmc_config::Config>();
+  if (context.power_element_token().has_value()) {
+    power_element_token_ = std::move(context.power_element_token().value());
+  }
+  power_element_runner_ = context.take_power_element_runner();
 
   fuchsia_hardware_sdmmc::SdmmcMetadata sdmmc_metadata;
   {
@@ -27,6 +34,13 @@ zx::result<> SdmmcRootDevice::Start() {
       return result.take_error();
     }
     sdmmc_metadata = std::move(result.value());
+  }
+
+  if (config_.enable_suspend()) {
+    zx::result<> result = InitializeSuspend(dispatcher(), *incoming_, name());
+    if (result.is_error()) {
+      fdf::warn("Failed to initialize suspend: {}", result);
+    }
   }
 
   auto [controller_client_end, controller_server_end] =
@@ -41,8 +55,8 @@ zx::result<> SdmmcRootDevice::Start() {
   const auto args =
       fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, name()).Build();
 
-  auto result =
-      parent_node_->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
+  auto result = fidl::WireCall(node().borrow())
+                    ->AddChild(args, std::move(controller_server_end), std::move(node_server_end));
   if (!result.ok()) {
     fdf::error("Failed to add child: {}", result.status_string());
     return zx::error(result.status());
@@ -55,7 +69,7 @@ zx::result<> SdmmcRootDevice::Start() {
   return zx::ok();
 }
 
-void SdmmcRootDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
+void SdmmcRootDevice::Stop(fdf::StopCompleter completer) {
   const auto* block_device = std::get_if<std::unique_ptr<SdmmcBlockDevice>>(&child_device_);
   if (block_device) {
     block_device->get()->StopWorkerDispatcher(std::move(completer));

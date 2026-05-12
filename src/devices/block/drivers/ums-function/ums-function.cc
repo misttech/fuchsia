@@ -10,7 +10,7 @@
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.request/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/scsi/controller.h>
 #include <lib/zx/result.h>
@@ -193,10 +193,10 @@ void UmsFunction::InEpCallback(std::vector<fendpoint::Completion> completion) {
     DataComplete(std::move(completion[0]));
   }
 
-  if (!active_ && pending_request_count_ == 0 && prepare_stop_completer_) {
+  if (!active_ && pending_request_count_ == 0 && stop_completer_) {
     dispatcher_.ShutdownAsync();
-    (*prepare_stop_completer_)(zx::ok());
-    prepare_stop_completer_.reset();
+    (*stop_completer_)(zx::ok());
+    stop_completer_.reset();
   }
 }
 
@@ -217,10 +217,10 @@ void UmsFunction::OutEpCallback(std::vector<fendpoint::Completion> completion) {
     DataComplete(std::move(completion[0]));
   }
 
-  if (!active_ && pending_request_count_ == 0 && prepare_stop_completer_) {
+  if (!active_ && pending_request_count_ == 0 && stop_completer_) {
     dispatcher_.ShutdownAsync();
-    (*prepare_stop_completer_)(zx::ok());
-    prepare_stop_completer_.reset();
+    (*stop_completer_)(zx::ok());
+    stop_completer_.reset();
   }
 }
 
@@ -715,7 +715,7 @@ void UmsFunction::CswComplete(fendpoint::Completion completion) {
   }
 }
 
-void UmsFunction::PrepareStop(fdf::PrepareStopCompleter completer) {
+void UmsFunction::Stop(fdf::StopCompleter completer) {
   zx::result cancel = CancelAll(in_ep_);
   if (cancel.is_error()) {
     fdf::error("Error canceling existing in-type requests: {}", cancel);
@@ -737,13 +737,13 @@ void UmsFunction::PrepareStop(fdf::PrepareStopCompleter completer) {
     dispatcher_.ShutdownAsync();
     completer(zx::ok());
   } else {
-    prepare_stop_completer_.emplace(std::move(completer));
+    stop_completer_.emplace(std::move(completer));
   }
 }
 zx::vmo UmsFunction::vmo_ = zx::vmo();
 
-zx::result<> UmsFunction::Start() {
-  zx_status_t status = Init();
+zx::result<> UmsFunction::Start(fdf::DriverContext context) {
+  zx_status_t status = Init(context);
   if (status != ZX_OK) {
     return zx::error(status);
   }
@@ -752,7 +752,7 @@ zx::result<> UmsFunction::Start() {
   std::vector<ffdf::NodeProperty> props{};
   std::vector<ffdf::Offer> offers{};
 
-  zx::result start = AddChild(name(), devfs_args, props, offers);
+  zx::result start = AddChild(name(), props, offers);
   if (start.is_error()) {
     fdf::error("AddChild(): {}", start);
     return start.take_error();
@@ -761,9 +761,9 @@ zx::result<> UmsFunction::Start() {
   return zx::ok();
 }
 
-zx_status_t UmsFunction::Init() {
+zx_status_t UmsFunction::Init(fdf::DriverContext& context) {
   zx::result function =
-      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+      context.incoming().Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (function.is_error()) {
     fdf::error("Could not connect to UsbFunction service: {}", function.error_value());
     return function.error_value();
@@ -895,4 +895,4 @@ zx_status_t UmsFunction::Init() {
 }  // namespace ums
 
 // clang-format off
-FUCHSIA_DRIVER_EXPORT(ums::UmsFunction);
+FUCHSIA_DRIVER_EXPORT2(ums::UmsFunction);

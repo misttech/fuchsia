@@ -14,7 +14,8 @@
 #include <lib/ddk/metadata.h>
 #include <lib/dma-buffer/buffer.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
@@ -40,7 +41,7 @@
 
 namespace aml_sdmmc {
 
-class AmlSdmmc : public fdf::DriverBase,
+class AmlSdmmc : public fdf::DriverBase2,
                  public fdf::WireServer<fuchsia_hardware_sdmmc::Sdmmc>,
                  public fidl::Server<fuchsia_hardware_power::PowerTokenProvider>,
                  public fdf_power::Suspendable<AmlSdmmc> {
@@ -55,9 +56,8 @@ class AmlSdmmc : public fdf::DriverBase,
   static constexpr fuchsia_power_broker::PowerLevel kPowerLevelOff = 0;
   static constexpr fuchsia_power_broker::PowerLevel kPowerLevelOn = 1;
 
-  AmlSdmmc(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)),
-        config_(take_config<aml_sdmmc_config::Config>()),
+  explicit AmlSdmmc()
+      : fdf::DriverBase2(kDriverName),
         registered_vmos_{
             // clang-format off
             SdmmcVmoStore{vmo_store::Options{}},
@@ -77,9 +77,9 @@ class AmlSdmmc : public fdf::DriverBase,
     }
   }
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
-  void PrepareStop(fdf::PrepareStopCompleter completer) __TA_EXCLUDES(lock_) override;
+  void Stop(fdf::StopCompleter completer) __TA_EXCLUDES(lock_) override;
 
   // fuchsia_hardware_sdmmc::Sdmmc implementation
   void HostInfo(fdf::Arena& arena, HostInfoCompleter::Sync& completer) override;
@@ -118,20 +118,22 @@ class AmlSdmmc : public fdf::DriverBase,
 
   zx_status_t SuspendPower() __TA_REQUIRES(lock_);
   zx_status_t ResumePower() __TA_REQUIRES(lock_);
-  void Suspend(fdf_power::SuspendCompleter completer) override {
-    SetLevel(kPowerLevelOff);
-    completer();
+  // fdf_power::Suspendable implementation
+  void Suspend(fdf_power::SuspendCompleter completer) override;
+  void Resume(fdf_power::ResumeCompleter completer) override;
+  bool SuspendEnabled() override;
+  // Used by fdf_power::Suspendable.
+  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> take_power_element_runner() {
+    return std::move(power_element_runner_);
   }
-  void Resume(fdf_power::ResumeCompleter completer) override {
-    SetLevel(kPowerLevelOn);
-    completer();
-  }
-  bool SuspendEnabled() override { return has_power_args(); }
+
+
 
   // Visible for tests
   zx_status_t Init(const std::string& instance_identifier) __TA_EXCLUDES(lock_);
 
  protected:
+  std::optional<inspect::ComponentInspector> component_inspector_;
   virtual zx_status_t WaitForInterruptImpl();
   virtual void WaitForBus() const __TA_REQUIRES(lock_);
   virtual std::optional<compat::DeviceServer::BanjoConfig> get_banjo_config() {
@@ -254,7 +256,8 @@ class AmlSdmmc : public fdf::DriverBase,
                                          cpp20::span<const TuneResults> adj_delay_results);
 
   zx::result<> InitResources(
-      fidl::ClientEnd<fuchsia_hardware_platform_device::Device> pdev_client_end);
+      fidl::ClientEnd<fuchsia_hardware_platform_device::Device> pdev_client_end,
+      fdf::Namespace& incoming);
 
   void Serve(fdf::ServerEnd<fuchsia_hardware_sdmmc::Sdmmc> request);
 
@@ -321,6 +324,7 @@ class AmlSdmmc : public fdf::DriverBase,
   uint32_t clk_div_saved_ = 0;
 
   zx::event hardware_power_assertive_token_;
+  std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> power_element_runner_;
 
   bool shutdown_ __TA_GUARDED(lock_) = false;
   std::array<SdmmcVmoStore, fuchsia_hardware_sdmmc::wire::kSdmmcMaxClientId + 1> registered_vmos_

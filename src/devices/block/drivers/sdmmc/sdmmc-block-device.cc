@@ -351,7 +351,7 @@ zx_status_t SdmmcBlockDevice::AddCqhciDevice() {
 }
 
 zx::result<> SdmmcBlockDevice::ConfigurePowerManagement() {
-  if (!parent_->power_element_token().has_value()) {
+  if (!parent_->power_element_token().is_valid()) {
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
@@ -364,9 +364,17 @@ zx::result<> SdmmcBlockDevice::ConfigurePowerManagement() {
   }
   fidl::SyncClient<fuchsia_power_system::CpuElementManager> cpu_element_manager(
       std::move(connect_to_cpu_element_manager.value()));
+  zx::event dependency_token;
+  zx_status_t status =
+      parent_->power_element_token().duplicate(ZX_RIGHT_SAME_RIGHTS, &dependency_token);
+  if (status != ZX_OK) {
+    fdf::error("Failed to duplicate power token: {}", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
   fidl::Result<fuchsia_power_system::CpuElementManager::AddExecutionStateDependency> result =
       cpu_element_manager->AddExecutionStateDependency(
-          {{.dependency_token = parent_->power_element_token(), .power_level = 1}});
+          {{.dependency_token = std::move(dependency_token), .power_level = 1}});
   if (result.is_error()) {
     fdf::error("CpuElementManager token registration failed: {}",
                result.error_value().FormatDescription());
@@ -502,7 +510,7 @@ void SdmmcBlockDevice::DisableCqhci(fdf::Arena& arena, DisableCqhciCompleter::Sy
   completer.buffer(arena).ReplySuccess();
 }
 
-void SdmmcBlockDevice::StopWorkerDispatcher(std::optional<fdf::PrepareStopCompleter> completer) {
+void SdmmcBlockDevice::StopWorkerDispatcher(std::optional<fdf::StopCompleter> completer) {
   if (worker_dispatcher_.get()) {
     {
       fbl::AutoLock worker_lock(&worker_lock_);
@@ -532,10 +540,10 @@ void SdmmcBlockDevice::StopWorkerDispatcher(std::optional<fdf::PrepareStopComple
   }
 
   struct Context {
-    Context(size_t count, std::optional<fdf::PrepareStopCompleter> comp)
+    Context(size_t count, std::optional<fdf::StopCompleter> comp)
         : pending_count(count), completer(std::move(comp)) {}
     std::atomic<size_t> pending_count;
-    std::optional<fdf::PrepareStopCompleter> completer;
+    std::optional<fdf::StopCompleter> completer;
   };
 
   auto ctx = std::make_shared<Context>(child_partition_devices_.size(), std::move(completer));

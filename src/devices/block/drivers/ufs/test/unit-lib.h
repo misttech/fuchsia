@@ -270,11 +270,10 @@ class FakePowerBroker : public fidl::Server<fuchsia_power_broker::Topology> {
 
 class TestUfs : public UfsPci {
  public:
-  TestUfs(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : UfsPci(std::move(start_args), std::move(dispatcher)) {}
+  explicit TestUfs() : UfsPci() {}
   ~TestUfs() override = default;
 
-  inspect::ComponentInspector& GetInspector() { return inspector(); }
+  inspect::ComponentInspector& GetInspector() { return *component_inspector_; }
 
   static void SetMockDevice(ufs_mock_device::UfsMockDevice* mock_device) {
     TestUfs::mock_device_ = mock_device;

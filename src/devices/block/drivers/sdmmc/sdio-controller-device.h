@@ -116,7 +116,7 @@ class SdioControllerDevice : public fdf::WireServer<fuchsia_hardware_sdmmc::InBa
   SdmmcRootDevice* parent() { return parent_; }
 
   zx_status_t StartSdioIrqDispatcherIfNeeded() TA_EXCL(irq_dispatcher_lock_);
-  void StopSdioIrqDispatcher(std::optional<fdf::PrepareStopCompleter> completer = std::nullopt)
+  void StopSdioIrqDispatcher(std::optional<fdf::StopCompleter> completer = std::nullopt)
       TA_EXCL(irq_dispatcher_lock_);
 
   fdf::Logger& logger();

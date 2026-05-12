@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 #include "scsi.h"
 
-FUCHSIA_DRIVER_EXPORT(virtio::ScsiDriver);
+FUCHSIA_DRIVER_EXPORT2(virtio::ScsiDriver);

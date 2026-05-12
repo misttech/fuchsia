@@ -45,8 +45,8 @@ class TestSdhci : public Sdhci {
   // Modify to configure the behaviour of this test driver.
   static fdf::MmioBuffer* mmio_;
 
-  TestSdhci(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : Sdhci(std::move(start_args), std::move(dispatcher)),
+  explicit TestSdhci()
+      : Sdhci(),
         irq_ack_wait_(this, ZX_HANDLE_INVALID, ZX_VIRTUAL_INTERRUPT_UNTRIGGERED,
                       ZX_WAIT_ASYNC_EDGE) {}
 
@@ -3085,4 +3085,4 @@ TEST_F(SdhciBackgroundTest, InitializeCommandQueueing) {
 
 }  // namespace sdhci
 
-FUCHSIA_DRIVER_EXPORT(sdhci::TestSdhci);
+FUCHSIA_DRIVER_EXPORT2(sdhci::TestSdhci);
