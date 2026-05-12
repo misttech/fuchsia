@@ -5,50 +5,14 @@
 # Always use the `$target_out_dir` associated with `$default_toolchain`.
 out_dir = get_label_info(":stub($default_toolchain)", "target_out_dir")
 
-gn_assembled_test_dir = "$out_dir/gn_assembled_fx_publish_working_dir"
 bazel_assembled_test_dir = "$out_dir/bazel_assembled_fx_publish_working_dir"
-
-gn_assembly_cache_packages_list =
-    "$gn_assembled_test_dir/assembly_cache_packages.list"
 bazel_assembly_cache_packages_list =
     "$bazel_assembled_test_dir/assembly_cache_packages.list"
 
 if (is_fuchsia) {
-  import("//build/assembly/assembled_system.gni")
-  import("//build/assembly/board_configuration.gni")
   import("//build/assembly/packages_from_product_assembler.gni")
-  import("//build/assembly/product_assembly_configuration.gni")
   import("//build/bazel/assembly/bazel_product_bundle.gni")
   import("//build/images/paths.gni")
-  import("//build/info/info.gni")
-  import("//build/product.gni")
-
-  product_assembly_configuration("product_assembly_config") {
-    testonly = true
-    platform = {
-      build_type = "eng"
-      feature_set_level = "utility"
-    }
-    cache_packages = [
-      {
-        package_target = "//examples/hello_world/cpp:hello-world-cpp"
-      },
-    ]
-    version = build_info_version
-  }
-
-  board_configuration("board_config") {
-    name = "test"
-    version = "fake_version"
-    partitions_config = "//boards/partitions:default"
-  }
-
-  assembled_system("fx_publish_test.gn_assembly") {
-    testonly = true
-    product_assembly_config_label = ":product_assembly_config"
-    board_config_label = ":board_config"
-    generate_fxfs = true
-  }
 
   bazel_product_bundle("bazel_pb") {
     testonly = true
@@ -61,18 +25,9 @@ if (is_fuchsia) {
     image_has_fxfs_blob = true
     generate_image_metadata = false
   }
-
-  packages_from_product_assembler("gn_assembly_cache_packages.list") {
-    assembly_label = ":fx_publish_test.gn_assembly($default_toolchain)"
-    package_set = "cache"
-    is_bazel_assembled = false
-    outputs = [ gn_assembly_cache_packages_list ]
-    testonly = true
-  }
   packages_from_product_assembler("bazel_assembly_cache_packages.list") {
     assembly_label = ":bazel_pb($default_toolchain)"
     package_set = "cache"
-    is_bazel_assembled = true
     outputs = [ bazel_assembly_cache_packages_list ]
     testonly = true
   }
@@ -161,17 +116,6 @@ if (is_host) {
     }
   }
 
-  # Create a predefined hermetic CWD for fx_publish integration tests on CQ/CV that can be known in
-  # GN time. This is needed because test data sources for host_test_data can only be provided in GN
-  # time but precise file references within the package manifest list can only be known during
-  # action/ninja time.
-  populate_fx_publish_working_dir("fx_publish_gn_assembly_working_dir") {
-    package_manifest_list = gn_assembly_cache_packages_list
-    deps = [ ":gn_assembly_cache_packages.list($default_toolchain)" ]
-    output = gn_assembled_test_dir
-    testonly = true
-  }
-
   populate_fx_publish_working_dir("fx_publish_bazel_assembly_working_dir") {
     package_manifest_list = bazel_assembly_cache_packages_list
     deps = [
@@ -187,31 +131,9 @@ if (is_host) {
     testonly = true
   }
 
-  host_test_data("fx_publish_gn_test_data") {
-    sources = [ gn_assembled_test_dir ]
-    deps = [ ":fx_publish_gn_assembly_working_dir" ]
-  }
-
   host_test_data("fx_publish_bazel_test_data") {
     sources = [ bazel_assembled_test_dir ]
     deps = [ ":fx_publish_bazel_assembly_working_dir" ]
-  }
-
-  python_host_test("fx_publish_gn_assembled_test") {
-    main_source = "//tools/devshell/tests/subcommands/fx_publish_test.py"
-    sources = [
-      "//tools/devshell/contrib/__init__.py",
-      "//tools/devshell/contrib/publish.py",
-      "//tools/devshell/contrib/terminal.py",
-    ]
-    test_data_deps = [ ":fx_publish_gn_test_data" ]
-    main_callable = "main"
-    extra_args = [
-      "--test-dir",
-      rebase_path(gn_assembled_test_dir, root_build_dir),
-      "--expect-cache-packages",
-      "hello-world-cpp/0",
-    ]
   }
 
   python_host_test("fx_publish_bazel_assembled_test") {
@@ -233,9 +155,6 @@ if (is_host) {
 
   group("fx_publish_tests") {
     testonly = true
-    public_deps = [
-      ":fx_publish_bazel_assembled_test",
-      ":fx_publish_gn_assembled_test",
-    ]
+    public_deps = [ ":fx_publish_bazel_assembled_test" ]
   }
 }

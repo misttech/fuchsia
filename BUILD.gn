@@ -2455,7 +2455,7 @@ group("developer_universe_packages") {
   visibility = [
     ":test_components",
     ":tests_from_metadata",
-    "//build/images/*",
+    "//build/images/updates:*",
   ]
   public_deps = universe_package_labels
 
@@ -2539,7 +2539,7 @@ group("developer_specified_tests") {
   testonly = true
   visibility = [
     ":*",
-    "//build/images/updates:universe_packages",
+    "//build/images/updates:*",
   ]
   public_deps = developer_test_labels
 }
@@ -2552,7 +2552,7 @@ group("developer_specified_tests") {
 # product in any way.
 group("discoverable_packages") {
   testonly = true
-  visibility = [ "//build/images/updates:universe_packages" ]
+  visibility = [ "//build/images/updates:*" ]
   public_deps = discoverable_package_labels + [ ":discoverable_tests" ]
 
   # For all configurations other than bringup, add //bundles/tools to
