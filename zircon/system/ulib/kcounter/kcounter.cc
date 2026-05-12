@@ -165,7 +165,7 @@ bool VmoToInspectMapper::ShouldInclude(const counters::Descriptor& entry) {
       "init.target.time.msec",    //
       "init.userboot.time.msec",  //
       "port.cancel",              //
-      "port.cancel.key",          //
+      "port.cancel_key",          //
       "profile.create",           //
       "profile.set",              //
   };
