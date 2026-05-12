@@ -657,6 +657,40 @@ fn two_responses_same_name() {
 }
 
 #[test]
+fn bsir() {
+    test_roundtrips(
+        highlevel::Response::Success(highlevel::Success::Bsir { enable: false }),
+        lowlevel::Response::Success {
+            name: String::from("BSIR"),
+            is_extension: true,
+            arguments: lowlevel::DelimitedArguments {
+                delimiter: Some(String::from(":")),
+                arguments: lowlevel::Arguments::ArgumentList(vec![
+                    lowlevel::Argument::PrimitiveArgument(String::from("0")),
+                ]),
+                terminator: None,
+            },
+        },
+        cr_lf_delimit("+BSIR: 0"),
+    );
+    test_roundtrips(
+        highlevel::Response::Success(highlevel::Success::Bsir { enable: true }),
+        lowlevel::Response::Success {
+            name: String::from("BSIR"),
+            is_extension: true,
+            arguments: lowlevel::DelimitedArguments {
+                delimiter: Some(String::from(":")),
+                arguments: lowlevel::Arguments::ArgumentList(vec![
+                    lowlevel::Argument::PrimitiveArgument(String::from("1")),
+                ]),
+                terminator: None,
+            },
+        },
+        cr_lf_delimit("+BSIR: 1"),
+    );
+}
+
+#[test]
 fn success_succeeds() {
     assert_eq!(
         success(highlevel::Success::Test {}),

@@ -208,3 +208,7 @@ command { AT+BLDN }
 # Standard "incoming call" indication
 # HFP 1.8 4.34.2
 response { RING }
+
+# In-band Ring Tone setting response
+# HFP 1.8 Section 4.13 / 4.34.1
+response Bsir { +BSIR: enable: BoolAsInt }
