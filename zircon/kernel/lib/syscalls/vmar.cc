@@ -23,6 +23,7 @@
 #include <object/vm_object_dispatcher.h>
 #include <vm/vm_address_region.h>
 #include <vm/vm_object.h>
+#include <vm/vm_object_paged.h>
 
 #define LOCAL_TRACE 0
 
@@ -160,6 +161,20 @@ zx_status_t vmar_map_common(zx_vm_option_t options, fbl::RefPtr<VmAddressRegionD
   // Allow faults flag must be used if creating a mapping that can fault.
   if ((options & ZX_VM_FAULT_BEYOND_STREAM_SIZE) && !(options & ZX_VM_ALLOW_FAULTS)) {
     return ZX_ERR_INVALID_ARGS;
+  }
+
+  // If fault beyond stream size has been requested, verify that the underlying VMO does, in fact,
+  // have a user stream size. This might be false if the mapping is being created from a non
+  // VmObjectDispatcher source.
+  if (options & ZX_VM_FAULT_BEYOND_STREAM_SIZE) {
+    if (VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(vmo.get()); likely(paged)) {
+      Guard<CriticalMutex> guard{paged->lock()};
+      if (!paged->user_stream_size_locked().has_value()) {
+        return ZX_ERR_INVALID_ARGS;
+      }
+    } else {
+      return ZX_ERR_INVALID_ARGS;
+    }
   }
 
   zx::result<VmAddressRegionDispatcher::MapResult> map_result =
@@ -306,10 +321,6 @@ zx_status_t sys_vmar_map_iob(zx_handle_t handle, zx_vm_option_t options, size_t 
                              zx_handle_t ep, uint32_t region_index, size_t region_offset,
                              size_t region_length, user_out_ptr<vaddr_t> mapped_addr) {
   auto* up = ProcessDispatcher::GetCurrent();
-
-  if (options & ZX_VM_FAULT_BEYOND_STREAM_SIZE) {
-    return ZX_ERR_INVALID_ARGS;
-  }
 
   // Lookup the VMAR dispatcher from handle.
   fbl::RefPtr<VmAddressRegionDispatcher> vmar;

@@ -7,6 +7,7 @@
 #include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/time.h>
+#include <lib/zx/vmar.h>
 
 #include <array>
 #include <chrono>
@@ -167,6 +168,22 @@ TEST(ClockTest, MultithreadedContentionClockMonotonic) {
   for (auto& thread : threads) {
     thread.join();
   }
+}
+
+// Regression test for b/512250974.
+TEST(ClockTest, FaultBeyondStreamSizeReturnserror) {
+  zx::clock clock;
+  ASSERT_OK(zx::clock::create(ZX_CLOCK_OPT_MAPPABLE, nullptr, &clock));
+
+  uint64_t size = 0;
+  ASSERT_OK(clock.get_info(ZX_INFO_CLOCK_MAPPED_SIZE, &size, sizeof(size), nullptr, nullptr));
+
+  zx_vaddr_t addr = 0;
+  zx_status_t status = zx::vmar::root_self()->map_clock(
+      ZX_VM_PERM_READ | ZX_VM_FAULT_BEYOND_STREAM_SIZE | ZX_VM_ALLOW_FAULTS | ZX_VM_MAP_RANGE, 0,
+      clock, size, &addr);
+
+  ASSERT_EQ(status, ZX_ERR_INVALID_ARGS);
 }
 
 }  // namespace
