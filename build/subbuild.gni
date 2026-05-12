@@ -92,8 +92,6 @@ template("subbuild") {
     args = [
       "--stamp-file",
       rebase_path(_build_dir_stamp, root_build_dir),
-      "--sdk-id",
-      sdk_id,
       "--output-build-dir",
       rebase_path(_build_dir, root_build_dir),
 
@@ -108,10 +106,6 @@ template("subbuild") {
       rebase_path("//", root_build_dir),
       "--prebuilt-host-tools-dir",
       tools_dir,
-      "--compress-debuginfo",
-      compress_debuginfo,
-      "--compilation-mode",
-      compilation_mode,
     ]
 
     if (sdk_sub_build_parallelism != "") {
@@ -136,27 +130,6 @@ template("subbuild") {
       args += [ "--use-jobserver" ]
     }
 
-    if (cxx_rbe_enable) {
-      args += [
-        "--cxx-rbe-enable",
-        "--cxx-exec-strategy",
-        cxx_rbe_exec_strategy,
-      ]
-    }
-    if (link_rbe_enable) {
-      args += [
-        "--link-rbe-enable",
-        "--link-exec-strategy",
-        link_rbe_exec_strategy,
-      ]
-    }
-    if (rust_rbe_enable) {
-      args += [
-        "--rust-rbe-enable",
-        "--rust-exec-strategy",
-        rust_rbe_exec_strategy,
-      ]
-    }
     if (ninja_upload_build_events != "") {
       args += [ "--upload-build-events=" + ninja_upload_build_events ]
     }
@@ -165,14 +138,6 @@ template("subbuild") {
         "--api-level-path",
         rebase_path(_build_dir, root_build_dir) + invoker.api_level_path,
       ]
-    }
-
-    if (update_goldens) {
-      args += [ "--update-goldens" ]
-    }
-
-    if (build_should_trace_actions) {
-      args += [ "--trace-build-actions" ]
     }
 
     # If jobserver mode is not enabled, limit the number of concurrent
@@ -198,6 +163,10 @@ template("subbuild") {
       ninja_subbuilds = [
         {
           build_dir = rebase_path(_build_dir, root_build_dir)
+          target_cpu = invoker.target_cpu
+          api_level = invoker.api_level
+          target_label = _target
+          use_idk_tools_only = use_idk_tools_only
         },
       ]
     }

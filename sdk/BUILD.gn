@@ -159,6 +159,7 @@ group("final_fuchsia_idk") {
     ":final_fuchsia_idk.archive",
     ":final_fuchsia_idk.exported",
     ":final_fuchsia_idk.validation",
+    ":subbuild_config",
   ]
   testonly = true
 
@@ -997,6 +998,38 @@ if (current_toolchain == default_toolchain) {
       deps = [ ":core" ]
     }
   }
+
+  # LINT.IfChange(subbuild_config)
+  generated_file("subbuild_config") {
+    visibility = []
+    visibility = [ "//*" ]
+    outputs = [ "$root_build_dir/subbuild_config.json" ]
+    output_conversion = "json"
+    contents = {
+      sdk_id = sdk_id
+      compress_debuginfo = compress_debuginfo
+      compilation_mode = compilation_mode
+      if (sdk_sub_build_parallelism != "") {
+        sdk_sub_build_parallelism = sdk_sub_build_parallelism
+      }
+      if (sdk_sub_build_max_load_average != "") {
+        sdk_sub_build_max_load_average = sdk_sub_build_max_load_average
+      }
+      sdk_sub_build_verbose = sdk_sub_build_verbose
+      enable_jobserver = enable_jobserver
+      cxx_rbe_enable = cxx_rbe_enable
+      cxx_rbe_exec_strategy = cxx_rbe_exec_strategy
+      link_rbe_enable = link_rbe_enable
+      link_rbe_exec_strategy = link_rbe_exec_strategy
+      rust_rbe_enable = rust_rbe_enable
+      rust_rbe_exec_strategy = rust_rbe_exec_strategy
+      ninja_upload_build_events = ninja_upload_build_events
+      update_goldens = update_goldens
+      build_should_trace_actions = build_should_trace_actions
+    }
+  }
+
+  # LINT.ThenChange(//build/subbuild.py:subbuild_config)
 }  # current_toolchain == default_toolchain
 
 if (is_host) {

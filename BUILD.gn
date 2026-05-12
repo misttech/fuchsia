@@ -2680,6 +2680,8 @@ group("root_targets") {
   if (has_board) {
     deps += [ "//build/images/updates:prepare_publish" ]
   }
+
+  deps += [ "//sdk:subbuild_config" ]
 }
 
 # A GN pool matching the special Ninja 'console' pool. Any action() that

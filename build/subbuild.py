@@ -5,6 +5,7 @@
 """Build a target for a particular target_cpu and api_level."""
 
 import argparse
+import json
 import logging
 import multiprocessing
 import os
@@ -147,7 +148,6 @@ def run_checked_command(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sdk-id", help="The version name value for this IDK.")
     parser.add_argument(
         "--target-label",
         required=True,
@@ -178,37 +178,6 @@ def main() -> int:
         help="Build dir for the subbuild",
     )
     parser.add_argument(
-        "--compilation-mode",
-        help="Compilation mode to use",
-    )
-    parser.add_argument(
-        "--cxx-rbe-enable",
-        action="store_true",
-        help="Enable remote builds with RBE for C++ targets.",
-    )
-    parser.add_argument(
-        "--cxx-exec-strategy",
-        help="RBE exec strategy for cxx compilation.",
-    )
-    parser.add_argument(
-        "--link-rbe-enable",
-        action="store_true",
-        help="Enable remote builds with RBE for linking C++ targets.",
-    )
-    parser.add_argument(
-        "--link-exec-strategy",
-        help="RBE exec strategy for linking.",
-    )
-    parser.add_argument(
-        "--rust-rbe-enable",
-        action="store_true",
-        help="Enable remote builds with RBE for Rust targets.",
-    )
-    parser.add_argument(
-        "--rust-exec-strategy",
-        help="RBE exec strategy for Rust compilation.",
-    )
-    parser.add_argument(
         "--upload-build-events",
         type=str,
         choices=["no", "resultstore", "resultstore_infra"],  # No Sponge yet
@@ -226,10 +195,6 @@ def main() -> int:
         type=int,
         default=multiprocessing.cpu_count(),
         help="Max load average argument (-l) to pass to ninja.",
-    )
-    parser.add_argument(
-        "--compress-debuginfo",
-        help="Optional value to select compression of debug sections in ELF binaries.",
     )
     parser.add_argument(
         "--host-tag", help="Fuchsia host os/cpu tag used to find prebuilts."
@@ -255,16 +220,6 @@ def main() -> int:
         type=str,
         default=None,
         help="If set, write the API level to this file in the output directory.",
-    )
-    parser.add_argument(
-        "--update-goldens",
-        action="store_true",
-        help="Update goldens rather than failing.",
-    )
-    parser.add_argument(
-        "--trace-build-actions",
-        action="store_true",
-        help="Trace build actions.",
     )
 
     args = parser.parse_args()
@@ -340,30 +295,50 @@ def main() -> int:
         dest_file = build_dir / file
         shutil.copy2(source_file, dest_file)
 
+    subbuild_config_json_path = build_dir.parent / "subbuild_config.json"
+    if not subbuild_config_json_path.exists():
+        logger.error(f"Missing {subbuild_config_json_path}")
+        return 1
+    with subbuild_config_json_path.open("r") as f:
+        subbuild_config = json.load(f)
+
+    compilation_mode = subbuild_config["compilation_mode"]
+    cxx_rbe_enable = subbuild_config["cxx_rbe_enable"]
+    link_rbe_enable = subbuild_config["link_rbe_enable"]
+    rust_rbe_enable = subbuild_config["rust_rbe_enable"]
+
+    cxx_exec_strategy = subbuild_config.get("cxx_rbe_exec_strategy")
+    link_exec_strategy = subbuild_config.get("link_rbe_exec_strategy")
+    rust_exec_strategy = subbuild_config.get("rust_rbe_exec_strategy")
+
+    sdk_id = subbuild_config.get("sdk_id")
+    compress_debuginfo = subbuild_config.get("compress_debuginfo")
+    update_goldens = subbuild_config.get("update_goldens", False)
+    trace_build_actions = subbuild_config.get(
+        "build_should_trace_actions", False
+    )
+
     args_gn_content = _ARGS_GN_TEMPLATE.format(
         cpu=target_cpu,
-        compilation_mode=args.compilation_mode,
-        cxx_rbe_enable="true" if args.cxx_rbe_enable else "false",
-        link_rbe_enable="true" if args.link_rbe_enable else "false",
-        rust_rbe_enable="true" if args.rust_rbe_enable else "false",
+        compilation_mode=compilation_mode,
+        cxx_rbe_enable="true" if cxx_rbe_enable else "false",
+        link_rbe_enable="true" if link_rbe_enable else "false",
+        rust_rbe_enable="true" if rust_rbe_enable else "false",
         sdk_labels_list=f'"{args.target_label}"',
     )
-    if args.cxx_exec_strategy:
-        args_gn_content += f'cxx_rbe_exec_strategy = "{args.cxx_exec_strategy}"'
-    if args.link_exec_strategy:
-        args_gn_content += (
-            f'link_rbe_exec_strategy = "{args.link_exec_strategy}"'
-        )
-    if args.rust_exec_strategy:
-        args_gn_content += (
-            f'rust_rbe_exec_strategy = "{args.rust_exec_strategy}"'
-        )
 
-    if args.sdk_id:
-        args_gn_content += f'sdk_id = "{args.sdk_id}"\n'
+    if cxx_exec_strategy:
+        args_gn_content += f'cxx_rbe_exec_strategy = "{cxx_exec_strategy}"\n'
+    if link_exec_strategy:
+        args_gn_content += f'link_rbe_exec_strategy = "{link_exec_strategy}"\n'
+    if rust_exec_strategy:
+        args_gn_content += f'rust_rbe_exec_strategy = "{rust_exec_strategy}"\n'
 
-    if args.compress_debuginfo:
-        args_gn_content += f'compress_debuginfo = "{args.compress_debuginfo}"\n'
+    if sdk_id:
+        args_gn_content += f'sdk_id = "{sdk_id}"\n'
+
+    if compress_debuginfo:
+        args_gn_content += f'compress_debuginfo = "{compress_debuginfo}"\n'
 
     if args.prebuilt_host_tools_dir:
         # Reuse host tools from the top-level build. This assumes that
@@ -376,18 +351,18 @@ def main() -> int:
 
     # Special API levels are passed to GN as a string; numeric API levels are
     # passed as ints.
-    if api_level == "NEXT" or api_level == "HEAD" or api_level == "PLATFORM":
+    if api_level in ("NEXT", "HEAD", "PLATFORM"):
         gn_api_level = f'"{api_level}"'
     else:
         gn_api_level = str(int(api_level))
 
     args_gn_content += f"current_build_target_api_level = {gn_api_level}\n"
 
-    if args.update_goldens:
-        args_gn_content += f"update_goldens = true\n"
+    if update_goldens:
+        args_gn_content += "update_goldens = true\n"
 
-    if args.trace_build_actions:
-        args_gn_content += f"build_should_trace_actions = true\n"
+    if trace_build_actions:
+        args_gn_content += "build_should_trace_actions = true\n"
 
     logger.info(f"{build_dir}: args.gn content:\n{args_gn_content}")
     if (
