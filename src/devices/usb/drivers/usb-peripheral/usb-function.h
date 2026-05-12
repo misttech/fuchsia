@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/fidl.h>
-#include <fuchsia/hardware/usb/dci/cpp/banjo.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/compat/cpp/compat.h>

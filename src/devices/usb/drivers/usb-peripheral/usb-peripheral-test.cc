@@ -7,8 +7,6 @@
 #include <fidl/fuchsia.hardware.usb.dci/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/wire_test_base.h>
-#include <fuchsia/hardware/usb/dci/c/banjo.h>
-#include <fuchsia/hardware/usb/dci/cpp/banjo.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
@@ -50,53 +48,14 @@ inline std::ostream& operator<<(std::ostream& os, const UsbPeripheral::DeviceSta
 namespace usb_peripheral::test {
 namespace {
 
-class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServer<fdci::UsbDci> {
+class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
  public:
-  FakeDevice() : proto_({&usb_dci_protocol_ops_, this}) {}
+  FakeDevice() = default;
 
   fdci::UsbDciService::InstanceHandler GetHandler() {
     return fdci::UsbDciService::InstanceHandler(
         {.device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                                            fidl::kIgnoreBindingClosure)});
-  }
-
-  // USB DCI protocol implementation (Banjo - no longer used).
-  void UsbDciRequestQueue(usb_request_t* req, const usb_request_complete_callback_t* cb) {
-    std::lock_guard<std::mutex> lock(requests_mutex_);
-    requests_.push_back({req, *cb});
-  }
-
-  void CompleteAll(zx_status_t status = ZX_OK) {
-    std::lock_guard<std::mutex> lock(requests_mutex_);
-    for (auto& request : requests_) {
-      usb_request_complete(request.req, status, 0, &request.cb);
-    }
-    requests_.clear();
-  }
-
-  zx_status_t UsbDciSetInterface(const usb_dci_interface_protocol_t* interface) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-  zx_status_t UsbDciConfigEp(const usb_endpoint_descriptor_t* ep_desc,
-                             const usb_ss_ep_comp_descriptor_t* ss_comp_desc) {
-    return ZX_ERR_NOT_SUPPORTED;
-  }
-  zx_status_t UsbDciDisableEp(uint8_t ep_address) { return ZX_ERR_NOT_SUPPORTED; }
-  zx_status_t UsbDciEpSetStall(uint8_t ep_address) { return ZX_ERR_NOT_SUPPORTED; }
-  zx_status_t UsbDciEpClearStall(uint8_t ep_address) { return ZX_ERR_NOT_SUPPORTED; }
-  size_t UsbDciGetRequestSize() { return sizeof(usb_request_t); }
-
-  zx_status_t UsbDciCancelAll(uint8_t ep_address) {
-    std::lock_guard<std::mutex> lock(requests_mutex_);
-    for (auto it = requests_.begin(); it != requests_.end();) {
-      if (it->req->header.ep_address == ep_address) {
-        usb_request_complete(it->req, ZX_ERR_IO_NOT_PRESENT, 0, &it->cb);
-        it = requests_.erase(it);
-      } else {
-        ++it;
-      }
-    }
-    return ZX_OK;
   }
 
   // fuchsia_hardware_usb_dci::UsbDci protocol.
@@ -174,8 +133,6 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_usb_dci::UsbDci> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {}
 
-  usb_dci_protocol_t* proto() { return &proto_; }
-
   fidl::ClientEnd<fdci::UsbDciInterface> TakeClient() {
     auto client = std::move(client_);
     EXPECT_TRUE(client.has_value());
@@ -183,12 +140,6 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
   }
 
   libsync::Completion& set_interface_called() { return set_interface_called_; }
-
-  compat::DeviceServer::BanjoConfig GetBanjoConfig() {
-    compat::DeviceServer::BanjoConfig config{ZX_PROTOCOL_USB_DCI};
-    config.callbacks[ZX_PROTOCOL_USB_DCI] = banjo_server_.callback();
-    return config;
-  }
 
   bool controller_started() const { return controller_started_; }
 
@@ -218,21 +169,12 @@ class FakeDevice : public ddk::UsbDciProtocol<FakeDevice>, public fidl::WireServ
   std::vector<uint8_t> disabled_endpoints_;
 
  private:
-  usb_dci_protocol_t proto_;
   bool controller_started_ = false;
   libsync::Completion set_interface_called_;
   libsync::Completion* stop_completion_ = nullptr;
   fidl::ServerBindingGroup<fdci::UsbDci> bindings_;
   std::optional<fidl::ClientEnd<fdci::UsbDciInterface>> client_;
-  compat::BanjoServer banjo_server_{ZX_PROTOCOL_USB_DCI, this, &usb_dci_protocol_ops_};
   std::map<uint8_t, fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint>> endpoints_;
-
-  struct Request {
-    usb_request_t* req;
-    usb_request_complete_callback_t cb;
-  };
-  std::mutex requests_mutex_;
-  std::vector<Request> requests_;
 };
 
 class FakeUsbFunction
@@ -374,17 +316,9 @@ class UsbPeripheralTestEnvironment : public fdf_testing::Environment {
   void Init(std::string_view serial_number) {
     fuchsia_boot_metadata::SerialNumberMetadata metadata{{.serial_number{serial_number}}};
     ASSERT_OK(serial_number_metadata_server_.SetMetadata(metadata));
-
-    device_server_.Initialize("default", std::nullopt, dci_.GetBanjoConfig());
   }
 
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
-    if (zx_status_t status =
-            device_server_.Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(), &to_driver_vfs);
-        status != ZX_OK) {
-      return zx::error(status);
-    }
-
     if (zx::result result = serial_number_metadata_server_.Serve(
             to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher());
         result.is_error()) {
@@ -402,13 +336,11 @@ class UsbPeripheralTestEnvironment : public fdf_testing::Environment {
   fidl::ClientEnd<fdci::UsbDciInterface> TakeDciClient() { return dci_.TakeClient(); }
 
   FakeDevice& dci() { return dci_; }
-  void CompleteAll(zx_status_t status = ZX_OK) { dci_.CompleteAll(status); }
 
  private:
   FakeDevice dci_;
   fdf_metadata::MetadataServer<fuchsia_boot_metadata::SerialNumberMetadata>
       serial_number_metadata_server_;
-  compat::DeviceServer device_server_;
 };
 
 class UsbPeripheralTestConfig {
@@ -541,11 +473,6 @@ class UsbPeripheralHarness : public ::testing::Test {
   static constexpr std::string_view kSerialNumber = "Test serial number";
 
   fidl::WireSyncClient<fdci::UsbDciInterface>& dci() { return dci_; }
-
-  void CompleteAll(zx_status_t status = ZX_OK) {
-    dut().RunInEnvironmentTypeContext(
-        [status](UsbPeripheralTestEnvironment& env) { env.CompleteAll(status); });
-  }
 
   void ExpectState(UsbPeripheral::DeviceState state) {
     dut().RunInDriverContext(
@@ -866,131 +793,6 @@ TEST_F(UsbPeripheralReadyTest, DisconnectHostWhenAlreadyPeripheralReady) {
     comp.Signal();
   });
   comp.Wait();
-}
-
-TEST_F(UsbPeripheralReadyTest, SmallRequestQueueing) {
-  size_t parent_req_size = 0;
-  this->dut().RunInDriverContext(
-      [&](UsbPeripheral& peripheral) { parent_req_size = peripheral.ParentRequestSize(); });
-
-  // Allocate a request that is too small.
-  // We use parent_req_size - 1 for the allocation metadata size.
-  usb_request_t* raw_req;
-  ASSERT_OK(usb_request_alloc(&raw_req, 1024, 1 /* ep_address */, parent_req_size - 1));
-
-  libsync::Completion completion;
-  usb_request_complete_callback_t cb = {
-      .callback =
-          [](void* ctx, usb_request_t* req) {
-            EXPECT_EQ(req->response.status, ZX_ERR_INVALID_ARGS);
-            static_cast<libsync::Completion*>(ctx)->Signal();
-            usb_request_release(req);
-          },
-      .ctx = &completion,
-  };
-
-  this->dut().RunInDriverContext(
-      [&](UsbPeripheral& peripheral) { peripheral.UsbPeripheralRequestQueue(raw_req, &cb); });
-
-  completion.Wait();
-}
-
-TEST_F(UsbPeripheralReadyTest, DuplicateRequestQueueing) {
-  size_t parent_req_size = 0;
-  this->dut().RunInDriverContext(
-      [&](UsbPeripheral& peripheral) { parent_req_size = peripheral.ParentRequestSize(); });
-
-  std::optional<usb::Request<void>> req;
-  ASSERT_OK(usb::Request<void>::Alloc(&req, 1024, 1 /* ep_address */, parent_req_size));
-
-  libsync::Completion completion;
-
-  struct Context {
-    libsync::Completion* completion;
-    size_t parent_req_size;
-  } context = {
-      .completion = &completion,
-      .parent_req_size = parent_req_size,
-  };
-
-  usb_request_complete_callback_t cb = {
-      .callback =
-          [](void* ctx, usb_request_t* req) {
-            auto* context = static_cast<Context*>(ctx);
-            usb::Request<void> unused(req, context->parent_req_size);
-            context->completion->Signal();
-          },
-      .ctx = &context,
-  };
-
-  // Extract the raw request for repeated submission. We will let the final completion callback
-  // clean it up.
-  usb_request_t* raw_req = req->take();
-
-  this->dut().RunInDriverContext([&](UsbPeripheral& peripheral) {
-    // First queueing should succeed.
-    peripheral.UsbPeripheralRequestQueue(raw_req, &cb);
-    // Queueing the same request again should immediately complete with ZX_ERR_INVALID_ARGS
-    // because it is already in the container. To verify this, we use a test callback.
-    bool called = false;
-    usb_request_complete_callback_t cb2 = {
-        .callback =
-            [](void* ctx, usb_request_t* req) {
-              EXPECT_EQ(req->response.status, ZX_ERR_INVALID_ARGS);
-              *static_cast<bool*>(ctx) = true;
-            },
-        .ctx = &called,
-    };
-    peripheral.UsbPeripheralRequestQueue(raw_req, &cb2);
-    EXPECT_TRUE(called);
-  });
-
-  // Complete the outstanding request via the fake DCI to finish the test.
-  this->CompleteAll(ZX_OK);
-
-  completion.Wait();
-}
-
-TEST_F(UsbPeripheralReadyTest, PendingRequestsCompletedOnClearFunctions) {
-  size_t parent_req_size = 0;
-  this->dut().RunInDriverContext(
-      [&](UsbPeripheral& peripheral) { parent_req_size = peripheral.ParentRequestSize(); });
-
-  std::optional<usb::Request<void>> req;
-  ASSERT_OK(usb::Request<void>::Alloc(&req, 1024, 1 /* ep_address */, parent_req_size));
-
-  libsync::Completion completion;
-
-  struct Context {
-    libsync::Completion* completion;
-    size_t parent_req_size;
-  } context = {
-      .completion = &completion,
-      .parent_req_size = parent_req_size,
-  };
-
-  usb_request_complete_callback_t cb = {
-      .callback =
-          [](void* ctx, usb_request_t* req) {
-            auto* context = static_cast<Context*>(ctx);
-            EXPECT_EQ(req->response.status, ZX_ERR_IO_NOT_PRESENT);
-            usb::Request<void> unused(req, context->parent_req_size);
-            context->completion->Signal();
-          },
-      .ctx = &context,
-  };
-
-  this->dut().RunInDriverContext(
-      [&](UsbPeripheral& peripheral) { peripheral.UsbPeripheralRequestQueue(req->take(), &cb); });
-
-  // Call ClearFunctions via FIDL.
-  auto client = this->Client();
-  auto result = client->ClearFunctions();
-  ASSERT_TRUE(result.ok());
-
-  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
-
-  completion.Wait();
 }
 
 TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsWhenNoneAdded) {

@@ -509,24 +509,17 @@ zx_status_t UsbFunction::CommonEndpointSetStall(uint8_t ep_address) {
   }
 
   fidl::Arena arena;
-  if (peripheral_->dci_new().is_valid()) {
-    auto result = peripheral_->dci_new().buffer(arena)->EndpointSetStall(ep_address);
+  auto result = peripheral_->dci().buffer(arena)->EndpointSetStall(ep_address);
 
-    if (!result.ok()) {
-      fdf::error("Failed to send EndpointSetStall request: {}", result.status_string());
-      return result.status();
-    }
-    if (result->is_error()) {
-      if (result->error_value() != ZX_ERR_NOT_SUPPORTED) {
-        fdf::error("EndpointSetStall failed: {}", zx_status_get_string(result->error_value()));
-      }
-      return result->error_value();
-    }
-    return ZX_OK;
+  if (!result.ok()) {
+    fdf::error("Failed to send EndpointSetStall request: {}", result.status_string());
+    return result.status();
   }
-
-  fdf::warn("could not EndointSetStall() over FIDL, falling back to banjo");
-  return peripheral_->dci().EpSetStall(ep_address);
+  if (result->is_error()) {
+    fdf::error("EndpointSetStall failed: {}", zx_status_get_string(result->error_value()));
+    return result->error_value();
+  }
+  return ZX_OK;
 }
 
 zx_status_t UsbFunction::CommonEndpointClearStall(uint8_t ep_address) {
@@ -535,24 +528,17 @@ zx_status_t UsbFunction::CommonEndpointClearStall(uint8_t ep_address) {
   }
 
   fidl::Arena arena;
-  if (peripheral_->dci_new().is_valid()) {
-    auto result = peripheral_->dci_new().buffer(arena)->EndpointClearStall(ep_address);
+  auto result = peripheral_->dci().buffer(arena)->EndpointClearStall(ep_address);
 
-    if (!result.ok()) {
-      fdf::error("Failed to send EndpointClearStall request: {}", result.status_string());
-      return result.status();
-    }
-    if (result->is_error()) {
-      if (result->error_value() != ZX_ERR_NOT_SUPPORTED) {
-        fdf::error("EndpointClearStall failed: {}", zx_status_get_string(result->error_value()));
-      }
-      return result->error_value();
-    }
-    return ZX_OK;
+  if (!result.ok()) {
+    fdf::error("Failed to send EndpointClearStall request: {}", result.status_string());
+    return result.status();
   }
-
-  fdf::warn("could not EndointClearStall() over FIDL, falling back to banjo");
-  return peripheral_->dci().EpClearStall(ep_address);
+  if (result->is_error()) {
+    fdf::error("EndpointClearStall failed: {}", zx_status_get_string(result->error_value()));
+    return result->error_value();
+  }
+  return ZX_OK;
 }
 
 zx_status_t UsbFunction::CommonEndpointConfigure(
@@ -565,61 +551,37 @@ zx_status_t UsbFunction::CommonEndpointConfigure(
     return ZX_ERR_NOT_FOUND;
   }
 
-  if (peripheral_->dci_new().is_valid()) {
-    fidl::Arena arena;
-
-    fdescriptor::wire::UsbEndpointDescriptor fep_desc = {
-        .b_endpoint_address = ep_address,
-        .bm_attributes = endpoint_configuration.descriptor()->bm_attributes(),
-        // TODO(https://fxbug.dev/497048374): FIDL types should use host
-        // endianness.
-        .w_max_packet_size = htole16(endpoint_configuration.descriptor()->w_max_packet_size()),
-        .b_interval = endpoint_configuration.descriptor()->b_interval(),
-    };
-    fdescriptor::wire::UsbSsEpCompDescriptor fss_comp_desc;
-    if (endpoint_configuration.super_speed_companion().has_value()) {
-      fss_comp_desc = {
-          .b_max_burst = endpoint_configuration.super_speed_companion()->b_max_burst(),
-          .bm_attributes = endpoint_configuration.super_speed_companion()->bm_attributes(),
-          // TODO(https://fxbug.dev/497048374): FIDL types should use host
-          // endianness.
-          .w_bytes_per_interval =
-              htole16(endpoint_configuration.super_speed_companion()->w_bytes_per_interval()),
-      };
-    }
-    auto result = peripheral_->dci_new().buffer(arena)->ConfigureEndpoint(fep_desc, fss_comp_desc);
-
-    if (!result.ok()) {
-      fdf::warn("Failed to send ConfigureEndpoint request: {}", result.status_string());
-    } else if (result->is_error() && result->error_value() == ZX_ERR_NOT_SUPPORTED) {
-      fdf::warn("Failed to configure endpoint: {}", result.status_string());
-    } else if (result->is_error() && result->error_value() != ZX_ERR_NOT_SUPPORTED) {
-      return result->error_value();
-    } else {
-      return ZX_OK;
-    }
-  }
-
-  usb_endpoint_descriptor_t ep_desc = {
+  fidl::Arena arena;
+  fdescriptor::wire::UsbEndpointDescriptor fep_desc = {
       .b_endpoint_address = ep_address,
       .bm_attributes = endpoint_configuration.descriptor()->bm_attributes(),
+      // TODO(https://fxbug.dev/497048374): FIDL types should use host
+      // endianness.
       .w_max_packet_size = htole16(endpoint_configuration.descriptor()->w_max_packet_size()),
       .b_interval = endpoint_configuration.descriptor()->b_interval(),
   };
-  usb_ss_ep_comp_descriptor_t ss_comp_desc;
-  usb_ss_ep_comp_descriptor_t* ss_comp_desc_ptr = nullptr;
+  fdescriptor::wire::UsbSsEpCompDescriptor fss_comp_desc;
   if (endpoint_configuration.super_speed_companion().has_value()) {
-    ss_comp_desc = {
+    fss_comp_desc = {
         .b_max_burst = endpoint_configuration.super_speed_companion()->b_max_burst(),
         .bm_attributes = endpoint_configuration.super_speed_companion()->bm_attributes(),
+        // TODO(https://fxbug.dev/497048374): FIDL types should use host
+        // endianness.
         .w_bytes_per_interval =
             htole16(endpoint_configuration.super_speed_companion()->w_bytes_per_interval()),
     };
-    ss_comp_desc_ptr = &ss_comp_desc;
   }
+  auto result = peripheral_->dci().buffer(arena)->ConfigureEndpoint(fep_desc, fss_comp_desc);
 
-  fdf::debug("could not ConfigureEndpoint() over FIDL, falling back to banjo");
-  return peripheral_->dci().ConfigEp(&ep_desc, ss_comp_desc_ptr);
+  if (!result.ok()) {
+    fdf::error("Failed to send ConfigureEndpoint request: {}", result.status_string());
+    return result.status();
+  }
+  if (result->is_error()) {
+    fdf::error("Failed to configure endpoint: {}", zx_status_get_string(result->error_value()));
+    return result->error_value();
+  }
+  return ZX_OK;
 }
 
 zx_status_t UsbFunction::CommonEndpointDisable(uint8_t ep_address) {
@@ -628,20 +590,17 @@ zx_status_t UsbFunction::CommonEndpointDisable(uint8_t ep_address) {
   }
 
   fidl::Arena arena;
-  auto result = peripheral_->dci_new().buffer(arena)->DisableEndpoint(ep_address);
+  auto result = peripheral_->dci().buffer(arena)->DisableEndpoint(ep_address);
 
   if (!result.ok()) {
-    fdf::debug("Failed to send DisableEndpoint request: {}", result.status_string());
-  } else if (result->is_error() && result->error_value() == ZX_ERR_NOT_SUPPORTED) {
-    fdf::debug("Failed to disable endpoint: {}", result.status_string());
-  } else if (result->is_error() && result->error_value() != ZX_ERR_NOT_SUPPORTED) {
-    return result->error_value();
-  } else {
-    return ZX_OK;
+    fdf::error("Failed to send DisableEndpoint request: {}", result.status_string());
+    return result.status();
   }
-
-  fdf::debug("could not DisableEndpoint() over FIDL, falling back to banjo");
-  return peripheral_->dci().DisableEp(ep_address);
+  if (result->is_error()) {
+    fdf::error("Failed to disable endpoint: {}", zx_status_get_string(result->error_value()));
+    return result->error_value();
+  }
+  return ZX_OK;
 }
 
 }  // namespace usb_peripheral

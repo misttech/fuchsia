@@ -6,7 +6,6 @@
 
 #include <assert.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
-#include <fuchsia/hardware/usb/dci/c/banjo.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/fit/defer.h>
@@ -41,89 +40,33 @@ namespace usb_peripheral {
 zx_status_t UsbPeripheral::UsbDciCancelAll(uint8_t ep_address) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
   fidl::Arena arena;
-  auto result = dci_new_.buffer(arena)->CancelAll(ep_address);
+  auto result = dci_.buffer(arena)->CancelAll(ep_address);
 
   if (!result.ok()) {
-    fdf::debug("Failed to send CancelAll request: {}", result.status_string());
-  } else if (result->is_error() && result->error_value() == ZX_ERR_NOT_SUPPORTED) {
-    fdf::debug("Failed to cancel all: {}", zx_status_get_string(result->error_value()));
-  } else if (result->is_error() && result->error_value() != ZX_ERR_NOT_SUPPORTED) {
-    return result->error_value();
-  } else {
-    return ZX_OK;
+    fdf::error("Failed to send CancelAll request: {}", result.status_string());
+    return result.status();
   }
-
-  fdf::debug("could not CancelAll() over FIDL, falling back to banjo");
-  return dci_.CancelAll(ep_address);
-}
-
-void UsbPeripheral::RequestComplete(usb_request_t* req) {
-  TRACE_DURATION("usb-peripheral", __func__);
-
-  usb::BorrowedRequest<void> request(req, dci_request_size_);
-  zx_status_t status = request.request()->response.status;
-  size_t actual = request.request()->response.actual;
-
-  UnlockedCallback all_complete_cb;
-  {
-    fbl::AutoLock l(&pending_requests_lock_);
-    pending_requests_.erase(&request);
-    if (pending_requests_.size() == 0 && on_all_pending_requests_complete_) {
-      all_complete_cb = std::move(on_all_pending_requests_complete_);
+  if (result->is_error()) {
+    if (result->error_value() != ZX_ERR_NOT_SUPPORTED) {
+      fdf::error("Failed to cancel all: {}", zx_status_get_string(result->error_value()));
     }
+    return result->error_value();
   }
-
-  // Record to monitor before completion to avoid use-after-free.
-  usb_monitor_.AddRecord(req);
-
-  request.Complete(status, actual);
-
-  if (all_complete_cb) {
-    all_complete_cb();
-  }
+  return ZX_OK;
 }
 
-void UsbPeripheral::UsbPeripheralRequestQueue(usb_request_t* usb_request,
-                                              const usb_request_complete_callback_t* complete_cb) {
-  TRACE_DURATION("usb-peripheral", __func__);
-  DeviceState current_state = SnapshotState();
-  if (current_state == DeviceState::kStopping) {
-    fdf::error("Failed to queue request: driver is stopping");
-    usb_request_complete(usb_request, ZX_ERR_IO_NOT_PRESENT, 0, complete_cb);
-    return;
-  }
-  // Ensure the request has enough space for our metadata.
-  if (usb_request->alloc_size < parent_request_size_) {
-    fdf::error("Failed to queue request: insufficient metadata space (found {} bytes, need {}).",
-               usb_request->alloc_size, parent_request_size_);
-    usb_request_complete(usb_request, ZX_ERR_INVALID_ARGS, 0, complete_cb);
-    return;
-  }
+zx_status_t UsbPeripheral::ConnectToEndpoint(
+    uint8_t ep_address, fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> ep) {
+  TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
 
-  fbl::AutoLock l(&pending_requests_lock_);
-  // Ensure the request is not already in a list, which would indicate
-  // that it has already been queued and not yet completed.
-  // Re-queueing an in-flight request is a bug in the calling driver.
-  if (usb::BorrowedRequest<void>::PeekNode(usb_request, dci_request_size_)->InContainer()) {
-    l.release();  // Release lock before completing the request.
-    fdf::error("Failed to queue request: it is already in-flight.");
-    usb_request_complete(usb_request, ZX_ERR_INVALID_ARGS, 0, complete_cb);
-    return;
+  auto result = dci_->ConnectToEndpoint(ep_address, std::move(ep));
+  if (!result.ok()) {
+    return ZX_ERR_INTERNAL;  // framework error.
   }
-
-  // Now that we know it's not in a container, it's safe to initialize the callback
-  // and perform the placement-new construct.
-  usb::BorrowedRequest<void> request(usb_request, *complete_cb, dci_request_size_);
-
-  [[maybe_unused]] usb_request_complete_callback_t completion;
-  completion.ctx = this;
-  completion.callback = [](void* ctx, usb_request_t* req) {
-    reinterpret_cast<UsbPeripheral*>(ctx)->RequestComplete(req);
-  };
-  pending_requests_.push_back(&request);
-  l.release();
-  usb_monitor_.AddRecord(usb_request);
-  dci_.RequestQueue(request.take(), &completion);
+  if (result->is_error()) {
+    return result->error_value();
+  }
+  return ZX_OK;
 }
 
 zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
@@ -147,21 +90,12 @@ zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
     } else if (result->is_error()) {
       fdf::error("Failed to set interface: {}", zx_status_get_string(result->error_value()));
     } else {
-      dci_new_.Bind(std::move(*dci_fidl));
+      dci_.Bind(std::move(*dci_fidl));
     }
   }
 
-  zx::result dci_banjo = compat::ConnectBanjo<ddk::UsbDciProtocolClient>(incoming_);
-  if (dci_banjo.is_error()) {
-    fdf::info("Failed to connect to dci banjo protocol: {}", dci_banjo);
-  } else {
-    dci_ = dci_banjo.value();
-    dci_request_size_ = dci_.GetRequestSize();
-    parent_request_size_ = usb::BorrowedRequest<void>::RequestSize(dci_request_size_);
-  }
-
-  if (!dci_.is_valid() && !dci_new_.is_valid()) {
-    fdf::error("No banjo/FIDL UsbDci protocol served by parent");
+  if (!dci_.is_valid()) {
+    fdf::error("No FIDL UsbDci protocol served by parent");
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
@@ -601,7 +535,7 @@ zx_status_t UsbPeripheral::StartController() {
   }
 
   fidl::Arena arena;
-  auto result = dci_new_.buffer(arena)->StartController();
+  auto result = dci_.buffer(arena)->StartController();
 
   if (!result.ok()) {
     fdf::error("Failed to send StartController request: {}", result.status_string());
@@ -628,9 +562,9 @@ zx_status_t UsbPeripheral::StopController() {
               state_);
   }
 
-  if (dci_new_.is_valid()) {
+  if (dci_.is_valid()) {
     fidl::Arena arena;
-    auto result = dci_new_.buffer(arena)->StopController();
+    auto result = dci_.buffer(arena)->StopController();
 
     if (!result.ok()) {
       fdf::error("Failed to send StopController request: {}", result.status_string());
@@ -1474,9 +1408,7 @@ void UsbPeripheral::ClearFunctions(ClearFunctionsCompleter::Sync& completer) {
   fdf::debug("{}", __func__);
   ClearFunctions();
 
-  auto on_complete = [this, completer = completer.ToAsync()]() mutable {
-    WaitForPendingRequests([completer = std::move(completer)]() mutable { completer.Reply(); });
-  };
+  auto on_complete = [completer = completer.ToAsync()]() mutable { completer.Reply(); };
   WaitForFunctionsCleared(std::move(on_complete));
 }
 
@@ -1499,12 +1431,9 @@ void UsbPeripheral::Stop(fdf::StopCompleter completer) {
     fbl::AutoLock lock(&lock_);
     stopping_driver_ = true;
 
-    on_complete = [this, completer = std::move(completer)]() mutable {
-      fdf::info("UsbPeripheral::Stop: Functions cleared, waiting for pending requests");
-      WaitForPendingRequests([completer = std::move(completer)]() mutable {
-        fdf::info("UsbPeripheral::Stop: All pending requests complete, replying to completer");
-        completer(zx::ok());
-      });
+    on_complete = [completer = std::move(completer)]() mutable {
+      fdf::info("UsbPeripheral::Stop: Functions cleared, replying to completer");
+      completer(zx::ok());
     };
 
     switch (state_) {
@@ -1660,16 +1589,6 @@ UsbPeripheral::ResourceAllocations UsbPeripheral::GetResourceAllocations(size_t 
   }
 
   return allocations;
-}
-
-void UsbPeripheral::WaitForPendingRequests(fit::callback<void()> callback) {
-  fbl::AutoLock lock(&pending_requests_lock_);
-  if (pending_requests_.size() == 0) {
-    lock.release();
-    callback();
-    return;
-  }
-  on_all_pending_requests_complete_ = UnlockedCallback(std::move(callback), pending_requests_lock_);
 }
 
 void UsbPeripheral::WaitForFunctionsCleared(fit::callback<void()> callback) {

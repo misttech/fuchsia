@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.hardware.usb.dci/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
-#include <fuchsia/hardware/usb/dci/cpp/banjo.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
@@ -245,28 +244,10 @@ class UsbPeripheral : public fdf::DriverBase2,
   // For testing purposes only.
   ResourceAllocations GetResourceAllocations(size_t function_index) __TA_EXCLUDES(lock_);
 
-  inline const ddk::UsbDciProtocolClient& dci() const { return dci_; }
-  inline const fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci>& dci_new() const {
-    return dci_new_;
-  }
-
-  inline size_t ParentRequestSize() const { return parent_request_size_; }
-  void UsbPeripheralRequestQueue(usb_request_t* usb_request,
-                                 const usb_request_complete_callback_t* complete_cb);
+  inline const fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci>& dci() const { return dci_; }
 
   zx_status_t ConnectToEndpoint(uint8_t ep_address,
-                                fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> ep) {
-    TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
-
-    auto result = dci_new_->ConnectToEndpoint(ep_address, std::move(ep));
-    if (!result.ok()) {
-      return ZX_ERR_INTERNAL;  // framework error.
-    }
-    if (result->is_error()) {
-      return result->error_value();
-    }
-    return ZX_OK;
-  }
+                                fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> ep);
 
   const usb_device_descriptor_t& device_desc() { return device_desc_; }
   void OnHostConnectionChanged(bool connected);
@@ -328,7 +309,6 @@ class UsbPeripheral : public fdf::DriverBase2,
   void SetConfiguration(uint8_t configuration, fit::callback<void(zx_status_t)> completer)
       __TA_EXCLUDES(lock_);
   zx_status_t SetDefaultConfig(std::vector<FunctionDescriptor>& functions);
-  void RequestComplete(usb_request_t* req);
 
   zx_status_t AllocInterfaceLocked(size_t function_index, uint8_t* out_intf_num)
       __TA_REQUIRES(lock_);
@@ -356,9 +336,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   // captures for the function FIDL client.
   std::vector<std::shared_ptr<UsbFunction>> functions_;
 
-  // Our parent's DCI protocol.
-  ddk::UsbDciProtocolClient dci_;
-  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci_new_;
+  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci_;
   // USB device descriptor set via ioctl_usb_peripheral_set_device_desc()
   usb_device_descriptor_t device_desc_ = {};
   // Map from endpoint index to function index.
@@ -389,10 +367,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   uint8_t configuration_ = 0;
   // USB connection speed.
   usb_speed_t speed_ = 0;
-  // Size of our parent's usb_request_t, only relevant to the banjo interface.
-  size_t parent_request_size_ = 0;
-  // Size of our parent's DCI request metadata, only relevant to the banjo interface.
-  size_t dci_request_size_ = 0;
+
   // Registered listener
   fidl::WireSharedClient<fuchsia_hardware_usb_peripheral::Events> listener_;
 
@@ -403,17 +378,10 @@ class UsbPeripheral : public fdf::DriverBase2,
 
   UsbMonitor usb_monitor_;
 
-  // Wait for all pending requests to complete. Call the callback when the queue is empty.
-  // If the queue is already empty, the callback is called immediately.
-  void WaitForPendingRequests(fit::callback<void()> callback) __TA_EXCLUDES(pending_requests_lock_);
-
   // Wait for all functions to be cleared. Call the callback when all functions are gone.
   // If no functions are pending clearance, the callback is called immediately.
   void WaitForFunctionsCleared(fit::callback<void()> callback) __TA_EXCLUDES(lock_);
 
-  fbl::Mutex pending_requests_lock_;
-  usb::BorrowedRequestList<void> pending_requests_ __TA_GUARDED(pending_requests_lock_);
-  UnlockedCallback on_all_pending_requests_complete_ __TA_GUARDED(pending_requests_lock_);
   std::vector<UnlockedCallback> on_all_functions_cleared_ __TA_GUARDED(lock_);
 
   UsbDciInterfaceServer intf_srv_{this};
