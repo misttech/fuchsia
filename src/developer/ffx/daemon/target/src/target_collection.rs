@@ -35,7 +35,11 @@ macro_rules! get_target_timeout {
         if cfg!(test) {
             std::time::Duration::from_secs(1)
         } else {
-            std::time::Duration::from_secs(5)
+            // This time seems somewhat long, but b/512483280 suggests that this
+            // change made the ffx_connection_test significantly flakier, presumably
+            // to the non-deterministic nature of delays when talking to a system
+            // under load.
+            std::time::Duration::from_secs(8)
         }
     };
 }
