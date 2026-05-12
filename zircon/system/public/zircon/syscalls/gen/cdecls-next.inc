@@ -67,8 +67,6 @@ _ZX_SYSCALL_DECL(sampler_stop, zx_status_t, /* no attributes */, 1, (iobuffer),
 
 _ZX_SYSCALL_DECL(syscall_next_1, zx_status_t, /* no attributes */, 1, (arg), (int32_t arg))
 
-_ZX_SYSCALL_DECL(system_barrier, zx_status_t, /* no attributes */, 1, (options), (uint32_t options))
-
 _ZX_SYSCALL_DECL(system_set_processor_power_domain, zx_status_t, /* no attributes */, 8,
                  (resource, options, domain, port, power_levels, num_power_levels, transitions,
                   num_transitions),

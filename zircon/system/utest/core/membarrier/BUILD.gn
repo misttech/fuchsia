@@ -2,12 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-source_set("system-membarrier") {
+source_set("membarrier") {
   testonly = true
   sources = [ "membarrier.cc" ]
   deps = [
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
-    "//zircon/system/utest/core:needs-next",
   ]
 }

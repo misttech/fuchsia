@@ -62,6 +62,7 @@ README_SECTIONS = [
     ("System", "system"),
     ("Driver", "driver"),
     ("Tracing", "tracing"),
+    ("Memory Barriers", "membarrier"),
     ("Restricted Mode (Work in progress)", "restricted"),
     ("Others/Work in progress", "others"),
 ]
@@ -179,7 +180,7 @@ def gen_toc_readme(inzip: str, outzip: str, reference_root: str) -> None:
                 data.append(
                     {"topic": topic, "summary": summary, "filename": filename}
                 )
-    (readme_contents, toc_contents) = gen_readme_and_toc(data, reference_root)
+    readme_contents, toc_contents = gen_readme_and_toc(data, reference_root)
 
     with zipfile.ZipFile(outzip, "a") as zf:
         zf.writestr("README.md", readme_contents)

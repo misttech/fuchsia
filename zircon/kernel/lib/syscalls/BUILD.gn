@@ -45,6 +45,7 @@ source_set("impl") {
     "handle_ops.cc",
     "hypervisor.cc",
     "iob.cc",
+    "membarrier.cc",
     "object.cc",
     "object_info.cc",
     "object_property.cc",

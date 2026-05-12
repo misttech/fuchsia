@@ -313,6 +313,10 @@ _ZX_SYSCALL_DECL(ktrace_read, zx_status_t, /* no attributes */, 5,
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, void* data,
                   uint32_t offset, size_t data_size, size_t* actual))
 
+_ZX_SYSCALL_DECL(membarrier_sync_process_data, void, /* no attributes */, 0, (), (void))
+
+_ZX_SYSCALL_DECL(membarrier_sync_process_insn, void, /* no attributes */, 0, (), (void))
+
 _ZX_SYSCALL_DECL(msi_allocate, zx_status_t, /* no attributes */, 3, (handle, count, out_allocation),
                  (_ZX_SYSCALL_ANNO(use_handle("Fuchsia")) zx_handle_t handle, uint32_t count,
                   _ZX_SYSCALL_ANNO(acquire_handle("Fuchsia")) zx_handle_t* out_allocation))

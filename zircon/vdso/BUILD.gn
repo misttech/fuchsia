@@ -51,6 +51,7 @@ fidl("zx") {
     "ioports.fidl",
     "job.fidl",
     "ktrace.fidl",
+    "membarrier.fidl",
     "misc.fidl",
     "msi.fidl",
     "mtrace.fidl",

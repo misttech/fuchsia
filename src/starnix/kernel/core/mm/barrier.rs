@@ -4,13 +4,6 @@
 
 use zx;
 
-// Options for zx_system_barrier
-// source: zircon/system/public/zircon/syscalls-next.h
-// TODO(https://fxbug.dev/297526152): When this API is stabilized, move the definitions for these
-// constants into the zx crate.
-const ZX_SYSTEM_BARRIER_DATA_MEMORY: u32 = 0;
-const ZX_SYSTEM_BARRIER_INSTRUCTION_STREAM: u32 = 1;
-
 pub enum BarrierType {
     /// Issues a data memory barrier on all running threads
     DataMemory,
@@ -23,15 +16,14 @@ pub enum BarrierType {
 ///
 /// Wraps the `zx_system_barrier` syscall.
 pub fn system_barrier(barrier_type: BarrierType) {
-    let status = match barrier_type {
+    match barrier_type {
         BarrierType::DataMemory => {
-            // SAFETY: This wraps the zx_system_barrier call which is safe.
-            unsafe { zx::sys::zx_system_barrier(ZX_SYSTEM_BARRIER_DATA_MEMORY) }
+            // SAFETY: This wraps the zx_membarrier_sync_process_data() syscall which is safe.
+            unsafe { zx::sys::zx_membarrier_sync_process_data() }
         }
         BarrierType::InstructionStream => {
-            // SAFETY: This wraps the zx_system_barrier call which is safe.
-            unsafe { zx::sys::zx_system_barrier(ZX_SYSTEM_BARRIER_INSTRUCTION_STREAM) }
+            // SAFETY: This wraps the zx_membarrier_sync_process_insn() syscall which is safe.
+            unsafe { zx::sys::zx_membarrier_sync_process_insn() }
         }
-    };
-    assert_eq!(status, zx::sys::ZX_OK);
+    }
 }

@@ -377,6 +377,10 @@ unsafe extern "C" {
         actual: *mut usize,
     ) -> zx_status_t;
 
+    pub fn zx_membarrier_sync_process_data();
+
+    pub fn zx_membarrier_sync_process_insn();
+
     pub fn zx_msi_allocate(
         handle: zx_handle_t,
         count: u32,
@@ -831,8 +835,6 @@ unsafe extern "C" {
         g: i32,
         h: i32,
     ) -> zx_status_t;
-
-    pub fn zx_system_barrier(options: u32) -> zx_status_t;
 
     pub fn zx_system_get_dcache_line_size() -> u32;
 
