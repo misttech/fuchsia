@@ -41,6 +41,7 @@ cc_library(
     features = ["enable_zircon_asserts"],
     deps = [
         "@fuchsia_sdk//fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_cpp",
+        "@fuchsia_sdk//fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_cpp",
@@ -91,6 +92,7 @@ fuchsia_cc_test(
         "//zircon/system/ulib/fzl",
         "@com_google_googletest//:gtest_main",
         "@fuchsia_sdk//pkg/driver_fake_clock_cpp",
+        "@fuchsia_sdk//pkg/driver_fake_gpio_cpp",
         "@fuchsia_sdk//pkg/driver_fake_platform_device_cpp",
         "@fuchsia_sdk//pkg/driver_fake_powerdomain_cpp",
         "@fuchsia_sdk//pkg/driver_fake_reset_cpp",

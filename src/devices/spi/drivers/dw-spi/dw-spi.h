@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_SPI_DRIVERS_DW_SPI_DW_SPI_H_
 #define SRC_DEVICES_SPI_DRIVERS_DW_SPI_DW_SPI_H_
 
+#include <fidl/fuchsia.hardware.gpio/cpp/wire.h>
 #include <fidl/fuchsia.hardware.spi.businfo/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.spiimpl/cpp/driver/wire.h>
 #include <lib/driver/component/cpp/driver_base2.h>
@@ -17,8 +18,13 @@ namespace dw_spi {
 
 class DwSpi : public fdf::WireServer<fuchsia_hardware_spiimpl::SpiImpl> {
  public:
-  DwSpi(fdf::MmioBuffer mmio, zx::interrupt interrupt)
-      : mmio_(std::move(mmio)), interrupt_(std::move(interrupt)) {}
+  DwSpi(fdf::MmioBuffer mmio, zx::interrupt interrupt,
+        fidl::ClientEnd<fuchsia_hardware_gpio::Gpio> cs_gpio)
+      : mmio_(std::move(mmio)), interrupt_(std::move(interrupt)) {
+    if (cs_gpio.is_valid()) {
+      cs_gpio_.Bind(std::move(cs_gpio), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+    }
+  }
 
   void InitRegisters();
 
@@ -73,11 +79,12 @@ class DwSpi : public fdf::WireServer<fuchsia_hardware_spiimpl::SpiImpl> {
   }
 
  private:
-  void ExchangePio(const uint8_t* txdata, uint8_t* out_rxdata, size_t size);
+  zx::result<> ExchangePio(const uint8_t* txdata, uint8_t* out_rxdata, size_t size);
 
   fdf::MmioBuffer mmio_;
   zx::interrupt interrupt_;
   fdf::ServerBindingGroup<fuchsia_hardware_spiimpl::SpiImpl> bindings_;
+  fidl::WireClient<fuchsia_hardware_gpio::Gpio> cs_gpio_;
 };
 
 class DwSpiDriver : public fdf::DriverBase2 {

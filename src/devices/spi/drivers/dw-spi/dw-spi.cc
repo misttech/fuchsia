@@ -43,7 +43,20 @@ void DwSpi::InitRegisters() {
   SsiEnr::Get().FromValue(0).set_ssi_en(1).WriteTo(&mmio_);
 }
 
-void DwSpi::ExchangePio(const uint8_t* txdata, uint8_t* out_rxdata, size_t size) {
+zx::result<> DwSpi::ExchangePio(const uint8_t* txdata, uint8_t* out_rxdata, size_t size) {
+  if (cs_gpio_.is_valid()) {
+    auto result =
+        cs_gpio_.sync()->SetBufferMode(fuchsia_hardware_gpio::wire::BufferMode::kOutputLow);
+    if (!result.ok()) {
+      fdf::error("Failed to send SetBufferMode request: {}", result.error().FormatDescription());
+      return zx::error(result.error().status());
+    }
+    if (result->is_error()) {
+      fdf::error("Failed to assert CS: {}", zx_status_get_string(result->error_value()));
+      return zx::error(result->error_value());
+    }
+  }
+
   // TODO(https://fxbug.dev/500865936): Support DMA transfers for larger sizes.
   // This is a placeholder indicating where DMA support would be added.
   // For now, we only implement PIO.
@@ -90,28 +103,49 @@ void DwSpi::ExchangePio(const uint8_t* txdata, uint8_t* out_rxdata, size_t size)
   }
 
   Ser::Get().FromValue(0).set_ser(0).WriteTo(&mmio_);
+
+  if (cs_gpio_.is_valid()) {
+    auto result =
+        cs_gpio_.sync()->SetBufferMode(fuchsia_hardware_gpio::wire::BufferMode::kOutputHigh);
+    if (!result.ok()) {
+      fdf::error("Failed to send SetBufferMode request: {}", result.error().FormatDescription());
+      return zx::error(result.error().status());
+    }
+    if (result->is_error()) {
+      fdf::error("Failed to deassert CS: {}", zx_status_get_string(result->error_value()));
+      return zx::error(result->error_value());
+    }
+  }
+
+  return zx::ok();
 }
 
 void DwSpi::TransmitVector(fuchsia_hardware_spiimpl::wire::SpiImplTransmitVectorRequest* request,
                            fdf::Arena& arena, TransmitVectorCompleter::Sync& completer) {
-  ExchangePio(request->data.data(), nullptr, request->data.size());
-  completer.buffer(arena).Reply(zx::ok());
+  zx::result<> result = ExchangePio(request->data.data(), nullptr, request->data.size());
+  completer.buffer(arena).Reply(result);
 }
 
 void DwSpi::ReceiveVector(fuchsia_hardware_spiimpl::wire::SpiImplReceiveVectorRequest* request,
                           fdf::Arena& arena, ReceiveVectorCompleter::Sync& completer) {
-  std::vector<uint8_t> rxdata(request->size);
-  ExchangePio(nullptr, rxdata.data(), request->size);
-  completer.buffer(arena).ReplySuccess(
-      fidl::VectorView<uint8_t>::FromExternal(rxdata.data(), rxdata.size()));
+  fidl::VectorView<uint8_t> rxdata(arena, request->size);
+  if (zx::result<> result = ExchangePio(nullptr, rxdata.data(), request->size); result.is_error()) {
+    completer.buffer(arena).ReplyError(result.error_value());
+  } else {
+    completer.buffer(arena).ReplySuccess(rxdata);
+  }
 }
 
 void DwSpi::ExchangeVector(fuchsia_hardware_spiimpl::wire::SpiImplExchangeVectorRequest* request,
                            fdf::Arena& arena, ExchangeVectorCompleter::Sync& completer) {
-  std::vector<uint8_t> rxdata(request->txdata.size());
-  ExchangePio(request->txdata.data(), rxdata.data(), request->txdata.size());
-  completer.buffer(arena).ReplySuccess(
-      fidl::VectorView<uint8_t>::FromExternal(rxdata.data(), rxdata.size()));
+  fidl::VectorView<uint8_t> rxdata(arena, request->txdata.size());
+  if (zx::result<> result =
+          ExchangePio(request->txdata.data(), rxdata.data(), request->txdata.size());
+      result.is_error()) {
+    completer.buffer(arena).ReplyError(result.error_value());
+  } else {
+    completer.buffer(arena).ReplySuccess(rxdata);
+  }
 }
 
 void DwSpi::Serve(fdf::ServerEnd<fuchsia_hardware_spiimpl::SpiImpl> request) {
@@ -210,7 +244,23 @@ zx::result<> DwSpiDriver::Start(fdf::DriverContext context) {
     return irq_result.take_error();
   }
 
-  device_ = std::make_unique<DwSpi>(*std::move(mmio), std::move(irq_result.value()));
+  fidl::ClientEnd<fuchsia_hardware_gpio::Gpio> cs_gpio;
+  {
+    auto cs_gpio_client = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>("gpio-cs-0");
+    if (cs_gpio_client.is_error()) {
+      fdf::error("Failed to connect to GPIO: {}", cs_gpio_client.status_string());
+      return cs_gpio_client.take_error();
+    }
+
+    // The chip select GPIO is optional. Make a call on it do determine whether or not it has been
+    // provided to us.
+    if (auto result = fidl::WireCall(*cs_gpio_client)->ReleaseInterrupt(); result.ok()) {
+      cs_gpio = *std::move(cs_gpio_client);
+    }
+  }
+
+  device_ =
+      std::make_unique<DwSpi>(*std::move(mmio), std::move(irq_result.value()), std::move(cs_gpio));
   device_->InitRegisters();
 
   fuchsia_hardware_spiimpl::Service::InstanceHandler handler({

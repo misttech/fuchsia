@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.spiimpl/cpp/driver/fidl.h>
 #include <lib/driver/fake-clock/cpp/fake-clock.h>
+#include <lib/driver/fake-gpio/cpp/fake-gpio.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/fake-powerdomain/cpp/fake-powerdomain.h>
 #include <lib/driver/fake-reset/cpp/fake-reset.h>
@@ -88,6 +89,12 @@ class DwSpiEnvironment : public fdf_testing::Environment {
       return result.take_error();
     }
 
+    if (zx::result<> result = to_driver_vfs.AddService<fuchsia_hardware_gpio::Service>(
+            cs_gpio_.CreateInstanceHandler(), "gpio-cs-0");
+        result.is_error()) {
+      return result.take_error();
+    }
+
     return zx::ok();
   }
 
@@ -113,6 +120,7 @@ class DwSpiEnvironment : public fdf_testing::Environment {
   zx::vmo mmio_vmo_;
   fzl::VmoMapper mapped_mmio_;
   zx::interrupt interrupt_;
+  fdf_fake::FakeGpio cs_gpio_{fdf::Dispatcher::GetCurrent()->async_dispatcher()};
 };
 
 class DwSpiTestConfiguration final {

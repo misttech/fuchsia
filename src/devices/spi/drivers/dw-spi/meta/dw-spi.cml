@@ -17,8 +17,9 @@
         { service: "fuchsia.hardware.spi.businfo.SpiBusMetadata" },
     ],
     use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
         { service: "fuchsia.hardware.clock.Service" },
+        { service: "fuchsia.hardware.gpio.Service" },
+        { service: "fuchsia.hardware.platform.device.Service" },
         { service: "fuchsia.hardware.powerdomain.Service" },
         { service: "fuchsia.hardware.reset.Service" },
     ],
