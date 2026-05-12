@@ -399,8 +399,11 @@ guide](docs/contribute/commit-message-style-guide.md).
         added, and what kind of tests they are (unit, integration, or end-to-end
         tests). If no new tests are needed (e.g., for a documentation
         change), you can use `Test: None` with a brief explanation.
-    *   **Change-Ids:** Preserve `Change-Id` footers when editing commit
-        messages, as Gerrit uses these to link git commits to Change Lists.
+    *   **Change-Ids:** Preserve `Change-Id` footers when editing, amending,
+        squashing, or rebasing commits. Gerrit uses these to link git commits
+        to Change Lists. If multiple commits are combined, ensure ONLY the
+        Change-Id from the _earliest_ commit in the series is retained in
+        the final commit message.
 
 **Example:**
 ```
