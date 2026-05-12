@@ -6,6 +6,7 @@ use anyhow::Result;
 use argh::FromArgs;
 
 mod commands;
+mod common;
 
 #[derive(FromArgs, Debug)]
 /// A tool to dump input reports from input devices.

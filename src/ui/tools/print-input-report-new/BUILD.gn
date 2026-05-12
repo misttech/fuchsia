@@ -16,16 +16,24 @@ rustc_binary("bin") {
     "src/commands/get_descriptor.rs",
     "src/commands/list.rs",
     "src/commands/read.rs",
+    "src/common.rs",
     "src/main.rs",
   ]
   deps = [
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-fs",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
+    "//third_party/rust_crates:csv",
+    "//third_party/rust_crates:prettytable-rs",
+    "//third_party/rust_crates:serde",
   ]
   test_deps = [
-    "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
     "//src/storage/lib/vfs/rust:vfs",
+    "//third_party/rust_crates:futures",
   ]
 }
 
