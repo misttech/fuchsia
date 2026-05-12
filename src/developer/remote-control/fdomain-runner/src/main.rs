@@ -8,6 +8,7 @@ use fuchsia_component::client::connect_to_protocol;
 use futures::future::{poll_fn, select};
 use futures::io::BufReader;
 use futures::prelude::*;
+use logging_util::FfxLogGuard;
 use std::io::{self, Write};
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::io::AsRawFd;
@@ -115,11 +116,16 @@ where
 /// Utility to bridge an FDomain/RCS connection via SSH. If you're running this
 /// manually, you are probably doing something wrong.
 #[derive(FromArgs)]
-struct Args {}
+struct Args {
+    /// log ID number from ffx to bookend connection logs.
+    #[argh(option)]
+    log_id: Option<String>,
+}
 
 #[fuchsia::main(logging_tags = ["remote_control_fdomain_runner"])]
 async fn main() -> anyhow::Result<()> {
-    let _args: Args = argh::from_env();
+    let args: Args = argh::from_env();
+    let _log_guard = FfxLogGuard::new(&args.log_id);
 
     let rcs_proxy = connect_to_protocol::<ConnectorMarker>()?;
     let (local_socket, remote_socket) = fidl::Socket::create_stream();

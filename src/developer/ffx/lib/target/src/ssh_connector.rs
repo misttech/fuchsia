@@ -255,7 +255,8 @@ async fn make_fdomain_ssh_command(
     target: ScopedSocketAddr,
     env_context: &EnvironmentContext,
 ) -> Result<tokio::process::Command> {
-    let args = vec!["fdomain_runner"];
+    let log_id = format!("{:0>20}", *ffx_config::logging::LOGGING_ID);
+    let args = vec!["fdomain_runner", "--log-id", &log_id];
     // Use ssh from the environment.
     let ssh_path = "ssh";
     let ssh = tokio::process::Command::from(
@@ -286,12 +287,15 @@ async fn start_overnet_ssh_command(
     let circuit_id =
         SystemTime::now().duration_since(UNIX_EPOCH).expect("system time").as_millis() as u64;
     let circuit_id_str = format!("{}", circuit_id);
+    let log_id = format!("{:0>20}", *ffx_config::logging::LOGGING_ID);
     let args = vec![
         "remote_control_runner",
         "--circuit",
         &circuit_id_str,
         "--abi-revision",
         &abi_revision,
+        "--log-id",
+        &log_id,
     ];
     // Use ssh from the environment.
     let ssh_path = "ssh";

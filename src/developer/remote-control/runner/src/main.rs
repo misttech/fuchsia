@@ -10,6 +10,7 @@ use fuchsia_component::client::connect_to_protocol;
 use futures::future::{poll_fn, select};
 use futures::io::BufReader;
 use futures::prelude::*;
+use logging_util::FfxLogGuard;
 use std::io::{self, Write as _};
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::io::AsRawFd;
@@ -159,6 +160,10 @@ struct Args {
     /// Overnet's mesh.
     #[argh(positional)]
     id: Option<u64>,
+
+    /// log ID number from ffx to bookend connection logs.
+    #[argh(option)]
+    log_id: Option<String>,
 }
 
 #[fuchsia::main(logging_tags = ["remote_control_runner"])]
@@ -200,6 +205,8 @@ async fn main() -> Result<()> {
         log::warn!("--abi-revision not present. Compatibility checks are disabled.");
     }
 
+    let _log_guard = FfxLogGuard::new(&args.log_id);
+
     let local_socket = fidl::AsyncSocket::from_socket(local_socket);
     let (mut rx_socket, mut tx_socket) = futures::AsyncReadExt::split(local_socket);
 
@@ -224,7 +231,6 @@ async fn main() -> Result<()> {
     let in_fut = buffered_copy(&mut stdin, &mut tx_socket, CopyDirection::StdIn);
     let out_fut = buffered_copy(&mut rx_socket, &mut stdout, CopyDirection::StdOut);
     select(pin!(in_fut), pin!(out_fut)).await;
-
     Ok(())
 }
 

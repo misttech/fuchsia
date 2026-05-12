@@ -15,6 +15,7 @@ rustc_binary("bin") {
 
   deps = [
     "//src/developer/remote-control/fidl:fuchsia.developer.remotecontrol.connector_rust",
+    "//src/developer/remote-control/logging-util",
     "//src/lib/fdio",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
