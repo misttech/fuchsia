@@ -121,7 +121,7 @@ kernel_elf_binary("elf-code-patching-test-add-one") {
   visibility = [ ":*" ]
   testonly = true
 
-  output_name = "add-one"
+  install_name = "add-one"
 
   configs += [ "//zircon/kernel/phys:phys-elf-module.config" ]
   ldflags = [ "-Wl,-e,AddOne" ]
@@ -137,7 +137,7 @@ kernel_elf_binary("elf-code-patching-test-multiply") {
   visibility = [ ":*" ]
   testonly = true
 
-  output_name = "multiply_by_factor"
+  install_name = "multiply_by_factor"
 
   configs += [ "//zircon/kernel/phys:phys-elf-module.config" ]
   ldflags = [ "-Wl,-e,multiply_by_factor" ]

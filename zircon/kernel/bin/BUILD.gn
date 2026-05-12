@@ -43,11 +43,14 @@ template("kernel_executable") {
   rsp_target = "$target_name.rsp"
 
   kernel_elf_binary(main_target) {
+    forward_variables_from(invoker, [ "testonly" ])
     visibility = [
       ":*",
       "//zircon/kernel/image/*",
       "//zircon/kernel/lib/userabi/trivial-test-userboot:*",
     ]
+
+    install_name = "vmzircon"
 
     configs += [ "//zircon/kernel/switch:kernel.config" ]
 
@@ -73,11 +76,13 @@ template("kernel_executable") {
 
   rspfile = "$target_gen_dir/$main_target.rsp"
   link_output_rspfile(rsp_target) {
+    forward_variables_from(invoker, [ "testonly" ])
     deps = [ ":$main_target.binary" ]
     outputs = [ rspfile ]
   }
 
   toolchain_utils_action(validate_symbols_target) {
+    forward_variables_from(invoker, [ "testonly" ])
     visibility = [ ":*" ]
     outputs = [ "$target_gen_dir/$target_name.stamp" ]
     script = "//zircon/kernel/scripts/validate-kernel-symbols.py"
@@ -92,9 +97,14 @@ template("kernel_executable") {
   }
 }
 
+# Kernel without bells or whistles.
 kernel_executable("vmzircon") {
-  # TODO(https://fxbug.dev/371568912): Define an executable without tests and
-  # debugcommands, and another one with them that sets testonly = true.
+  deps = []
+}
+
+# Kernel with tests and select debug commands compiled in.
+kernel_executable("vmzircon.with-tests") {
+  testonly = true
   deps = [
     "//zircon/kernel/debugcommands",
     "//zircon/kernel/tests:kernel-tests",

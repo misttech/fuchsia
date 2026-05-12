@@ -12,7 +12,7 @@ kernel_package("zircon") {
   visibility = [ "//zircon/kernel/image/*" ]
   deps = [
     "..:common-package-items",
-    "//zircon/kernel/bin:vmzircon(//zircon/kernel/switch/set/legacy:kernel_${current_cpu}.legacy)",
+    "//zircon/kernel/bin:vmzircon.with-tests((//zircon/kernel/switch/set/legacy:kernel_${current_cpu}.legacy)",
   ]
 }
 

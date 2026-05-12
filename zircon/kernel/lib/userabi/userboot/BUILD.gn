@@ -33,7 +33,7 @@ source_set("util") {
 kernel_elf_binary("userboot.executable") {
   visibility = [ ":*" ]
 
-  output_name = "userboot"
+  install_name = "userboot"
 
   configs += [ "//zircon/kernel/phys:phys-elf-module.config" ]
   has_patches = false

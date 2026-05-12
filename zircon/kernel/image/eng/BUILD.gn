@@ -18,7 +18,7 @@ kernel_package("zircon") {
     # temporarily keep this using the legacy switchset to softly transition
     # away from the "no_debug" builders in automation, exercising boot tests
     # against a user kernel in the old way.
-    "//zircon/kernel/bin:vmzircon(//zircon/kernel/switch/set/legacy:kernel_${current_cpu}.legacy)",
+    "//zircon/kernel/bin:vmzircon.with-tests(//zircon/kernel/switch/set/legacy:kernel_${current_cpu}.legacy)",
   ]
 }
 

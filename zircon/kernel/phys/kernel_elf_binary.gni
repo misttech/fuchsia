@@ -32,6 +32,12 @@ import("kernel_elf_image.gni")
 #    - Type: string
 #    - Default: "executable"
 #
+#   * install_name
+#    - Optional: Path for this image in the kernel package. Same semantics as
+#      output_name for kernel_elf_image().
+#    - Type: string
+#    - Default: target_name
+#
 #   * data_deps, has_patches, metadata, output_name, testonly, visibility
 #     - See kernel_elf_image().
 #
@@ -56,11 +62,12 @@ template("kernel_elf_binary") {
                              "data_deps",
                              "has_patches",
                              "metadata",
-                             "output_name",
                              "testonly",
                              "visibility",
                            ])
-    if (!defined(output_name)) {
+    if (defined(invoker.install_name)) {
+      output_name = invoker.install_name
+    } else {
       output_name = image_target
     }
     deps = [ ":$binary_target" ]

@@ -48,7 +48,7 @@ template("physload_binary_test") {
 
   if (toolchain_environment == "kernel.phys") {
     physload_module(binary_target) {
-      output_name = main_target
+      install_name = main_target
       visibility = [ ":*" ]
       testonly = true
 
