@@ -72,6 +72,17 @@ build --experimental_collect_system_network_usage
 common:no_gn_targets \
   --override_repository=gn_targets=build/bazel/local_repositories/empty_gn_targets
 
+# Globally assert no forbidden dependencies.
+# To specify the no-dep dependencies, use tag `assert_no_deps=<label>`:
+#
+#   some_target(
+#     ...
+#     tags = ["assert_no_deps=//some/label", ...],
+#   )
+#
+# See //build/bazel/aspects/tests/assert_no_deps_test.bzl for example usage.
+build --aspects=//build/bazel/aspects:assert_no_deps.bzl%assert_no_deps_aspect
+
 # Enable clippy for Rust targets specified on the build line.
 # See https://bazelbuild.github.io/rules_rust/rust_clippy.html.
 build --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect

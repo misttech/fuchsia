@@ -94,6 +94,9 @@ filegroup(
         "//sdk/lib/utf-utils",
         "//src/zircon/lib/zircon",
         "//zircon/system/ulib/zx",
+
+        # Aspect tests
+        "//build/bazel/aspects/tests",
     ],
     target_compatible_with = HOST_OS_CONSTRAINTS,
 )
