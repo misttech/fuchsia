@@ -114,7 +114,7 @@ pub trait SerialNumberFinder: Send + 'static {
 pub struct DefaultSerialFinder {}
 impl SerialNumberFinder for DefaultSerialFinder {
     async fn find_serial_numbers(&mut self) -> Vec<String> {
-        find_serial_numbers()
+        find_serial_numbers().await
     }
 }
 
@@ -231,7 +231,7 @@ fn device_is_fastboot(
 /// How many URBs to allocate for each device we communicate with.
 const URB_POOL_SIZE: usize = 32;
 
-fn find_serial_numbers() -> Vec<String> {
+async fn find_serial_numbers() -> Vec<String> {
     log::debug!("finding serial numbers");
     let mut serials = Vec::new();
 
@@ -263,6 +263,7 @@ fn find_serial_numbers() -> Vec<String> {
                 log::debug!(device = device.debug_name().as_str(); "Non-Fastboot usb device with serial {:?} found", device.serial());
             }
         }
+        fuchsia_async::yield_now().await;
     }
     log::debug!("Serials found: {:?}", serials);
     return serials;
