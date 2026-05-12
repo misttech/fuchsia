@@ -123,6 +123,7 @@
         },
         {
             protocol: [
+                "fuchsia.cpu.profiler.Session",
                 "fuchsia.feedback.LastRebootInfoProvider",
                 "fuchsia.hardware.backlight.Device",
                 "fuchsia.hardware.google.nanohub.Device",

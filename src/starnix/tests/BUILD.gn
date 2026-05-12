@@ -22,6 +22,7 @@ group("tests") {
     "iptables:tests",
     "memory_attribution:tests",
     "nanohub:tests",
+    "perf_event_open:tests",
     "psi:tests",
     "qipcrtr:tests",
     "reboot:tests",

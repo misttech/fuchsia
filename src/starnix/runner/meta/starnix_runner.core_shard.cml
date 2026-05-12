@@ -316,6 +316,13 @@
             from: "parent",
             to: "#starnix_runner",
         },
+        {
+            protocol: [ "fuchsia.cpu.profiler.Session" ],
+            from: "#profiler",
+            to: "#starnix_runner",
+            availability: "optional",
+            source_availability: "unknown",
+        },
     ],
     expose: [
         {
