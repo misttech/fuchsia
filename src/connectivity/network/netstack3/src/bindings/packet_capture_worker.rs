@@ -89,6 +89,108 @@ pub(crate) async fn serve_packet_capture_rolling(
 
 // Serve a stream of fuchsia.net.debug.PacketCaptureProvider API requests for a single
 // channel (e.g. a single client connection).
+pub(crate) fn handle_start_rolling(
+    ctx: &mut Ctx,
+    common_params: fnet_debug::CommonPacketCaptureParams,
+    params: fnet_debug::RollingPacketCaptureParams,
+) -> Result<
+    fidl::endpoints::ClientEnd<fnet_debug::RollingPacketCaptureMarker>,
+    fnet_debug::PacketCaptureStartError,
+> {
+    let fnet_debug::CommonPacketCaptureParams {
+        interfaces,
+        bpf_program: _,
+        snap_len,
+        __source_breaking: _,
+    } = common_params;
+    let fnet_debug::RollingPacketCaptureParams { capture_size, __source_breaking: _ } = params;
+    let capture_size = match capture_size {
+        None | Some(0) => fnet_debug::DEFAULT_BUFFER_SIZE,
+        Some(capture_size) => {
+            if capture_size < fnet_debug::MIN_BUFFER_SIZE
+                || capture_size > fnet_debug::MAX_BUFFER_SIZE
+            {
+                return Err(fnet_debug::PacketCaptureStartError::InvalidBufferSize);
+            }
+            capture_size
+        }
+    };
+
+    let interface_id = match interfaces {
+        Some(fnet_debug::InterfaceSpecifier::Any(fnet_debug::Empty)) => {
+            // TODO(https://fxbug.dev/485274945): Add support
+            // for capturing on all interfaces.
+            warn!("Capture on all interfaces requested but unimplemented");
+            return Err(fnet_debug::PacketCaptureStartError::InvalidInterfaceIds);
+        }
+        Some(fnet_debug::InterfaceSpecifier::InterfaceIds(ids)) => {
+            if ids.len() == 0 {
+                return Err(fnet_debug::PacketCaptureStartError::InvalidInterfaceIds);
+            } else if ids.len() > 1 {
+                // TODO(https://fxbug.dev/485274945):
+                // Add support for capturing on multiple
+                // interfaces.
+                warn!("Capture on multiple interfaces requested but unimplemented");
+                return Err(fnet_debug::PacketCaptureStartError::InvalidInterfaceIds);
+            } else {
+                ids[0]
+            }
+        }
+        Some(fnet_debug::InterfaceSpecifier::__SourceBreaking { .. }) => {
+            warn!("Unknown InterfaceSpecifier variant received");
+            return Err(fnet_debug::PacketCaptureStartError::InvalidInterfaceIds);
+        }
+        None => {
+            return Err(fnet_debug::PacketCaptureStartError::InvalidInterfaceIds);
+        }
+    };
+    let device_id = BindingId::new(interface_id)
+        .and_then(|id| ctx.bindings_ctx().devices.get_core_id(id))
+        .ok_or(fnet_debug::PacketCaptureStartError::InvalidInterfaceIds)?;
+
+    let link_type = match device_id {
+        DeviceId::Ethernet(_) | DeviceId::Loopback(_) | DeviceId::Blackhole(_) => {
+            LinkType::Ethernet
+        }
+        DeviceId::PureIp(_) => LinkType::PureIp,
+    };
+
+    const MIN_CHUNK_COUNT: u32 = 8;
+    let chunk_size = std::cmp::min(fnet_debug::DEFAULT_SNAP_LEN, capture_size / MIN_CHUNK_COUNT);
+
+    let snap_len = match snap_len {
+        None | Some(0) => fnet_debug::DEFAULT_SNAP_LEN,
+        Some(l) => l,
+    }
+    .try_into()
+    .expect("default snap len fits in usize");
+    let id = ctx.api().device_socket().create(SocketState::new_rolling_pcap(
+        RingBuffer::new(
+            capture_size.try_into().expect("capture_size fits in usize"),
+            chunk_size.try_into().expect("chunk_size fits in usize"),
+        ),
+        snap_len,
+        std::time::SystemTime::now(),
+        zx::BootInstant::get(),
+        fppacket::Kind::Link,
+    ));
+    ctx.api().device_socket().set_device_and_protocol(
+        &id,
+        TargetDevice::SpecificDevice(&device_id),
+        Protocol::All,
+    );
+
+    let (rolling_client, rolling_server) =
+        fidl::endpoints::create_endpoints::<fnet_debug::RollingPacketCaptureMarker>();
+    let request_stream = rolling_server.into_stream();
+    let ctx_clone = ctx.clone();
+    let device_name = device_id.device_name().clone();
+    fasync::Scope::current().spawn_request_stream_handler(request_stream, move |rs| {
+        serve_packet_capture_rolling(ctx_clone, rs, id, device_name, link_type)
+    });
+    Ok(rolling_client)
+}
+
 pub(crate) async fn serve_packet_captures(
     mut ctx: Ctx,
     mut rs: fnet_debug::PacketCaptureProviderRequestStream,
@@ -101,114 +203,12 @@ pub(crate) async fn serve_packet_captures(
                 return Ok(());
             }
             fnet_debug::PacketCaptureProviderRequest::StartRolling {
-                common_params:
-                    fnet_debug::CommonPacketCaptureParams {
-                        interfaces,
-                        bpf_program: _,
-                        snap_len,
-                        __source_breaking: _,
-                    },
-                params:
-                    fnet_debug::RollingPacketCaptureParams { capture_size, __source_breaking: _ },
+                common_params,
+                params,
                 responder,
             } => {
-                let capture_size = match capture_size {
-                    None | Some(0) => fnet_debug::DEFAULT_BUFFER_SIZE,
-                    Some(capture_size) => {
-                        if capture_size < fnet_debug::MIN_BUFFER_SIZE
-                            || capture_size > fnet_debug::MAX_BUFFER_SIZE
-                        {
-                            responder
-                                .send(Err(fnet_debug::PacketCaptureStartError::InvalidBufferSize))
-                                .unwrap_or_log("failed to respond");
-                            continue;
-                        }
-                        capture_size
-                    }
-                };
-
-                let interface_id = match interfaces {
-                    Some(fnet_debug::InterfaceSpecifier::Any(fnet_debug::Empty)) => {
-                        // TODO(https://fxbug.dev/485274945): Add support
-                        // for capturing on all interfaces.
-                        warn!("Capture on all interfaces requested but unimplemented");
-                        Err(())
-                    }
-                    Some(fnet_debug::InterfaceSpecifier::InterfaceIds(ids)) => {
-                        if ids.len() == 0 {
-                            Err(())
-                        } else if ids.len() > 1 {
-                            // TODO(https://fxbug.dev/485274945):
-                            // Add support for capturing on multiple
-                            // interfaces.
-                            warn!("Capture on multiple interfaces requested but unimplemented");
-                            Err(())
-                        } else {
-                            Ok(ids[0])
-                        }
-                    }
-                    Some(fnet_debug::InterfaceSpecifier::__SourceBreaking { .. }) => {
-                        warn!("Unknown InterfaceSpecifier variant received");
-                        Err(())
-                    }
-                    None => Err(()),
-                };
-                let device_id = match interface_id.and_then(|interface_id| {
-                    BindingId::new(interface_id)
-                        .and_then(|id| ctx.bindings_ctx().devices.get_core_id(id))
-                        .ok_or(())
-                }) {
-                    Ok(id) => id,
-                    Err(()) => {
-                        responder
-                            .send(Err(fnet_debug::PacketCaptureStartError::InvalidInterfaceIds))
-                            .unwrap_or_log("failed to respond");
-                        continue;
-                    }
-                };
-
-                let link_type = match device_id {
-                    DeviceId::Ethernet(_) | DeviceId::Loopback(_) | DeviceId::Blackhole(_) => {
-                        LinkType::Ethernet
-                    }
-                    DeviceId::PureIp(_) => LinkType::PureIp,
-                };
-
-                const MIN_CHUNK_COUNT: u32 = 8;
-                let chunk_size =
-                    std::cmp::min(fnet_debug::DEFAULT_SNAP_LEN, capture_size / MIN_CHUNK_COUNT);
-
-                let snap_len = match snap_len {
-                    None | Some(0) => fnet_debug::DEFAULT_SNAP_LEN,
-                    Some(l) => l,
-                }
-                .try_into()
-                .expect("default snap len fits in usize");
-                let id = ctx.api().device_socket().create(SocketState::new_rolling_pcap(
-                    RingBuffer::new(
-                        capture_size.try_into().expect("capture_size fits in usize"),
-                        chunk_size.try_into().expect("chunk_size fits in usize"),
-                    ),
-                    snap_len,
-                    std::time::SystemTime::now(),
-                    zx::BootInstant::get(),
-                    fppacket::Kind::Link,
-                ));
-                ctx.api().device_socket().set_device_and_protocol(
-                    &id,
-                    TargetDevice::SpecificDevice(&device_id),
-                    Protocol::All,
-                );
-
-                let (rolling_client, rolling_server) =
-                    fidl::endpoints::create_endpoints::<fnet_debug::RollingPacketCaptureMarker>();
-                let request_stream = rolling_server.into_stream();
-                let ctx_clone = ctx.clone();
-                let device_name = device_id.device_name().clone();
-                fasync::Scope::current().spawn_request_stream_handler(request_stream, move |rs| {
-                    serve_packet_capture_rolling(ctx_clone, rs, id, device_name, link_type)
-                });
-                responder.send(Ok(rolling_client)).unwrap_or_log("failed to respond");
+                let result = handle_start_rolling(&mut ctx, common_params, params);
+                responder.send(result).unwrap_or_log("failed to respond");
             }
         }
     }
