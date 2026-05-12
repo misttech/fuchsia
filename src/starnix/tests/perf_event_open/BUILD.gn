@@ -53,6 +53,9 @@ fuchsia_test_package("perf_event_open_integration_test") {
     "//src/starnix/kernel:starnix_kernel_package",
     "//src/starnix/containers/debian:debian_package",
   ]
+  test_specs = {
+    parallel = 1
+  }
 }
 
 group("tests") {
