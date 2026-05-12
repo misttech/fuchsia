@@ -295,7 +295,10 @@ impl<T: EngineOperations> EmuStartTool<T> {
         if let Some(ref mut existing_instance) = existing {
             let name = self.cmd.name.as_ref().unwrap();
             if existing_instance.is_running().await {
-                return_user_error!("An existing emulator instance named {name} is already running");
+                return_user_error!(
+                    "An existing emulator instance named {name} is already running. \
+                    Stop it with `ffx emu stop {name}` or use a different name."
+                );
             } else if !self.cmd.reuse && !self.cmd.reuse_with_check {
                 if let Some(cleanup_err) =
                     self.engine_operations.clean_up_instance_dir(&name).await.err()
