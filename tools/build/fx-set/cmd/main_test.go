@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -397,6 +398,10 @@ func (r fakeSubprocessRunner) Run(context.Context, []string, subprocess.RunOptio
 }
 
 func TestConstructStaticSpec(t *testing.T) {
+	origProbeXattr := probeXattr
+	probeXattr = func(dir string) (bool, error) { return true, nil }
+	t.Cleanup(func() { probeXattr = origProbeXattr })
+
 	rbeSupported := rbeIsSupported()
 	const (
 		rbe_mode_off = `rbe_mode="off"`
@@ -763,4 +768,57 @@ func createFile(t *testing.T, pathParts ...string) {
 	f.Close()
 
 	t.Cleanup(func() { os.Remove(path) })
+}
+
+func TestProbeXattrDisabled(t *testing.T) {
+	origProbeXattr := probeXattr
+	probeXattr = func(dir string) (bool, error) { return false, nil }
+	t.Cleanup(func() { probeXattr = origProbeXattr })
+
+	checkoutDir := t.TempDir()
+	createFile(t, checkoutDir, "boards/x64.gni")
+	createFile(t, checkoutDir, "products/core.gni")
+
+	args := &setArgs{
+		board:    "x64",
+		product:  "core",
+		buildDir: "out/core.x64-balanced",
+		rbeMode:  "off",
+	}
+
+	got, err := constructStaticSpec(checkoutDir, args, false)
+	if err != nil {
+		t.Fatalf("constructStaticSpec failed: %v", err)
+	}
+
+	if !got.DisableXattrForRbe {
+		t.Errorf("expected DisableXattrForRbe to be true when xattr probe fails, but got false")
+	}
+}
+
+func TestProbeXattrError(t *testing.T) {
+	err := errors.New("probe failed")
+	origProbeXattr := probeXattr
+	probeXattr = func(dir string) (bool, error) { return false, err }
+	t.Cleanup(func() { probeXattr = origProbeXattr })
+
+	checkoutDir := t.TempDir()
+	createFile(t, checkoutDir, "boards/x64.gni")
+	createFile(t, checkoutDir, "products/core.gni")
+
+	args := &setArgs{
+		board:    "x64",
+		product:  "core",
+		buildDir: "out/core.x64-balanced",
+		rbeMode:  "off",
+	}
+
+	got, err := constructStaticSpec(checkoutDir, args, false)
+	if err != nil {
+		t.Fatalf("constructStaticSpec failed: %v", err)
+	}
+
+	if got.DisableXattrForRbe {
+		t.Errorf("expected DisableXattrForRbe to be false when xattr probe errored, but got true")
+	}
 }

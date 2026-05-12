@@ -275,6 +275,9 @@ func genArgs(
 	if staticSpec.BazelRbeEnable {
 		vars["enable_bazel_remote_rbe"] = staticSpec.BazelRbeEnable
 	}
+	if staticSpec.DisableXattrForRbe {
+		vars["disable_xattr_for_rbe"] = staticSpec.DisableXattrForRbe
+	}
 
 	if staticSpec.BuildEventService != "" {
 		vars["bazel_upload_build_events"] = staticSpec.BuildEventService

@@ -13,6 +13,8 @@ if (is_host) {
     sources = [
       "main.go",
       "main_test.go",
+      "xattr_linux.go",
+      "xattr_other.go",
     ]
 
     deps = [

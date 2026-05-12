@@ -567,6 +567,9 @@ func constructStaticSpec(checkoutDir string, args *setArgs, canUseRbe bool) (*fi
 	return applyRbeSettings(static, args, canUseRbe)
 }
 
+// Used for mocking in tests.
+var probeXattr = probeXattrSupport
+
 func applyRbeSettings(static *fintpb.Static, args *setArgs, canUseRbe bool) (*fintpb.Static, error) {
 	rbeSupported := rbeIsSupported()
 	rbeMode := args.rbeMode
@@ -631,6 +634,12 @@ func applyRbeSettings(static *fintpb.Static, args *setArgs, canUseRbe bool) (*fi
 
 	static.GnArgs = gnArgs
 	static.CxxRbeEnable = useCxxRbeFinal
+
+	buildDirAbs := filepath.Join(args.checkoutDir, args.buildDir)
+	if supported, err := probeXattr(buildDirAbs); err == nil && !supported {
+		static.DisableXattrForRbe = true
+	}
+
 	return static, nil
 }
 
