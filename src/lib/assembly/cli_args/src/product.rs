@@ -29,9 +29,13 @@ pub struct ProductArgs {
     #[argh(option)]
     pub gendir: Utf8PathBuf,
 
-    /// the directory in which to find the platform assembly input bundles
+    /// [DEPRECATED] the directory in which to find the platform artifacts
     #[argh(option)]
-    pub input_bundles_dir: Utf8PathBuf,
+    pub input_bundles_dir: Option<Utf8PathBuf>,
+
+    /// the directory in which to find the platform artifacts
+    #[argh(option)]
+    pub platform_artifacts: Option<Utf8PathBuf>,
 
     /// disable validation of the assembly's packages
     #[argh(option)]
@@ -84,10 +88,10 @@ impl ProductArgs {
             self.board_config.to_string(),
             "--outdir".to_string(),
             self.outdir.to_string(),
-            "--input-bundles-dir".to_string(),
-            self.input_bundles_dir.to_string(),
             "--gendir".to_string(),
             self.gendir.to_string(),
+            "--input-bundles-dir".to_string(),
+            self.get_platform_artifacts().to_string(),
         ];
 
         if let Some(val) = &self.package_validation {
@@ -127,6 +131,14 @@ impl ProductArgs {
             args.push(pib.to_string());
         }
         args
+    }
+
+    /// Get the path to platform artifacts, falling back to input bundles dir.
+    pub fn get_platform_artifacts(&self) -> Utf8PathBuf {
+        self.platform_artifacts
+            .clone()
+            .or_else(|| self.input_bundles_dir.clone())
+            .expect("At least one of --platform-artifacts or --input-bundles-dir must be provided")
     }
 }
 
@@ -190,7 +202,7 @@ impl From<ProductArgs> for ProductAssemblyOutputs {
         image_assembly_config.push("image_assembly.json");
 
         ProductAssemblyOutputs {
-            platform: args.input_bundles_dir,
+            platform: args.get_platform_artifacts(),
             outdir: args.outdir,
             gendir: args.gendir,
             image_assembly_config,

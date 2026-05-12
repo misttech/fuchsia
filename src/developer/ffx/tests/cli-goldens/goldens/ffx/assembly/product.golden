@@ -65,10 +65,22 @@
           "arg_name": "input-bundles-dir"
         }
       },
-      "optionality": "required",
+      "optionality": "optional",
       "long": "--input-bundles-dir",
       "short": null,
-      "description": "the directory in which to find the platform assembly input bundles",
+      "description": "[DEPRECATED] the directory in which to find the platform artifacts",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "platform-artifacts"
+        }
+      },
+      "optionality": "optional",
+      "long": "--platform-artifacts",
+      "short": null,
+      "description": "the directory in which to find the platform artifacts",
       "hidden": false
     },
     {

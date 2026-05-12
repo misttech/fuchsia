@@ -183,7 +183,7 @@ template("test_assembly_config") {
                rebase_path(fuchsia_files.assembly_config, root_build_dir),
                "--board-config",
                rebase_path(fuchsia_files.board_config, root_build_dir),
-               "--input-bundles-dir",
+               "--platform-artifacts",
                rebase_path(platform_bundles_dir, root_build_dir),
                "--outdir",
                rebase_path(outdir, root_build_dir),

@@ -22,6 +22,7 @@ pub fn assemble(args: ProductArgs) -> Result<()> {
         board_config,
         outdir,
         gendir: _,
+        platform_artifacts,
         input_bundles_dir,
         package_validation,
         custom_kernel_aib,
@@ -49,7 +50,10 @@ Resulting product is not supported and may misbehave!
     }
 
     // Parse the input configs.
-    let platform_artifacts = Some(PlatformArtifacts::from_dir_with_path(&input_bundles_dir)?)
+    let platform_artifacts_dir = platform_artifacts
+        .or(input_bundles_dir)
+        .expect("At least one of --platform-artifacts or --input-bundles-dir must be provided");
+    let platform_artifacts = Some(PlatformArtifacts::from_dir_with_path(&platform_artifacts_dir)?)
         .context("Reading platform artifacts")?;
 
     let mut product_config =
@@ -134,7 +138,7 @@ Resulting product is not supported and may misbehave!
 
     // Do the actual building and validation of everything for the Image
     // Assembly config.
-    let tools = PlatformToolProvider::new(input_bundles_dir);
+    let tools = PlatformToolProvider::new(platform_artifacts_dir);
     let image_assembly_config =
         pa.build(&tools, &outdir).context("Building Image Assembly config")?;
 

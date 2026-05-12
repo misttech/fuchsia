@@ -32,10 +32,11 @@ def main() -> int:
         help="Path to board configuration input.",
     )
     parser.add_argument(
-        "--input-bundles-dir",
+        "--platform-artifacts",
+        dest="platform_artifacts",
         type=pathlib.Path,
         required=True,
-        help="Path to input bundles directory.",
+        help="Path to platform artifacts.",
     )
     parser.add_argument(
         "--legacy-bundle",
@@ -97,10 +98,10 @@ def main() -> int:
 
     output = run_product_assembly(
         ffx_bin=args.ffx_bin,
-        platform=args.input_bundles_dir,
+        platform=args.platform_artifacts,
         product=args.product_assembly_config,
         board_config=args.board_config,
-        input_bundles=args.input_bundles_dir,
+        platform_artifacts=args.platform_artifacts,
         legacy_bundle=args.legacy_bundle,
         outdir=args.outdir,
         gendir=args.gendir,

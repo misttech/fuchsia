@@ -16,7 +16,8 @@ pub fn product_assembly(
     context: &EnvironmentContext,
     args: ProductArgs,
 ) -> Result<ProductAssemblyOutputs> {
-    let tools = PlatformToolProvider::new(args.input_bundles_dir.clone());
+    let platform_artifacts = args.get_platform_artifacts();
+    let tools = PlatformToolProvider::new(platform_artifacts);
     let assembly_tool = tools.get_tool("assembly")?;
     assembly_tool.run(&args.to_vec(context))?;
 
@@ -73,14 +74,15 @@ mod tests {
         let board_config = Utf8PathBuf::from("path/to/board_config");
         let outdir = Utf8PathBuf::from("path/to/outdir");
         let gendir = Utf8PathBuf::from("path/to/gendir");
-        let input_bundles_dir = Utf8PathBuf::from("path/to/bundles");
+        let platform_artifacts = Utf8PathBuf::from("path/to/bundles");
 
         let args = ProductArgs {
             product: product.clone(),
             board_config: board_config.clone(),
             outdir: outdir.clone(),
             gendir: gendir.clone(),
-            input_bundles_dir: input_bundles_dir.clone(),
+            platform_artifacts: Some(platform_artifacts.clone()),
+            input_bundles_dir: None,
             package_validation: None,
             custom_kernel_aib: None,
             custom_boot_shim_aib: None,
@@ -107,10 +109,10 @@ mod tests {
                         board_config,
                         "--outdir",
                         outdir,
-                        "--input-bundles-dir",
-                        input_bundles_dir,
                         "--gendir",
                         gendir,
+                        "--input-bundles-dir",
+                        platform_artifacts,
                     ]
                 }
             ]

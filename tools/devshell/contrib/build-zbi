@@ -8,9 +8,9 @@
 
 # Currently only supports products that use bazel assembly.
 
-## usage: fx build-zbi [--input-bundles-dir PATH] [--product-config PATH] [--board-config PATH] [--board-name PATH]
+## usage: fx build-zbi [--platform-artifacts PATH] [--product-config PATH] [--board-config PATH] [--board-name PATH]
 ##
-##   --input-bundles-dir PATH      Path to input bundles directory. If not provided, tries to auto-discover.
+##   --platform-artifacts PATH     Path to platform artifacts. If not provided, tries to auto-discover.
 ##   --product-config PATH         Path to product configuration. If not provided, tries to auto-discover.
 ##   --board-config PATH           Path to board configuration. If not provided, tries to auto-discover.
 ##   --board-name PATH             Path to board name. If not provided, tries to auto-discover.
@@ -22,7 +22,7 @@ fx-config-read
 
 # Default values
 
-input_bundles_dir="$FUCHSIA_BUILD_DIR/obj/bundles/assembly/eng/platform_artifacts"
+platform_artifacts="$FUCHSIA_BUILD_DIR/obj/bundles/assembly/eng/platform_artifacts"
 product_config=""
 board_config=""
 board_name=""
@@ -35,8 +35,8 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
 
-    --input-bundles-dir)
-      input_bundles_dir="$2"
+    --platform-artifacts)
+      platform_artifacts="$2"
       shift 2
       ;;
     --product-config)
@@ -98,13 +98,13 @@ fi
 
 # Validate files exist
 
-if [[ ! -d "$input_bundles_dir" ]]; then
+if [[ ! -d "$platform_artifacts" ]]; then
   # We'll let the tool fail if it's not a directory, but warn here.
-  echo "Warning: Input bundles directory not found at $input_bundles_dir. Tool might fail."
+  echo "Warning: Platform artifacts not found at $platform_artifacts. Tool might fail."
 fi
 
 
-echo "Using Input Bundles Dir: $input_bundles_dir"
+echo "Using Platform Artifacts: $platform_artifacts"
 if [[ -n "$product_config" ]]; then
   echo "Using Product Config: $product_config"
 fi
@@ -156,7 +156,7 @@ fi
   --product-config "$product_config" \
   --board-config "$board_config" \
   --out "$outdir" \
-  --platform "$input_bundles_dir" \
+  --platform "$platform_artifacts" \
   --zbi-only \
   --auth no-auth \
   "${ffx_args[@]}"
