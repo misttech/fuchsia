@@ -146,7 +146,6 @@ _INPUT_ARGS: dict[str, Any] = {
         logs_dir="/tmp/logs",
         binary_path="/bin/ffx",
         logs_level="debug",
-        mdns_enabled=False,
         subtools_search_path=None,
         proxy_timeout_secs=None,
         ssh_keepalive_timeout=None,

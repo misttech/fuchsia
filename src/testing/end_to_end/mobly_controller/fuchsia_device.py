@@ -67,7 +67,6 @@ async def create(
         isolate_dir=None,
         logs_dir=f"{test_logs_dir}/ffx/",
         logs_level=ffx_config_dict["logs_level"],
-        enable_mdns=ffx_config_dict["enable_mdns"],
         subtools_search_path=ffx_config_dict.get("subtools_search_path"),
         proxy_timeout_secs=ffx_config_dict["proxy_timeout_secs"],
         ssh_keepalive_timeout=ffx_config_dict.get("ssh_keepalive_timeout"),
@@ -165,14 +164,6 @@ async def _get_fuchsia_device_info(
 
     _LOGGER.debug("Device info complete for %s", fuchsia_device.device_name)
     return device_info
-
-
-def _enable_mdns(configs: list[dict[str, Any]]) -> bool:
-    for config in configs:
-        device_config: dict[str, Any] = _parse_device_config(config)
-        if not device_config.get("device_ip_port"):
-            return True
-    return False
 
 
 # LINT.IfChange
@@ -301,7 +292,5 @@ def _get_ffx_config(configs: list[dict[str, Any]]) -> dict[str, Any]:
                 raise RuntimeError(
                     f"Invalid value sent in '{ffx_config_key}'. Please pass a int value"
                 ) from err
-
-    ffx_config_dict["enable_mdns"] = _enable_mdns(configs)
 
     return ffx_config_dict

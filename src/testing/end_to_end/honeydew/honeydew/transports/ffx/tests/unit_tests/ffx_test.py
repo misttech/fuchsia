@@ -43,7 +43,7 @@ _ISOLATE_DIR: str = "/tmp/isolate"
 _LOGS_DIR: str = "/tmp/logs"
 _BINARY_PATH: str = "ffx"
 _LOGS_LEVEL: str = "debug"
-_MDNS_ENABLED: bool = False
+
 _SUBTOOLS_SEARCH_PATH: str = "/subtools"
 _PROXY_TIMEOUT_SECS: int = 30
 _SSH_KEEPALIVE_TIMEOUT: int = 60
@@ -143,7 +143,6 @@ _INPUT_ARGS: dict[str, Any] = {
         logs_dir=_LOGS_DIR,
         binary_path=_BINARY_PATH,
         logs_level=_LOGS_LEVEL,
-        mdns_enabled=_MDNS_ENABLED,
         subtools_search_path=_SUBTOOLS_SEARCH_PATH,
         proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
         ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
@@ -549,8 +548,6 @@ class FfxTests(unittest.TestCase):
                 "-c",
                 f"log.level={_LOGS_LEVEL}",
                 "-c",
-                f"discovery.mdns.enabled={str(_MDNS_ENABLED).lower()}",
-                "-c",
                 f"ffx.subtool-search-paths={_SUBTOOLS_SEARCH_PATH}",
                 "-c",
                 f"proxy.timeout_secs={_PROXY_TIMEOUT_SECS}",
@@ -596,8 +593,6 @@ class FfxTests(unittest.TestCase):
                 f"log.dir={_LOGS_DIR}",
                 "-c",
                 f"log.level={_LOGS_LEVEL}",
-                "-c",
-                f"discovery.mdns.enabled={str(_MDNS_ENABLED).lower()}",
                 "-c",
                 f"ffx.subtool-search-paths={_SUBTOOLS_SEARCH_PATH}",
                 "-c",
@@ -748,8 +743,6 @@ class FfxTests(unittest.TestCase):
                 "-c",
                 f"log.level={_LOGS_LEVEL}",
                 "-c",
-                f"discovery.mdns.enabled={str(_MDNS_ENABLED).lower()}",
-                "-c",
                 f"ffx.subtool-search-paths={_SUBTOOLS_SEARCH_PATH}",
                 "-c",
                 f"proxy.timeout_secs={_PROXY_TIMEOUT_SECS}",
@@ -861,8 +854,6 @@ class FfxTests(unittest.TestCase):
                 "log.dir=/tmp/logs",
                 "-c",
                 "log.level=debug",
-                "-c",
-                "discovery.mdns.enabled=false",
                 "-c",
                 "ffx.subtool-search-paths=/subtools",
                 "-c",

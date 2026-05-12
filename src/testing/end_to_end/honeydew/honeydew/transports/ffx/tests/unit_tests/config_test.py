@@ -19,7 +19,6 @@ _ISOLATE_DIR: str = "/tmp/isolate"
 _LOGS_DIR: str = "/tmp/logs"
 _BINARY_PATH: str = "ffx"
 _LOGS_LEVEL: str = "debug"
-_MDNS_ENABLED: bool = False
 _SUBTOOLS_SEARCH_PATH: str = "/subtools"
 _PROXY_TIMEOUT_SECS: int = 30
 _SSH_KEEPALIVE_TIMEOUT: int = 60
@@ -37,7 +36,6 @@ _INPUT_ARGS: dict[str, Any] = {
         logs_dir=_LOGS_DIR,
         binary_path=_BINARY_PATH,
         logs_level=_LOGS_LEVEL,
-        mdns_enabled=_MDNS_ENABLED,
         subtools_search_path=_SUBTOOLS_SEARCH_PATH,
         proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
         ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
@@ -63,7 +61,6 @@ class FfxConfigTests(unittest.TestCase):
             isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
-            enable_mdns=_MDNS_ENABLED,
             subtools_search_path=_SUBTOOLS_SEARCH_PATH,
             proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
             ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
@@ -78,7 +75,6 @@ class FfxConfigTests(unittest.TestCase):
                 isolate_dir=_ISOLATE_DIR,
                 logs_dir=_LOGS_DIR,
                 logs_level=_LOGS_LEVEL,
-                enable_mdns=_MDNS_ENABLED,
                 subtools_search_path=_SUBTOOLS_SEARCH_PATH,
                 proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
                 ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
@@ -95,7 +91,6 @@ class FfxConfigTests(unittest.TestCase):
             isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
-            enable_mdns=_MDNS_ENABLED,
             subtools_search_path=_SUBTOOLS_SEARCH_PATH,
             proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
             ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
@@ -124,7 +119,6 @@ class FfxConfigTests(unittest.TestCase):
             isolate_dir=_ISOLATE_DIR,
             logs_dir=_LOGS_DIR,
             logs_level=_LOGS_LEVEL,
-            enable_mdns=_MDNS_ENABLED,
             subtools_search_path=_SUBTOOLS_SEARCH_PATH,
             proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
             ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,

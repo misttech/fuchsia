@@ -32,8 +32,6 @@ class FfxConfigData:
             arg of FFX
         logs_level: logs level that will be passed to `--config log.level`
             arg of FFX
-        enable_mdns: Whether or not mdns need to be enabled. This will be
-            passed to `--config discovery.mdns.enabled` arg of FFX
         subtools_search_path: A path of where ffx should
             look for plugins.
         proxy_timeout_secs: Proxy timeout in secs.
@@ -44,7 +42,6 @@ class FfxConfigData:
     isolate_dir: fuchsia_controller.IsolateDir
     logs_dir: str
     logs_level: str | None
-    mdns_enabled: bool
     subtools_search_path: str | None
     proxy_timeout_secs: int | None
     ssh_keepalive_timeout: int | None
@@ -55,7 +52,6 @@ class FfxConfigData:
             f"isolate_dir={self.isolate_dir.directory()}, "
             f"logs_dir={self.logs_dir}, "
             f"logs_level={self.logs_level}, "
-            f"mdns_enabled={self.mdns_enabled}, "
             f"subtools_search_path={self.subtools_search_path}, "
             f"proxy_timeout_secs={self.proxy_timeout_secs}, "
             f"ssh_keepalive_timeout={self.ssh_keepalive_timeout}, "
@@ -70,7 +66,6 @@ class FfxConfigData:
         configs = {
             "log.dir": self.logs_dir,
             "log.level": self.logs_level,
-            "discovery.mdns.enabled": str(self.mdns_enabled).lower(),
             "ffx.subtool-search-paths": self.subtools_search_path,
             "proxy.timeout_secs": self.proxy_timeout_secs,
             "ssh.keepalive_timeout": self.ssh_keepalive_timeout,
@@ -95,7 +90,6 @@ class FfxConfig:
         isolate_dir: str | None,
         logs_dir: str,
         logs_level: str | None,
-        enable_mdns: bool,
         subtools_search_path: str | None = None,
         proxy_timeout_secs: int | None = None,
         ssh_keepalive_timeout: int | None = None,
@@ -110,8 +104,6 @@ class FfxConfig:
                 arg of FFX
             logs_level: logs level that will be passed to `--config log.level`
                 arg of FFX
-            enable_mdns: Whether or not mdns need to be enabled. This will be
-                passed to `--config discovery.mdns.enabled` arg of FFX
             subtools_search_path: A path of where ffx should look for plugins.
                 Default value is None which means, it will not update
                 proxy_timeout_secs
@@ -136,7 +128,6 @@ class FfxConfig:
         )
         self._logs_dir: str = logs_dir
         self._logs_level: str | None = logs_level
-        self._mdns_enabled: bool = enable_mdns
         self._subtools_search_path: str | None = subtools_search_path
         self._proxy_timeout_secs: int | None = proxy_timeout_secs
         self._ssh_keepalive_timeout: int | None = ssh_keepalive_timeout
@@ -176,7 +167,6 @@ class FfxConfig:
             isolate_dir=self._isolate_dir,
             logs_dir=self._logs_dir,
             logs_level=self._logs_level,
-            mdns_enabled=self._mdns_enabled,
             subtools_search_path=self._subtools_search_path,
             proxy_timeout_secs=self._proxy_timeout_secs,
             ssh_keepalive_timeout=self._ssh_keepalive_timeout,
