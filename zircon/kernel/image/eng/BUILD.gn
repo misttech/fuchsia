@@ -4,17 +4,68 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-# TODO(https://fxbug.dev/371568912): Define a proper eng image and relocate the
-# eng cmdline settings here. Since the legacy image always picks the right
-# kernel and Assembly currently picks the right cmdline settings, this is
-# remains a valid eng image.
-group("eng") {
+import("//build/zbi/kernel_cmdline.gni")
+import("//zircon/kernel/kernel_image.gni")
+import("//zircon/kernel/kernel_package.gni")
+
+kernel_package("zircon") {
   testonly = true
-  public_deps = [ "//zircon/kernel/image/legacy" ]
+  visibility = [ ":*" ]
+  deps = [
+    "..:common-package-items",
+
+    # TODO(https://fxbug.dev/371568912): Should be lk_debug_level_2! We
+    # temporarily keep this using the legacy switchset to softly transition
+    # away from the "no_debug" builders in automation, exercising boot tests
+    # against a user kernel in the old way.
+    "//zircon/kernel/bin:vmzircon(//zircon/kernel/switch/set/legacy:kernel_${current_cpu}.legacy)",
+  ]
 }
 
-# TODO(https://fxbug.dev/371568912): Ditto for this target.
+kernel_cmdline("cmdline") {
+  testonly = true
+
+  args = [
+    # TODO(https://fxbug.dev/509616048): Currently these settings are overrode
+    # in Assembly by the same values. We keep things in sync with IFTTT until
+    # we can eventually make this the source of truth.
+    #
+    # LINT.IfChange
+    "kernel.enable-debugging-syscalls=true",
+    "kernel.enable-serial-syscalls=true",
+
+    # LINT.ThenChange(//bundles/assembly/BUILD.gn)
+  ]
+}
+
+kernel_image("eng") {
+  testonly = true
+  output_name = "kernel.eng"
+  deps = [
+    ":cmdline",
+    ":zircon",
+    "//zircon/kernel/phys:physboot",
+  ]
+}
+
+# TODO(https://fxbug.dev/371568912): Merge into ":test-data-deps" once the
+# legacy image (whose test data deps reference this) is gone.
+kernel_cmdline("test-boot-options.eng-only") {
+  visibility = [
+    ":*",
+    "//zircon/kernel/image/legacy:*",
+  ]
+  testonly = true
+  args = [
+    "kernel.pmm.alloc-random-should-wait=true",
+    "kernel.compression.random-debug-compress=true",
+  ]
+}
+
 group("eng.test-data-deps") {
   testonly = true
-  deps = [ "//zircon/kernel/image/legacy:legacy.test-data-deps" ]
+  deps = [
+    ":test-boot-options.eng-only",
+    "//zircon/kernel/image:common-test-boot-options",
+  ]
 }

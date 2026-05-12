@@ -1006,10 +1006,17 @@ assembly_input_bundle("kernel_args_eng") {
   ]
   kernel_cmdline = [
     "console.shell=true",
-    "kernel.enable-debugging-syscalls=true",
-    "kernel.enable-serial-syscalls=true",
     "netsvc.all-features=true",
     "netsvc.disable=false",
+
+    # TODO(https://fxbug.dev/509616048): Leave these settings to be part of the
+    # definition of the eng kernel image when possible.
+    #
+    # LINT.IfChange
+    "kernel.enable-debugging-syscalls=true",
+    "kernel.enable-serial-syscalls=true",
+
+    # LINT.ThenChange(//zircon/kernel/image/eng/BUILD.gn)
   ]
 }
 
@@ -1023,8 +1030,15 @@ assembly_input_bundle("kernel_args_userdebug") {
   ]
   kernel_cmdline = [
     "console.shell=false",
-    "kernel.enable-serial-syscalls=output-only",
     "netsvc.disable=true",
+
+    # TODO(https://fxbug.dev/509616048): Leave this setting to be part of the
+    # definition of the userdebug kernel image when possible.
+    #
+    # LINT.IfChange
+    "kernel.enable-serial-syscalls=output-only",
+
+    # LINT.ThenChange(//zircon/kernel/image/userdebug/BUILD.gn)
   ]
 }
 
@@ -1038,9 +1052,16 @@ assembly_input_bundle("kernel_args_userdebug") {
 assembly_input_bundle("kernel_args_user") {
   kernel_cmdline = [
     "console.shell=false",
+    "netsvc.disable=true",
+
+    # TODO(https://fxbug.dev/509616048): Leave these settings to be part of the
+    # definition of the user kernel image when possible.
+    #
+    # LINT.IfChange
     "kernel.enable-debugging-syscalls=false",
     "kernel.enable-serial-syscalls=false",
-    "netsvc.disable=true",
+
+    # LINT.ThenChange(//zircon/kernel/image/user/BUILD.gn)
   ]
 }
 

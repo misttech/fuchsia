@@ -4,16 +4,41 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-# TODO(https://fxbug.dev/371568912): Define a proper userdebug image and
-# relocate the userdebug cmdline settings here. Since the legacy image always
-# picks the right kernel and Assembly currently picks the right cmdline
-# settings, this is remains valid userdebug image.
-group("userdebug") {
-  public_deps = [ "//zircon/kernel/image/legacy" ]
+import("//build/zbi/kernel_cmdline.gni")
+import("//zircon/kernel/kernel_image.gni")
+import("//zircon/kernel/kernel_package.gni")
+
+kernel_package("zircon") {
+  visibility = [ ":*" ]
+  deps = [
+    "..:common-package-items",
+    "//zircon/kernel/bin:vmzircon(//zircon/kernel/switch/set/lk_debug_level_0:kernel_${current_cpu}.lk_debug_level_0)",
+  ]
 }
 
-# TODO(https://fxbug.dev/371568912): Ditto for this target.
+kernel_cmdline("cmdline") {
+  visibility = [ ":*" ]
+  args = [
+    # TODO(https://fxbug.dev/509616048): Currently these settings are overrode
+    # in Assembly by the same values. We keep things in sync with IFTTT until
+    # we can eventually make this the source of truth.
+    #
+    # LINT.IfChange
+    "kernel.enable-serial-syscalls=output-only",
+    # LINT.ThenChange(//bundles/assembly/BUILD.gn)
+  ]
+}
+
+kernel_image("userdebug") {
+  output_name = "kernel.userdebug"
+  deps = [
+    ":cmdline",
+    ":zircon",
+    "//zircon/kernel/phys:physboot",
+  ]
+}
+
 group("userdebug.test-data-deps") {
   testonly = true
-  deps = [ "//zircon/kernel/image/legacy:legacy.test-data-deps" ]
+  deps = [ "//zircon/kernel/image:common-test-boot-options" ]
 }
