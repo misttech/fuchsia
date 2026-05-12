@@ -895,6 +895,11 @@
         "instance_id": "cutiHuc7faTiBiWvoTtbsp9AHAaErwYjxnmf4Gm90OAC"
     },
     {
+        "package": "infra/python/wheels/pydantic_core/linux-amd64_cp311_cp311",
+        "version": "version:2.33.2",
+        "instance_id": "P7WR3vzbmGZr52J-TaV7LdG8CVlKlgGyY3Wd-umuJMAC"
+    },
+    {
         "package": "infra/rbe/client/linux-amd64",
         "version": "re_client_version:0.186.0.305f6525-gomaip",
         "instance_id": "OX0cYZjPNeReP2zz5JquuZ-ryOARxgxaxGYqe06-x4oC"

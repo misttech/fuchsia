@@ -4,6 +4,12 @@
 #
 #    pip-compile --output-file=requirements.txt requirements.in
 #
+--index-url https://us-python.pkg.dev/artifact-foundry-prod/ah-3p-staging-python/simple/
+
+annotated-types==0.7.0
+    # via
+    #   -r requirements.in
+    #   pydantic
 astroid==3.0.3
     # via
     #   -r requirements.in
@@ -34,6 +40,12 @@ platformdirs==4.1.0
     # via
     #   -r requirements.in
     #   pylint
+pydantic==2.11.7
+    # via -r requirements.in
+pydantic-core==2.33.2
+    # via
+    #   -r requirements.in
+    #   pydantic
 pyflakes==3.4.0
     # via
     #   -r requirements.in
@@ -52,3 +64,10 @@ typing-extensions==4.15.0
     # via
     #   -r requirements.in
     #   mypy
+    #   pydantic
+    #   pydantic-core
+    #   typing-inspection
+typing-inspection==0.4.2
+    # via
+    #   -r requirements.in
+    #   pydantic

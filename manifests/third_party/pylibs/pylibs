@@ -9,6 +9,12 @@
     * Rerun the //pylibs/update-pylibs.sh script.
   -->
   <projects>
+    <!-- annotated_types-0.7.0 -->
+    <project name="third_party/pylibs/annotated_types"
+        path="third_party/pylibs/annotated_types/src"
+        remote="https://fuchsia.googlesource.com/third_party/github.com/annotated-types/annotated-types"
+        revision="0735cd3d4c272b88405b6b04009716b691115210"
+        gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- astroid-3.0.3 -->
     <project name="third_party/pylibs/astroid"
         path="third_party/pylibs/astroid/src"
@@ -63,6 +69,12 @@
         remote="https://fuchsia.googlesource.com/third_party/github.com/platformdirs/platformdirs"
         revision="f772aab1dd35c9ba58e137aaf3bd8efb7d6f8b7b"
         gerrithost="https://fuchsia-review.googlesource.com"/>
+    <!-- pydantic-2.11.7 -->
+    <project name="third_party/pylibs/pydantic"
+        path="third_party/pylibs/pydantic/src"
+        remote="https://fuchsia.googlesource.com/third_party/github.com/pydantic/pydantic"
+        revision="a15b3ad8a21532db867ad808927a6822e816abb7"
+        gerrithost="https://fuchsia-review.googlesource.com"/>
     <!-- pyflakes-3.4.0 -->
     <project name="third_party/pylibs/pyflakes"
         path="third_party/pylibs/pyflakes/src"
@@ -98,6 +110,12 @@
         path="third_party/pylibs/typing_extensions/src"
         remote="https://fuchsia.googlesource.com/third_party/github.com/python/typing_extensions"
         revision="9d1637e264b5c1a6b7acee3e907015f89b20c2c9"
+        gerrithost="https://fuchsia-review.googlesource.com"/>
+    <!-- typing_inspection-0.4.2 -->
+    <project name="third_party/pylibs/typing_inspection"
+        path="third_party/pylibs/typing_inspection/src"
+        remote="https://fuchsia.googlesource.com/third_party/github.com/pydantic/typing-inspection"
+        revision="14fe8ad808ba59280edda699ffba63a89595be88"
         gerrithost="https://fuchsia-review.googlesource.com"/>
   </projects>
 </manifest>

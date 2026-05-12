@@ -697,6 +697,16 @@
                 "paths": [
                     "tools/cargo-gnaw/tests/simple_deps/vendor/anyhow/src/LICENSE-FOR-TESTING"
                 ]
+            },
+            {
+                "paths": [
+                    "prebuilt/third_party/pydantic-core-wheel"
+                ],
+                "notes": [
+                    "The infra/python/wheel/pydantic_core CIPD package installs to a single ",
+                    "Python wheel file, a zip archive which is extracted by a Jiri hook into ",
+                    "prebuilt/third_party/pydantic-core, which has all licensing information."
+                ]
             }
         ]
     }

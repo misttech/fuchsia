@@ -718,6 +718,18 @@
              path="prebuilt/third_party/protobuf-py3-wheel"
              platforms="linux-amd64,linux-arm64"/>
 
+    <!-- pydantic_core is vendored as a precompiled wheel (.whl) file which must
+         be extracted with a jiri hook similar to the above. The wheel contains
+         a Rust shared library that exposes interfaces for the python wrapper to
+         interact with. To make this work, the __init__.py is modified in place
+         such that the .so is findable from python.
+         See tools/build/scripts/extract_pydantic_core_wheel.sh.
+    -->
+    <package name="infra/python/wheels/pydantic_core/linux-amd64_cp311_cp311"
+             version="version:2.33.2"
+             path="prebuilt/third_party/pydantic-core-wheel"
+             platforms="linux-amd64"/>
+
     <!-- Device tree source formatter -->
     <package name="fuchsia/third_party/3pp/dtsfmt/${platform}"
              version="version:2@0.8.0"
