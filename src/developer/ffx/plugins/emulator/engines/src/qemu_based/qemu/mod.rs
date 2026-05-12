@@ -27,6 +27,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant, SystemTime};
 
+mod image_conversion;
+
 #[derive(Clone, Debug)]
 pub struct QemuEngine {
     data: EmulatorInstanceData,
@@ -277,11 +279,16 @@ impl QemuEngine {
                 .as_nanos()
         );
 
+        // We take a two-step approach to capture the screenshot:
+        // 1. Capture the screenshot in PPM format from QEMU to the temporary destination.
+        // 2. Read the PPM file into memory and overwrite it with its PNG-encoded version.
+        // This avoids creating extra temporary files on the host filesystem.
         let request = json!({
             "execute": "screendump",
             "id": command_id,
             "arguments": {
-                "filename": filename
+                "filename": filename,
+                "format": "ppm"
             }
         });
         let request_cmd = format!("{}\n", request);
@@ -308,27 +315,14 @@ impl QemuEngine {
                     return Err(user_error!("Screenshot error from emulator: {}", error));
                 }
                 if let Some(_return_value) = data.get("return") {
-                    // TODO(https://fxbug.dev/492401744): QEMU outputs PPM by default.
-                    // Future implementation will call convert_ppm_to_png here to save as a
-                    // true PNG file.
-                    return Ok(());
+                    return image_conversion::convert_ppm_to_png(
+                        /* ppm_source= */ absolute_path,
+                        /* png_destination= */ absolute_path,
+                    );
                 }
                 return Err(user_error!("Unknown QMP response for screendump: {:?}", data));
             }
         }
-    }
-
-    #[allow(dead_code)]
-    /// Converts a PPM P6 file to a PNG file.
-    fn convert_ppm_to_png(&self, _ppm_source: &Path, _png_destination: &Path) -> Result<()> {
-        // TODO(https://fxbug.dev/492401744): Implement PPM to PNG conversion:
-        // 1. Read the PPM file bytes from _ppm_source.
-        // 2. Parse the PPM P6 header (Magic "P6", width, height, max_val).
-        //    Note: QEMU typically outputs 8-bit PPM (max_val = 255).
-        // 3. Validate that the pixel data size matches (width * height * 3 bytes for RGB).
-        // 4. Use the `png` crate to encode the raw RGB data into a PNG file at _png_destination.
-        //    Reference implementation in CL 1598288.
-        Err(user_error!("PPM to PNG conversion is not yet implemented."))
     }
 }
 
