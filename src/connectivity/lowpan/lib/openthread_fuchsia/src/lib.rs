@@ -111,6 +111,8 @@ impl Platform {
         let (ot_to_rcp_sender, ot_to_rcp_receiver) = mpsc::channel::<Vec<u8>>();
         let ot_to_rcp_task = fasync::Task::spawn(async move {
             spinel_sink.open().await.expect("Unable to open spinel stream");
+            // Wait for initial allowance before sending any frames
+            spinel_sink.wait_for_allowance().await;
             loop {
                 trace!(tag = "ot_to_rcp_task"; "waiting on frame from OpenThread");
 

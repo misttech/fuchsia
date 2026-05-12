@@ -66,6 +66,22 @@ impl FlowWindow {
         }
     }
 
+    /// Returns a poll that resolves when the flow window is positive.
+    pub fn poll_positive(&self, context: &mut Context<'_>) -> Poll<()> {
+        let mut inner = self.inner.lock();
+        if inner.0 > 0 {
+            Poll::Ready(())
+        } else {
+            inner.1.push(context.waker().clone());
+            Poll::Pending
+        }
+    }
+
+    /// Asynchronously waits until the flow window is positive.
+    pub async fn wait_for_positive(&self) {
+        futures::future::poll_fn(|cx| self.poll_positive(cx)).await
+    }
+
     #[allow(dead_code)]
     pub fn dec(&self, amount: u32) -> FlowWindowDec<'_> {
         FlowWindowDec(self, amount)

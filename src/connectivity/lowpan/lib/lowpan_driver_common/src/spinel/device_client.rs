@@ -66,6 +66,9 @@ pub trait SpinelDeviceClient:
     /// Maps directly to the `get_max_frame_size::close()` method,
     /// with error consolidation and type casting to `usize`.
     async fn get_max_frame_size(&self) -> Result<usize, Error>;
+
+    /// Waits until the outbound allowance is positive.
+    async fn wait_for_allowance(&self);
 }
 
 #[async_trait::async_trait]
@@ -94,6 +97,10 @@ where
 
     async fn get_max_frame_size(&self) -> Result<usize, Error> {
         Ok(self.device_proxy.get_max_frame_size().await? as usize)
+    }
+
+    async fn wait_for_allowance(&self) {
+        self.send_window.wait_for_positive().await;
     }
 }
 
