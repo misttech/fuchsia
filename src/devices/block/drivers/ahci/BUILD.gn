@@ -57,7 +57,7 @@ test("ahci-unittest-bin") {
   ]
   deps = [
     ":shared",
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/driver/testing/cpp:minimal_compat_environment",
@@ -65,6 +65,9 @@ test("ahci-unittest-bin") {
     "//sdk/lib/inspect/testing/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
+    "//src/storage/lib/block_protocol:block_fifo",
+    "//src/storage/lib/block_server:block_server_cc",
+    "//zircon/system/ulib/storage/buffer",
   ]
 }
 
@@ -91,15 +94,17 @@ source_set("shared") {
   deps = [
     ":ahci_bind",
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
+    "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
     "//sdk/lib/driver/logging/cpp",
     "//src/devices/block/lib/common",
     "//src/devices/lib/driver:driver_runtime",
+    "//src/storage/lib/block_server:block_server_cc",
     "//zircon/system/ulib/sync:sync-cpp",
     "//zircon/system/ulib/zx",
   ]
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-    "//sdk/lib/driver/compat/cpp",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
+    "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/mmio/cpp",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",

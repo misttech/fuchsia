@@ -23,14 +23,13 @@
 
 namespace ahci {
 
-constexpr size_t kQemuMaxTransferBlocks = 1024;  // Linux kernel limit
-
-static void SataIdentifyDeviceComplete(void* cookie, zx_status_t status, block_op_t* op) {
-  // Use the 32-bit command field to shuttle the status back to the callsite that's waiting on the
-  // completion. This works despite the int32_t (zx_status_t) vs. uint32_t (command) mismatch.
-  op->command.flags = status;
-  sync_completion_signal(static_cast<sync_completion_t*>(cookie));
+void SataTransaction::Complete(zx_status_t status) {
+  if (completion_cb) {
+    completion_cb(status);
+  }
 }
+
+constexpr size_t kQemuMaxTransferBlocks = 1024;  // Linux kernel limit
 
 static bool IsModelIdQemu(char* model_id) {
   constexpr char kQemuModelId[] = "QEMU HARDDISK";
@@ -53,21 +52,24 @@ zx_status_t SataDevice::Init() {
   }
 
   sync_completion_t completion;
+  zx_status_t completion_status = ZX_OK;
   SataTransaction txn = {};
-  txn.bop.rw.command.opcode = BLOCK_OPCODE_READ;
-  txn.bop.rw.vmo = vmo.get();
-  txn.bop.rw.length = 1;
-  txn.bop.rw.offset_dev = 0;
-  txn.bop.rw.offset_vmo = 0;
-  txn.completion_cb = SataIdentifyDeviceComplete;
-  txn.cookie = &completion;
+  txn.operation = block_server::Operation{
+      .tag = block_server::Operation::Tag::Read,
+      .read = {.device_block_offset = 0, .block_count = 1, .vmo_offset = 0},
+  };
+  txn.vmo = vmo.borrow();
+  txn.completion_cb = [&completion, &completion_status](zx_status_t status) {
+    completion_status = status;
+    sync_completion_signal(&completion);
+  };
   txn.cmd = SATA_CMD_IDENTIFY_DEVICE;
   txn.device = 0;
 
   controller_->Queue(port_, &txn);
   sync_completion_wait(&completion, ZX_TIME_INFINITE);
 
-  status = txn.bop.command.flags;
+  status = completion_status;
   if (status != ZX_OK) {
     fdf::error("{}: Failed IDENTIFY_DEVICE: {}", DriverName().c_str(),
                zx_status_get_string(status));
@@ -157,8 +159,8 @@ zx_status_t SataDevice::Init() {
     inspect_device.RecordString("addressing", "CHS unsupported");
   }
 
-  info_.block_size = block_size;
-  info_.block_count = block_count;
+  partition_info_.block_size = block_size;
+  partition_info_.block_count = block_count;
 
   const bool volatile_write_cache_supported =
       devinfo.command_set1_0 & SATA_DEVINFO_CMD_SET1_0_VOLATILE_WRITE_CACHE_SUPPORTED;
@@ -170,14 +172,14 @@ zx_status_t SataDevice::Init() {
   // READ_FPDMA_QUEUED and WRITE_FPDMA_QUEUED commands support FUA, whereas for non-NCQ, FUA read
   // commands do not exist (FUA writes do).
   if (use_command_queue_) {
-    info_.flags |= DEVICE_FLAG_FUA_SUPPORT;
+    partition_info_.device_flags |= DEVICE_FLAG_FUA_SUPPORT;
   }
 
   uint32_t max_sg_size = SATA_MAX_BLOCK_COUNT * block_size;  // SATA cmd limit
   if (IsModelIdQemu(devinfo.model_id.string)) {
     max_sg_size = MIN(max_sg_size, kQemuMaxTransferBlocks * block_size);
   }
-  info_.max_transfer_size = MIN(AHCI_MAX_BYTES, max_sg_size);
+  partition_info_.max_transfer_size = MIN(AHCI_MAX_BYTES, max_sg_size);
 
   // set devinfo on controller
   di.block_size = block_size;
@@ -185,62 +187,27 @@ zx_status_t SataDevice::Init() {
   controller_->SetDevInfo(port_, &di);
 
   controller_->inspect().emplace(std::move(inspect_device));
+
+  block_server::PartitionInfo info = {
+      .device_flags = partition_info_.device_flags,
+      .start_block = 0,
+      .block_count = partition_info_.block_count,
+      .block_size = partition_info_.block_size,
+      .type_guid = {},
+      .instance_guid = {},
+      .name = "sata",
+      .flags = 0,
+      .max_transfer_size = partition_info_.max_transfer_size,
+  };
+  {
+    fbl::AutoLock lock(&lock_);
+    block_server_.emplace(info, this);
+  }
+
   return ZX_OK;
 }
 
 // implement device protocol:
-
-void SataDevice::BlockImplQuery(block_info_t* info_out, uint64_t* block_op_size_out) {
-  *info_out = info_;
-  *block_op_size_out = sizeof(SataTransaction);
-}
-
-void SataDevice::BlockImplQueue(block_op_t* bop, block_impl_queue_callback completion_cb,
-                                void* cookie) {
-  SataTransaction* txn = containerof(bop, SataTransaction, bop);
-  txn->completion_cb = completion_cb;
-  txn->cookie = cookie;
-
-  switch (bop->command.opcode) {
-    case BLOCK_OPCODE_READ:
-    case BLOCK_OPCODE_WRITE: {
-      if (zx_status_t status = block::CheckIoRange(bop->rw, info_.block_count, logger());
-          status != ZX_OK) {
-        txn->Complete(status);
-        return;
-      }
-
-      txn->device = 0x40;
-      const bool is_read = bop->command.opcode == BLOCK_OPCODE_READ;
-      const bool is_fua = bop->command.flags & BLOCK_IO_FLAG_FORCE_ACCESS;
-      if (use_command_queue_) {
-        if (is_fua) {
-          txn->device |= 1 << 7;  // Set FUA
-        }
-        txn->cmd = is_read ? SATA_CMD_READ_FPDMA_QUEUED : SATA_CMD_WRITE_FPDMA_QUEUED;
-      } else {
-        if (is_fua) {
-          txn->Complete(ZX_ERR_NOT_SUPPORTED);
-          return;
-        }
-        txn->cmd = is_read ? SATA_CMD_READ_DMA_EXT : SATA_CMD_WRITE_DMA_EXT;
-      }
-
-      fdf::debug("Queue op 0x{:x} txn {}", bop->command.opcode, static_cast<const void*>(txn));
-      break;
-    }
-    case BLOCK_OPCODE_FLUSH:
-      txn->cmd = SATA_CMD_FLUSH_EXT;
-      txn->device = 0x00;
-      fdf::debug("Queue FLUSH txn {}", static_cast<const void*>(txn));
-      break;
-    default:
-      txn->Complete(ZX_ERR_NOT_SUPPORTED);
-      return;
-  }
-
-  controller_->Queue(port_, txn);
-}
 
 zx::result<std::unique_ptr<SataDevice>> SataDevice::Bind(Controller* controller, uint32_t port,
                                                          bool use_command_queue) {
@@ -260,45 +227,45 @@ zx::result<std::unique_ptr<SataDevice>> SataDevice::Bind(Controller* controller,
 }
 
 zx_status_t SataDevice::AddDevice() {
-  {
-    const std::string path_from_parent = std::string(controller_->driver_name()) + "/";
-    compat::DeviceServer::BanjoConfig banjo_config;
-    banjo_config.callbacks[ZX_PROTOCOL_BLOCK_IMPL] = block_impl_server_.callback();
-
-    auto result = compat_server_.Initialize(
-        controller_->driver_incoming(), controller_->driver_outgoing(),
-        controller_->driver_node_name(), DriverName(), compat::ForwardMetadata::None(),
-        std::move(banjo_config), path_from_parent);
-    if (result.is_error()) {
-      return result.status_value();
-    }
-  }
-
   zx_status_t status = Init();
   if (status != ZX_OK) {
     return status;
   }
 
+  {
+    auto handlers = fuchsia_hardware_block_volume::Service::InstanceHandler({
+        .volume =
+            [this](fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
+              ServeRequests(std::move(server_end));
+            },
+        .node = node_bindings_.CreateHandler(
+            this, fdf::Dispatcher::GetCurrent()->async_dispatcher(), fidl::kIgnoreBindingClosure),
+    });
+
+    auto add_service_result =
+        controller_->driver_outgoing()->AddService<fuchsia_hardware_block_volume::Service>(
+            std::move(handlers), DriverName().c_str());
+    if (add_service_result.is_error()) {
+      fdf::error("Failed to add volume service instance: {}", add_service_result.status_string());
+      return add_service_result.status_value();
+    }
+  }
+
   auto [controller_client_end, controller_server_end] =
       fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+  auto [node_client_end, node_server_end] =
+      fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
 
   node_controller_.Bind(std::move(controller_client_end));
+  node_.Bind(std::move(node_client_end));
 
   fidl::Arena arena;
 
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> properties(arena, 1);
-  properties[0] = fdf::MakeProperty2(arena, bind_fuchsia::PROTOCOL,
-                                     static_cast<uint32_t>(ZX_PROTOCOL_BLOCK_IMPL));
+  const auto args =
+      fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, DriverName()).Build();
 
-  std::vector<fuchsia_driver_framework::wire::Offer> offers = compat_server_.CreateOffers2(arena);
-
-  const auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
-                        .name(arena, DriverName())
-                        .offers2(arena, std::move(offers))
-                        .properties2(properties)
-                        .Build();
-
-  auto result = controller_->root_node()->AddChild(args, std::move(controller_server_end), {});
+  auto result = controller_->root_node()->AddChild(args, std::move(controller_server_end),
+                                                   std::move(node_server_end));
   if (!result.ok()) {
     fdf::error("Failed to add child SATA device: {}", result.status_string());
     return result.status();
@@ -306,6 +273,186 @@ zx_status_t SataDevice::AddDevice() {
   return ZX_OK;
 }
 
-fdf::Logger& SataDevice::logger() { return controller_->logger(); }
+void SataDevice::CompleteTransaction(SataTransaction* txn, zx_status_t status) {
+  fbl::AutoLock lock(&lock_);
+  ZX_ASSERT(block_server_);
+  block_server_->SendReply(txn->request_id, zx::make_result(status));
+  FreeSataTransactionLocked(txn);
+}
+
+void SataDevice::ServeRequests(fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
+  fbl::AutoLock lock(&lock_);
+  if (is_shutting_down_ || !block_server_) {
+    return;
+  }
+  block_server_->Serve(std::move(server_end));
+}
+
+void SataDevice::AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) {
+  fidl::WireResult result = node_->AddChild(request->args, std::move(request->controller), {});
+  if (!result.ok()) {
+    fdf::error("Failed to add child node: {}", result.status_string());
+    completer.ReplyError(fuchsia_driver_framework::wire::NodeError::kInternal);
+    return;
+  }
+  if (result->is_error()) {
+    fdf::error("Failed to add child node error: {}", static_cast<uint32_t>(result->error_value()));
+    completer.ReplyError(result->error_value());
+    return;
+  }
+  completer.ReplySuccess();
+}
+
+void SataDevice::OnRequests(std::span<block_server::Request> requests) {
+  fbl::AutoLock lock(&lock_);
+  ZX_ASSERT(block_server_);
+  if (is_shutting_down_) {
+    for (const auto& request : requests) {
+      block_server_->SendReply(request.request_id, zx::error(ZX_ERR_PEER_CLOSED));
+    }
+    return;
+  }
+
+  for (const auto& request : requests) {
+    SataTransaction* txn = AllocateSataTransaction();
+    if (!txn) {
+      block_server_->SendReply(request.request_id, zx::error(ZX_ERR_PEER_CLOSED));
+      continue;
+    }
+
+    txn->request_id = request.request_id;
+    txn->device_ptr = this;
+    txn->operation = request.operation;
+    txn->vmo = request.vmo;
+
+    txn->completion_cb = [this, txn](zx_status_t status) { CompleteTransaction(txn, status); };
+
+    uint64_t length = 0;
+    uint64_t offset_dev = 0;
+    uint64_t offset_vmo = 0;
+
+    switch (request.operation.tag) {
+      case block_server::Operation::Tag::Read:
+        length = request.operation.read.block_count;
+        offset_dev = request.operation.read.device_block_offset;
+        offset_vmo = request.operation.read.vmo_offset / partition_info_.block_size;
+        txn->device = 0x40;
+        txn->cmd = use_command_queue_ ? SATA_CMD_READ_FPDMA_QUEUED : SATA_CMD_READ_DMA_EXT;
+        fdf::trace("read {} @ {}", length, offset_dev);
+        break;
+      case block_server::Operation::Tag::Write:
+        length = request.operation.write.block_count;
+        offset_dev = request.operation.write.device_block_offset;
+        offset_vmo = request.operation.write.vmo_offset / partition_info_.block_size;
+        txn->device = 0x40;
+        txn->cmd = use_command_queue_ ? SATA_CMD_WRITE_FPDMA_QUEUED : SATA_CMD_WRITE_DMA_EXT;
+        if (request.operation.write.options.flags.is_force_access()) {
+          // If NCQ is disabled, the device will not advertise FUA support to the block server
+          // library, so no FUA requests should make it here.
+          ZX_DEBUG_ASSERT(use_command_queue_);
+          txn->device |= (1 << 7);  // set fua
+        }
+        fdf::trace("write {} @ {}", length, offset_dev);
+        break;
+      case block_server::Operation::Tag::Flush:
+        txn->cmd = SATA_CMD_FLUSH_EXT;
+        txn->device = 0x00;
+        fdf::trace("flush");
+        break;
+      default:
+        fdf::error("Unsupported operation tag: {}", static_cast<uint32_t>(request.operation.tag));
+        block_server_->SendReply(request.request_id, zx::error(ZX_ERR_NOT_SUPPORTED));
+        FreeSataTransactionLocked(txn);
+        continue;
+    }
+
+    if (length > 0) {
+      if (zx_status_t status = block_server::CheckIoRange(request, partition_info_.block_count);
+          status != ZX_OK) {
+        block_server_->SendReply(request.request_id, zx::error(status));
+        FreeSataTransactionLocked(txn);
+        continue;
+      }
+      if (length > partition_info_.max_transfer_size / partition_info_.block_size) {
+        fdf::error("Io request size {} is larger than max transfer size {} blocks", length,
+                   partition_info_.max_transfer_size / partition_info_.block_size);
+        block_server_->SendReply(request.request_id, zx::error(ZX_ERR_INVALID_ARGS));
+        FreeSataTransactionLocked(txn);
+        continue;
+      }
+    }
+
+    controller_->Queue(port_, txn);
+  }
+}
+
+SataTransaction* SataDevice::AllocateSataTransaction() {
+  while (txns_allocated_.all() && !is_shutting_down_) {
+    pool_cond_.Wait(&lock_);
+  }
+  if (is_shutting_down_) {
+    return nullptr;
+  }
+  for (size_t i = 0; i < txns_.size(); i++) {
+    if (!txns_allocated_.test(i)) {
+      txns_allocated_.set(i);
+      return &txns_[i];
+    }
+  }
+  return nullptr;
+}
+
+void SataDevice::FreeSataTransactionLocked(SataTransaction* txn) {
+  ZX_ASSERT(txn >= txns_.data());
+  size_t idx = txn - txns_.data();
+  ZX_ASSERT(idx < txns_.size());
+  txns_allocated_.reset(idx);
+  pool_cond_.Signal();
+  if (is_shutting_down_ && txns_allocated_.none()) {
+    all_transactions_completed_.Signal();
+  }
+}
+
+void SataDevice::Shutdown(std::function<void()> callback) {
+  bool wait = false;
+  {
+    fbl::AutoLock lock(&lock_);
+    is_shutting_down_ = true;
+    pool_cond_.Broadcast();
+
+    // Wait for all transactions to complete.
+    if (txns_allocated_.any()) {
+      all_transactions_completed_.Reset();
+      wait = true;
+    }
+  }
+
+  if (wait && all_transactions_completed_.Wait(zx::sec(5)) == ZX_ERR_TIMED_OUT) {
+    fdf::error("Shutdown timed out waiting for in-flight transactions. Forcing port disable.");
+    // Disable the controller (so we don't double-free requests) and cancel in-flight requests.
+    controller_->port(port_)->Disable();
+    fbl::AutoLock lock(&lock_);
+    for (size_t i = 0; i < txns_.size(); ++i) {
+      if (txns_allocated_.test(i)) {
+        block_server_->SendReply(txns_[i].request_id, zx::error(ZX_ERR_CANCELED));
+        FreeSataTransactionLocked(&txns_[i]);
+      }
+    }
+    txns_allocated_.reset();
+  }
+
+  fbl::AutoLock lock(&lock_);
+  if (block_server_) {
+    block_server_->DestroyAsync([this, callback = std::move(callback)]() mutable {
+      {
+        fbl::AutoLock lock(&lock_);
+        block_server_.reset();
+      }
+      callback();
+    });
+  } else {
+    callback();
+  }
+}
 
 }  // namespace ahci

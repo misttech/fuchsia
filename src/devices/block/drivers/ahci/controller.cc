@@ -16,6 +16,8 @@
 #include <zircon/syscalls.h>
 #include <zircon/types.h>
 
+#include <atomic>
+#include <memory>
 #include <mutex>
 
 #include <fbl/alloc_checker.h>
@@ -81,8 +83,19 @@ void Controller::Queue(uint32_t portnr, SataTransaction* txn) {
   Port* port = &ports_[portnr];
   zx_status_t status = port->Queue(txn);
   if (status == ZX_OK) {
-    fdf::trace("ahci.{}: Queue txn {} offset_dev 0x{:x} length 0x{:x}", port->num(),
-               static_cast<const void*>(txn), txn->bop.rw.offset_dev, txn->bop.rw.length);
+    uint64_t lba = 0;
+    uint32_t count = 0;
+    if (txn->operation.tag == block_server::Operation::Tag::Read) {
+      lba = txn->operation.read.device_block_offset;
+      count = txn->operation.read.block_count;
+    } else if (txn->operation.tag == block_server::Operation::Tag::Write) {
+      lba = txn->operation.write.device_block_offset;
+      count = txn->operation.write.block_count;
+    }
+
+    fdf::trace("ahci.{}: Queue txn {} tag {} offset_dev 0x{:x} length 0x{:x}", port->num(),
+               static_cast<const void*>(txn), static_cast<uint32_t>(txn->operation.tag), lba,
+               count);
     // hit the worker loop
     worker_event_completion_.Signal();
   } else {
@@ -93,8 +106,24 @@ void Controller::Queue(uint32_t portnr, SataTransaction* txn) {
 }
 
 void Controller::PrepareStop(fdf::PrepareStopCompleter completer) {
-  Shutdown();
-  completer(zx::ok());
+  if (sata_devices_.empty()) {
+    Shutdown();
+    completer(zx::ok());
+    return;
+  }
+
+  auto shared_completer = std::make_shared<fdf::PrepareStopCompleter>(std::move(completer));
+  auto count = std::make_shared<std::atomic<size_t>>(sata_devices_.size());
+
+  for (auto& device : sata_devices_) {
+    device->Shutdown([this, shared_completer, count]() {
+      if (count->fetch_sub(1) == 1) {
+        sata_devices_.clear();
+        Shutdown();
+        (*shared_completer)(zx::ok());
+      }
+    });
+  }
 }
 
 bool Controller::ShouldExit() {

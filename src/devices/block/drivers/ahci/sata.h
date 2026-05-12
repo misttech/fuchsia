@@ -6,15 +6,21 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_AHCI_SATA_H_
 
 #include <byteswap.h>
-#include <fuchsia/hardware/block/driver/cpp/banjo.h>
-#include <lib/driver/compat/cpp/compat.h>
+#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/fit/function.h>
+#include <lib/sync/cpp/completion.h>
 #include <lib/zx/time.h>
 #include <zircon/listnode.h>
 
+#include <functional>
+
+#include <fbl/auto_lock.h>
+#include <fbl/condition_variable.h>
+#include <fbl/mutex.h>
 #include <fbl/string_printf.h>
 
-#include "ahci.h"
+#include "src/storage/lib/block_server/block_server.h"
 
 #define SATA_CMD_IDENTIFY_DEVICE 0xec
 #define SATA_CMD_READ_DMA 0xc8
@@ -35,6 +41,8 @@
 #define SATA_MAX_BLOCK_COUNT 0x10000  // 16-bit count
 
 namespace ahci {
+
+class SataDevice;
 
 // SATA disk identifier. Response to SATA_CMD_IDENTIFY_DEVICE command.
 // Generated from ATA Command Set spec (ACS-4).
@@ -148,11 +156,11 @@ struct SataIdentifyDeviceResponse {  // 16-bit word offset
 static_assert(sizeof(SataIdentifyDeviceResponse) == 512);
 
 struct SataTransaction {
-  void Complete(zx_status_t status) { completion_cb(cookie, status, &bop); }
+  void Complete(zx_status_t status);
 
-  block_op_t bop;
-  block_impl_queue_callback completion_cb;
-  void* cookie;
+  block_server::Operation operation;
+  zx::unowned<zx::vmo> vmo;
+  fit::function<void(zx_status_t)> completion_cb;
 
   uint8_t cmd;
   uint8_t device;
@@ -160,6 +168,9 @@ struct SataTransaction {
   zx::time timeout;
 
   list_node_t node;
+
+  block_server::RequestId request_id;
+  SataDevice* device_ptr;
 };
 
 struct SataDeviceInfo {
@@ -176,21 +187,28 @@ inline void SataStringFix(uint16_t* buf, size_t size) {
 
 class Controller;
 
-class SataDevice : public ddk::BlockImplProtocol<SataDevice> {
+class SataDevice : public block_server::DriverInterface,
+                   public fidl::WireServer<fuchsia_hardware_block_volume::Node> {
  public:
   SataDevice(Controller* controller, uint32_t port, bool use_command_queue)
       : controller_(controller), port_(port), use_command_queue_(use_command_queue) {}
+
+  // block_server::DriverInterface overrides
+  void OnRequests(std::span<block_server::Request> requests) override;
+
+  // fidl::WireServer<fuchsia_hardware_block_volume::Node> implementations.
+  void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
 
   // Create a SATA device on |controller| at |port|.
   static zx::result<std::unique_ptr<SataDevice>> Bind(Controller* controller, uint32_t port,
                                                       bool use_command_queue);
   fbl::String DriverName() const { return fbl::StringPrintf("sata%u", port_); }
 
-  // ddk::BlockImplProtocol implementations.
-  void BlockImplQuery(block_info_t* out_info, uint64_t* out_block_op_size);
-  void BlockImplQueue(block_op_t* op, block_impl_queue_callback callback, void* cookie);
-
   uint32_t port() const { return port_; }
+
+  void CompleteTransaction(SataTransaction* txn, zx_status_t status);
+  void ServeRequests(fidl::ServerEnd<fuchsia_storage_block::Block> server_end);
+  void Shutdown(std::function<void()> callback);
 
  private:
   // Invokes AddChild().
@@ -199,19 +217,27 @@ class SataDevice : public ddk::BlockImplProtocol<SataDevice> {
   // Main driver initialization.
   zx_status_t Init();
 
-  fdf::Logger& logger();
-
   Controller* const controller_;
   const uint32_t port_;
   // Whether to use Native Command Queuing.
   const bool use_command_queue_;
 
-  block_info_t info_{};
+  block_server::PartitionInfo partition_info_{};
 
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
+  fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
 
-  compat::BanjoServer block_impl_server_{ZX_PROTOCOL_BLOCK_IMPL, this, &block_impl_protocol_ops_};
-  compat::SyncInitializedDeviceServer compat_server_;
+  std::optional<block_server::BlockServer> block_server_ __TA_GUARDED(lock_);
+  fidl::ServerBindingGroup<fuchsia_hardware_block_volume::Node> node_bindings_;
+  libsync::Completion all_transactions_completed_;
+  fbl::Mutex lock_;
+  fbl::ConditionVariable pool_cond_ __TA_GUARDED(lock_);
+  std::array<SataTransaction, 32> txns_ __TA_GUARDED(lock_) = {};
+  std::bitset<32> txns_allocated_ __TA_GUARDED(lock_);
+  bool is_shutting_down_ __TA_GUARDED(lock_) = false;
+
+  SataTransaction* AllocateSataTransaction() __TA_REQUIRES(lock_);
+  void FreeSataTransactionLocked(SataTransaction* txn) __TA_REQUIRES(lock_);
 };
 
 }  // namespace ahci

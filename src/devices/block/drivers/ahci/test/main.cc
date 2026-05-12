@@ -7,17 +7,20 @@
 #include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/driver/testing/cpp/minimal_compat_environment.h>
 #include <lib/driver/testing/cpp/scoped_global_logger.h>
+#include <lib/fdf/env.h>
 #include <lib/fpromise/single_threaded_executor.h>
 #include <lib/inspect/testing/cpp/inspect.h>
 #include <lib/zx/clock.h>
 
 #include <gtest/gtest.h>
+#include <src/storage/lib/block_protocol/block-fifo.h>
 
 #include "../controller.h"
 #include "fake-bus.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace ahci {
+namespace {
 
 class PortTest : public ::testing::Test {
  protected:
@@ -118,12 +121,6 @@ TEST_F(PortTest, PortTestEnable) {
   BusAndPortEnable(&port);
 }
 
-void cb_status(void* cookie, zx_status_t status, block_op_t* bop) {
-  *static_cast<zx_status_t*>(cookie) = status;
-}
-
-void cb_assert(void* cookie, zx_status_t status, block_op_t* bop) { EXPECT_TRUE(false); }
-
 TEST_F(PortTest, PortCompleteNone) {
   Port port;
   BusAndPortEnable(&port);
@@ -141,7 +138,7 @@ TEST_F(PortTest, PortCompleteRunning) {
 
   SataTransaction txn = {};
   txn.timeout = zx::clock::get_monotonic() + zx::sec(5);
-  txn.completion_cb = cb_assert;
+  txn.completion_cb = [](zx_status_t status) { EXPECT_TRUE(false); };
 
   uint32_t slot = 0;
 
@@ -166,12 +163,10 @@ TEST_F(PortTest, PortCompleteSuccess) {
 
   // Transaction has successfully completed.
 
-  zx_status_t status = 100;  // Bogus value to be overwritten by callback.
-
+  zx_status_t completion_status = 100;
   SataTransaction txn = {};
   txn.timeout = zx::clock::get_monotonic() + zx::sec(5);
-  txn.completion_cb = cb_status;
-  txn.cookie = &status;
+  txn.completion_cb = [&completion_status](zx_status_t status) { completion_status = status; };
 
   uint32_t slot = 0;
 
@@ -188,7 +183,7 @@ TEST_F(PortTest, PortCompleteSuccess) {
   // False means no more running commands.
   EXPECT_FALSE(port.Complete());
   // Set by completion callback.
-  EXPECT_OK(status);
+  EXPECT_OK(completion_status);
 }
 
 TEST_F(PortTest, PortCompleteTimeout) {
@@ -197,13 +192,10 @@ TEST_F(PortTest, PortCompleteTimeout) {
 
   // Transaction has successfully completed.
 
-  zx_status_t status = ZX_OK;  // Value to be overwritten by callback.
-
+  zx_status_t completion_status = ZX_OK;
   SataTransaction txn = {};
-  // Set timeout in the past.
   txn.timeout = zx::clock::get_monotonic() - zx::sec(1);
-  txn.completion_cb = cb_status;
-  txn.cookie = &status;
+  txn.completion_cb = [&completion_status](zx_status_t status) { completion_status = status; };
 
   uint32_t slot = 0;
 
@@ -220,7 +212,7 @@ TEST_F(PortTest, PortCompleteTimeout) {
   // False means no more running commands.
   EXPECT_FALSE(port.Complete());
   // Set by completion callback.
-  EXPECT_NE(status, ZX_OK);
+  EXPECT_NE(completion_status, ZX_OK);
 }
 
 TEST_F(PortTest, FlushWhenCommandQueueEmpty) {
@@ -235,9 +227,10 @@ TEST_F(PortTest, FlushWhenCommandQueueEmpty) {
   zx_status_t status = ZX_ERR_IO;  // Value to be overwritten by callback.
 
   SataTransaction txn = {};
-  txn.bop.command.opcode = BLOCK_OPCODE_FLUSH;
-  txn.completion_cb = cb_status;
-  txn.cookie = &status;
+  txn.operation = block_server::Operation{
+      .tag = block_server::Operation::Tag::Flush,
+  };
+  txn.completion_cb = [&status](zx_status_t st) { status = st; };
   txn.cmd = SATA_CMD_FLUSH_EXT;
 
   // Queue txn.
@@ -278,9 +271,10 @@ TEST_F(PortTest, FlushWhenWritePrecedingAndReadFollowing) {
   zx_status_t write_status = ZX_ERR_IO;  // Value to be overwritten by callback.
 
   SataTransaction write_txn = {};
-  write_txn.bop.command.opcode = BLOCK_OPCODE_WRITE;
-  write_txn.completion_cb = cb_status;
-  write_txn.cookie = &write_status;
+  write_txn.operation = block_server::Operation{
+      .tag = block_server::Operation::Tag::Write,
+  };
+  write_txn.completion_cb = [&write_status](zx_status_t st) { write_status = st; };
   write_txn.cmd = SATA_CMD_WRITE_FPDMA_QUEUED;
 
   // Queue write_txn.
@@ -289,9 +283,10 @@ TEST_F(PortTest, FlushWhenWritePrecedingAndReadFollowing) {
   zx_status_t flush_status = ZX_ERR_IO;  // Value to be overwritten by callback.
 
   SataTransaction flush_txn = {};
-  flush_txn.bop.command.opcode = BLOCK_OPCODE_FLUSH;
-  flush_txn.completion_cb = cb_status;
-  flush_txn.cookie = &flush_status;
+  flush_txn.operation = block_server::Operation{
+      .tag = block_server::Operation::Tag::Flush,
+  };
+  flush_txn.completion_cb = [&flush_status](zx_status_t st) { flush_status = st; };
   flush_txn.cmd = SATA_CMD_FLUSH_EXT;
 
   // Queue flush_txn.
@@ -300,9 +295,10 @@ TEST_F(PortTest, FlushWhenWritePrecedingAndReadFollowing) {
   zx_status_t read_status = ZX_ERR_IO;  // Value to be overwritten by callback.
 
   SataTransaction read_txn = {};
-  read_txn.bop.command.opcode = BLOCK_OPCODE_READ;
-  read_txn.completion_cb = cb_status;
-  read_txn.cookie = &read_status;
+  read_txn.operation = block_server::Operation{
+      .tag = block_server::Operation::Tag::Read,
+  };
+  read_txn.completion_cb = [&read_status](zx_status_t st) { read_status = st; };
   read_txn.cmd = SATA_CMD_READ_FPDMA_QUEUED;
 
   // Queue read_txn.
@@ -389,38 +385,41 @@ class TestController : public Controller {
     }
     test_dispatcher_ = *std::move(dispatcher);
 
-    // Background work to emulate a SATA device on the fake bus responding to an IDENTIFY DEVICE
-    // command.
-    async::PostTask(test_dispatcher_.async_dispatcher(), [this, fake_bus = fake_bus.get()] {
-      Port* port = this->port(FakeBus::kTestPortNumber);
-      const SataTransaction* command;
-      while (true) {
-        command = port->TestGetRunning(0);
-        if (command != nullptr) {
-          break;
-        }
-        // Wait until IDENTIFY DEVICE command is processed by the worker dispatcher thread.
-        zx::nanosleep(zx::deadline_after(zx::msec(1)));
-      }
-      ASSERT_EQ(command->cmd, SATA_CMD_IDENTIFY_DEVICE);
+    zx_status_t post_status = async::PostTask(
+        test_dispatcher_.async_dispatcher(),
+        fit::function<void()>([this, fake_bus = fake_bus.get()] {
+          fdf::info("CreateBus background task started");
+          Port* port = this->port(FakeBus::kTestPortNumber);
+          const SataTransaction* command;
+          while (true) {
+            command = port->TestGetRunning(0);
+            if (command != nullptr) {
+              break;
+            }
+            // Wait until IDENTIFY DEVICE command is processed by the worker dispatcher thread.
+            zx::nanosleep(zx::deadline_after(zx::msec(1)));
+          }
+          ASSERT_EQ(command->cmd, SATA_CMD_IDENTIFY_DEVICE);
 
-      // Perform IDENTIFY DEVICE command.
-      SataIdentifyDeviceResponse devinfo{};
-      devinfo.major_version = 1 << 10;  // Support ACS-3.
-      devinfo.capabilities_1 = 1 << 9;  // Spec simply says, "Shall be set to one."
-      devinfo.lba_capacity = kTestLogicalBlockCount;
-      zx::unowned_vmo vmo(command->bop.rw.vmo);
-      ASSERT_OK(vmo->write(&devinfo, 0, sizeof(devinfo)));
+          // Perform IDENTIFY DEVICE command.
+          SataIdentifyDeviceResponse devinfo{};
+          devinfo.major_version = 1 << 10;  // Support ACS-3.
+          devinfo.capabilities_1 = 1 << 9;  // Spec simply says, "Shall be set to one."
+          devinfo.lba_capacity = kTestLogicalBlockCount;
+          zx::unowned_vmo vmo(command->vmo->get());
+          ASSERT_OK(vmo->write(&devinfo, 0, sizeof(devinfo)));
 
-      // Clear the running bit in the bus.
-      fake_bus->PortRegOverride(FakeBus::kTestPortNumber, kPortSataActive, 0);
-      fake_bus->PortRegOverride(FakeBus::kTestPortNumber, kPortCommandIssue, 0);
+          // Clear the running bit in the bus.
+          fake_bus->PortRegOverride(FakeBus::kTestPortNumber, kPortSataActive, 0);
+          fake_bus->PortRegOverride(FakeBus::kTestPortNumber, kPortCommandIssue, 0);
 
-      // Set interrupt for successful transfer completion.
-      fake_bus->PortRegOverride(FakeBus::kTestPortNumber, kPortInterruptStatus, AHCI_PORT_INT_DP);
-      // Invoke interrupt handler.
-      fake_bus->InterruptTrigger();
-    });
+          // Set interrupt for successful transfer completion.
+          fake_bus->PortRegOverride(FakeBus::kTestPortNumber, kPortInterruptStatus,
+                                    AHCI_PORT_INT_DP);
+          // Invoke interrupt handler.
+          fake_bus->InterruptTrigger();
+        }));
+    ZX_ASSERT(post_status == ZX_OK);
 
     return zx::ok(std::move(fake_bus));
   }
@@ -431,7 +430,22 @@ class TestController : public Controller {
       test_shutdown_completion_.Wait();
     }
     Shutdown();
-    completer(zx::ok());
+
+    if (sata_devices().empty()) {
+      completer(zx::ok());
+      return;
+    }
+
+    auto shared_completer = std::make_shared<fdf::PrepareStopCompleter>(std::move(completer));
+    auto count = std::make_shared<std::atomic<size_t>>(sata_devices().size());
+
+    for (auto& device : sata_devices()) {
+      device->Shutdown([shared_completer, count]() {
+        if (count->fetch_sub(1) == 1) {
+          (*shared_completer)(zx::ok());
+        }
+      });
+    }
   }
 
  private:
@@ -452,15 +466,16 @@ class AhciTest : public ::testing::TestWithParam<bool> {
  public:
   void SetUp() override {
     TestController::support_native_command_queuing_ = GetParam();
+    driver_test().runtime().StartBackgroundDispatcher();
 
     zx::result<> result = driver_test().StartDriver();
     ASSERT_OK(result);
 
-    fake_bus_ = static_cast<FakeBus*>(driver_test().driver()->bus());
+    driver_test().RunInDriverContext([this](TestController& driver) {
+      fake_bus_ = static_cast<FakeBus*>(driver.bus());
+      sata_device_ = driver.sata_devices()[0].get();
+    });
     ASSERT_NE(fake_bus_, nullptr);
-
-    ASSERT_GT(driver_test().driver()->sata_devices().size(), size_t{0});
-    sata_device_ = driver_test().driver()->sata_devices()[0].get();
     ASSERT_NE(sata_device_, nullptr);
   }
 
@@ -469,58 +484,79 @@ class AhciTest : public ::testing::TestWithParam<bool> {
     ASSERT_OK(result);
   }
 
-  fdf_testing::ForegroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
+  fdf_testing::BackgroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
 
  protected:
-  fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
   FakeBus* fake_bus_;
   SataDevice* sata_device_;
 };
 
 TEST_P(AhciTest, SataDeviceRead) {
-  fpromise::result<inspect::Hierarchy> hierarchy =
-      fpromise::run_single_threaded(inspect::ReadFromInspector(driver_test().driver()->inspect()));
-  ASSERT_TRUE(hierarchy.is_ok());
-  const auto* ahci = hierarchy.value().GetByPath({"ahci"});
-  ASSERT_NE(ahci, nullptr);
-  const auto* ncq = ahci->node().get_property<inspect::BoolPropertyValue>("native_command_queuing");
-  ASSERT_NE(ncq, nullptr);
-  EXPECT_EQ(ncq->value(), TestController::support_native_command_queuing_);
+  auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+  driver_test().RunInDriverContext([&volume_server, this](TestController& driver) mutable {
+    sata_device_->ServeRequests(std::move(volume_server));
+  });
 
-  block_info_t info;
-  uint64_t op_size;
-  sata_device_->BlockImplQuery(&info, &op_size);
-  EXPECT_EQ(info.block_size, uint32_t{512});
-  EXPECT_EQ(info.block_count, TestController::kTestLogicalBlockCount);
+  auto [session_client, session_server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
+  ASSERT_OK(fidl::WireCall(volume_client)->OpenSession(std::move(session_server)).status());
+
+  auto info_result = fidl::WireCall(volume_client)->GetInfo();
+  ASSERT_OK(info_result.status());
+  ASSERT_TRUE(info_result.value().is_ok());
+  EXPECT_EQ(info_result.value().value()->info.block_size, 512u);
+  EXPECT_EQ(info_result.value().value()->info.block_count, TestController::kTestLogicalBlockCount);
   if (TestController::support_native_command_queuing_) {
-    EXPECT_TRUE(info.flags & DEVICE_FLAG_FUA_SUPPORT);
+    EXPECT_TRUE(info_result.value().value()->info.flags &
+                fuchsia_storage_block::wire::DeviceFlag::kFuaSupport);
   } else {
-    EXPECT_FALSE(info.flags & DEVICE_FLAG_FUA_SUPPORT);
+    EXPECT_FALSE(info_result.value().value()->info.flags &
+                 fuchsia_storage_block::wire::DeviceFlag::kFuaSupport);
   }
 
-  sync_completion_t done;
-  auto callback = [](void* ctx, zx_status_t status, block_op_t* op) {
-    EXPECT_OK(status);
-    sync_completion_signal(static_cast<sync_completion_t*>(ctx));
+  driver_test().RunInDriverContext([&](TestController& driver) {
+    auto hierarchy = inspect::ReadFromVmo(driver.inspect().DuplicateVmo());
+    ASSERT_TRUE(hierarchy.is_ok());
+    const auto* ahci = hierarchy.value().GetByPath({"ahci"});
+    ASSERT_NE(ahci, nullptr);
+    const auto* ncq =
+        ahci->node().get_property<inspect::BoolPropertyValue>("native_command_queuing");
+    ASSERT_NE(ncq, nullptr);
+    EXPECT_EQ(ncq->value(), TestController::support_native_command_queuing_);
+  });
+
+  auto fifo_result = fidl::WireCall(session_client)->GetFifo();
+  ASSERT_OK(fifo_result.status());
+  zx::fifo fifo = std::move(fifo_result.value()->fifo);
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+  zx::vmo dup;
+  ASSERT_OK(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup));
+
+  auto vmo_result = fidl::WireCall(session_client)->AttachVmo(std::move(dup));
+  ASSERT_OK(vmo_result.status());
+  uint16_t vmoid = vmo_result.value()->vmoid.id;
+
+  BlockFifoRequest request = {
+      .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
+      .reqid = 0,
+      .group = 0,
+      .vmoid = vmoid,
+      .length = 1,
+      .total_compressed_bytes = 0,
+      .vmo_offset = 0,
+      .dev_offset = 0,
   };
 
-  zx::vmo read_vmo;
-  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &read_vmo));
-  auto block_op = std::make_unique<uint8_t[]>(op_size);
-  auto op = reinterpret_cast<block_op_t*>(block_op.get());
-  *op = {.rw = {
-             .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
-             .vmo = read_vmo.get(),
-             .length = 1,
-             .offset_dev = 0,
-             .offset_vmo = 0,
-         }};
-  sata_device_->BlockImplQueue(op, callback, &done);
+  ASSERT_OK(fifo.write(sizeof(BlockFifoRequest), &request, 1, nullptr));
 
-  Port* port = driver_test().driver()->port(FakeBus::kTestPortNumber);
-  const SataTransaction* command;
+  const SataTransaction* command = nullptr;
   while (true) {
-    command = port->TestGetRunning(0);
+    driver_test().RunInDriverContext([&command](TestController& driver) {
+      Port* port = driver.port(FakeBus::kTestPortNumber);
+      command = port->TestGetRunning(0);
+    });
     if (command != nullptr) {
       break;
     }
@@ -541,60 +577,228 @@ TEST_P(AhciTest, SataDeviceRead) {
   fake_bus_->PortRegOverride(FakeBus::kTestPortNumber, kPortInterruptStatus, AHCI_PORT_INT_DP);
   // Invoke interrupt handler.
   fake_bus_->InterruptTrigger();
+}
 
-  sync_completion_wait(&done, ZX_TIME_INFINITE);
+TEST_P(AhciTest, SataDeviceWriteWithFua) {
+  auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+  driver_test().RunInDriverContext([&volume_server, this](TestController& driver) mutable {
+    sata_device_->ServeRequests(std::move(volume_server));
+  });
+
+  auto [session_client, session_server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
+  ASSERT_OK(fidl::WireCall(volume_client)->OpenSession(std::move(session_server)).status());
+
+  auto fifo_result = fidl::WireCall(session_client)->GetFifo();
+  ASSERT_OK(fifo_result.status());
+  zx::fifo fifo = std::move(fifo_result.value()->fifo);
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+  zx::vmo dup;
+  ASSERT_OK(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup));
+
+  auto vmo_result = fidl::WireCall(session_client)->AttachVmo(std::move(dup));
+  ASSERT_OK(vmo_result.status());
+  uint16_t vmoid = vmo_result.value()->vmoid.id;
+
+  BlockFifoRequest request = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_FORCE_ACCESS},
+      .reqid = 0,
+      .group = 0,
+      .vmoid = vmoid,
+      .length = 1,
+      .total_compressed_bytes = 0,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
+
+  ASSERT_OK(fifo.write(sizeof(BlockFifoRequest), &request, 1, nullptr));
+
+  if (TestController::support_native_command_queuing_) {
+    uint8_t cmd = 0;
+    uint8_t device = 0;
+    while (true) {
+      driver_test().RunInDriverContext([&cmd, &device](TestController& driver) {
+        Port* port = driver.port(FakeBus::kTestPortNumber);
+        const SataTransaction* command = port->TestGetRunning(0);
+        if (command != nullptr) {
+          cmd = command->cmd;
+          device = command->device;
+        } else {
+          cmd = 0;
+        }
+      });
+      if (cmd != 0) {
+        break;
+      }
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
+
+    EXPECT_EQ(cmd, SATA_CMD_WRITE_FPDMA_QUEUED);
+    EXPECT_EQ(device, 0xC0);
+
+    fake_bus_->PortRegOverride(FakeBus::kTestPortNumber, kPortSataActive, 0);
+    fake_bus_->PortRegOverride(FakeBus::kTestPortNumber, kPortCommandIssue, 0);
+    fake_bus_->PortRegOverride(FakeBus::kTestPortNumber, kPortInterruptStatus, AHCI_PORT_INT_DP);
+    fake_bus_->InterruptTrigger();
+  } else {
+    // Without NCQ, the block server will simulate a FUA with a write + flush.
+    uint8_t cmd = 0;
+    uint8_t device = 0;
+    while (true) {
+      driver_test().RunInDriverContext([&cmd, &device](TestController& driver) {
+        Port* port = driver.port(FakeBus::kTestPortNumber);
+        const SataTransaction* command = port->TestGetRunning(0);
+        if (command != nullptr) {
+          cmd = command->cmd;
+          device = command->device;
+        } else {
+          cmd = 0;
+          device = 0;
+        }
+      });
+      if (cmd == SATA_CMD_WRITE_DMA_EXT) {
+        break;
+      }
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
+
+    EXPECT_EQ(device, 0x40);
+
+    fake_bus_->PortRegOverride(FakeBus::kTestPortNumber, kPortSataActive, 0);
+    fake_bus_->PortRegOverride(FakeBus::kTestPortNumber, kPortCommandIssue, 0);
+    fake_bus_->PortRegOverride(FakeBus::kTestPortNumber, kPortInterruptStatus, AHCI_PORT_INT_DP);
+    fake_bus_->InterruptTrigger();
+
+    while (true) {
+      driver_test().RunInDriverContext([&cmd](TestController& driver) {
+        Port* port = driver.port(FakeBus::kTestPortNumber);
+        const SataTransaction* command = port->TestGetRunning(0);
+        if (command != nullptr) {
+          cmd = command->cmd;
+        } else {
+          cmd = 0;
+        }
+      });
+      if (cmd == SATA_CMD_FLUSH_EXT) {
+        break;
+      }
+      zx::nanosleep(zx::deadline_after(zx::msec(1)));
+    }
+
+    fake_bus_->PortRegOverride(FakeBus::kTestPortNumber, kPortSataActive, 0);
+    fake_bus_->PortRegOverride(FakeBus::kTestPortNumber, kPortCommandIssue, 0);
+    fake_bus_->PortRegOverride(FakeBus::kTestPortNumber, kPortInterruptStatus, AHCI_PORT_INT_DP);
+    fake_bus_->InterruptTrigger();
+  }
+
+  ASSERT_OK(fifo.wait_one(ZX_FIFO_READABLE, zx::time::infinite(), nullptr));
+  BlockFifoResponse response;
+  size_t count = 0;
+  ASSERT_OK(fifo.read(sizeof(BlockFifoResponse), &response, 1, &count));
+  EXPECT_EQ(count, 1u);
+  EXPECT_EQ(response.reqid, 0u);
+  EXPECT_EQ(response.status, ZX_OK);
+}
+
+TEST_P(AhciTest, AddChildTest) {
+  zx::result node_client =
+      driver_test().Connect<fuchsia_hardware_block_volume::Service::Node>("sata0");
+  ASSERT_OK(node_client);
+
+  fidl::Arena arena;
+  auto [controller_client, controller_server] =
+      fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+  auto args =
+      fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena).name(arena, "test-child").Build();
+
+  fidl::WireResult result =
+      fidl::WireCall(node_client.value())->AddChild(args, std::move(controller_server));
+  ASSERT_TRUE(result.ok());
+  ASSERT_FALSE(result->is_error());
+
+  bool has_child = driver_test().RunInNodeContext<bool>([](fdf_testing::TestNode& node) {
+    auto ahci_iter = node.children().find("ahci");
+    if (ahci_iter == node.children().end()) {
+      return false;
+    }
+    auto sata_iter = ahci_iter->second.children().find("sata0");
+    if (sata_iter == ahci_iter->second.children().end()) {
+      return false;
+    }
+    return sata_iter->second.children().contains("test-child");
+  });
+  ASSERT_TRUE(has_child);
 }
 
 TEST_P(AhciTest, ShutdownWaitsForTransactionsInFlight) {
-  block_info_t info;
-  uint64_t op_size;
-  sata_device_->BlockImplQuery(&info, &op_size);
-  EXPECT_EQ(info.block_size, uint32_t{512});
-  EXPECT_EQ(info.block_count, TestController::kTestLogicalBlockCount);
+  auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+  driver_test().RunInDriverContext([&volume_server, this](TestController& driver) mutable {
+    sata_device_->ServeRequests(std::move(volume_server));
+  });
 
-  sync_completion_t done;
-  auto callback = [](void* ctx, zx_status_t status, block_op_t* op) {
-    EXPECT_EQ(status, ZX_ERR_TIMED_OUT);
-    sync_completion_signal(static_cast<sync_completion_t*>(ctx));
-  };
+  auto [session_client, session_server] = fidl::Endpoints<fuchsia_storage_block::Session>::Create();
+  ASSERT_OK(fidl::WireCall(volume_client)->OpenSession(std::move(session_server)).status());
+
+  auto fifo_result = fidl::WireCall(session_client)->GetFifo();
+  ASSERT_OK(fifo_result.status());
+  zx::fifo fifo = std::move(fifo_result.value()->fifo);
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+  zx::vmo dup;
+  ASSERT_OK(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup));
+
+  auto vmo_result = fidl::WireCall(session_client)->AttachVmo(std::move(dup));
+  ASSERT_OK(vmo_result.status());
+  uint16_t vmoid = vmo_result.value()->vmoid.id;
 
   // Set up a transaction that will timeout (in 5 seconds by default).
-  zx::vmo read_vmo;
-  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &read_vmo));
-  auto block_op = std::make_unique<uint8_t[]>(op_size);
-  auto op = reinterpret_cast<block_op_t*>(block_op.get());
-  *op = {.rw = {
-             .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
-             .vmo = read_vmo.get(),
-             .length = 1,
-             .offset_dev = 0,
-             .offset_vmo = 0,
-         }};
-  sata_device_->BlockImplQueue(op, callback, &done);
+  BlockFifoRequest request = {
+      .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
+      .reqid = 0,
+      .group = 0,
+      .vmoid = vmoid,
+      .length = 1,
+      .total_compressed_bytes = 0,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
 
-  Port* port = driver_test().driver()->port(FakeBus::kTestPortNumber);
-  const SataTransaction* command;
+  ASSERT_OK(fifo.write(sizeof(BlockFifoRequest), &request, 1, nullptr));
+
+  const SataTransaction* command = nullptr;
   while (true) {
-    command = port->TestGetRunning(0);
+    driver_test().RunInDriverContext([&command](TestController& driver) {
+      Port* port = driver.port(FakeBus::kTestPortNumber);
+      command = port->TestGetRunning(0);
+    });
     if (command != nullptr) {
       break;
     }
-    // Wait until read command is processed by the worker dispatcher thread.
     zx::nanosleep(zx::deadline_after(zx::msec(1)));
   }
+  ASSERT_NE(command, nullptr);
 
   zx::time time = zx::clock::get_monotonic();
-  driver_test().driver()->Shutdown();
+  driver_test().RunInDriverContext([](TestController& driver) { driver.Shutdown(); });
   zx::duration shutdown_duration = zx::clock::get_monotonic() - time;
 
   // The shutdown duration should be around 5 seconds (+/-). Conservatively check for > 2.5 seconds.
   EXPECT_GT(shutdown_duration, Port::kTransactionTimeout / 2);
 
-  sync_completion_wait(&done, ZX_TIME_INFINITE);
+  // Verify that the client gets a response from the FIFO.
+  BlockFifoResponse response;
+  size_t count = 0;
+  ASSERT_OK(fifo.read(sizeof(BlockFifoResponse), &response, 1, &count));
+  EXPECT_EQ(count, 1u);
+  EXPECT_EQ(response.reqid, 0u);
+  EXPECT_EQ(response.status, ZX_ERR_TIMED_OUT);
 }
 
 INSTANTIATE_TEST_SUITE_P(NativeCommandQueuingSupportTest, AhciTest, ::testing::Bool());
 
+}  // namespace
 }  // namespace ahci
 
 FUCHSIA_DRIVER_EXPORT(ahci::TestController);

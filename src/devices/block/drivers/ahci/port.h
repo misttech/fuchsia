@@ -12,6 +12,7 @@
 
 #include <mutex>
 
+#include "ahci.h"
 #include "bus.h"
 #include "sata.h"
 

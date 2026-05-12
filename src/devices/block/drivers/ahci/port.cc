@@ -351,10 +351,34 @@ zx_status_t Port::TxnBeginLocked(uint32_t slot, SataTransaction* txn) {
   ZX_DEBUG_ASSERT(slot < AHCI_MAX_COMMANDS);
   ZX_DEBUG_ASSERT(!SlotBusyLocked(slot));
 
-  uint64_t offset_vmo = txn->bop.rw.offset_vmo * devinfo_.block_size;
-  uint64_t bytes = txn->bop.rw.length * devinfo_.block_size;
+  uint64_t offset_vmo = 0;
+  uint64_t bytes = 0;
+  uint64_t lba = 0;
+  uint64_t count = 0;
+  bool is_write = false;
+  bool is_flush = false;
+
+  if (txn->operation.tag == block_server::Operation::Tag::Flush) {
+    is_flush = true;
+  } else if (txn->operation.tag == block_server::Operation::Tag::Read) {
+    is_write = false;
+    offset_vmo = txn->operation.read.vmo_offset;
+    bytes = txn->operation.read.block_count * devinfo_.block_size;
+    lba = txn->operation.read.device_block_offset;
+    count = txn->operation.read.block_count;
+  } else if (txn->operation.tag == block_server::Operation::Tag::Write) {
+    is_write = true;
+    offset_vmo = txn->operation.write.vmo_offset;
+    bytes = txn->operation.write.block_count * devinfo_.block_size;
+    lba = txn->operation.write.device_block_offset;
+    count = txn->operation.write.block_count;
+  } else {
+    fdf::error("Unsupported operation tag: {}", static_cast<uint32_t>(txn->operation.tag));
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
   size_t pagecount =
-      ((offset_vmo & (AHCI_PAGE_SIZE - 1)) + bytes + (AHCI_PAGE_SIZE - 1)) / AHCI_PAGE_SIZE;
+      ((offset_vmo & AHCI_PAGE_MASK) + bytes + (AHCI_PAGE_SIZE - 1)) / AHCI_PAGE_SIZE;
   zx_paddr_t pages[AHCI_MAX_PAGES];
   if (pagecount > AHCI_MAX_PAGES) {
     fdf::trace("port {}: txn {} too many pages ({})", num_, static_cast<const void*>(txn),
@@ -362,10 +386,8 @@ zx_status_t Port::TxnBeginLocked(uint32_t slot, SataTransaction* txn) {
     return ZX_ERR_INVALID_ARGS;
   }
 
-  const auto opcode = txn->bop.command.opcode;
-  const bool is_write = opcode == BLOCK_OPCODE_WRITE;
-  if (opcode != BLOCK_OPCODE_FLUSH) {
-    zx::unowned_vmo vmo(txn->bop.rw.vmo);
+  if (!is_flush) {
+    zx::unowned_vmo vmo(txn->vmo->get());
     uint32_t options = is_write ? ZX_BTI_PERM_READ : ZX_BTI_PERM_WRITE;
     zx::pmt pmt;
     zx_status_t st = bus_->BtiPin(options, vmo, offset_vmo & ~AHCI_PAGE_MASK,
@@ -388,8 +410,6 @@ zx_status_t Port::TxnBeginLocked(uint32_t slot, SataTransaction* txn) {
 
   uint8_t cmd = txn->cmd;
   uint8_t device = txn->device;
-  uint64_t lba = txn->bop.rw.offset_dev;
-  uint64_t count = txn->bop.rw.length;
 
   // build the command
   ahci_cl_t* cl = &mem_->cl[slot];
