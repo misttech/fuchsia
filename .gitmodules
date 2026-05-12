@@ -733,3 +733,8 @@
 	url = https://fuchsia.googlesource.com/third_party/abseil-cpp
 	name = third_party/abseil-cpp
 	ignore = all
+[submodule "third_party/chromium-zucchini/src"]
+	path = third_party/chromium-zucchini/src
+	url = https://fuchsia.googlesource.com/third_party/chromium.googlesource.com/chromium/src/components/zucchini
+	name = chromium-zucchini
+	ignore = all
