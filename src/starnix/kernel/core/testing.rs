@@ -358,7 +358,7 @@ pub fn map_memory_anywhere<L>(
     len: u64,
 ) -> UserAddress
 where
-    L: LockEqualOrBefore<FileOpsCore>,
+    L: LockEqualOrBefore<FileOpsCore> + starnix_sync::LockBefore<starnix_sync::ThreadGroupLimits>,
 {
     map_memory(locked, current_task, UserAddress::NULL, len)
 }
@@ -373,7 +373,7 @@ pub fn map_object_anywhere<L, T>(
     object: &T,
 ) -> UserAddress
 where
-    L: LockEqualOrBefore<FileOpsCore>,
+    L: LockEqualOrBefore<FileOpsCore> + starnix_sync::LockBefore<starnix_sync::ThreadGroupLimits>,
     T: IntoBytes + Immutable,
 {
     let addr = map_memory_anywhere(locked, current_task, std::mem::size_of::<T>() as u64);
@@ -391,7 +391,7 @@ pub fn map_memory<L>(
     length: u64,
 ) -> UserAddress
 where
-    L: LockEqualOrBefore<FileOpsCore>,
+    L: LockEqualOrBefore<FileOpsCore> + starnix_sync::LockBefore<starnix_sync::ThreadGroupLimits>,
 {
     map_memory_with_flags(locked, current_task, address, length, MAP_ANONYMOUS | MAP_PRIVATE)
 }
@@ -407,7 +407,7 @@ pub fn map_memory_with_flags<L>(
     flags: u32,
 ) -> UserAddress
 where
-    L: LockEqualOrBefore<FileOpsCore>,
+    L: LockEqualOrBefore<FileOpsCore> + starnix_sync::LockBefore<starnix_sync::ThreadGroupLimits>,
 {
     do_mmap(
         locked,

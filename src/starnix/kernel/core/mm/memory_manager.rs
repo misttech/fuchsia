@@ -58,7 +58,7 @@ use starnix_uapi::{
     MADV_DONTNEED, MADV_DONTNEED_LOCKED, MADV_FREE, MADV_HUGEPAGE, MADV_HWPOISON, MADV_KEEPONFORK,
     MADV_MERGEABLE, MADV_NOHUGEPAGE, MADV_NORMAL, MADV_PAGEOUT, MADV_POPULATE_READ, MADV_RANDOM,
     MADV_REMOVE, MADV_SEQUENTIAL, MADV_SOFT_OFFLINE, MADV_UNMERGEABLE, MADV_WILLNEED,
-    MADV_WIPEONFORK, MREMAP_DONTUNMAP, MREMAP_FIXED, MREMAP_MAYMOVE, SI_KERNEL, errno, error,
+    MADV_WIPEONFORK, MREMAP_DONTUNMAP, MREMAP_FIXED, MREMAP_MAYMOVE, errno, error,
     from_status_like_fdio,
 };
 use std::collections::HashMap;
@@ -593,10 +593,20 @@ impl MemoryManagerState {
     }
 
     fn validate_addr(&self, addr: DesiredAddress, length: usize) -> Result<(), Errno> {
-        if let DesiredAddress::FixedOverwrite(addr) = addr {
-            if self.check_has_unauthorized_splits(addr, length) {
-                return error!(ENOMEM);
+        if length > RESTRICTED_ASPACE_SIZE {
+            return error!(ENOMEM);
+        }
+        match addr {
+            DesiredAddress::Fixed(a) | DesiredAddress::FixedOverwrite(a) => {
+                let end = a.checked_add(length).ok_or_else(|| errno!(ENOMEM))?;
+                if end > UserAddress::from_ptr(RESTRICTED_ASPACE_HIGHEST_ADDRESS as usize) {
+                    return error!(ENOMEM);
+                }
+                if self.check_has_unauthorized_splits(a, length) {
+                    return error!(ENOMEM);
+                }
             }
+            _ => {}
         }
         Ok(())
     }
@@ -1278,61 +1288,76 @@ impl MemoryManagerState {
             addr..end
         };
 
-        let addr = prot_range.start;
+        let mut range_list = vec![];
+        let mapping_context = &current_task.mm()?.mapping_context;
         let length = prot_range.end - prot_range.start;
+        self.ensure_range_mapped_in_user_vmar(prot_range.start, Some(length), mapping_context)?;
 
-        // TODO: We should check the max_access flags on all the mappings in this range.
-        //       There are cases where max_access is more restrictive than the Zircon rights
-        //       we hold on the underlying VMOs.
-
-        // TODO(https://fxbug.dev/411617451): `mprotect` should apply the protection flags
-        // until it encounters a mapping that doesn't allow it, rather than not apply the protection
-        // flags at all if a single mapping doesn't allow it.
         for (range, mapping) in self.mappings.range(prot_range.clone()) {
-            security::file_mprotect(current_task, range, mapping, prot_flags)?;
+            range_list.push((range.clone(), mapping.clone()));
         }
 
-        // We need to map any lazy mappings before we can protect them.
-        let mapping_context = &current_task.mm()?.mapping_context;
-        self.ensure_range_mapped_in_user_vmar(addr, Some(length), mapping_context)?;
-
-        // Make one call to mprotect to update all the zircon protections.
-        // SAFETY: This is safe because the vmar belongs to a different process.
-        unsafe { mapping_context.user_vmar.protect(addr.ptr(), length, vmar_flags) }.map_err(
-            |s| match s {
-                zx::Status::INVALID_ARGS => errno!(EINVAL),
-                zx::Status::NOT_FOUND => {
-                    track_stub!(
-                        TODO("https://fxbug.dev/322875024"),
-                        "mprotect: succeed and update prot after NOT_FOUND"
-                    );
-                    errno!(EINVAL)
-                }
-                zx::Status::ACCESS_DENIED => errno!(EACCES),
-                _ => impossible_error(s),
-            },
-        )?;
-
-        // Update the flags on each mapping in the range.
+        let mut start_cursor = prot_range.start;
         let mut updates = vec![];
-        for (range, mapping) in self.mappings.range(prot_range.clone()) {
+        let mut final_result = Ok(());
+
+        for (range, mapping) in range_list {
+            if range.start > start_cursor {
+                final_result = error!(ENOMEM);
+                break;
+            }
+
+            let intersection = range.intersect(&prot_range);
+            if let Err(e) =
+                security::file_mprotect(current_task, &intersection, &mapping, prot_flags)
+            {
+                final_result = Err(e);
+                break;
+            }
+
             if mapping.flags().contains(MappingFlags::UFFD) {
                 track_stub!(
                     TODO("https://fxbug.dev/297375964"),
                     "mprotect on uffd-registered range should not alter protections"
                 );
-                return error!(EINVAL);
+                final_result = error!(EINVAL);
+                break;
             }
-            let range = range.intersect(&prot_range);
-            let mut mapping = mapping.clone();
-            mapping.set_flags(mapping.flags().with_access_flags(prot_flags));
-            updates.push((range, mapping));
+
+            let mapped_len = intersection.end - intersection.start;
+
+            // SAFETY: This is safe because the vmar belongs to a different process.
+            let protect_result = unsafe {
+                mapping_context.user_vmar.protect(intersection.start.ptr(), mapped_len, vmar_flags)
+            }
+            .map_err(|s| match s {
+                zx::Status::INVALID_ARGS => errno!(EINVAL),
+                zx::Status::NOT_FOUND => errno!(ENOMEM),
+                zx::Status::ACCESS_DENIED => errno!(EACCES),
+                _ => impossible_error(s),
+            });
+
+            if let Err(e) = protect_result {
+                final_result = Err(e);
+                break;
+            }
+
+            let mut new_mapping = mapping.clone();
+            new_mapping.set_flags(new_mapping.flags().with_access_flags(prot_flags));
+            let push_range = intersection.clone();
+            start_cursor = intersection.end;
+            updates.push((push_range, new_mapping));
         }
-        // Use a separate loop to avoid mutating the mappings structure while iterating over it.
-        for (range, mapping) in updates {
-            released_mappings.extend(self.mappings.insert(range, mapping));
+
+        if final_result.is_ok() && start_cursor < prot_range.end {
+            final_result = error!(ENOMEM);
         }
-        Ok(())
+
+        for (r, m) in updates {
+            released_mappings.extend(self.mappings.insert(r, m));
+        }
+
+        final_result
     }
 
     fn madvise(
@@ -3838,6 +3863,18 @@ impl MemoryManager {
         length: usize,
         prot_flags: ProtectionFlags,
     ) -> Result<(), Errno> {
+        let page_size = *PAGE_SIZE;
+        if !addr.is_aligned(page_size) {
+            return error!(EINVAL);
+        }
+        if length == 0 {
+            return Ok(());
+        }
+        let end = addr.checked_add(length).ok_or_else(|| errno!(ENOMEM))?.round_up(page_size)?;
+        if end > self.maximum_valid_user_address {
+            return error!(ENOMEM);
+        }
+
         // Hold the lock throughout the operation to uphold memory manager's invariants.
         // See mm/README.md.
         let mut state = self.state.write();
@@ -4129,13 +4166,20 @@ impl MemoryManager {
         // exception definitions such as:
         // zircon/kernel/arch/x86/include/arch/x86.h
         // zircon/kernel/arch/arm64/include/arch/arm64.h
-        let signo = match error_code {
-            zx::Status::OUT_OF_RANGE => SIGBUS,
-            _ => SIGSEGV,
+        let (signo, si_code) = match error_code {
+            zx::Status::OUT_OF_RANGE => (SIGBUS, linux_uapi::BUS_ADRERR as i32),
+            _ => {
+                let code = if self.state.read().mappings.get(addr).is_some() {
+                    linux_uapi::SEGV_ACCERR
+                } else {
+                    linux_uapi::SEGV_MAPERR
+                };
+                (SIGSEGV, code as i32)
+            }
         };
         ExceptionResult::Signal(SignalInfo::with_detail(
             signo,
-            SI_KERNEL as i32,
+            si_code,
             SignalDetail::SigFault { addr: decoded.faulting_address },
         ))
     }
@@ -4296,6 +4340,10 @@ impl MemoryManager {
         is_write: bool,
     ) -> Result<bool, Error> {
         self.state.write().extend_growsdown_mapping_to_address(self, addr, is_write)
+    }
+
+    pub fn get_total_usage(&self) -> usize {
+        self.state.read().mappings.iter().map(|(range, _)| range.end - range.start).sum()
     }
 
     pub fn get_stats(&self, current_task: &CurrentTask) -> MemoryStats {
@@ -5789,7 +5837,7 @@ mod tests {
         length: u64,
     ) -> UserAddress
     where
-        L: LockEqualOrBefore<FileOpsCore>,
+        L: LockEqualOrBefore<FileOpsCore> + LockBefore<ThreadGroupLimits>,
     {
         map_memory_with_flags(
             locked,

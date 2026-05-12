@@ -85,7 +85,7 @@ pub fn do_mmap<L>(
     offset: u64,
 ) -> Result<UserAddress, Errno>
 where
-    L: LockEqualOrBefore<FileOpsCore>,
+    L: LockEqualOrBefore<FileOpsCore> + starnix_sync::LockBefore<starnix_sync::ThreadGroupLimits>,
 {
     let prot_flags = ProtectionFlags::from_access_bits(prot).ok_or_else(|| {
         track_stub!(TODO("https://fxbug.dev/322874211"), "mmap parse protection", prot);
@@ -124,6 +124,18 @@ where
     }
     if offset % *PAGE_SIZE != 0 {
         return error!(EINVAL);
+    }
+
+    let page_size = *PAGE_SIZE as usize;
+    let length_aligned =
+        length.checked_add(page_size - 1).ok_or_else(|| errno!(ENOMEM))? & !(page_size - 1);
+    let rlimit_as =
+        current_task.thread_group().get_rlimit(locked, starnix_uapi::resource_limits::Resource::AS)
+            as usize;
+    let current_usage: usize = current_task.mm()?.get_total_usage();
+
+    if current_usage.saturating_add(length_aligned) > rlimit_as {
+        return error!(ENOMEM);
     }
 
     // TODO(tbodt): should we consider MAP_NORESERVE?
