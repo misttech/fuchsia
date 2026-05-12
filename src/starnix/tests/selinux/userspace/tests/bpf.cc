@@ -48,19 +48,18 @@ fbl::unique_fd LoadProgram() {
       BPF_RETURN(),
   };
 
-  char buffer[4096];
+  char buffer[4096] = {};
   union bpf_attr attr;
   memset(&attr, 0, sizeof(attr));
-  attr = {
-      .prog_type = BPF_PROG_TYPE_SOCKET_FILTER,
-      .expected_attach_type = 0,
-      .insns = reinterpret_cast<uint64_t>(program),
-      .insn_cnt = static_cast<uint32_t>(sizeof(program) / sizeof(program[0])),
-      .license = reinterpret_cast<uint64_t>("N/A"),
-      .log_buf = reinterpret_cast<uint64_t>(buffer),
-      .log_size = 4096,
-      .log_level = 1,
-  };
+
+  attr.prog_type = BPF_PROG_TYPE_SOCKET_FILTER;
+  attr.expected_attach_type = 0;
+  attr.insns = reinterpret_cast<uint64_t>(program);
+  attr.insn_cnt = static_cast<uint32_t>(sizeof(program) / sizeof(program[0]));
+  attr.license = reinterpret_cast<uint64_t>("N/A");
+  attr.log_buf = reinterpret_cast<uint64_t>(buffer);
+  attr.log_size = sizeof(buffer);
+  attr.log_level = 1;
 
   return fbl::unique_fd(bpf(BPF_PROG_LOAD, &attr));
 }
