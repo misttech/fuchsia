@@ -275,13 +275,16 @@ impl InputPipeline {
         ) = assembly.into_components();
 
         let mut handlers_count = handlers.len();
-        // TODO: b/469745447 - should use futures::select! instead of Task::local().detach().
+        // TODO: b/469745447 - should use futures::select! instead of detach().
         if let Some(fut) = display_ownership_fut {
-            fasync::Task::local(fut).detach();
+            // The displayer ownership handler, like all input handlers, runs on [`crate::Dispatcher`]
+            // which is driver dispatcher in dso mode. The display ownership future must run on
+            // the same dispatcher because the types do not support multithreaded access.
+            Dispatcher::spawn_local(fut).detach();
             handlers_count += 1;
         }
 
-        // TODO: b/469745447 - should use futures::select! instead of Task::local().detach().
+        // TODO: b/469745447 - should use futures::select! instead of detach().
         if let Some(fut) = focus_listener_fut {
             fasync::Task::local(fut).detach();
             handlers_count += 1;
