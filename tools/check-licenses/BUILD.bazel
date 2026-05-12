@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
@@ -30,6 +30,9 @@ go_library(
     importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
+    deps = [
+        "//tools/check-licenses/metrics",
+    ],
 )
 
 go_library(
@@ -42,6 +45,7 @@ go_library(
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
         ":v2_pipeline",
+        "//tools/check-licenses/metrics",
     ],
 )
 
@@ -55,6 +59,7 @@ go_library(
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
         ":v2_pipeline",
+        "//tools/check-licenses/metrics",
     ],
 )
 
@@ -67,6 +72,7 @@ go_library(
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
+        ":v2_config",
         ":v2_pipeline",
         ":v2_readme",
         "//tools/check-licenses/metrics",
@@ -82,6 +88,7 @@ go_library(
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
+        ":v2_config",
         ":v2_pipeline",
         "//tools/check-licenses/metrics",
     ],

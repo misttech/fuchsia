@@ -52,20 +52,27 @@ if (is_host) {
       "v2/pipeline/orchestrator.go",
     ]
     visibility = [ "//tools/check-licenses/*" ]
+    deps = [ "//tools/check-licenses/metrics" ]
   }
 }
 if (is_host) {
   go_library("v2_stages_discover") {
     sources = [ "v2/stages/discover/discover.go" ]
     visibility = [ "//tools/check-licenses/*" ]
-    deps = [ ":v2_pipeline" ]
+    deps = [
+      ":v2_pipeline",
+      "//tools/check-licenses/metrics",
+    ]
   }
 }
 if (is_host) {
   go_library("v2_stages_prune") {
     sources = [ "v2/stages/prune/prune.go" ]
     visibility = [ "//tools/check-licenses/*" ]
-    deps = [ ":v2_pipeline" ]
+    deps = [
+      ":v2_pipeline",
+      "//tools/check-licenses/metrics",
+    ]
   }
 }
 if (is_host) {
@@ -73,6 +80,7 @@ if (is_host) {
     sources = [ "v2/stages/report/report.go" ]
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
+      ":v2_config",
       ":v2_pipeline",
       ":v2_readme",
       "//tools/check-licenses/metrics",
@@ -84,6 +92,7 @@ if (is_host) {
     sources = [ "v2/stages/validate/validate.go" ]
     visibility = [ "//tools/check-licenses/*" ]
     deps = [
+      ":v2_config",
       ":v2_pipeline",
       "//tools/check-licenses/metrics",
     ]
