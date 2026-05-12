@@ -284,7 +284,7 @@ class CustomTypesTests(unittest.TestCase):
     def test_target_usb_ip_str_raises(self) -> None:
         """Test cases for TargetUsb.ip_str."""
         with self.assertRaises(ValueError):
-            custom_types.TargetUsb(12345).ip_str
+            _ = custom_types.TargetUsb(12345).ip_str
 
 
 if __name__ == "__main__":

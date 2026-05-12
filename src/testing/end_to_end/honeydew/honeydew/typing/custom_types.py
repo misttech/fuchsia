@@ -38,6 +38,7 @@ class TargetAddr(abc.ABC):
         Raises:
             ValueError: If the query cannot be cleanly parsed as a valid resolved address
                 (e.g., if it's just a hostname).
+            NotImplementedError: If called on the base class TargetAddr; subclasses must implement this.
         """
         if cls is TargetAddr:
             for subclass in TargetAddr.__subclasses__():
@@ -60,6 +61,7 @@ class TargetAddr(abc.ABC):
 
         Raises:
             ValueError: If the object type is not supported or missing required fields.
+            NotImplementedError: If called on the base class TargetAddr; subclasses must implement this.
         """
         if cls is TargetAddr:
             for subclass in TargetAddr.__subclasses__():
@@ -128,7 +130,7 @@ class TargetUsb(TargetAddr):
         """
         # For USB, the field is "cid" -> int
         cid = obj.get("cid")
-        if type(cid) is not int:
+        if not isinstance(cid, int) or isinstance(cid, bool):
             raise ValueError(f"USB address has invalid or missing 'cid': {obj}")
         return cls(cid)
 
