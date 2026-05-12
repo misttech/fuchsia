@@ -132,13 +132,25 @@ if (virtio_gpu_display_flavor == "rust") {
     source_root = "rust/src/lib.rs"
 
     output_name = "virtio-gpu-display"
-    sources = [ "rust/src/lib.rs" ]
+    sources = [
+      "rust/src/driver.rs",
+      "rust/src/lib.rs",
+      "rust/src/resources.rs",
+    ]
     deps = [
       ":virtio-gpu-display-bind",
       "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+      "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_rust_next",
+
+      # TODO(https://fxbug.dev/511338276): Remove when we can switch to rust_next.
+      "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
+      "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_next",
       "//sdk/lib/driver/component/rust",
       "//sdk/lib/driver/runtime/rust",
+      "//sdk/lib/driver/runtime/rust/fidl",
       "//sdk/rust/zx",
+      "//src/lib/fidl/rust/fidl",
+      "//src/lib/fidl/rust_next/fidl_next",
       "//third_party/rust_crates:log",
     ]
     test_deps = [ "//src/lib/fuchsia" ]
