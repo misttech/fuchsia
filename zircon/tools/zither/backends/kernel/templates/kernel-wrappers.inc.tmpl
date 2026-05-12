@@ -37,7 +37,7 @@ uint64_t pc) {
     zx_handle_t out_handle_{{ LowerCaseWithUnderscores . }} = ZX_HANDLE_INVALID;
 {{- end }}
 
-{{- if .NoReturn }} /*noreturn*/ {{ else }} auto result = {{ end }} sys_{{ $syscallName }} (
+{{- if .NoReturn }} /*noreturn*/ {{ else if not .ReturnType }} /*void*/ {{ else }} auto result = {{ end }} sys_{{ $syscallName }} (
 {{- range $i, $param := .Parameters }}
 {{- $paramName := LowerCaseWithUnderscores $param }}
 {{- $paramType := ParameterType $param }}
@@ -69,6 +69,8 @@ uint64_t pc) {
 {{- if .NoReturn }}
     /* NOTREACHED */
     return ZX_ERR_BAD_STATE;
+{{- else if not .ReturnType }}
+    return ZX_OK;
 {{- else }}
     return result;
 {{- end }}

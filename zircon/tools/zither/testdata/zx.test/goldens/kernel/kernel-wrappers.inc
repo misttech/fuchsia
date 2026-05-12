@@ -141,8 +141,8 @@ syscall_result wrapper_syscall_next(uint64_t pc);
 syscall_result wrapper_syscall_next(uint64_t pc) {
   return do_syscall(ZX_SYS_syscall_next, pc, &VDso::ValidSyscallPC::syscall_next,
                     [&](ProcessDispatcher* current_process) -> uint64_t {
-                      auto result = sys_syscall_next();
-                      return result;
+                      /*void*/ sys_syscall_next();
+                      return ZX_OK;
                     });
 }
 
@@ -150,8 +150,8 @@ syscall_result wrapper_syscall_test0(uint64_t pc);
 syscall_result wrapper_syscall_test0(uint64_t pc) {
   return do_syscall(ZX_SYS_syscall_test0, pc, &VDso::ValidSyscallPC::syscall_test0,
                     [&](ProcessDispatcher* current_process) -> uint64_t {
-                      auto result = sys_syscall_test0();
-                      return result;
+                      /*void*/ sys_syscall_test0();
+                      return ZX_OK;
                     });
 }
 
@@ -159,8 +159,8 @@ syscall_result wrapper_syscall_test1(uint64_t pc);
 syscall_result wrapper_syscall_test1(uint64_t pc) {
   return do_syscall(ZX_SYS_syscall_test1, pc, &VDso::ValidSyscallPC::syscall_test1,
                     [&](ProcessDispatcher* current_process) -> uint64_t {
-                      auto result = sys_syscall_test1();
-                      return result;
+                      /*void*/ sys_syscall_test1();
+                      return ZX_OK;
                     });
 }
 
@@ -168,8 +168,8 @@ syscall_result wrapper_syscall_test2(uint64_t pc);
 syscall_result wrapper_syscall_test2(uint64_t pc) {
   return do_syscall(ZX_SYS_syscall_test2, pc, &VDso::ValidSyscallPC::syscall_test2,
                     [&](ProcessDispatcher* current_process) -> uint64_t {
-                      auto result = sys_syscall_test2();
-                      return result;
+                      /*void*/ sys_syscall_test2();
+                      return ZX_OK;
                     });
 }
 }
