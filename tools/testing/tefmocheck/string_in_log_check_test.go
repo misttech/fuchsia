@@ -6,11 +6,11 @@ package tefmocheck
 
 import (
 	"fmt"
-	"path"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
@@ -179,7 +179,24 @@ func TestCheck(t *testing.T) {
 				},
 			},
 			shouldMatch: true,
-			wantName:    path.Join(wantName, "foo-test"),
+			wantName:    wantName + "/foo-test",
+		},
+		{
+			name:            "should match per test swarming output with double slash in test name",
+			attributeToTest: true,
+			testingOutputs: TestingOutputs{
+				SwarmingOutput: []byte(killerString),
+				SwarmingOutputPerTest: []TestLog{
+					{
+						TestName: "@@//foo/bar:baz",
+						Bytes:    []byte(killerString),
+						FilePath: "foo/log.txt",
+						Index:    0,
+					},
+				},
+			},
+			shouldMatch: true,
+			wantName:    wantName + "/@@//foo/bar:baz",
 		},
 		{
 			name:            "should add test name to tag",
@@ -221,7 +238,7 @@ func TestCheck(t *testing.T) {
 				},
 			},
 			shouldMatch: true,
-			wantName:    path.Join(wantName, "bar-test"),
+			wantName:    wantName + "/bar-test",
 		},
 		{
 			name:            "should match correct FailureReason for non-zero SwarmingOutputPerTest slice index",
@@ -244,7 +261,7 @@ func TestCheck(t *testing.T) {
 				},
 			},
 			shouldMatch: true,
-			wantName:    path.Join(wantName, "bar-test"),
+			wantName:    wantName + "/bar-test",
 			wantLine:    "second test " + line,
 		},
 		{

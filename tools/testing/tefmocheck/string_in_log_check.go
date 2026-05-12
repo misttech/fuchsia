@@ -278,7 +278,7 @@ func (c *stringInLogCheck) Name() string {
 	// the log type. Consider using the actual filename of the log.
 	name := path.Join("string_in_log", string(c.Type), strings.ReplaceAll(c.String, " ", "_"))
 	if c.testName != "" && !c.AddTag {
-		name = path.Join(name, c.testName)
+		name = name + "/" + c.testName
 	}
 	return name
 }

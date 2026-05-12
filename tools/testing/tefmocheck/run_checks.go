@@ -8,14 +8,13 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
 
-const checkTestNamePrefix = "testing_failure_mode"
+const checkTestNamePrefix = "testing_failure_mode/"
 
 func debugPathForCheck(check FailureModeCheck) string {
 	return filepath.Join(checkTestNamePrefix, check.Name(), "debug.txt")
@@ -75,7 +74,7 @@ func RunChecks(checks []FailureModeCheck, to *TestingOutputs, outputsDir string)
 		}
 
 		testDetails := runtests.TestDetails{
-			Name:                 path.Join(checkTestNamePrefix, check.Name()),
+			Name:                 checkTestNamePrefix + check.Name(),
 			IsTestingFailureMode: true,
 			Status:               runtests.TestFailure,
 			TestResult: runtests.TestResult{
@@ -119,7 +118,7 @@ func RunChecks(checks []FailureModeCheck, to *TestingOutputs, outputsDir string)
 		checkTests = append(checkTests, testDetails)
 		if check.IsFlake() {
 			checkTests = append(checkTests, runtests.TestDetails{
-				Name:                 path.Join(checkTestNamePrefix, check.Name()),
+				Name:                 checkTestNamePrefix + check.Name(),
 				IsTestingFailureMode: true,
 				TestResult: runtests.TestResult{
 					// Specify an empty slice so it gets serialized to an empty JSON

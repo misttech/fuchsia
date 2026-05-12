@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -131,18 +130,18 @@ func TestRunChecks(t *testing.T) {
 			},
 			want: []runtests.TestDetails{
 				{
-					Name:                 path.Join(checkTestNamePrefix, flakeCheck.Name()),
+					Name:                 checkTestNamePrefix + flakeCheck.Name(),
 					Status:               runtests.TestFailure,
 					IsTestingFailureMode: true,
 					TestResult:           runtests.TestResult{OutputFiles: []string{debugPathForCheck(flakeCheck)}},
 				},
 				{
-					Name:                 path.Join(checkTestNamePrefix, flakeCheck.Name()),
+					Name:                 checkTestNamePrefix + flakeCheck.Name(),
 					Status:               runtests.TestSuccess,
 					IsTestingFailureMode: true,
 				},
 				{
-					Name:                 path.Join(checkTestNamePrefix, trueCheck.Name()),
+					Name:                 checkTestNamePrefix + trueCheck.Name(),
 					Status:               runtests.TestFailure,
 					IsTestingFailureMode: true,
 					TestResult:           runtests.TestResult{OutputFiles: []string{debugPathForCheck(trueCheck)}},
@@ -153,7 +152,7 @@ func TestRunChecks(t *testing.T) {
 			checks: []FailureModeCheck{infraFailCheck},
 			want: []runtests.TestDetails{
 				{
-					Name:                 path.Join(checkTestNamePrefix, infraFailCheck.Name()),
+					Name:                 checkTestNamePrefix + infraFailCheck.Name(),
 					Status:               runtests.TestInfraFailure,
 					IsTestingFailureMode: true,
 					TestResult:           runtests.TestResult{OutputFiles: []string{debugPathForCheck(infraFailCheck)}},

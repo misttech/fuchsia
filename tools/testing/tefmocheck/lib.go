@@ -43,12 +43,3 @@ func LoadTestSummary(path string) (*runtests.TestSummary, error) {
 	}
 	return &ret, nil
 }
-
-func hasFailingTest(tests []runtests.TestDetails) bool {
-	for _, test := range tests {
-		if runtests.IsFailure(test.Status) {
-			return true
-		}
-	}
-	return false
-}
