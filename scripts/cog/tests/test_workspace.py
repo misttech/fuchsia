@@ -444,6 +444,7 @@ class TestWorkspace(unittest.TestCase):
                     "fuchsia": "fuchsia",
                     "integration": None,
                 },
+                "jiriImports": [],
             }
 
             with (
@@ -457,6 +458,7 @@ class TestWorkspace(unittest.TestCase):
                     ws, "_checkout_integration_roll", return_value="int_hash"
                 ) as mock_checkout,
                 patch.object(ws, "_is_jiri_bootstrapped", return_value=True),
+                patch("subprocess.run"),
             ):
                 with patch.object(ws, "_assert_locked") as mock_assert_locked:
                     ws.checkout_cartfs_to_cog_revisions()
@@ -480,6 +482,7 @@ class TestWorkspace(unittest.TestCase):
                     "fuchsia": "fuchsia",
                     "integration": "integration",
                 },
+                "jiriImports": [],
             }
 
             def mock_get_cog_commit(repo: str) -> str:
@@ -500,6 +503,7 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(ws, "_fetch_prebuilts") as mock_fetch,
                 patch.object(ws, "_reinit_integration_repo") as mock_reinit,
                 patch.object(ws, "_is_jiri_bootstrapped", return_value=True),
+                patch("subprocess.run"),
             ):
                 with patch.object(ws, "_assert_locked") as mock_assert_locked:
                     ws.checkout_cartfs_to_cog_revisions()
@@ -542,6 +546,7 @@ class TestWorkspace(unittest.TestCase):
                     return_value="integration_hash_abc",
                 ) as mock_checkout,
                 patch.object(ws, "_is_jiri_bootstrapped", return_value=True),
+                patch("subprocess.run"),
             ):
                 with patch.object(ws, "_assert_locked") as mock_assert_locked:
                     ws.checkout_cartfs_to_cog_revisions()
@@ -595,6 +600,7 @@ class TestWorkspace(unittest.TestCase):
                 patch.object(ws, "_reinit_integration_repo") as mock_reinit,
                 patch.object(ws, "_checkout_integration_roll") as mock_checkout,
                 patch.object(ws, "_is_jiri_bootstrapped", return_value=True),
+                patch("subprocess.run"),
             ):
                 with patch.object(ws, "_assert_locked") as mock_assert_locked:
                     ws.checkout_cartfs_to_cog_revisions()
@@ -716,6 +722,7 @@ class TestWorkspace(unittest.TestCase):
                     "fuchsia": "custom-fuchsia",
                     "integration": "custom-integration",
                 },
+                "jiriImports": [],
             }
             self.addCleanup(mock_config_patcher.stop)
 
@@ -729,6 +736,7 @@ class TestWorkspace(unittest.TestCase):
                     ws, "_checkout_integration_roll"
                 ) as mock_checkout_roll,
                 patch.object(ws, "_is_jiri_bootstrapped", return_value=True),
+                patch.object(ws, "_write_jiri_config"),
                 patch("subprocess.run") as mock_subprocess_run,
             ):
                 mock_get_cog_commit.side_effect = lambda repo: {
@@ -812,6 +820,7 @@ class TestWorkspace(unittest.TestCase):
                     "fuchsia": "fuchsia",
                     "integration": "integration",
                 },
+                "useJiriUpdateOnly": True,
             }
 
             def mock_get_commit(repo: str) -> str:
@@ -841,6 +850,7 @@ class TestWorkspace(unittest.TestCase):
                     "fuchsia": "fuchsia",
                     "integration": "integration",
                 },
+                "useJiriUpdateOnly": True,
             }
             with (
                 patch.object(ws, "get_cog_commit", return_value="fuchsia_hash"),
@@ -864,6 +874,7 @@ class TestWorkspace(unittest.TestCase):
                     "fuchsia": "fuchsia",
                     "integration": "integration",
                 },
+                "useJiriUpdateOnly": True,
             }
 
             def mock_get_cog_commit(repo: str) -> str:

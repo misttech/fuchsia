@@ -473,29 +473,30 @@ class Workspace:
     def is_checkout_uptodate(self) -> bool:
         """Checks if the CartFS checkouts are up to date with Cog."""
         self._assert_locked()
-        cog_fuchsia_commit = self.get_cog_commit(self.config["repo"]["fuchsia"])
-        cartfs_fuchsia_commit = self.get_cartfs_commit("fuchsia")
-        logger.log_debug(f"Cog Fuchsia commit: {cog_fuchsia_commit}")
-        logger.log_debug(f"CartFS Fuchsia commit: {cartfs_fuchsia_commit}")
 
-        if cog_fuchsia_commit != cartfs_fuchsia_commit:
-            return False
-
-        # Standalone fuchsia Cog checkouts don't have a Cog integration repo.
-        if not self.config["repo"]["integration"]:
-            return True
-
-        cog_integration_commit = self.get_cog_commit(
-            self.config["repo"]["integration"]
-        )
-        cartfs_integration_commit = self.get_cartfs_commit("integration")
-        logger.log_debug(f"Cog integration commit: {cog_integration_commit}")
-        logger.log_debug(
-            f"CartFS integration commit: {cartfs_integration_commit}"
-        )
-
-        # Also check if the integration repo is up to date for Cog superproject checkouts.
-        return cog_integration_commit == cartfs_integration_commit
+        if self.config.get("useJiriUpdateOnly", False):
+            # In Superproject, we will only check the integration commit is
+            # aligned.
+            cog_integration_commit = self.get_cog_commit(
+                self.config["repo"]["integration"]
+            )
+            cartfs_integration_commit = self.get_cartfs_commit("integration")
+            logger.log_debug(
+                f"Cog integration commit: {cog_integration_commit}"
+            )
+            logger.log_debug(
+                f"CartFS integration commit: {cartfs_integration_commit}"
+            )
+            return cog_integration_commit == cartfs_integration_commit
+        else:
+            # In fuchsia, we will check fuchsia commit is aligned.
+            cog_fuchsia_commit = self.get_cog_commit(
+                self.config["repo"]["fuchsia"]
+            )
+            cartfs_fuchsia_commit = self.get_cartfs_commit("fuchsia")
+            logger.log_debug(f"Cog Fuchsia commit: {cog_fuchsia_commit}")
+            logger.log_debug(f"CartFS Fuchsia commit: {cartfs_fuchsia_commit}")
+            return cog_fuchsia_commit == cartfs_fuchsia_commit
 
     def checkout_cartfs_to_cog_revisions(self) -> None:
         """Checkouts the CartFS fuchsia and integration repos to match the revisions in Cog."""
@@ -530,8 +531,19 @@ class Workspace:
         logger.emit_status(
             "Updating CartFS fuchsia and integration checkouts..."
         )
-        self._sync_fuchsia_repo(cog_fuchsia_commit)
-        self._fetch_prebuilts()
+
+        self.cartfs_fuchsia_dir.mkdir(parents=True, exist_ok=True)
+        self._write_jiri_manifest()
+        self._write_jiri_config()
+
+        if self.config.get("useJiriUpdateOnly", False):
+            if (self.cartfs_fuchsia_dir / "integration").is_symlink():
+                (self.cartfs_fuchsia_dir / "integration").unlink()
+            self._update_jiri_checkout()
+        else:
+            self._sync_fuchsia_repo(cog_fuchsia_commit)
+            self._fetch_prebuilts()
+
         self._create_symlinks()
 
         # Record the updated commit hashes in CartFS.
@@ -658,6 +670,15 @@ class Workspace:
         except (urllib.error.URLError, subprocess.CalledProcessError) as e:
             logger.log_error(f"Failed to bootstrap jiri: {e}")
             raise
+
+    def _update_jiri_checkout(self) -> None:
+        """Updates the jiri checkout."""
+        logger.emit_status("Updating jiri checkout...")
+
+        self._run(
+            [".jiri_root/bin/jiri", "update"],
+            cwd=self.cartfs_fuchsia_dir,
+        )
 
     def _fetch_prebuilts(self) -> None:
         """Fetches prebuilts for the given repo."""
@@ -952,13 +973,11 @@ class Workspace:
         # automatically.
         # https://fuchsia.googlesource.com/jiri/+/refs/heads/main/project/project.go#689
         # For our cartfs checkout, we need to create it manually.
-        shutil.copyfile(
-            self.cartfs_fuchsia_dir / ".git" / "HEAD",
-            self.cartfs_fuchsia_dir / ".git" / "JIRI_HEAD",
-        )
-
-        self._write_jiri_manifest()
-        self._write_jiri_config()
+        if not self.config.get("useJiriUpdateOnly", False):
+            shutil.copyfile(
+                self.cartfs_fuchsia_dir / ".git" / "HEAD",
+                self.cartfs_fuchsia_dir / ".git" / "JIRI_HEAD",
+            )
 
     def _merge_directories(self, src: Path, dst: Path) -> None:
         """Recursively copies files from src to dst, not overwriting existing files."""
@@ -1001,6 +1020,11 @@ class Workspace:
 
         for dest, src in self.config["symlinkMap"].items():
             self._create_symlink(_get_path(src), _get_path(dest))
+
+        if self.config.get("useJiriUpdateOnly", False):
+            # If we are using jiri update only, we don't need to run jiri hooks
+            # manually since jiri will do it for us.
+            return
 
         # Manually execute jiri hooks. The hooks are defined in
         # https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/manifests/platform#14
