@@ -33,8 +33,9 @@ void DwSpi::InitRegisters() {
       .set_tmod(0)     // Transmit & Receive
       .WriteTo(&mmio_);
 
-  // Set baud rate divider (assume 2 for now, must be even)
-  Baudr::Get().FromValue(0).set_sckdv(2).WriteTo(&mmio_);
+  // TODO(511200585): Determine the clock divider based on the core clock and requested bus clock
+  // frequencies. For now it is hardcoded to a low frequency just to get things working.
+  Baudr::Get().FromValue(0).set_sckdv(500).WriteTo(&mmio_);
 
   // Mask all interrupts initially in IMR
   Imr::Get().FromValue(0).WriteTo(&mmio_);

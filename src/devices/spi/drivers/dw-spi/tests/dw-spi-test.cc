@@ -169,7 +169,7 @@ TEST_F(DwSpiTest, StartStop) {
   EXPECT_EQ(mmio()[DW_SPI_SSIENR / 4], 1u);
 
   // Verify BAUDR
-  EXPECT_EQ(mmio()[DW_SPI_BAUDR / 4], 2u);
+  EXPECT_EQ(mmio()[DW_SPI_BAUDR / 4], 500u);
 
   // Verify IMR
   EXPECT_EQ(mmio()[DW_SPI_IMR / 4], 0u);
