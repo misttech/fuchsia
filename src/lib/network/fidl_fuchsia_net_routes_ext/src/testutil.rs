@@ -10,20 +10,20 @@
 
 use crate::FidlRouteIpExt;
 
-use fidl_fuchsia_net_routes as fnet_routes;
+use flex_fuchsia_net_routes as fnet_routes;
 use futures::{Future, Stream, StreamExt as _};
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6};
 
 /// Responds to the given `Watch` request with the given batch of events.
 pub fn handle_watch<I: FidlRouteIpExt>(
-    request: <<I::WatcherMarker as fidl::endpoints::ProtocolMarker>::RequestStream as Stream>::Item,
+    request: <<I::WatcherMarker as flex_client::fidl::ProtocolMarker>::RequestStream as Stream>::Item,
     event_batch: Vec<I::WatchEvent>,
 ) {
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct HandleInputs<I: FidlRouteIpExt> {
         request:
-            <<I::WatcherMarker as fidl::endpoints::ProtocolMarker>::RequestStream as Stream>::Item,
+            <<I::WatcherMarker as flex_client::fidl::ProtocolMarker>::RequestStream as Stream>::Item,
         event_batch: Vec<I::WatchEvent>,
     }
     I::map_ip_in(
@@ -50,7 +50,7 @@ pub fn handle_watch<I: FidlRouteIpExt>(
 /// Feeds events received in `events` as responses to `Watch()`.
 pub async fn fake_watcher_impl<I: FidlRouteIpExt>(
     events: impl Stream<Item = Vec<I::WatchEvent>>,
-    server_end: fidl::endpoints::ServerEnd<I::WatcherMarker>,
+    server_end: flex_client::fidl::ServerEnd<I::WatcherMarker>,
 ) {
     let (request_stream, _control_handle) = server_end.into_stream_and_control_handle();
     request_stream
@@ -66,14 +66,14 @@ pub async fn fake_watcher_impl<I: FidlRouteIpExt>(
 /// watcher client backed by the given event stream. The returned future
 /// drives the watcher implementation.
 pub async fn serve_state_request<'a, I: FidlRouteIpExt>(
-    request: <<I::StateMarker as fidl::endpoints::ProtocolMarker>::RequestStream as Stream>::Item,
+    request: <<I::StateMarker as flex_client::fidl::ProtocolMarker>::RequestStream as Stream>::Item,
     event_stream: impl Stream<Item = Vec<I::WatchEvent>> + 'a,
 ) {
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct GetWatcherInputs<'a, I: FidlRouteIpExt> {
         request:
-            <<I::StateMarker as fidl::endpoints::ProtocolMarker>::RequestStream as Stream>::Item,
+            <<I::StateMarker as flex_client::fidl::ProtocolMarker>::RequestStream as Stream>::Item,
         // Use `Box<dyn>` here because `event_stream` needs to have a know size.
         event_stream: Box<dyn Stream<Item = Vec<I::WatchEvent>> + 'a>,
     }
@@ -135,8 +135,8 @@ pub fn empty_watch_event_stream<'a, I: FidlRouteIpExt>()
 /// Provides testutils for testing implementations of clients and servers of
 /// fuchsia.net.routes.admin.
 pub mod admin {
-    use fidl::endpoints::ProtocolMarker;
-    use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+    use flex_client::fidl::ProtocolMarker;
+    use flex_fuchsia_net_routes_admin as fnet_routes_admin;
     use futures::{Stream, StreamExt as _, TryStreamExt as _};
     use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6};
 
@@ -147,7 +147,7 @@ pub mod admin {
     /// then panics on subsequent invocations. Returns the request stream for
     /// that RouteSet.
     pub fn serve_one_route_set<I: FidlRouteAdminIpExt>(
-        server_end: fidl::endpoints::ServerEnd<I::RouteTableMarker>,
+        server_end: flex_client::fidl::ServerEnd<I::RouteTableMarker>,
     ) -> impl Stream<
             Item = <
                     <<I as FidlRouteAdminIpExt>::RouteSetMarker as ProtocolMarker>
@@ -163,7 +163,7 @@ pub mod admin {
         );
         #[derive(GenericOverIp)]
         #[generic_over_ip(I, Ip)]
-        struct Out<I: FidlRouteAdminIpExt>(fidl::endpoints::ServerEnd<I::RouteSetMarker>);
+        struct Out<I: FidlRouteAdminIpExt>(flex_client::fidl::ServerEnd<I::RouteSetMarker>);
 
         let stream = server_end.into_stream();
         stream
@@ -207,7 +207,7 @@ pub mod admin {
     /// a single RouteSet stream. Returns a request stream that vends items as
     /// they arrive in any RouteSet.
     pub fn serve_all_route_sets_with_table_id<I: FidlRouteAdminIpExt>(
-        server_end: fidl::endpoints::ServerEnd<I::RouteTableMarker>,
+        server_end: flex_client::fidl::ServerEnd<I::RouteTableMarker>,
         table_id: Option<crate::TableId>,
     ) -> impl Stream<
             Item = <
@@ -224,7 +224,7 @@ pub mod admin {
         );
         #[derive(GenericOverIp)]
         #[generic_over_ip(I, Ip)]
-        struct Out<I: FidlRouteAdminIpExt>(Option<fidl::endpoints::ServerEnd<I::RouteSetMarker>>);
+        struct Out<I: FidlRouteAdminIpExt>(Option<flex_client::fidl::ServerEnd<I::RouteSetMarker>>);
 
         let stream = server_end.into_stream();
         stream
@@ -278,7 +278,7 @@ pub mod admin {
     /// Provides a RouteTable implementation that serves no-op RouteSets and identifies itself
     /// with the given ID.
     pub async fn serve_noop_route_sets_with_table_id<I: FidlRouteAdminIpExt>(
-        server_end: fidl::endpoints::ServerEnd<I::RouteTableMarker>,
+        server_end: flex_client::fidl::ServerEnd<I::RouteTableMarker>,
         table_id: crate::TableId,
     ) {
         let stream = server_end.into_stream();
@@ -302,14 +302,14 @@ pub mod admin {
 
     /// Provides a RouteTable implementation that serves no-op RouteSets.
     pub async fn serve_noop_route_sets<I: FidlRouteAdminIpExt>(
-        server_end: fidl::endpoints::ServerEnd<I::RouteTableMarker>,
+        server_end: flex_client::fidl::ServerEnd<I::RouteTableMarker>,
     ) {
         serve_noop_route_sets_with_table_id::<I>(server_end, crate::TableId::new(0)).await
     }
 
     /// Serves a RouteSet that returns OK for everything and does nothing.
     async fn serve_noop_route_set<I: FidlRouteAdminIpExt>(
-        server_end: fidl::endpoints::ServerEnd<I::RouteSetMarker>,
+        server_end: flex_client::fidl::ServerEnd<I::RouteSetMarker>,
     ) {
         #[derive(GenericOverIp)]
         #[generic_over_ip(I, Ip)]
@@ -348,7 +348,7 @@ pub mod admin {
 
 /// Provides testutils for testing implementations of clients and servers for routes rules FIDL.
 pub mod rules {
-    use fidl_fuchsia_net_routes as fnet_routes;
+    use flex_fuchsia_net_routes as fnet_routes;
     use futures::{Stream, StreamExt as _, TryStreamExt as _};
     use net_types::ip::{GenericOverIp, Ip};
 
@@ -357,14 +357,14 @@ pub mod rules {
 
     // Responds to the given `Watch` request with the given batch of events.
     fn handle_watch<I: FidlRuleIpExt>(
-        request: <<I::RuleWatcherMarker as fidl::endpoints::ProtocolMarker>::RequestStream as Stream>::Item,
+        request: <<I::RuleWatcherMarker as flex_client::fidl::ProtocolMarker>::RequestStream as Stream>::Item,
         event_batch: Vec<I::RuleEvent>,
     ) {
         #[derive(GenericOverIp)]
         #[generic_over_ip(I, Ip)]
         struct HandleInputs<I: FidlRuleIpExt> {
             request:
-                <<I::RuleWatcherMarker as fidl::endpoints::ProtocolMarker>::RequestStream as Stream>::Item,
+                <<I::RuleWatcherMarker as flex_client::fidl::ProtocolMarker>::RequestStream as Stream>::Item,
             event_batch: Vec<I::RuleEvent>,
         }
         I::map_ip_in(
@@ -391,7 +391,7 @@ pub mod rules {
     /// Feeds events received in `events` as responses to `Watch()`.
     pub async fn fake_rules_watcher_impl<I: FidlRuleIpExt>(
         events: impl Stream<Item = Vec<I::RuleEvent>>,
-        server_end: fidl::endpoints::ServerEnd<I::RuleWatcherMarker>,
+        server_end: flex_client::fidl::ServerEnd<I::RuleWatcherMarker>,
     ) {
         let (request_stream, _control_handle) = server_end.into_stream_and_control_handle();
         request_stream
@@ -421,7 +421,7 @@ pub mod rules {
 
     /// Provides a RuleTable implementation that serves no-op RuleSets.
     pub async fn serve_noop_rule_sets<I: FidlRuleAdminIpExt>(
-        server_end: fidl::endpoints::ServerEnd<I::RuleTableMarker>,
+        server_end: flex_client::fidl::ServerEnd<I::RuleTableMarker>,
     ) {
         let stream = server_end.into_stream();
         stream
@@ -440,7 +440,7 @@ pub mod rules {
 
     /// Serves a RuleSet that returns OK for everything and does nothing.
     pub async fn serve_noop_rule_set<I: FidlRuleAdminIpExt>(
-        server_end: fidl::endpoints::ServerEnd<I::RuleSetMarker>,
+        server_end: flex_client::fidl::ServerEnd<I::RuleSetMarker>,
     ) {
         let stream = server_end.into_stream();
         stream
@@ -577,7 +577,11 @@ mod tests {
         }
 
         // Instantiate the fake Watcher implementation.
-        let (state, state_server_end) = fidl::endpoints::create_proxy::<I::StateMarker>();
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
+        let (state, state_server_end) = client.create_proxy::<I::StateMarker>();
         let (mut state_request_stream, _control_handle) =
             state_server_end.into_stream_and_control_handle();
         let watcher_fut = state_request_stream
@@ -619,8 +623,12 @@ mod tests {
     #[fuchsia_async::run_singlethreaded]
     #[should_panic(expected = "received multiple RouteTable requests")]
     async fn test_serve_one_route_set_panic<I: FidlRouteAdminIpExt>() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
         let (routes_set_provider_proxy, routes_set_provider_server_end) =
-            fidl::endpoints::create_proxy::<I::RouteTableMarker>();
+            client.create_proxy::<I::RouteTableMarker>();
         let mut provider = admin::serve_one_route_set::<I>(routes_set_provider_server_end);
         let _rs1 = crate::admin::new_route_set::<I>(&routes_set_provider_proxy)
             .expect("created first RouteSet");

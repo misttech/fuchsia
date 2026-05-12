@@ -212,132 +212,132 @@ pub enum Option_ {
     RebindingTimeValue(RebindingTimeValue),
 }
 
-impl Into<fidl_fuchsia_net_dhcp::OptionCode> for Option_ {
-    fn into(self) -> fidl_fuchsia_net_dhcp::OptionCode {
+impl Into<flex_fuchsia_net_dhcp::OptionCode> for Option_ {
+    fn into(self) -> flex_fuchsia_net_dhcp::OptionCode {
         match self {
-            Option_::SubnetMask(_) => fidl_fuchsia_net_dhcp::OptionCode::SubnetMask,
-            Option_::TimeOffset(_) => fidl_fuchsia_net_dhcp::OptionCode::TimeOffset,
-            Option_::Router(_) => fidl_fuchsia_net_dhcp::OptionCode::Router,
-            Option_::TimeServer(_) => fidl_fuchsia_net_dhcp::OptionCode::TimeServer,
-            Option_::NameServer(_) => fidl_fuchsia_net_dhcp::OptionCode::NameServer,
-            Option_::DomainNameServer(_) => fidl_fuchsia_net_dhcp::OptionCode::DomainNameServer,
-            Option_::LogServer(_) => fidl_fuchsia_net_dhcp::OptionCode::LogServer,
-            Option_::CookieServer(_) => fidl_fuchsia_net_dhcp::OptionCode::CookieServer,
-            Option_::LprServer(_) => fidl_fuchsia_net_dhcp::OptionCode::LprServer,
-            Option_::ImpressServer(_) => fidl_fuchsia_net_dhcp::OptionCode::ImpressServer,
+            Option_::SubnetMask(_) => flex_fuchsia_net_dhcp::OptionCode::SubnetMask,
+            Option_::TimeOffset(_) => flex_fuchsia_net_dhcp::OptionCode::TimeOffset,
+            Option_::Router(_) => flex_fuchsia_net_dhcp::OptionCode::Router,
+            Option_::TimeServer(_) => flex_fuchsia_net_dhcp::OptionCode::TimeServer,
+            Option_::NameServer(_) => flex_fuchsia_net_dhcp::OptionCode::NameServer,
+            Option_::DomainNameServer(_) => flex_fuchsia_net_dhcp::OptionCode::DomainNameServer,
+            Option_::LogServer(_) => flex_fuchsia_net_dhcp::OptionCode::LogServer,
+            Option_::CookieServer(_) => flex_fuchsia_net_dhcp::OptionCode::CookieServer,
+            Option_::LprServer(_) => flex_fuchsia_net_dhcp::OptionCode::LprServer,
+            Option_::ImpressServer(_) => flex_fuchsia_net_dhcp::OptionCode::ImpressServer,
             Option_::ResourceLocationServer(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::ResourceLocationServer
+                flex_fuchsia_net_dhcp::OptionCode::ResourceLocationServer
             }
-            Option_::HostName(_) => fidl_fuchsia_net_dhcp::OptionCode::HostName,
-            Option_::BootFileSize(_) => fidl_fuchsia_net_dhcp::OptionCode::BootFileSize,
-            Option_::MeritDumpFile(_) => fidl_fuchsia_net_dhcp::OptionCode::MeritDumpFile,
-            Option_::DomainName(_) => fidl_fuchsia_net_dhcp::OptionCode::DomainName,
-            Option_::SwapServer(_) => fidl_fuchsia_net_dhcp::OptionCode::SwapServer,
-            Option_::RootPath(_) => fidl_fuchsia_net_dhcp::OptionCode::RootPath,
-            Option_::ExtensionsPath(_) => fidl_fuchsia_net_dhcp::OptionCode::ExtensionsPath,
-            Option_::IpForwarding(_) => fidl_fuchsia_net_dhcp::OptionCode::IpForwarding,
+            Option_::HostName(_) => flex_fuchsia_net_dhcp::OptionCode::HostName,
+            Option_::BootFileSize(_) => flex_fuchsia_net_dhcp::OptionCode::BootFileSize,
+            Option_::MeritDumpFile(_) => flex_fuchsia_net_dhcp::OptionCode::MeritDumpFile,
+            Option_::DomainName(_) => flex_fuchsia_net_dhcp::OptionCode::DomainName,
+            Option_::SwapServer(_) => flex_fuchsia_net_dhcp::OptionCode::SwapServer,
+            Option_::RootPath(_) => flex_fuchsia_net_dhcp::OptionCode::RootPath,
+            Option_::ExtensionsPath(_) => flex_fuchsia_net_dhcp::OptionCode::ExtensionsPath,
+            Option_::IpForwarding(_) => flex_fuchsia_net_dhcp::OptionCode::IpForwarding,
             Option_::NonLocalSourceRouting(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::NonLocalSourceRouting
+                flex_fuchsia_net_dhcp::OptionCode::NonLocalSourceRouting
             }
-            Option_::PolicyFilter(_) => fidl_fuchsia_net_dhcp::OptionCode::PolicyFilter,
+            Option_::PolicyFilter(_) => flex_fuchsia_net_dhcp::OptionCode::PolicyFilter,
             Option_::MaxDatagramReassemblySize(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::MaxDatagramReassemblySize
+                flex_fuchsia_net_dhcp::OptionCode::MaxDatagramReassemblySize
             }
-            Option_::DefaultIpTtl(_) => fidl_fuchsia_net_dhcp::OptionCode::DefaultIpTtl,
+            Option_::DefaultIpTtl(_) => flex_fuchsia_net_dhcp::OptionCode::DefaultIpTtl,
             Option_::PathMtuAgingTimeout(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::PathMtuAgingTimeout
+                flex_fuchsia_net_dhcp::OptionCode::PathMtuAgingTimeout
             }
             Option_::PathMtuPlateauTable(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::PathMtuPlateauTable
+                flex_fuchsia_net_dhcp::OptionCode::PathMtuPlateauTable
             }
-            Option_::InterfaceMtu(_) => fidl_fuchsia_net_dhcp::OptionCode::InterfaceMtu,
-            Option_::AllSubnetsLocal(_) => fidl_fuchsia_net_dhcp::OptionCode::AllSubnetsLocal,
-            Option_::BroadcastAddress(_) => fidl_fuchsia_net_dhcp::OptionCode::BroadcastAddress,
+            Option_::InterfaceMtu(_) => flex_fuchsia_net_dhcp::OptionCode::InterfaceMtu,
+            Option_::AllSubnetsLocal(_) => flex_fuchsia_net_dhcp::OptionCode::AllSubnetsLocal,
+            Option_::BroadcastAddress(_) => flex_fuchsia_net_dhcp::OptionCode::BroadcastAddress,
             Option_::PerformMaskDiscovery(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::PerformMaskDiscovery
+                flex_fuchsia_net_dhcp::OptionCode::PerformMaskDiscovery
             }
-            Option_::MaskSupplier(_) => fidl_fuchsia_net_dhcp::OptionCode::MaskSupplier,
+            Option_::MaskSupplier(_) => flex_fuchsia_net_dhcp::OptionCode::MaskSupplier,
             Option_::PerformRouterDiscovery(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::PerformRouterDiscovery
+                flex_fuchsia_net_dhcp::OptionCode::PerformRouterDiscovery
             }
             Option_::RouterSolicitationAddress(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::RouterSolicitationAddress
+                flex_fuchsia_net_dhcp::OptionCode::RouterSolicitationAddress
             }
-            Option_::StaticRoute(_) => fidl_fuchsia_net_dhcp::OptionCode::StaticRoute,
+            Option_::StaticRoute(_) => flex_fuchsia_net_dhcp::OptionCode::StaticRoute,
             Option_::TrailerEncapsulation(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::TrailerEncapsulation
+                flex_fuchsia_net_dhcp::OptionCode::TrailerEncapsulation
             }
-            Option_::ArpCacheTimeout(_) => fidl_fuchsia_net_dhcp::OptionCode::ArpCacheTimeout,
+            Option_::ArpCacheTimeout(_) => flex_fuchsia_net_dhcp::OptionCode::ArpCacheTimeout,
             Option_::EthernetEncapsulation(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::EthernetEncapsulation
+                flex_fuchsia_net_dhcp::OptionCode::EthernetEncapsulation
             }
-            Option_::TcpDefaultTtl(_) => fidl_fuchsia_net_dhcp::OptionCode::TcpDefaultTtl,
+            Option_::TcpDefaultTtl(_) => flex_fuchsia_net_dhcp::OptionCode::TcpDefaultTtl,
             Option_::TcpKeepaliveInterval(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::TcpKeepaliveInterval
+                flex_fuchsia_net_dhcp::OptionCode::TcpKeepaliveInterval
             }
             Option_::TcpKeepaliveGarbage(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::TcpKeepaliveGarbage
+                flex_fuchsia_net_dhcp::OptionCode::TcpKeepaliveGarbage
             }
             Option_::NetworkInformationServiceDomain(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::NetworkInformationServiceDomain
+                flex_fuchsia_net_dhcp::OptionCode::NetworkInformationServiceDomain
             }
             Option_::NetworkInformationServers(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::NetworkInformationServers
+                flex_fuchsia_net_dhcp::OptionCode::NetworkInformationServers
             }
             Option_::NetworkTimeProtocolServers(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::NetworkTimeProtocolServers
+                flex_fuchsia_net_dhcp::OptionCode::NetworkTimeProtocolServers
             }
             Option_::VendorSpecificInformation(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::VendorSpecificInformation
+                flex_fuchsia_net_dhcp::OptionCode::VendorSpecificInformation
             }
             Option_::NetBiosOverTcpipNameServer(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::NetbiosOverTcpipNameServer
+                flex_fuchsia_net_dhcp::OptionCode::NetbiosOverTcpipNameServer
             }
             Option_::NetBiosOverTcpipDatagramDistributionServer(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::NetbiosOverTcpipDatagramDistributionServer
+                flex_fuchsia_net_dhcp::OptionCode::NetbiosOverTcpipDatagramDistributionServer
             }
             Option_::NetBiosOverTcpipNodeType(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::NetbiosOverTcpipNodeType
+                flex_fuchsia_net_dhcp::OptionCode::NetbiosOverTcpipNodeType
             }
             Option_::NetBiosOverTcpipScope(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::NetbiosOverTcpipScope
+                flex_fuchsia_net_dhcp::OptionCode::NetbiosOverTcpipScope
             }
             Option_::XWindowSystemFontServer(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::XWindowSystemFontServer
+                flex_fuchsia_net_dhcp::OptionCode::XWindowSystemFontServer
             }
             Option_::XWindowSystemDisplayManager(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::XWindowSystemDisplayManager
+                flex_fuchsia_net_dhcp::OptionCode::XWindowSystemDisplayManager
             }
             Option_::NetworkInformationServicePlusDomain(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::NetworkInformationServicePlusDomain
+                flex_fuchsia_net_dhcp::OptionCode::NetworkInformationServicePlusDomain
             }
             Option_::NetworkInformationServicePlusServers(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::NetworkInformationServicePlusServers
+                flex_fuchsia_net_dhcp::OptionCode::NetworkInformationServicePlusServers
             }
-            Option_::MobileIpHomeAgent(_) => fidl_fuchsia_net_dhcp::OptionCode::MobileIpHomeAgent,
-            Option_::SmtpServer(_) => fidl_fuchsia_net_dhcp::OptionCode::SmtpServer,
-            Option_::Pop3Server(_) => fidl_fuchsia_net_dhcp::OptionCode::Pop3Server,
-            Option_::NntpServer(_) => fidl_fuchsia_net_dhcp::OptionCode::NntpServer,
-            Option_::DefaultWwwServer(_) => fidl_fuchsia_net_dhcp::OptionCode::DefaultWwwServer,
+            Option_::MobileIpHomeAgent(_) => flex_fuchsia_net_dhcp::OptionCode::MobileIpHomeAgent,
+            Option_::SmtpServer(_) => flex_fuchsia_net_dhcp::OptionCode::SmtpServer,
+            Option_::Pop3Server(_) => flex_fuchsia_net_dhcp::OptionCode::Pop3Server,
+            Option_::NntpServer(_) => flex_fuchsia_net_dhcp::OptionCode::NntpServer,
+            Option_::DefaultWwwServer(_) => flex_fuchsia_net_dhcp::OptionCode::DefaultWwwServer,
             Option_::DefaultFingerServer(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::DefaultFingerServer
+                flex_fuchsia_net_dhcp::OptionCode::DefaultFingerServer
             }
-            Option_::DefaultIrcServer(_) => fidl_fuchsia_net_dhcp::OptionCode::DefaultIrcServer,
-            Option_::StreettalkServer(_) => fidl_fuchsia_net_dhcp::OptionCode::StreettalkServer,
+            Option_::DefaultIrcServer(_) => flex_fuchsia_net_dhcp::OptionCode::DefaultIrcServer,
+            Option_::StreettalkServer(_) => flex_fuchsia_net_dhcp::OptionCode::StreettalkServer,
             Option_::StreettalkDirectoryAssistanceServer(_) => {
-                fidl_fuchsia_net_dhcp::OptionCode::StreettalkDirectoryAssistanceServer
+                flex_fuchsia_net_dhcp::OptionCode::StreettalkDirectoryAssistanceServer
             }
-            Option_::TftpServerName(_) => fidl_fuchsia_net_dhcp::OptionCode::TftpServerName,
-            Option_::BootfileName(_) => fidl_fuchsia_net_dhcp::OptionCode::BootfileName,
-            Option_::MaxDhcpMessageSize(_) => fidl_fuchsia_net_dhcp::OptionCode::MaxDhcpMessageSize,
-            Option_::RenewalTimeValue(_) => fidl_fuchsia_net_dhcp::OptionCode::RenewalTimeValue,
-            Option_::RebindingTimeValue(_) => fidl_fuchsia_net_dhcp::OptionCode::RebindingTimeValue,
+            Option_::TftpServerName(_) => flex_fuchsia_net_dhcp::OptionCode::TftpServerName,
+            Option_::BootfileName(_) => flex_fuchsia_net_dhcp::OptionCode::BootfileName,
+            Option_::MaxDhcpMessageSize(_) => flex_fuchsia_net_dhcp::OptionCode::MaxDhcpMessageSize,
+            Option_::RenewalTimeValue(_) => flex_fuchsia_net_dhcp::OptionCode::RenewalTimeValue,
+            Option_::RebindingTimeValue(_) => flex_fuchsia_net_dhcp::OptionCode::RebindingTimeValue,
         }
     }
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for Option_ {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for Option_ {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         match self {
             Option_::SubnetMask(v) => v.into(),
             Option_::TimeOffset(v) => v.into(),
@@ -418,10 +418,10 @@ pub struct SubnetMask {
     pub(crate) mask: Option<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for SubnetMask {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for SubnetMask {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let mask = self.mask.unwrap_or(Ipv4Addr::new(0, 0, 0, 0));
-        fidl_fuchsia_net_dhcp::Option_::SubnetMask(fidl_fuchsia_net::Ipv4Address {
+        flex_fuchsia_net_dhcp::Option_::SubnetMask(flex_fuchsia_net::Ipv4Address {
             addr: mask.octets(),
         })
     }
@@ -437,10 +437,10 @@ pub struct TimeOffset {
     offset: Option<i32>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for TimeOffset {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for TimeOffset {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let offset = self.offset.unwrap_or(0);
-        fidl_fuchsia_net_dhcp::Option_::TimeOffset(offset)
+        flex_fuchsia_net_dhcp::Option_::TimeOffset(offset)
     }
 }
 
@@ -453,14 +453,14 @@ pub struct Router {
     routers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for Router {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let routers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for Router {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let routers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .routers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::Router(routers)
+        flex_fuchsia_net_dhcp::Option_::Router(routers)
     }
 }
 
@@ -473,14 +473,14 @@ pub struct TimeServer {
     time_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for TimeServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let time_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for TimeServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let time_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .time_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::TimeServer(time_servers)
+        flex_fuchsia_net_dhcp::Option_::TimeServer(time_servers)
     }
 }
 
@@ -493,14 +493,14 @@ pub struct NameServer {
     name_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for NameServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let name_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for NameServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let name_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .name_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::NameServer(name_servers)
+        flex_fuchsia_net_dhcp::Option_::NameServer(name_servers)
     }
 }
 
@@ -513,14 +513,14 @@ pub struct DomainNameServer {
     domain_name_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for DomainNameServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let domain_name_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for DomainNameServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let domain_name_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .domain_name_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::DomainNameServer(domain_name_servers)
+        flex_fuchsia_net_dhcp::Option_::DomainNameServer(domain_name_servers)
     }
 }
 
@@ -533,14 +533,14 @@ pub struct LogServer {
     log_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for LogServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let log_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for LogServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let log_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .log_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::LogServer(log_servers)
+        flex_fuchsia_net_dhcp::Option_::LogServer(log_servers)
     }
 }
 
@@ -553,14 +553,14 @@ pub struct CookieServer {
     cookie_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for CookieServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let cookie_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for CookieServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let cookie_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .cookie_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::CookieServer(cookie_servers)
+        flex_fuchsia_net_dhcp::Option_::CookieServer(cookie_servers)
     }
 }
 
@@ -573,14 +573,14 @@ pub struct LprServer {
     lpr_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for LprServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let lpr_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for LprServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let lpr_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .lpr_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::LprServer(lpr_servers)
+        flex_fuchsia_net_dhcp::Option_::LprServer(lpr_servers)
     }
 }
 
@@ -593,14 +593,14 @@ pub struct ImpressServer {
     impress_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for ImpressServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let impress_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for ImpressServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let impress_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .impress_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::ImpressServer(impress_servers)
+        flex_fuchsia_net_dhcp::Option_::ImpressServer(impress_servers)
     }
 }
 
@@ -613,14 +613,14 @@ pub struct ResourceLocationServer {
     resource_location_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for ResourceLocationServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let resource_location_server: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for ResourceLocationServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let resource_location_server: Vec<flex_fuchsia_net::Ipv4Address> = self
             .resource_location_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::ResourceLocationServer(resource_location_server)
+        flex_fuchsia_net_dhcp::Option_::ResourceLocationServer(resource_location_server)
     }
 }
 
@@ -633,10 +633,10 @@ pub struct HostName {
     name: Option<String>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for HostName {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for HostName {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let name = self.name.unwrap_or_else(|| "".to_string());
-        fidl_fuchsia_net_dhcp::Option_::HostName(name)
+        flex_fuchsia_net_dhcp::Option_::HostName(name)
     }
 }
 
@@ -649,10 +649,10 @@ pub struct BootFileSize {
     size: Option<u16>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for BootFileSize {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for BootFileSize {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let size = self.size.unwrap_or(0);
-        fidl_fuchsia_net_dhcp::Option_::BootFileSize(size)
+        flex_fuchsia_net_dhcp::Option_::BootFileSize(size)
     }
 }
 
@@ -665,10 +665,10 @@ pub struct MeritDumpFile {
     path: Option<String>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for MeritDumpFile {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for MeritDumpFile {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let path: String = self.path.unwrap_or(String::new());
-        fidl_fuchsia_net_dhcp::Option_::MeritDumpFile(path)
+        flex_fuchsia_net_dhcp::Option_::MeritDumpFile(path)
     }
 }
 
@@ -681,10 +681,10 @@ pub struct DomainName {
     name: Option<String>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for DomainName {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for DomainName {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let name = self.name.unwrap_or(String::new());
-        fidl_fuchsia_net_dhcp::Option_::DomainName(name)
+        flex_fuchsia_net_dhcp::Option_::DomainName(name)
     }
 }
 
@@ -697,12 +697,12 @@ pub struct SwapServer {
     address: Option<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for SwapServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let address = fidl_fuchsia_net::Ipv4Address {
+impl Into<flex_fuchsia_net_dhcp::Option_> for SwapServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let address = flex_fuchsia_net::Ipv4Address {
             addr: self.address.unwrap_or(Ipv4Addr::new(0, 0, 0, 0)).octets(),
         };
-        fidl_fuchsia_net_dhcp::Option_::SwapServer(address)
+        flex_fuchsia_net_dhcp::Option_::SwapServer(address)
     }
 }
 
@@ -717,10 +717,10 @@ pub struct RootPath {
     path: Option<String>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for RootPath {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for RootPath {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let path = self.path.unwrap_or(String::new());
-        fidl_fuchsia_net_dhcp::Option_::RootPath(path)
+        flex_fuchsia_net_dhcp::Option_::RootPath(path)
     }
 }
 
@@ -735,10 +735,10 @@ pub struct ExtensionsPath {
     path: Option<String>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for ExtensionsPath {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for ExtensionsPath {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let path = self.path.unwrap_or(String::new());
-        fidl_fuchsia_net_dhcp::Option_::ExtensionsPath(path)
+        flex_fuchsia_net_dhcp::Option_::ExtensionsPath(path)
     }
 }
 
@@ -751,9 +751,9 @@ pub struct IpForwarding {
     enabled: bool,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for IpForwarding {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        fidl_fuchsia_net_dhcp::Option_::IpForwarding(self.enabled)
+impl Into<flex_fuchsia_net_dhcp::Option_> for IpForwarding {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        flex_fuchsia_net_dhcp::Option_::IpForwarding(self.enabled)
     }
 }
 
@@ -766,9 +766,9 @@ pub struct NonLocalSourceRouting {
     enabled: bool,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for NonLocalSourceRouting {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        fidl_fuchsia_net_dhcp::Option_::NonLocalSourceRouting(self.enabled)
+impl Into<flex_fuchsia_net_dhcp::Option_> for NonLocalSourceRouting {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        flex_fuchsia_net_dhcp::Option_::NonLocalSourceRouting(self.enabled)
     }
 }
 
@@ -782,14 +782,14 @@ pub struct PolicyFilter {
     addresses: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for PolicyFilter {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let addresses: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for PolicyFilter {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let addresses: Vec<flex_fuchsia_net::Ipv4Address> = self
             .addresses
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::PolicyFilter(addresses)
+        flex_fuchsia_net_dhcp::Option_::PolicyFilter(addresses)
     }
 }
 
@@ -803,10 +803,10 @@ pub struct MaxDatagramReassemblySize {
     size: Option<u16>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for MaxDatagramReassemblySize {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for MaxDatagramReassemblySize {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let size = self.size.unwrap_or(0);
-        fidl_fuchsia_net_dhcp::Option_::MaxDatagramReassemblySize(size)
+        flex_fuchsia_net_dhcp::Option_::MaxDatagramReassemblySize(size)
     }
 }
 
@@ -820,10 +820,10 @@ pub struct DefaultIpTtl {
     ttl: Option<u8>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for DefaultIpTtl {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for DefaultIpTtl {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let ttl = self.ttl.unwrap_or(0);
-        fidl_fuchsia_net_dhcp::Option_::DefaultIpTtl(ttl)
+        flex_fuchsia_net_dhcp::Option_::DefaultIpTtl(ttl)
     }
 }
 
@@ -836,10 +836,10 @@ pub struct PathMtuAgingTimeout {
     timeout: Option<u32>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for PathMtuAgingTimeout {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for PathMtuAgingTimeout {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let timeout = self.timeout.unwrap_or(0);
-        fidl_fuchsia_net_dhcp::Option_::PathMtuAgingTimeout(timeout)
+        flex_fuchsia_net_dhcp::Option_::PathMtuAgingTimeout(timeout)
     }
 }
 
@@ -853,9 +853,9 @@ pub struct PathMtuPlateauTable {
     mtu_sizes: Vec<u16>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for PathMtuPlateauTable {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        fidl_fuchsia_net_dhcp::Option_::PathMtuPlateauTable(self.mtu_sizes)
+impl Into<flex_fuchsia_net_dhcp::Option_> for PathMtuPlateauTable {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        flex_fuchsia_net_dhcp::Option_::PathMtuPlateauTable(self.mtu_sizes)
     }
 }
 
@@ -868,10 +868,10 @@ pub struct InterfaceMtu {
     mtu: Option<u16>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for InterfaceMtu {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for InterfaceMtu {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let mtu = self.mtu.unwrap_or(0);
-        fidl_fuchsia_net_dhcp::Option_::InterfaceMtu(mtu)
+        flex_fuchsia_net_dhcp::Option_::InterfaceMtu(mtu)
     }
 }
 
@@ -885,9 +885,9 @@ pub struct AllSubnetsLocal {
     local: bool,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for AllSubnetsLocal {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        fidl_fuchsia_net_dhcp::Option_::AllSubnetsLocal(self.local)
+impl Into<flex_fuchsia_net_dhcp::Option_> for AllSubnetsLocal {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        flex_fuchsia_net_dhcp::Option_::AllSubnetsLocal(self.local)
     }
 }
 
@@ -900,12 +900,12 @@ pub struct BroadcastAddress {
     addr: Option<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for BroadcastAddress {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let addr = fidl_fuchsia_net::Ipv4Address {
+impl Into<flex_fuchsia_net_dhcp::Option_> for BroadcastAddress {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let addr = flex_fuchsia_net::Ipv4Address {
             addr: self.addr.unwrap_or(Ipv4Addr::new(0, 0, 0, 0)).octets(),
         };
-        fidl_fuchsia_net_dhcp::Option_::BroadcastAddress(addr)
+        flex_fuchsia_net_dhcp::Option_::BroadcastAddress(addr)
     }
 }
 
@@ -918,9 +918,9 @@ pub struct PerformMaskDiscovery {
     do_discovery: bool,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for PerformMaskDiscovery {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        fidl_fuchsia_net_dhcp::Option_::PerformMaskDiscovery(self.do_discovery)
+impl Into<flex_fuchsia_net_dhcp::Option_> for PerformMaskDiscovery {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        flex_fuchsia_net_dhcp::Option_::PerformMaskDiscovery(self.do_discovery)
     }
 }
 
@@ -934,9 +934,9 @@ pub struct MaskSupplier {
     supplier: bool,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for MaskSupplier {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        fidl_fuchsia_net_dhcp::Option_::MaskSupplier(self.supplier)
+impl Into<flex_fuchsia_net_dhcp::Option_> for MaskSupplier {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        flex_fuchsia_net_dhcp::Option_::MaskSupplier(self.supplier)
     }
 }
 
@@ -950,9 +950,9 @@ pub struct PerformRouterDiscovery {
     do_discovery: bool,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for PerformRouterDiscovery {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        fidl_fuchsia_net_dhcp::Option_::PerformRouterDiscovery(self.do_discovery)
+impl Into<flex_fuchsia_net_dhcp::Option_> for PerformRouterDiscovery {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        flex_fuchsia_net_dhcp::Option_::PerformRouterDiscovery(self.do_discovery)
     }
 }
 
@@ -965,12 +965,12 @@ pub struct RouterSolicitationAddress {
     addr: Option<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for RouterSolicitationAddress {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let addr = fidl_fuchsia_net::Ipv4Address {
+impl Into<flex_fuchsia_net_dhcp::Option_> for RouterSolicitationAddress {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let addr = flex_fuchsia_net::Ipv4Address {
             addr: self.addr.unwrap_or(Ipv4Addr::new(0, 0, 0, 0)).octets(),
         };
-        fidl_fuchsia_net_dhcp::Option_::RouterSolicitationAddress(addr)
+        flex_fuchsia_net_dhcp::Option_::RouterSolicitationAddress(addr)
     }
 }
 
@@ -985,14 +985,14 @@ pub struct StaticRoute {
     routes: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for StaticRoute {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let routes: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for StaticRoute {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let routes: Vec<flex_fuchsia_net::Ipv4Address> = self
             .routes
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::StaticRoute(routes)
+        flex_fuchsia_net_dhcp::Option_::StaticRoute(routes)
     }
 }
 
@@ -1006,9 +1006,9 @@ pub struct TrailerEncapsulation {
     trailers: bool,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for TrailerEncapsulation {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        fidl_fuchsia_net_dhcp::Option_::TrailerEncapsulation(self.trailers)
+impl Into<flex_fuchsia_net_dhcp::Option_> for TrailerEncapsulation {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        flex_fuchsia_net_dhcp::Option_::TrailerEncapsulation(self.trailers)
     }
 }
 
@@ -1021,10 +1021,10 @@ pub struct ArpCacheTimeout {
     timeout: Option<u32>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for ArpCacheTimeout {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for ArpCacheTimeout {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let timeout = self.timeout.unwrap_or(0);
-        fidl_fuchsia_net_dhcp::Option_::ArpCacheTimeout(timeout)
+        flex_fuchsia_net_dhcp::Option_::ArpCacheTimeout(timeout)
     }
 }
 
@@ -1038,9 +1038,9 @@ pub struct EthernetEncapsulation {
     encapsulate: bool,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for EthernetEncapsulation {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        fidl_fuchsia_net_dhcp::Option_::EthernetEncapsulation(self.encapsulate)
+impl Into<flex_fuchsia_net_dhcp::Option_> for EthernetEncapsulation {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        flex_fuchsia_net_dhcp::Option_::EthernetEncapsulation(self.encapsulate)
     }
 }
 
@@ -1054,10 +1054,10 @@ pub struct TcpDefaultTtl {
     ttl: Option<u8>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for TcpDefaultTtl {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for TcpDefaultTtl {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let ttl = self.ttl.unwrap_or(0);
-        fidl_fuchsia_net_dhcp::Option_::TcpDefaultTtl(ttl)
+        flex_fuchsia_net_dhcp::Option_::TcpDefaultTtl(ttl)
     }
 }
 
@@ -1072,10 +1072,10 @@ pub struct TcpKeepaliveInterval {
     interval: Option<u32>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for TcpKeepaliveInterval {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for TcpKeepaliveInterval {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let interval = self.interval.unwrap_or(0);
-        fidl_fuchsia_net_dhcp::Option_::TcpKeepaliveInterval(interval)
+        flex_fuchsia_net_dhcp::Option_::TcpKeepaliveInterval(interval)
     }
 }
 
@@ -1089,9 +1089,9 @@ pub struct TcpKeepaliveGarbage {
     send_garbage: bool,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for TcpKeepaliveGarbage {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        fidl_fuchsia_net_dhcp::Option_::TcpKeepaliveGarbage(self.send_garbage)
+impl Into<flex_fuchsia_net_dhcp::Option_> for TcpKeepaliveGarbage {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        flex_fuchsia_net_dhcp::Option_::TcpKeepaliveGarbage(self.send_garbage)
     }
 }
 
@@ -1104,10 +1104,10 @@ pub struct NetworkInformationServiceDomain {
     domain_name: Option<String>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for NetworkInformationServiceDomain {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for NetworkInformationServiceDomain {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let domain_name = self.domain_name.unwrap_or(String::new());
-        fidl_fuchsia_net_dhcp::Option_::NetworkInformationServiceDomain(domain_name)
+        flex_fuchsia_net_dhcp::Option_::NetworkInformationServiceDomain(domain_name)
     }
 }
 
@@ -1121,14 +1121,14 @@ pub struct NetworkInformationServers {
     servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for NetworkInformationServers {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for NetworkInformationServers {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::NetworkInformationServers(servers)
+        flex_fuchsia_net_dhcp::Option_::NetworkInformationServers(servers)
     }
 }
 
@@ -1142,14 +1142,14 @@ pub struct NetworkTimeProtocolServers {
     servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for NetworkTimeProtocolServers {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for NetworkTimeProtocolServers {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::NetworkTimeProtocolServers(servers)
+        flex_fuchsia_net_dhcp::Option_::NetworkTimeProtocolServers(servers)
     }
 }
 
@@ -1162,9 +1162,9 @@ pub struct VendorSpecificInformation {
     data: Vec<u8>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for VendorSpecificInformation {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        fidl_fuchsia_net_dhcp::Option_::VendorSpecificInformation(self.data)
+impl Into<flex_fuchsia_net_dhcp::Option_> for VendorSpecificInformation {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        flex_fuchsia_net_dhcp::Option_::VendorSpecificInformation(self.data)
     }
 }
 
@@ -1178,14 +1178,14 @@ pub struct NetBiosOverTcpipNameServer {
     servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for NetBiosOverTcpipNameServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for NetBiosOverTcpipNameServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::NetbiosOverTcpipNameServer(servers)
+        flex_fuchsia_net_dhcp::Option_::NetbiosOverTcpipNameServer(servers)
     }
 }
 
@@ -1199,14 +1199,14 @@ pub struct NetBiosOverTcpipDatagramDistributionServer {
     servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for NetBiosOverTcpipDatagramDistributionServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for NetBiosOverTcpipDatagramDistributionServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::NetbiosOverTcpipDatagramDistributionServer(servers)
+        flex_fuchsia_net_dhcp::Option_::NetbiosOverTcpipDatagramDistributionServer(servers)
     }
 }
 
@@ -1219,16 +1219,16 @@ pub struct NetBiosOverTcpipNodeType {
     node_type: Option<NodeType>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for NetBiosOverTcpipNodeType {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for NetBiosOverTcpipNodeType {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let node_type = self.node_type.unwrap_or(NodeType::BNode(BNode {}));
         let fidl_node_type = match node_type {
-            NodeType::BNode(_) => fidl_fuchsia_net_dhcp::NodeTypes::B_NODE,
-            NodeType::HNode(_) => fidl_fuchsia_net_dhcp::NodeTypes::H_NODE,
-            NodeType::MNode(_) => fidl_fuchsia_net_dhcp::NodeTypes::M_NODE,
-            NodeType::PNode(_) => fidl_fuchsia_net_dhcp::NodeTypes::P_NODE,
+            NodeType::BNode(_) => flex_fuchsia_net_dhcp::NodeTypes::B_NODE,
+            NodeType::HNode(_) => flex_fuchsia_net_dhcp::NodeTypes::H_NODE,
+            NodeType::MNode(_) => flex_fuchsia_net_dhcp::NodeTypes::M_NODE,
+            NodeType::PNode(_) => flex_fuchsia_net_dhcp::NodeTypes::P_NODE,
         };
-        fidl_fuchsia_net_dhcp::Option_::NetbiosOverTcpipNodeType(fidl_node_type)
+        flex_fuchsia_net_dhcp::Option_::NetbiosOverTcpipNodeType(fidl_node_type)
     }
 }
 
@@ -1241,10 +1241,10 @@ pub struct NetBiosOverTcpipScope {
     scope: Option<String>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for NetBiosOverTcpipScope {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for NetBiosOverTcpipScope {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let scope = self.scope.unwrap_or(String::new());
-        fidl_fuchsia_net_dhcp::Option_::NetbiosOverTcpipScope(scope)
+        flex_fuchsia_net_dhcp::Option_::NetbiosOverTcpipScope(scope)
     }
 }
 
@@ -1258,14 +1258,14 @@ pub struct XWindowSystemFontServer {
     servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for XWindowSystemFontServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for XWindowSystemFontServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::XWindowSystemFontServer(servers)
+        flex_fuchsia_net_dhcp::Option_::XWindowSystemFontServer(servers)
     }
 }
 
@@ -1279,14 +1279,14 @@ pub struct XWindowSystemDisplayManager {
     display_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for XWindowSystemDisplayManager {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let display_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for XWindowSystemDisplayManager {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let display_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .display_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::XWindowSystemDisplayManager(display_servers)
+        flex_fuchsia_net_dhcp::Option_::XWindowSystemDisplayManager(display_servers)
     }
 }
 
@@ -1299,10 +1299,10 @@ pub struct NetworkInformationServicePlusDomain {
     domain_name: Option<String>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for NetworkInformationServicePlusDomain {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for NetworkInformationServicePlusDomain {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let domain_name = self.domain_name.unwrap_or(String::new());
-        fidl_fuchsia_net_dhcp::Option_::NetworkInformationServicePlusDomain(domain_name)
+        flex_fuchsia_net_dhcp::Option_::NetworkInformationServicePlusDomain(domain_name)
     }
 }
 
@@ -1316,14 +1316,14 @@ pub struct NetworkInformationServicePlusServers {
     servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for NetworkInformationServicePlusServers {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for NetworkInformationServicePlusServers {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::NetworkInformationServicePlusServers(servers)
+        flex_fuchsia_net_dhcp::Option_::NetworkInformationServicePlusServers(servers)
     }
 }
 
@@ -1337,14 +1337,14 @@ pub struct MobileIpHomeAgent {
     home_agents: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for MobileIpHomeAgent {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let home_agents: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for MobileIpHomeAgent {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let home_agents: Vec<flex_fuchsia_net::Ipv4Address> = self
             .home_agents
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::MobileIpHomeAgent(home_agents)
+        flex_fuchsia_net_dhcp::Option_::MobileIpHomeAgent(home_agents)
     }
 }
 
@@ -1358,14 +1358,14 @@ pub struct SmtpServer {
     smtp_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for SmtpServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let smtp_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for SmtpServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let smtp_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .smtp_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::SmtpServer(smtp_servers)
+        flex_fuchsia_net_dhcp::Option_::SmtpServer(smtp_servers)
     }
 }
 
@@ -1379,14 +1379,14 @@ pub struct Pop3Server {
     pop3_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for Pop3Server {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let pop3_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for Pop3Server {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let pop3_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .pop3_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::Pop3Server(pop3_servers)
+        flex_fuchsia_net_dhcp::Option_::Pop3Server(pop3_servers)
     }
 }
 
@@ -1400,14 +1400,14 @@ pub struct NntpServer {
     nntp_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for NntpServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let nntp_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for NntpServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let nntp_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .nntp_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::NntpServer(nntp_servers)
+        flex_fuchsia_net_dhcp::Option_::NntpServer(nntp_servers)
     }
 }
 
@@ -1421,14 +1421,14 @@ pub struct DefaultWwwServer {
     www_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for DefaultWwwServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let www_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for DefaultWwwServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let www_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .www_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::DefaultWwwServer(www_servers)
+        flex_fuchsia_net_dhcp::Option_::DefaultWwwServer(www_servers)
     }
 }
 
@@ -1442,14 +1442,14 @@ pub struct DefaultFingerServer {
     finger_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for DefaultFingerServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let finger_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for DefaultFingerServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let finger_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .finger_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::DefaultFingerServer(finger_servers)
+        flex_fuchsia_net_dhcp::Option_::DefaultFingerServer(finger_servers)
     }
 }
 
@@ -1463,14 +1463,14 @@ pub struct DefaultIrcServer {
     irc_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for DefaultIrcServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let irc_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for DefaultIrcServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let irc_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .irc_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::DefaultIrcServer(irc_servers)
+        flex_fuchsia_net_dhcp::Option_::DefaultIrcServer(irc_servers)
     }
 }
 
@@ -1484,14 +1484,14 @@ pub struct StreettalkServer {
     streettalk_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for StreettalkServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let streettalk_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for StreettalkServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let streettalk_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .streettalk_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::StreettalkServer(streettalk_servers)
+        flex_fuchsia_net_dhcp::Option_::StreettalkServer(streettalk_servers)
     }
 }
 
@@ -1505,14 +1505,14 @@ pub struct StreettalkDirectoryAssistanceServer {
     stda_servers: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for StreettalkDirectoryAssistanceServer {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
-        let stda_servers: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Option_> for StreettalkDirectoryAssistanceServer {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
+        let stda_servers: Vec<flex_fuchsia_net::Ipv4Address> = self
             .stda_servers
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Option_::StreettalkDirectoryAssistanceServer(stda_servers)
+        flex_fuchsia_net_dhcp::Option_::StreettalkDirectoryAssistanceServer(stda_servers)
     }
 }
 
@@ -1526,10 +1526,10 @@ pub struct TftpServerName {
     name: Option<String>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for TftpServerName {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for TftpServerName {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let name = self.name.unwrap_or(String::new());
-        fidl_fuchsia_net_dhcp::Option_::TftpServerName(name)
+        flex_fuchsia_net_dhcp::Option_::TftpServerName(name)
     }
 }
 
@@ -1543,10 +1543,10 @@ pub struct BootfileName {
     name: Option<String>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for BootfileName {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for BootfileName {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let name = self.name.unwrap_or(String::new());
-        fidl_fuchsia_net_dhcp::Option_::BootfileName(name)
+        flex_fuchsia_net_dhcp::Option_::BootfileName(name)
     }
 }
 
@@ -1560,10 +1560,10 @@ pub struct MaxDhcpMessageSize {
     length: Option<u16>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for MaxDhcpMessageSize {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for MaxDhcpMessageSize {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let length = self.length.unwrap_or(0);
-        fidl_fuchsia_net_dhcp::Option_::MaxDhcpMessageSize(length)
+        flex_fuchsia_net_dhcp::Option_::MaxDhcpMessageSize(length)
     }
 }
 
@@ -1577,10 +1577,10 @@ pub struct RenewalTimeValue {
     interval: Option<u32>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for RenewalTimeValue {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for RenewalTimeValue {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let interval = self.interval.unwrap_or(0);
-        fidl_fuchsia_net_dhcp::Option_::RenewalTimeValue(interval)
+        flex_fuchsia_net_dhcp::Option_::RenewalTimeValue(interval)
     }
 }
 
@@ -1594,10 +1594,10 @@ pub struct RebindingTimeValue {
     interval: Option<u32>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Option_> for RebindingTimeValue {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Option_ {
+impl Into<flex_fuchsia_net_dhcp::Option_> for RebindingTimeValue {
+    fn into(self) -> flex_fuchsia_net_dhcp::Option_ {
         let interval = self.interval.unwrap_or(0);
-        fidl_fuchsia_net_dhcp::Option_::RebindingTimeValue(interval)
+        flex_fuchsia_net_dhcp::Option_::RebindingTimeValue(interval)
     }
 }
 
@@ -1614,24 +1614,24 @@ pub enum Parameter {
     BoundDevices(BoundDevices),
 }
 
-impl Into<fidl_fuchsia_net_dhcp::ParameterName> for Parameter {
-    fn into(self) -> fidl_fuchsia_net_dhcp::ParameterName {
+impl Into<flex_fuchsia_net_dhcp::ParameterName> for Parameter {
+    fn into(self) -> flex_fuchsia_net_dhcp::ParameterName {
         match self {
-            Parameter::IpAddrs(_) => fidl_fuchsia_net_dhcp::ParameterName::IpAddrs,
-            Parameter::AddressPool(_) => fidl_fuchsia_net_dhcp::ParameterName::AddressPool,
-            Parameter::LeaseLength(_) => fidl_fuchsia_net_dhcp::ParameterName::LeaseLength,
-            Parameter::PermittedMacs(_) => fidl_fuchsia_net_dhcp::ParameterName::PermittedMacs,
+            Parameter::IpAddrs(_) => flex_fuchsia_net_dhcp::ParameterName::IpAddrs,
+            Parameter::AddressPool(_) => flex_fuchsia_net_dhcp::ParameterName::AddressPool,
+            Parameter::LeaseLength(_) => flex_fuchsia_net_dhcp::ParameterName::LeaseLength,
+            Parameter::PermittedMacs(_) => flex_fuchsia_net_dhcp::ParameterName::PermittedMacs,
             Parameter::StaticallyAssignedAddrs(_) => {
-                fidl_fuchsia_net_dhcp::ParameterName::StaticallyAssignedAddrs
+                flex_fuchsia_net_dhcp::ParameterName::StaticallyAssignedAddrs
             }
-            Parameter::ArpProbe(_) => fidl_fuchsia_net_dhcp::ParameterName::ArpProbe,
-            Parameter::BoundDevices(_) => fidl_fuchsia_net_dhcp::ParameterName::BoundDeviceNames,
+            Parameter::ArpProbe(_) => flex_fuchsia_net_dhcp::ParameterName::ArpProbe,
+            Parameter::BoundDevices(_) => flex_fuchsia_net_dhcp::ParameterName::BoundDeviceNames,
         }
     }
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Parameter> for Parameter {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Parameter {
+impl Into<flex_fuchsia_net_dhcp::Parameter> for Parameter {
+    fn into(self) -> flex_fuchsia_net_dhcp::Parameter {
         match self {
             Parameter::IpAddrs(v) => v.into(),
             Parameter::AddressPool(v) => v.into(),
@@ -1653,14 +1653,14 @@ pub struct IpAddrs {
     addrs: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Parameter> for IpAddrs {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Parameter {
-        let addrs: Vec<fidl_fuchsia_net::Ipv4Address> = self
+impl Into<flex_fuchsia_net_dhcp::Parameter> for IpAddrs {
+    fn into(self) -> flex_fuchsia_net_dhcp::Parameter {
+        let addrs: Vec<flex_fuchsia_net::Ipv4Address> = self
             .addrs
             .iter()
-            .map(|addr| fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+            .map(|addr| flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             .collect();
-        fidl_fuchsia_net_dhcp::Parameter::IpAddrs(addrs)
+        flex_fuchsia_net_dhcp::Parameter::IpAddrs(addrs)
     }
 }
 
@@ -1683,16 +1683,16 @@ pub struct AddressPool {
     range_stop: Option<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Parameter> for AddressPool {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Parameter {
+impl Into<flex_fuchsia_net_dhcp::Parameter> for AddressPool {
+    fn into(self) -> flex_fuchsia_net_dhcp::Parameter {
         let Self { prefix_length, range_start, range_stop } = self;
-        let pool = fidl_fuchsia_net_dhcp::AddressPool {
+        let pool = flex_fuchsia_net_dhcp::AddressPool {
             prefix_length,
-            range_start: range_start.map(|v| fidl_fuchsia_net::Ipv4Address { addr: v.octets() }),
-            range_stop: range_stop.map(|v| fidl_fuchsia_net::Ipv4Address { addr: v.octets() }),
+            range_start: range_start.map(|v| flex_fuchsia_net::Ipv4Address { addr: v.octets() }),
+            range_stop: range_stop.map(|v| flex_fuchsia_net::Ipv4Address { addr: v.octets() }),
             ..Default::default()
         };
-        fidl_fuchsia_net_dhcp::Parameter::AddressPool(pool)
+        flex_fuchsia_net_dhcp::Parameter::AddressPool(pool)
     }
 }
 
@@ -1708,11 +1708,11 @@ pub struct PermittedMacs {
     macs: Vec<MacAddr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Parameter> for PermittedMacs {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Parameter {
-        let addrs: Vec<fidl_fuchsia_net::MacAddress> =
+impl Into<flex_fuchsia_net_dhcp::Parameter> for PermittedMacs {
+    fn into(self) -> flex_fuchsia_net_dhcp::Parameter {
+        let addrs: Vec<flex_fuchsia_net::MacAddress> =
             self.macs.into_iter().map(fidl_fuchsia_net_ext::MacAddress::into).collect();
-        fidl_fuchsia_net_dhcp::Parameter::PermittedMacs(addrs)
+        flex_fuchsia_net_dhcp::Parameter::PermittedMacs(addrs)
     }
 }
 
@@ -1732,22 +1732,22 @@ pub struct StaticallyAssignedAddrs {
     assigned_addrs: Vec<Ipv4Addr>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Parameter> for StaticallyAssignedAddrs {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Parameter {
-        let assignments: Vec<fidl_fuchsia_net_dhcp::StaticAssignment> = self
+impl Into<flex_fuchsia_net_dhcp::Parameter> for StaticallyAssignedAddrs {
+    fn into(self) -> flex_fuchsia_net_dhcp::Parameter {
+        let assignments: Vec<flex_fuchsia_net_dhcp::StaticAssignment> = self
             .hosts
             .into_iter()
             .zip(self.assigned_addrs)
             .map(|(host, addr)| {
-                (host.into(), fidl_fuchsia_net::Ipv4Address { addr: addr.octets() })
+                (host.into(), flex_fuchsia_net::Ipv4Address { addr: addr.octets() })
             })
-            .map(|(host, assigned_addr)| fidl_fuchsia_net_dhcp::StaticAssignment {
+            .map(|(host, assigned_addr)| flex_fuchsia_net_dhcp::StaticAssignment {
                 host: Some(host),
                 assigned_addr: Some(assigned_addr),
                 ..Default::default()
             })
             .collect();
-        fidl_fuchsia_net_dhcp::Parameter::StaticallyAssignedAddrs(assignments)
+        flex_fuchsia_net_dhcp::Parameter::StaticallyAssignedAddrs(assignments)
     }
 }
 
@@ -1764,9 +1764,9 @@ pub struct ArpProbe {
     enabled: bool,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Parameter> for ArpProbe {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Parameter {
-        fidl_fuchsia_net_dhcp::Parameter::ArpProbe(self.enabled)
+impl Into<flex_fuchsia_net_dhcp::Parameter> for ArpProbe {
+    fn into(self) -> flex_fuchsia_net_dhcp::Parameter {
+        flex_fuchsia_net_dhcp::Parameter::ArpProbe(self.enabled)
     }
 }
 
@@ -1786,9 +1786,9 @@ pub struct LeaseLength {
     pub(crate) max: Option<u32>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Parameter> for LeaseLength {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Parameter {
-        fidl_fuchsia_net_dhcp::Parameter::Lease(fidl_fuchsia_net_dhcp::LeaseLength {
+impl Into<flex_fuchsia_net_dhcp::Parameter> for LeaseLength {
+    fn into(self) -> flex_fuchsia_net_dhcp::Parameter {
+        flex_fuchsia_net_dhcp::Parameter::Lease(flex_fuchsia_net_dhcp::LeaseLength {
             default: self.default,
             max: self.max,
             ..Default::default()
@@ -1840,8 +1840,8 @@ pub struct BoundDevices {
     pub names: Vec<String>,
 }
 
-impl Into<fidl_fuchsia_net_dhcp::Parameter> for BoundDevices {
-    fn into(self) -> fidl_fuchsia_net_dhcp::Parameter {
-        fidl_fuchsia_net_dhcp::Parameter::BoundDeviceNames(self.names)
+impl Into<flex_fuchsia_net_dhcp::Parameter> for BoundDevices {
+    fn into(self) -> flex_fuchsia_net_dhcp::Parameter {
+        flex_fuchsia_net_dhcp::Parameter::BoundDeviceNames(self.names)
     }
 }

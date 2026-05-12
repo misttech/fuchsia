@@ -24,7 +24,6 @@ rustc_binary("lookup_server") {
   sources = [ "src/main.rs" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_rust",
     "//src/connectivity/lib/net-declare",
     "//src/lib/fidl/rust/fidl",

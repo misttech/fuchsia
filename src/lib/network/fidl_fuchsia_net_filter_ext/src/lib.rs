@@ -21,12 +21,19 @@ use std::ops::RangeInclusive;
 
 use async_utils::fold::FoldWhile;
 use fidl::marker::SourceBreaking;
-use fidl_fuchsia_ebpf as febpf;
-use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_filter as fnet_filter;
+#[cfg(not(feature = "fdomain"))]
 use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
+#[cfg(feature = "fdomain")]
+use fidl_fuchsia_net_interfaces_ext_fdomain as fnet_interfaces_ext;
+#[cfg(not(feature = "fdomain"))]
 use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
-use fidl_fuchsia_net_root as fnet_root;
+#[cfg(feature = "fdomain")]
+use fidl_fuchsia_net_matchers_ext_fdomain as fnet_matchers_ext;
+use flex_client::ProxyHasDomain as _;
+use flex_fuchsia_ebpf as febpf;
+use flex_fuchsia_net as fnet;
+use flex_fuchsia_net_filter as fnet_filter;
+use flex_fuchsia_net_root as fnet_root;
 use futures::{Stream, StreamExt as _, TryStreamExt as _};
 use thiserror::Error;
 
@@ -87,18 +94,20 @@ impl From<fnet_matchers_ext::InterfaceError> for FidlConversionError {
             fnet_matchers_ext::InterfaceError::UnknownUnionVariant => {
                 FidlConversionError::UnknownUnionVariant(type_names::INTERFACE_MATCHER)
             }
-            fidl_fuchsia_net_matchers_ext::InterfaceError::UnknownPortClass(
-                unknown_port_class_error,
-            ) => match unknown_port_class_error {
-                fnet_interfaces_ext::UnknownPortClassError::NetInterfaces(_) => {
-                    FidlConversionError::UnknownUnionVariant(type_names::NET_INTERFACES_PORT_CLASS)
+            fnet_matchers_ext::InterfaceError::UnknownPortClass(unknown_port_class_error) => {
+                match unknown_port_class_error {
+                    fnet_interfaces_ext::UnknownPortClassError::NetInterfaces(_) => {
+                        FidlConversionError::UnknownUnionVariant(
+                            type_names::NET_INTERFACES_PORT_CLASS,
+                        )
+                    }
+                    fnet_interfaces_ext::UnknownPortClassError::HardwareNetwork(_) => {
+                        FidlConversionError::UnknownUnionVariant(
+                            type_names::HARDWARE_NETWORK_PORT_CLASS,
+                        )
+                    }
                 }
-                fnet_interfaces_ext::UnknownPortClassError::HardwareNetwork(_) => {
-                    FidlConversionError::UnknownUnionVariant(
-                        type_names::HARDWARE_NETWORK_PORT_CLASS,
-                    )
-                }
-            },
+            }
         }
     }
 }
@@ -1028,7 +1037,7 @@ pub enum WatchError {
 pub fn event_stream_from_state(
     state: fnet_filter::StateProxy,
 ) -> Result<impl Stream<Item = Result<Event, WatchError>>, WatcherCreationError> {
-    let (watcher, server_end) = fidl::endpoints::create_proxy::<fnet_filter::WatcherMarker>();
+    let (watcher, server_end) = state.domain().create_proxy::<fnet_filter::WatcherMarker>();
     state
         .get_watcher(&fnet_filter::WatcherOptions::default(), server_end)
         .map_err(WatcherCreationError::GetWatcher)?;
@@ -1423,7 +1432,8 @@ impl Controller {
         root: &fnet_root::FilterProxy,
         ControllerId(id): &ControllerId,
     ) -> Result<Self, ControllerCreationError> {
-        let (controller, server_end) = fidl::endpoints::create_proxy();
+        let (controller, server_end) =
+            root.domain().create_proxy::<fnet_filter::NamespaceControllerMarker>();
         root.open_controller(id, server_end).map_err(ControllerCreationError::OpenController)?;
 
         let fnet_filter::NamespaceControllerEvent::OnIdAssigned { id } = controller
@@ -1444,7 +1454,8 @@ impl Controller {
         control: &fnet_filter::ControlProxy,
         ControllerId(id): &ControllerId,
     ) -> Result<Self, ControllerCreationError> {
-        let (controller, server_end) = fidl::endpoints::create_proxy();
+        let (controller, server_end) =
+            control.domain().create_proxy::<fnet_filter::NamespaceControllerMarker>();
         control.open_controller(id, server_end).map_err(ControllerCreationError::OpenController)?;
 
         let fnet_filter::NamespaceControllerEvent::OnIdAssigned { id } = controller
@@ -1618,14 +1629,13 @@ pub(crate) fn handle_commit_result(
 mod tests {
 
     use assert_matches::assert_matches;
-    use fidl_fuchsia_net_matchers as fnet_matchers;
+    use flex_fuchsia_net_matchers as fnet_matchers;
     use futures::channel::mpsc;
-    use futures::task::Poll;
     use futures::{FutureExt as _, SinkExt as _};
     use test_case::test_case;
 
-    use fidl_fuchsia_hardware_network as fhardware_network;
-    use fidl_fuchsia_net_interfaces as fnet_interfaces;
+    use flex_fuchsia_hardware_network as fhardware_network;
+    use flex_fuchsia_net_interfaces as fnet_interfaces;
 
     use super::*;
 
@@ -1907,7 +1917,8 @@ mod tests {
             ).unwrap_err();
             fnet_matchers_ext::InterfaceError::UnknownPortClass(error)
         } =>
-        FidlConversionError::UnknownUnionVariant(type_names::NET_INTERFACES_PORT_CLASS)
+        FidlConversionError::UnknownUnionVariant(type_names::NET_INTERFACES_PORT_CLASS);
+        "UnknownPortClass=>UnknownUnionVariant"
     )]
     #[test_case(
         {
@@ -1920,7 +1931,8 @@ mod tests {
             fnet_matchers_ext::InterfaceError::UnknownPortClass(
                 fnet_interfaces_ext::UnknownPortClassError::HardwareNetwork(error))
         } =>
-        FidlConversionError::UnknownUnionVariant(type_names::HARDWARE_NETWORK_PORT_CLASS)
+        FidlConversionError::UnknownUnionVariant(type_names::HARDWARE_NETWORK_PORT_CLASS);
+        "UnknownPortClass(HardwareNetwork)=>UnknownUnionVariant"
     )]
     #[test_case(
         fnet_matchers_ext::SubnetError::PrefixTooLong =>
@@ -2072,8 +2084,9 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn event_stream_from_state_conversion_error() {
+        let client = flex_local::local_client_empty();
         let (proxy, mut request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fnet_filter::StateMarker>();
+            client.create_proxy_and_stream::<fnet_filter::StateMarker>();
         let stream = event_stream_from_state(proxy).expect("get event stream");
         futures::pin_mut!(stream);
 
@@ -2110,8 +2123,9 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn event_stream_from_state_empty_event_batch() {
+        let client = flex_local::local_client_empty();
         let (proxy, mut request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fnet_filter::StateMarker>();
+            client.create_proxy_and_stream::<fnet_filter::StateMarker>();
         let stream = event_stream_from_state(proxy).expect("get event stream");
         futures::pin_mut!(stream);
 
@@ -2348,8 +2362,8 @@ mod tests {
             tx.send(Ok(Event::Added(test_controller_a(), test_resource())))
                 .await
                 .expect("receiver should not be closed");
+            assert_matches!((&mut wait).now_or_never(), None);
         });
-        assert_matches!(exec.run_until_stalled(&mut wait), Poll::Pending);
 
         exec.run_singlethreaded(async {
             tx.send(Ok(Event::EndOfUpdate)).await.expect("receiver should not be closed");
@@ -2426,8 +2440,9 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn controller_push_changes_reports_invalid_change() {
+        let client = flex_local::local_client_empty();
         let (control, request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fnet_filter::ControlMarker>();
+            client.create_proxy_and_stream::<fnet_filter::ControlMarker>();
         let push_invalid_change = async {
             let mut controller = Controller::new(&control, &ControllerId(String::from("test")))
                 .await
@@ -2468,8 +2483,9 @@ mod tests {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn controller_commit_reports_invalid_change() {
+        let client = flex_local::local_client_empty();
         let (control, request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fnet_filter::ControlMarker>();
+            client.create_proxy_and_stream::<fnet_filter::ControlMarker>();
         let commit_invalid_change = async {
             let mut controller = Controller::new(&control, &ControllerId(String::from("test")))
                 .await

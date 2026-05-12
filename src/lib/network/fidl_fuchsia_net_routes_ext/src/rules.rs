@@ -7,13 +7,17 @@
 use std::fmt::Debug;
 
 use async_utils::{fold, stream};
-use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, Proxy as _};
-use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext::{IntoExt as _, TryIntoExt as _};
-use fidl_fuchsia_net_matchers as fnet_matchers;
+#[cfg(not(feature = "fdomain"))]
 use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
-use fidl_fuchsia_net_routes as fnet_routes;
-use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+#[cfg(feature = "fdomain")]
+use fidl_fuchsia_net_matchers_ext_fdomain as fnet_matchers_ext;
+use flex_client::ProxyHasDomain as _;
+use flex_client::fidl::{DiscoverableProtocolMarker, ProtocolMarker};
+use flex_fuchsia_net as fnet;
+use flex_fuchsia_net_matchers as fnet_matchers;
+use flex_fuchsia_net_routes as fnet_routes;
+use flex_fuchsia_net_routes_admin as fnet_routes_admin;
 use futures::future::Either;
 use futures::{Stream, TryStreamExt as _};
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6, Subnet};
@@ -26,7 +30,7 @@ pub trait FidlRuleIpExt: Ip {
     /// The "rules watcher" protocol to use for this IP version.
     type RuleWatcherMarker: ProtocolMarker<RequestStream = Self::RuleWatcherRequestStream>;
     /// The "rules watcher" request stream.
-    type RuleWatcherRequestStream: fidl::endpoints::RequestStream<Ok: Send, ControlHandle: Send>;
+    type RuleWatcherRequestStream: flex_client::fidl::RequestStream<Ok: Send, ControlHandle: Send>;
     /// The rule event to be watched.
     type RuleEvent: From<RuleEvent<Self>>
         + TryInto<RuleEvent<Self>, Error = RuleFidlConversionError>
@@ -36,7 +40,7 @@ pub trait FidlRuleIpExt: Ip {
 
     /// Turns a FIDL rule watcher request into the extension type.
     fn into_rule_watcher_request(
-        request: fidl::endpoints::Request<Self::RuleWatcherMarker>,
+        request: flex_client::fidl::Request<Self::RuleWatcherMarker>,
     ) -> RuleWatcherRequest<Self>;
 }
 
@@ -50,7 +54,7 @@ impl FidlRuleIpExt for Ipv4 {
     type RuleWatcherWatchResponder = fnet_routes::RuleWatcherV4WatchResponder;
 
     fn into_rule_watcher_request(
-        request: fidl::endpoints::Request<Self::RuleWatcherMarker>,
+        request: flex_client::fidl::Request<Self::RuleWatcherMarker>,
     ) -> RuleWatcherRequest<Self> {
         RuleWatcherRequest::from(request)
     }
@@ -63,7 +67,7 @@ impl FidlRuleIpExt for Ipv6 {
     type RuleWatcherWatchResponder = fnet_routes::RuleWatcherV6WatchResponder;
 
     fn into_rule_watcher_request(
-        request: fidl::endpoints::Request<Self::RuleWatcherMarker>,
+        request: flex_client::fidl::Request<Self::RuleWatcherMarker>,
     ) -> RuleWatcherRequest<Self> {
         RuleWatcherRequest::from(request)
     }
@@ -254,9 +258,9 @@ pub trait FidlRuleAdminIpExt: Ip {
     /// The "rule set" protocol to use for this IP Version.
     type RuleSetMarker: ProtocolMarker<RequestStream = Self::RuleSetRequestStream>;
     /// The request stream for the rule table protocol.
-    type RuleTableRequestStream: fidl::endpoints::RequestStream<Ok: Send, ControlHandle: Send>;
+    type RuleTableRequestStream: flex_client::fidl::RequestStream<Ok: Send, ControlHandle: Send>;
     /// The request stream for the rule set protocol.
-    type RuleSetRequestStream: fidl::endpoints::RequestStream<Ok: Send, ControlHandle: Send>;
+    type RuleSetRequestStream: flex_client::fidl::RequestStream<Ok: Send, ControlHandle: Send>;
     /// The responder for AddRule requests.
     type RuleSetAddRuleResponder: Responder<
             Payload = Result<(), fnet_routes_admin::RuleSetError>,
@@ -273,18 +277,18 @@ pub trait FidlRuleAdminIpExt: Ip {
             ControlHandle = Self::RuleSetControlHandle,
         >;
     /// The control handle for RuleTable protocols.
-    type RuleTableControlHandle: fidl::endpoints::ControlHandle + Send + Clone;
+    type RuleTableControlHandle: flex_client::fidl::ControlHandle + Send + Clone;
     /// The control handle for RuleSet protocols.
-    type RuleSetControlHandle: fidl::endpoints::ControlHandle + Send + Clone;
+    type RuleSetControlHandle: flex_client::fidl::ControlHandle + Send + Clone;
 
     /// Turns a FIDL rule set request into the extension type.
     fn into_rule_set_request(
-        request: fidl::endpoints::Request<Self::RuleSetMarker>,
+        request: flex_client::fidl::Request<Self::RuleSetMarker>,
     ) -> RuleSetRequest<Self>;
 
     /// Turns a FIDL rule table request into the extension type.
     fn into_rule_table_request(
-        request: fidl::endpoints::Request<Self::RuleTableMarker>,
+        request: flex_client::fidl::Request<Self::RuleTableMarker>,
     ) -> RuleTableRequest<Self>;
 }
 
@@ -301,13 +305,13 @@ impl FidlRuleAdminIpExt for Ipv4 {
     type RuleSetControlHandle = fnet_routes_admin::RuleSetV4ControlHandle;
 
     fn into_rule_set_request(
-        request: fidl::endpoints::Request<Self::RuleSetMarker>,
+        request: flex_client::fidl::Request<Self::RuleSetMarker>,
     ) -> RuleSetRequest<Self> {
         RuleSetRequest::from(request)
     }
 
     fn into_rule_table_request(
-        request: fidl::endpoints::Request<Self::RuleTableMarker>,
+        request: flex_client::fidl::Request<Self::RuleTableMarker>,
     ) -> RuleTableRequest<Self> {
         RuleTableRequest::from(request)
     }
@@ -326,13 +330,13 @@ impl FidlRuleAdminIpExt for Ipv6 {
     type RuleSetControlHandle = fnet_routes_admin::RuleSetV6ControlHandle;
 
     fn into_rule_set_request(
-        request: fidl::endpoints::Request<Self::RuleSetMarker>,
+        request: flex_client::fidl::Request<Self::RuleSetMarker>,
     ) -> RuleSetRequest<Self> {
         RuleSetRequest::from(request)
     }
 
     fn into_rule_table_request(
-        request: fidl::endpoints::Request<Self::RuleTableMarker>,
+        request: flex_client::fidl::Request<Self::RuleTableMarker>,
     ) -> RuleTableRequest<Self> {
         RuleTableRequest::from(request)
     }
@@ -624,7 +628,7 @@ pub enum RuleTableRequest<I: FidlRuleAdminIpExt> {
         /// The priority of the the rule set.
         priority: RuleSetPriority,
         /// The server end of the rule set protocol.
-        rule_set: fidl::endpoints::ServerEnd<I::RuleSetMarker>,
+        rule_set: flex_client::fidl::ServerEnd<I::RuleSetMarker>,
         /// Control handle to the protocol.
         control_handle: I::RuleTableControlHandle,
     },
@@ -681,7 +685,7 @@ pub enum RuleSetRequest<I: FidlRuleAdminIpExt> {
         /// The table id of the table being authenticated for.
         table: u32,
         /// The credential proving authorization for this route table.
-        token: fidl::Event,
+        token: flex_client::Event,
         /// The responder for this request.
         responder: I::RuleSetAuthenticateForRouteTableResponder,
     },
@@ -759,12 +763,13 @@ pub fn new_rule_set<I: Ip + FidlRuleAdminIpExt>(
     rule_table_proxy: &<I::RuleTableMarker as ProtocolMarker>::Proxy,
     priority: RuleSetPriority,
 ) -> Result<<I::RuleSetMarker as ProtocolMarker>::Proxy, RuleSetCreationError> {
-    let (rule_set_proxy, rule_set_server_end) = fidl::endpoints::create_proxy::<I::RuleSetMarker>();
+    let (rule_set_proxy, rule_set_server_end) =
+        rule_table_proxy.domain().create_proxy::<I::RuleSetMarker>();
 
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct NewRuleSetInput<'a, I: FidlRuleAdminIpExt> {
-        rule_set_server_end: fidl::endpoints::ServerEnd<I::RuleSetMarker>,
+        rule_set_server_end: flex_client::fidl::ServerEnd<I::RuleSetMarker>,
         rule_table_proxy: &'a <I::RuleTableMarker as ProtocolMarker>::Proxy,
     }
     let result = I::map_ip_in(
@@ -786,14 +791,14 @@ pub fn new_rule_set<I: Ip + FidlRuleAdminIpExt>(
 pub async fn authenticate_for_route_table<I: Ip + FidlRuleAdminIpExt>(
     rule_set: &<I::RuleSetMarker as ProtocolMarker>::Proxy,
     table_id: u32,
-    token: fidl::Event,
+    token: flex_client::Event,
 ) -> Result<Result<(), fnet_routes_admin::AuthenticateForRouteTableError>, fidl::Error> {
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct AuthenticateForRouteTableInput<'a, I: FidlRuleAdminIpExt> {
         rule_set: &'a <I::RuleSetMarker as ProtocolMarker>::Proxy,
         table_id: u32,
-        token: fidl::Event,
+        token: flex_client::Event,
     }
 
     I::map_ip_in(
@@ -862,6 +867,7 @@ pub async fn remove_rule<I: Ip + FidlRuleAdminIpExt>(
 pub async fn close_rule_set<I: Ip + FidlRuleAdminIpExt>(
     rule_set: <I::RuleSetMarker as ProtocolMarker>::Proxy,
 ) -> Result<(), fidl::Error> {
+    use flex_client::fidl::Proxy as _;
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct CloseInput<'a, I: FidlRuleAdminIpExt> {
@@ -887,17 +893,17 @@ pub async fn close_rule_set<I: Ip + FidlRuleAdminIpExt>(
 
 /// Dispatches either `GetRuleWatcherV4` or `GetRuleWatcherV6` on the state proxy.
 pub fn get_rule_watcher<I: FidlRuleIpExt + FidlRouteIpExt>(
-    state_proxy: &<I::StateMarker as fidl::endpoints::ProtocolMarker>::Proxy,
-) -> Result<<I::RuleWatcherMarker as fidl::endpoints::ProtocolMarker>::Proxy, WatcherCreationError>
+    state_proxy: &<I::StateMarker as flex_client::fidl::ProtocolMarker>::Proxy,
+) -> Result<<I::RuleWatcherMarker as flex_client::fidl::ProtocolMarker>::Proxy, WatcherCreationError>
 {
     let (watcher_proxy, watcher_server_end) =
-        fidl::endpoints::create_proxy::<I::RuleWatcherMarker>();
+        state_proxy.domain().create_proxy::<I::RuleWatcherMarker>();
 
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct GetWatcherInputs<'a, I: FidlRuleIpExt + FidlRouteIpExt> {
-        watcher_server_end: fidl::endpoints::ServerEnd<I::RuleWatcherMarker>,
-        state_proxy: &'a <I::StateMarker as fidl::endpoints::ProtocolMarker>::Proxy,
+        watcher_server_end: flex_client::fidl::ServerEnd<I::RuleWatcherMarker>,
+        state_proxy: &'a <I::StateMarker as flex_client::fidl::ProtocolMarker>::Proxy,
     }
     let result = I::map_ip_in(
         GetWatcherInputs::<'_, I> { watcher_server_end, state_proxy },
@@ -921,17 +927,17 @@ pub fn get_rule_watcher<I: FidlRuleIpExt + FidlRouteIpExt>(
 
 /// Calls `Watch()` on the provided `RuleWatcherV4` or `RuleWatcherV6` proxy.
 pub async fn watch<'a, I: FidlRuleIpExt>(
-    watcher_proxy: &'a <I::RuleWatcherMarker as fidl::endpoints::ProtocolMarker>::Proxy,
+    watcher_proxy: &'a <I::RuleWatcherMarker as flex_client::fidl::ProtocolMarker>::Proxy,
 ) -> Result<Vec<I::RuleEvent>, fidl::Error> {
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct WatchInputs<'a, I: FidlRuleIpExt> {
-        watcher_proxy: &'a <I::RuleWatcherMarker as fidl::endpoints::ProtocolMarker>::Proxy,
+        watcher_proxy: &'a <I::RuleWatcherMarker as flex_client::fidl::ProtocolMarker>::Proxy,
     }
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct WatchOutputs<I: FidlRuleIpExt> {
-        watch_fut: fidl::client::QueryResponseFut<Vec<I::RuleEvent>>,
+        watch_fut: fidl::client::QueryResponseFut<Vec<I::RuleEvent>, flex_client::Dialect>,
     }
     let WatchOutputs { watch_fut } = net_types::map_ip_twice!(
         I,
@@ -957,7 +963,7 @@ pub enum RuleWatchError {
 
 /// Creates a rules event stream from the state proxy.
 pub fn rule_event_stream_from_state<I: FidlRuleIpExt + FidlRouteIpExt>(
-    state: &<I::StateMarker as fidl::endpoints::ProtocolMarker>::Proxy,
+    state: &<I::StateMarker as flex_client::fidl::ProtocolMarker>::Proxy,
 ) -> Result<impl Stream<Item = Result<RuleEvent<I>, RuleWatchError>> + use<I>, WatcherCreationError>
 {
     let watcher = get_rule_watcher::<I>(state)?;
@@ -971,7 +977,7 @@ pub fn rule_event_stream_from_state<I: FidlRuleIpExt + FidlRouteIpExt>(
 /// single stream. If an error is encountered while calling `Watch` or while
 /// converting the event, the stream is immediately terminated.
 pub fn rule_event_stream_from_watcher<I: FidlRuleIpExt>(
-    watcher: <I::RuleWatcherMarker as fidl::endpoints::ProtocolMarker>::Proxy,
+    watcher: <I::RuleWatcherMarker as flex_client::fidl::ProtocolMarker>::Proxy,
 ) -> Result<impl Stream<Item = Result<RuleEvent<I>, RuleWatchError>> + use<I>, WatcherCreationError>
 {
     Ok(stream::ShortCircuit::new(
@@ -1054,7 +1060,7 @@ mod tests {
 
     #[test]
     fn missing_base_matcher_default_v4() {
-        let fidl_matcher = fidl_fuchsia_net_routes::RuleMatcherV4 {
+        let fidl_matcher = flex_fuchsia_net_routes::RuleMatcherV4 {
             from: None,
             base: None,
             __source_breaking: fidl::marker::SourceBreaking,
@@ -1064,7 +1070,7 @@ mod tests {
 
     #[test]
     fn missing_base_matcher_default_v6() {
-        let fidl_matcher = fidl_fuchsia_net_routes::RuleMatcherV6 {
+        let fidl_matcher = flex_fuchsia_net_routes::RuleMatcherV6 {
             from: None,
             base: None,
             __source_breaking: fidl::marker::SourceBreaking,
@@ -1074,7 +1080,7 @@ mod tests {
 
     #[test]
     fn invalid_destination_subnet_v4() {
-        let fidl_matcher = fidl_fuchsia_net_routes::RuleMatcherV4 {
+        let fidl_matcher = flex_fuchsia_net_routes::RuleMatcherV4 {
             // Invalid, because subnets should not have the "host bits" set.
             from: Some(net_declare::fidl_ip_v4_with_prefix!("192.168.0.1/24")),
             base: None,
@@ -1088,7 +1094,7 @@ mod tests {
 
     #[test]
     fn invalid_destination_subnet_v6() {
-        let fidl_matcher = fidl_fuchsia_net_routes::RuleMatcherV6 {
+        let fidl_matcher = flex_fuchsia_net_routes::RuleMatcherV6 {
             // Invalid, because subnets should not have the "host bits" set.
             from: Some(net_declare::fidl_ip_v6_with_prefix!("fe80::1/64")),
             base: None,
@@ -1102,7 +1108,7 @@ mod tests {
 
     #[test]
     fn all_unspecified_matcher_v4() {
-        let fidl_matcher = fidl_fuchsia_net_routes::RuleMatcherV4 {
+        let fidl_matcher = flex_fuchsia_net_routes::RuleMatcherV4 {
             from: None,
             base: None,
             __source_breaking: fidl::marker::SourceBreaking,
@@ -1115,12 +1121,12 @@ mod tests {
             mark_2: None,
         };
         assert_eq!(RuleMatcher::try_from(fidl_matcher.clone()), Ok(ext_matcher.clone()));
-        assert_eq!(fidl_fuchsia_net_routes::RuleMatcherV4::from(ext_matcher), fidl_matcher,)
+        assert_eq!(flex_fuchsia_net_routes::RuleMatcherV4::from(ext_matcher), fidl_matcher,)
     }
 
     #[test]
     fn all_unspecified_matcher_v6() {
-        let fidl_matcher = fidl_fuchsia_net_routes::RuleMatcherV6 {
+        let fidl_matcher = flex_fuchsia_net_routes::RuleMatcherV6 {
             from: None,
             base: None,
             __source_breaking: fidl::marker::SourceBreaking,
@@ -1133,6 +1139,6 @@ mod tests {
             mark_2: None,
         };
         assert_eq!(RuleMatcher::try_from(fidl_matcher.clone()), Ok(ext_matcher.clone()));
-        assert_eq!(fidl_fuchsia_net_routes::RuleMatcherV6::from(ext_matcher), fidl_matcher,)
+        assert_eq!(flex_fuchsia_net_routes::RuleMatcherV6::from(ext_matcher), fidl_matcher,)
     }
 }

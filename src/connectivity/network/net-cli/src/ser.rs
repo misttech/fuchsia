@@ -6,7 +6,13 @@
 //! JSON serialization to avoid coupling too closely to particular FIDL
 //! protocols.
 
+#[cfg(feature = "fdomain")]
+use fidl_fuchsia_net_interfaces_ext_fdomain as fidl_fuchsia_net_interfaces_ext;
+#[cfg(feature = "fdomain")]
+use fidl_fuchsia_net_neighbor_ext_fdomain as fidl_fuchsia_net_neighbor_ext;
 use fidl_fuchsia_net_routes_ext as froutes_ext;
+#[cfg(feature = "fdomain")]
+use fidl_fuchsia_net_routes_ext_fdomain as fidl_fuchsia_net_routes_ext;
 use net_types::Witness as _;
 use net_types::ip::IpAddress as _;
 use thiserror::Error;
@@ -42,12 +48,12 @@ pub(crate) enum AddressAssignmentState {
     Unavailable,
 }
 
-impl From<fidl_fuchsia_net_interfaces::AddressAssignmentState> for AddressAssignmentState {
-    fn from(value: fidl_fuchsia_net_interfaces::AddressAssignmentState) -> Self {
+impl From<flex_fuchsia_net_interfaces::AddressAssignmentState> for AddressAssignmentState {
+    fn from(value: flex_fuchsia_net_interfaces::AddressAssignmentState) -> Self {
         match value {
-            fidl_fuchsia_net_interfaces::AddressAssignmentState::Tentative => Self::Tentative,
-            fidl_fuchsia_net_interfaces::AddressAssignmentState::Assigned => Self::Assigned,
-            fidl_fuchsia_net_interfaces::AddressAssignmentState::Unavailable => Self::Unavailable,
+            flex_fuchsia_net_interfaces::AddressAssignmentState::Tentative => Self::Tentative,
+            flex_fuchsia_net_interfaces::AddressAssignmentState::Assigned => Self::Assigned,
+            flex_fuchsia_net_interfaces::AddressAssignmentState::Unavailable => Self::Unavailable,
         }
     }
 }
@@ -185,7 +191,7 @@ pub(crate) struct InterfaceView {
 impl
     From<(
         fidl_fuchsia_net_interfaces_ext::Properties<fidl_fuchsia_net_interfaces_ext::AllInterest>,
-        Option<fidl_fuchsia_net::MacAddress>,
+        Option<flex_fuchsia_net::MacAddress>,
     )> for InterfaceView
 {
     fn from(
@@ -193,7 +199,7 @@ impl
             fidl_fuchsia_net_interfaces_ext::Properties<
                 fidl_fuchsia_net_interfaces_ext::AllInterest,
             >,
-            Option<fidl_fuchsia_net::MacAddress>,
+            Option<flex_fuchsia_net::MacAddress>,
         ),
     ) -> InterfaceView {
         let (
@@ -276,8 +282,8 @@ pub struct NeighborTableEntryIteratorItemVariants<T> {
 }
 
 impl<T> NeighborTableEntryIteratorItemVariants<T> {
-    pub fn select(self, item: &fidl_fuchsia_net_neighbor::EntryIteratorItem) -> T {
-        use fidl_fuchsia_net_neighbor::EntryIteratorItem;
+    pub fn select(self, item: &flex_fuchsia_net_neighbor::EntryIteratorItem) -> T {
+        use flex_fuchsia_net_neighbor::EntryIteratorItem;
         let Self { existing, added, changed, removed, idle } = self;
         match item {
             EntryIteratorItem::Existing(_) => existing,

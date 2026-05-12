@@ -7,7 +7,7 @@
 use std::convert::TryInto as _;
 use std::fmt::Display;
 
-use fidl_fuchsia_net as fidl;
+use fidl_fuchsia_net_common as fidl;
 
 use net_types::{Witness as _, ethernet, ip};
 use paste::paste;
@@ -657,8 +657,8 @@ pub const MAX_MARK_DOMAIN_COUNTS: usize = 2;
 impl Marks {
     pub fn get(&self, domain: fidl::MarkDomain) -> Option<u32> {
         match domain {
-            fidl_fuchsia_net::MarkDomain::Mark1 => self.mark_1,
-            fidl_fuchsia_net::MarkDomain::Mark2 => self.mark_2,
+            fidl::MarkDomain::Mark1 => self.mark_1,
+            fidl::MarkDomain::Mark2 => self.mark_2,
         }
     }
 }

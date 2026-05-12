@@ -2,25 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fdomain_client::fidl::{DiscoverableProtocolMarker, ProtocolMarker, Proxy as _};
+use fdomain_fuchsia_developer_remotecontrol as fremotecontrol;
+use fdomain_fuchsia_net_debug as fdebug;
+use fdomain_fuchsia_net_dhcp as fdhcp;
+use fdomain_fuchsia_net_filter as ffilter;
+use fdomain_fuchsia_net_filter_deprecated as ffilter_deprecated;
+use fdomain_fuchsia_net_interfaces as finterfaces;
+use fdomain_fuchsia_net_interfaces_admin as finterfaces_admin;
+use fdomain_fuchsia_net_name as fname;
+use fdomain_fuchsia_net_neighbor as fneighbor;
+use fdomain_fuchsia_net_root as froot;
+use fdomain_fuchsia_net_routes as froutes;
+use fdomain_fuchsia_net_stack as fstack;
+use fdomain_fuchsia_net_stackmigrationdeprecated as fnet_migration;
+use fdomain_fuchsia_sys2 as fsys;
 use ffx_writer::MachineWriter;
 use fho::{FfxMain, FfxTool, user_error};
-use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker};
-use fidl_fuchsia_developer_remotecontrol as fremotecontrol;
-use fidl_fuchsia_net_debug as fdebug;
-use fidl_fuchsia_net_dhcp as fdhcp;
-use fidl_fuchsia_net_filter as ffilter;
-use fidl_fuchsia_net_filter_deprecated as ffilter_deprecated;
-use fidl_fuchsia_net_interfaces as finterfaces;
-use fidl_fuchsia_net_interfaces_admin as finterfaces_admin;
-use fidl_fuchsia_net_name as fname;
-use fidl_fuchsia_net_neighbor as fneighbor;
-use fidl_fuchsia_net_root as froot;
-use fidl_fuchsia_net_routes as froutes;
-use fidl_fuchsia_net_stack as fstack;
-use fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration;
-use fidl_fuchsia_sys2 as fsys;
+use net_cli_fdomain as net_cli;
 use std::ops::Deref as _;
-use target_holders::RemoteControlProxyHolder;
+use target_holders::fdomain::RemoteControlProxyHolder;
 
 const NETSTACK_MONIKER_SUFFIX: &str = "/netstack";
 const DHCPD_MONIKER_SUFFIX: &str = "/dhcpd";
@@ -46,7 +47,7 @@ impl FfxConnector<'_> {
             moniker = moniker.replace("\\:", ":");
             moniker = format!("/{moniker}");
         }
-        let (proxy, server_end) = fidl::endpoints::create_proxy::<S>();
+        let (proxy, server_end) = remote_control.domain().create_proxy::<S>();
         remote_control
             .connect_capability(
                 &moniker,

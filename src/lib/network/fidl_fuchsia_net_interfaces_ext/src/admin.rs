@@ -4,11 +4,9 @@
 
 //! Extensions for fuchsia.net.interfaces.admin.
 
-use fidl::Rights;
-use fidl::endpoints::ProtocolMarker as _;
-use fidl_fuchsia_net_interfaces as fnet_interfaces;
-use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
-use fidl_fuchsia_net_resources as fnet_resources;
+use flex_fuchsia_net_interfaces as fnet_interfaces;
+use flex_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+use flex_fuchsia_net_resources as fnet_resources;
 use futures::{Future, FutureExt as _, Stream, StreamExt as _, TryStreamExt as _};
 use thiserror::Error;
 use zx_status as zx;
@@ -157,6 +155,7 @@ type ControlEventStreamFutureToReason =
 /// Panics when the Event handle does not have the DUPLICATE right. Callers
 /// need not worry about this if providing a grant received from
 /// [`GetAuthorizationForInterface`].
+#[cfg(not(feature = "fdomain"))]
 pub fn proof_from_grant(
     grant: &fnet_resources::GrantForInterfaceAuthorization,
 ) -> fnet_resources::ProofOfInterfaceAuthorization {
@@ -168,7 +167,7 @@ pub fn proof_from_grant(
     // problem cannot be easily resolved via userspace.
     fnet_resources::ProofOfInterfaceAuthorization {
         interface_id: *interface_id,
-        token: token.duplicate_handle(Rights::TRANSFER).unwrap(),
+        token: token.duplicate_handle(fidl::Rights::TRANSFER).unwrap(),
     }
 }
 
@@ -243,7 +242,7 @@ where
                     Some(removal_reason) => Err(TerminalError::Terminal(removal_reason)),
                     None => Err(TerminalError::Fidl(fidl::Error::ClientChannelClosed {
                         status: zx::Status::PEER_CLOSED,
-                        protocol_name: fnet_interfaces_admin::ControlMarker::DEBUG_NAME,
+                        protocol_name: <fnet_interfaces_admin::ControlMarker as flex_client::fidl::ProtocolMarker>::DEBUG_NAME,
                         #[cfg(not(target_os = "fuchsia"))]
                         reason: None,
                         epitaph: None,
@@ -258,9 +257,9 @@ impl Control {
     /// Calls `AddAddress` on the proxy.
     pub fn add_address(
         &self,
-        address: &fidl_fuchsia_net::Subnet,
+        address: &flex_fuchsia_net::Subnet,
         parameters: &fnet_interfaces_admin::AddressParameters,
-        address_state_provider: fidl::endpoints::ServerEnd<
+        address_state_provider: flex_client::fidl::ServerEnd<
             fnet_interfaces_admin::AddressStateProviderMarker,
         >,
     ) -> Result<(), TerminalError<fnet_interfaces_admin::InterfaceRemovedReason>> {
@@ -281,7 +280,7 @@ impl Control {
     /// Calls `RemoveAddress` on the proxy.
     pub async fn remove_address(
         &self,
-        address: &fidl_fuchsia_net::Subnet,
+        address: &flex_fuchsia_net::Subnet,
     ) -> Result<
         fnet_interfaces_admin::ControlRemoveAddressResult,
         TerminalError<fnet_interfaces_admin::InterfaceRemovedReason>,
@@ -386,7 +385,7 @@ impl Control {
             Ok(Some(event)) => TerminalError::Terminal(event),
             Ok(None) => TerminalError::Fidl(fidl::Error::ClientChannelClosed {
                 status: zx::Status::PEER_CLOSED,
-                protocol_name: fnet_interfaces_admin::ControlMarker::DEBUG_NAME,
+                protocol_name: <fnet_interfaces_admin::ControlMarker as flex_client::fidl::ProtocolMarker>::DEBUG_NAME,
                 #[cfg(not(target_os = "fuchsia"))]
                 reason: None,
                 epitaph: None,
@@ -396,6 +395,7 @@ impl Control {
     }
 
     /// Creates a new `Control` and its `ServerEnd`.
+    #[cfg(not(feature = "fdomain"))]
     pub fn create_endpoints()
     -> Result<(Self, fidl::endpoints::ServerEnd<fnet_interfaces_admin::ControlMarker>), fidl::Error>
     {
@@ -527,11 +527,9 @@ impl From<NetstackManagedRoutesDesignation>
 mod test {
     use std::task::Poll;
 
-    use assert_matches::assert_matches;
-    use fidl::Rights;
-    use fidl::prelude::*;
-    use fidl_fuchsia_net_interfaces as fnet_interfaces;
-    use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
+    use flex_client::fidl::{ProtocolMarker, RequestStream};
+    use flex_fuchsia_net_interfaces as fnet_interfaces;
+    use flex_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
     use fnet_interfaces_admin::InterfaceRemovedReason;
     use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
     use test_case::test_case;
@@ -542,8 +540,9 @@ mod test {
     // Test that the terminal event is observed when the server closes its end.
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_assignment_state_stream() {
+        let client = flex_local::local_client_empty();
         let (address_state_provider, server_end) =
-            fidl::endpoints::create_proxy::<fnet_interfaces_admin::AddressStateProviderMarker>();
+            client.create_proxy::<fnet_interfaces_admin::AddressStateProviderMarker>();
         let state_stream = assignment_state_stream(address_state_provider);
         futures::pin_mut!(state_stream);
 
@@ -583,22 +582,29 @@ mod test {
     // an error observable on both the client proxy and the event stream occurs.
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_assignment_state_stream_single_error() {
+        let client = flex_local::local_client_empty();
         let (address_state_provider, server_end) =
-            fidl::endpoints::create_proxy::<fnet_interfaces_admin::AddressStateProviderMarker>();
+            client.create_proxy::<fnet_interfaces_admin::AddressStateProviderMarker>();
         let state_stream = assignment_state_stream(address_state_provider);
 
         server_end
             .close_with_epitaph(fidl::Status::INTERNAL)
             .expect("failed to send INTERNAL epitaph");
 
+        let states_fut = state_stream.collect::<Vec<_>>();
+
+        #[cfg(not(feature = "fdomain"))]
+        let states = states_fut.now_or_never().expect("state stream not immediately ready");
+
+        // FDomain needs to pump requests through its bowels a bit so the stream
+        // won't be immediately ready.
+        #[cfg(feature = "fdomain")]
+        let states = states_fut.await;
+
         // Use collect rather than try_collect to ensure that we don't observe
         // multiple errors on this stream.
         assert_matches::assert_matches!(
-            state_stream
-                .collect::<Vec<_>>()
-                .now_or_never()
-                .expect("state stream not immediately ready")
-                .as_slice(),
+            states.as_slice(),
             [Err(AddressStateProviderError::Fidl(fidl::Error::ClientChannelClosed {
                 status: fidl::Status::INTERNAL,
                 #[cfg(not(target_os = "fuchsia"))]
@@ -612,9 +618,9 @@ mod test {
     // the same time, the state is yielded first.
     #[fuchsia_async::run_singlethreaded(test)]
     async fn assignment_state_stream_state_before_event() {
-        let (address_state_provider, mut request_stream) = fidl::endpoints::create_proxy_and_stream::<
-            fnet_interfaces_admin::AddressStateProviderMarker,
-        >();
+        let client = flex_local::local_client_empty();
+        let (address_state_provider, mut request_stream) =
+            client.create_proxy_and_stream::<fnet_interfaces_admin::AddressStateProviderMarker>();
 
         const ASSIGNMENT_STATE_ASSIGNED: fnet_interfaces::AddressAssignmentState =
             fnet_interfaces::AddressAssignmentState::Assigned;
@@ -657,8 +663,9 @@ mod test {
     // Tests that terminal event is observed when using ControlWrapper.
     #[fuchsia_async::run_singlethreaded(test)]
     async fn control_terminal_event() {
+        let client = flex_local::local_client_empty();
         let (control, mut request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fnet_interfaces_admin::ControlMarker>();
+            client.create_proxy_and_stream::<fnet_interfaces_admin::ControlMarker>();
         let control = super::Control::new(control);
         const EXPECTED_EVENT: fnet_interfaces_admin::InterfaceRemovedReason =
             fnet_interfaces_admin::InterfaceRemovedReason::BadPort;
@@ -693,8 +700,9 @@ mod test {
     // event is issued.
     #[fuchsia_async::run_singlethreaded(test)]
     async fn control_missing_terminal_event() {
+        let client = flex_local::local_client_empty();
         let (control, mut request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fnet_interfaces_admin::ControlMarker>();
+            client.create_proxy_and_stream::<fnet_interfaces_admin::ControlMarker>();
         let control = super::Control::new(control);
         let ((), ()) = futures::future::join(
             async move {
@@ -702,7 +710,7 @@ mod test {
                     control.get_id().await,
                     Err(super::TerminalError::Fidl(fidl::Error::ClientChannelClosed {
                         status: zx::Status::PEER_CLOSED,
-                        protocol_name: fidl_fuchsia_net_interfaces_admin::ControlMarker::DEBUG_NAME,
+                        protocol_name: flex_fuchsia_net_interfaces_admin::ControlMarker::DEBUG_NAME,
                         #[cfg(not(target_os = "fuchsia"))]
                         reason: None,
                         ..
@@ -729,8 +737,9 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn control_pipelined_error() {
+        let client = flex_local::local_client_empty();
         let (control, request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fnet_interfaces_admin::ControlMarker>();
+            client.create_proxy_and_stream::<fnet_interfaces_admin::ControlMarker>();
         let control = super::Control::new(control);
         const CLOSE_REASON: fnet_interfaces_admin::InterfaceRemovedReason =
             fnet_interfaces_admin::InterfaceRemovedReason::BadPort;
@@ -739,6 +748,11 @@ mod test {
             .send_on_interface_removed(CLOSE_REASON)
             .expect("send terminal event");
         std::mem::drop(request_stream);
+        #[cfg(feature = "fdomain")]
+        {
+            let control_clone = control.clone();
+            let _ = control_clone.wait_termination().await;
+        }
         assert_matches::assert_matches!(control.or_terminal_event_no_return(Ok(())), Ok(()));
         assert_matches::assert_matches!(
             control.or_terminal_event_no_return(Err(fidl::Error::ClientWrite(
@@ -761,8 +775,9 @@ mod test {
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn control_wait_termination() {
+        let client = flex_local::local_client_empty();
         let (control, request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fnet_interfaces_admin::ControlMarker>();
+            client.create_proxy_and_stream::<fnet_interfaces_admin::ControlMarker>();
         let control = super::Control::new(control);
         const CLOSE_REASON: fnet_interfaces_admin::InterfaceRemovedReason =
             fnet_interfaces_admin::InterfaceRemovedReason::BadPort;
@@ -780,8 +795,9 @@ mod test {
     #[fuchsia_async::run_singlethreaded(test)]
     async fn control_respond_and_drop() {
         const ID: u64 = 15;
+        let client = flex_local::local_client_empty();
         let (control, mut request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<fnet_interfaces_admin::ControlMarker>();
+            client.create_proxy_and_stream::<fnet_interfaces_admin::ControlMarker>();
         let control = super::Control::new(control);
         let ((), ()) = futures::future::join(
             async move {
@@ -899,8 +915,15 @@ mod test {
         }
     }
 
+    #[cfg(not(feature = "fdomain"))]
     #[test]
     fn convert_proof_to_grant() {
+        use assert_matches::assert_matches;
+        // I don't know why we need this unused. The trait is definitely used
+        // and this function is only in the non-FDomain variant so we shouldn't
+        // be building an FDomain version.
+        #[allow(unused)]
+        use fidl::{AsHandleRef, Rights};
         // The default Event has more Rights than the token within the Grant returned from
         // [`GetAuthorizationForInterface`], but can still be converted to be used in the
         // [`ProofOfInterfaceAuthorization`], since only `zx::Rights::DUPLICATE` and

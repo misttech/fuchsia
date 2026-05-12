@@ -4,13 +4,16 @@
 
 use anyhow::Context as _;
 use argh::{ArgsInfo, FromArgs};
-use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext as fnet_ext;
-use fidl_fuchsia_net_interfaces as finterfaces;
-use fidl_fuchsia_net_interfaces_admin as finterfaces_admin;
+#[cfg(not(feature = "fdomain"))]
 use fidl_fuchsia_net_interfaces_ext as finterfaces_ext;
-use fidl_fuchsia_net_stack as fnet_stack;
-use fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration;
+#[cfg(feature = "fdomain")]
+use fidl_fuchsia_net_interfaces_ext_fdomain as finterfaces_ext;
+use flex_fuchsia_net as fnet;
+use flex_fuchsia_net_interfaces as finterfaces;
+use flex_fuchsia_net_interfaces_admin as finterfaces_admin;
+use flex_fuchsia_net_stack as fnet_stack;
+use flex_fuchsia_net_stackmigrationdeprecated as fnet_migration;
 use std::collections::HashMap;
 use std::convert::{TryFrom as _, TryInto as _};
 use std::num::NonZeroU64;

@@ -4,7 +4,7 @@
 
 use anyhow::Context as _;
 
-use fidl_fuchsia_net_stack as fidl_net_stack;
+use fidl_fuchsia_net_stack_common as fidl_net_stack;
 
 #[macro_export]
 macro_rules! exec_fidl {

@@ -6,10 +6,11 @@
 
 use std::fmt::Debug;
 
-use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker};
-use fidl_fuchsia_net_resources as fnet_resources;
-use fidl_fuchsia_net_root as fnet_root;
-use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
+use flex_client::ProxyHasDomain as _;
+use flex_client::fidl::{DiscoverableProtocolMarker, ProtocolMarker};
+use flex_fuchsia_net_resources as fnet_resources;
+use flex_fuchsia_net_root as fnet_root;
+use flex_fuchsia_net_routes_admin as fnet_routes_admin;
 use futures::future::Either;
 use net_types::ip::{GenericOverIp, Ip, IpInvariant, Ipv4, Ipv6};
 use thiserror::Error;
@@ -44,17 +45,19 @@ pub trait FidlRouteAdminIpExt: Ip {
     type RouteTableMarker: DiscoverableProtocolMarker<
             RequestStream = Self::RouteTableRequestStream,
             Proxy: Clone + Debug,
-        > + Unpin;
+        > + Unpin
+        + std::fmt::Debug;
     /// The "root set" protocol to use for this IP version.
     type GlobalRouteTableMarker: DiscoverableProtocolMarker;
     /// The "route set" protocol to use for this IP version.
-    type RouteSetMarker: ProtocolMarker<RequestStream = Self::RouteSetRequestStream>;
+    type RouteSetMarker: ProtocolMarker<RequestStream = Self::RouteSetRequestStream>
+        + std::fmt::Debug;
     /// The "route table provider" protocol to use for this IP version.
     type RouteTableProviderMarker: DiscoverableProtocolMarker<Proxy: Clone>;
     /// The request stream for the route set protocol.
-    type RouteSetRequestStream: fidl::endpoints::RequestStream<Ok: Send, ControlHandle: Send>;
+    type RouteSetRequestStream: flex_client::fidl::RequestStream<Ok: Send, ControlHandle: Send>;
     /// The request stream for the route table protocol.
-    type RouteTableRequestStream: fidl::endpoints::RequestStream<Ok: Send, ControlHandle: Send>;
+    type RouteTableRequestStream: flex_client::fidl::RequestStream<Ok: Send, ControlHandle: Send>;
     /// The responder for AddRoute requests.
     type AddRouteResponder: Responder<Payload = Result<bool, fnet_routes_admin::RouteSetError>>;
     /// The responder for RemoveRoute requests.
@@ -74,32 +77,32 @@ pub trait FidlRouteAdminIpExt: Ip {
         Payload = fnet_routes_admin::GrantForRouteTableAuthorization,
     >;
     /// The control handle for RouteTable protocols.
-    type RouteTableControlHandle: fidl::endpoints::ControlHandle + Debug;
+    type RouteTableControlHandle: flex_client::fidl::ControlHandle + Debug;
 
     /// The control handle for RouteTableProvider protocols.
-    type RouteTableProviderControlHandle: fidl::endpoints::ControlHandle + Debug;
+    type RouteTableProviderControlHandle: flex_client::fidl::ControlHandle + Debug;
 
     /// The responder for the GetInterfaceLocalTable method.
     type GetInterfaceLocalTableResponder: Responder<
         Payload = Result<
-            fidl::endpoints::ClientEnd<Self::RouteTableMarker>,
+            flex_client::fidl::ClientEnd<Self::RouteTableMarker>,
             fnet_routes_admin::GetInterfaceLocalTableError,
         >,
     >;
 
     /// Turns a FIDL route table provider request into the extension type.
     fn into_route_table_provider_request(
-        request: fidl::endpoints::Request<Self::RouteTableProviderMarker>,
+        request: flex_client::fidl::Request<Self::RouteTableProviderMarker>,
     ) -> RouteTableProviderRequest<Self>;
 
     /// Turns a FIDL route set request into the extension type.
     fn into_route_set_request(
-        request: fidl::endpoints::Request<Self::RouteSetMarker>,
+        request: flex_client::fidl::Request<Self::RouteSetMarker>,
     ) -> RouteSetRequest<Self>;
 
     /// Turns a FIDL route table request into the extension type.
     fn into_route_table_request(
-        request: fidl::endpoints::Request<Self::RouteTableMarker>,
+        request: flex_client::fidl::Request<Self::RouteTableMarker>,
     ) -> RouteTableRequest<Self>;
 
     /// Turns a FIDL route set request stream item into a Result of the extension type.
@@ -134,19 +137,19 @@ impl FidlRouteAdminIpExt for Ipv4 {
         fnet_routes_admin::RouteTableProviderV4GetInterfaceLocalTableResponder;
 
     fn into_route_table_provider_request(
-        request: fidl::endpoints::Request<Self::RouteTableProviderMarker>,
+        request: flex_client::fidl::Request<Self::RouteTableProviderMarker>,
     ) -> RouteTableProviderRequest<Ipv4> {
         RouteTableProviderRequest::from(request)
     }
 
     fn into_route_set_request(
-        request: fidl::endpoints::Request<Self::RouteSetMarker>,
+        request: flex_client::fidl::Request<Self::RouteSetMarker>,
     ) -> RouteSetRequest<Self> {
         RouteSetRequest::from(request)
     }
 
     fn into_route_table_request(
-        request: fidl::endpoints::Request<Self::RouteTableMarker>,
+        request: flex_client::fidl::Request<Self::RouteTableMarker>,
     ) -> RouteTableRequest<Self> {
         RouteTableRequest::from(request)
     }
@@ -185,19 +188,19 @@ impl FidlRouteAdminIpExt for Ipv6 {
         fnet_routes_admin::RouteTableProviderV6GetInterfaceLocalTableResponder;
 
     fn into_route_table_provider_request(
-        request: fidl::endpoints::Request<Self::RouteTableProviderMarker>,
+        request: flex_client::fidl::Request<Self::RouteTableProviderMarker>,
     ) -> RouteTableProviderRequest<Ipv6> {
         RouteTableProviderRequest::from(request)
     }
 
     fn into_route_set_request(
-        request: fidl::endpoints::Request<Self::RouteSetMarker>,
+        request: flex_client::fidl::Request<Self::RouteSetMarker>,
     ) -> RouteSetRequest<Self> {
         RouteSetRequest::from(request)
     }
 
     fn into_route_table_request(
-        request: fidl::endpoints::Request<Self::RouteTableMarker>,
+        request: flex_client::fidl::Request<Self::RouteTableMarker>,
     ) -> RouteTableRequest<Self> {
         RouteTableRequest::from(request)
     }
@@ -260,14 +263,14 @@ impl_responder!(
 impl_responder!(
     fnet_routes_admin::RouteTableProviderV4GetInterfaceLocalTableResponder,
     Result<
-        fidl::endpoints::ClientEnd<fnet_routes_admin::RouteTableV4Marker>,
+        flex_client::fidl::ClientEnd<fnet_routes_admin::RouteTableV4Marker>,
         fnet_routes_admin::GetInterfaceLocalTableError,
     >,
 );
 impl_responder!(
     fnet_routes_admin::RouteTableProviderV6GetInterfaceLocalTableResponder,
     Result<
-        fidl::endpoints::ClientEnd<fnet_routes_admin::RouteTableV6Marker>,
+        flex_client::fidl::ClientEnd<fnet_routes_admin::RouteTableV6Marker>,
         fnet_routes_admin::GetInterfaceLocalTableError,
     >,
 );
@@ -318,7 +321,7 @@ pub enum RouteTableProviderRequest<I: Ip + FidlRouteAdminIpExt> {
     /// Request to create a new route table.
     NewRouteTable {
         /// The server end of the RouteTable request
-        provider: fidl::endpoints::ServerEnd<I::RouteTableMarker>,
+        provider: flex_client::fidl::ServerEnd<I::RouteTableMarker>,
         /// The creation options.
         options: RouteTableOptions<I>,
         /// The control handle for the protocol.
@@ -372,12 +375,12 @@ pub fn new_route_table<I: Ip + FidlRouteAdminIpExt>(
     name: Option<String>,
 ) -> Result<<I::RouteTableMarker as ProtocolMarker>::Proxy, RouteTableCreationError> {
     let (route_table_proxy, route_table_server_end) =
-        fidl::endpoints::create_proxy::<I::RouteTableMarker>();
+        route_table_provider_proxy.domain().create_proxy::<I::RouteTableMarker>();
 
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct NewRouteTableInput<'a, I: FidlRouteAdminIpExt> {
-        route_table_server_end: fidl::endpoints::ServerEnd<I::RouteTableMarker>,
+        route_table_server_end: flex_client::fidl::ServerEnd<I::RouteTableMarker>,
         route_table_provider_proxy: &'a <I::RouteTableProviderMarker as ProtocolMarker>::Proxy,
         name: Option<String>,
     }
@@ -432,13 +435,14 @@ pub async fn get_interface_local_table<I: Ip + FidlRouteAdminIpExt>(
     struct Output<I: FidlRouteAdminIpExt>(
         fidl::client::QueryResponseFut<
             Result<
-                fidl::endpoints::ClientEnd<I::RouteTableMarker>,
+                flex_client::fidl::ClientEnd<I::RouteTableMarker>,
                 fnet_routes_admin::GetInterfaceLocalTableError,
             >,
+            flex_client::Dialect,
         >,
     );
 
-    let Output(fut) = I::map_ip(
+    let Output(fut) = I::map_ip::<Input<'_, I>, Output<I>>(
         Input::<'_, I> { route_table_provider_proxy, credential },
         |Input { route_table_provider_proxy, credential }| {
             Output::<Ipv4>(route_table_provider_proxy.get_interface_local_table(credential))
@@ -448,7 +452,7 @@ pub async fn get_interface_local_table<I: Ip + FidlRouteAdminIpExt>(
         },
     );
 
-    fut.await.map(|r| r.map(fidl::endpoints::ClientEnd::into_proxy))
+    fut.await.map(|r| r.map(|client_end| client_end.into_proxy()))
 }
 
 /// Dispatches `new_route_set` on either the `RouteTableV4`
@@ -457,12 +461,12 @@ pub fn new_route_set<I: Ip + FidlRouteAdminIpExt>(
     route_table_proxy: &<I::RouteTableMarker as ProtocolMarker>::Proxy,
 ) -> Result<<I::RouteSetMarker as ProtocolMarker>::Proxy, RouteSetCreationError> {
     let (route_set_proxy, route_set_server_end) =
-        fidl::endpoints::create_proxy::<I::RouteSetMarker>();
+        route_table_proxy.domain().create_proxy::<I::RouteSetMarker>();
 
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct NewRouteSetInput<'a, I: FidlRouteAdminIpExt> {
-        route_set_server_end: fidl::endpoints::ServerEnd<I::RouteSetMarker>,
+        route_set_server_end: flex_client::fidl::ServerEnd<I::RouteSetMarker>,
         route_table_proxy: &'a <I::RouteTableMarker as ProtocolMarker>::Proxy,
     }
     let result = I::map_ip_in(
@@ -485,12 +489,12 @@ pub fn new_global_route_set<I: Ip + FidlRouteAdminIpExt>(
     route_table_proxy: &<I::GlobalRouteTableMarker as ProtocolMarker>::Proxy,
 ) -> Result<<I::RouteSetMarker as ProtocolMarker>::Proxy, RouteSetCreationError> {
     let (route_set_proxy, route_set_server_end) =
-        fidl::endpoints::create_proxy::<I::RouteSetMarker>();
+        route_table_proxy.domain().create_proxy::<I::RouteSetMarker>();
 
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct NewRouteSetInput<'a, I: FidlRouteAdminIpExt> {
-        route_set_server_end: fidl::endpoints::ServerEnd<I::RouteSetMarker>,
+        route_set_server_end: flex_client::fidl::ServerEnd<I::RouteSetMarker>,
         route_table_proxy: &'a <I::GlobalRouteTableMarker as ProtocolMarker>::Proxy,
     }
     let result = I::map_ip_in(
@@ -729,7 +733,7 @@ pub enum RouteTableRequest<I: FidlRouteAdminIpExt> {
     /// Creates a new route set for the table.
     NewRouteSet {
         /// The server end of the route set protocol.
-        route_set: fidl::endpoints::ServerEnd<I::RouteSetMarker>,
+        route_set: flex_client::fidl::ServerEnd<I::RouteSetMarker>,
         /// Control handle to the protocol.
         control_handle: I::RouteTableControlHandle,
     },

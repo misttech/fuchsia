@@ -10,7 +10,6 @@ rustc_test("power") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_rust",
     "//sdk/fidl/fuchsia.hardware.power.suspend:fuchsia.hardware.power.suspend_rust",
-    "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//sdk/fidl/fuchsia.net.interfaces:fuchsia.net.interfaces_rust",
     "//sdk/fidl/fuchsia.net.power:fuchsia.net.power_rust",
     "//sdk/fidl/fuchsia.net.resources:fuchsia.net.resources_rust",

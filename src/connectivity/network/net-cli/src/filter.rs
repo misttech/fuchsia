@@ -8,13 +8,18 @@ use std::str::FromStr as _;
 
 use anyhow::{Error, anyhow};
 use fidl_fuchsia_net_ext as fnet_ext;
-use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_fuchsia_net_filter_ext::{
     self as fnet_filter_ext, ControllerId, Domain, InstalledIpRoutine, InstalledNatRoutine, IpHook,
     NamespaceId, NatHook, Resource, ResourceId, RoutineId, RoutineType, Rule, RuleId, Update,
 };
+#[cfg(feature = "fdomain")]
+use fidl_fuchsia_net_filter_ext_fdomain as fidl_fuchsia_net_filter_ext;
+#[cfg(not(feature = "fdomain"))]
 use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
-use fidl_fuchsia_net_root as fnet_root;
+#[cfg(feature = "fdomain")]
+use fidl_fuchsia_net_matchers_ext_fdomain as fnet_matchers_ext;
+use flex_fuchsia_net_filter as fnet_filter;
+use flex_fuchsia_net_root as fnet_root;
 
 use crate::{NetCliDepsConnector, connect_with_context, opts};
 
@@ -1404,9 +1409,10 @@ mod tests {
         const INDEX_THIRD: u32 = 13;
         const INDEX_FOURTH: u32 = 14;
 
+        let client = flex_local::local_client_empty();
+
         let mut output = Vec::new();
-        let (filter, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<fnet_filter::StateMarker>();
+        let (filter, mut requests) = client.create_proxy_and_stream::<fnet_filter::StateMarker>();
 
         let connector = TestConnector { filter: Some(filter), ..Default::default() };
         let op = do_filter(

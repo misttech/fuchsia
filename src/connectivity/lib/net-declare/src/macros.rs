@@ -230,7 +230,7 @@ impl Generator<IpAddr> for FidlGen {
             IpAddr::V6(v6) => (quote! { Ipv6 }, Self::generate(v6)),
         };
         quote! {
-            fidl_fuchsia_net::IpAddress::#t(#inner)
+            net_declare::fnet_common::IpAddress::#t(#inner)
         }
     }
 }
@@ -239,7 +239,7 @@ impl Generator<Ipv4Addr> for FidlGen {
     fn generate(input: Ipv4Addr) -> TokenStream {
         let octets = input.octets();
         quote! {
-            fidl_fuchsia_net::Ipv4Address{ addr: [#(#octets),*]}
+            net_declare::fnet_common::Ipv4Address{ addr: [#(#octets),*]}
         }
     }
 }
@@ -248,7 +248,7 @@ impl Generator<Ipv6Addr> for FidlGen {
     fn generate(input: Ipv6Addr) -> TokenStream {
         let octets = input.octets();
         quote! {
-            fidl_fuchsia_net::Ipv6Address{ addr: [#(#octets),*]}
+            net_declare::fnet_common::Ipv6Address{ addr: [#(#octets),*]}
         }
     }
 }
@@ -260,7 +260,7 @@ impl Generator<SocketAddr> for FidlGen {
             SocketAddr::V6(v6) => (quote! { Ipv6 }, Self::generate(v6)),
         };
         quote! {
-            fidl_fuchsia_net::SocketAddress::#t(#inner)
+            net_declare::fnet_common::SocketAddress::#t(#inner)
         }
     }
 }
@@ -270,7 +270,7 @@ impl Generator<SocketAddrV4> for FidlGen {
         let addr = Self::generate(input.ip().clone());
         let port = input.port();
         quote! {
-            fidl_fuchsia_net::Ipv4SocketAddress {
+            net_declare::fnet_common::Ipv4SocketAddress {
                 address: #addr,
                 port: #port
             }
@@ -284,7 +284,7 @@ impl Generator<SocketAddrV6> for FidlGen {
         let port = input.port();
         let scope_id = u64::from(input.scope_id());
         quote! {
-            fidl_fuchsia_net::Ipv6SocketAddress {
+            net_declare::fnet_common::Ipv6SocketAddress {
                 address: #addr,
                 port: #port,
                 zone_index: #scope_id
@@ -335,7 +335,7 @@ impl Generator<MacAddress> for FidlGen {
     fn generate(input: MacAddress) -> TokenStream {
         let MacAddress(octets) = input;
         quote! {
-            fidl_fuchsia_net::MacAddress {
+            net_declare::fnet_common::MacAddress {
                 octets: [#(#octets),*]
             }
         }
@@ -396,7 +396,7 @@ impl Generator<IpAddressWithPrefix<IpAddr>> for FidlGen {
         let IpAddressWithPrefix { address, prefix } = input;
         let address = Self::generate(address);
         quote! {
-            fidl_fuchsia_net::Subnet {
+            net_declare::fnet_common::Subnet {
                 addr: #address,
                 prefix_len: #prefix
             }
@@ -482,7 +482,7 @@ impl Generator<IpAddressWithPrefix<Ipv4Addr>> for FidlGen {
         let IpAddressWithPrefix { address, prefix } = input;
         let addr = Self::generate(address);
         quote! {
-            fidl_fuchsia_net::Ipv4AddressWithPrefix {
+            net_declare::fnet_common::Ipv4AddressWithPrefix {
                 addr: #addr,
                 prefix_len: #prefix,
             }
@@ -495,7 +495,7 @@ impl Generator<IpAddressWithPrefix<Ipv6Addr>> for FidlGen {
         let IpAddressWithPrefix { address, prefix } = input;
         let addr = Self::generate(address);
         quote! {
-            fidl_fuchsia_net::Ipv6AddressWithPrefix {
+            net_declare::fnet_common::Ipv6AddressWithPrefix {
                 addr: #addr,
                 prefix_len: #prefix,
             }

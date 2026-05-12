@@ -5,7 +5,7 @@
 mod error;
 pub use self::error::{FidlReturn, NetstackError};
 
-use fidl_fuchsia_net_stack as fidl;
+use fidl_fuchsia_net_stack_common as fidl;
 
 pub struct ForwardingEntry {
     pub subnet: fidl_fuchsia_net_ext::Subnet,

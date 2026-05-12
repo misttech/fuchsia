@@ -5,6 +5,8 @@
 //! Macros for constructing networking address types from the standard library,
 //! FIDL, and [`net_types`] from human-readable representations.
 
+pub use fidl_fuchsia_net_common as fnet_common;
+
 /// Declares an [`std::net::IpAddr`] from a parsable IP address (either V4 or
 /// V6) string.
 pub use net_declare_macros::std_ip;
@@ -137,9 +139,10 @@ pub mod net {
 
 #[cfg(test)]
 mod tests {
+    extern crate self as net_declare;
     use super::*;
     use ::std;
-    use fidl_fuchsia_net as fidl;
+    use fidl_fuchsia_net_common as fidl;
     use net_declare_macros::net_prefix_length_v4;
 
     #[test]

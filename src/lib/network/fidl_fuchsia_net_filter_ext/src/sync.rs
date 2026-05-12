@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![cfg(not(feature = "fdomain"))]
+
 use crate::{
     Change, CommitError, ControllerCreationError, ControllerId, PushChangesError,
     RegisterEbpfProgramError, handle_change_validation_result, handle_commit_result,
 };
 use fidl::marker::SourceBreaking;
-use fidl_fuchsia_ebpf as febpf;
-use fidl_fuchsia_net_filter as fnet_filter;
+use flex_fuchsia_ebpf as febpf;
+use flex_fuchsia_net_filter as fnet_filter;
 
 /// A controller for filtering state with blocking methods.
 pub struct Controller {

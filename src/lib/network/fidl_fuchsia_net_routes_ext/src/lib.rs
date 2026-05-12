@@ -20,11 +20,11 @@ use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 
 use async_utils::{fold, stream};
-use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext::{self as fnet_ext, IntoExt as _, TryIntoExt as _};
-use fidl_fuchsia_net_routes as fnet_routes;
-use fidl_fuchsia_net_routes_admin as fnet_routes_admin;
-use fidl_fuchsia_net_stack as fnet_stack;
+use flex_fuchsia_net as fnet;
+use flex_fuchsia_net_routes as fnet_routes;
+use flex_fuchsia_net_routes_admin as fnet_routes_admin;
+use flex_fuchsia_net_stack as fnet_stack;
 use futures::{Future, Stream, TryStreamExt as _};
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6, Ipv6Addr, Subnet};
 use net_types::{SpecifiedAddr, UnicastAddress, Witness as _};
@@ -811,9 +811,9 @@ pub enum WatchError {
 /// IP Extension for the `fuchsia.net.routes` FIDL API.
 pub trait FidlRouteIpExt: Ip {
     /// The "state" protocol to use for this IP version.
-    type StateMarker: fidl::endpoints::DiscoverableProtocolMarker;
+    type StateMarker: flex_client::fidl::DiscoverableProtocolMarker;
     /// The "watcher" protocol to use for this IP version.
-    type WatcherMarker: fidl::endpoints::ProtocolMarker;
+    type WatcherMarker: flex_client::fidl::ProtocolMarker;
     /// The type of "event" returned by this IP version's watcher protocol.
     type WatchEvent: TryInto<Event<Self>, Error = FidlConversionError<InstalledRouteRequiredFields>>
         + TryFrom<Event<Self>, Error = NetTypeConversionError>
@@ -843,7 +843,7 @@ impl FidlRouteIpExt for Ipv6 {
 }
 
 /// Abstracts over AddRoute and RemoveRoute RouteSet method responders.
-pub trait Responder: fidl::endpoints::Responder + Debug + Send {
+pub trait Responder: flex_client::fidl::Responder + Debug + Send {
     /// The payload of the response.
     type Payload;
 
@@ -856,7 +856,7 @@ pub trait Responder: fidl::endpoints::Responder + Debug + Send {
 /// This is similar to [`Responder`], but it allows the sender to send a slice
 /// of objects.
 // These two traits can be merged into one with GATs.
-pub trait SliceResponder<Payload>: fidl::endpoints::Responder + Debug + Send {
+pub trait SliceResponder<Payload>: flex_client::fidl::Responder + Debug + Send {
     /// Sends a FIDL response.
     fn send(self, payload: &[Payload]) -> Result<(), fidl::Error>;
 }
@@ -918,16 +918,18 @@ impl From<fnet_routes::WatcherOptionsV6> for WatcherOptions {
 
 /// Dispatches either `GetWatcherV4` or `GetWatcherV6` on the state proxy.
 pub fn get_watcher<I: FidlRouteIpExt>(
-    state_proxy: &<I::StateMarker as fidl::endpoints::ProtocolMarker>::Proxy,
+    state_proxy: &<I::StateMarker as flex_client::fidl::ProtocolMarker>::Proxy,
     options: WatcherOptions,
-) -> Result<<I::WatcherMarker as fidl::endpoints::ProtocolMarker>::Proxy, WatcherCreationError> {
-    let (watcher_proxy, watcher_server_end) = fidl::endpoints::create_proxy::<I::WatcherMarker>();
+) -> Result<<I::WatcherMarker as flex_client::fidl::ProtocolMarker>::Proxy, WatcherCreationError> {
+    use flex_client::ProxyHasDomain as _;
+    let (watcher_proxy, watcher_server_end) =
+        state_proxy.domain().create_proxy::<I::WatcherMarker>();
 
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct GetWatcherInputs<'a, I: FidlRouteIpExt> {
-        watcher_server_end: fidl::endpoints::ServerEnd<I::WatcherMarker>,
-        state_proxy: &'a <I::StateMarker as fidl::endpoints::ProtocolMarker>::Proxy,
+        watcher_server_end: flex_client::fidl::ServerEnd<I::WatcherMarker>,
+        state_proxy: &'a <I::StateMarker as flex_client::fidl::ProtocolMarker>::Proxy,
         options: WatcherOptions,
     }
     let result = I::map_ip_in(
@@ -946,17 +948,17 @@ pub fn get_watcher<I: FidlRouteIpExt>(
 
 /// Calls `Watch()` on the provided `WatcherV4` or `WatcherV6` proxy.
 pub fn watch<'a, I: FidlRouteIpExt>(
-    watcher_proxy: &'a <I::WatcherMarker as fidl::endpoints::ProtocolMarker>::Proxy,
+    watcher_proxy: &'a <I::WatcherMarker as flex_client::fidl::ProtocolMarker>::Proxy,
 ) -> impl Future<Output = Result<Vec<I::WatchEvent>, fidl::Error>> {
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct WatchInputs<'a, I: FidlRouteIpExt> {
-        watcher_proxy: &'a <I::WatcherMarker as fidl::endpoints::ProtocolMarker>::Proxy,
+        watcher_proxy: &'a <I::WatcherMarker as flex_client::fidl::ProtocolMarker>::Proxy,
     }
     #[derive(GenericOverIp)]
     #[generic_over_ip(I, Ip)]
     struct WatchOutputs<I: FidlRouteIpExt> {
-        watch_fut: fidl::client::QueryResponseFut<Vec<I::WatchEvent>>,
+        watch_fut: fidl::client::QueryResponseFut<Vec<I::WatchEvent>, flex_client::Dialect>,
     }
     let WatchOutputs { watch_fut } = I::map_ip::<WatchInputs<'_, I>, WatchOutputs<I>>(
         WatchInputs { watcher_proxy },
@@ -968,7 +970,7 @@ pub fn watch<'a, I: FidlRouteIpExt>(
 
 /// [`event_stream_from_state_with_options`] with default [`WatcherOptions`].
 pub fn event_stream_from_state<I: FidlRouteIpExt>(
-    routes_state: &<I::StateMarker as fidl::endpoints::ProtocolMarker>::Proxy,
+    routes_state: &<I::StateMarker as flex_client::fidl::ProtocolMarker>::Proxy,
 ) -> Result<impl Stream<Item = Result<Event<I>, WatchError>> + use<I>, WatcherCreationError> {
     event_stream_from_state_with_options(routes_state, Default::default())
 }
@@ -980,7 +982,7 @@ pub fn event_stream_from_state<I: FidlRouteIpExt>(
 /// single stream. If an error is encountered while calling `Watch` or while
 /// converting the event, the stream is immediately terminated.
 pub fn event_stream_from_state_with_options<I: FidlRouteIpExt>(
-    routes_state: &<I::StateMarker as fidl::endpoints::ProtocolMarker>::Proxy,
+    routes_state: &<I::StateMarker as flex_client::fidl::ProtocolMarker>::Proxy,
     options: WatcherOptions,
 ) -> Result<impl Stream<Item = Result<Event<I>, WatchError>> + use<I>, WatcherCreationError> {
     let watcher = get_watcher::<I>(routes_state, options)?;
@@ -994,7 +996,7 @@ pub fn event_stream_from_state_with_options<I: FidlRouteIpExt>(
 /// single stream. If an error is encountered while calling `Watch` or while
 /// converting the event, the stream is immediately terminated.
 pub fn event_stream_from_watcher<I: FidlRouteIpExt>(
-    watcher: <I::WatcherMarker as fidl::endpoints::ProtocolMarker>::Proxy,
+    watcher: <I::WatcherMarker as flex_client::fidl::ProtocolMarker>::Proxy,
 ) -> Result<impl Stream<Item = Result<Event<I>, WatchError>> + use<I>, WatcherCreationError> {
     Ok(stream::ShortCircuit::new(
         futures::stream::try_unfold(watcher, |watcher| async {
@@ -1185,7 +1187,7 @@ mod tests {
     use super::*;
     use crate::testutil::internal as internal_testutil;
     use assert_matches::assert_matches;
-    use fidl_fuchsia_net as _;
+    use flex_fuchsia_net as _;
     use futures::{FutureExt as _, StreamExt as _};
     use ip_test_macro::ip_test;
     use net_declare::{
@@ -1821,7 +1823,11 @@ mod tests {
         }
 
         // Instantiate the fake Watcher implementation.
-        let (state, state_server_end) = fidl::endpoints::create_proxy::<I::StateMarker>();
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
+        let (state, state_server_end) = client.create_proxy::<I::StateMarker>();
         let (mut state_request_stream, _control_handle) =
             state_server_end.into_stream_and_control_handle();
         let watcher_fut = state_request_stream
@@ -1882,7 +1888,11 @@ mod tests {
         ];
 
         // Instantiate the fake Watcher implementations.
-        let (state, state_server_end) = fidl::endpoints::create_proxy::<I::StateMarker>();
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
+        let (state, state_server_end) = client.create_proxy::<I::StateMarker>();
         let (state_request_stream, _control_handle) =
             state_server_end.into_stream_and_control_handle();
         let watchers_fut = state_request_stream
@@ -1973,7 +1983,11 @@ mod tests {
             .collect::<Vec<_>>();
 
         // Instantiate the fake Watcher implementation.
-        let (state, state_server_end) = fidl::endpoints::create_proxy::<I::StateMarker>();
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
+        let (state, state_server_end) = client.create_proxy::<I::StateMarker>();
         let (mut state_request_stream, _control_handle) =
             state_server_end.into_stream_and_control_handle();
         let watcher_fut = state_request_stream
@@ -2009,7 +2023,11 @@ mod tests {
             .collect::<Vec<_>>();
 
         // Instantiate the fake Watcher implementation.
-        let (state, state_server_end) = fidl::endpoints::create_proxy::<I::StateMarker>();
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
+        let (state, state_server_end) = client.create_proxy::<I::StateMarker>();
         let (mut state_request_stream, _control_handle) =
             state_server_end.into_stream_and_control_handle();
         let watcher_fut = state_request_stream

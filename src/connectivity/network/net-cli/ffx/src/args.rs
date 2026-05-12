@@ -8,7 +8,7 @@
 /// View and manage target network configuration
 pub struct Command {
     #[argh(subcommand)]
-    pub cmd: net_cli::CommandEnum,
+    pub cmd: net_cli_fdomain::CommandEnum,
 
     /// a realm to target when sending commands. Defaults to the core network realm.
     #[argh(option)]

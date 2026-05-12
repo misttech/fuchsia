@@ -35,7 +35,6 @@ rustc_binary("bin") {
     "//third_party/rust_crates:thiserror",
   ]
   test_deps = [
-    "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//src/connectivity/lib/net-declare",
     "//src/lib/fuchsia",
     "//src/sys/lib/cm_rust",

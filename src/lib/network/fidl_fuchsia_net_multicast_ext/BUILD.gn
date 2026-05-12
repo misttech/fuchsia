@@ -16,7 +16,6 @@ rustc_library("fidl_fuchsia_net_multicast_ext") {
     "//third_party/rust_crates:futures",
   ]
   test_deps = [
-    "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//src/connectivity/lib/net-declare",
     "//third_party/rust_crates:test-case",
   ]

@@ -7,25 +7,38 @@ mod opts;
 mod ser;
 
 use anyhow::{Context as _, Error, anyhow};
-use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_debug as fdebug;
-use fidl_fuchsia_net_dhcp as fdhcp;
 use fidl_fuchsia_net_ext as fnet_ext;
-use fidl_fuchsia_net_filter as fnet_filter;
-use fidl_fuchsia_net_filter_deprecated as ffilter_deprecated;
-use fidl_fuchsia_net_interfaces as finterfaces;
-use fidl_fuchsia_net_interfaces_admin as finterfaces_admin;
+#[cfg(not(feature = "fdomain"))]
 use fidl_fuchsia_net_interfaces_ext as finterfaces_ext;
+#[cfg(feature = "fdomain")]
+use fidl_fuchsia_net_interfaces_ext_fdomain as finterfaces_ext;
+#[cfg(not(feature = "fdomain"))]
 use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
-use fidl_fuchsia_net_name as fname;
-use fidl_fuchsia_net_neighbor as fneighbor;
+#[cfg(feature = "fdomain")]
+use fidl_fuchsia_net_matchers_ext_fdomain as fnet_matchers_ext;
+#[cfg(not(feature = "fdomain"))]
 use fidl_fuchsia_net_neighbor_ext as fneighbor_ext;
-use fidl_fuchsia_net_root as froot;
-use fidl_fuchsia_net_routes as froutes;
+#[cfg(feature = "fdomain")]
+use fidl_fuchsia_net_neighbor_ext_fdomain as fneighbor_ext;
+#[cfg(not(feature = "fdomain"))]
 use fidl_fuchsia_net_routes_ext as froutes_ext;
-use fidl_fuchsia_net_stack as fstack;
+#[cfg(feature = "fdomain")]
+use fidl_fuchsia_net_routes_ext_fdomain as froutes_ext;
 use fidl_fuchsia_net_stack_ext::{self as fstack_ext, FidlReturn as _};
-use fidl_fuchsia_net_stackmigrationdeprecated as fnet_migration;
+use flex_client::ProxyHasDomain;
+use flex_fuchsia_net as fnet;
+use flex_fuchsia_net_debug as fdebug;
+use flex_fuchsia_net_dhcp as fdhcp;
+use flex_fuchsia_net_filter as fnet_filter;
+use flex_fuchsia_net_filter_deprecated as ffilter_deprecated;
+use flex_fuchsia_net_interfaces as finterfaces;
+use flex_fuchsia_net_interfaces_admin as finterfaces_admin;
+use flex_fuchsia_net_name as fname;
+use flex_fuchsia_net_neighbor as fneighbor;
+use flex_fuchsia_net_root as froot;
+use flex_fuchsia_net_routes as froutes;
+use flex_fuchsia_net_stack as fstack;
+use flex_fuchsia_net_stackmigrationdeprecated as fnet_migration;
 use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use itertools::Itertools as _;
 use log::{info, warn};
@@ -61,7 +74,7 @@ fn add_row(t: &mut Table, row: Row) {
 
 /// An interface for acquiring a proxy to a FIDL service.
 #[async_trait::async_trait]
-pub trait ServiceConnector<S: fidl::endpoints::ProtocolMarker> {
+pub trait ServiceConnector<S: flex_client::fidl::ProtocolMarker> {
     /// Acquires a proxy to the parameterized FIDL interface.
     async fn connect(&self) -> Result<S::Proxy, Error>;
 }
@@ -276,7 +289,7 @@ fn write_tabulated_interfaces_info<
 pub(crate) async fn connect_with_context<S, C>(connector: &C) -> Result<S::Proxy, Error>
 where
     C: ServiceConnector<S>,
-    S: fidl::endpoints::ProtocolMarker,
+    S: flex_client::fidl::ProtocolMarker,
 {
     connector.connect().await.with_context(|| format!("failed to connect to {}", S::DEBUG_NAME))
 }
@@ -286,8 +299,9 @@ where
     C: ServiceConnector<froot::InterfacesMarker>,
 {
     let root_interfaces = connect_with_context::<froot::InterfacesMarker, _>(connector).await?;
-    let (control, server_end) = finterfaces_ext::admin::Control::create_endpoints()
-        .context("create admin control endpoints")?;
+    let (proxy, server_end) =
+        root_interfaces.domain().create_proxy::<finterfaces_admin::ControlMarker>();
+    let control = finterfaces_ext::admin::Control::new(proxy);
     root_interfaces.get_admin(id, server_end).context("send get admin request")?;
     Ok(control)
 }
@@ -663,9 +677,12 @@ async fn do_if<C: NetCliDepsConnector>(
                 let control = get_control(connector, id).await?;
                 let addr = fnet_ext::IpAddress::from_str(&addr)?.into();
                 let subnet = fnet_ext::Subnet { addr, prefix_len: prefix };
-                let (address_state_provider, server_end) = fidl::endpoints::create_proxy::<
-                    finterfaces_admin::AddressStateProviderMarker,
-                >();
+                let root_interfaces =
+                    connect_with_context::<froot::InterfacesMarker, _>(connector).await?;
+                let (address_state_provider, server_end) =
+                    root_interfaces
+                        .domain()
+                        .create_proxy::<finterfaces_admin::AddressStateProviderMarker>();
                 control
                     .add_address(
                         &subnet.into(),
@@ -836,7 +853,7 @@ async fn do_if<C: NetCliDepsConnector>(
                     )
                     .await?;
 
-            let (bridge, server_end) = fidl::endpoints::create_proxy();
+            let (bridge, server_end) = stack.domain().create_proxy();
             stack.bridge_interfaces(&ids, server_end).context("bridge interfaces")?;
             let bridge_id = bridge.get_id().await.context("get bridge id")?;
             // Detach the channel so it won't cause bridge destruction on exit.
@@ -876,8 +893,9 @@ async fn do_if<C: NetCliDepsConnector>(
                     .await
                     .expect("connect should succeed");
 
-            let (control, server_end) = finterfaces_ext::admin::Control::create_endpoints()
-                .context("create admin control endpoints")?;
+            let (proxy, server_end) =
+                installer.domain().create_proxy::<finterfaces_admin::ControlMarker>();
+            let control = finterfaces_ext::admin::Control::new(proxy);
             installer
                 .install_blackhole_interface(
                     server_end,
@@ -1585,9 +1603,7 @@ async fn print_neigh_entries(
     watch_for_changes: bool,
     view: fneighbor::ViewProxy,
 ) -> Result<(), Error> {
-    let (it_client, it_server) =
-        fidl::endpoints::create_endpoints::<fneighbor::EntryIteratorMarker>();
-    let it = it_client.into_proxy();
+    let (it, it_server) = view.domain().create_proxy::<fneighbor::EntryIteratorMarker>();
 
     view.open_entry_iterator(it_server, &fneighbor::EntryIteratorOptions::default())
         .context("error opening a connection to the entry iterator")?;
@@ -1863,7 +1879,7 @@ async fn do_netstack_migration<W: std::io::Write, C: NetCliDepsConnector>(
 
 #[cfg(test)]
 mod testutil {
-    use fidl::endpoints::ProtocolMarker;
+    use flex_client::fidl::ProtocolMarker;
 
     use super::*;
 
@@ -2057,8 +2073,11 @@ mod tests {
     use std::fmt::Debug;
 
     use assert_matches::assert_matches;
-    use fidl_fuchsia_net_routes as froutes;
+    #[cfg(not(feature = "fdomain"))]
     use fidl_fuchsia_net_routes_ext as froutes_ext;
+    #[cfg(feature = "fdomain")]
+    use fidl_fuchsia_net_routes_ext_fdomain as froutes_ext;
+    use flex_fuchsia_net_routes as froutes;
     use fuchsia_async::{self as fasync, TimeoutExt as _};
     use net_declare::{fidl_ip, fidl_ip_v4, fidl_mac, fidl_subnet};
     use test_case::test_case;
@@ -2180,9 +2199,11 @@ mod tests {
     #[test_case(fnet::IpVersion::V6, false ; "IPv6 disable routing")]
     #[fasync::run_singlethreaded(test)]
     async fn if_ip_forward(ip_version: fnet::IpVersion, enable: bool) {
+        let client = flex_local::local_client_empty();
+
         let interface1 = TestInterface { nicid: 1, name: "interface1" };
         let (root_interfaces, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<froot::InterfacesMarker>();
+            client.create_proxy_and_stream::<froot::InterfacesMarker>();
         let connector =
             TestConnector { root_interfaces: Some(root_interfaces), ..Default::default() };
 
@@ -2301,9 +2322,11 @@ mod tests {
     #[test_case(finterfaces_admin::IgmpVersion::V3)]
     #[fasync::run_singlethreaded(test)]
     async fn if_igmp(igmp_version: finterfaces_admin::IgmpVersion) {
+        let client = flex_local::local_client_empty();
+
         let interface1 = TestInterface { nicid: 1, name: "interface1" };
         let (root_interfaces, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<froot::InterfacesMarker>();
+            client.create_proxy_and_stream::<froot::InterfacesMarker>();
         let connector =
             TestConnector { root_interfaces: Some(root_interfaces), ..Default::default() };
 
@@ -2372,9 +2395,11 @@ mod tests {
     #[test_case(finterfaces_admin::MldVersion::V2)]
     #[fasync::run_singlethreaded(test)]
     async fn if_mld(mld_version: finterfaces_admin::MldVersion) {
+        let client = flex_local::local_client_empty();
+
         let interface1 = TestInterface { nicid: 1, name: "interface1" };
         let (root_interfaces, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<froot::InterfacesMarker>();
+            client.create_proxy_and_stream::<froot::InterfacesMarker>();
         let connector =
             TestConnector { root_interfaces: Some(root_interfaces), ..Default::default() };
 
@@ -2507,11 +2532,13 @@ mod tests {
     #[test_case(false, true ; "when interface is down, and not adding subnet route")]
     #[fasync::run_singlethreaded(test)]
     async fn if_addr_add(interface_is_up: bool, no_subnet_route: bool) {
+        let client = flex_local::local_client_empty();
+
         const TEST_PREFIX_LENGTH: u8 = 64;
 
         let interface1 = TestInterface { nicid: 1, name: "interface1" };
         let (root_interfaces, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<froot::InterfacesMarker>();
+            client.create_proxy_and_stream::<froot::InterfacesMarker>();
 
         let connector =
             TestConnector { root_interfaces: Some(root_interfaces), ..Default::default() };
@@ -2609,13 +2636,15 @@ mod tests {
     #[test_case(true ; "providing interface names")]
     #[fasync::run_singlethreaded(test)]
     async fn if_del_addr(use_ifname: bool) {
+        let client = flex_local::local_client_empty();
+
         let interface1 = TestInterface { nicid: 1, name: "interface1" };
         let interface2 = TestInterface { nicid: 2, name: "interface2" };
 
         let (root_interfaces, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<froot::InterfacesMarker>();
+            client.create_proxy_and_stream::<froot::InterfacesMarker>();
         let (interfaces_state, interfaces_requests) =
-            fidl::endpoints::create_proxy_and_stream::<finterfaces::StateMarker>();
+            client.create_proxy_and_stream::<finterfaces::StateMarker>();
 
         let (interface1_properties, _mac) = get_fake_interface(
             interface1.nicid,
@@ -2800,10 +2829,12 @@ mod tests {
     )]
     #[fasync::run_singlethreaded(test)]
     async fn if_addr_wait(ipv6: bool, events: Vec<finterfaces::Event>, expected_output: &str) {
+        let client = flex_local::local_client_empty();
+
         let interface = TestInterface { nicid: INTERFACE_ID, name: INTERFACE_NAME };
 
         let (interfaces_state, mut request_stream) =
-            fidl::endpoints::create_proxy_and_stream::<finterfaces::StateMarker>();
+            client.create_proxy_and_stream::<finterfaces::StateMarker>();
 
         let interfaces_handler = async move {
             let (finterfaces::WatcherOptions { include_non_assigned_addresses, .. }, server_end, _) =
@@ -2994,10 +3025,12 @@ port_identity_koid    -
     #[test_case(false, wanted_net_if_list_tabular() ; "in tabular format")]
     #[fasync::run_singlethreaded(test)]
     async fn if_list(json: bool, wanted_output: String) {
+        let client = flex_local::local_client_empty();
+
         let (root_interfaces, root_interfaces_stream) =
-            fidl::endpoints::create_proxy_and_stream::<froot::InterfacesMarker>();
+            client.create_proxy_and_stream::<froot::InterfacesMarker>();
         let (interfaces_state, interfaces_state_stream) =
-            fidl::endpoints::create_proxy_and_stream::<finterfaces::StateMarker>();
+            client.create_proxy_and_stream::<finterfaces::StateMarker>();
 
         let buffers = writer::TestBuffers::default();
         let mut output = if json {
@@ -3157,9 +3190,8 @@ port_identity_koid    -
         }
     }
 
-    async fn test_do_dhcp(cmd: opts::DhcpEnum) {
-        let (stack, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<fstack::StackMarker>();
+    async fn test_do_dhcp(client: flex_client::ClientArg, cmd: opts::DhcpEnum) {
+        let (stack, mut requests) = client.create_proxy_and_stream::<fstack::StackMarker>();
         let connector = TestConnector { stack: Some(stack), ..Default::default() };
         let op = do_dhcp(cmd.clone(), &connector);
         let op_succeeds = async move {
@@ -3185,15 +3217,19 @@ port_identity_koid    -
 
     #[fasync::run_singlethreaded(test)]
     async fn dhcp_start() {
-        test_do_dhcp(opts::DhcpEnum::Start(opts::DhcpStart { interface: 1.into() })).await;
+        let client = flex_local::local_client_empty();
+
+        test_do_dhcp(client, opts::DhcpEnum::Start(opts::DhcpStart { interface: 1.into() })).await;
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn dhcp_stop() {
-        test_do_dhcp(opts::DhcpEnum::Stop(opts::DhcpStop { interface: 1.into() })).await;
+        let client = flex_local::local_client_empty();
+
+        test_do_dhcp(client, opts::DhcpEnum::Stop(opts::DhcpStop { interface: 1.into() })).await;
     }
 
-    async fn test_modify_route(cmd: opts::RouteEnum) {
+    async fn test_modify_route(client: flex_client::ClientArg, cmd: opts::RouteEnum) {
         let expected_interface = match &cmd {
             opts::RouteEnum::List(_) => panic!("test_modify_route should not take a List command"),
             opts::RouteEnum::Add(opts::RouteAdd { interface, .. }) => interface,
@@ -3207,8 +3243,7 @@ port_identity_koid    -
             }
         };
 
-        let (stack, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<fstack::StackMarker>();
+        let (stack, mut requests) = client.create_proxy_and_stream::<fstack::StackMarker>();
         let connector = TestConnector { stack: Some(stack), ..Default::default() };
         let buffers = writer::TestBuffers::default();
         let mut out = writer::JsonWriter::new_test(None, &buffers);
@@ -3255,27 +3290,37 @@ port_identity_koid    -
 
     #[fasync::run_singlethreaded(test)]
     async fn route_add() {
+        let client = flex_local::local_client_empty();
+
         // Test arguments have been arbitrarily selected.
-        test_modify_route(opts::RouteEnum::Add(opts::RouteAdd {
-            destination: std::net::IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 0)),
-            prefix_len: 24,
-            gateway: None,
-            interface: 2.into(),
-            metric: 100,
-        }))
+        test_modify_route(
+            client,
+            opts::RouteEnum::Add(opts::RouteAdd {
+                destination: std::net::IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 0)),
+                prefix_len: 24,
+                gateway: None,
+                interface: 2.into(),
+                metric: 100,
+            }),
+        )
         .await;
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn route_del() {
+        let client = flex_local::local_client_empty();
+
         // Test arguments have been arbitrarily selected.
-        test_modify_route(opts::RouteEnum::Del(opts::RouteDel {
-            destination: std::net::IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 0)),
-            prefix_len: 24,
-            gateway: None,
-            interface: 2.into(),
-            metric: 100,
-        }))
+        test_modify_route(
+            client,
+            opts::RouteEnum::Del(opts::RouteDel {
+                destination: std::net::IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 0)),
+                prefix_len: 24,
+                gateway: None,
+                interface: 2.into(),
+                metric: 100,
+            }),
+        )
         .await;
     }
 
@@ -3343,10 +3388,12 @@ port_identity_koid    -
     #[test_case(false, wanted_route_list_tabular() ; "in tabular format")]
     #[fasync::run_singlethreaded(test)]
     async fn route_list(json: bool, wanted_output: String) {
+        let client = flex_local::local_client_empty();
+
         let (routes_v4_controller, mut routes_v4_state_stream) =
-            fidl::endpoints::create_proxy_and_stream::<froutes::StateV4Marker>();
+            client.create_proxy_and_stream::<froutes::StateV4Marker>();
         let (routes_v6_controller, mut routes_v6_state_stream) =
-            fidl::endpoints::create_proxy_and_stream::<froutes::StateV6Marker>();
+            client.create_proxy_and_stream::<froutes::StateV6Marker>();
         let connector = TestConnector {
             routes_v4: Some(routes_v4_controller),
             routes_v6: Some(routes_v6_controller),
@@ -3537,10 +3584,11 @@ port_identity_koid    -
     #[test_case(true ; "providing interface names")]
     #[fasync::run_singlethreaded(test)]
     async fn bridge(use_ifname: bool) {
-        let (stack, mut stack_requests) =
-            fidl::endpoints::create_proxy_and_stream::<fstack::StackMarker>();
+        let client = flex_local::local_client_empty();
+
+        let (stack, mut stack_requests) = client.create_proxy_and_stream::<fstack::StackMarker>();
         let (interfaces_state, interfaces_state_requests) =
-            fidl::endpoints::create_proxy_and_stream::<finterfaces::StateMarker>();
+            client.create_proxy_and_stream::<finterfaces::StateMarker>();
         let connector = TestConnector {
             interfaces_state: Some(interfaces_state),
             stack: Some(stack),
@@ -3626,8 +3674,9 @@ port_identity_koid    -
         batches: Vec<Vec<fneighbor::EntryIteratorItem>>,
         want: String,
     ) {
-        let (it, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<fneighbor::EntryIteratorMarker>();
+        let client = flex_local::local_client_empty();
+
+        let (it, mut requests) = client.create_proxy_and_stream::<fneighbor::EntryIteratorMarker>();
 
         let server = async {
             for items in batches {
@@ -3874,8 +3923,10 @@ port_identity_koid    -
 
     #[fasync::run_singlethreaded(test)]
     async fn neigh_add() {
+        let client = flex_local::local_client_empty();
+
         let (controller, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<fneighbor::ControllerMarker>();
+            client.create_proxy_and_stream::<fneighbor::ControllerMarker>();
         let neigh = do_neigh_add(INTERFACE_ID, IF_ADDR_V4.addr, MAC_1, controller);
         let neigh_succeeds = async {
             let (got_interface_id, got_ip_address, got_mac, responder) = requests
@@ -3898,8 +3949,10 @@ port_identity_koid    -
 
     #[fasync::run_singlethreaded(test)]
     async fn neigh_clear() {
+        let client = flex_local::local_client_empty();
+
         let (controller, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<fneighbor::ControllerMarker>();
+            client.create_proxy_and_stream::<fneighbor::ControllerMarker>();
         let neigh = do_neigh_clear(INTERFACE_ID, IP_VERSION, controller);
         let neigh_succeeds = async {
             let (got_interface_id, got_ip_version, responder) = requests
@@ -3921,8 +3974,10 @@ port_identity_koid    -
 
     #[fasync::run_singlethreaded(test)]
     async fn neigh_del() {
+        let client = flex_local::local_client_empty();
+
         let (controller, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<fneighbor::ControllerMarker>();
+            client.create_proxy_and_stream::<fneighbor::ControllerMarker>();
         let neigh = do_neigh_del(INTERFACE_ID, IF_ADDR_V4.addr, controller);
         let neigh_succeeds = async {
             let (got_interface_id, got_ip_address, responder) = requests
@@ -3983,8 +4038,9 @@ port_identity_koid    -
     #[test_case(opts::dhcpd::DhcpdEnum::Stop(opts::dhcpd::Stop {}); "stop")]
     #[fasync::run_singlethreaded(test)]
     async fn test_do_dhcpd(cmd: opts::dhcpd::DhcpdEnum) {
-        let (dhcpd, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<fdhcp::Server_Marker>();
+        let client = flex_local::local_client_empty();
+
+        let (dhcpd, mut requests) = client.create_proxy_and_stream::<fdhcp::Server_Marker>();
 
         let connector = TestConnector { dhcpd: Some(dhcpd), ..Default::default() };
         let op = do_dhcpd(cmd.clone(), &connector);
@@ -4103,8 +4159,9 @@ port_identity_koid    -
 
     #[fasync::run_singlethreaded(test)]
     async fn dns_lookup() {
-        let (lookup, mut requests) =
-            fidl::endpoints::create_proxy_and_stream::<fname::LookupMarker>();
+        let client = flex_local::local_client_empty();
+
+        let (lookup, mut requests) = client.create_proxy_and_stream::<fname::LookupMarker>();
         let connector = TestConnector { name_lookup: Some(lookup), ..Default::default() };
 
         let cmd = opts::dns::DnsEnum::Lookup(opts::dns::Lookup {

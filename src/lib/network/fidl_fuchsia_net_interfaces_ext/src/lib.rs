@@ -13,9 +13,10 @@ pub use reachability::{is_globally_routable, to_reachability_stream, wait_for_re
 
 use anyhow::Context as _;
 use derivative::Derivative;
-use fidl_fuchsia_hardware_network as fhardware_network;
-use fidl_fuchsia_net_interfaces as fnet_interfaces;
 use fidl_table_validation::*;
+use flex_client::ProxyHasDomain;
+use flex_fuchsia_hardware_network as fhardware_network;
+use flex_fuchsia_net_interfaces as fnet_interfaces;
 use futures::{Stream, TryStreamExt as _};
 use std::collections::btree_map::{self, BTreeMap};
 use std::collections::hash_map::{self, HashMap};
@@ -223,7 +224,7 @@ pub struct Properties<I: FieldInterests> {
 #[fidl_table_strict]
 pub struct Address<I: FieldInterests> {
     /// The address and prefix length.
-    pub addr: fidl_fuchsia_net::Subnet,
+    pub addr: flex_fuchsia_net::Subnet,
     /// The time after which the address will no longer be valid.
     ///
     /// Its value must be greater than 0. A value of zx.time.INFINITE indicates
@@ -928,7 +929,8 @@ pub fn event_stream_from_state<I: FieldInterests>(
     impl Stream<Item = Result<EventWithInterest<I>, fidl::Error>> + use<I>,
     WatcherCreationError,
 > {
-    let (watcher, server) = ::fidl::endpoints::create_proxy::<fnet_interfaces::WatcherMarker>();
+    let (watcher, server) =
+        interface_state.domain().create_proxy::<fnet_interfaces::WatcherMarker>();
     let WatchOptions { included_addresses, port_identity_koid_filter } = options;
     interface_state
         .get_watcher(
@@ -1201,7 +1203,7 @@ impl fidl_table_validation::Converter for PortIdentityKoidConverter {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl_fuchsia_net as fnet;
+    use flex_fuchsia_net as fnet;
     use futures::FutureExt as _;
     use futures::task::Poll;
     use net_declare::fidl_subnet;

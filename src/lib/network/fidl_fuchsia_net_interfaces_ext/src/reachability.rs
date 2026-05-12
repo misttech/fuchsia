@@ -7,8 +7,8 @@ use crate::{
     UpdateResult, WatcherOperationError,
 };
 
-use fidl_fuchsia_net as fnet;
-use fidl_fuchsia_net_interfaces as fnet_interfaces;
+use flex_fuchsia_net as fnet;
+use flex_fuchsia_net_interfaces as fnet_interfaces;
 use futures::{Stream, TryStreamExt};
 use net_types::{LinkLocalAddress as _, ScopeableAddress as _};
 use std::collections::{HashMap, HashSet};
@@ -161,7 +161,7 @@ mod tests {
     use crate::{AllInterest, PositiveMonotonicInstant, PreferredLifetimeInfo};
 
     use anyhow::Context as _;
-    use fidl_fuchsia_hardware_network as fnetwork;
+    use flex_fuchsia_hardware_network as fnetwork;
     use futures::FutureExt as _;
     use net_declare::fidl_subnet;
     use std::convert::TryInto as _;

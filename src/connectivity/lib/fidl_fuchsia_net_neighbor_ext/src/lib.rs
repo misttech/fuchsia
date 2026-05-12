@@ -10,10 +10,11 @@
 pub mod testutil;
 
 use async_utils::{fold, stream};
-use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext as fnet_ext;
-use fidl_fuchsia_net_neighbor as fnet_neighbor;
 use fidl_table_validation::*;
+use flex_client::ProxyHasDomain;
+use flex_fuchsia_net as fnet;
+use flex_fuchsia_net_neighbor as fnet_neighbor;
 use futures::{Stream, TryStreamExt as _};
 use std::num::NonZeroU64;
 use thiserror::Error;
@@ -135,7 +136,7 @@ pub fn open_entry_iterator(
     options: EntryIteratorOptions,
 ) -> Result<fnet_neighbor::EntryIteratorProxy, OpenEntryIteratorError> {
     let (neighbor_iter_proxy, entry_iter_server_end) =
-        fidl::endpoints::create_proxy::<fnet_neighbor::EntryIteratorMarker>();
+        view_proxy.domain().create_proxy::<fnet_neighbor::EntryIteratorMarker>();
 
     view_proxy
         .open_entry_iterator(entry_iter_server_end, &options.into())
