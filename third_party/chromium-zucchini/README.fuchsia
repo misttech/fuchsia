@@ -1,0 +1,10 @@
+Name: zucchini
+URL: https://chromium.googlesource.com/chromium/src/components/zucchini/
+Revision: 3e9c102bdc301fdc84b7464e58b953ab5c6f75a1
+License: BSD
+License File: src/LICENSE
+Description:
+
+The zucchini binary delta and patching tool from Chromium.
+
+Security Critical: yes

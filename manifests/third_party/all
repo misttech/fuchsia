@@ -96,6 +96,10 @@
              remote="https://boringssl.googlesource.com/boringssl"
              gerrithost="https://boringssl-review.googlesource.com"
              revision="e056f59c7dfdcf891af03bc7900c946ac485c78f"/>
+    <project name="chromium-zucchini"
+             path="third_party/chromium-zucchini/src"
+             remote="https://fuchsia.googlesource.com/third_party/chromium.googlesource.com/chromium/src/components/zucchini"
+             revision="c5695f0a5d0a912938e1fbe5db1d9e591cfdd769"/>
     <project name="chromiumos-xorg-conf"
              path="third_party/chromiumos-xorg-conf/src"
              remote="https://fuchsia.googlesource.com/third_party/chromium.googlesource.com/chromiumos/platform/xorg-conf"
