@@ -115,7 +115,7 @@ class FakeTraceRegistry : public fidl::WireServer<fuchsia_tracing_provider::Regi
 
 class TestConnection {
  public:
-  static constexpr const char* kDevicePathFuchsia = "/dev/class/gpu";
+  static constexpr const char* kDevicePathFuchsia = "/svc/fuchsia.gpu.magma.Service";
   static constexpr const char* kDeviceNameLinux = "/dev/dri/renderD128";
   static constexpr const char* kDeviceNameVirtioMagma = "/dev/magma0";
 
@@ -142,7 +142,9 @@ class TestConnection {
       zx::channel server_end, client_end;
       zx::channel::create(0, &server_end, &client_end);
 
-      zx_status_t zx_status = fdio_service_connect(p.path().c_str(), server_end.release());
+      device_name = (static_cast<std::string>(p.path()) + "/device");
+
+      zx_status_t zx_status = fdio_service_connect(device_name.c_str(), server_end.release());
       EXPECT_EQ(ZX_OK, zx_status);
       if (zx_status != ZX_OK)
         return false;
@@ -151,8 +153,6 @@ class TestConnection {
       EXPECT_EQ(MAGMA_STATUS_OK, status);
       if (status != MAGMA_STATUS_OK)
         return false;
-
-      device_name = p.path();
 
       if (gVendorId) {
         uint64_t vendor_id;

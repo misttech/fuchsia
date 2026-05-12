@@ -61,7 +61,7 @@ class TestAsyncHandler : public fidl::WireAsyncEventHandler<fuchsia_gpu_magma::P
 
 class TestMagmaFidl : public gtest::RealLoopFixture {
  public:
-  static constexpr const char* kDevicePathFuchsia = "/dev/class/gpu";
+  static constexpr const char* kDevicePathFuchsia = "/svc/fuchsia.gpu.magma.Service";
 
   void SetUp() override {
     auto client_end = component::Connect<fuchsia_gpu_magma_test::VendorHelper>();
@@ -75,7 +75,8 @@ class TestMagmaFidl : public gtest::RealLoopFixture {
       auto endpoints = fidl::Endpoints<fuchsia_gpu_magma::CombinedDevice>::Create();
 
       zx_status_t zx_status =
-          fdio_service_connect(p.path().c_str(), endpoints.server.TakeChannel().release());
+          fdio_service_connect((static_cast<std::string>(p.path()) + "/device").c_str(),
+                               endpoints.server.TakeChannel().release());
       ASSERT_EQ(ZX_OK, zx_status);
 
       device_ = DeviceClient(std::move(endpoints.client));
