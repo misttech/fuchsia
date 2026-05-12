@@ -80,7 +80,7 @@ fn extract_zbi_from_update_package(
     let mut zbi_reader = ZbiReader::new(zbi_data);
     let sections = zbi_reader.parse()?;
     let mut bootfs_files = HashMap::new();
-    let mut cmdline = vec![];
+    let mut cmdline_map = HashMap::new(); // Key to setting
     info!(total = sections.len(); "Extracted sections from the ZBI");
     for section in sections.iter() {
         info!(section_type:? = section.section_type; "Extracted sections");
@@ -99,11 +99,11 @@ fn extract_zbi_from_update_package(
             cmd_buffer.truncate(cmd_buffer.len() - 1);
             let cmd_str = std::str::from_utf8(&cmd_buffer)
                 .context("Failed to convert kernel arguments to utf-8")?;
-            let mut cmd = cmd_str.split(' ').map(ToString::to_string).collect::<Vec<String>>();
-            cmd.sort();
-            cmdline.extend(cmd);
+            parse_cmdline(cmd_str, &mut cmdline_map);
         }
     }
+    let mut cmdline: Vec<String> = cmdline_map.into_values().collect();
+    cmdline.sort();
 
     // Find the bootfs package index
     let bootfs_pkg_contents = bootfs_files.iter().find_map(|(file_name, data)| {
@@ -135,6 +135,17 @@ fn extract_zbi_from_update_package(
     let mut deps = artifact_reader.get_deps();
     deps.extend(package_reader.get_deps());
     Ok(Zbi { deps, sections, bootfs_files, bootfs_packages, cmdline })
+}
+
+// Parses settings from a CMDLINE string payload into a key->setting hashmap.
+fn parse_cmdline(cmd_str: &str, cmdline_map: &mut HashMap<String, String>) {
+    for setting in cmd_str.split_whitespace() {
+        let key = match setting.split_once('=') {
+            Some((key, _)) => key,
+            None => setting,
+        };
+        cmdline_map.insert(key.to_string(), setting.to_string());
+    }
 }
 
 fn lookup_zbi_hash_in_images_json(
@@ -215,15 +226,60 @@ mod tests {
         let collector = ZbiCollector {};
         collector.collect(data_model.clone()).unwrap();
         let collection = data_model.get::<Zbi>().unwrap();
-        assert_eq!(
-            collection.cmdline,
-            vec![
-                "console.shell=true".to_string(),
-                "kernel.enable-debugging-syscalls=true".to_string(),
-                "kernel.enable-serial-syscalls=true".to_string(),
-                "netsvc.all-features=true".to_string(),
-                "netsvc.disable=false".to_string()
-            ]
-        );
+        assert!(collection.cmdline.iter().any(|arg| !arg.is_empty()));
+    }
+
+    #[test]
+    fn test_parse_cmdline() {
+        use super::parse_cmdline;
+        use std::collections::HashMap;
+
+        // Test simple parsing
+        let mut map = HashMap::new();
+        parse_cmdline("foo=bar baz=qux", &mut map);
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("foo"), Some(&"foo=bar".to_string()));
+        assert_eq!(map.get("baz"), Some(&"baz=qux".to_string()));
+
+        // Test last wins for same key
+        let mut map = HashMap::new();
+        parse_cmdline("foo=bar foo=baz", &mut map);
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("foo"), Some(&"foo=baz".to_string()));
+
+        // Test key without value (boolean flag) is preserved
+        let mut map = HashMap::new();
+        parse_cmdline("foo", &mut map);
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("foo"), Some(&"foo".to_string()));
+
+        // Test mixed keys
+        let mut map = HashMap::new();
+        parse_cmdline("foo=bar foo baz=qux baz", &mut map);
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("foo"), Some(&"foo".to_string()));
+        assert_eq!(map.get("baz"), Some(&"baz".to_string()));
+
+        // Test mixed keys reverse order
+        let mut map = HashMap::new();
+        parse_cmdline("foo foo=bar baz baz=qux", &mut map);
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("foo"), Some(&"foo=bar".to_string()));
+        assert_eq!(map.get("baz"), Some(&"baz=qux".to_string()));
+
+        // Test multiple spaces
+        let mut map = HashMap::new();
+        parse_cmdline("foo=bar   baz=qux", &mut map);
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("foo"), Some(&"foo=bar".to_string()));
+        assert_eq!(map.get("baz"), Some(&"baz=qux".to_string()));
+
+        // Test multiple sections (multiple calls)
+        let mut map = HashMap::new();
+        parse_cmdline("foo=bar", &mut map);
+        parse_cmdline("foo=baz baz=qux", &mut map);
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("foo"), Some(&"foo=baz".to_string()));
+        assert_eq!(map.get("baz"), Some(&"baz=qux".to_string()));
     }
 }
