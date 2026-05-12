@@ -6,72 +6,74 @@ import("//build/go/go_binary.gni")
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
 
-go_library("lib") {
-  sources = [
-    "cdc_ethernet_state_check.go",
-    "cdc_ethernet_state_check_test.go",
-    "lib.go",
-    "lib_test.go",
-    "logprocessing.go",
-    "logprocessing_test.go",
-    "mass_test_failure_check.go",
-    "mass_test_failure_check_test.go",
-    "nearby_string_check.go",
-    "nearby_string_check_test.go",
-    "no_tests_ran_check.go",
-    "no_tests_ran_check_test.go",
-    "run_checks.go",
-    "run_checks_test.go",
-    "string_in_log_check.go",
-    "string_in_log_check_test.go",
-    "swarming.go",
-    "task_state_check.go",
-    "task_state_check_test.go",
-    "types.go",
-  ]
-  deps = [
-    "//third_party/golibs:golang.org/x/sync",
-    "//tools/botanist:constants",
-    "//tools/build",
-    "//tools/lib/ffxutil:constants",
-    "//tools/lib/serial:constants",
-    "//tools/lib/syslog:constants",
-    "//tools/net/netutil:constants",
-    "//tools/net/sshutil:constants",
-    "//tools/testing/testparser",
-    "//tools/testing/testrunner:constants",
-  ]
-}
+if (is_host) {
+  go_library("lib") {
+    sources = [
+      "cdc_ethernet_state_check.go",
+      "cdc_ethernet_state_check_test.go",
+      "lib.go",
+      "lib_test.go",
+      "logprocessing.go",
+      "logprocessing_test.go",
+      "mass_test_failure_check.go",
+      "mass_test_failure_check_test.go",
+      "nearby_string_check.go",
+      "nearby_string_check_test.go",
+      "no_tests_ran_check.go",
+      "no_tests_ran_check_test.go",
+      "run_checks.go",
+      "run_checks_test.go",
+      "string_in_log_check.go",
+      "string_in_log_check_test.go",
+      "swarming.go",
+      "task_state_check.go",
+      "task_state_check_test.go",
+      "types.go",
+    ]
+    deps = [
+      "//third_party/golibs:golang.org/x/sync",
+      "//tools/botanist:constants",
+      "//tools/build",
+      "//tools/lib/ffxutil:constants",
+      "//tools/lib/serial:constants",
+      "//tools/lib/syslog:constants",
+      "//tools/net/netutil:constants",
+      "//tools/net/sshutil:constants",
+      "//tools/testing/testparser",
+      "//tools/testing/testrunner:constants",
+    ]
+  }
 
-go_library("main") {
-  source_dir = "cmd"
-  sources = [ "main.go" ]
-  deps = [
-    ":lib",
-    "//tools/lib/flagmisc",
-    "//tools/testing/runtests",
-  ]
-}
+  go_library("main") {
+    source_dir = "cmd"
+    sources = [ "main.go" ]
+    deps = [
+      ":lib",
+      "//tools/lib/flagmisc",
+      "//tools/testing/runtests",
+    ]
+  }
 
-go_binary("tefmocheck") {
-  embed = [ ":main" ]
+  go_binary("tefmocheck") {
+    embed = [ ":main" ]
 
-  # Needed to support cross-compilation. The infra recipes always needs this
-  # built for Linux, even if build happens on Mac.
-  cgo = false
-}
+    # Needed to support cross-compilation. The infra recipes always needs this
+    # built for Linux, even if build happens on Mac.
+    cgo = false
+  }
 
-go_test("lib_tests") {
-  embed = [ ":lib" ]
-  output_name = "tefmocheck_lib_tests"
-  deps = [
-    "//third_party/golibs:github.com/google/go-cmp",
-    "//tools/testing/runtests",
-  ]
+  go_test("lib_tests") {
+    embed = [ ":lib" ]
+    output_name = "tefmocheck_lib_tests"
+    deps = [
+      "//third_party/golibs:github.com/google/go-cmp",
+      "//tools/testing/runtests",
+    ]
+  }
 }
 
 group("tests") {
   testonly = true
 
-  deps = [ ":lib_tests" ]
+  deps = [ ":lib_tests($host_toolchain)" ]
 }
