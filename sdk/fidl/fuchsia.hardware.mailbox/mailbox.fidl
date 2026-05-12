@@ -20,6 +20,22 @@ open protocol Listener {
     flexible OnMessage(struct {
         message vector<uint8>:MAX;
     }) -> () error zx.Status;
+
+    /// Called when a request is received on the mailbox channel.
+    ///
+    /// The client should process the request and return the response payload based
+    /// on what was requested. The response will be returned to the remote core by
+    /// the mailbox driver.
+    ///
+    /// If the listener returns an error, the error is logged by the mailbox driver
+    /// and no response is returned to the remote core.
+    ///
+    /// The same concurrency rules as `OnMessage` apply.
+    flexible OnRequest(struct {
+        message vector<uint8>:MAX;
+    }) -> (struct {
+        response vector<uint8>:MAX;
+    }) error zx.Status;
 };
 
 /// `Channel` represents a single mailbox channel that can be used to send messages to a
