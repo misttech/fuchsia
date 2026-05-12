@@ -143,7 +143,9 @@ class DpcRunner {
 
     // Moves any queued Dpcs from |source| to |this|.  May only be called after a successful
     // |Shutdown| of |source|.
-    void TakeFromLocked(Queue& source) TA_REQ(Dpc::Lock::Get());
+    //
+    // Returns true if any dpcs were moved.
+    bool TakeFromLocked(Queue& source) TA_REQ(Dpc::Lock::Get());
 
     void EnqueueLocked(Dpc& dpc) TA_REQ(Dpc::Lock::Get());
     void Signal() TA_EXCL(Dpc::Lock::Get());

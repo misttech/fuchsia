@@ -77,17 +77,29 @@ zx_status_t DpcRunner::Shutdown(zx_instant_mono_t deadline) {
 }
 
 void DpcRunner::TransitionOffCpu(DpcRunner& source) {
-  Guard<SpinLock, IrqSave> guard{Dpc::Lock::Get()};
+  bool took_from_general = false;
+  bool took_from_low_latency = false;
 
-  // |source|'s cpu is shutting down. Assert that we are migrating to the current cpu.
-  DEBUG_ASSERT(cpu_ == arch_curr_cpu_num());
-  DEBUG_ASSERT(cpu_ != source.cpu_);
+  {
+    Guard<SpinLock, IrqSave> guard{Dpc::Lock::Get()};
 
-  source.queue_general_.TakeFromLocked(source.queue_general_);
-  source.queue_low_latency_.TakeFromLocked(source.queue_low_latency_);
+    // |source|'s cpu is shutting down. Assert that we are migrating to the current cpu.
+    DEBUG_ASSERT(cpu_ == arch_curr_cpu_num());
+    DEBUG_ASSERT(cpu_ != source.cpu_);
 
-  source.initialized_ = false;
-  source.cpu_ = INVALID_CPU;
+    took_from_general = queue_general_.TakeFromLocked(source.queue_general_);
+    took_from_low_latency = queue_low_latency_.TakeFromLocked(source.queue_low_latency_);
+
+    source.initialized_ = false;
+    source.cpu_ = INVALID_CPU;
+  }
+
+  if (took_from_general) {
+    queue_general_.Signal();
+  }
+  if (took_from_low_latency) {
+    queue_low_latency_.Signal();
+  }
 }
 
 zx_status_t DpcRunner::Enqueue(Dpc& dpc, QueueType type) {
@@ -170,10 +182,12 @@ zx_status_t DpcRunner::Queue::Shutdown(zx_instant_mono_t deadline) {
   return t->Join(nullptr, deadline);
 }
 
-void DpcRunner::Queue::TakeFromLocked(Queue& source) {
+bool DpcRunner::Queue::TakeFromLocked(Queue& source) {
   // The thread must have already been stopped by a call to |Shutdown|.
   DEBUG_ASSERT(source.stop_);
   DEBUG_ASSERT(source.thread_ == nullptr);
+
+  bool moved = !source.list_.is_empty();
 
   // Move the contents of |source.list_| to the back of our |list_|.
   auto back = list_.end();
@@ -183,6 +197,8 @@ void DpcRunner::Queue::TakeFromLocked(Queue& source) {
   source.event_.Unsignal();
   DEBUG_ASSERT(source.list_.is_empty());
   source.stop_ = false;
+
+  return moved;
 }
 
 void DpcRunner::Queue::EnqueueLocked(Dpc& dpc) { list_.push_back(&dpc); }
