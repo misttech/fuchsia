@@ -172,6 +172,7 @@ _internal_source_sets_list = [
   "//sdk/lib/driver/devicetree/visitors/default:default",
   "//sdk/lib/driver/devicetree/visitors/default/mmio:mmio",
   "//sdk/lib/driver/devicetree/visitors/default/smc:smc",
+  "//sdk/lib/driver/devicetree/visitors/drivers/gpio-controllers/gpioimpl-visitor:gpioimpl_visitor",
   "//sdk/lib/driver/devicetree/visitors/drivers/mailbox-controllers/mailbox:mailbox_visitor",
   "//sdk/lib/driver/devicetree/visitors:driver-visitor",
   "//sdk/lib/driver/devicetree/visitors:load-visitors",

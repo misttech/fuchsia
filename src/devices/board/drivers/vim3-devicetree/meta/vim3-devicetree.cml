@@ -50,10 +50,6 @@
                 symbols: [ "__devicetree_visitor_registration__" ],
             },
             {
-                module_name: "lib/visitors/devicetree-visitors-gpioimpl-visitor.so",
-                symbols: [ "__devicetree_visitor_registration__" ],
-            },
-            {
                 module_name: "lib/visitors/devicetree-visitors-i2c-bus-visitor.so",
                 symbols: [ "__devicetree_visitor_registration__" ],
             },

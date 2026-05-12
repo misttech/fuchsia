@@ -12,11 +12,33 @@ group("tests") {
   testonly = true
 }
 
-devicetree_visitor("gpioimpl-visitor") {
-  deps = [ ":gpioimpl" ]
+devicetree_visitor("gpioimpl") {
+  enable_sdk_source_set = true
+  category = "internal"
+  sources = [
+    "gpioimpl-visitor-registration.cc",
+    "gpioimpl-visitor.cc",
+    "gpioimpl-visitor.h",
+  ]
+  deps = [
+    "//sdk/lib/driver/devicetree/manager:node",
+    "//sdk/lib/driver/devicetree/visitors:common-types",
+    "//sdk/lib/driver/devicetree/visitors:registration",
+    "//sdk/lib/driver/logging/cpp",
+    "//src/devices/bind/fuchsia.gpio",
+  ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_cpp",
+    "//sdk/lib/driver/devicetree/visitors:driver-visitor",
+  ]
+  non_sdk_deps = [
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib_cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.gpio:fuchsia.gpio_cpp",
+  ]
 }
 
-source_set("gpioimpl") {
+source_set("gpioimpl-visitor") {
   sources = [
     "gpioimpl-visitor.cc",
     "gpioimpl-visitor.h",
@@ -41,7 +63,7 @@ source_set("gpioimpl") {
 test("gpioimpl-visitor-test-bin") {
   sources = [ "test/gpioimpl-visitor-test.cc" ]
   deps = [
-    ":gpioimpl",
+    ":gpioimpl-visitor",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

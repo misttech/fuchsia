@@ -9,6 +9,7 @@
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devicetree/manager/manager.h>
 #include <lib/driver/devicetree/manager/publisher-dev.h>
+#include <lib/driver/devicetree/visitors/drivers/gpio-controllers/gpioimpl-visitor/gpioimpl-visitor.h>
 #include <lib/driver/devicetree/visitors/load-visitors.h>
 #include <lib/driver/logging/cpp/logger.h>
 
@@ -54,6 +55,12 @@ zx::result<> Vim3Devicetree::Start(fdf::DriverContext context) {
 
   if (zx::result result = (*visitors)->RegisterVisitor<Vim3NnaVisitor>(); result.is_error()) {
     fdf::error("Failed to register vim3 nna visitor");
+    return result.take_error();
+  };
+
+  if (zx::result result = (*visitors)->RegisterVisitor<gpio_impl_dt::GpioImplVisitor>();
+      result.is_error()) {
+    fdf::error("Failed to register gpio impl visitor");
     return result.take_error();
   };
 

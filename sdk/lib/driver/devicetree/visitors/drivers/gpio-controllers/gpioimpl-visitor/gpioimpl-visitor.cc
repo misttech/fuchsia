@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "gpioimpl-visitor.h"
+#include "lib/driver/devicetree/visitors/drivers/gpio-controllers/gpioimpl-visitor/gpioimpl-visitor.h"
 
 #include <ctype.h>
 #include <fidl/fuchsia.hardware.pinimpl/cpp/fidl.h>
-#include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_properties.h>
 #include <lib/driver/devicetree/visitors/common-types.h>
@@ -23,11 +22,21 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
+
+// TODO(https://fxbug.dev/494450198): Re-add this once the Bazel dependency issue is resolved.
+// #include <bind/fuchsia/hardware/gpio/cpp/bind.h>
 
 namespace gpio_impl_dt {
 
 namespace {
+
+// TODO(https://fxbug.dev/494450198): Remove this once we fix the Bazel dependency issue for FIDL
+// generated bind cpp headers
+namespace bind_fuchsia_hardware_gpio {
+static const char SERVICE[] = "fuchsia.hardware.gpio.Service";
+static const char SERVICE_ZIRCONTRANSPORT[] = "fuchsia.hardware.gpio.Service.ZirconTransport";
+}  // namespace bind_fuchsia_hardware_gpio
+
 using fuchsia_hardware_gpio::BufferMode;
 using fuchsia_hardware_pin::DriveType;
 using fuchsia_hardware_pin::Pull;
@@ -568,5 +577,3 @@ zx::result<> GpioImplVisitor::FinalizeNode(fdf_devicetree::Node& node) {
 }
 
 }  // namespace gpio_impl_dt
-
-REGISTER_DEVICETREE_VISITOR(gpio_impl_dt::GpioImplVisitor);

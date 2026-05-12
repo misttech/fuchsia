@@ -44,7 +44,7 @@ devicetree_visitor_collection("all-driver-visitors") {
     "//sdk/lib/driver/devicetree/visitors/drivers/cpu/performance-domain:performance-domain-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/display/display-panel:display-panel-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/ethernet/ethernet-phy:ethernet-phy-visitor",
-    "//sdk/lib/driver/devicetree/visitors/drivers/gpio-controllers/gpioimpl-visitor",
+    "//sdk/lib/driver/devicetree/visitors/drivers/gpio-controllers/gpioimpl-visitor:gpioimpl",
     "//sdk/lib/driver/devicetree/visitors/drivers/gpt:gpt-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/i2c-controllers/i2c-bus-visitor",
     "//sdk/lib/driver/devicetree/visitors/drivers/iio/adc:adc-visitor",
