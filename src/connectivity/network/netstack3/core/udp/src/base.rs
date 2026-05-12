@@ -47,8 +47,8 @@ use netstack3_datagram::{
     ExpectedUnboundError, InUseError, IpExt, IpOptions, ListenerInfo,
     MulticastMembershipInterfaceSelector, NonDualStackConverter,
     NonDualStackDatagramBoundStateContext, NonDualStackDatagramSpecBoundStateContext,
-    SendError as DatagramSendError, SetMulticastMembershipError, SocketInfo,
-    SocketState as DatagramSocketState, SocketStateInner as DatagramSocketStateInner,
+    PendingDatagramSocketError, SendError as DatagramSendError, SetMulticastMembershipError,
+    SocketInfo, SocketState as DatagramSocketState, SocketStateInner as DatagramSocketStateInner,
     WrapOtherStackIpOptions, WrapOtherStackIpOptionsMut,
 };
 use netstack3_filter::{SocketIngressFilterResult, SocketOpsFilter, SocketOpsFilterBindingContext};
@@ -1160,6 +1160,13 @@ pub trait UdpReceiveBindingsContext<I: IpExt, D: StrongDeviceIdentifier>: UdpBin
         meta: UdpPacketMeta<I>,
         body: &[u8],
     ) -> Result<(), ReceiveUdpError>;
+
+    /// Notifies Bindings that an error was set on a socket.
+    fn on_socket_error(
+        &mut self,
+        id: &UdpSocketId<I, D::Weak, Self>,
+        err: PendingDatagramSocketError,
+    );
 }
 
 /// The bindings context providing external types to UDP sockets.
@@ -1741,6 +1748,100 @@ fn try_dual_stack_deliver<
     }
 }
 
+fn receive_icmp_error<I, BC, CC>(
+    core_ctx: &mut CC,
+    bindings_ctx: &mut BC,
+    device: &CC::DeviceId,
+    original_src_ip: Option<SpecifiedAddr<I::Addr>>,
+    original_dst_ip: SpecifiedAddr<I::Addr>,
+    original_udp_packet: &[u8],
+    err: I::ErrorCode,
+) where
+    I: IpExt,
+    BC: UdpBindingsContext<I, CC::DeviceId> + UdpBindingsContext<I::OtherVersion, CC::DeviceId>,
+    CC: StateContext<I, BC>
+        + StateContext<I::OtherVersion, BC>
+        + UdpCounterContext<I, CC::WeakDeviceId, BC>
+        + UdpCounterContext<I::OtherVersion, CC::WeakDeviceId, BC>,
+{
+    // TODO(https://fxbug.dev/512048254): Add counters for ICMP errors.
+    let icmp_err = err.into();
+    let Some(pending_err) = PendingDatagramSocketError::from_hard_icmp(icmp_err) else { return };
+
+    let mut buffer = original_udp_packet;
+    let packet = match buffer.parse_with::<_, UdpPacketRaw<_>>(I::VERSION_MARKER) {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    let Some(orig_src_port) = packet.src_port() else { return };
+    let Some(orig_dst_port) = packet.dst_port() else { return };
+    let Some(orig_src_ip) = original_src_ip else { return };
+    let orig_src_ip = match SocketIpAddr::try_from(orig_src_ip) {
+        Ok(ip) => ip,
+        Err(AddrIsMappedError {}) => {
+            debug!("ignoring ICMP error from IPv4-mapped-IPv6 source: {}", orig_src_ip);
+            return;
+        }
+    };
+    let orig_dst_ip = match SocketIpAddr::try_from(original_dst_ip) {
+        Ok(ip) => ip,
+        Err(AddrIsMappedError {}) => {
+            debug!("ignoring ICMP error to IPv4-mapped-IPv6 destination: {}", original_dst_ip);
+            return;
+        }
+    };
+
+    let socket_id = StateContext::<I, _>::with_bound_state_context(core_ctx, |core_ctx| {
+        let device_weak = device.downgrade();
+        DatagramBoundStateContext::<_, _, Udp<_>>::with_bound_sockets(
+            core_ctx,
+            |_core_ctx, bound_sockets| {
+                bound_sockets
+                    .lookup_connected(
+                        (orig_dst_ip, UdpRemotePort::from(orig_dst_port)),
+                        (orig_src_ip, orig_src_port),
+                        device_weak,
+                    )
+                    .map(|entry| entry.first().clone())
+            },
+        )
+    });
+
+    let Some(socket_id) = socket_id else { return };
+
+    #[derive(GenericOverIp)]
+    #[generic_over_ip(I, Ip)]
+    struct Inputs<I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes> {
+        socket_id: I::DualStackBoundSocketId<D, Udp<BT>>,
+    }
+
+    #[derive(GenericOverIp)]
+    #[generic_over_ip(I, Ip)]
+    enum DualStackOutputs<I: DualStackIpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes> {
+        CurrentStack(UdpSocketId<I, D, BT>),
+        OtherStack(UdpSocketId<I::OtherVersion, D, BT>),
+    }
+
+    let dual_stack_outputs = I::map_ip(
+        Inputs { socket_id },
+        |Inputs { socket_id }| match socket_id {
+            EitherIpSocket::V4(socket_id) => DualStackOutputs::CurrentStack(socket_id),
+            EitherIpSocket::V6(socket_id) => DualStackOutputs::OtherStack(socket_id),
+        },
+        |Inputs { socket_id }| DualStackOutputs::CurrentStack(socket_id),
+    );
+
+    match dual_stack_outputs {
+        DualStackOutputs::CurrentStack(socket_id) => {
+            bindings_ctx.on_socket_error(&socket_id, pending_err);
+        }
+        DualStackOutputs::OtherStack(socket_id) => {
+            bindings_ctx.on_socket_error(&socket_id, pending_err);
+        }
+    }
+}
+
 /// Enables a blanket implementation of [`IpTransportContext`] for
 /// [`UdpIpTransportContext`].
 ///
@@ -1779,21 +1880,28 @@ impl<
 
     fn receive_icmp_error(
         core_ctx: &mut CC,
-        _bindings_ctx: &mut BC,
-        _device: &CC::DeviceId,
+        bindings_ctx: &mut BC,
+        device: &CC::DeviceId,
         original_src_ip: Option<SpecifiedAddr<I::Addr>>,
         original_dst_ip: SpecifiedAddr<I::Addr>,
-        _original_udp_packet: &[u8],
+        original_udp_packet: &[u8],
         err: I::ErrorCode,
     ) {
         CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx).rx_icmp_error.increment();
-        // NB: At the moment bindings has no need to consume ICMP errors, so we
-        // swallow them here.
-        // TODO(https://fxbug.dev/322214321): Actually implement SO_ERROR.
         debug!(
             "UDP received ICMP error {:?} from {:?} to {:?}",
             err, original_dst_ip, original_src_ip
         );
+
+        receive_icmp_error::<I, _, _>(
+            core_ctx,
+            bindings_ctx,
+            device,
+            original_src_ip,
+            original_dst_ip,
+            original_udp_packet,
+            err,
+        )
     }
 
     fn receive_ip_packet<B: BufferMut, H: IpHeaderInfo<I>>(
@@ -3064,6 +3172,14 @@ pub(crate) mod testutils {
             HashMap<WeakUdpSocketId<Ipv4, D::Weak, FakeUdpBindingsCtx<D>>, SocketReceived<Ipv4>>,
         received_v6:
             HashMap<WeakUdpSocketId<Ipv6, D::Weak, FakeUdpBindingsCtx<D>>, SocketReceived<Ipv6>>,
+        pending_errors_v4: HashMap<
+            WeakUdpSocketId<Ipv4, D::Weak, FakeUdpBindingsCtx<D>>,
+            Option<PendingDatagramSocketError>,
+        >,
+        pending_errors_v6: HashMap<
+            WeakUdpSocketId<Ipv6, D::Weak, FakeUdpBindingsCtx<D>>,
+            Option<PendingDatagramSocketError>,
+        >,
     }
 
     impl<D: StrongDeviceIdentifier> FakeBindingsCtxState<D> {
@@ -3101,6 +3217,32 @@ pub(crate) mod testutils {
             map
         }
 
+        pub(crate) fn pending_errors_mut<I: IpExt>(
+            &mut self,
+        ) -> &mut HashMap<
+            WeakUdpSocketId<I, D::Weak, FakeUdpBindingsCtx<D>>,
+            Option<PendingDatagramSocketError>,
+        > {
+            #[derive(GenericOverIp)]
+            #[generic_over_ip(I, Ip)]
+            struct Wrap<'a, I: IpExt, D: WeakDeviceIdentifier, BT: UdpBindingsTypes>(
+                &'a mut HashMap<WeakUdpSocketId<I, D, BT>, Option<PendingDatagramSocketError>>,
+            );
+            let Wrap(map) = I::map_ip_out(
+                self,
+                |state| Wrap(&mut state.pending_errors_v4),
+                |state| Wrap(&mut state.pending_errors_v6),
+            );
+            map
+        }
+
+        pub(crate) fn take_pending_error<I: IpExt>(
+            &mut self,
+            id: &WeakUdpSocketId<I, D::Weak, FakeUdpBindingsCtx<D>>,
+        ) -> Option<PendingDatagramSocketError> {
+            self.pending_errors_mut::<I>().remove(id).flatten()
+        }
+
         pub(crate) fn socket_data<I: TestIpExt>(
             &self,
         ) -> HashMap<WeakUdpSocketId<I, D::Weak, FakeUdpBindingsCtx<D>>, Vec<&'_ [u8]>> {
@@ -3134,6 +3276,14 @@ pub(crate) mod testutils {
             } else {
                 Err(ReceiveUdpError::QueueFull)
             }
+        }
+
+        fn on_socket_error(
+            &mut self,
+            id: &UdpSocketId<I, D::Weak, Self>,
+            err: PendingDatagramSocketError,
+        ) {
+            let _ = self.state.pending_errors_mut::<I>().insert(id.downgrade(), Some(err));
         }
     }
 
@@ -3399,15 +3549,23 @@ pub(crate) mod testutils {
         }
 
         fn receive_icmp_error(
-            _core_ctx: &mut FakeUdpCoreCtx<D>,
-            _bindings_ctx: &mut FakeUdpBindingsCtx<D>,
-            _device: &D,
-            _original_src_ip: Option<SpecifiedAddr<I::Addr>>,
-            _original_dst_ip: SpecifiedAddr<I::Addr>,
-            _original_udp_packet: &[u8],
-            _err: I::ErrorCode,
+            core_ctx: &mut FakeUdpCoreCtx<D>,
+            bindings_ctx: &mut FakeUdpBindingsCtx<D>,
+            device: &D,
+            original_src_ip: Option<SpecifiedAddr<I::Addr>>,
+            original_dst_ip: SpecifiedAddr<I::Addr>,
+            original_body: &[u8],
+            err: I::ErrorCode,
         ) {
-            unimplemented!()
+            receive_icmp_error::<I, _, _>(
+                core_ctx,
+                bindings_ctx,
+                device,
+                original_src_ip,
+                original_dst_ip,
+                original_body,
+                err,
+            )
         }
 
         fn receive_ip_packet<B: BufferMut, H: IpHeaderInfo<I>>(
@@ -3556,6 +3714,7 @@ mod tests {
     use alloc::vec;
     use core::convert::TryInto as _;
     use core::num::NonZeroU16;
+    use packet_formats::icmp::{Icmpv4DestUnreachableCode, Icmpv6DestUnreachableCode};
 
     use assert_matches::assert_matches;
     use ip_test_macro::ip_test;
@@ -3572,8 +3731,8 @@ mod tests {
         MultipleDevicesId, TestIpExt as _, set_logger_for_test,
     };
     use netstack3_base::{
-        CounterCollection, Mark, MarkDomain, NetworkSerializationContext, RemoteAddressError,
-        SendFrameErrorReason,
+        CounterCollection, Icmpv4ErrorCode, Icmpv6ErrorCode, Mark, MarkDomain,
+        NetworkSerializationContext, RemoteAddressError, SendFrameErrorReason,
     };
     use netstack3_datagram::MulticastInterfaceSelector;
     use netstack3_hashmap::{HashMap, HashSet};
@@ -7882,5 +8041,169 @@ mod tests {
                 buffer.as_ref(),
             );
         assert_matches!(early_demux_socket, Some(_));
+    }
+
+    fn so_error_inner<I: TestIpExt>(
+        icmp_err: I::ErrorCode,
+        expected_err: Option<PendingDatagramSocketError>,
+    ) {
+        set_logger_for_test();
+
+        let mut ctx = FakeUdpCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
+        let mut api = UdpApi::<I, _>::new(ctx.as_mut());
+
+        let local_ip = local_ip::<I>();
+        let remote_ip = remote_ip::<I>();
+        let socket = api.create();
+
+        api.listen(&socket, Some(ZonedAddr::Unzoned(local_ip)), Some(LOCAL_PORT))
+            .expect("listen should succeed");
+        api.connect(&socket, Some(ZonedAddr::Unzoned(remote_ip)), REMOTE_PORT.into())
+            .expect("connect should succeed");
+
+        let (_, bindings_ctx) = api.contexts();
+        assert_eq!(bindings_ctx.state.take_pending_error::<I>(&socket.downgrade()), None);
+
+        // Inject the ICMP error.
+        let mut original_body = vec![0u8; 8];
+        original_body[0..2].copy_from_slice(&LOCAL_PORT.get().to_be_bytes());
+        original_body[2..4].copy_from_slice(&REMOTE_PORT.get().to_be_bytes());
+        original_body[4..6].copy_from_slice(&8u16.to_be_bytes());
+
+        let (core_ctx, bindings_ctx) = api.contexts();
+
+        <UdpIpTransportContext as IpTransportContext<I, _, _>>::receive_icmp_error(
+            core_ctx,
+            bindings_ctx,
+            &FakeDeviceId,
+            Some(local_ip),
+            remote_ip,
+            &original_body,
+            icmp_err,
+        );
+
+        let (_, bindings_ctx) = api.contexts();
+        assert_eq!(bindings_ctx.state.take_pending_error::<I>(&socket.downgrade()), expected_err);
+        assert_eq!(bindings_ctx.state.take_pending_error::<I>(&socket.downgrade()), None);
+    }
+
+    #[test_case(
+        Icmpv4ErrorCode::DestUnreachable(
+            Icmpv4DestUnreachableCode::DestNetworkUnreachable,
+            Default::default()
+        ),
+        None;
+        "v4 network unreachable"
+    )]
+    #[test_case(
+        Icmpv4ErrorCode::DestUnreachable(
+            Icmpv4DestUnreachableCode::DestHostUnreachable,
+            Default::default()
+        ),
+        None;
+        "v4 host unreachable"
+    )]
+    #[test_case(
+        Icmpv4ErrorCode::DestUnreachable(
+            Icmpv4DestUnreachableCode::DestProtocolUnreachable,
+            Default::default()
+        ),
+        Some(PendingDatagramSocketError::ProtocolUnreachable);
+        "v4 protocol unreachable"
+    )]
+    #[test_case(
+        Icmpv4ErrorCode::DestUnreachable(
+            Icmpv4DestUnreachableCode::DestPortUnreachable,
+            Default::default()
+        ),
+        Some(PendingDatagramSocketError::PortUnreachable);
+        "v4 connection refused"
+    )]
+    fn so_error_v4(icmp_err: Icmpv4ErrorCode, expected_err: Option<PendingDatagramSocketError>) {
+        so_error_inner::<Ipv4>(icmp_err, expected_err)
+    }
+
+    #[test_case(
+        Icmpv6ErrorCode::DestUnreachable(Icmpv6DestUnreachableCode::NoRoute),
+        None;
+        "v6 no route"
+    )]
+    #[test_case(
+        Icmpv6ErrorCode::DestUnreachable(Icmpv6DestUnreachableCode::AddrUnreachable),
+        None;
+        "v6 addr unreachable"
+    )]
+    #[test_case(
+        Icmpv6ErrorCode::DestUnreachable(Icmpv6DestUnreachableCode::PortUnreachable),
+        Some(PendingDatagramSocketError::PortUnreachable);
+        "v6 connection refused"
+    )]
+    #[test_case(
+        Icmpv6ErrorCode::DestUnreachable(Icmpv6DestUnreachableCode::CommAdministrativelyProhibited),
+        Some(PendingDatagramSocketError::PermissionDenied);
+        "v6 permission denied"
+    )]
+    fn so_error_v6(icmp_err: Icmpv6ErrorCode, expected_err: Option<PendingDatagramSocketError>) {
+        so_error_inner::<Ipv6>(icmp_err, expected_err)
+    }
+
+    #[test]
+    fn so_error_dual_stack() {
+        set_logger_for_test();
+
+        const REMOTE_IP: Ipv4Addr = ip_v4!("8.8.8.8");
+        const REMOTE_IP_MAPPED: Ipv6Addr = net_ip_v6!("::ffff:8.8.8.8");
+
+        let mut ctx = FakeUdpCtx::with_core_ctx(FakeUdpCoreCtx::with_local_remote_ip_addrs(
+            vec![SpecifiedAddr::new(V4_LOCAL_IP).unwrap()],
+            vec![SpecifiedAddr::new(REMOTE_IP).unwrap()],
+        ));
+        let mut api = UdpApi::<Ipv6, _>::new(ctx.as_mut());
+        let socket = api.create();
+
+        api.listen(
+            &socket,
+            Some(ZonedAddr::Unzoned(SpecifiedAddr::new(V4_LOCAL_IP_MAPPED).unwrap())),
+            Some(LOCAL_PORT),
+        )
+        .expect("listen should succeed");
+
+        api.connect(
+            &socket,
+            Some(ZonedAddr::Unzoned(SpecifiedAddr::new(REMOTE_IP_MAPPED).unwrap())),
+            REMOTE_PORT.into(),
+        )
+        .expect("connect should succeed");
+
+        let (_, bindings_ctx) = api.contexts();
+        assert_eq!(bindings_ctx.state.take_pending_error::<Ipv6>(&socket.downgrade()), None);
+
+        let mut original_body = vec![0u8; 8];
+        original_body[0..2].copy_from_slice(&LOCAL_PORT.get().to_be_bytes());
+        original_body[2..4].copy_from_slice(&REMOTE_PORT.get().to_be_bytes());
+        original_body[4..6].copy_from_slice(&8u16.to_be_bytes());
+
+        let (core_ctx, bindings_ctx) = api.contexts();
+
+        let err = Icmpv4ErrorCode::DestUnreachable(
+            Icmpv4DestUnreachableCode::DestPortUnreachable,
+            Default::default(),
+        );
+
+        <UdpIpTransportContext as IpTransportContext<Ipv4, _, _>>::receive_icmp_error(
+            core_ctx,
+            bindings_ctx,
+            &FakeDeviceId,
+            Some(SpecifiedAddr::new(V4_LOCAL_IP).unwrap()),
+            SpecifiedAddr::new(REMOTE_IP).unwrap(),
+            &original_body,
+            err,
+        );
+
+        let (_, bindings_ctx) = api.contexts();
+        assert_eq!(
+            bindings_ctx.state.take_pending_error::<Ipv6>(&socket.downgrade()),
+            Some(PendingDatagramSocketError::PortUnreachable)
+        );
     }
 }

@@ -36,9 +36,9 @@ pub use internal::datagram::{
     DualStackBaseIpExt, DualStackConnState, DualStackConverter, DualStackDatagramBoundStateContext,
     DualStackIpExt, EitherIpSocket, ExpectedConnError, ExpectedUnboundError, InUseError, IpExt,
     IpOptions, ListenerInfo, MulticastInterfaceSelector, MulticastMembershipInterfaceSelector,
-    NonDualStackConverter, NonDualStackDatagramBoundStateContext, ReferenceState, SendError,
-    SendToError, SetMulticastMembershipError, SocketInfo, SocketState, SocketStateInner, StrongRc,
-    WeakRc, WrapOtherStackIpOptions, WrapOtherStackIpOptionsMut,
+    NonDualStackConverter, NonDualStackDatagramBoundStateContext, PendingDatagramSocketError,
+    ReferenceState, SendError, SendToError, SetMulticastMembershipError, SocketInfo, SocketState,
+    SocketStateInner, StrongRc, WeakRc, WrapOtherStackIpOptions, WrapOtherStackIpOptionsMut,
 };
 pub use internal::diagnostics::{DatagramSocketDiagnosticsSpec, SocketStateForMatching};
 pub use internal::settings::DatagramSettings;

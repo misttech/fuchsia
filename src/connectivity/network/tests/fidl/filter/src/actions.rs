@@ -55,10 +55,29 @@ async fn reject_incoming<I: TestIpExt>(name: &str, reject_type: RejectType) {
     let fake_endpoint = network.create_fake_endpoint().expect("create fake endpoint");
 
     // Install a rule that rejects all traffic.
+
+    let expected_error = match (I::VERSION, reject_type) {
+        (_, RejectType::NetUnreachable) | (_, RejectType::HostUnreachable) => None,
+        (_, RejectType::PortUnreachable) => Some(libc::ECONNREFUSED),
+        (_, RejectType::ProtoUnreachable) => Some(libc::ECONNREFUSED),
+        (IpVersion::V4, RejectType::RoutePolicyFail) => None,
+        (IpVersion::V6, RejectType::RoutePolicyFail) => Some(libc::EACCES),
+        (IpVersion::V4, RejectType::RejectRoute) => None,
+        (IpVersion::V6, RejectType::RejectRoute) => Some(libc::EACCES),
+        (IpVersion::V4, RejectType::AdminProhibited) => Some(libc::EHOSTUNREACH),
+        (IpVersion::V6, RejectType::AdminProhibited) => Some(libc::EACCES),
+        (_, RejectType::TcpReset) => Some(libc::ECONNREFUSED),
+    };
+
+    let expected_connectivity = match expected_error {
+        Some(err) => ExpectedConnectivity::Reject(err),
+        None => ExpectedConnectivity::None,
+    };
+
     let (_server_matcher, _sockets) = {
         let matcher = Udp;
         net.run_test_with::<I, UdpSocket, _, _>(
-            ExpectedConnectivity::None,
+            expected_connectivity,
             |TestNet { client: _, server }, addrs, ()| {
                 Box::pin(async move {
                     server

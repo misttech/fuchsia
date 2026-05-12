@@ -19,11 +19,6 @@
                 // https://fxbug.dev/42067218
                 "AllInetTests/UdpSocketTest.SendToAddressOtherThanConnected/*",
 
-                // Tests that hang in Fuchsia's CQ due to indefinite poll for ICMP response.
-                // TODO(https://fxbug.dev/42124055): Implement ICMP sockets in Netstack3.
-                "AllInetTests/UdpSocketTest.ConnectWriteToInvalidPort/*",
-                "AllInetTests/UdpSocketTest.ConnectAndSendNoReceiver/*",
-
                 // This test is very flaky on Fuchsia because of propagation
                 // time over loopback, there's no good way to observe dropped
                 // packets entirely from the POSIX API.

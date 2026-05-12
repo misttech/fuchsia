@@ -14,8 +14,8 @@ use either::Either;
 use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_posix as fposix;
 use fidl_fuchsia_posix_socket as fposix_socket;
-use netstack3_core::MapDerefExt as _;
 use netstack3_core::types::BufferSizeSettings;
+use netstack3_core::{MapDerefExt as _, PendingDatagramSocketError};
 
 use derivative::Derivative;
 use explicit::ResultExt as _;
@@ -321,6 +321,9 @@ pub(crate) trait TransportState<I: Ip>: Transport<I> + Send + Sync + 'static {
 
     fn set_send_buffer(ctx: &mut Ctx, id: &Self::SocketId, send_buffer: usize);
     fn get_send_buffer(ctx: &mut Ctx, id: &Self::SocketId) -> usize;
+
+    fn take_pending_error(ctx: &mut Ctx, id: &Self::SocketId)
+    -> Option<PendingDatagramSocketError>;
 }
 
 #[derive(Debug)]
@@ -356,14 +359,60 @@ impl OptionFromU16 for NonZeroU16 {
     }
 }
 
-#[derive(Debug, Error)]
-#[error("cannot send on non-connected UDP socket")]
-pub(crate) struct UdpSendNotConnectedError;
+#[derive(Error, Debug)]
+pub(crate) enum UdpSendError {
+    #[error(transparent)]
+    Core(#[from] udp::SendError),
+    #[error(transparent)]
+    PendingDatagramSocket(#[from] PendingDatagramSocketError),
+    #[error("cannot send on non-connected UDP socket")]
+    NotConnected,
+}
 
-impl IntoErrno for UdpSendNotConnectedError {
-    fn to_errno(&self) -> fposix::Errno {
+impl From<Either<udp::SendError, ExpectedConnError>> for UdpSendError {
+    fn from(value: Either<udp::SendError, ExpectedConnError>) -> Self {
+        match value {
+            Either::Left(e) => e.into(),
+            Either::Right(ExpectedConnError) => Self::NotConnected,
+        }
+    }
+}
+
+impl IntoErrno for UdpSendError {
+    fn to_errno(&self) -> fidl_fuchsia_posix::Errno {
         match self {
-            UdpSendNotConnectedError => fposix::Errno::Edestaddrreq,
+            UdpSendError::Core(err) => err.to_errno(),
+            UdpSendError::PendingDatagramSocket(err) => err.to_errno(),
+            UdpSendError::NotConnected => fposix::Errno::Edestaddrreq,
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub(crate) enum UdpSendToError {
+    #[error(transparent)]
+    LocalAddress(#[from] LocalAddressError),
+    #[error(transparent)]
+    Core(#[from] udp::SendToError),
+    #[error(transparent)]
+    PendingDatagramSocketError(#[from] PendingDatagramSocketError),
+}
+
+impl From<Either<LocalAddressError, udp::SendToError>> for UdpSendToError {
+    fn from(value: Either<LocalAddressError, udp::SendToError>) -> Self {
+        match value {
+            Either::Left(e) => e.into(),
+            Either::Right(e) => e.into(),
+        }
+    }
+}
+
+impl IntoErrno for UdpSendToError {
+    fn to_errno(&self) -> fidl_fuchsia_posix::Errno {
+        match self {
+            UdpSendToError::LocalAddress(err) => err.to_errno(),
+            UdpSendToError::Core(err) => err.to_errno(),
+            UdpSendToError::PendingDatagramSocketError(err) => err.to_errno(),
         }
     }
 }
@@ -388,8 +437,8 @@ where
     type LocalIdentifier = NonZeroU16;
     type RemoteIdentifier = udp::UdpRemotePort;
     type SocketInfo = SocketInfo<I::Addr, WeakDeviceId<BindingsCtx>>;
-    type SendError = Either<udp::SendError, UdpSendNotConnectedError>;
-    type SendToError = Either<LocalAddressError, udp::SendToError>;
+    type SendError = UdpSendError;
+    type SendToError = UdpSendToError;
     type DscpAndEcnError = NotDualStackCapableError;
 
     fn create_unbound(
@@ -634,10 +683,14 @@ where
         id: &Self::SocketId,
         body: B,
     ) -> Result<(), Self::SendError> {
-        ctx.api()
-            .udp()
-            .send(id, body)
-            .map_err(|e| e.map_right(|ExpectedConnError| UdpSendNotConnectedError))
+        if let Some(err) = Self::take_pending_error(ctx, id) {
+            return Err(UdpSendError::PendingDatagramSocket(err));
+        }
+
+        // NOTE: It's possible an ICMP error arrived on the socket between the
+        // check above and now. However, it's not possible for the application
+        // to detect the difference between that and the error coming in later.
+        ctx.api().udp().send(id, body).map_err(|e| e.into())
     }
 
     fn send_to<B: BufferMut>(
@@ -649,7 +702,12 @@ where
         ),
         body: B,
     ) -> Result<(), Self::SendToError> {
-        ctx.api().udp().send_to(id, remote_ip, remote_port, body)
+        if let Some(err) = Self::take_pending_error(ctx, id) {
+            return Err(UdpSendToError::PendingDatagramSocketError(err));
+        }
+
+        // NOTE: See the comment above in send() about a possible race.
+        ctx.api().udp().send_to(id, remote_ip, remote_port, body).map_err(|e| e.into())
     }
 
     fn set_mark(ctx: &mut Ctx, id: &Self::SocketId, domain: MarkDomain, mark: Mark) {
@@ -670,6 +728,13 @@ where
 
     fn get_send_buffer(ctx: &mut Ctx, id: &Self::SocketId) -> usize {
         ctx.api().udp().send_buffer(id)
+    }
+
+    fn take_pending_error(
+        _ctx: &mut Ctx,
+        id: &Self::SocketId,
+    ) -> Option<PendingDatagramSocketError> {
+        id.external_data().message_queue.lock().take_pending_error()
     }
 }
 
@@ -696,6 +761,10 @@ impl<I: IpExt> DatagramSocketExternalData<I> {
         };
 
         self.message_queue.lock().receive(message)
+    }
+
+    pub(crate) fn on_socket_error(&self, err: PendingDatagramSocketError) {
+        self.message_queue.lock().set_pending_error(err);
     }
 }
 
@@ -1085,6 +1154,13 @@ where
 
     fn get_send_buffer(ctx: &mut Ctx, id: &Self::SocketId) -> usize {
         ctx.api().icmp_echo().send_buffer(id)
+    }
+
+    fn take_pending_error(
+        _ctx: &mut Ctx,
+        id: &Self::SocketId,
+    ) -> Option<PendingDatagramSocketError> {
+        id.external_data().message_queue.lock().take_pending_error()
     }
 }
 
@@ -1552,10 +1628,9 @@ where
                 responder.send(Err(fposix::Errno::Enoprotoopt)).unwrap_or_log("failed to respond");
             }
             Request::GetError { responder } => {
-                warn!("syncudp::GetError is not implemented, returning Ok");
-                // Pretend that we don't have any errors to report.
-                // TODO(https://fxbug.dev/322214321): Actually implement SO_ERROR.
-                responder.send(Ok(())).unwrap_or_log("failed to respond");
+                let err = T::take_pending_error(self.ctx, &self.data.info.id);
+                let result = err.map(|e| e.to_errno()).map_or(Ok(()), Err);
+                responder.send(result).unwrap_or_log("failed to respond");
             }
             Request::SetSendBuffer { value_bytes, responder } => {
                 self.set_send_buffer(value_bytes);
@@ -2089,6 +2164,11 @@ where
                     ..
                 },
         } = self;
+
+        if let Some(err) = T::take_pending_error(ctx, id) {
+            return Err(ErrnoError::new(err.to_errno(), "pending error on socket"));
+        }
+
         let front = {
             let mut messages = <T as Transport<I>>::external_data(id).message_queue.lock();
             if recv_flags.contains(fposix_socket::RecvMsgFlags::PEEK) {
@@ -2822,7 +2902,9 @@ mod tests {
         StackSetupBuilder, TestSetup, TestSetupBuilder, TestStack, test_ep_name,
     };
     use crate::bindings::socket::testutil::TestSockAddr;
-    use crate::bindings::socket::{ZXSIO_SIGNAL_INCOMING, ZXSIO_SIGNAL_OUTGOING};
+    use crate::bindings::socket::{
+        ZXSIO_SIGNAL_ERROR, ZXSIO_SIGNAL_INCOMING, ZXSIO_SIGNAL_OUTGOING,
+    };
     use net_types::Witness as _;
     use net_types::ip::{IpAddr, IpAddress};
 
@@ -3329,6 +3411,85 @@ mod tests {
     }
 
     declare_tests!(hello);
+
+    #[fixture::teardown(TestSetup::shutdown)]
+    #[test_case::test_matrix(
+        [
+            fposix_socket::Domain::Ipv4,
+            fposix_socket::Domain::Ipv6,
+        ],
+        [
+            fposix_socket::DatagramSocketProtocol::Udp,
+            // ICMP Echo sockets don't support SO_ERROR.
+        ]
+    )]
+    #[fasync::run_singlethreaded(test)]
+    async fn so_error(domain: fposix_socket::Domain, proto: fposix_socket::DatagramSocketProtocol) {
+        let (local_subnet, connect_addr) = match domain {
+            fposix_socket::Domain::Ipv4 => (
+                fnet::Ipv4SocketAddress::config_addr_subnet(),
+                fnet::Ipv4SocketAddress::create(fnet::Ipv4SocketAddress::LOCAL_ADDR, 1234),
+            ),
+            fposix_socket::Domain::Ipv6 => (
+                fnet::Ipv6SocketAddress::config_addr_subnet(),
+                fnet::Ipv6SocketAddress::create(fnet::Ipv6SocketAddress::LOCAL_ADDR, 1234),
+            ),
+        };
+
+        let mut t = TestSetupBuilder::new()
+            .add_endpoint()
+            .add_stack(
+                StackSetupBuilder::new().add_named_endpoint(test_ep_name(1), Some(local_subnet)),
+            )
+            .build()
+            .await;
+
+        let bob = t.get_mut(0);
+        let (bob_socket, bob_events) = match domain {
+            fposix_socket::Domain::Ipv4 => {
+                get_socket_and_event::<fnet::Ipv4SocketAddress>(bob, proto).await
+            }
+            fposix_socket::Domain::Ipv6 => {
+                get_socket_and_event::<fnet::Ipv6SocketAddress>(bob, proto).await
+            }
+        };
+
+        bob_socket.connect(&connect_addr).await.unwrap().expect("Connect succeeds");
+
+        let body = "Hello".as_bytes();
+        let to_send = match domain {
+            fposix_socket::Domain::Ipv4 => {
+                prepare_buffer_to_send::<fnet::Ipv4SocketAddress>(proto, body.to_vec())
+            }
+            fposix_socket::Domain::Ipv6 => {
+                prepare_buffer_to_send::<fnet::Ipv6SocketAddress>(proto, body.to_vec())
+            }
+        };
+        assert_eq!(
+            bob_socket
+                .send_msg(
+                    None,
+                    &to_send,
+                    &fposix_socket::DatagramSocketSendControlData::default(),
+                    fposix_socket::SendMsgFlags::empty()
+                )
+                .await
+                .unwrap()
+                .expect("sendmsg succeeds"),
+            to_send.len() as i64
+        );
+
+        let signals = fasync::OnSignals::new(&bob_events, ZXSIO_SIGNAL_ERROR).await.unwrap();
+        assert!(signals.contains(ZXSIO_SIGNAL_ERROR));
+
+        let res = bob_socket.get_error().await.unwrap();
+        assert_eq!(res, Err(fposix::Errno::Econnrefused));
+
+        let res = bob_socket.get_error().await.unwrap();
+        assert_eq!(res, Ok(()));
+
+        t
+    }
 
     #[fixture::teardown(TestSetup::shutdown)]
     #[test_case::test_matrix(

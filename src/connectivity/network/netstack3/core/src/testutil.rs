@@ -42,6 +42,7 @@ use netstack3_base::{
     RngContext, TimerBindingsTypes, TimerContext, TimerHandler, TxMetadataBindingsTypes,
     WorkQueueReport,
 };
+use netstack3_datagram::PendingDatagramSocketError;
 use netstack3_device::ethernet::{
     EthernetCreationProperties, EthernetDeviceEvent, EthernetDeviceId, EthernetLinkDevice,
     EthernetWeakDeviceId, RecvEthernetFrameMeta,
@@ -1340,6 +1341,13 @@ impl<I: IpExt> UdpReceiveBindingsContext<I, DeviceId<Self>> for FakeBindingsCtx 
             (&mut *state).udp_state_mut::<I>().entry(id.clone()).or_insert_with(Vec::default);
         received.push(body.to_owned());
         Ok(())
+    }
+
+    fn on_socket_error(
+        &mut self,
+        _id: &UdpSocketId<I, WeakDeviceId<Self>, FakeBindingsCtx>,
+        _err: PendingDatagramSocketError,
+    ) {
     }
 }
 

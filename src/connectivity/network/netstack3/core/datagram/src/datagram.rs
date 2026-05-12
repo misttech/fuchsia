@@ -31,11 +31,12 @@ use netstack3_base::socket::{
 use netstack3_base::sync::{self, RwLock};
 use netstack3_base::{
     AnyDevice, BidirectionalConverter, ContextPair, CoreTxMetadataContext, DeviceIdContext,
-    DeviceIdentifier, EitherDeviceId, Inspector, InspectorDeviceExt, InspectorExt as _,
-    IpDeviceAddr, LocalAddressError, Mark, MarkDomain, Marks, NotFoundError,
-    OwnedOrRefsBidirectionalConverter, ReferenceNotifiers, ReferenceNotifiersExt,
-    RemoteAddressError, RemoveResourceResultWithContext, RngContext, SettingsContext, SocketError,
-    StrongDeviceIdentifier, TxMetadataBindingsTypes, WeakDeviceIdentifier, ZonedAddressError,
+    DeviceIdentifier, EitherDeviceId, IcmpErrorCode, Icmpv4ErrorCode, Icmpv6ErrorCode, Inspector,
+    InspectorDeviceExt, InspectorExt as _, IpDeviceAddr, LocalAddressError, Mark, MarkDomain,
+    Marks, NotFoundError, OwnedOrRefsBidirectionalConverter, ReferenceNotifiers,
+    ReferenceNotifiersExt, RemoteAddressError, RemoveResourceResultWithContext, RngContext,
+    SettingsContext, SocketError, StrongDeviceIdentifier, TxMetadataBindingsTypes,
+    WeakDeviceIdentifier, ZonedAddressError,
 };
 use netstack3_filter::{FilterIpExt, TransportPacketSerializer};
 use netstack3_hashmap::{HashMap, HashSet};
@@ -49,6 +50,7 @@ use netstack3_ip::{
     SocketMetadata, TransportIpContext,
 };
 use packet::BufferMut;
+use packet_formats::icmp::{Icmpv4DestUnreachableCode, Icmpv6DestUnreachableCode};
 use packet_formats::ip::{DscpAndEcn, IpProtoExt};
 use ref_cast::RefCast;
 use thiserror::Error;
@@ -137,6 +139,89 @@ impl<I: IpExt, D: WeakDeviceIdentifier, S: DatagramSocketSpec> DerefMut
 /// Marker trait for datagram IP extensions.
 pub trait IpExt: netstack3_ip::IpLayerIpExt + DualStackIpExt {}
 impl<I: netstack3_ip::IpLayerIpExt + DualStackIpExt> IpExt for I {}
+
+/// Errors surfaced on sockets via GetError.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Error)]
+pub enum PendingDatagramSocketError {
+    /// The network is unreachable.
+    #[error("network is unreachable")]
+    NetworkUnreachable,
+    /// The destination host is unreachable.
+    #[error("host is unreachable")]
+    HostUnreachable,
+    /// The destination protocol is unreachable.
+    #[error("protocol is unreachable")]
+    ProtocolUnreachable,
+    /// The destination port is unreachable.
+    #[error("port is unreachable")]
+    PortUnreachable,
+    /// The host is down.
+    #[error("host is down")]
+    DestinationHostDown,
+    /// The datagram lacked required permissions.
+    #[error("permission denied")]
+    PermissionDenied,
+    /// There was a protocol error.
+    #[error("protocol error")]
+    ProtocolError,
+    /// A packet sent was too large.
+    #[error("packet too big")]
+    PacketTooBig,
+    /// The connection was aborted by the system.
+    #[error("connection was aborted by the system")]
+    Aborted,
+}
+
+impl PendingDatagramSocketError {
+    /// Maps hard ICMP error codes to [`PendingDatagramSocketError`].
+    ///
+    /// The classification of what constitutes a hard error is meant to match
+    /// Linux.
+    pub fn from_hard_icmp(err: IcmpErrorCode) -> Option<Self> {
+        match err {
+            IcmpErrorCode::V4(v4_err) => match v4_err {
+                Icmpv4ErrorCode::DestUnreachable(code, _) => match code {
+                    Icmpv4DestUnreachableCode::DestPortUnreachable => Some(Self::PortUnreachable),
+                    Icmpv4DestUnreachableCode::DestProtocolUnreachable => {
+                        Some(Self::ProtocolUnreachable)
+                    }
+                    Icmpv4DestUnreachableCode::CommAdministrativelyProhibited => {
+                        Some(Self::HostUnreachable)
+                    }
+                    Icmpv4DestUnreachableCode::DestNetworkUnknown => Some(Self::NetworkUnreachable),
+                    Icmpv4DestUnreachableCode::DestHostUnknown => Some(Self::DestinationHostDown),
+                    Icmpv4DestUnreachableCode::FragmentationRequired => Some(Self::PacketTooBig),
+                    Icmpv4DestUnreachableCode::DestNetworkUnreachable
+                    | Icmpv4DestUnreachableCode::DestHostUnreachable
+                    | Icmpv4DestUnreachableCode::SourceRouteFailed
+                    | Icmpv4DestUnreachableCode::SourceHostIsolated
+                    | Icmpv4DestUnreachableCode::NetworkAdministrativelyProhibited
+                    | Icmpv4DestUnreachableCode::HostAdministrativelyProhibited
+                    | Icmpv4DestUnreachableCode::NetworkUnreachableForToS
+                    | Icmpv4DestUnreachableCode::HostUnreachableForToS
+                    | Icmpv4DestUnreachableCode::HostPrecedenceViolation
+                    | Icmpv4DestUnreachableCode::PrecedenceCutoffInEffect => None,
+                },
+                Icmpv4ErrorCode::ParameterProblem(_) => Some(Self::ProtocolError),
+                Icmpv4ErrorCode::TimeExceeded(_) | Icmpv4ErrorCode::Redirect(_) => None,
+            },
+            IcmpErrorCode::V6(v6_err) => match v6_err {
+                Icmpv6ErrorCode::DestUnreachable(code) => match code {
+                    Icmpv6DestUnreachableCode::PortUnreachable => Some(Self::PortUnreachable),
+                    Icmpv6DestUnreachableCode::CommAdministrativelyProhibited
+                    | Icmpv6DestUnreachableCode::SrcAddrFailedPolicy
+                    | Icmpv6DestUnreachableCode::RejectRoute => Some(Self::PermissionDenied),
+                    Icmpv6DestUnreachableCode::NoRoute
+                    | Icmpv6DestUnreachableCode::BeyondScope
+                    | Icmpv6DestUnreachableCode::AddrUnreachable => None,
+                },
+                Icmpv6ErrorCode::ParameterProblem(_) => Some(Self::ProtocolError),
+                Icmpv6ErrorCode::PacketTooBig(_) => Some(Self::PacketTooBig),
+                Icmpv6ErrorCode::TimeExceeded(_) => None,
+            },
+        }
+    }
+}
 
 /// A datagram socket's state.
 #[derive(Derivative, GenericOverIp)]

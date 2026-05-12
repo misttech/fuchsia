@@ -729,6 +729,14 @@ impl<I: IpExt> UdpReceiveBindingsContext<I, DeviceId<BindingsCtx>> for BindingsC
             .receive_udp(device_id, meta, body)
             .map_err(|NoSpace {}| ReceiveUdpError::QueueFull)
     }
+
+    fn on_socket_error(
+        &mut self,
+        id: &UdpSocketId<I, WeakDeviceId<BindingsCtx>, BindingsCtx>,
+        err: netstack3_core::PendingDatagramSocketError,
+    ) {
+        id.external_data().on_socket_error(err)
+    }
 }
 
 impl UdpBindingsTypes for BindingsCtx {

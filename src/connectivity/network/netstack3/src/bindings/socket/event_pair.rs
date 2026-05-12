@@ -10,8 +10,8 @@ use log::error;
 use netstack3_core::socket::SocketWritableListener;
 use zx::Peered as _;
 
-use crate::bindings::socket::queue::QueueReadableListener;
-use crate::bindings::socket::{ZXSIO_SIGNAL_INCOMING, ZXSIO_SIGNAL_OUTGOING};
+use crate::bindings::socket::queue::{QueueErrorListener, QueueReadableListener};
+use crate::bindings::socket::{ZXSIO_SIGNAL_ERROR, ZXSIO_SIGNAL_INCOMING, ZXSIO_SIGNAL_OUTGOING};
 
 /// A shared instance of [`zx::EventPair`] that can be signaled as
 /// readable/writable.
@@ -41,6 +41,13 @@ impl QueueReadableListener for SocketEventPair {
     fn on_readable_changed(&mut self, readable: bool) {
         let Self(event) = self;
         signal_zx_event(event, ZXSIO_SIGNAL_INCOMING, readable);
+    }
+}
+
+impl QueueErrorListener for SocketEventPair {
+    fn on_error_changed(&mut self, error: bool) {
+        let Self(event) = self;
+        signal_zx_event(event, ZXSIO_SIGNAL_ERROR, error);
     }
 }
 

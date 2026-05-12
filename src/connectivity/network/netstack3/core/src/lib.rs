@@ -208,8 +208,9 @@ pub mod routes {
 pub mod socket {
     pub use netstack3_datagram::{
         ConnInfo, ConnectError, ExpectedConnError, ExpectedUnboundError, ListenerInfo,
-        MulticastInterfaceSelector, MulticastMembershipInterfaceSelector, SendError, SendToError,
-        SetMulticastMembershipError, SocketInfo,
+        MulticastInterfaceSelector, MulticastMembershipInterfaceSelector,
+        PendingDatagramSocketError, SendError, SendToError, SetMulticastMembershipError,
+        SocketInfo,
     };
 
     pub use netstack3_base::socket::{
@@ -281,6 +282,7 @@ pub use netstack3_base::{
     MapDerefExt, MatcherBindingsTypes, NetworkSerializationContext, ReferenceNotifiers, RngContext,
     SettingsContext, TimerBindingsTypes, TimerContext, TxMetadata, TxMetadataBindingsTypes,
 };
+pub use netstack3_datagram::PendingDatagramSocketError;
 pub use state::{StackState, StackStateBuilder};
 pub use time::{AtomicInstant, Instant, TimerId};
 pub use transport::CoreTxMetadata;

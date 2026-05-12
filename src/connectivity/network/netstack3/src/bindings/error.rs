@@ -19,10 +19,10 @@ use netstack3_core::socket::{
     ConnectError, ExpectedConnError, ExpectedUnboundError, NotDualStackCapableError, SendError,
     SendToError, SetDualStackEnabledError, SetMulticastMembershipError,
 };
-use netstack3_core::{tcp, udp};
+use netstack3_core::{PendingDatagramSocketError, tcp, udp};
 use thiserror::Error;
 
-use crate::bindings::socket::datagram::UdpSendNotConnectedError;
+use crate::bindings::socket::datagram::{UdpSendError, UdpSendToError};
 use crate::bindings::util::{
     DeviceNotFoundError, MulticastMembershipConversionError, SocketAddressError,
     WrongIpVersionError,
@@ -55,6 +55,8 @@ pub(crate) enum Error {
     NotFoundError(#[from] NotFoundError),
     #[error(transparent)]
     NotSupportedError(#[from] NotSupportedError),
+    #[error(transparent)]
+    PendingDatagramSocketError(#[from] PendingDatagramSocketError),
     #[error(transparent)]
     RawIpSocketSendToError(#[from] RawIpSocketSendToError),
     #[error(transparent)]
@@ -96,11 +98,13 @@ pub(crate) enum Error {
     #[error(transparent)]
     TcpSetReuseAddrError(#[from] tcp::SetReuseAddrError),
     #[error(transparent)]
-    UdpSendError(#[from] udp::SendError),
+    CoreUdpSendError(#[from] udp::SendError),
     #[error(transparent)]
-    UdpSendToError(#[from] udp::SendToError),
+    CoreUdpSendToError(#[from] udp::SendToError),
     #[error(transparent)]
-    UdpSendNotConnectedError(#[from] UdpSendNotConnectedError),
+    UdpSendError(#[from] UdpSendError),
+    #[error(transparent)]
+    UdpSendToError(#[from] UdpSendToError),
     #[error(transparent)]
     WrongIpVersionError(#[from] WrongIpVersionError),
     #[error(transparent)]

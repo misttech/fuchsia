@@ -714,9 +714,7 @@ impl SocketType for UdpSocket {
 
             let mut buf = [0u8; 1024];
             match expected_connectivity {
-                ExpectedConnectivity::None
-                | ExpectedConnectivity::ClientToServerOnly
-                | ExpectedConnectivity::Reject(_) => {
+                ExpectedConnectivity::None | ExpectedConnectivity::ClientToServerOnly => {
                     match client
                         .recv_from(&mut buf[..])
                         .map_ok(Some)
@@ -733,6 +731,16 @@ impl SocketType for UdpSocket {
                         }
                         None => {}
                     }
+                }
+                ExpectedConnectivity::Reject(expected_errno) => {
+                    let error = client
+                        .recv_from(&mut buf[..])
+                        .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.after_now(), || {
+                            panic!("timed out waiting for recv_from to return expected error");
+                        })
+                        .await
+                        .expect_err("recv_from expected to fail");
+                    assert_eq!(error.raw_os_error(), Some(expected_errno));
                 }
                 ExpectedConnectivity::TwoWay => {
                     let (bytes, from) = client

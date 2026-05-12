@@ -72,6 +72,8 @@ const ZXSIO_SIGNAL_INCOMING: zx::Signals =
     zx::Signals::from_bits(psocket::SIGNAL_DATAGRAM_INCOMING).unwrap();
 const ZXSIO_SIGNAL_OUTGOING: zx::Signals =
     zx::Signals::from_bits(psocket::SIGNAL_DATAGRAM_OUTGOING).unwrap();
+const ZXSIO_SIGNAL_ERROR: zx::Signals =
+    zx::Signals::from_bits(psocket::SIGNAL_DATAGRAM_ERROR).unwrap();
 const ZXSIO_SIGNAL_CONNECTED: zx::Signals =
     zx::Signals::from_bits(psocket::SIGNAL_STREAM_CONNECTED).unwrap();
 
@@ -583,6 +585,22 @@ impl IntoErrno for LocalAddressError {
             LocalAddressError::AddressUnexpectedlyMapped => Errno::Einval,
             LocalAddressError::AddressInUse => Errno::Eaddrinuse,
             LocalAddressError::Zone(e) => e.to_errno(),
+        }
+    }
+}
+
+impl IntoErrno for netstack3_core::PendingDatagramSocketError {
+    fn to_errno(&self) -> Errno {
+        match self {
+            Self::NetworkUnreachable => Errno::Enetunreach,
+            Self::HostUnreachable => Errno::Ehostunreach,
+            Self::ProtocolUnreachable => Errno::Econnrefused,
+            Self::PortUnreachable => Errno::Econnrefused,
+            Self::DestinationHostDown => Errno::Ehostdown,
+            Self::PermissionDenied => Errno::Eacces,
+            Self::ProtocolError => Errno::Eproto,
+            Self::Aborted => Errno::Econnaborted,
+            Self::PacketTooBig => Errno::Emsgsize,
         }
     }
 }
