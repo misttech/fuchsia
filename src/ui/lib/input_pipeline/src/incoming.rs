@@ -35,14 +35,14 @@ mod dso {
         pub fn connect_protocol_next<P: fidl_next::Discoverable>(
             &self,
         ) -> Result<fidl_next::ClientEnd<P, Transport>, anyhow::Error> {
-            self.0.connect_protocol_next().context("connect_protocol_next")
+            self.0.connect_protocol_libasync_next().context("connect_protocol_next")
         }
 
         pub fn connect_protocol_next_at<P: fidl_next::Discoverable>(
             dir: &impl AsRefDirectory,
             path: &str,
         ) -> Result<fidl_next::ClientEnd<P, Transport>, anyhow::Error> {
-            fdf_component::Incoming::connect_protocol_next_at(dir, path)
+            fdf_component::Incoming::connect_protocol_libasync_next_at(dir, path)
                 .context("connect_protocol_next_at")
         }
 
