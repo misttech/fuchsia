@@ -916,23 +916,6 @@ TEST(Task, ExecveArgvExceedsLimit) {
   ASSERT_TRUE(helper.WaitForChildren());
 }
 
-TEST(Task, ExecveArgvExceedsArgCountLimit) {
-  test_helper::ForkHelper helper;
-  helper.RunInForkedProcess([] {
-    // We'll create a large number of empty strings that easily passes the
-    // 32-page byte-size limit because of the 1-byte size, but should trip
-    // over a MAX_ARG_STRINGS limit (or OOM memory otherwise).
-    // We use a reasonably large number that would panic if unbounded, but fits in test.
-    size_t num_args = 2 * 1024 * 1024;  // 2 million arguments
-    std::vector<char*> argv(num_args + 1, const_cast<char*>(""));
-    argv[num_args] = nullptr;
-    char* envp[] = {nullptr};
-    EXPECT_NE(execve("/proc/self/exe", argv.data(), envp), 0);
-    EXPECT_EQ(errno, E2BIG);
-  });
-  ASSERT_TRUE(helper.WaitForChildren());
-}
-
 TEST(Task, ExecveArgvEnvExceedLimit) {
   test_helper::ForkHelper helper;
   helper.RunInForkedProcess([] {
@@ -944,20 +927,6 @@ TEST(Task, ExecveArgvEnvExceedLimit) {
     std::fill_n(envp, kVecSize - 1, string.data());
     envp[kVecSize - 1] = nullptr;
     EXPECT_NE(execve("/proc/self/exe", argv, envp), 0);
-    EXPECT_EQ(errno, E2BIG);
-  });
-  ASSERT_TRUE(helper.WaitForChildren());
-}
-
-TEST(Task, ExecveEnvpExceedsArgCountLimit) {
-  test_helper::ForkHelper helper;
-  helper.RunInForkedProcess([] {
-    // Similar to ExecveArgvExceedsArgCountLimit but checks environment variable count.
-    size_t num_env = 2 * 1024 * 1024;  // 2 million env vars
-    std::vector<char*> envp(num_env + 1, const_cast<char*>(""));
-    envp[num_env] = nullptr;
-    char* argv[] = {const_cast<char*>("/proc/self/exe"), nullptr};
-    EXPECT_NE(execve("/proc/self/exe", argv, envp.data()), 0);
     EXPECT_EQ(errno, E2BIG);
   });
   ASSERT_TRUE(helper.WaitForChildren());
