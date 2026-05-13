@@ -10,10 +10,14 @@
 
 #include <sstream>
 
+#include <fuchsia_controller_abi/utils.h>
+
 #include "error.h"
 
 // Defined in fuchsia_controller_py.cc
 extern struct PyModuleDef fuchsia_controller_internal;
+
+namespace fc = fuchsia_controller;
 
 namespace {
 
@@ -225,10 +229,10 @@ class LastError {
   bool is_fidl() { return err_buf_ != nullptr && err_type_ == FC_ERR_TYPE_FIDL; }
   bool is_string() { return err_buf_ != nullptr && err_type_ == FC_ERR_TYPE_STRING; }
 
-  PyObject *to_string() {
+  fc::abi::utils::Object to_string() {
     if (!is_string()) {
       PyErr_SetString(PyExc_RuntimeError, "Internal error: expected string error from buffer");
-      return nullptr;
+      return fc::abi::utils::Object::null();
     }
     auto str_obj = PyUnicode_FromStringAndSize(err_buf_, static_cast<Py_ssize_t>(err_len_));
     // If this is null this will return an internal error about allocating the string.
@@ -236,9 +240,9 @@ class LastError {
       PyErr_Clear();
       PyErr_SetString(PyExc_RuntimeError,
                       "Internal error: unable to allocate error string from buffer. This is a bug");
-      return nullptr;
+      return fc::abi::utils::Object::null();
     }
-    return str_obj;
+    return fc::abi::utils::Object(str_obj);
   }
 
   void set_fdomain_exception(fc_status_t err) {
@@ -305,16 +309,17 @@ void set_python_exception(fc_status_t err) {
             break;
           }
           PyTuple_SetItem(tuple, 0, PyLong_FromLong(err));
-          PyTuple_SetItem(tuple, 1, str_obj);
+          // Important: use `take` here because this steals the reference.
+          // PyErr_SetObject increases the refcount so only requires `get`.
+          PyTuple_SetItem(tuple, 1, str_obj.take());
           PyErr_SetObject(reinterpret_cast<PyObject *>(error::FcTransportStatusType), tuple);
           Py_XDECREF(tuple);
           break;
         }
         default:
-          PyErr_SetObject(PyExc_RuntimeError, str_obj);
+          PyErr_SetObject(PyExc_RuntimeError, str_obj.get());
           break;
       }
-      Py_XDECREF(str_obj);
       break;
     }
     case FC_ERR_SOCKET_WRITE:

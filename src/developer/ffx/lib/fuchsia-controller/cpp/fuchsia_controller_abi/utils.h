@@ -13,6 +13,7 @@ namespace fuchsia_controller::abi::utils {
 class Object {
  public:
   explicit Object(PyObject* ptr) : ptr_(ptr) {}
+  static Object null() { return Object(nullptr); }
   ~Object() { Py_XDECREF(ptr_); }
   PyObject* get() { return ptr_; }
   PyObject* take() {
