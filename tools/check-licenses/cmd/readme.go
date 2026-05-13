@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/subcommands"
 
+	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
 )
 
@@ -101,7 +102,12 @@ func (c *ReadmeFormatCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 	formattedText := readme.Format(readmes)
 	formattedBytes := []byte(formattedText)
 
-	errs := readme.Validate(fuchsiaDir, absPath, readmes)
+	builder := v2config.NewBuilder(fuchsiaDir)
+	if err := builder.Assemble(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to assemble config: %v\n", err)
+	}
+
+	errs := readme.Validate(fuchsiaDir, absPath, readmes, builder.Config)
 	hasValidationErrors := len(errs) > 0
 	for _, err := range errs {
 		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
@@ -183,7 +189,12 @@ func (c *ReadmeCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 		return subcommands.ExitSuccess
 	}
 
-	errs := readme.Validate(fuchsiaDir, absPath, readmes)
+	builder := v2config.NewBuilder(fuchsiaDir)
+	if err := builder.Assemble(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to assemble config: %v\n", err)
+	}
+
+	errs := readme.Validate(fuchsiaDir, absPath, readmes, builder.Config)
 	hasValidationErrors := len(errs) > 0
 	for _, err := range errs {
 		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)

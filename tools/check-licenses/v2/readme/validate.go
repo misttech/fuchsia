@@ -8,15 +8,25 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 )
 
 // Validate checks if the README.fuchsia file structures contain all required fields
 // and no unknown fields. It also verifies that referenced paths exist on disk.
 // Returns a slice of all encountered errors.
-func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme) []error {
+func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme, config *v2config.MasterConfig) []error {
 	var errs []error
 
 	readmeDir := filepath.Dir(readmeFilePath)
+	if config != nil && config.OutOfTreeReadmes != nil {
+		for logicalPath, physicalPath := range config.OutOfTreeReadmes {
+			if filepath.Clean(physicalPath) == filepath.Clean(readmeFilePath) {
+				readmeDir = filepath.Join(fuchsiaDir, logicalPath)
+				break
+			}
+		}
+	}
 
 	for i, r := range readmes {
 		var baseDir string
@@ -30,6 +40,20 @@ func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme) []error {
 				}
 			} else {
 				baseDir = readmeDir // Fallback
+			}
+		}
+
+		relBaseDir, err := filepath.Rel(fuchsiaDir, baseDir)
+		if err != nil {
+			relBaseDir = baseDir
+		}
+		if relBaseDir == "." {
+			relBaseDir = ""
+		}
+		allowMissingLicense := false
+		if config != nil && config.PolicyExceptions != nil {
+			if list, ok := config.PolicyExceptions[v2config.PolicyCheckAllProjectsMustHaveALicense]; ok {
+				_, allowMissingLicense = list[relBaseDir]
 			}
 		}
 
@@ -55,7 +79,9 @@ func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme) []error {
 			errs = append(errs, fmt.Errorf("Readme %d: 'Location' is a required field for sub-projects defined after a DEPENDENCY DIVIDER", i+1))
 		}
 		if len(r.LicenseFiles) == 0 {
-			errs = append(errs, fmt.Errorf("Readme %d: At least one 'License File' must be specified", i+1))
+			if !allowMissingLicense {
+				errs = append(errs, fmt.Errorf("Readme %d: At least one 'License File' must be specified", i+1))
+			}
 		} else {
 			for _, lf := range r.LicenseFiles {
 				if lf.License == "" {

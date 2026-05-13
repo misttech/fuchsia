@@ -175,3 +175,51 @@ func TestReadmeCommand_Stdout(t *testing.T) {
 		t.Error("Expected file to remain unmodified in stdout mode")
 	}
 }
+
+func TestReadmeCommand_AllowlistedProject(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Setup v2 config with policy exception
+	configDir := filepath.Join(tempDir, "tools", "check-licenses", "v2")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	configBytes := []byte(`{
+		"policy_exceptions": {
+			"AllProjectsMustHaveALicense": [
+				{
+					"bug": "b/123",
+					"paths": ["allowlisted"]
+				}
+			]
+		}
+	}`)
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), configBytes, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	projDir := filepath.Join(tempDir, "allowlisted")
+	if err := os.MkdirAll(projDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	testFilePath := filepath.Join(projDir, "README.fuchsia")
+
+	// Content without License File
+	content := []byte("Name: allowlisted\nURL: https://test\nVersion: 1.0\nSecurity Critical: no\n")
+	if err := os.WriteFile(testFilePath, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &ReadmeCommand{}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fs)
+	fs.Parse([]string{"-fuchsia_dir", tempDir, "check", testFilePath})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	status := cmd.Execute(ctx, fs)
+	if status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess (0) for allowlisted project without License File, got %v", status)
+	}
+}
