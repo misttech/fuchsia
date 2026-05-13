@@ -8,6 +8,7 @@ from antlion.controllers.ap_lib.hostapd_security import (
 )
 from mobly_controller.openwrt_access_point.lib.access_point_config import (
     Band,
+    RadioConfig,
     Security,
     SecurityOpen,
     SecurityWep,
@@ -107,3 +108,37 @@ class AccessPointConfigMapper:
             capabilities.AC_CAPABILITY_TX_ANTENNA_PATTERN: hostapd_constants.AC_CAPABILITY_TX_ANTENNA_PATTERN,
         }
         return mapping.get(cap, cap)
+
+    @staticmethod
+    def to_legacy_params(radio_config: RadioConfig) -> dict[str, object]:
+        """Maps RadioConfig to legacy hostapd options for legacy AP support."""
+        mapping = {
+            "country_ie": "ieee80211d",
+        }
+        hostapd_options: dict[str, object] = {}
+
+        # 1. Map country
+        hostapd_options["country_code"] = radio_config.country
+
+        # 2. Map custom_uci_options on radio
+        for k, v in radio_config.custom_uci_options.items():
+            if k in mapping:
+                hostapd_options[mapping[k]] = v
+            elif isinstance(v, list):
+                hostapd_options[k] = " ".join(str(x) for x in v)
+            else:
+                hostapd_options[k] = v
+
+        # 3. Map custom_uci_options on first BSS (assuming single BSS for compliance tests)
+        if radio_config.bss_settings:
+            bss = radio_config.bss_settings[0]
+            for k, v in bss.custom_uci_options.items():
+                if k in mapping:
+                    hostapd_options[mapping[k]] = v
+                else:
+                    hostapd_options[k] = v
+
+        # 4. Merge with custom_hostapd_options
+        hostapd_options.update(radio_config.custom_hostapd_options)
+
+        return hostapd_options

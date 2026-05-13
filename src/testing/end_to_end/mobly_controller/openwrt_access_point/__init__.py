@@ -123,7 +123,13 @@ class OpenWrtAP:
         self.ssh.run(f"uci set wireless.{bss.name}.hidden='{hidden}'")
 
         for option, value in bss.custom_uci_options.items():
-            self.ssh.run(f"uci set wireless.{bss.name}.{option}='{value}'")
+            if isinstance(value, list):
+                for item in value:
+                    self.ssh.run(
+                        f"uci add_list wireless.{bss.name}.{option}='{item}'"
+                    )
+            else:
+                self.ssh.run(f"uci set wireless.{bss.name}.{option}='{value}'")
 
     def configure_wifi(self, config: AccessPointConfig) -> None:
         """Configures the Wi-Fi on the Access Point.
@@ -178,7 +184,23 @@ class OpenWrtAP:
             self.ssh.run(f"uci set wireless.{radio}.country='{country}'")
 
             for option, value in radio_config.custom_uci_options.items():
-                self.ssh.run(f"uci set wireless.{radio}.{option}='{value}'")
+                if isinstance(value, list):
+                    for item in value:
+                        self.ssh.run(
+                            f"uci add_list wireless.{radio}.{option}='{item}'"
+                        )
+                else:
+                    self.ssh.run(f"uci set wireless.{radio}.{option}='{value}'")
+
+            # Apply hostapd options
+            if hasattr(radio_config, "custom_hostapd_options"):
+                for (
+                    option,
+                    value,
+                ) in radio_config.custom_hostapd_options.items():
+                    self.ssh.run(
+                        f"uci add_list wireless.{radio}.hostapd_options='{option}={value}'"
+                    )
 
             if radio_config.bss_settings:
                 for bss in radio_config.bss_settings:

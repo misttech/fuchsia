@@ -34,6 +34,8 @@ python_library("mobly_controller_no_testonly") {
     "openwrt_access_point/lib/capabilities.py",
     "openwrt_access_point/lib/dhcp_config.py",
     "openwrt_access_point/lib/dhcp_controller.py",
+    "openwrt_access_point/lib/hostapd_options.py",
+    "openwrt_access_point/lib/uci_options.py",
   ]
   source_root = "."
   library_deps = [

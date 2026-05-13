@@ -242,9 +242,11 @@ class UciBssOptions(TypedDict, total=False):
 
     Attributes:
         dtim_period: DTIM period.
+        vendor_elements: Vendor-specific information elements.
     """
 
     dtim_period: int
+    vendor_elements: str
 
 
 @dataclasses.dataclass
@@ -317,6 +319,10 @@ class UciRadioOptions(TypedDict, total=False):
         beacon_int: Beacon interval in milliseconds.
         short_preamble: Use short preamble ("0" or "1").
         rts: RTS threshold.
+        require_mode: Sets the minimum client capability level mode.
+        country_ie: Enable IEEE 802.11d country IE.
+        supported_rates: Supported data rates.
+        basic_rates: Basic data rates.
     """
 
     frag: int
@@ -324,6 +330,47 @@ class UciRadioOptions(TypedDict, total=False):
     short_preamble: Literal["0", "1"]
     rts: int
     require_mode: Literal["n", "ac", "ax"]
+    country_ie: Literal[0, 1]
+    supported_rates: list[int]
+    basic_rates: list[int]
+
+
+class HostapdOptions(TypedDict, total=False):
+    """A TypedDict for common hostapd options passed via UCI list hostapd_options.
+
+    'total=False' means all keys are optional. Add more options as needed.
+    """
+
+    # WMM parameters
+    wmm_ac_bk_cwmin: int
+    wmm_ac_bk_cwmax: int
+    wmm_ac_bk_aifs: int
+    wmm_ac_bk_txop_limit: int
+    wmm_ac_bk_acm: Literal[0, 1]
+
+    wmm_ac_be_cwmin: int
+    wmm_ac_be_cwmax: int
+    wmm_ac_be_aifs: int
+    wmm_ac_be_txop_limit: int
+    wmm_ac_be_acm: Literal[0, 1]
+
+    wmm_ac_vi_cwmin: int
+    wmm_ac_vi_cwmax: int
+    wmm_ac_vi_aifs: int
+    wmm_ac_vi_txop_limit: int
+    wmm_ac_vi_acm: Literal[0, 1]
+
+    wmm_ac_vo_cwmin: int
+    wmm_ac_vo_cwmax: int
+    wmm_ac_vo_aifs: int
+    wmm_ac_vo_txop_limit: int
+    wmm_ac_vo_acm: Literal[0, 1]
+
+    # Vendor IEs
+    assocresp_elements: str
+
+    # Regulatory
+    country3: str
 
 
 # TODO(https://fxbug.dev/489258440): Make channel required param and provide easy way to use
@@ -350,7 +397,9 @@ class RadioConfig:
     custom_uci_options: UciRadioOptions = dataclasses.field(
         default_factory=lambda: UciRadioOptions()
     )
-    # TODO(b/510315419): Create a typed dict for hostapd options.
+    custom_hostapd_options: HostapdOptions = dataclasses.field(
+        default_factory=lambda: HostapdOptions()
+    )
 
     @classmethod
     def generate(
@@ -361,6 +410,7 @@ class RadioConfig:
         n_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT(),
         ac_capabilities: CapabilitySelection = CapabilitySelection.DEFAULT(),
         custom_uci_options: UciRadioOptions | None = None,
+        custom_hostapd_options: HostapdOptions | None = None,
     ) -> "RadioConfig":
         """Creates a RadioConfig object with the specified channel and BSS settings.
 
@@ -371,6 +421,7 @@ class RadioConfig:
             n_capabilities: Selection of 802.11n capabilities.
             ac_capabilities: Selection of 802.11ac capabilities.
             custom_uci_options: Structured UciRadioOptions to set on the radio.
+            custom_hostapd_options: Structured HostapdOptions to set on the radio.
 
         Returns:
             A RadioConfig object.
@@ -379,6 +430,8 @@ class RadioConfig:
             bss_settings = []
         if custom_uci_options is None:
             custom_uci_options = {}
+        if custom_hostapd_options is None:
+            custom_hostapd_options = {}
 
         return cls(
             channel=channel,
@@ -387,6 +440,7 @@ class RadioConfig:
             n_capabilities=n_capabilities,
             ac_capabilities=ac_capabilities,
             custom_uci_options=custom_uci_options,
+            custom_hostapd_options=custom_hostapd_options,
         )
 
 
