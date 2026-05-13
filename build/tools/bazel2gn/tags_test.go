@@ -73,6 +73,48 @@ func TestTagsConversion(t *testing.T) {
 	]
 }`,
 		},
+		{
+			name: "sync assert_no_deps with __pkg__ and __subpackages__",
+			bazel: `rustc_library(
+    name = "lib",
+    srcs = ["src/lib.rs"],
+    tags = [
+        "assert_no_deps=//src/lib/foo:__pkg__",
+        "assert_no_deps=//src/lib/bar:__subpackages__",
+    ],
+)
+`,
+			wantGN: `rustc_library("lib") {
+	sources = [
+		"src/lib.rs",
+	]
+	assert_no_deps = [
+		"//src/lib/foo:*",
+		"//src/lib/bar/*",
+	]
+}`,
+		},
+		{
+			name: "sync assert_no_deps with local __pkg__ and __subpackages__",
+			bazel: `rustc_library(
+    name = "lib",
+    srcs = ["src/lib.rs"],
+    tags = [
+        "assert_no_deps=:__pkg__",
+        "assert_no_deps=:__subpackages__",
+    ],
+)
+`,
+			wantGN: `rustc_library("lib") {
+	sources = [
+		"src/lib.rs",
+	]
+	assert_no_deps = [
+		":*",
+		"./*",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

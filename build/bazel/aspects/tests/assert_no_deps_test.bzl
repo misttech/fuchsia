@@ -139,6 +139,76 @@ def assert_no_deps_test_suite(name):
         expected_message = "absolute_dep_and_tag violates assert_no_deps: found forbidden dependencies: //build/bazel/aspects/tests:foo",
     )
 
+    dummy_lib(
+        name = "pkg_deps",
+        deps = [":foo"],
+        tags = ["assert_no_deps=:__pkg__"],
+    )
+
+    assert_no_deps_failure_test(
+        name = "pkg_deps_failure_test",
+        target_under_test = ":pkg_deps",
+        expected_message = "pkg_deps violates assert_no_deps: found forbidden dependencies: :__pkg__",
+    )
+
+    dummy_lib(
+        name = "absolute_pkg_tags",
+        deps = [":foo"],
+        tags = ["assert_no_deps=//build/bazel/aspects/tests:__pkg__"],
+    )
+
+    assert_no_deps_failure_test(
+        name = "absolute_pkg_tags_failure_test",
+        target_under_test = ":absolute_pkg_tags",
+        expected_message = "absolute_pkg_tags violates assert_no_deps: found forbidden dependencies: //build/bazel/aspects/tests:__pkg__",
+    )
+
+    dummy_lib(
+        name = "pkg_success",
+        deps = [":foo"],
+        tags = ["assert_no_deps=//build/bazel/aspects:__pkg__"],
+    )
+
+    assert_no_deps_success_test(
+        name = "pkg_success_test",
+        target_under_test = ":pkg_success",
+    )
+
+    dummy_lib(
+        name = "subpackages_deps",
+        deps = [":foo"],
+        tags = ["assert_no_deps=//build/bazel/aspects:__subpackages__"],
+    )
+
+    assert_no_deps_failure_test(
+        name = "subpackages_deps_failure_test",
+        target_under_test = ":subpackages_deps",
+        expected_message = "subpackages_deps violates assert_no_deps: found forbidden dependencies: //build/bazel/aspects:__subpackages__",
+    )
+
+    dummy_lib(
+        name = "local_subpackages_deps",
+        deps = [":foo"],
+        tags = ["assert_no_deps=:__subpackages__"],
+    )
+
+    assert_no_deps_failure_test(
+        name = "local_subpackages_deps_failure_test",
+        target_under_test = ":local_subpackages_deps",
+        expected_message = "local_subpackages_deps violates assert_no_deps: found forbidden dependencies: :__subpackages__",
+    )
+
+    dummy_lib(
+        name = "subpackages_success",
+        deps = [":foo"],
+        tags = ["assert_no_deps=//build/bazel/rules:__subpackages__"],
+    )
+
+    assert_no_deps_success_test(
+        name = "subpackages_success_test",
+        target_under_test = ":subpackages_success",
+    )
+
     native.test_suite(
         name = name,
         visibility = ["//visibility:public"],
@@ -150,5 +220,11 @@ def assert_no_deps_test_suite(name):
             ":absolute_deps_failure_test",
             ":absolute_tags_failure_test",
             ":absolute_dep_and_tag_failure_test",
+            ":pkg_deps_failure_test",
+            ":absolute_pkg_tags_failure_test",
+            ":pkg_success_test",
+            ":subpackages_deps_failure_test",
+            ":local_subpackages_deps_failure_test",
+            ":subpackages_success_test",
         ],
     )

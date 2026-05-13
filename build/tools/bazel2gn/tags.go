@@ -35,6 +35,10 @@ func tagsToGN(expr syntax.Expr) ([]string, error) {
 			if err != nil {
 				return nil, fmt.Errorf("transforming assert_no_deps label %q: %v", label, err)
 			}
+			transformedDep, err = bazelVisibilityToGN(transformedDep)
+			if err != nil {
+				return nil, fmt.Errorf("transforming assert_no_deps wildcard %q: %v", label, err)
+			}
 			assertNoDeps = append(assertNoDeps, transformedDep)
 		}
 	}

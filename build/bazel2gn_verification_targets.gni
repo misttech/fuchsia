@@ -36,6 +36,7 @@ bazel2gn_verification_targets = [
   "//src/connectivity/network/testing/conformance/parseoutput:verify_bazel2gn",
   "//src/developer/ffx/fidl/usb:verify_bazel2gn",
   "//src/developer/ffx/fidl:verify_bazel2gn",
+  "//src/developer/ffx/lib/errors:verify_bazel2gn",
   "//src/developer/ffx/lib/netext:verify_bazel2gn",
   "//src/developer/ffx/lib/timeout:verify_bazel2gn",
   "//src/developer/ffx/lib/version:verify_bazel2gn",

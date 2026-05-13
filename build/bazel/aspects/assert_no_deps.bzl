@@ -44,25 +44,39 @@ def _assert_no_deps_aspect_impl(_target, ctx):
         for no_dep_label_str in assert_no_deps:
             # Convert to Label for proper label comparisons below.
             no_dep_label = ctx.label.relative(no_dep_label_str)
+
+            # Support `//foo/bar:__pkg__`, which is equivalent to GN's `//foo/bar:*`.
+            if no_dep_label.name == "__pkg__":
+                for dep in transitive_deps_list:
+                    if no_dep_label.package == dep.package:
+                        violated_labels.append(no_dep_label_str)
+                        break
+                continue
+
+            # Support `//foo/bar:__subpackages__`, which is equivalent to GN's `//foo/bar/*`.
+            if no_dep_label.name == "__subpackages__":
+                for dep in transitive_deps_list:
+                    if dep.package.startswith(no_dep_label.package):
+                        violated_labels.append(no_dep_label_str)
+                        break
+                continue
+
+            # For exact label matches.
             if no_dep_label in transitive_deps_list:
                 violated_labels.append(no_dep_label_str)
                 continue
 
-            # TODO(https://fxbug.dev/511918867): Refine label matching logic here. A more
-            # thorough solution might be supporting some level of pattern matching.
-            #
-            # Right now it compares names and packages prefixes to handle generated aliases
-            # under //third_party/rust_crates, which won't reliably apply to other aliases.
+            # A special case to handle generated aliases under //third_party/rust_crates.
             #
             # For example, given how Bazel handles aliases in deps, the alias
             # `//third_party/rust_crates/vendor:anyhow` will be canonicalized to
             # "//third_party/rust_crates/vendor/anyhow-1.0.102:anyhow".
-            for dep in transitive_deps_list:
-                if not dep.package.startswith("third_party/rust_crates/vendor"):
-                    continue
-                if dep.name == no_dep_label.name and dep.package.startswith(no_dep_label.package):
-                    violated_labels.append(no_dep_label_str)
-                    break
+            if no_dep_label.package.startswith("third_party/rust_crates/vendor"):
+                for dep in transitive_deps_list:
+                    if dep.name == no_dep_label.name and dep.package.startswith(no_dep_label.package):
+                        violated_labels.append(no_dep_label_str)
+                        break
+                continue
 
         if violated_labels:
             fail("Target {} violates assert_no_deps: found forbidden dependencies: {}".format(ctx.label, ", ".join(violated_labels)))
