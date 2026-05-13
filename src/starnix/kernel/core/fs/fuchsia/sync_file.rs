@@ -62,11 +62,13 @@ pub enum Status {
 pub struct SyncPoint {
     pub timeline: Timeline,
     pub counter: Arc<zx::Counter>,
+    pub koid: zx::Koid,
 }
 
 impl SyncPoint {
     pub fn new(timeline: Timeline, counter: zx::Counter) -> SyncPoint {
-        SyncPoint { timeline, counter: Arc::new(counter) }
+        let koid = counter.koid().unwrap();
+        SyncPoint { timeline, counter: Arc::new(counter), koid }
     }
 }
 
@@ -188,7 +190,7 @@ impl FileOps for SyncFile {
                 let mut set = HashSet::<zx::Koid>::new();
 
                 for sync_point in &self.fence.sync_points {
-                    let koid = sync_point.counter.koid().unwrap();
+                    let koid = sync_point.koid;
                     if set.insert(koid) {
                         fence.sync_points.push(sync_point.clone());
                     }
@@ -196,16 +198,16 @@ impl FileOps for SyncFile {
 
                 if let Some(file2) = file2.downcast_file::<SyncFile>() {
                     for sync_point in &file2.fence.sync_points {
-                        let koid = sync_point.counter.koid().unwrap();
+                        let koid = sync_point.koid;
                         if set.insert(koid) {
                             fence.sync_points.push(sync_point.clone());
                         }
                     }
                 } else if let Some(file2) = file2.downcast_file::<RemoteCounter>() {
                     let counter = file2.duplicate_handle()?;
-                    let koid = counter.koid().map_err(impossible_error)?;
-                    if set.insert(koid) {
-                        fence.sync_points.push(SyncPoint::new(Timeline::Hwc, counter.into()));
+                    let sp = SyncPoint::new(Timeline::Hwc, counter.into());
+                    if set.insert(sp.koid) {
+                        fence.sync_points.push(sp);
                     }
                 } else {
                     return error!(EINVAL);
@@ -404,5 +406,68 @@ impl FileOps for SyncFile {
         _data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
         error!(ENODEV)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::mm::PAGE_SIZE;
+    use crate::testing::*;
+    use crate::vfs::{FdFlags, FdNumber};
+    use starnix_uapi::sync_merge_data;
+    use starnix_uapi::user_address::UserRef;
+
+    #[::fuchsia::test]
+    async fn test_sync_file_merge() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let counter1 = zx::Counter::create();
+            let counter2 = zx::Counter::create();
+
+            let sp1 = SyncPoint::new(Timeline::Magma, counter1);
+            let sp2 = SyncPoint::new(Timeline::Hwc, counter2);
+
+            let file1 = SyncFile::new_file(
+                locked,
+                &current_task,
+                [0; 32],
+                SyncFence { sync_points: vec![sp1.clone()] },
+            )
+            .unwrap();
+            let file2 = SyncFile::new_file(
+                locked,
+                &current_task,
+                [0; 32],
+                SyncFence { sync_points: vec![sp2.clone()] },
+            )
+            .unwrap();
+
+            let fd2 = current_task.add_file(locked, file2, FdFlags::empty()).unwrap();
+
+            let merge_data =
+                sync_merge_data { name: [0; 32], fd2: fd2.raw(), fence: 0, flags: 0, pad: 0 };
+
+            let user_addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
+            current_task.write_object(UserRef::new(user_addr), &merge_data).unwrap();
+
+            let request = ((SYNC_IOC_MAGIC as u32) << 8) | (SYNC_IOC_MERGE as u32);
+
+            let sync_file1 = file1.downcast_file::<SyncFile>().unwrap();
+            let res =
+                sync_file1.ioctl(locked, &file1, &current_task, request, user_addr.into()).unwrap();
+            assert_eq!(res, SUCCESS);
+
+            let updated_merge_data: sync_merge_data =
+                current_task.read_object(UserRef::new(user_addr)).unwrap();
+            let new_fd = FdNumber::from_raw(updated_merge_data.fence);
+
+            let new_file = current_task.get_file(new_fd).unwrap();
+            let merged_sync_file = new_file.downcast_file::<SyncFile>().unwrap();
+
+            assert_eq!(merged_sync_file.fence.sync_points.len(), 2);
+            assert_eq!(merged_sync_file.fence.sync_points[0].koid, sp1.koid);
+            assert_eq!(merged_sync_file.fence.sync_points[1].koid, sp2.koid);
+        })
+        .await;
     }
 }
