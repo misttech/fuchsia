@@ -21,6 +21,7 @@ name = "fuchsia-third-party"
 version = "0.1.0"
 
 [dependencies]
+adler2 = "2.0.1"
 # keep-sorted start
 aes = "0.8.4"
 aes-gcm = "0.10.1"
@@ -510,7 +511,7 @@ require_feature_reviews = [
   "tokio",
 ]
 
-[gn.package.adler2."2.0.0"]
+[gn.package.adler2."2.0.1"]
 license_files = ["LICENSE-APACHE"]
 
 [gn.package.aead."0.5.2"]

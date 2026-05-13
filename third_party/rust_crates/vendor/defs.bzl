@@ -293,6 +293,7 @@ def aliases(
 _NORMAL_DEPENDENCIES = {
     "third_party/rust_crates": {
         _COMMON_CONDITION: {
+            "adler2": Label("//third_party/rust_crates/vendor/adler2-2.0.1:adler2"),
             "aes": Label("//third_party/rust_crates/vendor/aes-0.8.4:aes"),
             "aes-gcm": Label("//third_party/rust_crates/vendor/aes-gcm-0.10.2:aes_gcm"),
             "aes-gcm-siv": Label("//third_party/rust_crates/vendor/aes-gcm-siv-0.11.1:aes_gcm_siv"),

@@ -11,6 +11,14 @@ import("//build/rust/rustc_macro.gni")
 gn_source_root = rebase_path("//", root_build_dir)
 not_needed([ "gn_source_root" ])
 
+group("adler2") {
+  public_deps = [ ":adler2-v2_0_1" ]
+}
+
+group("adler2-2.0.1") {
+  public_deps = [ ":adler2-v2_0_1" ]
+}
+
 group("aes") {
   public_deps = [ ":aes-v0_8_4" ]
 }
@@ -2623,16 +2631,16 @@ group("zstd-0.11.2+zstd.1.5.2") {
   public_deps = [ ":zstd-v0_11_2+zstd_1_5_2" ]
 }
 
-license("adler2-v2_0_0.license") {
+license("adler2-v2_0_1.license") {
   public_package_name = "adler2"
   license_files =
-      [ "//third_party/rust_crates/vendor/adler2-2.0.0/LICENSE-APACHE" ]
+      [ "//third_party/rust_crates/vendor/adler2-2.0.1/LICENSE-APACHE" ]
 }
 
-rustc_library("adler2-v2_0_0") {
+rustc_library("adler2-v2_0_1") {
   crate_name = "adler2"
-  source_root = "//third_party/rust_crates/vendor/adler2-2.0.0/src/lib.rs"
-  output_name = "adler2-dc06cd0b18b4c9fa"
+  source_root = "//third_party/rust_crates/vendor/adler2-2.0.1/src/lib.rs"
+  output_name = "adler2-6e31defb60d30743"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -2644,13 +2652,15 @@ rustc_library("adler2-v2_0_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=dc06cd0b18b4c9fa",
-    "-Cextra-filename=-dc06cd0b18b4c9fa",
+    "-Cmetadata=6e31defb60d30743",
+    "-Cextra-filename=-6e31defb60d30743",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":adler2-v2_0_0.license" ]
+  applicable_licenses = [ ":adler2-v2_0_1.license" ]
 }
 
 license("aead-v0_5_2.license") {
@@ -11951,7 +11961,7 @@ rustc_library("miniz_oxide-v0_8_9") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":adler2-v2_0_0" ]
+  deps += [ ":adler2-v2_0_1" ]
   deps += [ ":simd-adler32-v0_3_7" ]
 
   rustenv = []
