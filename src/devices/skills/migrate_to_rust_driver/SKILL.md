@@ -333,3 +333,10 @@ When authoring helper functions in your driver file:
   the struct's private fields or constructor, prefer moving it out of the `impl`
   block to become a top-level function in the file or module. This is considered
   more idiomatic Rust.
+
+## Further Reading
+
+* [Driver File Structure](/src/devices/skills/driver_file_structure/SKILL.md)
+  - Standard Fuchsia driver component directory layout, file naming, and build
+    target conventions.
+

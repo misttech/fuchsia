@@ -73,3 +73,10 @@ driver-specific metadata and bind rules.
 - **Property parser**: Configurable parser for node properties and phandles.
 - **Multi-visitor**: Combines multiple visitors into one.
 - **Load visitors**: Loads shared library visitors from `/lib/visitors`.
+
+## Further Reading
+
+* [Driver Devicetree
+  Binding](/src/devices/skills/driver_bind_devicetree/SKILL.md)
+  - Guide for writing bind rules and setting dependencies for devicetree
+    drivers.

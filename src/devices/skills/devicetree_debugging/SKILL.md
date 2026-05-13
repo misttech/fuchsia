@@ -122,3 +122,10 @@ isolated environment.
     the final `.dts` or `.dtb` files. For example, in some internal targets,
     they are located in the board driver's source directory (e.g.,
     `vendor/google/<target>/board/drivers/<target>/dts/`).
+
+## Further Reading
+
+* [Driver Devicetree
+  Binding](/src/devices/skills/driver_bind_devicetree/SKILL.md)
+  - Guide for writing bind rules and setting dependencies for devicetree
+    drivers.
