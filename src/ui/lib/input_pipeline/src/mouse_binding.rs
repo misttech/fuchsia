@@ -4,7 +4,7 @@
 
 use crate::input_device::{self, Handled, InputDeviceBinding, InputDeviceStatus, InputEvent};
 use crate::utils::{self, Position};
-use crate::{Transport, metrics, mouse_model_database};
+use crate::{Transport, metrics};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_input_report as fidl_input_report;
@@ -18,6 +18,8 @@ use sorted_vec_map::SortedVecSet;
 use zx;
 
 pub type MouseButton = u8;
+
+pub const DEFAULT_COUNTS_PER_MM: u32 = 40;
 
 /// Flag to indicate the scroll event is from device reporting precision delta.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -405,8 +407,6 @@ impl MouseBinding {
             format_err!("MouseDescriptor does not have a MouseInputDescriptor")
         })?;
 
-        let model = mouse_model_database::db::get_mouse_model(device_descriptor.device_information);
-
         let device_descriptor: MouseDeviceDescriptor = MouseDeviceDescriptor {
             device_id,
             absolute_x_range: mouse_input_descriptor
@@ -420,7 +420,7 @@ impl MouseBinding {
             wheel_v_range: utils::axis_to_old(mouse_input_descriptor.scroll_v.as_ref()),
             wheel_h_range: utils::axis_to_old(mouse_input_descriptor.scroll_h.as_ref()),
             buttons: mouse_input_descriptor.buttons,
-            counts_per_mm: model.counts_per_mm,
+            counts_per_mm: DEFAULT_COUNTS_PER_MM,
         };
 
         Ok((Self { event_sender: input_event_sender, device_descriptor }, input_device_status))
@@ -531,7 +531,7 @@ impl MouseBinding {
                     InputPipelineErrorMetricDimensionEvent::MouseDescriptionNotMouse,
                     "mouse_binding::process_reports got device_descriptor not mouse".to_string(),
                 );
-                mouse_model_database::db::DEFAULT_COUNTS_PER_MM
+                DEFAULT_COUNTS_PER_MM
             }
         };
 

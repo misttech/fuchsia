@@ -826,10 +826,7 @@ mod tests {
     use super::*;
     use crate::input_device::{InputDeviceBinding, InputEventType};
     use crate::utils::Position;
-    use crate::{
-        fake_input_device_binding, mouse_binding, mouse_model_database,
-        observe_fake_events_input_handler,
-    };
+    use crate::{fake_input_device_binding, mouse_binding, observe_fake_events_input_handler};
     use async_trait::async_trait;
     use diagnostics_assertions::AnyProperty;
     use fidl::endpoints::{create_proxy_and_stream, create_request_stream};
@@ -1119,7 +1116,7 @@ mod tests {
                 wheel_v_range: None,
                 wheel_h_range: None,
                 buttons: Some(vec![0]),
-                counts_per_mm: mouse_model_database::db::DEFAULT_COUNTS_PER_MM,
+                counts_per_mm: mouse_binding::DEFAULT_COUNTS_PER_MM,
             })
         );
 
