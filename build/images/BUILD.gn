@@ -2,22 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/assembly/developer_overrides.gni")
-import("//build/assembly/product_bundle.gni")
-import("//build/images/args.gni")
 import("//build/images/paths.gni")
-import("//build/product.gni")
-import("//products/core/core_bazel_inputs.gni")
 
 assert(current_toolchain == default_toolchain,
        "//build/images/* are only valid in the Fuchsia toolchain")
 
-# This is a group that contains the one-and-only assembly implementation.  It
-# can be used in contexts that need either bringup or the full-fuchsia assembly
-# implementation's outputs.
-#
-# If a target requires the outputs of the full-fuchsia assembly implementation,
-# it should directly use it (//build/images/fuchsia).
+# This is a group that contains the main product bundle.
 group("main_assembly") {
   testonly = true
   if (defined(labels.images)) {
@@ -25,25 +15,51 @@ group("main_assembly") {
   }
 }
 
-default_image_deps = [ "//build/images/tools:board_tools" ]
+# The images target is a dependency of the top level default
+# target when appropriate, and contains the minimum set of images that
+# are typical given the requested build configuration.
+group("images") {
+  testonly = true
 
-if (defined(labels.images)) {
-  default_image_deps += [ labels.images ]
+  deps = [
+    # perhaps redundant, but for completeness.
+    ":main_assembly",
+
+    # If the board specifies board tools, compile them.
+    "//build/images/tools:board_tools",
+
+    # Always include the qemu kernel so we can use the emulator.
+    labels.qemu_kernel,
+
+    # updates always needs to be included so that universe/discoverable can be published, even
+    # when there isn't a _single_ product bundle, but a multi-product build that includes test
+    # packages.
+    "//build/images/updates",
+  ]
+
+  if (defined(labels.images)) {
+    deps += [
+      labels.images,
+
+      # Needed so that 'gerrit_size_reports' and 'detailed_size_checker_data' metadata
+      # can be properly collected form the default-images target.  These are empty
+      # groups for bazel product bundles that don't provide them.
+      "${bazel_product_bundle_target}_elf_sizes",
+      "${bazel_product_bundle_target}_size_targets",
+    ]
+    deps += extra_bazel_assembly_targets
+  }
+
+  if (check_vtables_in_rodata) {
+    deps += [ ":check_vtables_in_rodata" ]
+  }
+
+  if (defined(main_pb_label) && main_pb_label != "") {
+    deps += [ "//build/assembly/overrides:build_zbi_developer_overrides.json" ]
+  }
 }
-if (defined(labels.recovery_images)) {
-  default_image_deps += [ labels.recovery_images ]
-}
 
-board_name_file = "$root_build_dir/board_name"
-write_file(board_name_file, "${board_name}")
-
-###
-### Zircon Boot Images
-###
-
-default_image_deps += [ labels.qemu_kernel ]
-
-if (defined(labels.images)) {
+if (defined(labels.images) && check_vtables_in_rodata) {
   # This action runs a script that checks all vtables in fuchsia binaries are
   # in readonly data.
   action("check_vtables_in_rodata") {
@@ -83,61 +99,5 @@ if (defined(labels.images)) {
       "--depfile",
       rebase_path(depfile, root_build_dir),
     ]
-  }
-}
-
-# Pseudo-target to record information about the sizes of filesystems assembled
-# during the build for later analysis.
-# TODO(https://fxbug.dev/42162374): Only include this for builds that generate blobfs
-# once this targets is no longer hardcoded in infra.
-group("record_filesystem_sizes") {
-  testonly = true
-  if (use_bazel_images_only) {
-    if (bazel_product_bundle_target != "") {
-      deps = [ "${bazel_product_bundle_target}_elf_sizes" ]
-    }
-  }
-}
-
-group("images") {
-  testonly = true
-  deps = [ ":default-images" ]
-}
-
-# The default-images target is a dependency of the top level default
-# target when appropriate, and contains the minimum set of images that
-# are typical given the requested build configuration.
-group("default-images") {
-  testonly = true
-
-  deps = default_image_deps
-  deps += [ "//build/images/updates" ]
-
-  if (use_bazel_images_only && bazel_product_bundle_target != "") {
-    deps += [
-      # Needed so that 'gerrit_size_reports' and 'detailed_size_checker_data' metadata
-      # can be properly collected form the default-images target.
-      "${bazel_product_bundle_target}_size_targets",
-    ]
-  }
-
-  if (check_vtables_in_rodata) {
-    deps += [ ":check_vtables_in_rodata" ]
-  }
-
-  if (bazel_product_bundle_target != "") {
-    deps += [ bazel_product_bundle_target ]
-    deps += extra_bazel_assembly_targets
-  }
-
-  if (defined(main_pb_label) && main_pb_label != "") {
-    deps += [ ":developer_overrides_list" ]
-  }
-}
-
-if (defined(main_pb_label) && main_pb_label != "") {
-  developer_overrides_list("developer_overrides_list") {
-    assembly_target = main_pb_label
-    outputs = [ "$target_out_dir/build_zbi_developer_overrides.json" ]
   }
 }

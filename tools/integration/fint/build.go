@@ -116,11 +116,6 @@ var (
 
 	// Names of images that are used for running on QEMU.
 	qemuImageNames = []string{qemuKernelImageName, "zircon-a"}
-
-	// Extra targets to build when building images. Needed for size checks and tracking.
-	extraTargetsForImages = []string{
-		"build/images:record_filesystem_sizes",
-	}
 )
 
 type buildModules interface {
@@ -803,7 +798,6 @@ func constructNinjaTargets(
 	}
 
 	if staticSpec.IncludeImages {
-		targets = append(targets, extraTargetsForImages...)
 
 		for _, image := range modules.Images() {
 			if isTestingImage(image, staticSpec.Pave) {

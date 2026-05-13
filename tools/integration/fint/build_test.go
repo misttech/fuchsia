@@ -487,7 +487,7 @@ func TestBuild(t *testing.T) {
 					{Name: "should-be-ignored", Path: "different_path"},
 				},
 			},
-			expectedTargets: append(extraTargetsForImages, "qemu_image_path"),
+			expectedTargets: []string{"qemu_image_path"},
 			expectedArtifacts: &fintpb.BuildArtifacts{
 				BuiltImages: []*structpb.Struct{
 					mustStructPB(t, build.Image{Name: qemuImageNames[0], Path: "qemu_image_path"}),
@@ -506,7 +506,7 @@ func TestBuild(t *testing.T) {
 					{Name: "should-be-ignored", Path: "different_path"},
 				},
 			},
-			expectedTargets: append(extraTargetsForImages, ":default"),
+			expectedTargets: []string{":default"},
 			expectedArtifacts: &fintpb.BuildArtifacts{
 				BuiltImages: []*structpb.Struct{
 					mustStructPB(t, build.Image{Name: qemuImageNames[0], Path: "qemu_image_path"}),
@@ -526,7 +526,7 @@ func TestBuild(t *testing.T) {
 					{Name: "foo", Path: "foo.sh", Type: "script"},
 				},
 			},
-			expectedTargets: append(extraTargetsForImages, "foo.sh"),
+			expectedTargets: []string{"foo.sh"},
 			expectedArtifacts: &fintpb.BuildArtifacts{
 				BuiltImages: []*structpb.Struct{
 					mustStructPB(t, build.Image{Name: "foo", Path: "foo.sh", Type: "script"}),

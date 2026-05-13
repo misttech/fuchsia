@@ -36,3 +36,10 @@ assembly_developer_overrides("overrides_for_test") {
     __append_to_provided_features = [ "fuchsia::new_feature" ]
   }
 }
+
+if (defined(main_pb_label) && main_pb_label != "") {
+  developer_overrides_list("build_zbi_developer_overrides.json") {
+    assembly_target = main_pb_label
+    outputs = [ "$target_out_dir/build_zbi_developer_overrides.json" ]
+  }
+}

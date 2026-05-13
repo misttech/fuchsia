@@ -112,7 +112,7 @@ if [[ -n "$board_config" ]]; then
   echo "Using Board Config: $board_config"
 fi
 
-developer_overrides="$FUCHSIA_BUILD_DIR/obj/build/images/build_zbi_developer_overrides.json"
+developer_overrides="$FUCHSIA_BUILD_DIR/obj/build/assembly/overrides/build_zbi_developer_overrides.json"
 if [[ -f "$developer_overrides" ]]; then
   rm "$developer_overrides"
 fi
@@ -122,7 +122,7 @@ echo "Building platform artifacts..."
 build_targets=("//bundles/assembly")
 build_targets+=("${board_config_label}")
 build_targets+=("${main_pb_label}_product_config")
-build_targets+=("//build/images:developer_overrides_list")
+build_targets+=("//build/assembly/overrides:build_zbi_developer_overrides.json")
 
 echo "Invoking fx build with targets: ${build_targets[*]}"
 fx-command-run build "${build_targets[@]}"

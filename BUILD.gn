@@ -1902,7 +1902,7 @@ build_api_module("rust_target_mapping") {
 check_included_drivers("drivers-check") {
   testonly = true
   deps = [
-    "//build/images:default-images",
+    "//build/images",
     "//build/images/updates:packages",
   ]
 }
@@ -1991,7 +1991,7 @@ build_api_module("platform_artifacts") {
 build_api_module("gerrit_size_report") {
   testonly = true
   data_keys = [ "gerrit_size_reports" ]
-  deps = [ "//build/images:default-images" ]
+  deps = [ "//build/images" ]
 }
 
 # Contains the paths to all assembly manifests.
@@ -2007,7 +2007,7 @@ build_api_module("gerrit_size_report") {
 build_api_module("assembly_manifests") {
   testonly = true
   data_keys = [ "assembly_manifests" ]
-  deps = [ "//build/images:default-images" ]
+  deps = [ "//build/images" ]
 }
 
 # Contains information about 0 or 1 product size checker outputs produced by the build.
@@ -2020,7 +2020,7 @@ build_api_module("assembly_manifests") {
 build_api_module("product_size_checker_output") {
   testonly = true
   data_keys = [ "product_size_checker_output" ]
-  deps = [ "//build/images:default-images" ]
+  deps = [ "//build/images" ]
 }
 
 # Contains details about the size checker output
@@ -2034,7 +2034,7 @@ build_api_module("product_size_checker_output") {
 build_api_module("detailed_size_checker_data") {
   testonly = true
   data_keys = [ "detailed_size_checker_data" ]
-  deps = [ "//build/images:default-images" ]
+  deps = [ "//build/images" ]
 }
 
 # File of estimated ninja build-graph edge weights (values are in milliseoncds)
@@ -2057,7 +2057,7 @@ generated_file("ninja_edge_weights") {
 product_bundles_json("product_bundles") {
   deps = [
            ":tests",
-           "//build/images:default-images",
+           "//build/images",
          ] + product_bundle_labels
 }
 
@@ -2112,7 +2112,7 @@ build_api_module("licenses") {
 
   # No need to save license artifacts for SDK-only builds.
   if (has_board) {
-    deps = [ "//build/images:default-images" ]
+    deps = [ "//build/images" ]
   }
 }
 
@@ -2397,7 +2397,7 @@ group("default") {
     "//bundles/assembly",
 
     # TODO(https://fxbug.dev/42067746) has_board check not working
-    "//build/images:default-images",
+    "//build/images",
     "//build/images/updates:packages",
     "//sdk",
 
@@ -2413,7 +2413,7 @@ group("default") {
   if (has_board) {
     deps += [
       "//:drivers-check",
-      "//build/images:default-images",
+      "//build/images",
     ]
   }
 
@@ -2636,10 +2636,6 @@ group("root_targets") {
 
     # Tests of platform Bazel rules, macros, and migrated targets.
     "//build/bazel/rules/tests:all",
-
-    # This target is listed explicitly by multiple CI bot build configurations.
-    # See https://fxbug.dev/42162374 for context.
-    "//build/images:record_filesystem_sizes",
 
     # Required by `fx fidldoc` as well as the Fuchsia controller ffx plugin
     # at runtime!
