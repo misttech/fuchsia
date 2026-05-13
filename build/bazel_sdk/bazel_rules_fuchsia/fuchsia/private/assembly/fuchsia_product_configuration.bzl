@@ -39,13 +39,11 @@ INPUT_DEVICE_TYPE = struct(
 
 def _fuchsia_product_configuration_impl(ctx):
     sdk = get_fuchsia_sdk_toolchain(ctx)
-
     if ctx.attr.repo:
         repo_name = ctx.attr.repo
     else:
         repo_name = ctx.attr._release_repository_flag[BuildSettingInfo].value
 
-    # Use the common product assembly implementation from @fuchsia_rules_common
     return common_product_configuration_impl(ctx, sdk.assembly_config, repo_name = repo_name)
 
 def _fuchsia_prebuilt_product_configuration_impl(ctx):

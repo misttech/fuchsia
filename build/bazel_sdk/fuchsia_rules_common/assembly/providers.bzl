@@ -53,5 +53,10 @@ FuchsiaStarnixContainerInfo = provider(
         "ramdisk": "Path to ramdisk image",
         "fstab": "Path to fstab will go in /odm which overrides the one in /vendor",
         "init": "Path to extra init scripts, will go in /odm/etc/init. Can be passed more than once.",
+        "system_file_overwrite_srcs": "List of paths to files to overwrite",
+        "system_file_overwrite_dsts": "List of destination paths for file overwrites",
+        "system_file_create_srcs": "List of paths to files to create",
+        "system_file_create_dsts": "List of destination paths for file creates",
+        "system_file_override_deletions": "List of paths to files to delete",
     },
 )

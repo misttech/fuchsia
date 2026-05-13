@@ -184,6 +184,43 @@ def common_product_configuration_impl(ctx, assembly_config_binary, bootfs_files_
         if container_detail.ramdisk:
             images["ramdisk"] = container_detail.ramdisk
 
+        overwrites = zip(
+            container_detail.system_file_overwrite_srcs,
+            container_detail.system_file_overwrite_dsts,
+        )
+
+        creates = zip(
+            container_detail.system_file_create_srcs,
+            container_detail.system_file_create_dsts,
+        )
+
+        container_file_overrides = []
+
+        for (src, dst) in overwrites:
+            container_file_overrides.append({
+                "image_name": "system",
+                "file_path": dst,
+                "operation": {
+                    "overwrite": src.path,
+                },
+            })
+
+        for (src, dst) in creates:
+            container_file_overrides.append({
+                "image_name": "system",
+                "file_path": dst,
+                "operation": {
+                    "create": src.path,
+                },
+            })
+
+        for delete in container_detail.system_file_override_deletions:
+            container_file_overrides.append({
+                "image_name": "system",
+                "file_path": delete,
+                "operation": "remove",
+            })
+
         starnix_containers.append(
             {
                 "name": container_detail.name,
@@ -193,6 +230,7 @@ def common_product_configuration_impl(ctx, assembly_config_binary, bootfs_files_
                 "hals": container_detail.hals,
                 "skip_subpackages": container_detail.skip_subpackages,
                 "images_or_package": {"images": images},
+                "file_overrides": container_file_overrides,
             },
         )
 

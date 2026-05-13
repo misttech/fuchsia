@@ -27,6 +27,9 @@ load(
     "fuchsia_product_input_bundle",
     "fuchsia_product_ota_config",
     "fuchsia_starnix_container",
+    "fuchsia_starnix_file_create",
+    "fuchsia_starnix_file_delete",
+    "fuchsia_starnix_file_override",
     "fuchsia_virtual_device",
     "ota_realm",
     "tuf_repo",
@@ -281,6 +284,23 @@ _testing_product_config_json = {
     },
 }
 
+fuchsia_starnix_file_create(
+    name = "create_foo",
+    src = "test_data/foo.txt",
+    dst = "path/in/system/foo.txt",
+)
+
+fuchsia_starnix_file_delete(
+    name = "delete_lost_found",
+    dst = "lost+found",
+)
+
+fuchsia_starnix_file_override(
+    name = "override_bar",
+    src = "test_data/foo.txt",
+    dst = "file1",
+)
+
 fuchsia_starnix_container(
     name = "starnix_container_for_test",
     base = "pkg_for_test",
@@ -292,6 +312,11 @@ fuchsia_starnix_container(
     ramdisk = [],
     skip_subpackages = True,
     system = "test_data/ext4.img",
+    system_file_overrides = [
+        ":create_foo",
+        ":delete_lost_found",
+        ":override_bar",
+    ],
     vendor = "test_data/ext4.img",
 )
 

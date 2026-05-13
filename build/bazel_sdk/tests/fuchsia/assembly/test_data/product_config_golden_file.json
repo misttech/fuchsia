@@ -69,6 +69,27 @@
                     "ams-light-test"
                 ],
                 "skip_subpackages": true,
+                "file_overrides": [
+                    {
+                        "image_name": "system",
+                        "file_path": "file1",
+                        "operation": {
+                            "overwrite": "fuchsia/assembly/test_data/foo.txt"
+                        }
+                    },
+                    {
+                        "image_name": "system",
+                        "file_path": "path/in/system/foo.txt",
+                        "operation": {
+                            "create": "fuchsia/assembly/test_data/foo.txt"
+                        }
+                    },
+                    {
+                        "image_name": "system",
+                        "file_path": "lost+found",
+                        "operation": "remove"
+                    }
+                ],
                 "images_or_package": {
                     "package": "packages/starnix_container_for_test"
                 }

@@ -130,6 +130,9 @@ load(
 load(
     "//fuchsia/private/assembly:fuchsia_starnix_container.bzl",
     _fuchsia_starnix_container = "fuchsia_starnix_container",
+    _fuchsia_starnix_file_create = "fuchsia_starnix_file_create",
+    _fuchsia_starnix_file_delete = "fuchsia_starnix_file_delete",
+    _fuchsia_starnix_file_override = "fuchsia_starnix_file_override",
 )
 load(
     "//fuchsia/private/assembly:fuchsia_test_product_bundle.bzl",
@@ -187,6 +190,9 @@ fuchsia_repository_keys = _fuchsia_repository_keys
 fuchsia_task_flash = _fuchsia_task_flash
 fuchsia_scrutiny_config = _fuchsia_scrutiny_config
 fuchsia_starnix_container = _fuchsia_starnix_container
+fuchsia_starnix_file_create = _fuchsia_starnix_file_create
+fuchsia_starnix_file_delete = _fuchsia_starnix_file_delete
+fuchsia_starnix_file_override = _fuchsia_starnix_file_override
 
 fuchsia_bootstrap_partition = _fuchsia_bootstrap_partition
 fuchsia_bootloader_partition = _fuchsia_bootloader_partition
