@@ -326,7 +326,7 @@ _NORMAL_DEPENDENCIES = {
             "bt-gatt": Label("//third_party/rust_crates/vendor/bt-gatt-0.0.1:bt_gatt"),
             "bt-pacs": Label("//third_party/rust_crates/vendor/bt-pacs-0.0.1:bt_pacs"),
             "bt-vcs": Label("//third_party/rust_crates/vendor/bt-vcs-0.0.1:bt_vcs"),
-            "bumpalo": Label("//third_party/rust_crates/vendor/bumpalo-3.19.1:bumpalo"),
+            "bumpalo": Label("//third_party/rust_crates/vendor/bumpalo-3.20.2:bumpalo"),
             "byteorder": Label("//third_party/rust_crates/vendor/byteorder-1.5.0:byteorder"),
             "bytes": Label("//third_party/rust_crates/vendor/bytes-1.11.1:bytes"),
             "camino": Label("//third_party/rust_crates/vendor/camino-1.2.2:camino"),
