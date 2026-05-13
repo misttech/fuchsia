@@ -37,6 +37,7 @@ fidl("fuchsia.hardware.clock") {
   sources = [ "clock.fidl" ]
   sdk_area = "Drivers"
   sdk_category = "partner"
+  enable_rust_next = true
   stable = true
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]
