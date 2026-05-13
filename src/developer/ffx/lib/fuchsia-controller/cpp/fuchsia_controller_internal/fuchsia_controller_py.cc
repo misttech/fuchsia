@@ -531,29 +531,27 @@ PyObject *context_create(PyObject *self, PyObject *args) {
   if (!PyArg_ParseTuple(args, "Osz", &config, &isolate, &target)) {
     return nullptr;
   }
-  std::unique_ptr<ffx_config_t[]> ffx_config;
-  Py_ssize_t config_len = 0;
-  // Convert the borrowed reference into an shared reference to avoid double-free.
-  Py_INCREF(config);
+  fc::abi::utils::Object config_holder = fc::abi::utils::Object::null();
   if (!config || config == Py_None) {
-    Py_XDECREF(config);
-    config = PyDict_New();
+    config_holder = fc::abi::utils::Object(PyDict_New());
+    if (config_holder == nullptr) {
+      return nullptr;
+    }
+    config = config_holder.get();
   }
   auto pair = build_config(config, target);
   if (pair.first == nullptr) {
     return nullptr;
   }
-  ffx_config = std::move(pair.first);
-  config_len = pair.second;
+  auto ffx_config = std::move(pair.first);
+  auto config_len = pair.second;
   ffx_env_context_t *env_context;
   fc_status_t status = create_ffx_env_context(&env_context, mod::get_module_state()->ctx,
                                               ffx_config.get(), config_len, isolate);
   if (status != FC_OK) {
     mod::set_python_exception(status);
-    Py_XDECREF(config);
     return nullptr;
   }
-  Py_XDECREF(config);
   return MakePyObject<PythonContext>(env_context);
 }
 

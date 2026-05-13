@@ -153,7 +153,7 @@ PyObject *decode_wire_error_type(mod::FuchsiaControllerState *state, char *err_b
 
 void set_fdomain_exception(mod::FuchsiaControllerState *state, fc_status_t err, char *err_buf,
                            uint64_t err_len) {
-  PyObject *tuple = PyTuple_New(2);
+  auto tuple = fc::abi::utils::Object(PyTuple_New(2));
   if (tuple == nullptr) {
     std::ostringstream ss;
     ss << "Failed to allocate Tuple in %s" << __func__;
@@ -161,7 +161,7 @@ void set_fdomain_exception(mod::FuchsiaControllerState *state, fc_status_t err, 
     PyErr_SetString(PyExc_RuntimeError, out.c_str());
     return;
   }
-  PyTuple_SetItem(tuple, 0, PyLong_FromLong(err));
+  PyTuple_SetItem(tuple.get(), 0, PyLong_FromLong(err));
   PyObject *err_message = nullptr;
   switch (err) {
     case FC_ERR_SOCKET_WRITE:
@@ -189,11 +189,9 @@ void set_fdomain_exception(mod::FuchsiaControllerState *state, fc_status_t err, 
       break;
   }
   if (err_message != nullptr) {
-    PyTuple_SetItem(tuple, 1, err_message);
-    PyErr_SetObject(reinterpret_cast<PyObject *>(error::FcTransportStatusType), tuple);
+    PyTuple_SetItem(tuple.get(), 1, err_message);
+    PyErr_SetObject(reinterpret_cast<PyObject *>(error::FcTransportStatusType), tuple.get());
   }
-  // Tuple ref is in PyErr_SetObject at this point. And if it isn't, we don't need it anymore.
-  Py_XDECREF(tuple);
 }
 }  // namespace
 
@@ -283,9 +281,8 @@ void set_python_exception(fc_status_t err) {
     case FC_ERR_PROTOCOL_STREAM_EVENT_INCOMPATIBLE:
     case FC_ERR_CONNECTION_MISMATCH:
     case FC_ERR_STREAMING_ABORTED: {
-      auto exception_err = PyLong_FromLong(err);
-      PyErr_SetObject(reinterpret_cast<PyObject *>(error::FcTransportStatusType), exception_err);
-      Py_XDECREF(exception_err);
+      auto exception_err = fc::abi::utils::Object(PyLong_FromLong(err));
+      PyErr_SetObject(reinterpret_cast<PyObject *>(error::FcTransportStatusType), exception_err.get());
       break;
     }
     // These errors are only surfaced from internal failures, which means the
@@ -300,7 +297,7 @@ void set_python_exception(fc_status_t err) {
       switch (err) {
         case FC_ERR_TRANSPORT:
         case FC_ERR_PROTOCOL: {
-          PyObject *tuple = PyTuple_New(2);
+          auto tuple = fc::abi::utils::Object(PyTuple_New(2));
           if (tuple == nullptr) {
             std::ostringstream ss;
             ss << "Failed to allocate Tuple in %s" << __func__;
@@ -308,12 +305,11 @@ void set_python_exception(fc_status_t err) {
             PyErr_SetString(PyExc_RuntimeError, out.c_str());
             break;
           }
-          PyTuple_SetItem(tuple, 0, PyLong_FromLong(err));
+          PyTuple_SetItem(tuple.get(), 0, PyLong_FromLong(err));
           // Important: use `take` here because this steals the reference.
           // PyErr_SetObject increases the refcount so only requires `get`.
-          PyTuple_SetItem(tuple, 1, str_obj.take());
-          PyErr_SetObject(reinterpret_cast<PyObject *>(error::FcTransportStatusType), tuple);
-          Py_XDECREF(tuple);
+          PyTuple_SetItem(tuple.get(), 1, str_obj.take());
+          PyErr_SetObject(reinterpret_cast<PyObject *>(error::FcTransportStatusType), tuple.get());
           break;
         }
         default:

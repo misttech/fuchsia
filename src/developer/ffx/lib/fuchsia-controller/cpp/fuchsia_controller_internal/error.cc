@@ -170,54 +170,54 @@ std::string fc_status_get_string(fc_status_t status) {
 
 // This was copied and macro'd from fuchsia_controller.h
 PyObject *FcTransportStatus_make_constants() {
-  PyObject *dict = PyDict_New();
+  auto dict = fc::abi::utils::Object(PyDict_New());
   if (dict == nullptr) {
     return nullptr;
   }
-  if (PyDict_SetItemString(dict, "FC_OK", PyLong_FromLong(FC_OK)) < 0) {
+  if (PyDict_SetItemString(dict.get(), "FC_OK", PyLong_FromLong(FC_OK)) < 0) {
     return nullptr;
   }
-  PyDict_SetItemString(dict, "FC_OK", PyLong_FromLong(FC_OK));
-  PyDict_SetItemString(dict, "FC_ERR_INVALID_ARGS", PyLong_FromLong(FC_ERR_INVALID_ARGS));
-  PyDict_SetItemString(dict, "FC_ERR_NOT_SUPPORTED", PyLong_FromLong(FC_ERR_NOT_SUPPORTED));
-  PyDict_SetItemString(dict, "FC_ERR_NOT_FOUND", PyLong_FromLong(FC_ERR_NOT_FOUND));
-  PyDict_SetItemString(dict, "FC_ERR_BUFFER_TOO_SMALL", PyLong_FromLong(FC_ERR_BUFFER_TOO_SMALL));
-  PyDict_SetItemString(dict, "FC_ERR_SHOULD_WAIT", PyLong_FromLong(FC_ERR_SHOULD_WAIT));
-  PyDict_SetItemString(dict, "FC_ERR_INTERNAL", PyLong_FromLong(FC_ERR_INTERNAL));
-  PyDict_SetItemString(dict, "FC_ERR_SOCKET_WRITE", PyLong_FromLong(FC_ERR_SOCKET_WRITE));
-  PyDict_SetItemString(dict, "FC_ERR_CHANNEL_WRITE", PyLong_FromLong(FC_ERR_CHANNEL_WRITE));
-  PyDict_SetItemString(dict, "FC_ERR_FDOMAIN", PyLong_FromLong(FC_ERR_FDOMAIN));
-  PyDict_SetItemString(dict, "FC_ERR_PROTOCOL", PyLong_FromLong(FC_ERR_PROTOCOL));
-  PyDict_SetItemString(dict, "FC_ERR_PROTOCOL_OBJECT_TYPE_INCOMPATIBLE",
+  PyDict_SetItemString(dict.get(), "FC_OK", PyLong_FromLong(FC_OK));
+  PyDict_SetItemString(dict.get(), "FC_ERR_INVALID_ARGS", PyLong_FromLong(FC_ERR_INVALID_ARGS));
+  PyDict_SetItemString(dict.get(), "FC_ERR_NOT_SUPPORTED", PyLong_FromLong(FC_ERR_NOT_SUPPORTED));
+  PyDict_SetItemString(dict.get(), "FC_ERR_NOT_FOUND", PyLong_FromLong(FC_ERR_NOT_FOUND));
+  PyDict_SetItemString(dict.get(), "FC_ERR_BUFFER_TOO_SMALL",
+                       PyLong_FromLong(FC_ERR_BUFFER_TOO_SMALL));
+  PyDict_SetItemString(dict.get(), "FC_ERR_SHOULD_WAIT", PyLong_FromLong(FC_ERR_SHOULD_WAIT));
+  PyDict_SetItemString(dict.get(), "FC_ERR_INTERNAL", PyLong_FromLong(FC_ERR_INTERNAL));
+  PyDict_SetItemString(dict.get(), "FC_ERR_SOCKET_WRITE", PyLong_FromLong(FC_ERR_SOCKET_WRITE));
+  PyDict_SetItemString(dict.get(), "FC_ERR_CHANNEL_WRITE", PyLong_FromLong(FC_ERR_CHANNEL_WRITE));
+  PyDict_SetItemString(dict.get(), "FC_ERR_FDOMAIN", PyLong_FromLong(FC_ERR_FDOMAIN));
+  PyDict_SetItemString(dict.get(), "FC_ERR_PROTOCOL", PyLong_FromLong(FC_ERR_PROTOCOL));
+  PyDict_SetItemString(dict.get(), "FC_ERR_PROTOCOL_OBJECT_TYPE_INCOMPATIBLE",
                        PyLong_FromLong(FC_ERR_PROTOCOL_OBJECT_TYPE_INCOMPATIBLE));
-  PyDict_SetItemString(dict, "FC_ERR_PROTOCOL_RIGHTS_INCOMPATIBLE",
+  PyDict_SetItemString(dict.get(), "FC_ERR_PROTOCOL_RIGHTS_INCOMPATIBLE",
                        PyLong_FromLong(FC_ERR_PROTOCOL_RIGHTS_INCOMPATIBLE));
-  PyDict_SetItemString(dict, "FC_ERR_PROTOCOL_STREAM_EVENT_INCOMPATIBLE",
+  PyDict_SetItemString(dict.get(), "FC_ERR_PROTOCOL_STREAM_EVENT_INCOMPATIBLE",
                        PyLong_FromLong(FC_ERR_PROTOCOL_STREAM_EVENT_INCOMPATIBLE));
-  PyDict_SetItemString(dict, "FC_ERR_TRANSPORT", PyLong_FromLong(FC_ERR_TRANSPORT));
-  PyDict_SetItemString(dict, "FC_ERR_CONNECTION_MISMATCH",
+  PyDict_SetItemString(dict.get(), "FC_ERR_TRANSPORT", PyLong_FromLong(FC_ERR_TRANSPORT));
+  PyDict_SetItemString(dict.get(), "FC_ERR_CONNECTION_MISMATCH",
                        PyLong_FromLong(FC_ERR_CONNECTION_MISMATCH));
-  PyDict_SetItemString(dict, "FC_ERR_STREAMING_ABORTED", PyLong_FromLong(FC_ERR_STREAMING_ABORTED));
-  return dict;
+  PyDict_SetItemString(dict.get(), "FC_ERR_STREAMING_ABORTED",
+                       PyLong_FromLong(FC_ERR_STREAMING_ABORTED));
+  return dict.take();
 }
 
 std::string FcTransportStatus_reprstr_helper(PyObject *self) {
   if (!PyObject_HasAttrString(self, "args")) {
     return "unknown: object has no args";
   }
-  auto args = PyObject_GetAttrString(self, "args");
-  if (PyTuple_Size(args) < 1) {
-    Py_DECREF(args);
+  auto args = fc::abi::utils::Object(PyObject_GetAttrString(self, "args"));
+  if (args == nullptr || PyTuple_Size(args.get()) < 1) {
     return "unknown: no args set";
   }
-  Py_DECREF(args);
   std::stringstream ss;
-  PyObject *i = PyTuple_GetItem(args, 0);
+  PyObject *i = PyTuple_GetItem(args.get(), 0);
   if (!PyLong_Check(i)) {
     return "unknown: non-int error code in arg[0]";
   }
   ss << fc_status_get_string(static_cast<fc_status_t>(PyLong_AsLong(i)));
-  PyObject *str = PyTuple_GetItem(args, 1);
+  PyObject *str = PyTuple_GetItem(args.get(), 1);
   // In the event that there are some types being created manually, e.g. there
   // are no string args, return the string we have so far.
   if (str == nullptr) {
@@ -323,14 +323,12 @@ std::string ZxStatus_reprstr_helper(PyObject *self) {
   if (!PyObject_HasAttrString(self, "args")) {
     return "";
   }
-  auto args = PyObject_GetAttrString(self, "args");
-  if (PyTuple_Size(args) < 1) {
-    Py_DECREF(args);
+  auto args = fc::abi::utils::Object(PyObject_GetAttrString(self, "args"));
+  if (args == nullptr || PyTuple_Size(args.get()) < 1) {
     return "unknown";
   }
-  Py_DECREF(args);
   std::stringstream ss;
-  PyObject *i = PyTuple_GetItem(args, 0);
+  PyObject *i = PyTuple_GetItem(args.get(), 0);
   if (!PyLong_Check(i)) {
     return "unknown";
   }
@@ -372,63 +370,66 @@ PyMethodDef ZxStatus_raw_def = {
 
 // This was copied and macro'd from the rust zx_status files.
 PyObject *ZxStatus_make_constants() {
-  PyObject *dict = PyDict_New();
+  auto dict = fc::abi::utils::Object(PyDict_New());
   if (dict == nullptr) {
     return nullptr;
   }
-  if (PyDict_SetItemString(dict, "ZX_OK", PyLong_FromLong(ZX_OK)) < 0) {
+  if (PyDict_SetItemString(dict.get(), "ZX_OK", PyLong_FromLong(ZX_OK)) < 0) {
     return nullptr;
   }
-  PyDict_SetItemString(dict, "ZX_ERR_INTERNAL", PyLong_FromLong(ZX_ERR_INTERNAL));
-  PyDict_SetItemString(dict, "ZX_ERR_NOT_SUPPORTED", PyLong_FromLong(ZX_ERR_NOT_SUPPORTED));
-  PyDict_SetItemString(dict, "ZX_ERR_NO_RESOURCES", PyLong_FromLong(ZX_ERR_NO_RESOURCES));
-  PyDict_SetItemString(dict, "ZX_ERR_NO_MEMORY", PyLong_FromLong(ZX_ERR_NO_MEMORY));
-  PyDict_SetItemString(dict, "ZX_ERR_INVALID_ARGS", PyLong_FromLong(ZX_ERR_INVALID_ARGS));
-  PyDict_SetItemString(dict, "ZX_ERR_BAD_HANDLE", PyLong_FromLong(ZX_ERR_BAD_HANDLE));
-  PyDict_SetItemString(dict, "ZX_ERR_WRONG_TYPE", PyLong_FromLong(ZX_ERR_WRONG_TYPE));
-  PyDict_SetItemString(dict, "ZX_ERR_BAD_SYSCALL", PyLong_FromLong(ZX_ERR_BAD_SYSCALL));
-  PyDict_SetItemString(dict, "ZX_ERR_OUT_OF_RANGE", PyLong_FromLong(ZX_ERR_OUT_OF_RANGE));
-  PyDict_SetItemString(dict, "ZX_ERR_BUFFER_TOO_SMALL", PyLong_FromLong(ZX_ERR_BUFFER_TOO_SMALL));
-  PyDict_SetItemString(dict, "ZX_ERR_BAD_STATE", PyLong_FromLong(ZX_ERR_BAD_STATE));
-  PyDict_SetItemString(dict, "ZX_ERR_TIMED_OUT", PyLong_FromLong(ZX_ERR_TIMED_OUT));
-  PyDict_SetItemString(dict, "ZX_ERR_SHOULD_WAIT", PyLong_FromLong(ZX_ERR_SHOULD_WAIT));
-  PyDict_SetItemString(dict, "ZX_ERR_CANCELED", PyLong_FromLong(ZX_ERR_CANCELED));
-  PyDict_SetItemString(dict, "ZX_ERR_PEER_CLOSED", PyLong_FromLong(ZX_ERR_PEER_CLOSED));
-  PyDict_SetItemString(dict, "ZX_ERR_NOT_FOUND", PyLong_FromLong(ZX_ERR_NOT_FOUND));
-  PyDict_SetItemString(dict, "ZX_ERR_ALREADY_EXISTS", PyLong_FromLong(ZX_ERR_ALREADY_EXISTS));
-  PyDict_SetItemString(dict, "ZX_ERR_ALREADY_BOUND", PyLong_FromLong(ZX_ERR_ALREADY_BOUND));
-  PyDict_SetItemString(dict, "ZX_ERR_UNAVAILABLE", PyLong_FromLong(ZX_ERR_UNAVAILABLE));
-  PyDict_SetItemString(dict, "ZX_ERR_ACCESS_DENIED", PyLong_FromLong(ZX_ERR_ACCESS_DENIED));
-  PyDict_SetItemString(dict, "ZX_ERR_IO", PyLong_FromLong(ZX_ERR_IO));
-  PyDict_SetItemString(dict, "ZX_ERR_IO_REFUSED", PyLong_FromLong(ZX_ERR_IO_REFUSED));
-  PyDict_SetItemString(dict, "ZX_ERR_IO_DATA_INTEGRITY", PyLong_FromLong(ZX_ERR_IO_DATA_INTEGRITY));
-  PyDict_SetItemString(dict, "ZX_ERR_IO_DATA_LOSS", PyLong_FromLong(ZX_ERR_IO_DATA_LOSS));
-  PyDict_SetItemString(dict, "ZX_ERR_IO_NOT_PRESENT", PyLong_FromLong(ZX_ERR_IO_NOT_PRESENT));
-  PyDict_SetItemString(dict, "ZX_ERR_IO_OVERRUN", PyLong_FromLong(ZX_ERR_IO_OVERRUN));
-  PyDict_SetItemString(dict, "ZX_ERR_IO_MISSED_DEADLINE",
+  PyDict_SetItemString(dict.get(), "ZX_ERR_INTERNAL", PyLong_FromLong(ZX_ERR_INTERNAL));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_NOT_SUPPORTED", PyLong_FromLong(ZX_ERR_NOT_SUPPORTED));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_NO_RESOURCES", PyLong_FromLong(ZX_ERR_NO_RESOURCES));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_NO_MEMORY", PyLong_FromLong(ZX_ERR_NO_MEMORY));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_INVALID_ARGS", PyLong_FromLong(ZX_ERR_INVALID_ARGS));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_BAD_HANDLE", PyLong_FromLong(ZX_ERR_BAD_HANDLE));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_WRONG_TYPE", PyLong_FromLong(ZX_ERR_WRONG_TYPE));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_BAD_SYSCALL", PyLong_FromLong(ZX_ERR_BAD_SYSCALL));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_OUT_OF_RANGE", PyLong_FromLong(ZX_ERR_OUT_OF_RANGE));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_BUFFER_TOO_SMALL",
+                       PyLong_FromLong(ZX_ERR_BUFFER_TOO_SMALL));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_BAD_STATE", PyLong_FromLong(ZX_ERR_BAD_STATE));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_TIMED_OUT", PyLong_FromLong(ZX_ERR_TIMED_OUT));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_SHOULD_WAIT", PyLong_FromLong(ZX_ERR_SHOULD_WAIT));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_CANCELED", PyLong_FromLong(ZX_ERR_CANCELED));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_PEER_CLOSED", PyLong_FromLong(ZX_ERR_PEER_CLOSED));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_NOT_FOUND", PyLong_FromLong(ZX_ERR_NOT_FOUND));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_ALREADY_EXISTS", PyLong_FromLong(ZX_ERR_ALREADY_EXISTS));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_ALREADY_BOUND", PyLong_FromLong(ZX_ERR_ALREADY_BOUND));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_UNAVAILABLE", PyLong_FromLong(ZX_ERR_UNAVAILABLE));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_ACCESS_DENIED", PyLong_FromLong(ZX_ERR_ACCESS_DENIED));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_IO", PyLong_FromLong(ZX_ERR_IO));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_IO_REFUSED", PyLong_FromLong(ZX_ERR_IO_REFUSED));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_IO_DATA_INTEGRITY",
+                       PyLong_FromLong(ZX_ERR_IO_DATA_INTEGRITY));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_IO_DATA_LOSS", PyLong_FromLong(ZX_ERR_IO_DATA_LOSS));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_IO_NOT_PRESENT", PyLong_FromLong(ZX_ERR_IO_NOT_PRESENT));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_IO_OVERRUN", PyLong_FromLong(ZX_ERR_IO_OVERRUN));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_IO_MISSED_DEADLINE",
                        PyLong_FromLong(ZX_ERR_IO_MISSED_DEADLINE));
-  PyDict_SetItemString(dict, "ZX_ERR_IO_INVALID", PyLong_FromLong(ZX_ERR_IO_INVALID));
-  PyDict_SetItemString(dict, "ZX_ERR_BAD_PATH", PyLong_FromLong(ZX_ERR_BAD_PATH));
-  PyDict_SetItemString(dict, "ZX_ERR_NOT_DIR", PyLong_FromLong(ZX_ERR_NOT_DIR));
-  PyDict_SetItemString(dict, "ZX_ERR_NOT_FILE", PyLong_FromLong(ZX_ERR_NOT_FILE));
-  PyDict_SetItemString(dict, "ZX_ERR_FILE_BIG", PyLong_FromLong(ZX_ERR_FILE_BIG));
-  PyDict_SetItemString(dict, "ZX_ERR_NO_SPACE", PyLong_FromLong(ZX_ERR_NO_SPACE));
-  PyDict_SetItemString(dict, "ZX_ERR_NOT_EMPTY", PyLong_FromLong(ZX_ERR_NOT_EMPTY));
-  PyDict_SetItemString(dict, "ZX_ERR_STOP", PyLong_FromLong(ZX_ERR_STOP));
-  PyDict_SetItemString(dict, "ZX_ERR_NEXT", PyLong_FromLong(ZX_ERR_NEXT));
-  PyDict_SetItemString(dict, "ZX_ERR_ASYNC", PyLong_FromLong(ZX_ERR_ASYNC));
-  PyDict_SetItemString(dict, "ZX_ERR_PROTOCOL_NOT_SUPPORTED",
+  PyDict_SetItemString(dict.get(), "ZX_ERR_IO_INVALID", PyLong_FromLong(ZX_ERR_IO_INVALID));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_BAD_PATH", PyLong_FromLong(ZX_ERR_BAD_PATH));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_NOT_DIR", PyLong_FromLong(ZX_ERR_NOT_DIR));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_NOT_FILE", PyLong_FromLong(ZX_ERR_NOT_FILE));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_FILE_BIG", PyLong_FromLong(ZX_ERR_FILE_BIG));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_NO_SPACE", PyLong_FromLong(ZX_ERR_NO_SPACE));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_NOT_EMPTY", PyLong_FromLong(ZX_ERR_NOT_EMPTY));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_STOP", PyLong_FromLong(ZX_ERR_STOP));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_NEXT", PyLong_FromLong(ZX_ERR_NEXT));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_ASYNC", PyLong_FromLong(ZX_ERR_ASYNC));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_PROTOCOL_NOT_SUPPORTED",
                        PyLong_FromLong(ZX_ERR_PROTOCOL_NOT_SUPPORTED));
-  PyDict_SetItemString(dict, "ZX_ERR_ADDRESS_UNREACHABLE",
+  PyDict_SetItemString(dict.get(), "ZX_ERR_ADDRESS_UNREACHABLE",
                        PyLong_FromLong(ZX_ERR_ADDRESS_UNREACHABLE));
-  PyDict_SetItemString(dict, "ZX_ERR_ADDRESS_IN_USE", PyLong_FromLong(ZX_ERR_ADDRESS_IN_USE));
-  PyDict_SetItemString(dict, "ZX_ERR_NOT_CONNECTED", PyLong_FromLong(ZX_ERR_NOT_CONNECTED));
-  PyDict_SetItemString(dict, "ZX_ERR_CONNECTION_REFUSED",
+  PyDict_SetItemString(dict.get(), "ZX_ERR_ADDRESS_IN_USE", PyLong_FromLong(ZX_ERR_ADDRESS_IN_USE));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_NOT_CONNECTED", PyLong_FromLong(ZX_ERR_NOT_CONNECTED));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_CONNECTION_REFUSED",
                        PyLong_FromLong(ZX_ERR_CONNECTION_REFUSED));
-  PyDict_SetItemString(dict, "ZX_ERR_CONNECTION_RESET", PyLong_FromLong(ZX_ERR_CONNECTION_RESET));
-  PyDict_SetItemString(dict, "ZX_ERR_CONNECTION_ABORTED",
+  PyDict_SetItemString(dict.get(), "ZX_ERR_CONNECTION_RESET",
+                       PyLong_FromLong(ZX_ERR_CONNECTION_RESET));
+  PyDict_SetItemString(dict.get(), "ZX_ERR_CONNECTION_ABORTED",
                        PyLong_FromLong(ZX_ERR_CONNECTION_ABORTED));
-  return dict;
+  return dict.take();
 }
 
 }  // namespace
@@ -442,31 +443,32 @@ PyTypeObject *ZxStatusType = nullptr;
 // of the Python error subclass will result in segfaulting.
 PyTypeObject *ZxStatusType_Create() {
   assert(ZxStatusType == nullptr);
-  auto constants = ZxStatus_make_constants();
+  auto constants = fc::abi::utils::Object(ZxStatus_make_constants());
   if (constants == nullptr) {
     return nullptr;
   }
   auto res = reinterpret_cast<PyTypeObject *>(
-      PyErr_NewException("fuchsia_controller_internal.ZxStatus", PyExc_Exception, constants));
+      PyErr_NewException("fuchsia_controller_internal.ZxStatus", PyExc_Exception, constants.get()));
   if (res == nullptr) {
     return nullptr;
   }
-  auto repr = PyDescr_NewMethod(res, &ZxStatus_repr_def);
+  auto repr = fc::abi::utils::Object(PyDescr_NewMethod(res, &ZxStatus_repr_def));
   if (repr == nullptr) {
     return nullptr;
   }
-  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "__repr__", repr) < 0) {
+  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "__repr__", repr.get()) < 0) {
     return nullptr;
   }
-  auto raw = PyDescr_NewMethod(res, &ZxStatus_raw_def);
-  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "raw", raw) < 0) {
+  auto raw = fc::abi::utils::Object(PyDescr_NewMethod(res, &ZxStatus_raw_def));
+  if (raw == nullptr ||
+      PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "raw", raw.get()) < 0) {
     return nullptr;
   }
-  auto str = PyDescr_NewMethod(res, &ZxStatus_str_def);
+  auto str = fc::abi::utils::Object(PyDescr_NewMethod(res, &ZxStatus_str_def));
   if (str == nullptr) {
     return nullptr;
   }
-  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "__str__", str) < 0) {
+  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "__str__", str.get()) < 0) {
     return nullptr;
   }
   Py_IncRef(reinterpret_cast<PyObject *>(res));
@@ -476,35 +478,37 @@ PyTypeObject *ZxStatusType_Create() {
 
 PyTypeObject *FcTransportStatusType_Create() {
   assert(FcTransportStatusType == nullptr);
-  auto constants = FcTransportStatus_make_constants();
+  auto constants = fc::abi::utils::Object(FcTransportStatus_make_constants());
   if (constants == nullptr) {
     return nullptr;
   }
   auto res = reinterpret_cast<PyTypeObject *>(PyErr_NewException(
-      "fuchsia_controller_internal.FcTransportStatus", PyExc_Exception, constants));
+      "fuchsia_controller_internal.FcTransportStatus", PyExc_Exception, constants.get()));
   if (res == nullptr) {
     return nullptr;
   }
-  auto repr = PyDescr_NewMethod(res, &FcTransportStatus_repr_def);
+  auto repr = fc::abi::utils::Object(PyDescr_NewMethod(res, &FcTransportStatus_repr_def));
   if (repr == nullptr) {
     return nullptr;
   }
-  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "__repr__", repr) < 0) {
+  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "__repr__", repr.get()) < 0) {
     return nullptr;
   }
-  auto desc = PyDescr_NewMethod(res, &FcTransportStatus_desc_def);
-  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "desc", desc) < 0) {
+  auto desc = fc::abi::utils::Object(PyDescr_NewMethod(res, &FcTransportStatus_desc_def));
+  if (desc == nullptr ||
+      PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "desc", desc.get()) < 0) {
     return nullptr;
   }
-  auto code = PyDescr_NewMethod(res, &FcTransportStatus_code_def);
-  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "code", code) < 0) {
+  auto code = fc::abi::utils::Object(PyDescr_NewMethod(res, &FcTransportStatus_code_def));
+  if (code == nullptr ||
+      PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "code", code.get()) < 0) {
     return nullptr;
   }
-  auto str = PyDescr_NewMethod(res, &FcTransportStatus_str_def);
+  auto str = fc::abi::utils::Object(PyDescr_NewMethod(res, &FcTransportStatus_str_def));
   if (str == nullptr) {
     return nullptr;
   }
-  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "__str__", str) < 0) {
+  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "__str__", str.get()) < 0) {
     return nullptr;
   }
   Py_IncRef(reinterpret_cast<PyObject *>(res));

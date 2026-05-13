@@ -15,6 +15,18 @@ class Object {
   explicit Object(PyObject* ptr) : ptr_(ptr) {}
   static Object null() { return Object(nullptr); }
   ~Object() { Py_XDECREF(ptr_); }
+
+  Object(const Object&) = delete;
+  Object& operator=(const Object&) = delete;
+  Object(Object&& other) noexcept : ptr_(other.take()) {}
+  Object& operator=(Object&& other) noexcept {
+    if (this != &other) {
+      Py_XDECREF(ptr_);
+      ptr_ = other.take();
+    }
+    return *this;
+  }
+
   PyObject* get() { return ptr_; }
   PyObject* take() {
     auto res = ptr_;
