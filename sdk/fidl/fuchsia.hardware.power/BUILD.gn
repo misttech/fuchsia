@@ -42,6 +42,7 @@ fidl("fuchsia.hardware.power") {
   ]
   sdk_area = "Power"
   sdk_category = "partner"
+  enable_rust_next = true
   stable = false
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]

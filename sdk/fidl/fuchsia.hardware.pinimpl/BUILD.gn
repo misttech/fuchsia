@@ -41,6 +41,7 @@ fidl("fuchsia.hardware.pinimpl") {
   sdk_area = "Drivers"
   sdk_category = "partner"
   contains_drivers = true
+  enable_rust_next = true
   stable = true
   visibility = [ "*" ]
   public_deps = [
