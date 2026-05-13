@@ -19,11 +19,6 @@ pub struct PrimaryFidlServer {
     bytes_imported: u64,
 }
 
-pub enum StreamItem {
-    Fidl(Result<fidl_fuchsia_gpu_magma::PrimaryRequest, fidl::Error>),
-    Message(crate::magma_system_connection::ConnectionMessage),
-}
-
 impl PrimaryFidlServer {
     pub fn new(connection: crate::magma_system_connection::MagmaSystemConnection) -> Self {
         PrimaryFidlServer {
@@ -65,27 +60,29 @@ impl PrimaryFidlServer {
     // Usage with the unsynchronized dispatcher has not been validated.
     pub async fn run(
         &mut self,
-        stream: fidl_fuchsia_gpu_magma::PrimaryRequestStream,
-        message_receiver: UnboundedReceiver<crate::magma_system_connection::ConnectionMessage>,
+        mut stream: fidl_fuchsia_gpu_magma::PrimaryRequestStream,
+        mut message_receiver: UnboundedReceiver<crate::magma_system_connection::ConnectionMessage>,
     ) -> anyhow::Result<()> {
         let control_handle = stream.control_handle();
 
-        let mut combined_stream = futures::stream::select(
-            stream.map(|res| StreamItem::Fidl(res)),
-            message_receiver.map(|msg| StreamItem::Message(msg)),
-        );
-
-        while let Some(item) = combined_stream.next().await {
-            match item {
-                StreamItem::Fidl(res) => {
-                    let request = res.context("Fidl error")?;
-                    self.handle_message_request(request, &control_handle).await?;
-                }
-                StreamItem::Message(
-                    crate::magma_system_connection::ConnectionMessage::ContextKilled,
-                ) => {
-                    return Ok(());
-                }
+        // Use select so we will exit if the FIDL channel closes.
+        loop {
+            futures::select! {
+                item = stream.next() => {
+                    match item {
+                        Some(res) => {
+                            let request = res.context("Fidl error")?;
+                            self.handle_message_request(request, &control_handle).await?;
+                        }
+                        None => break,
+                    }
+                },
+                    item = message_receiver.next() => {
+                    match item {
+                        Some(crate::magma_system_connection::ConnectionMessage::ContextKilled) => break,
+                        None => break,
+                    }
+                },
             }
         }
 
@@ -1055,6 +1052,39 @@ mod tests {
         server.lock().unwrap().connection.notification_handler.context_killed();
 
         // Wait for result!
+        let result = result_rx.await.unwrap();
+        assert!(result.is_ok());
+    }
+
+    #[fuchsia::test]
+    async fn fidl_channel_close_closes_connection() {
+        let owner = MockConnectionOwner { driver: crate::mock::MockDriver, token_id: 0 };
+
+        let (tx, rx) = futures::channel::mpsc::unbounded();
+        let connection = crate::magma_system_connection::MagmaSystemConnection::new(
+            Arc::new(owner),
+            Box::new(crate::mock::MockConnection),
+            Arc::new(MagmaNotificationHandler {
+                notification_channel: invalid_notification_channel(),
+                message_sender: tx,
+            }),
+        );
+
+        let (proxy, stream) =
+            fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
+
+        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server_clone = server.clone();
+        let (result_tx, result_rx) = futures::channel::oneshot::channel();
+        fuchsia_async::Task::local(async move {
+            let mut server_locked = server_clone.lock().unwrap();
+            let result = server_locked.run(stream, rx).await;
+            let _ = result_tx.send(result);
+        })
+        .detach();
+
+        // Drop our FIDL channel and wait for it to close.
+        std::mem::drop(proxy);
         let result = result_rx.await.unwrap();
         assert!(result.is_ok());
     }
