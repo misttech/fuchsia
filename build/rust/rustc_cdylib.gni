@@ -53,6 +53,10 @@ import("//build/rust/rustc_test.gni")
 #     Builds unit tests associated with the binary. This will create a
 #     `<name>-bin-unit-test` test file in the output directory.
 #
+#   test_output_name (optional)
+#     Name of the test binary. If not specified, it defaults to the target name
+#     (or output_name if specified) with `_cdylib_test` appended.
+#
 #   source_root (optional)
 #     Location of the crate root (e.g. `src/main.rs` or `src/lib.rs`).
 #     This defaults to `./src/main.rs` for binaries and `./src/lib.rs` for libraries,
@@ -129,9 +133,12 @@ template("rustc_cdylib") {
                    "variant_selector_target_type",
                    "is_loadable_module",
                  ])
-      output_name = invoker.target_name + "_cdylib_test"
-      if (defined(invoker.output_name)) {
-        output_name = invoker.output_name + "_cdylib_test"
+      if (defined(invoker.test_output_name)) {
+        output_name = invoker.test_output_name
+      } else if (defined(invoker.output_name)) {
+        output_name = invoker.output_name + "_test"
+      } else {
+        output_name = invoker.target_name + "_test"
       }
       forward_variables_from(invoker,
                              "*",
