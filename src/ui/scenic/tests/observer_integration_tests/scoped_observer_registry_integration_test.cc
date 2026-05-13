@@ -210,10 +210,13 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfHlcppTest,
   // presented.
   void BlockingPresent(fuc_FlatlandPtr& flatland) {
     bool presented = false;
+    bool next_frame_ready = false;
     flatland.events().OnFramePresented = [&presented](auto) { presented = true; };
+    flatland.events().OnNextFrameBegin = [&next_frame_ready](auto) { next_frame_ready = true; };
     flatland->Present({});
-    RunLoopUntil([&presented] { return presented; });
+    RunLoopUntil([&presented, &next_frame_ready] { return presented && next_frame_ready; });
     flatland.events().OnFramePresented = nullptr;
+    flatland.events().OnNextFrameBegin = nullptr;
   }
 
   // Create a new transform and viewport, then call |BlockingPresent| to wait for it to take
