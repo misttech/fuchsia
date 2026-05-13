@@ -14392,7 +14392,6 @@ rustc_library("pin-init-v0_3_0") {
     "--cap-lints=allow",
     "-Cmetadata=d03e4a33589ee11",
     "-Cextra-filename=-d03e4a33589ee11",
-    "--cfg=USE_RUSTC_FEATURES",
   ]
 
   visibility = [ ":*" ]
@@ -14428,7 +14427,6 @@ rustc_macro("pin-init-internal-v0_3_0") {
     "--cap-lints=allow",
     "-Cmetadata=449a5b2e2aeb03a2",
     "-Cextra-filename=-449a5b2e2aeb03a2",
-    "--cfg=USE_RUSTC_FEATURES",
   ]
 
   visibility = [ ":*" ]

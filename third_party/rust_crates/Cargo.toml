@@ -821,11 +821,9 @@ rustflags = []
 rustflags = []
 
 [gn.package.pin-init."0.3.0"]
-rustflags = [ "--cfg=USE_RUSTC_FEATURES" ]
 license_files = ["LICENSE-APACHE", "LICENSE-MIT"]
 
 [gn.package.pin-init-internal."0.3.0"]
-rustflags = [ "--cfg=USE_RUSTC_FEATURES" ]
 license_files = ["LICENSE-APACHE", "LICENSE-MIT"]
 
 # "--cfg=use_fallback" is required in order to avoid using the unstable
