@@ -1281,6 +1281,7 @@ mod tests {
             ObjectStore::create_object(&store, &mut transaction, HandleOptions::default(), None)
                 .await
                 .expect("create_object failed");
+        store.add_to_graveyard(&mut transaction, handle.object_id());
         transaction.commit().await.expect("commit failed");
 
         store

@@ -1444,6 +1444,17 @@ impl ObjectStore {
         object_id: u64,
         txn_options: Options<'_>,
     ) -> Result<(), Error> {
+        debug_assert!(
+            self.tree.find(&ObjectKey::object(object_id)).await?.is_some(),
+            "Tombstoning missing object"
+        );
+        debug_assert!(
+            self.tree
+                .find(&ObjectKey::graveyard_entry(self.graveyard_directory_object_id(), object_id))
+                .await?
+                .is_some(),
+            "Tombstoning object not in graveyard"
+        );
         self.key_manager.remove(object_id).await;
         let fs = self.filesystem();
         let truncate_guard = fs.truncate_guard(self.store_object_id, object_id).await;
@@ -1558,6 +1569,25 @@ impl ObjectStore {
         attribute_id: u64,
         txn_options: Options<'_>,
     ) -> Result<(), Error> {
+        // Ensure that we don't double-delete things, it should still exist and be in the graveyard.
+        debug_assert!(
+            self.tree
+                .find(&ObjectKey::attribute(object_id, attribute_id, AttributeKey::Attribute))
+                .await?
+                .is_some(),
+            "Tombstoning missing attribute"
+        );
+        debug_assert!(
+            self.tree
+                .find(&ObjectKey::graveyard_attribute_entry(
+                    self.graveyard_directory_object_id(),
+                    object_id,
+                    attribute_id
+                ))
+                .await?
+                .is_some(),
+            "Tombstoning attribute not in graveyard"
+        );
         let fs = self.filesystem();
         let mut trim_result = TrimResult::Incomplete;
         while matches!(trim_result, TrimResult::Incomplete) {
@@ -3328,6 +3358,7 @@ mod tests {
             )
             .await
             .expect("create_object failed");
+            root_store.add_to_graveyard(&mut transaction, child.object_id());
             transaction.commit().await.expect("commit failed");
 
             // Allocate an extent in the file.
@@ -3370,6 +3401,7 @@ mod tests {
             ObjectStore::create_object(&store, &mut transaction, HandleOptions::default(), None)
                 .await
                 .expect("create_object failed");
+        store.add_to_graveyard(&mut transaction, child.object_id());
         transaction.commit().await.expect("commit failed");
         assert!(store.key_manager.get(child.object_id()).await.unwrap().is_some());
         store
@@ -3398,6 +3430,7 @@ mod tests {
             )
             .await
             .expect("create_object failed");
+            root_store.add_to_graveyard(&mut transaction, child.object_id());
             transaction.commit().await.expect("commit failed");
 
             // Allocate an extent in the file.

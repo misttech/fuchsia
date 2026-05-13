@@ -804,6 +804,13 @@ async fn test_missing_object_tree_layer_file() {
             assert!(!layers.layers.is_empty());
             layers.layers[0].handle().unwrap().object_id()
         };
+        let mut transaction = fs
+            .clone()
+            .new_transaction(lock_keys![], Options::default())
+            .await
+            .expect("new_transaction failed");
+        fs.root_store().add_to_graveyard(&mut transaction, id);
+        transaction.commit().await.expect("commit failed");
         fs.root_store()
             .tombstone_object(id, transaction::Options::default())
             .await
@@ -836,6 +843,14 @@ async fn test_missing_object_store_handle() {
                 .unwrap();
             volume.store_object_id()
         };
+        let mut transaction = fs
+            .clone()
+            .new_transaction(lock_keys![], Options::default())
+            .await
+            .expect("new_transaction failed");
+        fs.root_store().add_to_graveyard(&mut transaction, store_id);
+        transaction.commit().await.unwrap();
+
         fs.root_store()
             .tombstone_object(store_id, transaction::Options::default())
             .await

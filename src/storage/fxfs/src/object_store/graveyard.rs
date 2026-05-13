@@ -133,11 +133,6 @@ impl Graveyard {
                         self.tombstone_object(store_id, object_id).await
                     };
                     if let Err(e) = res {
-                        debug_assert!(
-                            false,
-                            "Tombstone error: {e:?}, store_id: {store_id}, oid: {object_id}, \
-                             attribute_id: {attribute_id:?}"
-                        );
                         error!(
                             error:? = e,
                             store_id,
@@ -149,10 +144,6 @@ impl Graveyard {
                 }
                 Message::Trim(store_id, object_id) => {
                     if let Err(e) = self.trim(store_id, object_id).await {
-                        debug_assert!(
-                            false,
-                            "Tombstone error: {e:?}, store_id: {store_id}, oid: {object_id}"
-                        );
                         error!(error:? = e, store_id, oid = object_id; "Tombstone error");
                     }
                 }
