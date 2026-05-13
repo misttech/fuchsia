@@ -196,261 +196,6 @@ const SchedulerState::EffectiveProfile& GetEffectiveProfile(const Thread& thread
   return thread.scheduler_state().effective_profile();
 }
 
-struct ThreadBaseProfileChangedOp : public Scheduler::Pi {
-  static void UpdateDynamicParams(const Thread&, Thread& target,
-                                  const SchedulerState::EffectiveProfile& target_old_ep,
-                                  const SchedulerState::EffectiveProfile& target_new_ep,
-                                  SchedTime mono_now)
-      TA_REQ(chainlock_transaction_token, target.get_lock()) {
-    // Make sure the start and finish times are consistent with the bandwidth
-    // parameters of the deadline profile. Consistency in fair profiles is
-    // handled by Scheduler::AdjustFairBandwidth.
-    if (target_new_ep.IsDeadline()) {
-      GetStartTime(target) = GetFinishTime(target) - target_new_ep.deadline().deadline_ns;
-    }
-  }
-};
-
-struct UpstreamThreadBaseProfileChangedOp : public Scheduler::Pi {
-  template <typename TargetType>
-  static void UpdateDynamicParams(const Thread& upstream, TargetType& target,
-                                  const SchedulerState::EffectiveProfile& target_old_ep,
-                                  const SchedulerState::EffectiveProfile& target_new_ep,
-                                  SchedTime mono_now)
-      TA_REQ(upstream.get_lock(), target.get_lock()) {
-    // Make sure the start and finish times are consistent with the bandwidth
-    // parameters of the deadline profile. Consistency in fair profiles is
-    // handled by Scheduler::AdjustFairBandwidth.
-    if (target_new_ep.IsDeadline()) {
-      GetStartTime(target) = GetFinishTime(target) - target_new_ep.deadline().deadline_ns;
-    }
-  }
-};
-
-struct JoinNodeToPiGraphOp : public Scheduler::Pi {
-  template <typename UpstreamType, typename TargetType>
-  static void UpdateDynamicParams(const UpstreamType& upstream, TargetType& target,
-                                  const SchedulerState::EffectiveProfile& target_old_ep,
-                                  const SchedulerState::EffectiveProfile& target_new_ep,
-                                  SchedTime mono_now)
-      TA_REQ(chainlock_transaction_token, upstream.get_lock(), target.get_lock()) {
-    const SchedulerState::EffectiveProfile& upstream_ep = GetEffectiveProfile(upstream);
-
-    // If our upstream node is fair, then we have nothing more to do in the
-    // common path. Our target's effective profile has already been updated
-    // appropriately, and no changes to the target's dynamic deadline scheduling
-    // parameters needs to be done (since new pressure from a fair thread
-    // currently has no effect on deadline utilization). Any scheduler specific
-    // side effects will be handled by the active thread path (below) if the
-    // target is an active thread.
-    // TODO(https://fxbug.dev/42182908): Implement fair-to-fair priority
-    // inheritance.
-    if (upstream_ep.IsFair()) {
-      return;
-    }
-
-    // Our upstream node is not a fair node, therefore it must be a deadline
-    // node. In addition, no matter what it was before, our target node must now
-    // be a deadline node.
-    DEBUG_ASSERT(upstream_ep.IsDeadline());
-    DEBUG_ASSERT(target_new_ep.IsDeadline());
-
-    // Verify the start/finish times of the upstream node have the required
-    // relationship.
-    // TODO(https://fxbug.dev/448121736): Start time == finish time.
-    DEBUG_ASSERT_MSG(GetStartTime(upstream) < GetFinishTime(upstream),
-                     "upstream_ep: start_time=%" PRId64 " finish_time=%" PRId64
-                     " deadline_ns=%" PRId64,
-                     GetStartTime(upstream).raw_value(), GetFinishTime(upstream).raw_value(),
-                     upstream_ep.deadline().deadline_ns.raw_value());
-
-    if (target_old_ep.IsFair()) {
-      // If target has just now become deadline, we can simply transfer the
-      // dynamic deadline parameters from upstream to the target.
-      GetStartTime(target) = GetStartTime(upstream);
-      GetFinishTime(target) = GetFinishTime(upstream);
-      GetTimeSliceNs(target) = GetTimeSliceNs(upstream);
-      GetTimeSliceUsedNs(target) = GetTimeSliceUsedNs(upstream);
-    } else {
-      // The target was already a deadline thread, then we need to recompute the
-      // target's dynamic deadline parameters using the lag equation. Compute
-      // the remaining periods of the target and upstream threads.
-      const SchedDuration target_remaining_period =
-          ktl::max<SchedDuration>(GetFinishTime(target) - mono_now, SchedDuration{0});
-      const SchedDuration upstream_remaining_period =
-          ktl::max<SchedDuration>(GetFinishTime(upstream) - mono_now, SchedDuration{0});
-      const SchedDuration min_remaining_period =
-          ktl::min(target_remaining_period, upstream_remaining_period);
-
-      GetFinishTime(target) = ktl::min(GetFinishTime(target), GetFinishTime(upstream));
-      GetStartTime(target) = GetFinishTime(target) - target_new_ep.deadline().deadline_ns;
-
-      // Verify the start/finish times of the target node have the required
-      // relationship.
-      // TODO(https://fxbug.dev/448121736): Start time == finish time.
-      DEBUG_ASSERT_MSG(GetStartTime(target) < GetFinishTime(target),
-                       "target_new_ep: start_time=%" PRId64 " finish_time=%" PRId64
-                       " deadline_ns=%" PRId64,
-                       GetStartTime(target).raw_value(), GetFinishTime(target).raw_value(),
-                       target_new_ep.deadline().deadline_ns.raw_value());
-
-      // TODO(eieio): If a period is expired, the full bandwidth contribution of
-      // the respective task is available to the target and downstream, if any.
-      const SchedDuration new_remaining_time_slice =
-          GetRemainingTimeSliceNs(target) + GetRemainingTimeSliceNs(upstream) +
-          (target_old_ep.deadline().utilization *
-           (min_remaining_period - target_remaining_period)) +
-          (upstream_ep.deadline().utilization * (min_remaining_period - upstream_remaining_period));
-
-      // Limit the TSR.  It cannot be less than zero nor can it be more than the
-      // time until the absolute deadline of the new combined thread.
-      //
-      // TODO(johngro): If we did have to clamp the TSR, the amount we clamp by
-      // needs to turn into carried lag.
-      const SchedDuration clamped_remaining_time_slice = ktl::clamp<SchedDuration>(
-          new_remaining_time_slice, SchedDuration{0}, min_remaining_period);
-      GetTimeSliceNs(target) = target_new_ep.deadline().capacity_ns;
-      GetTimeSliceUsedNs(target) =
-          target_new_ep.deadline().capacity_ns - clamped_remaining_time_slice;
-      DEBUG_ASSERT_MSG(GetRemainingTimeSliceNs(target) >= 0,
-                       "capacity=%" PRId64 " remaining_time_slice=%" PRId64
-                       " remaining_period=%" PRId64,
-                       target_new_ep.deadline().capacity_ns.raw_value(),
-                       new_remaining_time_slice.raw_value(), min_remaining_period.raw_value());
-    }
-  }
-};
-
-struct SplitNodeFromPiGraphOp : public Scheduler::Pi {
-  template <typename UpstreamType, typename TargetType>
-  static void UpdateDynamicParams(UpstreamType& upstream, TargetType& target,
-                                  const SchedulerState::EffectiveProfile& target_old_ep,
-                                  const SchedulerState::EffectiveProfile& target_new_ep,
-                                  SchedTime mono_now)
-      TA_REQ(chainlock_transaction_token, upstream.get_lock(), target.get_lock()) {
-    const SchedulerState::EffectiveProfile& upstream_ep = GetEffectiveProfile(upstream);
-
-    // Was the target node a fair node? If so, there is really nothing for us to
-    // do here.
-    if (target_old_ep.IsFair()) {
-      return;
-    }
-
-    DEBUG_ASSERT(target_old_ep.IsDeadline());
-    if (target_new_ep.IsFair()) {
-      // If target node is now a fair node, then the upstream node must have
-      // been a deadline node. This split operation is what caused the target
-      // node to change from deadline to fair, all of the deadline pressure must
-      // have been coming from the upstream node. Assert all of this.
-      DEBUG_ASSERT(upstream_ep.IsDeadline());
-      DEBUG_ASSERT_MSG(target_old_ep.deadline().capacity_ns == upstream_ep.deadline().capacity_ns,
-                       "toep.deadline.capacity=%" PRId64 " uep.deadline.capacity=%" PRId64,
-                       target_old_ep.deadline().capacity_ns.raw_value(),
-                       upstream_ep.deadline().capacity_ns.raw_value());
-      DEBUG_ASSERT_MSG(target_old_ep.deadline().deadline_ns == upstream_ep.deadline().deadline_ns,
-                       "toep.deadline.deadline=%" PRId64 " uep.deadline.deadline=%" PRId64,
-                       target_old_ep.deadline().deadline_ns.raw_value(),
-                       upstream_ep.deadline().deadline_ns.raw_value());
-
-      // Verify the start/finish times of the target node have the required
-      // relationship.
-      // TODO(https://fxbug.dev/448121736): Start time == finish time.
-      DEBUG_ASSERT_MSG(GetStartTime(target) < GetFinishTime(target),
-                       "target_old_ep: start_time=%" PRId64 " finish_time=%" PRId64
-                       " deadline_ns=%" PRId64,
-                       GetStartTime(target).raw_value(), GetFinishTime(target).raw_value(),
-                       target_old_ep.deadline().deadline_ns.raw_value());
-
-      // Give the dynamic deadline parameters over to the upstream node.
-      GetStartTime(upstream) = GetStartTime(target);
-      GetFinishTime(upstream) = GetFinishTime(target);
-      GetTimeSliceNs(upstream) = GetTimeSliceNs(target);
-      GetTimeSliceUsedNs(upstream) = GetTimeSliceUsedNs(target);
-
-      // TODO(eieio): Just expire the time slice for now. This should actually
-      // be split out the same way as for deadline threads.
-      GetTimeSliceUsedNs(target) = GetTimeSliceNs(target);
-    } else {
-      // OK, the target node is still a deadline node. If the upstream node is a
-      // fair node, we don't have to do anything at all. A fair node splitting
-      // off from a deadline node should not change the deadline node's dynamic
-      // parameters. If the upstream fair node is a thread, it is going to
-      // arrive in a new scheduler queue Real Soon Now, and have new dynamic
-      // parameters computed for it.
-      //
-      // If both nodes are deadline nodes, then we need to invoke the lag
-      // equation in order to figure out what the new time slice remaining and
-      // absolute deadlines are.
-      if (upstream_ep.IsDeadline()) {
-        // Compute the time until absolute deadline of the target and upstream.
-        const SchedDuration target_remaining_period =
-            ktl::max<SchedDuration>(GetFinishTime(target) - mono_now, SchedDuration{0});
-        const SchedDuration upstream_remaining_period =
-            ktl::max<SchedDuration>(GetFinishTime(upstream) - mono_now, SchedDuration{0});
-
-        // Figure out what the uncapped utilization of the combined thread
-        // would have been based on the utilizations of the target and
-        // upstream nodes after the split. It is important when scaling
-        // timeslices to be sure that we divide by a utilization value which
-        // is the sum of the two (now separated) utilization values.
-        const SchedUtilization combined_uncapped_utilization =
-            target_new_ep.deadline().utilization + upstream_ep.deadline().utilization;
-        const SchedUtilization upstream_utilization_ratio =
-            upstream_ep.deadline().utilization / combined_uncapped_utilization;
-        const SchedDuration new_upstream_remaining_time_slice =
-            (upstream_utilization_ratio * GetRemainingTimeSliceNs(target)) +
-            (upstream_ep.deadline().utilization *
-             (upstream_remaining_period - target_remaining_period));
-
-        // TODO(johngro): This also changes when carried lag comes into play.
-        GetTimeSliceNs(upstream) = upstream_ep.deadline().capacity_ns;
-        GetTimeSliceUsedNs(upstream) =
-            upstream_ep.deadline().capacity_ns -
-            ktl::max(new_upstream_remaining_time_slice, SchedDuration{0});
-
-        // TODO(johngro): Fix this. Logically, it is not correct to preserve the
-        // abs deadline of the target after the split. The target's bookkeeping
-        // should be equivalent to the values which would be obtained by joining
-        // all of the threads which exist upstream of this node together.
-        // Because of this, our new target finish time should be equal to the
-        // min across all finish times immediately upstream of this node.
-        //
-        // Now handle the target node. We preserve the absolute deadline of the
-        // target node before and after the split, so we need to recompute its
-        // start time so that the distance between the absolute deadline and the
-        // start time is equal to the new relative deadline of the target node.
-        GetStartTime(target) = GetFinishTime(target) - target_new_ep.deadline().deadline_ns;
-
-        // Verify the start/finish times of the target node have the required
-        // relationship.
-        // TODO(https://fxbug.dev/448121736): Start time == finish time.
-        DEBUG_ASSERT_MSG(GetStartTime(target) < GetFinishTime(target),
-                         "target_new_ep: start_time=%" PRId64 " finish_time=%" PRId64
-                         " deadline_ns=%" PRId64,
-                         GetStartTime(target).raw_value(), GetFinishTime(target).raw_value(),
-                         target_new_ep.deadline().deadline_ns.raw_value());
-
-        // The time till absolute deadline of the pre and post split target
-        // remains the same, so the ttad contributions to the timeslice
-        // remaining simply drop out of the lag equation.
-        //
-        // Note that fixed point division takes the precision of the assignee
-        // into account to provide headroom in certain situations. Use an
-        // intermediate with the same fractional precision as the utilization
-        // operands before scaling the non-fractional timeslice.
-        const SchedUtilization target_utilization_ratio =
-            target_new_ep.deadline().utilization / combined_uncapped_utilization;
-        const SchedDuration new_target_remaining_time_slice =
-            GetRemainingTimeSliceNs(target) * target_utilization_ratio;
-
-        GetTimeSliceNs(target) = target_new_ep.deadline().capacity_ns;
-        GetTimeSliceUsedNs(target) = target_new_ep.deadline().capacity_ns -
-                                     ktl::max(new_target_remaining_time_slice, SchedDuration{0});
-      }
-    }
-  }
-};
-
 }  // anonymous namespace
 
 // Handle all of the common tasks associated with each of the possible PI
@@ -662,7 +407,21 @@ void Scheduler::ThreadBaseProfileChanged(Thread& thread) {
   // something downstream of this thread, we need to start by dealing with
   // updating this threads static and dynamic scheduling parameters first.
   Pi::AssertEpDirtyState(thread, SchedulerState::ProfileDirtyFlag::BaseDirty);
-  Pi::Common(thread, thread, ThreadBaseProfileChangedOp::UpdateDynamicParams);
+
+  const auto update_dynamic_params =
+      +[](const Thread&, Thread& target, const SchedulerState::EffectiveProfile& target_old_ep,
+          const SchedulerState::EffectiveProfile& target_new_ep, SchedTime mono_now)
+           TA_REQ(chainlock_transaction_token, target.get_lock()) {
+             // Make sure the start and finish times are consistent with the bandwidth
+             // parameters of the deadline profile. Consistency in fair profiles is
+             // handled by Scheduler::AdjustFairBandwidth.
+             if (target_new_ep.IsDeadline()) {
+               Pi::GetStartTime(target) =
+                   Pi::GetFinishTime(target) - target_new_ep.deadline().deadline_ns;
+             }
+           };
+
+  Pi::Common(thread, thread, update_dynamic_params);
 }
 
 // Called when a thread in a graph whose target is either an OwnedWaitQueue or
@@ -683,11 +442,23 @@ void Scheduler::UpstreamThreadBaseProfileChanged(const Thread& upstream, TargetT
   if constexpr (ktl::is_same_v<Thread, TargetType>) {
     DEBUG_ASSERT(&upstream != &target);
   }
-
   Pi::AssertEpDirtyState(target, SchedulerState::ProfileDirtyFlag::InheritedDirty);
   Pi::AssertEpDirtyState(upstream, SchedulerState::ProfileDirtyFlag::Clean);
 
-  Pi::Common(upstream, target, UpstreamThreadBaseProfileChangedOp::UpdateDynamicParams<TargetType>);
+  const auto update_dynamic_params = +[](const Thread& upstream, TargetType& target,
+                                         const SchedulerState::EffectiveProfile& target_old_ep,
+                                         const SchedulerState::EffectiveProfile& target_new_ep,
+                                         SchedTime mono_now) TA_REQ(upstream.get_lock(),
+                                                                    target.get_lock()) {
+    // Make sure the start and finish times are consistent with the bandwidth
+    // parameters of the deadline profile. Consistency in fair profiles is
+    // handled by Scheduler::AdjustFairBandwidth.
+    if (target_new_ep.IsDeadline()) {
+      Pi::GetStartTime(target) = Pi::GetFinishTime(target) - target_new_ep.deadline().deadline_ns;
+    }
+  };
+
+  Pi::Common(upstream, target, update_dynamic_params);
 }
 
 // Called when a new edge is added connecting the target of one PI graph (the
@@ -700,11 +471,102 @@ void Scheduler::JoinNodeToPiGraph(const UpstreamType& upstream, TargetType& targ
   if constexpr (ktl::is_same_v<UpstreamType, TargetType>) {
     DEBUG_ASSERT(&upstream != &target);
   }
-
   Pi::AssertEpDirtyState(target, SchedulerState::ProfileDirtyFlag::InheritedDirty);
   Pi::AssertEpDirtyState(upstream, SchedulerState::ProfileDirtyFlag::Clean);
 
-  Pi::Common(upstream, target, JoinNodeToPiGraphOp::UpdateDynamicParams<UpstreamType, TargetType>);
+  const auto update_dynamic_params = +[](const UpstreamType& upstream, TargetType& target,
+                                         const SchedulerState::EffectiveProfile& target_old_ep,
+                                         const SchedulerState::EffectiveProfile& target_new_ep,
+                                         SchedTime mono_now) TA_REQ(chainlock_transaction_token,
+                                                                    upstream.get_lock(),
+                                                                    target.get_lock()) {
+    const SchedulerState::EffectiveProfile& upstream_ep = GetEffectiveProfile(upstream);
+
+    // If our upstream node is fair, then we have nothing more to do in the
+    // common path. Our target's effective profile has already been updated
+    // appropriately, and no changes to the target's dynamic deadline scheduling
+    // parameters needs to be done (since new pressure from a fair thread
+    // currently has no effect on deadline utilization). Any scheduler specific
+    // side effects will be handled by the active thread path (below) if the
+    // target is an active thread.
+    // TODO(https://fxbug.dev/42182908): Implement fair-to-fair priority
+    // inheritance.
+    if (upstream_ep.IsFair()) {
+      return;
+    }
+
+    // Our upstream node is not a fair node, therefore it must be a deadline
+    // node. In addition, no matter what it was before, our target node must now
+    // be a deadline node.
+    DEBUG_ASSERT(upstream_ep.IsDeadline());
+    DEBUG_ASSERT(target_new_ep.IsDeadline());
+
+    // Verify the start/finish times of the upstream node have the required
+    // relationship.
+    // TODO(https://fxbug.dev/448121736): Start time == finish time.
+    DEBUG_ASSERT_MSG(
+        Pi::GetStartTime(upstream) < Pi::GetFinishTime(upstream),
+        "upstream_ep: start_time=%" PRId64 " finish_time=%" PRId64 " deadline_ns=%" PRId64,
+        Pi::GetStartTime(upstream).raw_value(), Pi::GetFinishTime(upstream).raw_value(),
+        upstream_ep.deadline().deadline_ns.raw_value());
+
+    if (target_old_ep.IsFair()) {
+      // If target has just now become deadline, we can simply transfer the
+      // dynamic deadline parameters from upstream to the target.
+      Pi::GetStartTime(target) = Pi::GetStartTime(upstream);
+      Pi::GetFinishTime(target) = Pi::GetFinishTime(upstream);
+      Pi::GetTimeSliceNs(target) = Pi::GetTimeSliceNs(upstream);
+      Pi::GetTimeSliceUsedNs(target) = Pi::GetTimeSliceUsedNs(upstream);
+    } else {
+      // The target was already a deadline thread, then we need to recompute the
+      // target's dynamic deadline parameters using the lag equation. Compute
+      // the remaining periods of the target and upstream threads.
+      const SchedDuration target_remaining_period =
+          ktl::max<SchedDuration>(Pi::GetFinishTime(target) - mono_now, SchedDuration{0});
+      const SchedDuration upstream_remaining_period =
+          ktl::max<SchedDuration>(Pi::GetFinishTime(upstream) - mono_now, SchedDuration{0});
+      const SchedDuration min_remaining_period =
+          ktl::min(target_remaining_period, upstream_remaining_period);
+
+      Pi::GetFinishTime(target) = ktl::min(Pi::GetFinishTime(target), Pi::GetFinishTime(upstream));
+      Pi::GetStartTime(target) = Pi::GetFinishTime(target) - target_new_ep.deadline().deadline_ns;
+
+      // Verify the start/finish times of the target node have the required
+      // relationship.
+      // TODO(https://fxbug.dev/448121736): Start time == finish time.
+      DEBUG_ASSERT_MSG(Pi::GetStartTime(target) < Pi::GetFinishTime(target),
+                       "target_new_ep: start_time=%" PRId64 " finish_time=%" PRId64
+                       " deadline_ns=%" PRId64,
+                       Pi::GetStartTime(target).raw_value(), Pi::GetFinishTime(target).raw_value(),
+                       target_new_ep.deadline().deadline_ns.raw_value());
+
+      // TODO(eieio): If a period is expired, the full bandwidth contribution of
+      // the respective task is available to the target and downstream, if any.
+      const SchedDuration new_remaining_time_slice =
+          Pi::GetRemainingTimeSliceNs(target) + Pi::GetRemainingTimeSliceNs(upstream) +
+          (target_old_ep.deadline().utilization *
+           (min_remaining_period - target_remaining_period)) +
+          (upstream_ep.deadline().utilization * (min_remaining_period - upstream_remaining_period));
+
+      // Limit the TSR.  It cannot be less than zero nor can it be more than the
+      // time until the absolute deadline of the new combined thread.
+      //
+      // TODO(johngro): If we did have to clamp the TSR, the amount we clamp by
+      // needs to turn into carried lag.
+      const SchedDuration clamped_remaining_time_slice = ktl::clamp<SchedDuration>(
+          new_remaining_time_slice, SchedDuration{0}, min_remaining_period);
+      Pi::GetTimeSliceNs(target) = target_new_ep.deadline().capacity_ns;
+      Pi::GetTimeSliceUsedNs(target) =
+          target_new_ep.deadline().capacity_ns - clamped_remaining_time_slice;
+      DEBUG_ASSERT_MSG(Pi::GetRemainingTimeSliceNs(target) >= 0,
+                       "capacity=%" PRId64 " remaining_time_slice=%" PRId64
+                       " remaining_period=%" PRId64,
+                       target_new_ep.deadline().capacity_ns.raw_value(),
+                       new_remaining_time_slice.raw_value(), min_remaining_period.raw_value());
+    }
+  };
+
+  Pi::Common(upstream, target, update_dynamic_params);
 }
 
 // Called when an upstream node has its downstream edge removed, splitting it
@@ -718,12 +580,139 @@ void Scheduler::SplitNodeFromPiGraph(UpstreamType& upstream, TargetType& target,
   if constexpr (ktl::is_same_v<UpstreamType, TargetType>) {
     DEBUG_ASSERT(&upstream != &target);
   }
-
   Pi::AssertEpDirtyState(target, SchedulerState::ProfileDirtyFlag::InheritedDirty);
   Pi::AssertEpDirtyState(upstream, SchedulerState::ProfileDirtyFlag::Clean);
 
-  Pi::Common(upstream, target,
-             SplitNodeFromPiGraphOp::UpdateDynamicParams<UpstreamType, TargetType>, old_target_ep);
+  const auto update_dynamic_params = +[](UpstreamType& upstream, TargetType& target,
+                                         const SchedulerState::EffectiveProfile& target_old_ep,
+                                         const SchedulerState::EffectiveProfile& target_new_ep,
+                                         SchedTime mono_now) TA_REQ(chainlock_transaction_token,
+                                                                    upstream.get_lock(),
+                                                                    target.get_lock()) {
+    const SchedulerState::EffectiveProfile& upstream_ep = GetEffectiveProfile(upstream);
+
+    // Was the target node a fair node? If so, there is really nothing for us to
+    // do here.
+    if (target_old_ep.IsFair()) {
+      return;
+    }
+
+    DEBUG_ASSERT(target_old_ep.IsDeadline());
+    if (target_new_ep.IsFair()) {
+      // If target node is now a fair node, then the upstream node must have
+      // been a deadline node. This split operation is what caused the target
+      // node to change from deadline to fair, all of the deadline pressure must
+      // have been coming from the upstream node. Assert all of this.
+      DEBUG_ASSERT(upstream_ep.IsDeadline());
+      DEBUG_ASSERT_MSG(target_old_ep.deadline().capacity_ns == upstream_ep.deadline().capacity_ns,
+                       "toep.deadline.capacity=%" PRId64 " uep.deadline.capacity=%" PRId64,
+                       target_old_ep.deadline().capacity_ns.raw_value(),
+                       upstream_ep.deadline().capacity_ns.raw_value());
+      DEBUG_ASSERT_MSG(target_old_ep.deadline().deadline_ns == upstream_ep.deadline().deadline_ns,
+                       "toep.deadline.deadline=%" PRId64 " uep.deadline.deadline=%" PRId64,
+                       target_old_ep.deadline().deadline_ns.raw_value(),
+                       upstream_ep.deadline().deadline_ns.raw_value());
+
+      // Verify the start/finish times of the target node have the required
+      // relationship.
+      // TODO(https://fxbug.dev/448121736): Start time == finish time.
+      DEBUG_ASSERT_MSG(Pi::GetStartTime(target) < Pi::GetFinishTime(target),
+                       "target_old_ep: start_time=%" PRId64 " finish_time=%" PRId64
+                       " deadline_ns=%" PRId64,
+                       Pi::GetStartTime(target).raw_value(), Pi::GetFinishTime(target).raw_value(),
+                       target_old_ep.deadline().deadline_ns.raw_value());
+
+      // Give the dynamic deadline parameters over to the upstream node.
+      Pi::GetStartTime(upstream) = Pi::GetStartTime(target);
+      Pi::GetFinishTime(upstream) = Pi::GetFinishTime(target);
+      Pi::GetTimeSliceNs(upstream) = Pi::GetTimeSliceNs(target);
+      Pi::GetTimeSliceUsedNs(upstream) = Pi::GetTimeSliceUsedNs(target);
+
+      // TODO(eieio): Just expire the time slice for now. This should actually
+      // be split out the same way as for deadline threads.
+      Pi::GetTimeSliceUsedNs(target) = Pi::GetTimeSliceNs(target);
+    } else {
+      // OK, the target node is still a deadline node. If the upstream node is a
+      // fair node, we don't have to do anything at all. A fair node splitting
+      // off from a deadline node should not change the deadline node's dynamic
+      // parameters. If the upstream fair node is a thread, it is going to
+      // arrive in a new scheduler queue Real Soon Now, and have new dynamic
+      // parameters computed for it.
+      //
+      // If both nodes are deadline nodes, then we need to invoke the lag
+      // equation in order to figure out what the new time slice remaining and
+      // absolute deadlines are.
+      if (upstream_ep.IsDeadline()) {
+        // Compute the time until absolute deadline of the target and upstream.
+        const SchedDuration target_remaining_period =
+            ktl::max<SchedDuration>(Pi::GetFinishTime(target) - mono_now, SchedDuration{0});
+        const SchedDuration upstream_remaining_period =
+            ktl::max<SchedDuration>(Pi::GetFinishTime(upstream) - mono_now, SchedDuration{0});
+
+        // Figure out what the uncapped utilization of the combined thread
+        // would have been based on the utilizations of the target and
+        // upstream nodes after the split. It is important when scaling
+        // timeslices to be sure that we divide by a utilization value which
+        // is the sum of the two (now separated) utilization values.
+        const SchedUtilization combined_uncapped_utilization =
+            target_new_ep.deadline().utilization + upstream_ep.deadline().utilization;
+        const SchedUtilization upstream_utilization_ratio =
+            upstream_ep.deadline().utilization / combined_uncapped_utilization;
+        const SchedDuration new_upstream_remaining_time_slice =
+            (upstream_utilization_ratio * Pi::GetRemainingTimeSliceNs(target)) +
+            (upstream_ep.deadline().utilization *
+             (upstream_remaining_period - target_remaining_period));
+
+        // TODO(johngro): This also changes when carried lag comes into play.
+        Pi::GetTimeSliceNs(upstream) = upstream_ep.deadline().capacity_ns;
+        Pi::GetTimeSliceUsedNs(upstream) =
+            upstream_ep.deadline().capacity_ns -
+            ktl::max(new_upstream_remaining_time_slice, SchedDuration{0});
+
+        // TODO(johngro): Fix this. Logically, it is not correct to preserve the
+        // abs deadline of the target after the split. The target's bookkeeping
+        // should be equivalent to the values which would be obtained by joining
+        // all of the threads which exist upstream of this node together.
+        // Because of this, our new target finish time should be equal to the
+        // min across all finish times immediately upstream of this node.
+        //
+        // Now handle the target node. We preserve the absolute deadline of the
+        // target node before and after the split, so we need to recompute its
+        // start time so that the distance between the absolute deadline and the
+        // start time is equal to the new relative deadline of the target node.
+        Pi::GetStartTime(target) = Pi::GetFinishTime(target) - target_new_ep.deadline().deadline_ns;
+
+        // Verify the start/finish times of the target node have the required
+        // relationship.
+        // TODO(https://fxbug.dev/448121736): Start time == finish time.
+        DEBUG_ASSERT_MSG(
+            Pi::GetStartTime(target) < Pi::GetFinishTime(target),
+            "target_new_ep: start_time=%" PRId64 " finish_time=%" PRId64 " deadline_ns=%" PRId64,
+            Pi::GetStartTime(target).raw_value(), Pi::GetFinishTime(target).raw_value(),
+            target_new_ep.deadline().deadline_ns.raw_value());
+
+        // The time till absolute deadline of the pre and post split target
+        // remains the same, so the ttad contributions to the timeslice
+        // remaining simply drop out of the lag equation.
+        //
+        // Note that fixed point division takes the precision of the assignee
+        // into account to provide headroom in certain situations. Use an
+        // intermediate with the same fractional precision as the utilization
+        // operands before scaling the non-fractional timeslice.
+        const SchedUtilization target_utilization_ratio =
+            target_new_ep.deadline().utilization / combined_uncapped_utilization;
+        const SchedDuration new_target_remaining_time_slice =
+            Pi::GetRemainingTimeSliceNs(target) * target_utilization_ratio;
+
+        Pi::GetTimeSliceNs(target) = target_new_ep.deadline().capacity_ns;
+        Pi::GetTimeSliceUsedNs(target) =
+            target_new_ep.deadline().capacity_ns -
+            ktl::max(new_target_remaining_time_slice, SchedDuration{0});
+      }
+    }
+  };
+
+  Pi::Common(upstream, target, update_dynamic_params, old_target_ep);
 }
 
 template void Scheduler::UpstreamThreadBaseProfileChanged(const Thread&, Thread&);
