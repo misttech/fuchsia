@@ -6,8 +6,19 @@
 
 use core::ffi::c_void;
 use core::ptr::NonNull;
+use kalloc::AllocError;
 
-pub trait Recyclable: Sized {
+/// Trait for types that can be recycled (deallocated).
+///
+/// # Safety
+///
+/// Implementing this trait is unsafe because the implementer must ensure that:
+/// - `allocate` returns a valid pointer that can be safely deallocated by `recycle`.
+/// - `recycle` correctly deallocates the pointer and does not cause double-free or use-after-free.
+pub unsafe trait Recyclable: Sized {
+    /// Allocates a new instance of `Self`.
+    fn allocate(value: Self) -> Result<NonNull<Self>, AllocError>;
+
     /// Recycles the object.
     ///
     /// # Safety

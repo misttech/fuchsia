@@ -9,7 +9,7 @@ use crate::ref_counted::HasRefCount;
 use core::ops::Deref;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, Ordering};
-use kalloc::{AllocError, Box};
+use kalloc::AllocError;
 
 /// `RefPtr<T>` holds a reference to an intrusively-refcounted object of type
 /// T that deletes the object when the refcount drops to 0.
@@ -29,14 +29,17 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `ptr` is valid and has a ref count already
-    /// acquired.
+    /// - The caller must ensure that `ptr` is valid and has a ref count already
+    ///   acquired.
+    /// - `ptr` must have been allocated in such a way that calling `T::recycle(ptr)` is a
+    ///   correct way to deallocate the pointer.
     pub unsafe fn from_raw(ptr: *const T) -> Self {
-        // SAFETY: The caller must ensure that ptr is valid and not null.
+        // SAFETY: The caller must ensure that ptr is valid.
         unsafe { RefPtr { ptr: NonNull::new_unchecked(ptr as *mut T) } }
     }
 
-    /// Helper function that combines `Box::try_new` and `RefPtr::from_raw`.
+    /// Helper function that allocates a new instance of `T` using `T::allocate` and
+    /// returns a `RefPtr` wrapping it.
     ///
     /// This is an internal helper function that should not be used directly.
     /// Use the `make_ref_counted!(...)` macro instead of this function to properly
@@ -47,11 +50,11 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
     /// The caller must ensure that `T` has a RefCounted field that is not
     /// already adopted.
     pub unsafe fn try_new(value: T) -> Result<RefPtr<T>, AllocError> {
-        let boxed = Box::try_new(value)?;
-        boxed.ref_count().adopt();
-        let ptr = Box::into_raw(boxed);
-        // SAFETY: The pointer returned by into_raw is valid and not null.
-        unsafe { Ok(RefPtr { ptr: NonNull::new_unchecked(ptr) }) }
+        let mut ptr = T::allocate(value)?;
+        // SAFETY: The caller must ensure that T has a RefCounted field that is not
+        // already adopted.
+        unsafe { ptr.as_mut().ref_count().adopt() };
+        Ok(RefPtr { ptr })
     }
 
     /// Returns the raw pointer to the object.

@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <atomic>
+
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 
@@ -12,7 +14,9 @@ namespace {
 class TestCppRefCountedObject : public fbl::RefCounted<TestCppRefCountedObject> {
  public:
   explicit TestCppRefCountedObject(bool* destroyed) : destroyed_(destroyed) {}
-  ~TestCppRefCountedObject() { *destroyed_ = true; }
+  ~TestCppRefCountedObject() {
+    std::atomic_ref<bool>(*destroyed_).store(true, std::memory_order_relaxed);
+  }
 
  private:
   bool* destroyed_;

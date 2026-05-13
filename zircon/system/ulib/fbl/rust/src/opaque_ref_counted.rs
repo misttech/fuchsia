@@ -41,11 +41,15 @@ mod tests {
 
     pub struct TestCppRefCountedObject;
 
-    impl Recyclable for OpaqueRefCounted<TestCppRefCountedObject> {
+    unsafe impl Recyclable for OpaqueRefCounted<TestCppRefCountedObject> {
         unsafe fn recycle(ptr: NonNull<Self>) {
             unsafe {
                 destroy_cpp_ref_counted_object(ptr.as_ptr() as *mut c_void);
             }
+        }
+
+        fn allocate(_value: Self) -> Result<NonNull<Self>, ::kalloc::AllocError> {
+            Err(::kalloc::AllocError)
         }
     }
 

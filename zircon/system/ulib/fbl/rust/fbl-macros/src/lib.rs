@@ -6,7 +6,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{Fields, ItemStruct, parse_macro_input};
+use syn::{DeriveInput, Fields, ItemStruct, parse_macro_input};
 
 /// Attribute macro to make a struct reference counted.
 ///
@@ -58,6 +58,8 @@ pub fn ref_counted(_attr: TokenStream, item: TokenStream) -> TokenStream {
         panic!("ref_counted attribute only supports structs with named fields");
     }
 
+    input.attrs.push(syn::parse_quote! { #[derive(::fbl::Recyclable)] });
+
     let expanded = quote! {
         #input
 
@@ -67,17 +69,38 @@ pub fn ref_counted(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
 
-        impl ::fbl::Recyclable for #name {
+        // Compile-time validation that ref_count is at offset 0
+        ::zr::static_assert!(core::mem::offset_of!(#name, ref_count) == 0);
+    };
+
+    TokenStream::from(expanded)
+}
+
+/// Derive macro to implement `Recyclable` for a struct using `kalloc::Box`.
+///
+/// This assumes the object was allocated using `kalloc::Box` (e.g., via `UniquePtr::try_new`).
+#[proc_macro_derive(Recyclable)]
+pub fn derive_recyclable(item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    let name = &input.ident;
+
+    let expanded = quote! {
+        unsafe impl ::fbl::Recyclable for #name {
             unsafe fn recycle(ptr: ::core::ptr::NonNull<Self>) {
-                // SAFETY: ptr was allocated by `try_make_ref_counted`, which uses `Box::try_new`.
+                // SAFETY: The caller of `recycle` must ensure that `ptr` was allocated
+                // by a mechanism compatible with `kalloc::Box` (e.g., `UniquePtr::try_new`).
                 unsafe {
                     let _ = ::kalloc::Box::from_non_null(ptr);
                 }
             }
-        }
 
-        // Compile-time validation that ref_count is at offset 0
-        ::zr::static_assert!(core::mem::offset_of!(#name, ref_count) == 0);
+            fn allocate(value: Self) -> Result<::core::ptr::NonNull<Self>, ::kalloc::AllocError> {
+                let boxed = ::kalloc::Box::try_new(value)?;
+                let raw = ::kalloc::Box::into_raw(boxed);
+                // SAFETY: Box::into_raw returns a valid, non-null pointer.
+                unsafe { Ok(::core::ptr::NonNull::new_unchecked(raw)) }
+            }
+        }
     };
 
     TokenStream::from(expanded)
