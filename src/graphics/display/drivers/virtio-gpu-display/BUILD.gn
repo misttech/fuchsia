@@ -141,9 +141,6 @@ if (virtio_gpu_display_flavor == "rust") {
       ":virtio-gpu-display-bind",
       "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
       "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_rust_next",
-
-      # TODO(https://fxbug.dev/511338276): Remove when we can switch to rust_next.
-      "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust",
       "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_rust_next",
       "//sdk/lib/driver/component/rust",
       "//sdk/lib/driver/runtime/rust",

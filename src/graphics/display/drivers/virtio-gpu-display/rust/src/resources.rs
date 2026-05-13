@@ -7,9 +7,6 @@ use fidl_next::ClientEnd;
 use log::error;
 use zx::Status;
 
-// TODO(https://fxbug.dev/511338276): Remove when we can switch to rust_next.
-use fidl_fuchsia_sysmem2 as fidl_legacy_sysmem2;
-
 use fidl_next_fuchsia_hardware_pci as fidl_pci;
 use fidl_next_fuchsia_sysmem2 as fidl_sysmem2;
 
@@ -37,15 +34,8 @@ impl PlatformResources {
             Status::INTERNAL
         })?;
 
-        // TODO(https://fxbug.dev/511338276): Replace with connect_protocol_next.
-        let sysmem_proxy = context
-            .incoming
-            .connect_protocol::<fidl_legacy_sysmem2::AllocatorProxy>()
-            .map_err(|_| Status::INTERNAL)?;
-        let sysmem_channel =
-            fidl::endpoints::Proxy::into_channel(sysmem_proxy).unwrap().into_zx_channel();
-        let sysmem_client =
-            fidl_next::ClientEnd::<fidl_sysmem2::Allocator>::from_untyped(sysmem_channel);
+        let sysmem_client: ClientEnd<fidl_sysmem2::Allocator> =
+            context.incoming.connect_protocol_next().map_err(|_| Status::INTERNAL)?;
 
         Ok(PlatformResources { pci_client, sysmem_client })
     }
