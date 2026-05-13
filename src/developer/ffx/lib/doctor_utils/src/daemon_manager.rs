@@ -97,7 +97,7 @@ impl DaemonManager for DefaultDaemonManager {
         } else {
             let socket_details = SocketDetails::new(self.socket_path.clone());
             if let Some(pid) = socket_details.get_running_pid() {
-                try_to_kill_pid(pid).await?;
+                try_to_kill_pid(pid).await.map_err(|e| anyhow::anyhow!("{:?}", e))?;
                 true
             } else {
                 false

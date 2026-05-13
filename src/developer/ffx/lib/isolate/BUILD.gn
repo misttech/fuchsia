@@ -20,7 +20,6 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/executor:lib",
     "//src/developer/ffx/lib/sdk:lib",
     "//src/lib/fuchsia-async",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:tempfile",

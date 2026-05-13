@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Result, anyhow};
 use ffx_config::{EnvironmentContext, SdkRoot};
 use ffx_executor::{CommandOutput, FfxExecutor};
 use sdk::FfxSdkConfig;
@@ -58,7 +57,10 @@ pub(crate) fn env_search_paths(search: &SearchContext) -> Vec<Cow<'_, Path>> {
     }
 }
 
-pub(crate) fn find_ffx(search: &SearchContext, search_paths: &[Cow<'_, Path>]) -> Result<PathBuf> {
+pub(crate) fn find_ffx(
+    search: &SearchContext,
+    search_paths: &[Cow<'_, Path>],
+) -> std::result::Result<PathBuf, IsolateError> {
     use SearchContext::*;
     match search {
         Runtime { ffx_path, .. } => return Ok(ffx_path.to_owned()),
@@ -71,9 +73,9 @@ pub(crate) fn find_ffx(search: &SearchContext, search_paths: &[Cow<'_, Path>]) -
             }
         }
     }
-    Err(anyhow!(
-        "ffx not found in search paths for isolation. cwd={}, search_paths={search_paths:?}",
-        std::env::current_dir()?.display()
+    Err(IsolateError::FfxNotFound(
+        std::env::current_dir().map_err(IsolateError::Io)?,
+        search_paths.iter().map(|p| p.to_path_buf()).collect(),
     ))
 }
 
@@ -97,17 +99,23 @@ pub(crate) fn get_log_dir(log_dir_root: &TempDir) -> PathBuf {
     }
 }
 
-pub(crate) fn create_directories(log_dir: &PathBuf, log_dir_root: &TempDir) -> Result<()> {
-    std::fs::create_dir_all(&log_dir)?;
+pub(crate) fn create_directories(
+    log_dir: &PathBuf,
+    log_dir_root: &TempDir,
+) -> std::result::Result<(), IsolateError> {
+    std::fs::create_dir_all(&log_dir).map_err(|e| IsolateError::CreateDir(log_dir.clone(), e))?;
     let metrics_path = log_dir_root.path().join("metrics_home/.fuchsia/metrics");
-    std::fs::create_dir_all(&metrics_path)?;
+    std::fs::create_dir_all(&metrics_path)
+        .map_err(|e| IsolateError::CreateDir(metrics_path.clone(), e))?;
 
     // TODO(287694118): See if we should get isolate-dir itself to deal with metrics isolation.
 
     // Mark that analytics are disabled
-    std::fs::write(metrics_path.join("analytics-status"), "0")?;
+    std::fs::write(metrics_path.join("analytics-status"), "0")
+        .map_err(|e| IsolateError::WriteFile(metrics_path.join("analytics-status"), e))?;
     // Mark that the notice has been given
-    std::fs::write(metrics_path.join("ffx"), "1")?;
+    std::fs::write(metrics_path.join("ffx"), "1")
+        .map_err(|e| IsolateError::WriteFile(metrics_path.join("ffx"), e))?;
     Ok(())
 }
 
@@ -121,7 +129,40 @@ pub struct Isolate {
 #[derive(Error, Debug)]
 pub enum IsolateError {
     #[error("Failed to get rerun prefix: {0}")]
-    RerunPrefix(String),
+    RerunPrefix(ffx_config::environment::ContextError),
+
+    #[error("Failed to create isolated context: {0}")]
+    IsolatedContext(#[from] ffx_config::environment::ContextError),
+
+    #[error("ffx not found in search paths for isolation. cwd={0}, search_paths={1:?}")]
+    FfxNotFound(std::path::PathBuf, Vec<std::path::PathBuf>),
+
+    #[error("Failed to create directory {0}: {1}")]
+    CreateDir(std::path::PathBuf, #[source] std::io::Error),
+
+    #[error("Failed to write file {0}: {1}")]
+    WriteFile(std::path::PathBuf, #[source] std::io::Error),
+
+    #[error("Failed to serialize config: {0}")]
+    SerializeConfig(#[from] serde_json::Error),
+
+    #[error("Failed to get environment variable {0}: {1}")]
+    EnvVar(String, #[source] std::env::VarError),
+
+    #[error("Failed to get config: {0}")]
+    Config(#[from] ffx_config::api::ConfigError),
+
+    #[error("Failed to canonicalize path {0}: {1}")]
+    Canonicalize(std::path::PathBuf, #[source] std::io::Error),
+
+    #[error("Failed to start daemon: {0}")]
+    StartDaemon(#[from] ffx_daemon::DaemonError),
+
+    #[error("Failed to execute ffx: {0}")]
+    ExecuteFfx(#[from] ffx_executor::ExecutionError),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 impl FfxExecutor for Isolate {
@@ -131,10 +172,7 @@ impl FfxExecutor for Isolate {
         &self,
         args: &[&str],
     ) -> std::result::Result<std::process::Command, Self::Error> {
-        let mut cmd = self
-            .env_context()
-            .rerun_prefix()
-            .map_err(|e| IsolateError::RerunPrefix(e.to_string()))?;
+        let mut cmd = self.env_context().rerun_prefix()?;
         cmd.args(args);
         Ok(cmd)
     }
@@ -156,8 +194,8 @@ impl Isolate {
         search: SearchContext,
         ssh_key: PathBuf,
         env_context: &EnvironmentContext,
-    ) -> Result<Isolate> {
-        let tmpdir = tempfile::Builder::new().prefix(name).tempdir()?;
+    ) -> std::result::Result<Isolate, IsolateError> {
+        let tmpdir = tempfile::Builder::new().prefix(name).tempdir().map_err(IsolateError::Io)?;
         let search_paths = env_search_paths(&search);
 
         let ffx_path = find_ffx(&search, &search_paths)?;
@@ -191,17 +229,15 @@ impl Isolate {
             search_paths,
             sdk_config,
         );
-        std::fs::write(
-            tmpdir.path().join(".ffx_user_config.json"),
-            serde_json::to_string(&user_config)?,
-        )?;
+        let user_config_str = serde_json::to_string(&user_config)?;
+        std::fs::write(tmpdir.path().join(".ffx_user_config.json"), user_config_str)
+            .map_err(|e| IsolateError::WriteFile(tmpdir.path().join(".ffx_user_config.json"), e))?;
 
-        std::fs::write(
-            tmpdir.path().join(".ffx_env"),
-            serde_json::to_string(&FfxEnvConfig::for_test(
-                tmpdir.path().join(".ffx_user_config.json").to_string_lossy(),
-            ))?,
-        )?;
+        let env_config_str = serde_json::to_string(&FfxEnvConfig::for_test(
+            tmpdir.path().join(".ffx_user_config.json").to_string_lossy(),
+        ))?;
+        std::fs::write(tmpdir.path().join(".ffx_env"), env_config_str)
+            .map_err(|e| IsolateError::WriteFile(tmpdir.path().join(".ffx_env"), e))?;
 
         let mut env_vars = HashMap::new();
 
@@ -267,10 +303,10 @@ impl Isolate {
         name: &str,
         ssh_key: PathBuf,
         context: &EnvironmentContext,
-    ) -> Result<Self> {
-        let ffx_path = context.rerun_bin()?;
-        let ffx_path =
-            std::fs::canonicalize(ffx_path).context("could not canonicalize own path")?;
+    ) -> std::result::Result<Self, IsolateError> {
+        let ffx_path = context.rerun_bin().map_err(IsolateError::RerunPrefix)?;
+        let ffx_path = std::fs::canonicalize(&ffx_path)
+            .map_err(|e| IsolateError::Canonicalize(ffx_path.clone(), e))?;
 
         let sdk_root = context.get_sdk_root().ok();
         let subtool_search_paths = context.get("ffx.subtool-search-paths").unwrap_or_default();
@@ -294,8 +330,8 @@ impl Isolate {
         name: &str,
         ssh_key: PathBuf,
         context: &EnvironmentContext,
-    ) -> Result<Self> {
-        let build_root = std::env::current_dir()?;
+    ) -> std::result::Result<Self, IsolateError> {
+        let build_root = std::env::current_dir().map_err(IsolateError::Io)?;
         Self::new_with_search(name, SearchContext::Build { build_root }, ssh_key, context).await
     }
 
@@ -317,7 +353,7 @@ impl Isolate {
 
     // Manually spawning the daemon allow it to remain under our process group instead of
     // daemonizing. These daemons will be sent signals directed towards this process group.
-    pub async fn start_daemon(&self) -> Result<Child> {
+    pub async fn start_daemon(&self) -> std::result::Result<Child, IsolateError> {
         let daemon = ffx_daemon::run_daemon(self.env_context()).await?;
         const DAEMON_WAIT_TIME: u64 = 2000;
         // Wait a bit to make sure the daemon has had a chance to start up.
@@ -328,18 +364,21 @@ impl Isolate {
 
     // TODO(396006570): Remove these functions once migrations have been done in external
     // users.
-    pub async fn ffx_cmd(&self, args: &[&str]) -> Result<std::process::Command> {
-        std::future::ready(FfxExecutor::make_ffx_cmd(self, args)).await.map_err(Into::into)
+    pub async fn ffx_cmd(
+        &self,
+        args: &[&str],
+    ) -> std::result::Result<std::process::Command, IsolateError> {
+        std::future::ready(FfxExecutor::make_ffx_cmd(self, args)).await
     }
 
-    pub async fn ffx(&self, args: &[&str]) -> Result<CommandOutput> {
+    pub async fn ffx(&self, args: &[&str]) -> std::result::Result<CommandOutput, IsolateError> {
         let cmd = FfxExecutor::make_ffx_cmd(self, args)?;
-        FfxExecutor::exec_ffx(self, cmd).await.map_err(Into::into)
+        FfxExecutor::exec_ffx(self, cmd).await.map_err(IsolateError::ExecuteFfx)
     }
 
-    pub fn ffx_sync(&self, args: &[&str]) -> Result<CommandOutput> {
+    pub fn ffx_sync(&self, args: &[&str]) -> std::result::Result<CommandOutput, IsolateError> {
         let cmd = FfxExecutor::make_ffx_cmd(self, args)?;
-        FfxExecutor::exec_ffx_sync(self, cmd).map_err(Into::into)
+        FfxExecutor::exec_ffx_sync(self, cmd).map_err(IsolateError::ExecuteFfx)
     }
 }
 
