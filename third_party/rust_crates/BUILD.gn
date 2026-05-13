@@ -994,11 +994,11 @@ group("itertools-0.14.0") {
 }
 
 group("itoa") {
-  public_deps = [ ":itoa-v1_0_17" ]
+  public_deps = [ ":itoa-v1_0_18" ]
 }
 
-group("itoa-1.0.17") {
-  public_deps = [ ":itoa-v1_0_17" ]
+group("itoa-1.0.18") {
+  public_deps = [ ":itoa-v1_0_18" ]
 }
 
 group("json-spanned-value") {
@@ -3365,7 +3365,7 @@ rustc_library("askama-v0_15_6") {
 
   deps = []
   deps += [ ":askama_macros-v0_15_6($host_toolchain)" ]
-  deps += [ ":itoa-v1_0_17" ]
+  deps += [ ":itoa-v1_0_18" ]
   deps += [ ":percent-encoding-v2_3_1" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_149" ]
@@ -6730,7 +6730,7 @@ rustc_library("csv-v1_4_0") {
 
   deps = []
   deps += [ ":csv-core-v0_1_12" ]
-  deps += [ ":itoa-v1_0_17" ]
+  deps += [ ":itoa-v1_0_18" ]
   deps += [ ":ryu-v1_0_22" ]
   deps += [ ":serde_core-v1_0_228" ]
 
@@ -10367,7 +10367,7 @@ rustc_library("hyper-v0_14_19") {
   deps += [ ":http-v0_2_4" ]
   deps += [ ":httparse-v1_10_1" ]
   deps += [ ":httpdate-v1_0_3" ]
-  deps += [ ":itoa-v1_0_17" ]
+  deps += [ ":itoa-v1_0_18" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
   deps += [ ":tokio-v1_38_1" ]
   deps += [ ":tower-service-v0_3_3" ]
@@ -11091,18 +11091,18 @@ rustc_library("itoa-v0_4_8") {
   applicable_licenses = [ ":itoa-v0_4_8.license" ]
 }
 
-license("itoa-v1_0_17.license") {
+license("itoa-v1_0_18.license") {
   public_package_name = "itoa"
   license_files = [
-    "//third_party/rust_crates/vendor/itoa-1.0.17/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/itoa-1.0.17/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/itoa-1.0.18/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/itoa-1.0.18/LICENSE-MIT",
   ]
 }
 
-rustc_library("itoa-v1_0_17") {
+rustc_library("itoa-v1_0_18") {
   crate_name = "itoa"
-  source_root = "//third_party/rust_crates/vendor/itoa-1.0.17/src/lib.rs"
-  output_name = "itoa-d29e51cf072536f5"
+  source_root = "//third_party/rust_crates/vendor/itoa-1.0.18/src/lib.rs"
+  output_name = "itoa-b8ddd58e5cf778b7"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -11114,13 +11114,13 @@ rustc_library("itoa-v1_0_17") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d29e51cf072536f5",
-    "-Cextra-filename=-d29e51cf072536f5",
+    "-Cmetadata=b8ddd58e5cf778b7",
+    "-Cextra-filename=-b8ddd58e5cf778b7",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":itoa-v1_0_17.license" ]
+  applicable_licenses = [ ":itoa-v1_0_18.license" ]
 }
 
 rustc_library("js-sys-v0_3_68") {
@@ -18813,7 +18813,7 @@ rustc_library("serde_json-v1_0_149") {
 
   deps = []
   deps += [ ":memchr-v2_8_0" ]
-  deps += [ ":itoa-v1_0_17" ]
+  deps += [ ":itoa-v1_0_18" ]
   deps += [ ":serde_core-v1_0_228" ]
   deps += [ ":zmij-v1_0_21" ]
   if (true) {
@@ -18964,7 +18964,7 @@ rustc_library("serde_yaml-v0_9_14") {
 
   deps = []
   deps += [ ":indexmap-v1_9_2" ]
-  deps += [ ":itoa-v1_0_17" ]
+  deps += [ ":itoa-v1_0_18" ]
   deps += [ ":ryu-v1_0_22" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":unsafe-libyaml-v0_2_4" ]
@@ -21880,7 +21880,7 @@ rustc_library("tuf-v0_3_0-beta14") {
   deps += [ ":futures-util-v0_3_31" ]
   deps += [ ":http-v0_2_4" ]
   deps += [ ":hyper-v0_14_19" ]
-  deps += [ ":itoa-v1_0_17" ]
+  deps += [ ":itoa-v1_0_18" ]
   deps += [ ":log-v0_4_29" ]
   deps += [ ":percent-encoding-v2_3_1" ]
   deps += [ ":serde-v1_0_228" ]
@@ -23038,7 +23038,7 @@ rustc_library("vt100-v0_16_2") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":itoa-v1_0_17" ]
+  deps += [ ":itoa-v1_0_18" ]
   deps += [ ":unicode-width-v0_2_2" ]
   deps += [ ":vte-v0_15_0" ]
 

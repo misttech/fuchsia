@@ -1405,14 +1405,14 @@ alias(
 )
 
 alias(
-    name = "itoa-1.0.17",
-    actual = "//third_party/rust_crates/vendor/itoa-1.0.17:itoa",
+    name = "itoa-1.0.18",
+    actual = "//third_party/rust_crates/vendor/itoa-1.0.18:itoa",
     tags = ["manual"],
 )
 
 alias(
     name = "itoa",
-    actual = "//third_party/rust_crates/vendor/itoa-1.0.17:itoa",
+    actual = "//third_party/rust_crates/vendor/itoa-1.0.18:itoa",
     tags = ["manual"],
 )
 
