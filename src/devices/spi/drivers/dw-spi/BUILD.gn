@@ -1,0 +1,78 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/components.gni")
+import("//build/drivers.gni")
+import("//build/testing/cc_test_executable.gni")
+
+driver_bind_rules("bind_rules") {
+  rules = "meta/dw-spi.bind"
+  bind_output = "dw-spi-bind.bindbc"
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_bindlib",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
+    "//sdk/fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain_bindlib",
+    "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_bindlib",
+    "//src/devices/bind/fuchsia.clock",
+    "//src/devices/bind/fuchsia.devicetree",
+    "//src/devices/bind/fuchsia.gpio",
+    "//src/devices/bind/fuchsia.platform",
+  ]
+}
+
+fuchsia_component_manifest("manifest") {
+  component_name = "dw-spi"
+  manifest = "meta/dw-spi.cml"
+}
+
+fuchsia_rust_driver("dw-spi-driver") {
+  edition = "2024"
+  output_name = "dw-spi"
+  with_unit_tests = true
+
+  sources = [ "src/lib.rs" ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust",
+    "//sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo_rust",
+    "//sdk/fidl/fuchsia.hardware.spiimpl:fuchsia.hardware.spiimpl_rust_next",
+    "//sdk/lib/driver/component/rust",
+    "//sdk/lib/driver/metadata/rust",
+    "//sdk/lib/driver/mmio/rust:mmio",
+    "//sdk/lib/driver/platform-device/rust:pdev",
+    "//sdk/lib/driver/runtime/rust",
+    "//sdk/rust/zx",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl/rust_next/fidl_next",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
+  ]
+}
+
+fuchsia_driver_component("component") {
+  cm_label = ":manifest"
+  deps = [
+    ":bind_rules",
+    ":dw-spi-driver",
+  ]
+  info = "meta/dw-spi-info.json"
+}
+
+fuchsia_driver_package("package") {
+  package_name = "dw-spi"
+  driver_components = [ ":component" ]
+  export_to_bazel = true
+}
+
+fuchsia_unittest_package("dw-spi-test") {
+  package_name = "dw_spi_test"
+  deps = [ ":dw-spi-driver_test" ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":dw-spi-test" ]
+}
