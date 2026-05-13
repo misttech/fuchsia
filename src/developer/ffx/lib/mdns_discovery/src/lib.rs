@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Result, anyhow, bail};
 use async_lock::Mutex;
 use async_trait::async_trait;
 use fidl_fuchsia_developer_ffx as ffx;
@@ -22,6 +21,33 @@ use std::time::Duration;
 use timeout::timeout;
 use tokio::net::UdpSocket;
 use zerocopy::SplitByteSlice;
+
+#[derive(thiserror::Error, Debug)]
+pub enum MdnsDiscoveryError {
+    #[error("Timeout waiting for target")]
+    Timeout,
+
+    #[error("Discovery loop exited early")]
+    DiscoveryLoopExited,
+
+    #[error("Failed to receive mDNS event: {0}")]
+    ReceiveEvent(#[from] async_channel::RecvError),
+
+    #[error("Failed to parse UTF-8 string: {0}")]
+    Utf8Parse(#[from] std::str::Utf8Error),
+
+    #[error("Failed to bind socket to {0}: {1}")]
+    BindSocket(std::net::SocketAddr, #[source] std::io::Error),
+
+    #[error("Failed to join multicast group: {0}")]
+    JoinMulticast(#[source] std::io::Error),
+
+    #[error("Failed to set socket option: {0}")]
+    SetSocketOption(#[source] std::io::Error),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+}
 
 /// Default mDNS port
 pub const MDNS_PORT: u16 = 5353;
@@ -152,7 +178,7 @@ pub async fn discover_target(
     target_name: String,
     listen_duration: Duration,
     mdns_port: u16,
-) -> Result<ffx::TargetInfo> {
+) -> std::result::Result<ffx::TargetInfo, MdnsDiscoveryError> {
     discover_target_by(listen_duration, mdns_port, move |t| {
         t.nodename.as_ref() == Some(&target_name)
     })
@@ -163,7 +189,7 @@ pub async fn discover_target_by<F>(
     listen_duration: Duration,
     mdns_port: u16,
     filter: F,
-) -> Result<ffx::TargetInfo>
+) -> std::result::Result<ffx::TargetInfo, MdnsDiscoveryError>
 where
     F: Fn(&ffx::TargetInfo) -> bool + Send + 'static,
 {
@@ -194,11 +220,12 @@ where
     // Wait on either the discovery or the timeout
     match futures::future::select(loop_task, discover_task).await {
         futures::future::Either::Left((loop_res, _)) => match loop_res {
-            Ok(ok) => ok,
-            Err(e) => Err(anyhow!("Hit error finding target: {}", e)),
+            Ok(Ok(ok)) => Ok(ok),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(MdnsDiscoveryError::Timeout),
         },
         futures::future::Either::Right((_, _)) => {
-            bail!("Discovery loop exited early")
+            return Err(MdnsDiscoveryError::DiscoveryLoopExited);
         }
     }
 }
@@ -206,25 +233,20 @@ where
 async fn loop_for_target<F>(
     receiver: async_channel::Receiver<ffx::MdnsEventType>,
     filter: F,
-) -> Result<ffx::TargetInfo>
+) -> std::result::Result<ffx::TargetInfo, MdnsDiscoveryError>
 where
     F: Fn(&ffx::TargetInfo) -> bool + Send + 'static,
 {
     loop {
-        match receiver.recv().await {
-            Ok(mdns_event) => match mdns_event {
-                ffx::MdnsEventType::TargetFound(target_info) => {
-                    if filter(&target_info) {
-                        return Ok(target_info);
-                    }
+        let mdns_event = receiver.recv().await?;
+        match mdns_event {
+            ffx::MdnsEventType::TargetFound(target_info) => {
+                if filter(&target_info) {
+                    return Ok(target_info);
                 }
-                _ => {
-                    log::warn!("Got an mdns event, but it wasnt a TargetFound so skipping it");
-                }
-            },
-            Err(e) => {
-                log::warn!("Got error receiving items");
-                return Err(anyhow!("Got error receiving mDNS events: {}", e));
+            }
+            _ => {
+                log::warn!("Got an mdns event, but it wasnt a TargetFound so skipping it");
             }
         }
     }
@@ -234,7 +256,7 @@ where
 pub async fn discover_targets(
     listen_duration: Duration,
     mdns_port: u16,
-) -> Result<Vec<ffx::TargetInfo>> {
+) -> std::result::Result<Vec<ffx::TargetInfo>, MdnsDiscoveryError> {
     let (sender, receiver) = async_channel::bounded::<ffx::MdnsEventType>(1);
     let inner = Arc::new(MdnsProtocol { events_out: sender, target_cache: Default::default() });
 
@@ -266,7 +288,9 @@ pub async fn discover_targets(
     Ok(inner.as_ref().target_cache().await)
 }
 
-async fn drain_reciever(receiver: async_channel::Receiver<ffx::MdnsEventType>) -> Result<()> {
+async fn drain_reciever(
+    receiver: async_channel::Receiver<ffx::MdnsEventType>,
+) -> std::result::Result<(), MdnsDiscoveryError> {
     loop {
         match receiver.recv().await {
             Ok(_) => {}
@@ -409,9 +433,7 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
         }
 
         if v4_listen_socket.upgrade().is_none() {
-            match make_listen_socket((MDNS_MCAST_V4, mdns_port).into())
-                .context("make_listen_socket for IPv4")
-            {
+            match make_listen_socket((MDNS_MCAST_V4, mdns_port).into()) {
                 Ok(sock) => {
                     // TODO(awdavies): Networking tests appear to fail when
                     // using IPv6. Only propagates the port binding event for
@@ -442,9 +464,7 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
         }
 
         if v6_listen_socket.upgrade().is_none() && recv_ipv6_task.is_none() {
-            match make_listen_socket((MDNS_MCAST_V6, mdns_port).into())
-                .context("make_listen_socket for IPv6")
-            {
+            match make_listen_socket((MDNS_MCAST_V6, mdns_port).into()) {
                 Ok(sock) => {
                     let sock = Arc::new(sock);
                     v6_listen_socket = Arc::downgrade(&sock);
@@ -709,7 +729,7 @@ fn make_target<B: SplitByteSlice + Copy>(
 /// Read the bytes from the txt record. These are encoded
 /// as <len><string> where len is u8. multiple strings
 /// can be in encoded.
-fn decode_txt_rdata(data: &[u8]) -> Result<Vec<String>> {
+fn decode_txt_rdata(data: &[u8]) -> std::result::Result<Vec<String>, MdnsDiscoveryError> {
     // Each text element is preceded by the length
     let mut ret: Vec<String> = vec![];
     let mut pos = 0;
@@ -951,7 +971,9 @@ fn is_fastboot_response<B: zerocopy::SplitByteSlice + Copy>(
     }
 }
 
-fn make_listen_socket(listen_addr: SocketAddr) -> Result<UdpSocket> {
+fn make_listen_socket(
+    listen_addr: SocketAddr,
+) -> std::result::Result<UdpSocket, MdnsDiscoveryError> {
     let socket: std::net::UdpSocket = match listen_addr {
         SocketAddr::V4(_) => {
             let socket = socket2::Socket::new(
@@ -959,18 +981,23 @@ fn make_listen_socket(listen_addr: SocketAddr) -> Result<UdpSocket> {
                 socket2::Type::DGRAM,
                 Some(socket2::Protocol::UDP),
             )
-            .context("construct datagram socket")?;
-            socket.set_multicast_loop_v4(false).context("set_multicast_loop_v4")?;
-            socket.set_reuse_address(true).context("set_reuse_address")?;
-            socket.set_reuse_port(true).context("set_reuse_port")?;
+            .map_err(MdnsDiscoveryError::Io)?;
+            socket.set_multicast_loop_v4(false).map_err(MdnsDiscoveryError::SetSocketOption)?;
+            socket.set_reuse_address(true).map_err(MdnsDiscoveryError::SetSocketOption)?;
+            socket.set_reuse_port(true).map_err(MdnsDiscoveryError::SetSocketOption)?;
             socket
                 .bind(
                     &SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listen_addr.port()).into(),
                 )
-                .context("bind")?;
+                .map_err(|e| {
+                    MdnsDiscoveryError::BindSocket(
+                        SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listen_addr.port()),
+                        e,
+                    )
+                })?;
             socket
                 .join_multicast_v4(&MDNS_MCAST_V4, &Ipv4Addr::UNSPECIFIED)
-                .context("join_multicast_v4")?;
+                .map_err(MdnsDiscoveryError::JoinMulticast)?;
             socket
         }
         SocketAddr::V6(_) => {
@@ -979,30 +1006,41 @@ fn make_listen_socket(listen_addr: SocketAddr) -> Result<UdpSocket> {
                 socket2::Type::DGRAM,
                 Some(socket2::Protocol::UDP),
             )
-            .context("construct datagram socket")?;
-            socket.set_only_v6(true).context("set_only_v6")?;
-            socket.set_multicast_loop_v6(false).context("set_multicast_loop_v6")?;
-            socket.set_reuse_address(true).context("set_reuse_address")?;
-            socket.set_reuse_port(true).context("set_reuse_port")?;
+            .map_err(MdnsDiscoveryError::Io)?;
+            socket.set_only_v6(true).map_err(MdnsDiscoveryError::SetSocketOption)?;
+            socket.set_multicast_loop_v6(false).map_err(MdnsDiscoveryError::SetSocketOption)?;
+            socket.set_reuse_address(true).map_err(MdnsDiscoveryError::SetSocketOption)?;
+            socket.set_reuse_port(true).map_err(MdnsDiscoveryError::SetSocketOption)?;
             socket
                 .bind(
                     &SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), listen_addr.port()).into(),
                 )
-                .context("bind")?;
+                .map_err(|e| {
+                    MdnsDiscoveryError::BindSocket(
+                        SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), listen_addr.port()),
+                        e,
+                    )
+                })?;
             // For some reason this often fails to bind on Mac, so avoid it and
             // use the interface binding loop to get multicast group joining to
             // work.
             #[cfg(not(target_os = "macos"))]
-            socket.join_multicast_v6(&MDNS_MCAST_V6, 0).context("join_multicast_v6")?;
+            socket
+                .join_multicast_v6(&MDNS_MCAST_V6, 0)
+                .map_err(MdnsDiscoveryError::JoinMulticast)?;
             socket
         }
     }
     .into();
-    socket.set_nonblocking(true)?;
-    Ok(UdpSocket::from_std(socket)?)
+    socket.set_nonblocking(true).map_err(MdnsDiscoveryError::Io)?;
+    Ok(UdpSocket::from_std(socket).map_err(MdnsDiscoveryError::Io)?)
 }
 
-fn make_sender_socket(interface_id: u32, addr: SocketAddr, ttl: u32) -> Result<UdpSocket> {
+fn make_sender_socket(
+    interface_id: u32,
+    addr: SocketAddr,
+    ttl: u32,
+) -> std::result::Result<UdpSocket, MdnsDiscoveryError> {
     let socket: std::net::UdpSocket = match addr {
         SocketAddr::V4(ref saddr) => {
             let socket = socket2::Socket::new(
@@ -1010,11 +1048,11 @@ fn make_sender_socket(interface_id: u32, addr: SocketAddr, ttl: u32) -> Result<U
                 socket2::Type::DGRAM,
                 Some(socket2::Protocol::UDP),
             )
-            .context("construct datagram socket")?;
-            socket.set_ttl(ttl).context("set_ttl")?;
-            socket.set_multicast_if_v4(saddr.ip()).context("set_multicast_if_v4")?;
-            socket.set_multicast_ttl_v4(ttl).context("set_multicast_ttl_v4")?;
-            socket.bind(&addr.into()).context("bind")?;
+            .map_err(MdnsDiscoveryError::Io)?;
+            socket.set_ttl(ttl).map_err(MdnsDiscoveryError::SetSocketOption)?;
+            socket.set_multicast_if_v4(saddr.ip()).map_err(MdnsDiscoveryError::SetSocketOption)?;
+            socket.set_multicast_ttl_v4(ttl).map_err(MdnsDiscoveryError::SetSocketOption)?;
+            socket.bind(&addr.into()).map_err(|e| MdnsDiscoveryError::BindSocket(addr, e))?;
             socket
         }
         SocketAddr::V6(ref _saddr) => {
@@ -1023,18 +1061,20 @@ fn make_sender_socket(interface_id: u32, addr: SocketAddr, ttl: u32) -> Result<U
                 socket2::Type::DGRAM,
                 Some(socket2::Protocol::UDP),
             )
-            .context("construct datagram socket")?;
-            socket.set_only_v6(true).context("set_only_v6")?;
-            socket.set_multicast_if_v6(interface_id).context("set_multicast_if_v6")?;
-            socket.set_unicast_hops_v6(ttl).context("set_unicast_hops_v6")?;
-            socket.set_multicast_hops_v6(ttl).context("set_multicast_hops_v6")?;
-            socket.bind(&addr.into()).context("bind")?;
+            .map_err(MdnsDiscoveryError::Io)?;
+            socket.set_only_v6(true).map_err(MdnsDiscoveryError::SetSocketOption)?;
+            socket
+                .set_multicast_if_v6(interface_id)
+                .map_err(MdnsDiscoveryError::SetSocketOption)?;
+            socket.set_unicast_hops_v6(ttl).map_err(MdnsDiscoveryError::SetSocketOption)?;
+            socket.set_multicast_hops_v6(ttl).map_err(MdnsDiscoveryError::SetSocketOption)?;
+            socket.bind(&addr.into()).map_err(|e| MdnsDiscoveryError::BindSocket(addr, e))?;
             socket
         }
     }
     .into();
-    socket.set_nonblocking(true)?;
-    Ok(UdpSocket::from_std(socket)?)
+    socket.set_nonblocking(true).map_err(MdnsDiscoveryError::Io)?;
+    Ok(UdpSocket::from_std(socket).map_err(MdnsDiscoveryError::Io)?)
 }
 
 #[cfg(test)]
@@ -1080,7 +1120,7 @@ mod tests {
     }
 
     #[test]
-    fn test_make_target_with_serial() -> Result<()> {
+    fn test_make_target_with_serial() -> anyhow::Result<()> {
         let nodename = DomainBuilder::from_str("foo._fuchsia._udp.local").unwrap();
         let mut txt_data: Vec<u8> = vec![];
         let txt_strings = ["foo=bar", "serial=1234990"];
@@ -1124,7 +1164,7 @@ mod tests {
     }
 
     #[test]
-    fn test_make_target_from_txt() -> Result<()> {
+    fn test_make_target_from_txt() -> anyhow::Result<()> {
         let nodename = DomainBuilder::from_str("foo._fuchsia._udp.local").unwrap();
         let mut emu_data: Vec<u8> = vec![];
         let emu_strings = ["host:123.11.22.33", "ssh:54321", "debug:1111"];
