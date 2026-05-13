@@ -162,7 +162,6 @@ fuchsia_driver_component("test-fallback-component") {
     ":test-fallback-bind",
   ]
   info = "meta/test-fallback-component-info.json"
-  is_v1_driver = false
   manifest = "meta/test-fallback-component.cml"
 }
 
