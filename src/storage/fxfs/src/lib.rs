@@ -34,7 +34,7 @@ pub mod range;
 pub mod round;
 pub mod serialized_types;
 mod stable_hash;
-#[cfg(any(test, feature = "benchmark"))]
+#[cfg(any(test, feature = "benchmark", fuzz))]
 pub mod testing;
 pub mod virtual_device;
 pub mod zerocopy_serialization;

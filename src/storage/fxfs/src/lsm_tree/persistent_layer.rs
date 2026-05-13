@@ -959,21 +959,16 @@ mod tests {
     use crate::filesystem::MAX_BLOCK_SIZE;
     use crate::lsm_tree::LayerIterator;
     use crate::lsm_tree::persistent_layer::MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER;
-    use crate::lsm_tree::types::{
-        DefaultOrdUpperBound, Existence, FuzzyHash, Item, ItemRef, Layer, LayerKey, LayerWriter,
-        MergeType, SortByU64,
-    };
+    use crate::lsm_tree::types::{Existence, Item, ItemRef, Layer, LayerWriter, OrdUpperBound};
     use crate::object_handle::WriteBytes;
+    use crate::object_store::object_record::ObjectKey;
     use crate::round::round_up;
-    use crate::serialized_types::{
-        LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
-    };
+    use crate::serialized_types::{LATEST_VERSION, Version};
     use crate::testing::fake_object::{FakeObject, FakeObjectHandle};
     use crate::testing::writer::Writer;
-    use fprint::TypeFingerprint;
-    use fxfs_macros::FuzzyHash;
+
     use std::fmt::Debug;
-    use std::hash::Hash;
+
     use std::ops::{Bound, Range};
     use std::sync::Arc;
 
@@ -1267,50 +1262,42 @@ mod tests {
         }
     }
 
-    #[derive(
-        Clone,
-        Eq,
-        Hash,
-        FuzzyHash,
-        PartialEq,
-        Debug,
-        serde::Serialize,
-        serde::Deserialize,
-        TypeFingerprint,
-        Versioned,
-    )]
-    struct TestKey(Range<u64>);
-    versioned_type! { 1.. => TestKey }
-    impl SortByU64 for TestKey {
-        fn get_leading_u64(&self) -> u64 {
-            self.0.start
-        }
-    }
-    impl LayerKey for TestKey {
-        fn merge_type(&self) -> crate::lsm_tree::types::MergeType {
-            MergeType::OptimizedMerge
-        }
+    use crate::lsm_tree::testing::TestKey;
 
-        fn next_key(&self) -> Option<Self> {
-            Some(TestKey(self.0.end..self.0.end + 1))
+    /// Generates extent records for a given object_id (of size 1).
+    /// This produces a series of records with the same leading_u64.
+    /// Returns the generated items and the next available object_id.
+    fn generate_extents(
+        object_id: u64,
+        base_offset: u64,
+        count: u64,
+    ) -> (Vec<Item<ObjectKey, u64>>, u64) {
+        let mut items = Vec::new();
+        for i in 0..count {
+            items.push(Item::new(
+                ObjectKey::extent(object_id, 1, base_offset + i..base_offset + i + 1),
+                object_id,
+            ));
         }
+        (items, object_id + 1)
     }
-    impl Ord for TestKey {
-        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-            self.0.start.cmp(&other.0.start).then(self.0.end.cmp(&other.0.end))
+
+    /// Generates objects object_ids over a range.
+    /// This produced a series of records with unique leading_u64.
+    /// Returns the generated items and the next available value for sequencing.
+    fn generate_objects(object_id_range: Range<u64>) -> (Vec<Item<ObjectKey, u64>>, u64) {
+        let mut items = Vec::new();
+        let end = object_id_range.end;
+        for object_id in object_id_range {
+            items.push(Item::new(ObjectKey::object(object_id), object_id));
         }
+        (items, end)
     }
-    impl PartialOrd for TestKey {
-        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-            Some(self.cmp(other))
-        }
-    }
-    impl DefaultOrdUpperBound for TestKey {}
 
     // Create a large spread of data across several blocks to ensure that no part of the range is
     // lost by the partial search using the layer seek table.
     #[fuchsia::test]
-    async fn test_block_seek_duplicate_keys() {
+    async fn test_block_seek_duplicate_leading_u64() {
         // At the upper end of the supported size.
         const BLOCK_SIZE: u64 = 512;
         const ITEMS_PER_PHASE: u64 = 50;
@@ -1320,7 +1307,107 @@ mod tests {
         let handle =
             FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
         {
-            let mut writer = PersistentLayerWriter::<_, TestKey, u64>::new(
+            let mut items = Vec::new();
+            // Make all values take up maximum space for varint encoding.
+            let mut object_id = u32::MAX as u64 + 1;
+
+            // First fill the front with duplicate object IDs, then look at the start,
+            // middle and end of the range.
+            {
+                let base_extent_offset = 0;
+                let (mut generated, next_object_id) =
+                    generate_extents(object_id, base_extent_offset, ITEMS_PER_PHASE * 3);
+                items.append(&mut generated);
+                let count = ITEMS_PER_PHASE * 3;
+                to_find.push(ObjectKey::extent(
+                    object_id,
+                    1,
+                    base_extent_offset..base_extent_offset + 1,
+                ));
+                to_find.push(ObjectKey::extent(
+                    object_id,
+                    1,
+                    base_extent_offset + (count / 2)..base_extent_offset + (count / 2) + 1,
+                ));
+                to_find.push(ObjectKey::extent(
+                    object_id,
+                    1,
+                    base_extent_offset + (count - 1)..base_extent_offset + count,
+                ));
+                object_id = next_object_id;
+            }
+
+            // Add some filler of all different leading u64.
+            {
+                let (mut generated, next_object_id) =
+                    generate_objects(object_id..object_id + ITEMS_PER_PHASE * 3);
+                items.append(&mut generated);
+                object_id = next_object_id;
+            }
+
+            // Fill the middle with duplicate object IDs, then look at the start,
+            // middle and end of the range.
+            {
+                let base_extent_offset = 1000;
+                let (mut generated, next_object_id) =
+                    generate_extents(object_id, base_extent_offset, ITEMS_PER_PHASE * 3);
+                items.append(&mut generated);
+                let count = ITEMS_PER_PHASE * 3;
+                to_find.push(ObjectKey::extent(
+                    object_id,
+                    1,
+                    base_extent_offset..base_extent_offset + 1,
+                ));
+                to_find.push(ObjectKey::extent(
+                    object_id,
+                    1,
+                    base_extent_offset + (count / 2)..base_extent_offset + (count / 2) + 1,
+                ));
+                to_find.push(ObjectKey::extent(
+                    object_id,
+                    1,
+                    base_extent_offset + (count - 1)..base_extent_offset + count,
+                ));
+                object_id = next_object_id;
+            }
+
+            // Add some filler of all different leading u64.
+            {
+                let (mut generated, next_object_id) =
+                    generate_objects(object_id..object_id + ITEMS_PER_PHASE * 3);
+                items.append(&mut generated);
+                object_id = next_object_id;
+            }
+
+            // Fill the end with duplicate object IDs, then look at the start,
+            // middle and end of the range.
+            {
+                let base_extent_offset = 2000;
+                let (mut generated, _) =
+                    generate_extents(object_id, base_extent_offset, ITEMS_PER_PHASE * 3);
+                items.append(&mut generated);
+                let count = ITEMS_PER_PHASE * 3;
+                to_find.push(ObjectKey::extent(
+                    object_id,
+                    1,
+                    base_extent_offset..base_extent_offset + 1,
+                ));
+                to_find.push(ObjectKey::extent(
+                    object_id,
+                    1,
+                    base_extent_offset + (count / 2)..base_extent_offset + (count / 2) + 1,
+                ));
+                to_find.push(ObjectKey::extent(
+                    object_id,
+                    1,
+                    base_extent_offset + (count - 1)..base_extent_offset + count,
+                ));
+            }
+
+            // Sort items by cmp_upper_bound!
+            items.sort_by(|a, b| a.key.cmp_upper_bound(&b.key));
+
+            let mut writer = PersistentLayerWriter::<_, ObjectKey, u64>::new(
                 Writer::new(&handle).await,
                 3 * BLOCK_SIZE as usize,
                 BLOCK_SIZE,
@@ -1328,101 +1415,16 @@ mod tests {
             .await
             .expect("writer new");
 
-            // Make all values take up maximum space for varint encoding.
-            let mut current_value = u32::MAX as u64 + 1;
-
-            // First fill the front with a duplicate leading u64 amount, then look at the start,
-            // middle and end of the range.
-            {
-                let items = ITEMS_PER_PHASE * 3;
-                for i in 0..items {
-                    writer
-                        .write(
-                            Item::new(TestKey(current_value..current_value + i), current_value)
-                                .as_item_ref(),
-                        )
-                        .await
-                        .expect("write failed");
-                }
-                to_find.push(TestKey(current_value..current_value));
-                to_find.push(TestKey(current_value..(current_value + (items / 2))));
-                to_find.push(TestKey(current_value..current_value + (items - 1)));
-                current_value += 1;
-            }
-
-            // Add some filler of all different leading u64.
-            {
-                let items = ITEMS_PER_PHASE * 3;
-                for _ in 0..items {
-                    writer
-                        .write(
-                            Item::new(TestKey(current_value..current_value), current_value)
-                                .as_item_ref(),
-                        )
-                        .await
-                        .expect("write failed");
-                    current_value += 1;
-                }
-            }
-
-            // Fill the middle with a duplicate leading u64 amount, then look at the start,
-            // middle and end of the range.
-            {
-                let items = ITEMS_PER_PHASE * 3;
-                for i in 0..items {
-                    writer
-                        .write(
-                            Item::new(TestKey(current_value..current_value + i), current_value)
-                                .as_item_ref(),
-                        )
-                        .await
-                        .expect("write failed");
-                }
-                to_find.push(TestKey(current_value..current_value));
-                to_find.push(TestKey(current_value..(current_value + (items / 2))));
-                to_find.push(TestKey(current_value..current_value + (items - 1)));
-                current_value += 1;
-            }
-
-            // Add some filler of all different leading u64.
-            {
-                let items = ITEMS_PER_PHASE * 3;
-                for _ in 0..items {
-                    writer
-                        .write(
-                            Item::new(TestKey(current_value..current_value), current_value)
-                                .as_item_ref(),
-                        )
-                        .await
-                        .expect("write failed");
-                    current_value += 1;
-                }
-            }
-
-            // Fill the end with a duplicate leading u64 amount, then look at the start,
-            // middle and end of the range.
-            {
-                let items = ITEMS_PER_PHASE * 3;
-                for i in 0..items {
-                    writer
-                        .write(
-                            Item::new(TestKey(current_value..current_value + i), current_value)
-                                .as_item_ref(),
-                        )
-                        .await
-                        .expect("write failed");
-                }
-                to_find.push(TestKey(current_value..current_value));
-                to_find.push(TestKey(current_value..(current_value + (items / 2))));
-                to_find.push(TestKey(current_value..current_value + (items - 1)));
+            for item in items {
+                writer.write(item.as_item_ref()).await.expect("write failed");
             }
 
             writer.flush().await.expect("flush failed");
         }
 
-        let layer = PersistentLayer::<TestKey, u64>::open(handle).await.expect("new failed");
+        let layer = PersistentLayer::<ObjectKey, u64>::open(handle).await.expect("new failed");
         for target in to_find {
-            let iterator: Box<dyn LayerIterator<TestKey, u64>> =
+            let iterator: Box<dyn LayerIterator<ObjectKey, u64>> =
                 layer.seek(Bound::Included(&target)).await.expect("failed to seek");
             let ItemRef { key, .. } = iterator.get().expect("missing item");
             assert_eq!(&target, key);

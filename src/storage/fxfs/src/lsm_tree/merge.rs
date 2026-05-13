@@ -808,56 +808,10 @@ mod tests {
     use std::ops::{Bound, Range};
     use std::sync::Arc;
 
-    #[derive(
-        Clone,
-        Eq,
-        Hash,
-        FuzzyHash,
-        PartialEq,
-        Debug,
-        serde::Serialize,
-        serde::Deserialize,
-        TypeFingerprint,
-        Versioned,
-    )]
-    struct TestKey(Range<u64>);
+    use crate::lsm_tree::testing::TestKey;
 
     impl Value for i32 {
         const DELETED_MARKER: Self = 0;
-    }
-
-    versioned_type! { 1.. => TestKey }
-
-    impl SortByU64 for TestKey {
-        fn get_leading_u64(&self) -> u64 {
-            self.0.start
-        }
-    }
-
-    impl LayerKey for TestKey {
-        fn merge_type(&self) -> MergeType {
-            MergeType::OptimizedMerge
-        }
-
-        fn next_key(&self) -> Option<Self> {
-            Some(TestKey(self.0.end..self.0.end + 1))
-        }
-
-        fn search_key(&self) -> Self {
-            TestKey(0..self.0.start + 1)
-        }
-    }
-
-    impl OrdUpperBound for TestKey {
-        fn cmp_upper_bound(&self, other: &TestKey) -> std::cmp::Ordering {
-            self.0.end.cmp(&other.0.end)
-        }
-    }
-
-    impl OrdLowerBound for TestKey {
-        fn cmp_lower_bound(&self, other: &Self) -> std::cmp::Ordering {
-            self.0.start.cmp(&other.0.start)
-        }
     }
 
     fn layer_ref_iter<K: Key, V: Value>(
@@ -1772,9 +1726,10 @@ mod tests {
         let mut merger = Merger::new(
             layer_ref_iter(&skip_lists),
             |left, right| {
-                let result = if left.key().0.end <= right.key().0.start {
+                if left.key().0.end <= right.key().0.start {
                     MergeResult::EmitLeft
                 } else {
+                    // Hardcoded rule for specific test data to test containment split.
                     if left.key() == &TestKey(0..30) && right.key() == &TestKey(10..20) {
                         MergeResult::Other {
                             emit: Some(Item::new(TestKey(0..10), 1).boxed()),
@@ -1790,8 +1745,7 @@ mod tests {
                             ),
                         }
                     }
-                };
-                result
+                }
             },
             counters(),
         );

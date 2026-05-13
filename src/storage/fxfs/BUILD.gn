@@ -90,6 +90,7 @@ fxfs_sources = [
   "src/lsm_tree/merge.rs",
   "src/lsm_tree/persistent_layer.rs",
   "src/lsm_tree/skip_list_layer.rs",
+  "src/lsm_tree/testing.rs",
   "src/lsm_tree/types.rs",
   "src/metrics.rs",
   "src/object_handle.rs",

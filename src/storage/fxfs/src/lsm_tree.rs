@@ -9,6 +9,9 @@ pub mod persistent_layer;
 pub mod skip_list_layer;
 pub mod types;
 
+#[cfg(any(test, fuzz))]
+pub mod testing;
+
 use crate::drop_event::DropEvent;
 use crate::log::*;
 use crate::metrics::DurationMeasureScope;
@@ -570,61 +573,24 @@ mod tests {
     };
     use crate::lsm_tree::merge::{MergeLayerIterator, MergeResult};
     use crate::lsm_tree::types::{
-        BoxedLayerIterator, Existence, FuzzyHash, Item, ItemRef, Key, Layer, LayerIterator,
-        LayerKey, OrdLowerBound, OrdUpperBound, SortByU64, Value,
+        BoxedLayerIterator, Existence, Item, ItemRef, Key, Layer, LayerIterator, Value,
     };
     use crate::lsm_tree::{Query, layers_from_handles};
     use crate::object_handle::ObjectHandle;
-    use crate::serialized_types::{
-        LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
-    };
+    use crate::serialized_types::{LATEST_VERSION, Version};
     use crate::testing::fake_object::{FakeObject, FakeObjectHandle};
     use crate::testing::writer::Writer;
     use anyhow::{Error, anyhow};
     use async_trait::async_trait;
-    use fprint::TypeFingerprint;
+
     use fuchsia_sync::Mutex;
-    use fxfs_macros::FuzzyHash;
+
     use rand::rng;
     use rand::seq::SliceRandom;
-    use std::hash::Hash;
+
     use std::sync::Arc;
 
-    #[derive(
-        Clone,
-        Eq,
-        PartialEq,
-        Debug,
-        Hash,
-        FuzzyHash,
-        serde::Serialize,
-        serde::Deserialize,
-        TypeFingerprint,
-        Versioned,
-    )]
-    struct TestKey(std::ops::Range<u64>);
-
-    versioned_type! { 1.. => TestKey }
-
-    impl SortByU64 for TestKey {
-        fn get_leading_u64(&self) -> u64 {
-            self.0.start
-        }
-    }
-
-    impl LayerKey for TestKey {}
-
-    impl OrdUpperBound for TestKey {
-        fn cmp_upper_bound(&self, other: &TestKey) -> std::cmp::Ordering {
-            self.0.end.cmp(&other.0.end)
-        }
-    }
-
-    impl OrdLowerBound for TestKey {
-        fn cmp_lower_bound(&self, other: &Self) -> std::cmp::Ordering {
-            self.0.start.cmp(&other.0.start)
-        }
-    }
+    use super::testing::TestKey;
 
     fn emit_left_merge_fn(
         _left: &MergeLayerIterator<'_, TestKey, u64>,
@@ -1138,57 +1104,17 @@ mod tests {
 
 #[cfg(fuzz)]
 mod fuzz {
-    use crate::lsm_tree::types::{
-        FuzzyHash, Item, LayerKey, OrdLowerBound, OrdUpperBound, SortByU64, Value,
-    };
+    use crate::lsm_tree::types::{Item, Value};
     use crate::serialized_types::{
         LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
     };
     use arbitrary::Arbitrary;
-    use fprint::TypeFingerprint;
     use fuzz::fuzz;
-    use fxfs_macros::FuzzyHash;
-    use std::hash::Hash;
 
-    #[derive(
-        Arbitrary,
-        Clone,
-        Eq,
-        Hash,
-        FuzzyHash,
-        PartialEq,
-        Debug,
-        serde::Serialize,
-        serde::Deserialize,
-        TypeFingerprint,
-        Versioned,
-    )]
-    struct TestKey(std::ops::Range<u64>);
-
-    versioned_type! { 1.. => TestKey }
+    use super::testing::TestKey;
 
     impl Versioned for u64 {}
     versioned_type! { 1.. => u64 }
-
-    impl LayerKey for TestKey {}
-
-    impl SortByU64 for TestKey {
-        fn get_leading_u64(&self) -> u64 {
-            self.0.start
-        }
-    }
-
-    impl OrdUpperBound for TestKey {
-        fn cmp_upper_bound(&self, other: &TestKey) -> std::cmp::Ordering {
-            self.0.end.cmp(&other.0.end)
-        }
-    }
-
-    impl OrdLowerBound for TestKey {
-        fn cmp_lower_bound(&self, other: &Self) -> std::cmp::Ordering {
-            self.0.start.cmp(&other.0.start)
-        }
-    }
 
     impl Value for u64 {
         const DELETED_MARKER: Self = 0;
