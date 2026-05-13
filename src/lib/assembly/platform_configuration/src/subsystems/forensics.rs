@@ -239,8 +239,6 @@ enum CrashReportUploadPolicy {
 /// The config that the Feedback component will actually consume. This is different than
 /// FeedbackConfig because product owners don't need fine-grained control over some of the
 /// fields.
-///
-/// TODO(https://fxbug.dev/457485424): merge other configs into this.
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 struct FeedbackInternalConfig {
