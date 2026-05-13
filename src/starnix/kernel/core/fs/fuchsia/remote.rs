@@ -2139,15 +2139,21 @@ impl FsNodeOps for RemoteSymlink {
 
 pub struct RemoteCounter {
     counter: Counter,
+    koid: zx::Koid,
 }
 
 impl RemoteCounter {
     fn new(counter: Counter) -> Self {
-        Self { counter }
+        let koid = counter.koid().unwrap();
+        Self { counter, koid }
     }
 
     pub fn duplicate_handle(&self) -> Result<Counter, Errno> {
         self.counter.duplicate_handle(zx::Rights::SAME_RIGHTS).map_err(impossible_error)
+    }
+
+    pub fn koid(&self) -> zx::Koid {
+        self.koid
     }
 }
 
@@ -2192,7 +2198,7 @@ impl FileOps for RemoteCounter {
         {
             let mut sync_points: Vec<SyncPoint> = vec![];
             let counter = self.duplicate_handle()?;
-            sync_points.push(SyncPoint::new(Timeline::Hwc, counter.into()));
+            sync_points.push(SyncPoint::with_koid(Timeline::Hwc, counter.into(), self.koid));
             let sync_file_name: &[u8; 32] = b"remote counter\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
             let sync_file = SyncFile::new(*sync_file_name, SyncFence { sync_points });
             return sync_file.ioctl(locked, file, current_task, request, arg);

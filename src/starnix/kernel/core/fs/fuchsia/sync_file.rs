@@ -68,6 +68,10 @@ pub struct SyncPoint {
 impl SyncPoint {
     pub fn new(timeline: Timeline, counter: zx::Counter) -> SyncPoint {
         let koid = counter.koid().unwrap();
+        Self::with_koid(timeline, counter, koid)
+    }
+
+    pub fn with_koid(timeline: Timeline, counter: zx::Counter, koid: zx::Koid) -> SyncPoint {
         SyncPoint { timeline, counter: Arc::new(counter), koid }
     }
 }
@@ -205,7 +209,7 @@ impl FileOps for SyncFile {
                     }
                 } else if let Some(file2) = file2.downcast_file::<RemoteCounter>() {
                     let counter = file2.duplicate_handle()?;
-                    let sp = SyncPoint::new(Timeline::Hwc, counter.into());
+                    let sp = SyncPoint::with_koid(Timeline::Hwc, counter.into(), file2.koid());
                     if set.insert(sp.koid) {
                         fence.sync_points.push(sp);
                     }
