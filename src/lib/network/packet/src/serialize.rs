@@ -2274,7 +2274,7 @@ impl<C: SerializationContext, I: PartialSerializer<C>, O: PartialPacketBuilder<C
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
         let header_constraints = self.outer.constraints();
-        let Some(constraints) = constraints.try_encapsulate(&header_constraints) else {
+        let Some(constraints) = header_constraints.try_encapsulate(&constraints) else {
             return Err(SerializeError::SizeLimitExceeded);
         };
 
@@ -3303,6 +3303,30 @@ mod tests {
             TruncatingSerializer::new(body.clone(), TruncateDirection::NoTruncating)
                 .into_verifying(false),
             SerializeError::SizeLimitExceeded,
+        );
+    }
+
+    // Regression test for a bug in the directionality of constraints
+    // encapsulation in nested partial serialization: an outer packet should be
+    // able to encapsulate an inner packet whose constraints it would violate if
+    // the encapsulation were reversed.
+    #[test]
+    fn nested_partial_serialize_constraints() {
+        const BODY: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        const INNER_PACKET_MAX_BODY: usize = 10;
+
+        let mut buf = vec![0; 100];
+
+        assert_eq!(
+            BODY.into_serializer()
+                .wrap_in(DummyPacketBuilder::new(0, 0, 0, INNER_PACKET_MAX_BODY))
+                .wrap_in(DummyPacketBuilder::new(2 * INNER_PACKET_MAX_BODY, 0, 0, usize::MAX))
+                .partial_serialize(
+                    &mut NoOpSerializationContext,
+                    PacketConstraints::UNCONSTRAINED,
+                    &mut buf
+                ),
+            Ok(PartialSerializeResult { bytes_written: 20, total_size: 30 })
         );
     }
 
