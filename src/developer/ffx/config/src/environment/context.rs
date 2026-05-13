@@ -805,6 +805,14 @@ mod test {
         runtime_args.insert("connectivity".into(), serde_json::Value::Object(connectivity));
         let ctx = EnvironmentContext::no_context(ExecutableKind::Test, runtime_args, None, true);
         assert!(ctx.get_direct_connection_mode());
+
+        // False if connectivity.direct=false
+        let mut connectivity = ConfigMap::new();
+        connectivity.insert("direct".into(), false.into());
+        let mut runtime_args = ConfigMap::new();
+        runtime_args.insert("connectivity".into(), serde_json::Value::Object(connectivity));
+        let ctx = EnvironmentContext::no_context(ExecutableKind::Test, runtime_args, None, true);
+        assert!(!ctx.get_direct_connection_mode());
     }
 
     #[fuchsia::test]

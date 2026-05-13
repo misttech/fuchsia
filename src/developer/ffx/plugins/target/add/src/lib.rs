@@ -129,8 +129,9 @@ pub async fn add_impl(
 mod test {
     use super::*;
     use ffx_writer::{Format, TestBuffers};
+    use fidl_fuchsia_developer_ffx as ffx;
+    use fidl_fuchsia_net as net;
     use target_holders::fake_proxy;
-    use {fidl_fuchsia_developer_ffx as ffx, fidl_fuchsia_net as net};
 
     fn setup_fake_target_collection<T: 'static + Fn(ffx::TargetAddrInfo) + Send>(
         test: T,
@@ -272,7 +273,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_machine_output() {
-        let env = ffx_config::test_init().expect("test_init");
+        let env = ffx_config::test_init_with_daemon().expect("test_init_with_daemon");
         let server = setup_fake_target_collection(|addr| {
             assert_eq!(
                 addr,
@@ -302,7 +303,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_machine_output_err() {
-        let env = ffx_config::test_init().expect("test_init");
+        let env = ffx_config::test_init_with_daemon().expect("test_init_with_daemon");
         let server = setup_fake_target_collection(|addr| {
             assert_eq!(
                 addr,

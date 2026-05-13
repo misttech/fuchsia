@@ -20,6 +20,10 @@ use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use tempfile::TempDir;
 
+use discovery;
+use ffx_target::{Resolution, TargetInfoQuery};
+use target_behavior::{ConnectionBehavior, target_interface};
+
 /// An isolated environment for testing ffx against a running emulator.
 pub struct IsolatedEmulator {
     emu_name: String,
@@ -211,10 +215,44 @@ impl IsolatedEmulator {
         self.ffx_isolate.env_context()
     }
 
+    /// Get the name of the emulator instance.
+    pub fn emu_name(&self) -> &str {
+        &self.emu_name
+    }
+
     /// Acquire a Fuchsia Host Objects (FHO) environment for use with this
     /// isolated instance.
     pub fn fho_env(&self) -> fho::FhoEnvironment {
         fho::FhoEnvironment::new_with_args(self.env_context(), &self.make_args(&[])[..])
+    }
+
+    /// Sets up a fake direct connector for the emulator to avoid ambiguity in discovery.
+    pub async fn setup_fake_direct_connector(
+        &self,
+        fho_env: &fho::FhoEnvironment,
+    ) -> anyhow::Result<()> {
+        let query = TargetInfoQuery::NodenameOrSerial(self.emu_name().to_string());
+        let targets =
+            ffx_target::list_targets(fho_env.environment_context(), query, false, false, false)
+                .await?;
+        let target_info = targets
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("No target found for emulator {}", self.emu_name()))?;
+
+        let th = discovery::TargetHandle {
+            node_name: target_info.nodename.clone(),
+            state: discovery::TargetState::Product {
+                addrs: target_info.addresses.clone().into_iter().map(|a| a.into()).collect(),
+                serial: target_info.serial_number.clone(),
+            },
+            manual: false,
+        };
+
+        let resolution = Resolution::from_target_handle(th)?;
+        let behavior = ConnectionBehavior::fake_direct_connector(resolution);
+
+        target_interface(&fho_env).set_behavior_for_test(behavior);
+        Ok(())
     }
 
     fn make_args<'a>(&'a self, args: &[&'a str]) -> Vec<&str> {

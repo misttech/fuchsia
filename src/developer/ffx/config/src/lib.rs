@@ -36,7 +36,9 @@ pub use api::ConfigError;
 pub use api::query::{ConfigQuery, ConfigQueryBuilder, SelectMode};
 pub use config_macros::FfxConfigBacked;
 
-pub use environment::{Environment, EnvironmentContext, TestEnv, test_env, test_init};
+pub use environment::{
+    Environment, EnvironmentContext, TestEnv, test_env, test_init, test_init_with_daemon,
+};
 pub use paths::get_state_base as get_state_base_path;
 pub use sdk::{self, Sdk, SdkRoot};
 pub use storage::{AssertNoEnv, AssertNoEnvError, ConfigMap};

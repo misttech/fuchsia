@@ -343,7 +343,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_machine_output_is_valid_json() {
-        let env = ffx_config::test_init().unwrap();
+        let env = ffx_config::test_init_with_daemon().unwrap();
         // Setup a tool that will succeed in daemon mode (the easiest to mock for this)
         let cmd = RebootCommand { bootloader: false, recovery: false };
         let target_proxy = setup_fake_target_server(cmd);

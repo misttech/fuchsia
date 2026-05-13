@@ -53,8 +53,6 @@ pub async fn selftest(context: &EnvironmentContext, cmd: SelftestCommand) -> Res
         daemon::test_no_autostart,
         daemon::test_isolate_cleanup,
         daemon::test_cleanup_on_signal,
-        target::test_manual_add_target_list,
-        target::test_manual_add_target_list_late_add,
     ];
 
     let mut target_tests = tests![

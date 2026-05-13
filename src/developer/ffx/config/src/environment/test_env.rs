@@ -125,6 +125,12 @@ pub fn test_env() -> TestEnvBuilder {
     TestEnvBuilder { ..Default::default() }
 }
 
+/// Creates a TestEnvBuilder that inherits environment variables from the real
+/// test environment.
+fn test_builder_with_envs() -> TestEnvBuilder {
+    TestEnvBuilder { env_vars: HashMap::from_iter(std::env::vars()), ..Default::default() }
+}
+
 impl TestEnvBuilder {
     /// Switches the final built TestEnv to be backed by
     /// `EnvironmentKind::in_tree`.
@@ -185,6 +191,17 @@ pub fn test_init() -> Result<TestEnv> {
     // TODO(https://fxbug.dev/411199300): Use `test_env()` when we don't need to
     // implicitly inherit environment variables from the real test environment
     // environment anymore.
-    (TestEnvBuilder { env_vars: HashMap::from_iter(std::env::vars()), ..Default::default() })
+    test_builder_with_envs().build()
+}
+
+/// Creates a `TestEnv` with the following defaults:
+///  - Backed by `EnvironmentKind::Isolated`,
+///  - inherits environment variables from the real test environment, and
+///  - sets "connectivity.direct" and "connectivity.enable_network" to false to
+///    ensure test isolation and avoid interference in unit tests.
+pub fn test_init_with_daemon() -> Result<TestEnv> {
+    test_builder_with_envs()
+        .runtime_config("connectivity.direct", false)
+        .runtime_config("connectivity.enable_network", false)
         .build()
 }

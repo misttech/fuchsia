@@ -22,8 +22,18 @@ const LOCALHOST_UNSPECIFIED_PORT: SocketAddr = std_socket_addr!("127.0.0.1:0");
 #[fuchsia::test(logging = true)]
 async fn ffx_target_net_test() {
     info!("starting emulator...");
-    let emu = IsolatedEmulator::start("ffx-target-net-test").await.unwrap();
+
+    // IsolatedEmulator provides isolation by using unique paths for its environment
+    // (data dir, config, etc.), so we don't need to include the PID or a counter
+    // in the name to prevent collisions between parallel test runs.
+    let name = "ffx-target-net-test";
+    let emu = IsolatedEmulator::start(name).await.unwrap();
     let fho_env = emu.fho_env();
+
+    // Manually resolve the target address for the emulator we just started. This prevents
+    // falling back to default discovery, which could be ambiguous if other emulators are running.
+    emu.setup_fake_direct_connector(&fho_env).await.unwrap();
+
     let rcs = RemoteControlProxyHolder::try_from_env(&fho_env).await.expect("connect to rcs");
 
     let socket_provider =
