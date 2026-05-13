@@ -40,6 +40,7 @@ if (is_host) {
       "constants.go",
       "genrule.go",
       "select.go",
+      "tags.go",
       "transformers.go",
     ]
     deps = [ "//third_party/golibs:go.starlark.net/syntax" ]
@@ -52,6 +53,7 @@ if (is_host) {
       "constants_test.go",
       "genrule_test.go",
       "select_test.go",
+      "tags_test.go",
       "transformers_test.go",
     ]
     embed = [ ":bazel2gn_lib" ]

@@ -370,6 +370,11 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 		return genruleCmdToGN(expr.Y)
 	}
 
+	// Intercept tags attribute to sync assert_no_deps.
+	if attrName == "tags" {
+		return tagsToGN(expr.Y)
+	}
+
 	op, ok := attrGNAssignmentOps[attrName]
 	if !ok {
 		op = "="
