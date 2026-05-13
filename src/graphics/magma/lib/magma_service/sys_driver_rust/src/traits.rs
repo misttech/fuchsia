@@ -4,13 +4,14 @@
 
 use crate::magma_system_connection::MagmaStatus;
 use crate::magma_system_context::{MagmaExecCommandBuffer, MagmaExecResource};
+use std::sync::Arc;
 use zx;
 
 // This struct represents all the information about the driver that the library needs to interact
 // with. The implementation of this struct is driver-specific.
 pub trait Driver: Send + Sync {
     fn configure(&self, flags: u32);
-    fn import_buffer(&self, vmo: zx::Vmo, client_id: u64) -> Box<dyn Buffer>;
+    fn import_buffer(&self, vmo: zx::Vmo, client_id: u64) -> Result<Box<dyn Buffer>, MagmaStatus>;
     fn import_semaphore(
         &self,
         handle: zx::NullableHandle,
@@ -46,16 +47,21 @@ pub trait Device: Send + Sync {
     // when a power change is completed.
     fn set_power_state(&self, power_state: i64, callback: Box<dyn FnOnce(i32) + Send>);
     fn dump_status(&self, dump_flags: u32);
-    fn open(&self, client_id: u64, client_type: MagmaClientType) -> Option<Box<dyn Connection>>;
+    fn open(
+        &self,
+        client_id: u64,
+        client_type: MagmaClientType,
+        notification_handler: Arc<dyn NotificationHandler>,
+    ) -> Option<Box<dyn Connection>>;
 }
 
-pub trait NotificationHandler {
+pub trait NotificationHandler: Send + Sync {
     fn notification_channel_send(&self, data: &[u8]);
     fn context_killed(&self);
 }
 
 // This is a single connection from a client.
-pub trait Connection: Send + Sync {
+pub trait Connection {
     fn create_context_2(&self, priority: u64) -> Result<Box<dyn Context>, MagmaStatus>;
     fn map_buffer(
         &self,
@@ -95,7 +101,7 @@ pub trait Connection: Send + Sync {
 }
 
 // This represents a single hardware context that may execute commands.
-pub trait Context: Send + Sync {
+pub trait Context {
     fn execute_command_buffers(
         &self,
         command_buffers: Vec<MagmaExecCommandBuffer>,
@@ -107,11 +113,11 @@ pub trait Context: Send + Sync {
 }
 
 pub trait Buffer: Send + Sync {
-    fn get_raw_ptr(&self) -> *mut ();
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 pub trait Semaphore: Send + Sync {
-    fn get_raw_ptr(&self) -> *mut ();
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 pub trait LogError {

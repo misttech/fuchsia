@@ -55,13 +55,9 @@ impl MagmaCombinedDeviceServer {
                     notification_channel,
                     ..
                 } => {
-                    let connection = self
-                        .system_device
-                        .open(client_id, client_type)
-                        .context("Failed to create connection")?;
                     self.system_device.clone().start_connection_thread(
                         client_id,
-                        connection,
+                        client_type,
                         primary_channel,
                         notification_channel,
                     );

@@ -393,7 +393,7 @@ impl CloseOnError for Result<(), MagmaStatus> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::magma_system_connection::SemaphoreId;
+    use crate::magma_system_connection::{MagmaNotificationHandler, SemaphoreId};
     use crate::traits::NotificationHandler;
     use std::sync::Arc;
 
@@ -850,28 +850,32 @@ mod tests {
             0,
         ));
 
-        let endpoints =
+        let (client_channel, server_channel) =
             fidl::endpoints::create_endpoints::<fidl_fuchsia_gpu_magma::NotificationMarker>();
-        let client_channel = endpoints.0.into_channel();
-        let server_channel = endpoints.1.into_channel();
 
         let (tx, _) = futures::channel::mpsc::unbounded();
         let connection = crate::magma_system_connection::MagmaSystemConnection::new(
             Arc::new(device.clone()),
             Box::new(crate::mock::MockConnection),
-            fidl::endpoints::ServerEnd::<fidl_fuchsia_gpu_magma::NotificationMarker>::new(
-                client_channel,
-            ),
-            tx,
+            Arc::new(MagmaNotificationHandler {
+                notification_channel: server_channel,
+                message_sender: tx,
+            }),
         );
 
         let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
 
         let data = 0x12345678u32;
-        server.lock().unwrap().connection.notification_channel_send(&data.to_ne_bytes());
+        server
+            .lock()
+            .unwrap()
+            .connection
+            .notification_handler
+            .notification_channel_send(&data.to_ne_bytes());
 
         let mut message_buf = zx::MessageBuf::new();
-        server_channel.read(&mut message_buf).unwrap();
+        let client_channel = client_channel.into_channel();
+        client_channel.read(&mut message_buf).unwrap();
         let bytes = message_buf.bytes();
 
         assert_eq!(bytes.len(), 4);
@@ -936,8 +940,10 @@ mod tests {
         crate::magma_system_connection::MagmaSystemConnection::new(
             owner,
             Box::new(crate::mock::MockConnection),
-            invalid_notification_channel(),
-            tx,
+            Arc::new(MagmaNotificationHandler {
+                notification_channel: invalid_notification_channel(),
+                message_sender: tx,
+            }),
         )
     }
 
@@ -1026,8 +1032,10 @@ mod tests {
         let connection = crate::magma_system_connection::MagmaSystemConnection::new(
             Arc::new(owner),
             Box::new(crate::mock::MockConnection),
-            invalid_notification_channel(),
-            tx,
+            Arc::new(MagmaNotificationHandler {
+                notification_channel: invalid_notification_channel(),
+                message_sender: tx,
+            }),
         );
 
         let (_proxy, stream) =
@@ -1044,7 +1052,7 @@ mod tests {
         .detach();
 
         // Trigger context killed!
-        server.lock().unwrap().connection.context_killed();
+        server.lock().unwrap().connection.notification_handler.context_killed();
 
         // Wait for result!
         let result = result_rx.await.unwrap();

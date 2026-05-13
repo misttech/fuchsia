@@ -93,6 +93,23 @@ pub trait Owner {
     fn perf_count_access_token_id(&self) -> u64;
 }
 
+pub struct MagmaNotificationHandler {
+    pub notification_channel: ServerEnd<fidl_fuchsia_gpu_magma::NotificationMarker>,
+    pub message_sender: futures::channel::mpsc::UnboundedSender<ConnectionMessage>,
+}
+
+impl traits::NotificationHandler for MagmaNotificationHandler {
+    fn notification_channel_send(&self, data: &[u8]) {
+        if let Err(e) = self.notification_channel.channel().write(data, &mut []) {
+            log::error!("Failed to write to notification channel: {:?}", e);
+        }
+    }
+
+    fn context_killed(&self) {
+        let _ = self.message_sender.unbounded_send(ConnectionMessage::ContextKilled);
+    }
+}
+
 pub struct MagmaSystemConnection {
     // This is a reference to MagmaSystemDevice.
     owner: Arc<dyn Owner>,
@@ -105,18 +122,14 @@ pub struct MagmaSystemConnection {
         PerformanceId,
         fidl::endpoints::ServerEnd<fidl_fuchsia_gpu_magma::PerformanceCounterEventsMarker>,
     >,
-    notification_channel: ServerEnd<fidl_fuchsia_gpu_magma::NotificationMarker>,
-    message_sender: futures::channel::mpsc::UnboundedSender<ConnectionMessage>,
+    pub notification_handler: Arc<MagmaNotificationHandler>,
 }
 
 impl MagmaSystemConnection {
     pub fn new(
         owner: Arc<dyn Owner>,
         msd_connection: Box<dyn traits::Connection>,
-        notification_channel: fidl::endpoints::ServerEnd<
-            fidl_fuchsia_gpu_magma::NotificationMarker,
-        >,
-        message_sender: futures::channel::mpsc::UnboundedSender<ConnectionMessage>,
+        notification_handler: Arc<MagmaNotificationHandler>,
     ) -> Self {
         MagmaSystemConnection {
             owner,
@@ -126,8 +139,7 @@ impl MagmaSystemConnection {
             semaphore_map: HashMap::new(),
             can_access_performance_counters: false,
             pool_map: HashMap::new(),
-            notification_channel,
-            message_sender,
+            notification_handler: notification_handler,
         }
     }
 
@@ -142,9 +154,7 @@ impl MagmaSystemConnection {
     pub fn lookup_semaphore(&self, id: SemaphoreId) -> Option<&MagmaSystemSemaphore> {
         self.semaphore_map.get(&id)
     }
-}
 
-impl MagmaSystemConnection {
     pub fn import_object(
         &mut self,
         handle: zx::NullableHandle,
@@ -167,7 +177,7 @@ impl MagmaSystemConnection {
                 let duplicate_vmo = vmo
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .map_err(|_| MagmaStatus::InternalError)?;
-                let msd_buffer = self.owner.driver().import_buffer(duplicate_vmo, client_id);
+                let msd_buffer = self.owner.driver().import_buffer(duplicate_vmo, client_id)?;
 
                 let buffer = MagmaSystemBuffer::new(vmo, msd_buffer);
 
@@ -478,18 +488,6 @@ impl MagmaSystemConnection {
     }
 }
 
-impl traits::NotificationHandler for MagmaSystemConnection {
-    fn notification_channel_send(&self, data: &[u8]) {
-        if let Err(e) = self.notification_channel.channel().write(data, &mut []) {
-            log::error!("Failed to write to notification channel: {:?}", e);
-        }
-    }
-
-    fn context_killed(&self) {
-        let _ = self.message_sender.unbounded_send(ConnectionMessage::ContextKilled);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -509,8 +507,10 @@ mod tests {
         crate::magma_system_connection::MagmaSystemConnection::new(
             Arc::new(device.clone()),
             Box::new(crate::mock::MockConnection),
-            invalid_notification_channel(),
-            tx,
+            Arc::new(MagmaNotificationHandler {
+                notification_channel: invalid_notification_channel(),
+                message_sender: tx,
+            }),
         )
     }
 
@@ -521,8 +521,10 @@ mod tests {
         crate::magma_system_connection::MagmaSystemConnection::new(
             owner,
             Box::new(crate::mock::MockConnection),
-            invalid_notification_channel(),
-            tx,
+            Arc::new(MagmaNotificationHandler {
+                notification_channel: invalid_notification_channel(),
+                message_sender: tx,
+            }),
         )
     }
 
@@ -991,8 +993,10 @@ mod tests {
         let connection = MagmaSystemConnection::new(
             Arc::new(device.clone()),
             Box::new(TestConnection { dropped: dropped.clone() }),
-            invalid_notification_channel(),
-            tx,
+            Arc::new(MagmaNotificationHandler {
+                notification_channel: invalid_notification_channel(),
+                message_sender: tx,
+            }),
         );
 
         assert!(!*dropped.lock().unwrap());

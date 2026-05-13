@@ -43,7 +43,7 @@ mod tests {
         let driver = MockDriver;
         let vmo = zx::Vmo::create(4096).unwrap();
         let duplicate_vmo = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-        let msd_buffer = driver.import_buffer(duplicate_vmo, 1);
+        let msd_buffer = driver.import_buffer(duplicate_vmo, 1).unwrap();
         let buffer = MagmaSystemBuffer::new(vmo, msd_buffer);
         assert_eq!(buffer.size().unwrap(), 4096);
     }

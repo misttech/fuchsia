@@ -3,12 +3,14 @@
 // found in the LICENSE file.
 
 use crate::traits;
-use crate::traits::LogError;
+use crate::traits::{Device, LogError, NotificationHandler};
 
 use crate::magma_common_defs::{
     MAGMA_QUERY_MAXIMUM_INFLIGHT_PARAMS, MAX_INFLIGHT_MEMORY_MB, MAX_INFLIGHT_MESSAGES,
 };
-use crate::magma_system_connection::{ConnectionMessage, Owner as ConnectionOwner};
+use crate::magma_system_connection::{
+    ConnectionMessage, MagmaNotificationHandler, Owner as ConnectionOwner,
+};
 use fidl::endpoints::ServerEnd;
 use futures::channel::mpsc::UnboundedSender;
 use std::collections::HashMap;
@@ -92,7 +94,7 @@ impl MagmaSystemDevice {
     pub fn start_connection_thread(
         self: std::sync::Arc<Self>,
         client_id: u64,
-        connection: Box<dyn crate::traits::Connection>,
+        client_type: crate::traits::MagmaClientType,
         primary_channel: ServerEnd<fidl_fuchsia_gpu_magma::PrimaryMarker>,
         notification_channel: ServerEnd<fidl_fuchsia_gpu_magma::NotificationMarker>,
     ) {
@@ -112,11 +114,21 @@ impl MagmaSystemDevice {
                     )
                     .log_err("Failed to set thread role");
 
+                    let notification_handler = Arc::new(MagmaNotificationHandler {
+                        notification_channel,
+                        message_sender: connection_sender,
+                    });
+                    let Some(connection) =
+                        device.open(client_id, client_type, notification_handler.clone())
+                    else {
+                        log::error!("Failed to create connection");
+                        return;
+                    };
+
                     let system_conn = crate::magma_system_connection::MagmaSystemConnection::new(
                         device.clone(),
                         connection,
-                        notification_channel,
-                        connection_sender,
+                        notification_handler,
                     );
 
                     let mut server =
@@ -209,8 +221,9 @@ impl crate::traits::Device for MagmaSystemDevice {
         &self,
         client_id: u64,
         client_type: crate::traits::MagmaClientType,
+        notification_handler: Arc<dyn NotificationHandler>,
     ) -> Option<Box<dyn crate::traits::Connection>> {
-        self.msd_device.open(client_id, client_type)
+        self.msd_device.open(client_id, client_type, notification_handler)
     }
 }
 

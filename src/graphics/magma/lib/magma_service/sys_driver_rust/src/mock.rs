@@ -4,13 +4,19 @@
 
 use crate::magma_system_connection::MagmaStatus;
 use crate::traits;
+use crate::traits::NotificationHandler;
+use std::sync::Arc;
 
 pub struct MockDriver;
 impl traits::Driver for MockDriver {
     fn configure(&self, _flags: u32) {}
 
-    fn import_buffer(&self, vmo: zx::Vmo, _client_id: u64) -> Box<dyn traits::Buffer> {
-        Box::new(MockBuffer { vmo })
+    fn import_buffer(
+        &self,
+        vmo: zx::Vmo,
+        _client_id: u64,
+    ) -> Result<Box<dyn traits::Buffer>, MagmaStatus> {
+        Ok(Box::new(MockBuffer { vmo }))
     }
 
     fn import_semaphore(
@@ -38,6 +44,7 @@ impl traits::Device for MockDevice {
         &self,
         _client_id: u64,
         _client_type: traits::MagmaClientType,
+        _notification_handler: Arc<dyn NotificationHandler>,
     ) -> Option<Box<dyn traits::Connection>> {
         Some(Box::new(MockConnection))
     }
@@ -126,14 +133,14 @@ pub struct MockBuffer {
     pub vmo: zx::Vmo,
 }
 impl traits::Buffer for MockBuffer {
-    fn get_raw_ptr(&self) -> *mut () {
-        std::ptr::null_mut()
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
 pub struct MockSemaphore;
 impl traits::Semaphore for MockSemaphore {
-    fn get_raw_ptr(&self) -> *mut () {
-        std::ptr::null_mut()
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
