@@ -42,10 +42,6 @@ template("packages_from_product_assembler") {
       defined(invoker.assembly_label),
       "must define a `assembly_label` argument which points to an assembled_system() invocation")
   assert(defined(invoker.outputs), "must define `outputs`")
-  assert(defined(invoker.is_bazel_assembled),
-         "must define `is_bazel_assembled`")
-  assert(!invoker.is_bazel_assembled || !defined(invoker.namespace),
-         "`namespace` is not allowed for Bazel-assembled products!")
 
   assert(
       defined(invoker.package_set),
@@ -62,21 +58,10 @@ template("packages_from_product_assembler") {
   _assembly_target_name = get_label_info(invoker.assembly_label, "name")
   _assembly_dir = get_label_info(invoker.assembly_label, "dir")
   _assembly_namespace = _assembly_target_name
-  _is_bazel_assembled = invoker.is_bazel_assembled
-  if (defined(invoker.namespace)) {
-    _assembly_namespace = invoker.namespace
-  }
 
-  if (_is_bazel_assembled) {
-    _assembly_gen_dir = get_label_info(invoker.assembly_label, "target_out_dir")
-    _assembly_manifest = "${_assembly_gen_dir}/${_assembly_target_name}_product_assembly/image_assembly.json"
-    _assembly_dep = "${_assembly_dir}:${_assembly_namespace}_product_assembly"
-  } else {
-    _assembly_out_dir = get_label_info(invoker.assembly_label, "target_out_dir")
-    _assembly_manifest =
-        "${_assembly_out_dir}/${_assembly_target_name}_gen/image_assembly.json"
-    _assembly_dep = "${_assembly_dir}:${_assembly_namespace}.product_assembler"
-  }
+  _assembly_gen_dir = get_label_info(invoker.assembly_label, "target_out_dir")
+  _assembly_manifest = "${_assembly_gen_dir}/${_assembly_target_name}_product_assembly/image_assembly.json"
+  _assembly_dep = "${_assembly_dir}:${_assembly_namespace}_product_assembly"
 
   python_action(target_name) {
     forward_variables_from(invoker,
@@ -93,13 +78,9 @@ template("packages_from_product_assembler") {
       invoker.package_set,
       "--output",
       rebase_path(outputs[0], root_build_dir),
+      "--bazel-execroot",
+      rebase_path(bazel_execroot, root_build_dir),
     ]
-    if (_is_bazel_assembled) {
-      args += [
-        "--bazel-execroot",
-        rebase_path(bazel_execroot, root_build_dir),
-      ]
-    }
     inputs = [ _assembly_manifest ]
     deps = [ _assembly_dep ]
   }
