@@ -66,31 +66,4 @@ TEST_F(RequestLaunchTest, LaunchInTerminal) {
   EXPECT_TRUE(run_in_terminal_received);
 }
 
-TEST_F(RequestLaunchTest, LaunchNoTerminal) {
-  // Register client handler for RunInTerminal which will be called by server during Launch request.
-  bool run_in_terminal_received = false;
-  client().registerHandler([&](const dap::RunInTerminalRequest& req) {
-    run_in_terminal_received = true;
-    return dap::RunInTerminalResponse();
-  });
-
-  InitializeDebugging();
-
-  // Send attach request from the client.
-  dap::LaunchRequestZxdb req = {};
-  req.process = "test";
-  auto response = client().send(req);
-
-  // Read request and process it.
-  context().OnStreamReadable();
-
-  // Run client to receive response.
-  RunClient();
-  auto got = response.get();
-  // Expect an error.
-  EXPECT_TRUE(got.error);
-  // Expect no RunInTerminal request.
-  EXPECT_FALSE(run_in_terminal_received);
-}
-
 }  // namespace zxdb

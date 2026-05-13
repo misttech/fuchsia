@@ -1,0 +1,544 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+from __future__ import annotations
+
+import asyncio
+import copy
+import json
+import os
+import unittest
+from typing import Any, Dict, List, Optional
+
+from portpicker import portpicker
+from pydap.client import DapClient
+
+
+class RequestFuture:
+    """A future representing a pending DAP request and its expectations."""
+
+    def __init__(
+        self, framework: DapTestFramework, command: str, request_seq: int
+    ) -> None:
+        self.framework = framework
+        self.command = command
+        self.request_seq = request_seq
+        self.fut = asyncio.get_running_loop().create_future()
+        self.expectations: List[Dict[str, Any]] = []
+
+    def expect(self, partial_check: Dict[str, Any]) -> RequestFuture:
+        """Registers a partial check on the response."""
+        self.expectations.append(partial_check)
+        return self
+
+    def __await__(self) -> Any:
+        return self.fut.__await__()
+
+    def set_result(self, result: Any) -> None:
+        if self.fut.done():
+            return
+        try:
+            for check in self.expectations:
+                self.framework._verify_partial(result, check, raise_error=True)
+            self.fut.set_result(result)
+        except Exception as e:
+            self.fut.set_exception(e)
+
+    def set_exception(self, exc: Exception) -> None:
+        if not self.fut.done():
+            self.fut.set_exception(exc)
+
+
+class EventFuture:
+    """A future representing a pending DAP event and its expectations."""
+
+    def __init__(self, framework: DapTestFramework, event_name: str) -> None:
+        self.framework = framework
+        self.event_name = event_name
+        self.fut = asyncio.get_running_loop().create_future()
+        self.checks: List[Dict[str, Any]] = []
+
+    def expect(self, partial_check: Dict[str, Any]) -> EventFuture:
+        """Registers a partial check on the event in O(1) time."""
+        self.checks.append(partial_check)
+        return self
+
+    def __await__(self) -> Any:
+        async def _wait() -> Dict[str, Any]:
+            # 1. Check if expectations are already satisfied by past history
+            self.framework._check_event_expectations_against_history()
+
+            if self.fut.done():
+                return self.fut.result()
+
+            # 2. Await future or wake up immediately if background tasks crash
+            tasks = [self.fut]
+            if self.framework._client_task:
+                tasks.append(self.framework._client_task)
+            if self.framework._process_task:
+                tasks.append(self.framework._process_task)
+
+            done, _pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+
+            if self.fut in done:
+                return self.fut.result()
+
+            # 3. Check if background tasks crashed
+            if (
+                self.framework._client_task
+                and self.framework._client_task in done
+            ):
+                exc = self.framework._client_task.exception()
+                raise RuntimeError(f"DAP client background task stopped: {exc}")
+            if (
+                self.framework._process_task
+                and self.framework._process_task in done
+            ):
+                exc = self.framework._process_task.exception()
+                raise RuntimeError(
+                    f"DAP event processor background task stopped: {exc}"
+                )
+
+            return await self.fut
+
+        return _wait().__await__()
+
+
+class DapTestFramework:
+    """Base class for DAP integration tests."""
+
+    def __init__(self) -> None:
+        self.client = DapClient()
+        self.event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
+        self.traffic_history: List[Dict[str, Any]] = []
+        self.unmatched_events: List[Dict[str, Any]] = []
+        self._client_task: Optional[asyncio.Task[None]] = None
+        self._process_task: Optional[asyncio.Task[None]] = None
+        self._request_tasks: List[asyncio.Task[None]] = []
+        self.proc: Optional[Any] = None
+        self._writer: Optional[asyncio.StreamWriter] = None
+        self.pending_futures: List[RequestFuture] = []
+        self.event_expectations: List[EventFuture] = []
+
+    async def start_server(self, port: int) -> None:
+        """Starts the DAP server via FfxCmd and waits for it to be ready."""
+        # Imported locally to allow hermetic unit testing without Fuchsia SDK dependencies.
+        import signal
+
+        import package_server
+        from ffx_cmd.lib import FfxCmd
+
+        async with package_server.ensure_running():
+            ffx_cmd = FfxCmd()
+            args = [
+                "debug",
+                "connect",
+                "--new-agent",
+                "--",
+                "--enable-debug-adapter",
+                f"--debug-adapter-port={port}",
+                f"--signal-when-ready={os.getpid()}",
+            ]
+
+            print(f"Starting DAP server via FfxCmd...")
+            self.proc = await ffx_cmd.start(*args)
+
+            # Setup signal handler to wait for zxdb to be ready
+            loop = asyncio.get_running_loop()
+            signal_fut = loop.create_future()
+
+            def handle_sigusr1() -> None:
+                if not signal_fut.done():
+                    signal_fut.set_result(True)
+
+            loop.add_signal_handler(signal.SIGUSR1, handle_sigusr1)
+
+            print("Waiting for SIGUSR1 from zxdb...")
+            try:
+                await asyncio.wait_for(signal_fut, timeout=30.0)
+                print("Received SIGUSR1 from zxdb. Server is ready.")
+            except asyncio.TimeoutError:
+                print("Timed out waiting for SIGUSR1 from zxdb.")
+                if self.proc:
+                    self.proc.terminate()
+                raise RuntimeError("Timed out waiting for DAP server to start")
+            finally:
+                loop.remove_signal_handler(signal.SIGUSR1)
+
+        print(f"Connecting to DAP server on port {port}...")
+        reader, writer = await asyncio.open_connection("localhost", port)
+        self._writer = writer
+
+        # Start background task for protocol handling
+        self._client_task = asyncio.create_task(
+            self.client.run(reader, self.event_queue)
+        )
+        self._process_task = asyncio.create_task(self._event_processor_loop())
+
+    def send_request(
+        self, command: str, arguments: Optional[Dict[str, Any]] = None
+    ) -> RequestFuture:
+        """Sends a request in the background and returns a RequestFuture."""
+        seq = self.client._seq_counter
+        req_fut = RequestFuture(self, command, seq)
+        self.pending_futures.append(req_fut)
+
+        async def do_send() -> None:
+            try:
+                assert self._writer is not None
+                resp = await self.client.send_request(
+                    self._writer, command, arguments
+                )
+                self.traffic_history.append(resp)
+                req_fut.set_result(resp)
+            except Exception as e:
+                req_fut.set_exception(e)
+
+        task = asyncio.create_task(do_send())
+        self._request_tasks.append(task)
+        return req_fut
+
+    def on_event(self, event_name: str) -> EventFuture:
+        """Returns an EventFuture to track expectations on events."""
+        event_fut = EventFuture(self, event_name)
+        self.event_expectations.append(event_fut)
+        return event_fut
+
+    async def _event_processor_loop(self) -> None:
+        """Continuously reads events from queue and processes them against expectations."""
+        while True:
+            try:
+                event = await self.event_queue.get()
+                print(f"Framework read event from queue: {event}")
+                self.traffic_history.append(event)
+
+                matched = False
+                for exp in list(self.event_expectations):
+                    if exp.event_name == event.get("event"):
+                        all_passed = True
+                        for check in exp.checks:
+                            if not self._verify_partial(
+                                event, check, raise_error=False
+                            ):
+                                all_passed = False
+                                break
+                        if all_passed:
+                            if not exp.fut.done():
+                                exp.fut.set_result(event)
+                            self.event_expectations.remove(exp)
+                            matched = True
+                            break
+                if not matched:
+                    self.unmatched_events.append(event)
+                self.event_queue.task_done()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"Error in event processor loop: {e}")
+                raise
+
+    def _verify_partial(
+        self,
+        data: Dict[str, Any],
+        check: Dict[str, Any],
+        raise_error: bool = True,
+    ) -> bool:
+        """Verifies that data matches partial check recursively."""
+        for k, v in check.items():
+            if k not in data:
+                if raise_error:
+                    raise AssertionError(
+                        f"Expectation failed: key {k} not found in data"
+                    )
+                return False
+            if isinstance(v, dict) and isinstance(data[k], dict):
+                if not self._verify_partial(data[k], v, raise_error):
+                    return False
+            elif isinstance(v, list) and isinstance(data[k], list):
+                if not self._verify_list_partial(data[k], v, raise_error):
+                    return False
+            elif data[k] != v:
+                if raise_error:
+                    raise AssertionError(
+                        f"Expectation failed: expected {k}={v}, got {data[k]}"
+                    )
+                return False
+        return True
+
+    def _verify_list_partial(
+        self,
+        data_list: List[Any],
+        check_list: List[Any],
+        raise_error: bool = True,
+    ) -> bool:
+        """Verifies that each item in check_list partially matches an item in data_list."""
+        # Special case: [...] means we expect a list but don't care about its content
+        if check_list == [...]:
+            return True
+
+        # For each item we expect, search for a matching item in the actual list.
+        for check_item in check_list:
+            found = False
+            for data_item in data_list:
+                # If both are dicts, do a recursive partial match.
+                if isinstance(check_item, dict) and isinstance(data_item, dict):
+                    if self._verify_partial(
+                        data_item, check_item, raise_error=False
+                    ):
+                        found = True
+                        break
+                # Otherwise, do an exact match.
+                elif data_item == check_item:
+                    found = True
+                    break
+            # If any expected item was not found, the expectation fails.
+            if not found:
+                if raise_error:
+                    raise AssertionError(
+                        f"Expectation failed: expected item {check_item} not found in list {data_list}"
+                    )
+                return False
+        return True
+
+    def evaluate_and_compare(
+        self, golden_file: str, ignore_list: Optional[List[str]] = None
+    ) -> None:
+        """Compares history against golden file."""
+        history = self._get_clean_history(ignore_list)
+        with open(golden_file, "r") as f:
+            golden = json.load(f)
+
+        if history != golden:
+            raise AssertionError(
+                f"Snapshot mismatch. History: {history}, Golden: {golden}"
+            )
+
+    def evaluate_and_save(
+        self, golden_file: str, ignore_list: Optional[List[str]] = None
+    ) -> None:
+        """Saves history as golden file."""
+        history = self._get_clean_history(ignore_list)
+        abs_path = os.path.abspath(golden_file)
+        print(f"Saving golden file to: {abs_path}")
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        with open(abs_path, "w") as f:
+            json.dump(history, f, indent=2)
+
+    def _get_clean_history(
+        self, ignore_list: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Strips volatile fields from history."""
+        clean_history = []
+        for msg in self.traffic_history:
+            clean_msg = copy.deepcopy(msg)
+            if ignore_list:
+                for path in ignore_list:
+                    self._strip_path(clean_msg, path)
+            clean_history.append(clean_msg)
+        return clean_history
+
+    def _strip_path(self, data: Any, path: str) -> None:
+        """Strips a simple dotted path (e.g., 'body.threadId' or '$.seq') from data."""
+        # Normalize path (strip leading $ and .)
+        if path.startswith("$"):
+            path = path[1:]
+        if path.startswith("."):
+            path = path[1:]
+
+        parts = path.split(".")
+        self._recursive_strip_path(data, parts)
+
+    def _recursive_strip_path(self, data: Any, parts: List[str]) -> None:
+        if not parts:
+            return
+
+        key = parts[0]
+        if len(parts) == 1:
+            if isinstance(data, dict):
+                data.pop(key, None)
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        item.pop(key, None)
+            return
+
+        # More parts remaining
+        if isinstance(data, dict):
+            if key in data:
+                self._recursive_strip_path(data[key], parts[1:])
+        elif isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict) and key in item:
+                    self._recursive_strip_path(item[key], parts[1:])
+
+    # High-Level Wrappers
+    def initialize(self, adapterID: str = "zxdb") -> RequestFuture:
+        return self.send_request("initialize", {"adapterID": adapterID})
+
+    def launch(self, process: str, launchCommand: str = "") -> RequestFuture:
+        return self.send_request(
+            "launch", {"process": process, "launchCommand": launchCommand}
+        )
+
+    def evaluate(self, expression: str, context: str = "repl") -> RequestFuture:
+        return self.send_request(
+            "evaluate", {"expression": expression, "context": context}
+        )
+
+    def threads(self) -> RequestFuture:
+        return self.send_request("threads")
+
+    def stack_trace(self, threadId: int) -> RequestFuture:
+        return self.send_request("stackTrace", {"threadId": threadId})
+
+    async def verify_all_expectations(self) -> None:
+        """Awaits all pending futures and verifies event expectations."""
+        # 1. Check if pending expectations are already satisfied by unmatched history
+        self._check_event_expectations_against_history()
+
+        # 2. Verify request futures (Fail-fast before waiting for events)
+        for fut in self.pending_futures:
+            try:
+                await fut
+            except Exception as e:
+                print(f"Expectation failure in background request: {e}")
+                raise
+        self.pending_futures.clear()
+
+        # 3. If there are still pending expectations, wait for up to 2 seconds for them to arrive
+        if self.event_expectations:
+            print(
+                f"Pending event expectations remain. Waiting up to 2 seconds for them to arrive..."
+            )
+            try:
+                async with asyncio.timeout(2.0):
+                    futs = [exp.fut for exp in self.event_expectations]
+                    await asyncio.gather(*futs)
+            except asyncio.TimeoutError:
+                print("Timed out waiting for pending event expectations.")
+
+        # 4. Verify event expectations
+        if self.event_expectations:
+            raise AssertionError(
+                f"Pending event expectations were not met: {[e.event_name for e in self.event_expectations]}"
+            )
+
+    def _check_event_expectations_against_history(self) -> None:
+        """Helper to check pending event expectations against unmatched history."""
+        for exp in list(self.event_expectations):
+            for msg in list(self.unmatched_events):
+                if (
+                    msg.get("type") == "event"
+                    and msg.get("event") == exp.event_name
+                ):
+                    all_passed = True
+                    for check in exp.checks:
+                        if not self._verify_partial(
+                            msg, check, raise_error=False
+                        ):
+                            all_passed = False
+                            break
+                    if all_passed:
+                        if not exp.fut.done():
+                            exp.fut.set_result(msg)
+                        self.event_expectations.remove(exp)
+                        self.unmatched_events.remove(msg)
+                        break
+
+    async def teardown(self) -> None:
+        """Cleans up connections and processes."""
+        for task in self._request_tasks:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        self._request_tasks.clear()
+
+        if self._client_task:
+            self._client_task.cancel()
+            try:
+                await self._client_task
+            except asyncio.CancelledError:
+                pass
+        if self._process_task:
+            self._process_task.cancel()
+            try:
+                await self._process_task
+            except asyncio.CancelledError:
+                pass
+        if self._writer:
+            self._writer.close()
+            await self._writer.wait_closed()
+        if self.proc:
+            try:
+                if hasattr(self.proc, "terminate"):
+                    self.proc.terminate()
+                if (
+                    hasattr(self.proc, "_runner_task")
+                    and self.proc._runner_task
+                ):
+                    await self.proc._runner_task
+                elif hasattr(self.proc, "wait"):
+                    await self.proc.wait()
+            except (ProcessLookupError, AttributeError):
+                pass
+            except Exception as e:
+                print(f"Teardown: error draining server process: {e}")
+
+
+class DapTestCase(unittest.IsolatedAsyncioTestCase):
+    """Base class for DAP integration tests, handling server lifecycle fixtures."""
+
+    async def asyncSetUp(self) -> None:
+        self.framework = DapTestFramework()
+        self.port = portpicker.pick_unused_port()
+        # Start server and connect
+        await self.framework.start_server(self.port)
+
+    async def asyncTearDown(self) -> None:
+        # Await all pending futures first to check expectations
+        try:
+            await self.framework.verify_all_expectations()
+        except Exception as e:
+            print(f"Teardown: Expectations failed: {e}")
+            raise
+        finally:
+            # Disconnect and terminate server
+            await self.framework.teardown()
+
+    # Delegation methods for cleaner test syntax
+    def initialize(self, adapterID: str = "zxdb") -> RequestFuture:
+        return self.framework.initialize(adapterID)
+
+    def launch(self, process: str, launchCommand: str = "") -> RequestFuture:
+        return self.framework.launch(process, launchCommand)
+
+    def evaluate(self, expression: str, context: str = "repl") -> RequestFuture:
+        return self.framework.evaluate(expression, context)
+
+    def threads(self) -> RequestFuture:
+        return self.framework.threads()
+
+    def stack_trace(self, threadId: int) -> RequestFuture:
+        return self.framework.stack_trace(threadId)
+
+    def on_event(self, event_name: str) -> EventFuture:
+        return self.framework.on_event(event_name)
+
+    def evaluate_and_compare(
+        self, golden_file: str, ignore_list: Optional[List[str]] = None
+    ) -> None:
+        self.framework.evaluate_and_compare(golden_file, ignore_list)
+
+    def evaluate_and_save(
+        self, golden_file: str, ignore_list: Optional[List[str]] = None
+    ) -> None:
+        self.framework.evaluate_and_save(golden_file, ignore_list)
+
+    async def verify_all_expectations(self) -> None:
+        await self.framework.verify_all_expectations()

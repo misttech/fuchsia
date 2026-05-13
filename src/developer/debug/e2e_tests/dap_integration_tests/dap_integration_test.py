@@ -1,0 +1,36 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import unittest
+
+from dap_test_framework import DapTestCase
+
+
+class TestDapSmoke(DapTestCase):
+    async def test_smoke_flow(self) -> None:
+        target = "fuchsia-pkg://fuchsia.com/zxdb_e2e_inferiors#meta/rust_functions.cm"
+
+        await self.initialize("zxdb")
+        await self.on_event("initialized")
+
+        await self.evaluate("b $main")
+        await self.launch(target)
+        await self.on_event("stopped").expect(
+            {"body": {"reason": "breakpoint"}}
+        )
+
+        threads_resp = await self.threads().expect(
+            {"body": {"threads": [{"name": "initial-thread"}]}}
+        )
+        thread_id = threads_resp["body"]["threads"][0]["id"]
+
+        self.stack_trace(threadId=thread_id).expect(
+            {"body": {"stackFrames": [...]}}
+        )
+
+        await self.verify_all_expectations()
+
+
+if __name__ == "__main__":
+    unittest.main()

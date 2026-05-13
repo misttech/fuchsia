@@ -38,10 +38,10 @@ void SplitDapCommand(const dap::string& cmd_string, dap::array<dap::string>& cmd
 
 dap::ResponseOrError<dap::LaunchResponse> OnRequestLaunch(DebugAdapterContext* context,
                                                           const dap::LaunchRequestZxdb& req) {
+  // TODO(https://fxbug.dev/512353047): DAP handlers should not depend on the console
   if (!context->supports_run_in_terminal()) {
-    return dap::Error(
-        "Client doesn't support run in terminal. Please launch program manually and use attach "
-        "instead of launch to connect to zxdb.");
+    context->console()->ProcessInputLine("run-component " + req.process);
+    return dap::LaunchResponse();
   }
 
   context->console()->ProcessInputLine("attach " + req.process);
