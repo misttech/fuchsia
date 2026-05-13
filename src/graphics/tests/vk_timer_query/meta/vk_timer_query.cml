@@ -11,17 +11,7 @@
         binary: "bin/vk_timer_query",
     },
     use: [
-        {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-gpu",
-            rights: [ "r*" ],
-            path: "/dev/class/gpu",
-        },
-        {
-            // This service replaces the directory capability above.
-            service: "fuchsia.gpu.magma.Service",
-        },
+        { service: "fuchsia.gpu.magma.Service" },
         {
             storage: "tmp",
             path: "/tmp",
