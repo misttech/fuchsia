@@ -356,7 +356,7 @@
              internal="true"/>
     <!--   OpenThread Radio firmware for NRF52840 chip -->
     <package name="fuchsia_internal/firmware/ot-radio-firmware"
-             version="CoCcwAdu6O4_n-CCoFe5_YjZR5RAyD_AlN-5E9V0aMMC"
+             version="UYuWCWhy057oVV7cQgulqlyC8kc1EZQ3mzZ4RwVv3YYC"
              path="prebuilt/connectivity/openthread/radio-firmware"
              platforms="linux-amd64,linux-arm64"
              internal="true"/>
