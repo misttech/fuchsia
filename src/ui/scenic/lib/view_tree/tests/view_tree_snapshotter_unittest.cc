@@ -124,75 +124,43 @@ Snapshot BasicTreeSnapshot() {
 // correctly delivered to a subscriber.
 TEST(ViewTreeSnapshotterTest, BasicTreeTest) {
   std::vector<ViewTreeSnapshotter::Subscriber> subscribers;
-  async::TestLoop loop;
   bool callback_fired = false;
-  subscribers.push_back({.on_new_view_tree =
-                             [&callback_fired](std::shared_ptr<const Snapshot> snapshot) {
-                               callback_fired = true;
-                               const bool conversion_correct = *snapshot == BasicTreeSnapshot();
-                               EXPECT_TRUE(conversion_correct);
-                               if (!conversion_correct) {
-                                 FX_LOGS(ERROR) << "Generated snapshot:\n"
-                                                << (*snapshot) << "\ndid not match expected:\n\n"
-                                                << BasicTreeSnapshot();
-                               }
-                             },
-                         .dispatcher = loop.dispatcher()});
+  subscribers.push_back(
+      {.on_new_view_tree = [&callback_fired](std::shared_ptr<const Snapshot> snapshot) {
+        callback_fired = true;
+        const bool conversion_correct = *snapshot == BasicTreeSnapshot();
+        EXPECT_TRUE(conversion_correct);
+        if (!conversion_correct) {
+          FX_LOGS(ERROR) << "Generated snapshot:\n"
+                         << (*snapshot) << "\ndid not match expected:\n\n"
+                         << BasicTreeSnapshot();
+        }
+      }});
 
   ViewTreeSnapshotter tree(BasicTree(), std::move(subscribers));
 
   tree.UpdateSnapshot();
-  loop.RunUntilIdle();
-  EXPECT_TRUE(callback_fired);
-}
-
-// Check that the subscriber fires on the supplied dispatcher and doesn't rely on the default
-// dispatcher.
-// TODO(https://fxbug.dev/42155704): Re-enable or delete.
-TEST(ViewTreeSnapshotterTest, DISABLED_Subscriber_RunsOnCorrectDispatcher) {
-  std::vector<ViewTreeSnapshotter::Subscriber> subscribers;
-  async::TestLoop loop1;
-  async::TestLoop loop2;
-  async_set_default_dispatcher(loop1.dispatcher());
-  bool callback_fired = false;
-  subscribers.push_back({.on_new_view_tree = [&callback_fired](auto) { callback_fired = true; },
-                         .dispatcher = loop2.dispatcher()});
-
-  ViewTreeSnapshotter tree(BasicTree(), std::move(subscribers));
-
-  tree.UpdateSnapshot();
-
-  EXPECT_FALSE(callback_fired);
-  loop1.RunUntilIdle();
-  EXPECT_FALSE(callback_fired);
-  loop2.RunUntilIdle();
   EXPECT_TRUE(callback_fired);
 }
 
 TEST(ViewTreeSnapshotterTest, MultipleSubscribers) {
   std::vector<ViewTreeSnapshotter::Subscriber> subscribers;
 
-  async::TestLoop loop;
   std::shared_ptr<const Snapshot> snapshot1;
-  subscribers.push_back({.on_new_view_tree = [&snapshot1](auto snapshot) { snapshot1 = snapshot; },
-                         .dispatcher = loop.dispatcher()});
+  subscribers.push_back(
+      {.on_new_view_tree = [&snapshot1](auto snapshot) { snapshot1 = snapshot; }});
   std::shared_ptr<const Snapshot> snapshot2;
-  subscribers.push_back({.on_new_view_tree = [&snapshot2](auto snapshot) { snapshot2 = snapshot; },
-                         .dispatcher = loop.dispatcher()});
-  async::TestLoop loop2;
+  subscribers.push_back(
+      {.on_new_view_tree = [&snapshot2](auto snapshot) { snapshot2 = snapshot; }});
   std::shared_ptr<const Snapshot> snapshot3;
-  subscribers.push_back({.on_new_view_tree = [&snapshot3](auto snapshot) { snapshot3 = snapshot; },
-                         .dispatcher = loop2.dispatcher()});
+  subscribers.push_back(
+      {.on_new_view_tree = [&snapshot3](auto snapshot) { snapshot3 = snapshot; }});
 
   ViewTreeSnapshotter tree(BasicTree(), std::move(subscribers));
 
   tree.UpdateSnapshot();
-  loop.RunUntilIdle();
   EXPECT_TRUE(snapshot1);
   EXPECT_TRUE(snapshot2);
-  // TODO(https://fxbug.dev/42155704): Re-enable or fix up.
-  // EXPECT_FALSE(snapshot3);
-  loop2.RunUntilIdle();
   EXPECT_TRUE(snapshot3);
 
   // Should all be pointing to the same snapshot.
@@ -218,15 +186,13 @@ TEST(ViewTreeSnapshotterTest, MultipleUpdateSessionsCalls) {
   });
 
   std::vector<ViewTreeSnapshotter::Subscriber> subscribers;
-  async::TestLoop loop;
   std::shared_ptr<const Snapshot> snapshot1;
-  subscribers.push_back({.on_new_view_tree = [&snapshot1](auto snapshot) { snapshot1 = snapshot; },
-                         .dispatcher = loop.dispatcher()});
+  subscribers.push_back(
+      {.on_new_view_tree = [&snapshot1](auto snapshot) { snapshot1 = snapshot; }});
 
   ViewTreeSnapshotter tree(std::move(subtrees), std::move(subscribers));
 
   tree.UpdateSnapshot();
-  loop.RunUntilIdle();
   ASSERT_TRUE(snapshot1);
   EXPECT_EQ(snapshot1->root, kRoot1A);
 
@@ -234,7 +200,6 @@ TEST(ViewTreeSnapshotterTest, MultipleUpdateSessionsCalls) {
   EXPECT_EQ(snapshot1_copy, snapshot1);
 
   tree.UpdateSnapshot();
-  loop.RunUntilIdle();
   EXPECT_NE(snapshot1_copy, snapshot1);
   EXPECT_EQ(snapshot1->root, kRoot4B);
 }
@@ -250,25 +215,19 @@ TEST(ViewTreeSnapshotterTest, SubscriberCallbackLifetime) {
   });
 
   std::vector<ViewTreeSnapshotter::Subscriber> subscribers;
-  async::TestLoop loop;
   std::shared_ptr<const Snapshot> snapshot1;
   int called_count = 0;
-  subscribers.push_back({.on_new_view_tree =
-                             [&snapshot1, &called_count](auto snapshot) {
-                               snapshot1 = snapshot;
-                               ++called_count;
-                             },
-                         .dispatcher = loop.dispatcher()});
+  subscribers.push_back({.on_new_view_tree = [&snapshot1, &called_count](auto snapshot) {
+    snapshot1 = snapshot;
+    ++called_count;
+  }});
 
   auto tree = std::make_unique<ViewTreeSnapshotter>(std::move(subtrees), std::move(subscribers));
 
   tree->UpdateSnapshot();
   tree->UpdateSnapshot();
   tree.reset();
-  // TODO(https://fxbug.dev/42155704): Re-enable or fix up.
-  // EXPECT_EQ(called_count, 0);
 
-  loop.RunUntilIdle();
   EXPECT_EQ(called_count, 2);
   ASSERT_TRUE(snapshot1);
   EXPECT_EQ(snapshot1->root, kRoot1A);
@@ -299,32 +258,30 @@ TEST(ViewTreeSnapshotterTest, NoDiff) {
   };
 
   std::vector<ViewTreeSnapshotter::Subscriber> subscribers;
-  async::TestLoop loop;
 
   std::vector<std::shared_ptr<const Snapshot>> snapshots;
-  subscribers.push_back(
-      {.on_new_view_tree =
-           [&snapshots](auto snapshot) { snapshots.push_back(std::move(snapshot)); },
-       .dispatcher = loop.dispatcher()});
+  subscribers.push_back({.on_new_view_tree = [&snapshots](auto snapshot) {
+    snapshots.push_back(std::move(snapshot));
+  }});
 
   auto tree =
       std::make_unique<ViewTreeSnapshotter>(std::move(subtree_generators), std::move(subscribers));
 
   tree->UpdateSnapshot();
-  loop.RunUntilIdle();
+
   EXPECT_EQ(snapshots.size(), 1U);
 
   // If even one generator doesn't return "no diff", then a new snapshot will be generated.
   nodiffB = nodiffC = true;
   tree->UpdateSnapshot();
-  loop.RunUntilIdle();
+
   EXPECT_EQ(snapshots.size(), 2U);
   EXPECT_EQ(*snapshots[0], *snapshots[1]);
 
   // If all generators return "no diff", then no new snapshot will be generatated.
   nodiffA = true;
   tree->UpdateSnapshot();
-  loop.RunUntilIdle();
+
   EXPECT_EQ(snapshots.size(), 2U);
 }
 

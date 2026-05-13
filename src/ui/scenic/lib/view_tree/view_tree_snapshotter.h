@@ -20,11 +20,8 @@ using SubtreeSnapshotGenerator = fit::function<GeneratedSubtreeSnapshot()>;
 class ViewTreeSnapshotter final {
  public:
   struct Subscriber {
-    // |on_new_view_tree| will run on |dispatcher|.
     // |on_new_view_tree| must be safe to call repeatedly for the lifetime of ViewTreeSnapshotter
     OnNewViewTree on_new_view_tree;
-    // |dispatcher| must outlive ViewTreeSnapshotter.
-    async_dispatcher_t* dispatcher = nullptr;
   };
 
   // Each element in |subtrees| will be called once for every call to UpdateSnapshot(). Each
@@ -36,8 +33,9 @@ class ViewTreeSnapshotter final {
   // the lifetime of ViewTreeSnapshotter.
   //
   // The |on_new_view_tree| closure of each subscriber in |subscribers| will be called at the
-  // end of every UpdateSnapshot() call with the new snapshot, on their individual dispatcher.
-  // All subscriber callbacks must be safe to queue on their dispatchers for the lifetime of
+  // end of every UpdateSnapshot() call with the new snapshot.
+  //
+  // All subscriber callbacks must be safe to call for the lifetime of
   // ViewTreeSnapshotter.
   explicit ViewTreeSnapshotter(std::vector<SubtreeSnapshotGenerator> subtrees,
                                std::vector<Subscriber> subscribers);

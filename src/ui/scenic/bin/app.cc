@@ -655,36 +655,26 @@ void App::InitializeHeartbeat(display::Display& display) {
     // All subscriber callbacks get called with the new snapshot every time one is generated (once
     // per frame).
     std::vector<view_tree::ViewTreeSnapshotter::Subscriber> subscribers;
-    subscribers.push_back(
-        {.on_new_view_tree =
-             [this](auto snapshot) { input_->OnNewViewTreeSnapshot(std::move(snapshot)); },
-         .dispatcher = async_get_default_dispatcher()});
+    subscribers.push_back({.on_new_view_tree = [this](auto snapshot) {
+      input_->OnNewViewTreeSnapshot(std::move(snapshot));
+    }});
 
-    subscribers.push_back(
-        {.on_new_view_tree =
-             [this](auto snapshot) { focus_manager_.OnNewViewTreeSnapshot(std::move(snapshot)); },
-         .dispatcher = async_get_default_dispatcher()});
+    subscribers.push_back({.on_new_view_tree = [this](auto snapshot) {
+      focus_manager_.OnNewViewTreeSnapshot(std::move(snapshot));
+    }});
 
-    subscribers.push_back({.on_new_view_tree =
-                               [this](auto snapshot) {
-                                 view_ref_installed_impl_.OnNewViewTreeSnapshot(
-                                     std::move(snapshot));
-                               },
-                           .dispatcher = async_get_default_dispatcher()});
+    subscribers.push_back({.on_new_view_tree = [this](auto snapshot) {
+      view_ref_installed_impl_.OnNewViewTreeSnapshot(std::move(snapshot));
+    }});
 
-    subscribers.push_back({.on_new_view_tree =
-                               [this](auto snapshot) {
-                                 geometry_provider_.OnNewViewTreeSnapshot(std::move(snapshot));
-                               },
-                           .dispatcher = async_get_default_dispatcher()});
+    subscribers.push_back({.on_new_view_tree = [this](auto snapshot) {
+      geometry_provider_.OnNewViewTreeSnapshot(std::move(snapshot));
+    }});
 
     if (enable_snapshot_dump_) {
-      subscribers.push_back({.on_new_view_tree =
-                                 [](auto snapshot) {
-                                   view_tree::SnapshotDump::OnNewViewTreeSnapshot(
-                                       std::move(snapshot));
-                                 },
-                             .dispatcher = async_get_default_dispatcher()});
+      subscribers.push_back({.on_new_view_tree = [](auto snapshot) {
+        view_tree::SnapshotDump::OnNewViewTreeSnapshot(std::move(snapshot));
+      }});
     }
 
     view_tree_snapshotter_.emplace(std::move(subtrees_generator_callbacks), std::move(subscribers));
