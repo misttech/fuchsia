@@ -20,11 +20,15 @@ use futures::TryStreamExt;
 use std::sync::{Arc, Mutex};
 use zx;
 
+struct Connection {
+    sender: UnboundedSender<ConnectionMessage>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
 pub struct MagmaSystemDevice {
     driver: Box<dyn traits::Driver>,
     msd_device: Box<dyn traits::Device>,
     perf_count_access_token_id: u64,
-    connections: Mutex<HashMap<u64, UnboundedSender<ConnectionMessage>>>,
+    connections: Mutex<HashMap<u64, Connection>>,
 }
 
 impl Drop for MagmaSystemDevice {
@@ -67,12 +71,21 @@ impl MagmaSystemDevice {
         }
     }
 
-    /// This requests that all of the connections are stopped.
-    /// This does not wait for the connection threads to complete.
+    /// This stops all of the connection threads and waits for them to complete.
     pub fn stop_all_connections(&self) {
-        let connections = self.connections.lock().unwrap();
-        for (_, connection) in connections.iter() {
-            let _ = connection.unbounded_send(ConnectionMessage::ContextKilled);
+        // Swap our connections out so we aren't holding the lock.
+        // (The connection thread tries to remove itself from this map before exiting)
+        let mut connections =
+            std::mem::replace(&mut *self.connections.lock().unwrap(), HashMap::new());
+
+        for (_, connection) in connections.iter_mut() {
+            let _ = connection.sender.unbounded_send(ConnectionMessage::ContextKilled);
+        }
+
+        for (_, connection) in connections.iter_mut() {
+            if let Some(handle) = connection.thread.take() {
+                let _ = handle.join();
+            }
         }
     }
 
@@ -87,8 +100,9 @@ impl MagmaSystemDevice {
             crate::magma_system_connection::ConnectionMessage,
         >();
 
-        self.connections.lock().unwrap().insert(client_id, message_sender.clone());
-        std::thread::Builder::new()
+        let device = self.clone();
+        let connection_sender = message_sender.clone();
+        let thread = std::thread::Builder::new()
             .name(format!("ConnectionThread {}", client_id))
             .spawn(move || {
                 let mut executor = fuchsia_async::LocalExecutor::default();
@@ -99,10 +113,10 @@ impl MagmaSystemDevice {
                     .log_err("Failed to set thread role");
 
                     let system_conn = crate::magma_system_connection::MagmaSystemConnection::new(
-                        self.clone(),
+                        device.clone(),
                         connection,
                         notification_channel,
-                        message_sender,
+                        connection_sender,
                     );
 
                     let mut server =
@@ -112,11 +126,15 @@ impl MagmaSystemDevice {
                         .await
                         .log_err("Failed to run PrimaryFidlServer");
 
-                    let mut map = self.connections.lock().unwrap();
+                    let mut map = device.connections.lock().unwrap();
                     map.remove(&client_id);
                 });
             })
             .unwrap();
+        self.connections
+            .lock()
+            .unwrap()
+            .insert(client_id, Connection { sender: message_sender, thread: Some(thread) });
     }
 
     pub async fn handle_debug_utils(
