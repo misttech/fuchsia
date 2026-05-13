@@ -513,6 +513,12 @@
         "type": "server_end:fuchsia.bluetooth.bredr/Profile"
     },
     {
+        "kind": "union/member",
+        "name": "fuchsia.bluetooth.host/ProtocolRequest.test_gatt_server",
+        "ordinal": "7",
+        "type": "server_end:fuchsia.bluetooth.test/Gatt"
+    },
+    {
         "kind": "union",
         "name": "fuchsia.bluetooth.host/ProtocolRequest",
         "strictness": "flexible",

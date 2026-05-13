@@ -11,6 +11,7 @@ using fuchsia.bluetooth.bredr;
 using fuchsia.bluetooth.gatt;
 using fuchsia.bluetooth.gatt2;
 using fuchsia.bluetooth.le;
+using fuchsia.bluetooth.test;
 
 /// Receives a bt-host by protocol for use in the Bluetooth Host Subsystem
 @discoverable(client="platform,external", server="platform")
@@ -29,6 +30,8 @@ type ProtocolRequest = flexible resource union {
     5: profile server_end:fuchsia.bluetooth.bredr.Profile;
     @available(added=24)
     6: privileged_peripheral server_end:fuchsia.bluetooth.le.PrivilegedPeripheral;
+    @available(added=NEXT)
+    7: test_gatt_server server_end:fuchsia.bluetooth.test.Gatt;
 };
 
 /// A token protocol representing discovery being enabled.
