@@ -63,11 +63,13 @@ if (is_host) {
 if (is_host) {
   go_binary("whereiscl") {
     embed = [ ":main" ]
+    visibility = [ "*" ]
   }
 }
 if (is_host) {
   go_library("testhelper") {
     sources = [ "testhelper/testhelper.go" ]
+    deps = [ "//third_party/golibs:github.com/google/go-cmp/cmp" ]
   }
 }
 if (is_host) {
@@ -79,7 +81,12 @@ if (is_host) {
     embed = [ ":lib" ]
     deps = [
       ":testhelper",
-      "//third_party/golibs:github.com/google/go-cmp",
+      "//third_party/golibs:github.com/google/go-cmp/cmp",
     ]
   }
+}
+group("tests") {
+  deps = [ ":whereiscl_test" ]
+  visibility = [ "*" ]
+  testonly = true
 }

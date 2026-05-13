@@ -36,6 +36,7 @@ go_binary_host_tool(
     name = "whereiscl",
     embed = [":main"],
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
 )
 
 go_library(
@@ -43,6 +44,7 @@ go_library(
     srcs = ["testhelper/testhelper.go"],
     importpath = "go.fuchsia.dev/fuchsia/tools/whereiscl/testhelper",
     target_compatible_with = HOST_CONSTRAINTS,
+    deps = ["//third_party/golibs:github.com/google/go-cmp/cmp"],
 )
 
 # We can also migrate the test content to Bazel, even if we run it from GN for now.
@@ -56,6 +58,14 @@ go_test(
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
         ":testhelper",
-        "//third_party/golibs:github.com/google/go-cmp",
+        "//third_party/golibs:github.com/google/go-cmp/cmp",
     ],
+)
+
+test_suite(
+    name = "tests",
+    tests = [
+        ":whereiscl_test",
+    ],
+    visibility = ["//visibility:public"],
 )
