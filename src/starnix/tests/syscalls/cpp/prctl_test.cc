@@ -14,6 +14,7 @@
 #include <linux/prctl.h>
 #include <linux/securebits.h>
 
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -516,5 +517,108 @@ TEST_F(CapGetSetTest, CapSetExpandPermittedSet) {
     EXPECT_EQ(header_.version, static_cast<__u32>(_LINUX_CAPABILITY_VERSION_3));
   });
 }
+
+TEST(PrctlTest, SecurebitNoCapAmbientRaisePreventsRaisingAmbientCaps) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running as root";
+  }
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&]() {
+    SAFE_SYSCALL(setresuid(0, 0, 0));
+
+    test_helper::SetCapabilityEffective(CAP_SETPCAP);
+    test_helper::SetCapabilityInheritable(CAP_AUDIT_READ);
+    test_helper::SetCapabilityPermitted(CAP_AUDIT_READ);
+
+    SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, SECBIT_NO_CAP_AMBIENT_RAISE));
+
+    EXPECT_THAT(prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_AUDIT_READ, 0, 0),
+                SyscallFailsWithErrno(EPERM));
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+struct SecurebitParam {
+  int bit;
+  int lock_bit;
+  const char *name;
+};
+
+class SecurebitsLockedTest : public ::testing::TestWithParam<SecurebitParam> {};
+
+TEST_P(SecurebitsLockedTest, LockedBitPreventsSettingBit) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running as root";
+  }
+  SecurebitParam param = GetParam();
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&]() {
+    SAFE_SYSCALL(setresuid(0, 0, 0));
+    test_helper::SetCapabilityEffective(CAP_SETPCAP);
+
+    SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, param.lock_bit));
+
+    EXPECT_THAT(prctl(PR_SET_SECUREBITS, param.lock_bit | param.bit), SyscallFailsWithErrno(EPERM));
+
+    EXPECT_EQ(SAFE_SYSCALL(prctl(PR_GET_SECUREBITS)), param.lock_bit);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST_P(SecurebitsLockedTest, LockedBitPreventsClearingBit) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running as root";
+  }
+  SecurebitParam param = GetParam();
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&]() {
+    SAFE_SYSCALL(setresuid(0, 0, 0));
+    test_helper::SetCapabilityEffective(CAP_SETPCAP);
+
+    SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, param.bit));
+    SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, param.bit | param.lock_bit));
+
+    EXPECT_THAT(prctl(PR_SET_SECUREBITS, param.lock_bit), SyscallFailsWithErrno(EPERM));
+
+    EXPECT_EQ(SAFE_SYSCALL(prctl(PR_GET_SECUREBITS)), param.bit | param.lock_bit);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST_P(SecurebitsLockedTest, LockedBitCannotBeCleared) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running as root";
+  }
+  SecurebitParam param = GetParam();
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&]() {
+    SAFE_SYSCALL(setresuid(0, 0, 0));
+    test_helper::SetCapabilityEffective(CAP_SETPCAP);
+
+    SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, param.lock_bit));
+
+    // Try to clear the lock bit (by setting securebits to 0).
+    EXPECT_THAT(prctl(PR_SET_SECUREBITS, 0), SyscallFailsWithErrno(EPERM));
+
+    // Verify the lock bit is still set.
+    EXPECT_EQ(SAFE_SYSCALL(prctl(PR_GET_SECUREBITS)), param.lock_bit);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    AllBits, SecurebitsLockedTest,
+    ::testing::Values(SecurebitParam{SECBIT_NOROOT, SECBIT_NOROOT_LOCKED, "NOROOT"},
+                      SecurebitParam{SECBIT_NO_SETUID_FIXUP, SECBIT_NO_SETUID_FIXUP_LOCKED,
+                                     "NO_SETUID_FIXUP"},
+                      SecurebitParam{SECBIT_NO_CAP_AMBIENT_RAISE,
+                                     SECBIT_NO_CAP_AMBIENT_RAISE_LOCKED, "NO_CAP_AMBIENT_RAISE"}),
+    [](const ::testing::TestParamInfo<SecurebitsLockedTest::ParamType> &info) {
+      return info.param.name;
+    });
 
 }  // namespace

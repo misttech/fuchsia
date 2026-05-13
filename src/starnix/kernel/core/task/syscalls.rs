@@ -1125,7 +1125,9 @@ pub fn sys_prctl(
                 return error!(EINVAL);
             }
             let mut creds = Credentials::clone(&current_task.current_creds());
-            creds.securebits.set(SecureBits::KEEP_CAPS, arg2 != 0);
+            let mut securebits = creds.securebits;
+            securebits.set(SecureBits::KEEP_CAPS, arg2 != 0);
+            creds.set_securebits(securebits)?;
             current_task.set_creds(creds);
             Ok(().into())
         }
@@ -1179,15 +1181,15 @@ pub fn sys_prctl(
         }
         PR_GET_SECUREBITS => Ok(current_task.current_creds().securebits.bits().into()),
         PR_SET_SECUREBITS => {
-            // TODO(security): This does not yet respect locked flags.
-            let mut creds = Credentials::clone(&current_task.current_creds());
             security::check_task_capable(current_task, CAP_SETPCAP)?;
 
             let securebits = SecureBits::from_bits(arg2 as u32).ok_or_else(|| {
                 track_stub!(TODO("https://fxbug.dev/322875244"), "PR_SET_SECUREBITS", arg2);
                 errno!(ENOSYS)
             })?;
-            creds.securebits = securebits;
+
+            let mut creds = Credentials::clone(&current_task.current_creds());
+            creds.set_securebits(securebits)?;
             current_task.set_creds(creds);
             Ok(().into())
         }

@@ -395,6 +395,32 @@ impl Credentials {
         self.cap_effective.contains(capability)
     }
 
+    /// Updates the `securebits` field, taking into account *`_LOCKED` bits.
+    pub fn set_securebits(&mut self, securebits: SecureBits) -> Result<(), Errno> {
+        // If a lock bit is set then neither it nor the corresponding `SECBIT_*` can be changed.
+        let mut locked_bits = SecureBits::empty();
+        if self.securebits.contains(SecureBits::NOROOT_LOCKED) {
+            locked_bits |= SecureBits::NOROOT | SecureBits::NOROOT_LOCKED;
+        }
+        if self.securebits.contains(SecureBits::KEEP_CAPS_LOCKED) {
+            locked_bits |= SecureBits::KEEP_CAPS | SecureBits::KEEP_CAPS_LOCKED;
+        }
+        if self.securebits.contains(SecureBits::NO_SETUID_FIXUP_LOCKED) {
+            locked_bits |= SecureBits::NO_SETUID_FIXUP | SecureBits::NO_SETUID_FIXUP_LOCKED;
+        }
+        if self.securebits.contains(SecureBits::NO_CAP_AMBIENT_RAISE_LOCKED) {
+            locked_bits |=
+                SecureBits::NO_CAP_AMBIENT_RAISE | SecureBits::NO_CAP_AMBIENT_RAISE_LOCKED;
+        }
+
+        if securebits & locked_bits != self.securebits & locked_bits {
+            return error!(EPERM);
+        }
+
+        self.securebits = securebits;
+        Ok(())
+    }
+
     fn apply_suid_and_sgid(&mut self, maybe_set: UserAndOrGroupId) {
         if maybe_set.is_none() {
             return;

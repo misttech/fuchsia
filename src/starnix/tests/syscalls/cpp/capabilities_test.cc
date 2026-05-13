@@ -247,10 +247,13 @@ class CapsExecTest : public ::testing::Test {
 TEST_F(CapsExecTest, SecurebitKeepCapsIsNotPreservedAcrossExecve) {
   unsigned int securebits;
 
-  ASSERT_TRUE(RunPrintSecurebits([]() { SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, SECBIT_KEEP_CAPS)); },
-                                 &securebits));
+  ASSERT_TRUE(RunPrintSecurebits(
+      []() { SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, SECBIT_KEEP_CAPS | SECBIT_KEEP_CAPS_LOCKED)); },
+      &securebits));
 
   EXPECT_NE(securebits & SECBIT_KEEP_CAPS, static_cast<unsigned int>(SECBIT_KEEP_CAPS));
+  EXPECT_EQ(securebits & SECBIT_KEEP_CAPS_LOCKED,
+            static_cast<unsigned int>(SECBIT_KEEP_CAPS_LOCKED));
 }
 
 TEST_F(CapsExecTest, SecurebitFlagsArePreservedAcrossExecve) {
