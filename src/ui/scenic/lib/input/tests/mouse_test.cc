@@ -88,7 +88,7 @@ std::shared_ptr<view_tree::Snapshot> NewSnapshot(std::vector<zx_koid_t> hits,
 class MouseTest : public gtest::TestLoopFixture {
  public:
   MouseTest()
-      : hit_tester_(view_tree_snapshot_, inspect_node_),
+      : hit_tester_(inspect_node_),
         mouse_system_(context_provider_.context(), view_tree_snapshot_, hit_tester_,
                       /*request_focus*/ [](auto...) {}) {}
 

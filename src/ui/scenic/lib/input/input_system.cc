@@ -17,7 +17,7 @@ namespace scenic_impl::input {
 InputSystem::InputSystem(sys::ComponentContext *context, inspect::Node &inspect_node,
                          RequestFocusFunc request_focus, async_dispatcher_t *dispatcher)
     : request_focus_(std::move(request_focus)),
-      hit_tester_(view_tree_snapshot_, inspect_node),
+      hit_tester_(inspect_node),
       mouse_system_(context, view_tree_snapshot_, hit_tester_,
                     [this](zx_koid_t koid) { request_focus_(koid); }),
       touch_system_(context, view_tree_snapshot_, hit_tester_, inspect_node),

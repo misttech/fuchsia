@@ -31,15 +31,14 @@ bool IsOutsideViewport(const Viewport& viewport, const glm::vec2& position_in_vi
 
 }  // namespace
 
-HitTester::HitTester(const std::shared_ptr<const view_tree::Snapshot>& view_tree_snapshot,
-                     inspect::Node& parent_node)
-    : view_tree_snapshot_(view_tree_snapshot),
-      hit_test_stats_node_(parent_node.CreateChild("HitTestStats")),
+HitTester::HitTester(inspect::Node& parent_node)
+    : hit_test_stats_node_(parent_node.CreateChild("HitTestStats")),
       num_empty_hit_tests_(hit_test_stats_node_.CreateUint("num_empty_hit_tests", 0)),
       hits_outside_viewport_(hit_test_stats_node_.CreateUint("hit_outside_viewport", 0)),
       context_view_missing_(hit_test_stats_node_.CreateUint("context_view_missing", 0)) {}
 
-std::vector<zx_koid_t> HitTester::HitTest(const Viewport& viewport,
+std::vector<zx_koid_t> HitTester::HitTest(const view_tree::Snapshot& snapshot,
+                                          const Viewport& viewport,
                                           const glm::vec2 position_in_viewport,
                                           const zx_koid_t context, const zx_koid_t target,
                                           const bool semantic_hit_test) {
@@ -49,7 +48,7 @@ std::vector<zx_koid_t> HitTester::HitTest(const Viewport& viewport,
   }
 
   const std::optional<glm::mat4> world_from_context_transform =
-      view_tree_snapshot_->GetWorldFromViewTransform(context);
+      snapshot.GetWorldFromViewTransform(context);
   if (!world_from_context_transform) {
     num_empty_hit_tests_.Add(1);
     context_view_missing_.Add(1);
@@ -60,7 +59,7 @@ std::vector<zx_koid_t> HitTester::HitTest(const Viewport& viewport,
       world_from_context_transform.value() * viewport.context_from_viewport_transform;
   const auto world_space_point =
       utils::TransformPointerCoords(position_in_viewport, world_from_viewport_transform);
-  auto hits = view_tree_snapshot_->HitTest(target, world_space_point, semantic_hit_test);
+  auto hits = snapshot.HitTest(target, world_space_point, semantic_hit_test);
   if (hits.empty()) {
     num_empty_hit_tests_.Add(1);
   }

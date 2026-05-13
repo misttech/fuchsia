@@ -93,7 +93,7 @@ std::shared_ptr<view_tree::Snapshot> NewSnapshot(std::vector<zx_koid_t> hits,
 class GestureDisambiguationTest : public gtest::TestLoopFixture {
  public:
   GestureDisambiguationTest()
-      : hit_tester_(view_tree_snapshot_, inspect_node_),
+      : hit_tester_(inspect_node_),
         touch_system_(context_provider_.context(), view_tree_snapshot_, hit_tester_,
                       inspect_node_) {}
 

@@ -92,7 +92,8 @@ void MouseSystem::InjectMouseEventHitTested(InternalMouseEvent event, const Stre
   }
   // If not latched, choose the current target by finding the top view.
   if (!mouse_receiver.latched) {
-    const zx_koid_t top_koid = hit_tester_.TopHitTest(event, /*semantic_hit_test*/ false);
+    const zx_koid_t top_koid =
+        hit_tester_.TopHitTest(*view_tree_snapshot_, event, /*semantic_hit_test*/ false);
 
     // Determine the currently hovered view. If it's different than previously, send the
     // previous one a "View Exited" event.

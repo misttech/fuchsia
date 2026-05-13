@@ -178,7 +178,8 @@ void TouchSystem::Upgrade(fidl::InterfaceHandle<fuchsia::ui::pointer::TouchSourc
               // client, this hit test will be done multiple times per injectiom redundantly. We
               // might need to improve this in the future, but as long as we're only expecting the
               // one client this is fine.
-              const zx_koid_t top_koid = hit_tester_.TopHitTest(event, /*semantic_hit_test*/ true);
+              const zx_koid_t top_koid =
+                  hit_tester_.TopHitTest(*view_tree_snapshot_, event, /*semantic_hit_test*/ true);
               glm::vec2 local_point = glm::vec2(0.f, 0.f);
               if (top_koid != ZX_KOID_INVALID) {
                 const std::array<float, 9> top_view_from_viewport_transform =
@@ -205,7 +206,8 @@ void TouchSystem::Upgrade(fidl::InterfaceHandle<fuchsia::ui::pointer::TouchSourc
 fuchsia::ui::input::accessibility::PointerEvent TouchSystem::CreateAccessibilityEvent(
     const InternalTouchEvent& event) {
   // Find top-hit target and send it to accessibility.
-  const zx_koid_t view_ref_koid = hit_tester_.TopHitTest(event, /*semantic_hit_test*/ true);
+  const zx_koid_t view_ref_koid =
+      hit_tester_.TopHitTest(*view_tree_snapshot_, event, /*semantic_hit_test*/ true);
 
   glm::vec2 top_hit_view_local;
   if (view_ref_koid != ZX_KOID_INVALID) {
@@ -384,7 +386,8 @@ std::vector<ContenderId> TouchSystem::CollectContenders(StreamId stream_id,
     contenders.push_back(a11y_contender_id_);
   }
 
-  const zx_koid_t top_koid = hit_tester_.TopHitTest(event, /*semantic_hit_test*/ false);
+  const zx_koid_t top_koid =
+      hit_tester_.TopHitTest(*view_tree_snapshot_, event, /*semantic_hit_test*/ false);
   if (top_koid != ZX_KOID_INVALID) {
     // Find TouchSource contenders in priority order from furthest (valid) ancestor to top hit view.
     const std::vector<zx_koid_t> ancestors = GetAncestorChainTopToBottom(top_koid, event.target);

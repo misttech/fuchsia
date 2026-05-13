@@ -16,32 +16,31 @@ namespace scenic_impl::input {
 // Performs hit testing and tracks hit testing inspect data.
 class HitTester {
  public:
-  explicit HitTester(const std::shared_ptr<const view_tree::Snapshot>& view_tree_snapshot,
-                     inspect::Node& parent_node);
+  explicit HitTester(inspect::Node& parent_node);
   ~HitTester() = default;
 
-  // Perform a hit test with |event| in |view_tree| and returns the koids of all hit views, in order
+  // Perform a hit test with |event| in |snapshot| and returns the koids of all hit views, in order
   // from geometrically closest to furthest from the |event|.
-  std::vector<zx_koid_t> HitTest(const Viewport& viewport, glm::vec2 position_in_viewport,
-                                 zx_koid_t context, zx_koid_t target, bool semantic_hit_test);
+  std::vector<zx_koid_t> HitTest(const view_tree::Snapshot& snapshot, const Viewport& viewport,
+                                 glm::vec2 position_in_viewport, zx_koid_t context,
+                                 zx_koid_t target, bool semantic_hit_test);
 
   template <typename T>
-  std::vector<zx_koid_t> HitTest(const T& event, bool semantic_hit_test) {
-    return HitTest(event.viewport, event.position_in_viewport, event.context, event.target,
-                   semantic_hit_test);
+  std::vector<zx_koid_t> HitTest(const view_tree::Snapshot& snapshot, const T& event,
+                                 bool semantic_hit_test) {
+    return HitTest(snapshot, event.viewport, event.position_in_viewport, event.context,
+                   event.target, semantic_hit_test);
   }
 
   // Returns the koid of the top hit, or ZX_KOID_INVALID if there is none.
   template <typename T>
-  zx_koid_t TopHitTest(const T& event, bool semantic_hit_test) {
-    const auto hits = HitTest(event, semantic_hit_test);
+  zx_koid_t TopHitTest(const view_tree::Snapshot& snapshot, const T& event,
+                       bool semantic_hit_test) {
+    const auto hits = HitTest(snapshot, event, semantic_hit_test);
     return hits.empty() ? ZX_KOID_INVALID : hits.front();
   }
 
  private:
-  // Reference to the ViewTreeSnapshot held by InputSystem.
-  const std::shared_ptr<const view_tree::Snapshot>& view_tree_snapshot_;
-
   // Inspect data.
   inspect::Node hit_test_stats_node_;
   inspect::UintProperty num_empty_hit_tests_;
