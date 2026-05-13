@@ -29,8 +29,7 @@ async fn main() -> Result<(), anyhow::Error> {
         );
     }
 
-    let options = fdf_env::Environment::ENFORCE_ALLOWED_SCHEDULER_ROLES
-        | fdf_env::Environment::DYNAMIC_THREAD_SPAWNING;
+    let options = fdf_env::Environment::ENFORCE_ALLOWED_SCHEDULER_ROLES;
     let env = fdf_env::Environment::start(options)?;
 
     let mut service_fs = ServiceFs::new_local();
