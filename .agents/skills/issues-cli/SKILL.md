@@ -125,10 +125,18 @@ Render the full details of a specific issue. `$ISSUES render --issue_id <ID>
 
 ### 4. Add a Comment
 
-Post a new comment to an existing issue. `$ISSUES comment --issue_id <ID>
---comment "<MESSAGE>"`
+Post a new comment to an existing issue. Use either `--comment` or
+`--comment_file`:
+
+```bash
+$ISSUES comment --issue_id <ID> --comment "<MESSAGE>"
+# OR
+$ISSUES comment --issue_id <ID> --comment_file <PATH>
+```
 
 - **comment**: The text or markdown to add as a comment.
+- **comment_file**: The file to read a comment from. Preferred for multi-line
+  payloads.
 
 ### 5. Create a New Issue
 
