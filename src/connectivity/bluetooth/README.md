@@ -190,7 +190,7 @@ documentation includes an example of the expected inspect tree.
 
 #### Example Usage
 
-*   bt-host: `ffx inspect show bootstrap/driver_manager --file class/bt-host/000.inspect`
+*   bt-host: `ffx inspect show core/bluetooth-core/bt-host-collection*`
     exposes information about the controller, peers, and services.
 *   bt-gap: `ffx inspect show core/bluetooth-core/bt-gap` exposes information on host devices
     managed by bt-gap, pairing capabilities, stored bonds, and actively connected peers.
@@ -200,12 +200,6 @@ documentation includes an example of the expected inspect tree.
     devices are being logged and how much data is stored.
 *   All core Bluetooth components `ffx inspect show core/bluetooth-core/*`
 *   All other Bluetooth components: `ffx inspect show core/bt-*`
-
-
-See the [ffx documentation](/docs/reference/tools/sdk/ffx) for complete instructions
-on using `inspect`.
-
-`TODO(https://fxbug.dev/42131615): Find a better link for ffx inspect usage`
 
 ### Respectful Code
 
