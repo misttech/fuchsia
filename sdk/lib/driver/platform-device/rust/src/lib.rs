@@ -27,6 +27,11 @@ pub trait PlatformDevice {
     fn get_typed_metadata<T: Persistable + Serializable>(
         &self,
     ) -> impl Future<Output = Result<T, Status>>;
+
+    /// Gets deserialized metadata associated with this platform device using default ID.
+    fn get_deserialized_metadata<T: serde::de::DeserializeOwned>(
+        &self,
+    ) -> impl Future<Output = Result<T, Status>>;
 }
 
 impl PlatformDevice for pdev_fidl::DeviceProxy {
@@ -68,6 +73,27 @@ impl PlatformDevice for pdev_fidl::DeviceProxy {
             .map_err(Status::from_raw)?;
         fidl::unpersist(&metadata).map_err(|err| {
             error!("Failed to parse pdev metadata: {err}");
+            Status::INVALID_ARGS
+        })
+    }
+
+    async fn get_deserialized_metadata<T: serde::de::DeserializeOwned>(&self) -> Result<T, Status> {
+        let name = "fuchsia.driver.metadata.Dictionary";
+        let metadata = self
+            .get_metadata(name)
+            .await
+            .map_err(|err| {
+                error!("Failed to get metadata from pdev: {name} {err}");
+                Status::INTERNAL
+            })?
+            .map_err(Status::from_raw)?;
+        let dict: fidl_fuchsia_driver_metadata::Dictionary =
+            fidl::unpersist(&metadata).map_err(|err| {
+                error!("Failed to unpersist dictionary: {err}");
+                Status::INVALID_ARGS
+            })?;
+        fdf_metadata::from_dictionary(dict).map_err(|err| {
+            error!("Failed to deserialize config from dictionary: {err:?}");
             Status::INVALID_ARGS
         })
     }

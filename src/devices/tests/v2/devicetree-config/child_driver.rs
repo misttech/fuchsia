@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use fdf_component::{Driver, DriverContext, driver_register};
-use fidl_fuchsia_driver_metadata as fmetadata;
 use log::info;
+use pdev::PlatformDevice;
 use serde::Deserialize;
 use zx::Status;
 
@@ -44,24 +44,8 @@ impl Driver for ChildDriver {
             Status::INTERNAL
         })?;
 
-        let result =
-            pdev.get_metadata("fuchsia.driver.metadata.Dictionary").await.map_err(|e| {
-                log::error!("Failed to get metadata: {:?}", e);
-                Status::INTERNAL
-            })?;
-        let bytes = result.map_err(|s| {
-            log::error!("Metadata result error: {:?}", s);
-            Status::from_raw(s)
-        })?;
-        let dict: fmetadata::Dictionary = fidl::unpersist(&bytes).map_err(|e| {
-            log::error!("Failed to unpersist dictionary: {:?}", e);
-            Status::INTERNAL
-        })?;
-
-        log::info!("Dict: {:?}", dict);
-
-        let config: MyConfig = fdf_metadata::from_dictionary(dict).map_err(|e| {
-            log::error!("Failed to deserialize config: {:?}", e);
+        let config: MyConfig = pdev.get_deserialized_metadata().await.map_err(|e| {
+            log::error!("Failed to get deserialized metadata: {:?}", e);
             Status::INTERNAL
         })?;
 
