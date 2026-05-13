@@ -162,6 +162,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
         channel: int,
         ssid: str,
+        profile_name: str,
         force_wmm: bool = False,
         additional_ap_parameters: HostapdOptions | None = None,
         frag_threshold: int | None = None,
@@ -238,7 +239,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
             setup_ap(
                 access_point=self.access_point,
-                profile_name="whirlwind_11ab_legacy",
+                profile_name=profile_name,
                 channel=channel,
                 ssid=ssid,
                 force_wmm=force_wmm,
@@ -258,6 +259,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_long_preamble(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             preamble=False,
@@ -265,6 +267,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_short_preamble(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             preamble=True,
@@ -272,6 +275,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_minimal_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             beacon_interval=15,
@@ -279,6 +283,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_maximum_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             beacon_interval=1024,
@@ -286,6 +291,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_frag_threshold_430(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             frag_threshold=430,
@@ -293,6 +299,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_rts_threshold_256(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             rts_threshold=256,
@@ -300,6 +307,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_rts_256_frag_430(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             rts_threshold=256,
@@ -308,6 +316,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_high_dtim_low_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             dtim_period=3,
@@ -316,6 +325,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_low_dtim_high_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             dtim_period=1,
@@ -324,6 +334,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_with_WMM_with_default_values(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -332,6 +343,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_with_WMM_with_non_default_values(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -341,6 +353,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
     def test_associate_11b_only_with_WMM_ACM_on_BK(self) -> None:
         wmm_acm_bits_enabled = WmmParams.DEFAULT_11B | WmmAcm.BK
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -351,6 +364,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
     def test_associate_11b_only_with_WMM_ACM_on_BE(self) -> None:
         wmm_acm_bits_enabled = WmmParams.DEFAULT_11B | WmmAcm.BE
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -360,6 +374,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
     def test_associate_11b_only_with_WMM_ACM_on_VI(self) -> None:
         wmm_acm_bits_enabled = WmmParams.DEFAULT_11B | WmmAcm.VI
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -369,6 +384,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
     def test_associate_11b_only_with_WMM_ACM_on_VO(self) -> None:
         wmm_acm_bits_enabled = WmmParams.DEFAULT_11B | WmmAcm.VO
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -380,6 +396,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_11B | WmmAcm.BK | WmmAcm.BE | WmmAcm.VI
         )
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -391,6 +408,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_11B | WmmAcm.BK | WmmAcm.BE | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -402,6 +420,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_11B | WmmAcm.BK | WmmAcm.VI | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -413,6 +432,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_11B | WmmAcm.BE | WmmAcm.VI | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -421,6 +441,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_with_country_code(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             country_ie=1,
@@ -430,6 +451,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_with_non_country_code(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             country_ie=1,
@@ -439,6 +461,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11b_only_with_hidden_ssid(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             hidden=True,
@@ -448,6 +471,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
     ) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             vendor_elements=VendorElements.CORRECT_LENGTH,
@@ -457,6 +481,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
     ) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             vendor_elements=VendorElements.ZERO_LENGTH_WITHOUT_DATA,
@@ -466,6 +491,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
     ) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             additional_ap_parameters=AssocRespIe.CORRECT_LENGTH,
@@ -475,6 +501,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
     ) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             additional_ap_parameters=AssocRespIe.ZERO_LENGTH_WITHOUT_DATA,
@@ -482,6 +509,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_long_preamble(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             preamble=False,
@@ -489,6 +517,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_short_preamble(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             preamble=True,
@@ -496,6 +525,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_minimal_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             beacon_interval=15,
@@ -503,6 +533,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_maximum_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             beacon_interval=1024,
@@ -510,6 +541,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_frag_threshold_430(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             frag_threshold=430,
@@ -517,6 +549,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_rts_threshold_256(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             rts_threshold=256,
@@ -524,6 +557,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_rts_256_frag_430(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             rts_threshold=256,
@@ -532,6 +566,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_high_dtim_low_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             dtim_period=3,
@@ -540,6 +575,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_low_dtim_high_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             dtim_period=1,
@@ -548,6 +584,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_with_WMM_with_default_values(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             force_wmm=True,
@@ -556,6 +593,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_with_WMM_with_non_default_values(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             force_wmm=True,
@@ -567,6 +605,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.BK
         )
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             force_wmm=True,
@@ -578,6 +617,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.BE
         )
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             force_wmm=True,
@@ -589,6 +629,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.VI
         )
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             force_wmm=True,
@@ -600,6 +641,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             force_wmm=True,
@@ -614,6 +656,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             | WmmAcm.VI
         )
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             force_wmm=True,
@@ -628,6 +671,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             force_wmm=True,
@@ -642,6 +686,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             force_wmm=True,
@@ -656,6 +701,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             force_wmm=True,
@@ -664,6 +710,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_with_country_code(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             country_ie=1,
@@ -673,6 +720,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_with_non_country_code(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             country_ie=1,
@@ -682,6 +730,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11a_only_with_hidden_ssid(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             hidden=True,
@@ -691,6 +740,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
     ) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             vendor_elements=VendorElements.CORRECT_LENGTH,
@@ -700,6 +750,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
     ) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             vendor_elements=VendorElements.ZERO_LENGTH_WITHOUT_DATA,
@@ -709,6 +760,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
     ) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             additional_ap_parameters=AssocRespIe.CORRECT_LENGTH,
@@ -718,6 +770,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
     ) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
             additional_ap_parameters=AssocRespIe.ZERO_LENGTH_WITHOUT_DATA,
@@ -725,6 +778,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_long_preamble(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             preamble=False,
@@ -734,6 +788,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_short_preamble(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             preamble=True,
@@ -743,6 +798,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_minimal_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             beacon_interval=15,
@@ -752,6 +808,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_maximum_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             beacon_interval=1024,
@@ -761,6 +818,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_frag_threshold_430(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             frag_threshold=430,
@@ -770,6 +828,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_rts_threshold_256(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             rts_threshold=256,
@@ -779,6 +838,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_rts_256_frag_430(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             rts_threshold=256,
@@ -789,6 +849,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_high_dtim_low_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             dtim_period=3,
@@ -799,6 +860,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_low_dtim_high_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             dtim_period=1,
@@ -809,6 +871,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_with_WMM_with_default_values(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -819,6 +882,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_with_WMM_with_non_default_values(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -832,6 +896,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.BK
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -845,6 +910,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.BE
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -858,6 +924,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.VI
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -871,6 +938,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -887,6 +955,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             | WmmAcm.VI
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -903,6 +972,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -919,6 +989,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -935,6 +1006,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -945,6 +1017,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_with_country_code(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             country_ie=1,
@@ -956,6 +1029,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_with_non_country_code(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             country_ie=1,
@@ -967,6 +1041,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11g_only_with_hidden_ssid(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             hidden=True,
@@ -978,6 +1053,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
     ) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             supported_rates=SupportedRates.OFDM,
@@ -989,6 +1065,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
     ) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             supported_rates=SupportedRates.OFDM,
@@ -1000,6 +1077,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
     ) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             supported_rates=SupportedRates.OFDM,
@@ -1011,6 +1089,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
     ) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             supported_rates=SupportedRates.OFDM,
@@ -1020,6 +1099,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_only_long_preamble(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             preamble=False,
@@ -1027,6 +1107,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_short_preamble(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             preamble=True,
@@ -1034,6 +1115,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_minimal_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             beacon_interval=15,
@@ -1041,6 +1123,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_maximum_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             beacon_interval=1024,
@@ -1048,6 +1131,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_frag_threshold_430(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             frag_threshold=430,
@@ -1055,6 +1139,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_rts_threshold_256(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             rts_threshold=256,
@@ -1062,6 +1147,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_rts_256_frag_430(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             rts_threshold=256,
@@ -1070,6 +1156,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_high_dtim_low_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             dtim_period=3,
@@ -1078,6 +1165,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_low_dtim_high_beacon_interval(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             dtim_period=1,
@@ -1086,6 +1174,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_with_WMM_with_default_values(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -1094,6 +1183,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_with_WMM_with_non_default_values(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -1105,6 +1195,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.BK
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -1116,6 +1207,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.BE
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -1127,6 +1219,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.VI
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -1138,6 +1231,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -1152,6 +1246,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             | WmmAcm.VI
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -1166,6 +1261,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -1180,6 +1276,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -1194,6 +1291,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             | WmmAcm.VO
         )
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
@@ -1202,6 +1300,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_with_country_code(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             country_ie=1,
@@ -1211,6 +1310,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_with_non_country_code(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             country_ie=1,
@@ -1220,6 +1320,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_only_with_hidden_ssid(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             hidden=True,
@@ -1229,6 +1330,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         self,
     ) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             vendor_elements=VendorElements.CORRECT_LENGTH,
@@ -1236,6 +1338,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_associate_11bg_with_vendor_ie_in_beacon_zero_length(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             vendor_elements=VendorElements.ZERO_LENGTH_WITHOUT_DATA,
@@ -1243,96 +1346,112 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     def test_minimum_ssid_length_2g_11n_20mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_min_len_2g["SSID"],
         )
 
     def test_minimum_ssid_length_5g_11ac_80mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_min_len_5g["SSID"],
         )
 
     def test_maximum_ssid_length_2g_11n_20mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_max_len_2g["SSID"],
         )
 
     def test_maximum_ssid_length_5g_11ac_80mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_max_len_5g["SSID"],
         )
 
     def test_ssid_with_UTF8_characters_2g_11n_20mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.utf8_ssid_2g,
         )
 
     def test_ssid_with_UTF8_characters_5g_11ac_80mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.utf8_ssid_5g,
         )
 
     def test_ssid_with_UTF8_characters_french_2g_11n_20mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.utf8_ssid_2g_french,
         )
 
     def test_ssid_with_UTF8_characters_german_2g_11n_20mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.utf8_ssid_2g_german,
         )
 
     def test_ssid_with_UTF8_characters_dutch_2g_11n_20mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.utf8_ssid_2g_dutch,
         )
 
     def test_ssid_with_UTF8_characters_swedish_2g_11n_20mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.utf8_ssid_2g_swedish,
         )
 
     def test_ssid_with_UTF8_characters_norwegian_2g_11n_20mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.utf8_ssid_2g_norwegian,
         )
 
     def test_ssid_with_UTF8_characters_danish_2g_11n_20mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.utf8_ssid_2g_danish,
         )
 
     def test_ssid_with_UTF8_characters_japanese_2g_11n_20mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.utf8_ssid_2g_japanese,
         )
 
     def test_ssid_with_UTF8_characters_spanish_2g_11n_20mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.utf8_ssid_2g_spanish,
         )
 
     def test_ssid_with_UTF8_characters_italian_2g_11n_20mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.utf8_ssid_2g_italian,
         )
 
     def test_ssid_with_UTF8_characters_korean_2g_11n_20mhz(self) -> None:
         self._run_test(
+            profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.utf8_ssid_2g_korean,
         )
