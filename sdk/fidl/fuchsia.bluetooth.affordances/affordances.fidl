@@ -43,16 +43,20 @@ open protocol PeerController {
     /// Connect to a peer.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
+    /// * error Returns `MISSING_PARAMETERS` if the selector does not contain a peer ID.
     flexible ConnectPeer(PeerSelector) -> () error Error;
 
     /// Disconnect all logical links (BR/EDR & LE) to a peer.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
+    /// * error Returns `MISSING_PARAMETERS` if the selector does not contain a peer ID.
     flexible DisconnectPeer(PeerSelector) -> () error Error;
 
     /// Initiate pairing with a peer.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
+    /// * error Returns `MISSING_PARAMETERS` if `selector` or `options` is missing, or if `selector`
+    ///   does not contain a peer ID.
     flexible Pair(table {
         /// Required. Defines which peer to initiate pairing with.
         1: selector PeerSelector;
@@ -64,11 +68,13 @@ open protocol PeerController {
     /// Forget a peer and all its bonding information.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
+    /// * error Returns `MISSING_PARAMETERS` if the selector does not contain a peer ID.
     flexible ForgetPeer(PeerSelector) -> () error Error;
 
     /// Set discovery state.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
+    /// * error Returns `MISSING_PARAMETERS` if `discovery` is missing.
     flexible SetDiscovery(table {
         /// Required. Set to true if starting discovery or false if stopping discovery.
         1: discovery bool;
@@ -87,6 +93,7 @@ open protocol HostController {
     /// Set discoverability state.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
+    /// * error Returns `MISSING_PARAMETERS` if `discoverable` is missing.
     flexible SetDiscoverability(table {
         /// Required. Set to true if making discoverable or false if revoking discoverability.
         1: discoverable bool;
@@ -95,13 +102,15 @@ open protocol HostController {
     /// Set the active host.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
+    /// * error Returns `MISSING_PARAMETERS` if the selector does not contain a host ID.
     flexible SetActiveHost(HostSelector) -> () error Error;
 
     /// Set the active host's local name.
     ///
-    /// + request `name` Name to assign to the host.
     /// * error Returns `INTERNAL` if the operation failed (check logs).
+    /// * error Returns `MISSING_PARAMETERS` if `name` is missing.
     flexible SetLocalName(table {
+        /// Required. Name to assign to the host.
         1: name bt.DeviceName;
     }) -> () error Error;
 
@@ -116,6 +125,8 @@ open protocol HostController {
     /// initiated by the host.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
+    /// * error Returns `MISSING_PARAMETERS` if `input_capability` or `output_capability` is
+    ///   missing.
     flexible StartPairingDelegate(table {
         /// Required. Set based on the ability of the host to enter responses to pairing requests.
         /// See [`fuchsia.bluetooth.sys/InputCapability`].
@@ -131,13 +142,12 @@ open protocol HostController {
     ///
     /// This method can only stop a delegate started by [`StartPairingDelegate`], and will not stop
     /// a delegate started through other means.
-    ///
-    /// * error Returns `INTERNAL` if the operation failed (check logs).
-    flexible StopPairingDelegate() -> () error Error;
+    flexible StopPairingDelegate() -> ();
 
     /// Set the active host's device class.
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
+    /// * error Returns `MISSING_PARAMETERS` if `device_class` is missing.
     flexible SetDeviceClass(table {
         /// Required. The device class to assign to the host. See [`fuchsia.bluetooth.DeviceClass`].
         1: device_class bt.DeviceClass;
@@ -150,6 +160,7 @@ open protocol PeripheralController {
     ///
     /// * error Returns `INTERNAL` if the operation failed (check logs).
     /// * error Returns `TIMEOUT` if the advertisement timed out without a connection.
+    /// * error Returns `MISSING_PARAMETERS` if `parameters` or `timeout` is missing.
     flexible Advertise(table {
         /// Required. Advertising parameters.
         1: parameters le.AdvertisingParameters;

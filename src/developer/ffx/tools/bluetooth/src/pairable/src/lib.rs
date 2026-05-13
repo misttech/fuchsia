@@ -72,12 +72,7 @@ impl PairableTool {
             .host_controller
             .stop_pairing_delegate()
             .await
-            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?
-            .map_err(|err| {
-                fho::Error::Unexpected(anyhow::anyhow!(
-                    "fuchsia.bluetooth.affordances.HostController error: {err:?}"
-                ))
-            })?)
+            .map_err(|err| fho::Error::Unexpected(anyhow::anyhow!("FIDL error: {err}")))?)
     }
 }
 
