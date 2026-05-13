@@ -11,7 +11,6 @@ group("drivers") {
     "drivers/usb-composite",
     "drivers/usb-hub",
     "drivers/usb-peripheral",
-    "drivers/usb-peripheral-test",
     "drivers/usb-virtual-bus",
     "drivers/usb-virtual-bus/tests/virtual-bus-tester",
     "drivers/usb-virtual-bus/tests/virtual-bus-tester-function",
