@@ -5,7 +5,8 @@
 mod lazy_pseudo_directory;
 
 pub use crate::lazy_pseudo_directory::{
-    LazyPseudoDirectory, LazyPseudoDirectoryState, ToPseudoDirectory,
+    LazyPseudoDirectory, LazyPseudoDirectoryAsync, LazyPseudoDirectoryState, ToPseudoDirectory,
+    ToPseudoDirectoryAsync,
 };
 pub use vfs::directory::simple::Simple as PseudoDirectory;
 pub use vfs::file::vmo::VmoFile as PseudoFile;
