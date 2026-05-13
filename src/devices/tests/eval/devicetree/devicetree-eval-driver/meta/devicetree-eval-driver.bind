@@ -1,14 +1,7 @@
 // Copyright 2026 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/dts-v1/;
 
-/ {
-	#address-cells = <1>;
-	#size-cells = <1>;
+using fuchsia.devicetree;
 
-	test-device@1000 {
-		compatible = "fuchsia,test-device";
-		reg = <0x1000 0x100>;
-	};
-};
+fuchsia.devicetree.FIRST_COMPATIBLE == "fuchsia,test-device";

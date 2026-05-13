@@ -5,6 +5,7 @@
 import("//build/components.gni")
 import("//build/devicetree/devicetree.gni")
 import("//build/drivers.gni")
+import("//build/rust/rustc_test.gni")
 
 group("tests") {
   testonly = true
@@ -23,7 +24,7 @@ resource("test-dtb-resource") {
 }
 
 driver_bind_rules("fake-board-bind") {
-  rules = "fake-board.bind"
+  rules = "meta/fake-board.bind"
   deps = [
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
     "//src/devices/bind/fuchsia.test.platform",
@@ -54,15 +55,19 @@ fuchsia_driver_component("fake-board-component") {
   info = "meta/fake-board-info.json"
 }
 
-executable("test-bin") {
-  testonly = true
-  sources = [ "integration-test.cc" ]
+rustc_test("test-bin") {
+  edition = "2024"
+  source_root = "devicetree-evaluation-test.rs"
+  sources = [ "devicetree-evaluation-test.rs" ]
   deps = [
-    "//sdk/lib/async-loop:async-loop-cpp",
-    "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/driver/devicetree/testing:board-test-helper",
-    "//src/lib/fxl/test:gtest_main",
-    "//zircon/system/ulib/ddk-platform-defs",
+    "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
+    "//sdk/lib/driver_test_realm/realm_builder/rust",
+    "//sdk/rust/zx",
+    "//src/devices/tests/fidl-service:echo_rust",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-component-test",
+    "//third_party/rust_crates:anyhow",
   ]
 }
 
