@@ -8,6 +8,8 @@
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 
+#include <memory>
+
 #include <fbl/mutex.h>
 #include <usb/request-cpp.h>
 #include <usb/request-fidl.h>
@@ -75,17 +77,17 @@ class UsbEpServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint>
   void CancelAll(CancelAllCompleter::Sync& completer) override;
 
   UsbVirtualEp* ep_;
-  std::optional<fidl::ServerBinding<fuchsia_hardware_usb_endpoint::Endpoint>> binding_;
+  std::shared_ptr<fidl::ServerBinding<fuchsia_hardware_usb_endpoint::Endpoint>> binding_
+      __TA_GUARDED(lock_);
 
   // completions_: Holds on to request completions that are completed, but have not been replied
   // to due to  defer_completion == true.
-  std::vector<fuchsia_hardware_usb_endpoint::Completion> completions_;
+  std::vector<fuchsia_hardware_usb_endpoint::Completion> completions_ __TA_GUARDED(lock_);
 
   // registered_vmos_: All pre-registered VMOs registered through RegisterVmos(). Mapping from
   // vmo_id to usb::MappedVmo.
   std::map<uint64_t, usb::MappedVmo> registered_vmos_ __TA_GUARDED(lock_);
 
-  // Guards access to pending_reqs_, current_req_, and registered_vmos_.
   fbl::Mutex lock_;
 };
 

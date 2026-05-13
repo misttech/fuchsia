@@ -7,6 +7,9 @@
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/fake-bti/bti.h>
 
+#include <atomic>
+#include <thread>
+
 #include <zxtest/zxtest.h>
 
 namespace {
@@ -281,6 +284,31 @@ TEST_F(UsbEndpointServerTest, RequestCompleteBanjoTest) {
   ep_->RequestComplete(ZX_OK, 0,
                        usb::BorrowedRequest<void>(request->take(), complete_cb, kBaseReqSize));
   EXPECT_TRUE(called);
+}
+
+TEST_F(UsbEndpointServerTest, ConcurrentRequestCompleteAndUnbind) {
+  std::atomic<bool> stop{false};
+  std::thread complete_thread([&]() {
+    while (!stop.load()) {
+      ep_->RequestComplete(ZX_OK, 0,
+                           usb::FidlRequest(std::move(
+                               fuchsia_hardware_usb_request::Request().defer_completion(false))));
+      zx::nanosleep(zx::deadline_after(zx::usec(10)));
+    }
+  });
+
+  // Let it run for a bit
+  zx::nanosleep(zx::deadline_after(zx::msec(10)));
+
+  // Trigger unbind
+  {
+    auto unused = std::move(client_);
+  }
+
+  sync_completion_wait(&ep_->unbound_, zx::time::infinite().get());
+
+  stop.store(true);
+  complete_thread.join();
 }
 
 }  // namespace

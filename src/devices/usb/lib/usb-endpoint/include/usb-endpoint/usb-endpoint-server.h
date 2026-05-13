@@ -9,6 +9,8 @@
 #include <lib/io-buffer/phys-iter.h>
 #include <lib/zx/eventpair.h>
 
+#include <mutex>
+
 #include <usb/request-cpp.h>
 #include <usb/request-fidl.h>
 
@@ -49,13 +51,14 @@ class EndpointServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoi
                          fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server_end);
 
  private:
-  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> binding_ref_;
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> binding_ref_
+      __TA_GUARDED(lock_);
   const zx::bti& bti_;
   uint8_t ep_addr_;
 
   // completions_: Holds on to request completions that are completed, but have not been replied to
   // due to  defer_completion == true.
-  std::vector<fuchsia_hardware_usb_endpoint::Completion> completions_;
+  std::vector<fuchsia_hardware_usb_endpoint::Completion> completions_ __TA_GUARDED(lock_);
 
   struct RegisteredVmo {
     zx_handle_t pmt;
@@ -64,7 +67,9 @@ class EndpointServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoi
   };
   // registered_vmos_: All pre-registered VMOs registered through RegisterVmos(). Mapping from
   // vmo_id to RegisteredVmo.
-  std::map<uint64_t, RegisteredVmo> registered_vmos_;
+  std::map<uint64_t, RegisteredVmo> registered_vmos_ __TA_GUARDED(lock_);
+
+  mutable std::mutex lock_;
 };
 
 }  // namespace usb

@@ -61,11 +61,12 @@ zx::result<void*> UsbEpServer::GetBuffer(RequestVariant& req) {
 }
 
 void UsbEpServer::Connect(fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server_end) {
+  fbl::AutoLock lock(&lock_);
   if (binding_) {
     fdf::error("Endpoint already bound");
     return;
   }
-  binding_.emplace(
+  binding_ = std::make_shared<fidl::ServerBinding<fuchsia_hardware_usb_endpoint::Endpoint>>(
       ep_->bus_->async_dispatcher(), std::move(server_end), this, [this](fidl::UnbindInfo) {
         fbl::AutoLock lock(&lock_);
         for (const auto& [_, registered_vmo] : registered_vmos_) {
@@ -76,7 +77,10 @@ void UsbEpServer::Connect(fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoin
           }
         }
         registered_vmos_.clear();
-        async::PostTask(ep_->bus_->async_dispatcher(), [this]() { binding_.reset(); });
+        async::PostTask(ep_->bus_->async_dispatcher(), [this]() {
+          fbl::AutoLock lock(&lock_);
+          binding_.reset();
+        });
       });
 }
 
@@ -214,19 +218,33 @@ void UsbEpServer::RequestComplete(zx_status_t status, size_t actual, RequestVari
 
   auto& freq = std::get<usb::FidlRequest>(request);
   auto defer_completion = *freq->defer_completion();
-  completions_.emplace_back(std::move(fuchsia_hardware_usb_endpoint::Completion()
-                                          .request(freq.take_request())
-                                          .status(status)
-                                          .transfer_size(actual)));
-  if (defer_completion && status == ZX_OK) {
-    return;
-  }
-  std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
-  completions.swap(completions_);
 
-  auto result = fidl::SendEvent(*binding_)->OnCompletion(std::move(completions));
-  if (result.is_error()) {
-    fdf::error("Error sending event: {}", result.error_value().status_string());
+  std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
+
+  std::shared_ptr<fidl::ServerBinding<fuchsia_hardware_usb_endpoint::Endpoint>> binding;
+
+  {
+    fbl::AutoLock lock(&lock_);
+
+    completions_.emplace_back(std::move(fuchsia_hardware_usb_endpoint::Completion()
+                                            .request(freq.take_request())
+                                            .status(status)
+                                            .transfer_size(actual)));
+    if (defer_completion && status == ZX_OK) {
+      return;
+    }
+
+    if (binding_) {
+      binding = binding_;
+      completions.swap(completions_);
+    }
+  }
+
+  if (binding) {
+    auto result = fidl::SendEvent(*binding)->OnCompletion(std::move(completions));
+    if (result.is_error()) {
+      fdf::error("Error sending event: {}", result.error_value().status_string());
+    }
   }
 }
 
