@@ -1610,12 +1610,13 @@ pub trait Serializer<C: SerializationContext>: NestableSerializer + Sized {
     /// reached, the contained buffer is passed to the `provider`, allowing it
     /// to decide how to produce a buffer which is large enough to fit the
     /// entire packet - either by reusing the existing buffer, or by discarding
-    /// it and allocating a new one. `outer` specifies [`PacketConstraints`] for
-    /// the outer parts of the packet (header and footer).
+    /// it and allocating a new one. `constraints` specifies
+    /// [`PacketConstraints`] for the outer parts of the packet (header and
+    /// footer).
     fn serialize<B: GrowBufferMut, P: BufferProvider<Self::Buffer, B>>(
         self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         provider: P,
     ) -> Result<B, (SerializeError<P::Error>, Self)>;
 
@@ -1628,7 +1629,7 @@ pub trait Serializer<C: SerializationContext>: NestableSerializer + Sized {
     fn serialize_new_buf<B: GrowBufferMut, A: LayoutBufferAlloc<B>>(
         &self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         alloc: A,
     ) -> Result<B, SerializeError<A::Error>>;
 
@@ -1652,12 +1653,12 @@ pub trait Serializer<C: SerializationContext>: NestableSerializer + Sized {
     fn serialize_vec(
         self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
     ) -> Result<Either<Self::Buffer, Buf<Vec<u8>>>, (SerializeError<Never>, Self)>
     where
         Self::Buffer: ReusableBuffer,
     {
-        self.serialize(context, outer, MaybeReuseBufferProvider(new_buf_vec))
+        self.serialize(context, constraints, MaybeReuseBufferProvider(new_buf_vec))
     }
 
     /// Serializes this `Serializer`, failing if the existing buffer is not
@@ -1677,13 +1678,14 @@ pub trait Serializer<C: SerializationContext>: NestableSerializer + Sized {
     fn serialize_no_alloc(
         self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
     ) -> Result<Self::Buffer, (SerializeError<BufferTooShortError>, Self)>
     where
         Self::Buffer: ReusableBuffer,
     {
-        self.serialize(context, outer, MaybeReuseBufferProvider(())).map(Either::into_a).map_err(
-            |(err, slf)| {
+        self.serialize(context, constraints, MaybeReuseBufferProvider(()))
+            .map(Either::into_a)
+            .map_err(|(err, slf)| {
                 (
                     match err {
                         SerializeError::Alloc(()) => BufferTooShortError.into(),
@@ -1691,8 +1693,7 @@ pub trait Serializer<C: SerializationContext>: NestableSerializer + Sized {
                     },
                     slf,
                 )
-            },
-        )
+            })
     }
 
     /// Serializes this `Serializer` as the outermost packet.
@@ -1860,13 +1861,13 @@ impl<C: SerializationContext, I: InnerPacketBuilder, B: GrowBuffer + ShrinkBuffe
     fn serialize<BB: GrowBufferMut, P: BufferProvider<B, BB>>(
         self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         provider: P,
     ) -> Result<BB, (SerializeError<P::Error>, InnerSerializer<I, B>)> {
         debug_assert_eq!(self.buffer.len(), 0);
         InnerPacketBuilderWrapper(self.inner)
             .wrap_body(self.buffer)
-            .serialize(context, outer, provider)
+            .serialize(context, constraints, provider)
             .map_err(|(err, Nested { inner: buffer, outer: pb })| {
                 (err, InnerSerializer { inner: pb.0, buffer })
             })
@@ -1897,27 +1898,27 @@ impl<C: SerializationContext, B: GrowBuffer + ShrinkBuffer> Serializer<C> for B 
     fn serialize<BB: GrowBufferMut, P: BufferProvider<Self::Buffer, BB>>(
         self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         provider: P,
     ) -> Result<BB, (SerializeError<P::Error>, Self)> {
         TruncatingSerializer::new(self, TruncateDirection::NoTruncating)
-            .serialize(context, outer, provider)
+            .serialize(context, constraints, provider)
             .map_err(|(err, ser)| (err, ser.buffer))
     }
 
     fn serialize_new_buf<BB: GrowBufferMut, A: LayoutBufferAlloc<BB>>(
         &self,
         _context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         alloc: A,
     ) -> Result<BB, SerializeError<A::Error>> {
-        if self.len() > outer.max_body_len() {
+        if self.len() > constraints.max_body_len() {
             return Err(SerializeError::SizeLimitExceeded);
         }
 
-        let padding = outer.min_body_len().saturating_sub(self.len());
-        let tail_size = padding + outer.footer_len();
-        let mut buffer = alloc.layout_alloc(outer.header_len(), self.len(), tail_size)?;
+        let padding = constraints.min_body_len().saturating_sub(self.len());
+        let tail_size = padding + constraints.footer_len();
+        let mut buffer = alloc.layout_alloc(constraints.header_len(), self.len(), tail_size)?;
         buffer.copy_from(self);
         buffer.grow_back(padding);
         Ok(buffer)
@@ -1942,15 +1943,15 @@ impl<C: SerializationContext, A: Serializer<C>, B: Serializer<C, Buffer = A::Buf
     fn serialize<TB: GrowBufferMut, P: BufferProvider<Self::Buffer, TB>>(
         self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         provider: P,
     ) -> Result<TB, (SerializeError<P::Error>, Self)> {
         match self {
             EitherSerializer::A(s) => s
-                .serialize(context, outer, provider)
+                .serialize(context, constraints, provider)
                 .map_err(|(err, s)| (err, EitherSerializer::A(s))),
             EitherSerializer::B(s) => s
-                .serialize(context, outer, provider)
+                .serialize(context, constraints, provider)
                 .map_err(|(err, s)| (err, EitherSerializer::B(s))),
         }
     }
@@ -2026,12 +2027,12 @@ impl<C: SerializationContext, B: GrowBuffer + ShrinkBuffer> Serializer<C>
     fn serialize<BB: GrowBufferMut, P: BufferProvider<B, BB>>(
         mut self,
         _context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         provider: P,
     ) -> Result<BB, (SerializeError<P::Error>, Self)> {
         let original_len = self.buffer.len();
-        let excess_bytes = if original_len > outer.max_body_len {
-            Some(original_len - outer.max_body_len)
+        let excess_bytes = if original_len > constraints.max_body_len() {
+            Some(original_len - constraints.max_body_len())
         } else {
             None
         };
@@ -2045,16 +2046,16 @@ impl<C: SerializationContext, B: GrowBuffer + ShrinkBuffer> Serializer<C>
             }
         }
 
-        let padding = outer.min_body_len().saturating_sub(self.buffer.len());
+        let padding = constraints.min_body_len().saturating_sub(self.buffer.len());
 
         // At this point, the body and padding MUST fit within the limit. Note
         // that PacketConstraints guarantees that min_body_len <= max_body_len,
         // so the padding can't cause this assertion to fail.
-        debug_assert!(self.buffer.len() + padding <= outer.max_body_len());
+        debug_assert!(self.buffer.len() + padding <= constraints.max_body_len());
         match provider.reuse_or_realloc(
             self.buffer,
-            outer.header_len(),
-            padding + outer.footer_len(),
+            constraints.header_len(),
+            padding + constraints.footer_len(),
         ) {
             Ok(buffer) => Ok(buffer),
             Err((err, mut buffer)) => {
@@ -2118,14 +2119,14 @@ impl<C: SerializationContext, I: Serializer<C>, O: PacketBuilder<C>> Serializer<
     fn serialize<B: GrowBufferMut, P: BufferProvider<I::Buffer, B>>(
         self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         provider: P,
     ) -> Result<B, (SerializeError<P::Error>, Self)> {
-        let Some(outer) = self.outer.constraints().try_encapsulate(&outer) else {
+        let Some(constraints) = self.outer.constraints().try_encapsulate(&constraints) else {
             return Err((SerializeError::SizeLimitExceeded, self));
         };
 
-        match context.serialize_with_outer(self.inner, &self.outer, outer, provider) {
+        match context.serialize_with_outer(self.inner, &self.outer, constraints, provider) {
             Ok(mut buf) => {
                 buf.serialize(context, &self.outer);
                 Ok(buf)
@@ -2138,15 +2139,15 @@ impl<C: SerializationContext, I: Serializer<C>, O: PacketBuilder<C>> Serializer<
     fn serialize_new_buf<B: GrowBufferMut, A: LayoutBufferAlloc<B>>(
         &self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         alloc: A,
     ) -> Result<B, SerializeError<A::Error>> {
-        let Some(outer) = self.outer.constraints().try_encapsulate(&outer) else {
+        let Some(constraints) = self.outer.constraints().try_encapsulate(&constraints) else {
             return Err(SerializeError::SizeLimitExceeded);
         };
 
         let mut buf =
-            context.serialize_new_buf_with_outer(&self.inner, &self.outer, outer, alloc)?;
+            context.serialize_new_buf_with_outer(&self.inner, &self.outer, constraints, alloc)?;
         GrowBufferMut::serialize(&mut buf, context, &self.outer);
         Ok(buf)
     }
@@ -2198,7 +2199,7 @@ pub trait PartialSerializer<C: SerializationContext> {
     fn partial_serialize(
         &self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>>;
 }
@@ -2207,7 +2208,7 @@ impl<C: SerializationContext, B: GrowBuffer + ShrinkBuffer> PartialSerializer<C>
     fn partial_serialize(
         &self,
         _context: &mut C,
-        _outer: PacketConstraints,
+        _constraints: PacketConstraints,
         _buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
         Ok(PartialSerializeResult { bytes_written: 0, total_size: self.len() })
@@ -2220,11 +2221,13 @@ impl<C: SerializationContext, B: GrowBuffer + ShrinkBuffer> PartialSerializer<C>
     fn partial_serialize(
         &self,
         _context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         _buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        let total_size =
-            cmp::max(outer.min_body_len(), cmp::min(self.buffer().len(), outer.max_body_len()));
+        let total_size = cmp::max(
+            constraints.min_body_len(),
+            cmp::min(self.buffer().len(), constraints.max_body_len()),
+        );
         Ok(PartialSerializeResult { bytes_written: 0, total_size })
     }
 }
@@ -2235,12 +2238,12 @@ impl<C: SerializationContext, I: InnerPacketBuilder, B: GrowBuffer + ShrinkBuffe
     fn partial_serialize(
         &self,
         _context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         _buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
         Ok(PartialSerializeResult {
             bytes_written: 0,
-            total_size: cmp::max(self.inner().bytes_len(), outer.min_body_len()),
+            total_size: cmp::max(self.inner().bytes_len(), constraints.min_body_len()),
         })
     }
 }
@@ -2251,12 +2254,12 @@ impl<C: SerializationContext, A: PartialSerializer<C>, B: PartialSerializer<C>> 
     fn partial_serialize(
         &self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
         match self {
-            EitherSerializer::A(s) => s.partial_serialize(context, outer, buffer),
-            EitherSerializer::B(s) => s.partial_serialize(context, outer, buffer),
+            EitherSerializer::A(s) => s.partial_serialize(context, constraints, buffer),
+            EitherSerializer::B(s) => s.partial_serialize(context, constraints, buffer),
         }
     }
 }
@@ -2267,11 +2270,11 @@ impl<C: SerializationContext, I: PartialSerializer<C>, O: PartialPacketBuilder<C
     fn partial_serialize(
         &self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
         let header_constraints = self.outer.constraints();
-        let Some(constraints) = outer.try_encapsulate(&header_constraints) else {
+        let Some(constraints) = constraints.try_encapsulate(&header_constraints) else {
             return Err(SerializeError::SizeLimitExceeded);
         };
 
@@ -2456,7 +2459,7 @@ impl<C: SerializationContext> Serializer<C> for DynSerializer<'_, C> {
     fn serialize<B: GrowBufferMut, P: BufferProvider<Self::Buffer, B>>(
         self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         provider: P,
     ) -> Result<B, (SerializeError<P::Error>, Self)> {
         struct Adapter<S, P>(P, PhantomData<S>);
@@ -2479,7 +2482,12 @@ impl<C: SerializationContext> Serializer<C> for DynSerializer<'_, C> {
         }
 
         let Self(serializer) = self;
-        match dyn_serialize_new_buf(serializer, context, outer, Adapter(provider, PhantomData)) {
+        match dyn_serialize_new_buf(
+            serializer,
+            context,
+            constraints,
+            Adapter(provider, PhantomData),
+        ) {
             Ok(b) => Ok(b),
             Err(e) => Err((e, self)),
         }
@@ -2488,11 +2496,11 @@ impl<C: SerializationContext> Serializer<C> for DynSerializer<'_, C> {
     fn serialize_new_buf<B: GrowBufferMut, A: LayoutBufferAlloc<B>>(
         &self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         alloc: A,
     ) -> Result<B, SerializeError<A::Error>> {
         let Self(serializer) = self;
-        dyn_serialize_new_buf(*serializer, context, outer, alloc)
+        dyn_serialize_new_buf(*serializer, context, constraints, alloc)
     }
 }
 
@@ -2714,20 +2722,20 @@ mod tests {
         fn serialize<B: GrowBufferMut, P: BufferProvider<Self::Buffer, B>>(
             self,
             context: &mut NoOpSerializationContext,
-            outer: PacketConstraints,
+            constraints: PacketConstraints,
             provider: P,
         ) -> Result<B, (SerializeError<P::Error>, Self)> {
             let Self { ser, verifier } = self;
             let orig = ser.clone();
 
-            let result = ser.serialize(context, outer, provider).map_err(|(err, ser)| {
+            let result = ser.serialize(context, constraints, provider).map_err(|(err, ser)| {
                 // If serialization fails, the original Serializer should be
                 // unmodified.
                 assert_eq!(ser, orig);
                 (err, Self { ser, verifier })
             });
 
-            verifier.verify_result(result.as_ref().map_err(|(err, _ser)| err), outer);
+            verifier.verify_result(result.as_ref().map_err(|(err, _ser)| err), constraints);
 
             result
         }

@@ -261,7 +261,7 @@ impl<B: SplitByteSlice, C: IpSerializationContext<Ipv4>> PartialSerializer<C> fo
     fn partial_serialize(
         &self,
         _context: &mut C,
-        _outer: PacketConstraints,
+        _constraints: PacketConstraints,
         mut buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
         let hdr_prefix = Ref::bytes(&self.hdr_prefix);

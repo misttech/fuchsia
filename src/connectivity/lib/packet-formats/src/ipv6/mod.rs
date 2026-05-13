@@ -383,7 +383,7 @@ impl<B: SplitByteSlice, C: IpSerializationContext<Ipv6>> PartialSerializer<C> fo
     fn partial_serialize(
         &self,
         _context: &mut C,
-        _outer: PacketConstraints,
+        _constraints: PacketConstraints,
         mut buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
         let fixed_hdr = Ref::bytes(&self.fixed_hdr);

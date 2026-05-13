@@ -413,10 +413,10 @@ impl<I: FilterIpExt> Serializer<NetworkSerializationContext> for DynTransportSer
     fn serialize<B: GrowBufferMut, P: BufferProvider<Self::Buffer, B>>(
         self,
         context: &mut NetworkSerializationContext,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         provider: P,
     ) -> Result<B, (SerializeError<P::Error>, Self)> {
-        match DynSerializer::new_dyn(self.0).serialize(context, outer, provider) {
+        match DynSerializer::new_dyn(self.0).serialize(context, constraints, provider) {
             Ok(r) => Ok(r),
             Err((e, _)) => Err((e, self)),
         }
@@ -440,10 +440,10 @@ impl<'a, I: FilterIpExt> PartialSerializer<NetworkSerializationContext>
     fn partial_serialize(
         &self,
         context: &mut NetworkSerializationContext,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        (*self.0).partial_serialize(context, outer, buffer)
+        (*self.0).partial_serialize(context, constraints, buffer)
     }
 }
 
@@ -1172,10 +1172,10 @@ impl<'a, C: SerializationContext, S: PartialSerializer<C>> PartialSerializer<C>
     fn partial_serialize(
         &self,
         context: &mut C,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        self.reference.partial_serialize(context, outer, buffer)
+        self.reference.partial_serialize(context, constraints, buffer)
     }
 }
 
@@ -1193,14 +1193,14 @@ impl<I: FilterIpExt, S: TransportPacketSerializer<I> + NetworkPartialSerializer>
     fn partial_serialize(
         &self,
         context: &mut NetworkSerializationContext,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
         let packet_builder =
             I::PacketBuilder::new(self.src_addr, self.dst_addr, TX_PACKET_NO_TTL, self.protocol);
         packet_builder
             .wrap_body(PartialSerializeRef { reference: self.serializer })
-            .partial_serialize(context, outer, buffer)
+            .partial_serialize(context, constraints, buffer)
     }
 }
 
@@ -1260,11 +1260,11 @@ impl<I: IpExt, B: BufferMut + NetworkSerializer> Serializer<NetworkSerialization
     fn serialize<G: packet::GrowBufferMut, P: packet::BufferProvider<Self::Buffer, G>>(
         self,
         context: &mut NetworkSerializationContext,
-        outer: packet::PacketConstraints,
+        constraints: packet::PacketConstraints,
         provider: P,
     ) -> Result<G, (packet::SerializeError<P::Error>, Self)> {
         let Self { src_addr, dst_addr, protocol, transport_header_offset, buffer } = self;
-        buffer.serialize(context, outer, provider).map_err(|(err, buffer)| {
+        buffer.serialize(context, constraints, provider).map_err(|(err, buffer)| {
             (err, Self { src_addr, dst_addr, protocol, transport_header_offset, buffer })
         })
     }
@@ -1287,7 +1287,7 @@ impl<C: SerializationContext, I: IpExt, B: BufferMut> PartialSerializer<C>
     fn partial_serialize(
         &self,
         _context: &mut C,
-        _outer: PacketConstraints,
+        _constraints: PacketConstraints,
         mut buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
         let mut buffer = &mut buffer;
@@ -2398,11 +2398,11 @@ impl<I: IpExt, B: BufferMut + NetworkSerializer> Serializer<NetworkSerialization
     fn serialize<G: GrowBufferMut, P: BufferProvider<Self::Buffer, G>>(
         self,
         context: &mut NetworkSerializationContext,
-        outer: PacketConstraints,
+        constraints: PacketConstraints,
         provider: P,
     ) -> Result<G, (SerializeError<P::Error>, Self)> {
         let Self { protocol, src_addr, dst_addr, body, transport_packet_data } = self;
-        body.serialize(context, outer, provider).map_err(|(err, body)| {
+        body.serialize(context, constraints, provider).map_err(|(err, body)| {
             (err, Self { protocol, src_addr, dst_addr, body, transport_packet_data })
         })
     }
@@ -2423,7 +2423,7 @@ impl<I: IpExt, B: BufferMut> PartialSerializer<NetworkSerializationContext> for 
     fn partial_serialize(
         &self,
         _context: &mut NetworkSerializationContext,
-        _outer: PacketConstraints,
+        _constraints: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
         let bytes_to_copy = core::cmp::min(self.body.len(), buffer.len());
@@ -3172,7 +3172,7 @@ pub mod testutil {
             fn partial_serialize(
                 &self,
                 context: &mut NetworkSerializationContext,
-                _outer: PacketConstraints,
+                _constraints: PacketConstraints,
                 buffer: &mut [u8],
             ) -> Result<PartialSerializeResult, SerializeError<Never>> {
                 let Some(proto) = <&T>::proto() else {
