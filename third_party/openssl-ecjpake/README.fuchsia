@@ -1,0 +1,6 @@
+Name: openssl-ecjpake
+URL: https://github.com/openweave/openssl-ecjpake
+Security Critical: yes
+
+License File: src/LICENSE
+  License: Apache-2.0
