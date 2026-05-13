@@ -46,6 +46,9 @@ struct Profile {
   zx::profile profile{};
   std::vector<fuchsia_scheduler::Parameter> output_parameters;
 
+  // Counter exposed via Inspect to track role requests.
+  uint64_t request_count = 0;
+
   void PopulateInspect(inspect::Node& node) const;
 };
 

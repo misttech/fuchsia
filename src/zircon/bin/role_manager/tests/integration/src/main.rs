@@ -15,6 +15,58 @@ use fuchsia_async::Timer;
 use fuchsia_component::client::connect_to_protocol;
 use realm_proxy_client::RealmProxyClient;
 
+macro_rules! retry_if_none {
+    ($expr:expr, $err_msg:expr, $last_failure_reason:ident, $timer:expr) => {
+        match $expr {
+            Some(val) => val,
+            None => {
+                $last_failure_reason = Some($err_msg.to_string());
+                $timer.await;
+                continue;
+            }
+        }
+    };
+    ($expr:expr, $err_msg:expr, $last_failure_reason:ident) => {
+        retry_if_none!(
+            $expr,
+            $err_msg,
+            $last_failure_reason,
+            Timer::new(zx::MonotonicDuration::from_millis(500))
+        )
+    };
+}
+
+macro_rules! retry_if_not_equal {
+    ($expr:expr, $expected:expr, $name:expr, $last_failure_reason:ident, $timer:expr) => {
+        match $expr {
+            Ok(actual) => {
+                if actual != $expected {
+                    $last_failure_reason = Some(format!(
+                        "{}:\n\texpected: {}\n\tactual: {}",
+                        $name, $expected, actual
+                    ));
+                    $timer.await;
+                    continue;
+                }
+            }
+            Err(e) => {
+                $last_failure_reason = Some(format!("{}", e));
+                $timer.await;
+                continue;
+            }
+        }
+    };
+    ($expr:expr, $expected:expr, $name:expr, $last_failure_reason:ident) => {
+        retry_if_not_equal!(
+            $expr,
+            $expected,
+            $name,
+            $last_failure_reason,
+            Timer::new(zx::MonotonicDuration::from_millis(500))
+        )
+    };
+}
+
 async fn create_realm(options: ftest::RealmOptions) -> Result<RealmProxyClient> {
     let realm_factory = connect_to_protocol::<ftest::RealmFactoryMarker>()?;
     let (client, server) = create_endpoints();
@@ -33,6 +85,105 @@ fn get_test_thread_handle() -> Result<zx::Thread> {
 
 fn get_test_vmar_handle() -> Result<zx::Vmar> {
     Ok(fuchsia_runtime::vmar_root_self().duplicate_handle(zx::Rights::SAME_RIGHTS)?)
+}
+
+fn get_roles_count(
+    roles: &diagnostics_reader::DiagnosticsHierarchy,
+    role_name: &str,
+) -> Result<u64> {
+    match roles.get_child(role_name) {
+        Some(n) => match n.get_property("request_count") {
+            Some(p) => Ok(p.uint().unwrap()),
+            None => anyhow::bail!(
+                "Could not find \"request_count\" property for role \"{}\".",
+                role_name
+            ),
+        },
+        None => anyhow::bail!("Could not find \"{}\" child node.", role_name),
+    }
+}
+
+async fn validate_inspect(
+    expected_thread_request_count: u64,
+    expected_memory_request_count: u64,
+) -> Result<()> {
+    // Give up on waiting for the Inspect update after this amount of tries.
+    const MAX_LOOPS_COUNT: usize = 20;
+    let mut last_failure_reason = None;
+
+    // Collect inspect in a loop to avoid racing with role_manager's start or with Archivist on
+    // subsequent snapshot requests.
+    for _ in 0..MAX_LOOPS_COUNT {
+        let data = ArchiveReader::inspect()
+            .add_selector("test_realm_factory/realm_builder\\:*/role_manager:root")
+            .snapshot()
+            .await?
+            .into_iter()
+            .filter(|d| d.payload.is_some())
+            .collect::<Vec<_>>();
+
+        if let Some(inspect_data) =
+            data.iter().find(|d| d.moniker.to_string().contains("role_manager"))
+        {
+            if let Some(payload) = &inspect_data.payload {
+                // Verify that the deep properties we expect are present.
+                let config_node = retry_if_none!(
+                    payload.get_child("config"),
+                    "Could not find \"config\" child node.",
+                    last_failure_reason
+                );
+
+                // Verify thread roles exist and that the request count matches the expected value.
+                let thread_roles = retry_if_none!(
+                    config_node.get_child("thread_roles"),
+                    "Could not find \"thread_roles\" child node.",
+                    last_failure_reason
+                );
+                retry_if_not_equal!(
+                    get_roles_count(thread_roles, "test.core.a"),
+                    expected_thread_request_count,
+                    "Thread request count",
+                    last_failure_reason
+                );
+
+                let affinity_node = retry_if_none!(
+                    thread_roles.get_child("test.core.affinity"),
+                    "Could not find \"test.core.affinity\" child node.",
+                    last_failure_reason
+                );
+
+                let affinity_prop = retry_if_none!(
+                    affinity_node.get_property("affinity"),
+                    "Could not find \"affinity\" property.",
+                    last_failure_reason
+                );
+
+                // If we found the property, verify its value.
+                assert_eq!(affinity_prop.string().unwrap(), "0x3");
+
+                // Verify memory roles exist and that the request count matches the expected value.
+                let memory_roles = retry_if_none!(
+                    config_node.get_child("memory_roles"),
+                    "Could not find \"memory_roles\" child node.",
+                    last_failure_reason
+                );
+                retry_if_not_equal!(
+                    get_roles_count(memory_roles, "test.core.a"),
+                    expected_memory_request_count,
+                    "Memory request count",
+                    last_failure_reason
+                );
+            }
+        }
+
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "\nInspect did not match after {} tries.\n\n{}",
+        MAX_LOOPS_COUNT,
+        last_failure_reason.unwrap_or_else(|| "No data found".to_string())
+    );
 }
 
 #[fuchsia::test]
@@ -323,67 +474,47 @@ async fn test_bad_config_extension() -> Result<()> {
 async fn test_inspect_exposed() -> Result<()> {
     let realm_options = ftest::RealmOptions::default();
     let realm = create_realm(realm_options).await?;
-    let _role_manager = realm.connect_to_protocol::<RoleManagerMarker>().await?;
+    let role_manager = realm.connect_to_protocol::<RoleManagerMarker>().await?;
 
-    // Collect inspect in a loop to avoid racing with role_manager's start.
-    loop {
-        let data = ArchiveReader::inspect()
-            .add_selector("test_realm_factory/realm_builder\\:*/role_manager:root")
-            .snapshot()
-            .await?
-            .into_iter()
-            .filter(|d| d.payload.is_some())
-            .collect::<Vec<_>>();
+    let mut expected_thread_request_count: u64 = 0;
+    let mut expected_memory_request_count: u64 = 0;
 
-        if let Some(inspect_data) =
-            data.iter().find(|d| d.moniker.to_string().contains("role_manager"))
-        {
-            if let Some(payload) = &inspect_data.payload {
-                // Verify that the deep properties we expect are present.
-                let config_node = match payload.get_child("config") {
-                    Some(node) => node,
-                    None => {
-                        Timer::new(zx::MonotonicDuration::from_millis(500)).await;
-                        continue;
-                    }
-                };
+    // Validate that all expected properties exist on startup.
+    validate_inspect(expected_thread_request_count, expected_memory_request_count).await.unwrap();
 
-                let thread_roles = match config_node.get_child("thread_roles") {
-                    Some(node) => node,
-                    None => {
-                        Timer::new(zx::MonotonicDuration::from_millis(500)).await;
-                        continue;
-                    }
-                };
-
-                let affinity_node = match thread_roles.get_child("test.core.affinity") {
-                    Some(node) => node,
-                    None => {
-                        Timer::new(zx::MonotonicDuration::from_millis(500)).await;
-                        continue;
-                    }
-                };
-
-                let affinity_prop = match affinity_node.get_property("affinity") {
-                    Some(prop) => prop,
-                    None => {
-                        Timer::new(zx::MonotonicDuration::from_millis(500)).await;
-                        continue;
-                    }
-                };
-
-                // If we found the property, verify its value.
-                assert_eq!(affinity_prop.string().unwrap(), "0x3");
-
-                // Also verify memory_roles exists
-                if config_node.get_child("memory_roles").is_some() {
-                    break;
-                }
-            }
-        }
-
-        Timer::new(zx::MonotonicDuration::from_millis(500)).await;
+    // Issue both thread and memory GetProfileForRole() requests.
+    for target in [RoleType::Task, RoleType::Memory] {
+        let request = RoleManagerGetProfileForRoleRequest {
+            target: Some(target),
+            role: Some(RoleName { role: "test.core.a".to_string() }),
+            ..Default::default()
+        };
+        let response = role_manager.get_profile_for_role(request).await?;
+        assert!(response.is_ok());
     }
+
+    // Take new snapshot and check that both counters increased by 1.
+    expected_thread_request_count += 1;
+    expected_memory_request_count += 1;
+    validate_inspect(expected_thread_request_count, expected_memory_request_count).await.unwrap();
+
+    // Do the same with the SetRole() request.
+    for target in
+        [RoleTarget::Thread(get_test_thread_handle()?), RoleTarget::Vmar(get_test_vmar_handle()?)]
+    {
+        let request = RoleManagerSetRoleRequest {
+            target: Some(target),
+            role: Some(RoleName { role: "test.core.a".to_string() }),
+            ..Default::default()
+        };
+        let response = role_manager.set_role(request).await?;
+        assert!(response.is_ok());
+    }
+
+    // Take new snapshot and check that both counters increased by 1.
+    expected_thread_request_count += 1;
+    expected_memory_request_count += 1;
+    validate_inspect(expected_thread_request_count, expected_memory_request_count).await.unwrap();
 
     Ok(())
 }

@@ -115,8 +115,7 @@ void ProfileProvider::SetProfileByRole(SetProfileByRoleRequestView request,
     return;
   }
 
-  const auto& profile_map =
-      handle_info.type == ZX_OBJ_TYPE_THREAD ? profiles_.thread : profiles_.memory;
+  auto& profile_map = handle_info.type == ZX_OBJ_TYPE_THREAD ? profiles_.thread : profiles_.memory;
 
   // Handle the test role case specially.
   if (role->IsTestRole()) {
@@ -142,6 +141,7 @@ void ProfileProvider::SetProfileByRole(SetProfileByRoleRequestView request,
 
   // Select the profile parameters based on the role name.
   if (auto search = profile_map.find(*role_without_selectors); search != profile_map.cend()) {
+    search->second.request_count++;
     status = zx_object_set_profile(request->handle.get(), search->second.profile.get(), 0);
     completer.Reply(status);
   } else if (const auto media_role = role->ToMediaRole(); media_role.is_ok()) {

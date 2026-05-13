@@ -880,6 +880,8 @@ void Profile::PopulateInspect(inspect::Node& node) const {
       }
     });
   }
+
+  node.RecordUint("request_count", request_count);
 }
 
 }  // namespace zircon_profile

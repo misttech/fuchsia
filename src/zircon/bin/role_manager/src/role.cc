@@ -148,12 +148,14 @@ void RoleManager::SetRole(SetRoleRequestView request, SetRoleCompleter::Sync& co
     return;
   }
 
-  const auto& profile_map = request->target().is_thread() ? profiles_.thread : profiles_.memory;
+  auto& profile_map = request->target().is_thread() ? profiles_.thread : profiles_.memory;
 
   // Look for the requested role in the profile map and set the profile if found.
   fidl::Arena arena;
   auto builder = fuchsia_scheduler::wire::RoleManagerSetRoleResponse::Builder(arena);
   if (auto search = profile_map.find(*role); search != profile_map.cend()) {
+    search->second.request_count++;
+
     zx_status_t status = zx_object_set_profile(target_handle, search->second.profile.get(), 0);
     if (status != ZX_OK) {
       completer.ReplyError(status);
@@ -220,9 +222,11 @@ void RoleManager::GetProfileForRole(GetProfileForRoleRequestView request,
     completer.ReplyError(ZX_ERR_INVALID_ARGS);
     return;
   }
-  const auto& profile_map =
+  auto& profile_map =
       request->target() == fuchsia_scheduler::RoleType::kTask ? profiles_.thread : profiles_.memory;
   if (auto search = profile_map.find(*role); search != profile_map.cend()) {
+    search->second.request_count++;
+
     zx::profile profile;
     zx_status_t status = search->second.profile.duplicate(ZX_RIGHT_SAME_RIGHTS, &profile);
     if (status != ZX_OK) {
