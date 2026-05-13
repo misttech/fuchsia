@@ -23,6 +23,12 @@ Avoid all-in-one monolith files. A common pattern is to split skills into
 **implementation**, **testing**, and **debugging**, and further split by
 language if the implementations differ significantly.
 
+### 1.1 Use Hyphens for Skill Names
+
+Skill names in the frontmatter must use hyphens rather than underscores.
+* **Pattern**: `topic-action-language`
+* **Example**: `driver-interrupt-impl-cpp`
+
 ### 2. Put Dependencies First
 
 Always include a `## Dependencies` section near the top of the file if
@@ -79,21 +85,16 @@ Ensure that related skills are cross-linked.
 * **Rule**: The testing guide should link to the implementation guide.
 * **Rule**: Both should link to the relevant debugging guide if one exists.
 
-### 7. Apply Spacing and Formatting
+### 7. Apply Style and Notation Standards
 
-* **Heading Spacing**: Always leave a blank line after any heading (H1 to H4)
-  before the content begins. Also ensure there is exactly one blank line after
-  the content of a section and before the next heading.
 * **FIDL Notation**: When referencing FIDL methods in text, use the slash and
   dot convention: `fuchsia.hardware.gpio/Gpio.GetInterrupt`.
-* **Line Wrapping**: Wrap lines at column 80 for readability in text files,
-  except for long URLs. Use best effort for line wrapping code.
-* **Bullet Point Spacing**: Bullet points should be followed by only one space
-  (e.g., `* Bullet`).
-* **Trailing Whitespace**: Do not leave trailing whitespaces at the end of
-  lines.
 * **Code Block Tags**: Always specify the language for fenced code blocks (e.g.,
   `cpp`, `gn`, `cml`, `bazel`, `bash`) to ensure proper syntax highlighting.
+* **No Emojis**: Do not use emojis in headers, text, or lists. Emojis add
+  multi-byte token bloat to the agent's context window, increase parser noise,
+  and can render inconsistently in CLI environments or terminal pagers (like
+  `cat` or `less`).
 
 ### 8. Include Standard Sections
 

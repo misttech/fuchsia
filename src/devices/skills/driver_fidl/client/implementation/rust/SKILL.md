@@ -1,5 +1,5 @@
 ---
-name: driver_fidl_client_implementation_rust
+name: driver-fidl-client-impl-rust
 description: Connect to FIDL protocols and services in a Rust DFv2 driver.
 ---
 
@@ -104,9 +104,9 @@ let client = context
     .map_err(|_| zx::Status::INTERNAL)?;
 ```
 
-To find the correct instance name by looking at the bind rules, see the
-[Finding Instance Names from Bind Rules](/src/devices/skills/driver_bind_find_instance_name/SKILL.md)
-skill.
+To find the correct instance name by looking at the bind rules, see the [Finding
+Instance Names from Bind
+Rules](/src/devices/skills/driver_bind_find_instance_name/SKILL.md) skill.
 
 ## Common Pitfalls
 
@@ -125,10 +125,12 @@ skill.
 
 ## Further Reading
 
-* [FIDL Tutorial for Drivers](/docs/development/drivers/tutorials/fidl-tutorial.md) -
-  Learn how to define and use FIDL protocols in drivers.
-* For guidance on debugging FIDL connection issues, see the
-  [Driver FIDL Usage Debugging](/src/devices/skills/driver_fidl/debugging/SKILL.md)
-  skill.
-* [Zircon Transport Rust Example Driver](/examples/drivers/transport/zircon/rust/)
-* [Driver Transport Rust Example Driver](/examples/drivers/transport/driver/rust_next/)
+* [FIDL Tutorial for
+  Drivers](/docs/development/drivers/tutorials/fidl-tutorial.md) - Learn how to
+  define and use FIDL protocols in drivers.
+* For guidance on debugging FIDL connection issues, see the [Driver FIDL Usage
+  Debugging](/src/devices/skills/driver_fidl/debugging/SKILL.md) skill.
+* [Zircon Transport Rust Example
+  Driver](/examples/drivers/transport/zircon/rust/)
+* [Driver Transport Rust Example
+  Driver](/examples/drivers/transport/driver/rust_next/)

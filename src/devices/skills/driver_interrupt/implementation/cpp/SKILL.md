@@ -1,5 +1,5 @@
 ---
-name: driver_interrupt_implementation_cpp
+name: driver-interrupt-impl-cpp
 description: Implement interrupt handling in Fuchsia C++ drivers (DFv2)
 ---
 
@@ -49,8 +49,7 @@ protocol.
 
 **Lifecycle and Cleanup**: No manual cleanup of the interrupt handle is
 necessary. The `zx::interrupt` wrapper manages the handle's lifecycle; its
-destructor automatically closes the handle when the object goes out of
-scope.
+destructor automatically closes the handle when the object goes out of scope.
 
 ## Listen to an Interrupt
 
@@ -120,12 +119,12 @@ class MyDriver : public fdf::DriverBase {
 
 ## Further Reading
 
-* [Handle Interrupts in a Driver](/docs/development/drivers/developer_guide/handle-interrupts-in-a-driver.md) -
-  Comprehensive Fuchsia developer guide covering implementation and testing in
-  both C++ and Rust.
+* [Handle Interrupts in a
+  Driver](/docs/development/drivers/developer_guide/handle-interrupts-in-a-driver.md)
+  - Comprehensive Fuchsia developer guide covering implementation and testing in
+    both C++ and Rust.
 * [Interrupts Reference](/docs/reference/kernel_objects/interrupts.md) - Kernel
   object reference detailing Zircon interrupts and the
   `ZX_VIRTUAL_INTERRUPT_UNTRIGGERED` signal.
-* For guidance on testing interrupts, see the
-  [Driver Interrupt Testing (C++)](/src/devices/skills/driver_interrupt/testing/cpp/SKILL.md)
-  skill.
+* For guidance on testing interrupts, see the [Driver Interrupt Testing
+  (C++)](/src/devices/skills/driver_interrupt/testing/cpp/SKILL.md) skill.

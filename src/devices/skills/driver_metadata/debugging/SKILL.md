@@ -1,7 +1,8 @@
 ---
-name: driver_metadata_debugging
+name: driver-metadata-debugging
 description: Debug metadata issues in DFv2 drivers.
 ---
+
 # Driver Metadata Debugging (DFv2)
 
 ## Verification Steps
@@ -39,8 +40,8 @@ If the service is not listed, proceed to the troubleshooting section below.
     include that offer when creating the child node.
 * **Service Name Mismatch**:
   * The service name in the `.cml` file must match the fully qualified FIDL type
-    name (e.g., `fuchsia.examples.metadata.Metadata`). A common mistake is
-    using a generic service name instead of the specific FIDL type.
+    name (e.g., `fuchsia.examples.metadata.Metadata`). A common mistake is using
+    a generic service name instead of the specific FIDL type.
 
 ### Handle Stale or Default Values
 
@@ -50,7 +51,9 @@ If the service is not listed, proceed to the troubleshooting section below.
 
 ## Further Reading
 
-* [Driver Metadata Implementation Skill (C++)](/src/devices/skills/driver_metadata/implementation/cpp/SKILL.md)
-* [Driver Metadata Testing Skill (C++)](/src/devices/skills/driver_metadata/testing/cpp/SKILL.md)
+* [Driver Metadata Implementation Skill
+  (C++)](/src/devices/skills/driver_metadata/implementation/cpp/SKILL.md)
+* [Driver Metadata Testing Skill
+  (C++)](/src/devices/skills/driver_metadata/testing/cpp/SKILL.md)
 * [/docs/development/drivers/tutorials/metadata-tutorial.md](/docs/development/drivers/tutorials/metadata-tutorial.md)
 * [Driver Metadata Examples](/examples/drivers/metadata/)

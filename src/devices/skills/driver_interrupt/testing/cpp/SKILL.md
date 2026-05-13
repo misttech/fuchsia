@@ -1,5 +1,5 @@
 ---
-name: driver_interrupt_testing_cpp
+name: driver-interrupt-testing-cpp
 description: Test interrupt handling in Fuchsia C++ drivers (DFv2)
 ---
 
@@ -120,12 +120,14 @@ class MyDriverEnvironment : public fdf_testing::Environment {
 
 ## Further Reading
 
-* [Handle Interrupts in a Driver](/docs/development/drivers/developer_guide/handle-interrupts-in-a-driver.md) -
-  Comprehensive Fuchsia developer guide covering implementation and testing in
-  both C++ and Rust.
+* [Handle Interrupts in a
+  Driver](/docs/development/drivers/developer_guide/handle-interrupts-in-a-driver.md)
+  - Comprehensive Fuchsia developer guide covering implementation and testing in
+    both C++ and Rust.
 * [Interrupts Reference](/docs/reference/kernel_objects/interrupts.md) - Kernel
   object reference detailing Zircon interrupts and the
   `ZX_VIRTUAL_INTERRUPT_UNTRIGGERED` signal.
-* For guidance on implementing interrupts, see the
-  [Driver Interrupt Implementation (C++)](/src/devices/skills/driver_interrupt/implementation/cpp/SKILL.md)
+* For guidance on implementing interrupts, see the [Driver Interrupt
+  Implementation
+  (C++)](/src/devices/skills/driver_interrupt/implementation/cpp/SKILL.md)
   skill.

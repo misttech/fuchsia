@@ -1,5 +1,5 @@
 ---
-name: driver_interrupt_implementation_rust
+name: driver-interrupt-impl-rust
 description: Implement interrupt handling in Fuchsia Rust drivers
 ---
 
@@ -45,8 +45,8 @@ protocol.
 
 **Lifecycle and Cleanup**: No manual cleanup of the interrupt handle is
 necessary. The `zx::Interrupt` type implements the `Drop` trait, which
-automatically closes the underlying Zircon handle when the object goes
-out of scope.
+automatically closes the underlying Zircon handle when the object goes out of
+scope.
 
 ## Listen to an Interrupt
 
@@ -102,12 +102,12 @@ impl Driver for MyDriver {
 
 ## Further Reading
 
-* [Handle Interrupts in a Driver](/docs/development/drivers/developer_guide/handle-interrupts-in-a-driver.md) -
-  Comprehensive Fuchsia developer guide covering implementation and testing in
-  both C++ and Rust.
+* [Handle Interrupts in a
+  Driver](/docs/development/drivers/developer_guide/handle-interrupts-in-a-driver.md)
+  - Comprehensive Fuchsia developer guide covering implementation and testing in
+    both C++ and Rust.
 * [Interrupts Reference](/docs/reference/kernel_objects/interrupts.md) - Kernel
   object reference detailing Zircon interrupts and the
   `ZX_VIRTUAL_INTERRUPT_UNTRIGGERED` signal.
-* For guidance on testing interrupts, see the
-  [Driver Interrupt Testing (Rust)](/src/devices/skills/driver_interrupt/testing/rust/SKILL.md)
-  skill.
+* For guidance on testing interrupts, see the [Driver Interrupt Testing
+  (Rust)](/src/devices/skills/driver_interrupt/testing/rust/SKILL.md) skill.

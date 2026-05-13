@@ -1,5 +1,5 @@
 ---
-name: driver_fidl_server_implementation_rust
+name: driver-fidl-server-impl-rust
 description: Serve FIDL protocols and services from a Rust driver.
 ---
 
@@ -247,7 +247,11 @@ library for efficient message handling.
 
 ## Further Reading
 
-* [Driver FIDL Usage Skill](/src/devices/skills/driver_fidl/client/implementation/rust/SKILL.md)
-* [Server FIDL Debugging](/src/devices/skills/driver_fidl/server/debugging/SKILL.md)
-* [Zircon Transport Rust Example Driver](/examples/drivers/transport/zircon/rust/)
-* [Driver Transport Rust Example Driver](/examples/drivers/transport/driver/rust_next/)
+* [Driver FIDL Usage
+  Skill](/src/devices/skills/driver_fidl/client/implementation/rust/SKILL.md)
+* [Server FIDL
+  Debugging](/src/devices/skills/driver_fidl/server/debugging/SKILL.md)
+* [Zircon Transport Rust Example
+  Driver](/examples/drivers/transport/zircon/rust/)
+* [Driver Transport Rust Example
+  Driver](/examples/drivers/transport/driver/rust_next/)

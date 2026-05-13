@@ -1,5 +1,5 @@
 ---
-name: driver_fidl_server_implementation_cpp
+name: driver-fidl-server-impl-cpp
 description: Serve FIDL protocols and services from a C++ driver using service advertising.
 ---
 
@@ -150,8 +150,8 @@ performance is not critical.
 * **Include**: `#include <fidl/library.name/cpp/wire.h>`
 * **Base Class**: `fidl::WireServer<Protocol>`
 * **Binding Group**: `fidl::ServerBindingGroup<Protocol>`
-* **Handler Creation**: Requires an `async_dispatcher_t*`
-  (e.g., `dispatcher()`).
+* **Handler Creation**: Requires an `async_dispatcher_t*` (e.g.,
+  `dispatcher()`).
 * **Method Signature**: `void Method(RequestView, Completer::Sync&)`
 
 ### Driver Transport
@@ -161,9 +161,10 @@ Used for high-performance communication between drivers in the same process.
 * **Include**: `#include <fidl/library.name/cpp/driver/wire.h>`
 * **Base Class**: `fdf::WireServer<Protocol>`
 * **Binding Group**: `fdf::ServerBindingGroup<Protocol>`
-* **Handler Creation**: Requires an `fdf_dispatcher_t*`
-  (e.g., `driver_dispatcher()->get()`).
-* **Method Signature**: `void Method(RequestView, fdf::Arena& arena, Completer::Sync&)`
+* **Handler Creation**: Requires an `fdf_dispatcher_t*` (e.g.,
+  `driver_dispatcher()->get()`).
+* **Method Signature**: `void Method(RequestView, fdf::Arena& arena,
+  Completer::Sync&)`
 
 Note that methods in Driver transport take an extra `fdf::Arena&` parameter for
 memory allocation.
@@ -180,8 +181,8 @@ memory allocation.
 * **Incorrect Dispatcher**: Use the correct dispatcher (usually the driver's
   default dispatcher) when creating the handler.
 * **Forgetting to offer to child nodes**: When serving this capability for use
-  by a child node, simply adding it to the outgoing directory is not enough.
-  The capability must also be explicitly **offered** in the `NodeAddArgs` when
+  by a child node, simply adding it to the outgoing directory is not enough. The
+  capability must also be explicitly **offered** in the `NodeAddArgs` when
   calling `AddChild()`.
 * **Forgetting to serve the capability**: Offering a capability to a child node
   only sets up the routing. You must still actually serve the protocol in your
@@ -194,7 +195,9 @@ memory allocation.
 
 ## Further Reading
 
-* [Driver FIDL Usage Skill](/src/devices/skills/driver_fidl/client/implementation/cpp/SKILL.md)
-* [Server FIDL Debugging](/src/devices/skills/driver_fidl/server/debugging/SKILL.md)
+* [Driver FIDL Usage
+  Skill](/src/devices/skills/driver_fidl/client/implementation/cpp/SKILL.md)
+* [Server FIDL
+  Debugging](/src/devices/skills/driver_fidl/server/debugging/SKILL.md)
 * [Zircon Transport Example Driver](/examples/drivers/transport/zircon/v2/)
 * [Driver Transport Example Driver](/examples/drivers/transport/driver/v2/)

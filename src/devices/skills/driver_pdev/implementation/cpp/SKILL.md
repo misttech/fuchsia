@@ -1,5 +1,5 @@
 ---
-name: use_pdev_dfv2
+name: use-pdev-dfv2
 description: Use Platform Device (pdev) in DFv2 drivers.
 ---
 
@@ -67,5 +67,6 @@ fdf::PDev pdev(std::move(pdev_client.value()));
 
 ## Further Reading
 
-* For more information on FIDL usage, see the
-  [Driver FIDL Usage Implementation Skill (C++)](/src/devices/skills/driver_fidl_usage/implementation/cpp/SKILL.md).
+* For more information on FIDL usage, see the [Driver FIDL Usage Implementation
+  Skill
+  (C++)](/src/devices/skills/driver_fidl_usage/implementation/cpp/SKILL.md).

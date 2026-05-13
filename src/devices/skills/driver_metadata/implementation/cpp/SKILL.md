@@ -1,7 +1,8 @@
 ---
-name: driver_metadata_cpp_implementation
+name: driver-metadata-cpp-impl
 description: Implement metadata handling in C++ DFv2 drivers.
 ---
+
 # Driver Metadata Implementation (C++) (DFv2)
 
 ## Dependencies
@@ -183,8 +184,8 @@ Update the manifest to `use` and `expose` the service:
 
 ## Common Pitfalls
 
-* **Service Naming**: The service name in the manifest must match the FIDL
-  type name, not `fuchsia.driver.metadata.Service`.
+* **Service Naming**: The service name in the manifest must match the FIDL type
+  name, not `fuchsia.driver.metadata.Service`.
 * **Missing Offer**: Forgetting to call `CreateOffer()` and pass it to
   `AddChild` will prevent the child from accessing the metadata.
 * **Using Structs instead of Tables**: Using a FIDL `struct` for metadata makes
@@ -195,7 +196,10 @@ Update the manifest to `use` and `expose` the service:
 ## Further Reading
 
 * [/docs/development/drivers/tutorials/metadata-tutorial.md](/docs/development/drivers/tutorials/metadata-tutorial.md)
-* [/sdk/lib/driver/metadata/](/sdk/lib/driver/metadata/) (Metadata library source)
-* [Driver Metadata Testing Skill](/src/devices/skills/driver_metadata/testing/cpp/SKILL.md)
-* [Driver Metadata Debugging Skill](/src/devices/skills/driver_metadata/debugging/SKILL.md)
+* [/sdk/lib/driver/metadata/](/sdk/lib/driver/metadata/) (Metadata library
+  source)
+* [Driver Metadata Testing
+  Skill](/src/devices/skills/driver_metadata/testing/cpp/SKILL.md)
+* [Driver Metadata Debugging
+  Skill](/src/devices/skills/driver_metadata/debugging/SKILL.md)
 * [Driver Metadata Examples](/examples/drivers/metadata/)

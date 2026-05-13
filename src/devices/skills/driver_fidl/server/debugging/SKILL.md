@@ -1,5 +1,5 @@
 ---
-name: driver_fidl_server_debugging
+name: driver-fidl-server-debugging
 description: Debug FIDL service advertising and outgoing namespace in DFv2 drivers.
 ---
 
@@ -33,8 +33,8 @@ If the service is not listed, check that the driver successfully called
 
 ### 2. Diagnose Routing with `ffx component doctor`
 
-To check if the service exposed by your driver is correctly routed and
-available to other components, use `ffx component doctor`:
+To check if the service exposed by your driver is correctly routed and available
+to other components, use `ffx component doctor`:
 
 ```bash
 ffx component doctor <provider-driver-moniker>
@@ -59,8 +59,8 @@ failures or broken capabilities.
 ### Clients cannot connect despite service being visible
 
 * **Missing `capabilities` in Manifest**:
-  * The service must be declared in the `capabilities` section before it can
-    be exposed:
+  * The service must be declared in the `capabilities` section before it can be
+    exposed:
     ```json5
     capabilities: [
         {
@@ -86,6 +86,9 @@ failures or broken capabilities.
 
 ## Further Reading
 
-* [Serving FIDL in C++](/src/devices/skills/driver_fidl/server/implementation/cpp/SKILL.md)
-* [Serving FIDL in Rust](/src/devices/skills/driver_fidl/server/implementation/rust/SKILL.md)
-* [Client FIDL Debugging](/src/devices/skills/driver_fidl/client/debugging/SKILL.md)
+* [Serving FIDL in
+  C++](/src/devices/skills/driver_fidl/server/implementation/cpp/SKILL.md)
+* [Serving FIDL in
+  Rust](/src/devices/skills/driver_fidl/server/implementation/rust/SKILL.md)
+* [Client FIDL
+  Debugging](/src/devices/skills/driver_fidl/client/debugging/SKILL.md)

@@ -1,5 +1,5 @@
 ---
-name: driver_fidl_client_implementation_cpp
+name: driver-fidl-client-impl-cpp
 description: Connect to FIDL protocols and services in a C++ DFv2 driver.
 ---
 
@@ -114,9 +114,9 @@ the instance name when connecting by passing it as an argument to `Connect()`.
           "instance_name");
 ```
 
-To find the correct instance name by looking at the bind rules, see the
-[Finding Instance Names from Bind Rules](/src/devices/skills/driver_bind_find_instance_name/SKILL.md)
-skill.
+To find the correct instance name by looking at the bind rules, see the [Finding
+Instance Names from Bind
+Rules](/src/devices/skills/driver_bind_find_instance_name/SKILL.md) skill.
 
 ## Driver Transport vs Zircon Transport
 
@@ -142,8 +142,8 @@ Used for high-performance communication between drivers in the same process.
   `fdf::WireSyncClient<Protocol>`
 * **Connection**: `context.incoming().Connect<Service::Device>()` returns
   `zx::result<fdf::ClientEnd<Protocol>>`.
-* **Dispatcher**: Requires an `fdf_dispatcher_t*` to bind
-  (e.g., `driver_dispatcher()->get()`).
+* **Dispatcher**: Requires an `fdf_dispatcher_t*` to bind (e.g.,
+  `driver_dispatcher()->get()`).
 * **Calls**: Methods require an `fdf::Arena` for allocation.
 
 ## Common Pitfalls
@@ -153,9 +153,9 @@ Used for high-performance communication between drivers in the same process.
   route the capability to the driver sandbox.
 * **Mixing up Protocol and Service in `.cml`**: If the capability is a FIDL
   `service`, use the `service` field in the `.cml`. If it is a direct
-  `protocol`, use the `protocol` field. Declaring a service under
-  `protocol` (or vice versa) will result in routing failures at runtime, even if
-  the driver code compiles successfully.
+  `protocol`, use the `protocol` field. Declaring a service under `protocol` (or
+  vice versa) will result in routing failures at runtime, even if the driver
+  code compiles successfully.
 * **Using the wrong bindings**: Use the new C++ bindings (e.g.,
   `fuchsia_hardware_example::MyProtocol`) instead of the legacy ones.
 * **Ignoring the result**: Always check the `zx::result` returned by `Connect`
@@ -163,10 +163,10 @@ Used for high-performance communication between drivers in the same process.
 
 ## Further Reading
 
-* [FIDL Tutorial for Drivers](/docs/development/drivers/tutorials/fidl-tutorial.md) -
-  Learn how to define and use FIDL protocols in drivers.
-* For guidance on debugging FIDL connection issues, see the
-  [Driver FIDL Usage Debugging](/src/devices/skills/driver_fidl/debugging/SKILL.md)
-  skill.
+* [FIDL Tutorial for
+  Drivers](/docs/development/drivers/tutorials/fidl-tutorial.md) - Learn how to
+  define and use FIDL protocols in drivers.
+* For guidance on debugging FIDL connection issues, see the [Driver FIDL Usage
+  Debugging](/src/devices/skills/driver_fidl/debugging/SKILL.md) skill.
 * [Zircon Transport Example Driver](/examples/drivers/transport/zircon/v2/)
 * [Driver Transport Example Driver](/examples/drivers/transport/driver/v2/)

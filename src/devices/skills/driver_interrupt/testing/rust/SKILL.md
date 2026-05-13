@@ -1,5 +1,5 @@
 ---
-name: driver_interrupt_testing_rust
+name: driver-interrupt-testing-rust
 description: Test interrupt handling in Fuchsia Rust drivers
 ---
 
@@ -7,7 +7,9 @@ description: Test interrupt handling in Fuchsia Rust drivers
 
 ## Dependencies
 
-Testing with [`fuchsia_async::OnSignals`](/src/lib/fuchsia-async/src/handle/zircon/on_signals.rs) requires `fuchsia-async`:
+Testing with
+[`fuchsia_async::OnSignals`](/src/lib/fuchsia-async/src/handle/zircon/on_signals.rs)
+requires `fuchsia-async`:
 
 **GN:**
 ```gn
@@ -44,7 +46,8 @@ virtual_interrupt.trigger(zx::Instant::from_nanos(0))?;
 
 ## Verify Interrupt Acknowledgment
 
-Wait for the `zx::Signals::VIRTUAL_INTERRUPT_UNTRIGGERED` signal using `fuchsia_async::OnSignals`.
+Wait for the `zx::Signals::VIRTUAL_INTERRUPT_UNTRIGGERED` signal using
+`fuchsia_async::OnSignals`.
 
 ## Review Example Test Setup
 
@@ -74,12 +77,14 @@ OnSignals::new(&virtual_interrupt, Signals::VIRTUAL_INTERRUPT_UNTRIGGERED).await
 
 ## Further Reading
 
-* [Handle Interrupts in a Driver](/docs/development/drivers/developer_guide/handle-interrupts-in-a-driver.md) -
-  Comprehensive Fuchsia developer guide covering implementation and testing in
-  both C++ and Rust.
+* [Handle Interrupts in a
+  Driver](/docs/development/drivers/developer_guide/handle-interrupts-in-a-driver.md)
+  - Comprehensive Fuchsia developer guide covering implementation and testing in
+    both C++ and Rust.
 * [Interrupts Reference](/docs/reference/kernel_objects/interrupts.md) - Kernel
   object reference detailing Zircon interrupts and the
   `ZX_VIRTUAL_INTERRUPT_UNTRIGGERED` signal.
-* For guidance on implementing interrupts, see the
-  [Driver Interrupt Implementation (Rust)](/src/devices/skills/driver_interrupt/implementation/rust/SKILL.md)
+* For guidance on implementing interrupts, see the [Driver Interrupt
+  Implementation
+  (Rust)](/src/devices/skills/driver_interrupt/implementation/rust/SKILL.md)
   skill.

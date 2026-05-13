@@ -1,7 +1,6 @@
 ---
-name: driver_bind_find_instance_name
-description: >-
-  Find the instance name for a FIDL connection using the driver's bind rules.
+name: driver-bind-find-instance-name
+description: Find the instance name for a FIDL connection using the driver's bind rules.
 ---
 
 # Finding Instance Names from Bind Rules
@@ -20,10 +19,10 @@ composite driver:
 * **Non-Composite Drivers**: The instance name is implicitly `"default"`. You do
   not need to find a name in the bind rules.
 * **Composite Drivers**:
-  1. **Look for Parent Definitions**: Look for the `parent` definitions in the
-     bind rules.
-  2. **Identify Parent Name**: Identify the name assigned to the parent you need
-     to connect to.
+  1.  **Look for Parent Definitions**: Look for the `parent` definitions in the
+      bind rules.
+  2.  **Identify Parent Name**: Identify the name assigned to the parent you
+      need to connect to.
 
 ### Example
 
@@ -40,8 +39,10 @@ Non-composite drivers do not have a "parent" property in their bind rules.
 To see how to use this instance name to connect to the parent capability in your
 driver code, see the corresponding implementation skills:
 
-* [Using FIDL in C++](/src/devices/skills/driver_fidl/client/implementation/cpp/SKILL.md)
-* [Using FIDL in Rust](/src/devices/skills/driver_fidl/client/implementation/rust/SKILL.md)
+* [Using FIDL in
+  C++](/src/devices/skills/driver_fidl/client/implementation/cpp/SKILL.md)
+* [Using FIDL in
+  Rust](/src/devices/skills/driver_fidl/client/implementation/rust/SKILL.md)
 
 ## Common Pitfalls
 
@@ -54,6 +55,6 @@ driver code, see the corresponding implementation skills:
 
 ## Further Reading
 
-* [Debugging Driver Binding](/src/devices/skills/debug_driver_binding/SKILL.md) -
-  Workflow for determining why a driver failed to bind or find its parent
-  capabilities.
+* [Debugging Driver Binding](/src/devices/skills/debug_driver_binding/SKILL.md)
+  - Workflow for determining why a driver failed to bind or find its parent
+    capabilities.

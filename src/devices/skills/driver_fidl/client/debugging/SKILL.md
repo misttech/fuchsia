@@ -1,7 +1,8 @@
 ---
-name: driver_fidl_debugging
+name: driver-fidl-debugging
 description: Debug FIDL connections in the incoming namespace of DFv2 drivers.
 ---
+
 # Driver FIDL Usage Debugging (DFv2)
 
 ## Verification Steps
@@ -22,7 +23,7 @@ FIDL protocol or service name:
 ls /ns/svc
 ```
 * **Expected**: You should see a service or protocol name matching your FIDL
-type (e.g., `fuchsia.hardware.example.MyProtocol`).
+  type (e.g., `fuchsia.hardware.example.MyProtocol`).
 
 If the capability is not listed, proceed to the troubleshooting section below.
 
@@ -43,8 +44,8 @@ manually tracing manifests.
 ### Connection fails with `ZX_ERR_NOT_FOUND`
 
 * **Missing Capability Routing in Manifest**:
-  * Check that the parent driver (or component exposing the capability) has
-    an `expose` entry in its `.cml`.
+  * Check that the parent driver (or component exposing the capability) has an
+    `expose` entry in its `.cml`.
   * Check that the receiver driver has a `use` entry in its `.cml` for the
     protocol or service.
 * **Instance Name Mismatch**:
@@ -55,9 +56,8 @@ manually tracing manifests.
     offered it under a specific name, the connection will fail with
     `ZX_ERR_NOT_FOUND`.
   * To learn how to find the correct instance name by looking at bind rules, see
-    the
-    [Finding Instance Names from Bind Rules](/src/devices/skills/driver_bind_find_instance_name/SKILL.md)
-    skill.
+    the [Finding Instance Names from Bind
+    Rules](/src/devices/skills/driver_bind_find_instance_name/SKILL.md) skill.
 * **Protocol vs Service Confusion in Manifest**:
   * Ensure you are using the correct keyword in your `.cml`. If the capability
     is a FIDL `service`, you must use `service: "..."`. If it is a direct
@@ -65,6 +65,9 @@ manually tracing manifests.
     runtime routing failures.
 
 ## Further Reading
-* [Using FIDL in C++](/src/devices/skills/driver_fidl/client/implementation/cpp/SKILL.md)
-* [Using FIDL in Rust](/src/devices/skills/driver_fidl/client/implementation/rust/SKILL.md)
-* [Server FIDL Debugging](/src/devices/skills/driver_fidl/server/debugging/SKILL.md)
+* [Using FIDL in
+  C++](/src/devices/skills/driver_fidl/client/implementation/cpp/SKILL.md)
+* [Using FIDL in
+  Rust](/src/devices/skills/driver_fidl/client/implementation/rust/SKILL.md)
+* [Server FIDL
+  Debugging](/src/devices/skills/driver_fidl/server/debugging/SKILL.md)

@@ -1,5 +1,5 @@
 ---
-name: migrate_dma_dfv1_to_dfv2
+name: migrate-dma-dfv1-to-dfv2
 description: Migrate DMA buffers from ddk::IoBuffer to dma-buffer in DFv2.
 ---
 
@@ -72,4 +72,5 @@ When accessing the virtual or physical addresses:
 
 ## Further Reading
 
-* [dma-buffer Header](/src/devices/lib/dma-buffer/include/lib/dma-buffer/buffer.h)
+* [dma-buffer
+  Header](/src/devices/lib/dma-buffer/include/lib/dma-buffer/buffer.h)

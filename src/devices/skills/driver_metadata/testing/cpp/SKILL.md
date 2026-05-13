@@ -1,7 +1,8 @@
 ---
-name: driver_metadata_cpp_testing
+name: driver-metadata-cpp-testing
 description: Test metadata handling in C++ DFv2 drivers.
 ---
+
 # Driver Metadata Testing (C++) (DFv2)
 
 ## Dependencies
@@ -79,8 +80,8 @@ TEST_F(MyDriverTest, TestWithMetadata) {
 ## Verify Outgoing Metadata
 
 When the driver serves metadata to its children using
-`fdf_metadata::MetadataServer`, verify that it served the correct data
-by connecting to the driver's outgoing directory in the test.
+`fdf_metadata::MetadataServer`, verify that it served the correct data by
+connecting to the driver's outgoing directory in the test.
 
 ```cpp
 #include <lib/driver/metadata/cpp/metadata.h>
@@ -108,7 +109,10 @@ TEST_F(MyDriverTest, VerifyOutgoingMetadata) {
 ## Further Reading
 
 * [/docs/development/drivers/tutorials/metadata-tutorial.md](/docs/development/drivers/tutorials/metadata-tutorial.md)
-* [/sdk/lib/driver/metadata/](/sdk/lib/driver/metadata/) (Metadata library source)
-* [Driver Metadata Implementation Skill](/src/devices/skills/driver_metadata/implementation/cpp/SKILL.md)
-* [Driver Metadata Debugging Skill](/src/devices/skills/driver_metadata/debugging/SKILL.md)
+* [/sdk/lib/driver/metadata/](/sdk/lib/driver/metadata/) (Metadata library
+  source)
+* [Driver Metadata Implementation
+  Skill](/src/devices/skills/driver_metadata/implementation/cpp/SKILL.md)
+* [Driver Metadata Debugging
+  Skill](/src/devices/skills/driver_metadata/debugging/SKILL.md)
 * [Driver Metadata Examples](/examples/drivers/metadata/)
