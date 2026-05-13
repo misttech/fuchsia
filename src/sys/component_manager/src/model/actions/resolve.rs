@@ -127,10 +127,7 @@ async fn do_resolve(
     }
 
     let weak = WeakComponentInstance::new(component).into();
-    let event = component.new_event(EventPayload::Resolved {
-        component: weak,
-        decl: Arc::clone(&component_info.decl),
-    });
+    let event = component.new_event(EventPayload::Resolved { component: weak });
     component.hooks.dispatch(&event).await;
     Ok(())
 }

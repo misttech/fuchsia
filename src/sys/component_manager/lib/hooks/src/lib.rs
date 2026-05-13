@@ -4,7 +4,6 @@
 
 use anyhow::format_err;
 use async_trait::async_trait;
-use cm_rust::ComponentDecl;
 use cm_types::{Name, Url};
 use errors::ModelError;
 use fidl_fuchsia_component as fcomponent;
@@ -226,7 +225,6 @@ pub enum EventPayload {
     Destroyed,
     Resolved {
         component: WeakInstanceToken,
-        decl: Arc<ComponentDecl>,
     },
     Unresolved,
     Started {
@@ -277,15 +275,13 @@ impl fmt::Debug for EventPayload {
             EventPayload::CapabilityRequested { name, .. } => {
                 formatter.field("name", &name).finish()
             }
-            EventPayload::Resolved { component: _, decl, .. } => {
-                formatter.field("decl", &*decl).finish()
-            }
             EventPayload::Stopped { status, exit_code, .. } => {
                 formatter.field("status", status).field("exit_code", exit_code).finish()
             }
             EventPayload::Unresolved
             | EventPayload::Destroyed
             | EventPayload::Started { .. }
+            | EventPayload::Resolved { .. }
             | EventPayload::DebugStarted { .. } => formatter.finish(),
         }
     }

@@ -16,7 +16,6 @@ rustc_library("hooks") {
     "//sdk/rust/zx",
     "//src/lib/fuchsia-sync",
     "//src/sys/component_manager/lib/errors",
-    "//src/sys/lib/cm_rust",
     "//src/sys/lib/cm_types",
     "//src/sys/lib/moniker",
     "//src/sys/lib/runtime_capabilities",
