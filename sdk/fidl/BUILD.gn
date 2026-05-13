@@ -115,6 +115,7 @@ _partner_idk_fidl_libraries_targets_list = [
   "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata",
   "//sdk/fidl/fuchsia.driver.registrar:fuchsia.driver.registrar",
   "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test",
+  "//sdk/fidl/fuchsia.driver.token:fuchsia.driver.token",
   "//sdk/fidl/fuchsia.element:fuchsia.element",
   "//sdk/fidl/fuchsia.factory.wlan:fuchsia.factory.wlan",
   "//sdk/fidl/fuchsia.factory:fuchsia.factory",

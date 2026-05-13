@@ -5,6 +5,8 @@
 import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.driver.token") {
+  sdk_category = "partner"
+  stable = false
   sdk_area = "Driver SDK"
   sources = [
     "debug.fidl",
@@ -13,4 +15,6 @@ fidl("fuchsia.driver.token") {
     "overview.fidl",
   ]
   public_deps = [ "//sdk/fidl/fuchsia.driver.framework" ]
+
+  enable_hlcpp = true
 }
