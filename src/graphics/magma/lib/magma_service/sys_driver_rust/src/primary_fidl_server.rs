@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 use crate::magma_common_defs::{MAX_INFLIGHT_BYTES, MAX_INFLIGHT_MESSAGES};
-use crate::magma_system_connection::{BufferId, ContextId, MagmaObjectType, PerformanceId};
+use crate::magma_system_connection::{
+    BufferId, ContextId, MagmaObjectType, MagmaStatus, PerformanceId,
+};
 use crate::magma_system_context::{MagmaExecCommandBuffer, MagmaExecResource};
 use anyhow::Context;
-use fidl::endpoints::RequestStream;
+use fidl::endpoints::{ControlHandle, RequestStream};
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 
@@ -162,6 +164,7 @@ impl PrimaryFidlServer {
                 self.flow_control(0, control_handle);
                 self.connection
                     .destroy_context(ContextId(context_id))
+                    .close_on_error(control_handle)
                     .context("DestroyContext failed")?;
             }
             fidl_fuchsia_gpu_magma::PrimaryRequest::ExecuteCommand {
@@ -201,11 +204,13 @@ impl PrimaryFidlServer {
                         signal_semaphores,
                         flags.bits() as u64,
                     )
+                    .close_on_error(control_handle)
                     .context("ExecuteCommandBuffers failed")?;
             }
             fidl_fuchsia_gpu_magma::PrimaryRequest::ExecuteInlineCommands { .. } => {
                 fuchsia_trace::duration!("magma", "PrimaryFidlServer::ExecuteInlineCommand");
                 self.flow_control(0, &control_handle);
+                control_handle.shutdown_with_epitaph(MagmaStatus::InvalidArgs.into());
                 return Err(anyhow::anyhow!("ExecuteInlineCommands unimplmented"));
             }
             fidl_fuchsia_gpu_magma::PrimaryRequest::Flush { responder } => {
@@ -226,6 +231,7 @@ impl PrimaryFidlServer {
                         range.size,
                         flags,
                     )
+                    .close_on_error(control_handle)
                     .context("MapBuffer failed")?;
             }
             fidl_fuchsia_gpu_magma::PrimaryRequest::UnmapBuffer { payload, control_handle: _ } => {
@@ -263,6 +269,7 @@ impl PrimaryFidlServer {
 
                 self.connection
                     .enable_performance_counter_access(access_token.into())
+                    .close_on_error(control_handle)
                     .context("EnablePerformanceCounterAccess failed")?;
             }
             fidl_fuchsia_gpu_magma::PrimaryRequest::CreatePerformanceCounterBufferPool {
@@ -357,6 +364,7 @@ impl PrimaryFidlServer {
                 self.flow_control(0, &control_handle);
                 self.connection
                     .enable_performance_counters(counters)
+                    .close_on_error(control_handle)
                     .context("EnablePerformanceCounters failed")?;
             }
             fidl_fuchsia_gpu_magma::PrimaryRequest::EnableFlowControl { control_handle: _ } => {
@@ -365,6 +373,20 @@ impl PrimaryFidlServer {
             }
         }
         Ok(())
+    }
+}
+
+trait CloseOnError {
+    fn close_on_error(self, control_handle: &fidl_fuchsia_gpu_magma::PrimaryControlHandle) -> Self;
+}
+
+impl CloseOnError for Result<(), MagmaStatus> {
+    fn close_on_error(self, control_handle: &fidl_fuchsia_gpu_magma::PrimaryControlHandle) -> Self {
+        match &self {
+            Ok(_) => (),
+            Err(e) => control_handle.shutdown_with_epitaph((*e).into()),
+        }
+        self
     }
 }
 

@@ -14,8 +14,10 @@ use futures::channel::mpsc::UnboundedSender;
 use std::collections::HashMap;
 
 use crate::magma_system_connection::MagmaStatus;
+use anyhow::Context;
 use fuchsia_async;
-use std::sync::Mutex;
+use futures::TryStreamExt;
+use std::sync::{Arc, Mutex};
 use zx;
 
 pub struct MagmaSystemDevice {
@@ -115,6 +117,43 @@ impl MagmaSystemDevice {
                 });
             })
             .unwrap();
+    }
+
+    pub async fn handle_debug_utils(
+        self: Arc<Self>,
+        mut stream: fidl_fuchsia_gpu_magma::DebugUtilsRequestStream,
+    ) -> anyhow::Result<()> {
+        while let Some(request) = stream.try_next().await.context("Stream error")? {
+            match request {
+                fidl_fuchsia_gpu_magma::DebugUtilsRequest::SetPowerState {
+                    power_state,
+                    responder,
+                } => {
+                    let start_time = std::time::Instant::now();
+                    let (sender, receiver) = futures::channel::oneshot::channel::<i32>();
+
+                    self.msd_device.set_power_state(
+                        power_state,
+                        Box::new(move |status| {
+                            let _ = sender.send(status);
+                        }),
+                    );
+
+                    match receiver.await {
+                        Ok(0) => {
+                            let elapsed = start_time.elapsed().as_nanos() as u64;
+                            responder.send(Ok(elapsed)).context("Failed to send response")?;
+                        }
+                        _ => {
+                            responder
+                                .send(Err(zx::Status::INTERNAL.into_raw()))
+                                .context("Failed to send error response")?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 

@@ -74,6 +74,20 @@ impl TryFrom<i32> for MagmaStatus {
     }
 }
 
+impl From<MagmaStatus> for zx::Status {
+    fn from(status: MagmaStatus) -> zx::Status {
+        match status {
+            MagmaStatus::Ok => zx::Status::OK,
+            MagmaStatus::InternalError => zx::Status::INTERNAL,
+            MagmaStatus::InvalidArgs => zx::Status::INVALID_ARGS,
+            MagmaStatus::AccessDenied => zx::Status::ACCESS_DENIED,
+            MagmaStatus::MemoryError => zx::Status::NO_MEMORY,
+            MagmaStatus::Unimplemented => zx::Status::NOT_SUPPORTED,
+            MagmaStatus::BadState => zx::Status::BAD_STATE,
+        }
+    }
+}
+
 pub trait Owner {
     fn driver(&self) -> &dyn traits::Driver;
     fn perf_count_access_token_id(&self) -> u64;

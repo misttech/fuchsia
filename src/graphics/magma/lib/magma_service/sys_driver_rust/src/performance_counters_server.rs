@@ -21,7 +21,7 @@ impl PerformanceCountersServer {
     }
 
     pub async fn run(
-        self,
+        &self,
         mut stream: fidl_magma::PerformanceCounterAccessRequestStream,
     ) -> anyhow::Result<()> {
         while let Some(request) = stream.try_next().await.context("Stream error")? {
