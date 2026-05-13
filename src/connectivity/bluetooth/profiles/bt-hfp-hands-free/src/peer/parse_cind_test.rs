@@ -6,44 +6,61 @@ use anyhow::{Result, format_err};
 use nom::Parser;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
-use nom::character::complete::{alpha1, char, digit1};
-use nom::combinator::map_res;
-use nom::error::ErrorKind;
-use nom::multi::separated_list0;
+use nom::character::complete::{alpha1, char};
+use nom::combinator::{map, map_res};
+
+use nom::multi::{separated_list0, separated_list1};
 use nom::sequence::{delimited, preceded, separated_pair};
 
 use crate::peer::ag_indicators::AgIndicatorIndex;
 use crate::peer::at_connection::Response as AtResponse;
 
-// TODO(b/417756085) Evaluate rewriting this without nom.
+/// Parses a single integer.
+fn parse_digit(input: &str) -> nom::IResult<&str, i64> {
+    map_res(nom::character::complete::digit1, |n: &str| n.parse::<i64>()).parse(input)
+}
+
+/// Parses a range of the form "min-max" (e.g., "0-3").
+fn parse_range(input: &str) -> nom::IResult<&str, (i64, i64)> {
+    map(separated_pair(parse_digit, char('-'), parse_digit), |(min, max)| (min, max)).parse(input)
+}
+
+/// Parses a list of discrete values of the form "val1,val2,..." (e.g., "0,1,2").
+/// Derives min and max from the list.
+fn parse_list(input: &str) -> nom::IResult<&str, (i64, i64)> {
+    map(separated_list1(char(','), parse_digit), |list: Vec<i64>| {
+        let min = *list.iter().min().unwrap();
+        let max = *list.iter().max().unwrap();
+        (min, max)
+    })
+    .parse(input)
+}
 
 /// Parses an AT response of the form
 /// +CIND: (<ag_indicator_name_0>,(<min_value_0>,<max_value_0)),...,(<ag_indicator_name_k>,(<min_value_k>,<max_value_k))
 /// as specified in ETSI TS 127 007 v6.8.0 sec. 8.9 and HFP v1.8 sec. 4.32.2: AT+CIND into an
 /// ordered vector of AG indicators. In doing so it checks that the ranges provided in the AT
 /// response by the peer match those required by the HFP spec.
+// TODO(b/417756085) Evaluate rewriting this without nom.
 pub fn parse(bytes: Vec<u8>) -> Result<AtResponse> {
     let mut string = String::from_utf8(bytes)?; // AT commands are ASCII.
     string.retain(|c| !char::is_whitespace(c)); // Strip whitespace.
     let str = string.as_str();
 
     // This line parses the response name, "+CIND:".
-    let name_parser = tag::<&str, &str, (&str, ErrorKind)>("+CIND:");
+    let name_parser = tag("+CIND:");
 
     // The next line parses a double quote delimited name of an indicator.
     let ag_indicator_name_parser = delimited(char('"'), alpha1, char('"'));
 
-    // The next five lines parse a parenthesis delimited pair of integers such as "(0,1)"
-    // or "(0-1)" indicating a range of indicator values.
-    let min_parser = map_res(digit1, |n: &str| n.parse::<i64>());
-    let max_parser = map_res(digit1, |n: &str| n.parse::<i64>());
+    // Attempt to parse a parenthesis comma delimited list of integers such as "(0,1)"
+    // or hyphen delimited range of integers such as "(0-1)".
+    // See 3GPP TS 27.007 Section 8.9: Commas indicate discrete values, dashes indicate ranges.
+    let value_parser = alt((parse_range, parse_list));
+    let delimited_value_parser = delimited(char('('), value_parser, char(')'));
 
-    let comma_or_dash_parser = alt((char(','), char('-')));
-    let range_parser = separated_pair(min_parser, comma_or_dash_parser, max_parser);
-    let delimited_range_parser = delimited(char('('), range_parser, char(')'));
-
-    // The next two lines parse a parenthesis delimited pair of indicator names and ranges.
-    let pair_parser = separated_pair(ag_indicator_name_parser, char(','), delimited_range_parser);
+    // The next two lines parse a parenthesis delimited pair of indicator names and ranges/lists.
+    let pair_parser = separated_pair(ag_indicator_name_parser, char(','), delimited_value_parser);
     let delimited_pair_parser = delimited(char('('), pair_parser, char(')'));
 
     // This line parses a comma separated list of such pairs
@@ -186,12 +203,60 @@ mod tests {
 
     #[fuchsia::test]
     fn parse_malformed_custom_indicators() {
-        // Single value in range (should fail Nom parser)
-        let bytes1 = b"+CIND: (\"mycustom\",(1))";
-        assert_matches!(parse(Vec::from(bytes1)), Err(_));
-
         // Missing parentheses (should fail Nom parser)
         let bytes2 = b"+CIND: (\"mycustom\",0,1)";
         assert_matches!(parse(Vec::from(bytes2)), Err(_));
+    }
+
+    #[fuchsia::test]
+    fn parse_with_single_element_list() {
+        let bytes = b"+CIND: (\"mycustom\",(1))";
+        let parsed = parse(Vec::from(bytes)).expect("Parsing");
+        assert_eq!(
+            parsed,
+            AtResponse::CindTest {
+                ordered_indicators: vec![AgIndicatorIndex::Vendor {
+                    name: "mycustom".to_string(),
+                    min: 1,
+                    max: 1
+                }]
+            }
+        )
+    }
+    #[fuchsia::test]
+    fn parse_with_comma_separated_list() {
+        let bytes = b"+CIND: (\"mycustom\",(0,1,2))";
+        let parsed = parse(Vec::from(bytes)).expect("Parsing");
+        assert_eq!(
+            parsed,
+            AtResponse::CindTest {
+                ordered_indicators: vec![AgIndicatorIndex::Vendor {
+                    name: "mycustom".to_string(),
+                    min: 0,
+                    max: 2
+                }]
+            }
+        )
+    }
+
+    #[fuchsia::test]
+    fn parse_with_mixed_formats() {
+        let bytes = b"+CIND: (\"call\",(0,1)),(\"callsetup\",(0-3)),(\"service\",(0-1)),(\"signal\",(0-5)),(\"roam\",(0,1)),(\"battchg\",(0-5)),(\"callheld\",(0-2)),(\"mycustom\",(0-4))";
+        let parsed = parse(Vec::from(bytes)).expect("Parsing");
+        assert_eq!(
+            parsed,
+            AtResponse::CindTest {
+                ordered_indicators: vec![
+                    AgIndicatorIndex::Call,
+                    AgIndicatorIndex::CallSetup,
+                    AgIndicatorIndex::ServiceAvailable,
+                    AgIndicatorIndex::SignalStrength,
+                    AgIndicatorIndex::Roaming,
+                    AgIndicatorIndex::BatteryCharge,
+                    AgIndicatorIndex::CallHeld,
+                    AgIndicatorIndex::Vendor { name: "mycustom".to_string(), min: 0, max: 4 },
+                ]
+            }
+        )
     }
 }
