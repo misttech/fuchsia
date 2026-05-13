@@ -37,6 +37,14 @@ func TestProjectCommand_Check(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	bsdPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "BSD")
+	if err := os.MkdirAll(bsdPatternDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bsdPatternDir, "bsd.txt"), []byte("Redistribution and use in source and binary forms"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	// Scaffold configs dir to avoid Assemble errors
 	os.MkdirAll(filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs"), 0755)
 
@@ -58,7 +66,7 @@ func TestProjectCommand_Check(t *testing.T) {
 
 	// 4. Create an undeclared file with a license
 	undeclaredFile := filepath.Join(projectDir, "undeclared.cc")
-	if err := os.WriteFile(undeclaredFile, []byte("/* Permission is hereby granted, free of charge, to any person obtaining a copy */\nint helper() {}"), 0644); err != nil {
+	if err := os.WriteFile(undeclaredFile, []byte("/* Redistribution and use in source and binary forms */\nint helper() {}"), 0644); err != nil {
 		t.Fatal(err)
 	}
 

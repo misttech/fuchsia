@@ -130,6 +130,14 @@ func IsProjectBoundary(dir, fuchsiaDir string, outOfTreeReadmes map[string]strin
 
 	var foundReadmePaths []string
 
+	// Check virtual
+	relDir, err := filepath.Rel(fuchsiaDir, dir)
+	if err == nil {
+		if virtualPath, ok := outOfTreeReadmes[relDir]; ok {
+			foundReadmePaths = append(foundReadmePaths, virtualPath)
+		}
+	}
+
 	// Check physical
 	for _, name := range []string{"README.fuchsia", "go.mod", "Cargo.toml", "pubspec.yaml"} {
 		possiblePath := filepath.Join(dir, name)
@@ -138,12 +146,19 @@ func IsProjectBoundary(dir, fuchsiaDir string, outOfTreeReadmes map[string]strin
 		}
 	}
 
-	// Check virtual
-	relDir, err := filepath.Rel(fuchsiaDir, dir)
-	if err == nil {
-		if virtualPath, ok := outOfTreeReadmes[relDir]; ok {
-			foundReadmePaths = append(foundReadmePaths, virtualPath)
+	if len(foundReadmePaths) > 1 {
+		// If both virtual and physical exist, log a warning
+		var b strings.Builder
+		b.WriteString(fmt.Sprintf("⚠️ Warning, project %s has multiple READMEs:\n", relDir))
+		for _, p := range foundReadmePaths {
+			kind := "physical"
+			if strings.Contains(p, "assets") {
+				kind = "virtual "
+			}
+			b.WriteString(fmt.Sprintf("  * %s: %s\n", kind, p))
 		}
+		b.WriteString("Out-of-tree asset README will take priority.\n")
+		fmt.Fprint(os.Stderr, b.String())
 	}
 
 	if len(foundReadmePaths) > 0 {

@@ -26,6 +26,7 @@ func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme, config *v2co
 				break
 			}
 		}
+		IsProjectBoundary(readmeDir, fuchsiaDir, config.OutOfTreeReadmes)
 	}
 
 	for i, r := range readmes {
