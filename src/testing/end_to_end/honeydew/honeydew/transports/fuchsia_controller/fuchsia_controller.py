@@ -38,6 +38,7 @@ class FuchsiaController:
         ffx_config_data: ffx_config.FfxConfigData,
         target_ip_port: custom_types.IpPort | None = None,
         device_ip_change: FuchsiaDeviceIpChange | None = None,
+        target_serial: str | None = None,
     ) -> None:
         self._target_name: str = target_name
 
@@ -54,9 +55,13 @@ class FuchsiaController:
                 fn=self._on_device_ip_change
             )
 
+        self._target_serial: str | None = target_serial
+
         self._target: str
         if self._target_ip_port:
             self._target = str(self._target_ip_port)
+        elif self._target_serial:
+            self._target = f"serial:{self._target_serial}"
         else:
             self._target = self._target_name
 
@@ -90,6 +95,29 @@ class FuchsiaController:
                 config["log.dir"] = log_dir
             else:
                 _LOGGER.debug("log dir not set.")
+            if self._ffx_config_data.enable_usb:
+                enable_usb = "true"
+            else:
+                enable_usb = "false"
+            _LOGGER.debug("connectivity.enable_usb set to %s", enable_usb)
+            config["connectivity.enable_usb"] = enable_usb
+            if self._ffx_config_data.usb_driver_autostart:
+                usb_driver_autostart = "true"
+            else:
+                usb_driver_autostart = "false"
+            _LOGGER.debug(
+                "connectivity.usb_driver_autostart set to %s",
+                usb_driver_autostart,
+            )
+            config["connectivity.usb_driver_autostart"] = usb_driver_autostart
+            if self._ffx_config_data.usb_socket_path:
+                usb_socket_path = self._ffx_config_data.usb_socket_path
+                _LOGGER.debug(
+                    "connectivity.usb_socket_path set to %s", usb_socket_path
+                )
+                config["connectivity.usb_socket_path"] = usb_socket_path
+            else:
+                _LOGGER.debug("connectivity.usb_socket_path not set.")
             msg: str = (
                 f"Creating Fuchsia-Controller Context with "
                 f"target='{self._target}', config='{config}'"

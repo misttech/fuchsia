@@ -491,6 +491,14 @@ class TestExecution:
                     "FUCHSIA_NODENAME": self._device_env.name,
                 }
             )
+
+        if self._exec_env.usb_socket_path:
+            env.update(
+                {
+                    "FUCHSIA_TEST_FFX_USB_SOCKET_PATH": self._exec_env.usb_socket_path,
+                }
+            )
+
         return None if not env else env
 
     def should_symbolize(self) -> bool:

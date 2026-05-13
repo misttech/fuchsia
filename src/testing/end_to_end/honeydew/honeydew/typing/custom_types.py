@@ -30,7 +30,7 @@ class TargetAddr(abc.ABC):
         """Attempts to parse a string query into a TargetAddr.
 
         Args:
-            query: The string representation of a target address (e.g. 'usb:123', '127.0.0.1:8022')
+            query: The string representation of a target address (e.g. 'usb:cid:123', '127.0.0.1:8022')
 
         Returns:
             A TargetAddr subclass instance (like TargetUsb or IpPort).
@@ -98,7 +98,7 @@ class TargetUsb(TargetAddr):
         """Attempts to parse a string query into a TargetUsb.
 
         Args:
-            query: The string representation of a target address (e.g. 'usb:12345')
+            query: The string representation of a target address (e.g. 'usb:cid:12345')
 
         Returns:
             A TargetUsb.
@@ -106,8 +106,8 @@ class TargetUsb(TargetAddr):
         Raises:
             ValueError: If the query cannot be cleanly parsed as a valid USB address
         """
-        if query.startswith("usb:"):
-            usb_id_str = query.removeprefix("usb:")
+        if query.startswith("usb:cid:"):
+            usb_id_str = query.removeprefix("usb:cid:")
             try:
                 usb_id = int(usb_id_str)
             except ValueError as e:
@@ -135,7 +135,7 @@ class TargetUsb(TargetAddr):
         return cls(cid)
 
     def __str__(self) -> str:
-        return f"usb:{self.target_id}"
+        return f"usb:cid:{self.target_id}"
 
     @property
     def ip_str(self) -> str:
@@ -360,6 +360,7 @@ class DeviceInfo:
     """
 
     name: str
+    serial_number: str | None
     ip_port: IpPort | None
     serial_socket: str | None
 

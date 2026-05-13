@@ -272,6 +272,8 @@ class FuchsiaDevice:
             isolate_dir=None,
             logs_dir=f"{getattr(logging, 'log_path')}/ffx/",
             logs_level="Off",
+            enable_mdns=False,
+            enable_usb=False,
             subtools_search_path=self.ffx_subtools_search_path,
             proxy_timeout_secs=FFX_PROXY_TIMEOUT_SEC,
         )
@@ -279,6 +281,7 @@ class FuchsiaDevice:
         self.honeydew_fd = honeydew.create_device(
             device_info=DeviceInfo(
                 name=self.name,
+                serial_number=self.serial_number,
                 ip_port=IpPort(ip_address(self.ip), self.ssh_port),
                 serial_socket=None,
             ),

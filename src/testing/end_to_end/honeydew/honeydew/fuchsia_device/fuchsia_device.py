@@ -130,7 +130,6 @@ _FFX_CMDS: dict[str, list[str]] = {
     "RESOLVE_IP": [
         "target",
         "list",
-        "--no-usb",  # do not do USB discovery
         "--no-probe",  # do not connect to targets
     ],
 }

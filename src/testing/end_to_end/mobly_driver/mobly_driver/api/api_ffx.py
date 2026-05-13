@@ -77,18 +77,19 @@ class FfxClient:
           OutputFormatException if unable to parse JSON result or JSON
             does not contain expected keys.
         """
+        cmd = [self._ffx_path]
+
+        if isolate_dir is not None:
+            cmd += ["--isolate-dir", isolate_dir]
+
+        cmd += [
+            "--machine",
+            "json",
+            "target",
+            "list",
+        ]
+
         try:
-            cmd = [self._ffx_path]
-
-            if isolate_dir is not None:
-                cmd += ["--isolate-dir", isolate_dir]
-
-            cmd += [
-                "--machine",
-                "json",
-                "target",
-                "list",
-            ]
             output = subprocess.check_output(cmd, timeout=5).decode()
         except (
             subprocess.CalledProcessError,
@@ -111,6 +112,49 @@ class FfxClient:
 
         return TargetListResult(all_nodes, default_nodes)
 
+    def get_target_serial(
+        self, target_name: str, isolate_dir: str | None
+    ) -> str | None:
+        """Returns the target's serial number.
+
+        Args:
+          target_name: Name of the fuchsia target
+          isolate_dir: If provided, FFX isolate dir to run command in.
+
+        Returns:
+          An optional string.
+
+        Raises:
+          CommandException if FFX command fails.
+        """
+        cmd = [self._ffx_path]
+
+        if isolate_dir is not None:
+            cmd += ["--isolate-dir", isolate_dir]
+
+        cmd += [
+            "-t",
+            target_name,
+            "target",
+            "list",
+            "--format",
+            "serials",
+        ]
+        try:
+            output = subprocess.check_output(cmd, timeout=5).decode().strip()
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+        ) as e:
+            raise CommandException(
+                f"Failed to get the target serial number via {cmd}: {e}"
+            )
+
+        if output:
+            return output
+        else:
+            return None
+
     def get_target_ssh_address(
         self, target_name: str, isolate_dir: str | None
     ) -> TargetSshAddress:
@@ -127,19 +171,21 @@ class FfxClient:
           CommandException if FFX command fails.
           OutputFormatException if unable to parse command output.
         """
+        cmd = [self._ffx_path]
+
+        if isolate_dir is not None:
+            cmd += ["--isolate-dir", isolate_dir]
+
+        cmd += [
+            "target",
+            "list",
+            "--allow-addrs",
+            "ip",
+            "--format",
+            "addresses-with-scope",
+            target_name,
+        ]
         try:
-            cmd = [self._ffx_path]
-
-            if isolate_dir is not None:
-                cmd += ["--isolate-dir", isolate_dir]
-
-            cmd += [
-                "target",
-                "list",
-                "--format",
-                "addresses-with-scope",
-                target_name,
-            ]
             output = subprocess.check_output(cmd, timeout=5).decode().strip()
         except (
             subprocess.CalledProcessError,

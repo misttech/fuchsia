@@ -4,15 +4,16 @@
 """Implements BaseDriver for the local execution environment."""
 
 import os
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 import yaml
 from mobly_driver.api import api_ffx, api_infra, api_mobly
 from mobly_driver.driver import base, common
 
-_DEFAULT_TARGET_TYPE: str = "ip"
 _VALID_TARGET_TYPES: list[str] = [
     "ip",
+    "serial",
     "name",
 ]
 
@@ -46,8 +47,9 @@ class LocalDriver(base.BaseDriver):
           output_path: absolute path to directory for storing Mobly test output.
           config_path: absolute path to the Mobly test config file.
           params_path: absolute path to the Mobly test params file.
-          target_address_type: Whether to use the fuchsia device's name or ip for host-target
-            interactions when using FFX and Fuchsia-Controller transports.
+          target_address_type: Whether to use the fuchsia device's name, serial
+            number,  or ip for host-target interactions when using FFX and
+            Fuchsia-Controller transports.
 
         Raises:
           KeyError if required environment variables not found.
@@ -67,10 +69,12 @@ class LocalDriver(base.BaseDriver):
         self._ap_ssh_port = ap_ssh_port
         self._ap_ssh_key = ap_ssh_key
 
-        self._target_address_type: str = (
-            target_address_type or _DEFAULT_TARGET_TYPE
-        )
-        if self._target_address_type not in _VALID_TARGET_TYPES:
+        self._target_address_type: Optional[str] = target_address_type
+
+        if (
+            self._target_address_type
+            and self._target_address_type not in _VALID_TARGET_TYPES
+        ):
             raise ValueError(
                 f"'target_address_type' should be from '{_VALID_TARGET_TYPES}' but received: "
                 f"{self._target_address_type}"
@@ -135,18 +139,57 @@ class LocalDriver(base.BaseDriver):
             detected.
         """
         mobly_controllers: List[Dict[str, Any]] = []
+        honeydew_config = deepcopy(self._honeydew_config)
+
+        usb_socket_path = os.getenv("FUCHSIA_TEST_FFX_USB_SOCKET_PATH")
+        if usb_socket_path:
+            honeydew_config["transports"]["ffx"][
+                "usb_socket_path"
+            ] = usb_socket_path
         for target in self._get_test_targets():
             fx_device = {
                 "type": api_infra.FUCHSIA_DEVICE,
                 "name": target,
             }
-            if self._target_address_type == "ip":
-                target_ssh_address: api_ffx.TargetSshAddress = (
-                    self._ffx_client.get_target_ssh_address(
+            if (
+                self._target_address_type == "serial"
+                or not self._target_address_type
+            ):
+                failure = None
+                target_serial: str | None = None
+                try:
+                    target_serial = self._ffx_client.get_target_serial(
                         target_name=target, isolate_dir=None
                     )
-                )
-                fx_device["device_ip_port"] = str(target_ssh_address)
+                except Exception as e:
+                    failure = e
+                if target_serial is not None:
+                    fx_device["device_serial"] = target_serial
+                elif self._target_address_type == "serial":
+                    if failure is None:
+                        raise common.DriverException(
+                            "Device had no serial number"
+                        )
+                    else:
+                        raise failure
+
+            if (
+                self._target_address_type == "ip"
+                or not self._target_address_type
+            ):
+                try:
+                    target_ssh_address: api_ffx.TargetSshAddress = (
+                        self._ffx_client.get_target_ssh_address(
+                            target_name=target, isolate_dir=None
+                        )
+                    )
+                    fx_device["device_ip_port"] = str(target_ssh_address)
+                except Exception as e:
+                    if (
+                        self._target_address_type == "ip"
+                        or "device_serial" not in fx_device
+                    ):
+                        raise e
 
             mobly_controllers.append(fx_device)
 
@@ -189,7 +232,7 @@ class LocalDriver(base.BaseDriver):
         config = api_mobly.new_testbed_config(
             testbed_name="GeneratedLocalTestbed",
             output_path=self._output_path,
-            honeydew_config=self._honeydew_config,
+            honeydew_config=honeydew_config,
             mobly_controllers=mobly_controllers,
             test_params_dict={},
             botanist_honeydew_map={},

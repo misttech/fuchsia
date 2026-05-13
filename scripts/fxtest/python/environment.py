@@ -5,6 +5,7 @@
 from dataclasses import dataclass
 import datetime
 import os
+import subprocess
 import typing
 
 import args
@@ -47,6 +48,9 @@ class ExecutionEnvironment:
 
     # Path to the package-repositories.json file.
     package_repositories_file: str | None = None
+
+    # Path to the USB Driver socket.
+    usb_socket_path: str | None = None
 
     @classmethod
     def initialize_from_args(
@@ -97,6 +101,42 @@ class ExecutionEnvironment:
                 f"Expected directory at {out_dir}. Ensure you have set up your build directory correctly using 'fx set'."
             )
 
+        usb_socket_path = flags.ffx_usb_socket_path
+        if not usb_socket_path:
+            # This looks heavy but we're just snagging a config value out of the
+            # caller's config. No special subprocess wrapper since this is the
+            # one place we *want* to leak the caller's config into our context.
+            cmd = [
+                "fx",
+                "--dir",
+                out_dir,
+                "ffx",
+                "config",
+                "get",
+                "connectivity.usb_socket_path",
+            ]
+            env = os.environ
+            if (
+                "XDG_RUNTIME_DIR" not in env
+                and "FUCHSIA_XDG_RUNTIME_DIR_FROM_FX" in env
+            ):
+                env["XDG_RUNTIME_DIR"] = env["FUCHSIA_XDG_RUNTIME_DIR_FROM_FX"]
+            try:
+                result = subprocess.run(
+                    cmd,
+                    text=True,
+                    stderr=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    env=env,
+                )
+                if result.returncode == 0:
+                    got = result.stdout.replace('"', "").strip()
+                    if got:
+                        usb_socket_path = got
+            except Exception:
+                # TODO(512908834): Log something and/or narrow the exception class.
+                pass
+
         # Either disable logging, log to the given path, or format
         # a default path in the output directory.
         # We will write gzipped logs since they can get a bit large
@@ -143,6 +183,7 @@ class ExecutionEnvironment:
                 if os.path.isfile(package_repositories_file)
                 else None
             ),
+            usb_socket_path=usb_socket_path,
         )
 
     def relative_to_root(self, path: str) -> str:

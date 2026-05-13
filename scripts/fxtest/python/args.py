@@ -113,6 +113,7 @@ class Flags:
     env: typing.List[str]
     allow_temporary_package_server: bool
     allow_temporary_emulator: bool
+    ffx_usb_socket_path: str | None
 
     output: bool
     simple: bool
@@ -640,6 +641,12 @@ def parse_args(
         action=argparse.BooleanOptionalAction,
         help="Allow this script to start a temporary package server if one is not already running. Default is True.",
         default=True,
+    )
+    execution.add_argument(
+        "--ffx-usb-socket-path",
+        help="""If set, explicitly sets the path to the socket used to communicate with the FFX USB
+        driver. Otherwise the default is used from your ffx config.""",
+        default=None,
     )
 
     execution.add_argument(

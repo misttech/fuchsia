@@ -34,6 +34,9 @@ _INPUT_ARGS: dict[str, Any] = {
         logs_dir="/tmp/logs",
         binary_path="/bin/ffx",
         logs_level="debug",
+        enable_usb=False,
+        usb_socket_path=None,
+        usb_driver_autostart=False,
         subtools_search_path=None,
         proxy_timeout_secs=None,
         ssh_keepalive_timeout=None,
@@ -72,6 +75,7 @@ class InitTests(unittest.TestCase):
             honeydew.create_device(
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["target_name"],
+                    serial_number=None,
                     ip_port=None,
                     serial_socket=None,
                 ),
@@ -81,7 +85,12 @@ class InitTests(unittest.TestCase):
         )
 
         mock_fc_context.assert_called_once_with(
-            config={"log.level": "debug", "log.dir": "/tmp/logs"},
+            config={
+                "log.level": "debug",
+                "log.dir": "/tmp/logs",
+                "connectivity.enable_usb": "false",
+                "connectivity.usb_driver_autostart": "false",
+            },
             isolate_dir=_INPUT_ARGS["ffx_config_data"].isolate_dir,
             target=_INPUT_ARGS["target_name"],
         )
@@ -110,6 +119,7 @@ class InitTests(unittest.TestCase):
             honeydew.create_device(
                 custom_types.DeviceInfo(
                     name=_INPUT_ARGS["target_name"],
+                    serial_number=None,
                     ip_port=_INPUT_ARGS["target_ip_port"],
                     serial_socket=None,
                 ),
@@ -119,7 +129,12 @@ class InitTests(unittest.TestCase):
         )
 
         mock_fc_context.assert_called_once_with(
-            config={"log.level": "debug", "log.dir": "/tmp/logs"},
+            config={
+                "log.level": "debug",
+                "log.dir": "/tmp/logs",
+                "connectivity.enable_usb": "false",
+                "connectivity.usb_driver_autostart": "false",
+            },
             isolate_dir=_INPUT_ARGS["ffx_config_data"].isolate_dir,
             target=str(_INPUT_ARGS["target_ip_port"]),
         )
@@ -142,6 +157,7 @@ class InitTests(unittest.TestCase):
             honeydew.create_device(
                 custom_types.DeviceInfo(
                     name=_INPUT_ARGS["target_name"],
+                    serial_number=None,
                     ip_port=_INPUT_ARGS["target_ip_port"],
                     serial_socket=None,
                 ),

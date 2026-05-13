@@ -167,7 +167,7 @@ class CustomTypesTests(unittest.TestCase):
         [
             (
                 "usb_valid",
-                "usb:12345",
+                "usb:cid:12345",
                 custom_types.TargetUsb(12345),
             ),
             (
@@ -201,9 +201,9 @@ class CustomTypesTests(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ("invalid_usb", "usb:notanint"),
+            ("invalid_usb", "usb:cid:notanint"),
             ("invalid_usb_format", "usb123"),
-            ("negative_usb", "usb:-1"),
+            ("negative_usb", "usb:cid:-1"),
             ("invalid_ip", "256.256.256.256"),
             ("random_string", "my-fuchsia-device"),
         ]
@@ -279,7 +279,7 @@ class CustomTypesTests(unittest.TestCase):
     def test_target_usb_str(self) -> None:
         """Test cases for TargetUsb.__str__."""
         got = str(custom_types.TargetUsb(12345))
-        self.assertEqual(got, "usb:12345")
+        self.assertEqual(got, "usb:cid:12345")
 
     def test_target_usb_ip_str_raises(self) -> None:
         """Test cases for TargetUsb.ip_str."""

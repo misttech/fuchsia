@@ -43,7 +43,10 @@ _ISOLATE_DIR: str = "/tmp/isolate"
 _LOGS_DIR: str = "/tmp/logs"
 _BINARY_PATH: str = "ffx"
 _LOGS_LEVEL: str = "debug"
-
+_MDNS_ENABLED: bool = False
+_ENABLE_USB: bool = False
+_USB_SOCKET_PATH: str | None = None
+_USB_DRIVER_AUTOSTART: bool = False
 _SUBTOOLS_SEARCH_PATH: str = "/subtools"
 _PROXY_TIMEOUT_SECS: int = 30
 _SSH_KEEPALIVE_TIMEOUT: int = 60
@@ -143,6 +146,9 @@ _INPUT_ARGS: dict[str, Any] = {
         logs_dir=_LOGS_DIR,
         binary_path=_BINARY_PATH,
         logs_level=_LOGS_LEVEL,
+        enable_usb=_ENABLE_USB,
+        usb_socket_path=_USB_SOCKET_PATH,
+        usb_driver_autostart=_USB_DRIVER_AUTOSTART,
         subtools_search_path=_SUBTOOLS_SEARCH_PATH,
         proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
         ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
@@ -554,6 +560,10 @@ class FfxTests(unittest.TestCase):
                 "-c",
                 f"ssh.keepalive_timeout={_SSH_KEEPALIVE_TIMEOUT}",
                 "-c",
+                f"connectivity.enable_usb={str(_ENABLE_USB).lower()}",
+                "-c",
+                f"connectivity.usb_driver_autostart={str(_USB_DRIVER_AUTOSTART).lower()}",
+                "-c",
                 f"shared_data={_LOGS_DIR}",
             ]
             + ffx._FFX_CMDS["TARGET_SHOW"],
@@ -599,6 +609,10 @@ class FfxTests(unittest.TestCase):
                 f"proxy.timeout_secs={_PROXY_TIMEOUT_SECS}",
                 "-c",
                 f"ssh.keepalive_timeout={_SSH_KEEPALIVE_TIMEOUT}",
+                "-c",
+                f"connectivity.enable_usb={str(_ENABLE_USB).lower()}",
+                "-c",
+                f"connectivity.usb_driver_autostart={str(_USB_DRIVER_AUTOSTART).lower()}",
                 "-c",
                 f"shared_data={_LOGS_DIR}",
             ]
@@ -749,6 +763,10 @@ class FfxTests(unittest.TestCase):
                 "-c",
                 f"ssh.keepalive_timeout={_SSH_KEEPALIVE_TIMEOUT}",
                 "-c",
+                f"connectivity.enable_usb={str(_ENABLE_USB).lower()}",
+                "-c",
+                f"connectivity.usb_driver_autostart={str(_USB_DRIVER_AUTOSTART).lower()}",
+                "-c",
                 f"shared_data={_LOGS_DIR}",
             ]
             + ["a", "b", "c"],
@@ -860,6 +878,10 @@ class FfxTests(unittest.TestCase):
                 "proxy.timeout_secs=30",
                 "-c",
                 "ssh.keepalive_timeout=60",
+                "-c",
+                "connectivity.enable_usb=false",
+                "-c",
+                "connectivity.usb_driver_autostart=false",
                 "-c",
                 "shared_data=/tmp/logs",
                 "target",

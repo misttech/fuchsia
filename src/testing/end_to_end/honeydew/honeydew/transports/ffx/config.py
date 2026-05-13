@@ -32,10 +32,18 @@ class FfxConfigData:
             arg of FFX
         logs_level: logs level that will be passed to `--config log.level`
             arg of FFX
+        enable_mdns: Whether or not mdns need to be enabled. This will be
+            passed to `--config discovery.mdns.enabled` arg of FFX
         subtools_search_path: A path of where ffx should
             look for plugins.
         proxy_timeout_secs: Proxy timeout in secs.
         ssh_keepalive_timeout: SSH keep-alive timeout in secs.
+        enable_usb: Whether to use FFX's USB protocol to communicate
+            with targets if available.
+        usb_socket_path: Path to socket used to communicate with the USB
+            protocol driver.
+        usb_driver_autostart: Whether to start the USB protocol driver if it
+            isn't running.
     """
 
     binary_path: str
@@ -45,6 +53,9 @@ class FfxConfigData:
     subtools_search_path: str | None
     proxy_timeout_secs: int | None
     ssh_keepalive_timeout: int | None
+    enable_usb: bool
+    usb_socket_path: str | None
+    usb_driver_autostart: bool
 
     def __str__(self) -> str:
         return (
@@ -55,6 +66,9 @@ class FfxConfigData:
             f"subtools_search_path={self.subtools_search_path}, "
             f"proxy_timeout_secs={self.proxy_timeout_secs}, "
             f"ssh_keepalive_timeout={self.ssh_keepalive_timeout}, "
+            f"enable_usb={self.enable_usb}, "
+            f"usb_socket_path={self.usb_socket_path}, "
+            f"usb_driver_autostart={self.usb_driver_autostart}, "
         )
 
     def get_config_args(self) -> list[str]:
@@ -69,6 +83,11 @@ class FfxConfigData:
             "ffx.subtool-search-paths": self.subtools_search_path,
             "proxy.timeout_secs": self.proxy_timeout_secs,
             "ssh.keepalive_timeout": self.ssh_keepalive_timeout,
+            "connectivity.enable_usb": str(self.enable_usb).lower(),
+            "connectivity.usb_driver_autostart": str(
+                self.usb_driver_autostart
+            ).lower(),
+            "connectivity.usb_socket_path": self.usb_socket_path,
         }
 
         ffx_args = []
@@ -90,9 +109,13 @@ class FfxConfig:
         isolate_dir: str | None,
         logs_dir: str,
         logs_level: str | None,
+        enable_mdns: bool,
+        enable_usb: bool,
         subtools_search_path: str | None = None,
         proxy_timeout_secs: int | None = None,
         ssh_keepalive_timeout: int | None = None,
+        usb_socket_path: str | None = None,
+        usb_driver_autostart: bool = True,
     ) -> None:
         """Sets up configuration need to be used while running FFX command.
 
@@ -131,6 +154,9 @@ class FfxConfig:
         self._subtools_search_path: str | None = subtools_search_path
         self._proxy_timeout_secs: int | None = proxy_timeout_secs
         self._ssh_keepalive_timeout: int | None = ssh_keepalive_timeout
+        self._enable_usb: bool = enable_usb
+        self._usb_socket_path: str | None = usb_socket_path
+        self._usb_driver_autostart: bool = usb_driver_autostart
 
         self._setup_done = True
 
@@ -170,6 +196,9 @@ class FfxConfig:
             subtools_search_path=self._subtools_search_path,
             proxy_timeout_secs=self._proxy_timeout_secs,
             ssh_keepalive_timeout=self._ssh_keepalive_timeout,
+            enable_usb=self._enable_usb,
+            usb_socket_path=self._usb_socket_path,
+            usb_driver_autostart=self._usb_driver_autostart,
         )
 
     def _atexit_callback(self) -> None:

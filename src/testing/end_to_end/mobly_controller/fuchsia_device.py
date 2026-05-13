@@ -67,9 +67,14 @@ async def create(
         isolate_dir=None,
         logs_dir=f"{test_logs_dir}/ffx/",
         logs_level=ffx_config_dict["logs_level"],
+        enable_mdns=ffx_config_dict.get("enable_mdns", True),
         subtools_search_path=ffx_config_dict.get("subtools_search_path"),
         proxy_timeout_secs=ffx_config_dict["proxy_timeout_secs"],
         ssh_keepalive_timeout=ffx_config_dict.get("ssh_keepalive_timeout"),
+        enable_usb=ffx_config_dict["enable_usb"],
+        usb_socket_path=ffx_config_dict.get("usb_socket_path"),
+        usb_driver_autostart=ffx_config_dict.get("usb_driver_autostart")
+        or False,
     )
 
     fuchsia_devices = []
@@ -80,6 +85,7 @@ async def create(
             honeydew.create_device(
                 device_info=custom_types.DeviceInfo(
                     name=device_config["name"],
+                    serial_number=device_config.get("device_serial"),
                     ip_port=device_config.get("device_ip_port"),
                     serial_socket=device_config.get("serial_socket"),
                 ),
@@ -270,6 +276,7 @@ def _get_ffx_config(configs: list[dict[str, Any]]) -> dict[str, Any]:
             )
         except KeyError:
             pass
+
     if not ffx_config_dict:
         raise RuntimeError("No FFX config found in any of the device config")
 
@@ -293,4 +300,5 @@ def _get_ffx_config(configs: list[dict[str, Any]]) -> dict[str, Any]:
                     f"Invalid value sent in '{ffx_config_key}'. Please pass a int value"
                 ) from err
 
+    ffx_config_dict["enable_usb"] = True
     return ffx_config_dict

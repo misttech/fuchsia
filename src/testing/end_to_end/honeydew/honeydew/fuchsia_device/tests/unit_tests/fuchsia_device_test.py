@@ -146,6 +146,9 @@ _INPUT_ARGS: dict[str, Any] = {
         logs_dir="/tmp/logs",
         binary_path="/bin/ffx",
         logs_level="debug",
+        enable_usb=False,
+        usb_socket_path=None,
+        usb_driver_autostart=False,
         subtools_search_path=None,
         proxy_timeout_secs=None,
         ssh_keepalive_timeout=None,
@@ -285,6 +288,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             sync_fd_fc_obj = fuchsia_device.FuchsiaDevice(
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["device_name"],
+                    serial_number=None,
                     ip_port=_INPUT_ARGS["device_ip"],
                     serial_socket=_INPUT_ARGS["device_serial_socket"],
                 ),
@@ -347,6 +351,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             sync_fd_sl4f_obj = fuchsia_device.FuchsiaDevice(
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["device_name"],
+                    serial_number=None,
                     ip_port=None,
                     serial_socket=_INPUT_ARGS["device_serial_socket"],
                 ),
@@ -432,6 +437,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             fd_obj = fuchsia_device.FuchsiaDevice(
                 device_info=custom_types.DeviceInfo(
                     name=_INPUT_ARGS["device_name"],
+                    serial_number=None,
                     ip_port=_INPUT_ARGS["device_ip"],
                     serial_socket=_INPUT_ARGS["device_serial_socket"],
                 ),
@@ -481,6 +487,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
 
         self.fd_fc_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
+            serial_number=None,
             ip_port=None,
             serial_socket=None,
         )
@@ -1644,6 +1651,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         IP address is not specified."""
         self.fd_fc_obj._device_info = custom_types.DeviceInfo(
             name=_INPUT_ARGS["device_name"],
+            serial_number=None,
             ip_port=None,
             serial_socket=None,
         )

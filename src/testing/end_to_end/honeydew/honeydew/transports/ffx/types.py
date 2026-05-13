@@ -37,8 +37,13 @@ class TargetData:
     def __init__(self, **kwargs: Any) -> None:
         for k, v in kwargs.items():
             if k == "ssh_address":
-                ip = IpPort.create_using_ip_and_port(f"{v['host']}:{v['port']}")
-                object.__setattr__(self, k, ip)
+                if v is not None:
+                    ip = IpPort.create_using_ip_and_port(
+                        f"{v['host']}:{v['port']}"
+                    )
+                    object.__setattr__(self, k, ip)
+                else:
+                    object.__setattr__(self, k, None)
             else:
                 object.__setattr__(self, k, v)
 
