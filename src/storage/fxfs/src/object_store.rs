@@ -1520,8 +1520,28 @@ impl ObjectStore {
                     {
                         self.remove_from_graveyard(&mut transaction, object_id);
                     }
+                    // The last attribute was not the default attribute, it may have been added to
+                    // the graveyard alongside the object.
+                    if for_tombstone && attribute_id != DEFAULT_DATA_ATTRIBUTE_ID {
+                        self.remove_attribute_from_graveyard(
+                            &mut transaction,
+                            object_id,
+                            attribute_id,
+                        );
+                    }
                 }
-                TrimResult::Done(id) => next_attribute = id,
+                TrimResult::Done(id) => {
+                    // Moved to the next attribute. This one is finished and it may have been
+                    // added to the graveyard alongside the object.
+                    if for_tombstone && attribute_id != DEFAULT_DATA_ATTRIBUTE_ID {
+                        self.remove_attribute_from_graveyard(
+                            &mut transaction,
+                            object_id,
+                            attribute_id,
+                        );
+                    }
+                    next_attribute = id;
+                }
             }
 
             if !transaction.mutations().is_empty() {

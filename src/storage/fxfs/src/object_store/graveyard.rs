@@ -20,6 +20,7 @@ use futures::StreamExt;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::channel::oneshot;
 use fxfs_trace::{TraceFutureExt, trace_future_args};
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -178,15 +179,20 @@ impl Graveyard {
         let graveyard_object_id = store.graveyard_directory_object_id();
         let mut iter = Self::iter(graveyard_object_id, &mut merger).await?;
         let store_id = store.store_object_id();
-        // TODO(https://fxbug.dev/355246066): This iteration can sometimes attempt to reap
-        // attributes after they've been reaped as part of the parent object.
+        let mut queued_objects = BTreeSet::new();
         while let Some(GraveyardEntryInfo { object_id, attribute_id, value }) = iter.get() {
             store.graveyard_entries.fetch_add(1, Ordering::Relaxed);
             match value {
                 ObjectValue::Some => {
                     if let Some(attribute_id) = attribute_id {
-                        self.queue_tombstone_attribute(store_id, object_id, attribute_id)
+                        // If the object is already queued for tombstone, don't queue any attributes
+                        // under it as well. The object tombstone will clean up any attributes as
+                        // well as their graveyard entries.
+                        if !queued_objects.contains(&(store_id, object_id)) {
+                            self.queue_tombstone_attribute(store_id, object_id, attribute_id)
+                        }
                     } else {
+                        queued_objects.insert((store_id, object_id));
                         self.queue_tombstone_object(store_id, object_id)
                     }
                 }
@@ -709,8 +715,14 @@ mod tests {
         .expect("failed to create object");
         transaction.commit().await.expect("commit failed");
 
+        // With both of these it will test that both their graveyard entries got cleaned up in
+        // trim_or_tombstone() via two different paths.
         handle
             .write_attr(FSVERITY_MERKLE_ATTRIBUTE_ID, &[0; 8192])
+            .await
+            .expect("failed to write merkle attribute");
+        handle
+            .write_attr(FSVERITY_MERKLE_ATTRIBUTE_ID + 1, &[0; 8192])
             .await
             .expect("failed to write merkle attribute");
         let object_id = handle.object_id();
@@ -722,6 +734,17 @@ mod tests {
                     root_store.graveyard_directory_object_id(),
                     object_id,
                     FSVERITY_MERKLE_ATTRIBUTE_ID,
+                ),
+                ObjectValue::Some,
+            ),
+        );
+        transaction.add(
+            root_store.store_object_id(),
+            Mutation::replace_or_insert_object(
+                ObjectKey::graveyard_attribute_entry(
+                    root_store.graveyard_directory_object_id(),
+                    object_id,
+                    FSVERITY_MERKLE_ATTRIBUTE_ID + 1,
                 ),
                 ObjectValue::Some,
             ),
