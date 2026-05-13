@@ -19,7 +19,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use {fidl_test_sagcontrol as fctrl, fuchsia_async as fasync};
+use fidl_test_sagcontrol as fctrl;
+use fuchsia_async as fasync;
 
 // TODO(b/336692041): Set up a more complex topology to allow fake SAG to override power element
 // states.
@@ -299,7 +300,7 @@ impl SystemActivityGovernorControl {
                     return Err(fctrl::SetSystemActivityGovernorStateError::NotSupported);
                 }
 
-                let token = self.sag_proxy.take_wake_lease("Suspending").await.unwrap();
+                let token = self.sag_proxy.acquire_wake_lease("Suspending").await.unwrap().unwrap();
                 let _ = self.suspending_token.borrow_mut().get_or_insert(token);
 
                 self.handle_application_activity_changes(required_application_activity_level)

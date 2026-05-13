@@ -23,7 +23,7 @@ using fuchsia_power_system::LeaseToken;
 
 class WakeLeaseTest : public gtest::TestLoopFixture {};
 
-TEST_F(WakeLeaseTest, TakeWakeLeaseThenDropIt) {
+TEST_F(WakeLeaseTest, AcquireWakeLeaseThenDropIt) {
   auto endpoints = fidl::CreateEndpoints<ActivityGovernor>().value();
   FidlBoundServer<FakeActivityGovernor> server(
       test_loop().dispatcher(), std::move(endpoints.server), test_loop().dispatcher());

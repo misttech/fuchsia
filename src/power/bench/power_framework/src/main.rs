@@ -4,7 +4,7 @@
 
 //! A benchmark runner for SAG, based on Criterion.
 //!
-//! main.rs contains benchmarks for TakeWakeLease from SAG.
+//! main.rs contains benchmarks for AcquireWakeLease from SAG.
 
 mod daemon_work;
 mod sag_work;
@@ -18,7 +18,7 @@ use fuchsia_criterion::FuchsiaCriterion;
 use fuchsia_criterion::criterion::Criterion;
 use std::sync::Arc;
 
-fn bench_take_wake_lease(
+fn bench_acquire_wake_lease(
     b: &mut criterion::Bencher,
     sag: Arc<fsystem::ActivityGovernorSynchronousProxy>,
 ) {
@@ -39,7 +39,7 @@ fn bench_toggle_lease(
 
 fn get_sag_benches(name: &'static str) -> criterion::Benchmark {
     let sag_arc = sag_work::obtain_sag_proxy();
-    criterion::Benchmark::new(name, move |b| bench_take_wake_lease(b, sag_arc.clone()))
+    criterion::Benchmark::new(name, move |b| bench_acquire_wake_lease(b, sag_arc.clone()))
 }
 
 fn get_daemon_benches() -> criterion::Benchmark {
@@ -72,10 +72,11 @@ fn main() -> Result<()> {
         c.bench("fuchsia.power.framework", get_sag_benches("TakeDropWakeLease"));
     let sag_arc = sag_work::obtain_sag_proxy();
     let _event_pair = sag_arc
-        .take_wake_lease(
+        .acquire_wake_lease(
             "benchmark",
             zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(5)),
         )
+        .unwrap()
         .unwrap();
 
     let _: &mut Criterion = c.bench("fuchsia.power.framework", get_sag_benches("TakeWakeLease"));

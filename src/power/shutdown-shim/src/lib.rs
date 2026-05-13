@@ -380,16 +380,18 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
                 .connect_to_protocol::<fsystem::ActivityGovernorMarker>()
                 .context("error connecting to system_activity_governor")?;
             activity_governor
-                .take_wake_lease("shutdown_control")
+                .acquire_wake_lease("shutdown_control")
                 .await
-                .context("failed to take wake lease")
+                .context("failed to acquire wake lease")
         }
         .await;
-        res.map_err(|e| {
-            eprintln!("[shutdown-shim]: {e}");
-            ()
-        })
-        .ok()
+        match res {
+            Ok(Ok(token)) => Some(token),
+            e => {
+                eprintln!("[shutdown-shim]: {:?}", e);
+                None
+            }
+        }
     }
 
     /// Cause the program to terminate.

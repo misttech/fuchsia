@@ -226,25 +226,6 @@ open protocol ActivityGovernor {
     ///
     /// The hardware platform will not suspend as long as a valid
     /// [`LeaseToken`] exists.
-    ///
-    /// If an error occurs while creating a token for the wake lease, then the
-    /// channel to `ActivityGovernor` will be closed by the server and no
-    /// response will be returned.
-    @available(added=HEAD, deprecated=HEAD, note="Use AcquireWakeLease instead")
-    flexible TakeWakeLease(struct {
-        /// The name of the lease.
-        ///
-        /// The name is not required to be globally unique.
-        name string:fuchsia.power.broker.MAX_ELEMENT_NAME_LEN;
-    }) -> (resource struct {
-        /// The token that blocks hardware platform suspension.
-        token LeaseToken;
-    });
-
-    /// Creates a lease that blocks suspension of the hardware platform.
-    ///
-    /// The hardware platform will not suspend as long as a valid
-    /// [`LeaseToken`] exists.
     @available(added=26)
     flexible AcquireWakeLease(struct {
         /// The name of the lease.

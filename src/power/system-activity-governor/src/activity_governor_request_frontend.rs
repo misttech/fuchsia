@@ -95,15 +95,6 @@ impl ActivityGovernorRequestFrontend {
                     },
                 );
             }
-            Ok(fsystem::ActivityGovernorRequest::TakeWakeLease { responder, name }) => {
-                let (server_token, client_token) = fsystem::LeaseToken::create();
-                let _ = responder.send(client_token);
-                self.stored_wake_leases.borrow_mut().push(StoredWakeLease {
-                    name,
-                    server_token,
-                    is_long: false,
-                });
-            }
             Ok(fsystem::ActivityGovernorRequest::AcquireWakeLease { responder, name }) => {
                 let (server_token, client_token) = fsystem::LeaseToken::create();
                 let _ = responder.send(Ok(client_token));

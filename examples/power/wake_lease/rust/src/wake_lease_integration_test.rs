@@ -4,15 +4,14 @@
 
 use anyhow::{Context as _, Result};
 use fidl::endpoints::create_request_stream;
+use fidl_fuchsia_power_broker as fbroker;
+use fidl_fuchsia_power_system as fsystem;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use futures::channel::mpsc;
 use futures::prelude::*;
 use stream::StreamExt;
 use wake_lease::WakeLease;
-use {
-    fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_system as fsystem,
-    fuchsia_async as fasync,
-};
 
 struct SuspendBlocker {
     before_suspend_sender: mpsc::UnboundedSender<()>,
@@ -69,7 +68,7 @@ async fn wake_lease_blocks_system_suspend_until_release() -> Result<()> {
     let _ = boot_control.set_boot_complete().await?;
 
     // Create and take a wake lease, ensuring the system doesn't suspend.
-    let wake_lease = WakeLease::take(&sag, "test-wake-lease".to_string()).await?;
+    let wake_lease = WakeLease::acquire(&sag, "test-wake-lease".to_string()).await?;
 
     // Register a suspend blocker on System Activity Governor to check for suspend callbacks.
     let (client, stream) = create_request_stream::<fsystem::SuspendBlockerMarker>();
@@ -83,7 +82,7 @@ async fn wake_lease_blocks_system_suspend_until_release() -> Result<()> {
 
     // The RegisterSuspendBlocker call returns another wake lease. Functionally, we could replace
     // the `wake_lease` from above with the one that's obtained here, but we want this example to
-    // clearly demonstrate that the token returned by TakeWakeLease will block suspension.
+    // clearly demonstrate that the token returned by AcquireWakeLease will block suspension.
     {
         let _registration_lease = sag
             .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
