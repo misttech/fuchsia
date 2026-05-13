@@ -146,6 +146,24 @@ func TestDepsConversion(t *testing.T) {
 	]
 }`,
 		},
+		{
+			name: "overwritten deps",
+			bazel: `go_library(
+	name = "test",
+	deps = [
+		"//path/to:foo", # @bazel2gn:path_overwrite://path/to/foo_overwritten
+		"//path/to:bar", # @bazel2gn:path_overwrite:bar_overwritten
+		"//path/to:baz",
+	],
+)`,
+			wantGN: `go_library("test") {
+	deps = [
+		"//path/to/foo_overwritten",
+		"bar_overwritten",
+		"//path/to:baz",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

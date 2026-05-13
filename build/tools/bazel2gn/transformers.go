@@ -78,6 +78,11 @@ func bazelDepToGN(expr syntax.Expr) (syntax.Expr, error) {
 		return expr, nil
 	}
 
+	if dep, ok := overwrittenPath(lit); ok {
+		lit.Raw = fmt.Sprintf(`"%s"`, dep)
+		return lit, nil
+	}
+
 	for bazelRepo, gnRepo := range thirdPartyBazelRepos {
 		quotedBazelRepo := fmt.Sprintf(`"%s"`, bazelRepo)
 		if lit.Raw == quotedBazelRepo {

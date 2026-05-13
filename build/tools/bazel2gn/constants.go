@@ -170,6 +170,7 @@ var ccLibAttrMap = mustMergeMaps(ccCommonAttrMap, map[string]string{
 // This map only includes attributes that have different names in Bazel and GN.
 var rustCommonAttrMap = map[string]string{
 	"compile_data":         "inputs",
+	"data":                 "non_rust_deps",
 	"crate_features":       "features",
 	"with_host_unit_tests": "with_unit_tests",
 	"rustc_flags":          "rustflags",

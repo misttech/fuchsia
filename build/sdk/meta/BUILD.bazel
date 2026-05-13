@@ -2,9 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
 # This list should only contain schemas that are currently exported outside of
 # the Fuchsia source tree. Unless otherwise indicated, each file corresponds
 # to a supported IDK atom type.
+#
+# @bazel2gn:skip
 _idk_schema_files = [
     # LINT.IfChange(schema_in_idk)
     "bind_library.json",
@@ -25,11 +30,60 @@ _idk_schema_files = [
     "sysroot.json",
     "version_history.json",
 
-    # LINT.ThenChange(BUILD.gn:schema_in_idk, //build/bazel/bazel_idk/private/idk_atom.bzl:idk_atom_types, //build/sdk/sdk_common/__init__.py:idk_atom_types)
+    # LINT.ThenChange(//build/bazel/bazel_idk/private/idk_atom.bzl:idk_atom_types, //build/sdk/sdk_common/__init__.py:idk_atom_types)
 ]
 
+# @bazel2gn:skip
 filegroup(
     name = "idk_schema_files",
     srcs = _idk_schema_files,
     visibility = ["//build/bazel/bazel_sdk:__pkg__"],
+)
+
+rustc_library(
+    name = "rust",
+    srcs = [
+        "src/common.rs",
+        "src/ffx_tool.rs",
+        "src/host_tool.rs",
+        "src/json.rs",
+        "src/lib.rs",
+        "src/manifest.rs",
+        "src/testing.rs",
+        "src/virtual_device.rs",
+        "src/virtual_device/manifest.rs",
+        "src/virtual_device/v1.rs",
+    ],
+    compile_data = [
+        "common.json",
+        "ffx_tool.json",
+        "hardware.json",
+        "host_tool.json",
+        "manifest.json",
+        "test_data/empty_vd_manifest.json",
+        "test_data/multi_vd_manifest.json",
+        "test_data/single_vd_manifest.json",
+        "test_data/virtual_device.json",
+        "test_data/virtual_device2.json",
+        "test_data/virtual_device3.json",
+        "virtual_device.json",
+    ],
+    crate_name = "sdk_metadata",
+    data = [":idk_schema_files"],
+    edition = "2024",
+    target_compatible_with = HOST_CONSTRAINTS,
+    test_deps = [
+        "//third_party/rust_crates/vendor:tempfile",
+    ],
+    visibility = ["//visibility:public"],
+    with_host_unit_tests = True,
+    deps = [
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:camino",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:thiserror",
+        "//third_party/rust_crates/vendor:valico",
+        "//third_party/rust_crates/vendor/url-1.7.2:url",  # @bazel2gn:path_overwrite://third_party/rust_crates:url-v1_7_2
+    ],
 )
