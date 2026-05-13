@@ -186,4 +186,49 @@ TEST(ClockTest, FaultBeyondStreamSizeReturnserror) {
   ASSERT_EQ(status, ZX_ERR_INVALID_ARGS);
 }
 
+// This is a regression test for https://fxbug.dev/511253004.  Please refer to
+// it for more details.
+TEST(ClockTest, MappableClockPaddingLeak) {
+  zx::clock clock;
+  ASSERT_OK(zx::clock::create(ZX_CLOCK_OPT_MAPPABLE, nullptr, &clock));
+
+  uint64_t size;
+  ASSERT_OK(clock.get_info(ZX_INFO_CLOCK_MAPPED_SIZE, &size, sizeof(size), nullptr, nullptr));
+
+  zx_vaddr_t addr;
+  ASSERT_OK(
+      zx::vmar::root_self()->map_clock(ZX_VM_PERM_READ | ZX_VM_MAP_RANGE, 0, clock, size, &addr));
+
+  uint8_t* ptr = reinterpret_cast<uint8_t*>(addr);
+
+  // Search for ZX_CLOCK_UNKNOWN_ERROR (uint64_t).  Our padding will be 4 bytes
+  // long, and located 36 bytes after this point.  So, regardless of the size of
+  // the mapped clock, we need to be careful to at least 40 bytes from the end
+  // of the buffer in order for the padding to exist within the mapped clock.
+  constexpr uint64_t kUnknownError = ZX_CLOCK_UNKNOWN_ERROR;
+  constexpr size_t kSearchLimit = 36 + sizeof(uint32_t);
+  ASSERT_GE(size, kSearchLimit,
+            "Size of a mapped clock (%lu) must be larger than our search limit (%zu)\n", size,
+            kSearchLimit);
+
+  uint8_t* error_ptr = nullptr;
+  for (size_t i = 0; i < (size - kSearchLimit); i += 8) {
+    if (*reinterpret_cast<uint64_t*>(ptr + i) == kUnknownError) {
+      error_ptr = ptr + i;
+      break;
+    }
+  }
+
+  ASSERT_NOT_NULL(error_ptr, "Could not find ZX_CLOCK_UNKNOWN_ERROR in mapped clock page");
+
+  // Padding is at offset 36 from error_bound.
+  uint32_t padding = *reinterpret_cast<uint32_t*>(error_ptr + 36);
+
+  // We expect it to be 0 if fixed, or it might contain garbage if not fixed.
+  EXPECT_EQ(0u, padding, "Padding contains garbage!");
+
+  // Unmap
+  ASSERT_OK(zx::vmar::root_self()->unmap(addr, size));
+}
+
 }  // namespace

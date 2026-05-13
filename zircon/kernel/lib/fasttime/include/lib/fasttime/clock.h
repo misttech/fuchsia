@@ -98,7 +98,21 @@ struct ClockTransformation {
     zx_ticks_t last_rate_adjust_update_ticks = 0;
     zx_ticks_t last_error_bounds_update_ticks = 0;
     int32_t cur_ppm_adj = 0;
+    uint32_t _padding = 0;
   };
+
+  // Make sure that our Params both a standard layout, and a unique representation.
+  //
+  // The standard layout requirement ensures that we don't have wonky stuff like
+  // a vtable, or multiple inheritance going on (just a plain 'ole structure
+  // please).  The unique representation requirement makes sure that we don't
+  // have any non-explicit padding.  All of the field and their initial values
+  // are defined above.
+  //
+  // Both of these things are important when we plan to share this data
+  // structure between the kernel and user-mode, which we do.
+  static_assert(std::is_standard_layout_v<Params>);
+  static_assert(std::has_unique_object_representations_v<Params>);
 
   // Constants determined at construction time.  These never change and do not
   // need to be protected with the sequence lock.
