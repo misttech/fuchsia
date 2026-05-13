@@ -346,11 +346,11 @@ impl<T: DiagnosticsDataType> ArchiveReader<T> {
     }
 
     /// Connects to the ArchiveAccessor and returns data matching provided selectors.
-    async fn snapshot_shared<D>(&self) -> Result<Vec<Data<D>>, Error>
+    async fn snapshot_shared<D>(&self, format: Format) -> Result<Vec<Data<D>>, Error>
     where
         D: DiagnosticsData + 'static,
     {
-        let data_future = self.snapshot_inner::<D, Data<D>>(FORMAT);
+        let data_future = self.snapshot_inner::<D, Data<D>>(format);
         let data = match self.timeout {
             Some(timeout) => data_future.on_timeout(timeout.after_now(), || Ok(Vec::new())).await?,
             None => data_future.await?,
@@ -553,9 +553,23 @@ impl ArchiveReader<Inspect> {
         self
     }
 
+    /// Sets the format to use when reading inspect data.
+    pub fn with_format(&mut self, format: Format) -> &mut Self {
+        self.format = Some(format);
+        self
+    }
+
+    #[inline]
+    fn format(&self) -> Format {
+        match self.format {
+            Some(f) => f,
+            None => FORMAT,
+        }
+    }
+
     /// Connects to the ArchiveAccessor and returns data matching provided selectors.
     pub async fn snapshot(&self) -> Result<Vec<Data<Inspect>>, Error> {
-        self.snapshot_shared::<Inspect>().await
+        self.snapshot_shared::<Inspect>(self.format()).await
     }
 }
 

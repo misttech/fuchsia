@@ -21,7 +21,7 @@
             to: "#realm_builder",
         },
 
-        // Offers required for realm_builder to run archvist.
+        // Offers required for realm_builder to run archivist.
         //
         // LINT.IfChange
         {

@@ -49,8 +49,28 @@ async fn accessor_truncation_test() {
 
     assert_eq!(count_dropped_schemas_per_moniker(&data, "child_a"), 3);
 
+    const MAX_EXPECTED_BYTES_FOR_3_COMPONENTS: u64 = 8000;
+
+    // Use the default format with this read. At HEAD this will be CBOR, but when frozen for CTF
+    // we will fall back to JSON.
+    //
+    // Leave enough room for the result of 3 components in this read and the following one.
     let data = reader
-        .with_aggregated_result_bytes_limit(4000)
+        .with_aggregated_result_bytes_limit(MAX_EXPECTED_BYTES_FOR_3_COMPONENTS)
+        .add_selector("child_a*:root")
+        .with_minimum_schema_count(3)
+        .snapshot()
+        .await
+        .expect("got inspect data");
+
+    assert_eq!(data.len(), 3);
+
+    assert_eq!(count_dropped_schemas_per_moniker(&data, "child_a"), 0);
+
+    // Force use of JSON for this read, ensuring that we still fit within the limit.
+    let data = reader
+        .with_format(fidl_fuchsia_diagnostics::Format::Json)
+        .with_aggregated_result_bytes_limit(MAX_EXPECTED_BYTES_FOR_3_COMPONENTS)
         .add_selector("child_a*:root")
         .with_minimum_schema_count(3)
         .snapshot()
@@ -74,8 +94,23 @@ async fn accessor_truncation_test() {
     assert_eq!(count_dropped_schemas_per_moniker(&data, "child_a"), 3);
     assert_eq!(count_dropped_schemas_per_moniker(&data, "child_b"), 3);
 
+    // Similar to the above reads, ensure that we leave enough room for 6 components' output.
     let data = reader
-        .with_aggregated_result_bytes_limit(8000)
+        .with_aggregated_result_bytes_limit(2 * MAX_EXPECTED_BYTES_FOR_3_COMPONENTS)
+        .add_selector("child_b*:root")
+        .add_selector("child_a*:root")
+        .with_minimum_schema_count(6)
+        .snapshot()
+        .await
+        .expect("got inspect data");
+
+    assert_eq!(data.len(), 6);
+    assert_eq!(count_dropped_schemas_per_moniker(&data, "child_a"), 0);
+    assert_eq!(count_dropped_schemas_per_moniker(&data, "child_b"), 0);
+
+    let data = reader
+        .with_format(fidl_fuchsia_diagnostics::Format::Json)
+        .with_aggregated_result_bytes_limit(2 * MAX_EXPECTED_BYTES_FOR_3_COMPONENTS)
         .add_selector("child_b*:root")
         .add_selector("child_a*:root")
         .with_minimum_schema_count(6)
