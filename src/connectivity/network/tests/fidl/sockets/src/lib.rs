@@ -565,6 +565,62 @@ async fn control_disconnect_ip_tcp_connected<I: Ip>(name: &str) {
 
 #[netstack_test]
 #[variant(I, Ip)]
+async fn control_disconnect_ip_udp_connected<I: Ip>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let control =
+        realm.connect_to_protocol::<fnet_sockets::ControlMarker>().expect("connect to protocol");
+
+    let local_addr = std::net::SocketAddr::new(I::LOOPBACK_ADDRESS.to_ip_addr().into(), LOCAL_PORT);
+    let domain = match I::VERSION {
+        IpVersion::V4 => fposix_socket::Domain::Ipv4,
+        IpVersion::V6 => fposix_socket::Domain::Ipv6,
+    };
+
+    let mut socket =
+        realm.datagram_socket(domain, fposix_socket::DatagramSocketProtocol::Udp).await.unwrap();
+    socket.bind(&local_addr.into()).unwrap();
+    socket.connect(&local_addr.into()).unwrap();
+
+    let result = control
+        .disconnect_ip(&fnet_sockets::ControlDisconnectIpRequest {
+            matchers: Some(vec![fnet_sockets::IpSocketMatcher::Proto(
+                fnet_matchers::SocketTransportProtocol::Udp(fnet_matchers::UdpSocket::SrcPort(
+                    fnet_matchers::BoundPort::Bound(fnet_matchers::Port {
+                        start: LOCAL_PORT,
+                        end: LOCAL_PORT,
+                        invert: false,
+                    }),
+                )),
+            )]),
+            ..Default::default()
+        })
+        .await
+        .expect("call disconnect_ip");
+
+    assert_matches!(
+        result,
+        fnet_sockets::DisconnectIpResult::Ok(fnet_sockets::DisconnectIpResponse {
+            disconnected: 1
+        })
+    );
+
+    let mut buf = [0; 1];
+    let res = socket.read(&mut buf);
+    assert!(res.is_err());
+    assert_eq!(res.unwrap_err().raw_os_error(), Some(libc::ECONNABORTED));
+
+    let err = socket.take_error().unwrap();
+    assert!(err.is_none());
+
+    let buf = [0u8; 1];
+    let res = socket.send(&buf);
+    assert!(res.is_err());
+    assert_eq!(res.unwrap_err().raw_os_error(), Some(libc::EDESTADDRREQ));
+}
+
+#[netstack_test]
+#[variant(I, Ip)]
 async fn diagnostics_tcp_info<I: Ip>(name: &str) {
     const SLEEP_MS: u64 = 100;
 

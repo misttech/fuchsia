@@ -2008,7 +2008,6 @@ where
         pair.core_ctx()
     }
 
-    #[cfg(test)]
     fn contexts(&mut self) -> (&mut C::CoreContext, &mut C::BindingsContext) {
         let Self(pair, IpVersionMarker { .. }) = self;
         pair.contexts()
@@ -2063,15 +2062,34 @@ where
 
     /// Disconnects all bound sockets matching the provided matcher.
     ///
-    ///
     /// Returns the number of sockets that were disconnected.
-    pub fn disconnect_bound<M>(&mut self, _matcher: &M) -> usize
+    pub fn disconnect_bound<M>(&mut self, matcher: &M) -> usize
     where
         M: IpSocketPropertiesMatcher<<C::BindingsContext as MatcherBindingsTypes>::DeviceClass>
             + ?Sized,
     {
-        // TODO(https://fxbug.dev/459457112): Implement disconnect for UDP.
-        0
+        // It's technically possible to avoid the Vec here by putting the
+        // disconnection logic into the datagram crate and providing trait hooks
+        // for specific functionality. This is how bound_socket_diagnostics does
+        // things. However, this is not a performance-sensitive operation, and
+        // doing so would add a lot of complexity to the code.
+        let mut ids = Vec::new();
+        DatagramStateContext::for_each_socket(self.core_ctx(), |ctx, id, state| {
+            if matcher
+                .matches_ip_socket(&netstack3_datagram::SocketStateForMatching::new(state, id, ctx))
+            {
+                ids.push(id.clone());
+            }
+        });
+
+        for id in &ids {
+            self.datagram().disconnect_any_to_unbound(id);
+
+            let (_, bindings_ctx) = self.contexts();
+            bindings_ctx.on_socket_error(id, PendingDatagramSocketError::Aborted);
+        }
+
+        ids.len()
     }
 
     fn datagram(&mut self) -> &mut DatagramApi<I, C, Udp<C::BindingsContext>> {

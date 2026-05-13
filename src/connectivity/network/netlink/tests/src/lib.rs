@@ -29,7 +29,7 @@ use netlink::messaging::{
 use netlink::multicast_groups::ModernGroup;
 use netlink::protocol_family::NetlinkClient as _;
 use netlink_packet_core::{
-    ErrorMessage, NLM_F_ACK, NetlinkDeserializable, NetlinkMessage, NetlinkPayload,
+    ErrorMessage, NLM_F_ACK, NLM_F_REQUEST, NetlinkDeserializable, NetlinkMessage, NetlinkPayload,
     NetlinkSerializable,
 };
 use netlink_packet_route::route::{
@@ -2003,7 +2003,7 @@ async fn sock_destroy_tcp<I: Ip>(name: &str) {
 
     let msg = SockDiagRequest::InetSockDestroy(req);
     let mut netlink_msg: NetlinkMessage<SockDiagRequest> = msg.into();
-    netlink_msg.header.flags = NLM_F_ACK | (linux_uapi::NLM_F_REQUEST as u16);
+    netlink_msg.header.flags = NLM_F_ACK | NLM_F_REQUEST;
     netlink_msg.finalize();
 
     client.sender.0.unbounded_send(FakeCreds::attach(netlink_msg)).expect("send request");
@@ -2021,8 +2021,63 @@ async fn sock_destroy_tcp<I: Ip>(name: &str) {
     );
 }
 
-// TODO(https://fxbug.dev/459457112): Add test for SOCK_DESTROY on UDP once
-// that's supported in the netstack.
+#[netstack_test]
+#[variant(I, Ip)]
+async fn sock_destroy_udp<I: Ip>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let (netlink, _join_handle) = start_test_netlink(&realm).await;
+    let mut client = add_sock_diag_client(&netlink);
+
+    let addr = std::net::SocketAddr::new(I::LOOPBACK_ADDRESS.get().to_ip_addr().into(), 0);
+
+    let socket1 = fasync::net::UdpSocket::bind_in_realm(&realm, addr).await.expect("bind socket1");
+    let local_addr1 = socket1.local_addr().expect("get local addr 1");
+
+    let socket2 = fasync::net::UdpSocket::bind_in_realm(&realm, addr).await.expect("bind socket2");
+    let local_addr2 = socket2.local_addr().expect("get local addr 2");
+
+    socket1.connect(&local_addr2).expect("connect socket1");
+    socket2.connect(&local_addr1).expect("connect socket2");
+
+    let req = InetRequest {
+        family: match I::VERSION {
+            IpVersion::V4 => linux_uapi::AF_INET as u8,
+            IpVersion::V6 => linux_uapi::AF_INET6 as u8,
+        },
+        protocol: linux_uapi::IPPROTO_UDP as u8,
+        extensions: ExtensionFlags::empty(),
+        states: StateFlags::all(),
+        socket_id: SocketId {
+            source_port: local_addr1.port(),
+            destination_port: local_addr2.port(),
+            source_address: local_addr1.ip(),
+            destination_address: local_addr2.ip(),
+            interface_id: 0,
+            // The match-all cookie.
+            cookie: [0xFF; 8],
+        },
+        nlas: smallvec![],
+    };
+
+    let msg = SockDiagRequest::InetSockDestroy(req);
+    let mut netlink_msg: NetlinkMessage<SockDiagRequest> = msg.into();
+    netlink_msg.header.flags = NLM_F_ACK | NLM_F_REQUEST;
+    netlink_msg.finalize();
+
+    client.sender.0.unbounded_send(FakeCreds::attach(netlink_msg)).expect("send request");
+
+    let msg = client.receiver.next().await.expect("receive ack").message;
+    assert_matches!(msg.payload, NetlinkPayload::Error(ErrorMessage { code: None, .. }));
+
+    let mut buf = [0u8; 1];
+    assert_matches!(
+        socket1.recv_from(&mut buf).await,
+        Err(e) if e.kind() == std::io::ErrorKind::ConnectionAborted
+    );
+
+    assert_matches!(socket2.recv_from(&mut buf).now_or_never(), None);
+}
 
 #[netstack_test]
 #[variant(I, Ip)]
@@ -2071,7 +2126,7 @@ async fn sock_destroy_id_mismatch<I: Ip>(name: &str) {
 
     let msg = SockDiagRequest::InetSockDestroy(req);
     let mut netlink_msg: NetlinkMessage<SockDiagRequest> = msg.into();
-    netlink_msg.header.flags = NLM_F_ACK | (linux_uapi::NLM_F_REQUEST as u16);
+    netlink_msg.header.flags = NLM_F_ACK | NLM_F_REQUEST;
     netlink_msg.finalize();
 
     client.sender.0.unbounded_send(FakeCreds::attach(netlink_msg)).expect("send request");

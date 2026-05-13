@@ -158,6 +158,7 @@ mod tests {
     use alloc::string::ToString;
     use alloc::vec;
     use alloc::vec::Vec;
+    use assert_matches::assert_matches;
     use core::num::NonZeroU16;
 
     use ip_test_macro::ip_test;
@@ -173,6 +174,7 @@ mod tests {
 
     use crate::internal::base::testutils::{FakeUdpCoreCtx, TestIpExt, UdpFakeDeviceCtx};
     use crate::internal::base::{UdpApi, UdpRemotePort};
+    use netstack3_datagram::{ConnInfo, ListenerInfo};
 
     use super::*;
 
@@ -978,5 +980,98 @@ mod tests {
                 marks: Marks::default(),
             }]
         );
+    }
+
+    #[ip_test(I)]
+    fn disconnect_listener<I: TestIpExt>() {
+        set_logger_for_test();
+
+        let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
+        let mut api = UdpApi::<I, _>::new(ctx.as_mut());
+        let socket = api.create();
+        api.listen(&socket, None, Some(LOCAL_PORT_1)).unwrap();
+        assert_matches!(api.get_info(&socket), SocketInfo::Listener(ListenerInfo { .. }));
+
+        let count = api.disconnect_bound(&IpSocketMatcher::Cookie(SocketCookieMatcher {
+            cookie: socket.socket_cookie().export_value(),
+            invert: false,
+        }));
+        assert_eq!(count, 1);
+        assert_matches!(api.get_info(&socket), SocketInfo::Unbound);
+    }
+
+    #[ip_test(I)]
+    fn disconnect_implicitly_bound<I: TestIpExt>() {
+        set_logger_for_test();
+
+        let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::with_local_remote_ip_addrs(
+            vec![I::TEST_ADDRS.local_ip],
+            vec![I::TEST_ADDRS.remote_ip],
+        ));
+        let mut api = UdpApi::<I, _>::new(ctx.as_mut());
+        let socket = api.create();
+
+        api.send_to(
+            &socket,
+            Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)),
+            REMOTE_PORT_1.into(),
+            packet::Buf::new(vec![], ..),
+        )
+        .expect("send failed");
+        assert_matches!(api.get_info(&socket), SocketInfo::Listener(ListenerInfo { .. }));
+
+        let count = api.disconnect_bound(&IpSocketMatcher::Cookie(SocketCookieMatcher {
+            cookie: socket.socket_cookie().export_value(),
+            invert: false,
+        }));
+        assert_eq!(count, 1);
+        assert_matches!(api.get_info(&socket), SocketInfo::Unbound);
+    }
+
+    #[ip_test(I)]
+    fn disconnect_connected_and_reuse<I: TestIpExt>() {
+        set_logger_for_test();
+
+        let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::with_local_remote_ip_addrs(
+            vec![I::TEST_ADDRS.local_ip],
+            vec![I::TEST_ADDRS.remote_ip],
+        ));
+        let mut api = UdpApi::<I, _>::new(ctx.as_mut());
+        let socket = api.create();
+
+        api.listen(&socket, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_1))
+            .unwrap();
+        api.connect(
+            &socket,
+            Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)),
+            REMOTE_PORT_1.into(),
+        )
+        .unwrap();
+
+        assert_matches!(api.get_info(&socket), SocketInfo::Connected(ConnInfo { .. }));
+
+        let count = api.disconnect_bound(&IpSocketMatcher::Cookie(SocketCookieMatcher {
+            cookie: socket.socket_cookie().export_value(),
+            invert: false,
+        }));
+        assert_eq!(count, 1);
+        assert_matches!(api.get_info(&socket), SocketInfo::Unbound);
+
+        // Unlike TCP sockets, a UDP sockets that's been disconnected
+        // can be reused (after putting it back in the right state).
+        let new_remote_port = NonZeroU16::new(9999).unwrap();
+        api.connect(
+            &socket,
+            Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)),
+            new_remote_port.into(),
+        )
+        .unwrap();
+
+        let info = api.get_info(&socket);
+        assert_matches!(info, SocketInfo::Connected(ConnInfo { .. }));
+        if let SocketInfo::Connected(conn_info) = info {
+            // Local port was reallocated, so no assert for that.
+            assert_eq!(conn_info.remote_identifier, new_remote_port.get());
+        }
     }
 }

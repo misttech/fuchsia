@@ -4040,6 +4040,30 @@ where
         })
     }
 
+    /// Disconnects any socket (bound or unbound), resetting it to unbound state
+    /// and clearing the bound device.
+    pub fn disconnect_any_to_unbound(&mut self, id: &DatagramApiSocketId<I, C, S>) {
+        self.core_ctx().with_socket_state_mut(id, |core_ctx, state| {
+            let SocketState { ip_options, inner, sharing, .. } = state;
+            match inner {
+                SocketStateInner::Unbound(UnboundSocketState { device }) => {
+                    *device = None;
+                }
+                SocketStateInner::Bound(bound_state) => {
+                    let unbound_state = disconnect_to_unbound(
+                        core_ctx,
+                        id,
+                        true,
+                        ip_options,
+                        bound_state,
+                        sharing.clone(),
+                    );
+                    state.inner = SocketStateInner::Unbound(unbound_state);
+                }
+            }
+        });
+    }
+
     /// Returns the socket's shutdown state.
     pub fn get_shutdown_connected(
         &mut self,
