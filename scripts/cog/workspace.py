@@ -648,6 +648,16 @@ class Workspace:
             cwd=self.cartfs_fuchsia_dir,
         )
 
+        # Restore changes snapshotted from former workspace
+        self._run(
+            [".jiri_root/bin/jiri", "runp", "git", "clean", "-df"],
+            cwd=self.cartfs_fuchsia_dir,
+        )
+        self._run(
+            [".jiri_root/bin/jiri", "runp", "git", "restore", "."],
+            cwd=self.cartfs_fuchsia_dir,
+        )
+
     def _is_jiri_bootstrapped(self) -> bool:
         """Checks if jiri is bootstrapped."""
         return (
@@ -674,6 +684,7 @@ class Workspace:
     def _update_jiri_checkout(self) -> None:
         """Updates the jiri checkout."""
         logger.emit_status("Updating jiri checkout...")
+        logger.log_info(f"Running jiri update in {self.cartfs_fuchsia_dir}")
 
         self._run(
             [".jiri_root/bin/jiri", "update"],
@@ -684,9 +695,6 @@ class Workspace:
         """Fetches prebuilts for the given repo."""
         logger.emit_status(f"Fetching prebuilts for {self.repo_name}...")
         cartfs_fuchsia_dir = self.cartfs_fuchsia_dir
-        if (cartfs_fuchsia_dir / ".git").exists():
-            self._run(["git", "restore", "."], cwd=cartfs_fuchsia_dir)
-            self._run(["git", "clean", "-df"], cwd=cartfs_fuchsia_dir)
 
         # Run jiri update and fetch-packages in parallel to speed up the
         # process.
