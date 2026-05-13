@@ -69,10 +69,6 @@ class DeviceTest : public zxtest::Test {
 
   size_t get_parent_request_size() { return device_->UsbGetRequestSize(); }
 
-  void RequestQueue(usb_request_t* request, const usb_request_complete_callback_t* completion) {
-    device_->UsbRequestQueue(request, completion);
-  }
-
   ddk::UsbProtocolClient get_usb_protocol() {
     usb_protocol_t usb;
     device_->DdkGetProtocol(ZX_PROTOCOL_USB, &usb);
@@ -126,14 +122,13 @@ TEST_F(DeviceTest, CancelAllCancelsAllRequestsThenReturns) {
     std::optional<Request> request;
     Request::Alloc(&request, 0, 1, get_parent_request_size(),
                    [&](Request request) { completed++; });
-    request->Queue(*this);
+    request->Queue(get_usb_protocol());
   }
   CancelAll();
   ASSERT_EQ(completed.load(), 500);
 }
 
 // USB protocol tests
-
 TEST_F(DeviceTest, ControlOut) {
   auto usb = get_usb_protocol();
   uint8_t const_data[5];
@@ -645,5 +640,4 @@ TEST_F(EvilDeviceTest, GetConfigurationDescriptorDifferentSizesAreRejected) {
   auto result = device->Init(loop.dispatcher());
   ASSERT_EQ(result, ZX_ERR_IO);
 }
-
 }  // namespace usb_bus

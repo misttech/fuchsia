@@ -4,7 +4,6 @@
 
 #include "usb/request-cpp.h"
 
-#include <fuchsia/hardware/usb/function/cpp/banjo.h>
 #include <lib/fake-bti/bti.h>
 #include <lib/trace-engine/types.h>
 #include <lib/zx/bti.h>
@@ -869,18 +868,18 @@ TEST(UsbRequestTest, Callback) {
 }
 
 TEST(UsbRequestTest, CallbackRequest) {
-  usb_function_protocol_t fake_function = {};
-  usb_function_protocol_ops_t fake_ops;
+  usb_protocol_t fake_usb = {};
+  usb_protocol_ops_t fake_ops;
   fake_ops.request_queue = [](void* ctx, usb_request_t* usb_request,
                               const usb_request_complete_callback_t* complete_cb) {
     usb_request_complete(usb_request, ZX_OK, 0, complete_cb);
   };
-  fake_function.ops = &fake_ops;
+  fake_usb.ops = &fake_ops;
   using Request = usb::CallbackRequest<sizeof(std::max_align_t)>;
   std::optional<Request> req;
   int invoked = 0;
   bool invoked_other = false;
-  ddk::UsbFunctionProtocolClient client(&fake_function);
+  ddk::UsbProtocolClient client(&fake_usb);
   ASSERT_EQ(Request::Alloc(&req, 0, 0, sizeof(usb_request_t),
                            [&](Request request) {
                              invoked++;

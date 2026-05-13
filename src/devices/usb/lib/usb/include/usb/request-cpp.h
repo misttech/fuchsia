@@ -10,6 +10,7 @@
 #else
 #include <lib/ddk/debug.h>  // nogncheck
 #endif
+#include <fuchsia/hardware/usb/cpp/banjo.h>
 #include <lib/fit/function.h>
 #include <lib/io-buffer/phys-iter.h>
 #include <lib/operation/operation.h>
@@ -412,17 +413,16 @@ class CallbackRequest
     }
     return status;
   }
-  template <typename ClientType>
-  static void Queue(CallbackRequest request, ClientType& client) {
+  static void Queue(CallbackRequest request, const ddk::UsbProtocolClient& client) {
     request.Queue(client);
   }
-  template <typename ClientType, typename Lambda>
-  static void Queue(CallbackRequest request, ClientType& client, Lambda callback) {
+  template <typename Lambda>
+  static void Queue(CallbackRequest request, const ddk::UsbProtocolClient& client,
+                    Lambda callback) {
     request.Queue(client, std::move(callback));
   }
   auto private_storage() { return Request::private_storage(); }
-  template <typename ClientType>
-  void Queue(ClientType& function) {
+  void Queue(const ddk::UsbProtocolClient& function) {
     usb_request_complete_callback_t completion;
     completion.ctx = reinterpret_cast<void*>(parent_request_size_);
     completion.callback = [](void* ctx, usb_request_t* request) {
@@ -430,8 +430,8 @@ class CallbackRequest
     };
     function.RequestQueue(Request::take(), &completion);
   }
-  template <typename ClientType, typename Lambda>
-  void Queue(ClientType& function, Lambda callback) {
+  template <typename Lambda>
+  void Queue(const ddk::UsbProtocolClient& function, Lambda callback) {
     usb_request_complete_callback_t completion;
     completion.ctx = reinterpret_cast<void*>(parent_request_size_);
     completion.callback = [](void* ctx, usb_request_t* request) {

@@ -150,7 +150,19 @@ class EventRingHarness : public ::testing::Test {
   }
 
   Request Borrow(TestRequest request) {
-    request.Queue(*this);
+    static const usb_protocol_ops_t ops = {
+        .request_queue = [](void* ctx, usb_request_t* usb_request,
+                             const usb_request_complete_callback_t* complete_cb) {
+          auto* harness = static_cast<EventRingHarness*>(ctx);
+          harness->RequestQueue(usb_request, complete_cb);
+        },
+    };
+    usb_protocol_t proto = {
+        .ops = &ops,
+        .ctx = this,
+    };
+    ddk::UsbProtocolClient client(&proto);
+    TestRequest::Queue(std::move(request), client);
     return std::move(*pending_req_);
   }
 

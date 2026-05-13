@@ -343,7 +343,21 @@ class XhciHarness : public ::testing::Test {
 
   size_t GetMaxDeviceCount() { return driver_test().driver()->UsbHciGetMaxDeviceCount(); }
 
-  void RequestQueue(TestRequest request) { request.Queue(*driver_test().driver()); }
+  void RequestQueue(TestRequest request) {
+    static const usb_protocol_ops_t ops = {
+        .request_queue = [](void* ctx, usb_request_t* usb_request,
+                             const usb_request_complete_callback_t* complete_cb) {
+          auto* driver = static_cast<UsbXhci*>(ctx);
+          driver->UsbHciRequestQueue(usb_request, complete_cb);
+        },
+    };
+    usb_protocol_t proto = {
+        .ops = &ops,
+        .ctx = driver_test().driver(),
+    };
+    ddk::UsbProtocolClient client(&proto);
+    TestRequest::Queue(std::move(request), client);
+  }
 
   template <typename Callback>
   zx_status_t AllocateRequest(std::optional<TestRequest>* request, uint32_t device_id,
