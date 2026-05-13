@@ -7,6 +7,7 @@ import("//build/images/tools/fastboot.gni")
 import("//build/python/python_library.gni")
 import("//build/testing/host_test_data.gni")
 import("//sdk/categories/compatibility.gni")
+import("//src/developer/ffx/config.gni")
 
 group("honeydew") {
   testonly = true
@@ -195,6 +196,20 @@ group("honeydew_ffx_tool_deps") {
     "//src/developer/ffx/tools/monitor:ffx_monitor_test_data",
     "//src/developer/ffx/tools/starnix:ffx_starnix_test_data",
   ]
+}
+
+# FFX tools that will be used in Honeydew tests (testonly).
+group("honeydew_ffx_tool_test_deps") {
+  testonly = true
+
+  deps = []
+  if (ffx_build_dual_mode_plugins_as_subtools) {
+    deps += [
+      "//src/developer/ffx/plugins/component:ffx_component_tool_test_data",
+      "//src/developer/ffx/plugins/package:ffx_package_tool_test_data",
+      "//src/developer/ffx/plugins/product:ffx_product_tool_test_data",
+    ]
+  }
 }
 
 # FIDL dependencies that will be used in Honeydew using Fuchsia-Controller.

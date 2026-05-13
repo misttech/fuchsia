@@ -7,6 +7,7 @@ import("//build/python/python_binary.gni")
 import("//build/rust/rustc_binary.gni")
 import("//build/testing/host_test.gni")
 import("//build/testing/host_test_data.gni")
+import("//src/developer/ffx/config.gni")
 
 # Declares a host-side antlion test.
 #
@@ -123,11 +124,22 @@ template("antlion_host_test") {
     testonly = true
     visibility = [ ":*" ]
     sources = [ "${host_tools_dir}/ffx" ]
-    outputs = [ "${_test_dir}/ffx" ]
+    if (ffx_build_dual_mode_plugins_as_subtools) {
+      sources += [
+        "${host_tools_dir}/ffx-component",
+        "${host_tools_dir}/ffx-component.json",
+      ]
+    }
+    outputs = [ "${_test_dir}/{{source_file_part}}" ]
     deps = [
       "//src/developer/ffx:host",
       "//src/developer/ffx:suite_test_data",
     ]
+    if (ffx_build_dual_mode_plugins_as_subtools) {
+      deps += [
+        "//src/developer/ffx/plugins/component:ffx_component_tool_host_tool",
+      ]
+    }
   }
 
   #
@@ -168,7 +180,7 @@ template("antlion_host_test") {
       "--ffx-binary",
       rebase_path("${_test_dir}/ffx", root_build_dir),
       "--ffx-subtools-search-path",
-      rebase_path(host_tools_dir, root_build_dir),
+      rebase_path(_test_dir, root_build_dir),
       "--ssh-binary",
       rebase_path("${_test_dir}/ssh", root_build_dir),
     ]
@@ -177,7 +189,11 @@ template("antlion_host_test") {
       args += invoker.test_cases
     }
 
-    data_deps = [ "//src/developer/ffx:suite_test_data" ]
+    data_deps = [
+      "//src/developer/ffx:suite_test_data",
+      "//src/testing/end_to_end/honeydew:honeydew_ffx_tool_deps",
+      "//src/testing/end_to_end/honeydew:honeydew_ffx_tool_test_deps",
+    ]
 
     deps = [
       ":${_host_test_data_antlion_runner}",

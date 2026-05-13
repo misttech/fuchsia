@@ -133,6 +133,10 @@ func NewRepository(
 	}, nil
 }
 
+func (r *Repository) SetFfx(ffx *ffx.FFXTool) {
+	r.ffx = ffx
+}
+
 // NewRepositoryFromTar extracts a repository from a tar.gz, and returns a
 // Repository parsed from it. It returns an error if the repository does not
 // exist, or contains malformed metadata.

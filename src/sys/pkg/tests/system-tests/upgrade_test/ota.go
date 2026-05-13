@@ -137,6 +137,11 @@ func newOta(
 		return nil, fmt.Errorf("error getting repository: %w", err)
 	}
 
+	// Use the latest ffx for repository operations because they are host-side
+	// and do not communicate with the target. This ensures we have access to
+	// the repository plugin even when testing older builds.
+	repo.SetFfx(latestFfx)
+
 	// Refresh with the latest ffx to make sure the metadata hasn't expired.
 	// FIXME(https://fxbug.dev/336897946): We need to use the latest ffx because
 	// F11's ffx doesn't actually refresh metadata.
