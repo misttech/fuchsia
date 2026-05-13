@@ -1513,74 +1513,22 @@ pub trait SerializationContext: Sized {
     /// The packet-specific state required by this serialization context.
     type ContextState: Default;
 
-    /// Updates the context with knowledge that an inner `Serializer` is being
-    /// wrapped by an outer `PacketBuilder`. Must be called any time such
-    /// nesting is encountered during serialization.
+    /// Performs nested serialization within the context of an outer
+    /// [`PacketBuilder`].
     ///
-    /// The context is expected to delegate serialization to
-    /// `inner.serialize(self, constraints, provider)`, but it may update its
-    /// internal state before and/or after doing so if necessary.
+    /// The provided `serialize_fn` is expected to serialize the packet body and
+    /// then the packet header and/or footer, each with the provided context.
     ///
-    /// The result of the inner serialization must be returned without
-    /// modification.
-    fn serialize_with_outer<
-        I: Serializer<Self>,
-        O: PacketBuilder<Self>,
-        B: GrowBufferMut,
-        P: BufferProvider<I::Buffer, B>,
-    >(
+    /// The implementor is expected to call `serialize_fn` and return the result
+    /// without modification, but it may update its internal state before and/or
+    /// after doing so if necessary.
+    fn serialize_nested<O: PacketBuilder<Self>, R>(
         &mut self,
-        inner: I,
         _outer: &O,
         constraints: PacketConstraints,
-        provider: P,
-    ) -> Result<B, (SerializeError<P::Error>, I)> {
-        inner.serialize(self, constraints, provider)
-    }
-
-    /// Updates the context with knowledge that an inner `Serializer` is being
-    /// wrapped by an outer `PacketBuilder`. Must be called any time such
-    /// nesting is encountered during packet serialization.
-    ///
-    /// The context is expected to delegate serialization to
-    /// `inner.serialize_new_buf(self, constraints, alloc)`, but it may update
-    /// its internal state before and/or after doing so if necessary.
-    ///
-    /// The result of the inner serialization must be returned without
-    /// modification.
-    fn serialize_new_buf_with_outer<
-        I: Serializer<Self>,
-        O: PacketBuilder<Self>,
-        B: GrowBufferMut,
-        A: LayoutBufferAlloc<B>,
-    >(
-        &mut self,
-        inner: &I,
-        _outer: &O,
-        constraints: PacketConstraints,
-        alloc: A,
-    ) -> Result<B, SerializeError<A::Error>> {
-        inner.serialize_new_buf(self, constraints, alloc)
-    }
-
-    /// Updates the context with knowledge that an inner `PartialSerializer` is
-    /// being wrapped by an outer `PartialPacketBuilder`. Must be called any
-    /// time such nesting is encountered during partial serialization.
-    ///
-    /// The context is expected to delegate serialization to
-    /// `inner.partial_serialize(self, constraints, buffer)`, but it may update
-    /// its internal state before and/or after doing so if necessary.
-    ///
-    /// The result of the inner serialization must be returned without
-    /// modification.
-    fn partial_serialize_with_outer<I: PartialSerializer<Self>, O: PartialPacketBuilder<Self>>(
-        &mut self,
-        inner: &I,
-        _outer: &O,
-        constraints: PacketConstraints,
-        buffer: &mut [u8],
-    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        inner.partial_serialize(self, constraints, buffer)
+        serialize_fn: impl FnOnce(&mut Self, PacketConstraints) -> R,
+    ) -> R {
+        serialize_fn(self, constraints)
     }
 }
 
@@ -1591,7 +1539,7 @@ pub struct NoOpSerializationContext;
 impl SerializationContext for NoOpSerializationContext {
     type ContextState = ();
 
-    // No need to override the serialization methods; the default implementation
+    // No need to override the serialization method; the default implementation
     // does what we want.
 }
 
@@ -2122,17 +2070,18 @@ impl<C: SerializationContext, I: Serializer<C>, O: PacketBuilder<C>> Serializer<
         constraints: PacketConstraints,
         provider: P,
     ) -> Result<B, (SerializeError<P::Error>, Self)> {
-        let Some(constraints) = self.outer.constraints().try_encapsulate(&constraints) else {
-            return Err((SerializeError::SizeLimitExceeded, self));
-        };
-
-        match context.serialize_with_outer(self.inner, &self.outer, constraints, provider) {
-            Ok(mut buf) => {
-                buf.serialize(context, &self.outer);
-                Ok(buf)
-            }
-            Err((err, inner)) => Err((err, self.outer.wrap_body(inner))),
-        }
+        context
+            .serialize_nested(&self.outer, constraints, |context, constraints| {
+                let Some(constraints) = self.outer.constraints().try_encapsulate(&constraints)
+                else {
+                    return Err((SerializeError::SizeLimitExceeded, self.inner));
+                };
+                self.inner.serialize(context, constraints, provider).map(|mut buf| {
+                    buf.serialize(context, &self.outer);
+                    buf
+                })
+            })
+            .map_err(|(err, inner)| (err, self.outer.wrap_body(inner)))
     }
 
     #[inline]
@@ -2142,14 +2091,15 @@ impl<C: SerializationContext, I: Serializer<C>, O: PacketBuilder<C>> Serializer<
         constraints: PacketConstraints,
         alloc: A,
     ) -> Result<B, SerializeError<A::Error>> {
-        let Some(constraints) = self.outer.constraints().try_encapsulate(&constraints) else {
-            return Err(SerializeError::SizeLimitExceeded);
-        };
-
-        let mut buf =
-            context.serialize_new_buf_with_outer(&self.inner, &self.outer, constraints, alloc)?;
-        GrowBufferMut::serialize(&mut buf, context, &self.outer);
-        Ok(buf)
+        context.serialize_nested(&self.outer, constraints, |context, constraints| {
+            let Some(constraints) = self.outer.constraints().try_encapsulate(&constraints) else {
+                return Err(SerializeError::SizeLimitExceeded);
+            };
+            self.inner.serialize_new_buf(context, constraints, alloc).map(|mut buf| {
+                buf.serialize(context, &self.outer);
+                buf
+            })
+        })
     }
 }
 
@@ -2273,25 +2223,21 @@ impl<C: SerializationContext, I: PartialSerializer<C>, O: PartialPacketBuilder<C
         constraints: PacketConstraints,
         buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        let header_constraints = self.outer.constraints();
-        let Some(constraints) = header_constraints.try_encapsulate(&constraints) else {
-            return Err(SerializeError::SizeLimitExceeded);
-        };
-
-        let header_len = header_constraints.header_len();
-        let inner_buf = buffer.get_mut(header_len..).unwrap_or(&mut []);
-        let mut result = context.partial_serialize_with_outer(
-            &self.inner,
-            &self.outer,
-            constraints,
-            inner_buf,
-        )?;
-        if header_len <= buffer.len() {
-            self.outer.partial_serialize(context, result.total_size, &mut buffer[..header_len]);
-            result.bytes_written += header_len;
-        }
-        result.total_size += header_len + header_constraints.footer_len();
-        Ok(result)
+        context.serialize_nested(&self.outer, constraints, |context, constraints| {
+            let header_constraints = self.outer.constraints();
+            let Some(constraints) = header_constraints.try_encapsulate(&constraints) else {
+                return Err(SerializeError::SizeLimitExceeded);
+            };
+            let header_len = header_constraints.header_len();
+            let inner_buf = buffer.get_mut(header_len..).unwrap_or(&mut []);
+            let mut result = self.inner.partial_serialize(context, constraints, inner_buf)?;
+            if header_len <= buffer.len() {
+                self.outer.partial_serialize(context, result.total_size, &mut buffer[..header_len]);
+                result.bytes_written += header_len;
+            }
+            result.total_size += header_len + header_constraints.footer_len();
+            Ok(result)
+        })
     }
 }
 
@@ -3672,50 +3618,14 @@ mod tests {
     impl SerializationContext for TrackingSerializationContext {
         type ContextState = ();
 
-        fn serialize_with_outer<
-            I: Serializer<Self>,
-            O: PacketBuilder<Self>,
-            B: GrowBufferMut,
-            P: BufferProvider<I::Buffer, B>,
-        >(
+        fn serialize_nested<O: PacketBuilder<Self>, R>(
             &mut self,
-            inner: I,
             outer: &O,
             constraints: PacketConstraints,
-            provider: P,
-        ) -> Result<B, (SerializeError<P::Error>, I)> {
+            serialize_fn: impl FnOnce(&mut Self, PacketConstraints) -> R,
+        ) -> R {
             self.history.push(outer.constraints().header_len());
-            inner.serialize(self, constraints, provider)
-        }
-
-        fn serialize_new_buf_with_outer<
-            I: Serializer<Self>,
-            O: PacketBuilder<Self>,
-            B: GrowBufferMut,
-            A: LayoutBufferAlloc<B>,
-        >(
-            &mut self,
-            inner: &I,
-            outer: &O,
-            constraints: PacketConstraints,
-            alloc: A,
-        ) -> Result<B, SerializeError<A::Error>> {
-            self.history.push(outer.constraints().header_len());
-            inner.serialize_new_buf(self, constraints, alloc)
-        }
-
-        fn partial_serialize_with_outer<
-            I: PartialSerializer<Self>,
-            O: PartialPacketBuilder<Self>,
-        >(
-            &mut self,
-            inner: &I,
-            outer: &O,
-            constraints: PacketConstraints,
-            buffer: &mut [u8],
-        ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-            self.history.push(outer.constraints().header_len());
-            inner.partial_serialize(self, constraints, buffer)
+            serialize_fn(self, constraints)
         }
     }
 
