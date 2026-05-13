@@ -7,6 +7,9 @@ use async_helpers::maybe_stream::MaybeStream;
 use async_utils::stream::FutureMap;
 use bt_hfp::{audio, sco};
 use fidl::endpoints::{ClientEnd, ControlHandle, RequestStream};
+use fidl_fuchsia_bluetooth_bredr as bredr;
+use fidl_fuchsia_bluetooth_hfp as fidl_hfp;
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::profile::ProtocolDescriptor;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_sync::Mutex;
@@ -17,10 +20,7 @@ use profile_client::{ProfileClient, ProfileEvent};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use {
-    fidl_fuchsia_bluetooth_bredr as bredr, fidl_fuchsia_bluetooth_hfp as fidl_hfp,
-    fuchsia_async as fasync, zx,
-};
+use zx;
 
 use crate::config::HandsFreeFeatureSupport;
 use crate::one_to_one::OneToOneMatcher;

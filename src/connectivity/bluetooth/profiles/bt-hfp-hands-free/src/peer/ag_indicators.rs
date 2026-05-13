@@ -6,11 +6,10 @@ use anyhow::{Result, format_err};
 use bt_hfp::call::indicators as call_indicators;
 use fidl_fuchsia_bluetooth_hfp::SignalStrength;
 use std::collections::HashMap;
-use std::sync::LazyLock;
 
 use crate::impl_from_to_variant;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum AgIndicatorIndex {
     Call,
     CallSetup,
@@ -19,92 +18,36 @@ pub enum AgIndicatorIndex {
     SignalStrength,
     Roaming,
     BatteryCharge,
+    Vendor { name: String, min: i64, max: i64 },
 }
 
-struct Range {
-    min: i64,
-    max: i64,
-}
-
-// These ranges are from HFP v1.8 4.32.2 section on AT+CIND.
-static ALLOWED_INDICATOR_RANGES: LazyLock<HashMap<AgIndicatorIndex, Range>> = LazyLock::new(|| {
-    use AgIndicatorIndex::*;
-
-    let mut map = HashMap::new();
-
-    let _ = map.insert(Call, Range { min: 0, max: 1 });
-    let _ = map.insert(CallSetup, Range { min: 0, max: 3 });
-    let _ = map.insert(CallHeld, Range { min: 0, max: 2 });
-    let _ = map.insert(ServiceAvailable, Range { min: 0, max: 1 });
-    let _ = map.insert(SignalStrength, Range { min: 0, max: 5 });
-    let _ = map.insert(Roaming, Range { min: 0, max: 1 });
-    let _ = map.insert(BatteryCharge, Range { min: 0, max: 5 });
-
-    map
-});
-
-pub fn check_ag_indicator_range_allowed(
-    indicator: AgIndicatorIndex,
-    min: i64,
-    max: i64,
-) -> Result<()> {
-    let allowed_range_option = ALLOWED_INDICATOR_RANGES.get(&indicator);
-    let allowed_range = allowed_range_option.expect("No allowed range specified for AG Indicator");
-
-    if allowed_range.min != min {
-        Err(format_err!(
-            "Min allowed value {:} doesn't match provided min value {:} for AG Indicator {:?}",
-            allowed_range.min,
-            min,
-            indicator
-        ))?;
-    }
-
-    if allowed_range.max != max {
-        Err(format_err!(
-            "Max allowed value {:} doesn't match provided max value {:} for AG Indicator {:?}",
-            allowed_range.max,
-            max,
-            indicator
-        ))?;
-    }
-
-    Ok(())
-}
-
-/// Convert from the AT response +CIND names for the indicators to an enum variant
-impl TryFrom<&str> for AgIndicatorIndex {
-    type Error = anyhow::Error;
-
-    fn try_from(str: &str) -> Result<Self> {
-        match str {
-            "call" => Ok(Self::Call),
-            "callsetup" => Ok(Self::CallSetup),
-            "callheld" => Ok(Self::CallHeld),
-            "service" => Ok(Self::ServiceAvailable),
-            "signal" => Ok(Self::SignalStrength),
-            "roam" => Ok(Self::Roaming),
-            "battchg" => Ok(Self::BatteryCharge),
-            other => Err(format_err!("Unknown AG indicator {:}", other)),
+impl AgIndicatorIndex {
+    pub fn new(name: &str, min: i64, max: i64) -> Self {
+        match name {
+            "call" => Self::Call,
+            "callsetup" => Self::CallSetup,
+            "callheld" => Self::CallHeld,
+            "service" => Self::ServiceAvailable,
+            "signal" => Self::SignalStrength,
+            "roam" => Self::Roaming,
+            "battchg" => Self::BatteryCharge,
+            other => Self::Vendor { name: other.to_string(), min, max },
         }
     }
-}
 
-/// Convert from the AT response +CIND names for the indicators to an enum variant
-impl TryFrom<&[u8]> for AgIndicatorIndex {
-    type Error = anyhow::Error;
-
-    fn try_from(bytes: &[u8]) -> Result<Self> {
-        let str = std::str::from_utf8(bytes)?;
-        str.try_into()
+    pub(crate) fn allowed_range(&self) -> std::ops::RangeInclusive<i64> {
+        // These ranges are from HFP v1.8 4.32.2 section on AT+CIND.
+        match self {
+            Self::Call => 0..=1,
+            Self::CallSetup => 0..=3,
+            Self::CallHeld => 0..=2,
+            Self::ServiceAvailable => 0..=1,
+            Self::SignalStrength => 0..=5,
+            Self::Roaming => 0..=1,
+            Self::BatteryCharge => 0..=5,
+            Self::Vendor { min, max, .. } => *min..=*max,
+        }
     }
-}
-
-/// Keeps track of which indices are used for the indicators being received from an AG peer.
-/// Map them to indicators from a `+CIEV` using [`AgAssignedIndicators::translate`]
-#[derive(Debug, PartialEq)]
-pub struct AgIndicatorTranslator {
-    indices: HashMap<i64, AgIndicatorIndex>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -176,6 +119,25 @@ impl TryFrom<i64> for BatteryChargeIndicator {
     }
 }
 
+/// Represents an arbitrary AG indicator that is not explicitly defined in the HFP specification.
+/// See HFP v1.8 Section 4.2.1.3.
+#[derive(Debug, PartialEq)]
+pub struct VendorIndicator {
+    pub name: String,
+    pub value: i64,
+}
+
+impl VendorIndicator {
+    pub fn try_new(name: String, min: i64, max: i64, value: i64) -> Result<Self> {
+        if value < min || value > max {
+            return Err(format_err!(
+                "Value {value} is out of allowed range [{min}, {max}] for vendor indicator {name}"
+            ));
+        }
+        Ok(Self { name, value })
+    }
+}
+
 /// Typed AG Indicators, which represent the various +CIEV indicators the AG may send to the HF.
 /// This is split into three variants which represent the different uses the HF has for these
 /// indicators.
@@ -188,11 +150,20 @@ pub enum AgIndicator {
     Call(CallIndicator),
     NetworkInformation(NetworkInformationIndicator),
     BatteryCharge(BatteryChargeIndicator),
+    Vendor(VendorIndicator),
 }
 
 impl_from_to_variant!(CallIndicator, AgIndicator, Call);
 impl_from_to_variant!(NetworkInformationIndicator, AgIndicator, NetworkInformation);
 impl_from_to_variant!(BatteryChargeIndicator, AgIndicator, BatteryCharge);
+impl_from_to_variant!(VendorIndicator, AgIndicator, Vendor);
+
+/// Keeps track of which indices are used for the indicators being received from an AG peer.
+/// Map them to indicators from a `+CIEV` using [`AgIndicatorTranslator::translate`]
+#[derive(Debug, PartialEq)]
+pub struct AgIndicatorTranslator {
+    indices: HashMap<i64, AgIndicatorIndex>,
+}
 
 impl AgIndicatorTranslator {
     pub fn new() -> Self {
@@ -200,7 +171,7 @@ impl AgIndicatorTranslator {
     }
 
     pub fn set_index(&mut self, indicator: AgIndicatorIndex, index: i64) -> Result<()> {
-        let result = self.indices.insert(index, indicator);
+        let result = self.indices.insert(index, indicator.clone());
 
         if let Some(old_indicator) = result {
             return Err(format_err!(
@@ -216,7 +187,6 @@ impl AgIndicatorTranslator {
 
     /// Translate a +CIEV indicator received from the AG to a typed AgIndicator using the index
     /// values previously retrieved from the AG via a +CIND.
-    // TODO(https://fxbug.dev/129577) Use this in Peer task for calls and other uses.
     pub fn translate_indicator(&self, index: i64, value: i64) -> Result<AgIndicator> {
         let Some(ag_indicator_index) = self.indices.get(&index) else {
             return Err(format_err!(
@@ -256,6 +226,10 @@ impl AgIndicatorTranslator {
             AgIndicatorIndex::BatteryCharge => {
                 let battery_change_indicator = BatteryChargeIndicator::try_from(value)?;
                 AgIndicator::BatteryCharge(battery_change_indicator)
+            }
+            AgIndicatorIndex::Vendor { name, min, max } => {
+                let vendor = VendorIndicator::try_new(name.clone(), *min, *max, value)?;
+                AgIndicator::Vendor(vendor)
             }
         };
 
@@ -368,6 +342,21 @@ mod tests {
         let out_of_range_battery_charge_indicator =
             translator.translate_indicator(/* Battchg indicator */ 7, 6);
         assert_matches!(out_of_range_battery_charge_indicator, Err(_));
+
+        // Vendor indicator range validation
+        translator
+            .set_index(AgIndicatorIndex::Vendor { name: "callfwd".to_string(), min: 0, max: 2 }, 8)
+            .expect("Vendor");
+
+        let in_range_vendor =
+            translator.translate_indicator(/* Vendor indicator */ 8, 1).expect("valid range");
+        assert_eq!(
+            in_range_vendor,
+            AgIndicator::Vendor(VendorIndicator { name: "callfwd".to_string(), value: 1 })
+        );
+
+        let out_of_range_vendor = translator.translate_indicator(/* Vendor indicator */ 8, 3);
+        assert_matches!(out_of_range_vendor, Err(_));
     }
 
     #[fuchsia::test]
@@ -396,5 +385,44 @@ mod tests {
         let result = translator.set_index(AgIndicatorIndex::Call, 1); // Reused index
 
         assert_matches!(result, Err(_));
+    }
+
+    #[fuchsia::test]
+    fn multiple_vendor_indicators_same_name() {
+        let mut translator = AgIndicatorTranslator::new();
+        translator
+            .set_index(AgIndicatorIndex::Vendor { name: "mycustom".to_string(), min: 0, max: 1 }, 8)
+            .expect("Index 8");
+        translator
+            .set_index(AgIndicatorIndex::Vendor { name: "mycustom".to_string(), min: 0, max: 5 }, 9)
+            .expect("Index 9");
+
+        // Verify index 8 checks against range 0..=1
+        assert_matches!(
+            translator.translate_indicator(8, 1),
+            Ok(AgIndicator::Vendor(VendorIndicator { value: 1, .. }))
+        );
+        assert_matches!(translator.translate_indicator(8, 4), Err(_));
+
+        // Verify index 9 checks against range 0..=5
+        assert_matches!(
+            translator.translate_indicator(9, 4),
+            Ok(AgIndicator::Vendor(VendorIndicator { value: 4, .. }))
+        );
+
+        // Value out of bounds.
+        assert_matches!(translator.translate_indicator(9, 6), Err(_));
+    }
+
+    #[fuchsia::test]
+    fn vendor_indicator_invalid_bounds() {
+        // Max cannot be less than min.
+        let res = VendorIndicator::try_new(
+            "mycustom".to_string(),
+            /* min */ 5,
+            /* max */ 1,
+            /* value */ 3,
+        );
+        assert_matches!(res, Err(_));
     }
 }

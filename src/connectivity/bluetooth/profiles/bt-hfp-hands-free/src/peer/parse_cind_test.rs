@@ -12,7 +12,7 @@ use nom::error::ErrorKind;
 use nom::multi::separated_list0;
 use nom::sequence::{delimited, preceded, separated_pair};
 
-use crate::peer::ag_indicators::{AgIndicatorIndex, check_ag_indicator_range_allowed};
+use crate::peer::ag_indicators::AgIndicatorIndex;
 use crate::peer::at_connection::Response as AtResponse;
 
 // TODO(b/417756085) Evaluate rewriting this without nom.
@@ -30,10 +30,8 @@ pub fn parse(bytes: Vec<u8>) -> Result<AtResponse> {
     // This line parses the response name, "+CIND:".
     let name_parser = tag::<&str, &str, (&str, ErrorKind)>("+CIND:");
 
-    // The next two lines parse a double quote delimited name of an indicator into an
-    // AgIndicatorIndex.
+    // The next line parses a double quote delimited name of an indicator.
     let ag_indicator_name_parser = delimited(char('"'), alpha1, char('"'));
-    let ag_indicator_parser = map_res(ag_indicator_name_parser, AgIndicatorIndex::try_from);
 
     // The next five lines parse a parenthesis delimited pair of integers such as "(0,1)"
     // or "(0-1)" indicating a range of indicator values.
@@ -45,7 +43,7 @@ pub fn parse(bytes: Vec<u8>) -> Result<AtResponse> {
     let delimited_range_parser = delimited(char('('), range_parser, char(')'));
 
     // The next two lines parse a parenthesis delimited pair of indicator names and ranges.
-    let pair_parser = separated_pair(ag_indicator_parser, char(','), delimited_range_parser);
+    let pair_parser = separated_pair(ag_indicator_name_parser, char(','), delimited_range_parser);
     let delimited_pair_parser = delimited(char('('), pair_parser, char(')'));
 
     // This line parses a comma separated list of such pairs
@@ -65,13 +63,26 @@ pub fn parse(bytes: Vec<u8>) -> Result<AtResponse> {
         ))?
     }
 
-    // Check that the indicator ranges provided by the peer are those specified in the HFP spec.
-    // If not, the peer is nonconformant.
-    for (indicator, (min, max)) in indicators_and_ranges.iter() {
-        check_ag_indicator_range_allowed(*indicator, *min, *max)?;
-    }
+    let indicators = indicators_and_ranges
+        .into_iter()
+        .map(|(name, (min, max))| {
+            let indicator = AgIndicatorIndex::new(name, min, max);
+            // Some indicators are defined in the specification and have a predetermined minimum &
+            // maximum values.
+            let range = indicator.allowed_range();
+            if *range.start() != min || *range.end() != max {
+                return Err(format_err!(
+                    "Allowed range for {:?} is {:?}, but AG reported [{}, {}]",
+                    indicator,
+                    range,
+                    min,
+                    max
+                ));
+            }
+            Ok(indicator)
+        })
+        .collect::<Result<Vec<_>>>()?;
 
-    let indicators = indicators_and_ranges.iter().map(|ir| ir.0).collect();
     Ok(AtResponse::CindTest { ordered_indicators: indicators })
 }
 
@@ -147,5 +158,40 @@ mod tests {
         let bytes = b"+CIND: (\"service\",(0,2))";
         let parsed = parse(Vec::from(bytes));
         assert_matches!(parsed, Err(_));
+    }
+
+    #[fuchsia::test]
+    fn parse_with_vendor_indicators() {
+        let bytes = b"+CIND: (\"service\",(0,1)),(\"callfwd\",(0,2)),(\"mycustom\",(0,1))";
+        let parsed = parse(Vec::from(bytes)).expect("Parsing");
+        assert_eq!(
+            parsed,
+            AtResponse::CindTest {
+                ordered_indicators: vec![
+                    AgIndicatorIndex::ServiceAvailable,
+                    AgIndicatorIndex::Vendor { name: "callfwd".to_string(), min: 0, max: 2 },
+                    AgIndicatorIndex::Vendor { name: "mycustom".to_string(), min: 0, max: 1 },
+                ]
+            }
+        )
+    }
+
+    #[fuchsia::test]
+    fn parse_empty_indicators() {
+        // Empty indicator list (should parse to empty ordered_indicators)
+        let bytes3 = b"+CIND: ";
+        let parsed3 = parse(Vec::from(bytes3)).expect("Parsing empty list");
+        assert_eq!(parsed3, AtResponse::CindTest { ordered_indicators: vec![] });
+    }
+
+    #[fuchsia::test]
+    fn parse_malformed_custom_indicators() {
+        // Single value in range (should fail Nom parser)
+        let bytes1 = b"+CIND: (\"mycustom\",(1))";
+        assert_matches!(parse(Vec::from(bytes1)), Err(_));
+
+        // Missing parentheses (should fail Nom parser)
+        let bytes2 = b"+CIND: (\"mycustom\",0,1)";
+        assert_matches!(parse(Vec::from(bytes2)), Err(_));
     }
 }

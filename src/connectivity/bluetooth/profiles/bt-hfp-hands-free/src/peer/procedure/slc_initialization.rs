@@ -458,6 +458,79 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn slci_succeeds_with_custom_indicators() {
+        let mut procedure = SlcInitProcedure::new();
+        let hf_feature_support = HandsFreeFeatureSupport::default();
+        let mut state = ProcedureManipulatedState::new(hf_feature_support);
+
+        assert!(!procedure.is_terminated());
+
+        let start_input = ProcedureInput::CommandFromHf(CommandFromHf::StartSlci {
+            hf_features: hf_feature_support.into(),
+        });
+        let expected_command0 = vec![at_cmd!(Brsf { features: state.hf_features.bits() })];
+        assert_eq!(procedure.transition(&mut state, start_input).unwrap(), expected_command0);
+
+        let response1 = at_resp!(Brsf { features: AgFeatures::default().bits() });
+        let response1_ok = at_ok!();
+        assert_eq!(procedure.transition(&mut state, response1).unwrap(), vec![]);
+        assert_eq!(
+            procedure.transition(&mut state, response1_ok).unwrap(),
+            vec![at_cmd!(CindTest {})]
+        );
+
+        let response2 = ProcedureInput::AtResponseFromAg(AtResponse::CindTest {
+            ordered_indicators: vec![
+                AgIndicatorIndex::Call,
+                AgIndicatorIndex::CallSetup,
+                AgIndicatorIndex::CallHeld,
+                AgIndicatorIndex::SignalStrength,
+                AgIndicatorIndex::Roaming,
+                AgIndicatorIndex::BatteryCharge,
+                AgIndicatorIndex::ServiceAvailable,
+                AgIndicatorIndex::Vendor { name: "callfwd".to_string(), min: 0, max: 2 },
+            ],
+        });
+        // We should get SetAgIndicatorIndex command for all 8 indicators (including Custom)
+        let outputs = procedure.transition(&mut state, response2).unwrap();
+        assert_eq!(outputs.len(), 8);
+
+        let response2_ok = at_ok!();
+        assert_eq!(
+            procedure.transition(&mut state, response2_ok).unwrap(),
+            vec![at_cmd!(CindRead {})]
+        );
+
+        let response3 = at_resp!(CindRead {
+            ordered_values: vec![
+                6, // service
+                5, // call
+                4, // callsetup
+                3, // callheld
+                2, // signal
+                1, // roam
+                7, // battchg
+                0, // custom value
+            ]
+        });
+        let outputs3 = procedure.transition(&mut state, response3).unwrap();
+        assert_eq!(outputs3.len(), 1); // returns SetInitialAgIndicatorValues
+
+        let response3_ok = at_ok!();
+        let expected_command3 = vec![at_cmd!(Cmer {
+            mode: Some(INDICATOR_REPORTING_MODE),
+            keyp: Some(0),
+            disp: Some(0),
+            ind: Some(1)
+        })];
+        assert_eq!(procedure.transition(&mut state, response3_ok).unwrap(), expected_command3);
+
+        let response4 = at_ok!();
+        assert_eq!(procedure.transition(&mut state, response4).unwrap(), vec![]);
+        assert!(procedure.is_terminated());
+    }
+
+    #[fuchsia::test]
     fn slci_hf_indicator_properly_works() {
         let mut procedure = SlcInitProcedure::new();
         // Hf indicators needed for optional procedure.

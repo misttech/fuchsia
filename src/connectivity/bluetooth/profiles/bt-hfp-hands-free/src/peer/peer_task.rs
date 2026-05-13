@@ -3,16 +3,18 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, format_err};
+use at_commands as at;
 use bt_hfp::call::indicators as call_indicators;
 use bt_hfp::codec_id::CodecId;
 use bt_hfp::{a2dp, audio, sco};
+use fidl_fuchsia_bluetooth_hfp as fidl_hfp;
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::{Channel, PeerId};
 use fuchsia_sync::Mutex;
 use futures::{StreamExt, select};
 use log::{debug, error, info, warn};
 use std::sync::Arc;
 use vigil::{DropWatch, Vigil};
-use {at_commands as at, fidl_fuchsia_bluetooth_hfp as fidl_hfp, fuchsia_async as fasync};
 
 use crate::config::HandsFreeFeatureSupport;
 use crate::peer::ag_indicators::{
@@ -312,6 +314,10 @@ impl PeerTask {
             AgIndicator::BatteryCharge(BatteryChargeIndicator { percent }) => {
                 self.indicated_state.set_ag_battery_level(percent)
             }
+            AgIndicator::Vendor(vendor) => {
+                // No-op, these are gracefully handled.
+                info!("Received vendor AG indicator update: {} = {}", vendor.name, vendor.value);
+            }
         }
 
         Ok(())
@@ -394,6 +400,10 @@ impl PeerTask {
                 }
                 AgIndicator::BatteryCharge(BatteryChargeIndicator { percent }) => {
                     self.indicated_state.set_ag_battery_level(percent)
+                }
+                AgIndicator::Vendor(vendor) => {
+                    // No-op, initialization has no effect.
+                    info!("Initial vendor AG indicator value: {} = {}", vendor.name, vendor.value);
                 }
             }
         }
