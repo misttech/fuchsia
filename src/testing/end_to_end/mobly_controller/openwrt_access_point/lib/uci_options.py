@@ -10,8 +10,9 @@ class SupportedRates:
     CCK_AND_OFDM = CCK + OFDM
 
 
-class BasicRates:
+class BasicRate:
     OFDM_ONLY = [6000, 12000, 24000]
+    CCK = [1000, 2000]
     CCK_AND_OFDM = [1000, 2000, 5500, 11000]
 
 

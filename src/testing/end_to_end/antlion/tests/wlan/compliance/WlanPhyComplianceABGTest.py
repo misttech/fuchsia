@@ -36,7 +36,7 @@ from mobly_controller.openwrt_access_point.lib.hostapd_options import (
     WmmParams,
 )
 from mobly_controller.openwrt_access_point.lib.uci_options import (
-    BasicRates,
+    BasicRate,
     SupportedRates,
     VendorElements,
 )
@@ -174,7 +174,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         country_ie: Literal[0, 1] | None = None,
         country: str | None = None,
         supported_rates: list[int] | None = None,
-        basic_rates: list[int] | None = None,
+        basic_rate: list[int] | None = None,
         vendor_elements: str | None = None,
     ) -> None:
         """Common function to run PHY compliance tests."""
@@ -197,8 +197,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
         if supported_rates is not None:
             custom_uci_options["supported_rates"] = supported_rates
-        if basic_rates is not None:
-            custom_uci_options["basic_rates"] = basic_rates
+        if basic_rate is not None:
+            custom_uci_options["basic_rate"] = basic_rate
 
         custom_bss_uci_options: UciBssOptions = {}
         if dtim_period is not None:
@@ -263,6 +263,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             preamble=False,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_short_preamble(self) -> None:
@@ -271,6 +273,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             preamble=True,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_minimal_beacon_interval(self) -> None:
@@ -279,6 +283,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             beacon_interval=15,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_maximum_beacon_interval(self) -> None:
@@ -287,6 +293,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             beacon_interval=1024,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_frag_threshold_430(self) -> None:
@@ -295,6 +303,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             frag_threshold=430,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_rts_threshold_256(self) -> None:
@@ -303,6 +313,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             rts_threshold=256,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_rts_256_frag_430(self) -> None:
@@ -312,6 +324,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             rts_threshold=256,
             frag_threshold=430,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_high_dtim_low_beacon_interval(self) -> None:
@@ -321,6 +335,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             dtim_period=3,
             beacon_interval=100,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_low_dtim_high_beacon_interval(self) -> None:
@@ -330,6 +346,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             dtim_period=1,
             beacon_interval=300,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_WMM_with_default_values(self) -> None:
@@ -339,6 +357,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
             additional_ap_parameters=WmmParams.DEFAULT_11B,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_WMM_with_non_default_values(self) -> None:
@@ -348,6 +368,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
             additional_ap_parameters=WmmParams.NON_DEFAULT,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_WMM_ACM_on_BK(self) -> None:
@@ -359,6 +381,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             force_wmm=True,
             # additional_ap_parameters=wmm_acm_bits_enabled,
             additional_ap_parameters=wmm_acm_bits_enabled,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_WMM_ACM_on_BE(self) -> None:
@@ -369,6 +393,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
             additional_ap_parameters=wmm_acm_bits_enabled,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_WMM_ACM_on_VI(self) -> None:
@@ -379,6 +405,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
             additional_ap_parameters=wmm_acm_bits_enabled,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_WMM_ACM_on_VO(self) -> None:
@@ -389,6 +417,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
             additional_ap_parameters=wmm_acm_bits_enabled,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_WMM_ACM_on_BK_BE_VI(self) -> None:
@@ -401,6 +431,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
             additional_ap_parameters=wmm_acm_bits_enabled,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_WMM_ACM_on_BK_BE_VO(self) -> None:
@@ -413,6 +445,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
             additional_ap_parameters=wmm_acm_bits_enabled,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_WMM_ACM_on_BK_VI_VO(self) -> None:
@@ -425,6 +459,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
             additional_ap_parameters=wmm_acm_bits_enabled,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_WMM_ACM_on_BE_VI_VO(self) -> None:
@@ -437,6 +473,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
             additional_ap_parameters=wmm_acm_bits_enabled,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_country_code(self) -> None:
@@ -447,6 +485,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             country_ie=1,
             country="US",
             additional_ap_parameters=Country3.ALL,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_non_country_code(self) -> None:
@@ -457,6 +497,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             country_ie=1,
             country="XX",
             additional_ap_parameters=Country3.ALL,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_hidden_ssid(self) -> None:
@@ -465,6 +507,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             hidden=True,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_vendor_ie_in_beacon_correct_length(
@@ -475,6 +519,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             vendor_elements=VendorElements.CORRECT_LENGTH,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_vendor_ie_in_beacon_zero_length(
@@ -485,6 +531,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             vendor_elements=VendorElements.ZERO_LENGTH_WITHOUT_DATA,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_vendor_ie_in_assoc_correct_length(
@@ -495,6 +543,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             additional_ap_parameters=AssocRespIe.CORRECT_LENGTH,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11b_only_with_vendor_ie_in_assoc_zero_length(
@@ -505,6 +555,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             additional_ap_parameters=AssocRespIe.ZERO_LENGTH_WITHOUT_DATA,
+            supported_rates=SupportedRates.CCK,
+            basic_rate=BasicRate.CCK,
         )
 
     def test_associate_11a_only_long_preamble(self) -> None:
@@ -783,7 +835,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             preamble=False,
             supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_short_preamble(self) -> None:
@@ -793,7 +845,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             preamble=True,
             supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_minimal_beacon_interval(self) -> None:
@@ -803,7 +855,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             beacon_interval=15,
             supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_maximum_beacon_interval(self) -> None:
@@ -813,7 +865,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             beacon_interval=1024,
             supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_frag_threshold_430(self) -> None:
@@ -823,7 +875,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             frag_threshold=430,
             supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_rts_threshold_256(self) -> None:
@@ -833,7 +885,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             rts_threshold=256,
             supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_rts_256_frag_430(self) -> None:
@@ -844,7 +896,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             rts_threshold=256,
             frag_threshold=430,
             supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_high_dtim_low_beacon_interval(self) -> None:
@@ -855,7 +907,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             dtim_period=3,
             beacon_interval=100,
             supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_low_dtim_high_beacon_interval(self) -> None:
@@ -866,7 +918,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             dtim_period=1,
             beacon_interval=300,
             supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_WMM_with_default_values(self) -> None:
@@ -875,9 +927,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=WmmParams.DEFAULT_PHYS_11A_11G_11N_11AC_DEFAULT_PARAMS,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_WMM_with_non_default_values(self) -> None:
@@ -886,9 +938,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=WmmParams.NON_DEFAULT,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_WMM_ACM_on_BK(self) -> None:
@@ -900,9 +952,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=wmm_params,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_WMM_ACM_on_BE(self) -> None:
@@ -914,9 +966,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=wmm_params,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_WMM_ACM_on_VI(self) -> None:
@@ -928,9 +980,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=wmm_params,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_WMM_ACM_on_VO(self) -> None:
@@ -942,9 +994,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=wmm_params,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_WMM_ACM_on_BK_BE_VI(self) -> None:
@@ -959,9 +1011,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=wmm_params,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_WMM_ACM_on_BK_BE_VO(self) -> None:
@@ -976,9 +1028,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=wmm_acm_bits_enabled,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_WMM_ACM_on_BK_VI_VO(self) -> None:
@@ -993,9 +1045,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=wmm_acm_bits_enabled,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_WMM_ACM_on_BE_VI_VO(self) -> None:
@@ -1010,9 +1062,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
             force_wmm=True,
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=wmm_acm_bits_enabled,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_country_code(self) -> None:
@@ -1022,9 +1074,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             country_ie=1,
             country="US",
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=Country3.ALL,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_non_country_code(self) -> None:
@@ -1034,9 +1086,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             country_ie=1,
             country="XX",
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=Country3.ALL,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_hidden_ssid(self) -> None:
@@ -1046,7 +1098,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             ssid=self.open_network_2g["SSID"],
             hidden=True,
             supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_vendor_ie_in_beacon_correct_length(
@@ -1056,9 +1108,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             vendor_elements=VendorElements.CORRECT_LENGTH,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_vendor_ie_in_beacon_zero_length(
@@ -1068,9 +1120,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             vendor_elements=VendorElements.ZERO_LENGTH_WITHOUT_DATA,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_vendor_ie_in_assoc_correct_length(
@@ -1080,9 +1132,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=AssocRespIe.CORRECT_LENGTH,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11g_only_with_vendor_ie_in_assoc_zero_length(
@@ -1092,9 +1144,9 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
-            supported_rates=SupportedRates.OFDM,
-            basic_rates=BasicRates.OFDM_ONLY,
             additional_ap_parameters=AssocRespIe.ZERO_LENGTH_WITHOUT_DATA,
+            supported_rates=SupportedRates.OFDM,
+            basic_rate=BasicRate.OFDM_ONLY,
         )
 
     def test_associate_11bg_only_long_preamble(self) -> None:

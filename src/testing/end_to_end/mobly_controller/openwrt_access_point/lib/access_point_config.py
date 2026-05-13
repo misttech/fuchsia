@@ -322,7 +322,7 @@ class UciRadioOptions(TypedDict, total=False):
         require_mode: Sets the minimum client capability level mode.
         country_ie: Enable IEEE 802.11d country IE.
         supported_rates: Supported data rates.
-        basic_rates: Basic data rates.
+        basic_rate: Basic data rates.
     """
 
     frag: int
@@ -332,7 +332,7 @@ class UciRadioOptions(TypedDict, total=False):
     require_mode: Literal["n", "ac", "ax"]
     country_ie: Literal[0, 1]
     supported_rates: list[int]
-    basic_rates: list[int]
+    basic_rate: list[int]
 
 
 class HostapdOptions(TypedDict, total=False):
