@@ -261,7 +261,7 @@
             if (ctx.object_wait_async(original_handle, port, 42, ZX_USER_SIGNAL_0, 0) != ZX_OK) {
               __builtin_trap();
             }
-            if (ctx.port_cancel(port, original_handle, 42) != ZX_OK) {
+            if (ctx.port_cancel_key(port, 0u, 42) != ZX_OK) {
               __builtin_trap();
             }
           }
