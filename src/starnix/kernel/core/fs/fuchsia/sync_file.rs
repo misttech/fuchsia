@@ -15,7 +15,7 @@ use crate::vfs::{
 };
 
 use starnix_lifecycle::AtomicCounter;
-use starnix_logging::{CATEGORY_STARNIX, impossible_error, log_warn, trace_duration};
+use starnix_logging::{impossible_error, log_warn, trace_duration};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::errors::Errno;
@@ -43,6 +43,7 @@ use std::sync::Arc;
 
 const SYNC_IOC_MERGE: u8 = 3;
 const SYNC_IOC_FILE_INFO: u8 = 4;
+const TRACE_CATEGORY: &'static str = "gfx";
 
 #[derive(Clone, Debug)]
 pub enum Timeline {
@@ -178,7 +179,7 @@ impl FileOps for SyncFile {
 
         match ioctl_number {
             SYNC_IOC_MERGE => {
-                trace_duration!(CATEGORY_STARNIX, "SyncFileMerge");
+                trace_duration!(TRACE_CATEGORY, "SyncFileMerge");
                 let user_ref = UserRef::new(user_addr);
                 let mut merge_data: sync_merge_data = current_task.read_object(user_ref)?;
                 let file2 = current_task.get_file(FdNumber::from_raw(merge_data.fd2))?;
@@ -246,7 +247,7 @@ impl FileOps for SyncFile {
                 Ok(SUCCESS)
             }
             SYNC_IOC_FILE_INFO => {
-                trace_duration!(CATEGORY_STARNIX, "SyncFileInfo");
+                trace_duration!(TRACE_CATEGORY, "SyncFileInfo");
                 let user_ref = UserRef::new(user_addr);
                 let mut info: sync_file_info = current_task.read_object(user_ref)?;
 
