@@ -204,8 +204,8 @@ func TestReadmeCommand_AllowlistedProject(t *testing.T) {
 	}
 	testFilePath := filepath.Join(projDir, "README.fuchsia")
 
-	// Content without License File
-	content := []byte("Name: allowlisted\nURL: https://test\nVersion: 1.0\nSecurity Critical: no\n")
+	// Content without License File and without Version
+	content := []byte("Name: allowlisted\nURL: https://test\nSecurity Critical: no\n")
 	if err := os.WriteFile(testFilePath, content, 0644); err != nil {
 		t.Fatal(err)
 	}

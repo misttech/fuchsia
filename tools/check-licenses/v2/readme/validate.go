@@ -70,9 +70,6 @@ func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme, config *v2co
 		if r.URL == "" {
 			errs = append(errs, fmt.Errorf("Readme %d: 'URL' is a required field", i+1))
 		}
-		if r.Version == "" {
-			errs = append(errs, fmt.Errorf("Readme %d: 'Version' is a required field", i+1))
-		}
 		if r.SecurityCritical != "yes" && r.SecurityCritical != "no" {
 			errs = append(errs, fmt.Errorf("Readme %d: 'Security Critical' is required and must be exactly 'yes' or 'no'. Got: %q", i+1, r.SecurityCritical))
 		}
