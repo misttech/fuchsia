@@ -581,12 +581,42 @@ fn check_path(
 fn check_areas(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
     //TODO(https://fxbug.dev/42064921): Align _areas.yaml on same schema.
     if filename.ends_with("contribute/governance/areas/_areas.yaml") {
-        let (_items, errors) = parse_entries::<AreaEntry>(filename, yaml_value);
-        //TODO(https://fxbug.dev/42064922): other checks for AreaEntry?
-        errors
+        let (items, errors) = parse_entries::<AreaEntry>(filename, yaml_value);
+        let mut errs = errors.unwrap_or_default();
+        if let Some(entries) = items {
+            for entry in entries {
+                if entry.name.is_empty() {
+                    errs.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        "area name cannot be empty",
+                    ));
+                }
+                if !entry.api_primary.is_empty() && !entry.api_primary.contains('@') {
+                    errs.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!(
+                            "invalid api_primary email: {} for area {}",
+                            entry.api_primary, entry.name
+                        ),
+                    ));
+                }
+                if !entry.api_secondary.is_empty() && !entry.api_secondary.contains('@') {
+                    errs.push(DocCheckError::new_error(
+                        1,
+                        filename.to_path_buf(),
+                        &format!(
+                            "invalid api_secondary email: {} for area {}",
+                            entry.api_secondary, entry.name
+                        ),
+                    ));
+                }
+            }
+        }
+        if errs.is_empty() { None } else { Some(errs) }
     } else {
         let (_items, errors) = parse_entries::<String>(filename, yaml_value);
-        //TODO(https://fxbug.dev/42064922): other checks for AreaEntry?
         errors
     }
 }
@@ -1394,7 +1424,7 @@ mod test {
     fn test_check_areas() -> Result<()> {
         // Test is more complex because of todo
         //TODO(https://fxbug.dev/42064921): Align _areas.yaml on same schema.
-        let filename = "/some/docs/contribute/governance/areas/_areas.yaml";
+        let filename = "docs/contribute/governance/areas/_areas.yaml";
         let yaml_value: Value = serde_yaml::from_str(
             r#"
 - name: 'Area1'
@@ -1406,10 +1436,25 @@ mod test {
           </p>
   examples:
     - fidl: 'fuchsia.docs.samples'
+- name: 'Area2'
+  api_primary: 'bademail'
+  api_secondary: 'anotherbademail'
+- name: ''
+  api_primary: 'valid@google.com'
+  api_secondary: ''
           "#,
         )?;
 
-        assert_eq!(check_areas(&PathBuf::from(filename), &yaml_value), None);
+        let result = check_areas(&PathBuf::from(filename), &yaml_value);
+        assert!(result.is_some());
+        let errors = result.unwrap();
+        assert_eq!(errors.len(), 3);
+        assert_eq!(errors[0].message, "invalid api_primary email: bademail for area Area2");
+        assert_eq!(
+            errors[1].message,
+            "invalid api_secondary email: anotherbademail for area Area2"
+        );
+        assert_eq!(errors[2].message, "area name cannot be empty");
 
         Ok(())
     }
