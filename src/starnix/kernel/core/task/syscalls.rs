@@ -1220,9 +1220,7 @@ pub fn sys_prctl(
                     {
                         return error!(EPERM);
                     }
-                    if creds.securebits.contains(SecureBits::NO_CAP_AMBIENT_RAISE)
-                        || creds.securebits.contains(SecureBits::NO_CAP_AMBIENT_RAISE_LOCKED)
-                    {
+                    if creds.securebits.contains(SecureBits::NO_CAP_AMBIENT_RAISE) {
                         return error!(EPERM);
                     }
 
