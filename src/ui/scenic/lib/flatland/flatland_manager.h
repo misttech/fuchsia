@@ -143,11 +143,6 @@ class FlatlandManager {
           buffer_collection_importers,
       const FlatlandConfig& config) const;
 
-  // Used to assert that code is running on the expected thread.
-  void CheckIsOnMainThread() const {
-    FX_DCHECK(executor_.dispatcher() == async_get_default_dispatcher());
-  }
-
   std::shared_ptr<FlatlandPresenter> flatland_presenter_;
   std::shared_ptr<UberStructSystem> uber_struct_system_;
   std::shared_ptr<LinkSystem> link_system_;

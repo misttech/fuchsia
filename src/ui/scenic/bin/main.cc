@@ -25,9 +25,12 @@
 #include "src/lib/fxl/command_line.h"
 #include "src/lib/fxl/log_settings_command_line.h"
 #include "src/ui/scenic/bin/app.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 
 int main(int argc, const char** argv) {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  utils::ScopedThreadDispatcherSetter setter(loop.dispatcher(), loop.dispatcher());
+
   auto command_line = fxl::CommandLineFromArgcArgv(argc, argv);
   if (!fxl::SetLogSettingsFromCommandLine(command_line, {"scenic"})) {
     return 1;

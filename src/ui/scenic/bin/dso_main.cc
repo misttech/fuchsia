@@ -18,8 +18,8 @@
 #include "src/lib/dso/cpp/async.h"
 #include "src/lib/fxl/command_line.h"
 #include "src/lib/fxl/log_settings_command_line.h"
-#include "src/ui/lib/escher/vk/vulkan_instance.h"
 #include "src/ui/scenic/bin/app.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 
 int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t svc_handle,
                    zx_handle_t pkg_handle, zx_handle_t directory_request_handle,
@@ -37,6 +37,7 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
     return 2;
   }
   async_set_default_dispatcher(dispatcher);
+  utils::ScopedThreadDispatcherSetter setter(dispatcher, dispatcher);
 
   // This call creates ComponentContext, but does not start serving immediately. Outgoing directory
   // is served by App, after App::InitializeServices() is completed.

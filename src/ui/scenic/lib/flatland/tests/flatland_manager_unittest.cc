@@ -16,6 +16,7 @@
 #include "src/ui/scenic/lib/flatland/tests/mock_flatland_presenter.h"
 #include "src/ui/scenic/lib/scheduling/frame_scheduler.h"
 #include "src/ui/scenic/lib/scheduling/id.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 
 using ::testing::_;
 using ::testing::AtLeast;
@@ -68,7 +69,8 @@ namespace {
 class FlatlandManagerTest : public LoggingEventLoop, public ::testing::Test {
  public:
   FlatlandManagerTest()
-      : uber_struct_system_(std::make_shared<UberStructSystem>()),
+      : dispatcher_setter_(dispatcher(), dispatcher()),
+        uber_struct_system_(std::make_shared<UberStructSystem>()),
         link_system_(std::make_shared<LinkSystem>(uber_struct_system_->GetNextInstanceId())) {}
 
   void SetUp() override {
@@ -220,6 +222,7 @@ class FlatlandManagerTest : public LoggingEventLoop, public ::testing::Test {
   }
 
  protected:
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_;
   std::shared_ptr<::testing::StrictMock<MockFlatlandPresenter>> mock_flatland_presenter_;
   const std::shared_ptr<UberStructSystem> uber_struct_system_;
 

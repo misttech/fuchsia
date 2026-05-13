@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "src/lib/fsl/handles/object_info.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/dispatcher_holder.h"
 
 namespace flatland {
@@ -79,7 +80,7 @@ FlatlandManager::~FlatlandManager() {
 scheduling::SessionId FlatlandManager::CreateFlatland(
     fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
     const FlatlandConfig& config) {
-  CheckIsOnMainThread();
+  utils::CheckIsOnMainThread();
 
   const scheduling::SessionId id = uber_struct_system_->GetNextInstanceId();
   FX_DCHECK(flatland_instances_.find(id) == flatland_instances_.end());
@@ -159,7 +160,7 @@ std::shared_ptr<Flatland> FlatlandManager::NewFlatland(
         async::PostTask(executor_.dispatcher(),
                         [this, focuser = std::move(focuser), view_ref_koid]() mutable {
                           TRACE_DURATION("gfx", "FlatlandManager::NewFlatland[Focuser]");
-                          CheckIsOnMainThread();
+                          utils::CheckIsOnMainThread();
                           register_view_focuser_(fidl::NaturalToHLCPP(focuser), view_ref_koid);
                         });
       },
@@ -170,7 +171,7 @@ std::shared_ptr<Flatland> FlatlandManager::NewFlatland(
             executor_.dispatcher(),
             [this, view_ref_focused = std::move(view_ref_focused), view_ref_koid]() mutable {
               TRACE_DURATION("gfx", "FlatlandManager::NewFlatland[ViewRefFocused]");
-              CheckIsOnMainThread();
+              utils::CheckIsOnMainThread();
               register_view_ref_focused_(fidl::NaturalToHLCPP(view_ref_focused), view_ref_koid);
             });
       },
@@ -180,7 +181,7 @@ std::shared_ptr<Flatland> FlatlandManager::NewFlatland(
         async::PostTask(executor_.dispatcher(),
                         [this, touch_source = std::move(touch_source), view_ref_koid]() mutable {
                           TRACE_DURATION("gfx", "FlatlandManager::NewFlatland[TouchSource]");
-                          CheckIsOnMainThread();
+                          utils::CheckIsOnMainThread();
                           register_touch_source_(fidl::NaturalToHLCPP(touch_source), view_ref_koid);
                         });
       },
@@ -190,7 +191,7 @@ std::shared_ptr<Flatland> FlatlandManager::NewFlatland(
         async::PostTask(executor_.dispatcher(),
                         [this, mouse_source = std::move(mouse_source), view_ref_koid]() mutable {
                           TRACE_DURATION("gfx", "FlatlandManager::NewFlatland[MouseSource]");
-                          CheckIsOnMainThread();
+                          utils::CheckIsOnMainThread();
                           register_mouse_source_(fidl::NaturalToHLCPP(mouse_source), view_ref_koid);
                         });
       },
@@ -257,7 +258,7 @@ void FlatlandManager::UpdateInstances(
     const std::unordered_map<scheduling::SessionId, scheduling::PresentId>& instances_to_update) {
   TRACE_DURATION("gfx", "FlatlandManager::UpdateInstances", "count",
                  TA_UINT64(instances_to_update.size()));
-  CheckIsOnMainThread();
+  utils::CheckIsOnMainThread();
 
   const auto results = uber_struct_system_->UpdateInstances(instances_to_update);
 
@@ -283,7 +284,7 @@ void FlatlandManager::UpdateInstances(
 
 void FlatlandManager::SendHintsToStartRendering() {
   TRACE_DURATION("gfx", "FlatlandManager::SendHintsToStartRendering");
-  CheckIsOnMainThread();
+  utils::CheckIsOnMainThread();
 
   if (all_clients_opt_out_present_info_) {
     // We know that no clients want to receive `-> OnNextFrameBegin`, so avoid the costly
@@ -342,7 +343,7 @@ void FlatlandManager::OnFramePresented(
     scheduling::PresentTimestamps present_times) {
   TRACE_DURATION("gfx", "FlatlandManager::OnFramePresented");
 
-  CheckIsOnMainThread();
+  utils::CheckIsOnMainThread();
 
   for (const auto& [session_id, latch_times] : latched_times) {
     auto instance_kv = flatland_instances_.find(session_id);
@@ -362,7 +363,7 @@ void FlatlandManager::SendPresentCredits(FlatlandInstance* instance,
                                          uint32_t present_credits_returned,
                                          Flatland::FuturePresentationInfos presentation_infos) {
   TRACE_DURATION("gfx", "FlatlandManager::SendPresentCredits");
-  CheckIsOnMainThread();
+  utils::CheckIsOnMainThread();
 
   // The Flatland impl must be accessed on the thread it is bound to; post a task to that thread.
   std::weak_ptr<Flatland> weak_impl = instance->impl;
@@ -382,7 +383,7 @@ void FlatlandManager::SendFramePresented(
     FlatlandInstance* instance,
     const std::map<scheduling::PresentId, /*latched_time*/ zx::time>& latched_times,
     scheduling::PresentTimestamps present_times) {
-  CheckIsOnMainThread();
+  utils::CheckIsOnMainThread();
 
   if (instance->impl->config().skips_on_frame_presented) {
     // This Flatland session has opted out of `-> OnFramePresented` events.
@@ -402,7 +403,7 @@ void FlatlandManager::SendFramePresented(
 }
 
 void FlatlandManager::RemoveFlatlandInstance(scheduling::SessionId session_id) {
-  CheckIsOnMainThread();
+  utils::CheckIsOnMainThread();
 
   bool found = false;
 

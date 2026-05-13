@@ -14,6 +14,7 @@
 #include "src/ui/scenic/lib/flatland/flatland_manager.h"
 #include "src/ui/scenic/lib/flatland/tests/logging_event_loop.h"
 #include "src/ui/scenic/lib/flatland/tests/mock_flatland_presenter.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 
 using flatland::FlatlandManager;
 using flatland::LinkSystem;
@@ -26,6 +27,8 @@ namespace {
 
 class TrustedFlatlandFactoryTest : public LoggingEventLoop, public ::testing::Test {
  public:
+  TrustedFlatlandFactoryTest() : dispatcher_setter_(this->dispatcher(), this->dispatcher()) {}
+
   void SetUp() override {
     ::testing::Test::SetUp();
 
@@ -63,6 +66,7 @@ class TrustedFlatlandFactoryTest : public LoggingEventLoop, public ::testing::Te
   }
 
  protected:
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_;
   std::unique_ptr<TrustedFlatlandFactoryImpl> factory_;
   std::shared_ptr<FlatlandManager> flatland_manager_;
   std::vector<fidl::Client<fuchsia_ui_composition::Flatland>> flatland_clients_;

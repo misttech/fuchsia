@@ -16,6 +16,7 @@
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
 #include "src/ui/scenic/lib/flatland/scene_dumper.h"
 #include "src/ui/scenic/lib/scheduling/frame_scheduler.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/logging.h"
 
@@ -40,6 +41,7 @@ Engine::Engine(std::shared_ptr<DisplayCompositor> flatland_compositor,
       inspect_node_(std::move(inspect_node)),
       get_root_transform_(std::move(get_root_transform)),
       executor_(async_get_default_dispatcher()) {
+  utils::CheckIsOnMainThread();
   FX_DCHECK(flatland_compositor_);
   FX_DCHECK(flatland_presenter_);
   FX_DCHECK(uber_struct_system_);
@@ -76,6 +78,8 @@ void Engine::InitializeInspectObjects() {
 void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_time,
                                   const FlatlandDisplay& display,
                                   scheduling::FramePresentedCallback callback) {
+  utils::CheckIsOnMainThread();
+
   // Emit a counter called "ScenicRender" for visualization in the Trace Viewer.
   //
   // This counter is flipped between 0 and 1 and back on each frame, and is
@@ -197,6 +201,7 @@ void Engine::RecordFrameResult(DisplayCompositor::RenderFrameResult result) {
 
 void Engine::CleanUpFrame() {
   TRACE_DURATION("gfx", "flatland::Engine::CleanUpFrame");
+  utils::CheckIsOnMainThread();
 
   FX_DCHECK(current_scene_state_);
   FX_DCHECK(!cleared_scene_state_);
@@ -215,6 +220,7 @@ void Engine::CleanUpFrame() {
 view_tree::GeneratedSubtreeSnapshot Engine::GenerateViewTreeSnapshot(
     const TransformHandle& root_transform) {
   TRACE_DURATION("gfx", "flatland::Engine::GenerateViewTreeSnapshot");
+  utils::CheckIsOnMainThread();
 
   const auto [link_child_to_parent_transform_map, link_topology_changed] =
       link_system_->GetLinkChildToParentTransformMap();
@@ -242,6 +248,8 @@ view_tree::GeneratedSubtreeSnapshot Engine::GenerateViewTreeSnapshot(
 // TODO(https://fxbug.dev/42162342) If we put Screenshot on its own thread, we should make this
 // call thread safe.
 Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
+  utils::CheckIsOnMainThread();
+
   TransformHandle root = display.root_transform();
 
   SceneState scene_state;
@@ -317,6 +325,7 @@ void Engine::SceneState::Clear() {
 
 void Engine::SkipRender(scheduling::FramePresentedCallback callback, bool rotate_scene_state) {
   TRACE_DURATION("gfx", "flatland::Engine::SkipRender");
+  utils::CheckIsOnMainThread();
 
   if (rotate_scene_state) {
     // We don't populate the SceneState, but we still need to move it from "cleared" -> "current" in
@@ -335,6 +344,8 @@ void Engine::SkipRender(scheduling::FramePresentedCallback callback, bool rotate
 }
 
 void Engine::AddDisplay(display::Display& display) {
+  utils::CheckIsOnMainThread();
+
   auto [it, inserted] = seen_display_ids_.emplace(display.display_id(), false);
   if (!inserted) {
     return;
