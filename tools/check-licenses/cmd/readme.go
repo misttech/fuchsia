@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/google/subcommands"
 
 	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
+	v2discover "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover"
 )
 
 type ReadmeCommand struct {
@@ -46,6 +48,7 @@ func (c *ReadmeCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...inter
 	subCommander := subcommands.NewCommander(subFlags, "readme")
 	subCommander.Register(&ReadmeFormatCommand{fuchsiaDir: c.fuchsiaDir}, "")
 	subCommander.Register(&ReadmeCheckCommand{fuchsiaDir: c.fuchsiaDir}, "")
+	subCommander.Register(&ReadmeListCommand{fuchsiaDir: c.fuchsiaDir}, "")
 	return subCommander.Execute(ctx)
 }
 
@@ -205,5 +208,75 @@ func (c *ReadmeCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...
 	}
 
 	fmt.Printf("✅ README is perfectly formatted and contains no unknown fields: %s\n", targetFile)
+	return subcommands.ExitSuccess
+}
+
+type ReadmeListCommand struct {
+	fuchsiaDir string
+}
+
+func (*ReadmeListCommand) Name() string { return "list" }
+func (*ReadmeListCommand) Synopsis() string {
+	return "Lists all README.fuchsia files discovered in the repository."
+}
+func (*ReadmeListCommand) Usage() string {
+	return `list:
+  Lists the relative paths (from the fuchsia root) to all physical and virtual README.fuchsia files.
+`
+}
+
+func (c *ReadmeListCommand) SetFlags(f *flag.FlagSet) {}
+
+func (c *ReadmeListCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	fuchsiaDir, _, err := ResolveAndValidatePath(c.fuchsiaDir, ".")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return subcommands.ExitFailure
+	}
+
+	builder := v2config.NewBuilder(fuchsiaDir)
+	if err := builder.Assemble(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to assemble configuration: %v\n", err)
+		return subcommands.ExitFailure
+	}
+	config := builder.Config
+
+	var allReadmes []string
+
+	for _, physPath := range config.OutOfTreeReadmes {
+		rel, err := filepath.Rel(fuchsiaDir, physPath)
+		if err == nil {
+			allReadmes = append(allReadmes, rel)
+		}
+	}
+
+	discoverer := v2discover.NewCrawler(fuchsiaDir, config.SkipPaths, config.SkipAnywhere)
+	rawPaths, err := discoverer.Run(ctx, []string{fuchsiaDir})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to crawl repository: %v\n", err)
+		return subcommands.ExitFailure
+	}
+
+	for rp := range rawPaths {
+		if rp.IsDir {
+			continue
+		}
+		if filepath.Base(rp.Path) == "README.fuchsia" {
+			rel, err := filepath.Rel(fuchsiaDir, rp.Path)
+			if err == nil {
+				allReadmes = append(allReadmes, rel)
+			}
+		}
+	}
+
+	sort.Strings(allReadmes)
+	last := ""
+	for _, r := range allReadmes {
+		if r != last {
+			fmt.Println(r)
+			last = r
+		}
+	}
+
 	return subcommands.ExitSuccess
 }
