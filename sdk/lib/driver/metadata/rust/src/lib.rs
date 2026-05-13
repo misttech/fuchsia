@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod serde;
+
 use fdf_component::ServiceOffer;
 use fidl_fuchsia_driver_framework as fdf;
 use fidl_next::{Responder, ServerEnd};
@@ -9,6 +11,8 @@ use fidl_next_fuchsia_driver_metadata as fmetadata;
 use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceObjTrait};
 use std::sync::Arc;
+
+pub use serde::*;
 
 pub struct MetadataServer {
     data: Option<Arc<Vec<u8>>>,

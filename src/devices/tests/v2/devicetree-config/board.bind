@@ -1,0 +1,4 @@
+using fuchsia;
+
+fuchsia.BIND_PLATFORM_DEV_VID == 0x11;
+fuchsia.BIND_PLATFORM_DEV_PID == 0x18;

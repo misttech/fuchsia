@@ -1,0 +1,3 @@
+using fuchsia.devicetree;
+
+fuchsia.devicetree.FIRST_COMPATIBLE == "devicetree-config-child";

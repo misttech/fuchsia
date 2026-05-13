@@ -34,7 +34,10 @@ if (is_host) {
 }
 
 fidl("fuchsia.driver.metadata") {
-  sources = [ "fuchsia.driver.metadata.fidl" ]
+  sources = [
+    "dictionary.fidl",
+    "fuchsia.driver.metadata.fidl",
+  ]
   sdk_area = "Driver SDK"
   sdk_category = "partner"
   enable_rust_next = true

@@ -44,6 +44,7 @@ group("drivers") {
     "ddk-init-test:drivers",
     "devfs-export-service:root",
     "devfs_exporter:root",
+    "devicetree-config:drivers",
     "dictionary-offers:child",
     "dictionary-offers:root",
     "dynamic_offers:leaf",
