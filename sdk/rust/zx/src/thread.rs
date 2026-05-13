@@ -5,13 +5,10 @@
 //! Type-safe bindings for Zircon threads.
 
 use crate::{
-    AsHandleRef, ExceptionReport, HandleRef, MonotonicDuration, NullableHandle, ObjectQuery,
-    Profile, Status, Task, Topic, ok, sys,
+    ExceptionReport, MonotonicDuration, NullableHandle, ObjectQuery, Profile, Status, Task, Topic,
+    ok, sys,
 };
 use bitflags::bitflags;
-
-#[cfg(target_arch = "x86_64")]
-use crate::{Property, PropertyQuery};
 
 bitflags! {
     /// Options that may be used with `Thread::raise_exception`

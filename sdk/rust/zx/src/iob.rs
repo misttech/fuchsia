@@ -4,7 +4,7 @@
 
 //! Type-safe bindings for Zircon iobuffer objects.
 
-use crate::{AsHandleRef, HandleRef, NullableHandle, Status, ok, sys};
+use crate::{NullableHandle, Status, ok, sys};
 use bitflags::bitflags;
 
 mod io_slice;

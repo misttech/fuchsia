@@ -5,8 +5,7 @@
 //! Type-safe bindings for Zircon port objects.
 
 use crate::{
-    AsHandleRef, GPAddr, HandleRef, MonotonicInstant, NullableHandle, Signals, Status,
-    VcpuContents, guest, ok, sys,
+    GPAddr, MonotonicInstant, NullableHandle, Signals, Status, VcpuContents, guest, ok, sys,
 };
 use bitflags::bitflags;
 use std::mem;

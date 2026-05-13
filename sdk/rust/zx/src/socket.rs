@@ -6,10 +6,7 @@
 
 #![allow(clippy::bad_bit_mask)] // TODO(https://fxbug.dev/42080521): stop using bitflags for SocketOpts
 
-use crate::{
-    AsHandleRef, HandleRef, NullableHandle, ObjectQuery, Peered, Property, PropertyQuery, Status,
-    Topic, ok, sys,
-};
+use crate::{NullableHandle, ObjectQuery, Peered, Status, Topic, ok, sys};
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
 

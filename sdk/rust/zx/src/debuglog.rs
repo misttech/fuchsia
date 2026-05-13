@@ -4,7 +4,7 @@
 
 //! Type-safe bindings for Zircon resources.
 
-use crate::{AsHandleRef, BootInstant, HandleRef, Koid, NullableHandle, Resource, Status, ok, sys};
+use crate::{BootInstant, Koid, NullableHandle, Resource, Status, ok, sys};
 use bitflags::bitflags;
 use bstr::BStr;
 

@@ -6,10 +6,7 @@
 
 use crate::clock::Clock;
 use crate::iob::Iob;
-use crate::{
-    AsHandleRef, HandleRef, Koid, Name, NullableHandle, ObjectQuery, Status, Timeline, Topic, Vmo,
-    ok, sys,
-};
+use crate::{Koid, Name, NullableHandle, ObjectQuery, Status, Timeline, Topic, Vmo, ok, sys};
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
 use zerocopy::{FromBytes, Immutable};

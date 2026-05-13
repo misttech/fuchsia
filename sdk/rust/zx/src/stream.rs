@@ -4,10 +4,7 @@
 
 //! Type-safe bindings for Zircon stream objects.
 
-use crate::{
-    AsHandleRef, HandleRef, NullableHandle, Property, PropertyQuery, Status, StatusExt, Vmo, ok,
-    sys,
-};
+use crate::{NullableHandle, Status, StatusExt, Vmo, ok, sys};
 use bitflags::bitflags;
 use std::io::SeekFrom;
 use std::mem::MaybeUninit;

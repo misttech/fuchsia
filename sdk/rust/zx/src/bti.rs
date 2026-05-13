@@ -8,9 +8,7 @@ use bitflags::bitflags;
 use zerocopy::{FromBytes, Immutable};
 use zx_sys::zx_paddr_t;
 
-use crate::{
-    AsHandleRef, HandleRef, Iommu, NullableHandle, ObjectQuery, Pmt, Status, Topic, Vmo, ok, sys,
-};
+use crate::{Iommu, NullableHandle, ObjectQuery, Pmt, Status, Topic, Vmo, ok, sys};
 
 /// An object representing a Zircon Bus Transaction Initiator object.
 /// See [BTI Documentation](https://fuchsia.dev/fuchsia-src/reference/kernel_objects/bus_transaction_initiator) for details.

@@ -5,20 +5,20 @@
 // Implements the common traits for a Handle newtype struct
 macro_rules! impl_handle_based {
     ($type_name:path) => {
-        impl AsHandleRef for $type_name {
-            fn as_handle_ref(&self) -> HandleRef<'_> {
+        impl $crate::AsHandleRef for $type_name {
+            fn as_handle_ref(&self) -> $crate::HandleRef<'_> {
                 self.0.as_handle_ref()
             }
         }
 
-        impl From<NullableHandle> for $type_name {
-            fn from(handle: NullableHandle) -> Self {
+        impl From<$crate::NullableHandle> for $type_name {
+            fn from(handle: $crate::NullableHandle) -> Self {
                 $type_name(handle)
             }
         }
 
-        impl From<$type_name> for NullableHandle {
-            fn from(x: $type_name) -> NullableHandle {
+        impl From<$type_name> for $crate::NullableHandle {
+            fn from(x: $type_name) -> $crate::NullableHandle {
                 x.0
             }
         }
@@ -57,7 +57,7 @@ macro_rules! delegated_concrete_handle_based_impls {
         }
 
         /// Returns a [HandleRef] referring to this handle.
-        pub fn as_handle_ref(&self) -> HandleRef<'_> {
+        pub fn as_handle_ref(&self) -> $crate::HandleRef<'_> {
             self.0.as_handle_ref()
         }
 
@@ -188,14 +188,14 @@ macro_rules! unsafe_handle_properties {
     ) => {
         $(
             struct $query_tag {}
-            unsafe impl PropertyQuery for $query_tag {
-                const PROPERTY: Property = Property::$query_ty;
+            unsafe impl $crate::PropertyQuery for $query_tag {
+                const PROPERTY: $crate::Property = $crate::Property::$query_ty;
                 type PropTy = $prop_ty;
             }
 
             $(
                 impl $object_ty {
-                    pub fn $get(&self) -> Result<$prop_ty, Status> {
+                    pub fn $get(&self) -> Result<$prop_ty, $crate::Status> {
                         self.0.get_property::<$query_tag>()
                     }
                 }
@@ -203,7 +203,7 @@ macro_rules! unsafe_handle_properties {
 
             $(
                 impl $object_ty {
-                    pub fn $set(&self, val: &$prop_ty) -> Result<(), Status> {
+                    pub fn $set(&self, val: &$prop_ty) -> Result<(), $crate::Status> {
                         self.0.set_property::<$query_tag>(val)
                     }
                 }

@@ -4,10 +4,7 @@
 
 //! Type-safe bindings for Zircon event objects.
 
-use crate::{
-    AsHandleRef, HandleRef, NullableHandle, Process, Property, PropertyQuery, Status, Thread, ok,
-    sys,
-};
+use crate::{NullableHandle, Process, Status, Thread, ok, sys};
 
 /// An object representing a Zircon
 /// [exception object](https://fuchsia.dev/fuchsia-src/concepts/kernel/exceptions).

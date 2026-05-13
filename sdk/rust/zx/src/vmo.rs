@@ -5,8 +5,7 @@
 //! Type-safe bindings for Zircon vmo objects.
 
 use crate::{
-    AsHandleRef, Bti, HandleRef, Koid, Name, NullableHandle, ObjectQuery, Property, PropertyQuery,
-    Resource, Rights, Status, Topic, ok, sys,
+    Bti, Koid, Name, NullableHandle, ObjectQuery, Resource, Rights, Status, Topic, ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
