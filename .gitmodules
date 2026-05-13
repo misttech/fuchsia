@@ -738,3 +738,18 @@
 	url = https://fuchsia.googlesource.com/third_party/chromium.googlesource.com/chromium/src/components/zucchini
 	name = chromium-zucchini
 	ignore = all
+[submodule "third_party/pylibs/annotated_types/src"]
+	path = third_party/pylibs/annotated_types/src
+	url = https://fuchsia.googlesource.com/third_party/github.com/annotated-types/annotated-types
+	name = third_party/pylibs/annotated_types
+	ignore = all
+[submodule "third_party/pylibs/pydantic/src"]
+	path = third_party/pylibs/pydantic/src
+	url = https://fuchsia.googlesource.com/third_party/github.com/pydantic/pydantic
+	name = third_party/pylibs/pydantic
+	ignore = all
+[submodule "third_party/pylibs/typing_inspection/src"]
+	path = third_party/pylibs/typing_inspection/src
+	url = https://fuchsia.googlesource.com/third_party/github.com/pydantic/typing-inspection
+	name = third_party/pylibs/typing_inspection
+	ignore = all
