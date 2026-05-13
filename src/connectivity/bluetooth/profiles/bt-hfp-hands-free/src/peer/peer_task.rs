@@ -266,7 +266,8 @@ impl PeerTask {
     fn at_response_is_indicator(at_response: &AtResponse) -> bool {
         match at_response {
             AtResponse::Recognized(at::Response::Success(at::Success::Ciev { .. }))
-            | AtResponse::Recognized(at::Response::Success(at::Success::Clip { .. })) => true,
+            | AtResponse::Recognized(at::Response::Success(at::Success::Clip { .. }))
+            | AtResponse::Recognized(at::Response::Success(at::Success::Bsir { .. })) => true,
             _ => false,
         }
     }
@@ -289,6 +290,9 @@ impl PeerTask {
             // TODO(htps://fxbug.dec/135158) Handle setting phone numbers.
             AtResponse::Recognized(at::Response::Success(at::Success::Clip { .. })) => {
                 warn!("+CLIP not handled")
+            }
+            AtResponse::Recognized(at::Response::Success(at::Success::Bsir { enable })) => {
+                info!("Received BSIR: in-band ringtone enable={enable}. No-op.");
             }
             _ => warn!("Received unexpected unsolicited AT response: {:?}", at_response),
         }
@@ -596,5 +600,16 @@ mod tests {
             ))
             .await
             .expect("Failed to handle call in progress");
+    }
+
+    #[fuchsia::test]
+    async fn handle_bsir_response() {
+        let mut peer_task = create_test_peer_task().await;
+
+        // Simulate receiving BSIR response
+        let at_response =
+            AtResponse::Recognized(at::Response::Success(at::Success::Bsir { enable: true }));
+        let result = peer_task.handle_at_response(at_response);
+        assert!(result.is_ok());
     }
 }
