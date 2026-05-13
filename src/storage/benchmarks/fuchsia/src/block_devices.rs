@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use block_matcher::{BlockDeviceMatcher, Guid, create_random_guid, find_block_device};
 use fidl::endpoints::{
     DiscoverableProtocolMarker as _, Proxy, create_proxy, create_request_stream,
 };
@@ -22,9 +23,6 @@ use fuchsia_component::client::{Service, connect_to_protocol, connect_to_protoco
 use std::sync::Arc;
 use storage_benchmarks::block_device::BlockDevice;
 use storage_benchmarks::{BlockDeviceConfig, BlockDeviceFactory};
-use storage_isolated_driver_manager::{
-    BlockDeviceMatcher, Guid, create_random_guid, find_block_device,
-};
 
 const BENCHMARK_FVM_SIZE_BYTES: u64 = 160 * 1024 * 1024;
 // 8MiB is the default slice size; use it so the test FVM partition matches the performance of the

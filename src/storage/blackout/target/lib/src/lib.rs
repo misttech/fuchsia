@@ -8,6 +8,7 @@
 
 use anyhow::{Context as _, Result, anyhow};
 use async_trait::async_trait;
+use block_matcher::{BlockDeviceMatcher, Guid, create_random_guid, find_block_device, into_guid};
 use fidl_fuchsia_blackout_test::{ControllerRequest, ControllerRequestStream};
 use fidl_fuchsia_device::ControllerMarker;
 use fidl_fuchsia_io as fio;
@@ -23,9 +24,6 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::pin::pin;
 use std::sync::Arc;
-use storage_isolated_driver_manager::{
-    BlockDeviceMatcher, Guid, create_random_guid, find_block_device, into_guid,
-};
 
 pub mod random_op;
 pub mod static_tree;

@@ -17,9 +17,9 @@ rustc_library("utils") {
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-fs",
     "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_rust",
+    "//src/storage/lib/block_matcher",
     "//src/storage/lib/fs_management/rust:fs_management",
     "//src/storage/lib/ramdevice_client",
-    "//src/storage/testing/rust:storage-isolated-driver-manager",
     "//third_party/rust_crates:log",  # for recording messages
     "//third_party/rust_crates:rand",
   ]

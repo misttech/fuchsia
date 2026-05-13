@@ -24,8 +24,8 @@ rustc_library("blackout-target") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/storage/blackout/fidl/fuchsia.blackout.test:fuchsia.blackout.test_rust",
+    "//src/storage/lib/block_matcher",
     "//src/storage/lib/fs_management/rust:fs_management",
-    "//src/storage/testing/rust:storage-isolated-driver-manager",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:futures",
@@ -55,7 +55,7 @@ rustc_library("blackout-target") {
 #     "//sdk/lib/device-watcher/rust",
 #     "//src/lib/fuchsia-async",
 #     "//src/storage/lib/ramdevice_client/rust:ramdevice_client",
-#     "//src/storage/testing/rust:storage-isolated-driver-manager",
+#     "//src/storage/lib/block_matcher",
 #     "//third_party/rust_crates:uuid",
 #   ]
 

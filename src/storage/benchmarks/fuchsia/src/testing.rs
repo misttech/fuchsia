@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
+use block_matcher::create_random_guid;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block::BlockMarker;
@@ -15,7 +16,6 @@ use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use ramdevice_client::RamdiskClient;
 use storage_benchmarks::block_device::BlockDevice;
 use storage_benchmarks::{BlockDeviceConfig, BlockDeviceFactory};
-use storage_isolated_driver_manager::create_random_guid;
 
 use crate::block_devices::create_fvm_volume;
 

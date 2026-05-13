@@ -5,13 +5,13 @@
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_io as fio;
 
+pub use block_matcher::Guid;
+use block_matcher::create_random_guid;
 use fs_management::filesystem::{
     DirBasedBlockConnector, Filesystem, ServingMultiVolumeFilesystem, ServingVolume,
 };
 use fs_management::{self, Fvm};
 use ramdevice_client::{RamdiskClient, RamdiskClientBuilder};
-pub use storage_isolated_driver_manager::Guid;
-use storage_isolated_driver_manager::create_random_guid;
 use zx::{Rights, Vmo};
 
 async fn create_ramdisk(vmo: &Vmo, ramdisk_block_size: u64) -> RamdiskClient {

@@ -4,6 +4,7 @@
 
 use blob_writer::BlobWriter;
 use block_client::{BlockClient as _, RemoteBlockClient};
+use block_matcher::{BlockDeviceMatcher, find_block_device};
 use delivery_blob::{CompressionMode, Type1Blob};
 use fake_keymint::{FakeKeymint, with_keymint_service};
 use fidl_fuchsia_fs_startup::{CreateOptions, MountOptions};
@@ -28,7 +29,6 @@ use serde_json::json;
 use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
-use storage_isolated_driver_manager::{BlockDeviceMatcher, find_block_device};
 use test_vmo_backed_block_server::{VmoBackedServer, VmoBackedServerConnector};
 use uuid::Uuid;
 use zerocopy::{Immutable, IntoBytes};

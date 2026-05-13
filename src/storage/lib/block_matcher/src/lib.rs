@@ -2,16 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result, anyhow};
-use fidl_fuchsia_io as fio;
-use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy};
+use anyhow::{Context, Result};
+use fidl_fuchsia_storage_block::BlockProxy;
 use fidl_fuchsia_storage_partitions as fpartitions;
 use fs_management::filesystem::BlockConnector;
 use fs_management::format::{DiskFormat, detect_disk_format};
-use fuchsia_component::client::{ServiceInstanceStream, connect_to_protocol_at_path};
-use fuchsia_fs::directory::{WatchEvent, Watcher};
+use fuchsia_component::client::ServiceInstanceStream;
 use futures::TryStreamExt;
-use std::path::{Path, PathBuf};
 
 pub type Guid = [u8; 16];
 
@@ -94,36 +91,8 @@ async fn matches_all(partition: &BlockProxy, matchers: &[BlockDeviceMatcher<'_>]
     true
 }
 
-/// Waits for a block device to appear in `/dev/class/block` that meets all of the requirements of
-/// `matchers`. Returns the path to the matched block device.
-/// TODO(https://fxbug.dev/339491886): Remove when all clients are ported to
-/// `wait_for_block_device`.
-pub async fn wait_for_block_device_devfs(matchers: &[BlockDeviceMatcher<'_>]) -> Result<PathBuf> {
-    const DEV_CLASS_BLOCK: &str = "/dev/class/block";
-    assert!(!matchers.is_empty());
-    let block_dev_dir =
-        fuchsia_fs::directory::open_in_namespace(DEV_CLASS_BLOCK, fio::PERM_READABLE)?;
-    let mut watcher = Watcher::new(&block_dev_dir).await?;
-    while let Some(msg) = watcher.try_next().await? {
-        if msg.event != WatchEvent::ADD_FILE && msg.event != WatchEvent::EXISTING {
-            continue;
-        }
-        if msg.filename.to_str() == Some(".") {
-            continue;
-        }
-        let path = Path::new(DEV_CLASS_BLOCK).join(msg.filename);
-        let partition = connect_to_protocol_at_path::<BlockMarker>(path.to_str().unwrap())?;
-        if matches_all(&partition, matchers).await {
-            return Ok(path);
-        }
-    }
-    Err(anyhow!("Failed to wait for block device"))
-}
-
 /// Waits for the first partition service instance that meets all of the requirements of `matchers`.
 /// Returns the path to the matched block device.
-/// TODO(https://fxbug.dev/339491886): Remove when all clients are ported to
-/// `wait_for_block_device_devfs.
 pub async fn wait_for_block_device(
     matchers: &[BlockDeviceMatcher<'_>],
     mut stream: ServiceInstanceStream<fpartitions::PartitionServiceMarker>,
@@ -135,27 +104,6 @@ pub async fn wait_for_block_device(
         }
     }
     unreachable!()
-}
-
-/// Looks for a block device already in `/dev/class/block` that meets all of the requirements of
-/// `matchers`. Returns the path to the matched block device.
-/// TODO(https://fxbug.dev/339491886): Remove when all clients are ported to `find_block_device`.
-pub async fn find_block_device_devfs(matchers: &[BlockDeviceMatcher<'_>]) -> Result<PathBuf> {
-    const DEV_CLASS_BLOCK: &str = "/dev/class/block";
-    assert!(!matchers.is_empty());
-    let block_dev_dir =
-        fuchsia_fs::directory::open_in_namespace(DEV_CLASS_BLOCK, fio::PERM_READABLE)?;
-    let entries = fuchsia_fs::directory::readdir(&block_dev_dir)
-        .await
-        .context("Failed to readdir /dev/class/block")?;
-    for entry in entries {
-        let path = Path::new(DEV_CLASS_BLOCK).join(entry.name);
-        let partition = connect_to_protocol_at_path::<BlockMarker>(path.to_str().unwrap())?;
-        if matches_all(&partition, matchers).await {
-            return Ok(path);
-        }
-    }
-    Err(anyhow!("Failed to find matching block device"))
 }
 
 /// Returns the first partition in `partitions` matching all of `matchers.`  Ok(None) indicates no
