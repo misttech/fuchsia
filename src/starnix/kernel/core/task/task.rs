@@ -719,6 +719,10 @@ pub struct TaskLiveState {
 
     /// The namespace for AF_VSOCK for this task.
     pub abstract_vsock_namespace: Arc<AbstractVsockSocketNamespace>,
+
+    /// The pid directory, so it doesn't have to be generated and thrown away on every access.
+    /// See https://fxbug.dev/291962828 for details.
+    pub proc_pid_directory_cache: RcuOptionCell<FsNodeHandle>,
 }
 
 impl TaskLiveState {
@@ -954,10 +958,6 @@ pub struct Task {
 
     /// Tell you whether you are tracing syscall entry / exit without a lock.
     pub trace_syscalls: AtomicBool,
-
-    // The pid directory, so it doesn't have to be generated and thrown away on every access.
-    // See https://fxbug.dev/291962828 for details.
-    pub proc_pid_directory_cache: Mutex<Option<FsNodeHandle>>,
 }
 
 /// The decoded cross-platform parts we care about for page fault exception reports.
@@ -1108,6 +1108,7 @@ impl Task {
                     fs: RcuArc::new(fs),
                     abstract_socket_namespace,
                     abstract_vsock_namespace,
+                    proc_pid_directory_cache: Default::default(),
                 })),
                 vfork_event,
                 stop_state: AtomicStopState::new(StopState::Awake),
@@ -1137,7 +1138,6 @@ impl Task {
                 ),
                 seccomp_filter_state,
                 trace_syscalls: AtomicBool::new(false),
-                proc_pid_directory_cache: Mutex::new(None),
             };
 
             #[cfg(any(test, debug_assertions))]
@@ -1536,7 +1536,6 @@ impl Releasable for Task {
     fn release<'a>(mut self, context: Self::Context<'a>) {
         let (thread_state, locked, pids) = context;
 
-        *self.proc_pid_directory_cache.get_mut() = None;
         self.ptrace_disconnect(&pids);
 
         std::mem::drop(pids);

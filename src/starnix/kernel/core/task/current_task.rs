@@ -334,8 +334,8 @@ impl CurrentTask {
         }
         // The /proc/pid directory's ownership is updated when the task's euid
         // or egid changes. See proc(5).
-        let maybe_node = self.proc_pid_directory_cache.lock();
-        if let Some(node) = &*maybe_node {
+        let maybe_node = self.live().proc_pid_directory_cache.cloned();
+        if let Some(node) = maybe_node {
             let creds = self.real_creds().euid_as_fscred();
             // SAFETY: The /proc/pid directory held by `proc_pid_directory_cache` represents the
             // current task. It's owner and group are supposed to track the current task's euid and
