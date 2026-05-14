@@ -41,7 +41,6 @@ go_library("main") {
     "//third_party/luci-go/resultdb/sink/proto/v1:resultsink_proto_go",
     "//tools/lib/flagmisc",
     "//tools/testing/runtests",
-    "//tools/testing/testparser",
   ]
 }
 

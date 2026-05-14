@@ -39,7 +39,6 @@ if (is_host) {
       "//tools/lib/syslog:constants",
       "//tools/net/netutil:constants",
       "//tools/net/sshutil:constants",
-      "//tools/testing/testparser",
       "//tools/testing/testrunner:constants",
     ]
   }
