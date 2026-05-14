@@ -15,6 +15,7 @@ group("goldens") {
     "my-component-v2-rust",
     "my-devicetree-visitor:tests",
     "my-driver-cpp",
+    "my-driver-rust",
   ]
 }
 
@@ -27,6 +28,10 @@ group("tests") {
     ":my-component-v2-rust($host_toolchain)",
     ":my-devicetree-visitor($host_toolchain)",
     ":my-driver-cpp($host_toolchain)",
+
+    # TODO(b/512567245): Enable this test once we are able to compile it without
+    # a dead-code warning.
+    #":my-driver-rust($host_toolchain)",
   ]
   if (is_fuchsia) {
     deps += [
@@ -36,6 +41,10 @@ group("tests") {
       "my-component-v2-rust:tests",
       "my-devicetree-visitor:tests",
       "my-driver-cpp:tests",
+
+      # TODO(b/512567245): Enable this test once we are able to compile it without
+      # a dead-code warning.
+      #"my-driver-rust:tests",
     ]
   }
 }
@@ -114,6 +123,23 @@ if (is_host) {
       "my-driver-cpp/my_driver_cpp.cc",
       "my-driver-cpp/my_driver_cpp.h",
       "my-driver-cpp/tests/my_driver_cpp_test.cc",
+    ]
+  }
+
+  # Create a Rust driver project named `my-driver-rust` and
+  # compare its file contents to the golden project of the same name.
+  golden_test("my-driver-rust") {
+    project_type = "driver"
+    language = "rust"
+    year = "2026"
+    golden_files = [
+      "my-driver-rust/BUILD.gn",
+      "my-driver-rust/BUILD.bazel",
+      "my-driver-rust/README.md",
+      "my-driver-rust/meta/my_driver_rust.bind",
+      "my-driver-rust/meta/my_driver_rust.cml",
+      "my-driver-rust/meta/my_driver_rust_info.json",
+      "my-driver-rust/src/lib.rs",
     ]
   }
 
