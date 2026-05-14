@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_inputs.gni")
 import("//build/host.gni")
 import("//build/rust/rustc_binary.gni")
 
@@ -31,6 +32,11 @@ if (is_host) {
   install_host_tools("host") {
     deps = [ ":package-tool" ]
     outputs = [ "package-tool" ]
+  }
+
+  bazel_input_file("bazel_input") {
+    generator = ":package-tool"
+    outputs = [ "${root_out_dir}/package-tool" ]
   }
 
   group("host_tests") {

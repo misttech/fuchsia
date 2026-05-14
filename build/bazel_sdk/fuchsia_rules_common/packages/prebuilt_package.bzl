@@ -11,12 +11,13 @@ load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 def _relative_file_name(ctx, filename):
     return ctx.label.name + "_expanded/" + filename
 
-def unpack_prebuilt_package_impl(ctx, ffx_package, packaged_components = []):
+def unpack_prebuilt_package_impl(ctx, package_tool, package_tool_is_ffx = False, packaged_components = []):
     """Unpacks a prebuilt package archive (.far).
 
     Args:
       ctx: The rule context.
-      ffx_package: The path or file of the ffx_package tool.
+      package_tool: The path or file of the package_tool.
+      package_tool_is_ffx: If the package tool is ffx (so it can be run isolated)
       packaged_components: [list] A list of FuchsiaPackagedComponentInfo structs.
 
     Returns:
@@ -27,9 +28,6 @@ def unpack_prebuilt_package_impl(ctx, ffx_package, packaged_components = []):
 
     # where we will collect all of the temporary files
     pkg_dir = ctx.label.name + "_pkg/"
-
-    # An environment variable that creates an isolated FFX instance.
-    ffx_isolate_dir = ctx.actions.declare_directory(pkg_dir + "_package.ffx")
 
     # Technical note: `ffx package archive extract` below will populate its
     # output directory with multiple files whose name are content hashes and
@@ -82,28 +80,37 @@ def unpack_prebuilt_package_impl(ctx, ffx_package, packaged_components = []):
     #
     output_dir = ctx.actions.declare_directory(_relative_file_name(ctx, "content"))
     output_files.append(output_dir)
+    outputs = [output_dir]
+
+    args = []
+
+    if (package_tool_is_ffx):
+        # An environment variable that creates an isolated FFX instance.
+        ffx_isolate_dir = ctx.actions.declare_directory(pkg_dir + "_package.ffx")
+        args += [
+            "--isolate-dir",
+            ffx_isolate_dir.path,
+        ]
+        outputs.append(ffx_isolate_dir)
+
+    args += [
+        "package",
+        "archive",
+        "extract",
+        far_archive.path,
+        "-o",
+        output_dir.path,
+        "--repository",
+        "fuchsia.com",
+    ]
 
     # extract the package
     ctx.actions.run(
-        executable = ffx_package,
-        arguments = [
-            "--isolate-dir",
-            ffx_isolate_dir.path,
-            "package",
-            "archive",
-            "extract",
-            far_archive.path,
-            "-o",
-            output_dir.path,
-            "--repository",
-            "fuchsia.com",
-        ],
+        executable = package_tool,
+        arguments = args,
         inputs = [far_archive],
-        outputs = [
-            output_dir,
-            ffx_isolate_dir,
-        ],
-        mnemonic = "FuchsiaFfxPackageArchiveExtract",
+        outputs = outputs,
+        mnemonic = "FuchsiaPackageArchiveExtract",
         progress_message = "extracting the package for %{label}",
         **LOCAL_ONLY_ACTION_KWARGS
     )
@@ -120,7 +127,7 @@ def unpack_prebuilt_package_impl(ctx, ffx_package, packaged_components = []):
             "--updated-package-manifest",
             rebased_package_manifest_json.path,
         ],
-        mnemonic = "ExtractPrebuiltPackage",
+        mnemonic = "RebasePrebuiltPackageManifest",
         **LOCAL_ONLY_ACTION_KWARGS
     )
     output_files.append(rebased_package_manifest_json)

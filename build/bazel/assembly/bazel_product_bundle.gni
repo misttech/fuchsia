@@ -8,6 +8,7 @@ import("//build/bazel/bazel_build_group.gni")
 import("//build/sdk/product_bundle_transfer_manifest.gni")
 import("//sdk/config.gni")
 import("//src/sys/pkg/bin/package-tool/package-tool.gni")
+import("assembly_bazel_inputs.gni")
 
 # A GN wrapper for a Bazel product bundle target. From GN's perspective, the
 # output product bundle is opaque (only a manifest file containing paths to the
@@ -190,7 +191,8 @@ template("bazel_product_bundle") {
   }
 
   # The bazel inputs for all of the bazel actions described by this template.
-  _bazel_inputs = []
+  # We start with the tools that are assumed to be needed by all product bundles.
+  _bazel_inputs = product_bundle_tools_bazel_inputs
 
   # See if there are any developer overrides enabled for this target, and
   # if so, pass them to assembly.

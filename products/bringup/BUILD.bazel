@@ -6,7 +6,6 @@ load("@fuchsia_build_info//:args.bzl", "build_info_version")
 load(
     "@rules_fuchsia//fuchsia:assembly.bzl",
     "BUILD_TYPES",
-    "fuchsia_prebuilt_package",
     "fuchsia_product",
     "fuchsia_product_bundle",
     "fuchsia_product_configuration",
@@ -14,6 +13,10 @@ load(
 load(
     "//build/bazel/rules/assembly:product_configuration.bzl",
     internal_product_configuration = "product_configuration",
+)
+load(
+    "//build/bazel/rules/packages:prebuilt_package.bzl",
+    "prebuilt_package",
 )
 
 package(default_visibility = ["//visibility:public"])
@@ -61,7 +64,7 @@ internal_product_configuration(
     version = build_info_version,
 )
 
-fuchsia_prebuilt_package(
+prebuilt_package(
     name = "bootfs_test_files_package",
     archive = "@gn_targets//products/bringup:bootfs_test_files_package",
 )

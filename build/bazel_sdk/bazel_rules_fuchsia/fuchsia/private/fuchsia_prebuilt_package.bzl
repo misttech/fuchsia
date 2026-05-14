@@ -58,7 +58,8 @@ def _unpack_prebuilt_package_impl(ctx):
 
     return unpack_prebuilt_package_impl(
         ctx,
-        ffx_package = sdk.ffx_package,
+        package_tool = sdk.ffx_package,
+        package_tool_is_ffx = True,
         packaged_components = _make_component_info(ctx),
     )
 
