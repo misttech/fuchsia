@@ -582,3 +582,5 @@ toc:
     path: /docs/contribute/governance/rfcs/0281_architectural_exceptions_and_job_debugger_exception_channels.md
   - title: "RFC-0282: Zircon membarrier API"
     path: /docs/contribute/governance/rfcs/0282_zircon_membarrier.md
+  - title: "RFC-0283: Add support for C++23"
+    path: /docs/contribute/governance/rfcs/0283_add_support_for_c++23.md

@@ -3717,3 +3717,16 @@
   reviewers: ['travisg@google.com', 'maniscalco@google.com','mcgrathr@google.com']
   submitted: '2025-09-12'
   reviewed: '2026-05-04'
+
+- name: 'RFC-0283'
+  title: 'Add support for C++23'
+  short_description: 'Update the Fuchsia tree C++ version to C++23 and expand supported SDK C++ versions to include C++23'
+  authors: ['ianloic@google.com']
+  file: '0283_add_support_for_c++23.md'
+  area: ['Languages and Libraries', 'Toolchain']
+  issue: ['459923005']
+  gerrit_change_id: ['1546603']
+  status: 'Accepted'
+  reviewers: ['mcgrathr@google.com', 'phosek@google.com']
+  submitted: '2026-03-19'
+  reviewed: '2026-05-05'
