@@ -145,6 +145,7 @@ class Daemon:
         self.zxdb_reader: asyncio.StreamReader | None = None
         self.port = port
         self.connect_to_existing = connect_to_existing
+        self.active_processes: dict[int, str] = {}
         self.dap_proc: AsyncCommand | None = None
         self.ready_fd = ready_fd
 
@@ -247,7 +248,10 @@ class Daemon:
                         "name": t.name,
                     }
                 )
-            return Response(success=True, body={"threads": threads})
+            return Response(
+                success=True,
+                body={"threads": threads, "processes": self.active_processes},
+            )
         except Exception as e:
             return Response(
                 success=False, message=f"Failed to get threads: {e}"
@@ -604,6 +608,15 @@ class Daemon:
             elif event.get("event") == "continued":
                 thread_id = event.get("body", {}).get("threadId")
                 self.stopped_threads.discard(thread_id)
+            elif event.get("event") == "process":
+                body = event.get("body", {})
+                pid = body.get("systemProcessId")
+                name = body.get("name")
+                if pid is not None:
+                    self.active_processes[pid] = name
+            elif event.get("event") in ("exited", "terminated"):
+                # Assume single process for now, clear all.
+                self.active_processes.clear()
 
             # Only enqueue and sequence allowed events for surfacing to the CLI client
             if event.get("event") in allowed_events:

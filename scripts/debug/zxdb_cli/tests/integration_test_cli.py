@@ -165,6 +165,43 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
                         )
                         writer.write(resp_header + resp_body)
                         await writer.drain()
+                    elif req.get("command") == "attach":
+                        resp = {
+                            "seq": req["seq"],
+                            "type": "response",
+                            "request_seq": req["seq"],
+                            "success": True,
+                            "command": "attach",
+                        }
+                        resp_body = json.dumps(resp).encode("utf-8")
+                        resp_header = (
+                            f"Content-Length: {len(resp_body)}\r\n\r\n".encode(
+                                "utf-8"
+                            )
+                        )
+                        writer.write(resp_header + resp_body)
+                        await writer.drain()
+
+                        # Simulate process event
+                        event = {
+                            "seq": req["seq"] + 1,
+                            "type": "event",
+                            "event": "process",
+                            "body": {
+                                "name": "test_process",
+                                "systemProcessId": 1234,
+                                "isLocalProcess": False,
+                                "startMethod": "attach",
+                            },
+                        }
+                        event_body = json.dumps(event).encode("utf-8")
+                        event_header = (
+                            f"Content-Length: {len(event_body)}\r\n\r\n".encode(
+                                "utf-8"
+                            )
+                        )
+                        writer.write(event_header + event_body)
+                        await writer.drain()
             except (asyncio.IncompleteReadError, ConnectionResetError):
                 pass
             finally:
@@ -418,6 +455,59 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             if proc.poll() is None:
                 proc.terminate()
                 proc.wait()
+
+    async def test_process_event(self) -> None:
+        proc, _port = await self._setup_daemon_and_server()
+
+        try:
+            # Trigger a process event by sending attach command
+            exit_code = await main(["attach", "test_process"])
+            self.assertEqual(exit_code, 0)
+
+            # Capture stdout to read the JSON response from wait-for-event
+            saved_stdout = sys.stdout
+            try:
+                out = StringIO()
+                sys.stdout = out
+
+                # Give daemon time to process the event
+                await asyncio.sleep(0.1)
+
+                exit_code = await main(
+                    ["wait-for-event", "--last-seen-seq", "0"]
+                )
+                self.assertEqual(exit_code, 0)
+
+                output = out.getvalue().strip()
+            finally:
+                sys.stdout = saved_stdout
+
+            # Parse output
+            resp = json.loads(output)
+            self.assertTrue(resp.get("success"))
+            events = resp.get("events", [])
+            self.assertGreater(len(events), 0)
+
+            # Find process event
+            process_event = None
+            for event in events:
+                if event.get("event") == "process":
+                    process_event = event
+                    break
+
+            self.assertIsNotNone(
+                process_event, "Process event was not received"
+            )
+            assert process_event is not None
+            self.assertEqual(process_event["body"]["systemProcessId"], 1234)
+            self.assertEqual(process_event["body"]["name"], "test_process")
+
+            # Stop via CLI
+            exit_code = await main(["stop"])
+            self.assertEqual(exit_code, 0)
+
+        finally:
+            await _cleanup_process_group(proc)
 
 
 if __name__ == "__main__":
