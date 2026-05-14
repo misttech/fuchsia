@@ -642,4 +642,346 @@ TEST(ExtendedPstate, Signals) {
   ASSERT_TRUE(helper.WaitForChildren());
 }
 
+// Verify that FP/SIMD registers are preserved across recoverable page faults (stack growth).
+TEST(ExtendedPstate, StackGrowth) {
+  // Run in a child to ensure only the one test thread is mutating the address space.
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+
+    // Find a 4-page "opening" in the address space that a 2-page mapping can grow into by making it
+    // ourselves. Since we're the only thread, we know that mapping and then immediately unmapping
+    // will leave the space reserved.
+    void* base_addr = mmap(nullptr, 4 * page_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ASSERT_NE(base_addr, MAP_FAILED);
+    SAFE_SYSCALL(munmap(base_addr, 4 * page_size));
+
+    // Start our down-growing mapping in the middle of the reserved space.
+    void* grow_low =
+        mmap(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(base_addr) + (2 * page_size)),
+             2 * page_size, PROT_READ | PROT_WRITE,
+             MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_GROWSDOWN, -1, 0);
+    ASSERT_NE(grow_low, MAP_FAILED);
+
+    RegistersValue kTestRegisters;
+#if defined(__x86_64__)
+    for (int i = 0; i < 16; ++i) {
+      kTestRegisters.xmm[i] =
+          (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64) | (0x090a0b0c0d0e0f10ULL + i);
+    }
+#elif defined(__arm__)
+    for (int i = 0; i < 32; ++i) {
+      kTestRegisters.d[i] = 0x0102030405060708ULL + i;
+    }
+#elif defined(__aarch64__)
+    for (int i = 0; i < 32; ++i) {
+      kTestRegisters.q[i] =
+          (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64) | (0x0901020304050607ULL + i);
+    }
+#elif defined(__riscv)
+    for (int i = 0; i < 32; ++i) {
+      kTestRegisters.f[i] = 0x0102030405060708ULL + i;
+      kTestRegisters.v[i] =
+          (static_cast<__uint128_t>(0x0102030405060708ULL + i) << 64) | (0x0901020304050607ULL + i);
+    }
+#endif
+
+    volatile char* trigger_addr =
+        reinterpret_cast<volatile char*>(reinterpret_cast<uintptr_t>(grow_low) - page_size);
+
+#if defined(__x86_64__)
+    RegistersValue actual_registers;
+    asm volatile(
+        "movups   0(%1), %%xmm0\n"
+        "movups  16(%1), %%xmm1\n"
+        "movups  32(%1), %%xmm2\n"
+        "movups  48(%1), %%xmm3\n"
+        "movups  64(%1), %%xmm4\n"
+        "movups  80(%1), %%xmm5\n"
+        "movups  96(%1), %%xmm6\n"
+        "movups 112(%1), %%xmm7\n"
+        "movups 128(%1), %%xmm8\n"
+        "movups 144(%1), %%xmm9\n"
+        "movups 160(%1), %%xmm10\n"
+        "movups 176(%1), %%xmm11\n"
+        "movups 192(%1), %%xmm12\n"
+        "movups 208(%1), %%xmm13\n"
+        "movups 224(%1), %%xmm14\n"
+        "movups 240(%1), %%xmm15\n"
+
+        "movb $42, (%0)\n"
+
+        "movups %%xmm0,   0(%2)\n"
+        "movups %%xmm1,  16(%2)\n"
+        "movups %%xmm2,  32(%2)\n"
+        "movups %%xmm3,  48(%2)\n"
+        "movups %%xmm4,  64(%2)\n"
+        "movups %%xmm5,  80(%2)\n"
+        "movups %%xmm6,  96(%2)\n"
+        "movups %%xmm7, 112(%2)\n"
+        "movups %%xmm8, 128(%2)\n"
+        "movups %%xmm9, 144(%2)\n"
+        "movups %%xmm10, 160(%2)\n"
+        "movups %%xmm11, 176(%2)\n"
+        "movups %%xmm12, 192(%2)\n"
+        "movups %%xmm13, 208(%2)\n"
+        "movups %%xmm14, 224(%2)\n"
+        "movups %%xmm15, 240(%2)\n"
+        :
+        : "r"(trigger_addr), "r"(&kTestRegisters), "r"(&actual_registers)
+        : "memory");
+    EXPECT_EQ(actual_registers, kTestRegisters);
+#elif defined(__arm__)
+    RegistersValue actual_registers;
+    asm volatile(
+        "vldr d0, [%1, #0]\n"
+        "vldr d1, [%1, #8]\n"
+        "vldr d2, [%1, #16]\n"
+        "vldr d3, [%1, #24]\n"
+        "vldr d4, [%1, #32]\n"
+        "vldr d5, [%1, #40]\n"
+        "vldr d6, [%1, #48]\n"
+        "vldr d7, [%1, #56]\n"
+        "vldr d8, [%1, #64]\n"
+        "vldr d9, [%1, #72]\n"
+        "vldr d10, [%1, #80]\n"
+        "vldr d11, [%1, #88]\n"
+        "vldr d12, [%1, #96]\n"
+        "vldr d13, [%1, #104]\n"
+        "vldr d14, [%1, #112]\n"
+        "vldr d15, [%1, #120]\n"
+        "vldr d16, [%1, #128]\n"
+        "vldr d17, [%1, #136]\n"
+        "vldr d18, [%1, #144]\n"
+        "vldr d19, [%1, #152]\n"
+        "vldr d20, [%1, #160]\n"
+        "vldr d21, [%1, #168]\n"
+        "vldr d22, [%1, #176]\n"
+        "vldr d23, [%1, #184]\n"
+        "vldr d24, [%1, #192]\n"
+        "vldr d25, [%1, #200]\n"
+        "vldr d26, [%1, #208]\n"
+        "vldr d27, [%1, #216]\n"
+        "vldr d28, [%1, #224]\n"
+        "vldr d29, [%1, #232]\n"
+        "vldr d30, [%1, #240]\n"
+        "vldr d31, [%1, #248]\n"
+
+        "strb %[val], [%0]\n"
+
+        "vstr d0, [%2, #0]\n"
+        "vstr d1, [%2, #8]\n"
+        "vstr d2, [%2, #16]\n"
+        "vstr d3, [%2, #24]\n"
+        "vstr d4, [%2, #32]\n"
+        "vstr d5, [%2, #40]\n"
+        "vstr d6, [%2, #48]\n"
+        "vstr d7, [%2, #56]\n"
+        "vstr d8, [%2, #64]\n"
+        "vstr d9, [%2, #72]\n"
+        "vstr d10, [%2, #80]\n"
+        "vstr d11, [%2, #88]\n"
+        "vstr d12, [%2, #96]\n"
+        "vstr d13, [%2, #104]\n"
+        "vstr d14, [%2, #112]\n"
+        "vstr d15, [%2, #120]\n"
+        "vstr d16, [%2, #128]\n"
+        "vstr d17, [%2, #136]\n"
+        "vstr d18, [%2, #144]\n"
+        "vstr d19, [%2, #152]\n"
+        "vstr d20, [%2, #160]\n"
+        "vstr d21, [%2, #168]\n"
+        "vstr d22, [%2, #176]\n"
+        "vstr d23, [%2, #184]\n"
+        "vstr d24, [%2, #192]\n"
+        "vstr d25, [%2, #200]\n"
+        "vstr d26, [%2, #208]\n"
+        "vstr d27, [%2, #216]\n"
+        "vstr d28, [%2, #224]\n"
+        "vstr d29, [%2, #232]\n"
+        "vstr d30, [%2, #240]\n"
+        "vstr d31, [%2, #248]\n"
+        :
+        : "r"(trigger_addr), "r"(&kTestRegisters), "r"(&actual_registers), [val] "r"(42)
+        : "memory");
+    EXPECT_EQ(actual_registers, kTestRegisters);
+#elif defined(__aarch64__)
+    RegistersValue actual_registers;
+    asm volatile(
+        "ldr q0, [%1, #0]\n"
+        "ldr q1, [%1, #16]\n"
+        "ldr q2, [%1, #32]\n"
+        "ldr q3, [%1, #48]\n"
+        "ldr q4, [%1, #64]\n"
+        "ldr q5, [%1, #80]\n"
+        "ldr q6, [%1, #96]\n"
+        "ldr q7, [%1, #112]\n"
+        "ldr q8, [%1, #128]\n"
+        "ldr q9, [%1, #144]\n"
+        "ldr q10, [%1, #160]\n"
+        "ldr q11, [%1, #176]\n"
+        "ldr q12, [%1, #192]\n"
+        "ldr q13, [%1, #208]\n"
+        "ldr q14, [%1, #224]\n"
+        "ldr q15, [%1, #240]\n"
+        "ldr q16, [%1, #256]\n"
+        "ldr q17, [%1, #272]\n"
+        "ldr q18, [%1, #288]\n"
+        "ldr q19, [%1, #304]\n"
+        "ldr q20, [%1, #320]\n"
+        "ldr q21, [%1, #336]\n"
+        "ldr q22, [%1, #352]\n"
+        "ldr q23, [%1, #368]\n"
+        "ldr q24, [%1, #384]\n"
+        "ldr q25, [%1, #400]\n"
+        "ldr q26, [%1, #416]\n"
+        "ldr q27, [%1, #432]\n"
+        "ldr q28, [%1, #448]\n"
+        "ldr q29, [%1, #464]\n"
+        "ldr q30, [%1, #480]\n"
+        "ldr q31, [%1, #496]\n"
+
+        "strb %w3, [%0]\n"
+
+        "str q0, [%2, #0]\n"
+        "str q1, [%2, #16]\n"
+        "str q2, [%2, #32]\n"
+        "str q3, [%2, #48]\n"
+        "str q4, [%2, #64]\n"
+        "str q5, [%2, #80]\n"
+        "str q6, [%2, #96]\n"
+        "str q7, [%2, #112]\n"
+        "str q8, [%2, #128]\n"
+        "str q9, [%2, #144]\n"
+        "str q10, [%2, #160]\n"
+        "str q11, [%2, #176]\n"
+        "str q12, [%2, #192]\n"
+        "str q13, [%2, #208]\n"
+        "str q14, [%2, #224]\n"
+        "str q15, [%2, #240]\n"
+        "str q16, [%2, #256]\n"
+        "str q17, [%2, #272]\n"
+        "str q18, [%2, #288]\n"
+        "str q19, [%2, #304]\n"
+        "str q20, [%2, #320]\n"
+        "str q21, [%2, #336]\n"
+        "str q22, [%2, #352]\n"
+        "str q23, [%2, #368]\n"
+        "str q24, [%2, #384]\n"
+        "str q25, [%2, #400]\n"
+        "str q26, [%2, #416]\n"
+        "str q27, [%2, #432]\n"
+        "str q28, [%2, #448]\n"
+        "str q29, [%2, #464]\n"
+        "str q30, [%2, #480]\n"
+        "str q31, [%2, #496]\n"
+        :
+        : "r"(trigger_addr), "r"(&kTestRegisters), "r"(&actual_registers), "r"(42)
+        : "memory");
+    EXPECT_EQ(actual_registers, kTestRegisters);
+#elif defined(__riscv)
+    RegistersValue actual_registers;
+    asm volatile(
+        "fld f0, 0(%1)\n"
+        "fld f1, 8(%1)\n"
+        "fld f2, 16(%1)\n"
+        "fld f3, 24(%1)\n"
+        "fld f4, 32(%1)\n"
+        "fld f5, 40(%1)\n"
+        "fld f6, 48(%1)\n"
+        "fld f7, 56(%1)\n"
+        "fld f8, 64(%1)\n"
+        "fld f9, 72(%1)\n"
+        "fld f10, 80(%1)\n"
+        "fld f11, 88(%1)\n"
+        "fld f12, 96(%1)\n"
+        "fld f13, 104(%1)\n"
+        "fld f14, 112(%1)\n"
+        "fld f15, 120(%1)\n"
+        "fld f16, 128(%1)\n"
+        "fld f17, 136(%1)\n"
+        "fld f18, 144(%1)\n"
+        "fld f19, 152(%1)\n"
+        "fld f20, 160(%1)\n"
+        "fld f21, 168(%1)\n"
+        "fld f22, 176(%1)\n"
+        "fld f23, 184(%1)\n"
+        "fld f24, 192(%1)\n"
+        "fld f25, 200(%1)\n"
+        "fld f26, 208(%1)\n"
+        "fld f27, 216(%1)\n"
+        "fld f28, 224(%1)\n"
+        "fld f29, 232(%1)\n"
+        "fld f30, 240(%1)\n"
+        "fld f31, 248(%1)\n"
+        "addi %[ptr], %[ptr], 256\n"
+        "csrr t0, vlenb\n"
+        "slli t0, t0, 3\n"
+        "vl8r.v v0, (%[ptr])\n"
+        "add %[ptr], %[ptr], t0\n"
+        "vl8r.v v8, (%[ptr])\n"
+        "add %[ptr], %[ptr], t0\n"
+        "vl8r.v v16, (%[ptr])\n"
+        "add %[ptr], %[ptr], t0\n"
+        "vl8r.v v24, (%[ptr])\n"
+
+        "sb %[val], (%0)\n"
+
+        "fsd f0, 0(%2)\n"
+        "fsd f1, 8(%2)\n"
+        "fsd f2, 16(%2)\n"
+        "fsd f3, 24(%2)\n"
+        "fsd f4, 32(%2)\n"
+        "fsd f5, 40(%2)\n"
+        "fsd f6, 48(%2)\n"
+        "fsd f7, 56(%2)\n"
+        "fsd f8, 64(%2)\n"
+        "fsd f9, 72(%2)\n"
+        "fsd f10, 80(%2)\n"
+        "fsd f11, 88(%2)\n"
+        "fsd f12, 96(%2)\n"
+        "fsd f13, 104(%2)\n"
+        "fsd f14, 112(%2)\n"
+        "fsd f15, 120(%2)\n"
+        "fsd f16, 128(%2)\n"
+        "fsd f17, 136(%2)\n"
+        "fsd f18, 144(%2)\n"
+        "fsd f19, 152(%2)\n"
+        "fsd f20, 160(%2)\n"
+        "fsd f21, 168(%2)\n"
+        "fsd f22, 176(%2)\n"
+        "fsd f23, 184(%2)\n"
+        "fsd f24, 192(%2)\n"
+        "fsd f25, 200(%2)\n"
+        "fsd f26, 208(%2)\n"
+        "fsd f27, 216(%2)\n"
+        "fsd f28, 224(%2)\n"
+        "fsd f29, 232(%2)\n"
+        "fsd f30, 240(%2)\n"
+        "fsd f31, 248(%2)\n"
+        "addi %[out_ptr], %[out_ptr], 256\n"
+        "vs8r.v v0, (%[out_ptr])\n"
+        "add %[out_ptr], %[out_ptr], t0\n"
+        "vs8r.v v8, (%[out_ptr])\n"
+        "add %[out_ptr], %[out_ptr], t0\n"
+        "vs8r.v v16, (%[out_ptr])\n"
+        "add %[out_ptr], %[out_ptr], t0\n"
+        "vs8r.v v24, (%[out_ptr])\n"
+        :
+        : "r"(trigger_addr), [ptr] "r"(&kTestRegisters), [out_ptr] "r"(&actual_registers),
+          [val] "r"(42)
+        : "memory", "t0");
+    EXPECT_EQ(actual_registers, kTestRegisters);
+#endif
+
+    // Verify that the mapping grew by trying to map onto trigger_addr with MAP_FIXED_NOREPLACE.
+    // It should fail with EEXIST because the page is now mapped.
+    void* rv = mmap(const_cast<char*>(trigger_addr), page_size, PROT_READ,
+                    MAP_FIXED_NOREPLACE | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    EXPECT_EQ(rv, MAP_FAILED);
+    EXPECT_EQ(errno, EEXIST);
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
 }  // namespace
