@@ -264,10 +264,6 @@ void Nvme::QueueIoCommand(IoCommand* io_cmd) {
 
 void Nvme::Stop(fdf::StopCompleter completer) {
   fdf::debug("Preparing to stop driver.");
-  {
-    std::lock_guard<std::mutex> lock(commands_lock_);
-    driver_shutdown_ = true;
-  }
 
   if (namespaces_.empty()) {
     PerformTeardown();
@@ -295,6 +291,10 @@ void Nvme::Stop(fdf::StopCompleter completer) {
 }
 
 void Nvme::PerformTeardown() {
+  {
+    std::lock_guard<std::mutex> lock(commands_lock_);
+    driver_shutdown_ = true;
+  }
   if (pci_.is_valid()) {
     pci_.SetBusMastering(false);
   }

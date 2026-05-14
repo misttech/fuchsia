@@ -319,6 +319,57 @@ TEST_F(NvmeTeardownTest, TeardownWithActiveClient) {
   t.join();
 }
 
+TEST_F(NvmeTeardownTest, TeardownWithPendingRequest) {
+  fake_nvme::FakeNamespace fake_ns;
+  TestNvme::controller_.AddNamespace(1, fake_ns);
+
+  libsync::Completion unblock;
+  libsync::Completion in_flight;
+  // Start a command which blocks, so the driver cannot issue any other commands.
+  TestNvme::controller_.AddIoCommand(
+      IoCommandOpcode::kRead,
+      [&](Submission& submission, const TransactionData& data, Completion& completion) {
+        in_flight.Signal();
+        unblock.Wait();
+        completion.set_status_code_type(StatusCodeType::kGeneric)
+            .set_status_code(GenericStatus::kSuccess);
+      });
+  driver_test().runtime().StartBackgroundDispatcher();
+
+  ASSERT_NO_FATAL_FAILURE(StartDriver());
+
+  auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+  driver_test().RunInDriverContext([&volume_server](TestNvme& driver) mutable {
+    Namespace* ns = driver.namespaces()[0].get();
+    ns->ServeRequests(std::move(volume_server));
+  });
+
+  zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> device =
+      block_client::RemoteBlockDevice::Create(std::move(volume_client));
+  ASSERT_OK(device);
+
+  block_client::ReaderWriter client(*device.value());
+
+  std::thread t([&]() {
+    uint8_t buffer[512];
+    [[maybe_unused]] zx_status_t status = client.Read(0, sizeof(buffer), buffer);
+  });
+
+  // Wait for the blocking command to reach the hardware.
+  in_flight.Wait();
+
+  std::thread unblock_thread([&]() {
+    // Give StopDriver() time to reach ns->StopBlockServer() and block_server_->DestroyAsync().
+    zx::nanosleep(zx::deadline_after(zx::msec(50)));
+    unblock.Signal();
+  });
+
+  EXPECT_OK(driver_test().StopDriver());
+
+  unblock_thread.join();
+  t.join();
+}
+
 TEST_F(NvmeTest, IoPushback) {
   fake_nvme::FakeNamespace fake_ns;
   TestNvme::controller_.AddNamespace(1, fake_ns);
