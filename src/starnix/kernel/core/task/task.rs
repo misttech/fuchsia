@@ -12,9 +12,9 @@ use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::tracing::KoidPair;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, EventHandler, Kernel,
-    NormalPriority, PidTable, ProcessEntryRef, ProcessExitInfo, RealtimePriority, SchedulerState,
-    SchedulingPolicy, SeccompFilterContainer, SeccompState, SeccompStateValue, ThreadGroup,
-    ThreadGroupKey, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess,
+    NormalPriority, ProcessExitInfo, RealtimePriority, SchedulerState, SchedulingPolicy,
+    SeccompFilterContainer, SeccompState, SeccompStateValue, ThreadGroup, ThreadGroupKey,
+    ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess,
 };
 use crate::vfs::{FdTable, FsContext, FsNodeHandle, FsString};
 use atomic_bitflags::atomic_bitflags;
@@ -1031,17 +1031,18 @@ impl Task {
         }
     }
 
-    /// Disconnects this task from the tracer, if the tracer is still running.
-    pub fn ptrace_disconnect(&mut self, pids: &PidTable) {
-        let mut state = self.write();
-        let ptracer_pid = state.ptrace.as_ref().map(|ptrace| ptrace.get_pid());
-        if let Some(ptracer_pid) = ptracer_pid {
-            let _ = state.set_ptrace(None);
-            if let Some(ProcessEntryRef::Process(tg)) = pids.get_process(ptracer_pid) {
-                let tid = self.get_tid();
-                drop(state);
-                tg.ptracees.lock().remove(&tid);
-            }
+    /// Disconnects this task from the tracer.
+    pub fn ptrace_disconnect(&self) {
+        // Get a reference to the ptracer thread group through the weak reference in PtraceCoreState
+        // to avoid acquiring a PidTable lock.
+        let tracer_tg = self
+            .read()
+            .ptrace
+            .as_ref()
+            .map(|p| p.core_state.thread_group.clone())
+            .and_then(|tg| tg.upgrade());
+        if let Some(tg) = tracer_tg {
+            tg.ptracees.lock().remove(&self.tid);
         }
     }
 
@@ -1527,18 +1528,12 @@ impl Task {
 }
 
 impl Releasable for Task {
-    type Context<'a> = (
-        ThreadState<RegisterStorageEnum>,
-        &'a mut Locked<TaskRelease>,
-        RwLockWriteGuard<'a, PidTable>,
-    );
+    type Context<'a> = (ThreadState<RegisterStorageEnum>, &'a mut Locked<TaskRelease>);
 
-    fn release<'a>(mut self, context: Self::Context<'a>) {
-        let (thread_state, locked, pids) = context;
+    fn release<'a>(self, context: Self::Context<'a>) {
+        let (thread_state, locked) = context;
 
-        self.ptrace_disconnect(&pids);
-
-        std::mem::drop(pids);
+        self.ptrace_disconnect();
 
         self.signal_vfork();
 

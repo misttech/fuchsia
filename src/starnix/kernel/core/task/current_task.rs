@@ -109,8 +109,9 @@ impl Releasable for TaskBuilder {
         // Moreover, this requires a OwnedRef of the task to ensure the tasks of
         // the thread group are always valid.
         self.task.thread_group().remove(locked, &mut pids, &self.task);
+        drop(pids);
 
-        let context = (self.thread_state.into(), locked, pids);
+        let context = (self.thread_state.into(), locked);
         self.task.release(context);
     }
 }
@@ -187,8 +188,9 @@ impl Releasable for CurrentTask {
         // Moreover, this requires a OwnedRef of the task to ensure the tasks of
         // the thread group are always valid.
         self.task.thread_group().remove(locked, &mut pids, &self.task);
+        drop(pids);
 
-        let context = (self.thread_state, locked, pids);
+        let context = (self.thread_state, locked);
         self.task.release(context);
     }
 }
