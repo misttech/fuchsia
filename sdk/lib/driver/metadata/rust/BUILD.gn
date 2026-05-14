@@ -16,6 +16,7 @@ rustc_library("rust") {
     "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust",
     "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust_next",
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust",
+    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
     "//sdk/lib/driver/component/rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",

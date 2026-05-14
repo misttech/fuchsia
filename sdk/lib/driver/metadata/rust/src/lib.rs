@@ -8,6 +8,7 @@ use fdf_component::ServiceOffer;
 use fidl_fuchsia_driver_framework as fdf;
 use fidl_next::{Responder, ServerEnd};
 use fidl_next_fuchsia_driver_metadata as fmetadata;
+use fidl_next_fuchsia_hardware_platform_device as fdevice_next;
 use fuchsia_async as fasync;
 use fuchsia_component::server::{ServiceFs, ServiceObjTrait};
 use std::sync::Arc;
@@ -38,6 +39,19 @@ impl MetadataServer {
             .await
             .map_err(|_| zx::Status::INTERNAL)?
             .map_err(zx::Status::from_raw)?;
+        Ok(Self { data: Some(Arc::new(data)), name: self.name })
+    }
+
+    pub async fn forward_from_pdev_next(
+        self,
+        pdev: &fidl_next::Client<fdevice_next::Device>,
+    ) -> Result<Self, zx::Status> {
+        let metadata_res = pdev.get_metadata(&self.name).await.map_err(|_| zx::Status::INTERNAL)?;
+        let data = match metadata_res {
+            fidl_next::FlexibleResult::Ok(resp) => resp.metadata,
+            fidl_next::FlexibleResult::Err(e) => return Err(zx::Status::from_raw(e)),
+            fidl_next::FlexibleResult::FrameworkErr(_) => return Err(zx::Status::INTERNAL),
+        };
         Ok(Self { data: Some(Arc::new(data)), name: self.name })
     }
 
