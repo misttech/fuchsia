@@ -132,7 +132,7 @@ impl LogsRepository {
                 let archivist_container = mutable_state.create_log_container(
                     Arc::new(ComponentIdentity::new(
                         ExtendedMoniker::ComponentInstance(m.clone()),
-                        "fuchsia-pkg://UNKNOWN",
+                        "fuchsia-boot:///archivist#meta/archivist.cm",
                     )),
                     &shared_buffer,
                     Weak::clone(me),
