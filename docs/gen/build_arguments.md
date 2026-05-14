@@ -393,7 +393,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:195
+From //build/bazel/bazel_root_targets_list.gni:199
 
 ### bazel_upload_build_events
 
@@ -1006,7 +1006,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   lsan = {
@@ -1020,7 +1020,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -2183,6 +2183,9 @@ artifact. Schema is:
   ninja_name = "bazel_toolchains_tests_build.stamp"
 }, {
   bazel_label = "//build/tools/json_validator:json_validator_valico"
+  install_host_tool = true
+}, {
+  bazel_label = "//build/tools/json_merge"
   install_host_tool = true
 }, {
   bazel_label = "//build/tools/formatjson5"
