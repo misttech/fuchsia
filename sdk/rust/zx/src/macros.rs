@@ -17,9 +17,23 @@ macro_rules! impl_handle_based {
             }
         }
 
+        impl From<$crate::Handle> for $type_name {
+            fn from(handle: $crate::Handle) -> Self {
+                $type_name(handle.into())
+            }
+        }
+
         impl From<$type_name> for $crate::NullableHandle {
             fn from(x: $type_name) -> $crate::NullableHandle {
                 x.0
+            }
+        }
+
+        impl TryFrom<$type_name> for $crate::Handle {
+            type Error = $crate::Status;
+
+            fn try_from(x: $type_name) -> Result<$crate::Handle, Self::Error> {
+                Ok($crate::Handle::try_from(x.0)?)
             }
         }
 
@@ -46,9 +60,24 @@ macro_rules! impl_handle_based {
             }
         }
 
+        impl<$($impl_generics)*> From<$crate::Handle> for $type_name<$($ty_generics)*> {
+            fn from(handle: $crate::Handle) -> Self {
+                $type_name(handle.into(), ::std::marker::PhantomData)
+            }
+        }
+
+
         impl<$($impl_generics)*> From<$type_name<$($ty_generics)*>> for crate::NullableHandle {
             fn from(x: $type_name<$($ty_generics)*>) -> crate::NullableHandle {
                 x.0
+            }
+        }
+
+        impl<$($impl_generics)*> TryFrom<$type_name<$($ty_generics)*>> for $crate::Handle {
+            type Error = $crate::Status;
+
+            fn try_from(x: $type_name<$($ty_generics)*>) -> Result<$crate::Handle, Self::Error> {
+                Ok($crate::Handle::try_from(x.0)?)
             }
         }
 

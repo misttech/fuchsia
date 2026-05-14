@@ -63,6 +63,25 @@ impl Handle {
         Self(NonZeroU32::new(raw).unwrap())
     }
 
+    // A program which uses a handle returned from this function for anything other than being
+    // `Drop`ped may be terminated by the kernel.
+    #[doc(hidden)]
+    pub fn poison() -> Self {
+        Self(unsafe { NonZeroU32::new_unchecked(1) })
+    }
+
+    #[doc(hidden)]
+    pub fn is_poison(&self) -> bool {
+        // From https://fuchsia.dev/fuchsia-src/concepts/kernel/handles:
+        //
+        // > The integer value for a handle is any 32-bit number except the value corresponding to
+        // > `ZX_HANDLE_INVALID` which will always have the value of 0. In addition to this, the
+        // > integer value of a valid handle will always have two least significant bits of the
+        // > handle set. The mask representing these bits may be accessed using
+        // > `ZX_HANDLE_FIXED_BITS_MASK`.
+        (self.0.get() & sys::ZX_HANDLE_FIXED_BITS_MASK) != sys::ZX_HANDLE_FIXED_BITS_MASK
+    }
+
     /// Wraps the
     /// [zx_handle_check_valid](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_check_valid.md)
     /// syscall.
@@ -314,8 +333,10 @@ impl Handle {
 
 impl Drop for Handle {
     fn drop(&mut self) {
-        // SAFETY: basic FFI call.
-        unsafe { sys::zx_handle_close(self.0.get()) };
+        if !self.is_poison() {
+            // SAFETY: basic FFI call.
+            unsafe { sys::zx_handle_close(self.0.get()) };
+        }
     }
 }
 
@@ -1152,5 +1173,19 @@ mod tests {
         assert!(!rhs.is_closed().unwrap());
         drop(rhs);
         assert!(lhs.is_closed().unwrap());
+    }
+
+    #[test]
+    fn poisoned_drops_without_closing() {
+        let handle = Handle::poison();
+        assert!(handle.is_poison());
+        drop(handle);
+    }
+
+    #[test]
+    fn valid_handles_not_poisoned() {
+        let event = zx::Event::create();
+        let event: zx::Handle = event.try_into().unwrap();
+        assert!(!event.is_poison());
     }
 }

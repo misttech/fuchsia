@@ -100,6 +100,7 @@ macro_rules! multiconst {
 
 multiconst!(zx_handle_t, [
     ZX_HANDLE_INVALID = 0;
+    ZX_HANDLE_FIXED_BITS_MASK = 0x3;
 ]);
 
 multiconst!(zx_handle_op_t, [
