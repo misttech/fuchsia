@@ -43,6 +43,8 @@ def snapshot_workspace(
     copy_subdirs = [
         "integration",
         "fuchsia",
+        ".fuchsia_commit_hash",
+        ".integration_commit_hash",
     ]
 
     # Placeholders for endpoint and RPC names.
