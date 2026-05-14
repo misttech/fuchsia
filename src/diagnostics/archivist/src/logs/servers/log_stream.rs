@@ -6,7 +6,7 @@ use crate::logs::error::LogsError;
 use crate::logs::repository::LogsRepository;
 use crate::logs::shared_buffer::FilterCursor;
 use diagnostics_log_encoding::encode::{Encoder, EncoderOpts, ResizableBuffer};
-use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, Record};
+use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, MONIKER, Record, URL};
 use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, RequestStream};
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_diagnostics::StreamMode;
@@ -205,8 +205,8 @@ impl LogStreamServer {
             timestamp: zx::BootInstant::from_nanos(0),
             severity: Severity::Info.into_primitive(),
             arguments: vec![
-                Argument::other("moniker", identity.moniker.to_string()),
-                Argument::other("url", identity.url.as_str()),
+                Argument::other(MONIKER, identity.moniker.to_string()),
+                Argument::other(URL, identity.url.as_str()),
             ],
         };
         encoder.write_record(record).map_err(std::io::Error::other)?;

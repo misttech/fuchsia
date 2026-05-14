@@ -25,6 +25,8 @@ use std::string::FromUtf8Error;
 use std::time::Duration;
 use thiserror::Error;
 mod filter;
+#[cfg(not(feature = "fdomain"))]
+mod fxt_streamer;
 mod log_formatter;
 mod log_socket_stream;
 pub use log_formatter::{
@@ -32,6 +34,9 @@ pub use log_formatter::{
     TIMESTAMP_FORMAT, Timestamp, WriterContainer, dump_logs_from_socket,
 };
 pub use log_socket_stream::{JsonDeserializeError, LogsDataStream};
+
+#[cfg(not(feature = "fdomain"))]
+pub use log_formatter::dump_fxt_logs_from_socket;
 
 // Subcommand for ffx log (either watch or dump).
 #[derive(ArgsInfo, FromArgs, Clone, PartialEq, Debug)]
@@ -120,6 +125,26 @@ impl std::str::FromStr for TimeFormat {
             "utc" => Ok(TimeFormat::Utc),
             "boot" => Ok(TimeFormat::Boot),
             _ => Err(format!("'{s}' is not a valid value: must be one of 'local', 'utc', 'boot'")),
+        }
+    }
+}
+
+/// Encoding format for retrieving logs from archivist
+#[derive(Clone, Debug, PartialEq)]
+pub enum LogEncoding {
+    Json,
+    Fxt,
+}
+
+impl std::str::FromStr for LogEncoding {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let lower = s.to_ascii_lowercase();
+        match lower.as_str() {
+            "json" => Ok(LogEncoding::Json),
+            "fxt" => Ok(LogEncoding::Fxt),
+            _ => Err(format!("'{s}' is not a valid value: must be one of 'json', 'fxt'")),
         }
     }
 }
@@ -352,6 +377,12 @@ pub struct LogCommand {
     #[argh(switch)]
     pub force_set_severity: bool,
 
+    /// EXPERIMENTAL/SUBJECT TO REMOVAL: select the encoding used to retrieve logs from the
+    /// archivist. Options are "json" or "fxt". Default is "json".
+    #[cfg(target_os = "fuchsia")]
+    #[argh(option, default = "LogEncoding::Json")]
+    pub encoding: LogEncoding,
+
     /// enables structured JSON logs.
     #[cfg(target_os = "fuchsia")]
     #[argh(switch)]
@@ -393,6 +424,8 @@ impl Default for LogCommand {
             hide_moniker: false,
             pid: None,
             tid: None,
+            #[cfg(target_os = "fuchsia")]
+            encoding: LogEncoding::Json,
             #[cfg(target_os = "fuchsia")]
             json: false,
             #[cfg(not(target_os = "fuchsia"))]

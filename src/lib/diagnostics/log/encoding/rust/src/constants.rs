@@ -10,6 +10,11 @@ pub(crate) const MESSAGE: &str = "message";
 pub(crate) const FILE: &str = "file";
 pub(crate) const LINE: &str = "line";
 
+/// Argument name for the component moniker in FXT manifest records.
+pub const MONIKER: &str = "moniker";
+/// Argument name for the component URL in FXT manifest records.
+pub const URL: &str = "url";
+
 /// Size of the FXT header.
 pub const FXT_HEADER_SIZE: usize = 8;
 

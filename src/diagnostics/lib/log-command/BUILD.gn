@@ -42,6 +42,7 @@ template("log_command_lib") {
 
     sources = [
       "src/filter.rs",
+      "src/fxt_streamer.rs",
       "src/lib.rs",
       "src/log_formatter.rs",
       "src/log_socket_stream.rs",
@@ -60,8 +61,12 @@ log_command_lib("log-command") {
   deps = [
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust_flex",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_flex",
+    "//src/lib/diagnostics/log/encoding/rust",
+    "//src/lib/diagnostics/log/message/rust:lib",
     "//src/lib/fdomain/client:flex_fidl",
     "//src/sys/lib/component_debug",
+    "//third_party/rust_crates:flyweights",
+    "//third_party/rust_crates:zerocopy",
   ]
 }
 

@@ -161,6 +161,46 @@ where
     Ok(LogProcessingResult::Continue)
 }
 
+#[cfg(not(feature = "fdomain"))]
+/// Reads FXT logs from a socket and formats them using the given formatter and symbolizer.
+pub async fn dump_fxt_logs_from_socket<F, S>(
+    socket: flex_client::AsyncSocket,
+    formatter: &mut F,
+    symbolizer: &S,
+    include_timestamp: bool,
+) -> Result<LogProcessingResult, LogError>
+where
+    F: LogFormatter + BootTimeAccessor,
+    S: Symbolize + ?Sized,
+{
+    let mut streamer = crate::fxt_streamer::FxtStreamer::new(socket);
+    let mut decoder = std::pin::pin!(streamer.stream());
+    let mut symbolize_pending = FuturesUnordered::new();
+    if include_timestamp && !formatter.is_utc_time_format() {
+        formatter.push_log(generate_timestamp_message(formatter.get_boot_timestamp())).await?;
+    }
+    while let Some(value) = select! {
+        res = decoder.next() => Some(Either::Left(res)),
+        res = symbolize_pending.next() => Some(Either::Right(res)),
+        complete => None,
+    } {
+        match value {
+            Either::Left(Some(result)) => match result {
+                Ok(log) => symbolize_pending.push(handle_value(log, symbolizer)),
+                Err(e) => return Err(e),
+            },
+            Either::Right(Some(Some(symbolized))) => match formatter.push_log(symbolized).await? {
+                LogProcessingResult::Exit => {
+                    return Ok(LogProcessingResult::Exit);
+                }
+                LogProcessingResult::Continue => {}
+            },
+            _ => {}
+        }
+    }
+    Ok(LogProcessingResult::Continue)
+}
+
 pub trait BootTimeAccessor {
     /// Sets the boot timestamp in nanoseconds since the Unix epoch.
     fn set_boot_timestamp(&mut self, _boot_ts_nanos: Timestamp);
@@ -1073,5 +1113,226 @@ mod test {
         );
         assert!(!FormatterError::IO(std::io::Error::other("other")).is_broken_pipe());
         assert!(!FormatterError::Other(anyhow::anyhow!("other")).is_broken_pipe());
+    }
+
+    #[cfg(not(feature = "fdomain"))]
+    #[fuchsia::test]
+    async fn test_json_and_fxt_output_identical() {
+        use diagnostics_data::ExtendedMoniker;
+        use diagnostics_log_encoding::encode::{Encoder, EncoderOpts, ResizableBuffer};
+        use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, MONIKER, Record, URL};
+        use diagnostics_message::MonikerWithUrl;
+        use flyweights::FlyStr;
+        use zerocopy::{FromBytes, IntoBytes};
+
+        let symbolizer = NoOpSymbolizer {};
+        let options = LogFormatterOptions::default();
+
+        let fn_encode = |record: Record<'_>, tag: u32| -> Vec<u8> {
+            let mut encoder = Encoder::new(
+                std::io::Cursor::new(ResizableBuffer::from(Vec::new())),
+                EncoderOpts::default(),
+            );
+            encoder.write_record(record).unwrap();
+            let mut bytes = encoder.take().into_inner().into_inner();
+            let mut header = Header::read_from_bytes(&bytes[0..8]).unwrap();
+            header.set_tag(tag);
+            bytes[0..8].copy_from_slice(header.as_bytes());
+            bytes
+        };
+
+        let manifest_bytes = fn_encode(
+            Record {
+                timestamp: zx::BootInstant::from_nanos(0),
+                severity: 0x30, // INFO
+                arguments: vec![
+                    Argument::other(MONIKER, "core/foo"),
+                    Argument::other(URL, "fuchsia-pkg://foo"),
+                ],
+            },
+            1 | LOG_CONTROL_BIT,
+        );
+
+        let log_bytes1 = fn_encode(
+            Record {
+                timestamp: zx::BootInstant::from_nanos(123456),
+                severity: 0x30, // INFO
+                arguments: vec![
+                    Argument::pid(zx::Koid::from_raw(1000)),
+                    Argument::tid(zx::Koid::from_raw(2000)),
+                    Argument::tag("my_tag"),
+                    Argument::message("Hello identical world!"),
+                ],
+            },
+            1,
+        );
+
+        let log_bytes2 = fn_encode(
+            Record {
+                timestamp: zx::BootInstant::from_nanos(123457),
+                severity: 0x40, // WARN
+                arguments: vec![
+                    Argument::file("src/main.rs"),
+                    Argument::line(42),
+                    Argument::dropped(5),
+                    Argument::message("Warning with source location and dropped count"),
+                ],
+            },
+            1,
+        );
+
+        let log_bytes3_signed = fn_encode(
+            Record {
+                timestamp: zx::BootInstant::from_nanos(123458),
+                severity: 0x50, // ERROR
+                arguments: vec![
+                    Argument::message("Error with custom signed int"),
+                    Argument::new("signed_val", -12345i64),
+                ],
+            },
+            1,
+        );
+
+        let log_bytes3_unsigned = fn_encode(
+            Record {
+                timestamp: zx::BootInstant::from_nanos(123458),
+                severity: 0x50, // ERROR
+                arguments: vec![
+                    Argument::message("Error with custom unsigned int"),
+                    Argument::new("unsigned_val", 67890u64),
+                ],
+            },
+            1,
+        );
+
+        let log_bytes3_bool = fn_encode(
+            Record {
+                timestamp: zx::BootInstant::from_nanos(123458),
+                severity: 0x50, // ERROR
+                arguments: vec![
+                    Argument::message("Error with custom boolean"),
+                    Argument::new("bool_val", true),
+                ],
+            },
+            1,
+        );
+
+        let log_bytes3_str = fn_encode(
+            Record {
+                timestamp: zx::BootInstant::from_nanos(123458),
+                severity: 0x50, // ERROR
+                arguments: vec![
+                    Argument::message("Error with custom string"),
+                    Argument::new("string_val", "custom string"),
+                ],
+            },
+            1,
+        );
+
+        let log_bytes4_pi = fn_encode(
+            Record {
+                timestamp: zx::BootInstant::from_nanos(123459),
+                severity: 0x60, // FATAL
+                arguments: vec![
+                    Argument::message("Fatal with float pi"),
+                    Argument::new("float_pi", std::f64::consts::PI),
+                ],
+            },
+            1,
+        );
+
+        let log_bytes4_zero = fn_encode(
+            Record {
+                timestamp: zx::BootInstant::from_nanos(123459),
+                severity: 0x60, // FATAL
+                arguments: vec![
+                    Argument::message("Fatal with float zero"),
+                    Argument::new("float_zero", 0.0f64),
+                ],
+            },
+            1,
+        );
+
+        let log_bytes4_large = fn_encode(
+            Record {
+                timestamp: zx::BootInstant::from_nanos(123459),
+                severity: 0x60, // FATAL
+                arguments: vec![
+                    Argument::message("Fatal with float large"),
+                    Argument::new("float_large", 123456.789f64),
+                ],
+            },
+            1,
+        );
+
+        let all_records = [
+            &log_bytes1,
+            &log_bytes2,
+            &log_bytes3_signed,
+            &log_bytes3_unsigned,
+            &log_bytes3_bool,
+            &log_bytes3_str,
+            &log_bytes4_pi,
+            &log_bytes4_zero,
+            &log_bytes4_large,
+        ];
+
+        // 1. JSON setup and execution using converted FXT messages
+        let buffers_json = TestBuffers::default();
+        let stdout_json = JsonWriter::<LogEntry>::new_test(None, &buffers_json);
+        let mut formatter_json =
+            DefaultLogFormatter::new(LogFilterCriteria::default(), stdout_json, options.clone());
+        formatter_json.set_boot_timestamp(Timestamp::from_nanos(0));
+
+        let source = MonikerWithUrl {
+            moniker: ExtendedMoniker::parse_str("core/foo").unwrap(),
+            url: FlyStr::new("fuchsia-pkg://foo"),
+        };
+
+        let (sender_json, receiver_json) = zx::Socket::create_stream();
+        let mut json_stream_bytes = Vec::new();
+        for record_bytes in &all_records {
+            let target_log =
+                diagnostics_message::from_structured(source.clone(), record_bytes).unwrap();
+            serde_json::to_writer(&mut json_stream_bytes, &target_log).unwrap();
+            json_stream_bytes.push(b'\n');
+        }
+        sender_json.write(&json_stream_bytes).expect("failed to write target logs");
+        drop(sender_json);
+
+        super::dump_logs_from_socket(
+            flex_client::socket_to_async(receiver_json),
+            &mut formatter_json,
+            &symbolizer,
+            false,
+        )
+        .await
+        .unwrap();
+
+        // 2. FXT setup and execution
+        let buffers_fxt = TestBuffers::default();
+        let stdout_fxt = JsonWriter::<LogEntry>::new_test(None, &buffers_fxt);
+        let mut formatter_fxt =
+            DefaultLogFormatter::new(LogFilterCriteria::default(), stdout_fxt, options.clone());
+        formatter_fxt.set_boot_timestamp(Timestamp::from_nanos(0));
+
+        let (sender_fxt, receiver_fxt) = zx::Socket::create_stream();
+        sender_fxt.write(&manifest_bytes).unwrap();
+        for record_bytes in &all_records {
+            sender_fxt.write(record_bytes).unwrap();
+        }
+        drop(sender_fxt);
+
+        super::dump_fxt_logs_from_socket(
+            flex_client::socket_to_async(receiver_fxt),
+            &mut formatter_fxt,
+            &symbolizer,
+            false,
+        )
+        .await
+        .unwrap();
+
+        // 3. Verify identity
+        assert_eq!(buffers_json.stdout.into_string(), buffers_fxt.stdout.into_string());
     }
 }

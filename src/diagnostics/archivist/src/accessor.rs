@@ -359,6 +359,10 @@ fn get_buffer_from_formatted_content(
 ) -> Result<Buffer, AccessorError> {
     match content {
         FormattedContent::Json(json) => Ok(json),
+        FormattedContent::Fxt(vmo) => {
+            let size = vmo.get_content_size().map_err(AccessorError::VmoSize)?;
+            Ok(fidl_fuchsia_mem::Buffer { vmo, size })
+        }
         _ => Err(AccessorError::UnsupportedFormat),
     }
 }
@@ -1310,5 +1314,14 @@ mod tests {
 
         assert!(manifest_b_found, "Manifest B must be emitted on tag reuse");
         assert!(log_b_found, "Log B must be emitted");
+    }
+
+    #[fuchsia::test]
+    fn test_get_buffer_from_formatted_content_fxt() {
+        let vmo = zx::Vmo::create(100).unwrap();
+        vmo.set_content_size(&50).unwrap();
+        let content = fidl_fuchsia_diagnostics::FormattedContent::Fxt(vmo);
+        let buffer = get_buffer_from_formatted_content(content).unwrap();
+        assert_eq!(buffer.size, 50);
     }
 }

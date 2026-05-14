@@ -14,10 +14,7 @@ use fidl_fuchsia_diagnostics_host::ArchiveAccessorMarker;
 use fidl_fuchsia_sys2::RealmQueryMarker;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
 use log_command as log_utils;
-use log_command::{
-    DefaultLogFormatter, LogEntry, Symbolize, Timestamp, WriterContainer,
-    dump_logs_from_socket as read_logs_from_socket,
-};
+use log_command::{DefaultLogFormatter, LogEntry, Symbolize, Timestamp, WriterContainer};
 use log_utils::{BootTimeAccessor, LogCommand, LogSubCommand};
 use std::future::pending;
 use std::io::Write;
@@ -63,15 +60,20 @@ async fn main() -> Result<(), Error> {
             })
             .unwrap_or(fidl_fuchsia_diagnostics::StreamMode::SnapshotThenSubscribe)
     };
+    let format = match cmd.encoding {
+        log_utils::LogEncoding::Json => fidl_fuchsia_diagnostics::Format::Json,
+        log_utils::LogEncoding::Fxt => fidl_fuchsia_diagnostics::Format::Fxt,
+    };
     proxy
         .stream_diagnostics(
             &StreamParameters {
                 data_type: Some(fidl_fuchsia_diagnostics::DataType::Logs),
                 stream_mode: Some(stream_mode),
-                format: Some(fidl_fuchsia_diagnostics::Format::Json),
+                format: Some(format),
                 client_selector_configuration: Some(
                     fidl_fuchsia_diagnostics::ClientSelectorConfiguration::SelectAll(true),
                 ),
+                subscribe_to_manifest: Some(matches!(cmd.encoding, log_utils::LogEncoding::Fxt)),
                 ..Default::default()
             },
             sender,
@@ -99,17 +101,34 @@ async fn main() -> Result<(), Error> {
         }
     }
     formatter.set_boot_timestamp(boot_ts);
-    if let Err(e) = read_logs_from_socket(
-        flex_client::socket_to_async(receiver),
-        &mut formatter,
-        &Symbolizer::new(),
-        true,
-    )
-    .await
-    {
-        eprintln!("Error in log_listener reading logs from socket, exiting: {e:?}");
-        return Err(e.into());
-    };
+    match cmd.encoding {
+        log_utils::LogEncoding::Json => {
+            if let Err(e) = log_utils::dump_logs_from_socket(
+                flex_client::socket_to_async(receiver),
+                &mut formatter,
+                &Symbolizer::new(),
+                true,
+            )
+            .await
+            {
+                eprintln!("Error in log_listener reading logs from socket, exiting: {e:?}");
+                return Err(e.into());
+            }
+        }
+        log_utils::LogEncoding::Fxt => {
+            if let Err(e) = log_utils::dump_fxt_logs_from_socket(
+                flex_client::socket_to_async(receiver),
+                &mut formatter,
+                &Symbolizer::new(),
+                true,
+            )
+            .await
+            {
+                eprintln!("Error in log_listener reading logs from socket, exiting: {e:?}");
+                return Err(e.into());
+            }
+        }
+    }
 
     if let Err(e) = std::io::stdout().flush() {
         eprintln!("Error in log_listener flushing stdout: {e:?}");
