@@ -2665,6 +2665,12 @@ group("root_targets") {
     # It must be possible to run the versioning scripts without them being part
     # of the default build.
     "//scripts/versioning($host_toolchain)",
+
+    # To allow multi-products builds to define products that can be build with fx build
+    #
+    # (the ":product_bundles" target itself is only a stub, so we need to include
+    # its metadata target that actually follows the dependencies pass to it)
+    ":product_bundles_metadata",
   ]
 
   if (sdk_cross_compile_host_tools) {
