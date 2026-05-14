@@ -23928,6 +23928,7 @@ rustc_library("zerocopy-v0_8_48") {
     "--cfg=feature=\"derive\"",
     "--cfg=feature=\"simd\"",
     "--cfg=feature=\"zerocopy-derive\"",
+    "--cfg=zerocopy_inline_always",
   ]
 
   visibility = [ ":*" ]
