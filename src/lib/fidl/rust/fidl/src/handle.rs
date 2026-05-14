@@ -24,28 +24,7 @@ pub mod fuchsia_handles {
     pub use fuchsia_async::invoke_for_handle_types;
 
     macro_rules! fuchsia_handle {
-        ($x:tt, $docname:expr, $name:ident, $zx_name:ident, Stub) => {
-            /// Stub implementation of Zircon handle type $x.
-            #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-            #[repr(transparent)]
-            pub struct $x(zx::NullableHandle);
 
-            impl zx::AsHandleRef for $x {
-                fn as_handle_ref(&self) -> HandleRef<'_> {
-                    self.0.as_handle_ref()
-                }
-            }
-            impl From<NullableHandle> for $x {
-                fn from(handle: NullableHandle) -> Self {
-                    $x(handle)
-                }
-            }
-            impl From<$x> for NullableHandle {
-                fn from(x: $x) -> NullableHandle {
-                    x.0
-                }
-            }
-        };
         ($x:tt, $docname:expr, $name:ident, $value:expr, $availability:tt) => {
             pub use zx::$x;
         };
