@@ -1969,7 +1969,7 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
           } else if (p->IsMarker()) {
             p.IncrementMarkerShareCount();
           }
-          shared_end = owner_offset + kPageSize;
+          shared_end = cow_clone_offset + kPageSize;
 
           return ZX_ERR_NEXT;
         },
