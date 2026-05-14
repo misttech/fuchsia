@@ -4,8 +4,8 @@
 
 import("//build/bazel/bazel_inputs.gni")
 import("//build/board.gni")
-import("//build/images/vboot/esp.gni")
 import("//src/firmware/gigaboot/cpp/backends.gni")
+import("//src/firmware/gigaboot/cpp/esp.gni")
 import("//zircon/kernel/phys/efi/efi_executable.gni")
 
 config("board_name") {
