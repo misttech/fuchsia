@@ -2031,12 +2031,12 @@ impl CurrentTask {
 
     /// The flags indicates only the flags as in clone3(), and does not use the low 8 bits for the
     /// exit signal as in clone().
-    pub fn clone_task_for_test<L>(
+    pub fn clone_task_builder_for_test<L>(
         &self,
         locked: &mut Locked<L>,
         flags: u64,
         exit_signal: Option<Signal>,
-    ) -> crate::testing::AutoReleasableTask
+    ) -> TaskBuilder
     where
         L: LockBefore<MmDumpable>,
         L: LockBefore<TaskRelease>,
@@ -2053,8 +2053,23 @@ impl CurrentTask {
             )
             .expect("failed to create task in test");
         result.task.write().set_spawned();
+        result
+    }
 
-        result.into()
+    /// The flags indicates only the flags as in clone3(), and does not use the low 8 bits for the
+    /// exit signal as in clone().
+    pub fn clone_task_for_test<L>(
+        &self,
+        locked: &mut Locked<L>,
+        flags: u64,
+        exit_signal: Option<Signal>,
+    ) -> crate::testing::AutoReleasableTask
+    where
+        L: LockBefore<MmDumpable>,
+        L: LockBefore<TaskRelease>,
+        L: LockBefore<ProcessGroupState>,
+    {
+        self.clone_task_builder_for_test(locked, flags, exit_signal).into()
     }
 
     // See "Ptrace access mode checking" in https://man7.org/linux/man-pages/man2/ptrace.2.html

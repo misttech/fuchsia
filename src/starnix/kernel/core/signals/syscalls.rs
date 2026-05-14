@@ -2153,16 +2153,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_waiting_for_child() {
         spawn_kernel_and_run(async |locked, task| {
-            let child = task
-                .clone_task(
-                    locked,
-                    0,
-                    Some(SIGCHLD),
-                    UserRef::default(),
-                    UserRef::default(),
-                    UserRef::default(),
-                )
-                .expect("clone_task");
+            let child = task.clone_task_builder_for_test(locked, 0, Some(SIGCHLD));
 
             // No child is currently terminated.
             assert_eq!(
