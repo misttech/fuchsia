@@ -1077,10 +1077,19 @@ impl Data<Logs> {
         })
     }
 
+    /// Returns a component name derived from the component URL if available and non-empty.
+    /// Otherwise, it falls back to the component's moniker. This name is intended for display
+    /// purposes in logs, where showing the full URL or moniker might be impractical.
     pub fn component_name_by_url(&self) -> Cow<'_, str> {
-        if let Some(url_str) = &self.metadata.component_url {
+        if let Some(url_str) = &self.metadata.component_url
+            && !url_str.is_empty()
+        {
+            // Remove the .cm suffix if present
             let last_part = url_str.rsplit('/').next().unwrap_or(url_str);
-            return Cow::Owned(last_part.to_string());
+            if let Some(stripped) = last_part.strip_suffix(".cm") {
+                return Cow::Borrowed(stripped);
+            }
+            return Cow::Borrowed(last_part);
         }
         // No URL available, fallback to moniker
         self.component_name()
@@ -1917,6 +1926,47 @@ mod tests {
             "[00012.345678][123][456][moniker] INFO: [some_file.cc(420)] some message test=property value=test",
             format!("{data}")
         )
+    }
+
+    #[fuchsia::test]
+    fn test_component_name_by_url() {
+        let data = LogsDataBuilder::new(BuilderArgs {
+            timestamp: Timestamp::from_nanos(0),
+            component_url: Some(FlyStr::from(
+                "fuchsia-pkg://fuchsia.com/my-pkg#meta/my-component.cm",
+            )),
+            moniker: ExtendedMoniker::parse_str("test/moniker").unwrap(),
+            severity: Severity::Info,
+        })
+        .build();
+        assert_eq!(data.component_name_by_url(), "my-component");
+
+        let data = LogsDataBuilder::new(BuilderArgs {
+            timestamp: Timestamp::from_nanos(0),
+            component_url: Some(FlyStr::from("fuchsia-pkg://fuchsia.com/my-pkg#meta/my-component")),
+            moniker: ExtendedMoniker::parse_str("test/moniker").unwrap(),
+            severity: Severity::Info,
+        })
+        .build();
+        assert_eq!(data.component_name_by_url(), "my-component");
+
+        let data = LogsDataBuilder::new(BuilderArgs {
+            timestamp: Timestamp::from_nanos(0),
+            component_url: Some(FlyStr::from("")),
+            moniker: ExtendedMoniker::parse_str("test/moniker").unwrap(),
+            severity: Severity::Info,
+        })
+        .build();
+        assert_eq!(data.component_name_by_url(), "moniker");
+
+        let data = LogsDataBuilder::new(BuilderArgs {
+            timestamp: Timestamp::from_nanos(0),
+            component_url: None,
+            moniker: ExtendedMoniker::parse_str("test/moniker").unwrap(),
+            severity: Severity::Info,
+        })
+        .build();
+        assert_eq!(data.component_name_by_url(), "moniker");
     }
 
     #[fuchsia::test]
