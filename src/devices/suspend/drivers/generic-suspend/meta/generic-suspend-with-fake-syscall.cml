@@ -16,7 +16,6 @@
         bind: "meta/bind/generic-suspend-with-fake-syscall.bindbc",
         use_next_vdso: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        colocate: "false",
     },
     capabilities: [
         {

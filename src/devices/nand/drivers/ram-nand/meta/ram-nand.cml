@@ -11,7 +11,6 @@
         runner: "driver",
         binary: "driver/ram-nand.so",
         bind: "meta/bind/ram-nand-bind.bindbc",
-        colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
     capabilities: [

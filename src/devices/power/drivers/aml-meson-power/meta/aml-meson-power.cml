@@ -11,7 +11,6 @@
         runner: "driver",
         binary: "driver/aml-meson-power.so",
         bind: "meta/bind/aml-meson-power.bindbc",
-        colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         service_connect_validation: "true",
     },

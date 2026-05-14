@@ -10,7 +10,6 @@
     program: {
         runner: "driver",
         bind: "meta/bind/goldfish_control_composite-bind.bindbc",
-        colocate: "false",
         compat: "driver/goldfish_control.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },

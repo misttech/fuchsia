@@ -10,7 +10,6 @@
         runner: "driver",
         binary: "driver/aml-gpu.so",
         bind: "meta/bind/aml-gpu.bindbc",
-        colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         allowed_scheduler_roles: [ "fuchsia.graphics.drivers.aml-gpu" ],
         service_connect_validation: "true",

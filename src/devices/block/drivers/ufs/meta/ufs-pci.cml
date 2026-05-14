@@ -11,7 +11,6 @@
         runner: "driver",
         binary: "driver/ufs-pci.so",
         bind: "meta/bind/ufs-pci-bind.bindbc",
-        colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
     capabilities: [

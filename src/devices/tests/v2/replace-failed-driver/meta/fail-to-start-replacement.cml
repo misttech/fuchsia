@@ -9,7 +9,6 @@
     program: {
         runner: "driver",
         binary: "driver/fail-to-start-replacement-driver.so",
-        colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         bind: "meta/bind/failer-replacement.bindbc",
     },

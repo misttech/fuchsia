@@ -11,7 +11,6 @@
         runner: "driver",
         binary: "driver/e1000.so",
         bind: "meta/bind/e1000_bind.bindbc",
-        colocate: "false",
     },
     capabilities: [
         { service: "fuchsia.hardware.network.driver.Service" },

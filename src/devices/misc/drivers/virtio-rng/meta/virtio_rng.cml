@@ -11,7 +11,6 @@
         runner: "driver",
         binary: "driver/virtio_rng.so",
         bind: "meta/bind/virtio_rng_bind.bindbc",
-        colocate: "false",
     },
     use: [
         { service: "fuchsia.hardware.pci.Service" },

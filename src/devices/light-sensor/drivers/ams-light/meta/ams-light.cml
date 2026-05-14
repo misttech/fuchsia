@@ -11,7 +11,6 @@
         binary: "driver/ams-light.so",
         bind: "meta/bind/ams-light.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        colocate: "false",
     },
     use: [
         {

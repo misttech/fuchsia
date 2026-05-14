@@ -9,7 +9,6 @@
     program: {
         runner: "driver",
         binary: "driver/ctf_basic_driver.so",
-        colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         bind: "meta/bind/basic.bindbc",
     },

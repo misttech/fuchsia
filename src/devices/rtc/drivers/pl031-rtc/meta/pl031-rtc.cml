@@ -10,7 +10,6 @@
     program: {
         runner: "driver",
         bind: "meta/bind/pl031_rtc_bind.bindbc",
-        colocate: "false",
         compat: "driver/pl031-rtc.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },

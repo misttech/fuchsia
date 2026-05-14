@@ -10,7 +10,6 @@
     program: {
         runner: "driver",
         binary: "driver/power-system-integration-example-test-driver.so",
-        colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
         bind: "meta/bind/power-system-integration-example-test-driver.bindbc",
     },

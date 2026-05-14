@@ -12,7 +12,6 @@
         binary: "driver/aml-trip.so",
         bind: "meta/bind/aml-trip.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
-        colocate: "false",
         host_restart_on_crash: "true",
     },
     capabilities: [

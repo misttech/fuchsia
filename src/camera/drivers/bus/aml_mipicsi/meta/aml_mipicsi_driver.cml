@@ -10,7 +10,6 @@
     program: {
         runner: "driver",
         bind: "meta/bind/aml_mipi_bind.bindbc",
-        colocate: "false",
         compat: "driver/aml_mipicsi.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },

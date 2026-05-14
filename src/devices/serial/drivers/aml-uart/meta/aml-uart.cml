@@ -10,7 +10,6 @@
         runner: "driver",
         binary: "driver/aml-uart.so",
         bind: "meta/bind/aml-uart.bindbc",
-        colocate: "false",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
     capabilities: [

@@ -11,7 +11,6 @@
         runner: "driver",
         binary: "driver/virtio-gpu-display.so",
         bind: "meta/bind/virtio-gpu-display.bindbc",
-        colocate: "false",
     },
     capabilities: [
         { service: "fuchsia.gpu.virtio.Service" },
