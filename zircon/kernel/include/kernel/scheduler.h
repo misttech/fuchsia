@@ -60,11 +60,13 @@ using SchedProcessingRate = ffl::Fixed<int64_t, 31>;
 static_assert(ktl::is_same_v<power_management::ProcessingRate, SchedProcessingRate>);
 
 // Converts a userspace CPU performance scale to a SchedProcessingRate value.
+//
+// The returned value will always be greater than zero.
 constexpr SchedProcessingRate ToSchedProcessingRate(zx_cpu_performance_scale_t value) {
   const size_t FractionaBits = sizeof(value.fractional_part) * 8;
   const SchedProcessingRate performance_scale = ffl::FromRaw<FractionaBits>(
       uint64_t{value.integral_part} << FractionaBits | value.fractional_part);
-  return ktl::min(performance_scale, SchedProcessingRate{1});
+  return ktl::clamp(performance_scale, SchedProcessingRate::Epsilon(), SchedProcessingRate{1});
 }
 
 // Converts a SchedProcessingRate value to a userspace CPU performance scale.
@@ -1545,6 +1547,7 @@ class Scheduler {
     // Sets the processing rate on systems that don't provide an energy model and manage OPPs
     // exclusively from userspace. User requests are ignored if an energy model is set.
     void UserSetProcessingRate(SchedProcessingRate processing_rate) {
+      DEBUG_ASSERT(processing_rate > 0);
       if (!domain()) {
         updated_processing_rate_ = processing_rate;
       }

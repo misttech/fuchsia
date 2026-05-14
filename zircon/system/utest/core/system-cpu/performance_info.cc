@@ -531,3 +531,19 @@ TEST(SystemCpu, ScaleBandwidth) {
   });
   EXPECT_OK(run_thread_result);
 }
+
+// This is a regression test for https://fxbug.dev/511568228.
+//
+// Set a performance scale that's near zero in an attempt to trigger a divide-by-zero.
+TEST(SystemCpu, SetPerformanceInfoNearZero) {
+  const zx::result resource = GetSystemCpuResource();
+  ASSERT_TRUE(resource.is_ok());
+
+  zx_cpu_performance_info_t info{};
+  info.logical_cpu_number = 0;
+  info.performance_scale.integral_part = 0;
+  info.performance_scale.fractional_part = 1;
+
+  // Just see that we don't crash.
+  ASSERT_OK(zx_system_set_performance_info(resource->get(), ZX_CPU_PERF_SCALE, &info, 1));
+}
