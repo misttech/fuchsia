@@ -5,17 +5,23 @@
 import unittest
 
 from dap_test_framework import DapTestCase
+from pydap.models import (
+    EvaluateArguments,
+    InitializeArguments,
+    LaunchArguments,
+    StackTraceArguments,
+)
 
 
 class TestDapSmoke(DapTestCase):
     async def test_smoke_flow(self) -> None:
         target = "fuchsia-pkg://fuchsia.com/zxdb_e2e_inferiors#meta/rust_functions.cm"
 
-        await self.initialize("zxdb")
+        await self.initialize(InitializeArguments(adapter_id="zxdb"))
         await self.on_event("initialized")
 
-        await self.evaluate("b $main")
-        await self.launch(target)
+        await self.evaluate(EvaluateArguments(expression="b $main"))
+        await self.launch(LaunchArguments(process=target))
         await self.on_event("stopped").expect(
             {"body": {"reason": "breakpoint"}}
         )
@@ -25,7 +31,7 @@ class TestDapSmoke(DapTestCase):
         )
         thread_id = threads_resp["body"]["threads"][0]["id"]
 
-        self.stack_trace(threadId=thread_id).expect(
+        self.stack_trace(StackTraceArguments(thread_id=thread_id)).expect(
             {"body": {"stackFrames": [...]}}
         )
 

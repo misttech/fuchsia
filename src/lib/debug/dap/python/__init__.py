@@ -4,9 +4,9 @@
 
 """Pydap: A Python client library for the Debug Adapter Protocol."""
 
-from pydap.client import DapClient, DapError
-from pydap.dap_types import StackFrame, Thread
-from pydap.models import (
+from .client import DapClient, DapError
+from .dap_types import DapBaseModel, StackFrame, Thread
+from .models import (
     ContinueArguments,
     ContinueResponseBody,
     DisconnectArguments,

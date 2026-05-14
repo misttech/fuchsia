@@ -240,7 +240,7 @@ class Daemon:
         try:
             threads_resp = await self.dap_client.threads(self.zxdb_writer)
             threads = []
-            for t in threads_resp.threads:
+            for t in threads_resp.body.threads:
                 threads.append(
                     {
                         "id": t.id,
@@ -270,7 +270,7 @@ class Daemon:
 
         try:
             resp = await self.dap_client.attach(self.zxdb_writer, attach_args)
-            return Response(success=True, body=resp)
+            return Response(success=True, body=resp.dump_dap())
         except Exception as e:
             return Response(success=False, message=f"Failed to attach: {e}")
 
@@ -284,7 +284,7 @@ class Daemon:
             resp = await self.dap_client.threads(self.zxdb_writer)
             return Response(
                 success=True,
-                body=resp.dump_dap(),
+                body=resp.body.model_dump(by_alias=True),
             )
         except Exception as e:
             return Response(
@@ -303,7 +303,7 @@ class Daemon:
 
         try:
             resp = await self.dap_client.continue_thread(self.zxdb_writer, args)
-            return Response(success=True, body=resp)
+            return Response(success=True, body=resp.dump_dap())
         except Exception as e:
             return Response(success=False, message=f"Failed to continue: {e}")
 
@@ -338,7 +338,7 @@ class Daemon:
 
             return Response(
                 success=True,
-                body=stack_resp.dump_dap(),
+                body=stack_resp.body.model_dump(by_alias=True),
             )
         except Exception as e:
             return Response(

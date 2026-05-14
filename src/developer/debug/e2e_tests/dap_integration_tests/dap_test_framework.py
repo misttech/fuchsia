@@ -9,12 +9,17 @@ import copy
 import json
 import os
 import unittest
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 from portpicker import portpicker
-from pydantic import BaseModel
 from pydap.client import DapClient
-from pydap.models import InitializeArguments, StackTraceArguments
+from pydap.dap_types import DapBaseModel
+from pydap.models import (
+    EvaluateArguments,
+    InitializeArguments,
+    LaunchArguments,
+    StackTraceArguments,
+)
 
 
 class RequestFuture:
@@ -180,22 +185,21 @@ class DapTestFramework:
         )
         self._process_task = asyncio.create_task(self._event_processor_loop())
 
-    def send_request(
-        self, command: str, arguments: Optional[BaseModel] = None
+    def _send_wrapper(
+        self, command: str, coro_fn: Callable[[], Coroutine[Any, Any, Any]]
     ) -> RequestFuture:
-        """Sends a request in the background and returns a RequestFuture."""
+        """Executes a DAP client coroutine in the background and returns a RequestFuture."""
         seq = self.client._seq_counter
         req_fut = RequestFuture(self, command, seq)
         self.pending_futures.append(req_fut)
 
         async def do_send() -> None:
             try:
-                assert self._writer is not None
-                resp = await self.client.send_request(
-                    self._writer, command, arguments
-                )
-                self.traffic_history.append(resp)
-                req_fut.set_result(resp)
+                resp = await coro_fn()
+                assert isinstance(resp, DapBaseModel)
+                resp_dict = resp.dump_dap()
+                self.traffic_history.append(resp_dict)
+                req_fut.set_result(resp_dict)
             except Exception as e:
                 req_fut.set_exception(e)
 
@@ -377,27 +381,40 @@ class DapTestFramework:
                     self._recursive_strip_path(item[key], parts[1:])
 
     # High-Level Wrappers
-    def initialize(self, adapterID: str = "zxdb") -> RequestFuture:
-        return self.send_request(
-            "initialize", InitializeArguments(adapterID=adapterID)
+    def initialize(self, args: InitializeArguments) -> RequestFuture:
+        assert self._writer is not None
+        writer = self._writer
+        return self._send_wrapper(
+            "initialize",
+            lambda: self.client.initialize(writer, args),
         )
 
-    def launch(self, process: str, launchCommand: str = "") -> RequestFuture:
-        return self.send_request(
-            "launch", {"process": process, "launchCommand": launchCommand}
+    def launch(self, args: LaunchArguments) -> RequestFuture:
+        assert self._writer is not None
+        writer = self._writer
+        return self._send_wrapper(
+            "launch", lambda: self.client.launch(writer, args)
         )
 
-    def evaluate(self, expression: str, context: str = "repl") -> RequestFuture:
-        return self.send_request(
-            "evaluate", {"expression": expression, "context": context}
+    def evaluate(self, args: EvaluateArguments) -> RequestFuture:
+        assert self._writer is not None
+        writer = self._writer
+        return self._send_wrapper(
+            "evaluate", lambda: self.client.evaluate(writer, args)
         )
 
     def threads(self) -> RequestFuture:
-        return self.send_request("threads")
+        assert self._writer is not None
+        writer = self._writer
+        return self._send_wrapper(
+            "threads", lambda: self.client.threads(writer)
+        )
 
-    def stack_trace(self, threadId: int) -> RequestFuture:
-        return self.send_request(
-            "stackTrace", StackTraceArguments(threadId=threadId)
+    def stack_trace(self, args: StackTraceArguments) -> RequestFuture:
+        assert self._writer is not None
+        writer = self._writer
+        return self._send_wrapper(
+            "stackTrace", lambda: self.client.stack_trace(writer, args)
         )
 
     async def verify_all_expectations(self) -> None:
@@ -518,20 +535,20 @@ class DapTestCase(unittest.IsolatedAsyncioTestCase):
             await self.framework.teardown()
 
     # Delegation methods for cleaner test syntax
-    def initialize(self, adapterID: str = "zxdb") -> RequestFuture:
-        return self.framework.initialize(adapterID)
+    def initialize(self, args: InitializeArguments) -> RequestFuture:
+        return self.framework.initialize(args)
 
-    def launch(self, process: str, launchCommand: str = "") -> RequestFuture:
-        return self.framework.launch(process, launchCommand)
+    def launch(self, args: LaunchArguments) -> RequestFuture:
+        return self.framework.launch(args)
 
-    def evaluate(self, expression: str, context: str = "repl") -> RequestFuture:
-        return self.framework.evaluate(expression, context)
+    def evaluate(self, args: EvaluateArguments) -> RequestFuture:
+        return self.framework.evaluate(args)
 
     def threads(self) -> RequestFuture:
         return self.framework.threads()
 
-    def stack_trace(self, threadId: int) -> RequestFuture:
-        return self.framework.stack_trace(threadId)
+    def stack_trace(self, args: StackTraceArguments) -> RequestFuture:
+        return self.framework.stack_trace(args)
 
     def on_event(self, event_name: str) -> EventFuture:
         return self.framework.on_event(event_name)

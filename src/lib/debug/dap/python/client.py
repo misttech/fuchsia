@@ -12,9 +12,12 @@ from .models import (
     AttachRequestArguments,
     ContinueArguments,
     DisconnectArguments,
+    EvaluateArguments,
     InitializeArguments,
+    LaunchArguments,
     MessageType,
     PauseArguments,
+    Response,
     StackTraceArguments,
     StackTraceResponse,
     ThreadsResponse,
@@ -63,7 +66,7 @@ class DapClient:
                 logger.exception("Error in DAP client run loop")
                 break
 
-    async def send_request(
+    async def _send_request(
         self,
         writer: asyncio.StreamWriter,
         command: str,
@@ -114,7 +117,7 @@ class DapClient:
 
     async def initialize(
         self, writer: asyncio.StreamWriter, args: InitializeArguments
-    ) -> dict[str, Any]:
+    ) -> Response:
         """Sends an initialize request.
 
         Args:
@@ -122,13 +125,14 @@ class DapClient:
             args: Arguments for the initialize request.
 
         Returns:
-            The response message dictionary.
+            The response model.
         """
-        return await self.send_request(writer, "initialize", args)
+        resp = await self._send_request(writer, "initialize", args)
+        return Response.model_validate(resp)
 
     async def disconnect(
         self, writer: asyncio.StreamWriter, args: DisconnectArguments
-    ) -> dict[str, Any]:
+    ) -> Response:
         """Sends a disconnect request.
 
         Args:
@@ -136,9 +140,10 @@ class DapClient:
             args: Arguments for the disconnect request.
 
         Returns:
-            The response message dictionary.
+            The response model.
         """
-        return await self.send_request(writer, "disconnect", args)
+        resp = await self._send_request(writer, "disconnect", args)
+        return Response.model_validate(resp)
 
     async def stack_trace(
         self, writer: asyncio.StreamWriter, args: StackTraceArguments
@@ -152,12 +157,12 @@ class DapClient:
         Returns:
             The stackTrace response model.
         """
-        resp = await self.send_request(writer, "stackTrace", args)
-        return StackTraceResponse.model_validate(resp.get("body", {}))
+        resp = await self._send_request(writer, "stackTrace", args)
+        return StackTraceResponse.model_validate(resp)
 
     async def continue_thread(
         self, writer: asyncio.StreamWriter, args: ContinueArguments
-    ) -> dict[str, Any]:
+    ) -> Response:
         """Sends a continue request.
 
         Args:
@@ -165,13 +170,14 @@ class DapClient:
             args: Arguments for the continue request.
 
         Returns:
-            The response message dictionary.
+            The response model.
         """
-        return await self.send_request(writer, "continue", args)
+        resp = await self._send_request(writer, "continue", args)
+        return Response.model_validate(resp)
 
     async def pause_thread(
         self, writer: asyncio.StreamWriter, args: PauseArguments
-    ) -> dict[str, Any]:
+    ) -> Response:
         """Sends a pause request.
 
         Args:
@@ -179,9 +185,10 @@ class DapClient:
             args: Arguments for the pause request.
 
         Returns:
-            The response message dictionary.
+            The response model.
         """
-        return await self.send_request(writer, "pause", args)
+        resp = await self._send_request(writer, "pause", args)
+        return Response.model_validate(resp)
 
     async def threads(self, writer: asyncio.StreamWriter) -> ThreadsResponse:
         """Sends a threads request.
@@ -192,12 +199,12 @@ class DapClient:
         Returns:
             The threads response model.
         """
-        resp = await self.send_request(writer, "threads")
-        return ThreadsResponse.model_validate(resp.get("body", {}))
+        resp = await self._send_request(writer, "threads")
+        return ThreadsResponse.model_validate(resp)
 
     async def attach(
         self, writer: asyncio.StreamWriter, args: AttachRequestArguments
-    ) -> dict[str, Any]:
+    ) -> Response:
         """Sends an attach request.
 
         Args:
@@ -205,9 +212,40 @@ class DapClient:
             args: Arguments for the attach request.
 
         Returns:
-            The response message dictionary.
+            The response model.
         """
-        return await self.send_request(writer, "attach", args)
+        resp = await self._send_request(writer, "attach", args)
+        return Response.model_validate(resp)
+
+    async def launch(
+        self, writer: asyncio.StreamWriter, args: LaunchArguments
+    ) -> Response:
+        """Sends a launch request.
+
+        Args:
+            writer: Stream writer to send the request to.
+            args: Arguments for the launch request.
+
+        Returns:
+            The response model.
+        """
+        resp = await self._send_request(writer, "launch", args)
+        return Response.model_validate(resp)
+
+    async def evaluate(
+        self, writer: asyncio.StreamWriter, args: EvaluateArguments
+    ) -> Response:
+        """Sends an evaluate request.
+
+        Args:
+            writer: Stream writer to send the request to.
+            args: Arguments for the evaluate request.
+
+        Returns:
+            The response model.
+        """
+        resp = await self._send_request(writer, "evaluate", args)
+        return Response.model_validate(resp)
 
     async def _read_message(
         self, reader: asyncio.StreamReader

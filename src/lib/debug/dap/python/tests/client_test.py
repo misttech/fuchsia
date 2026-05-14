@@ -8,6 +8,7 @@ import json
 import unittest
 
 from pydap.client import DapClient
+from pydap.models import *
 
 
 class MockWriter:
@@ -48,13 +49,13 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(headers, b"Content-Length: 26")
         self.assertEqual(json.loads(body.decode("utf-8")), value)
 
-    async def test_send_request(self) -> None:
+    async def test__send_request(self) -> None:
         client = DapClient()
 
         writer = MockWriter()
 
         send_task = asyncio.create_task(
-            client.send_request(writer, "initialize")  # type: ignore
+            client._send_request(writer, "initialize")  # type: ignore
         )
 
         await asyncio.sleep(0.1)
@@ -80,8 +81,6 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp["request_seq"], seq)
 
     async def test_initialize(self) -> None:
-        from pydap.models import InitializeArguments
-
         client = DapClient()
 
         writer = MockWriter()
@@ -109,11 +108,9 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             client._pending_requests[seq].set_result(response)
 
         resp = await send_task
-        self.assertTrue(resp["success"])
+        self.assertTrue(resp.success)
 
     async def test_disconnect(self) -> None:
-        from pydap.models import DisconnectArguments
-
         client = DapClient()
 
         writer = MockWriter()
@@ -141,11 +138,9 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             client._pending_requests[seq].set_result(response)
 
         resp = await send_task
-        self.assertTrue(resp["success"])
+        self.assertTrue(resp.success)
 
     async def test_stack_trace(self) -> None:
-        from pydap.models import StackTraceArguments
-
         client = DapClient()
 
         writer = MockWriter()
@@ -174,11 +169,9 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             client._pending_requests[seq].set_result(response)
 
         resp = await send_task
-        self.assertEqual(resp.stack_frames, [])
+        self.assertEqual(resp.body.stack_frames, [])
 
     async def test_continue_thread(self) -> None:
-        from pydap.models import ContinueArguments
-
         client = DapClient()
 
         writer = MockWriter()
@@ -207,11 +200,9 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             client._pending_requests[seq].set_result(response)
 
         resp = await send_task
-        self.assertTrue(resp["success"])
+        self.assertTrue(resp.success)
 
     async def test_pause_thread(self) -> None:
-        from pydap.models import PauseArguments
-
         client = DapClient()
 
         writer = MockWriter()
@@ -239,7 +230,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             client._pending_requests[seq].set_result(response)
 
         resp = await send_task
-        self.assertTrue(resp["success"])
+        self.assertTrue(resp.success)
 
     async def test_threads(self) -> None:
         client = DapClient()
@@ -272,13 +263,11 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             client._pending_requests[seq].set_result(response)
 
         resp = await send_task
-        self.assertEqual(len(resp.threads), 2)
-        self.assertEqual(resp.threads[0].id, 1234)
-        self.assertEqual(resp.threads[0].name, "main")
+        self.assertEqual(len(resp.body.threads), 2)
+        self.assertEqual(resp.body.threads[0].id, 1234)
+        self.assertEqual(resp.body.threads[0].name, "main")
 
     async def test_attach(self) -> None:
-        from pydap.models import AttachRequestArguments
-
         client = DapClient()
 
         writer = MockWriter()
@@ -306,6 +295,66 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             client._pending_requests[seq].set_result(response)
 
         resp = await send_task
-        self.assertTrue(resp["success"])
+        self.assertTrue(resp.success)
         self.assertTrue(req_val["arguments"]["__restart"])
         self.assertEqual(req_val["arguments"]["process"], "my_process")
+
+    async def test_launch(self) -> None:
+        client = DapClient()
+        writer = MockWriter()
+        args = LaunchArguments(process="my_process", launch_command="run")
+        send_task = asyncio.create_task(client.launch(writer, args))  # type: ignore
+
+        await asyncio.sleep(0.1)
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "launch",
+        }
+
+        if seq in client._pending_requests:
+            client._pending_requests[seq].set_result(response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual(req_val["arguments"]["process"], "my_process")
+        self.assertEqual(req_val["arguments"]["launchCommand"], "run")
+
+    async def test_evaluate(self) -> None:
+        client = DapClient()
+        writer = MockWriter()
+        args = EvaluateArguments(expression="1 + 1", context="repl")
+        send_task = asyncio.create_task(client.evaluate(writer, args))  # type: ignore
+
+        await asyncio.sleep(0.1)
+
+        buffer_val = writer.buffer.getvalue()
+        headers, body = buffer_val.split(b"\r\n\r\n", 1)
+        req_val = json.loads(body.decode("utf-8"))
+        seq = req_val["seq"]
+
+        response = {
+            "seq": 10,
+            "type": "response",
+            "request_seq": seq,
+            "success": True,
+            "command": "evaluate",
+            "body": {"result": "2"},
+        }
+
+        if seq in client._pending_requests:
+            client._pending_requests[seq].set_result(response)
+
+        resp = await send_task
+        self.assertTrue(resp.success)
+        self.assertEqual((resp.body or {}).get("result"), "2")
+        self.assertEqual(req_val["arguments"]["expression"], "1 + 1")
+        self.assertEqual(req_val["arguments"]["context"], "repl")

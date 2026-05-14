@@ -108,14 +108,20 @@ class DisconnectArguments(DapBaseModel):
     terminate_debuggee: bool | None = None
 
 
-class StackTraceResponse(DapBaseModel):
+class StackTraceResponseBody(DapBaseModel):
+    """Body of response to `stackTrace` request."""
+
+    stack_frames: list[StackFrame]
+
+
+class StackTraceResponse(Response):
     """Response to `stackTrace` request.
 
     Attributes:
-        stack_frames: The stack frames of the thread.
+        body: The stack trace response body.
     """
 
-    stack_frames: list[StackFrame]
+    body: StackTraceResponseBody
 
 
 class ContinueResponseBody(DapBaseModel):
@@ -128,14 +134,20 @@ class ContinueResponseBody(DapBaseModel):
     all_threads_continued: bool
 
 
-class ThreadsResponse(DapBaseModel):
+class ThreadsResponseBody(DapBaseModel):
+    """Body of response to `threads` request."""
+
+    threads: list[Thread]
+
+
+class ThreadsResponse(Response):
     """Response to `threads` request.
 
     Attributes:
-        threads: All threads.
+        body: The threads response body.
     """
 
-    threads: list[Thread]
+    body: ThreadsResponseBody
 
 
 class StackTraceArguments(DapBaseModel):
@@ -172,6 +184,20 @@ class PauseArguments(DapBaseModel):
     """
 
     thread_id: int
+
+
+class LaunchArguments(DapBaseModel):
+    """Arguments for `launch` request."""
+
+    process: str
+    launch_command: str = Field(default="", alias="launchCommand")
+
+
+class EvaluateArguments(DapBaseModel):
+    """Arguments for `evaluate` request."""
+
+    expression: str
+    context: str = Field(default="repl")
 
 
 class AttachRequestArguments(DapBaseModel):

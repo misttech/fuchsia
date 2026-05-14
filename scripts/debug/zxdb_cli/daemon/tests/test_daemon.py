@@ -53,7 +53,9 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             daemon.dap_client, "attach", new_callable=AsyncMock
         ) as mock_attach:
-            mock_attach.return_value = {"success": True}
+            mock_attach_resp = Mock()
+            mock_attach_resp.dump_dap.return_value = {"success": True}
+            mock_attach.return_value = mock_attach_resp
 
             req = AttachRequest(filter="my_process")
             resp = await daemon.handle_attach(req)
@@ -91,8 +93,10 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
     async def test_handle_continue(self, mock_dap_client_class: Mock) -> None:
         mock_dap_client = mock_dap_client_class.return_value
 
+        mock_continue_resp = Mock()
+        mock_continue_resp.dump_dap.return_value = {"success": True}
         mock_dap_client.continue_thread = AsyncMock(
-            return_value={"success": True}
+            return_value=mock_continue_resp
         )
 
         daemon = Daemon(port=15678)
@@ -139,19 +143,21 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
     async def test_handle_threads(self, mock_dap_client_class: Mock) -> None:
         mock_dap_client = mock_dap_client_class.return_value
         mock_threads_resp = Mock()
+        mock_body = Mock()
         mock_thread1 = Mock()
         mock_thread1.id = 1
         mock_thread1.name = "main"
         mock_thread2 = Mock()
         mock_thread2.id = 2
         mock_thread2.name = "worker"
-        mock_threads_resp.threads = [mock_thread1, mock_thread2]
-        mock_threads_resp.dump_dap.return_value = {
+        mock_body.threads = [mock_thread1, mock_thread2]
+        mock_body.model_dump.return_value = {
             "threads": [
                 {"id": 1, "name": "main"},
                 {"id": 2, "name": "worker"},
             ]
         }
+        mock_threads_resp.body = mock_body
         mock_dap_client.threads = AsyncMock(return_value=mock_threads_resp)
 
         daemon = Daemon(port=15678)

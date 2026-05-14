@@ -24,11 +24,6 @@ class TestDapFramework(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         await self.framework.teardown()
 
-    async def test_send_request_returns_future(self) -> None:
-        fut = self.framework.send_request("threads")
-        self.assertIsInstance(fut, RequestFuture)
-        self.assertEqual(len(self.framework._request_tasks), 1)
-
     async def test_verify_partial_success(self) -> None:
         data = {
             "seq": 1,
