@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/host.gni")
 import("//build/test.gni")
 
 source_set("srcs") {
@@ -14,12 +13,6 @@ source_set("srcs") {
   public_deps = [ "//third_party/rapidjson" ]
 }
 
-executable("json_merge") {
-  sources = [ "main.cc" ]
-
-  deps = [ ":srcs" ]
-}
-
 test("json_merge_test") {
   sources = [ "test.cc" ]
 
@@ -27,10 +20,4 @@ test("json_merge_test") {
     ":srcs",
     "//src/lib/fxl/test:gtest_main",
   ]
-}
-
-install_host_tools("install") {
-  deps = [ ":json_merge" ]
-
-  outputs = [ "json_merge" ]
 }

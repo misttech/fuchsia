@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/compiled_action.gni")
+import("//build/bazel/bazel_tool_action.gni")
 
 # Merge one or more json files.
 #
@@ -42,7 +42,7 @@ import("//build/compiled_action.gni")
 #     minify = true
 #   }
 template("json_merge") {
-  compiled_action(target_name) {
+  bazel_tool_action(target_name) {
     forward_variables_from(invoker,
                            [
                              "deps",
@@ -55,7 +55,7 @@ template("json_merge") {
                              "metadata",
                            ])
 
-    tool = "//build/tools/json_merge"
+    tool_label = "//build/tools/json_merge"
 
     merged_output = "$target_out_dir/$target_name"
     outputs = [ merged_output ]
