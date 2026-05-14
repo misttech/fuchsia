@@ -7,7 +7,7 @@
 ### Convenience wrapper for running the product size checker.
 ## usage: fx size-check [--assembly-manifest <assembly-manifest-file>]
 ##                      [--base-assembly-manifest <assembly-manifest-file>]
-##                      [--visualization_dir <output-directory>]
+##                      [--visualization-dir <output-directory>]
 ##
 ## Convenience wrapper for running the product size checker.
 
