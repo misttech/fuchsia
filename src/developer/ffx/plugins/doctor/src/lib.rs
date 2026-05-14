@@ -951,7 +951,7 @@ async fn check_ffx_info<W: Write>(
         _ => "not found".to_string(),
     };
     let ffx_path_node =
-        ledger.add_node(&format!("Path to ffx: {}", ffx_path), LedgerMode::Verbose)?;
+        ledger.add_node(&format!("Path to ffx: {}", ffx_path), LedgerMode::Normal)?;
     ledger.set_outcome(ffx_path_node, LedgerOutcome::Info)?;
 
     ledger.close(ffx_node)?;
@@ -3923,6 +3923,8 @@ mod test {
             ledger.writer.get_data(),
             format!(
                 "\
+                \n[✓] FFX doctor\
+                \n    [i] Path to ffx: {ffx_path}\
                 \n[✓] FFX Environment Context\
                 \n    [✓] Kind of Environment: Isolated environment with an isolated root of {isolated_root}\
                 \n    [✓] Config Lock Files\
@@ -3945,6 +3947,7 @@ mod test {
                 \n    [✓] Target: {NODENAME}\
                 \n    [✗] Target: {UNRESPONSIVE_NODENAME}\
                 \n[✓] No issues found\n",
+                ffx_path = ffx_path(),
                 isolated_root = test_env.isolate_root.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
@@ -4579,6 +4582,8 @@ mod test {
             ledger.writer.get_data(),
             format!(
                 "\
+                \n[✓] FFX doctor\
+                \n    [i] Path to ffx: {ffx_path}\
                 \n[✓] FFX Environment Context\
                 \n    [✓] Kind of Environment: Isolated environment with an isolated root of {isolated_root}\
                 \n    [✓] Config Lock Files\
@@ -4602,6 +4607,7 @@ mod test {
                 \n    [✗] Target: {UNRESPONSIVE_NODENAME}\
                 \n[✗] Doctor found issues in one or more categories; \
                 run 'ffx doctor -v' for more details.\n",
+                ffx_path = ffx_path(),
                 isolated_root = test_env.isolate_root.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
