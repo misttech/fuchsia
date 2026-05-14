@@ -477,6 +477,11 @@ pub fn write_rule<W: io::Write>(
                     rustenv.add_platform_cfg(platform.cloned(), flag.to_string());
                 }
             }
+            if let Some(ref crate_configs) = cfg.remove_configs {
+                for config in crate_configs {
+                    configs.remove_platform_cfg(platform.cloned(), config);
+                }
+            }
             if let Some(ref crate_configs) = cfg.configs {
                 for config in crate_configs {
                     configs.add_platform_cfg(platform.cloned(), config);

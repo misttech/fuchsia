@@ -196,6 +196,11 @@ fn main() {
             golden_expected_filename: vec!["existing_gn_target", "BUILD.gn"],
             options: Options { extra_args: vec!["--skip-root"], ..Default::default() },
         },
+        TestCase {
+            manifest_path: vec!["gn-configs", "Cargo.toml"],
+            golden_expected_filename: vec!["gn-configs", "BUILD.gn"],
+            options: Options { extra_args: vec!["--skip-root"], ..Default::default() },
+        },
     ];
 
     let run_gnaw = |manifest_path: &[&str], extra_args: &[&str], output_sdk_metadata: bool| {
@@ -261,9 +266,7 @@ fn main() {
         let expected_path: PathBuf =
             test_base_dir.join(test.golden_expected_filename.iter().collect::<PathBuf>());
         let expected = std::fs::read_to_string(expected_path.to_string_lossy().to_string())
-            .with_context(|| {
-                format!("while reading expected: {:?}", test.golden_expected_filename)
-            })
+            .with_context(|| format!("while reading expected: {:?}", test.golden_expected_filename))
             .expect("expected file read success");
         assert_eq!(
             DisplayAsDebug(&expected),

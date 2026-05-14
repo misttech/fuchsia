@@ -98,6 +98,9 @@ pub struct TargetCfg {
     /// GN Configs that this crate should depend on.  Used to add
     /// crate-specific configs.
     configs: Option<Vec<String>>,
+    /// GN Configs that this crate should exclude.  Used to remove
+    /// crate-specific configs.
+    remove_configs: Option<Vec<String>>,
     /// GN Visibility that controls which targets can depend on this target.
     visibility: Option<Vec<String>>,
 
@@ -437,10 +440,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                                     package,
                                 )
                                 .with_context(|| {
-                                    format!(
-                                        "while writing top level rule for package: {}",
-                                        dep.pkg
-                                    )
+                                    format!("while writing top level rule for package: {}", dep.pkg)
                                 })
                                 .context("writing Fuchsia SDK metadata for top level rule")?;
                             }
