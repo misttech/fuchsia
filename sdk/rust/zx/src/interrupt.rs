@@ -5,8 +5,7 @@
 //! Type-safe bindings for Zircon interrupts.
 
 use crate::{
-    AsHandleRef, BootTimeline, HandleRef, Instant, MonotonicTimeline, NullableHandle, Port, Status,
-    Timeline, ok, sys,
+    BootTimeline, Instant, MonotonicTimeline, NullableHandle, Port, Status, Timeline, ok, sys,
 };
 use std::marker::PhantomData;
 
@@ -16,6 +15,8 @@ use std::marker::PhantomData;
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
 pub struct Interrupt<K = RealInterruptKind, T = BootTimeline>(NullableHandle, PhantomData<(K, T)>);
+
+impl_handle_based!(Interrupt, [K: InterruptKind, T: Timeline], [K, T]);
 
 pub trait InterruptKind: private::Sealed {}
 
@@ -77,7 +78,6 @@ impl<K: InterruptKind, T: Timeline> Interrupt<K, T> {
         let status = unsafe { sys::zx_interrupt_ack(self.raw_handle()) };
         ok(status)
     }
-
     /// Destroy the interrupt.
     ///
     /// Wraps [zx_interrupt_destroy](https://fuchsia.dev/reference/syscalls/interrupt_destroy).
@@ -86,8 +86,6 @@ impl<K: InterruptKind, T: Timeline> Interrupt<K, T> {
         let status = unsafe { sys::zx_interrupt_destroy(self.raw_handle()) };
         ok(status)
     }
-
-    delegated_concrete_handle_based_impls!(|h| Self(h, PhantomData));
 }
 
 pub trait InterruptTimeline: Timeline {
@@ -128,24 +126,6 @@ impl<T: InterruptTimeline> Interrupt<VirtualInterruptKind, T> {
         // SAFETY: this is a basic FFI call.
         let status = unsafe { sys::zx_interrupt_trigger(self.raw_handle(), 0, time.into_nanos()) };
         ok(status)
-    }
-}
-
-impl<K: InterruptKind, T: Timeline> AsHandleRef for Interrupt<K, T> {
-    fn as_handle_ref(&self) -> HandleRef<'_> {
-        self.0.as_handle_ref()
-    }
-}
-
-impl<K: InterruptKind, T: Timeline> From<NullableHandle> for Interrupt<K, T> {
-    fn from(handle: NullableHandle) -> Self {
-        Interrupt::<K, T>(handle, PhantomData)
-    }
-}
-
-impl<K: InterruptKind, T: Timeline> From<Interrupt<K, T>> for NullableHandle {
-    fn from(x: Interrupt<K, T>) -> NullableHandle {
-        x.0
     }
 }
 

@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon clock objects.
 
 use crate::{
-    AsHandleRef, BootTimeline, ClockUpdate, HandleRef, Instant, MonotonicTimeline, NullableHandle,
-    ObjectQuery, SyntheticTimeline, Ticks, Timeline, Topic, ok, sys,
+    BootTimeline, ClockUpdate, Instant, MonotonicTimeline, NullableHandle, ObjectQuery,
+    SyntheticTimeline, Ticks, Timeline, Topic, ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
@@ -27,6 +27,8 @@ pub struct Clock<Reference = MonotonicTimeline, Output = SyntheticTimeline>(
     NullableHandle,
     std::marker::PhantomData<(Reference, Output)>,
 );
+
+impl_handle_based!(Clock, [Reference: Timeline, Output: Timeline], [Reference, Output]);
 
 pub type SyntheticClock = Clock<MonotonicTimeline, SyntheticTimeline>;
 pub type SyntheticClockOnBoot = Clock<BootTimeline, SyntheticTimeline>;
@@ -187,8 +189,6 @@ impl<Reference: Timeline, Output: Timeline> Clock<Reference, Output> {
     pub fn downcast<NewReference: Timeline>(self) -> Clock<NewReference, SyntheticTimeline> {
         Clock(self.0, std::marker::PhantomData)
     }
-
-    delegated_concrete_handle_based_impls!(|h| Self(h, std::marker::PhantomData));
 }
 
 impl<Reference: Timeline> Clock<Reference, SyntheticTimeline> {
@@ -198,24 +198,6 @@ impl<Reference: Timeline> Clock<Reference, SyntheticTimeline> {
         self,
     ) -> Clock<NewReference, UserTimeline> {
         Clock(self.0, std::marker::PhantomData)
-    }
-}
-
-impl<Reference: Timeline, Output: Timeline> AsHandleRef for Clock<Reference, Output> {
-    fn as_handle_ref(&self) -> HandleRef<'_> {
-        self.0.as_handle_ref()
-    }
-}
-
-impl<Reference: Timeline, Output: Timeline> From<NullableHandle> for Clock<Reference, Output> {
-    fn from(handle: NullableHandle) -> Self {
-        Clock(handle, std::marker::PhantomData)
-    }
-}
-
-impl<Reference: Timeline, Output: Timeline> From<Clock<Reference, Output>> for NullableHandle {
-    fn from(x: Clock<Reference, Output>) -> NullableHandle {
-        x.0
     }
 }
 

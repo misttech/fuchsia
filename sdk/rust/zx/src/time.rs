@@ -4,7 +4,7 @@
 
 //! Type-safe bindings for Zircon timer objects.
 
-use crate::{AsHandleRef, HandleRef, NullableHandle, ObjectQuery, Status, Topic, ok, sys};
+use crate::{NullableHandle, ObjectQuery, Status, Topic, ok, sys};
 use std::cmp::{Eq, Ord, PartialEq, PartialOrd};
 use std::hash::Hash;
 use std::{ops, time as stdtime};
@@ -414,6 +414,8 @@ impl MonotonicDuration {
 // TODO(https://fxbug.dev/361661898) remove default type when FIDL understands mono vs. boot timers
 pub struct Timer<T = MonotonicTimeline>(NullableHandle, std::marker::PhantomData<T>);
 
+impl_handle_based!(Timer, [T: Timeline], [T]);
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, FromBytes, Immutable)]
 pub struct TimerInfo<T: Timeline> {
@@ -466,8 +468,6 @@ impl<T: Timeline> Timer<T> {
     pub fn info(&self) -> Result<TimerInfo<T>, Status> {
         Ok(TimerInfo::from_raw(self.0.get_info_single::<TimerInfoQuery>()?))
     }
-
-    delegated_concrete_handle_based_impls!(|h| Self(h, std::marker::PhantomData));
 }
 
 impl Timer<MonotonicTimeline> {
@@ -529,24 +529,6 @@ impl<T: Timeline> Timer<T> {
     pub fn cancel(&self) -> Result<(), Status> {
         let status = unsafe { sys::zx_timer_cancel(self.raw_handle()) };
         ok(status)
-    }
-}
-
-impl<T: Timeline> AsHandleRef for Timer<T> {
-    fn as_handle_ref(&self) -> HandleRef<'_> {
-        self.0.as_handle_ref()
-    }
-}
-
-impl<T: Timeline> From<NullableHandle> for Timer<T> {
-    fn from(handle: NullableHandle) -> Self {
-        Timer(handle, std::marker::PhantomData)
-    }
-}
-
-impl<T: Timeline> From<Timer<T>> for NullableHandle {
-    fn from(x: Timer<T>) -> NullableHandle {
-        x.0
     }
 }
 

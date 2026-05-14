@@ -4,7 +4,7 @@
 
 //! Type-safe bindings for Zircon fifo objects.
 
-use crate::{AsHandleRef, HandleRef, NullableHandle, Status, ok, sys};
+use crate::{NullableHandle, Status, ok, sys};
 use std::mem::MaybeUninit;
 use zerocopy::{FromBytes, IntoBytes};
 
@@ -20,6 +20,8 @@ pub struct Fifo<R = UnspecifiedFifoElement, W = R>(
     NullableHandle,
     std::marker::PhantomData<(R, W)>,
 );
+
+impl_handle_based!(Fifo, [R, W], [R, W]);
 
 impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
     /// Create a pair of fifos and return their endpoints. Writing to one endpoint enqueues an
@@ -158,8 +160,6 @@ impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
         };
         ok(status).map(|()| actual_count)
     }
-
-    delegated_concrete_handle_based_impls!(|h| Self(h, std::marker::PhantomData));
 }
 
 impl Fifo<UnspecifiedFifoElement> {
@@ -175,24 +175,6 @@ impl<R, W> Fifo<R, W> {
     /// will not support reads or writes.
     pub fn downcast(self) -> Fifo {
         Fifo::from(self.0)
-    }
-}
-
-impl<R, W> AsHandleRef for Fifo<R, W> {
-    fn as_handle_ref(&self) -> HandleRef<'_> {
-        self.0.as_handle_ref()
-    }
-}
-
-impl<R, W> From<NullableHandle> for Fifo<R, W> {
-    fn from(handle: NullableHandle) -> Self {
-        Self(handle, std::marker::PhantomData)
-    }
-}
-
-impl<R, W> From<Fifo<R, W>> for NullableHandle {
-    fn from(x: Fifo<R, W>) -> NullableHandle {
-        x.0
     }
 }
 

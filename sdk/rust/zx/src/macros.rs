@@ -27,6 +27,35 @@ macro_rules! impl_handle_based {
             delegated_concrete_handle_based_impls!(Self);
         }
     };
+    ($type_name:ident, [$($impl_generics:tt)*], [$($ty_generics:tt)*]) => {
+        impl<$($impl_generics)*> crate::AsHandleRef for $type_name<$($ty_generics)*> {
+            fn as_handle_ref(&self) -> crate::HandleRef<'_> {
+                self.0.as_handle_ref()
+            }
+        }
+
+        impl<$($impl_generics)*> AsRef<crate::NullableHandle> for $type_name<$($ty_generics)*> {
+            fn as_ref(&self) -> &crate::NullableHandle {
+                &self.0
+            }
+        }
+
+        impl<$($impl_generics)*> From<crate::NullableHandle> for $type_name<$($ty_generics)*> {
+            fn from(handle: crate::NullableHandle) -> Self {
+                $type_name(handle, ::std::marker::PhantomData)
+            }
+        }
+
+        impl<$($impl_generics)*> From<$type_name<$($ty_generics)*>> for crate::NullableHandle {
+            fn from(x: $type_name<$($ty_generics)*>) -> crate::NullableHandle {
+                x.0
+            }
+        }
+
+        impl<$($impl_generics)*> $type_name<$($ty_generics)*> {
+            delegated_concrete_handle_based_impls!(|h| Self(h, ::std::marker::PhantomData));
+        }
+    };
 }
 
 macro_rules! delegated_concrete_handle_based_impls {
