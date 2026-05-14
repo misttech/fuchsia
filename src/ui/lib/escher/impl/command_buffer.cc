@@ -4,6 +4,8 @@
 
 #include "src/ui/lib/escher/impl/command_buffer.h"
 
+#include <memory_resource>
+
 #include "src/lib/fxl/macros.h"
 #include "src/ui/lib/escher/impl/descriptor_set_pool.h"
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
@@ -53,14 +55,32 @@ bool CommandBuffer::Submit(vk::Queue queue, CommandBufferFinishedCallback callba
 
   static constexpr vk::ProtectedSubmitInfo kProtectedSubmitInfo =
       vk::ProtectedSubmitInfo().setProtectedSubmit(true);
+
+  // Build raw semaphore arrays on the stack using a single PMR pool to avoid
+  // heap allocations in the common case where we have few semaphores.
+  std::byte buffer[256];
+  std::pmr::monotonic_buffer_resource pool{buffer, sizeof(buffer)};
+
+  std::pmr::vector<vk::Semaphore> raw_wait_semaphores{&pool};
+  raw_wait_semaphores.reserve(wait_semaphores_.size());
+  for (const auto& s : wait_semaphores_) {
+    raw_wait_semaphores.push_back(s->vk_semaphore());
+  }
+
+  std::pmr::vector<vk::Semaphore> raw_signal_semaphores{&pool};
+  raw_signal_semaphores.reserve(signal_semaphores_.size());
+  for (const auto& s : signal_semaphores_) {
+    raw_signal_semaphores.push_back(s->vk_semaphore());
+  }
+
   const vk::SubmitInfo submit_info(
-      /*waitSemaphoreCount=*/static_cast<uint32_t>(wait_semaphores_for_submit_.size()),
-      /*pWaitSemaphores*/ wait_semaphores_for_submit_.data(),
+      /*waitSemaphoreCount=*/static_cast<uint32_t>(raw_wait_semaphores.size()),
+      /*pWaitSemaphores*/ raw_wait_semaphores.data(),
       /*pWaitDstStageMask=*/wait_semaphore_stages_.data(),
       /*commandBufferCount=*/1,
       /*pCommandBuffers=*/&command_buffer_,
-      /*signalSemaphoreCount=*/static_cast<uint32_t>(signal_semaphores_for_submit_.size()),
-      /*pSignalSemaphores=*/signal_semaphores_for_submit_.data(),
+      /*signalSemaphoreCount=*/static_cast<uint32_t>(raw_signal_semaphores.size()),
+      /*pSignalSemaphores=*/raw_signal_semaphores.data(),
       /*pNext=*/use_protected_memory_ ? &kProtectedSubmitInfo : nullptr);
   auto submit_result = queue.submit(1, &submit_info, fence_);
   if (submit_result != vk::Result::eSuccess) {
@@ -84,10 +104,7 @@ vk::Result CommandBuffer::Wait(uint64_t nanoseconds) {
 void CommandBuffer::AddWaitSemaphore(SemaphorePtr semaphore, vk::PipelineStageFlags stage) {
   FX_DCHECK(is_active_);
   if (semaphore) {
-    // Build up list that will be used when frame is submitted.
-    wait_semaphores_for_submit_.push_back(semaphore->vk_semaphore());
     wait_semaphore_stages_.push_back(stage);
-    // Retain semaphore to ensure that it doesn't prematurely die.
     wait_semaphores_.push_back(std::move(semaphore));
   }
 }
@@ -95,9 +112,6 @@ void CommandBuffer::AddWaitSemaphore(SemaphorePtr semaphore, vk::PipelineStageFl
 void CommandBuffer::AddSignalSemaphore(SemaphorePtr semaphore) {
   FX_DCHECK(is_active_);
   if (semaphore) {
-    // Build up list that will be used when frame is submitted.
-    signal_semaphores_for_submit_.push_back(semaphore->vk_semaphore());
-    // Retain semaphore to ensure that it doesn't prematurely die.
     signal_semaphores_.push_back(std::move(semaphore));
   }
 }
@@ -374,10 +388,8 @@ bool CommandBuffer::Retire() {
 
   // TODO: move semaphores to pool for reuse?
   wait_semaphores_.clear();
-  wait_semaphores_for_submit_.clear();
   wait_semaphore_stages_.clear();
   signal_semaphores_.clear();
-  signal_semaphores_for_submit_.clear();
 
   auto result = command_buffer_.reset(vk::CommandBufferResetFlags());
   FX_DCHECK(result == vk::Result::eSuccess);

@@ -138,12 +138,11 @@ class CommandBuffer {
   const vk::Fence fence_;
   const vk::PipelineStageFlags pipeline_stage_mask_;
 
+  // Build up lists that will be used when the command buffer is submitted, and
+  // retain semaphores to ensure that they don't prematurely die.
   std::vector<SemaphorePtr> wait_semaphores_;
   std::vector<vk::PipelineStageFlags> wait_semaphore_stages_;
-  std::vector<vk::Semaphore> wait_semaphores_for_submit_;
-
   std::vector<SemaphorePtr> signal_semaphores_;
-  std::vector<vk::Semaphore> signal_semaphores_for_submit_;
 
   const bool use_protected_memory_ = false;
   bool is_active_ = false;
