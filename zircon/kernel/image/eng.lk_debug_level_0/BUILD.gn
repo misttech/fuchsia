@@ -34,5 +34,5 @@ kernel_image("eng.lk_debug_level_0") {
 
 group("eng.lk_debug_level_0.test-data-deps") {
   testonly = true
-  deps = [ "//zircon/kernel/image/eng:eng.test-data-deps" ]
+  deps = [ "//zircon/kernel/image:common-test-boot-options" ]
 }
