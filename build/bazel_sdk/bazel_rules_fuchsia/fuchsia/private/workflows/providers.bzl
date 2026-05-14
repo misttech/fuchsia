@@ -5,9 +5,12 @@
 """All Fuchsia Task Providers."""
 
 load(
+    "@fuchsia_rules_common//debug_symbols:providers.bzl",
+    _FuchsiaDebugSymbolInfo = "FuchsiaDebugSymbolInfo",
+)
+load(
     "//fuchsia/private:providers.bzl",
     _FuchsiaComponentInfo = "FuchsiaComponentInfo",
-    _FuchsiaDebugSymbolInfo = "FuchsiaDebugSymbolInfo",
     _FuchsiaDriverToolInfo = "FuchsiaDriverToolInfo",
     _FuchsiaPackagedComponentInfo = "FuchsiaPackagedComponentInfo",
     _FuchsiaProductBundleInfo = "FuchsiaProductBundleInfo",

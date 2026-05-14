@@ -4,6 +4,10 @@
 
 """fuchsia_package() rule."""
 
+load(
+    "@fuchsia_rules_common//debug_symbols:providers.bzl",
+    "FuchsiaDebugSymbolInfo",
+)
 load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 load("//fuchsia/constraints:target_compatibility.bzl", "COMPATIBILITY")
 load("//fuchsia/private/workflows:fuchsia_package_tasks.bzl", "fuchsia_package_tasks")
@@ -22,7 +26,6 @@ load(
     ":providers.bzl",
     "FuchsiaCollectedPackageResourcesInfo",
     "FuchsiaComponentInfo",
-    "FuchsiaDebugSymbolInfo",
     "FuchsiaDriverToolInfo",
     "FuchsiaPackageResourcesInfo",
     "FuchsiaPackagedComponentInfo",

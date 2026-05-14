@@ -9,6 +9,10 @@ Drop in replacements for cc_binary and cc_test:
  - fuchsia_cc_test
 """
 
+load(
+    "@fuchsia_rules_common//debug_symbols:providers.bzl",
+    "FuchsiaDebugSymbolInfo",
+)
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
@@ -20,7 +24,6 @@ load("//fuchsia/private:fuchsia_toolchains.bzl", "FUCHSIA_TOOLCHAIN_DEFINITION",
 load(":fuchsia_component.bzl", "fuchsia_test_component")
 load(
     ":providers.bzl",
-    "FuchsiaDebugSymbolInfo",
     "FuchsiaPackageResourcesInfo",
     "FuchsiaUnstrippedBinaryInfo",
 )

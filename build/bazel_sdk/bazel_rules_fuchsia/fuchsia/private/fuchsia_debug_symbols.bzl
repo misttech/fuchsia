@@ -5,9 +5,12 @@
 """Utilities for extracting, creating, and manipulating debug symbols."""
 
 load(
+    "@fuchsia_rules_common//debug_symbols:providers.bzl",
+    "FuchsiaDebugSymbolInfo",
+)
+load(
     ":providers.bzl",
     "FuchsiaCollectedUnstrippedBinariesInfo",
-    "FuchsiaDebugSymbolInfo",
     "FuchsiaPackageResourcesInfo",
     "FuchsiaUnstrippedBinaryInfo",
 )
