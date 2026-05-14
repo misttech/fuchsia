@@ -367,7 +367,6 @@ mod tests {
     use fidl_fuchsia_logger::{LogSinkMarker, LogSinkProxy};
     use fuchsia_async::{Task, TestExecutor};
     use fuchsia_inspect as inspect;
-    use fuchsia_inspect_derive::WithInspect;
     use moniker::ExtendedMoniker;
 
     fn initialize_container(
@@ -378,11 +377,8 @@ mod tests {
             ExtendedMoniker::parse_str("/foo/bar").unwrap(),
             "fuchsia-pkg://test",
         ));
-        let stats = Arc::new(
-            LogStreamStats::default()
-                .with_inspect(inspect::component::inspector().root(), identity.moniker.as_ref())
-                .expect("failed to attach component log stats"),
-        );
+        let stats =
+            Arc::new(LogStreamStats::new(inspect::component::inspector().root(), &identity));
         let buffer = SharedBuffer::new(
             create_ring_buffer(1024 * 1024),
             Box::new(|_| {}),

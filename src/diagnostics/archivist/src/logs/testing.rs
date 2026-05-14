@@ -15,10 +15,13 @@ use diagnostics_log_encoding::{Argument, RawSeverity, Record};
 use diagnostics_log_types::Severity;
 use diagnostics_message::MAX_DATAGRAM_LEN;
 use fidl::prelude::*;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_logger::{
     LogFilterOptions, LogMarker, LogMessage, LogProxy, LogSinkMarker, LogSinkProxy,
     MAX_DATAGRAM_LEN_BYTES,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol_at_dir_svc;
 use fuchsia_inspect::Inspector;
 use fuchsia_sync::Mutex;
@@ -31,7 +34,6 @@ use std::marker::PhantomData;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use validating_log_listener::validate_log_stream;
-use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 pub struct TestHarness {
     inspector: Inspector,
@@ -623,5 +625,12 @@ pub fn make_message(msg: &str, tag: Option<&str>, timestamp: zx::BootInstant) ->
     let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
     encoder.write_record(record).unwrap();
     let encoded = &buffer.get_ref()[..buffer.position() as usize];
-    StoredMessage::new(encoded.to_vec().into(), &Default::default()).unwrap()
+    StoredMessage::new(
+        encoded.to_vec().into(),
+        &Arc::new(crate::logs::stats::LogStreamStats::new(
+            &fuchsia_inspect::Node::default(),
+            &ComponentIdentity::unknown(),
+        )),
+    )
+    .unwrap()
 }

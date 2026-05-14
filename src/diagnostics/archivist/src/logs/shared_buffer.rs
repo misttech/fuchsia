@@ -1053,11 +1053,11 @@ mod tests {
     use fuchsia_async as fasync;
     use fuchsia_async::TimeoutExt;
     use fuchsia_inspect::Inspector;
-    use fuchsia_inspect_derive::WithInspect;
     use futures::FutureExt;
     use futures::channel::mpsc;
     use futures::future::OptionFuture;
     use futures::stream::{FuturesUnordered, StreamExt as _};
+    use moniker::ExtendedMoniker;
     use ring_buffer::MAX_MESSAGE_SIZE;
     use std::future::poll_fn;
     use std::iter::repeat_with;
@@ -1066,6 +1066,13 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::task::Poll;
     use std::time::Duration;
+
+    fn test_stats() -> Arc<LogStreamStats> {
+        Arc::new(LogStreamStats::new(
+            &fuchsia_inspect::Node::default(),
+            &super::ComponentIdentity::unknown(),
+        ))
+    }
 
     async fn yield_to_executor() {
         let mut first_time = true;
@@ -1090,7 +1097,7 @@ mod tests {
             &fuchsia_inspect::Node::default(),
         );
         let container_buffer =
-            buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
+            buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats());
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
         container_buffer.push_back(msg.bytes());
 
@@ -1109,7 +1116,7 @@ mod tests {
         );
 
         let container_buffer =
-            buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
+            buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats());
         container_buffer.push_back(&[0]);
 
         assert_eq!(container_buffer.cursor(StreamMode::Snapshot).unwrap().count().await, 0);
@@ -1124,7 +1131,7 @@ mod tests {
             &fuchsia_inspect::Node::default(),
         );
         let container_buffer =
-            buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
+            buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats());
         container_buffer.push_back(&[0x77; 16]);
 
         assert_eq!(container_buffer.cursor(StreamMode::Snapshot).unwrap().count().await, 0);
@@ -1139,7 +1146,7 @@ mod tests {
             &fuchsia_inspect::Node::default(),
         );
         let container_buffer =
-            buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
+            buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats());
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
         container_buffer.push_back(&msg.bytes()[..msg.bytes().len() - 1]);
 
@@ -1155,7 +1162,7 @@ mod tests {
             &fuchsia_inspect::Node::default(),
         );
         let container_buffer =
-            buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
+            buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats());
 
         // Keep writing messages until we wrap.
         let mut i = 0;
@@ -1222,8 +1229,8 @@ mod tests {
                 &fuchsia_inspect::Node::default(),
             ))
         };
-        let container_a = buffer.new_container_buffer(identity, Arc::default());
-        let container_b = buffer.new_container_buffer(Arc::new(vec!["b"].into()), Arc::default());
+        let container_a = buffer.new_container_buffer(identity, test_stats());
+        let container_b = buffer.new_container_buffer(Arc::new(vec!["b"].into()), test_stats());
 
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
         container_a.push_back(msg.bytes());
@@ -1252,14 +1259,14 @@ mod tests {
         );
 
         // terminate when buffer has no logs.
-        let container_a = buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
+        let container_a = buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats());
         assert_eq!(buffer.container_count(), 1);
         container_a.terminate();
 
         assert_eq!(buffer.container_count(), 0);
 
         // terminate when buffer has logs.
-        let container_a = buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default());
+        let container_a = buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats());
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
         container_a.push_back(msg.bytes());
         assert_eq!(buffer.container_count(), 1);
@@ -1269,7 +1276,7 @@ mod tests {
         assert_eq!(buffer.container_count(), 1);
 
         // Roll out the logs.
-        let container_b = buffer.new_container_buffer(Arc::new(vec!["b"].into()), Arc::default());
+        let container_b = buffer.new_container_buffer(Arc::new(vec!["b"].into()), test_stats());
         assert_eq!(buffer.container_count(), 2);
 
         // Repeatedly write messages to b until a's message is dropped and then the container will
@@ -1294,7 +1301,7 @@ mod tests {
                 &fuchsia_inspect::Node::default(),
             );
             let container =
-                Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default()));
+                Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats()));
             let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
             container.push_back(msg.bytes());
 
@@ -1347,7 +1354,7 @@ mod tests {
             &fuchsia_inspect::Node::default(),
         );
         let container =
-            Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default()));
+            Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats()));
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
 
         let mut cursor_a = pin!(container.cursor(StreamMode::Subscribe).unwrap());
@@ -1381,7 +1388,7 @@ mod tests {
             &fuchsia_inspect::Node::default(),
         );
         let container =
-            Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default()));
+            Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats()));
 
         let cursor_a = container.cursor(StreamMode::Subscribe).unwrap();
         let cursor_b = container.cursor(StreamMode::SnapshotThenSubscribe).unwrap();
@@ -1403,7 +1410,7 @@ mod tests {
             &fuchsia_inspect::Node::default(),
         ));
         let container_a =
-            Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default()));
+            Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats()));
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
         container_a.push_back(msg.bytes());
 
@@ -1412,7 +1419,7 @@ mod tests {
 
         // Roll out all the messages.
         let container_b =
-            Arc::new(buffer.new_container_buffer(Arc::new(vec!["b"].into()), Arc::default()));
+            Arc::new(buffer.new_container_buffer(Arc::new(vec!["b"].into()), test_stats()));
         while container_a.cursor(StreamMode::Snapshot).unwrap().count().await > 0 {
             container_b.push_back(msg.bytes());
 
@@ -1425,7 +1432,7 @@ mod tests {
         // This should create a new container that uses a new slot and shouldn't interfere with
         // container_a.
         let container_c =
-            Arc::new(buffer.new_container_buffer(Arc::new(vec!["c"].into()), Arc::default()));
+            Arc::new(buffer.new_container_buffer(Arc::new(vec!["c"].into()), test_stats()));
         container_c.push_back(msg.bytes());
         container_c.push_back(msg.bytes());
     }
@@ -1433,8 +1440,11 @@ mod tests {
     #[fuchsia::test]
     async fn socket_increments_logstats() {
         let inspector = Inspector::default();
-        let stats: Arc<LogStreamStats> =
-            Arc::new(LogStreamStats::default().with_inspect(inspector.root(), "test").unwrap());
+        let identity = Arc::new(super::ComponentIdentity::new(
+            ExtendedMoniker::parse_str("./test").unwrap(),
+            "",
+        ));
+        let stats = Arc::new(LogStreamStats::new(inspector.root(), &identity));
         let buffer = Arc::new(SharedBuffer::new(
             create_ring_buffer(65536),
             Box::new(|_| {}),
@@ -1526,7 +1536,7 @@ mod tests {
             &fuchsia_inspect::Node::default(),
         ));
         let container_a =
-            Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), Arc::default()));
+            Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats()));
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
 
         let (local, remote) = zx::Socket::create_datagram();
@@ -1571,7 +1581,7 @@ mod tests {
             SharedBufferOptions { sleep_time: Duration::ZERO, ..Default::default() },
             &fuchsia_inspect::Node::default(),
         ));
-        let container_a = Arc::new(buffer.new_container_buffer(a_identity, Arc::default()));
+        let container_a = Arc::new(buffer.new_container_buffer(a_identity, test_stats()));
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
 
         let (local, remote) = zx::Socket::create_datagram();
@@ -1584,7 +1594,7 @@ mod tests {
         assert_eq!(cursor.map(|item| assert_eq!(item.data(), msg.bytes())).count().await, 1);
 
         // Now roll out a's messages.
-        let container_b = buffer.new_container_buffer(Arc::new(vec!["b"].into()), Arc::default());
+        let container_b = buffer.new_container_buffer(Arc::new(vec!["b"].into()), test_stats());
         while container_a.cursor(StreamMode::Snapshot).unwrap().count().await == 1 {
             container_b.push_back(msg.bytes());
 
@@ -1612,7 +1622,7 @@ mod tests {
             Default::default(),
             &fuchsia_inspect::Node::default(),
         ));
-        let container_a = Arc::new(buffer.new_container_buffer(a_identity, Arc::default()));
+        let container_a = Arc::new(buffer.new_container_buffer(a_identity, test_stats()));
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
 
         let (local, remote) = zx::Socket::create_datagram();

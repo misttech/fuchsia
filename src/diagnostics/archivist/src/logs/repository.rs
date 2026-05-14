@@ -18,7 +18,6 @@ use fidl_fuchsia_diagnostics_types::Severity as FidlSeverity;
 use flyweights::FlyStr;
 use fuchsia_async as fasync;
 use fuchsia_inspect as inspect;
-use fuchsia_inspect_derive::WithInspect;
 use fuchsia_sync::Mutex;
 use futures::prelude::*;
 use log::{LevelFilter, debug, error};
@@ -372,11 +371,7 @@ impl LogsRepositoryState {
         repo: Weak<LogsRepository>,
     ) -> Arc<LogsArtifactsContainer> {
         let initial_interest = self.get_initial_interest(identity.as_ref());
-        let stats = LogStreamStats::default()
-            .with_inspect(&self.inspect_node, identity.moniker.as_ref())
-            .expect("failed to attach component log stats");
-        stats.set_url(&identity.url);
-        let stats = Arc::new(stats);
+        let stats = Arc::new(LogStreamStats::new(&self.inspect_node, &identity));
         let buffer = shared_buffer.new_container_buffer(Arc::clone(&identity), Arc::clone(&stats));
         let container = Arc::new(LogsArtifactsContainer::new(
             Arc::clone(&identity),
@@ -516,10 +511,13 @@ mod tests {
     use super::*;
     use crate::logs::shared_buffer::create_ring_buffer;
     use crate::logs::testing::make_message;
+    use fidl_fuchsia_diagnostics::StreamMode;
     use fidl_fuchsia_logger::LogSinkMarker;
-
+    use fuchsia_inspect::Inspector;
     use moniker::ExtendedMoniker;
-    use selectors::FastError;
+    use ring_buffer::MAX_MESSAGE_SIZE;
+    use selectors::{FastError, SelectorExt};
+    use std::time::Duration;
 
     #[fuchsia::test]
     async fn data_repo_filters_logs_by_selectors() {
@@ -698,5 +696,74 @@ mod tests {
         container.handle_log_sink(stream, scope);
         let initial_interest = log_sink.wait_for_interest_change().await.unwrap().unwrap();
         assert_eq!(initial_interest.min_severity, expected_severity);
+    }
+
+    #[fuchsia::test]
+    async fn inspect_node_cleaned_up_on_roll_out() {
+        let inspector = Inspector::default();
+        let repo = LogsRepository::new(
+            create_ring_buffer(MAX_MESSAGE_SIZE),
+            std::iter::empty(),
+            inspector.root(),
+            fasync::Scope::new(),
+        );
+
+        let identity_foo = Arc::new(ComponentIdentity::new(
+            ExtendedMoniker::parse_str("./foo").unwrap(),
+            "fuchsia-pkg://foo",
+        ));
+
+        // Create container A
+        let container_foo = repo.get_log_container(Arc::clone(&identity_foo));
+        container_foo.ingest_message(make_message("a", None, zx::BootInstant::from_nanos(1)));
+
+        // Force SharedBuffer to scan messages and update msg_ids.end.
+        // Without this, ContainerInfo::is_active() evaluates to false immediately after
+        // mark_stopped(), causing repo.is_live() to return false before rollout happens.
+        let _cursor = repo.logs_cursor(
+            StreamMode::Subscribe,
+            vec![identity_foo.moniker.clone().into_component_selector()],
+        );
+
+        container_foo.mark_stopped();
+        drop(container_foo);
+
+        // Verify stats exist
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert!(
+            hierarchy.get_child_by_path(&["log_sources", "foo"]).is_some(),
+            "foo stats must exist initially"
+        );
+
+        // Ingest messages for another component until foo is rolled out
+        let container_bar = repo.get_log_container(Arc::new(ComponentIdentity::new(
+            ExtendedMoniker::parse_str("./bar").unwrap(),
+            "fuchsia-pkg://bar",
+        )));
+
+        let large_str = "b".repeat(1000);
+        for i in 2..1000 {
+            container_bar.ingest_message(make_message(
+                &large_str,
+                None,
+                zx::BootInstant::from_nanos(i),
+            ));
+            fasync::Timer::new(Duration::from_millis(10)).await;
+            if !repo.mutable_state.lock().is_live(&identity_foo) {
+                break;
+            }
+        }
+
+        assert!(
+            !repo.mutable_state.lock().is_live(&identity_foo),
+            "foo container must be inactive after rollout"
+        );
+
+        // Verify stats are cleaned up
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert!(
+            hierarchy.get_child_by_path(&["log_sources", "foo"]).is_none(),
+            "foo stats must be cleaned up after rollout"
+        );
     }
 }

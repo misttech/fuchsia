@@ -617,7 +617,7 @@ where
                         Err(e)
                     }
                     Ok(contents) => {
-                        result_stats.add_result();
+                        result_stats.add_result(1);
                         match per_component_byte_limit_opt {
                             Some(x) => {
                                 if maybe_update_budget(

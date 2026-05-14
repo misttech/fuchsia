@@ -6,6 +6,7 @@ use archivist_lib::identity::ComponentIdentity;
 use archivist_lib::logs::shared_buffer::{
     FilterCursorStream, FxtMessage, SharedBuffer, create_ring_buffer,
 };
+use archivist_lib::logs::stats::LogStreamStats;
 use archivist_lib::logs::stored_message::StoredMessage;
 use diagnostics_log_encoding::encode::{Encoder, EncoderOpts};
 use diagnostics_log_encoding::{Argument, Record};
@@ -25,6 +26,10 @@ use std::time::Duration;
 
 const RING_BUFFER_SIZE: usize = 65536;
 
+fn test_stats() -> Arc<LogStreamStats> {
+    Arc::new(LogStreamStats::new(&fuchsia_inspect::Node::default(), &ComponentIdentity::unknown()))
+}
+
 fn make_message(msg: &str, timestamp: zx::BootInstant) -> StoredMessage {
     let record = Record {
         timestamp,
@@ -39,7 +44,7 @@ fn make_message(msg: &str, timestamp: zx::BootInstant) -> StoredMessage {
     let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
     encoder.write_record(record).unwrap();
     let encoded = &buffer.get_ref()[..buffer.position() as usize];
-    StoredMessage::new(encoded.to_vec().into(), &Default::default()).unwrap()
+    StoredMessage::new(encoded.to_vec().into(), &test_stats()).unwrap()
 }
 
 fn get_component_identity() -> Arc<ComponentIdentity> {
@@ -57,7 +62,7 @@ fn bench_fill(b: &mut criterion::Bencher, size: usize) {
     ));
     let msg =
         make_message(std::str::from_utf8(&[65; 100]).unwrap(), zx::BootInstant::from_nanos(1));
-    let container = Arc::new(buffer.new_container_buffer(get_component_identity(), Arc::default()));
+    let container = Arc::new(buffer.new_container_buffer(get_component_identity(), test_stats()));
     b.iter(|| {
         for _ in 0..size {
             container.push_back(msg.bytes());
@@ -86,7 +91,7 @@ fn bench_iterate_concurrent(b: &mut criterion::Bencher, args: IterateArgs) {
         std::str::from_utf8(&[65; 100]).unwrap(),
         zx::BootInstant::from_nanos(1),
     ));
-    let container = Arc::new(buffer.new_container_buffer(get_component_identity(), Arc::default()));
+    let container = Arc::new(buffer.new_container_buffer(get_component_identity(), test_stats()));
 
     for _ in 0..args.size {
         // fill the list

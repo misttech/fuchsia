@@ -313,14 +313,11 @@ impl<T: PacketFormat> Stream for PacketSerializer<T> {
         let mut buffer = Vec::with_capacity(256 * 1024);
         buffer.extend_from_slice(T::HEADER);
 
-        let mut first = true;
+        let mut results = 0;
 
         if !this.overflow.is_empty() {
             buffer.append(this.overflow);
-            first = false;
-            if let Some(stats) = &this.stats {
-                stats.add_result();
-            }
+            results += 1;
         }
 
         let mut vmo = None;
@@ -342,18 +339,19 @@ impl<T: PacketFormat> Stream for PacketSerializer<T> {
 
             let last_len = buffer.len();
 
-            let separator_len = match this.format.as_mut().write_item(cx, first, &mut buffer) {
+            let separator_len = match this.format.as_mut().write_item(cx, results == 0, &mut buffer)
+            {
                 Poll::Ready(Some(separator_len)) => separator_len,
                 Poll::Ready(None) => {
                     *this.finished = true;
-                    if first {
+                    if results == 0 {
                         return Poll::Ready(None);
                     } else {
                         break;
                     }
                 }
                 Poll::Pending => {
-                    if first {
+                    if results == 0 {
                         return Poll::Pending;
                     } else {
                         break;
@@ -371,18 +369,18 @@ impl<T: PacketFormat> Stream for PacketSerializer<T> {
                     // Last item put us over the maximum packet size, keep it for the next batch.
                     // We should have at least one item because otherwise we should have gone
                     // through the branch above.
-                    assert!(!first);
+                    assert!(results > 0);
                     this.overflow.extend_from_slice(&buffer[last_len + separator_len..]);
                     buffer.truncate(last_len);
                     break;
                 }
 
-                first = false;
-
-                if let Some(stats) = &this.stats {
-                    stats.add_result();
-                }
+                results += 1;
             }
+        }
+
+        if let Some(stats) = &this.stats {
+            stats.add_result(results);
         }
 
         buffer.extend_from_slice(T::FOOTER);

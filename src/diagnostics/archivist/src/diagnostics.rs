@@ -380,8 +380,8 @@ impl BatchIteratorConnectionStats {
         self.get_next_terminal_responses.add(1);
     }
 
-    pub fn add_result(&self) {
-        self.global_stats.batch_iterator.get_next.result_count.add(1);
+    pub fn add_result(&self, count: u64) {
+        self.global_stats.batch_iterator.get_next.result_count.add(count);
     }
 
     pub fn add_result_error(&self) {

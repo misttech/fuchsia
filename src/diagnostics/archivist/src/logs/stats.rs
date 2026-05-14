@@ -2,19 +2,40 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::identity::ComponentIdentity;
 use diagnostics_data::Severity;
+use flyweights::FlyStr;
 use fuchsia_inspect::{
-    ArrayProperty, IntArrayProperty, IntProperty, Node, NumericProperty, Property, StringProperty,
-    UintArrayProperty, UintProperty,
+    ArrayProperty, Inspector, IntArrayProperty, LazyNode, Node, UintArrayProperty,
 };
-use fuchsia_inspect_derive::Inspect;
 use fuchsia_sync::Mutex;
+use futures::FutureExt;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 
-#[derive(Debug, Default, Inspect)]
-pub struct LogStreamStats {
-    sockets_opened: UintProperty,
-    sockets_closed: UintProperty,
-    last_timestamp: IntProperty,
+#[derive(Debug, Default)]
+struct LogCounter {
+    number: AtomicU64,
+    bytes: AtomicU64,
+}
+
+impl LogCounter {
+    fn count(&self, bytes: usize) {
+        self.number.fetch_add(1, Ordering::Relaxed);
+        self.bytes.fetch_add(bytes as u64, Ordering::Relaxed);
+    }
+
+    fn increment_bytes(&self, bytes: usize) {
+        self.number.fetch_add(1, Ordering::Relaxed);
+        self.bytes.fetch_add(bytes as u64, Ordering::Relaxed);
+    }
+}
+
+#[derive(Debug, Default)]
+struct InnerStats {
+    sockets_opened: AtomicU64,
+    sockets_closed: AtomicU64,
+    last_timestamp: AtomicI64,
     total: LogCounter,
     rolled_out: LogCounter,
     fatal: LogCounter,
@@ -23,62 +44,80 @@ pub struct LogStreamStats {
     info: LogCounter,
     debug: LogCounter,
     trace: LogCounter,
-    url: StringProperty,
+    url: FlyStr,
     invalid: LogCounter,
-    inspect_node: Node,
+}
+
+#[derive(Debug)]
+pub struct LogStreamStats {
+    inner: Arc<InnerStats>,
+    _lazy_node: LazyNode,
 }
 
 impl LogStreamStats {
-    pub fn set_url(&self, url: &str) {
-        self.url.set(url);
+    pub fn new(parent: &Node, identity: &ComponentIdentity) -> Self {
+        let inner = Arc::new(InnerStats { url: identity.url.clone(), ..Default::default() });
+        let inner_clone = Arc::clone(&inner);
+        let lazy_node = parent.create_lazy_child(identity.moniker.to_string(), move || {
+            let inner = Arc::clone(&inner_clone);
+            async move {
+                let inspector = Inspector::default();
+                let root = inspector.root();
+                root.record_uint("sockets_opened", inner.sockets_opened.load(Ordering::Relaxed));
+                root.record_uint("sockets_closed", inner.sockets_closed.load(Ordering::Relaxed));
+                root.record_int("last_timestamp", inner.last_timestamp.load(Ordering::Relaxed));
+                root.record_string("url", inner.url.as_str());
+
+                let record_counter = |name: &str, counter: &LogCounter| {
+                    let child = root.create_child(name);
+                    child.record_uint("number", counter.number.load(Ordering::Relaxed));
+                    child.record_uint("bytes", counter.bytes.load(Ordering::Relaxed));
+                    root.record(child);
+                };
+
+                record_counter("total", &inner.total);
+                record_counter("rolled_out", &inner.rolled_out);
+                record_counter("fatal", &inner.fatal);
+                record_counter("error", &inner.error);
+                record_counter("warn", &inner.warn);
+                record_counter("info", &inner.info);
+                record_counter("debug", &inner.debug);
+                record_counter("trace", &inner.trace);
+                record_counter("invalid", &inner.invalid);
+
+                Ok(inspector)
+            }
+            .boxed()
+        });
+        Self { inner, _lazy_node: lazy_node }
     }
 
     pub fn open_socket(&self) {
-        self.sockets_opened.add(1);
+        self.inner.sockets_opened.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn close_socket(&self) {
-        self.sockets_closed.add(1);
+        self.inner.sockets_closed.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn increment_rolled_out(&self, msg_len: usize) {
-        self.rolled_out.increment_bytes(msg_len);
+        self.inner.rolled_out.increment_bytes(msg_len);
     }
 
     pub fn increment_invalid(&self, bytes: usize) {
-        self.invalid.increment_bytes(bytes);
+        self.inner.invalid.increment_bytes(bytes);
     }
 
     pub fn ingest_message(&self, bytes: usize, severity: Severity) {
-        self.total.count(bytes);
+        self.inner.total.count(bytes);
         match severity {
-            Severity::Trace => self.trace.count(bytes),
-            Severity::Debug => self.debug.count(bytes),
-            Severity::Info => self.info.count(bytes),
-            Severity::Warn => self.warn.count(bytes),
-            Severity::Error => self.error.count(bytes),
-            Severity::Fatal => self.fatal.count(bytes),
+            Severity::Trace => self.inner.trace.count(bytes),
+            Severity::Debug => self.inner.debug.count(bytes),
+            Severity::Info => self.inner.info.count(bytes),
+            Severity::Warn => self.inner.warn.count(bytes),
+            Severity::Error => self.inner.error.count(bytes),
+            Severity::Fatal => self.inner.fatal.count(bytes),
         }
-    }
-}
-
-#[derive(Debug, Default, Inspect)]
-struct LogCounter {
-    number: UintProperty,
-    bytes: UintProperty,
-
-    inspect_node: Node,
-}
-
-impl LogCounter {
-    fn count(&self, bytes: usize) {
-        self.number.add(1);
-        self.bytes.add(bytes as u64);
-    }
-
-    fn increment_bytes(&self, bytes: usize) {
-        self.number.add(1);
-        self.bytes.add(bytes as u64);
     }
 }
 
