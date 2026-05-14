@@ -2,12 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    include: [ "driver/platform-device.shard.cml" ],
     program: {
-        runner: "driver",
         binary: "driver/dwc3.so",
         bind: "meta/bind/dwc3.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
@@ -23,7 +19,6 @@
         { service: "fuchsia.hardware.usb.policy.Service" },
     ],
     use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
         {
             config: "fuchsia.power.SuspendEnabled",
             key: "enable_suspend",

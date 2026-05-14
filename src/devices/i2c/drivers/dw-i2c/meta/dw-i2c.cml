@@ -2,12 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    include: [ "driver/platform-device.shard.cml" ],
     program: {
-        runner: "driver",
         binary: "driver/dw-i2c.so",
         bind: "meta/bind/dw-i2c-bind.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
@@ -22,9 +18,6 @@
                 "fuchsia.hardware.i2cimpl.Service",
             ],
         },
-    ],
-    use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
     ],
     expose: [
         {

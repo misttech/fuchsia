@@ -4,11 +4,9 @@
 {
     include: [
         "//sdk/lib/driver/compat/compat.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
+        "driver/platform-device.shard.cml",
     ],
     program: {
-        runner: "driver",
         bind: "meta/bind/aml-cpu-legacy.bindbc",
         colocate: "true",
         compat: "driver/aml-cpu-legacy.so",
@@ -16,9 +14,6 @@
     },
     capabilities: [
         { service: "fuchsia.hardware.cpu.ctrl.Service" },
-    ],
-    use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
     ],
     expose: [
         {

@@ -3,12 +3,10 @@
 // found in the LICENSE file.
 {
     include: [
+        "driver/platform-device.shard.cml",
         "driver_component/driver.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
     ],
     program: {
-        runner: "driver",
         binary: "driver/aml-saradc.so",
         bind: "meta/bind/aml-saradc.bindbc",
         colocate: "true",
@@ -18,9 +16,7 @@
         { service: "fuchsia.hardware.adcimpl.Service" },
         { service: "fuchsia.hardware.adcimpl.Metadata" },
     ],
-    use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
-    ],
+    use: [],
     expose: [
         {
             service: "fuchsia.hardware.adcimpl.Metadata",
