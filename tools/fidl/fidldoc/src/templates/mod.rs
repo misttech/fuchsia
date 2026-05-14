@@ -301,7 +301,14 @@ pub fn pulldown(
 }
 
 fn pd(text: &str) -> String {
-    let parser = Parser::new(text);
+    // Escape asterisks inside single quotes to prevent them from being
+    // interpreted as emphasis markers by the markdown parser.
+    let re_quotes = Regex::new(r"'([^']*)'").unwrap();
+    let processed_text = re_quotes.replace_all(text, |caps: &Captures<'_>| {
+        let content = caps.get(1).unwrap().as_str();
+        format!("'{}'", content.replace("*", "\\*"))
+    });
+    let parser = Parser::new(&processed_text);
     let mut html_text = String::new();
     pulldown_html::push_html(&mut html_text, parser);
     html_text.replace("*", "&#42;")
@@ -543,6 +550,14 @@ file, the error is <code>ZX_ERR_NOT_FILE</code>.</li>
 <li>In other mismatched cases, the error is <code>ZX_ERR_WRONG_TYPE</code>.</li>
 </ul>
 "#;
+        assert_eq!(pd(description), expected);
+    }
+
+    #[test]
+    fn pd_wildcard_test() {
+        let description = "Prefix wildcards, such as 'kernel:*' and '*' are supported.";
+        let expected =
+            "<p>Prefix wildcards, such as 'kernel:&#42;' and '&#42;' are supported.</p>\n";
         assert_eq!(pd(description), expected);
     }
 
