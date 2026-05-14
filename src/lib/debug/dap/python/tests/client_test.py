@@ -85,7 +85,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         client = DapClient()
 
         writer = MockWriter()
-        args = InitializeArguments(adapterID="test")
+        args = InitializeArguments(adapter_id="test")
         send_task = asyncio.create_task(
             client.initialize(writer, args)  # type: ignore
         )
@@ -117,7 +117,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         client = DapClient()
 
         writer = MockWriter()
-        args = DisconnectArguments(terminateDebuggee=True)
+        args = DisconnectArguments(terminate_debuggee=True)
         send_task = asyncio.create_task(
             client.disconnect(writer, args)  # type: ignore
         )
@@ -149,7 +149,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         client = DapClient()
 
         writer = MockWriter()
-        args = StackTraceArguments(threadId=1)
+        args = StackTraceArguments(thread_id=1)
         send_task = asyncio.create_task(
             client.stack_trace(writer, args)  # type: ignore
         )
@@ -174,7 +174,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
             client._pending_requests[seq].set_result(response)
 
         resp = await send_task
-        self.assertEqual(resp.stackFrames, [])
+        self.assertEqual(resp.stack_frames, [])
 
     async def test_continue_thread(self) -> None:
         from pydap.models import ContinueArguments
@@ -182,7 +182,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         client = DapClient()
 
         writer = MockWriter()
-        args = ContinueArguments(threadId=1)
+        args = ContinueArguments(thread_id=1)
         send_task = asyncio.create_task(
             client.continue_thread(writer, args)  # type: ignore
         )
@@ -215,7 +215,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
         client = DapClient()
 
         writer = MockWriter()
-        args = PauseArguments(threadId=1)
+        args = PauseArguments(thread_id=1)
         send_task = asyncio.create_task(
             client.pause_thread(writer, args)  # type: ignore
         )
@@ -283,7 +283,7 @@ class TestDapClient(unittest.IsolatedAsyncioTestCase):
 
         writer = MockWriter()
         args = AttachRequestArguments(
-            _restart=True, extra_fields={"process": "my_process"}
+            restart=True, extra_fields={"process": "my_process"}
         )
         send_task = asyncio.create_task(client.attach(writer, args))  # type: ignore
 

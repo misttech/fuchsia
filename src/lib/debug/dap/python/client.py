@@ -7,7 +7,8 @@ import json
 import logging
 from typing import Any
 
-from pydap.models import (
+from .dap_types import DapBaseModel
+from .models import (
     AttachRequestArguments,
     ContinueArguments,
     DisconnectArguments,
@@ -17,8 +18,6 @@ from pydap.models import (
     StackTraceArguments,
     StackTraceResponse,
     ThreadsResponse,
-    dataclass_to_dict,
-    from_dict,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,14 +31,19 @@ class DapClient:
     """A client for the Debug Adapter Protocol."""
 
     def __init__(self) -> None:
+        """Initializes the DAP client."""
         self._pending_requests: dict[int, asyncio.Future[Any]] = {}
-
         self._seq_counter = 1
 
     async def run(
         self, reader: asyncio.StreamReader, event_queue: asyncio.Queue[Any]
     ) -> None:
-        """Runs the client's read loop, processing messages from the reader."""
+        """Runs the client's read loop, processing messages from the reader.
+
+        Args:
+            reader: Stream reader to receive messages from the debug adapter.
+            event_queue: Queue to put received DAP events into.
+        """
         while True:
             try:
                 msg = await self._read_message(reader)
@@ -63,10 +67,23 @@ class DapClient:
         self,
         writer: asyncio.StreamWriter,
         command: str,
-        arguments: dict[str, Any] | None = None,
+        arguments: DapBaseModel | None = None,
         timeout: float = 5.0,
     ) -> dict[str, Any]:
-        """Sends a request to the debug adapter and waits for the response."""
+        """Sends a request to the debug adapter and waits for the response.
+
+        Args:
+            writer: Stream writer to send the request to.
+            command: The DAP command name.
+            arguments: Optional arguments for the command.
+            timeout: Maximum time to wait for response in seconds.
+
+        Returns:
+            The response message dictionary from the adapter.
+
+        Raises:
+            DapError: If the request times out or framing fails.
+        """
         seq = self._seq_counter
         self._seq_counter += 1
 
@@ -74,13 +91,17 @@ class DapClient:
         fut = loop.create_future()
         self._pending_requests[seq] = fut
 
-        request = {
+        request: dict[str, Any] = {
             "seq": seq,
             "type": MessageType.REQUEST.value,
             "command": command,
         }
-        if arguments:
-            request["arguments"] = arguments
+        if arguments is not None:
+            if not isinstance(arguments, DapBaseModel):
+                raise TypeError(
+                    f"arguments must be a DapBaseModel, got {type(arguments)}"
+                )
+            request["arguments"] = arguments.dump_dap()
 
         await self._write_message(writer, request)
         try:
@@ -94,65 +115,114 @@ class DapClient:
     async def initialize(
         self, writer: asyncio.StreamWriter, args: InitializeArguments
     ) -> dict[str, Any]:
-        """Sends an initialize request."""
-        return await self.send_request(
-            writer, "initialize", dataclass_to_dict(args)
-        )
+        """Sends an initialize request.
+
+        Args:
+            writer: Stream writer to send the request to.
+            args: Arguments for the initialize request.
+
+        Returns:
+            The response message dictionary.
+        """
+        return await self.send_request(writer, "initialize", args)
 
     async def disconnect(
         self, writer: asyncio.StreamWriter, args: DisconnectArguments
     ) -> dict[str, Any]:
-        """Sends a disconnect request."""
-        return await self.send_request(
-            writer, "disconnect", dataclass_to_dict(args)
-        )
+        """Sends a disconnect request.
+
+        Args:
+            writer: Stream writer to send the request to.
+            args: Arguments for the disconnect request.
+
+        Returns:
+            The response message dictionary.
+        """
+        return await self.send_request(writer, "disconnect", args)
 
     async def stack_trace(
         self, writer: asyncio.StreamWriter, args: StackTraceArguments
     ) -> StackTraceResponse:
-        """Sends a stackTrace request."""
-        resp = await self.send_request(
-            writer, "stackTrace", dataclass_to_dict(args)
-        )
-        return from_dict(StackTraceResponse, resp.get("body", {}))
+        """Sends a stackTrace request.
+
+        Args:
+            writer: Stream writer to send the request to.
+            args: Arguments for the stackTrace request.
+
+        Returns:
+            The stackTrace response model.
+        """
+        resp = await self.send_request(writer, "stackTrace", args)
+        return StackTraceResponse.model_validate(resp.get("body", {}))
 
     async def continue_thread(
         self, writer: asyncio.StreamWriter, args: ContinueArguments
     ) -> dict[str, Any]:
-        """Sends a continue request."""
-        return await self.send_request(
-            writer, "continue", dataclass_to_dict(args)
-        )
+        """Sends a continue request.
+
+        Args:
+            writer: Stream writer to send the request to.
+            args: Arguments for the continue request.
+
+        Returns:
+            The response message dictionary.
+        """
+        return await self.send_request(writer, "continue", args)
 
     async def pause_thread(
         self, writer: asyncio.StreamWriter, args: PauseArguments
     ) -> dict[str, Any]:
-        """Sends a pause request."""
-        return await self.send_request(writer, "pause", dataclass_to_dict(args))
+        """Sends a pause request.
+
+        Args:
+            writer: Stream writer to send the request to.
+            args: Arguments for the pause request.
+
+        Returns:
+            The response message dictionary.
+        """
+        return await self.send_request(writer, "pause", args)
 
     async def threads(self, writer: asyncio.StreamWriter) -> ThreadsResponse:
-        """Sends a threads request."""
+        """Sends a threads request.
+
+        Args:
+            writer: Stream writer to send the request to.
+
+        Returns:
+            The threads response model.
+        """
         resp = await self.send_request(writer, "threads")
-        return from_dict(ThreadsResponse, resp.get("body", {}))
+        return ThreadsResponse.model_validate(resp.get("body", {}))
 
     async def attach(
         self, writer: asyncio.StreamWriter, args: AttachRequestArguments
     ) -> dict[str, Any]:
-        """Sends an attach request."""
-        data = dataclass_to_dict(args)
-        # Map _restart to __restart for protocol compliance
-        restart = data.pop("_restart", None)
-        if restart is not None:
-            data["__restart"] = restart
-        extra_fields = data.pop("extra_fields", None)
-        if extra_fields:
-            data.update(extra_fields)
-        return await self.send_request(writer, "attach", data)
+        """Sends an attach request.
+
+        Args:
+            writer: Stream writer to send the request to.
+            args: Arguments for the attach request.
+
+        Returns:
+            The response message dictionary.
+        """
+        return await self.send_request(writer, "attach", args)
 
     async def _read_message(
         self, reader: asyncio.StreamReader
     ) -> dict[str, Any] | None:
-        """Reads a single message from the reader, handling protocol framing."""
+        """Reads a single message from the reader, handling protocol framing.
+
+        Args:
+            reader: Stream reader to read from.
+
+        Returns:
+            The parsed message dictionary, or None on EOF.
+
+        Raises:
+            DapError: If framing headers are invalid or missing.
+        """
         content_length = None
         while True:
             line = await reader.readline()
@@ -179,7 +249,12 @@ class DapClient:
     async def _write_message(
         self, writer: asyncio.StreamWriter, value: dict[str, Any]
     ) -> None:
-        """Writes a message to the writer, handling protocol framing."""
+        """Writes a message to the writer, handling protocol framing.
+
+        Args:
+            writer: Stream writer to write to.
+            value: The message dictionary to serialize and send.
+        """
         content = json.dumps(value, separators=(",", ":")).encode("utf-8")
         header = f"Content-Length: {len(content)}\r\n\r\n".encode("utf-8")
         writer.write(header)

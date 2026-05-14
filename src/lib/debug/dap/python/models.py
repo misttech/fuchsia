@@ -2,53 +2,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
 
-from pydap.dap_types import StackFrame, Thread
+from pydantic import Field, model_serializer
+
+from .dap_types import DapBaseModel, StackFrame, Thread
 
 
 class MessageType(str, Enum):
+    """Defines the types of DAP messages."""
+
     REQUEST = "request"
     RESPONSE = "response"
     EVENT = "event"
 
 
-def verbatim_factory(items: list[tuple[str, Any]]) -> dict[str, Any]:
-    return {k: v for k, v in items if v is not None}
-
-
-def dataclass_to_dict(obj: Any) -> dict[str, Any]:
-    return asdict(obj, dict_factory=verbatim_factory)
-
-
-def from_dict(cls: type[Any], data: dict[str, Any]) -> Any:
-    """Creates a dataclass instance from a dictionary with spec-cased keys."""
-    if not hasattr(cls, "__dataclass_fields__"):
-        return data
-    kwargs = {}
-    for field_name, field in cls.__dataclass_fields__.items():
-        if field_name in data:
-            value = data[field_name]
-            origin = getattr(field.type, "__origin__", None)
-            args = getattr(field.type, "__args__", None)
-
-            if (
-                origin is list
-                and args
-                and hasattr(args[0], "__dataclass_fields__")
-            ):
-                kwargs[field_name] = [from_dict(args[0], v) for v in value]
-            elif hasattr(field.type, "__dataclass_fields__"):
-                kwargs[field_name] = from_dict(field.type, value)
-            else:
-                kwargs[field_name] = value
-    return cls(**kwargs)
-
-
-@dataclass
-class ProtocolMessage:
+class ProtocolMessage(DapBaseModel):
     """Base class of all requests, responses, and events.
 
     Attributes:
@@ -60,8 +30,7 @@ class ProtocolMessage:
     type: str
 
 
-@dataclass
-class Request:
+class Request(DapBaseModel):
     """A client request.
 
     Attributes:
@@ -77,8 +46,7 @@ class Request:
     arguments: dict[str, Any] | None = None
 
 
-@dataclass
-class Response:
+class Response(DapBaseModel):
     """Response for a request.
 
     Attributes:
@@ -93,15 +61,14 @@ class Response:
 
     seq: int
     type: str
-    request_seq: int
+    request_seq: int = Field(alias="request_seq")
     success: bool
     command: str | None = None
     message: str | None = None
     body: dict[str, Any] | None = None
 
 
-@dataclass
-class Event:
+class Event(DapBaseModel):
     """A server event.
 
     Attributes:
@@ -117,56 +84,51 @@ class Event:
     body: dict[str, Any] | None = None
 
 
-@dataclass
-class InitializeArguments:
+class InitializeArguments(DapBaseModel):
     """Arguments for `initialize` request.
 
     Attributes:
-        adapterID: The ID of the debug adapter.
-        supportsInvalidatedEvent: Client supports the `invalidated` event.
-        supportsRunInTerminalRequest: Client supports the `runInTerminal` request.
+        adapter_id: The ID of the debug adapter.
+        supports_invalidated_event: Client supports the `invalidated` event.
+        supports_run_in_terminal_request: Client supports the `runInTerminal` request.
     """
 
-    adapterID: str
-    supportsInvalidatedEvent: bool | None = None
-    supportsRunInTerminalRequest: bool | None = None
+    adapter_id: str = Field(alias="adapterID")
+    supports_invalidated_event: bool | None = None
+    supports_run_in_terminal_request: bool | None = None
 
 
-@dataclass
-class DisconnectArguments:
+class DisconnectArguments(DapBaseModel):
     """Arguments for `disconnect` request.
 
     Attributes:
-        terminateDebuggee: Indicates whether the debuggee should be terminated when the debugger is disconnected.
+        terminate_debuggee: Indicates whether the debuggee should be terminated when the debugger is disconnected.
     """
 
-    terminateDebuggee: bool | None = None
+    terminate_debuggee: bool | None = None
 
 
-@dataclass
-class StackTraceResponse:
+class StackTraceResponse(DapBaseModel):
     """Response to `stackTrace` request.
 
     Attributes:
-        stackFrames: The stack frames of the thread.
+        stack_frames: The stack frames of the thread.
     """
 
-    stackFrames: list[StackFrame]
+    stack_frames: list[StackFrame]
 
 
-@dataclass
-class ContinueResponseBody:
+class ContinueResponseBody(DapBaseModel):
     """Response to `continue` request.
 
     Attributes:
-        allThreadsContinued: Indicates whether all threads were continued.
+        all_threads_continued: Indicates whether all threads were continued.
     """
 
-    allThreadsContinued: bool
+    all_threads_continued: bool
 
 
-@dataclass
-class ThreadsResponse:
+class ThreadsResponse(DapBaseModel):
     """Response to `threads` request.
 
     Attributes:
@@ -176,53 +138,59 @@ class ThreadsResponse:
     threads: list[Thread]
 
 
-@dataclass
-class StackTraceArguments:
+class StackTraceArguments(DapBaseModel):
     """Arguments for `stackTrace` request.
 
     Attributes:
-        threadId: Retrieve the stacktrace for this thread.
-        startFrame: The index of the first frame to return; if omitted frames start at 0.
+        thread_id: Retrieve the stacktrace for this thread.
+        start_frame: The index of the first frame to return; if omitted frames start at 0.
         levels: The maximum number of frames to return. If levels is not specified or 0, all frames are returned.
     """
 
-    threadId: int
-    startFrame: int | None = None
+    thread_id: int
+    start_frame: int | None = None
     levels: int | None = None
 
 
-@dataclass
-class ContinueArguments:
+class ContinueArguments(DapBaseModel):
     """Arguments for `continue` request.
 
     Attributes:
-        threadId: Specifies the active thread.
-        singleThread: If this flag is true, execution is resumed only for the thread with given `threadId`.
+        thread_id: Specifies the active thread.
+        single_thread: If this flag is true, execution is resumed only for the thread with given `thread_id`.
     """
 
-    threadId: int
-    singleThread: bool | None = None
+    thread_id: int
+    single_thread: bool | None = None
 
 
-@dataclass
-class PauseArguments:
+class PauseArguments(DapBaseModel):
     """Arguments for `pause` request.
 
     Attributes:
-        threadId: Pause execution for this thread.
+        thread_id: Pause execution for this thread.
     """
 
-    threadId: int
+    thread_id: int
 
 
-@dataclass
-class AttachRequestArguments:
+class AttachRequestArguments(DapBaseModel):
     """Arguments for `attach` request.
 
     Attributes:
-        _restart: Arbitrary data from the previous, restarted session.
+        restart: Arbitrary data from the previous, restarted session.
         extra_fields: Additional implementation specific attributes.
     """
 
-    _restart: Any | None = None
-    extra_fields: dict[str, Any] | None = None
+    restart: Any | None = Field(default=None, alias="__restart")
+    extra_fields: dict[str, Any] | None = Field(
+        default=None, alias="extra_fields"
+    )
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        extra_fields = data.pop("extra_fields", None)
+        if extra_fields:
+            data.update(extra_fields)
+        return data

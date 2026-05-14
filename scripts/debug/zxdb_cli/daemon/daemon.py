@@ -18,7 +18,6 @@ from pydap.models import (
     InitializeArguments,
     PauseArguments,
     StackTraceArguments,
-    dataclass_to_dict,
 )
 from shared.protocol import (
     PROTOCOL_VERSION,
@@ -266,7 +265,7 @@ class Daemon:
         from pydap.models import AttachRequestArguments
 
         attach_args = AttachRequestArguments(
-            _restart=None, extra_fields={"process": req.filter}
+            restart=None, extra_fields={"process": req.filter}
         )
 
         try:
@@ -283,7 +282,10 @@ class Daemon:
 
         try:
             resp = await self.dap_client.threads(self.zxdb_writer)
-            return Response(success=True, body=dataclass_to_dict(resp))
+            return Response(
+                success=True,
+                body=resp.dump_dap(),
+            )
         except Exception as e:
             return Response(
                 success=False, message=f"Failed to get threads: {e}"
@@ -334,7 +336,10 @@ class Daemon:
                 ),
             )
 
-            return Response(success=True, body=dataclass_to_dict(stack_resp))
+            return Response(
+                success=True,
+                body=stack_resp.dump_dap(),
+            )
         except Exception as e:
             return Response(
                 success=False, message=f"Failed to get stack trace: {e}"

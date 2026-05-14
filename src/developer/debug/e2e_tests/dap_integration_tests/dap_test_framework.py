@@ -12,7 +12,9 @@ import unittest
 from typing import Any, Dict, List, Optional
 
 from portpicker import portpicker
+from pydantic import BaseModel
 from pydap.client import DapClient
+from pydap.models import InitializeArguments, StackTraceArguments
 
 
 class RequestFuture:
@@ -179,7 +181,7 @@ class DapTestFramework:
         self._process_task = asyncio.create_task(self._event_processor_loop())
 
     def send_request(
-        self, command: str, arguments: Optional[Dict[str, Any]] = None
+        self, command: str, arguments: Optional[BaseModel] = None
     ) -> RequestFuture:
         """Sends a request in the background and returns a RequestFuture."""
         seq = self.client._seq_counter
@@ -376,7 +378,9 @@ class DapTestFramework:
 
     # High-Level Wrappers
     def initialize(self, adapterID: str = "zxdb") -> RequestFuture:
-        return self.send_request("initialize", {"adapterID": adapterID})
+        return self.send_request(
+            "initialize", InitializeArguments(adapterID=adapterID)
+        )
 
     def launch(self, process: str, launchCommand: str = "") -> RequestFuture:
         return self.send_request(
@@ -392,7 +396,9 @@ class DapTestFramework:
         return self.send_request("threads")
 
     def stack_trace(self, threadId: int) -> RequestFuture:
-        return self.send_request("stackTrace", {"threadId": threadId})
+        return self.send_request(
+            "stackTrace", StackTraceArguments(threadId=threadId)
+        )
 
     async def verify_all_expectations(self) -> None:
         """Awaits all pending futures and verifies event expectations."""

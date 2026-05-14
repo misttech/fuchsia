@@ -146,19 +146,18 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         mock_thread2.id = 2
         mock_thread2.name = "worker"
         mock_threads_resp.threads = [mock_thread1, mock_thread2]
+        mock_threads_resp.dump_dap.return_value = {
+            "threads": [
+                {"id": 1, "name": "main"},
+                {"id": 2, "name": "worker"},
+            ]
+        }
         mock_dap_client.threads = AsyncMock(return_value=mock_threads_resp)
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
 
-        with patch("daemon.daemon.dataclass_to_dict") as mock_dict:
-            mock_dict.return_value = {
-                "threads": [
-                    {"id": 1, "name": "main"},
-                    {"id": 2, "name": "worker"},
-                ]
-            }
-            resp = await daemon.handle_threads(ThreadsRequest())
+        resp = await daemon.handle_threads(ThreadsRequest())
 
         if not resp.success:
             print(f"Test failed with message: {resp.message}")

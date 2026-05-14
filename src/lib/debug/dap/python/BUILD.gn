@@ -19,6 +19,7 @@ if (is_host) {
       "dap_types.py",
       "models.py",
     ]
+    deps = [ "//third_party/pylibs/pydantic" ]
   }
 
   python_host_test("client_test") {
