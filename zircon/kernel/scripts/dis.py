@@ -180,7 +180,7 @@ the build directory, using the matche's name with a ".lst" suffix.""",
 
     for bin_path, bin_label in all_matches:
         full_bin_path = build_dir / bin_path
-        output_path = full_bin_path.with_suffix(".lst")
+        output_path = full_bin_path.with_name(full_bin_path.name + ".lst")
         output_rel_path = output_path.relative_to(Path.cwd())
 
         print(f"Disassembling {bin_label}...")
