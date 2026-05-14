@@ -45,7 +45,11 @@ class FuchsiaControllerTests(fuchsia_async_extension.AsyncBaseTestClass):
             self.device.notify_intentional_disconnect()
             await coro
         except FcTransportStatus as status:
-            if status.code() != FcTransportStatus.FC_ERR_FDOMAIN:
+            valid_reboot_errs = [
+                FcTransportStatus.FC_ERR_FDOMAIN,
+                FcTransportStatus.FC_ERR_TRANSPORT,
+            ]
+            if status.code() not in valid_reboot_errs:
                 raise status
             _LOGGER.info("Device reboot command sent")
         # [END reboot_example]
