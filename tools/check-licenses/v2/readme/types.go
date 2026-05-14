@@ -6,15 +6,19 @@ package readme
 
 // Readme represents a parsed README.fuchsia file.
 type Readme struct {
-	Name               string
-	URL                string
-	Version            string
-	SecurityCritical   string
-	Location           string // The relative path to the sub-project boundary (required for dependencies)
-	LicenseFile        string // Legacy flat field, preserved for backward compatibility
-	UpstreamGit        string
-	Description        string
-	LocalModifications string
+	Name                     string
+	URL                      string
+	OriginalURL              string
+	Version                  string
+	SecurityCritical         string
+	Location                 string // The relative path to the sub-project boundary (required for dependencies)
+	LicenseFile              string // Legacy flat field, preserved for backward compatibility
+	UpstreamGit              string
+	Revision                 string
+	LicenseAndroidCompatible string
+	Description              string
+	LocalModifications       string
+	Deprecated               string
 
 	// LicenseFiles contains the file-level metadata for multi-license projects.
 	// This represents the hierarchical "License File: foo \n -> License: bar" structure.

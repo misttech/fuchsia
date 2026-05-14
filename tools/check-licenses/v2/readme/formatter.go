@@ -29,10 +29,13 @@ func formatSingle(r *Readme) string {
 
 	writeField(&b, "Name", r.Name)
 	writeField(&b, "URL", r.URL)
+	writeField(&b, "Original URL", r.OriginalURL)
 	writeField(&b, "Version", r.Version)
-	writeField(&b, "Security Critical", r.SecurityCritical)
-	writeField(&b, "Location", r.Location)
 	writeField(&b, "Upstream Git", r.UpstreamGit)
+	writeField(&b, "Revision", r.Revision)
+	writeField(&b, "Security Critical", r.SecurityCritical)
+	writeField(&b, "License Android Compatible", r.LicenseAndroidCompatible)
+	writeField(&b, "Location", r.Location)
 
 	hasLicenses := len(r.LicenseFiles) > 0 || r.LicenseFile != "" || len(r.SourceFiles) > 0 || len(r.NonLicenseFiles) > 0
 	if hasLicenses {
@@ -97,6 +100,7 @@ func formatSingle(r *Readme) string {
 
 	writeMultiLineField(&b, "Description", r.Description)
 	writeMultiLineField(&b, "Local Modifications", r.LocalModifications)
+	writeMultiLineField(&b, "Deprecated", r.Deprecated)
 
 	// Append any unknown fields at the very bottom so they aren't lost
 	if len(r.UnknownFields) > 0 {

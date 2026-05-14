@@ -185,3 +185,33 @@ License File: third_party/sub/LICENSE
 		t.Errorf("Expected 1 License File 'third_party/sub/LICENSE' for child")
 	}
 }
+
+func TestParse_LicenseOrder(t *testing.T) {
+	// 1. Canonical nested order
+	canonicalText := `
+Name: canonical
+License File: LICENSE
+  License: MIT
+`
+	canonicalReadmes, err := Parse([]byte(canonicalText))
+	if err != nil || len(canonicalReadmes) != 1 {
+		t.Fatalf("Failed to parse canonical: %v", err)
+	}
+	if len(canonicalReadmes[0].LicenseFiles) != 1 || canonicalReadmes[0].LicenseFiles[0].License != "MIT" {
+		t.Errorf("Expected canonical License 'MIT', got %+v", canonicalReadmes[0].LicenseFiles)
+	}
+
+	// 2. Legacy out-of-order
+	legacyText := `
+Name: legacy
+License: MIT
+License File: LICENSE
+`
+	legacyReadmes, err := Parse([]byte(legacyText))
+	if err != nil || len(legacyReadmes) != 1 {
+		t.Fatalf("Failed to parse legacy: %v", err)
+	}
+	if len(legacyReadmes[0].LicenseFiles) != 1 || legacyReadmes[0].LicenseFiles[0].License != "MIT" {
+		t.Errorf("Expected legacy License 'MIT', got %+v", legacyReadmes[0].LicenseFiles)
+	}
+}

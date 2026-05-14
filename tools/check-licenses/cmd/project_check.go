@@ -95,9 +95,17 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 			}
 		}
 
-		originalReadmes, updatedReadmes, _, _, _, _, err := RunProjectPipeline(ctx, fuchsiaDir, projectRoot, config, classifier)
+		originalReadmes, updatedReadmes, readmePath, _, _, _, err := RunProjectPipeline(ctx, fuchsiaDir, projectRoot, config, classifier)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Error analyzing project %s: %v\n", targetPath, err)
+			hasErrors = true
+			continue
+		}
+
+		if readmeErrs := readme.Validate(fuchsiaDir, readmePath, originalReadmes, config); len(readmeErrs) > 0 {
+			for _, rErr := range readmeErrs {
+				fmt.Fprintf(os.Stderr, "❌ Error in %s: %v\n", targetPath, rErr)
+			}
 			hasErrors = true
 			continue
 		}

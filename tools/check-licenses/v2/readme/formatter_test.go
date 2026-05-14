@@ -13,8 +13,8 @@ func TestFormat(t *testing.T) {
 	readmeText := `Name: awesome_lib
 URL: https://github.com/awesome/lib
 Version: 1.2.3
-Security Critical: yes
 Upstream Git: https://github.com/awesome/lib.git
+Security Critical: yes
 
 License File: LICENSE
 

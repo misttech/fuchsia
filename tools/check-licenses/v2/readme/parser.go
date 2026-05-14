@@ -25,19 +25,23 @@ func ParseFile(path string) ([]*Readme, error) {
 }
 
 var knownDirectives = map[string]bool{
-	"Name":                true,
-	"URL":                 true,
-	"Version":             true,
-	"Security Critical":   true,
-	"Location":            true,
-	"License File":        true,
-	"Source File":         true,
-	"Non-License File":    true,
-	"Upstream Git":        true,
-	"Description":         true,
-	"Local Modifications": true,
-	"Modifications":       true, // Legacy alias
-	"Deprecated":          true, // Legacy
+	"Name":                       true,
+	"URL":                        true,
+	"Version":                    true,
+	"Security Critical":          true,
+	"Location":                   true,
+	"License File":               true,
+	"Source File":                true,
+	"Non-License File":           true,
+	"Upstream Git":               true,
+	"Description":                true,
+	"Local Modifications":        true,
+	"License Android Compatible": true, // Kept for Chromium Compatibility
+	"Original URL":               true, // Kept for Chromium Compatibility
+	"Revision":                   true, // Kept for Chromium Compatibility
+	"Modifications":              true, // Legacy alias
+	"Deprecated":                 true, // Legacy
+	"License":                    true, // Legacy flat root directive
 }
 
 var knownFileDirectives = map[string]bool{
@@ -64,6 +68,7 @@ func Parse(data []byte) ([]*Readme, error) {
 		var currentLicenseEntry *LicenseEntry
 		var currentSourceEntry *LicenseEntry
 		var currentNonLicenseEntry *NonLicenseEntry
+		var pendingLicense string
 
 		var currentKey string
 		var currentValue strings.Builder
@@ -88,8 +93,10 @@ func Parse(data []byte) ([]*Readme, error) {
 					key := strings.TrimSpace(parts[0])
 					if knownFileDirectives[key] {
 						isFileDirective = true
-						if currentLicenseEntry != nil {
-							value := strings.TrimSpace(parts[1])
+						value := strings.TrimSpace(parts[1])
+						if key == "License" && currentLicenseEntry == nil && currentSourceEntry == nil {
+							pendingLicense = value
+						} else if currentLicenseEntry != nil {
 							switch key {
 							case "License":
 								currentLicenseEntry.License = value
@@ -99,7 +106,6 @@ func Parse(data []byte) ([]*Readme, error) {
 								currentLicenseEntry.LicenseFileURL = value
 							}
 						} else if currentSourceEntry != nil {
-							value := strings.TrimSpace(parts[1])
 							switch key {
 							case "License":
 								currentSourceEntry.License = value
@@ -109,7 +115,6 @@ func Parse(data []byte) ([]*Readme, error) {
 								currentSourceEntry.LicenseFileURL = value
 							}
 						} else if currentNonLicenseEntry != nil {
-							value := strings.TrimSpace(parts[1])
 							switch key {
 							case "Non-License File Explanation":
 								currentNonLicenseEntry.Explanation = value
@@ -134,6 +139,12 @@ func Parse(data []byte) ([]*Readme, error) {
 				if knownDirectives[key] {
 					isRootDirective = true
 
+					if key == "License" {
+						pendingLicense = value
+						currentKey = ""
+						continue
+					}
+
 					if key == "License File" || key == "Source File" || key == "Non-License File" {
 						if currentLicenseEntry != nil {
 							readme.LicenseFiles = append(readme.LicenseFiles, *currentLicenseEntry)
@@ -149,7 +160,8 @@ func Parse(data []byte) ([]*Readme, error) {
 						}
 
 						if key == "License File" {
-							currentLicenseEntry = &LicenseEntry{Path: value}
+							currentLicenseEntry = &LicenseEntry{Path: value, License: pendingLicense}
+							pendingLicense = ""
 							if readme.LicenseFile == "" {
 								readme.LicenseFile = value
 							}
@@ -279,6 +291,8 @@ func assignValue(r *Readme, key, value string) {
 		r.Name = value
 	case "URL":
 		r.URL = value
+	case "Original URL":
+		r.OriginalURL = value
 	case "Version":
 		r.Version = value
 	case "Security Critical":
@@ -287,10 +301,16 @@ func assignValue(r *Readme, key, value string) {
 		r.Location = value
 	case "Upstream Git":
 		r.UpstreamGit = value
+	case "Revision":
+		r.Revision = value
+	case "License Android Compatible":
+		r.LicenseAndroidCompatible = value
 	case "Description":
 		r.Description = value
 	case "Local Modifications", "Modifications":
 		r.LocalModifications = value
+	case "Deprecated":
+		r.Deprecated = value
 	}
 }
 
