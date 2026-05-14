@@ -1090,7 +1090,10 @@ PyObject *block_forever_test_function(PyObject *self, PyObject *args) {
   if (state == nullptr) {
     return nullptr;
   }
-  fc_status_t status = _block_forever(state->ctx);
+  fc_status_t status;
+  Py_BEGIN_ALLOW_THREADS;
+  status = _block_forever(state->ctx);
+  Py_END_ALLOW_THREADS;
   if (status != FC_OK) {
     mod::set_python_exception(status);
     return nullptr;

@@ -139,6 +139,7 @@ impl LibContext {
     }
 
     pub(crate) fn shutdown_cmd_thread(&self) {
+        log::info!("Shutting down lib context thread.");
         self.run(LibraryCommand::ShutdownLib);
         let thread =
             self.thread_ctx.lock().unwrap().take().expect("thread context must have been set");
@@ -148,10 +149,12 @@ impl LibContext {
             "thread is being dropped from inside itself"
         );
         thread.join().expect("joining thread");
+        log::info!("Thread successfully joined.");
 
         // Signal the signal handler thread to exit.
         self.signal_handle.close();
 
+        log::info!("Joining signal thread");
         let signal_thread = self
             .signal_handler_thread
             .lock()
@@ -164,6 +167,7 @@ impl LibContext {
             "thread is being dropped from inside itself"
         );
         signal_thread.join().expect("joining signal thread");
+        log::info!("Signal thread joined successfully.");
     }
 
     pub(crate) async fn fdomain_state<'a>(&'a self) -> MutexGuard<'a, FDomainState> {
@@ -177,30 +181,46 @@ fn new_command_thread(
     notifier: Notifier,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(|| {
+        log::info!("Starting lib_context main thread");
         let mut executor = LocalExecutor::default();
         executor.run_singlethreaded(async move {
-            while let Ok(cmd) = receiver.recv().await {
-                // If there was a signal from the previous iteration, then clear it out
-                // so it doesn't cause an immediate error. This is mostly to prevent racing with
-                // the REPL, as a user could potentially pre-load some signals before hitting the
-                // command itself. In the event that SIGINT is received by a real program this
-                // section of code won't matter anyway.
-                if let Ok(_) = sigint_receiver.try_recv() {
-                    log::info!("received signal before command, (this will have been received by the caller). Ignoring");
-                }
-                if let LibraryCommand::ShutdownLib = cmd {
-                    // Dropping the notifier will cause spawned tasks to be dropped.
-                    *notifier.lock().await = None;
-                    break;
-                }
-                let cmd_fut = Task::local(cmd.run());
-                let _ = futures_lite::FutureExt::or(cmd_fut, async {
-                    sigint_receiver.recv().await.unwrap();
-                    log::info!("command thread received signal.");
-                })
-                .await;
-            }
+            let pool = std::cell::RefCell::new(fuchsia_async::Scope::new());
+            while futures_lite::FutureExt::or(
+                async {
+                    let Ok(cmd) = receiver.recv().await else {
+                        return false;
+                    };
+                    if let LibraryCommand::ShutdownLib = cmd {
+                        return false;
+                    }
+                    pool.borrow().spawn_local(cmd.run());
+                    true
+                },
+                async {
+                    let Ok(s) = sigint_receiver.recv().await else {
+                        return false;
+                    };
+                    log::info!("command thread received signal");
+                    // SIGINT: interrupt all pending commands. Continue thread.
+                    // SIGTERM: exit thread. Abandon everything.
+                    match s {
+                        signal::SIGINT => {
+                            let old_pool = pool.replace(fuchsia_async::Scope::new());
+                            old_pool.cancel().await;
+                            true
+                        }
+                        signal::SIGTERM => false,
+                        _ => panic!("received unhandled signal: {s}"),
+                    }
+                },
+            )
+            .await
+            {}
+            // Dropping the notifier will cause spawned tasks to be dropped.
+            *notifier.lock().await = None;
+            pool.into_inner().cancel().await;
         });
+        log::info!("Exiting lib_context main thread");
     })
 }
 
