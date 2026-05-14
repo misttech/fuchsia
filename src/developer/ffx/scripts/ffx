@@ -71,4 +71,6 @@ fi
 FFX_WRAPPER_INVOKE=${FFX_WRAPPER_INVOKE:-ffx}
 export FFX_WRAPPER_INVOKE
 
+export FUCHSIA_METRICS_CALL_STACK="${FUCHSIA_METRICS_CALL_STACK:+${FUCHSIA_METRICS_CALL_STACK} }ffx_script"
+
 exec "${fuchsia_dir}"/scripts/fx ffx --config fuchsia.analytics.ffx_invoker=fx "$@"

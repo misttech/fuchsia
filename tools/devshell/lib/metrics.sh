@@ -20,7 +20,7 @@
 # depends on FUCHSIA_DIR being defined correctly.
 
 # Increase the metrics version by 1 when analytics is updated
-_METRICS_VERSION="9"
+_METRICS_VERSION="10"
 _METRICS_ALLOWS_CUSTOM_REPORTING=( "test" )
 # If args match the below, then track capture group 1
 _METRICS_TRACK_REGEX=(
@@ -625,12 +625,15 @@ function track-command-execution {
     args_truncated=1
   fi
 
+  local call_stack="${FUCHSIA_METRICS_CALL_STACK:0:500}"
+
   event_params=$(fx-command-run jq -c -n \
     --arg subcommand "${subcommand}" \
     --arg args "${args1}" \
     --arg args2 "${args2}" \
     --arg args_truncated "${args_truncated}" \
     --arg invoker "${FUCHSIA_FX_INVOKER}" \
+    --arg call_stack "${call_stack}" \
     '$ARGS.named')
 
   _add-to-analytics-batch "invoke" "${event_params}"
@@ -712,6 +715,8 @@ function track-command-finished {
     args_truncated=1
   fi
 
+  local call_stack="${FUCHSIA_METRICS_CALL_STACK:0:500}"
+
   local timing=$(( (end_time - start_time)/1000 ))
 
   event_params=$(fx-command-run jq -c -n \
@@ -725,6 +730,7 @@ function track-command-finished {
     --argjson timing "${timing}" \
     --argjson start_time_micros "${start_time}" \
     --argjson end_time_micros "${end_time}" \
+    --arg call_stack "${call_stack}" \
     '$ARGS.named')
 
   _add-to-analytics-batch "finish" "${event_params}"
@@ -1054,6 +1060,8 @@ function metrics-init {
   else
     exec 10> >(_metrics-service)
   fi
+
+  export FUCHSIA_METRICS_CALL_STACK="${FUCHSIA_METRICS_CALL_STACK:+${FUCHSIA_METRICS_CALL_STACK} }fx"
 }
 
 # Calls __add-to-analytics-batch asynchronously, via metrics service

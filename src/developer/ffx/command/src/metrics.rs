@@ -55,6 +55,13 @@ impl MetricsSession {
             UNKNOWN_SDK.to_string()
         };
         init_metrics_svc(analytics_path, build_info, invoker.clone(), sdk_version).await;
+        let call_stack = std::env::var("FUCHSIA_METRICS_CALL_STACK").unwrap_or_default();
+        let new_call_stack =
+            if call_stack.is_empty() { "ffx".to_string() } else { format!("{call_stack} ffx") };
+        // SAFETY: This is called during single-threaded initialization before any other threads are spawned.
+        unsafe {
+            std::env::set_var("FUCHSIA_METRICS_CALL_STACK", new_call_stack);
+        }
         if !enabled {
             opt_out_for_this_invocation().await.map_err(anyhow::Error::from)?
         }
