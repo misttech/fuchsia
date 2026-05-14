@@ -174,6 +174,12 @@ macro_rules! delegated_concrete_handle_based_impls {
             self.0.wait_async(port, key, signals, options)
         }
 
+        /// Return a `WaitItem` for this handle and the provided `signals` to use with
+        /// `object_wait_many`.
+        pub fn wait_item(&self, signals: $crate::Signals) -> $crate::WaitItem<'_> {
+            self.0.wait_item(signals)
+        }
+
         /// Wraps a call to the
         /// [`zx_object_get_property`](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_property)
         /// syscall for the `ZX_PROP_NAME` property.

@@ -336,19 +336,11 @@ impl Usercopy {
             // loop on exceptions
             loop {
                 let mut wait_items = [
-                    zx::WaitItem {
-                        handle: exception_channel.as_handle_ref(),
-                        waitfor: zx::Signals::CHANNEL_READABLE,
-                        pending: zx::Signals::empty(),
-                    },
-                    zx::WaitItem {
-                        handle: shutdown_event_clone.as_handle_ref(),
-                        waitfor: zx::Signals::USER_0,
-                        pending: zx::Signals::empty(),
-                    },
+                    exception_channel.wait_item(zx::Signals::CHANNEL_READABLE),
+                    shutdown_event_clone.wait_item(zx::Signals::USER_0),
                 ];
                 let _ = zx::object_wait_many(&mut wait_items, zx::MonotonicInstant::INFINITE);
-                if wait_items[1].pending == zx::Signals::USER_0 {
+                if wait_items[1].pending() == zx::Signals::USER_0 {
                     break;
                 }
                 let mut buf = zx::MessageBuf::new();

@@ -784,7 +784,7 @@ pub struct NamespaceEntry {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use zx::{MonotonicInstant, Signals, Status, WaitItem, object_wait_many};
+    use zx::{MonotonicInstant, Signals, Status, object_wait_many};
 
     #[test]
     fn namespace_get_installed() {
@@ -875,22 +875,14 @@ mod tests {
         let mut output = vec![];
         loop {
             let mut items = vec![
-                WaitItem {
-                    handle: process.as_handle_ref(),
-                    waitfor: Signals::PROCESS_TERMINATED,
-                    pending: Signals::NONE,
-                },
-                WaitItem {
-                    handle: stdout_sock.as_handle_ref(),
-                    waitfor: Signals::SOCKET_READABLE | Signals::SOCKET_PEER_CLOSED,
-                    pending: Signals::NONE,
-                },
+                process.wait_item(Signals::PROCESS_TERMINATED),
+                stdout_sock.wait_item(Signals::SOCKET_READABLE | Signals::SOCKET_PEER_CLOSED),
             ];
 
             let signals_result =
                 object_wait_many(&mut items, MonotonicInstant::INFINITE).expect("unable to wait");
 
-            if items[1].pending.contains(Signals::SOCKET_READABLE) {
+            if items[1].pending().contains(Signals::SOCKET_READABLE) {
                 let bytes_len = stdout_sock.outstanding_read_bytes().expect("Socket error");
                 let mut buf: Vec<u8> = vec![0; bytes_len];
                 let read_len = stdout_sock
@@ -904,11 +896,11 @@ mod tests {
             }
 
             // read stdout buffer until test process dies or the socket is closed
-            if items[1].pending.contains(Signals::SOCKET_PEER_CLOSED) {
+            if items[1].pending().contains(Signals::SOCKET_PEER_CLOSED) {
                 break;
             }
 
-            if items[0].pending.contains(Signals::PROCESS_TERMINATED) {
+            if items[0].pending().contains(Signals::PROCESS_TERMINATED) {
                 break;
             }
 

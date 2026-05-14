@@ -6,7 +6,7 @@
 
 use crate::{
     Koid, MonotonicInstant, Name, ObjectQuery, ObjectType, Port, Property, PropertyQuery, Rights,
-    Signals, Status, Topic, WaitAsyncOpts, ok, sys,
+    Signals, Status, Topic, WaitAsyncOpts, WaitItem, ok, sys,
 };
 use std::marker::PhantomData;
 use std::mem::{ManuallyDrop, MaybeUninit};
@@ -191,6 +191,12 @@ impl Handle {
         })
     }
 
+    /// Return a [`WaitItem`] for this handle and `signals` that can be used with
+    /// [`object_wait_many`].
+    pub fn wait_item(&self, signals: Signals) -> WaitItem<'_> {
+        WaitItem::new(self.as_handle_ref(), signals)
+    }
+
     /// Get the [Property::NAME] property for this object.
     ///
     /// Wraps a call to the
@@ -340,6 +346,13 @@ impl Handle {
     }
 }
 
+impl AsHandleRef for Handle {
+    fn as_handle_ref(&self) -> HandleRef<'_> {
+        // SAFETY: inner is a guaranteed valid handle that will not be closed for self's lifetime.
+        unsafe { Unowned::from_raw_handle(self.raw_handle()) }
+    }
+}
+
 impl Drop for Handle {
     fn drop(&mut self) {
         if !self.is_poison() {
@@ -458,6 +471,10 @@ impl NullableHandle {
             .unwrap_or(Err(Status::BAD_HANDLE))
     }
 
+    pub fn wait_item(&self, signals: Signals) -> WaitItem<'_> {
+        WaitItem::new(self.as_handle_ref(), signals)
+    }
+
     pub fn get_name(&self) -> Result<Name, Status> {
         self.0.as_ref().map(Handle::get_name).unwrap_or(Err(Status::BAD_HANDLE))
     }
@@ -551,7 +568,13 @@ pub struct Unowned<'a, T> {
     marker: PhantomData<&'a T>,
 }
 
-impl<'a, T: Into<NullableHandle>> ::std::ops::Deref for Unowned<'a, T> {
+// Ensure ABI-compatibility with zx_handle_t with the following static assertions, like on Handle.
+static_assertions::assert_eq_size!(Unowned<'static, Handle>, sys::zx_handle_t);
+static_assertions::assert_eq_align!(Unowned<'static, Handle>, sys::zx_handle_t);
+static_assertions::assert_eq_size!(Option<Unowned<'static, Handle>>, sys::zx_handle_t);
+static_assertions::assert_eq_align!(Option<Unowned<'static, Handle>>, sys::zx_handle_t);
+
+impl<'a, T> std::ops::Deref for Unowned<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {

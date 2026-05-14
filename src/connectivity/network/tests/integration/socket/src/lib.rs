@@ -415,11 +415,7 @@ fn validate_send_msg_preflight_response(
     let all_eventpairs_valid = {
         let mut wait_items = validity
             .iter()
-            .map(|eventpair| zx::WaitItem {
-                handle: eventpair.as_handle_ref(),
-                waitfor: zx::Signals::EVENTPAIR_PEER_CLOSED,
-                pending: zx::Signals::NONE,
-            })
+            .map(|eventpair| eventpair.wait_item(zx::Signals::EVENTPAIR_PEER_CLOSED))
             .collect::<Vec<_>>();
         zx::object_wait_many(&mut wait_items, zx::MonotonicInstant::INFINITE_PAST)
             == Err(zx::Status::TIMED_OUT)

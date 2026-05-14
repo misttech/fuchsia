@@ -34,11 +34,7 @@ impl WakeSource {
     }
 
     fn as_wait_item(&self) -> zx::WaitItem<'_> {
-        zx::WaitItem {
-            handle: self.handle.as_handle_ref(),
-            waitfor: self.signals,
-            pending: zx::Signals::empty(),
-        }
+        self.handle.wait_item(self.signals)
     }
 }
 
@@ -191,8 +187,8 @@ pub async fn suspend_container(
 
         let mut resume_reasons: Vec<String> = Vec::new();
         for wait_item in &wait_items {
-            if (wait_item.pending & wait_item.waitfor) != zx::Signals::NONE {
-                let koid = wait_item.handle.koid().unwrap();
+            if (wait_item.pending() & wait_item.waiting_for()) != zx::Signals::NONE {
+                let koid = wait_item.handle().koid().unwrap();
                 if let Some(event) = wake_sources.get(&koid) {
                     log::info!("Woke container from sleep for: {}", event.name,);
                     resume_reasons.push(event.name.clone());
