@@ -13,12 +13,7 @@ kernel_package("zircon") {
   visibility = [ ":*" ]
   deps = [
     "..:common-package-items",
-
-    # TODO(https://fxbug.dev/371568912): Should be lk_debug_level_2! We
-    # temporarily keep this using the legacy switchset to softly transition
-    # away from the "no_debug" builders in automation, exercising boot tests
-    # against a user kernel in the old way.
-    "//zircon/kernel/bin:vmzircon.with-tests(//zircon/kernel/switch/set/legacy:kernel_${current_cpu}.legacy)",
+    "//zircon/kernel/bin:vmzircon.with-tests(//zircon/kernel/switch/set/lk_debug_level_2:kernel_${current_cpu}.lk_debug_level_2)",
   ]
 }
 
