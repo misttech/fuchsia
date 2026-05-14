@@ -4,7 +4,8 @@
 use crate::diagnostics::BatchIteratorConnectionStats;
 use crate::error::AccessorError;
 use crate::logs::servers::{ExtendRecordOpts, extend_fxt_record};
-use crate::logs::shared_buffer::FxtMessage;
+use crate::logs::shared_buffer::FilterCursor;
+use diagnostics_log_encoding::Header;
 use fidl_fuchsia_diagnostics::{
     DataType, Format, FormattedContent, MAXIMUM_ENTRIES_PER_BATCH, StreamMode,
 };
@@ -17,6 +18,7 @@ use serde::Serialize;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, ready};
+use zerocopy::{FromBytes, IntoBytes};
 use zx;
 
 static SERIALIZED_DATA_VMO_NAME: zx::Name = zx::Name::new_lossy("archivist-serialized-data");
@@ -403,14 +405,14 @@ impl<T: PacketFormat> Stream for PacketSerializer<T> {
 }
 
 #[pin_project]
-pub struct FxtPacketFormat<I> {
+pub struct FxtPacketFormat {
     #[pin]
-    pub stream: I,
+    pub cursor: FilterCursor,
     pub subscribe_to_manifest: bool,
     pub sent_tags: std::collections::HashMap<u64, Arc<crate::identity::ComponentIdentity>>,
 }
 
-impl<I: Stream<Item = FxtMessage>> PacketFormat for FxtPacketFormat<I> {
+impl PacketFormat for FxtPacketFormat {
     const FORMAT: Format = Format::Fxt;
 
     fn write_item(
@@ -419,11 +421,23 @@ impl<I: Stream<Item = FxtMessage>> PacketFormat for FxtPacketFormat<I> {
         _first: bool,
         buffer: &mut Vec<u8>,
     ) -> Poll<Option<usize>> {
-        let this = self.project();
-        if let Some(item) = ready!(this.stream.poll_next(cx)) {
+        let mut this = self.project();
+        loop {
+            let Some(message) = ready!(this.cursor.as_mut().poll_next(cx)) else {
+                return Poll::Ready(None);
+            };
+
+            let (identity, header, data) = match message.parse() {
+                Ok(res) => res,
+                Err(_) => {
+                    // If we fail to parse the message, just ignore it and move on to the next
+                    // message.
+                    continue;
+                }
+            };
+            let tag = header.tag() as u64;
+
             if *this.subscribe_to_manifest {
-                let tag = item.tag();
-                let identity = item.component_identity();
                 let send_manifest = match this.sent_tags.entry(tag) {
                     std::collections::hash_map::Entry::Vacant(e) => {
                         e.insert(Arc::clone(identity));
@@ -441,10 +455,9 @@ impl<I: Stream<Item = FxtMessage>> PacketFormat for FxtPacketFormat<I> {
 
                 if send_manifest {
                     use diagnostics_log_encoding::encode::{Encoder, EncoderOpts, ResizableBuffer};
-                    use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, Record};
+                    use diagnostics_log_encoding::{Argument, LOG_CONTROL_BIT, Record};
                     use fidl_fuchsia_diagnostics_types::Severity;
                     use std::io::Cursor;
-                    use zerocopy::{FromBytes, IntoBytes};
 
                     let mut encoder = Encoder::new(
                         Cursor::new(ResizableBuffer::from(Vec::new())),
@@ -461,20 +474,21 @@ impl<I: Stream<Item = FxtMessage>> PacketFormat for FxtPacketFormat<I> {
                     encoder.write_record(record).unwrap();
                     let mut manifest_buffer = encoder.take().into_inner().into_inner();
                     if manifest_buffer.len() >= 8 {
-                        let mut header = Header::read_from_bytes(&manifest_buffer[0..8]).unwrap();
-                        header.set_tag((tag as u32) | LOG_CONTROL_BIT);
-                        manifest_buffer[0..8].copy_from_slice(header.as_bytes());
+                        let mut header_manifest =
+                            Header::read_from_bytes(&manifest_buffer[0..8]).unwrap();
+                        header_manifest.set_tag((tag as u32) | LOG_CONTROL_BIT);
+                        manifest_buffer[0..8].copy_from_slice(header_manifest.as_bytes());
                     }
                     buffer.extend_from_slice(&manifest_buffer);
                 }
             }
 
-            buffer.extend_from_slice(item.data());
+            buffer.extend_from_slice(header.as_bytes());
+            buffer.extend_from_slice(&data[8..]);
 
-            // if we are subscribing to the manifest, don't inject metadata into every record
             extend_fxt_record(
-                item.component_identity(),
-                item.dropped(),
+                identity,
+                message.dropped,
                 &ExtendRecordOpts {
                     component_url: !*this.subscribe_to_manifest,
                     moniker: !*this.subscribe_to_manifest,
@@ -483,27 +497,25 @@ impl<I: Stream<Item = FxtMessage>> PacketFormat for FxtPacketFormat<I> {
                 },
                 buffer,
             );
-            Poll::Ready(Some(0))
-        } else {
-            Poll::Ready(None)
+            return Poll::Ready(Some(0));
         }
     }
 }
 
-pub type FxtPacketSerializer<I> = PacketSerializer<FxtPacketFormat<I>>;
+pub type FxtPacketSerializer = PacketSerializer<FxtPacketFormat>;
 
-impl<I> FxtPacketSerializer<I> {
+impl FxtPacketSerializer {
     pub fn new(
         stats: Arc<BatchIteratorConnectionStats>,
         max_packet_size: u64,
-        items: I,
+        cursor: FilterCursor,
         subscribe_to_manifest: bool,
     ) -> Self {
         Self::with_format(
             Some(stats),
             max_packet_size,
             FxtPacketFormat {
-                stream: items,
+                cursor,
                 subscribe_to_manifest,
                 sent_tags: std::collections::HashMap::new(),
             },
@@ -742,9 +754,13 @@ mod tests {
     #[fuchsia::test]
     async fn fxt_packet_serializer_subscribe_to_manifest() {
         use crate::identity::ComponentIdentity;
+        use crate::logs::shared_buffer::{SharedBuffer, create_ring_buffer};
+        use crate::logs::stats::LogStreamStats;
         use diagnostics_log_encoding::encode::{Encoder, EncoderOpts};
         use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, Record};
+        use fidl_fuchsia_diagnostics::StreamMode;
         use fidl_fuchsia_diagnostics_types::Severity;
+        use fuchsia_inspect::Node;
         use std::io::Cursor;
         use zerocopy::{FromBytes, IntoBytes};
 
@@ -754,9 +770,20 @@ mod tests {
             flyweights::FlyStr::new("fuchsia-pkg://fuchsia.com/test#meta/test.cm");
         let identity2 = Arc::new(identity2_inner);
 
+        let buffer = Arc::new(SharedBuffer::new(
+            create_ring_buffer(65536),
+            Box::new(|_| {}),
+            Default::default(),
+            &Node::default(),
+        ));
+        let stats1 = Arc::new(LogStreamStats::new(&Node::default(), &identity1));
+        let container1 = buffer.new_container_buffer(Arc::clone(&identity1), stats1);
+        let stats2 = Arc::new(LogStreamStats::new(&Node::default(), &identity2));
+        let container2 = buffer.new_container_buffer(Arc::clone(&identity2), stats2);
+
         // create message 1
-        let mut buffer = Cursor::new(vec![0u8; 128]);
-        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        let mut buffer_out = Cursor::new(vec![0u8; 128]);
+        let mut encoder = Encoder::new(&mut buffer_out, EncoderOpts::default());
         encoder
             .write_record(Record {
                 timestamp: zx::BootInstant::from_nanos(100),
@@ -769,12 +796,11 @@ mod tests {
         let mut header = Header::read_from_bytes(&msg1_bytes[0..8]).unwrap();
         header.set_tag(1);
         msg1_bytes[0..8].copy_from_slice(header.as_bytes());
-        let msg1 =
-            FxtMessage::new_test(msg1_bytes.into_boxed_slice(), 0, Arc::clone(&identity1), 1);
+        container1.push_back(&msg1_bytes);
 
         // create message 2
-        let mut buffer = Cursor::new(vec![0u8; 128]);
-        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        let mut buffer_out = Cursor::new(vec![0u8; 128]);
+        let mut encoder = Encoder::new(&mut buffer_out, EncoderOpts::default());
         encoder
             .write_record(Record {
                 timestamp: zx::BootInstant::from_nanos(200),
@@ -787,12 +813,11 @@ mod tests {
         let mut header = Header::read_from_bytes(&msg2_bytes[0..8]).unwrap();
         header.set_tag(2);
         msg2_bytes[0..8].copy_from_slice(header.as_bytes());
-        let msg2 =
-            FxtMessage::new_test(msg2_bytes.into_boxed_slice(), 0, Arc::clone(&identity2), 2);
+        container2.push_back(&msg2_bytes);
 
         // create message 3 (same tag/identity as message 2)
-        let mut buffer = Cursor::new(vec![0u8; 128]);
-        let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+        let mut buffer_out = Cursor::new(vec![0u8; 128]);
+        let mut encoder = Encoder::new(&mut buffer_out, EncoderOpts::default());
         encoder
             .write_record(Record {
                 timestamp: zx::BootInstant::from_nanos(300),
@@ -805,18 +830,17 @@ mod tests {
         let mut header = Header::read_from_bytes(&msg3_bytes[0..8]).unwrap();
         header.set_tag(2);
         msg3_bytes[0..8].copy_from_slice(header.as_bytes());
-        let msg3 =
-            FxtMessage::new_test(msg3_bytes.into_boxed_slice(), 0, Arc::clone(&identity2), 2);
+        container2.push_back(&msg3_bytes);
 
-        let inputs = vec![msg1, msg2, msg3];
+        let cursor = buffer.cursor(StreamMode::Snapshot, vec![]);
 
-        let node = fuchsia_inspect::Node::default();
+        let node = Node::default();
         let accessor_stats = Arc::new(AccessorStats::new(node));
         let test_stats = Arc::new(accessor_stats.new_logs_batch_iterator());
 
         // Test with subscribe_to_manifest = true
         let packets: Vec<_> =
-            FxtPacketSerializer::new(Arc::clone(&test_stats), 1024 * 1024, iter(inputs), true)
+            FxtPacketSerializer::new(Arc::clone(&test_stats), 1024 * 1024, cursor, true)
                 .collect::<Vec<_>>()
                 .await
                 .into_iter()
@@ -845,24 +869,24 @@ mod tests {
 
         assert_eq!(records.len(), 5);
 
-        // Record 0: Manifest for tag 1
+        // Record 0: Manifest for tag 0
         assert_ne!(records[0].0.tag() & LOG_CONTROL_BIT, 0);
-        assert_eq!(records[0].0.tag() & !LOG_CONTROL_BIT, 1);
+        assert_eq!(records[0].0.tag() & !LOG_CONTROL_BIT, 0);
 
         // Record 1: Msg 1
-        assert_eq!(records[1].0.tag(), 1);
+        assert_eq!(records[1].0.tag(), 0);
         assert_eq!(records[1].1.arguments.len(), 1); // no moniker/url injected
 
-        // Record 2: Manifest for tag 2
+        // Record 2: Manifest for tag 1
         assert_ne!(records[2].0.tag() & LOG_CONTROL_BIT, 0);
-        assert_eq!(records[2].0.tag() & !LOG_CONTROL_BIT, 2);
+        assert_eq!(records[2].0.tag() & !LOG_CONTROL_BIT, 1);
 
         // Record 3: Msg 2
-        assert_eq!(records[3].0.tag(), 2);
+        assert_eq!(records[3].0.tag(), 1);
         assert_eq!(records[3].1.arguments.len(), 1); // no moniker/url injected
 
         // Record 4: Msg 3
-        assert_eq!(records[4].0.tag(), 2);
+        assert_eq!(records[4].0.tag(), 1);
         assert_eq!(records[4].1.arguments.len(), 1); // no moniker/url injected
     }
 }

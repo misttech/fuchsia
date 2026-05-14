@@ -7,7 +7,7 @@ use crate::events::types::{Event, EventPayload, LogSinkRequestedPayload};
 use crate::identity::ComponentIdentity;
 use crate::logs::container::LogsArtifactsContainer;
 use crate::logs::debuglog::{DebugLog, DebugLogBridge, KERNEL_IDENTITY};
-use crate::logs::shared_buffer::{FilterCursorStream, FxtMessage, SharedBuffer};
+use crate::logs::shared_buffer::{FilterCursor, FilterCursorStream, SharedBuffer};
 use crate::logs::stats::{GlobalAnalytics, LogStreamStats};
 use anyhow::format_err;
 use diagnostics_data::{LogsData, Severity};
@@ -200,8 +200,8 @@ impl LogsRepository {
         &self,
         mode: StreamMode,
         selectors: Vec<ComponentSelector>,
-    ) -> FilterCursorStream<FxtMessage> {
-        self.shared_buffer.cursor(mode, selectors).into()
+    ) -> FilterCursor {
+        self.shared_buffer.cursor(mode, selectors)
     }
 
     /// Returns a log stream filtered to the specified selectors. If `selectors` is empty, all logs

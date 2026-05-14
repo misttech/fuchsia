@@ -4,7 +4,7 @@
 
 mod cursor;
 
-pub use cursor::{FilterCursor, FilterCursorStream, FxtMessage};
+pub use cursor::{FilterCursor, FilterCursorStream};
 
 use crate::identity::ComponentIdentity;
 use crate::logs::repository::ARCHIVIST_MONIKER;
@@ -838,6 +838,16 @@ impl ContainerBuffer {
         self.shared_buffer.inner.lock().ingest(msg, self.container_id);
     }
 
+    /// Returns the identity of the container if it still exists.
+    pub fn identity(&self) -> Option<Arc<ComponentIdentity>> {
+        self.shared_buffer
+            .inner
+            .lock()
+            .containers
+            .get(self.container_id)
+            .map(|c| Arc::clone(&c.identity))
+    }
+
     /// Returns an IOBuffer for the container.
     pub fn iob(&self) -> zx::Iob {
         let mut inner = self.shared_buffer.inner.lock();
@@ -859,23 +869,6 @@ impl ContainerBuffer {
         });
 
         ep0
-    }
-
-    /// Returns a cursor for messages that only apply to this container.
-    #[cfg(test)]
-    fn cursor(&self, mode: StreamMode) -> Option<FilterCursorStream<FxtMessage>> {
-        use selectors::SelectorExt;
-
-        // NOTE: It is not safe to use on_inactive in this function because this function can be
-        // called whilst locks are held which are the same locks that the on_inactive notification
-        // uses.
-        let mut inner = InnerGuard::new(&self.shared_buffer);
-        let Some(container) = inner.containers.get_mut(self.container_id) else {
-            // We've hit a race where the container has terminated.
-            return None;
-        };
-        let selectors = vec![container.identity.moniker.clone().into_component_selector()];
-        Some(inner.cursor(mode, selectors).into())
     }
 
     /// Marks the buffer as terminated which will force all cursors to end and close all sockets.
@@ -1045,6 +1038,7 @@ struct Socket {
 #[cfg(test)]
 mod tests {
     use super::{SharedBuffer, SharedBufferOptions, Slab, create_ring_buffer};
+    use crate::identity::ComponentIdentity;
     use crate::logs::stats::LogStreamStats;
     use crate::logs::testing::make_message;
     use assert_matches::assert_matches;
@@ -1059,6 +1053,7 @@ mod tests {
     use futures::stream::{FuturesUnordered, StreamExt as _};
     use moniker::ExtendedMoniker;
     use ring_buffer::MAX_MESSAGE_SIZE;
+    use selectors::SelectorExt;
     use std::future::poll_fn;
     use std::iter::repeat_with;
     use std::pin::pin;
@@ -1066,12 +1061,25 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::task::Poll;
     use std::time::Duration;
+    use zerocopy::FromBytes;
 
     fn test_stats() -> Arc<LogStreamStats> {
         Arc::new(LogStreamStats::new(
             &fuchsia_inspect::Node::default(),
-            &super::ComponentIdentity::unknown(),
+            &ComponentIdentity::unknown(),
         ))
+    }
+
+    fn container_cursor(
+        buffer: &Arc<SharedBuffer>,
+        container: &super::ContainerBuffer,
+        mode: StreamMode,
+    ) -> Option<impl futures::Stream<Item = Box<[u8]>>> {
+        let selectors = vec![container.identity()?.moniker.clone().into_component_selector()];
+        let mut cursor = Box::pin(buffer.cursor(mode, selectors));
+        Some(futures::stream::poll_fn(move |cx| {
+            cursor.as_mut().poll_next(cx).map(|m| m.map(|m| m.parse().unwrap().2.into()))
+        }))
     }
 
     async fn yield_to_executor() {
@@ -1102,8 +1110,8 @@ mod tests {
         container_buffer.push_back(msg.bytes());
 
         // Make sure the cursor can find it.
-        let cursor = container_buffer.cursor(StreamMode::Snapshot).unwrap();
-        assert_eq!(cursor.map(|item| assert_eq!(item.data(), msg.bytes())).count().await, 1);
+        let cursor = container_cursor(&buffer, &container_buffer, StreamMode::Snapshot).unwrap();
+        assert_eq!(cursor.map(|item| assert_eq!(&*item, msg.bytes())).count().await, 1);
     }
 
     #[fuchsia::test]
@@ -1119,7 +1127,13 @@ mod tests {
             buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats());
         container_buffer.push_back(&[0]);
 
-        assert_eq!(container_buffer.cursor(StreamMode::Snapshot).unwrap().count().await, 0);
+        assert_eq!(
+            container_cursor(&buffer, &container_buffer, StreamMode::Snapshot)
+                .unwrap()
+                .count()
+                .await,
+            0
+        );
     }
 
     #[fuchsia::test]
@@ -1134,7 +1148,13 @@ mod tests {
             buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats());
         container_buffer.push_back(&[0x77; 16]);
 
-        assert_eq!(container_buffer.cursor(StreamMode::Snapshot).unwrap().count().await, 0);
+        assert_eq!(
+            container_cursor(&buffer, &container_buffer, StreamMode::Snapshot)
+                .unwrap()
+                .count()
+                .await,
+            0
+        );
     }
 
     #[fuchsia::test]
@@ -1150,7 +1170,13 @@ mod tests {
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
         container_buffer.push_back(&msg.bytes()[..msg.bytes().len() - 1]);
 
-        assert_eq!(container_buffer.cursor(StreamMode::Snapshot).unwrap().count().await, 0);
+        assert_eq!(
+            container_cursor(&buffer, &container_buffer, StreamMode::Snapshot)
+                .unwrap()
+                .count()
+                .await,
+            0
+        );
     }
 
     #[fuchsia::test]
@@ -1181,18 +1207,19 @@ mod tests {
         }
 
         // Read back all the messages.
-        let mut cursor = pin!(container_buffer.cursor(StreamMode::Snapshot).unwrap());
+        let mut cursor =
+            pin!(container_cursor(&buffer, &container_buffer, StreamMode::Snapshot).unwrap());
 
         let mut j;
         let item = cursor.next().await;
         assert_matches!(
             item,
             Some(item) => {
-                j = item.timestamp().into_nanos();
+                j = i64::read_from_bytes(&item[8..16]).unwrap();
                 let msg = make_message(&format!("{j}"),
                                        None,
-                                       item.timestamp());
-                assert_eq!(item.data(), msg.bytes());
+                                       zx::BootInstant::from_nanos(j));
+                assert_eq!(&*item, msg.bytes());
             }
         );
 
@@ -1201,9 +1228,9 @@ mod tests {
             assert_matches!(
                 cursor.next().await,
                 Some(item) => {
-                    assert_eq!(item.data(), make_message(&format!("{j}"),
+                    assert_eq!(&*item, make_message(&format!("{j}"),
                                                          None,
-                                                         item.timestamp()).bytes());
+                                                         zx::BootInstant::from_nanos(j)).bytes());
                 }
             );
             j += 1;
@@ -1236,7 +1263,9 @@ mod tests {
         container_a.push_back(msg.bytes());
 
         // Repeatedly write messages to b until a is rolled out.
-        while container_a.cursor(StreamMode::Snapshot).unwrap().count().await == 1 {
+        while container_cursor(&buffer, &container_a, StreamMode::Snapshot).unwrap().count().await
+            == 1
+        {
             container_b.push_back(msg.bytes());
 
             // Yield to the executor to allow messages to be rolled out.
@@ -1288,7 +1317,7 @@ mod tests {
             yield_to_executor().await;
         }
 
-        assert!(container_a.cursor(StreamMode::Subscribe).is_none());
+        assert!(container_cursor(&buffer, &container_a, StreamMode::Subscribe).is_none());
     }
 
     #[fuchsia::test]
@@ -1311,7 +1340,8 @@ mod tests {
             {
                 let container = Arc::clone(&container);
                 fasync::Task::spawn(async move {
-                    let mut cursor = pin!(container.cursor(mode).unwrap());
+                    let mut cursor =
+                        pin!(container_cursor(&container.shared_buffer, &container, mode).unwrap());
                     while let Some(item) = cursor.next().await {
                         sender.unbounded_send(item).unwrap();
                     }
@@ -1323,7 +1353,7 @@ mod tests {
             if mode == StreamMode::SnapshotThenSubscribe {
                 assert_matches!(
                     receiver.next().await,
-                    Some(item) if item.data() == msg.bytes()
+                    Some(item) if item.as_ref() == msg.bytes()
                 );
             }
 
@@ -1340,7 +1370,7 @@ mod tests {
             // The message should arrive now.
             assert_matches!(
                 receiver.next().await,
-                Some(item) if item.data() == msg.bytes()
+                Some(item) if item.as_ref() == msg.bytes()
             );
         }
     }
@@ -1357,8 +1387,10 @@ mod tests {
             Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats()));
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
 
-        let mut cursor_a = pin!(container.cursor(StreamMode::Subscribe).unwrap());
-        let mut cursor_b = pin!(container.cursor(StreamMode::SnapshotThenSubscribe).unwrap());
+        let mut cursor_a =
+            pin!(container_cursor(&buffer, &container, StreamMode::Subscribe).unwrap());
+        let mut cursor_b =
+            pin!(container_cursor(&buffer, &container, StreamMode::SnapshotThenSubscribe).unwrap());
 
         container.push_back(msg.bytes());
         container.push_back(msg.bytes());
@@ -1366,7 +1398,8 @@ mod tests {
         container.push_back(msg.bytes());
         container.push_back(msg.bytes());
 
-        let mut cursor_c = pin!(container.cursor(StreamMode::Snapshot).unwrap());
+        let mut cursor_c =
+            pin!(container_cursor(&buffer, &container, StreamMode::Snapshot).unwrap());
         assert!(cursor_a.next().await.is_some());
         assert!(cursor_b.next().await.is_some());
         assert!(cursor_c.next().await.is_some());
@@ -1390,9 +1423,10 @@ mod tests {
         let container =
             Arc::new(buffer.new_container_buffer(Arc::new(vec!["a"].into()), test_stats()));
 
-        let cursor_a = container.cursor(StreamMode::Subscribe).unwrap();
-        let cursor_b = container.cursor(StreamMode::SnapshotThenSubscribe).unwrap();
-        let cursor_c = container.cursor(StreamMode::Snapshot).unwrap();
+        let cursor_a = container_cursor(&buffer, &container, StreamMode::Subscribe).unwrap();
+        let cursor_b =
+            container_cursor(&buffer, &container, StreamMode::SnapshotThenSubscribe).unwrap();
+        let cursor_c = container_cursor(&buffer, &container, StreamMode::Snapshot).unwrap();
 
         drop(buffer.terminate());
 
@@ -1414,13 +1448,17 @@ mod tests {
         let msg = make_message("a", None, zx::BootInstant::from_nanos(1));
         container_a.push_back(msg.bytes());
 
-        let mut cursor = pin!(container_a.cursor(StreamMode::SnapshotThenSubscribe).unwrap());
+        let mut cursor = pin!(
+            container_cursor(&buffer, &container_a, StreamMode::SnapshotThenSubscribe).unwrap()
+        );
         assert_matches!(cursor.next().await, Some(_));
 
         // Roll out all the messages.
         let container_b =
             Arc::new(buffer.new_container_buffer(Arc::new(vec!["b"].into()), test_stats()));
-        while container_a.cursor(StreamMode::Snapshot).unwrap().count().await > 0 {
+        while container_cursor(&buffer, &container_a, StreamMode::Snapshot).unwrap().count().await
+            > 0
+        {
             container_b.push_back(msg.bytes());
 
             // Yield to the executor to allow messages to be rolled out.
@@ -1440,10 +1478,8 @@ mod tests {
     #[fuchsia::test]
     async fn socket_increments_logstats() {
         let inspector = Inspector::default();
-        let identity = Arc::new(super::ComponentIdentity::new(
-            ExtendedMoniker::parse_str("./test").unwrap(),
-            "",
-        ));
+        let identity =
+            Arc::new(ComponentIdentity::new(ExtendedMoniker::parse_str("./test").unwrap(), ""));
         let stats = Arc::new(LogStreamStats::new(inspector.root(), &identity));
         let buffer = Arc::new(SharedBuffer::new(
             create_ring_buffer(65536),
@@ -1457,7 +1493,7 @@ mod tests {
         let (local, remote) = zx::Socket::create_datagram();
         container_a.add_socket(remote);
 
-        let cursor_a = container_a.cursor(StreamMode::Subscribe).unwrap();
+        let cursor_a = container_cursor(&buffer, &container_a, StreamMode::Subscribe).unwrap();
 
         // Use FuturesUnordered so that we can make sure that the cursor is woken when a message is
         // received (FuturesUnordered uses separate wakers for all the futures it manages).
@@ -1471,9 +1507,9 @@ mod tests {
 
         local.write(msg.bytes()).unwrap();
 
-        let cursor_b = pin!(container_a.cursor(StreamMode::Snapshot).unwrap());
+        let cursor_b = pin!(container_cursor(&buffer, &container_a, StreamMode::Snapshot).unwrap());
 
-        assert_eq!(cursor_b.map(|item| assert_eq!(item.data(), msg.bytes())).count().await, 1);
+        assert_eq!(cursor_b.map(|item| assert_eq!(&*item, msg.bytes())).count().await, 1);
 
         // If cursor_a wasn't woken, this will hang.
         next.await;
@@ -1542,7 +1578,7 @@ mod tests {
         let (local, remote) = zx::Socket::create_datagram();
         container_a.add_socket(remote);
 
-        let cursor_a = container_a.cursor(StreamMode::Subscribe).unwrap();
+        let cursor_a = container_cursor(&buffer, &container_a, StreamMode::Subscribe).unwrap();
 
         // Use FuturesUnordered so that we can make sure that the cursor is woken when a message is
         // received (FuturesUnordered uses separate wakers for all the futures it manages).
@@ -1556,9 +1592,9 @@ mod tests {
 
         local.write(msg.bytes()).unwrap();
 
-        let cursor_b = pin!(container_a.cursor(StreamMode::Snapshot).unwrap());
+        let cursor_b = pin!(container_cursor(&buffer, &container_a, StreamMode::Snapshot).unwrap());
 
-        assert_eq!(cursor_b.map(|item| assert_eq!(item.data(), msg.bytes())).count().await, 1);
+        assert_eq!(cursor_b.map(|item| assert_eq!(&*item, msg.bytes())).count().await, 1);
 
         // If cursor_a wasn't woken, this will hang.
         next.await;
@@ -1589,13 +1625,15 @@ mod tests {
 
         local.write(msg.bytes()).unwrap();
 
-        let cursor = pin!(container_a.cursor(StreamMode::Snapshot).unwrap());
+        let cursor = pin!(container_cursor(&buffer, &container_a, StreamMode::Snapshot).unwrap());
 
-        assert_eq!(cursor.map(|item| assert_eq!(item.data(), msg.bytes())).count().await, 1);
+        assert_eq!(cursor.map(|item| assert_eq!(&*item, msg.bytes())).count().await, 1);
 
         // Now roll out a's messages.
         let container_b = buffer.new_container_buffer(Arc::new(vec!["b"].into()), test_stats());
-        while container_a.cursor(StreamMode::Snapshot).unwrap().count().await == 1 {
+        while container_cursor(&buffer, &container_a, StreamMode::Snapshot).unwrap().count().await
+            == 1
+        {
             container_b.push_back(msg.bytes());
 
             // Yield to the executor to allow messages to be rolled out.
@@ -1628,7 +1666,7 @@ mod tests {
         let (local, remote) = zx::Socket::create_datagram();
         container_a.add_socket(remote);
 
-        let cursor = pin!(container_a.cursor(StreamMode::Subscribe).unwrap());
+        let cursor = pin!(container_cursor(&buffer, &container_a, StreamMode::Subscribe).unwrap());
 
         const COUNT: usize = 1000;
         for _ in 0..COUNT {

@@ -4,20 +4,23 @@
 use crate::identity::ComponentIdentity;
 use crate::logs::error::LogsError;
 use crate::logs::repository::LogsRepository;
-use crate::logs::shared_buffer::FxtMessage;
+use crate::logs::shared_buffer::FilterCursor;
 use diagnostics_log_encoding::encode::{Encoder, EncoderOpts, ResizableBuffer};
 use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, Record};
 use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, RequestStream};
+use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_diagnostics::StreamMode;
 use fidl_fuchsia_diagnostics_types::Severity;
-use futures::{AsyncWriteExt, Stream, StreamExt};
+use fuchsia_async as fasync;
+use futures::{AsyncWriteExt, StreamExt};
 use log::warn;
 use std::collections::HashMap;
+use std::future::poll_fn;
 use std::io::Cursor;
 use std::pin::pin;
 use std::sync::Arc;
+use std::task::{Poll, ready};
 use zerocopy::{FromBytes, IntoBytes};
-use {fidl_fuchsia_diagnostics as fdiagnostics, fuchsia_async as fasync};
 
 #[derive(thiserror::Error, Debug)]
 enum StreamError {
@@ -104,19 +107,36 @@ impl LogStreamServer {
         Ok(())
     }
 
-    async fn stream_logs(
-        mut socket: fasync::Socket,
-        logs: impl Stream<Item = FxtMessage>,
-        opts: ExtendRecordOpts,
-    ) {
+    async fn stream_logs(mut socket: fasync::Socket, logs: FilterCursor, opts: ExtendRecordOpts) {
         let mut logs = pin!(logs);
         let mut buffer = Vec::new();
-        while let Some(message) = logs.next().await {
-            buffer.clear();
-            buffer.extend_from_slice(message.data());
-            extend_fxt_record(message.component_identity(), message.dropped(), &opts, &mut buffer);
-            let result = socket.write_all(&buffer).await;
-            if result.is_err() {
+        while let Some((identity, dropped)) = poll_fn(|cx| {
+            loop {
+                match ready!(logs.as_mut().poll_next(cx)) {
+                    Some(message) => {
+                        let (identity_ref, header, data) = match message.parse() {
+                            Ok(res) => res,
+                            Err(_) => {
+                                // If we fail to parse the message, just ignore it and move on
+                                // to the next message.
+                                continue;
+                            }
+                        };
+                        let identity = Arc::clone(identity_ref);
+                        buffer.clear();
+                        buffer.reserve(data.len());
+                        buffer.extend_from_slice(header.as_bytes());
+                        buffer.extend_from_slice(&data[8..]);
+                        return Poll::Ready(Some((identity, message.dropped)));
+                    }
+                    None => return Poll::Ready(None),
+                }
+            }
+        })
+        .await
+        {
+            extend_fxt_record(&identity, dropped, &opts, &mut buffer);
+            if socket.write_all(&buffer).await.is_err() {
                 // Assume an error means the peer closed for now.
                 break;
             }
@@ -125,27 +145,51 @@ impl LogStreamServer {
 
     async fn stream_logs_with_manifest(
         mut socket: fasync::Socket,
-        logs: impl Stream<Item = FxtMessage>,
+        logs: FilterCursor,
     ) -> Result<(), StreamError> {
         let mut logs = pin!(logs);
         let mut sent_tags = HashMap::new();
-        while let Some(message) = logs.next().await {
-            let tag = message.tag();
-            match sent_tags.entry(tag) {
-                std::collections::hash_map::Entry::Vacant(e) => {
-                    let identity = message.component_identity();
-                    Self::send_component_change(&mut socket, tag, identity).await?;
-                    e.insert(Arc::clone(message.component_identity()));
-                }
-                std::collections::hash_map::Entry::Occupied(mut e) => {
-                    let identity = message.component_identity();
-                    if !Arc::ptr_eq(e.get(), identity) && **e.get() != **identity {
-                        Self::send_component_change(&mut socket, tag, identity).await?;
-                        e.insert(Arc::clone(message.component_identity()));
+        let mut buffer = Vec::new();
+        while let Some((identity, tag)) = poll_fn(|cx| {
+            loop {
+                match ready!(logs.as_mut().poll_next(cx)) {
+                    Some(message) => {
+                        let (identity_ref, header, data) = match message.parse() {
+                            Ok(res) => res,
+                            Err(_) => continue,
+                        };
+                        let identity = Arc::clone(identity_ref);
+                        buffer.clear();
+                        buffer.reserve(data.len());
+                        buffer.extend_from_slice(header.as_bytes());
+                        buffer.extend_from_slice(&data[8..]);
+                        return Poll::Ready(Some((identity, header.tag() as u64)));
                     }
+                    None => return Poll::Ready(None),
                 }
             }
-            socket.write_all(message.data()).await?;
+        })
+        .await
+        {
+            let send = match sent_tags.entry(tag) {
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(Arc::clone(&identity));
+                    true
+                }
+                std::collections::hash_map::Entry::Occupied(mut e) => {
+                    if !Arc::ptr_eq(e.get(), &identity) && **e.get() != *identity {
+                        e.insert(Arc::clone(&identity));
+                        true
+                    } else {
+                        false
+                    }
+                }
+            };
+
+            if send {
+                Self::send_component_change(&mut socket, tag, &identity).await?;
+            }
+            socket.write_all(&buffer).await?;
         }
         Ok(())
     }

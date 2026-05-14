@@ -21,7 +21,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, ready};
-use zerocopy::{FromBytes, IntoBytes};
+use zerocopy::FromBytes;
 
 /// FilterCursor is a cursor that returns all logs optionally filtered by component selectors.
 #[pin_project]
@@ -179,19 +179,19 @@ impl Ord for MessageRef {
 pub struct Message<'a> {
     inner: ConditionGuard<'a, Inner>,
     message: MessageRef,
-    dropped: u64,
+    pub dropped: u64,
 }
 
 impl Message<'_> {
     /// Returns the component and FXT bytes.  The FXT record is validated to be the correct length
     /// and type.
-    fn parse(&self) -> Result<(&Arc<ComponentIdentity>, u64, &[u8]), MessageError> {
+    pub fn parse(&self) -> Result<(&Arc<ComponentIdentity>, Header, &[u8]), MessageError> {
         // SAFETY: We hold a lock which prevents the buffer from being drained so
         // it should be safe to read this range.
         let (container, data, _) =
             unsafe { self.inner.parse_message(self.message.index..self.inner.last_scanned) };
         let container_id = container;
-        let (header, _) = Header::read_from_prefix(data)
+        let (mut header, _) = Header::read_from_prefix(data)
             .map_err(|_| MessageError::from(ParseError::InvalidHeader))?;
         let msg_len = header.size_words() as usize * 8;
         if msg_len > data.len() || msg_len < 16 {
@@ -200,8 +200,9 @@ impl Message<'_> {
         if header.raw_type() != TRACING_FORMAT_LOG_RECORD_TYPE {
             return Err(ParseError::InvalidRecordType.into());
         }
+        header.set_tag(container_id.0);
         let container = self.inner.containers.get(container).unwrap();
-        Ok((&container.identity, container_id.0 as u64, &data[..msg_len]))
+        Ok((&container.identity, header, &data[..msg_len]))
     }
 }
 
@@ -209,7 +210,7 @@ impl TryFrom<Message<'_>> for LogsData {
     type Error = MessageError;
 
     fn try_from(value: Message<'_>) -> Result<Self, Self::Error> {
-        let (container, _tag, data) = value.parse()?;
+        let (container, _header, data) = value.parse()?;
         let mut data = diagnostics_message::from_structured(container.as_ref().into(), data)?;
         if value.dropped > 0 {
             data.metadata
@@ -218,67 +219,6 @@ impl TryFrom<Message<'_>> for LogsData {
                 .push(LogError::RolledOutLogs { count: value.dropped });
         }
         Ok(data)
-    }
-}
-
-/// A copy of the raw message.
-#[derive(Debug)]
-pub struct FxtMessage {
-    data: Box<[u8]>,
-    dropped: u64,
-    component_identity: Arc<ComponentIdentity>,
-    tag: u64,
-}
-
-impl FxtMessage {
-    pub fn data(&self) -> &[u8] {
-        &self.data
-    }
-
-    pub fn tag(&self) -> u64 {
-        self.tag
-    }
-
-    pub fn dropped(&self) -> u64 {
-        self.dropped
-    }
-
-    pub fn component_identity(&self) -> &Arc<ComponentIdentity> {
-        &self.component_identity
-    }
-
-    pub fn timestamp(&self) -> zx::BootInstant {
-        zx::BootInstant::from_nanos(i64::read_from_bytes(&self.data[8..16]).unwrap())
-    }
-
-    #[cfg(test)]
-    pub fn new_test(
-        data: Box<[u8]>,
-        dropped: u64,
-        component_identity: Arc<ComponentIdentity>,
-        tag: u64,
-    ) -> Self {
-        Self { data, dropped, component_identity, tag }
-    }
-}
-
-impl TryFrom<Message<'_>> for FxtMessage {
-    type Error = MessageError;
-
-    fn try_from(value: Message<'_>) -> Result<Self, Self::Error> {
-        let (component, tag, data) = value.parse()?;
-        let mut data: Box<[u8]> = data.into();
-        if data.len() >= 8 {
-            let mut header = Header::read_from_bytes(&data[0..8]).unwrap();
-            header.set_tag(tag as u32);
-            data[0..8].copy_from_slice(header.as_bytes());
-        }
-        Ok(FxtMessage {
-            data,
-            dropped: value.dropped,
-            tag,
-            component_identity: Arc::clone(component),
-        })
     }
 }
 
@@ -339,6 +279,7 @@ mod tests {
     use fidl_fuchsia_diagnostics::StreamMode;
     use futures::StreamExt;
     use selectors::{FastError, parse_component_selector};
+    use std::future::poll_fn;
     use std::pin::pin;
     use std::time::Duration;
 
@@ -463,15 +404,16 @@ mod tests {
         let item = stream.next().await.unwrap();
         assert_eq!(item.msg().unwrap(), "msg");
 
+        let has_messages = async |component| {
+            let mut cursor = pin!(buffer.cursor(
+                StreamMode::Snapshot,
+                vec![parse_component_selector::<FastError>(component).unwrap()],
+            ));
+            poll_fn(|cx| cursor.as_mut().poll_next(cx).map(|i| i.is_some())).await
+        };
+
         // Force roll out of remaining A messages
-        while pin!(FilterCursorStream::<FxtMessage>::from(buffer.cursor(
-            StreamMode::Snapshot,
-            vec![parse_component_selector::<FastError>("a").unwrap()]
-        )))
-        .next()
-        .await
-        .is_some()
-        {
+        while has_messages("a").await {
             container_b.push_back(msg.bytes());
             // Force the buffer to pop old messages.
             {

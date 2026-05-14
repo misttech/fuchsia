@@ -11,7 +11,7 @@ use crate::formatter::{
 use crate::inspect::ReaderServer;
 use crate::inspect::repository::InspectRepository;
 use crate::logs::repository::LogsRepository;
-use crate::logs::shared_buffer::FxtMessage;
+use crate::logs::shared_buffer::FilterCursor;
 use crate::pipeline::Pipeline;
 use diagnostics_data::{Data, DiagnosticsData, ExtendedMoniker, Metadata};
 use fidl::endpoints::{ControlHandle, RequestStream};
@@ -249,9 +249,9 @@ impl ArchiveAccessorServer {
                 };
                 match format {
                     Format::Fxt => {
-                        let logs = Box::pin(log_repo.logs_cursor_raw(mode, selectors));
+                        let cursor = log_repo.logs_cursor_raw(mode, selectors);
                         BatchIterator::new_serving_fxt(
-                            logs,
+                            cursor,
                             requests,
                             mode,
                             stats,
@@ -653,23 +653,20 @@ where
         )
     }
 
-    pub fn new_serving_fxt<S>(
-        data: S,
+    pub fn new_serving_fxt(
+        cursor: FilterCursor,
         requests: R,
         mode: StreamMode,
         stats: Arc<BatchIteratorConnectionStats>,
         parent_trace_id: ftrace::Id,
         performance_config: PerformanceConfig,
-    ) -> Result<Self, AccessorError>
-    where
-        S: Stream<Item = FxtMessage> + Send + Unpin + 'static,
-    {
+    ) -> Result<Self, AccessorError> {
         let data = FxtPacketSerializer::new(
             Arc::clone(&stats),
             performance_config
                 .aggregated_content_limit_bytes
                 .unwrap_or(FORMATTED_CONTENT_CHUNK_SIZE_TARGET),
-            data,
+            cursor,
             performance_config.subscribe_to_manifest,
         );
         Self::new_inner(

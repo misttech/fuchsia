@@ -23,7 +23,6 @@ archivist_optimized_binary("logging-bin") {
     "//src/lib/diagnostics/log/types",
     "//src/lib/fuchsia-async",
     "//src/sys/lib/moniker",
-    "//third_party/rust_crates:futures",
   ]
 
   sources = [ "src/logging.rs" ]

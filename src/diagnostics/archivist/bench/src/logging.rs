@@ -3,9 +3,7 @@
 // found in the LICENSE file.
 
 use archivist_lib::identity::ComponentIdentity;
-use archivist_lib::logs::shared_buffer::{
-    FilterCursorStream, FxtMessage, SharedBuffer, create_ring_buffer,
-};
+use archivist_lib::logs::shared_buffer::{SharedBuffer, create_ring_buffer};
 use archivist_lib::logs::stats::LogStreamStats;
 use archivist_lib::logs::stored_message::StoredMessage;
 use diagnostics_log_encoding::encode::{Encoder, EncoderOpts};
@@ -15,11 +13,9 @@ use fidl_fuchsia_diagnostics::StreamMode;
 use fuchsia_async::SendExecutorBuilder;
 use fuchsia_criterion::FuchsiaCriterion;
 use fuchsia_criterion::criterion::{self, Criterion};
-use futures::StreamExt;
 use std::convert::{TryFrom, TryInto};
 use std::io::Cursor;
 use std::mem;
-use std::pin::pin;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
@@ -117,14 +113,16 @@ fn bench_iterate_concurrent(b: &mut criterion::Bencher, args: IterateArgs) {
 
     // measure how long it takes to read |size| entries from the list
     b.iter(|| {
-        let cursor = FilterCursorStream::<FxtMessage>::from(
-            buffer.cursor(StreamMode::SnapshotThenSubscribe, Vec::new()),
-        );
+        let mut cursor = Box::pin(buffer.cursor(StreamMode::SnapshotThenSubscribe, Vec::new()));
         executor.run(async move {
-            let mut cursor = pin!(cursor);
             let mut items_read = 0;
             while items_read < args.size {
-                cursor.next().await.expect("must have some value");
+                std::future::poll_fn(|cx| {
+                    cursor.as_mut().poll_next(cx).map(|i| {
+                        i.expect("must have some value");
+                    })
+                })
+                .await;
                 items_read += 1;
             }
         });
