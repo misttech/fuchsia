@@ -16,13 +16,6 @@ declare_args() {
   all_cpu_kernel_boot_tests = false
 }
 
-# TODO(https://fxbug.dev/371568912): Once the dust settles, audit what uses this
-# target and for what purposes. Eventually, we likely want to get to having no
-# such target here.
-group("kernel") {
-  public_deps = [ "image/legacy($default_toolchain)" ]
-}
-
 group("tests") {
   testonly = true
   deps = [

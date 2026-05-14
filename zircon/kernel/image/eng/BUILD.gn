@@ -43,13 +43,8 @@ kernel_image("eng") {
   ]
 }
 
-# TODO(https://fxbug.dev/371568912): Merge into ":test-data-deps" once the
-# legacy image (whose test data deps reference this) is gone.
-kernel_cmdline("test-boot-options.eng-only") {
-  visibility = [
-    ":*",
-    "//zircon/kernel/image/legacy:*",
-  ]
+kernel_cmdline("test-boot-options") {
+  visibility = [ ":*" ]
   testonly = true
   args = [
     "kernel.pmm.alloc-random-should-wait=true",
@@ -60,7 +55,7 @@ kernel_cmdline("test-boot-options.eng-only") {
 group("eng.test-data-deps") {
   testonly = true
   deps = [
-    ":test-boot-options.eng-only",
+    ":test-boot-options",
     "//zircon/kernel/image:common-test-boot-options",
   ]
 }

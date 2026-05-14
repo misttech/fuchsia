@@ -45,7 +45,6 @@ assert(
 #       # TODO(https://fxbug.dev/42117912): Break this up into individual knobs.
 #     - Type: int
 #
-# TODO(https://fxbug.dev/371568912): Nothing to parameterize just yet.
 template("kernel_switchset") {
   _dir = get_label_info(":$target_name", "dir")
   _expected_dir = "//zircon/kernel/switch/set/${target_name}"
