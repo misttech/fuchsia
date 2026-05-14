@@ -4,18 +4,28 @@
 
 Moving away from SuspendBlockers is straightforward, drivers simply need to opt-in to using what is already available. It is these steps:
 
+> [!NOTE]
+> Drivers that use `SuspendBlocker` (or libraries like `FeedForwardWakeLease` that implement it) **only** to acquire wake leases to prevent suspend during interrupt handling are still allowed and do not need to be migrated. Focus migration efforts on drivers that use `SuspendBlocker` to coordinate hardware state changes or other suspend/resume logic.
+
 * Update the component manifest
 * Implement the fdf\_power::Suspendable mix-in (C++) or the fdf\_power::SuspendableDriver trait (Rust)
 * Implement `SuspendEnabled` (C++) or `suspend_enabled` (Rust)
 * Move any logic from `AfterResume` and `BeforeSuspend` to the driver's `Resume` and `Suspend` calls
 
-For drivers that already use the Suspendable mix-in or SuspendDriver trait, only the first step is required. For drivers that don't implement these you'll need to do the other steps. implement_suspendable.md has information about how perform the actions called out in these steps.
+For drivers that already use the Suspendable mix-in, only the first two steps are required. For drivers that don't implement these you'll need to do the other steps. implement_suspendable.md has information about how to perform the actions called out in these steps.
+
+For Rust drivers that implement `SuspendableDriver`, only the first step is required.
 
 ### Update the component manifest
 
 Add `suspend_enabled: "true"` program section of the component manifest, [src/devices/block/drivers/sdmmc/meta/sdmmc.cml](https://cs.opensource.google/fuchsia/fuchsia/+/30ec5f992257d1fb2a646e100c18b16eb7108aee:src/devices/block/drivers/sdmmc/meta/sdmmc.cml;l=16) has an example of this.
 
 If a driver already uses the Suspendable mix-in for C++ or the SuspendableDriver trait for Rust, that's all, you're done. The driver's `Suspend` and `Resume` calls will now be triggered by its power element instead of registering a `SuspendBlocker`.
+
+### Auditing Existing Migrations
+
+Look for drivers that have already implemented the `fdf_power::Suspendable` mix-in (C++) or `SuspendableDriver` trait (Rust) but have **not** updated their component manifest to include `suspend_enabled: "true"` in the `program` section. These drivers are not actually using the framework power elements until that flag is set. Additionally, verify that the driver correctly overrides `take_power_element_runner()` to return a valid runner if it is expected to receive one from the framework or context, rather than returning `std::nullopt`.
+
 
 ### Implement the fdf\_power::Suspendable mix-in (C++) or the fdf\_power::SuspendableDriver trait (Rust)
 

@@ -9,12 +9,38 @@ Include the header:
 #include <lib/driver/power/cpp/suspend.h>
 ```
 
+In the implementation we need to get the power element runner from the `DriverContext`. We assign it to an optional field, because it might not have been suppled. We must also implement `take_power_element_runner` because the `Suspendable` implementation calls it. The other thing is that we must call `InitializeSuspend` which is provided by `Suspendable` so that it can to its own initialization.
+
+For drivers that already implement `Suspendable` or `SuspendableDriver`, the `Suspend` and `Resume` methods shown below should already exist, but other parts of the sample code may not.
+
 Typically the C++ implementation will look something like
 
 ```c
 class MyDriver : public fdf::DriverBase2,
                  public fdf_power::Suspendable<MyDriver> {
   public:
+
+    zx::result<> Start(fdf::DriverContext context) {
+	  // Other assignment of private driver fields
+	  power_element_runner_ = context.take_power_element_runner();
+
+	  // Typically a field `incoming_` exists and is a shared pointer
+	  // to a `fdf::Namespace` type, if incoming_ doesn't exist, look
+	  // for a field of the proper type.
+	  // The third arg is a name, which will typically not be used,
+	  // but usually matches the name of the driver. To be safe, use
+	  // the name `NAME-FIXME` and rely on the reviewer to pick a name.
+	  zx::result suspend_init_result = InitializeSuspend(dispatcher(),
+	      *incoming_,
+		  "NAME-FIXME");
+	}
+
+	// This is called by fdf_power::Suspendable to get the element runner channel
+	// for it to manage
+	std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> take_power_element_runner() {
+	  return std::move(power_element_runner_);
+	}
+
     void Resume(fdf_power::ResumeCompleter completer) override {
       // Your resume logic here
       completer();
@@ -36,6 +62,8 @@ class MyDriver : public fdf::DriverBase2,
     // `fuchsia.power.SuspendEnabled` config capability, but your driver may
     // have a more specific way of doing its configuration.
     my_driver_config::Config config_;
+
+	std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> power_element_runner_;
 }
 ```
 
@@ -43,7 +71,7 @@ For simplicity the above example puts the implementation in the header, but that
 
 #### Rust
 
-In Rust the driver implements the `SuspendableDriver` trait, which looks very similar to the `Suspendable` mix-in.
+In Rust the driver implements the `SuspendableDriver` trait, which looks very similar to the `Suspendable` mix-in, but a little simpler.
 
 ```rust
 impl SuspendableDriver for MyDriver {
