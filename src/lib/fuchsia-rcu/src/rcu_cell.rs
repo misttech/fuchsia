@@ -60,6 +60,15 @@ impl<T: Send + Sync + 'static> RcuCell<T> {
     }
 }
 
+impl<T: Clone + Send + Sync + 'static> RcuCell<T> {
+    /// Returns a clone of the value of the RCU Cell.
+    ///
+    /// The clone is detached from any RCU read scope.
+    pub fn cloned(&self) -> T {
+        self.as_ref(&RcuReadScope::new()).clone()
+    }
+}
+
 impl<T: Send + Sync + 'static> Drop for RcuCell<T> {
     fn drop(&mut self) {
         // SAFETY: We can pass `std::ptr::null_mut` to `Self::replace`.
@@ -96,6 +105,7 @@ mod tests {
     fn test_rcu_cell() {
         let value = RcuCell::new(42);
         assert_eq!(value.read().deref(), &42);
+        assert_eq!(value.cloned(), 42);
     }
 
     #[test]

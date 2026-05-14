@@ -63,6 +63,15 @@ impl<T: Send + Sync + 'static> RcuOptionCell<T> {
     }
 }
 
+impl<T: Clone + Send + Sync + 'static> RcuOptionCell<T> {
+    /// Returns a clone of the value of the RCU Cell.
+    ///
+    /// The clone is detached from any RCU read scope.
+    pub fn cloned(&self) -> Option<T> {
+        self.as_ref(&RcuReadScope::new()).cloned()
+    }
+}
+
 impl<T: Send + Sync + 'static> Drop for RcuOptionCell<T> {
     fn drop(&mut self) {
         // SAFETY: We can pass `std::ptr::null_mut` to `Self::replace`.
@@ -100,9 +109,11 @@ mod tests {
     fn test_rcu_option_cell() {
         let value = RcuOptionCell::new(Some(42));
         assert_eq!(value.read().unwrap().deref(), &42);
+        assert_eq!(value.cloned(), Some(42));
 
         let value = RcuOptionCell::<i32>::new(None);
         assert!(value.read().is_none());
+        assert!(value.cloned().is_none());
     }
 
     #[test]
