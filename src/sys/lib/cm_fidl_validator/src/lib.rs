@@ -1074,7 +1074,7 @@ impl<'a> ValidationContext<'a> {
         }
         match decl {
             DeclType::UseRunner | DeclType::UseConfiguration => {}
-            #[cfg(fuchsia_api_level_at_least = "HEAD")]
+            #[cfg(fuchsia_api_level_at_least = "29")]
             DeclType::UseProtocol => {
                 if target_path.is_some() {
                     check_path(target_path, decl, "target_path", &mut self.errors);
