@@ -355,7 +355,7 @@ TEST_F(CrashServerTest, LogsReportUploadDuration) {
           cobalt::Event(cobalt::EventType::kInteger, cobalt_registry::kReportUploadDurationMetricId,
                         {static_cast<uint32_t>(cobalt::ReportUploadStatus::kSuccess),
                          static_cast<uint32_t>(cobalt::ReportUploadSize::kLessThan250)},
-                        delta.get()),
+                        5),
       }));
 }
 
@@ -380,7 +380,7 @@ TEST_F(CrashServerTest, LogsReportUploadDurationWithUploadStatus) {
           cobalt::Event(cobalt::EventType::kInteger, cobalt_registry::kReportUploadDurationMetricId,
                         {static_cast<uint32_t>(cobalt::ReportUploadStatus::kFailure),
                          static_cast<uint32_t>(cobalt::ReportUploadSize::kLessThan250)},
-                        delta.get()),
+                        1),
       }));
 }
 

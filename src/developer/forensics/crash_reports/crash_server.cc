@@ -156,7 +156,7 @@ std::optional<fuchsia::net::http::Request> BuildRequest(const std::string_view m
   }
 
   Request request;
-  request.set_method(std ::string(method))
+  request.set_method(std::string(method))
       .set_url(std::string(url))
       .set_deadline(zx::deadline_after(timeout).get())
       .set_headers(std::move(http_headers))
@@ -251,7 +251,7 @@ void CrashServer::MakeRequest(const Report& report, const Snapshot& snapshot,
                                   cobalt_registry::kReportUploadDurationMetricId,
                                   {static_cast<uint32_t>(ToCobaltReportUploadStatus(status)),
                                    static_cast<uint32_t>(ToCobaltReportUploadSize(upload_size))},
-                                  duration.get()));
+                                  duration.to_secs()));
 
     callback(status, std::move(server_report_id));
   };
