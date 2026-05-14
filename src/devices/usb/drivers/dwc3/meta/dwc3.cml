@@ -23,6 +23,7 @@
         { service: "fuchsia.hardware.usb.policy.Service" },
     ],
     use: [
+        { service: "fuchsia.hardware.platform.device.Service" },
         {
             config: "fuchsia.power.SuspendEnabled",
             key: "enable_suspend",
@@ -33,7 +34,6 @@
         { protocol: "fuchsia.power.system.ActivityGovernor" },
         { service: "fuchsia.hardware.clock.Service" },
         { service: "fuchsia.hardware.interconnect.PathService" },
-        { service: "fuchsia.hardware.platform.device.Service" },
         { service: "fuchsia.hardware.reset.Service" },
         { service: "fuchsia.hardware.usb.phy.ConnectionWatcherService" },
         { service: "fuchsia.hardware.usb.phy.Service" },

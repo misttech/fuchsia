@@ -20,14 +20,13 @@
         { service: "fuchsia.hardware.sdmmc.SdmmcMetadata" },
     ],
     use: [
+        { service: "fuchsia.hardware.platform.device.Service" },
         {
             config: "fuchsia.power.SuspendEnabled",
             key: "enable_suspend",
             type: "bool",
         },
         { protocol: "fuchsia.power.broker.Topology" },
-
-        // Used by //sdk/lib/driver/power/cpp
         {
             protocol: [
                 "fuchsia.power.system.ActivityGovernor",
@@ -36,7 +35,6 @@
         },
         { service: "fuchsia.hardware.clock.Service" },
         { service: "fuchsia.hardware.gpio.Service" },
-        { service: "fuchsia.hardware.platform.device.Service" },
     ],
     expose: [
         {

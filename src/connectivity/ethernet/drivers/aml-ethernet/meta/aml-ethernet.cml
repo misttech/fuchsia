@@ -4,11 +4,9 @@
 {
     include: [
         "//sdk/lib/driver/compat/compat.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
+        "driver/platform-device.shard.cml",
     ],
     program: {
-        runner: "driver",
         bind: "meta/bind/aml_eth_bind.bindbc",
         compat: "driver/aml-ethernet.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
@@ -19,7 +17,6 @@
     use: [
         { service: "fuchsia.hardware.gpio.Service" },
         { service: "fuchsia.hardware.i2c.Service" },
-        { service: "fuchsia.hardware.platform.device.Service" },
     ],
     expose: [
         {

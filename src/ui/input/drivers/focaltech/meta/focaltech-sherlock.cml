@@ -3,12 +3,10 @@
 // found in the LICENSE file.
 {
     include: [
+        "driver/platform-device.shard.cml",
         "driver_component/driver.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
     ],
     program: {
-        runner: "driver",
         binary: "driver/focaltech-sherlock.so",
         bind: "meta/bind/focaltech.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
@@ -19,7 +17,6 @@
             service: [
                 "fuchsia.hardware.gpio.Service",
                 "fuchsia.hardware.i2c.Service",
-                "fuchsia.hardware.platform.device.Service",
             ],
         },
     ],

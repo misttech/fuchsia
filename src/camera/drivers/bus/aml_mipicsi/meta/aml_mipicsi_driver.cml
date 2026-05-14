@@ -4,16 +4,12 @@
 {
     include: [
         "//sdk/lib/driver/compat/compat.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
+        "driver/platform-device.shard.cml",
     ],
     program: {
-        runner: "driver",
         bind: "meta/bind/aml_mipi_bind.bindbc",
         compat: "driver/aml_mipicsi.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
-    use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
-    ],
+    use: [],
 }

@@ -3,12 +3,10 @@
 // found in the LICENSE file.
 {
     include: [
+        "driver/platform-device.shard.cml",
         "driver_component/driver.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
     ],
     program: {
-        runner: "driver",
         binary: "driver/brcmfmac.so",
         bind: "meta/bind/brcmfmac_sdio.bindbc",
         colocate: "true",
@@ -32,7 +30,6 @@
                 "fuchsia.boot.metadata.MacAddressMetadata",
                 "fuchsia.hardware.gpio.Service",
                 "fuchsia.hardware.pci.Service",
-                "fuchsia.hardware.platform.device.Service",
             ],
         },
     ],

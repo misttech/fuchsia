@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 {
     include: [
+        "driver/platform-device.shard.cml",
         "driver_component/driver.shard.cml",
-        "syslog/client.shard.cml",
     ],
     program: {
-        runner: 'driver',
         binary: 'driver/test-power-parent.so',
         bind: 'meta/bind/test-power-parent-bind.bindbc',
         default_dispatcher_ops: [ "allow_sync_calls" ],
@@ -18,7 +17,6 @@
     ],
     use: [
         { protocol: "fuchsia.power.broker.Topology" },
-        { service: "fuchsia.hardware.platform.device.Service" },
     ],
     expose: [
         {

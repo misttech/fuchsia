@@ -4,11 +4,9 @@
 {
     include: [
         "//sdk/lib/driver/compat/compat.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
+        "driver/platform-device.shard.cml",
     ],
     program: {
-        runner: "driver",
         bind: "meta/bind/optee.bindbc",
         compat: "driver/optee.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
@@ -22,7 +20,6 @@
             protocol: [ "fuchsia.scheduler.RoleManager" ],
         },
         { service: "fuchsia.hardware.rpmb.Service" },
-        { service: "fuchsia.hardware.platform.device.Service" },
     ],
     expose: [
         {

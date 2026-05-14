@@ -4,17 +4,14 @@
 {
     include: [
         "//sdk/lib/driver/compat/compat.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
+        "driver/platform-device.shard.cml",
     ],
     program: {
-        runner: "driver",
         bind: "meta/bind/aml-g12-tdm.bindbc",
         compat: "driver/aml-g12-tdm.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
     use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
         { service: "fuchsia.hardware.audio.CodecService" },
         { service: "fuchsia.hardware.gpio.Service" },
         { service: "fuchsia.hardware.clock.Service" },

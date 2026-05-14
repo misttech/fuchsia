@@ -4,11 +4,9 @@
 {
     include: [
         "//sdk/lib/driver/compat/compat.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
+        "driver/platform-device.shard.cml",
     ],
     program: {
-        runner: "driver",
         bind: "meta/bind/dwmac_bind.bindbc",
         colocate: "true",
         compat: "driver/dwmac.so",
@@ -18,7 +16,6 @@
         { service: "fuchsia.hardware.network.driver.Service" },
     ],
     use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
         { service: "fuchsia.hardware.ethernet.board.Service" },
         { service: "fuchsia.boot.metadata.MacAddressMetadata" },
     ],

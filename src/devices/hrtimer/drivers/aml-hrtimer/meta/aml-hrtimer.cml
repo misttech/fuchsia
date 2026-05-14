@@ -2,12 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    include: [ "driver/platform-device.shard.cml" ],
     program: {
-        runner: "driver",
         binary: "driver/aml-hrtimer.so",
         bind: "meta/bind/aml-hrtimer.bindbc",
     },
@@ -17,10 +13,7 @@
             key: "enable_suspend",
             type: "bool",
         },
-        { service: "fuchsia.hardware.platform.device.Service" },
         { protocol: "fuchsia.power.broker.Topology" },
-
-        // Used by //sdk/lib/driver/power/cpp
         { protocol: "fuchsia.power.system.ActivityGovernor" },
     ],
 }

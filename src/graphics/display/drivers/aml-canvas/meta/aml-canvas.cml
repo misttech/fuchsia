@@ -3,12 +3,10 @@
 // found in the LICENSE file.
 {
     include: [
+        "driver/platform-device.shard.cml",
         "driver_component/driver.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
     ],
     program: {
-        runner: "driver",
         binary: "driver/aml-canvas.so",
         bind: "meta/bind/aml-canvas.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
@@ -17,9 +15,7 @@
     capabilities: [
         { service: "fuchsia.hardware.amlogiccanvas.Service" },
     ],
-    use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
-    ],
+    use: [],
     expose: [
         {
             service: "fuchsia.hardware.amlogiccanvas.Service",

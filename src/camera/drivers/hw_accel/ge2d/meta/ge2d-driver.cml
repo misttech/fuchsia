@@ -4,11 +4,9 @@
 {
     include: [
         "//sdk/lib/driver/compat/compat.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
+        "driver/platform-device.shard.cml",
     ],
     program: {
-        runner: "driver",
         bind: "meta/bind/ge2d_bind.bindbc",
         colocate: "true",
         compat: "driver/ge2d.so",
@@ -16,6 +14,5 @@
     },
     use: [
         { service: "fuchsia.hardware.amlogiccanvas.Service" },
-        { service: "fuchsia.hardware.platform.device.Service" },
     ],
 }

@@ -4,16 +4,11 @@
 {
     include: [
         "//sdk/lib/driver/compat/compat.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
+        "driver/platform-device.shard.cml",
     ],
     program: {
-        runner: "driver",
         bind: "meta/bind/pl031_rtc_bind.bindbc",
         compat: "driver/pl031-rtc.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
-    use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
-    ],
 }

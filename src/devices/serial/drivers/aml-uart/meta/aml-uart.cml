@@ -2,12 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    include: [ "driver/platform-device.shard.cml" ],
     program: {
-        runner: "driver",
         binary: "driver/aml-uart.so",
         bind: "meta/bind/aml-uart.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
@@ -24,7 +20,6 @@
         },
         { protocol: "fuchsia.power.broker.Topology" },
         { protocol: "fuchsia.power.system.ActivityGovernor" },
-        { service: "fuchsia.hardware.platform.device.Service" },
         { service: "fuchsia.boot.metadata.MacAddressMetadata" },
     ],
     expose: [

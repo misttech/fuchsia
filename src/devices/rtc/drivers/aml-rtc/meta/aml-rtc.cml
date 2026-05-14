@@ -2,20 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    include: [ "driver/platform-device.shard.cml" ],
     program: {
-        runner: "driver",
         binary: "driver/aml-rtc.so",
         bind: "meta/bind/aml_rtc_bind.bindbc",
     },
     capabilities: [
         { service: "fuchsia.hardware.rtc.Service" },
-    ],
-    use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
     ],
     expose: [
         {

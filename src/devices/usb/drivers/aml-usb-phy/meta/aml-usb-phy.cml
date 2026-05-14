@@ -2,12 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    include: [ "driver/platform-device.shard.cml" ],
     program: {
-        runner: "driver",
         binary: "driver/aml-usb-phy.so",
         bind: "meta/bind/aml-usb-phy.bindbc",
     },
@@ -15,7 +11,6 @@
         { service: 'fuchsia.hardware.usb.phy.Service' },
     ],
     use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
         { service: "fuchsia.hardware.registers.Service" },
     ],
     expose: [

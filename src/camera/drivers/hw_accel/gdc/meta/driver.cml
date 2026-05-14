@@ -4,17 +4,13 @@
 {
     include: [
         "//sdk/lib/driver/compat/compat.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
+        "driver/platform-device.shard.cml",
     ],
     program: {
-        runner: "driver",
         bind: "meta/bind/gdc_bind.bindbc",
         colocate: "true",
         compat: "driver/gdc.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
-    use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
-    ],
+    use: [],
 }

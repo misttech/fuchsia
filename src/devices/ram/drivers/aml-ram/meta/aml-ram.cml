@@ -4,20 +4,15 @@
 {
     include: [
         "//sdk/lib/driver/compat/compat.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
+        "driver/platform-device.shard.cml",
     ],
     program: {
-        runner: "driver",
         bind: "meta/bind/aml-ram.bindbc",
         compat: "driver/aml-ram.so",
         default_dispatcher_opts: [ "allow_sync_calls" ],
     },
     capabilities: [
         { service: "fuchsia.hardware.ram.metrics.Service" },
-    ],
-    use: [
-        { service: "fuchsia.hardware.platform.device.Service" },
     ],
     expose: [
         {

@@ -2,12 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    include: [ "driver/platform-device.shard.cml" ],
     program: {
-        runner: "driver",
         binary: "driver/ams-light.so",
         bind: "meta/bind/ams-light.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
@@ -17,7 +13,6 @@
             service: [
                 "fuchsia.hardware.gpio.Service",
                 "fuchsia.hardware.i2c.Service",
-                "fuchsia.hardware.platform.device.Service",
             ],
         },
     ],

@@ -2,12 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 {
-    include: [
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
-    ],
+    include: [ "driver/platform-device.shard.cml" ],
     program: {
-        runner: "driver",
         binary: "driver/aml-spi.so",
         bind: "meta/bind/aml-spi.bindbc",
         colocate: "true",
@@ -19,7 +15,6 @@
     ],
     use: [
         { service: "fuchsia.hardware.gpio.Service" },
-        { service: "fuchsia.hardware.platform.device.Service" },
         { service: "fuchsia.hardware.registers.Service" },
         { service: 'fuchsia.driver.compat.Service' },
     ],

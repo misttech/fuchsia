@@ -3,12 +3,10 @@
 // found in the LICENSE file.
 {
     include: [
+        "driver/platform-device.shard.cml",
         "driver_component/driver.shard.cml",
-        "inspect/client.shard.cml",
-        "syslog/client.shard.cml",
     ],
     program: {
-        runner: "driver",
         binary: "driver/dwc2.so",
         bind: "meta/bind/dwc2.bindbc",
         allowed_scheduler_roles: [ "fuchsia.devices.usb.drivers.dwc2.interrupt" ],
@@ -30,7 +28,6 @@
         {
             protocol: [ "fuchsia.scheduler.RoleManager" ],
         },
-        { service: "fuchsia.hardware.platform.device.Service" },
         { service: "fuchsia.hardware.usb.phy.Service" },
         { service: "fuchsia.boot.metadata.MacAddressMetadata" },
         { service: "fuchsia.boot.metadata.SerialNumberMetadata" },
