@@ -205,9 +205,9 @@ ScopedEnforcement ScopedEnforcement::SetPermissive() {
 ScopedEnforcement::ScopedEnforcement(bool enforcing) {
   EXPECT_TRUE(files::ReadFileToString("/sys/fs/selinux/enforce", &previous_state_));
   std::string new_state = enforcing ? "1" : "0";
-  EXPECT_TRUE(files::WriteFile("/sys/fs/selinux/enforce", new_state));
+  EXPECT_TRUE(files::WriteFile("/sys/fs/selinux/enforce", new_state)) << strerror(errno);
 }
 
 ScopedEnforcement::~ScopedEnforcement() {
-  EXPECT_TRUE(files::WriteFile("/sys/fs/selinux/enforce", previous_state_));
+  EXPECT_TRUE(files::WriteFile("/sys/fs/selinux/enforce", previous_state_)) << strerror(errno);
 }

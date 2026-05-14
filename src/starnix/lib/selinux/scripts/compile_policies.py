@@ -183,6 +183,7 @@ _COMPOSITE_POLICY_PATHS = [
     (
         [
             "base_policy.conf",
+            "new_file/test_policy.conf",
             "new_file/selinuxfs_policy.conf",
         ],
         "selinuxfs_policy",

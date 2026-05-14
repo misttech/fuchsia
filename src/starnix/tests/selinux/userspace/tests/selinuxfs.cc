@@ -16,6 +16,7 @@
 #include "src/lib/fxl/strings/string_number_conversions.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
 extern std::string DoPrePolicyLoadWork() { return "selinuxfs_policy"; }
 
@@ -124,6 +125,10 @@ TEST(SeLinuxFsNull, HasPolicyDevnullContext) {
   constexpr char kSeLinuxFsNull[] = "/sys/fs/selinux/null";
 
   EXPECT_EQ(GetLabel(kSeLinuxFsNull), fit::ok("system_u:object_r:devnull_t:s0"));
+}
+
+TEST(SeLinuxFs, RootNodeLabel) {
+  EXPECT_THAT(GetLabel("/sys/fs/selinux"), IsOk("system_u:object_r:selinuxfs_t:s0"));
 }
 
 TEST(SeLinuxFsContext, OneRequestPerInstance) {
@@ -669,6 +674,25 @@ TEST(SeLinuxFsAccess, ComputeAccessAudit) {
                           "test_selinuxfs_u:object_r:test_selinuxfs_access_audit_none_target_t:s0",
                           "test_selinuxfs_target_class", kAllPerms),
             fit::ok("0 ffffffff 0 fffffff0 1 0"));
+}
+
+TEST(SeLinuxFsPolicy, ReadPolicyPermission) {
+  auto enforcement = ScopedEnforcement::SetEnforcing();
+
+  // Verify that a domain with read_policy permission (like unconfined_t) can read the policy.
+  ASSERT_TRUE(RunSubprocessAs("system_u:unconfined_r:unconfined_t:s0", []() {
+    fbl::unique_fd fd(open("/sys/fs/selinux/policy", O_RDONLY));
+    ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+    char buf[1];
+    EXPECT_THAT(read(fd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(1));
+  }));
+
+  // Verify that a domain without read_policy permission cannot read the policy.
+  ASSERT_TRUE(RunSubprocessAs("system_u:unconfined_r:test_policy_read_denied_t:s0", []() {
+    fbl::unique_fd fd(open("/sys/fs/selinux/policy", O_RDONLY));
+    EXPECT_THAT(fd.get(), SyscallFailsWithErrno(EACCES));
+  }));
 }
 
 }  // namespace

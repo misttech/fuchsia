@@ -308,6 +308,16 @@ impl FileOps for PolicyFile {
     fileops_impl_seekable!();
     fileops_impl_noop_sync!();
 
+    fn open(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &FileObject,
+        current_task: &CurrentTask,
+    ) -> Result<(), Errno> {
+        security::selinuxfs_check_access(current_task, SecurityPermission::ReadPolicy)?;
+        Ok(())
+    }
+
     fn read(
         &self,
         _locked: &mut Locked<FileOpsCore>,

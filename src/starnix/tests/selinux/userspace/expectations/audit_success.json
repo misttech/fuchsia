@@ -1673,6 +1673,12 @@
             ]
         },
         {
+            "name": "SeLinuxFsPolicy.ReadPolicyPermission",
+            "audit_expectations": [
+                "avc:  denied  { read_policy } for scontext=system_u:unconfined_r:test_policy_read_denied_t:s0 tcontext=system_u:object_r:unconfined_t:s0 tclass=security permissive=0"
+            ]
+        },
+        {
             "name": "SocketBindTests/SocketBindTest.Bind/RequiresDirAddName",
             "audit_expectations": [
                 "avc:  denied  { add_name } for name=\"test_socket_bind_mknod\" scontext=test_u:test_r:socket_bind_test_dir_add_name_no_t:s0 tcontext=system_u:object_r:tmpfs_t:s0 tclass=dir permissive=0"

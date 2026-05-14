@@ -1252,6 +1252,8 @@ class_permission_enum! {
         ComputeUser("compute_user"),
         /// Permission to load a new binary policy into the kernel via the "load" API.
         LoadPolicy("load_policy"),
+        /// Permission to read the loaded binary policy via the "policy" file.
+        ReadPolicy("read_policy"),
         /// Permission to commit booleans to control conditional elements of the policy.
         SetBool("setbool"),
         /// Permission to change the way permissions are validated for `mmap()` operations.
