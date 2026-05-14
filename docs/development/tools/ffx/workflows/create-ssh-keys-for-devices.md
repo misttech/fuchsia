@@ -62,7 +62,7 @@ help you verify your SSH keys. For more information, see
 
 <!-- Reference links -->
 
-[ffx-target-show]: https://fuchsia.dev/reference/tools/sdk/ffx?skip_cache=true#show_8
-[ffx-log]: https://fuchsia.dev/reference/tools/sdk/ffx?skip_cache=true#log_2
+[ffx-target-show]: https://fuchsia.dev/reference/tools/sdk/ffx#show_8
+[ffx-log]: https://fuchsia.dev/reference/tools/sdk/ffx#log_2
 [flash-device]: ./flash-a-device.md
 [troubleshoot-ssh-keys]: /docs/development/tools/ffx/workflows/troubleshoot-ssh-keys.md
