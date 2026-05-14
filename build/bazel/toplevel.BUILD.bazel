@@ -113,6 +113,11 @@ exports_files(
         "rustfmt.toml",
     ] +
 
+    # MILESTONE file, used in //src/developer/ffx/lib/sdk.
+    [
+        "integration/MILESTONE",
+    ] +
+
     # end of list.
     [],
 )
