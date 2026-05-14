@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::lib::chromebook_keyboard_handler::ChromebookKeyboardHandler;
 use crate::lib::factory_reset_handler::FactoryResetHandler;
 use crate::lib::ime_handler::ImeHandler;
 use crate::lib::input_device::InputPipelineFeatureFlags;
@@ -308,9 +307,7 @@ async fn register_keyboard_related_input_handlers(
     input_handlers_node: &inspect::Node,
     metrics_logger: metrics::MetricsLogger,
 ) -> InputPipelineAssembly {
-    // Add as early as possible, but not before inspect handlers.
-    let mut assembly =
-        add_chromebook_keyboard_handler(assembly, input_handlers_node, metrics_logger.clone());
+    let mut assembly = assembly;
 
     // Display ownership deals with keyboard events.
     assembly = assembly.add_display_ownership(display_ownership_event, input_handlers_node);
@@ -485,14 +482,6 @@ async fn build_input_pipeline_assembly(
     node.record(input_handlers_node);
 
     assembly
-}
-
-fn add_chromebook_keyboard_handler(
-    assembly: InputPipelineAssembly,
-    input_handlers_node: &inspect::Node,
-    metrics_logger: metrics::MetricsLogger,
-) -> InputPipelineAssembly {
-    assembly.add_handler(ChromebookKeyboardHandler::new(input_handlers_node, metrics_logger))
 }
 
 /// Hooks up the modifier keys handler.

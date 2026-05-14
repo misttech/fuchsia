@@ -99,7 +99,6 @@ _input_pipeline = {
   ]
 
   sources = [
-    "src/chromebook_keyboard_handler.rs",
     "src/consumer_controls_binding.rs",
     "src/dead_keys_handler.rs",
     "src/dispatcher.rs",
