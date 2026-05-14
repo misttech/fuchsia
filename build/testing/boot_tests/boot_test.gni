@@ -344,13 +344,11 @@ template("boot_test") {
 
     assembly_mode = "test-zbi"
     assembled_system_kernel_zbi = "//build/testing/boot_tests:empty-zbi"
-    signable_ramdisk = true
     if (defined(invoker.zbi)) {
       assembled_system_kernel_zbi = invoker.zbi
     } else if (defined(invoker.ramdisk)) {
       assembly_mode = "test-ramdisk"
       assembled_system_kernel_zbi = invoker.ramdisk
-      signable_ramdisk = false  # Per test-ramdisk semantics
     }
 
     assembled_system(assembled_system_target) {
@@ -366,13 +364,6 @@ template("boot_test") {
       assembly_mode = assembly_mode
 
       generate_signed_zbi = false
-      if (signable_ramdisk) {
-        if (custom_signing_script != "") {
-          inputs = custom_signing_script_inputs
-          deps = [ "//build/images/custom_signing:deps" ]
-          generate_signed_zbi = true
-        }
-      }
       forward_variables_from(invoker, [ "qemu_kernel" ])
     }
 
@@ -399,13 +390,6 @@ template("boot_test") {
       assembly_mode = assembly_mode
 
       generate_signed_zbi = false
-      if (signable_ramdisk) {
-        if (custom_signing_script != "") {
-          inputs = custom_signing_script_inputs
-          deps = [ "//build/images/custom_signing:deps" ]
-          generate_signed_zbi = true
-        }
-      }
       forward_variables_from(invoker, [ "qemu_kernel" ])
     }
 

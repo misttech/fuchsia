@@ -579,14 +579,12 @@ template("bazel_product_bundle") {
           path = "${_system_a_root}/fuchsia.zbi"
 
           archive = true
-          if (!sign_zbi) {
-            fastboot_flash = []
-            if (zircon_a_partition != "") {
-              fastboot_flash += [ zircon_a_partition ]
-            }
-            if (zircon_b_partition != "") {
-              fastboot_flash += [ zircon_b_partition ]
-            }
+          fastboot_flash = []
+          if (zircon_a_partition != "") {
+            fastboot_flash += [ zircon_a_partition ]
+          }
+          if (zircon_b_partition != "") {
+            fastboot_flash += [ zircon_b_partition ]
           }
         },
       ]
