@@ -655,6 +655,7 @@ sdk_molecule("core_data") {
   visibility += [ "//vendor/*" ]
   deps = [
     # TODO(ddorwin): Rename these to make it clear that they are data (e.g., _shards).
+    "//sdk/lib/driver:driver_pdev_sdk",
     "//sdk/lib/driver_component",
     "//sdk/lib/driver_test_realm/realm_builder:client_shard_sdk",
     "//sdk/lib/heapdump_instrumentation:heapdump_instrumentation_shard",

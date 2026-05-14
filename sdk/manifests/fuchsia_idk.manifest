@@ -145,6 +145,7 @@ companion_host_tool://tools/x64/aemu_internal
 companion_host_tool://tools/x64/crosvm_internal
 companion_host_tool://tools/x64/qemu_internal
 dart_library://dart/sl4f
+data://pkg/driver/driver_pdev_sdk.json
 data://pkg/driver_component/driver_component.json
 data://pkg/driver_test_realm/realm_builder/client_shard_sdk.json
 data://pkg/heapdump_instrumentation/heapdump_instrumentation_shard.json
