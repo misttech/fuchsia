@@ -80,6 +80,6 @@ rust_library(
     version = "2.7.1",
     deps = [
         "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
-        "//third_party/rust_crates/vendor/zerocopy-0.8.42:zerocopy",
+        "//third_party/rust_crates/vendor/zerocopy-0.8.48:zerocopy",
     ],
 )
