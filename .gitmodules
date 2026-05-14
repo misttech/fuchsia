@@ -573,11 +573,6 @@
 	url = https://fuchsia.googlesource.com/third_party/android/platform/system/tools/aidl
 	name = third_party/android/platform/system/tools/aidl
 	ignore = all
-[submodule "third_party/android/platform/system/keymint/src"]
-	path = third_party/android/platform/system/keymint/src
-	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/keymint
-	name = third_party/android.googlesource.com/platform/system/keymint
-	ignore = all
 [submodule "third_party/Vulkan-Headers/src"]
 	path = third_party/Vulkan-Headers/src
 	url = https://fuchsia.googlesource.com/third_party/Vulkan-Headers
