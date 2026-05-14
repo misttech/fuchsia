@@ -36,6 +36,10 @@ string_flag(
     visibility = [
         "//build/bazel/bazel_idk:__subpackages__",
         "//build/bazel/rules/fidl:__subpackages__",
+        "//sdk/lib/async:__subpackages__",
+        "//sdk/lib/fdio:__subpackages__",
+        "//sdk/lib/fidl:__subpackages__",
+        "//sdk/lib/zxio:__subpackages__",
     ],
 )
 
@@ -55,15 +59,7 @@ _api_level_condition_visibility = [
 config_setting(
     name = "is_api_level_PLATFORM",
     flag_values = {"//build/bazel:fuchsia_api_level": "PLATFORM"},
-    visibility = _api_level_condition_visibility + [
-        "//build/bazel/rules:__subpackages__",
-
-        # `go_binary_host_tool()` is a legacy macro, so uses must be visible
-        # where that macro is used.
-        "//build/beads/.agent/skills:__subpackages__",
-        "//build/tools:__subpackages__",
-        "//tools:__subpackages__",
-    ],
+    visibility = ["//visibility:public"],
 )
 
 config_setting(

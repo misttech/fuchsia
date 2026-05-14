@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel:fuchsia_api_level.bzl", "fuchsia_api_level_copts")
 load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_source_library_zx")
 
 idk_cc_source_library_zx(
@@ -62,6 +63,7 @@ idk_cc_source_library_zx(
     ],
     api_area = "Kernel",
     category = "partner",
+    copts = fuchsia_api_level_copts(),
     idk_name = "async-cpp",
     implementation_deps = [
         ":async",

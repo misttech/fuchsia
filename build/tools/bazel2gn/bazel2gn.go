@@ -212,6 +212,9 @@ func targetCompatibleWithToGNConditions(expr syntax.Expr) ([]string, error) {
 func callExprToGN(expr *syntax.CallExpr) ([]string, error) {
 	fn := expr.Fn.(*syntax.Ident)
 	bazelRule := fn.Name
+	if bazelRule == "fuchsia_api_level_copts" {
+		return nil, nil
+	}
 	gnTemplateName, ok := bazelRuleToGNTemplate[bazelRule]
 	if !ok {
 		return nil, fmt.Errorf("%s is not a known Bazel rule to convert to GN", bazelRule)
@@ -442,7 +445,7 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 		return nil, fmt.Errorf("converting rhs of binary expression: %v", err)
 	}
 	if len(rhs) == 0 {
-		return nil, errors.New("rhs hand side of binary expression is unexpectedly empty")
+		return nil, nil
 	}
 
 	ret := []string{fmt.Sprintf("%s %s %s", attrName, op, rhs[0])}
@@ -482,6 +485,9 @@ func binaryExprToGN(expr *syntax.BinaryExpr, transformers []transformer) ([]stri
 	rhs, err := exprToGN(expr.Y, transformers)
 	if err != nil {
 		return nil, fmt.Errorf("converting rhs of binary expression: %v", err)
+	}
+	if len(rhs) == 0 && expr.Op == syntax.PLUS {
+		return lhs, nil
 	}
 	if len(rhs) == 0 {
 		return nil, errors.New("rhs hand side of binary expression is unexpectedly empty")

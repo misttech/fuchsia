@@ -5,7 +5,12 @@
 """Functions related to the Fuchsia API level."""
 
 # Only toolchains should need to use the API level as an integer.
-visibility(["//build/bazel/..."])
+visibility([
+    "//build/bazel/...",
+    "//sdk/lib/...",
+    "//src/connectivity/network/netstack/udp_serde/...",
+    "//zircon/system/ulib/zx/...",
+])
 
 def get_integer_for_api_level(api_level):
     """Returns the integer reprsentation of the Fuchsia `api_level`.
@@ -41,3 +46,10 @@ def get_integer_for_api_level(api_level):
             fail("Special API levels should be given by name, not number: %s" % api_level_integer)
 
         return api_level_integer
+
+def fuchsia_api_level_copts():
+    """Returns copts to specify the API level. This is overwritten in the per-API-level IDK transition."""
+    return select({
+        "@//build/bazel:is_api_level_PLATFORM": ["-ffuchsia-api-level=%d" % get_integer_for_api_level("PLATFORM")],
+        "//conditions:default": [],
+    })

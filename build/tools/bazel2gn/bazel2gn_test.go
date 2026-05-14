@@ -911,6 +911,31 @@ func TestCCConversion(t *testing.T) {
 	]
 }`,
 		},
+		{
+			name: "ignore fuchsia_api_level_copts",
+			bazel: `cc_library(
+	name = "foo",
+	copts = [
+		"-Wno-vla-cxx-extension",
+	] + fuchsia_api_level_copts(),
+)
+`,
+			wantGN: `source_set("foo") {
+	configs += [
+		"//build/config:Wno-vla-cxx-extension",
+	]
+}`,
+		},
+		{
+			name: "ignore only fuchsia_api_level_copts",
+			bazel: `cc_library(
+	name = "foo",
+	copts = fuchsia_api_level_copts(),
+)
+`,
+			wantGN: `source_set("foo") {
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)
