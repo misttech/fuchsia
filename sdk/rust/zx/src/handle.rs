@@ -52,15 +52,24 @@ impl Handle {
     ///
     /// # Safety
     ///
+    /// `raw` must either be `ZX_HANDLE_INVALID` or be a valid handle present in the current handle
+    /// table that will not be closed by another owner.
+    pub unsafe fn from_raw(raw: sys::zx_handle_t) -> Option<Self> {
+        let inner = NonZeroU32::new(raw)?;
+        debug_assert!(Self::check_raw_valid(raw).is_ok());
+        Some(Self(inner))
+    }
+
+    /// Take exclusive ownership over a raw handle.
+    ///
+    /// # Safety
+    ///
     /// `raw` must be a valid handle present in the current handle table that will not be closed by
     /// another owner.
-    ///
-    /// # Panics
-    ///
-    /// If `ZX_HANDLE_INVALID` is passed.
-    pub unsafe fn from_raw(raw: sys::zx_handle_t) -> Self {
+    pub unsafe fn from_raw_unchecked(raw: sys::zx_handle_t) -> Self {
         debug_assert!(Self::check_raw_valid(raw).is_ok());
-        Self(NonZeroU32::new(raw).unwrap())
+        // SAFETY: invariant is passed on to our caller.
+        Self(unsafe { NonZeroU32::new_unchecked(raw) })
     }
 
     // A program which uses a handle returned from this function for anything other than being
@@ -116,7 +125,7 @@ impl Handle {
         ok(status)?;
 
         // SAFETY: zx_handle_duplicate returns a valid handle that this function owns.
-        Ok(unsafe { Self::from_raw(out) })
+        Ok(unsafe { Self::from_raw_unchecked(out) })
     }
 
     /// Wraps the
@@ -130,7 +139,7 @@ impl Handle {
         ok(status)?;
 
         // SAFETY: zx_handle_replace gives us a valid owned handle if the call succeeded.
-        unsafe { Ok(Self::from_raw(out)) }
+        unsafe { Ok(Self::from_raw_unchecked(out)) }
     }
 
     /// Wraps the [`zx_object_signal`](https://fuchsia.dev/reference/syscalls/object_signal) syscall.
