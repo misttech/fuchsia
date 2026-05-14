@@ -38,6 +38,7 @@ pub struct TestHarness<D> {
     offers: Option<Vec<NextOffer>>,
     scope: fasync::Scope,
     power_element_args: Option<fidl_fuchsia_driver_framework::PowerElementArgs>,
+    node_token: Option<zx::Event>,
     _d: PhantomData<D>,
 }
 
@@ -89,6 +90,7 @@ impl<D: Driver> TestHarness<D> {
             offers: None,
             scope,
             power_element_args: None,
+            node_token: None,
             _d: PhantomData,
         }
     }
@@ -135,6 +137,12 @@ impl<D: Driver> TestHarness<D> {
         args: fidl_fuchsia_driver_framework::PowerElementArgs,
     ) -> Self {
         self.power_element_args = Some(args);
+        self
+    }
+
+    /// Sets the node token for the driver. Consumes and returns self to allow chaining.
+    pub fn set_node_token(mut self, token: zx::Event) -> Self {
+        self.node_token = Some(token);
         self
     }
 
@@ -190,6 +198,10 @@ impl<D: Driver> TestHarness<D> {
                     token: args.token,
                 }
             }),
+            node_token: self
+                .node_token
+                .as_ref()
+                .and_then(|t| t.duplicate_handle(fidl::Rights::SAME_RIGHTS).ok()),
             ..DriverStartArgs::default()
         };
 
