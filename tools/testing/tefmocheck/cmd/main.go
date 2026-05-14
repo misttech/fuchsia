@@ -64,7 +64,7 @@ func main() {
 	for _, serialLogPath := range serialLogPaths {
 		serialLog, err := os.ReadFile(serialLogPath)
 		if err != nil {
-			log.Fatalf("failed to read serial log from %s: %e", serialLogPath, err)
+			log.Fatalf("failed to read serial log from %s: %v", serialLogPath, err)
 		}
 		serialLogs = append(serialLogs, serialLog)
 	}
@@ -74,7 +74,7 @@ func main() {
 	if *swarmingOutputPath != "" {
 		swarmingOutput, err = os.ReadFile(*swarmingOutputPath)
 		if err != nil {
-			log.Fatalf("failed to read swarming output from %s: %e", *swarmingOutputPath, err)
+			log.Fatalf("failed to read swarming output from %s: %v", *swarmingOutputPath, err)
 		}
 		swarmingOutputPerTest, err = tefmocheck.SplitTestLogs(swarmingOutput, filepath.Base(*swarmingOutputPath), *outputsDir, inputSummary.Tests)
 		if err != nil {
@@ -107,7 +107,7 @@ func main() {
 	for _, syslogPath := range syslogPaths {
 		syslog, err := os.ReadFile(syslogPath)
 		if err != nil {
-			log.Fatalf("failed to read syslog from %s: %e", syslogPath, err)
+			log.Fatalf("failed to read syslog from %s: %v", syslogPath, err)
 		}
 		syslogs = append(syslogs, syslog)
 	}
