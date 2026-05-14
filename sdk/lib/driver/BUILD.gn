@@ -24,6 +24,7 @@ group("tests") {
     "fake-bti/rust:tests",
     "fake-mmio-reg/cpp:tests",
     "fake-object/cpp:tests",
+    "fake-platform-device/rust:tests",
     "fake-resource/cpp:tests",
     "metadata/cpp:tests",
     "metadata/rust:tests",
