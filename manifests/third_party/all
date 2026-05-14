@@ -82,10 +82,6 @@
              path="third_party/android/platform/system/libbase"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/libbase"
              revision="55aab9e9acb686b59ddb57877084a0be0cac020f"/>
-    <project name="third_party/android.googlesource.com/platform/system/keymint"
-             path="third_party/android/platform/system/keymint/src"
-             remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/keymint"
-             revision="f1a6f63284bbdcc8d1357cebd9a2c94802f4fe41"/>
     <project name="third_party/bcmdhd"
              path="third_party/bcmdhd"
              remote="https://fuchsia.googlesource.com/third_party/bcmdhd"

@@ -138,9 +138,6 @@ zeroize_visibility = [
   #
   # At this time only Android KeyMint is allowed to use it.
   # Unfortunately we can't be more specific without exposing internal paths under vendor/.
-
-  # TODO(https://fxbug.dev/507443343): delete the fuchsia.git entry once migration to vendor/ is done.
-  "//third_party/android/platform/system/keymint:*",
   "//vendor/*:*",
 ]
 
@@ -158,9 +155,6 @@ openssl_visibility = [
   #
   # At this time only Android KeyMint is allowed to use it.
   # Unfortunately we can't be more specific without exposing internal paths under vendor/.
-
-  # TODO(https://fxbug.dev/507443343): delete the fuchsia.git entry once migration to vendor/ is done.
-  "//third_party/android/platform/system/keymint:*",
   "//vendor/*:*",
 ]
 
@@ -278,7 +272,6 @@ regex_visibility = [
   "//src/sys/test_runners/gotests/tests:*",
   "//src/sys/test_runners/rust:*",
   "//src/ui/lib/input_pipeline:*",
-  "//third_party/android/platform/system/keymint:*",
   "//third_party/tcpdump/tests:*",
   "//tools/doc_checker:*",
   "//tools/fidl/example-tester:*",
