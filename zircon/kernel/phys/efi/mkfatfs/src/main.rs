@@ -8,7 +8,7 @@ use fatfs as _;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
-use std::io::{copy, BufReader, Write};
+use std::io::{BufReader, Write, copy};
 use std::path::Path;
 
 // Reasonable defaults for sector and cluster sizes. Sector is the 'block' unit
@@ -109,10 +109,10 @@ fn main() -> Result<(), Error> {
     fatfs::format_volume(&image, options)?;
 
     let mut depfile = File::create(args.depfile)?;
-    depfile.write_all(format!("{}:", &args.output).as_bytes())?;
+    depfile.write_all(format!("{}:", args.output).as_bytes())?;
     let fs = fatfs::FileSystem::new(&image, fatfs::FsOptions::new())?;
     for (dest_path, src) in files.iter_mut() {
-        depfile.write_all(format!(" {}", &src.path).as_bytes())?;
+        depfile.write_all(format!(" {}", src.path).as_bytes())?;
         let mut dir = fs.root_dir();
         let mut parts: Vec<&str> = dest_path.split("/").collect();
         let filename = parts.pop().unwrap();

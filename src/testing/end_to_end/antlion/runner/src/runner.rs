@@ -93,7 +93,7 @@ impl Runner for ProcessRunner {
 
         println!(
             "Launching antlion to run: \"{} {}\"\n",
-            &self.python_bin,
+            self.python_bin,
             args.iter().format(" "),
         );
 

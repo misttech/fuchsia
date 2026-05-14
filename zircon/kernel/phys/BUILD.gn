@@ -169,6 +169,7 @@ if (toolchain_environment == "kernel.phys" ||
 
     allow_circular_includes_from = [ ":elf-image" ]
     deps = [
+      ":boot-options",
       ":elf-image",
       ":log",
       "//src/lib/elfldltl",

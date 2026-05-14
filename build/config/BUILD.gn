@@ -793,6 +793,10 @@ config("default_warnings") {
 
       # TODO(https://fxbug.dev/362618077): Spuriously fires.
       "-Wno-alloc-size-larger-than",
+
+      #TODO(https://fxbug.dev/42077425): libcxx namespace macros can sometimes
+      # include #pragma clang ... directives.
+      "-Wno-unknown-pragmas",
     ]
   }
 
