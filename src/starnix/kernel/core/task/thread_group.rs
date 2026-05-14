@@ -654,6 +654,7 @@ impl ThreadGroup {
         locked: &mut Locked<L>,
         kernel: Arc<Kernel>,
         process: zx::Process,
+        parent: ThreadGroupWriteGuard<'_>,
         leader: pid_t,
         process_group: Arc<ProcessGroup>,
     ) -> Arc<ThreadGroup>
@@ -665,7 +666,7 @@ impl ThreadGroup {
             kernel,
             process,
             zx::Vmar::invalid(),
-            None,
+            Some(parent),
             leader,
             Some(SIGCHLD),
             process_group,

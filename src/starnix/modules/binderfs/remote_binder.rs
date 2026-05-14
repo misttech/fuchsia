@@ -1167,6 +1167,7 @@ mod tests {
             let fs = init_task.fs().clone();
             let kernel = init_task.kernel().clone();
             let memory_manager = init_task.mm().ok();
+            let init_thread_group = init_task.thread_group().clone();
 
             // Simulate the remote binder user process.
             let starnix_thread = std::thread::Builder::new()
@@ -1190,6 +1191,7 @@ mod tests {
                                 locked,
                                 kernel.clone(),
                                 process,
+                                init_thread_group.write(),
                                 pid,
                                 process_group,
                             );
