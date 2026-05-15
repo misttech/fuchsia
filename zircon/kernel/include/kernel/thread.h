@@ -59,6 +59,7 @@ struct BrwLockOps;
 class OwnedWaitQueue;
 class ThreadDispatcher;
 class VmAspace;
+class WaitQueueBase;
 class WaitQueue;
 struct WaitQueueLockOps;
 struct Thread;
@@ -227,8 +228,8 @@ class WaitQueueCollection {
       DEBUG_ASSERT(!InWaitQueue());
     }
 
-    WaitQueue* blocking_wait_queue() { return blocking_wait_queue_; }
-    const WaitQueue* blocking_wait_queue() const { return blocking_wait_queue_; }
+    WaitQueueBase* blocking_wait_queue() { return blocking_wait_queue_; }
+    const WaitQueueBase* blocking_wait_queue() const { return blocking_wait_queue_; }
     Interruptible interruptible() const { return interruptible_; }
 
    private:
@@ -238,6 +239,7 @@ class WaitQueueCollection {
     friend class OwnedWaitQueue;
     friend class Scheduler;
     friend class WaitQueue;
+    friend class WaitQueueBase;
     friend class WaitQueueCollection;
     friend struct WaitQueueCollection::BlockedThreadTreeTraits;
     friend struct WaitQueueCollection::MinRelativeDeadlineTraits;
@@ -246,7 +248,7 @@ class WaitQueueCollection {
     friend class ThreadDumper;
 
     // If blocked, a pointer to the WaitQueue the Thread is on.
-    WaitQueue* blocking_wait_queue_ = nullptr;
+    WaitQueueBase* blocking_wait_queue_ = nullptr;
 
     // Node state for existing in WaitQueueCollection::threads_
     fbl::WAVLTreeNodeState<Thread*> blocked_threads_tree_node_;
@@ -351,15 +353,13 @@ class WaitQueueCollection {
 };
 
 // NOTE: must be inside critical section when using these
-class WaitQueue : public ChainLockable {
+class WaitQueueBase : public ChainLockable {
  public:
-  constexpr WaitQueue() : WaitQueue(kMagic) {}
-  ~WaitQueue();
-
-  WaitQueue(WaitQueue&) = delete;
-  WaitQueue(WaitQueue&&) = delete;
-  WaitQueue& operator=(WaitQueue&) = delete;
-  WaitQueue& operator=(WaitQueue&&) = delete;
+  uint32_t magic() const { return magic_; }
+  bool IsEmpty() const TA_REQ_SHARED(get_lock()) { return collection_.IsEmpty(); }
+  uint32_t Count() const TA_REQ_SHARED(get_lock()) { return collection_.Count(); }
+  Thread* PeekFront() TA_REQ(get_lock()) { return collection_.PeekFront(); }
+  const Thread* PeekFront() const TA_REQ(get_lock()) { return collection_.PeekFront(); }
 
   // Remove a specific thread out of the wait queue it's blocked on, and deal
   // with any PI side effects.  Note: when calling this function:
@@ -376,6 +376,55 @@ class WaitQueue : public ChainLockable {
   zx_status_t UnblockThread(Thread* t, zx_status_t wait_queue_error)
       TA_REL(get_lock(), ChainLockable::GetLock(*t))
           TA_REQ(chainlock_transaction_token, preempt_disabled_token);
+
+  // Recompute the effective profile of a thread which is known to be blocked in
+  // this wait queue, reordering the thread in the queue collection as needed.
+  //
+  // This method does not deal with the consequences of profile inheritance, and
+  // should only ever be called from one of the OwnedWaitQueue's Propagate
+  // methods (which will deal with the consequences)
+  void UpdateBlockedThreadEffectiveProfile(Thread& t) TA_REQ(get_lock(), t);
+
+ protected:
+  explicit constexpr WaitQueueBase(uint32_t magic) : magic_(magic) {}
+  ~WaitQueueBase();
+
+  inline zx_status_t BlockEtcPreamble(Thread* current_thread, const Deadline& deadline,
+                                      uint signal_mask, ResourceOwnership reason,
+                                      Interruptible interruptible)
+      TA_REQ(get_lock(), ChainLockable::GetLock(*current_thread));
+
+  inline zx_status_t BlockEtcPostamble(Thread* current_thread, const Deadline& deadline)
+      TA_EXCL(get_lock())
+          TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(*current_thread));
+
+  void Dequeue(Thread* t, zx_status_t wait_queue_error)
+      TA_REQ(get_lock(), ChainLockable::GetLock(*t));
+
+  void ValidateQueue() TA_REQ_SHARED(get_lock());
+
+  static void TimeoutHandler(Timer* timer, zx_instant_mono_t now, void* arg);
+
+  uint32_t magic_;
+  WaitQueueCollection collection_ TA_GUARDED(get_lock());
+
+  // The OwnedWaitQueue subclass also manipulates the collection.
+  friend class OwnedWaitQueue;
+  friend struct BrwLockOps;
+  friend struct WaitQueueLockOps;
+};
+
+// NOTE: must be inside critical section when using these
+class WaitQueue : public WaitQueueBase {
+ public:
+  static constexpr uint32_t kMagic = fbl::magic("wait");
+
+  constexpr WaitQueue() : WaitQueueBase(kMagic) {}
+
+  WaitQueue(WaitQueue&) = delete;
+  WaitQueue(WaitQueue&&) = delete;
+  WaitQueue& operator=(WaitQueue&) = delete;
+  WaitQueue& operator=(WaitQueue&&) = delete;
 
   // Block on a wait queue.
   // The returned status is whatever the caller of WaitQueue::Wake_*() specifies.
@@ -402,11 +451,6 @@ class WaitQueue : public ChainLockable {
   zx_status_t BlockEtc(Thread* current_thread, const Deadline& deadline, uint signal_mask,
                        ResourceOwnership reason, Interruptible interruptible) TA_REL(get_lock())
       TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(*current_thread));
-
-  // Returns the current highest priority blocked thread on this wait queue, or
-  // nullptr if no threads are blocked.
-  Thread* PeekFront() TA_REQ(get_lock()) { return collection_.PeekFront(); }
-  const Thread* PeekFront() const TA_REQ(get_lock()) { return collection_.PeekFront(); }
 
   // Release one or more threads from the wait queue.
   // wait_queue_error = what WaitQueue::Block() should return for the blocking thread.
@@ -443,76 +487,12 @@ class WaitQueue : public ChainLockable {
   void DequeueThread(Thread* t, zx_status_t wait_queue_error)
       TA_REQ(get_lock(), ChainLockable::GetLock(*t));
 
-  // Whether the wait queue is currently empty.
-  bool IsEmpty() const TA_REQ_SHARED(get_lock()) { return collection_.IsEmpty(); }
-  uint32_t Count() const TA_REQ_SHARED(get_lock()) { return collection_.Count(); }
-
-  // Recompute the effective profile of a thread which is known to be blocked in
-  // this wait queue, reordering the thread in the queue collection as needed.
-  //
-  // This method does not deal with the consequences of profile inheritance, and
-  // should only ever be called from one of the OwnedWaitQueue's Propagate
-  // methods (which will deal with the consequences)
-  void UpdateBlockedThreadEffectiveProfile(Thread& t) TA_REQ(get_lock(), t);
-
-  // OwnedWaitQueue needs to be able to call this on WaitQueues to
-  // determine if they are base WaitQueues or the OwnedWaitQueue
-  // subclass.
-  uint32_t magic() const { return magic_; }
-
  protected:
-  explicit constexpr WaitQueue(uint32_t magic) : magic_(magic) {}
-
-  // Inline helpers (defined in wait_queue_internal.h) for
-  // WaitQueue::BlockEtc and OwnedWaitQueue::BlockAndAssignOwner to
-  // share.
-  inline zx_status_t BlockEtcPreamble(Thread* current_thread, const Deadline& deadline,
-                                      uint signal_mask, ResourceOwnership reason,
-                                      Interruptible interuptible)
-      TA_REQ(get_lock(), ChainLockable::GetLock(*current_thread));
-
-  // By the time we have made it to BlockEtcPostamble, we should have dropped
-  // the wait_queue lock, and only be holding the lock for current thread (who
-  // is about to block).  We have already (successfully) added the thread to the
-  // queue and set our blocked state.  All we need to do now is set up our
-  // timer, and finally descend into the scheduler in order to block and select
-  // a new thread.
-  inline zx_status_t BlockEtcPostamble(Thread* current_thread, const Deadline& deadline)
-      TA_EXCL(get_lock())
-          TA_REQ(chainlock_transaction_token, ChainLockable::GetLock(*current_thread));
+  explicit constexpr WaitQueue(uint32_t magic) : WaitQueueBase(magic) {}
 
   // Move the specified thread from the source wait queue to the dest wait queue.
   static void MoveThread(WaitQueue* source, WaitQueue* dest, Thread* t)
       TA_REQ(source->get_lock(), dest->get_lock(), ChainLockable::GetLock(*t));
-
- private:
-  // The OwnedWaitQueue subclass also manipulates the collection.
-  friend class OwnedWaitQueue;
-
-  // Ideally, the special WaitQueueLock and BrwLock operation(s) could just be
-  // member's of the WaitQueue itself, but they need to understand what a
-  // Thread::UnblockList is, so they need to be declared after the Thread
-  // structure is declared.
-  friend struct BrwLockOps;
-  friend struct WaitQueueLockOps;
-
-  static void TimeoutHandler(Timer* timer, zx_instant_mono_t now, void* arg);
-
-  // Internal helper for dequeueing a single Thread.
-  void Dequeue(Thread* t, zx_status_t wait_queue_error)
-      TA_REQ(get_lock(), ChainLockable::GetLock(*t));
-
-  // Validate that the queue of a given WaitQueue is valid.
-  void ValidateQueue() TA_REQ_SHARED(get_lock());
-
-  // Note: Wait queues come in 2 flavors (traditional and owned) which are
-  // distinguished using the magic number.  The point here is that, unlike
-  // most other magic numbers in the system, the wait_queue_t serves a
-  // functional purpose beyond checking for corruption debug builds.
-  static constexpr uint32_t kMagic = fbl::magic("wait");
-  uint32_t magic_;
-
-  WaitQueueCollection collection_ TA_GUARDED(get_lock());
 };
 
 // Returns a string constant for the given thread state.
@@ -2050,7 +2030,7 @@ class ScopedMemoryAllocationDisabled {
 //    blocked in the wait queue) and nothing else.  While the wait queue state
 //    cannot mutate while we exist in the wait queue (at least, not without
 //    holding both the wait queue and thread's lock), other things can.
-static inline void AssertInWaitQueue(const Thread& t, const WaitQueue& wq) TA_REQ(wq.get_lock())
+static inline void AssertInWaitQueue(const Thread& t, const WaitQueueBase& wq) TA_REQ(wq.get_lock())
     TA_ASSERT_SHARED(t.get_lock()) {
   [&]() TA_NO_THREAD_SAFETY_ANALYSIS {
     DEBUG_ASSERT(t.wait_queue_state().InWaitQueue());

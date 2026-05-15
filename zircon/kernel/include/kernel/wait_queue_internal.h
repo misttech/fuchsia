@@ -47,10 +47,10 @@
 // WaitQueue::BlockEtc/Block, or OwnedWaitQueue::BlockAndAssignOwner
 // instead.
 //
-inline zx_status_t WaitQueue::BlockEtcPreamble(Thread* const current_thread,
-                                               const Deadline& deadline, uint signal_mask,
-                                               ResourceOwnership reason,
-                                               Interruptible interruptible)
+inline zx_status_t WaitQueueBase::BlockEtcPreamble(Thread* const current_thread,
+                                                   const Deadline& deadline, uint signal_mask,
+                                                   ResourceOwnership reason,
+                                                   Interruptible interruptible)
     TA_REQ(get_lock(), current_thread->get_lock()) {
   DEBUG_ASSERT(current_thread == Thread::Current::Get());
 
@@ -81,15 +81,15 @@ inline zx_status_t WaitQueue::BlockEtcPreamble(Thread* const current_thread,
   return ZX_OK;
 }
 
-inline zx_status_t WaitQueue::BlockEtcPostamble(Thread* const current_thread,
-                                                const Deadline& deadline)
+inline zx_status_t WaitQueueBase::BlockEtcPostamble(Thread* const current_thread,
+                                                    const Deadline& deadline)
     TA_REQ(current_thread->get_lock()) TA_EXCL(get_lock()) {
   DEBUG_ASSERT(current_thread == Thread::Current::Get());
   Timer timer;
 
   // if the deadline is nonzero or noninfinite, set a callback to yank us out of the queue
   if (deadline.when() != ZX_TIME_INFINITE) {
-    timer.Set(deadline, &WaitQueue::TimeoutHandler, (void*)current_thread);
+    timer.Set(deadline, &WaitQueueBase::TimeoutHandler, current_thread);
   }
 
   Scheduler::Block(current_thread);

@@ -85,7 +85,7 @@ static inline void WqTraceDepth(const WaitQueueCollection* collection, uint32_t 
 
 // Wait queues are building blocks that other locking primitives use to handle
 // blocking threads.
-void WaitQueue::TimeoutHandler(Timer* timer, zx_instant_mono_t now, void* arg) {
+void WaitQueueBase::TimeoutHandler(Timer* timer, zx_instant_mono_t now, void* arg) {
   Thread& thread = *(static_cast<Thread*>(arg));
   thread.canary().Assert();
 
@@ -124,7 +124,7 @@ void WaitQueue::TimeoutHandler(Timer* timer, zx_instant_mono_t now, void* arg) {
       return ChainLockTransaction::Done;
     }
 
-    WaitQueue* wq = thread.wait_queue_state().blocking_wait_queue_;
+    WaitQueueBase* wq = thread.wait_queue_state().blocking_wait_queue();
     if (wq == nullptr) {
       DEBUG_ASSERT(thread.state() == THREAD_READY);
       return ChainLockTransaction::Done;
@@ -148,7 +148,7 @@ void WaitQueue::TimeoutHandler(Timer* timer, zx_instant_mono_t now, void* arg) {
 
 // Remove a thread from a wait queue, maintain the wait queue's internal count,
 // and update the WaitQueue specific bookkeeping in the thread in the process.
-void WaitQueue::Dequeue(Thread* t, zx_status_t wait_queue_error) {
+void WaitQueueBase::Dequeue(Thread* t, zx_status_t wait_queue_error) {
   DEBUG_ASSERT(t != nullptr);
   AssertInWaitQueue(*t, *this);
 
@@ -217,7 +217,7 @@ ChainLock::Result WaitQueueCollection::LockAll() {
   return ChainLock::Result::Ok;
 }
 
-void WaitQueue::ValidateQueue() {
+void WaitQueueBase::ValidateQueue() {
   DEBUG_ASSERT_MAGIC_CHECK(this);
   collection_.Validate();
 }
@@ -544,7 +544,7 @@ void WaitQueue::MoveThread(WaitQueue* source, WaitQueue* dest, Thread* t) {
  * which case it would have called Block() on an invalid wait
  * queue.
  */
-WaitQueue::~WaitQueue() {
+WaitQueueBase::~WaitQueueBase() {
   DEBUG_ASSERT_MAGIC_CHECK(this);
 
   const uint32_t count = collection_.Count();
@@ -576,7 +576,7 @@ WaitQueue::~WaitQueue() {
  *
  * @return ZX_ERR_BAD_STATE if thread was not in any wait queue.
  */
-zx_status_t WaitQueue::UnblockThread(Thread* t, zx_status_t wait_queue_error) {
+zx_status_t WaitQueueBase::UnblockThread(Thread* t, zx_status_t wait_queue_error) {
   DEBUG_ASSERT_MAGIC_CHECK(this);
   t->canary().Assert();
 
@@ -613,7 +613,7 @@ zx_status_t WaitQueue::UnblockThread(Thread* t, zx_status_t wait_queue_error) {
   return ZX_OK;
 }
 
-void WaitQueue::UpdateBlockedThreadEffectiveProfile(Thread& t) {
+void WaitQueueBase::UpdateBlockedThreadEffectiveProfile(Thread& t) {
   t.canary().Assert();
   DEBUG_ASSERT_MAGIC_CHECK(this);
   // Note, we don't do this in order to establish shared access to the thread's

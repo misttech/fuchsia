@@ -365,7 +365,7 @@ inline void Scheduler::Pi::Common(Upstream& upstream, Thread& thread,
     // The target thread is not runnable; update its effective profile and the
     // scheduler bookkeeping.
     SchedulerState::EffectiveProfile old_ep = state.effective_profile_;
-    if (WaitQueue* wq = thread.wait_queue_state().blocking_wait_queue_; wq != nullptr) {
+    if (WaitQueueBase* wq = thread.wait_queue_state().blocking_wait_queue_; wq != nullptr) {
       wq->get_lock().AssertHeld();
       wq->UpdateBlockedThreadEffectiveProfile(thread);
     } else {

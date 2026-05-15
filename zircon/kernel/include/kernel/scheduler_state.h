@@ -597,6 +597,7 @@ class SchedulerState {
   friend class Scheduler;
   friend class OwnedWaitQueue;
   friend class WaitQueue;
+  friend class WaitQueueBase;
   friend class WaitQueueCollection;
 
   // Allow tests to observe/modify our state.

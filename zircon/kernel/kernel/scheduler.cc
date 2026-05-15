@@ -3655,7 +3655,7 @@ cpu_mask_t Scheduler::SetCpuAffinity(Thread& thread, cpu_mask_t affinity,
     // TODO(eieio): Why do we need to synchronize the affinity mask with the
     // wait queue?
     if (thread.state() == THREAD_BLOCKED) {
-      WaitQueue* wait_queue = thread.wait_queue_state().blocking_wait_queue_;
+      WaitQueueBase* wait_queue = thread.wait_queue_state().blocking_wait_queue_;
       DEBUG_ASSERT(wait_queue != nullptr);
 
       if (!wait_queue->get_lock().AcquireOrBackoff()) {

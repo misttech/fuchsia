@@ -36,24 +36,8 @@ struct OwnedWaitQueueTopologyTests;
 // destructor for OwnedWaitQueue and Thread.  This enforcement is considered
 // to be the reasoning why holding unmanaged pointers is considered to be safe.
 //
-class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<OwnedWaitQueue*> {
+class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<OwnedWaitQueue*> {
  public:
-  // We want to limit access to our base WaitQueue's methods, but not all of
-  // them.  Make public the methods which should be safe for folks to use from
-  // the OwnedWaitQueue level of things.
-  //
-  // This list is pretty short right now, and there are probably other methods
-  // which could be added safely (WakeOne, WakeAll, Peek, etc...) we'd rather
-  // keep the list as short as possible for now, and only expand it when there
-  // is a tangible need, and a thorough review for safety.
-  //
-  // The general rule of thumb here is that code which knows that it using an
-  // OwnedWaitQueue should go through the OWQ specific APIs instead of
-  // attempting to use the base WaitQueue APIs.
-  using WaitQueue::Count;
-  using WaitQueue::get_lock;
-  using WaitQueue::IsEmpty;
-
   struct IWakeRequeueHook {
    public:
     IWakeRequeueHook() = default;
@@ -173,7 +157,7 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
   static constexpr PropagateOpTag<PropagateOp::BaseProfileChanged> BaseProfileChangedOp{};
 
   static constexpr uint32_t kOwnedMagic = fbl::magic("ownq");
-  constexpr OwnedWaitQueue() : WaitQueue(kOwnedMagic) {}
+  constexpr OwnedWaitQueue() : WaitQueueBase(kOwnedMagic) {}
   ~OwnedWaitQueue();
 
   // No copy or move is permitted.
@@ -203,7 +187,7 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
   // node given by |start|.
   static ChainLock::Result LockPiChain(Thread& start)
       TA_REQ(chainlock_transaction_token, start.get_lock()) {
-    WaitQueue* wq = start.wait_queue_state().blocking_wait_queue_;
+    WaitQueueBase* wq = start.wait_queue_state().blocking_wait_queue_;
 
     if (wq == nullptr) {
       return ChainLock::Result::Ok;
@@ -214,7 +198,7 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
     return LockPiChainCommonRefuseCycle(*wq);
   }
 
-  static ChainLock::Result LockPiChain(WaitQueue& start)
+  static ChainLock::Result LockPiChain(WaitQueueBase& start)
       TA_REQ(chainlock_transaction_token, start.get_lock()) {
     Thread* t = GetQueueOwner(&start);
 
@@ -349,7 +333,7 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
 
  private:
   // Give permission to the WaitQueue thunk to call the PropagateRemove method
-  friend zx_status_t WaitQueue::UnblockThread(Thread* t, zx_status_t wait_queue_error);
+  friend zx_status_t WaitQueueBase::UnblockThread(Thread* t, zx_status_t wait_queue_error);
   friend struct OwnedWaitQueueTopologyTests;
 
   struct DefaultWakeHooks : public IWakeRequeueHook {};
@@ -524,12 +508,13 @@ class OwnedWaitQueue : protected WaitQueue, public fbl::DoublyLinkedListable<Own
   // Upcast from a WaitQueue to an OwnedWaitQueue if possible, using the magic
   // number to detect the underlying nature of the object.  Returns nullptr if
   // the pointer passed is nullptr, or if the object is not an OwnedWaitQueue.
-  static OwnedWaitQueue* DowncastToOwq(WaitQueue* wq) {
+  static OwnedWaitQueue* DowncastToOwq(WaitQueueBase* wq) {
     return (wq != nullptr) && (wq->magic() == kOwnedMagic) ? static_cast<OwnedWaitQueue*>(wq)
                                                            : nullptr;
   }
 
-  static Thread* GetQueueOwner(WaitQueue* wq) TA_REQ(chainlock_transaction_token, wq->get_lock()) {
+  static Thread* GetQueueOwner(WaitQueueBase* wq)
+      TA_REQ(chainlock_transaction_token, wq->get_lock()) {
     const OwnedWaitQueue* owq = DowncastToOwq(wq);
 
     if (owq != nullptr) {

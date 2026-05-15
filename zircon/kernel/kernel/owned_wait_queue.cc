@@ -266,7 +266,7 @@ OwnedWaitQueue::WakeThreadsResult OwnedWaitQueue::WakeThreadsLocked(
     // collection in the process.
     const SchedulerState::EffectiveProfile old_target_ep = GetEffectiveProfile();
     BeginPropagate(*t, *this, RemoveSingleEdgeOp, force_inheritance, &old_target_ep);
-    DequeueThread(t, ZX_OK);
+    Dequeue(t, ZX_OK);
     UpdateSchedStateStorageThreadRemoved(*t);
 
     // If we still have blocked threads, and we are supposed to make this thread
@@ -564,10 +564,11 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
     // BeginPropagate.
     if constexpr (OpType == PropagateOp::BaseProfileChanged) {
       thread_iter->get_lock().AssertHeld();
-      DEBUG_ASSERT_MSG(
-          thread_iter->wait_queue_state().blocking_wait_queue_ == static_cast<WaitQueue*>(owq_iter),
-          "blocking wait queue %p owq_iter %p",
-          thread_iter->wait_queue_state().blocking_wait_queue_, static_cast<WaitQueue*>(owq_iter));
+      DEBUG_ASSERT_MSG(thread_iter->wait_queue_state().blocking_wait_queue_ ==
+                           static_cast<WaitQueueBase*>(owq_iter),
+                       "blocking wait queue %p owq_iter %p",
+                       thread_iter->wait_queue_state().blocking_wait_queue_,
+                       static_cast<WaitQueueBase*>(owq_iter));
     }
 
     // OK - we are finally ready to get to work.  Use a slightly-evil(tm) goto in
@@ -1462,13 +1463,12 @@ template <OwnedWaitQueue::LockingBehavior Behavior, typename StartNodeType>
 ktl::variant<ChainLock::Result, const void*> OwnedWaitQueue::LockPiChainCommon(
     StartNodeType& start) {
   Thread* next_thread{nullptr};
-  WaitQueue* next_wq{nullptr};
+  WaitQueueBase* next_wq{nullptr};
 
   if constexpr (ktl::is_same_v<StartNodeType, Thread>) {
     next_thread = &start;
   } else {
-    static_assert(ktl::is_same_v<StartNodeType, WaitQueue> ||
-                  ktl::is_same_v<StartNodeType, OwnedWaitQueue>);
+    static_assert(ktl::is_base_of_v<WaitQueueBase, StartNodeType>);
     next_wq = &start;
     goto start_from_next_wq;
   }
@@ -1531,7 +1531,7 @@ ktl::variant<ChainLock::Result, const void*> OwnedWaitQueue::LockPiChainCommon(
 template <typename StartNodeType>
 void OwnedWaitQueue::UnlockPiChainCommon(StartNodeType& start, const void* stop_point) {
   Thread* next_thread{nullptr};
-  WaitQueue* next_wq{nullptr};
+  WaitQueueBase* next_wq{nullptr};
 
   auto ShouldStopThread = [stop_point](const Thread* t) TA_REQ(chainlock_transaction_token) {
     if (stop_point != nullptr) {
@@ -1544,16 +1544,17 @@ void OwnedWaitQueue::UnlockPiChainCommon(StartNodeType& start, const void* stop_
     }
   };
 
-  auto ShouldStopWaitQueue = [stop_point](const WaitQueue* wq) TA_REQ(chainlock_transaction_token) {
-    if (stop_point != nullptr) {
-      const bool stop_point_match = (stop_point == wq);
-      DEBUG_ASSERT(wq != nullptr);
-      DEBUG_ASSERT(stop_point_match || wq->get_lock().is_held());
-      return stop_point_match;
-    } else {
-      return (wq == nullptr) || (wq->get_lock().is_held() == false);
-    }
-  };
+  auto ShouldStopWaitQueue = [stop_point](const WaitQueueBase* wq)
+                                 TA_REQ(chainlock_transaction_token) {
+                                   if (stop_point != nullptr) {
+                                     const bool stop_point_match = (stop_point == wq);
+                                     DEBUG_ASSERT(wq != nullptr);
+                                     DEBUG_ASSERT(stop_point_match || wq->get_lock().is_held());
+                                     return stop_point_match;
+                                   } else {
+                                     return (wq == nullptr) || (wq->get_lock().is_held() == false);
+                                   }
+                                 };
 
   // We must currently be holding the starting node's lock.  If we found our
   // stopping point, have no next node, or we are not currently holding the next
@@ -1573,8 +1574,7 @@ void OwnedWaitQueue::UnlockPiChainCommon(StartNodeType& start, const void* stop_
     }
     goto start_from_next_wq;
   } else {
-    static_assert(ktl::is_same_v<StartNodeType, WaitQueue> ||
-                  ktl::is_same_v<StartNodeType, OwnedWaitQueue>);
+    static_assert(ktl::is_base_of_v<WaitQueueBase, StartNodeType>);
     next_thread = GetQueueOwner(&start);
     const bool stop = ShouldStopThread(next_thread);
     start.get_lock().Release();
@@ -1632,7 +1632,7 @@ void OwnedWaitQueue::SetThreadBaseProfileAndPropagate(Thread& thread,
                                   TA_REQ(chainlock_transaction_token,
                                          preempt_disabled_token) -> ChainLockTransaction::Result<> {
     thread.get_lock().AcquireFirstInChain();
-    WaitQueue* wq = thread.wait_queue_state().blocking_wait_queue_;
+    WaitQueueBase* wq = thread.wait_queue_state().blocking_wait_queue_;
     OwnedWaitQueue* owq = DowncastToOwq(wq);
 
     // Lock the rest of the PI chain, restarting if we need to.

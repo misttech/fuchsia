@@ -609,7 +609,7 @@ zx_status_t Thread::SuspendOrKillInternal(SuspendOrKillOp op) {
     // Attempting to obtain this chain of locks might result in a conflict which
     // requires us to back off, releasing all locks (including the initial
     // thread's) before trying again.
-    WaitQueue* const wq = wait_queue_state_.blocking_wait_queue();
+    WaitQueueBase* const wq = wait_queue_state_.blocking_wait_queue();
     if (is_blocked && OwnedWaitQueue::LockPiChain(*this) == ChainLock::Result::Backoff) {
       return ChainLockTransaction::Action::Backoff;
     }
