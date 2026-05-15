@@ -20,11 +20,15 @@ class FakeReset : public fidl::testing::WireTestBase<fuchsia_hardware_reset::Res
   fuchsia_hardware_reset::Service::InstanceHandler CreateInstanceHandler();
 
   bool take_toggled();
+  bool take_asserted();
+  bool take_deasserted();
 
  private:
   void Toggle(ToggleCompleter::Sync& completer) override;
   void ToggleWithTimeout(ToggleWithTimeoutRequestView request,
                          ToggleWithTimeoutCompleter::Sync& completer) override;
+  void Assert(AssertCompleter::Sync& completer) override;
+  void Deassert(DeassertCompleter::Sync& completer) override;
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_reset::Reset> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
@@ -38,6 +42,8 @@ class FakeReset : public fidl::testing::WireTestBase<fuchsia_hardware_reset::Res
   async_dispatcher_t* const dispatcher_;
 
   bool toggled_ = false;
+  bool asserted_ = false;
+  bool deasserted_ = false;
   fidl::ServerBindingGroup<fuchsia_hardware_reset::Reset> bindings_;
 };
 
