@@ -1,9 +1,11 @@
 Name: certdata.txt
 URL: https://hg.mozilla.org/mozilla-central/raw-file/tip/security/nss/lib/ckfw/builtins/certdata.txt
-License: MPLv2
-License File: LICENSE.MPLv2
-Description:
+Security Critical: yes
 
-Root certificates provided by Mozilla and converted into a PEM format
-(cert.pem). The original source data comes from certdata.txt, found at the URL
-listed above.
+License File: LICENSE.MPLv2
+  License: MPL-2.0
+
+Description:
+  Root certificates provided by Mozilla and converted into a PEM format
+  (cert.pem). The original source data comes from certdata.txt, found at the URL
+  listed above.

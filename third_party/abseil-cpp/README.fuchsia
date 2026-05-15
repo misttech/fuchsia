@@ -1,2 +1,6 @@
 Name: Abseil - C++ Common Libraries
+URL: https://github.com/abseil/abseil-cpp
+Security Critical: yes
+
 License File: LICENSE
+  License: Apache-2.0

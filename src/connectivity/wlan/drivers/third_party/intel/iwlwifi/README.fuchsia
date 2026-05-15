@@ -1,3 +1,5 @@
 Name: Intel iwlwifi
-License: BSD
+Security Critical: yes
+
 License File: LICENSE
+  License: BSD-3-Clause

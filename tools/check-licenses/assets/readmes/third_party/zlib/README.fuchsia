@@ -1,17 +1,22 @@
 Name: zlib
+URL: https://github.com/madler/zlib
+Upstream Git: https://github.com/madler/zlib
+Security Critical: yes
 
 License File: README
- -> License File Format: Single License
- -> License Classifications: Zlib
+  License: Zlib
 
 License File: contrib/dotzlib/LICENSE_1_0.txt
- -> License File Format: Single License
- -> License Classifications: BSL-1.0
+  License: BSL-1.0
 
 License File: contrib/iostream3/LICENSE
- -> License File Format: Single License
+  License: Iostream
+
+Source File: BUILD.gn
+  License: BSD-3-Clause
 
 Description:
-
+  zlib compression and decompression library.
 
 Local Modifications:
+  - Added BUILD.bazel

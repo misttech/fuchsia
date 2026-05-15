@@ -1,7 +1,12 @@
 Name: snippet-uiautomator
 URL: https://github.com/google/snippet-uiautomator
+Upstream Git: https://github.com/google/snippet-uiautomator
 Revision: e18186121571e0f79fab8fa948e60391a6f084be
-License: Apache 2.0
+Security Critical: no
+
 License File: src/LICENSE
-Description: This is the Python wrapper based on Mobly Snippet Lib for calling the AndroidX UiAutomator APIs.
-Revision is from `git merge-base JIRI_HEAD origin/main`.
+  License: Apache-2.0
+
+Description:
+  This is the Python wrapper based on Mobly Snippet Lib for calling the AndroidX UiAutomator APIs.
+  Revision is from `git merge-base JIRI_HEAD origin/main`.

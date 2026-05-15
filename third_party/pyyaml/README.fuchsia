@@ -1,9 +1,14 @@
 Name: PyYAML
 URL: https://github.com/yaml/pyyaml
-Revision: 8cdff2c80573b8be8e8ad28929264a913a63aa33
-Version: 6.0
-License: MIT
-License File: LICENSE
-Description: YAML (Yet Another Markup Language) parser and emitter for Python.
-Revision is from `git merge-base JIRI_HEAD 6.0`.
 Original URL: http://pyyaml.org/
+Version: 6.0
+Upstream Git: https://github.com/yaml/pyyaml
+Revision: 8cdff2c80573b8be8e8ad28929264a913a63aa33
+Security Critical: no
+
+License File: src/LICENSE
+  License: MIT
+
+Description:
+  YAML (Yet Another Markup Language) parser and emitter for Python.
+  Revision is from `git merge-base JIRI_HEAD 6.0`.
