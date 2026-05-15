@@ -27,8 +27,8 @@ fuchsia::ui::input::PointerEvent InternalTouchEventToGfxPointerEvent(
 // a mat3 in column-major array form.
 // Prereq: |destination| must exist in the |snapshot|.
 template <typename T>
-ColumnMajorMat3Array GetDestinationFromViewportTransform(const T& event, zx_koid_t destination,
-                                                         const view_tree::Snapshot& snapshot) {
+ColumnMajorMat3Array GetDestinationFromViewportTransform(const view_tree::Snapshot& snapshot,
+                                                         const T& event, zx_koid_t destination) {
   const std::optional<glm::mat4> destination_from_source_transform =
       snapshot.GetDestinationViewFromSourceViewTransform(/*source*/ event.context, destination);
   FX_DCHECK(destination_from_source_transform.has_value());
@@ -39,10 +39,10 @@ ColumnMajorMat3Array GetDestinationFromViewportTransform(const T& event, zx_koid
 
 // Returns the |event| with a new |receiver_from_viewport_transform| set on the viewport.
 template <typename T>
-T EventWithReceiverFromViewportTransform(T event, zx_koid_t receiver,
-                                         const view_tree::Snapshot& snapshot) {
+T EventWithReceiverFromViewportTransform(const view_tree::Snapshot& snapshot, T event,
+                                         zx_koid_t receiver) {
   event.viewport.receiver_from_viewport_transform =
-      GetDestinationFromViewportTransform(event, receiver, snapshot);
+      GetDestinationFromViewportTransform(snapshot, event, receiver);
   return event;
 }
 

@@ -31,7 +31,8 @@ class InputSystem {
 #if defined(FUCHSIA_DSO)
     pointerinjector_registry_dso_.OnNewViewTreeSnapshot(snapshot);
 #endif
-    view_tree_snapshot_ = std::move(snapshot);
+    touch_system_.SetViewTreeSnapshot(snapshot);
+    mouse_system_.SetViewTreeSnapshot(snapshot);
   }
 
   void RegisterTouchSource(
@@ -68,8 +69,6 @@ class InputSystem {
 #if defined(FUCHSIA_DSO)
   ::scenic_impl::input_dso::PointerinjectorRegistry pointerinjector_registry_dso_;
 #endif
-
-  std::shared_ptr<const view_tree::Snapshot> view_tree_snapshot_;
 };
 
 }  // namespace scenic_impl::input

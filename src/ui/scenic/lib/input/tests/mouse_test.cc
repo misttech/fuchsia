@@ -12,6 +12,7 @@
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/ui/scenic/lib/input/mouse_source.h"
 #include "src/ui/scenic/lib/input/mouse_system.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 
 // These tests exercise the full mouse delivery flow of InputSystem for
 // clients of the fuchsia.ui.pointer.MouseSource protocol.
@@ -88,11 +89,13 @@ std::shared_ptr<view_tree::Snapshot> NewSnapshot(std::vector<zx_koid_t> hits,
 class MouseTest : public gtest::TestLoopFixture {
  public:
   MouseTest()
-      : hit_tester_(inspect_node_),
-        mouse_system_(context_provider_.context(), view_tree_snapshot_, hit_tester_,
+      : dispatcher_setter_(dispatcher(), dispatcher()),
+        hit_tester_(inspect_node_),
+        mouse_system_(context_provider_.context(), hit_tester_,
                       /*request_focus*/ [](auto...) {}) {}
 
   void SetUp() override {
+    ::testing::Test::SetUp();
     client1_ptr_.set_error_handler([](auto) { FAIL() << "Client1's channel closed"; });
     client2_ptr_.set_error_handler([](auto) { FAIL() << "Client2's channel closed"; });
 
@@ -103,7 +106,7 @@ class MouseTest : public gtest::TestLoopFixture {
   }
 
   void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
-    view_tree_snapshot_ = snapshot;
+    mouse_system_.SetViewTreeSnapshot(snapshot);
   }
 
   // Starts a recursive MouseSource::Watch() loop that collects all received events into
@@ -122,9 +125,9 @@ class MouseTest : public gtest::TestLoopFixture {
   }
 
  private:
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_;
   // Must be initialized before |mouse_system_|.
   sys::testing::ComponentContextProvider context_provider_;
-  std::shared_ptr<const view_tree::Snapshot> view_tree_snapshot_;
   inspect::Node inspect_node_;
   scenic_impl::input::HitTester hit_tester_;
 

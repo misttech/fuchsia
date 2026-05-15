@@ -10,8 +10,10 @@
 #include <lib/sys/cpp/component_context.h>
 
 #include <map>
+#include <mutex>
 #include <optional>
 
+#include "src/lib/fxl/synchronization/thread_annotations.h"
 #include "src/ui/scenic/lib/input/a11y_legacy_contender.h"
 #include "src/ui/scenic/lib/input/a11y_registry.h"
 #include "src/ui/scenic/lib/input/constants.h"
@@ -19,17 +21,24 @@
 #include "src/ui/scenic/lib/input/helper.h"
 #include "src/ui/scenic/lib/input/hit_tester.h"
 #include "src/ui/scenic/lib/input/touch_source_base.h"
+#include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"
 
 namespace scenic_impl::input {
 
 // Tracks input APIs.
+//
+// Thread-unsafe.  All methods are expected to be called from the same thread (the "input thread").
+// The only exception is `SetViewTreeSnapshot()`, which replaces the existing snapshot under a mutex
+// lock.
 class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
  public:
-  explicit TouchSystem(sys::ComponentContext* context,
-                       std::shared_ptr<const view_tree::Snapshot>& view_tree_snapshot,
-                       HitTester& hit_tester, inspect::Node& parent_node);
+  explicit TouchSystem(sys::ComponentContext* context, HitTester& hit_tester,
+                       inspect::Node& parent_node);
   ~TouchSystem() = default;
+
+  // This is the only function allowed to be called from a non-input thread.
+  void SetViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot);
 
   fuchsia::ui::input::accessibility::PointerEventListenerPtr&
   accessibility_pointer_event_listener() {
@@ -61,19 +70,26 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
   void InjectTouchEventHitTested(InternalTouchEvent event, StreamId stream_id);
 
  private:
+  // Should be called only once in a single call stack. The snapshot should be
+  // passed down into helper functions, rather than re-obtaining it, to ensure
+  // that a consistent snapshot is being used.
+  view_tree::SnapshotRef GetViewTreeSnapshot();
+
   // Finds the ViewRef koid registered with the other side of the |original| channel and returns it.
   // Returns ZX_KOID_INVALID if the related channel isn't found.
   zx_koid_t FindViewRefKoidOfRelatedChannel(
       const fidl::InterfaceHandle<fuchsia::ui::pointer::TouchSource>& original) const;
 
   fuchsia::ui::input::accessibility::PointerEvent CreateAccessibilityEvent(
-      const InternalTouchEvent& event);
+      const view_tree::Snapshot& snapshot, const InternalTouchEvent& event);
 
   // Collects all the GestureContenders for a new touch event stream.
-  std::vector<ContenderId> CollectContenders(StreamId stream_id, const InternalTouchEvent& event);
+  std::vector<ContenderId> CollectContenders(const view_tree::SnapshotRef& snapshot,
+                                             StreamId stream_id, const InternalTouchEvent& event);
 
   // Updates the gesture arena and all contenders for stream |stream_id| with a new event.
-  void UpdateGestureContest(InternalTouchEvent event, StreamId stream_id);
+  void UpdateGestureContest(const view_tree::SnapshotRef& snapshot, InternalTouchEvent event,
+                            StreamId stream_id);
 
   // Records a set of responses from a gesture disambiguation contender.
   void RecordGestureDisambiguationResponse(StreamId stream_id, ContenderId contender_id,
@@ -86,13 +102,12 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
   // Destroys contender specified by |contender_id| and removes it from all contests.
   void EraseContender(ContenderId contender_id, zx_koid_t view_ref_koid);
 
-  // For a view hierarchy where |top| is an ancestor of |bottom|, returns |bottom|'s ancestor
-  // hierarchy starting at |top| and ending at |bottom|.
-  std::vector<zx_koid_t> GetAncestorChainTopToBottom(zx_koid_t bottom, zx_koid_t top) const;
+  std::vector<zx_koid_t> GetAncestorChainTopToBottom(const view_tree::Snapshot& snapshot,
+                                                     zx_koid_t bottom, zx_koid_t top) const;
 
   /// Construction-time state.
-  // Reference to the ViewTreeSnapshot held by InputSystem.
-  std::shared_ptr<const view_tree::Snapshot>& view_tree_snapshot_;
+  view_tree::SnapshotHolder snapshot_holder_;
+
   HitTester& hit_tester_;
 
   // An inspector that tracks all GestureContenders, so data can persist past contender lifetimes.

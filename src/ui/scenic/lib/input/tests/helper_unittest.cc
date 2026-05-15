@@ -54,7 +54,7 @@ TEST(InputHelperTest, EventWithReceiverFromViewportTransform) {
   event.viewport.context_from_viewport_transform = {3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 1};
 
   auto transform =
-      scenic_impl::input::GetDestinationFromViewportTransform(event, kGrandchild, snapshot);
+      scenic_impl::input::GetDestinationFromViewportTransform(snapshot, event, kGrandchild);
 
   // Expect the final transform to be:
   //

@@ -13,6 +13,7 @@
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/ui/scenic/lib/input/input_system.h"
 #include "src/ui/scenic/lib/input/touch_source.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 
 // These tests exercise input event delivery under different dispatch policies.
@@ -41,11 +42,13 @@ constexpr float kDisplayHeight = 9.f;
 class DispatchPolicyTest : public gtest::TestLoopFixture {
  public:
   DispatchPolicyTest()
-      : input_system_(
+      : dispatcher_setter_(dispatcher(), dispatcher()),
+        input_system_(
             context_provider_.context(), inspect_node_,
             /*request_focus*/ [](auto...) {}, dispatcher()) {}
 
   void SetUp() override {
+    ::testing::Test::SetUp();
     root_vrp_ = scenic::ViewRefPair::New();
     client1_vrp_ = scenic::ViewRefPair::New();
     client2_vrp_ = scenic::ViewRefPair::New();
@@ -148,6 +151,7 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
   zx_koid_t Client4Koid() { return utils::ExtractKoid(client4_vrp_.view_ref); }
 
  private:
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_;
   // Must be initialized before |input_system_|.
   sys::testing::ComponentContextProvider context_provider_;
   inspect::Node inspect_node_;

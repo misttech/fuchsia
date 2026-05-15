@@ -11,6 +11,7 @@
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/ui/scenic/lib/input/input_system.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 
 namespace input::test {
 
@@ -137,11 +138,12 @@ class MockAccessibilityPointerEventListener
 class AccessibilityPointerEventsTest : public gtest::TestLoopFixture {
  public:
   AccessibilityPointerEventsTest()
-      : hit_tester_(inspect_node_),
-        touch_system_(context_provider_.context(), view_tree_snapshot_, hit_tester_,
-                      inspect_node_) {}
+      : dispatcher_setter_(dispatcher(), dispatcher()),
+        hit_tester_(inspect_node_),
+        touch_system_(context_provider_.context(), hit_tester_, inspect_node_) {}
 
   void SetUp() override {
+    ::testing::Test::SetUp();
     OnNewViewTreeSnapshot(NewSnapshot(
         /*hits*/ {kClientKoid}, /*hierarchy*/ {kContextKoid, kClientKoid}));
 
@@ -151,13 +153,13 @@ class AccessibilityPointerEventsTest : public gtest::TestLoopFixture {
   }
 
   void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
-    view_tree_snapshot_ = snapshot;
+    touch_system_.SetViewTreeSnapshot(snapshot);
   }
 
  private:
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_;
   // Must be initialized before |touch_system_|.
   sys::testing::ComponentContextProvider context_provider_;
-  std::shared_ptr<const view_tree::Snapshot> view_tree_snapshot_;
   inspect::Node inspect_node_;
   scenic_impl::input::HitTester hit_tester_;
 

@@ -12,6 +12,7 @@
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/ui/scenic/lib/input/touch_source.h"
 #include "src/ui/scenic/lib/input/touch_system.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 
 // These tests exercise the full gesture disambiguation implementation of InputSystem for
 // clients of the  fuchsia.ui.pointer.TouchSource protocol.
@@ -93,11 +94,12 @@ std::shared_ptr<view_tree::Snapshot> NewSnapshot(std::vector<zx_koid_t> hits,
 class GestureDisambiguationTest : public gtest::TestLoopFixture {
  public:
   GestureDisambiguationTest()
-      : hit_tester_(inspect_node_),
-        touch_system_(context_provider_.context(), view_tree_snapshot_, hit_tester_,
-                      inspect_node_) {}
+      : dispatcher_setter_(dispatcher(), dispatcher()),
+        hit_tester_(inspect_node_),
+        touch_system_(context_provider_.context(), hit_tester_, inspect_node_) {}
 
   void SetUp() override {
+    ::testing::Test::SetUp();
     client1_ptr_.set_error_handler([](auto) { FAIL() << "Client1's channel closed"; });
     client2_ptr_.set_error_handler([](auto) { FAIL() << "Client2's channel closed"; });
 
@@ -108,16 +110,16 @@ class GestureDisambiguationTest : public gtest::TestLoopFixture {
   }
 
   void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
-    view_tree_snapshot_ = snapshot;
+    touch_system_.SetViewTreeSnapshot(snapshot);
   }
 
  private:
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_;
   // Must be initialized before |touch_system_|.
   sys::testing::ComponentContextProvider context_provider_;
 
  protected:
   inspect::Node inspect_node_;
-  std::shared_ptr<const view_tree::Snapshot> view_tree_snapshot_;
   scenic_impl::input::HitTester hit_tester_;
   scenic_impl::input::TouchSystem touch_system_;
   fuchsia::ui::pointer::TouchSourcePtr client1_ptr_;

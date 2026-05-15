@@ -13,17 +13,19 @@ namespace input {
 
 A11yLegacyContender::A11yLegacyContender(
     fit::function<void(StreamId, GestureResponse)> respond,
-    fit::function<void(const InternalTouchEvent& event)> deliver_to_client,
+    fit::function<void(const view_tree::Snapshot& snapshot, const InternalTouchEvent& event)>
+        deliver_to_client,
     GestureContenderInspector& inspector)
     : GestureContender(ZX_KOID_INVALID),
       respond_(std::move(respond)),
       deliver_to_client_(std::move(deliver_to_client)),
       inspector_(inspector) {}
 
-void A11yLegacyContender::UpdateStream(StreamId stream_id, InternalTouchEvent event,
-                                       bool is_end_of_stream, view_tree::BoundingBox) {
+void A11yLegacyContender::UpdateStream(const view_tree::Snapshot& snapshot, StreamId stream_id,
+                                       InternalTouchEvent event, bool is_end_of_stream,
+                                       view_tree::BoundingBox) {
   inspector_.OnInjectedEvents(view_ref_koid_, 1);
-  deliver_to_client_(event);
+  deliver_to_client_(snapshot, event);
 
   const bool is_new_stream = !ongoing_streams_.contains(stream_id);
   FX_DCHECK(!(won_streams_awaiting_first_message_.contains(stream_id) && !is_new_stream));

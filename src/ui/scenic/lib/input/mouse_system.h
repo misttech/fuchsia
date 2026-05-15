@@ -8,23 +8,32 @@
 #include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include <mutex>
 #include <unordered_map>
 
+#include "src/lib/fxl/synchronization/thread_annotations.h"
 #include "src/ui/scenic/lib/input/constants.h"
 #include "src/ui/scenic/lib/input/helper.h"
 #include "src/ui/scenic/lib/input/hit_tester.h"
 #include "src/ui/scenic/lib/input/mouse_source_base.h"
+#include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"
 
 namespace scenic_impl::input {
 
 // Tracks input APIs.
+//
+// Thread-unsafe.  All methods are expected to be called from the same thread (the "input thread").
+// The only exception is `SetViewTreeSnapshot()`, which replaces the existing snapshot under a mutex
+// lock.
 class MouseSystem {
  public:
-  explicit MouseSystem(sys::ComponentContext* context,
-                       std::shared_ptr<const view_tree::Snapshot>& view_tree_snapshot,
-                       HitTester& hit_tester_, RequestFocusFunc request_focus);
+  explicit MouseSystem(sys::ComponentContext* context, HitTester& hit_tester_,
+                       RequestFocusFunc request_focus);
   ~MouseSystem() = default;
+
+  // This is the only function allowed to be called from a non-input thread.
+  void SetViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot);
 
   void RegisterMouseSource(
       fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
@@ -39,18 +48,22 @@ class MouseSystem {
   void CancelMouseStream(StreamId stream_id);
 
  private:
+  // Should be called only once in a single call stack. The snapshot should be
+  // passed down into helper functions, rather than re-obtaining it, to ensure
+  // that a consistent snapshot is being used.
+  view_tree::SnapshotRef GetViewTreeSnapshot();
+
   // Finds the ViewRef koid registered with the other side of the |original| channel and returns it.
   // Returns ZX_KOID_INVALID if the related channel isn't found.
   zx_koid_t FindViewRefKoidOfRelatedChannel(
       const fidl::InterfaceHandle<fuchsia::ui::pointer::MouseSource>& original) const;
 
   // Locates and sends an event to the MouseSource identified by |receiver|, if one exists.
-  void SendEventToMouse(zx_koid_t receiver, InternalMouseEvent event, StreamId stream_id,
-                        bool view_exit);
+  void SendEventToMouse(const view_tree::Snapshot& snapshot, zx_koid_t receiver,
+                        InternalMouseEvent event, StreamId stream_id, bool view_exit);
 
   /// Construction-time state.
-  // Reference to the ViewTreeSnapshot held by InputSystem.
-  std::shared_ptr<const view_tree::Snapshot>& view_tree_snapshot_;
+  view_tree::SnapshotHolder snapshot_holder_;
   HitTester& hit_tester_;
   const RequestFocusFunc request_focus_;
 

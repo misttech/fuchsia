@@ -17,7 +17,8 @@ TouchSourceWithLocalHit::TouchSourceWithLocalHit(
     fidl::InterfaceRequest<fuchsia::ui::pointer::augment::TouchSourceWithLocalHit> request,
     fit::function<void(StreamId, const std::vector<GestureResponse>&)> respond,
     fit::function<void()> error_handler,
-    fit::function<std::pair<zx_koid_t, std::array<float, 2>>(const InternalTouchEvent&)>
+    fit::function<std::pair<zx_koid_t, std::array<float, 2>>(const view_tree::Snapshot&,
+                                                             const InternalTouchEvent&)>
         get_local_hit,
     GestureContenderInspector& inspector)
     : TouchSourceBase(fsl::GetKoid(request.channel().get()), view_ref_koid, std::move(respond),
@@ -63,9 +64,10 @@ void TouchSourceWithLocalHit::CloseChannel(zx_status_t epitaph) {
   error_handler_();
 }
 
-void TouchSourceWithLocalHit::Augment(AugmentedTouchEvent& out_event,
+void TouchSourceWithLocalHit::Augment(const view_tree::Snapshot& snapshot,
+                                      AugmentedTouchEvent& out_event,
                                       const InternalTouchEvent& in_event) {
-  const auto [view_ref_koid, local_point] = get_local_hit_(in_event);
+  const auto [view_ref_koid, local_point] = get_local_hit_(snapshot, in_event);
   out_event.local_hit = {
       .local_viewref_koid = view_ref_koid,
       .local_point = local_point,

@@ -16,6 +16,7 @@ using scenic_impl::input::InternalTouchEvent;
 using scenic_impl::input::StreamId;
 
 constexpr view_tree::BoundingBox kViewBoundsEmpty{};
+const view_tree::Snapshot kSnapshot{};
 constexpr bool kStreamOngoing = false;
 constexpr bool kStreamEnding = true;
 
@@ -29,7 +30,7 @@ TEST(A11yLegacyContenderTest, SingleStream_ConsumedAtSweep) {
       /*respond*/
       [&responses](StreamId id, GestureResponse response) { responses.push_back(response); },
       /*deliver_events_to_client*/
-      [&events_sent_to_client](const InternalTouchEvent& event) {
+      [&events_sent_to_client](const view_tree::Snapshot&, const InternalTouchEvent& event) {
         events_sent_to_client.emplace_back(event.ShallowClone());
       },
       inspector);
@@ -40,21 +41,21 @@ TEST(A11yLegacyContenderTest, SingleStream_ConsumedAtSweep) {
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 1u);
   EXPECT_TRUE(responses.empty());
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 2u);
   EXPECT_TRUE(responses.empty());
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamEnding, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamEnding, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 3u);
   EXPECT_TRUE(responses.empty());
@@ -82,7 +83,7 @@ TEST(A11yLegacyContenderTest, SingleStream_ConsumedMidContest) {
       /*respond*/
       [&responses](StreamId id, GestureResponse response) { responses.push_back(response); },
       /*deliver_events_to_client*/
-      [&events_sent_to_client](const InternalTouchEvent& event) {
+      [&events_sent_to_client](const view_tree::Snapshot&, const InternalTouchEvent& event) {
         events_sent_to_client.emplace_back(event.ShallowClone());
       },
       inspector);
@@ -93,12 +94,12 @@ TEST(A11yLegacyContenderTest, SingleStream_ConsumedMidContest) {
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 2u);
   EXPECT_TRUE(responses.empty());
@@ -114,7 +115,7 @@ TEST(A11yLegacyContenderTest, SingleStream_ConsumedMidContest) {
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   ASSERT_EQ(responses.size(), 3u);
   EXPECT_EQ(responses[2], GestureResponse::kYesPrioritize);
@@ -126,12 +127,12 @@ TEST(A11yLegacyContenderTest, SingleStream_ConsumedMidContest) {
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamEnding, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamEnding, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 2u);
   EXPECT_TRUE(responses.empty());
@@ -147,7 +148,7 @@ TEST(A11yLegacyContenderTest, SingleStream_Rejected) {
       /*respond*/
       [&responses](StreamId id, GestureResponse response) { responses.push_back(response); },
       /*deliver_events_to_client*/
-      [&events_sent_to_client](const InternalTouchEvent& event) {
+      [&events_sent_to_client](const view_tree::Snapshot&, const InternalTouchEvent& event) {
         events_sent_to_client.emplace_back(event.ShallowClone());
       },
       inspector);
@@ -155,12 +156,12 @@ TEST(A11yLegacyContenderTest, SingleStream_Rejected) {
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 2u);
   EXPECT_TRUE(responses.empty());
@@ -187,7 +188,7 @@ TEST(A11yLegacyContenderTest, ContestEndedOnResponse) {
         contender_ptr->EndContest(id, /*awarded_win*/ true);
       },
       /*deliver_events_to_client*/
-      [&events_sent_to_client](const InternalTouchEvent& event) {
+      [&events_sent_to_client](const view_tree::Snapshot&, const InternalTouchEvent& event) {
         events_sent_to_client.emplace_back(event.ShallowClone());
       },
       inspector);
@@ -196,17 +197,17 @@ TEST(A11yLegacyContenderTest, ContestEndedOnResponse) {
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 3u);
   EXPECT_TRUE(responses.empty());
@@ -223,7 +224,7 @@ TEST(A11yLegacyContenderTest, ContestEndedOnResponse) {
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 1u);
 }
@@ -238,7 +239,7 @@ TEST(A11yLegacyContenderTest, MultipleStreams) {
       /*respond*/
       [&responses](StreamId id, GestureResponse response) { responses[id].push_back(response); },
       /*deliver_events_to_client*/
-      [&events_sent_to_client](const InternalTouchEvent& event) {
+      [&events_sent_to_client](const view_tree::Snapshot&, const InternalTouchEvent& event) {
         events_sent_to_client.emplace_back(event.ShallowClone());
       },
       inspector);
@@ -248,12 +249,12 @@ TEST(A11yLegacyContenderTest, MultipleStreams) {
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 2u);
   EXPECT_TRUE(responses.empty());
@@ -261,12 +262,12 @@ TEST(A11yLegacyContenderTest, MultipleStreams) {
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId2;
-    contender.UpdateStream(kId2, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId2, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId2;
-    contender.UpdateStream(kId2, std::move(event), kStreamEnding, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId2, std::move(event), kStreamEnding, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 4u);
   EXPECT_TRUE(responses.empty());
@@ -274,12 +275,12 @@ TEST(A11yLegacyContenderTest, MultipleStreams) {
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId3;
-    contender.UpdateStream(kId3, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId3, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId3;
-    contender.UpdateStream(kId3, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId3, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 6u);
   EXPECT_TRUE(responses.empty());
@@ -314,14 +315,14 @@ TEST(A11yLegacyContenderTest, MultipleStreams) {
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId2;
-    contender.UpdateStream(kId2, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId2, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 1u);
   EXPECT_TRUE(responses.empty());
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId3;
-    contender.UpdateStream(kId3, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId3, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 2u);
   EXPECT_TRUE(responses.empty());
@@ -331,7 +332,7 @@ TEST(A11yLegacyContenderTest, MultipleStreams) {
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId1;
-    contender.UpdateStream(kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamOngoing, kViewBoundsEmpty);
   }
   EXPECT_EQ(events_sent_to_client.size(), 3u);
   EXPECT_EQ(responses.size(), 1u);
@@ -349,23 +350,23 @@ TEST(A11yLegacyContenderTest, MultipleStreams_WithSamePointer) {
       /*respond*/
       [&responses](StreamId id, GestureResponse response) { responses[id].push_back(response); },
       /*deliver_events_to_client*/
-      [](const InternalTouchEvent& event) {}, inspector);
+      [](const view_tree::Snapshot&, const InternalTouchEvent&) {}, inspector);
 
   // Create three streams and end them.
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId;
-    contender.UpdateStream(kId1, std::move(event), kStreamEnding, {});
+    contender.UpdateStream(kSnapshot, kId1, std::move(event), kStreamEnding, {});
   }
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId;
-    contender.UpdateStream(kId2, std::move(event), kStreamEnding, {});
+    contender.UpdateStream(kSnapshot, kId2, std::move(event), kStreamEnding, {});
   }
   {
     InternalTouchEvent event;
     event.pointer_id = kPointerId;
-    contender.UpdateStream(kId3, std::move(event), kStreamEnding, {});
+    contender.UpdateStream(kSnapshot, kId3, std::move(event), kStreamEnding, {});
   }
   EXPECT_TRUE(responses.empty());
 

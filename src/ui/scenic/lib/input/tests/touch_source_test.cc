@@ -31,6 +31,7 @@ constexpr uint32_t kDeviceId = 2;
 constexpr uint32_t kPointerId = 3;
 
 constexpr view_tree::BoundingBox kEmptyBoundingBox{};
+const view_tree::Snapshot kSnapshot{};
 constexpr bool kStreamOngoing = false;
 constexpr bool kStreamEnding = true;
 
@@ -149,7 +150,7 @@ TEST_F(TouchSourceTest, ForcedChannelClosing_ShouldFireInternalErrorHandler) {
 }
 
 TEST_F(TouchSourceTest, EmptyResponse_ForPointerEvent_ShouldCloseChannel) {
-  touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
+  touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
                               kEmptyBoundingBox);
   client_ptr_->Watch({}, [](auto events) { EXPECT_EQ(events.size(), 1u); });
   RunLoopUntilIdle();
@@ -167,7 +168,7 @@ TEST_F(TouchSourceTest, EmptyResponse_ForPointerEvent_ShouldCloseChannel) {
 }
 
 TEST_F(TouchSourceTest, NonEmptyResponse_ForNonPointerEvent_ShouldCloseChannel) {
-  touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
+  touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
                               kEmptyBoundingBox);
   // This event expects an empty response table.
   touch_source_->EndContest(kStreamId, /*awarded_win*/ true);
@@ -197,9 +198,9 @@ TEST_F(TouchSourceTest, Watch_BeforeEvents_ShouldReturnOnFirstEvent) {
   EXPECT_EQ(num_events, 0u);
 
   // Sending fidl message on first event, so expect the second one not to arrive.
-  touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
+  touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
                               kEmptyBoundingBox);
-  touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kChange), kStreamOngoing,
+  touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kChange), kStreamOngoing,
                               kEmptyBoundingBox);
 
   RunLoopUntilIdle();
@@ -220,11 +221,11 @@ TEST_F(TouchSourceTest, Watch_BeforeEvents_ShouldReturnOnFirstEvent) {
 
 TEST_F(TouchSourceTest, Watch_ShouldAtMostReturn_TOUCH_MAX_EVENT_Events_PerCall) {
   // Sending fidl message on first event, so expect the second one not to arrive.
-  touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
+  touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
                               kEmptyBoundingBox);
   for (size_t i = 0; i < fuchsia::ui::pointer::TOUCH_MAX_EVENT + 3; ++i) {
-    touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kChange), kStreamOngoing,
-                                kEmptyBoundingBox);
+    touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kChange),
+                                kStreamOngoing, kEmptyBoundingBox);
   }
 
   client_ptr_->Watch(
@@ -255,7 +256,7 @@ TEST_F(TouchSourceTest, Watch_ResponseBeforeEvent_ShouldCloseChannel) {
 }
 
 TEST_F(TouchSourceTest, Watch_MoreResponsesThanEvents_ShouldCloseChannel) {
-  touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
+  touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
                               kEmptyBoundingBox);
   client_ptr_->Watch({}, [](auto events) { EXPECT_EQ(events.size(), 1u); });
   RunLoopUntilIdle();
@@ -274,9 +275,9 @@ TEST_F(TouchSourceTest, Watch_MoreResponsesThanEvents_ShouldCloseChannel) {
 }
 
 TEST_F(TouchSourceTest, Watch_FewerResponsesThanEvents_ShouldCloseChannel) {
-  touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
+  touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
                               kEmptyBoundingBox);
-  touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kChange), kStreamOngoing,
+  touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kChange), kStreamOngoing,
                               kEmptyBoundingBox);
   client_ptr_->Watch({}, [](auto events) { EXPECT_EQ(events.size(), 2u); });
   RunLoopUntilIdle();
@@ -307,7 +308,7 @@ TEST_F(TouchSourceTest, MissingArgument_ShouldCloseChannel) {
   EXPECT_EQ(num_events, 0u);
   EXPECT_FALSE(channel_closed_);
 
-  touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
+  touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
                               kEmptyBoundingBox);
   RunLoopUntilIdle();
   EXPECT_EQ(num_events, 1u);
@@ -326,10 +327,10 @@ TEST_F(TouchSourceTest, MissingArgument_ShouldCloseChannel) {
 TEST_F(TouchSourceTest, UpdateResponse) {
   {  // Complete a stream and respond HOLD to it.
     client_ptr_->Watch({}, [](auto) {});
-    touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
+    touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
                                 kEmptyBoundingBox);
-    touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kRemove), kStreamEnding,
-                                kEmptyBoundingBox);
+    touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kRemove),
+                                kStreamEnding, kEmptyBoundingBox);
     RunLoopUntilIdle();
 
     std::vector<fuchsia::ui::pointer::TouchResponse> responses;
@@ -375,7 +376,7 @@ TEST_F(TouchSourceTest, UpdateResponse_BeforeStreamEnd_ShouldCloseChannel) {
   {  // Start a stream and respond to it.
     bool callback_triggered = false;
     client_ptr_->Watch({}, [&callback_triggered](auto) { callback_triggered = true; });
-    touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
+    touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
                                 kEmptyBoundingBox);
     RunLoopUntilIdle();
     EXPECT_TRUE(callback_triggered);
@@ -406,10 +407,10 @@ TEST_F(TouchSourceTest, UpdateResponse_WhenLastResponseWasntHOLD_ShouldCloseChan
   {  // Start a stream and respond to it.
     bool callback_triggered = false;
     client_ptr_->Watch({}, [&callback_triggered](auto) { callback_triggered = true; });
-    touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
+    touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
                                 kEmptyBoundingBox);
-    touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kRemove), kStreamEnding,
-                                kEmptyBoundingBox);
+    touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kRemove),
+                                kStreamEnding, kEmptyBoundingBox);
     RunLoopUntilIdle();
     EXPECT_TRUE(callback_triggered);
 
@@ -442,10 +443,10 @@ TEST_F(TouchSourceTest, UpdateResponse_WithHOLD_ShouldCloseChannel) {
   {  // Start a stream and respond to it.
     bool callback_triggered = false;
     client_ptr_->Watch({}, [&callback_triggered](auto) { callback_triggered = true; });
-    touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
+    touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
                                 kEmptyBoundingBox);
-    touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kRemove), kStreamEnding,
-                                kEmptyBoundingBox);
+    touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kRemove),
+                                kStreamEnding, kEmptyBoundingBox);
     RunLoopUntilIdle();
     EXPECT_TRUE(callback_triggered);
 
@@ -488,12 +489,13 @@ TEST_F(TouchSourceTest, ViewportIsDeliveredCorrectly) {
   {
     auto event = IPEventTemplate(Phase::kAdd);
     event.viewport = viewport;
-    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamOngoing, view_bounds);
+    touch_source_->UpdateStream(kSnapshot, kStreamId, std::move(event), kStreamOngoing,
+                                view_bounds);
   }
   {
     auto event = IPEventTemplate(Phase::kRemove);
     event.viewport = viewport;
-    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamEnding, view_bounds);
+    touch_source_->UpdateStream(kSnapshot, kStreamId, std::move(event), kStreamEnding, view_bounds);
   }
 
   client_ptr_->Watch({}, [&](auto events) {
@@ -530,12 +532,14 @@ TEST_F(TouchSourceTest, WhenExtentsChange_ViewportShouldUpdate) {
   {
     auto event = IPEventTemplate(Phase::kAdd);
     event.viewport = viewport1;
-    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamOngoing, view_bounds1);
+    touch_source_->UpdateStream(kSnapshot, kStreamId, std::move(event), kStreamOngoing,
+                                view_bounds1);
   }
   {  // viewport2 -> new viewport.
     auto event = IPEventTemplate(Phase::kRemove);
     event.viewport = viewport2;
-    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamEnding, view_bounds1);
+    touch_source_->UpdateStream(kSnapshot, kStreamId, std::move(event), kStreamEnding,
+                                view_bounds1);
   }
 
   client_ptr_->Watch({}, [&](auto events) {
@@ -577,12 +581,14 @@ TEST_F(TouchSourceTest, WhenTransformChanges_ViewportShouldUpdate) {
   {
     auto event = IPEventTemplate(Phase::kAdd);
     event.viewport = viewport1;
-    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamOngoing, view_bounds1);
+    touch_source_->UpdateStream(kSnapshot, kStreamId, std::move(event), kStreamOngoing,
+                                view_bounds1);
   }
   {  // viewport2 -> new viewport.
     auto event = IPEventTemplate(Phase::kRemove);
     event.viewport = viewport2;
-    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamEnding, view_bounds1);
+    touch_source_->UpdateStream(kSnapshot, kStreamId, std::move(event), kStreamEnding,
+                                view_bounds1);
   }
 
   client_ptr_->Watch({}, [&](auto events) {
@@ -615,12 +621,14 @@ TEST_F(TouchSourceTest, WhenViewBoundsChange_ViewportShouldUpdate) {
   {
     auto event = IPEventTemplate(Phase::kAdd);
     event.viewport = viewport1;
-    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamOngoing, view_bounds1);
+    touch_source_->UpdateStream(kSnapshot, kStreamId, std::move(event), kStreamOngoing,
+                                view_bounds1);
   }
   {  // view_bounds2 -> new viewport.
     auto event = IPEventTemplate(Phase::kRemove);
     event.viewport = viewport1;
-    touch_source_->UpdateStream(kStreamId, std::move(event), kStreamEnding, view_bounds2);
+    touch_source_->UpdateStream(kSnapshot, kStreamId, std::move(event), kStreamEnding,
+                                view_bounds2);
   }
 
   client_ptr_->Watch({}, [&](auto events) {
@@ -639,13 +647,13 @@ TEST_F(TouchSourceTest, WhenViewBoundsChange_ViewportShouldUpdate) {
 
 // Sends a full stream and observes that GestureResponses are as expected.
 TEST_F(TouchSourceTest, NormalStream) {
-  touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
+  touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kAdd), kStreamOngoing,
                               kEmptyBoundingBox);
-  touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kChange), kStreamOngoing,
+  touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kChange), kStreamOngoing,
                               kEmptyBoundingBox);
-  touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kChange), kStreamOngoing,
+  touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kChange), kStreamOngoing,
                               kEmptyBoundingBox);
-  touch_source_->UpdateStream(kStreamId, IPEventTemplate(Phase::kRemove), kStreamEnding,
+  touch_source_->UpdateStream(kSnapshot, kStreamId, IPEventTemplate(Phase::kRemove), kStreamEnding,
                               kEmptyBoundingBox);
 
   EXPECT_TRUE(received_responses_.empty());
@@ -701,19 +709,19 @@ TEST_F(TouchSourceTest, TouchDeviceInfo_ShouldBeSent_OncePerDevice) {
   {
     InternalTouchEvent event = IPEventTemplate(Phase::kAdd);
     event.device_id = kDeviceId1;
-    touch_source_->UpdateStream(/*stream_id*/ 1, std::move(event), kStreamOngoing,
+    touch_source_->UpdateStream(kSnapshot, /*stream_id*/ 1, std::move(event), kStreamOngoing,
                                 kEmptyBoundingBox);
   }
   {
     InternalTouchEvent event = IPEventTemplate(Phase::kAdd);
     event.device_id = kDeviceId1;
-    touch_source_->UpdateStream(/*stream_id*/ 2, std::move(event), kStreamOngoing,
+    touch_source_->UpdateStream(kSnapshot, /*stream_id*/ 2, std::move(event), kStreamOngoing,
                                 kEmptyBoundingBox);
   }
   {
     InternalTouchEvent event = IPEventTemplate(Phase::kAdd);
     event.device_id = kDeviceId2;
-    touch_source_->UpdateStream(/*stream_id*/ 3, std::move(event), kStreamOngoing,
+    touch_source_->UpdateStream(kSnapshot, /*stream_id*/ 3, std::move(event), kStreamOngoing,
                                 kEmptyBoundingBox);
   }
   RunLoopUntilIdle();

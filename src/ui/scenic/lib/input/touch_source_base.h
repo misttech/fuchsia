@@ -30,7 +30,8 @@ class TouchSourceBase : public GestureContender {
   // |GestureContender|
   // For |view_bounds| and |event.viewport| new values are only sent to the client when they've
   // changed from their last seen values.
-  void UpdateStream(StreamId stream_id, InternalTouchEvent event, bool is_end_of_stream,
+  void UpdateStream(const view_tree::Snapshot& snapshot, StreamId stream_id,
+                    InternalTouchEvent event, bool is_end_of_stream,
                     view_tree::BoundingBox view_bounds) override;
 
   // |GestureContender|
@@ -74,7 +75,8 @@ class TouchSourceBase : public GestureContender {
   virtual void CloseChannel(zx_status_t epitaph) = 0;
 
   // Allows subtypes to add augmentations to each event.
-  virtual void Augment(AugmentedTouchEvent&, const InternalTouchEvent&) = 0;
+  virtual void Augment(const view_tree::Snapshot& snapshot, AugmentedTouchEvent&,
+                       const InternalTouchEvent&) = 0;
 
  private:
   struct StreamData {
