@@ -117,3 +117,38 @@ Enables kernel assisted Yielding SMCCC calls that conform to QCOM's protocol.
 
 The kernel will automatically resume preempted SMCCC Yielding calls on behalf of the caller.
 )""")
+
+DEFINE_OPTION("kernel.arm-smmu-mode", SmallString, arm_smmu_mode,
+              {"disabled"},
+              R"""(
+This option determines how the kernel handles SMMU instances that it is told
+about via ZBI parameters at boot time. The format is a comma-separated list
+starting with the default mode, and having zero or more `<base-address>=<mode>`
+segments following it which may be used to override the default mode for specific
+SMMU instances as identified by the base physical address of the SMMU's registers.
+There are three valid values which may be used for modes:
+ * `disabled`
+   - SMMU hardware is ignored.  Its register regions are not reserved (allowing
+     user-mode to claim the registers), and the state of the SMMU hardware is
+     left as it was when handed off to Zircon via the bootloader chain. Requests
+     to create IOMMU instances of type `ZX_IOMMU_TYPE_ARM_SMMU` will have a
+     StubIommu instance substituted instead.  Leaked PMT pages will be
+     quarantined as usual.
+ * `passthru`
+   - SMMU hardware is claimed and the register regions are reserved.  User-mode
+     will not be able to access this HW.  BTIs must have valid stream
+     identifiers supplied, and are used to configure contexts where all
+     operations for all memory are permitted for the associated stream ID.
+     Address translation and per-page permissions will not be performed/enforced.
+     Leaked PMT pages will be returned to the main page pool after the BTI's
+     context has been locked down and denied access.  Passthru mode for a BTI
+     resumes when the quarantine is released.
+ * `enforced`
+   - SMMU hardware is claimed and the register regions are reserved.  User-mode
+     will not be able to access this HW.  BTIs must have valid stream
+     identifiers supplied and will be used to configure an independent device
+     address space for that BTI.  Address translation will take place and
+     per-page permissions for pinned memory will be enforced. Leaked PMT pages
+     will be returned to the main page pool after the PTEs for the pinned memory
+     have been removed, revoking HW access to those pages in the process.
+)""")

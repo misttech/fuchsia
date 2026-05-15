@@ -94,6 +94,9 @@ source_set("object") {
     "//zircon/system/ulib/region-alloc",
     "//zircon/system/ulib/zx",
   ]
+  if (current_cpu == "arm64") {
+    deps += [ "//zircon/kernel/dev/iommu/arm_smmu" ]
+  }
 }
 
 library_headers("headers") {

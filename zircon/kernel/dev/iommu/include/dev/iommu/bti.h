@@ -171,14 +171,14 @@ class Bti : public fbl::RefCounted<Bti> {
     return ZX_OK;
   }
 
+  void PrintQuarantineWarning(BtiPageLeakReason reason, uint64_t total_leaked_pages,
+                              size_t total_leaked_vmos);
+
  protected:
   friend class fbl::RefPtr<Bti>;
 
   Bti(uint64_t bti_id) : bti_id_(bti_id) {}
   virtual ~Bti() = default;
-
-  void PrintQuarantineWarning(BtiPageLeakReason reason, uint64_t total_leaked_pages,
-                              size_t total_leaked_vmos);
 
   const uint64_t bti_id_;
 

@@ -106,6 +106,7 @@ if (toolchain_environment == "kernel.phys" ||
       "//sdk/lib/fit",
       "//zircon/kernel/dev/coresight",
       "//zircon/kernel/dev/interrupt/gic/common",
+      "//zircon/kernel/dev/iommu/arm_smmu",
       "//zircon/kernel/dev/iommu/stub",
       "//zircon/kernel/dev/psci",
       "//zircon/kernel/lib/arch",

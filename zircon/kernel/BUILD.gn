@@ -21,6 +21,7 @@ group("tests") {
   deps = [
     "arch/$zircon_cpu/user-copy:tests",
     "dev/coresight/tests($host_toolchain)",
+    "dev/iommu/arm_smmu/tests",
     "lib:tests",
     "phys:tests",
     "phys/lib:tests",

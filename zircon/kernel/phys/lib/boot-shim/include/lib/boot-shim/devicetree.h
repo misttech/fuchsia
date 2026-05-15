@@ -1230,9 +1230,24 @@ class ArmDevicetreeQcomRngItem
   const DevicetreeBootShimMmioObserver* mmio_observer_ = nullptr;
 };
 
+// Reference: https://www.kernel.org/doc/Documentation/devicetree/bindings/iommu/arm%2Csmmu.txt
 class ArmDevicetreeSmmuItem : public DevicetreeItemBase<ArmDevicetreeSmmuItem, 2>, public ItemBase {
  public:
-  static constexpr auto kCompatibleDevices = std::to_array({"qcom,qsmmu-v500"});
+  static constexpr auto kCompatibleDevices = std::to_array({
+      // clang-format off
+      "arm,smmu-v1",
+      "arm,smmu-v2",
+      "arm,mmu-400",
+      "arm,mmu-401",
+      "arm,mmu-500",
+      "cavium,smmu-v2",
+      "qcom,smmu-v2",
+      "qcom,msm8996-smmu-v2",
+      "qcom,sdm845-smmu-v2",
+      "qcom,sdm845-smmu-500",
+      "qcom,qsmmu-v500",
+      // clang-format on
+  });
 
   template <typename Shim>
   void Init(const Shim& shim) {

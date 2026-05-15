@@ -17,6 +17,9 @@
 
 #include <dev/iommu/iommu.h>
 #include <dev/iommu/stub/stub.h>
+#if ARCH_ARM64
+#include <dev/arm_smmu/smmu.h>
+#endif
 
 #define LOCAL_TRACE 0
 
@@ -36,18 +39,8 @@ zx_status_t IommuDispatcher::Create(uint32_t type, ktl::unique_ptr<const uint8_t
       }
       break;
 #if ARCH_ARM64
-    // TODO(johngro): Creating a StubIommu is a temporary hack.  It allows
-    // user-mode to start to create ARM "SMMU instances", as well as BTIs
-    // associated with the proper instance, using the API which will eventually
-    // be used when full support lands.  In the meantime, we can give them a
-    // StubIommu instance which will behave the same way as the system (which
-    // explicitly creates Stub instances) does today.
     case ZX_IOMMU_TYPE_ARM_SMMU:
-      if (!desc || (desc_len != sizeof(zx_iommu_desc_arm_smmu_t))) {
-        result = zx::error(ZX_ERR_INVALID_ARGS);
-      } else {
-        result = StubIommu::Create();
-      }
+      result = ArmSmmu::Fetch(ktl::move(desc), desc_len);
       break;
 #endif
     default:
