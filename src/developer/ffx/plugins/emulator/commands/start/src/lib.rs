@@ -526,14 +526,28 @@ impl<T: EngineOperations> EmuStartTool<T> {
                     if self.cmd.device.is_none() && device_name != "" {
                         self.cmd.device = Some(device_name);
                     } else {
-                        self.cmd.device = Some(loaded_product_bundle.device_refs()?[0].clone());
+                        self.cmd.device = Some(
+                            loaded_product_bundle
+                                .device_refs()
+                                .context("Getting device references")?[0]
+                                .clone(),
+                        );
                     }
                 } else {
-                    self.cmd.device = Some(loaded_product_bundle.device_refs()?[0].clone());
+                    self.cmd.device = Some(
+                        loaded_product_bundle.device_refs().context("Getting device references")?
+                            [0]
+                        .clone(),
+                    );
                 }
             }
 
-            let target_arch = loaded_product_bundle.get_device(&self.cmd.device)?.hardware.cpu.arch;
+            let target_arch = loaded_product_bundle
+                .get_device(&self.cmd.device)
+                .context("Getting virtual device specification")?
+                .hardware
+                .cpu
+                .arch;
 
             match target_arch {
                 CpuArchitecture::X64 | CpuArchitecture::Arm64 => (),

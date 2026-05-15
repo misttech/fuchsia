@@ -6,7 +6,6 @@
 
 use crate::v2::{CanonicalizeError, Canonicalizer, ProductBundleV2, RelativizeError, Type};
 
-use anyhow::{Context, Result, anyhow, bail};
 use assembled_system::Image;
 use camino::{Utf8Path, Utf8PathBuf};
 use fuchsia_repo::repository::FileSystemRepository;
@@ -94,9 +93,41 @@ pub enum ProductBundleExtractError {
     ToolFailed(std::process::ExitStatus, String, String),
 }
 
-fn try_load_product_bundle(
-    r: impl BufRead,
-) -> std::result::Result<ProductBundle, ProductBundleLoadError> {
+/// Errors that can occur when operating on virtual devices in a product bundle.
+#[derive(Debug, thiserror::Error)]
+pub enum ProductBundleDeviceError {
+    /// Failed to load virtual device manifest.
+    #[error("Failed to load virtual device manifest: {0}")]
+    ManifestError(#[source] anyhow::Error),
+
+    /// No default virtual device is available.
+    #[error("No default virtual device is available, please specify one by name.")]
+    NoDefaultDevice,
+
+    /// Device not found in manifest and failed to parse as path.
+    #[error(
+        "No virtual device matches '{device}': {name_err}\nWe were also not able to parse '{device}' as a virtual device file: {file_err}"
+    )]
+    DeviceNotFound { device: String, name_err: anyhow::Error, file_err: anyhow::Error },
+}
+
+/// Errors that can occur when getting repositories from a product bundle.
+#[derive(Debug, thiserror::Error)]
+pub enum GetRepositoriesError {
+    /// Failed to load product bundle.
+    #[error("Failed to load product bundle: {0}")]
+    LoadProductBundle(#[from] ProductBundleLoadError),
+
+    /// Failed to canonicalize path.
+    #[error("Failed to canonicalize path {0}: {1}")]
+    Canonicalize(Utf8PathBuf, #[source] std::io::Error),
+
+    /// Failed to convert delivery blob type.
+    #[error("Failed to convert delivery blob type: {0}")]
+    DeliveryBlobType(#[from] delivery_blob::DeliveryBlobError),
+}
+
+fn try_load_product_bundle(r: impl BufRead) -> Result<ProductBundle, ProductBundleLoadError> {
     let helper: SerializationHelper =
         serde_json::from_reader(r).map_err(ProductBundleLoadError::Parse)?;
     match helper {
@@ -120,7 +151,7 @@ impl ZipLoadedProductBundle {
     /// Read a prdouct bundle from a zip file.
     pub fn try_load_from(
         product_bundle_zip_path: impl AsRef<Utf8Path>,
-    ) -> std::result::Result<Self, ProductBundleLoadError> {
+    ) -> Result<Self, ProductBundleLoadError> {
         let path = product_bundle_zip_path.as_ref();
         let file = File::open(path)
             .map_err(|e| ProductBundleLoadError::OpenFile(path.to_path_buf(), e))?;
@@ -129,9 +160,7 @@ impl ZipLoadedProductBundle {
     }
 
     /// Load a product bundle from an already parsed ZipArchive.
-    pub fn load_from(
-        mut zip: ZipArchive<File>,
-    ) -> std::result::Result<Self, ProductBundleLoadError> {
+    pub fn load_from(mut zip: ZipArchive<File>) -> Result<Self, ProductBundleLoadError> {
         let product_bundle_manifest_name = zip
             .file_names()
             .find(|x| x == &"product_bundle.json" || x.ends_with("/product_bundle.json"))
@@ -221,9 +250,7 @@ impl LoadedProductBundle {
     /// Load a ProductBundle from a directory containing product_bundle.json
     /// on disk. This method will return a LoadedProductBundle which keeps
     /// track of where it was loaded from.
-    pub fn try_load_from(
-        path: impl AsRef<Utf8Path>,
-    ) -> std::result::Result<Self, ProductBundleLoadError> {
+    pub fn try_load_from(path: impl AsRef<Utf8Path>) -> Result<Self, ProductBundleLoadError> {
         if !path.as_ref().is_dir() {
             return Err(ProductBundleLoadError::NotADirectory(path.as_ref().to_string()));
         }
@@ -296,25 +323,18 @@ enum SerializationHelperVersioned {
 impl ProductBundle {
     /// Read a product bundle from a path, whether it be a zip file or a
     /// directory.
-    pub fn try_load_from(path: impl AsRef<Utf8Path>) -> Result<Self> {
+    pub fn try_load_from(path: impl AsRef<Utf8Path>) -> Result<Self, ProductBundleLoadError> {
         let path = path.as_ref();
         if path.is_file() && path.extension() == Some("zip") {
-            ZipLoadedProductBundle::try_load_from(path)
-                .map(|v| v.into())
-                .map_err(|e| anyhow::anyhow!(e))
+            ZipLoadedProductBundle::try_load_from(path).map(|v| v.into())
         } else {
-            LoadedProductBundle::try_load_from(path)
-                .map(|v| v.into())
-                .map_err(|e| anyhow::anyhow!(e))
+            LoadedProductBundle::try_load_from(path).map(|v| v.into())
         }
     }
 
     /// Write a product bundle to a directory on disk at `path`.
     /// Note that this only writes the manifest file, and not the artifacts, images, blobs.
-    pub fn write(
-        &self,
-        path: impl AsRef<Utf8Path>,
-    ) -> std::result::Result<(), ProductBundleWriteError> {
+    pub fn write(&self, path: impl AsRef<Utf8Path>) -> Result<(), ProductBundleWriteError> {
         let helper = match self {
             Self::V2(data) => {
                 let mut data = data.clone();
@@ -330,12 +350,12 @@ impl ProductBundle {
     }
 
     /// Get the list of logical device names.
-    pub fn device_refs(&self) -> Result<Vec<String>> {
+    pub fn device_refs(&self) -> Result<Vec<String>, ProductBundleDeviceError> {
         match self {
             Self::V2(data) => {
                 let path = data.get_virtual_devices_path();
-                let manifest =
-                    VirtualDeviceManifest::from_path(&path).context("manifest from_path")?;
+                let manifest = VirtualDeviceManifest::from_path(&path)
+                    .map_err(ProductBundleDeviceError::ManifestError)?;
                 Ok(manifest.device_names())
             }
         }
@@ -370,16 +390,22 @@ impl ProductBundle {
     /// If `device` is empty, loads the default recommended device instead.
     /// If `device` does not exist within the product bundle, `device` is
     /// instead interpreted as a virtual device file path.
-    pub fn get_device(&self, device: &Option<String>) -> Result<VirtualDeviceV1> {
+    pub fn get_device(
+        &self,
+        device: &Option<String>,
+    ) -> Result<VirtualDeviceV1, ProductBundleDeviceError> {
         let Self::V2(pb) = self;
 
         // Determine the correct device name from the user, or default to the "recommended"
         // device, if one is provided in the product bundle.
         let path = pb.get_virtual_devices_path();
-        let manifest = VirtualDeviceManifest::from_path(&path).context("manifest from_path")?;
+        let manifest = VirtualDeviceManifest::from_path(&path)
+            .map_err(ProductBundleDeviceError::ManifestError)?;
         let result = match device.as_deref() {
             // If no device is given, return the default specified in the manifest.
-            None | Some("") => manifest.default_device(),
+            None | Some("") => {
+                manifest.default_device().map_err(ProductBundleDeviceError::ManifestError)?
+            }
 
             // Otherwise, find the virtual device by name in the product bundle.
             Some(device) => manifest
@@ -388,21 +414,18 @@ impl ProductBundle {
                     // If we cannot find it in the product bundle, attempt to parse
                     // `device` as a virtual device file path.
                     VirtualDevice::try_load_from(Utf8Path::new(device)).map_err(|file_err| {
-                        anyhow!(
-                            "No virtual device matches '{}': {}\n\
-                            We were also not able to parse '{}' as a virtual device file: {}",
-                            device,
+                        ProductBundleDeviceError::DeviceNotFound {
+                            device: device.to_string(),
                             name_err,
-                            device,
-                            file_err
-                        )
+                            file_err,
+                        }
                     })
                 })
-                .map(|d| Some(d)),
-        }?;
+                .map(|d| Some(d))?,
+        };
         match result {
             Some(VirtualDevice::V1(virtual_device)) => Ok(virtual_device),
-            None => bail!("No default virtual device is available, please specify one by name."),
+            None => Err(ProductBundleDeviceError::NoDefaultDevice),
         }
     }
 
@@ -425,7 +448,7 @@ impl ProductBundle {
         &self,
         slot: assembly_partitions_config::Slot,
         out_dir: impl AsRef<Utf8Path>,
-    ) -> std::result::Result<(), ProductBundleExtractError> {
+    ) -> Result<(), ProductBundleExtractError> {
         let ProductBundle::V2(pb) = self;
 
         let (system, platform_tools) = match slot {
@@ -470,10 +493,10 @@ impl ProductBundle {
 }
 
 /// Construct a Vec<FileSystemRepository> from product bundle.
-pub fn get_repositories(product_bundle_dir: Utf8PathBuf) -> Result<Vec<FileSystemRepository>> {
-    let pb = match ProductBundle::try_load_from(&product_bundle_dir)
-        .with_context(|| format!("loading {}", product_bundle_dir))?
-    {
+pub fn get_repositories(
+    product_bundle_dir: Utf8PathBuf,
+) -> Result<Vec<FileSystemRepository>, GetRepositoriesError> {
+    let pb = match ProductBundle::try_load_from(&product_bundle_dir)? {
         ProductBundle::V2(pb) => pb,
     };
 
@@ -481,13 +504,11 @@ pub fn get_repositories(product_bundle_dir: Utf8PathBuf) -> Result<Vec<FileSyste
     for repo in pb.repositories {
         let repo_builder = FileSystemRepository::builder(
             repo.metadata_path
-                .canonicalize()
-                .with_context(|| format!("failed to canonicalize {:?}", repo.metadata_path))?
-                .try_into()?,
+                .canonicalize_utf8()
+                .map_err(|e| GetRepositoriesError::Canonicalize(repo.metadata_path.clone(), e))?,
             repo.blobs_path
-                .canonicalize()
-                .with_context(|| format!("failed to canonicalize {:?}", repo.blobs_path))?
-                .try_into()?,
+                .canonicalize_utf8()
+                .map_err(|e| GetRepositoriesError::Canonicalize(repo.blobs_path.clone(), e))?,
         )
         .alias(repo.name)
         .delivery_blob_type(repo.delivery_blob_type.try_into()?);
@@ -499,6 +520,7 @@ pub fn get_repositories(product_bundle_dir: Utf8PathBuf) -> Result<Vec<FileSyste
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
     use assembled_system::AssembledSystem;
     use assembly_cli_args::{AssemblyMode, ValidationMode};
     use assembly_container::AssemblyContainer;

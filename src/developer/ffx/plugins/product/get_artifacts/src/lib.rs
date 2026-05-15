@@ -93,7 +93,7 @@ impl PbGetArtifactsTool {
         // It is expected that self.cmd.product_bundle has been validated to be some() by this point.
         let product_bundle =
             ProductBundle::try_load_from(&self.cmd.product_bundle.as_ref().unwrap())
-                .map_err(Into::<fho::Error>::into)?;
+                .map_err(|e| fho::bug!("Failed to load product bundle: {}", e))?;
 
         let artifacts = match self.cmd.artifacts_group {
             Type::Flash => self.extract_flashing_artifacts(product_bundle)?,

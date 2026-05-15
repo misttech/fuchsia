@@ -95,7 +95,7 @@ impl PbGetImagePathTool {
         // It is expected that self.cmd.product_bundle has been validated to be some() by this point.
         let product_bundle =
             ProductBundle::try_load_from(&self.cmd.product_bundle.as_ref().unwrap())
-                .map_err(Into::<fho::Error>::into)?;
+                .map_err(|e| user_error!("Failed to load product bundle: {}", e))?;
         self.extract_image_path(product_bundle)
     }
 

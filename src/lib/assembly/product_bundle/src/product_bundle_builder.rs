@@ -5,7 +5,6 @@
 use crate::product_bundle::{ProductBundle, ProductBundleWriteError};
 use crate::v2::{ProductBundleV2, Repository};
 
-use anyhow::{Context, Result, anyhow, ensure};
 use assembled_system::{AssembledSystem, BlobfsContents, Image, PackagesMetadata};
 use assembly_container::AssemblyContainer;
 use assembly_partitions_config::{PartitionImageMapper, PartitionsConfig, Slot as PartitionSlot};
@@ -60,6 +59,33 @@ pub enum ProductBundleBuildError {
 
     #[error("Failed to write product bundle: {0}")]
     WriteProductBundle(#[from] ProductBundleWriteError),
+
+    #[error("Found more than one ZBI")]
+    DuplicateZbi,
+
+    #[error("Found more than one VBMeta")]
+    DuplicateVbmeta,
+
+    #[error("Found more than one Dtbo")]
+    DuplicateDtbo,
+
+    #[error("Failed to read package manifest {0}: {1}")]
+    ReadPackageManifest(Utf8PathBuf, #[source] anyhow::Error),
+
+    #[error("Failed to copy file from {0} to {1}: {2}")]
+    CopyFileFailed(Utf8PathBuf, Utf8PathBuf, #[source] std::io::Error),
+
+    #[error("Failed to get file name for {0}")]
+    MissingFileName(Utf8PathBuf),
+
+    #[error("Missing a partitions config")]
+    MissingPartitionsConfig,
+
+    #[error("The partitions config ({0}) does not match the partitions config ({1})")]
+    PartitionsConfigMismatch(String, String),
+
+    #[error("Multiple virtual device entries for: {0}")]
+    DuplicateVirtualDevice(String),
 
     #[error("Other error: {0}")]
     Other(String),
@@ -216,16 +242,12 @@ impl ProductBundleBuilder {
             .map_err(|e| ProductBundleBuildError::CreateDir(out_dir.to_path_buf(), e))?;
 
         // Write the systems to the `out_dir`, and extract the packages.
-        let (system_a, packages_a) = write_assembled_system(system_a, out_dir.join("system_a"))
-            .map_err(ProductBundleBuildError::WriteAssembledSystem)?;
-        let (system_b, _packages_b) = write_assembled_system(system_b, out_dir.join("system_b"))
-            .map_err(ProductBundleBuildError::WriteAssembledSystem)?;
-        let (system_r, packages_r) = write_assembled_system(system_r, out_dir.join("system_r"))
-            .map_err(ProductBundleBuildError::WriteAssembledSystem)?;
+        let (system_a, packages_a) = write_assembled_system(system_a, out_dir.join("system_a"))?;
+        let (system_b, _packages_b) = write_assembled_system(system_b, out_dir.join("system_b"))?;
+        let (system_r, packages_r) = write_assembled_system(system_r, out_dir.join("system_r"))?;
 
         // Write the partitions config to `out_dir`.
-        let partitions = write_partitions(&system_a, &system_b, &system_r, &out_dir)
-            .map_err(ProductBundleBuildError::WritePartitions)?;
+        let partitions = write_partitions(&system_a, &system_b, &system_r, &out_dir)?;
 
         // Write the gerrit image size report.
         if let Some(gerrit_size_report) = gerrit_size_report {
@@ -236,8 +258,7 @@ impl ProductBundleBuilder {
                 &system_r,
                 &product_bundle_name,
                 gerrit_size_report,
-            )
-            .map_err(ProductBundleBuildError::WriteSizeReport)?;
+            )?;
         }
 
         // Write the update package.
@@ -266,18 +287,15 @@ impl ProductBundleBuilder {
                 )
                 .map_err(ProductBundleBuildError::WriteOtaManifest)?;
             }
-            Some(
-                write_update_package(
-                    update_details,
-                    &packages_a,
-                    &system_a,
-                    &system_r,
-                    &partitions,
-                    tools,
-                    gen_dir_path,
-                )
-                .map_err(ProductBundleBuildError::WriteUpdatePackage)?,
-            )
+            Some(write_update_package(
+                update_details,
+                &packages_a,
+                &system_a,
+                &system_r,
+                &partitions,
+                tools,
+                gen_dir_path,
+            )?)
         } else {
             None
         };
@@ -307,22 +325,18 @@ impl ProductBundleBuilder {
                 blobs_path,
                 out_dir,
             )
-            .await
-            .map_err(ProductBundleBuildError::WriteRepositories)?
+            .await?
         } else {
             vec![]
         };
 
         // Write the virtual devices.
         let virtual_devices_path = if !virtual_devices.is_empty() {
-            Some(
-                write_virtual_devices(
-                    virtual_devices,
-                    out_dir.join("virtual_devices"),
-                    recommended_virtual_device,
-                )
-                .map_err(ProductBundleBuildError::WriteVirtualDevices)?,
-            )
+            Some(write_virtual_devices(
+                virtual_devices,
+                out_dir.join("virtual_devices"),
+                recommended_virtual_device,
+            )?)
         } else {
             None
         };
@@ -374,7 +388,7 @@ fn write_partitions(
     system_b: &Option<AssembledSystem>,
     system_r: &Option<AssembledSystem>,
     out_dir: impl AsRef<Utf8Path>,
-) -> Result<PartitionsConfig> {
+) -> std::result::Result<PartitionsConfig, ProductBundleBuildError> {
     let out_dir = out_dir.as_ref();
 
     // Load the partitions config from the boards and ensure they are all identical.
@@ -382,7 +396,7 @@ fn write_partitions(
     for system in [system_a, system_b, system_r] {
         if let Some(path) = partitions_from_system(system.as_ref()) {
             let another_config = PartitionsConfig::from_dir(&path)
-                .with_context(|| format!("Parsing partitions config: {}", path))?;
+                .map_err(ProductBundleBuildError::WritePartitions)?;
 
             match &chosen_partitions {
                 // No chosen partitions yet, so just save it.
@@ -395,19 +409,24 @@ fn write_partitions(
                 // Chosen and new partitions are from boards.
                 // Assert they are equal.
                 Some((current_config, false)) => {
-                    ensure!(
-                        current_config.contents_eq(&another_config)?,
-                        "The partitions config ({}) does not match the partitions config ({})",
-                        another_config.hardware_revision,
-                        current_config.hardware_revision
-                    );
+                    let eq = current_config
+                        .contents_eq(&another_config)
+                        .map_err(ProductBundleBuildError::WritePartitions)?;
+                    if !eq {
+                        return Err(ProductBundleBuildError::PartitionsConfigMismatch(
+                            another_config.hardware_revision,
+                            current_config.hardware_revision.clone(),
+                        ));
+                    }
                 }
             }
         }
     }
 
-    let partitions = chosen_partitions.ok_or_else(|| anyhow!("Missing a partitions config"))?.0;
-    let partitions = partitions.write_to_dir(out_dir.join("partitions"), None::<Utf8PathBuf>)?;
+    let partitions = chosen_partitions.ok_or(ProductBundleBuildError::MissingPartitionsConfig)?.0;
+    let partitions = partitions
+        .write_to_dir(out_dir.join("partitions"), None::<Utf8PathBuf>)
+        .map_err(ProductBundleBuildError::WritePartitions)?;
     Ok(partitions)
 }
 
@@ -420,7 +439,7 @@ fn write_update_package(
     partitions: &PartitionsConfig,
     tools: Box<dyn ToolProvider>,
     out_dir: impl AsRef<Utf8Path>,
-) -> Result<UpdatePackage> {
+) -> std::result::Result<UpdatePackage, ProductBundleBuildError> {
     let out_dir = out_dir.as_ref();
 
     let mut builder = UpdatePackageBuilder::new(
@@ -432,7 +451,9 @@ fn write_update_package(
     );
     let mut all_packages = UpdatePackagesManifest::default();
     for (_path, package) in packages {
-        all_packages.add_by_manifest(&package)?;
+        all_packages
+            .add_by_manifest(&package)
+            .map_err(ProductBundleBuildError::WriteUpdatePackage)?;
     }
     builder.add_packages(all_packages);
     if let Some(manifest) = &system_a {
@@ -441,7 +462,7 @@ fn write_update_package(
     if let Some(manifest) = &system_r {
         builder.add_slot_images(Slot::Recovery(manifest.clone()));
     }
-    builder.build(tools)
+    builder.build(tools).map_err(ProductBundleBuildError::WriteUpdatePackage)
 }
 
 /// Write the TUF repositories to `out_dir` and the blobs to `blobs_path`.
@@ -452,7 +473,7 @@ async fn write_repositories(
     packages_r: Vec<(Option<Utf8PathBuf>, PackageManifest)>,
     blobs_path: impl AsRef<Utf8Path>,
     out_dir: impl AsRef<Utf8Path>,
-) -> Result<Vec<Repository>> {
+) -> std::result::Result<Vec<Repository>, ProductBundleBuildError> {
     let tuf_keys = repository_details.tuf_keys;
     let blobs_path = blobs_path.as_ref();
     let out_dir = out_dir.as_ref();
@@ -461,7 +482,8 @@ async fn write_repositories(
     let recovery_metadata_path = out_dir.join("recovery_repository");
     let keys_path = out_dir.join("keys");
 
-    let repo_keys = RepoKeys::from_dir(tuf_keys.as_std_path()).context("Gathering repo keys")?;
+    let repo_keys = RepoKeys::from_dir(tuf_keys.as_std_path())
+        .map_err(|e| ProductBundleBuildError::WriteRepositories(anyhow::Error::new(e)))?;
 
     // Main slot.
     let repo =
@@ -470,15 +492,17 @@ async fn write_repositories(
             .build();
     let mut repo_builder = RepoBuilder::create(&repo, &repo_keys)
         .add_package_manifests(packages_a.into_iter())
-        .await?;
+        .await
+        .map_err(ProductBundleBuildError::WriteRepositories)?;
     if let Some(update_package) = update_package {
         repo_builder = repo_builder
             .add_package_manifests(
                 update_package.package_manifests.into_iter().map(|manifest| (None, manifest)),
             )
-            .await?;
+            .await
+            .map_err(ProductBundleBuildError::WriteRepositories)?;
     }
-    repo_builder.commit().await.context("Building the repo")?;
+    repo_builder.commit().await.map_err(ProductBundleBuildError::WriteRepositories)?;
 
     // Recovery slot.
     // We currently need this for scrutiny to find the recovery blobs.
@@ -490,12 +514,14 @@ async fn write_repositories(
     .build();
     RepoBuilder::create(&recovery_repo, &repo_keys)
         .add_package_manifests(packages_r.into_iter())
-        .await?
+        .await
+        .map_err(ProductBundleBuildError::WriteRepositories)?
         .commit()
         .await
-        .context("Building the recovery repo")?;
+        .map_err(ProductBundleBuildError::WriteRepositories)?;
 
-    std::fs::create_dir_all(&keys_path).context("Creating keys directory")?;
+    std::fs::create_dir_all(&keys_path)
+        .map_err(|e| ProductBundleBuildError::CreateDir(keys_path.clone(), e))?;
 
     // We intentionally do not add the recovery repository, because no tools currently need
     // it. Scrutiny needs the recovery blobs to be accessible, but that's it.
@@ -522,25 +548,35 @@ fn partitions_from_system<'a>(system: Option<&'a AssembledSystem>) -> Option<&'a
 fn write_assembled_system(
     system: Option<AssembledSystem>,
     out_dir: impl AsRef<Utf8Path>,
-) -> Result<(Option<AssembledSystem>, Vec<(Option<Utf8PathBuf>, PackageManifest)>)> {
+) -> std::result::Result<
+    (Option<AssembledSystem>, Vec<(Option<Utf8PathBuf>, PackageManifest)>),
+    ProductBundleBuildError,
+> {
     let out_dir = out_dir.as_ref();
     if let Some(system) = system {
         // Make sure `out_dir` is created.
-        std::fs::create_dir_all(&out_dir).context("Creating the out_dir")?;
+        std::fs::create_dir_all(&out_dir)
+            .map_err(|e| ProductBundleBuildError::CreateDir(out_dir.to_path_buf(), e))?;
 
         // Filter out the base package, and the blobfs contents.
         let mut images = Vec::new();
         let mut packages = Vec::new();
-        let mut extract_packages = |packages_metadata| -> Result<()> {
-            let PackagesMetadata { base, cache } = packages_metadata;
-            let all_packages = [base.metadata, cache.metadata].concat();
-            for package in all_packages {
-                let manifest = PackageManifest::try_load_from(&package.manifest)
-                    .with_context(|| format!("reading package manifest: {}", package.manifest))?;
-                packages.push((Some(package.manifest), manifest));
-            }
-            Ok(())
-        };
+        let mut extract_packages =
+            |packages_metadata| -> std::result::Result<(), ProductBundleBuildError> {
+                let PackagesMetadata { base, cache } = packages_metadata;
+                let all_packages = [base.metadata, cache.metadata].concat();
+                for package in all_packages {
+                    let manifest =
+                        PackageManifest::try_load_from(&package.manifest).map_err(|e| {
+                            ProductBundleBuildError::ReadPackageManifest(
+                                package.manifest.clone(),
+                                e,
+                            )
+                        })?;
+                    packages.push((Some(package.manifest), manifest));
+                }
+                Ok(())
+            };
         let mut has_zbi = false;
         let mut has_vbmeta = false;
         let mut has_dtbo = false;
@@ -557,21 +593,21 @@ fn write_assembled_system(
                 }
                 Image::ZBI { .. } => {
                     if has_zbi {
-                        anyhow::bail!("Found more than one ZBI");
+                        return Err(ProductBundleBuildError::DuplicateZbi);
                     }
                     images.push(image);
                     has_zbi = true;
                 }
                 Image::VBMeta(_) => {
                     if has_vbmeta {
-                        anyhow::bail!("Found more than one VBMeta");
+                        return Err(ProductBundleBuildError::DuplicateVbmeta);
                     }
                     images.push(image);
                     has_vbmeta = true;
                 }
                 Image::Dtbo(_) => {
                     if has_dtbo {
-                        anyhow::bail!("Found more than one Dtbo");
+                        return Err(ProductBundleBuildError::DuplicateDtbo);
                     }
                     images.push(image);
                     has_dtbo = true;
@@ -619,17 +655,23 @@ fn write_assembled_system(
 
 /// Copy a file from `source` to `out_dir` preserving the filename.
 /// Returns the destination, which is equal to {out_dir}{filename}.
-fn copy_file(source: impl AsRef<Utf8Path>, out_dir: impl AsRef<Utf8Path>) -> Result<Utf8PathBuf> {
+fn copy_file(
+    source: impl AsRef<Utf8Path>,
+    out_dir: impl AsRef<Utf8Path>,
+) -> std::result::Result<Utf8PathBuf, ProductBundleBuildError> {
     let source = source.as_ref();
     let out_dir = out_dir.as_ref();
-    let filename = source.file_name().context("getting file name")?;
+    let filename = source
+        .file_name()
+        .ok_or_else(|| ProductBundleBuildError::MissingFileName(source.to_path_buf()))?;
     let destination = out_dir.join(filename);
 
     // Attempt to hardlink, if that fails, fall back to copying.
     if let Err(_) = std::fs::hard_link(source, &destination) {
         // falling back to copying.
-        std::fs::copy(source, &destination)
-            .with_context(|| format!("copying file '{}'", source))?;
+        std::fs::copy(source, &destination).map_err(|e| {
+            ProductBundleBuildError::CopyFileFailed(source.to_path_buf(), destination.clone(), e)
+        })?;
     }
     Ok(destination)
 }
@@ -642,21 +684,28 @@ fn write_size_report(
     system_r: &Option<AssembledSystem>,
     product_bundle_name: &String,
     output: impl AsRef<Utf8Path>,
-) -> Result<()> {
+) -> std::result::Result<(), ProductBundleBuildError> {
     let output = output.as_ref().to_path_buf();
-    let mut mapper = PartitionImageMapper::new(partitions.clone())?;
+    let mut mapper = PartitionImageMapper::new(partitions.clone())
+        .map_err(ProductBundleBuildError::WriteSizeReport)?;
     if let Some(system) = system_a {
-        mapper.map_images_to_slot(&system.images, PartitionSlot::A)?;
+        mapper
+            .map_images_to_slot(&system.images, PartitionSlot::A)
+            .map_err(ProductBundleBuildError::WriteSizeReport)?;
     }
     if let Some(system) = system_b {
-        mapper.map_images_to_slot(&system.images, PartitionSlot::B)?;
+        mapper
+            .map_images_to_slot(&system.images, PartitionSlot::B)
+            .map_err(ProductBundleBuildError::WriteSizeReport)?;
     }
     if let Some(system) = system_r {
-        mapper.map_images_to_slot(&system.images, PartitionSlot::R)?;
+        mapper
+            .map_images_to_slot(&system.images, PartitionSlot::R)
+            .map_err(ProductBundleBuildError::WriteSizeReport)?;
     }
     mapper
         .generate_gerrit_size_report(&output, product_bundle_name)
-        .context("Generating image size report")?;
+        .map_err(ProductBundleBuildError::WriteSizeReport)?;
     Ok(())
 }
 
@@ -665,14 +714,14 @@ fn write_virtual_devices(
     virtual_devices: BTreeMap<String, VirtualDevice>,
     out_dir: impl AsRef<Utf8Path>,
     recommended: Option<String>,
-) -> Result<Utf8PathBuf> {
+) -> std::result::Result<Utf8PathBuf, ProductBundleBuildError> {
     let out_dir = out_dir.as_ref();
     let mut manifest = VirtualDeviceManifest::default();
     manifest.recommended = recommended;
 
     // Create the virtual_devices directory.
     std::fs::create_dir_all(out_dir)
-        .with_context(|| format!("Creating the virtual_devices directory: {}", out_dir))?;
+        .map_err(|e| ProductBundleBuildError::CreateDir(out_dir.to_path_buf(), e))?;
 
     for (file_name, virtual_device) in virtual_devices {
         // Write the virtual device to the directory.
@@ -681,20 +730,20 @@ fn write_virtual_devices(
         let device_file_path = out_dir.join(&device_file_name);
         virtual_device
             .write(&device_file_path)
-            .with_context(|| format!("Writing virtual device: {}", device_file_path))?;
+            .map_err(ProductBundleBuildError::WriteVirtualDevices)?;
 
         // Add the virtual device to the manifest.
         if let Some(_) = manifest.device_paths.insert(name.clone(), device_file_name) {
-            anyhow::bail!("Multiple virtual device entries for: {}", name);
+            return Err(ProductBundleBuildError::DuplicateVirtualDevice(name));
         }
     }
 
     // Write the manifest into the directory.
     let manifest_path = out_dir.join("manifest.json");
     let manifest_file = File::create(&manifest_path)
-        .with_context(|| format!("Creating virtual device manifest: {}", manifest_path))?;
+        .map_err(|e| ProductBundleBuildError::CreateDir(manifest_path.clone(), e))?;
     serde_json::to_writer(manifest_file, &manifest)
-        .with_context(|| format!("Writing virtual device manifest: {}", manifest_path))?;
+        .map_err(|e| ProductBundleBuildError::WriteVirtualDevices(anyhow::Error::new(e)))?;
 
     Ok(manifest_path)
 }
