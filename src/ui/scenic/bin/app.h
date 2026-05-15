@@ -66,9 +66,11 @@ enum class RendererType : uint8_t {
 
 class App {
  public:
-  App(std::unique_ptr<sys::ComponentContext> app_context,
+  App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_dispatcher,
+      std::unique_ptr<sys::ComponentContext> app_context,
       fidl::ClientEnd<fuchsia_io::Directory> pkg_dir,
-      fidl::ServerEnd<fuchsia_io::Directory> out_dir, zx::vmo config, inspect::Node& root_node,
+      fidl::ServerEnd<fuchsia_io::Directory> out_dir, scenic_structured_config::Config config,
+      inspect::Node& root_node,
       fpromise::promise<::display::CoordinatorClientChannels, zx_status_t> dc_handles_promise,
       fit::closure quit_callback);
 
@@ -82,6 +84,8 @@ class App {
   void InitializeHeartbeat(display::Display& display);
 
   async::Executor executor_;
+  async_dispatcher_t* const flatland_dispatcher_;
+  async_dispatcher_t* const input_dispatcher_;
   std::unique_ptr<sys::ComponentContext> app_context_;
   fidl::SyncClient<fuchsia_io::Directory> pkg_dir_;
   const scenic_structured_config::Config config_values_;

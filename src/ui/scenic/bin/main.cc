@@ -26,23 +26,23 @@
 #include "src/lib/fxl/log_settings_command_line.h"
 #include "src/ui/scenic/bin/app.h"
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
+#include "src/ui/scenic/scenic_structured_config.h"
 
 int main(int argc, const char** argv) {
-  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
-  utils::ScopedThreadDispatcherSetter setter(loop.dispatcher(), loop.dispatcher());
+  async::Loop render_loop(&kAsyncLoopConfigAttachToCurrentThread);
 
   auto command_line = fxl::CommandLineFromArgcArgv(argc, argv);
   if (!fxl::SetLogSettingsFromCommandLine(command_line, {"scenic"})) {
     return 1;
   }
 
-  trace::TraceProviderWithFdio trace_provider(loop.dispatcher());
+  trace::TraceProviderWithFdio trace_provider(render_loop.dispatcher());
   // This call creates ComponentContext, but does not start serving immediately. Outgoing directory
   // is served by App, after App::InitializeServices() is completed.
   std::unique_ptr<sys::ComponentContext> app_context = sys::ComponentContext::Create();
 
   // Set up an inspect::Node to inject into the App.
-  inspect::ComponentInspector inspector(loop.dispatcher(), {});
+  inspect::ComponentInspector inspector(render_loop.dispatcher(), {});
 
   component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher;
   zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
@@ -61,13 +61,45 @@ int main(int argc, const char** argv) {
   const zx_handle_t directory_request_handle = zx_take_startup_handle(PA_DIRECTORY_REQUEST);
   zx::channel out_dir{directory_request_handle};
   const zx_handle_t config_handle = zx_take_startup_handle(PA_VMO_COMPONENT_CONFIG);
-  zx::vmo config{config_handle};
+  zx::vmo config_vmo{config_handle};
+  auto config = scenic_structured_config::Config::CreateFromVmo(std::move(config_vmo));
+
+  // Only use a dedicated input loop/dispatcher/thread if configured to do so.  Otherwise, use the
+  // same dispatcher for rendering and input.
+  std::unique_ptr<async::Loop> input_loop;
+  async_dispatcher_t* input_dispatcher = render_loop.dispatcher();
+  // Placeholder.  We can enable this unconditionally later, add a new structured config value, etc.
+  constexpr bool kUseSeparateInputThread = false;
+  if (kUseSeparateInputThread) {
+    input_loop = std::make_unique<async::Loop>(&kAsyncLoopConfigNoAttachToCurrentThread);
+    zx_status_t input_thread_status = input_loop->StartThread("scenic.input");
+    FX_CHECK(input_thread_status == ZX_OK)
+        << "Failed to start input thread: " << zx_status_get_string(input_thread_status);
+
+    // Set the role for the input thread.
+    async::PostTask(input_loop->dispatcher(), [] {
+      const zx_status_t role_status =
+          fuchsia_scheduler::SetRoleForThisThread("fuchsia.scenic.input");
+      if (role_status != ZX_OK) {
+        FX_LOGS(WARNING) << "Failed to apply profile to input thread: " << role_status;
+      }
+    });
+
+    input_dispatcher = input_loop->dispatcher();
+  }
+  utils::ScopedThreadDispatcherSetter setter(render_loop.dispatcher(), input_dispatcher);
 
   // Instantiate Scenic app.
-  scenic_impl::App app(
-      std::move(app_context), fidl::ClientEnd<fuchsia_io::Directory>(std::move(pkg_dir)),
-      fidl::ServerEnd<fuchsia_io::Directory>(std::move(out_dir)), std::move(config),
-      inspector.root(), std::move(display_coordinator_promise), [&loop] { loop.Quit(); });
+  scenic_impl::App app(render_loop.dispatcher(), input_dispatcher, std::move(app_context),
+                       fidl::ClientEnd<fuchsia_io::Directory>(std::move(pkg_dir)),
+                       fidl::ServerEnd<fuchsia_io::Directory>(std::move(out_dir)),
+                       std::move(config), inspector.root(), std::move(display_coordinator_promise),
+                       [&render_loop, &input_loop] {
+                         render_loop.Quit();
+                         if (input_loop) {
+                           input_loop->Quit();
+                         }
+                       });
 
   // Apply the scheduler role defined for Scenic.
   const zx_status_t thread_status = fuchsia_scheduler::SetRoleForThisThread("fuchsia.scenic.main");
@@ -75,7 +107,7 @@ int main(int argc, const char** argv) {
     FX_LOGS(WARNING) << "Failed to apply profile to main thread: " << thread_status;
   }
 
-  loop.Run();
+  render_loop.Run();
   FX_LOGS(INFO) << "Quit main Scenic loop.";
 
   return 0;

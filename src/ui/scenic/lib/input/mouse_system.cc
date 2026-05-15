@@ -31,6 +31,8 @@ view_tree::SnapshotRef MouseSystem::GetViewTreeSnapshot() { return snapshot_hold
 void MouseSystem::RegisterMouseSource(
     fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
     zx_koid_t client_view_ref_koid) {
+  TRACE_DURATION("input", "MouseSystem::RegisterMouseSource");
+  utils::CheckIsOnInputThread();
   const auto [it, success] = mouse_sources_.emplace(
       client_view_ref_koid,
       std::make_unique<MouseSource>(std::move(mouse_source_request),

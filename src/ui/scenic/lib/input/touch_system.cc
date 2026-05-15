@@ -239,6 +239,8 @@ void TouchSystem::RegisterTouchSource(
 void TouchSystem::RegisterTouchSource(
     fidl::ServerEnd<fuchsia_ui_pointer::TouchSource> touch_source_server_end,
     zx_koid_t client_view_ref_koid) {
+  TRACE_DURATION("input", "TouchSystem::RegisterTouchSource");
+  utils::CheckIsOnInputThread();
   FX_DCHECK(client_view_ref_koid != ZX_KOID_INVALID);
   const ContenderId contender_id = next_contender_id_++;
 

@@ -6,6 +6,7 @@
 
 #include <lib/syslog/cpp/macros.h>
 
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 
 namespace focus {
@@ -113,11 +114,15 @@ void FocusManager::Register(
 
 void FocusManager::RegisterViewRefFocused(
     zx_koid_t koid, fidl::InterfaceRequest<fuchsia::ui::views::ViewRefFocused> vrf) {
+  TRACE_DURATION("gfx", "FocusManager::RegisterViewRefFocused");
+  utils::CheckIsOnInputThread();
   view_ref_focused_registry_.Register(koid, std::move(vrf));
 }
 
 void FocusManager::RegisterViewFocuser(
     zx_koid_t koid, fidl::InterfaceRequest<fuchsia::ui::views::Focuser> focuser) {
+  TRACE_DURATION("gfx", "FocusManager::RegisterViewFocuser");
+  utils::CheckIsOnInputThread();
   view_focuser_registry_.Register(koid, std::move(focuser));
 }
 

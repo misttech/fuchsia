@@ -6,8 +6,12 @@
 
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.ui.display.singleton/cpp/hlcpp_conversion.h>
+#include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <fuchsia/vulkan/loader/cpp/fidl.h>
+#include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
+#include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <cstdint>
@@ -123,11 +127,8 @@ uint64_t GetDisplayRotation(scenic_structured_config::Config values) {
   return 0;
 }
 
-// Gets Scenic's structured config values and logs them.
-scenic_structured_config::Config GetConfig(zx::vmo config) {
-  // Retrieve structured configuration
-  auto values = scenic_structured_config::Config::CreateFromVmo(std::move(config));
-
+// Logs Scenic's structured config values.
+void LogConfig(const scenic_structured_config::Config& values) {
   FX_LOGS(INFO) << "Scenic renderer: " << ToString(GetRendererType(values))
                 << " min_predicted_frame_duration(us): "
                 << values.frame_scheduler_min_predicted_frame_duration_in_us()
@@ -144,8 +145,6 @@ scenic_structured_config::Config GetConfig(zx::vmo config) {
                 << " display_rotation: " << GetDisplayRotation(values)
                 << " visual_debugging_level: " << static_cast<int>(values.visual_debugging_level())
                 << " enable_frame_counter_overlay: " << values.enable_frame_counter_overlay();
-
-  return values;
 }
 
 // Interval at which we log that Scenic is waiting for Vulkan or display.
@@ -177,22 +176,24 @@ fuchsia::math::SizeU DisplayInfoDelegate::GetDisplayDimensions() {
   return {display_->width_in_px(), display_->height_in_px()};
 }
 
-App::App(std::unique_ptr<sys::ComponentContext> app_context,
+App::App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_dispatcher,
+         std::unique_ptr<sys::ComponentContext> app_context,
          fidl::ClientEnd<fuchsia_io::Directory> pkg_dir,
-         fidl::ServerEnd<fuchsia_io::Directory> out_dir, zx::vmo config, inspect::Node& root_node,
+         fidl::ServerEnd<fuchsia_io::Directory> out_dir, scenic_structured_config::Config config,
+         inspect::Node& root_node,
          fpromise::promise<::display::CoordinatorClientChannels, zx_status_t> dc_handles_promise,
          fit::closure quit_callback)
-    : executor_(async_get_default_dispatcher()),
+    : executor_(flatland_dispatcher),
+      flatland_dispatcher_(flatland_dispatcher),
+      input_dispatcher_(input_dispatcher),
       app_context_(std::move(app_context)),
-      config_values_(GetConfig(std::move(config))),
+      config_values_(std::move(config)),
       // TODO(https://fxbug.dev/42117030): subsystems requiring graceful shutdown *on a loop* should
       // register themselves. It is preferable to cleanly shutdown using destructors only, if
       // possible.
-      shutdown_manager_(
-          ShutdownManager::New(async_get_default_dispatcher(), std::move(quit_callback))),
-      metrics_logger_(async_get_default_dispatcher(),
-                      fidl::ClientEnd<fuchsia_io::Directory>(
-                          app_context_->svc()->CloneChannel().TakeChannel())),
+      shutdown_manager_(ShutdownManager::New(flatland_dispatcher_, std::move(quit_callback))),
+      metrics_logger_(flatland_dispatcher_, fidl::ClientEnd<fuchsia_io::Directory>(
+                                                app_context_->svc()->CloneChannel().TakeChannel())),
       inspect_node_(root_node.CreateChild("scenic")),
       frame_scheduler_(
           std::make_unique<scheduling::WindowedFramePredictor>(
@@ -224,6 +225,7 @@ App::App(std::unique_ptr<sys::ComponentContext> app_context,
       observer_registry_(geometry_provider_),
       scoped_observer_registry_(geometry_provider_),
       health_inspector_(display_manager_, display_power_manager_, root_node) {
+  LogConfig(config_values_);
   pkg_dir_.Bind(std::move(pkg_dir));
   fpromise::bridge<escher::EscherUniquePtr> escher_bridge;
   fpromise::bridge<std::shared_ptr<display::Display>> display_bridge;
@@ -435,24 +437,37 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
         async_get_default_dispatcher(), flatland_presenter_, uber_struct_system_, link_system_,
         display, std::move(importers),
         /*register_view_focuser*/
-        [this](fidl::InterfaceRequest<fuchsia::ui::views::Focuser> focuser,
-               zx_koid_t view_ref_koid) {
-          focus_manager_.RegisterViewFocuser(view_ref_koid, std::move(focuser));
+        [this](fidl::ServerEnd<fuchsia_ui_views::Focuser> focuser, zx_koid_t view_ref_koid) {
+          async::PostTask(input_dispatcher_,
+                          [this, focuser = std::move(focuser), view_ref_koid]() mutable {
+                            focus_manager_.RegisterViewFocuser(
+                                view_ref_koid, fidl::NaturalToHLCPP(std::move(focuser)));
+                          });
         },
         /*register_view_ref_focused*/
-        [this](fidl::InterfaceRequest<fuchsia::ui::views::ViewRefFocused> vrf,
-               zx_koid_t view_ref_koid) {
-          focus_manager_.RegisterViewRefFocused(view_ref_koid, std::move(vrf));
+        [this](fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> vrf, zx_koid_t view_ref_koid) {
+          async::PostTask(input_dispatcher_, [this, vrf = std::move(vrf), view_ref_koid]() mutable {
+            focus_manager_.RegisterViewRefFocused(view_ref_koid,
+                                                  fidl::NaturalToHLCPP(std::move(vrf)));
+          });
         },
         /*register_touch_source*/
-        [this](fidl::InterfaceRequest<fuchsia::ui::pointer::TouchSource> touch_source,
+        [this](fidl::ServerEnd<fuchsia_ui_pointer::TouchSource> touch_source,
                zx_koid_t view_ref_koid) {
-          input_->RegisterTouchSource(std::move(touch_source), view_ref_koid);
+          async::PostTask(input_dispatcher_,
+                          [this, touch_source = std::move(touch_source), view_ref_koid]() mutable {
+                            input_->RegisterTouchSource(
+                                fidl::NaturalToHLCPP(std::move(touch_source)), view_ref_koid);
+                          });
         },
         /*register_mouse_source*/
-        [this](fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source,
+        [this](fidl::ServerEnd<fuchsia_ui_pointer::MouseSource> mouse_source,
                zx_koid_t view_ref_koid) {
-          input_->RegisterMouseSource(std::move(mouse_source), view_ref_koid);
+          async::PostTask(input_dispatcher_,
+                          [this, mouse_source = std::move(mouse_source), view_ref_koid]() mutable {
+                            input_->RegisterMouseSource(
+                                fidl::NaturalToHLCPP(std::move(mouse_source)), view_ref_koid);
+                          });
         });
 
     // TODO(https://fxbug.dev/42146099): these should be moved into FlatlandManager.
@@ -634,7 +649,7 @@ void App::InitializeInput() {
           focus_manager_.RequestFocus(requestor, request);
         }
       },
-      async_get_default_dispatcher());
+      input_dispatcher_);
 }
 
 void App::InitializeHeartbeat(display::Display& display) {

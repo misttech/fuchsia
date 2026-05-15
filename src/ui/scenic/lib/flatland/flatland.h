@@ -14,6 +14,7 @@
 #include <lib/fit/function.h>
 #include <lib/zx/channel.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <memory_resource>

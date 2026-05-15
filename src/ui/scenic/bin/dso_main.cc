@@ -20,6 +20,7 @@
 #include "src/lib/fxl/log_settings_command_line.h"
 #include "src/ui/scenic/bin/app.h"
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
+#include "src/ui/scenic/scenic_structured_config.h"
 
 int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t svc_handle,
                    zx_handle_t pkg_handle, zx_handle_t directory_request_handle,
@@ -44,7 +45,8 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
   auto svc_dir = std::make_shared<sys::ServiceDirectory>(zx::channel(svc_handle));
   zx::channel pkg_dir(pkg_handle);
   zx::channel out_dir(directory_request_handle);
-  zx::vmo config(config_handle);
+  zx::vmo config_vmo(config_handle);
+  auto config = scenic_structured_config::Config::CreateFromVmo(std::move(config_vmo));
   auto app_context = std::make_unique<sys::ComponentContext>(svc_dir, dispatcher);
 
   auto command_line = fxl::CommandLineFromArgcArgv(argc, argv);
@@ -93,7 +95,9 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
 
   // Instantiate Scenic app.
   // TODO(https://fxbug.dev/485919515): Free `app` when the program terminates
-  auto* const app = new scenic_impl::App{std::move(app_context),
+  auto* const app = new scenic_impl::App{dispatcher,
+                                         dispatcher,
+                                         std::move(app_context),
                                          fidl::ClientEnd<fuchsia_io::Directory>(std::move(pkg_dir)),
                                          fidl::ServerEnd<fuchsia_io::Directory>(std::move(out_dir)),
                                          std::move(config),

@@ -26,13 +26,13 @@ FlatlandManager::FlatlandManager(
     const std::shared_ptr<UberStructSystem>& uber_struct_system,
     const std::shared_ptr<LinkSystem>& link_system, std::shared_ptr<display::Display> display,
     std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> buffer_collection_importers,
-    fit::function<void(fidl::InterfaceRequest<fuchsia::ui::views::Focuser>, zx_koid_t)>
+    std::function<void(fidl::ServerEnd<fuchsia_ui_views::Focuser>, zx_koid_t)>
         register_view_focuser,
-    fit::function<void(fidl::InterfaceRequest<fuchsia::ui::views::ViewRefFocused>, zx_koid_t)>
+    std::function<void(fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused>, zx_koid_t)>
         register_view_ref_focused,
-    fit::function<void(fidl::InterfaceRequest<fuchsia::ui::pointer::TouchSource>, zx_koid_t)>
+    std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource>, zx_koid_t)>
         register_touch_source,
-    fit::function<void(fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource>, zx_koid_t)>
+    std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
         register_mouse_source)
     : flatland_presenter_(flatland_presenter),
       uber_struct_system_(uber_struct_system),
@@ -149,53 +149,14 @@ std::shared_ptr<Flatland> FlatlandManager::NewFlatland(
     const std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>&
         buffer_collection_importers,
     const FlatlandConfig& config) const {
-  return Flatland::New(
-      std::move(dispatcher_holder), fidl::HLCPPToNatural(std::move(request)), session_id,
-      std::move(destroy_instance_function), std::move(flatland_presenter), std::move(link_system),
-      std::move(uber_struct_queue), std::move(buffer_collection_importers),
-      // All the register callbacks will be called on the instance thread, so we
-      // must make sure to post the work back on the main thread.
-      /*register_view_focuser*/
-      [this](fidl::ServerEnd<fuchsia_ui_views::Focuser> focuser, zx_koid_t view_ref_koid) {
-        async::PostTask(executor_.dispatcher(),
-                        [this, focuser = std::move(focuser), view_ref_koid]() mutable {
-                          TRACE_DURATION("gfx", "FlatlandManager::NewFlatland[Focuser]");
-                          utils::CheckIsOnMainThread();
-                          register_view_focuser_(fidl::NaturalToHLCPP(focuser), view_ref_koid);
-                        });
-      },
-      /*register_view_ref_focused*/
-      [this](fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> view_ref_focused,
-             zx_koid_t view_ref_koid) {
-        async::PostTask(
-            executor_.dispatcher(),
-            [this, view_ref_focused = std::move(view_ref_focused), view_ref_koid]() mutable {
-              TRACE_DURATION("gfx", "FlatlandManager::NewFlatland[ViewRefFocused]");
-              utils::CheckIsOnMainThread();
-              register_view_ref_focused_(fidl::NaturalToHLCPP(view_ref_focused), view_ref_koid);
-            });
-      },
-      /*register_touch_source*/
-      [this](fidl::ServerEnd<fuchsia_ui_pointer::TouchSource> touch_source,
-             zx_koid_t view_ref_koid) {
-        async::PostTask(executor_.dispatcher(),
-                        [this, touch_source = std::move(touch_source), view_ref_koid]() mutable {
-                          TRACE_DURATION("gfx", "FlatlandManager::NewFlatland[TouchSource]");
-                          utils::CheckIsOnMainThread();
-                          register_touch_source_(fidl::NaturalToHLCPP(touch_source), view_ref_koid);
-                        });
-      },
-      /*register_mouse_source*/
-      [this](fidl::ServerEnd<fuchsia_ui_pointer::MouseSource> mouse_source,
-             zx_koid_t view_ref_koid) {
-        async::PostTask(executor_.dispatcher(),
-                        [this, mouse_source = std::move(mouse_source), view_ref_koid]() mutable {
-                          TRACE_DURATION("gfx", "FlatlandManager::NewFlatland[MouseSource]");
-                          utils::CheckIsOnMainThread();
-                          register_mouse_source_(fidl::NaturalToHLCPP(mouse_source), view_ref_koid);
-                        });
-      },
-      config);
+  return Flatland::New(std::move(dispatcher_holder), fidl::HLCPPToNatural(std::move(request)),
+                       session_id, std::move(destroy_instance_function),
+                       std::move(flatland_presenter), std::move(link_system),
+                       std::move(uber_struct_queue), std::move(buffer_collection_importers),
+                       /*register_view_focuser*/ register_view_focuser_,
+                       /*register_view_ref_focused*/ register_view_ref_focused_,
+                       /*register_touch_source*/ register_touch_source_,
+                       /*register_mouse_source*/ register_mouse_source_, config);
 }
 
 void FlatlandManager::CreateFlatlandDisplay(

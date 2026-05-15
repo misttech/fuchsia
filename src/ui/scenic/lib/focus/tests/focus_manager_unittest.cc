@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 
 namespace focus::test {
@@ -481,6 +482,20 @@ class FocusChainTest : public gtest::TestLoopFixture,
 
   std::vector<zx_koid_t> last_received_chain_;
   uint32_t num_focus_chains_received_ = 0;
+
+ protected:
+  void SetUp() override {
+    gtest::TestLoopFixture::SetUp();
+    dispatcher_setter_ =
+        std::make_unique<utils::ScopedThreadDispatcherSetter>(dispatcher(), dispatcher());
+  }
+
+  void TearDown() override {
+    dispatcher_setter_.reset();
+    gtest::TestLoopFixture::TearDown();
+  }
+
+  std::unique_ptr<utils::ScopedThreadDispatcherSetter> dispatcher_setter_;
 
  private:
   fidl::Binding<fuchsia::ui::focus::FocusChainListener> focus_listener_;

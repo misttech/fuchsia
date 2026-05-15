@@ -12,6 +12,7 @@
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/ui/scenic/lib/focus/focus_manager.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"
 
 // This test exercises the implementation of the fuchsia.ui.views.ViewRefFocused protocol, which
@@ -43,7 +44,12 @@ std::shared_ptr<const view_tree::Snapshot> TwoNodeSnapshot() {
 // Class fixture for TEST_F.
 class ViewRefFocusedTest : public gtest::TestLoopFixture {
  protected:
-  ViewRefFocusedTest() {
+  ViewRefFocusedTest() : focus_manager_() {}
+
+  void SetUp() override {
+    gtest::TestLoopFixture::SetUp();
+    dispatcher_setter_ =
+        std::make_unique<utils::ScopedThreadDispatcherSetter>(dispatcher(), dispatcher());
     focus_manager_.RegisterViewRefFocused(kNodeA, node_a_focused_.NewRequest());
     focus_manager_.RegisterViewRefFocused(kNodeB, node_b_focused_.NewRequest());
 
@@ -51,6 +57,12 @@ class ViewRefFocusedTest : public gtest::TestLoopFixture {
     FX_CHECK(node_b_focused_.is_bound());
   }
 
+  void TearDown() override {
+    dispatcher_setter_.reset();
+    gtest::TestLoopFixture::TearDown();
+  }
+
+  std::unique_ptr<utils::ScopedThreadDispatcherSetter> dispatcher_setter_;
   focus::FocusManager focus_manager_;
   fuchsia::ui::views::ViewRefFocusedPtr node_a_focused_;
   fuchsia::ui::views::ViewRefFocusedPtr node_b_focused_;

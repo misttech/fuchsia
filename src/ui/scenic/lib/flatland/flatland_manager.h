@@ -12,6 +12,7 @@
 #include <lib/async/default.h>
 #include <lib/fidl/cpp/binding.h>
 
+#include <functional>
 #include <map>
 #include <optional>
 #include <unordered_map>
@@ -31,20 +32,21 @@ namespace flatland {
 
 class FlatlandManager {
  public:
-  FlatlandManager(
-      async_dispatcher_t* dispatcher, const std::shared_ptr<FlatlandPresenter>& flatland_presenter,
-      const std::shared_ptr<UberStructSystem>& uber_struct_system,
-      const std::shared_ptr<LinkSystem>& link_system, std::shared_ptr<display::Display> display,
-      std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>
-          buffer_collection_importers,
-      fit::function<void(fidl::InterfaceRequest<fuchsia::ui::views::Focuser>, zx_koid_t)>
-          register_view_focuser,
-      fit::function<void(fidl::InterfaceRequest<fuchsia::ui::views::ViewRefFocused>, zx_koid_t)>
-          register_view_ref_focused,
-      fit::function<void(fidl::InterfaceRequest<fuchsia::ui::pointer::TouchSource>, zx_koid_t)>
-          register_touch_source,
-      fit::function<void(fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource>, zx_koid_t)>
-          register_mouse_source);
+  FlatlandManager(async_dispatcher_t* dispatcher,
+                  const std::shared_ptr<FlatlandPresenter>& flatland_presenter,
+                  const std::shared_ptr<UberStructSystem>& uber_struct_system,
+                  const std::shared_ptr<LinkSystem>& link_system,
+                  std::shared_ptr<display::Display> display,
+                  std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>
+                      buffer_collection_importers,
+                  std::function<void(fidl::ServerEnd<fuchsia_ui_views::Focuser>, zx_koid_t)>
+                      register_view_focuser,
+                  std::function<void(fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused>, zx_koid_t)>
+                      register_view_ref_focused,
+                  std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource>, zx_koid_t)>
+                      register_touch_source,
+                  std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
+                      register_mouse_source);
   ~FlatlandManager();
 
   scheduling::SessionId CreateFlatland(
@@ -171,13 +173,12 @@ class FlatlandManager {
   bool all_clients_opt_out_present_info_ = true;
 
   // Callbacks for registering View-bound protocols.
-  fit::function<void(fidl::InterfaceRequest<fuchsia::ui::views::Focuser>, zx_koid_t)>
-      register_view_focuser_;
-  fit::function<void(fidl::InterfaceRequest<fuchsia::ui::views::ViewRefFocused>, zx_koid_t)>
+  std::function<void(fidl::ServerEnd<fuchsia_ui_views::Focuser>, zx_koid_t)> register_view_focuser_;
+  std::function<void(fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused>, zx_koid_t)>
       register_view_ref_focused_;
-  fit::function<void(fidl::InterfaceRequest<fuchsia::ui::pointer::TouchSource>, zx_koid_t)>
+  std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource>, zx_koid_t)>
       register_touch_source_;
-  fit::function<void(fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource>, zx_koid_t)>
+  std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
       register_mouse_source_;
 
   // This loop executes tasks related to shutting down Flatland sessions and FlatlandDisplays.
