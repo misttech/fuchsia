@@ -97,7 +97,7 @@ function main {
     # TODO(https://fxbug.dev/504722186): Implement temporary server in `ffx target update`.
     if ! check-for-package-server >/dev/null 2>&1; then
       fx-info "Package server not running. Starting 'fx serve'..."
-      local server_name="fx-ota-serve-$(date +%Y-%m-%dT%H-%M-%S)"
+      local server_name="fx-ota-serve-$(date +%Y-%m-%dt%H-%M-%S)"
       fx-command-run serve --background --name "${server_name}" || return 1
       started_serve=true
       trap "fx-info \"Stopping package server...\"; fx-command-run ffx repository server stop ${server_name} || true" EXIT
