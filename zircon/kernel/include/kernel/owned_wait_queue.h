@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_INCLUDE_KERNEL_OWNED_WAIT_QUEUE_H_
 #define ZIRCON_KERNEL_INCLUDE_KERNEL_OWNED_WAIT_QUEUE_H_
 
+#include <lib/fit/result.h>
 #include <lib/kconcurrent/chainlock.h>
 
 #include <fbl/canary.h>
@@ -16,7 +17,6 @@
 #include <kernel/thread.h>
 #include <kernel/wait.h>
 #include <ktl/optional.h>
-#include <ktl/variant.h>
 
 // fwd decl so we can be friends with our tests.
 struct OwnedWaitQueueTopologyTests;
@@ -535,7 +535,7 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
                                         RequeueLockingDetails& requeue_locking_details_out)
       TA_REQ(chainlock_transaction_token) TA_TRY_ACQ(true, get_lock(), requeue_target.get_lock());
 
-  ktl::variant<ChainLock::Result, ReplaceOwnerLockingDetails> LockForOwnerReplacement(
+  fit::result<ChainLock::Result, ReplaceOwnerLockingDetails> LockForOwnerReplacement(
       Thread* new_owner, const Thread* blocking_thread = nullptr,
       bool propagate_new_owner_cycle_error = false, bool new_owner_is_locked = false)
       TA_REQ(chainlock_transaction_token, get_lock());
@@ -560,13 +560,13 @@ class OwnedWaitQueue : public WaitQueueBase, public fbl::DoublyLinkedListable<Ow
 
   // Common handler for PI chain locking/unlocking
   template <LockingBehavior Behavior, typename StartNodeType>
-  static ktl::variant<ChainLock::Result, const void*> LockPiChainCommon(StartNodeType& start)
+  static fit::result<ChainLock::Result, const void*> LockPiChainCommon(StartNodeType& start)
       TA_REQ(chainlock_transaction_token);
 
   template <typename StartNodeType>
-  static inline ChainLock::Result LockPiChainCommonRefuseCycle(StartNodeType& start)
+  static ChainLock::Result LockPiChainCommonRefuseCycle(StartNodeType& start)
       TA_REQ(chainlock_transaction_token) {
-    return ktl::get<ChainLock::Result>(LockPiChainCommon<LockingBehavior::RefuseCycle>(start));
+    return LockPiChainCommon<LockingBehavior::RefuseCycle>(start).error_value();
   }
 
   template <typename StartNodeType>

@@ -812,25 +812,25 @@ bool OwnedWaitQueue::LockForRequeueOperationOrBackoff(
   // already in the requeue target (stopping at the requeue target queue
   // itself), or if it passes through any of the threads we intend to requeue.
   if (new_requeue_target_owner) {
-    const auto variant_res =
+    const fit::result result =
         LockPiChainCommon<LockingBehavior::StopAtCycle>(*new_requeue_target_owner);
 
     // Since we chose the "StopAtCycle" behavior, if we got a ChainLock::Result back,
     // then we either succeeded locking the chain, or we need to back off.
-    if (ktl::holds_alternative<ChainLock::Result>(variant_res)) {
-      if (ktl::get<ChainLock::Result>(variant_res) == ChainLock::Result::Backoff) {
+    if (result.is_error()) {
+      if (result.error_value() == ChainLock::Result::Backoff) {
         UnlockLockedThreads();
         get_lock().Release();
         requeue_target.get_lock().Release();
         return false;
       }
       res.new_requeue_target_owner = new_requeue_target_owner;
-      DEBUG_ASSERT(ktl::get<ChainLock::Result>(variant_res) == ChainLock::Result::Ok);
+      DEBUG_ASSERT(result.error_value() == ChainLock::Result::Ok);
     } else {
       // if we found a stopping point, and that stopping point is not the
       // wake-queue, or a thread we plan to wake, we need to deny the new
       // owner, dropping the locks we just obtained in the process.
-      const void* const stop = ktl::get<const void*>(variant_res);
+      const void* const stop = result.value();
       const bool accept = [&]() {
         // If we hit nothing, or we hit the wake-queue, we can accept this owner.
         if ((stop == nullptr) || (stop == this)) {
@@ -882,33 +882,33 @@ bool OwnedWaitQueue::LockForRequeueOperationOrBackoff(
   const bool locked_current_requeue_target_owner =
       (requeue_target.owner_ != nullptr) && (requeue_target.owner_ != res.new_requeue_target_owner);
   if (locked_current_requeue_target_owner) {
-    const auto variant_res =
+    const fit::result result =
         LockPiChainCommon<LockingBehavior::StopAtCycle>(*requeue_target.owner_);
 
     // If we have a result, we either succeeded or need to back off.
-    if (ktl::holds_alternative<ChainLock::Result>(variant_res)) {
-      if (ktl::get<ChainLock::Result>(variant_res) == ChainLock::Result::Backoff) {
+    if (result.is_error()) {
+      if (result.error_value() == ChainLock::Result::Backoff) {
         UnlockOwnerChain(res.new_requeue_target_owner, res.new_requeue_target_owner_stop_point);
         UnlockLockedThreads();
         get_lock().Release();
         requeue_target.get_lock().Release();
         return false;
       }
-      DEBUG_ASSERT(ktl::get<ChainLock::Result>(variant_res) == ChainLock::Result::Ok);
+      DEBUG_ASSERT(result.error_value() == ChainLock::Result::Ok);
     } else {
       // Record the stopping point.
-      res.old_requeue_target_owner_stop_point = ktl::get<const void*>(variant_res);
+      res.old_requeue_target_owner_stop_point = result.value();
     }
   }
 
   // Finally, lock the exiting owner chain for the wake-queue.  It is OK if
   // this chain hits any of the locks we already hold.
   if (this->owner_ != nullptr) {
-    const auto variant_res = LockPiChainCommon<LockingBehavior::StopAtCycle>(*this->owner_);
+    const fit::result result = LockPiChainCommon<LockingBehavior::StopAtCycle>(*this->owner_);
 
     // If we have a result, we either succeeded or need to back off.
-    if (ktl::holds_alternative<ChainLock::Result>(variant_res)) {
-      if (ktl::get<ChainLock::Result>(variant_res) == ChainLock::Result::Backoff) {
+    if (result.is_error()) {
+      if (result.error_value() == ChainLock::Result::Backoff) {
         if (locked_current_requeue_target_owner) {
           UnlockOwnerChain(requeue_target.owner_, res.old_requeue_target_owner_stop_point);
         }
@@ -918,10 +918,10 @@ bool OwnedWaitQueue::LockForRequeueOperationOrBackoff(
         requeue_target.get_lock().Release();
         return false;
       }
-      DEBUG_ASSERT(ktl::get<ChainLock::Result>(variant_res) == ChainLock::Result::Ok);
+      DEBUG_ASSERT(result.error_value() == ChainLock::Result::Ok);
     } else {
       // Record the stopping point.
-      res.old_wake_queue_owner_stop_point = ktl::get<const void*>(variant_res);
+      res.old_wake_queue_owner_stop_point = result.value();
     }
   }
 
@@ -962,23 +962,23 @@ bool OwnedWaitQueue::TryLockForBAAOOperationLocked(
   // Now attempt to lock the rest of the old owner/new owner chain, backing
   // off if we have to.  This common code path with automatically deal with
   // nack'ing the proposed new owner when appropriate.
-  const auto variant_res = LockForOwnerReplacement(new_owner, current_thread);
-  if (ktl::holds_alternative<ChainLock::Result>(variant_res)) {
+  const fit::result result = LockForOwnerReplacement(new_owner, current_thread);
+  if (result.is_error()) {
     // The only valid lock result we can get back from this operation is
     // Backoff.  LockForOwnerReplacement should handle any cycles, and if the
     // locking operation succeeds, it is going to return locking details
     // instead of an "OK" ChainLock::Result.
-    DEBUG_ASSERT(ktl::get<ChainLock::Result>(variant_res) == ChainLock::Result::Backoff);
+    DEBUG_ASSERT(result.error_value() == ChainLock::Result::Backoff);
     current_thread->get_lock().Release();
     return false;
   }
 
   // Success, return the locking details.
-  details_out = ktl::get<ReplaceOwnerLockingDetails>(variant_res);
+  details_out = result.value();
   return true;
 }
 
-ktl::variant<ChainLock::Result, OwnedWaitQueue::ReplaceOwnerLockingDetails>
+fit::result<ChainLock::Result, OwnedWaitQueue::ReplaceOwnerLockingDetails>
 OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocking_thread,
                                         bool propagate_new_owner_cycle_error,
                                         bool new_owner_is_locked) {
@@ -1046,8 +1046,8 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
   // already a cycle in the graph before the proposed BAAO operation (which
   // would violate the PI graph invariants).
 
-  ReplaceOwnerLockingDetails res{_new_owner};
-  Thread*& new_owner = res.new_owner;
+  ReplaceOwnerLockingDetails details{_new_owner};
+  Thread*& new_owner = details.new_owner;
   Thread* const old_owner = owner_;
   const bool old_owner_is_blocking = (blocking_thread == old_owner);
 
@@ -1062,12 +1062,12 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
     // If we have no owner, and we are not assigning a new owner, then we are
     // done.
     if (old_owner == nullptr) {
-      return res;
+      return fit::ok(details);
     }
     // If the new owner is locked, then we are done.
     if (new_owner_is_locked) {
       new_owner->get_lock().AssertHeld();
-      return res;
+      return fit::ok(details);
     }
 
     // Lock the chain starting from the current owner.  This is case 1 where the old
@@ -1075,7 +1075,7 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
     // the blocking thread, this means that we can be sure that the old owner is
     // also not the blocking thread.
     DEBUG_ASSERT(old_owner_is_blocking == false);
-    const auto variant_res = LockPiChainCommon<LockingBehavior::StopAtCycle>(*new_owner);
+    const fit::result result = LockPiChainCommon<LockingBehavior::StopAtCycle>(*new_owner);
     const void* stop_point = nullptr;
 
     // If we didn't detect a cycle, and the existing owner is allowed to own
@@ -1083,16 +1083,16 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
     // succeeded and can simply get out holding the locks we have, or we failed
     // an need to back-off (which we can do immediately since we didn't obtain
     // any new locks).
-    if (ktl::holds_alternative<ChainLock::Result>(variant_res)) {
-      ChainLock::Result lock_res = ktl::get<ChainLock::Result>(variant_res);
+    if (result.is_error()) {
+      ChainLock::Result lock_res = result.error_value();
       if (lock_res != ChainLock::Result::Ok) {
         DEBUG_ASSERT(lock_res == ChainLock::Result::Backoff);
-        return lock_res;
+        return fit::error(lock_res);
       }
 
       new_owner->get_lock().AssertHeld();
       if (new_owner->can_own_wait_queues_ == true) {
-        return res;
+        return fit::ok(details);
       }
     } else {
       // We found a cycle which would have been formed by attempting to block a
@@ -1105,7 +1105,7 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
       // someone attempted to block this queue's current owner in the queue
       // itself.  We need to make sure to check for this special case before
       // calling UnlockPiChainCommon.
-      stop_point = ktl::get<const void*>(variant_res);
+      stop_point = result.value();
       DEBUG_ASSERT_MSG(
           stop_point == static_cast<const void*>(blocking_thread),
           "Detected cycle point is not the blocking thread.  (BT %p this %p stop_point %p)",
@@ -1129,9 +1129,9 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
   if (new_owner != nullptr) {
     // Start by attempting to lock the new owner path.
     const ChainLock::Result new_owner_lock_res =
-        !new_owner_is_locked ? ktl::get<ChainLock::Result>(
-                                   LockPiChainCommon<LockingBehavior::RefuseCycle>(*new_owner))
-                             : ChainLock::Result::Ok;
+        !new_owner_is_locked
+            ? LockPiChainCommon<LockingBehavior::RefuseCycle>(*new_owner).error_value()
+            : ChainLock::Result::Ok;
 
     if (new_owner_lock_res == ChainLock::Result::Ok) {
       // Things went well and we got the locks.  Check to make sure that our new
@@ -1149,7 +1149,7 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
         }
         new_owner = nullptr;
         if (old_owner == nullptr) {
-          return res;
+          return fit::ok(details);
         }
       }
 
@@ -1157,7 +1157,7 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
       // because it is not allowed to own queues.  If there is no current owner
       // we are finished.
       if (old_owner == nullptr) {
-        return res;
+        return fit::ok(details);
       }
 
       // If we didn't reject the new owner, we now need to lock the old owner
@@ -1180,12 +1180,11 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
         // OK since we are replacing the old owner with a (now validated) new
         // one, we just need to remember where to stop unlocking after we have
         // replaced the old owner with a new one.
-        const auto variant_res =
-            (old_owner_is_blocking == false)
-                ? LockPiChainCommon<LockingBehavior::StopAtCycle>(*old_owner)
-                : ktl::variant<ChainLock::Result, const void*>{blocking_thread};
-        if (ktl::holds_alternative<ChainLock::Result>(variant_res)) {
-          const ChainLock::Result old_owner_lock_res = ktl::get<ChainLock::Result>(variant_res);
+        const fit::result result = !old_owner_is_blocking
+                                       ? LockPiChainCommon<LockingBehavior::StopAtCycle>(*old_owner)
+                                       : fit::ok(static_cast<const void*>(blocking_thread));
+        if (result.is_error()) {
+          const ChainLock::Result old_owner_lock_res = result.error_value();
 
           // Since we chose StopAtCycle behavior for locking the old_owner path,
           // we know the result cannot be CycleDetected.  It is either OK (and
@@ -1193,7 +1192,7 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
           DEBUG_ASSERT(old_owner_lock_res != ChainLock::Result::Cycle);
           if (old_owner_lock_res == ChainLock::Result::Ok) {
             // Things went well, we are done.
-            return res;
+            return fit::ok(details);
           }
 
           // Need to back off and try again.  Drop the locks we were holding
@@ -1203,20 +1202,20 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
             new_owner->get_lock().AssertAcquired();
             UnlockPiChainCommon(*new_owner);
           }
-          return old_owner_lock_res;
-        } else {
-          // Success (although our paths intersect in some way).  Record our
-          // stopping point and get out.
-          DEBUG_ASSERT(ktl::holds_alternative<const void*>(variant_res));
-          res.stop_point = ktl::get<const void*>(variant_res);
-          DEBUG_ASSERT(res.stop_point != static_cast<const void*>(this));
-          return res;
+          return fit::error(old_owner_lock_res);
         }
+
+        // Success (although our paths intersect in some way).  Record our
+        // stopping point and get out.
+        DEBUG_ASSERT(result.is_ok());
+        details.stop_point = result.value();
+        DEBUG_ASSERT(details.stop_point != static_cast<const void*>(this));
+        return fit::ok(details);
       }
     } else if (new_owner_lock_res == ChainLock::Result::Backoff) {
       // Need to back off and try again.  We should not be holding any new
       // locks, so we can just propagate the error up and out.
-      return new_owner_lock_res;
+      return fit::error(new_owner_lock_res);
     } else {
       // We found a cycle, so we have to nack this new owner.  If the caller asked us to propagate
       // the error up the stack, we can just do so now.  We are not holding any extra locks (yet).
@@ -1226,12 +1225,12 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
       // we can simply drop into the Case 2 handler (below).
       DEBUG_ASSERT(new_owner_lock_res == ChainLock::Result::Cycle);
       if (propagate_new_owner_cycle_error) {
-        return ChainLock::Result::Cycle;
+        return fit::error(ChainLock::Result::Cycle);
       }
 
       new_owner = nullptr;
       if (old_owner == nullptr) {
-        return res;
+        return fit::ok(details);
       }
     }
   }
@@ -1245,11 +1244,11 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
   // See case 2 (above).  If the old owner is the blocking thread, there is
   // nothing more to lock, and we need to remember to stop unlocking at the old
   // owner during owner reassignment.
-  const auto variant_res = (old_owner_is_blocking == false)
-                               ? LockPiChainCommon<LockingBehavior::StopAtCycle>(*old_owner)
-                               : ktl::variant<ChainLock::Result, const void*>{blocking_thread};
-  if (ktl::holds_alternative<ChainLock::Result>(variant_res)) {
-    const ChainLock::Result lock_res = ktl::get<ChainLock::Result>(variant_res);
+  const fit::result result = !old_owner_is_blocking
+                                 ? LockPiChainCommon<LockingBehavior::StopAtCycle>(*old_owner)
+                                 : fit::ok(static_cast<const void*>(blocking_thread));
+  if (result.is_error()) {
+    const ChainLock::Result lock_res = result.error_value();
 
     // Since we chose StopAtCycle behavior for locking the old_owner path, we
     // know the result cannot be CycleDetected.  It is either OK (and we are
@@ -1257,28 +1256,28 @@ OwnedWaitQueue::LockForOwnerReplacement(Thread* _new_owner, const Thread* blocki
     DEBUG_ASSERT(lock_res != ChainLock::Result::Cycle);
     if (lock_res == ChainLock::Result::Ok) {
       // Things went well, we are done.
-      return res;
+      return fit::ok(details);
     }
 
     // Need to back off and try again.  We are not holding any new locks, so we
     // can just propagate the error.
     DEBUG_ASSERT(lock_res == ChainLock::Result::Backoff);
-    return lock_res;
-  } else {
-    // We must have found a cycle.  If we did, we successfully locked up until
-    // the point in the graph where that cycle was detected, and marked that as
-    // our stop point.  Since we are removing the old owner, we know that there
-    // must be a blocking thread, and the cycle we detected must have been found
-    // at that point.  ASSERT this, then Record our stop point in the results
-    // and we are done.
-    DEBUG_ASSERT(ktl::holds_alternative<const void*>(variant_res));
-    res.stop_point = ktl::get<const void*>(variant_res);
-    DEBUG_ASSERT_MSG(
-        res.stop_point == static_cast<const void*>(blocking_thread),
-        "Detected cycle point is not the blocking thread.  (BT %p this %p stop_point %p)",
-        blocking_thread, this, res.stop_point);
-    return res;
+    return fit::error(lock_res);
   }
+
+  // We must have found a cycle.  If we did, we successfully locked up until
+  // the point in the graph where that cycle was detected, and marked that as
+  // our stop point.  Since we are removing the old owner, we know that there
+  // must be a blocking thread, and the cycle we detected must have been found
+  // at that point.  ASSERT this, then Record our stop point in the results
+  // and we are done.
+  DEBUG_ASSERT(result.is_ok());
+  details.stop_point = result.value();
+  DEBUG_ASSERT_MSG(
+      details.stop_point == static_cast<const void*>(blocking_thread),
+      "Detected cycle point is not the blocking thread.  (BT %p this %p stop_point %p)",
+      blocking_thread, this, details.stop_point);
+  return fit::ok(details);
 }
 
 ktl::optional<Thread::UnblockList> OwnedWaitQueue::LockAndMakeWaiterListLocked(
@@ -1455,7 +1454,7 @@ void OwnedWaitQueue::UnlockAndClearWaiterListLocked(Thread::UnblockList list) {
 }
 
 template <OwnedWaitQueue::LockingBehavior Behavior, typename StartNodeType>
-ktl::variant<ChainLock::Result, const void*> OwnedWaitQueue::LockPiChainCommon(
+fit::result<ChainLock::Result, const void*> OwnedWaitQueue::LockPiChainCommon(
     StartNodeType& start) {
   Thread* next_thread{nullptr};
   WaitQueueBase* next_wq{nullptr};
@@ -1473,7 +1472,7 @@ ktl::variant<ChainLock::Result, const void*> OwnedWaitQueue::LockPiChainCommon(
     if (!skip_thread_lock) {
       // If we hit the end of the chain, we are done.
       if (next_thread == nullptr) {
-        return ChainLock::Result::Ok;
+        return fit::error(ChainLock::Result::Ok);
       }
 
       // Try to lock the next thread; if we fail, implement the specified locking
@@ -1483,7 +1482,7 @@ ktl::variant<ChainLock::Result, const void*> OwnedWaitQueue::LockPiChainCommon(
       if (ChainLock::Result result; !next_thread->get_lock().AcquireOrResult(result)) {
         if constexpr (Behavior == LockingBehavior::StopAtCycle) {
           if (result == ChainLock::Result::Cycle) {
-            return static_cast<const void*>(next_thread);
+            return fit::ok(static_cast<const void*>(next_thread));
           }
         }
 
@@ -1491,7 +1490,7 @@ ktl::variant<ChainLock::Result, const void*> OwnedWaitQueue::LockPiChainCommon(
           UnlockPiChainCommon(start, next_thread);
         }
 
-        return result;
+        return fit::error(result);
       }
       // We just checked for success, skip the assert and just mark this lock as
       // held for the static analyzer's sake.
@@ -1503,13 +1502,13 @@ ktl::variant<ChainLock::Result, const void*> OwnedWaitQueue::LockPiChainCommon(
 
     // If we hit the end of the chain, we are done.
     if (next_wq == nullptr) {
-      return ChainLock::Result::Ok;
+      return fit::error(ChainLock::Result::Ok);
     }
 
     if (ChainLock::Result result; !next_wq->get_lock().AcquireOrResult(result)) {
       if constexpr (Behavior == LockingBehavior::StopAtCycle) {
         if (result == ChainLock::Result::Cycle) {
-          return static_cast<const void*>(next_wq);
+          return fit::ok(static_cast<const void*>(next_wq));
         }
       }
 
@@ -1517,7 +1516,7 @@ ktl::variant<ChainLock::Result, const void*> OwnedWaitQueue::LockPiChainCommon(
         UnlockPiChainCommon(start, next_wq);
       }
 
-      return result;
+      return fit::error(result);
     }
 
     next_thread = GetQueueOwner(next_wq);
@@ -1693,9 +1692,10 @@ ChainLockTransaction::Result<zx_status_t> OwnedWaitQueue::AssignOwnerCommon(
   // Obtain the locks needed to change owner.  If, while obtaining locks, we
   // detect that the new owner proposal would generate a cycle, we nak the
   // entire operation with a BAD_STATE error and change nothing.
-  const auto variant_res = LockForOwnerReplacement(new_owner, nullptr, true, new_owner_is_locked);
-  if (ktl::holds_alternative<ChainLock::Result>(variant_res)) {
-    const ChainLock::Result lock_res = ktl::get<ChainLock::Result>(variant_res);
+  const fit::result<ChainLock::Result, ReplaceOwnerLockingDetails> result =
+      LockForOwnerReplacement(new_owner, nullptr, true, new_owner_is_locked);
+  if (result.is_error()) {
+    const ChainLock::Result lock_res = result.error_value();
     if (lock_res == ChainLock::Result::Cycle) {
       return ZX_ERR_BAD_STATE;
     }
@@ -1710,16 +1710,15 @@ ChainLockTransaction::Result<zx_status_t> OwnedWaitQueue::AssignOwnerCommon(
   // Go ahead and perform the assignment.  Start by removing any current
   // owner we have, dropping the locks along that path immediately after we
   // are done.
-  const auto& details = ktl::get<ReplaceOwnerLockingDetails>(variant_res);
   if (Thread* const old_owner = owner_; old_owner != nullptr) {
     old_owner->get_lock().AssertHeld();
     BeginPropagate(*this, *old_owner, RemoveSingleEdgeOp);
-    UnlockPiChainCommon(*old_owner, details.stop_point);
+    UnlockPiChainCommon(*old_owner, result->stop_point);
   }
 
   // Now, if we have a new owner to assign, perform the assignment, then
   // drop the locks along the new owner path.
-  DEBUG_ASSERT(details.new_owner == new_owner);
+  DEBUG_ASSERT(result->new_owner == new_owner);
   if (new_owner != nullptr) {
     new_owner->get_lock().AssertHeld();
     BeginPropagate(*this, *new_owner, AddSingleEdgeOp);
@@ -2225,9 +2224,9 @@ template void OwnedWaitQueue::BeginPropagate(Thread&, OwnedWaitQueue&, RemoveSin
                                              const SchedulerState::EffectiveProfile*);
 
 // Explicit instantiation of the common lock/unlock routines.
-template ktl::variant<ChainLock::Result, const void*>
+template fit::result<ChainLock::Result, const void*>
 OwnedWaitQueue::LockPiChainCommon<OwnedWaitQueue::LockingBehavior::RefuseCycle>(Thread& start);
-template ktl::variant<ChainLock::Result, const void*>
+template fit::result<ChainLock::Result, const void*>
 OwnedWaitQueue::LockPiChainCommon<OwnedWaitQueue::LockingBehavior::RefuseCycle>(WaitQueue& start);
 template void OwnedWaitQueue::UnlockPiChainCommon(Thread& start, const void* stop_point);
 template void OwnedWaitQueue::UnlockPiChainCommon(WaitQueue& start, const void* stop_point);
