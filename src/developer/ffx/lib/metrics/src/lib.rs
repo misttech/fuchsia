@@ -5,14 +5,17 @@
 use agents::{SystemEnvironment, is_invoked_by_agent};
 use analytics::metrics_state::MetricsStatus;
 use analytics::{
-    add_custom_event, ga4_metrics, initialize_ga4_metrics_service, redact_host_and_user_from,
+    AnalyticsError, add_custom_event, ga4_metrics, initialize_ga4_metrics_service,
+    redact_host_and_user_from,
 };
-use anyhow::{Context, Result};
+use anyhow::Context;
 use ffx_build_version::VersionInfo;
 use fuchsia_async::TimeoutExt;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+
+pub type Result<T> = std::result::Result<T, AnalyticsError>;
 
 pub const GA4_PROPERTY_ID: &str = "G-L10R82HSYT";
 pub const GA4_KEY: &str = "mHeVJ5GxQTCvAVCmVHn_dw";
@@ -76,7 +79,8 @@ pub async fn add_ffx_launch_event(
             Some("invoke"),
         )
         .await?;
-    metrics_svc.send_events().await.map_err(anyhow::Error::from)
+    metrics_svc.send_events().await?;
+    Ok(())
 }
 
 pub async fn add_daemon_metrics_event(request_str: &str) {
@@ -119,7 +123,6 @@ pub async fn add_flash_partition_event(
         ("file_size", file_size.into()),
         ("flash_time", u64_time.into()),
     ]);
-    add_custom_event(Some("ffx_flash"), None, None, custom_dimensions)
-        .await
-        .map_err(anyhow::Error::from)
+    add_custom_event(Some("ffx_flash"), None, None, custom_dimensions).await?;
+    Ok(())
 }
