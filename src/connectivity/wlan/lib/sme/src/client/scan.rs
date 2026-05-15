@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::Error;
 use crate::client::inspect;
+use crate::responder::Responder;
+use crate::{Error, MlmeRequest, MlmeSink};
 use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_mlme as fidl_mlme;
 use fidl_fuchsia_wlan_sme as fidl_sme;
 use fuchsia_inspect::NumericProperty;
+use futures::channel::mpsc;
 use ieee80211::{Bssid, Ssid};
 use log::warn;
 use std::collections::{HashMap, HashSet, hash_map};
@@ -17,6 +19,8 @@ use std::sync::{Arc, LazyLock};
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_common::ie::IesMerger;
+
+type ScanTxnId = u64;
 
 const PASSIVE_SCAN_CHANNEL_MS: u32 = 200;
 const ACTIVE_SCAN_PROBE_DELAY_MS: u32 = 5;
@@ -42,7 +46,63 @@ impl<T> DiscoveryScan<T> {
         self.tokens.append(&mut scan.tokens)
     }
 }
+/// Client end of a scheduled scan session.
+pub struct ScheduledScanReceiver {
+    scan_results_receiver: mpsc::UnboundedReceiver<fidl::Vmo>,
+    pub(crate) txn_id: ScanTxnId,
+    mlme_sink: MlmeSink,
+    stopped_by_firmware: bool,
+}
+impl ScheduledScanReceiver {
+    fn new(
+        scan_results_receiver: mpsc::UnboundedReceiver<fidl::Vmo>,
+        txn_id: ScanTxnId,
+        mlme_sink: MlmeSink,
+    ) -> Self {
+        Self { scan_results_receiver, txn_id, mlme_sink, stopped_by_firmware: false }
+    }
+}
+impl futures::stream::Stream for ScheduledScanReceiver {
+    type Item = fidl::Vmo;
 
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let poll_result = std::pin::Pin::new(&mut self.scan_results_receiver).poll_next(cx);
+        if let std::task::Poll::Ready(None) = poll_result {
+            self.stopped_by_firmware = true;
+        }
+        poll_result
+    }
+}
+impl Drop for ScheduledScanReceiver {
+    fn drop(&mut self) {
+        // If the firmware already stopped the scheduled scan, we do not need to send a stop
+        // command. Sending it anyway could result in MLME returning ZX_ERR_NOT_FOUND and
+        // logging errors.
+        if !self.stopped_by_firmware {
+            let mlme_req = fidl_mlme::MlmeStopScheduledScanRequest { txn_id: self.txn_id };
+            let (responder, _) = Responder::new();
+            self.mlme_sink.send(MlmeRequest::StopScheduledScan(mlme_req, responder));
+        }
+    }
+}
+
+/// Represents the internal state of an active scheduled scan. Used to accumulate streamed scheduled
+/// scan results and send them via VMO when ready.
+pub(crate) struct ScheduledScanState {
+    scan_results_sender: mpsc::UnboundedSender<fidl::Vmo>,
+    bss_map: std::collections::HashMap<
+        Bssid,
+        (fidl_ieee80211::BssDescription, wlan_common::ie::IesMerger),
+    >,
+}
+impl ScheduledScanState {
+    fn new(scan_results_sender: mpsc::UnboundedSender<fidl::Vmo>) -> Self {
+        Self { scan_results_sender, bss_map: HashMap::new() }
+    }
+}
 pub struct ScanScheduler<T> {
     // The currently running scan. We assume that MLME can handle a single concurrent scan
     // regardless of its own state.
@@ -51,7 +111,9 @@ pub struct ScanScheduler<T> {
     pending_discovery: Vec<DiscoveryScan<T>>,
     device_info: Arc<fidl_mlme::DeviceInfo>,
     spectrum_management_support: fidl_common::SpectrumManagementSupport,
-    last_mlme_txn_id: u64,
+    // Map of active scheduled scan transaction IDs to their internal states.
+    pub(crate) scheduled_scan_receivers: HashMap<ScanTxnId, ScheduledScanState>,
+    last_mlme_txn_id: ScanTxnId,
 }
 
 #[derive(Debug)]
@@ -59,7 +121,7 @@ enum ScanState<T> {
     NotScanning,
     ScanningToDiscover {
         cmd: DiscoveryScan<T>,
-        mlme_txn_id: u64,
+        mlme_txn_id: ScanTxnId,
         bss_map: HashMap<Bssid, (fidl_ieee80211::BssDescription, IesMerger)>,
     },
 }
@@ -81,6 +143,7 @@ impl<T> ScanScheduler<T> {
             pending_discovery: Vec::new(),
             device_info,
             spectrum_management_support,
+            scheduled_scan_receivers: HashMap::new(),
             last_mlme_txn_id: 0,
         }
     }
@@ -106,8 +169,37 @@ impl<T> ScanScheduler<T> {
         self.start_next_scan()
     }
 
+    // Returns a unique transaction ID for the next MLME transaction.
+    fn get_next_mlme_txn_id(&mut self) -> ScanTxnId {
+        self.last_mlme_txn_id += 1;
+        self.last_mlme_txn_id
+    }
+
+    pub(crate) fn start_scheduled_scan(
+        &mut self,
+        req: fidl_common::ScheduledScanRequest,
+        mlme_sink: MlmeSink,
+        responder: Responder<Result<(), i32>>,
+    ) -> ScheduledScanReceiver {
+        // Send start request to MLME with a new transaction ID
+        let txn_id = self.get_next_mlme_txn_id();
+        let mlme_req = fidl_mlme::MlmeStartScheduledScanRequest { txn_id, req };
+        mlme_sink.send(MlmeRequest::StartScheduledScan(mlme_req, responder));
+
+        // Create a channel to process scan results streamed from MLME
+        let (sender, receiver) = mpsc::unbounded();
+        let _ = self.scheduled_scan_receivers.insert(txn_id, ScheduledScanState::new(sender));
+        ScheduledScanReceiver::new(receiver, txn_id, mlme_sink)
+    }
+
     // Should be called for every OnScanResult event received from MLME.
     pub fn on_mlme_scan_result(&mut self, msg: fidl_mlme::ScanResult) -> Result<(), Error> {
+        // First check if this belongs to a scheduled scan session.
+        if let Some(session) = self.scheduled_scan_receivers.get_mut(&msg.txn_id) {
+            maybe_insert_bss(&mut session.bss_map, msg.bss);
+            return Ok(());
+        }
+
         match &mut self.current {
             ScanState::NotScanning => Err(Error::ScanResultNotScanning),
             ScanState::ScanningToDiscover { mlme_txn_id, .. } if *mlme_txn_id != msg.txn_id => {
@@ -118,6 +210,46 @@ impl<T> ScanScheduler<T> {
                 Ok(())
             }
         }
+    }
+
+    pub(crate) fn on_scheduled_scan_matches_available(
+        &mut self,
+        txn_id: ScanTxnId,
+        sme_inspect: &Arc<inspect::SmeTree>,
+        cfg: &crate::client::ClientConfig,
+        device_info: &fidl_mlme::DeviceInfo,
+        security_support: &fidl_common::SecuritySupport,
+    ) {
+        if let Some(session) = self.scheduled_scan_receivers.get_mut(&txn_id) {
+            let bss_map = std::mem::take(&mut session.bss_map);
+            let bss_description_list = convert_bss_map(bss_map, None::<Ssid>, sme_inspect);
+            let results_fidl = bss_description_list
+                .into_iter()
+                .map(|bss_description| {
+                    cfg.create_scan_result(
+                        // TODO(https://fxbug.dev/42164608): ScanEnd drops the timestamp from MLME
+                        zx::MonotonicInstant::from_nanos(0),
+                        bss_description,
+                        device_info,
+                        security_support,
+                    )
+                })
+                .map(Into::into)
+                .collect::<Vec<_>>();
+
+            match wlan_common::scan::write_vmo(results_fidl) {
+                Ok(vmo) => {
+                    let _ = session.scan_results_sender.unbounded_send(vmo);
+                }
+                Err(e) => {
+                    log::error!("Failed to write VMO for sched scan results: {:?}", e);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn on_scheduled_scan_stopped_by_firmware(&mut self, txn_id: ScanTxnId) {
+        let _ = self.scheduled_scan_receivers.remove(&txn_id);
     }
 
     // Should be called for every OnScanEnd event received from MLME.
@@ -148,17 +280,17 @@ impl<T> ScanScheduler<T> {
     fn start_next_scan(&mut self) -> Option<fidl_mlme::ScanRequest> {
         let has_pending = !self.pending_discovery.is_empty();
         (matches!(self.current, ScanState::NotScanning) && has_pending).then(|| {
-            self.last_mlme_txn_id += 1;
+            let txn_id = self.get_next_mlme_txn_id();
             let scan_cmd = self.pending_discovery.remove(0);
             let request = new_discovery_scan_request(
-                self.last_mlme_txn_id,
+                txn_id,
                 &scan_cmd,
                 &self.device_info,
                 self.spectrum_management_support.clone(),
             );
             self.current = ScanState::ScanningToDiscover {
                 cmd: scan_cmd,
-                mlme_txn_id: self.last_mlme_txn_id,
+                mlme_txn_id: txn_id,
                 bss_map: HashMap::new(),
             };
             request
@@ -224,7 +356,7 @@ fn convert_bss_map(
 }
 
 fn new_scan_request(
-    mlme_txn_id: u64,
+    mlme_txn_id: ScanTxnId,
     scan_request: fidl_sme::ScanRequest,
     ssid_list: Vec<Ssid>,
     device_info: &fidl_mlme::DeviceInfo,
@@ -258,7 +390,7 @@ fn new_scan_request(
 }
 
 fn new_discovery_scan_request<T>(
-    mlme_txn_id: u64,
+    mlme_txn_id: ScanTxnId,
     discovery_scan: &DiscoveryScan<T>,
     device_info: &fidl_mlme::DeviceInfo,
     spectrum_management_support: fidl_common::SpectrumManagementSupport,
@@ -375,6 +507,16 @@ mod tests {
     static CLIENT_ADDR: LazyLock<MacAddr> =
         LazyLock::new(|| [0x7A, 0xE7, 0x76, 0xD9, 0xF2, 0x67].into());
 
+    impl ScheduledScanReceiver {
+        pub(crate) fn try_next(&mut self) -> Result<Option<fidl::Vmo>, mpsc::TryRecvError> {
+            let res = self.scan_results_receiver.try_next();
+            if let Ok(None) = res {
+                self.stopped_by_firmware = true;
+            }
+            res
+        }
+    }
+
     fn passive_discovery_scan(token: i32) -> DiscoveryScan<i32> {
         DiscoveryScan::new(
             token,
@@ -385,6 +527,7 @@ mod tests {
     #[test]
     fn discovery_scan() {
         let mut sched = create_sched();
+        let _next_txn_id = 0;
         let (_inspector, sme_inspect) = sme_inspect();
         let req = sched
             .enqueue_scan_to_discover(passive_discovery_scan(10))
@@ -424,8 +567,7 @@ mod tests {
         let (scan_end, mlme_req) = assert_matches!(
             sched.on_mlme_scan_end(
                 fidl_mlme::ScanEnd { txn_id, code: fidl_mlme::ScanResultCode::Success },
-                &sme_inspect,
-            ),
+                &sme_inspect),
             Ok((scan_end, mlme_req)) => (scan_end, mlme_req)
         );
         assert!(mlme_req.is_none());
@@ -482,6 +624,7 @@ mod tests {
         returned_bss_description_list: Vec<BssDescription>,
     ) {
         let mut sched = create_sched();
+        let _next_txn_id = 0;
         let (_inspector, sme_inspect) = sme_inspect();
         let req = sched
             .enqueue_scan_to_discover(passive_discovery_scan(10))
@@ -499,8 +642,7 @@ mod tests {
         let (scan_end, mlme_req) = assert_matches!(
             sched.on_mlme_scan_end(
                 fidl_mlme::ScanEnd { txn_id, code: fidl_mlme::ScanResultCode::Success },
-                &sme_inspect,
-            ),
+                &sme_inspect),
             Ok((scan_end, mlme_req)) => (scan_end, mlme_req)
         );
         assert!(mlme_req.is_none());
@@ -520,6 +662,7 @@ mod tests {
     #[test]
     fn discovery_scan_merge_ies() {
         let mut sched = create_sched();
+        let _next_txn_id = 0;
         let (_inspector, sme_inspect) = sme_inspect();
         let req = sched
             .enqueue_scan_to_discover(passive_discovery_scan(10))
@@ -552,8 +695,7 @@ mod tests {
         let (scan_end, mlme_req) = assert_matches!(
             sched.on_mlme_scan_end(
                 fidl_mlme::ScanEnd { txn_id, code: fidl_mlme::ScanResultCode::Success },
-                &sme_inspect,
-            ),
+                &sme_inspect),
             Ok((scan_end, mlme_req)) => (scan_end, mlme_req)
         );
         assert!(mlme_req.is_none());
@@ -602,6 +744,7 @@ mod tests {
     #[test]
     fn test_passive_discovery_scan_args() {
         let mut sched = create_sched();
+        let _next_txn_id = 0;
         let req = sched
             .enqueue_scan_to_discover(passive_discovery_scan(10))
             .expect("expected a ScanRequest");
@@ -627,6 +770,7 @@ mod tests {
         }
         let mut sched: ScanScheduler<i32> =
             ScanScheduler::new(Arc::new(device_info), spectrum_management);
+        let _next_txn_id = 0;
         let scan_cmd = DiscoveryScan::new(
             10,
             fidl_sme::ScanRequest::Active(fidl_sme::ActiveScanRequest {
@@ -650,6 +794,7 @@ mod tests {
         let device_info = device_info_with_channel(vec![1, 36, 165]);
         let mut sched: ScanScheduler<i32> =
             ScanScheduler::new(Arc::new(device_info), fake_spectrum_management_support_empty());
+        let _next_txn_id = 0;
         let ssid1: Vec<u8> = Ssid::try_from("ssid1").unwrap().into();
         let ssid2: Vec<u8> = Ssid::try_from("ssid2").unwrap().into();
         let scan_cmd = DiscoveryScan::new(
@@ -682,6 +827,7 @@ mod tests {
             10,
             fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![1, 36] }),
         );
+        let _next_txn_id = 0;
         let req = sched.enqueue_scan_to_discover(scan_cmd).expect("expected a ScanRequest");
 
         assert_eq!(req.txn_id, 1);
@@ -699,6 +845,7 @@ mod tests {
         let device_info = device_info_with_channel(vec![1, 36]);
         let mut sched: ScanScheduler<i32> =
             ScanScheduler::new(Arc::new(device_info), fake_spectrum_management_support_empty());
+        let _next_txn_id = 0;
         // Request a scan that includes a channel not supported by the device.
         let scan_cmd = DiscoveryScan::new(
             10,
@@ -719,6 +866,7 @@ mod tests {
         let device_info = device_info_with_channel(vec![1, 200]);
         let mut sched: ScanScheduler<i32> =
             ScanScheduler::new(Arc::new(device_info), fake_spectrum_management_support_empty());
+        let _next_txn_id = 0;
         // Request a scan that includes an invalid channel.
         let scan_cmd = DiscoveryScan::new(
             10,
@@ -737,6 +885,7 @@ mod tests {
         let device_info = device_info_with_channel(vec![1, 36, 165]);
         let mut sched: ScanScheduler<i32> =
             ScanScheduler::new(Arc::new(device_info), fake_spectrum_management_support_empty());
+        let _next_txn_id = 0;
         let scan_cmd = DiscoveryScan::new(
             10,
             fidl_sme::ScanRequest::Passive(fidl_sme::PassiveScanRequest { channels: vec![] }),
@@ -754,6 +903,7 @@ mod tests {
     #[test]
     fn test_discovery_scans_dedupe_single_group() {
         let mut sched = create_sched();
+        let _next_txn_id = 0;
         let (_inspector, sme_inspect) = sme_inspect();
 
         // Post one scan command, expect a message to MLME
@@ -792,8 +942,7 @@ mod tests {
         let (scan_end, mlme_req) = assert_matches!(
             sched.on_mlme_scan_end(
                 fidl_mlme::ScanEnd { txn_id, code: fidl_mlme::ScanResultCode::Success },
-                &sme_inspect,
-            ),
+                &sme_inspect),
             Ok((scan_end, mlme_req)) => (scan_end, mlme_req)
         );
 
@@ -858,8 +1007,7 @@ mod tests {
         let (scan_end, mlme_req) = assert_matches!(
             sched.on_mlme_scan_end(
                 fidl_mlme::ScanEnd { txn_id, code: fidl_mlme::ScanResultCode::Success },
-                &sme_inspect,
-            ),
+                &sme_inspect),
             Ok((scan_end, mlme_req)) => (scan_end, mlme_req)
         );
 
@@ -886,8 +1034,7 @@ mod tests {
         let (scan_end, mlme_req) = assert_matches!(
             sched.on_mlme_scan_end(
                 fidl_mlme::ScanEnd { txn_id, code: fidl_mlme::ScanResultCode::Success },
-                &sme_inspect,
-            ),
+                &sme_inspect),
             Ok((scan_end, mlme_req)) => (scan_end, mlme_req)
         );
 
@@ -901,6 +1048,7 @@ mod tests {
     #[test]
     fn test_discovery_scan_result_wrong_txn_id() {
         let mut sched = create_sched();
+        let _next_txn_id = 0;
 
         // Post a passive scan command, expect a message to MLME
         let mlme_req = sched
@@ -941,6 +1089,7 @@ mod tests {
     #[test]
     fn test_discovery_scan_end_wrong_txn_id() {
         let mut sched = create_sched();
+        let _next_txn_id = 0;
         let (_inspector, sme_inspect) = sme_inspect();
 
         // Post a passive scan command, expect a message to MLME
@@ -952,7 +1101,7 @@ mod tests {
         assert_matches!(
             sched.on_mlme_scan_end(
                 fidl_mlme::ScanEnd { txn_id: txn_id + 1, code: fidl_mlme::ScanResultCode::Success },
-                &sme_inspect,
+                &sme_inspect
             ),
             Err(Error::ScanEndWrongTxnId)
         );
@@ -961,11 +1110,12 @@ mod tests {
     #[test]
     fn test_discovery_scan_end_not_scanning() {
         let mut sched = create_sched();
+        let _next_txn_id = 0;
         let (_inspector, sme_inspect) = sme_inspect();
         assert_matches!(
             sched.on_mlme_scan_end(
                 fidl_mlme::ScanEnd { txn_id: 0, code: fidl_mlme::ScanResultCode::Success },
-                &sme_inspect,
+                &sme_inspect
             ),
             Err(Error::ScanEndNotScanning)
         );
@@ -1018,5 +1168,77 @@ mod tests {
             &fake_spectrum_management_support_empty(),
         ));
         (inspector, sme_inspect)
+    }
+
+    #[test]
+    fn test_scan_scheduler_routing() {
+        let mut sched = create_sched();
+        let (mlme_sink, mut _mlme_stream) = mpsc::unbounded();
+        let mlme_sink = MlmeSink::new(mlme_sink);
+
+        let (responder, _receiver) = Responder::new();
+        let mut stream = sched.start_scheduled_scan(
+            fidl_common::ScheduledScanRequest { ..Default::default() },
+            mlme_sink,
+            responder,
+        );
+        let sched_txn_id = stream.txn_id;
+        assert_eq!(sched_txn_id, 1);
+
+        // Enqueue discovery scan
+        let req = sched.enqueue_scan_to_discover(passive_discovery_scan(10)).unwrap();
+        let disc_txn_id = req.txn_id;
+        assert_eq!(disc_txn_id, 2);
+
+        // Send scan result for scheduled scan (txn_id 1)
+        let bss1 = fake_fidl_bss_description!(Open, ssid: Ssid::try_from("scheduled").unwrap());
+        sched
+            .on_mlme_scan_result(fidl_mlme::ScanResult {
+                txn_id: sched_txn_id,
+                timestamp_nanos: 1000,
+                bss: bss1.clone(),
+            })
+            .unwrap();
+
+        // Send scan result for discovery scan (txn_id 2)
+        let bss2 = fake_fidl_bss_description!(Open, ssid: Ssid::try_from("discovery").unwrap());
+        sched
+            .on_mlme_scan_result(fidl_mlme::ScanResult {
+                txn_id: disc_txn_id,
+                timestamp_nanos: 2000,
+                bss: bss2.clone(),
+            })
+            .unwrap();
+
+        // Trigger matches available for scheduled scan
+        let (_inspector, sme_inspect) = sme_inspect();
+        let cfg = crate::client::ClientConfig::default();
+        let device_info = test_utils::fake_device_info(*CLIENT_ADDR);
+        let security_support = wlan_common::test_utils::fake_features::fake_security_support();
+        sched.on_scheduled_scan_matches_available(
+            sched_txn_id,
+            &sme_inspect,
+            &cfg,
+            &device_info,
+            &security_support,
+        );
+
+        // Verify scheduled scan receiver got the matches
+        assert_matches!(
+            stream.try_next(),
+            Ok(Some(scan_results)) => {
+                let results = wlan_common::scan::read_vmo(scan_results).unwrap();
+                assert_eq!(results.len(), 1);
+                let parsed_bss = wlan_common::bss::BssDescription::try_from(results[0].bss_description.clone()).unwrap();
+                assert_eq!(parsed_bss.ssid, Ssid::try_from("scheduled").unwrap());
+            }
+        );
+
+        // Verify discovery scan state has the match
+        if let ScanState::ScanningToDiscover { bss_map, .. } = &sched.current {
+            assert!(bss_map.contains_key(&Bssid::from(bss2.bssid)));
+        } else {
+            panic!("Expected ScanState::ScanningToDiscover");
+        }
     }
 }

@@ -16,6 +16,7 @@ pub mod test_utils;
 
 use self::event::Event;
 use self::protection::{Protection, SecurityContext};
+pub use self::scan::ScheduledScanReceiver;
 use self::scan::{DiscoveryScan, ScanScheduler};
 use self::state::{ClientState, ConnectCommand};
 use crate::responder::Responder;
@@ -70,8 +71,6 @@ use self::internal::*;
 // connection attempt. For example, a new connection attempt can be triggered
 // by a DisassociateInd message from the MLME.
 pub type ConnectionAttemptId = u64;
-
-pub type ScanTxnId = u64;
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ClientConfig {
@@ -831,6 +830,24 @@ impl ClientSme {
         receiver
     }
 
+    pub fn on_start_scheduled_scan_command(
+        &mut self,
+        req: fidl_common::ScheduledScanRequest,
+    ) -> (oneshot::Receiver<Result<(), i32>>, ScheduledScanReceiver) {
+        let (responder, receiver) = Responder::new();
+        let session =
+            self.scan_sched.start_scheduled_scan(req, self.context.mlme_sink.clone(), responder);
+        (receiver, session)
+    }
+
+    pub fn on_get_scheduled_scan_enabled_command(
+        &mut self,
+    ) -> oneshot::Receiver<Result<fidl_mlme::MlmeGetScheduledScanEnabledResponse, i32>> {
+        let (responder, receiver) = Responder::new();
+        self.context.mlme_sink.send(MlmeRequest::GetScheduledScanEnabled(responder));
+        receiver
+    }
+
     pub fn on_clone_inspect_vmo(&self) -> Option<fidl::Vmo> {
         self.context.inspect.clone_vmo_data()
     }
@@ -942,10 +959,11 @@ impl super::Station for ClientSme {
 
     fn on_mlme_event(&mut self, event: fidl_mlme::MlmeEvent) {
         match event {
-            fidl_mlme::MlmeEvent::OnScanResult { result } => self
-                .scan_sched
-                .on_mlme_scan_result(result)
-                .unwrap_or_else(|e| error!("scan result error: {:?}", e)),
+            fidl_mlme::MlmeEvent::OnScanResult { result } => {
+                self.scan_sched
+                    .on_mlme_scan_result(result)
+                    .unwrap_or_else(|e| error!("scan result error: {:?}", e));
+            }
             fidl_mlme::MlmeEvent::OnScanEnd { end } => {
                 match self.scan_sched.on_mlme_scan_end(end, &self.context.inspect) {
                     Err(e) => error!("scan end error: {:?}", e),
@@ -985,6 +1003,18 @@ impl super::Station for ClientSme {
                         }
                     }
                 }
+            }
+            fidl_mlme::MlmeEvent::OnScheduledScanMatchesAvailable { txn_id } => {
+                self.scan_sched.on_scheduled_scan_matches_available(
+                    txn_id,
+                    &self.context.inspect,
+                    &self.cfg,
+                    &self.context.device_info,
+                    &self.context.security_support,
+                );
+            }
+            fidl_mlme::MlmeEvent::OnScheduledScanStoppedByFirmware { txn_id } => {
+                self.scan_sched.on_scheduled_scan_stopped_by_firmware(txn_id);
             }
             fidl_mlme::MlmeEvent::OnWmmStatusResp { status, resp } => {
                 for responder in self.wmm_status_responders.drain(..) {
@@ -1714,6 +1744,110 @@ mod tests {
         assert_eq!(ClientSmeStatus::Connecting(Ssid::try_from("foo").unwrap()), sme.status());
 
         assert_matches!(mlme_stream.try_next(), Ok(Some(MlmeRequest::Connect(..))));
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_scheduled_scan_session_events() {
+        let (mut sme, mut mlme_stream, _time_stream) = create_sme().await;
+
+        let req = fidl_common::ScheduledScanRequest { ..Default::default() };
+
+        let (receiver, mut session_event_stream) = sme.on_start_scheduled_scan_command(req.clone());
+
+        assert_matches!(
+            mlme_stream.try_next(),
+            Ok(Some(MlmeRequest::StartScheduledScan(fidl_mlme::MlmeStartScheduledScanRequest { txn_id: id, req: _ }, responder))) => {
+                assert_eq!(id, 1);
+                responder.respond(Ok(()));
+            }
+        );
+
+        let result = receiver.await.expect("receiver failed");
+        assert!(result.is_ok());
+
+        let bss = fake_bss_description!(Open, ssid: Ssid::try_from("foo").unwrap());
+        sme.on_mlme_event(fidl_mlme::MlmeEvent::OnScanResult {
+            result: fidl_mlme::ScanResult { txn_id: 1, timestamp_nanos: 1000, bss: bss.into() },
+        });
+
+        sme.on_mlme_event(fidl_mlme::MlmeEvent::OnScheduledScanMatchesAvailable { txn_id: 1 });
+
+        assert_matches!(
+            session_event_stream.try_next(),
+            Ok(Some(scan_results)) => {
+                let results = wlan_common::scan::read_vmo(scan_results).unwrap();
+                assert_eq!(results.len(), 1);
+                let parsed_bss = wlan_common::bss::BssDescription::try_from(results[0].bss_description.clone()).unwrap();
+                assert_eq!(parsed_bss.ssid, Ssid::try_from("foo").unwrap());
+            }
+        );
+
+        sme.on_mlme_event(fidl_mlme::MlmeEvent::OnScheduledScanStoppedByFirmware { txn_id: 1 });
+
+        assert_matches!(session_event_stream.try_next(), Ok(None));
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_concurrent_scheduled_scan_sessions() {
+        let (mut sme, mut mlme_stream, _time_stream) = create_sme().await;
+        let req = fidl_common::ScheduledScanRequest { ..Default::default() };
+
+        // Start session 1
+        let (receiver1, mut session_event_stream1) =
+            sme.on_start_scheduled_scan_command(req.clone());
+
+        assert_matches!(
+            mlme_stream.try_next(),
+            Ok(Some(MlmeRequest::StartScheduledScan(fidl_mlme::MlmeStartScheduledScanRequest { txn_id: id, req: _ }, responder))) => {
+                assert_eq!(id, 1);
+                assert_eq!(session_event_stream1.txn_id, 1);
+                responder.respond(Ok(()));
+            }
+        );
+        let _ = receiver1.await.unwrap();
+
+        // Start start session 2
+        let (receiver2, mut session_event_stream2) =
+            sme.on_start_scheduled_scan_command(req.clone());
+
+        assert_matches!(
+            mlme_stream.try_next(),
+            Ok(Some(MlmeRequest::StartScheduledScan(fidl_mlme::MlmeStartScheduledScanRequest { txn_id: id, req: _ }, responder))) => {
+                assert_eq!(id, 2);
+                assert_eq!(session_event_stream2.txn_id, 2);
+                responder.respond(Ok(()));
+            }
+        );
+        let _ = receiver2.await.unwrap();
+
+        // Send results for session 1
+        let bss1 = fake_bss_description!(Open, ssid: Ssid::try_from("session1").unwrap());
+        sme.on_mlme_event(fidl_mlme::MlmeEvent::OnScanResult {
+            result: fidl_mlme::ScanResult { txn_id: 1, timestamp_nanos: 1000, bss: bss1.into() },
+        });
+        sme.on_mlme_event(fidl_mlme::MlmeEvent::OnScheduledScanMatchesAvailable { txn_id: 1 });
+
+        // Verify session 1 receives results
+        assert_matches!(
+            session_event_stream1.try_next(),
+            Ok(Some(scan_results)) => {
+                let results = wlan_common::scan::read_vmo(scan_results).unwrap();
+                assert_eq!(results.len(), 1);
+                let parsed_bss = wlan_common::bss::BssDescription::try_from(results[0].bss_description.clone()).unwrap();
+                assert_eq!(parsed_bss.ssid, Ssid::try_from("session1").unwrap());
+            }
+        );
+
+        // Verify session 2 has not received results
+        assert_matches!(session_event_stream2.try_next(), Err(_));
+
+        // Stop stop session 2
+        sme.on_mlme_event(fidl_mlme::MlmeEvent::OnScheduledScanStoppedByFirmware { txn_id: 2 });
+
+        assert_matches!(session_event_stream2.try_next(), Ok(None));
+
+        // Verify session 1 is still alive
+        assert!(sme.scan_sched.scheduled_scan_receivers.contains_key(&1));
     }
 
     #[fuchsia::test(allow_stalls = false)]

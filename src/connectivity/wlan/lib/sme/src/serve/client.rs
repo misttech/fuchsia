@@ -4,13 +4,12 @@
 
 use crate::client::{
     self as client_sme, ConnectResult, ConnectTransactionEvent, ConnectTransactionStream,
-    RoamResult,
+    RoamResult, ScheduledScanReceiver,
 };
 use crate::{MlmeEventStream, MlmeSink, MlmeStream};
-use fidl::endpoints::{RequestStream, ServerEnd};
+use fidl::endpoints::{ControlHandle, RequestStream, ServerEnd};
 use fidl_fuchsia_wlan_common as fidl_common;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
-use fidl_fuchsia_wlan_ieee80211::BssDescription as BssDescriptionFidl;
 use fidl_fuchsia_wlan_mlme as fidl_mlme;
 use fidl_fuchsia_wlan_sme::{self as fidl_sme, ClientSmeRequest, TelemetryRequest};
 use fuchsia_sync::Mutex;
@@ -98,6 +97,21 @@ async fn handle_fidl_request(
         }
         ClientSmeRequest::Status { responder } => responder.send(&status(sme)),
         ClientSmeRequest::WmmStatus { responder } => wmm_status(sme, responder).await,
+        ClientSmeRequest::StartScheduledScan { req, txn, responder } => {
+            start_scheduled_scan(sme, req, txn, responder).await
+        }
+
+        ClientSmeRequest::GetScheduledScanEnabled { responder } => {
+            let receiver = sme.lock().on_get_scheduled_scan_enabled_command();
+            let resp = match receiver.await {
+                Ok(result) => result,
+                Err(_) => Err(zx::sys::ZX_ERR_CANCELED),
+            };
+            responder
+                .send(resp.as_ref().map(|r| !r.active_txn_ids.is_empty()).map_err(|e| *e))
+                .unwrap_or_else(|e| error!("Error sending response: {:?}", e));
+            Ok(())
+        }
         ClientSmeRequest::ScanForController { req, responder } => {
             Ok(scan(sme, req, |result| match result {
                 Ok(results) => responder.send(Ok(&results[..])).map_err(|e| e.into()),
@@ -261,6 +275,64 @@ async fn connect(
     Ok(())
 }
 
+/// Serves a scheduled scan session by processing a stream for events sent by MLME and processed in
+/// SME's scan scheduler, and a stream for client-initiated cancellations.
+async fn serve_sched_scan_session(
+    txn_handle: fidl_sme::ScheduledScanTransactionControlHandle,
+    txn_stream: fidl_sme::ScheduledScanTransactionRequestStream,
+    session: ScheduledScanReceiver,
+) -> Result<(), anyhow::Error> {
+    // Client will close the transaction channel to cancel session.
+    let mut cancellation_stream = txn_stream.fuse();
+    let mut session_stream = session.fuse();
+    loop {
+        futures::select! {
+            scan_results = session_stream.next() => {
+                if let Some(vmo) = scan_results {
+                    txn_handle.send_on_scheduled_scan_matches_available(vmo)?;
+                } else {
+                    // Stream closed naturally (SME dropped sender because firmware stopped it).
+                    txn_handle.shutdown_with_epitaph(zx::Status::OK);
+                    break;
+                }
+            },
+            _ = cancellation_stream.next() => {
+                // Client dropped transaction stream. Cleanup is handled by ScheduledScanReceiver's
+                // Drop implementation.
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Creates a new scheduled scan session and starts serving it.
+async fn start_scheduled_scan(
+    sme: &Mutex<Sme>,
+    req: fidl_common::ScheduledScanRequest,
+    txn_server: ServerEnd<fidl_sme::ScheduledScanTransactionMarker>,
+    responder: fidl_sme::ClientSmeStartScheduledScanResponder,
+) -> Result<(), fidl::Error> {
+    let txn_receiver_stream = txn_server.into_stream();
+    let txn_sender_handle = txn_receiver_stream.control_handle();
+    let (receiver, session) = sme.lock().on_start_scheduled_scan_command(req);
+    match receiver.await.unwrap_or_else(|_| Err(zx::Status::CANCELED.into_raw())) {
+        Ok(()) => {
+            responder.send(Ok(()))?;
+            serve_sched_scan_session(txn_sender_handle, txn_receiver_stream, session)
+                .await
+                .unwrap_or_else(|e| {
+                    error!("Error serving sched scan txn stream: {:?}", e);
+                });
+        }
+        Err(status) => {
+            responder.send(Err(status))?;
+            txn_sender_handle.shutdown_with_epitaph(zx::Status::from_raw(status));
+        }
+    }
+    Ok(())
+}
+
 async fn serve_connect_txn_stream(
     handle: Option<fidl_sme::ConnectTransactionControlHandle>,
     mut connect_txn_stream: ConnectTransactionStream,
@@ -350,7 +422,8 @@ fn convert_connect_result(result: &ConnectResult, is_reconnect: bool) -> fidl_sm
 fn convert_roam_result(result: &RoamResult) -> fidl_sme::RoamResult {
     match result {
         RoamResult::Success(bss) => {
-            let bss_description = Some(Box::new(BssDescriptionFidl::from(*bss.clone())));
+            let bss_description =
+                Some(Box::new(fidl_ieee80211::BssDescription::from(*bss.clone())));
             fidl_sme::RoamResult {
                 bssid: bss.bssid.to_array(),
                 status_code: fidl_ieee80211::StatusCode::Success,

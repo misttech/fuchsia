@@ -233,6 +233,16 @@ closed protocol ConnectTransaction {
     });
 };
 
+/// Transaction channel for a scheduled scan operation. To cancel a scheduled scan, drop this
+/// channel. If the scan is canceled by the driver/firmware, this channel will be closed by SME.
+closed protocol ScheduledScanTransaction {
+    /// Indicates that an individual scan within the scheduled scan plan has been completed
+    /// and all results have been sent for that individual scan.
+    strict -> OnScheduledScanMatchesAvailable(resource struct {
+        scan_results zx.Handle:VMO;
+    });
+};
+
 type RadioConfig = struct {
     phy ieee80211.WlanPhyType;
     channel ieee80211.WlanChannel;
@@ -284,6 +294,18 @@ closed protocol ClientSme {
         // The VMO encodes ScanResultVector with RFC-0120 FIDL persistence.
         scan_results zx.Handle:VMO;
     }) error ScanErrorCode;
+
+    /// Starts scheduled scanning.
+    strict StartScheduledScan(resource struct {
+        req fuchsia.wlan.common.ScheduledScanRequest;
+        txn server_end:ScheduledScanTransaction;
+    }) -> () error zx.Status;
+
+    /// Returns whether any scheduled scans are currently active.
+    strict GetScheduledScanEnabled() -> (struct {
+        enabled bool;
+    }) error zx.Status;
+
     strict Connect(resource struct {
         req ConnectRequest;
         txn server_end:<ConnectTransaction, optional>;
