@@ -53,7 +53,17 @@ pub enum FfxError {
     },
 }
 
-// Utility macro for constructing a FfxError::Error with a simple error string.
+/// Constructs a user-facing `FfxError` containing an error string, with a default exit status code of 1.
+///
+/// This should be used when you need to return an error type that will be printed directly
+/// to the user terminal without a generic BUG report stack trace prefix.
+///
+/// # Examples
+///
+/// ```no_run
+/// let err = ffx_error!("Target device connection refused.");
+/// let err_fmt = ffx_error!("Failed to open file: {}", path.display());
+/// ```
 #[macro_export]
 macro_rules! ffx_error {
     ($error_message: expr) => {{
@@ -64,6 +74,13 @@ macro_rules! ffx_error {
     };
 }
 
+/// Constructs a user-facing `FfxError`, allowing the caller to explicitly specify a custom exit status code.
+///
+/// # Examples
+///
+/// ```no_run
+/// let err = ffx_error_with_code!(2, "Configuration value not found.");
+/// ```
 #[macro_export]
 macro_rules! ffx_error_with_code {
     ($error_code:expr, $error_message:expr $(,)?) => {{
@@ -74,6 +91,16 @@ macro_rules! ffx_error_with_code {
     };
 }
 
+/// A convenience macro that constructs a user-facing `FfxError` and immediately bails (returns early)
+/// from the current function context, wrapping it in `Err(...)`.
+///
+/// # Examples
+///
+/// ```no_run
+/// if !path.exists() {
+///     ffx_bail!("Staged target file path does not exist.");
+/// }
+/// ```
 #[macro_export]
 macro_rules! ffx_bail {
     ($msg:literal $(,)?) => {
@@ -84,6 +111,16 @@ macro_rules! ffx_bail {
     };
 }
 
+/// A convenience macro that constructs a user-facing `FfxError` with a custom exit code and immediately
+/// returns early from the function, wrapping it in `Err(...)`.
+///
+/// # Examples
+///
+/// ```no_run
+/// if !key_exists {
+///     ffx_bail_with_code!(2, "Target configuration key missing.");
+/// }
+/// ```
 #[macro_export]
 macro_rules! ffx_bail_with_code {
     ($code:literal, $msg:literal $(,)?) => {
