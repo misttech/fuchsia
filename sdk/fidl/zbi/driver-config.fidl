@@ -68,6 +68,9 @@ type KernelDriver = enum : uint32 {
     /// 'MNFP'
     MoonflowerPower = 0x4d4e4650;
 
+    /// 'IRSP'
+    IrisPower = 0x49525350;
+
     /// 'IMXU'
     ImxUart = 0x55584d49;
 

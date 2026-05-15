@@ -78,6 +78,9 @@ typedef uint32_t zbi_kernel_driver_t;
 // 'MNFP'
 #define ZBI_KERNEL_DRIVER_MOONFLOWER_POWER ((zbi_kernel_driver_t)(0x4d4e4650u))
 
+// 'IRSP'
+#define ZBI_KERNEL_DRIVER_IRIS_POWER ((zbi_kernel_driver_t)(0x49525350u))
+
 // 'IMXU'
 #define ZBI_KERNEL_DRIVER_IMX_UART ((zbi_kernel_driver_t)(0x55584d49u))
 

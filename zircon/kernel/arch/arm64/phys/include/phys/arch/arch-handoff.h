@@ -89,6 +89,9 @@ struct ArchPhysHandoff {
   // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_MOONFLOWER_POWER) payload.
   bool moonflower_power_driver = false;
 
+  // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_IRIS_POWER) payload.
+  bool iris_power_driver = false;
+
   // See ArchPatchInfo, above.
   Arm64AlternateVbar alternate_vbar = Arm64AlternateVbar::kNone;
 };

@@ -16,6 +16,7 @@
 #include <dev/init.h>
 #include <dev/interrupt/arm_gicv2_init.h>
 #include <dev/interrupt/arm_gicv3_init.h>
+#include <dev/power/iris/init.h>
 #include <dev/power/moonflower/init.h>
 #include <dev/power/motmot/init.h>
 #include <dev/psci.h>
@@ -63,6 +64,10 @@ void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
 
   if (arch_handoff.moonflower_power_driver) {
     moonflower_power_init_early();
+  }
+
+  if (arch_handoff.iris_power_driver) {
+    iris_power_init_early();
   }
 
   if (BootOptions::Get()->allow_debug_uart_suspend) {

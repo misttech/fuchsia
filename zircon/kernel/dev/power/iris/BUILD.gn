@@ -1,0 +1,20 @@
+# Copyright 2026 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/cpp/library_headers.gni")
+
+library_headers("headers") {
+  headers = [ "dev/power/iris/init.h" ]
+}
+
+source_set("iris") {
+  sources = [ "power.cc" ]
+  public_deps = [ ":headers" ]
+  deps = [
+    "//zircon/kernel/dev/pdev/power",
+    "//zircon/kernel/dev/psci",
+  ]
+}
