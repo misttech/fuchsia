@@ -2,12 +2,111 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Unused stub target to satisfy Bazel genquery for correct incremental builds.
-# See details in https://fxbug.dev/500609897
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//build/bazel/bazel_idk:defs.bzl", "idk_cc_shared_library_zx")
 
-# TODO(https://fxbug.dev/506781894): Replace with real targets when available.
-filegroup(
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["fdio.ld"])
+
+cc_library(
+    name = "cleanpath",
+    srcs = [
+        "cleanpath.cc",
+        "cleanpath.h",
+    ],
+    visibility = [":__subpackages__"],
+    deps = ["//zircon/system/ulib/fbl"],
+)
+
+idk_cc_shared_library_zx(
     name = "fdio",
-    srcs = [],
-    visibility = ["//visibility:public"],
+    srcs = [
+        "bsdsocket.cc",
+        "directory.cc",
+        "errno.cc",
+        "event.cc",
+        "fd.cc",
+        "fdio.cc",
+        "fdio_slot.cc",
+        "fdio_slot.h",
+        "fdio_state.cc",
+        "fdio_state.h",
+        "fdio_unistd.cc",
+        "fdio_unistd.h",
+        "get_client.h",
+        "internal.h",
+        "io.cc",
+        "iovec.cc",
+        "mem.cc",
+        "namespace/local-connection.cc",
+        "namespace/local-connection.h",
+        "namespace/local-filesystem.cc",
+        "namespace/local-filesystem.h",
+        "namespace/local-vnode.cc",
+        "namespace/local-vnode.h",
+        "namespace/namespace.cc",
+        "namespace/namespace.h",
+        "null.cc",
+        "remoteio.cc",
+        "socket.cc",
+        "socket.h",
+        "spawn.cc",
+        "stubs.cc",
+        "timer.cc",
+        "uname.cc",
+        "unistd.cc",
+        "unistd.h",
+        "unsafe.cc",
+        "waitable.cc",
+        "watcher.cc",
+        "zxio.cc",
+        "zxio.h",
+    ],
+    hdrs = [
+        "include/lib/fdio/directory.h",
+        "include/lib/fdio/fd.h",
+        "include/lib/fdio/fdio.h",
+        "include/lib/fdio/io.h",
+        "include/lib/fdio/limits.h",
+        "include/lib/fdio/namespace.h",
+        "include/lib/fdio/processargs.h",
+        "include/lib/fdio/spawn.h",
+        "include/lib/fdio/unsafe.h",
+        "include/lib/fdio/watcher.h",
+    ],
+    api_area = "Kernel",
+    category = "partner",
+    copts = [
+        "-Wno-vla-cxx-extension",
+        "-Wno-deprecated-pragma",
+    ],
+    idk_name = "fdio",
+    implementation_deps = [
+        ":cleanpath",
+        "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
+        "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
+        "//sdk/fidl/fuchsia.net:fuchsia.net_cpp",
+        "//sdk/fidl/fuchsia.net.name:fuchsia.net.name_cpp",
+        "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_cpp",
+        "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_cpp",
+        "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_cpp",
+        "//sdk/fidl/fuchsia.process:fuchsia.process_cpp",
+        "//sdk/lib/fidl",
+        "//sdk/lib/fit",
+        "//sdk/lib/zxio",
+        "//sdk/lib/zxio:inception",
+        "//zircon/system/ulib/fbl",
+        "//zircon/system/ulib/zx",
+        "//zircon/third_party/ulib/safemath",
+
+        # @bazel2gn:skip
+        "//zircon/third_party/ulib/musl:getifaddrs-internal",
+    ],
+    inputs = ["fdio.ld"],
+    ldflags = [
+        "-Wl,--version-script=sdk/lib/fdio/fdio.ld",  # @bazel2gn:raw_overwrite:"-Wl,--version-script=" + rebase_path("fdio.ld", root_build_dir)
+    ],
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    version_script = ":fdio.ld",
 )

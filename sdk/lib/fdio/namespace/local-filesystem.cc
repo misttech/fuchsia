@@ -6,6 +6,7 @@
 
 #include <lib/fdio/directory.h>
 #include <lib/fdio/namespace.h>
+#include <lib/fdio/zxio.h>
 #include <lib/fit/defer.h>
 #include <lib/stdcompat/string_view.h>
 #include <lib/zx/channel.h>
@@ -18,7 +19,6 @@
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 #include <fbl/string.h>
-#include <sdk/lib/fdio/zxio.h>
 
 #include "local-connection.h"
 #include "local-vnode.h"

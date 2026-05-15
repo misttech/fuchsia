@@ -42,6 +42,7 @@ ALL_CC_SOURCE_LIBRARY_ATOMS = STABLE_CC_SOURCE_LIBRARY_ATOMS + UNSTABLE_CC_SOURC
 CC_PREBUILT_SHARED_LIBRARY_ATOMS = [
     # buildifier: keep sorted
     "//sdk/lib/async-default:async-default_idk",
+    "//sdk/lib/fdio:fdio_idk",
 ]
 
 CC_PREBUILT_STATIC_LIBRARY_ATOMS = [
