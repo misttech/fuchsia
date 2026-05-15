@@ -1192,39 +1192,23 @@ fn read_cstring(buf: &mut dyn Read) -> Result<Vec<u8>, std::io::Error> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ffx_config::{ConfigLevel, test_init};
-    use serde_json::json;
+
     use std::io::{Read, Write};
     use tempfile::TempDir;
 
     #[fuchsia::test]
     fn test_load() {
-        // Set up the test environment and set the ssh key paths
-        let env = test_init().expect("test env init");
-        env.context
-            .query(SSH_PUB_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &env.context,
-                json!(["$ENV_PATH_THAT_IS_NOT_SET", "/expected/default", "someother"]),
+        let env = ffx_config::test_env()
+            .user_config(
+                SSH_PUB_KEY,
+                vec!["$ENV_PATH_THAT_IS_NOT_SET", "/expected/default", "someother"],
             )
-            .expect("set ssh.pub");
-        env.context
-            .query(SSH_PRIVATE_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &env.context,
-                json!([
-                    "$ENV_PATH_THAT_IS_NOT_SET_2",
-                    "/expected/default/private",
-                    "someother/place"
-                ]),
+            .user_config(
+                SSH_PRIVATE_KEY,
+                vec!["$ENV_PATH_THAT_IS_NOT_SET_2", "/expected/default/private", "someother/place"],
             )
-            .expect("set ssh.priv");
-
-        // set the config
+            .build()
+            .expect("test env init");
 
         let ssh_files = match SshKeyFiles::load(&env.context) {
             Ok(ssh) => ssh,
@@ -1924,32 +1908,17 @@ mod test {
 
     #[fuchsia::test]
     fn test_find_key_dirs_pub_and_private() {
-        let env = test_init().expect("test env init");
-        // These key locations don't really make sense since one is a directory and one is a file
-        // if we expect these values to be true, but we're going to just ignore that. We pop one
-        // element to ensure we have the directory.
-        env.context
-            .query(SSH_PUB_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &env.context,
-                json!(["$ENV_PATH_THAT_IS_NOT_SET", "/expected/default", "/someother/thing"]),
+        let env = ffx_config::test_env()
+            .user_config(
+                SSH_PUB_KEY,
+                vec!["$ENV_PATH_THAT_IS_NOT_SET", "/expected/default", "/someother/thing"],
             )
-            .expect("set ssh.pub");
-        env.context
-            .query(SSH_PRIVATE_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &env.context,
-                json!([
-                    "$ENV_PATH_THAT_IS_NOT_SET_2",
-                    "/expected/default/private",
-                    "someother/place"
-                ]),
+            .user_config(
+                SSH_PRIVATE_KEY,
+                vec!["$ENV_PATH_THAT_IS_NOT_SET_2", "/expected/default/private", "someother/place"],
             )
-            .expect("set ssh.priv");
+            .build()
+            .expect("test env init");
 
         let dirs = local_ssh_key_dirs(&env.context).unwrap();
         assert!(dirs.iter().any(|d| d.display().to_string() == "/expected/default"));

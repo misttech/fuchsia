@@ -420,19 +420,19 @@ pub(crate) async fn get_virtual_devices(product_bundle: &ProductBundle) -> Resul
 mod tests {
     use super::*;
     use emulator_instance::{CpuArchitecture, PortMapping};
-    use ffx_config::ConfigLevel;
+
     use ffx_emulator_common::config::{
         EMU_DEFAULT_DEVICE, EMU_DEFAULT_ENGINE, EMU_DEFAULT_GPU, EMU_START_TIMEOUT,
     };
     use regex::Regex;
-    use serde_json::json;
+
     use std::fs::create_dir_all;
     use std::io::Write;
     use tempfile::tempdir;
 
     #[fuchsia::test]
     async fn test_apply_command_line_options() -> Result<()> {
-        let env = ffx_config::test_init().unwrap();
+        let env = ffx_config::test_env().build().unwrap();
         let emulator_instances = EmulatorInstances::new(PathBuf::new());
 
         // Set up some test data to be applied.
@@ -481,14 +481,13 @@ mod tests {
         assert_eq!(opts.runtime.name, "SomeName");
         assert_eq!(opts.runtime.upscript, None);
 
-        env.context
-            .query(EMU_UPSCRIPT_FILE)
-            .level(Some(ConfigLevel::User))
+        let env2 = ffx_config::test_env()
+            .user_config(EMU_UPSCRIPT_FILE, "/path/to/upscript")
             .build()
-            .set(&env.context, json!("/path/to/upscript".to_string()))?;
+            .unwrap();
 
         let opts =
-            apply_command_line_options(opts, &cmd, &emulator_instances, &env.context).await?;
+            apply_command_line_options(opts, &cmd, &emulator_instances, &env2.context).await?;
         assert_eq!(opts.runtime.upscript, Some(PathBuf::from("/path/to/upscript")));
 
         // Test relative file paths
@@ -543,7 +542,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_config_backed_values() -> Result<()> {
-        let env = ffx_config::test_init().unwrap();
+        let env = ffx_config::test_env().build().unwrap();
         let mut cmd = StartCommand::default();
         let emu_config = EmulatorConfiguration::default();
 
@@ -561,34 +560,21 @@ mod tests {
         let opts = result.unwrap();
         assert_eq!(opts.host.gpu, GpuType::SwiftshaderIndirect);
 
-        env.context
-            .query(EMU_DEFAULT_DEVICE)
-            .level(Some(ConfigLevel::User))
+        let env2 = ffx_config::test_env()
+            .user_config(EMU_DEFAULT_DEVICE, "my_device")
+            .user_config(EMU_DEFAULT_ENGINE, "qemu")
+            .user_config(EMU_DEFAULT_GPU, "host")
+            .user_config(EMU_START_TIMEOUT, 120)
             .build()
-            .set(&env.context, json!("my_device"))?;
-        env.context
-            .query(EMU_DEFAULT_ENGINE)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, json!("qemu"))?;
-        env.context
-            .query(EMU_DEFAULT_GPU)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, json!("host"))?;
-        env.context
-            .query(EMU_START_TIMEOUT)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, json!(120))?;
+            .unwrap();
 
-        assert_eq!(cmd.device(&env.context).unwrap(), Some(String::from("my_device")));
-        assert_eq!(cmd.engine(&env.context).unwrap(), "qemu");
-        assert_eq!(cmd.gpu(&env.context).unwrap(), "host");
-        assert_eq!(cmd.startup_timeout(&env.context).unwrap(), 120);
+        assert_eq!(cmd.device(&env2.context).unwrap(), Some(String::from("my_device")));
+        assert_eq!(cmd.engine(&env2.context).unwrap(), "qemu");
+        assert_eq!(cmd.gpu(&env2.context).unwrap(), "host");
+        assert_eq!(cmd.startup_timeout(&env2.context).unwrap(), 120);
 
         let result =
-            apply_command_line_options(emu_config.clone(), &cmd, &emu_instances, &env.context)
+            apply_command_line_options(emu_config.clone(), &cmd, &emu_instances, &env2.context)
                 .await;
         assert!(result.is_ok(), "{:?}", result.err());
         let opts = result.unwrap();
@@ -596,9 +582,9 @@ mod tests {
 
         cmd.gpu = Some(String::from("swiftshader_indirect"));
 
-        assert_eq!(cmd.gpu(&env.context).unwrap(), "swiftshader_indirect");
+        assert_eq!(cmd.gpu(&env2.context).unwrap(), "swiftshader_indirect");
         let result =
-            apply_command_line_options(emu_config.clone(), &cmd, &emu_instances, &env.context)
+            apply_command_line_options(emu_config.clone(), &cmd, &emu_instances, &env2.context)
                 .await;
         assert!(result.is_ok(), "{:?}", result.err());
         let opts = result.unwrap();
@@ -609,7 +595,6 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_accel_auto() -> Result<()> {
-        let env = ffx_config::test_init().unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
         let file_path = temp_path.join("kvm");
         create_dir_all(&temp_path).expect("Create all temp directory");
@@ -617,16 +602,10 @@ mod tests {
         let file = File::create(&file_path).expect("Create temp file");
         let mut perms = file.metadata().expect("Get file metadata").permissions();
 
-        env.context.query(KVM_PATH).level(Some(ConfigLevel::User)).build().set(
-            &env.context,
-            json!(
-                file_path
-                    .as_path()
-                    .to_str()
-                    .expect("Couldn't convert file_path to str")
-                    .to_string()
-            ),
-        )?;
+        let env = ffx_config::test_env()
+            .user_config(KVM_PATH, file_path.to_str().unwrap())
+            .build()
+            .unwrap();
         let emu_instances = EmulatorInstances::new(temp_path.clone());
 
         // Set up some test data to be applied.

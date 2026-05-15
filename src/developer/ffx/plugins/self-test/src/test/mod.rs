@@ -25,13 +25,12 @@ async fn set_value_in_isolate(
     config_key: &str,
     value: Value,
 ) -> Result<()> {
-    isolate
-        .env_context()
-        .query(config_key)
-        .level(Some(ffx_config::ConfigLevel::User))
-        .build()
-        .set(&isolate.env_context(), value)
-        .map_err(anyhow::Error::from)
+    let ctx = isolate.env_context();
+    let env = ctx.load()?;
+    let mut config = ffx_config::Config::from_env(&env)?;
+    config.set(config_key, ffx_config::ConfigLevel::User, value)?;
+    config.save()?;
+    Ok(())
 }
 
 fn subtest_log_file(isolate: &ffx_isolate::Isolate) -> PathBuf {

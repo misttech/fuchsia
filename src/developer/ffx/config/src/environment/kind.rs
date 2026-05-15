@@ -44,6 +44,28 @@ impl EnvironmentKind {
                 | EnvironmentKind::ConfigDomain { isolate_root: Some(_), .. }
         )
     }
+
+    pub fn build_dir(&self) -> Option<&Path> {
+        match self {
+            EnvironmentKind::InTree { build_dir, .. } => build_dir.as_deref(),
+            EnvironmentKind::ConfigDomain { domain, .. } => {
+                Some(domain.get_build_dir()?.as_std_path())
+            }
+            _ => None,
+        }
+    }
+
+    pub fn get_default_overrides(&self) -> crate::ConfigMap {
+        use EnvironmentKind::*;
+        let mut cm = match self {
+            ConfigDomain { domain, .. } => domain.get_config_defaults().clone(),
+            _ => crate::ConfigMap::default(),
+        };
+        if self.is_isolated() {
+            crate::aliases::add_isolation_default(&mut cm);
+        }
+        cm
+    }
 }
 
 impl std::fmt::Display for EnvironmentKind {

@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::{EnvironmentKind, ExecutableKind};
+use super::{EnvironmentFiles, EnvironmentKind, ExecutableKind};
 use crate::api::ConfigError;
 use crate::api::value::{TryConvert, ValueStrategy};
-use crate::cache::Cache;
-use crate::storage::{AssertNoEnv, Config};
+use crate::storage::{AssertNoEnv, Config, StorageError};
 use crate::{ConfigMap, ConfigQueryBuilder, Environment, is_analytics_disabled};
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -17,7 +16,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -61,6 +60,12 @@ pub enum ContextError {
 
     #[error("AssertNoEnv error: {0}")]
     AssertNoEnv(#[from] crate::storage::AssertNoEnvError),
+
+    #[error("Config load error: {0}")]
+    ConfigLoad(#[from] StorageError),
+
+    #[error("Path error: {0}")]
+    Path(#[from] camino::FromPathError),
 }
 
 /// A name for the type used as an environment variable mapping for isolation override
@@ -71,10 +76,10 @@ pub(crate) type EnvVars = HashMap<String, String>;
 pub struct EnvironmentContext {
     kind: EnvironmentKind,
     exe_kind: ExecutableKind,
-    env_vars: Option<EnvVars>,
+    pub(crate) env_vars: Option<EnvVars>,
     pub(crate) runtime_args: ConfigMap,
     env_file_path: Option<PathBuf>,
-    pub(crate) cache: Arc<crate::cache::Cache<Config>>,
+    pub(crate) config: Config,
     self_path: PathBuf,
     // A target spec is an Option<String>. The extra Option<> indicates whether it has been set.
     override_target_spec: Option<Option<String>>,
@@ -90,7 +95,7 @@ impl Default for EnvironmentContext {
             env_vars: Default::default(),
             runtime_args: Default::default(),
             env_file_path: Default::default(),
-            cache: Default::default(),
+            config: Config::default(),
             override_target_spec: None,
             self_path: std::env::current_exe().unwrap(),
             no_environment: false,
@@ -119,6 +124,17 @@ pub enum EnvironmentDetectError {
 }
 
 impl EnvironmentContext {
+    fn load_env_files(path: &Path) -> Result<EnvironmentFiles, ContextError> {
+        let file = match File::open(path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(EnvironmentFiles::default());
+            }
+            Err(e) => return Err(e.into()),
+        };
+        serde_json::from_reader(std::io::BufReader::new(file)).map_err(Into::into)
+    }
+
     /// Initializes a new environment type with the given kind and runtime arguments.
     pub(crate) fn new(
         kind: EnvironmentKind,
@@ -127,25 +143,58 @@ impl EnvironmentContext {
         runtime_args: ConfigMap,
         env_file_path: Option<PathBuf>,
         no_environment: bool,
-    ) -> Self {
-        let cache = Arc::default();
-        Self {
+    ) -> Result<Self, ContextError> {
+        let config = if !no_environment {
+            let env_path = match &env_file_path {
+                Some(path) => path.clone(),
+                None => kind.get_default_env_path()?,
+            };
+            let env_files = Self::load_env_files(&env_path)?;
+
+            let user_conf = env_files.user.or_else(|| kind.get_default_user_file_path().ok());
+            let build_conf = if let Some(build_config_path) = kind.get_build_config_file() {
+                Some(build_config_path.into())
+            } else {
+                let dir = kind.build_dir();
+                dir.and_then(|d| {
+                    env_files
+                        .build
+                        .as_ref()
+                        .and_then(|dirs| dirs.get(d).cloned())
+                        .or_else(|| kind.get_default_build_dir_config_path(d).ok())
+                })
+            };
+            let global_conf = env_files.global;
+
+            let is_isolated = kind.is_isolated();
+            Config::from_paths(
+                user_conf,
+                build_conf,
+                global_conf,
+                runtime_args.clone(),
+                kind.get_default_overrides(),
+                is_isolated,
+            )?
+        } else {
+            Config::new(None, None, None, runtime_args.clone(), kind.get_default_overrides())
+        };
+
+        Ok(Self {
             kind,
             exe_kind,
             env_vars,
             runtime_args,
             env_file_path,
-            cache,
+            config,
             override_target_spec: None,
             self_path: std::env::current_exe().unwrap(),
             no_environment,
-        }
+        })
     }
 
     /// Initializes an environment type that is just the bare minimum, containing no ambient configuration, only
     /// the runtime args.
     pub fn strict(exe_kind: ExecutableKind, runtime_args: ConfigMap) -> Result<Self, ContextError> {
-        let cache = Arc::new(Cache::<Config>::new(None));
         let mut res = Self {
             kind: EnvironmentKind::StrictContext,
             exe_kind: exe_kind.clone(),
@@ -155,7 +204,7 @@ impl EnvironmentContext {
             env_file_path: None,
             no_environment: true,
             override_target_spec: None,
-            cache,
+            config: Config::new(None, None, None, runtime_args.clone(), ConfigMap::new()),
             self_path: std::env::current_exe().unwrap(),
         };
 
@@ -181,7 +230,7 @@ impl EnvironmentContext {
         runtime_args: ConfigMap,
         isolate_root: Option<PathBuf>,
         no_environment: bool,
-    ) -> Self {
+    ) -> Result<Self, ContextError> {
         Self::new(
             EnvironmentKind::ConfigDomain { domain: Box::new(domain), isolate_root },
             exe_kind,
@@ -204,7 +253,7 @@ impl EnvironmentContext {
         let domain_config = ConfigDomain::find_root(&domain_root)
             .ok_or_else(|| ContextError::DomainRootNotFound(domain_root.clone()))?;
         let domain = ConfigDomain::load_from(&domain_config)?;
-        Ok(Self::config_domain(exe_kind, domain, runtime_args, isolate_root, no_environment))
+        Self::config_domain(exe_kind, domain, runtime_args, isolate_root, no_environment)
     }
 
     /// Initialize an environment type for an in tree context, rooted at `tree_root` and if
@@ -216,7 +265,7 @@ impl EnvironmentContext {
         runtime_args: ConfigMap,
         env_file_path: Option<PathBuf>,
         no_environment: bool,
-    ) -> Self {
+    ) -> Result<Self, ContextError> {
         Self::new(
             EnvironmentKind::InTree { tree_root, build_dir },
             exe_kind,
@@ -239,24 +288,18 @@ impl EnvironmentContext {
     ) -> Result<Self, ContextError> {
         if let Some(domain_path) = current_dir.and_then(ConfigDomain::find_root) {
             let domain = ConfigDomain::load_from(&domain_path)?;
-            Ok(Self::config_domain(
-                exe_kind,
-                domain,
-                runtime_args,
-                Some(isolate_root),
-                no_environment,
-            ))
+            Self::config_domain(exe_kind, domain, runtime_args, Some(isolate_root), no_environment)
         } else {
             // Isolate dirs should be absolute paths
             let isolate_root = std::path::absolute(&isolate_root)?;
-            Ok(Self::new(
+            Self::new(
                 EnvironmentKind::Isolated { isolate_root },
                 exe_kind,
                 Some(env_vars),
                 runtime_args,
                 env_file_path,
                 no_environment,
-            ))
+            )
         }
     }
 
@@ -293,7 +336,7 @@ impl EnvironmentContext {
         runtime_args: ConfigMap,
         env_file_path: Option<PathBuf>,
         no_environment: bool,
-    ) -> Self {
+    ) -> Result<Self, ContextError> {
         Self::new(
             EnvironmentKind::NoContext,
             exe_kind,
@@ -314,28 +357,28 @@ impl EnvironmentContext {
         current_dir: &Path,
         env_file_path: Option<PathBuf>,
         no_environment: bool,
-    ) -> Result<Self, EnvironmentDetectError> {
+    ) -> Result<Self, ContextError> {
         // strong signals that we're running...
         if let Some(domain_path) = ConfigDomain::find_root(current_dir.try_into()?) {
             // - a config-domain: we found a fuchsia-env file
             let domain = ConfigDomain::load_from(&domain_path)?;
-            Ok(Self::config_domain(exe_kind, domain, runtime_args, None, no_environment))
+            Self::config_domain(exe_kind, domain, runtime_args, None, no_environment)
         } else if let Some(tree_root) = Self::find_fx_root(current_dir)? {
             // - in-tree: we found `.fx-root`, and...
             // look for a .fx-build-dir file and use that instead.
             let build_dir = Self::load_fx_build_dir(&tree_root)?;
 
-            Ok(Self::in_tree(
+            Self::in_tree(
                 exe_kind,
                 tree_root,
                 build_dir,
                 runtime_args,
                 env_file_path,
                 no_environment,
-            ))
+            )
         } else {
             // - no particular context: any other situation
-            Ok(Self::no_context(exe_kind, runtime_args, env_file_path, no_environment))
+            Self::no_context(exe_kind, runtime_args, env_file_path, no_environment)
         }
     }
 
@@ -372,13 +415,7 @@ impl EnvironmentContext {
 
     /// Returns the path to the currently active build output directory
     pub fn build_dir(&self) -> Option<&Path> {
-        match &self.kind {
-            EnvironmentKind::InTree { build_dir, .. } => build_dir.as_deref(),
-            EnvironmentKind::ConfigDomain { domain, .. } => {
-                Some(domain.get_build_dir()?.as_std_path())
-            }
-            _ => None,
-        }
+        self.kind.build_dir()
     }
 
     /// Returns version info about the running ffx binary
@@ -581,15 +618,7 @@ impl EnvironmentContext {
     }
 
     pub fn get_default_overrides(&self) -> ConfigMap {
-        use EnvironmentKind::*;
-        let mut cm = match &self.kind {
-            ConfigDomain { domain, .. } => domain.get_config_defaults().clone(),
-            _ => ConfigMap::default(),
-        };
-        if self.is_isolated() {
-            crate::aliases::add_isolation_default(&mut cm);
-        }
-        cm
+        self.kind.get_default_overrides()
     }
 
     /// Returns the configuration domain for the current invocation, if there
@@ -759,7 +788,8 @@ mod test {
             Default::default(),
             None,
             false,
-        );
+        )
+        .expect("in tree context");
 
         assert!(context.is_in_tree());
     }
@@ -795,7 +825,8 @@ mod test {
     fn direct_connection_mode() {
         // Defaults to false
         let ctx =
-            EnvironmentContext::no_context(ExecutableKind::Test, ConfigMap::new(), None, true);
+            EnvironmentContext::no_context(ExecutableKind::Test, ConfigMap::new(), None, true)
+                .unwrap();
         assert!(!ctx.get_direct_connection_mode());
 
         // True if connectivity.direct=true
@@ -803,7 +834,8 @@ mod test {
         connectivity.insert("direct".into(), true.into());
         let mut runtime_args = ConfigMap::new();
         runtime_args.insert("connectivity".into(), serde_json::Value::Object(connectivity));
-        let ctx = EnvironmentContext::no_context(ExecutableKind::Test, runtime_args, None, true);
+        let ctx =
+            EnvironmentContext::no_context(ExecutableKind::Test, runtime_args, None, true).unwrap();
         assert!(ctx.get_direct_connection_mode());
 
         // False if connectivity.direct=false
@@ -811,14 +843,16 @@ mod test {
         connectivity.insert("direct".into(), false.into());
         let mut runtime_args = ConfigMap::new();
         runtime_args.insert("connectivity".into(), serde_json::Value::Object(connectivity));
-        let ctx = EnvironmentContext::no_context(ExecutableKind::Test, runtime_args, None, true);
+        let ctx =
+            EnvironmentContext::no_context(ExecutableKind::Test, runtime_args, None, true).unwrap();
         assert!(!ctx.get_direct_connection_mode());
     }
 
     #[fuchsia::test]
     fn test_override_target_spec() {
         let mut ctx =
-            EnvironmentContext::no_context(ExecutableKind::Test, ConfigMap::new(), None, true);
+            EnvironmentContext::no_context(ExecutableKind::Test, ConfigMap::new(), None, true)
+                .unwrap();
         assert_eq!(ctx.get_overridden_target_specifier(), None);
         ctx.override_target_specifier(&Some("foo".to_string()));
         assert_eq!(

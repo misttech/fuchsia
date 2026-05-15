@@ -809,8 +809,7 @@ pub async fn discover_fastboot_target(
 mod test {
     use super::*;
     use ffx_command_error::bug;
-    use ffx_config::macro_deps::serde_json::Value;
-    use ffx_config::{ConfigLevel, test_env, test_init};
+    use ffx_config::{test_env, test_init};
     use futures_lite::future::{pending, ready};
     use tempfile::tempdir;
 
@@ -855,26 +854,12 @@ mod test {
     #[fuchsia::test]
     async fn test_get_target_specifier_bypasses_state() {
         let build_dir = tempdir().expect("temp dir");
-        let env = test_env().in_tree(build_dir.path()).build().unwrap();
-
-        // Set stateful configuration.
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
+        let env = test_env()
+            .in_tree(build_dir.path())
+            .user_config(TARGET_DEFAULT_KEY, "stateful-user-default")
+            .build_config(TARGET_DEFAULT_KEY, "stateful-build-default")
+            .global_config(TARGET_DEFAULT_KEY, "stateful-global-default")
             .build()
-            .set(&env.context, Value::String("stateful-user-default".to_owned()))
-            .unwrap();
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::Build))
-            .build()
-            .set(&env.context, Value::String("stateful-build-default".to_owned()))
-            .unwrap();
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::Global))
-            .build()
-            .set(&env.context, Value::String("stateful-global-default".to_owned()))
             .unwrap();
 
         let target_spec = get_target_specifier(&env.context).unwrap();
@@ -887,27 +872,10 @@ mod test {
         let env = test_env()
             .env_var("FUCHSIA_NODENAME", "nodename-default")
             .in_tree(build_dir.path())
+            .user_config(TARGET_DEFAULT_KEY, "stateful-user-default")
+            .build_config(TARGET_DEFAULT_KEY, "stateful-build-default")
+            .global_config(TARGET_DEFAULT_KEY, "stateful-global-default")
             .build()
-            .unwrap();
-
-        // Set stateful configuration.
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, Value::String("stateful-user-default".to_owned()))
-            .unwrap();
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::Build))
-            .build()
-            .set(&env.context, Value::String("stateful-build-default".to_owned()))
-            .unwrap();
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::Global))
-            .build()
-            .set(&env.context, Value::String("stateful-global-default".to_owned()))
             .unwrap();
 
         let target_spec = get_target_specifier(&env.context).unwrap();
@@ -922,27 +890,10 @@ mod test {
             .env_var("FUCHSIA_DEVICE_ADDR", "device-addr-default")
             .runtime_config(TARGET_DEFAULT_KEY, "runtime-default")
             .in_tree(build_dir.path())
+            .user_config(TARGET_DEFAULT_KEY, "stateful-user-default")
+            .build_config(TARGET_DEFAULT_KEY, "stateful-build-default")
+            .global_config(TARGET_DEFAULT_KEY, "stateful-global-default")
             .build()
-            .unwrap();
-
-        // Set stateful configuration.
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, Value::String("stateful-user-default".to_owned()))
-            .unwrap();
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::Build))
-            .build()
-            .set(&env.context, Value::String("stateful-build-default".to_owned()))
-            .unwrap();
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::Global))
-            .build()
-            .set(&env.context, Value::String("stateful-global-default".to_owned()))
             .unwrap();
 
         let target_spec = get_target_specifier(&env.context).unwrap();
@@ -1086,14 +1037,10 @@ mod test {
     async fn wait_for_device_timeout_on_shutdown_short_timeout() {
         let mut mock = MockRcsKnocker::new();
         mock.expect_knock_rcs().returning(|_, _| Box::pin(pending()));
-        let env = ffx_config::test_init().unwrap();
 
-        // Set discovery timeout to 2000ms
-        env.context
-            .query(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT)
-            .level(Some(ffx_config::ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT, 2000)
             .build()
-            .set(&env.context, Value::Number(2000.into()))
             .unwrap();
 
         let res = wait_for_device_inner(

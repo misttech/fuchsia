@@ -22,15 +22,13 @@ pub trait ConfigAliases {
 impl ConfigAliases for EnvironmentContext {
     // Return values at first config level for which either the key or the alias has a value
     fn get_with_alias(&self, key: &str, alias: &str) -> Option<(ConfigValue, ConfigValue)> {
-        let Ok(env) = self.load() else { return None };
-        let Ok(config) = env.config_from_cache() else { return None };
         let key_vec: Vec<&str> = key.split('.').collect();
         let alias_vec: Vec<&str> = alias.split('.').collect();
         // These are called only by functions that hard-code the keys, so we won't panic
         let key_head = key_vec[0];
         let alias_head = alias_vec[0];
-        let read_guard = config.read().ok()?;
-        for config in read_guard.iter() {
+
+        for config in self.config.iter() {
             let kval = nested_get(config, key_head, &key_vec[1..]);
             let aval = nested_get(config, alias_head, &alias_vec[1..]);
             if kval.is_some() || aval.is_some() {
@@ -111,26 +109,14 @@ pub(crate) fn add_isolation_default(cm: &mut ConfigMap) {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{self as ffx_config, ConfigLevel};
+    use crate::{self as ffx_config};
 
     #[fuchsia::test]
     fn test_ffx_isolated() {
-        let env = ffx_config::test_init().expect("create test config");
-
-        // It'd be nice to check that isolation is not set by default,
-        // but since a test may use an isolate-dir (which automatically
-        // sets isolation), that check is difficult
-        // assert!(!is_usb_discovery_disabled(&env.context).await);
-        // assert!(!is_analytics_disabled(&env.context).await);
-        // assert!(!is_mdns_discovery_disabled(&env.context).await);
-        // assert!(!is_mdns_autoconnect_disabled(&env.context).await);
-
-        env.context
-            .query("ffx.isolated")
-            .level(Some(ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config("ffx.isolated", true)
             .build()
-            .set(&env.context, Value::Bool(true))
-            .unwrap();
+            .expect("create test config");
 
         assert!(is_usb_discovery_disabled(&env.context));
         assert!(is_analytics_disabled(&env.context));
@@ -140,23 +126,11 @@ mod test {
 
     #[fuchsia::test]
     fn test_ffx_isolated_can_override_global() {
-        let env = ffx_config::test_init().expect("create test config");
-
-        env.context
-            .query("ffx.isolated")
-            // Higher precedence
-            .level(Some(ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config("ffx.isolated", true)
+            .global_config("fastboot.usb.disabled", false)
             .build()
-            .set(&env.context, Value::Bool(true))
-            .unwrap();
-
-        env.context
-            .query("fastboot.usb.disabled")
-            // Lower precedence
-            .level(Some(ConfigLevel::Global))
-            .build()
-            .set(&env.context, Value::Bool(false))
-            .unwrap();
+            .expect("create test config");
 
         // Isolation is respected, since it is set at a higher level
         assert!(is_usb_discovery_disabled(&env.context));
@@ -164,23 +138,11 @@ mod test {
 
     #[fuchsia::test]
     fn test_ffx_isolated_can_be_overridden() {
-        let env = ffx_config::test_init().expect("create test config");
-
-        env.context
-            .query("ffx.isolated")
-            // Higher precedence
-            .level(Some(ConfigLevel::Global))
+        let env = ffx_config::test_env()
+            .global_config("ffx.isolated", true)
+            .user_config("fastboot.usb.disabled", false)
             .build()
-            .set(&env.context, Value::Bool(true))
-            .unwrap();
-
-        env.context
-            .query("fastboot.usb.disabled")
-            // Lower precedence
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, Value::Bool(false))
-            .unwrap();
+            .expect("create test config");
 
         // Isolation is overridden, since it is set at a lower level
         // (It's not clear we _want_ this behavior, but this is the current plan)

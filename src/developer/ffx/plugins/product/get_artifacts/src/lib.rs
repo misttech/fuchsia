@@ -265,7 +265,7 @@ mod tests {
 
     use assembly_container::AssemblyContainer;
     use assembly_partitions_config::PartitionsConfig;
-    use ffx_config::ConfigLevel;
+
     use ffx_writer::{Format, TestBuffers};
     use product_bundle::ProductBundleV2;
     use std::fs::{self, File};
@@ -660,16 +660,15 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_use_default_bundle() {
-        let env = ffx_config::test_init().expect("test env");
-        let pb_path = env.isolate_root.path().join("test_bundle");
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let pb_path = isolate_root.join("test_bundle");
         fs::create_dir_all(&pb_path).expect("create test bundle dir");
 
-        env.context
-            .query("product.path")
-            .level(Some(ConfigLevel::User))
+        let env = builder
+            .user_config("product.path", pb_path.to_string_lossy())
             .build()
-            .set(&env.context, pb_path.to_string_lossy().into())
-            .expect("set pb path");
+            .expect("test env");
 
         let virtual_device = pb_path.join("manifest.json");
         let mut vd_file1 = File::create(&virtual_device).expect("virtual_device manifest");

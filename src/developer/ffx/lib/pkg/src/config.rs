@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use ffx_config::{ConfigLevel, EnvironmentContext};
+use ffx_config::EnvironmentContext;
 const CONFIG_KEY_DEFAULT_REPOSITORY: &str = "repository.default";
 const CONFIG_KEY_SERVER_LISTEN: &str = "repository.server.listen";
 
@@ -91,78 +91,4 @@ pub fn get_default_repository(
     context: &EnvironmentContext,
 ) -> Result<Option<String>, RepositoryConfigError> {
     Ok(context.get(CONFIG_KEY_DEFAULT_REPOSITORY)?)
-}
-
-/// Sets the default repository from the config.
-pub fn set_default_repository(
-    context: &EnvironmentContext,
-    repo_name: &str,
-) -> Result<(), RepositoryConfigError> {
-    context
-        .query(CONFIG_KEY_DEFAULT_REPOSITORY)
-        .level(Some(ConfigLevel::User))
-        .build()
-        .set(context, repo_name.into())?;
-    Ok(())
-}
-
-/// Unsets the default repository from the config.
-
-pub fn unset_default_repository(context: &EnvironmentContext) -> Result<(), RepositoryConfigError> {
-    context
-        .query(CONFIG_KEY_DEFAULT_REPOSITORY)
-        .level(Some(ConfigLevel::User))
-        .build()
-        .remove(context)?;
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use pretty_assertions::assert_eq;
-    use serde_json::{Value, json};
-
-    const CONFIG_KEY_ROOT: &str = "repository";
-
-    #[fuchsia::test]
-    fn test_get_set_unset_default_repository() {
-        let env = ffx_config::test_init().expect("test init");
-        env.context
-            .query(CONFIG_KEY_ROOT)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, json!({}))
-            .unwrap();
-
-        // Initially there's no default.
-        assert_eq!(get_default_repository(&env.context).unwrap(), None);
-
-        // Setting the default should write to the config.
-        set_default_repository(&env.context, "foo").unwrap();
-        assert_eq!(
-            env.context.get::<Value, _>(CONFIG_KEY_DEFAULT_REPOSITORY).unwrap(),
-            json!("foo"),
-        );
-        assert_eq!(get_default_repository(&env.context).unwrap(), Some("foo".into()));
-
-        // We don't care if the repository has `.` in it.
-        set_default_repository(&env.context, "foo.bar").unwrap();
-        assert_eq!(
-            env.context.get::<Value, _>(CONFIG_KEY_DEFAULT_REPOSITORY).unwrap(),
-            json!("foo.bar"),
-        );
-        assert_eq!(get_default_repository(&env.context).unwrap(), Some("foo.bar".into()));
-
-        // Unset removes the default repository from the config.
-        unset_default_repository(&env.context).unwrap();
-        assert_eq!(
-            env.context.get::<Option<Value>, _>(CONFIG_KEY_DEFAULT_REPOSITORY).unwrap(),
-            None,
-        );
-        assert_eq!(get_default_repository(&env.context).unwrap(), None);
-
-        // Unsetting the repo again returns an error.
-        assert!(unset_default_repository(&env.context).is_err());
-    }
 }

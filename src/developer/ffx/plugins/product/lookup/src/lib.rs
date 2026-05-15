@@ -130,7 +130,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use ffx_config::{ConfigLevel, TestEnv};
+    use ffx_config::TestEnv;
     use ffx_writer::{Format, TestBuffers};
     use std::fs::File;
     use std::path::Path;
@@ -139,15 +139,10 @@ mod test {
     const PRODUCT_BUNDLE_INDEX_KEY: &str = "product.index";
 
     async fn setup_test_env(path: &Path) -> TestEnv {
-        let env = ffx_config::test_init().unwrap();
-        env.context
-            .query(PRODUCT_BUNDLE_INDEX_KEY)
-            .level(Some(ConfigLevel::User))
+        ffx_config::test_env()
+            .user_config(PRODUCT_BUNDLE_INDEX_KEY, path.to_str().unwrap())
             .build()
-            .set(&env.context, path.to_str().unwrap().into())
-            .unwrap();
-
-        env
+            .unwrap()
     }
 
     #[fuchsia::test]

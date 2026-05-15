@@ -162,7 +162,7 @@ async fn main() -> Result<()> {
     let metrics_service = metrics::GaMetricsService::new("0.1".to_string()).await?;
 
     let ctx =
-        EnvironmentContext::no_context(ExecutableKind::Subtool, ConfigMap::default(), None, false);
+        EnvironmentContext::no_context(ExecutableKind::Subtool, ConfigMap::default(), None, false)?;
 
     let res = match args.nested {
         FunnelSubcommands::Host(host_command) => funnel_main(&ctx, host_command).await,

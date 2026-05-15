@@ -129,8 +129,8 @@ mod tests {
         EmulatorInstanceData, EmulatorInstanceInfo, EngineState, EngineType, FlagData,
         NetworkingMode, write_to_disk,
     };
-    use ffx_config::ConfigLevel;
     use ffx_emulator_config::VirtualDeviceInfo;
+
     use ffx_writer::{Format, TestBuffers};
     use std::collections::HashMap;
 
@@ -258,13 +258,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_show_part() {
-        let env = ffx_config::test_init().unwrap();
-        env.context
-            .query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
-            .level(Some(ConfigLevel::User))
+        let mut builder = ffx_config::test_env();
+        let temp_dir = builder.isolate_root().join("instances");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let env = builder
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, temp_dir.to_string_lossy())
             .build()
-            .set(&env.context, env.isolate_root.path().to_string_lossy().into())
-            .expect("setting test config");
+            .unwrap();
         let tool = EmuShowTool {
             cmd: ShowCommand { device: true, ..Default::default() },
             context: env.context.clone(),
@@ -272,7 +272,7 @@ mod tests {
 
         let mut data = EmulatorInstanceData::new_with_state("one_instance", EngineState::Running);
         data.get_emulator_configuration_mut().device.cpu.count = 2;
-        let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
+        let emu_instances = EmulatorInstances::new(temp_dir);
         let instance_dir = emu_instances
             .get_instance_dir("one_instance", true)
             .expect("test instance dir created");

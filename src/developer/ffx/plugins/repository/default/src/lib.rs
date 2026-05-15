@@ -36,19 +36,26 @@ pub async fn exec_repository_default_impl<W: std::io::Write + ToolIO>(
             let res: String = context.get(CONFIG_KEY_DEFAULT).unwrap_or_else(|_| "".to_owned());
             writeln!(writer, "{}", res).map_err(|e| bug!(e))?;
         }
-        SubCommand::Set(set) => context
-            .query(CONFIG_KEY_DEFAULT)
-            .level(Some(set.level))
-            .build()
-            .set(context, serde_json::Value::String(set.name.clone()))
-            .map_err(ffx_config::macro_deps::anyhow::Error::from)?,
+        SubCommand::Set(set) => {
+            let env = context.load().map_err(ffx_config::macro_deps::anyhow::Error::from)?;
+            let mut config = ffx_config::Config::from_env(&env)
+                .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
+            config
+                .set(CONFIG_KEY_DEFAULT, set.level, serde_json::Value::String(set.name.clone()))
+                .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
+            config.save().map_err(ffx_config::macro_deps::anyhow::Error::from)?;
+        }
         SubCommand::Unset(unset) => {
-            let _ = context
-                .query(CONFIG_KEY_DEFAULT)
-                .level(Some(unset.level))
-                .build()
-                .remove(context)
-                .map_err(|e| writeln!(writer.stderr(), "warning: {}", e));
+            let env = context.load().map_err(ffx_config::macro_deps::anyhow::Error::from)?;
+            let mut config = ffx_config::Config::from_env(&env)
+                .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
+            let res = (|| {
+                config.remove(CONFIG_KEY_DEFAULT, unset.level)?;
+                config.save()
+            })();
+            if let Err(e) = res {
+                let _ = writeln!(writer.stderr(), "warning: {}", e);
+            }
         }
     };
     Ok(())

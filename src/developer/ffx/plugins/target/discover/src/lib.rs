@@ -476,7 +476,6 @@ impl Stream for SignalStream {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use ffx_config::{ConfigLevel, test_init};
     use ffx_target_discover_args::ClearCommand;
     use tempfile::{TempDir, tempdir};
 
@@ -491,18 +490,14 @@ mod tests {
         async fn setup() -> Self {
             let tmp_dir = tempdir().unwrap();
             let cache_path = tmp_dir.path().to_path_buf();
-            let test_env = test_init().unwrap();
-            test_env
-                .context
-                .query("discovery.cache_dir")
-                .level(Some(ConfigLevel::User))
+            let env = ffx_config::test_env()
+                .user_config("discovery.cache_dir", cache_path.to_str().unwrap())
                 .build()
-                .set(&test_env.context, serde_json::to_value(cache_path.to_str().unwrap()).unwrap())
                 .unwrap();
             let process_manager = Some(MockProcessManager::new());
             let discovery_runner = Some(MockDiscoveryRunner::new());
             Self {
-                context: test_env.context.clone(),
+                context: env.context.clone(),
                 _tmp_dir: tmp_dir,
                 process_manager,
                 discovery_runner,

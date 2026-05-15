@@ -22,7 +22,6 @@ pub mod logging;
 pub mod runtime;
 
 mod aliases;
-mod cache;
 mod mapping;
 mod nested;
 mod paths;
@@ -41,7 +40,7 @@ pub use environment::{
 };
 pub use paths::get_state_base as get_state_base_path;
 pub use sdk::{self, Sdk, SdkRoot};
-pub use storage::{AssertNoEnv, AssertNoEnvError, ConfigMap};
+pub use storage::{AssertNoEnv, AssertNoEnvError, Config, ConfigMap};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -184,9 +183,7 @@ pub fn get_host_tool(ctx: &EnvironmentContext, name: &str) -> Result<PathBuf, Li
 }
 
 pub fn print_config<W: Write>(ctx: &EnvironmentContext, mut writer: W) -> Result<(), LibError> {
-    let config = ctx.load()?.config_from_cache()?;
-    let read_guard = config.read().map_err(|_| LibError::ReadGuard)?;
-    writeln!(writer, "{}", *read_guard).map_err(LibError::DisplayConfig)
+    writeln!(writer, "{}", ctx.config).map_err(LibError::DisplayConfig)
 }
 
 fn get_log_dirs(ctx: &Option<EnvironmentContext>) -> Result<Vec<String>, LibError> {
@@ -436,26 +433,24 @@ mod test {
     struct TestEmptyBackedStruct {}
 
     #[fuchsia::test]
-    fn test_config_backed_attribute() {
-        let env = ffx_config::test_init().expect("create test config");
-        let mut empty_config_struct = TestConfigBackedStruct::default();
+    fn test_config_backed_attribute_default() {
+        let env = ffx_config::test_env().build().expect("create test config");
+        let empty_config_struct = TestConfigBackedStruct::default();
         assert!(empty_config_struct.value.is_none());
         assert_eq!(empty_config_struct.value(&env.context).unwrap(), "thing");
         assert!(empty_config_struct.reverse_value.is_none());
         assert_eq!(empty_config_struct.reverse_value(&env.context).unwrap(), "what");
+    }
 
-        env.context
-            .query("test.test.thing")
-            .level(Some(ConfigLevel::User))
+    #[fuchsia::test]
+    fn test_config_backed_attribute_override() {
+        let env = ffx_config::test_env()
+            .user_config("test.test.thing", "config_value_thingy")
+            .user_config("other.test.thing", 2.0)
             .build()
-            .set(&env.context, Value::String("config_value_thingy".to_owned()))
-            .unwrap();
-        env.context
-            .query("other.test.thing")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, Value::Number(serde_json::Number::from_f64(2f64).unwrap()))
-            .unwrap();
+            .expect("create test config");
+
+        let mut empty_config_struct = TestConfigBackedStruct::default();
 
         // If this is set, this should pop up before the config values.
         empty_config_struct.value = Some("wat".to_owned());
@@ -463,12 +458,6 @@ mod test {
         empty_config_struct.value = None;
         assert_eq!(empty_config_struct.value(&env.context).unwrap(), "config_value_thingy");
         assert_eq!(empty_config_struct.other_value(&env.context).unwrap().unwrap(), 2f64);
-        env.context
-            .query("other.test.thing")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, Value::String("oaiwhfoiwh".to_owned()))
-            .unwrap();
 
         // This should just compile and drop without panicking is all.
         let _ignore = TestEmptyBackedStruct {};
@@ -488,27 +477,24 @@ mod test {
 
     #[fuchsia::test]
     fn test_get_host_tool() {
-        let env = ffx_config::test_init().expect("create test config");
-        let sdk_root = env.isolate_root.path().join("sdk");
-        env.context
-            .query("sdk.root")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, sdk_root.to_string_lossy().into())
-            .expect("creating temp sdk root");
+        let mut builder = ffx_config::test_env();
+        let sdk_root = builder.isolate_root().join("sdk");
 
         put_file!(sdk_root, "../test_data/sdk", "meta/manifest.json");
         put_file!(sdk_root, "../test_data/sdk", "tools/x64/a_host_tool-meta.json");
 
         // Override the path via config
-        let override_path = env.isolate_root.path().join("a_override_host_tool");
+        let override_path = builder.isolate_root().join("a_override_host_tool");
         fs::write(&override_path, "a_override_tool_contents").expect("override file written");
-        env.context
-            .query(&format!("{SDK_OVERRIDE_KEY_PREFIX}.a_host_tool"))
-            .level(Some(ConfigLevel::User))
+
+        let env = builder
+            .user_config("sdk.root", sdk_root.to_string_lossy())
+            .user_config(
+                &format!("{SDK_OVERRIDE_KEY_PREFIX}.a_host_tool"),
+                override_path.to_string_lossy(),
+            )
             .build()
-            .set(&env.context, override_path.to_string_lossy().into())
-            .expect("setting override");
+            .expect("create test config");
 
         let result = get_host_tool(&env.context, "a_host_tool").expect("a_host_tool");
         assert_eq!(result, override_path);
@@ -516,29 +502,25 @@ mod test {
 
     #[fuchsia::test]
     fn test_get_host_tool_override_no_exists() {
-        let env = ffx_config::test_init().expect("create test config");
-        let sdk_root = env.isolate_root.path().join("sdk");
-        env.context
-            .query("sdk.root")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, sdk_root.to_string_lossy().into())
-            .expect("creating temp sdk root");
+        let mut builder = ffx_config::test_env();
+        let sdk_root = builder.isolate_root().join("sdk");
 
         put_file!(sdk_root, "../test_data/sdk", "meta/manifest.json");
         put_file!(sdk_root, "../test_data/sdk", "tools/x64/a_host_tool-meta.json");
 
         // Override the path via config
-        let override_path = env.isolate_root.path().join("a_override_host_tool");
+        let override_path = builder.isolate_root().join("a_override_host_tool");
 
         // do not create file, this should report an error.
 
-        env.context
-            .query(&format!("{SDK_OVERRIDE_KEY_PREFIX}.a_host_tool"))
-            .level(Some(ConfigLevel::User))
+        let env = builder
+            .user_config("sdk.root", sdk_root.to_string_lossy())
+            .user_config(
+                &format!("{SDK_OVERRIDE_KEY_PREFIX}.a_host_tool"),
+                override_path.to_string_lossy(),
+            )
             .build()
-            .set(&env.context, override_path.to_string_lossy().into())
-            .expect("setting override");
+            .expect("create test config");
 
         let result = get_host_tool(&env.context, "a_host_tool");
         assert_eq!(

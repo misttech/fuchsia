@@ -504,7 +504,9 @@ for more detail on the progress of update-related downloads.\n"
                 {
                     product_path
                 } else {
-                    return_user_error!("No product bundle path specified nor configured. Run `ffx product-bundle get` or specify one with the appropriate flag.")
+                    return_user_error!(
+                        "No product bundle path specified nor configured. Run `ffx product-bundle get` or specify one with the appropriate flag."
+                    )
                 }
             }
         };
@@ -1051,18 +1053,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_force_install_packageless() {
-        let test_env = ffx_config::test_init().expect("test env");
-        let client = fdomain_local::local_client_empty();
-
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_path = temp_dir.path().to_path_buf();
-        test_env
-            .context
-            .query("repository.process_dir")
-            .level(Some(ffx_config::ConfigLevel::User))
+        let test_env = ffx_config::test_env()
+            .user_config("repository.process_dir", temp_path.to_str().unwrap())
             .build()
-            .set(&test_env.context, serde_json::Value::String(temp_path.to_string_lossy().into()))
             .unwrap();
+        let client = fdomain_local::local_client_empty();
 
         let update_info = installer::UpdateInfo::builder().download_size(1000).build();
         let mock_installer = Arc::new(MockUpdateInstallerService::with_states(vec![

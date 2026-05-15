@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use camino::Utf8Path;
-use ffx_config::{ConfigLevel, EnvironmentContext};
+use ffx_config::{Config, ConfigLevel, EnvironmentContext};
 use ffx_sdk_args::{RunCommand, SdkCommand, SetCommand, SetRootCommand, SetSubCommand, SubCommand};
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{FfxContext, FfxMain, FfxTool, bug, exit_with_code, return_user_error, user_error};
@@ -104,11 +104,10 @@ async fn exec_set(context: EnvironmentContext, cmd: &SetCommand) -> Result<()> {
         SetSubCommand::Root(SetRootCommand { path }) => {
             let abs_path =
                 path.canonicalize().with_context(|| format!("making path absolute: {:?}", path))?;
-            context
-                .query("sdk.root")
-                .level(Some(ConfigLevel::User))
-                .build()
-                .set(&context, abs_path.to_string_lossy().into())?;
+            let env = context.load()?;
+            let mut config = Config::from_env(&env)?;
+            config.set("sdk.root", ConfigLevel::User, abs_path.to_string_lossy().into())?;
+            config.save()?;
             Ok(())
         }
     }

@@ -204,5 +204,3 @@ impl FfxMain for ServerStartTool {
 pub struct ServerInfo {
     address: std::net::SocketAddr,
 }
-#[cfg(test)]
-mod tests {}

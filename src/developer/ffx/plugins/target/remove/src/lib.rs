@@ -138,7 +138,7 @@ impl RemoveTool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ffx_config::ConfigLevel;
+
     use ffx_writer::{Format, TestBuffers};
     use serde_json::json;
     use target_holders::fake_proxy;
@@ -220,13 +220,8 @@ mod test {
     #[fuchsia::test]
     async fn test_remove_all_targets_some() {
         let env = ffx_config::test_init_with_daemon().expect("test_init");
-        const MANUAL_TARGETS: &'static str = "targets.manual";
-        env.context
-            .query(MANUAL_TARGETS)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345}))
-            .unwrap();
+        let mt = Config::new_from_context(&env.context);
+        mt.storage_set(json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345})).await.unwrap();
         let server = setup_fake_target_collection_proxy(|_| true);
         let tool = RemoveTool {
             cmd: RemoveCommand { all: true, name_or_addr: None },

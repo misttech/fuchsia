@@ -608,9 +608,8 @@ mod test {
     use super::*;
     use addr::TargetIpAddr;
     use assert_matches::assert_matches;
-    use ffx_config::ConfigLevel;
+    use ffx_config::environment::TestEnvBuilder;
     use futures::StreamExt;
-    use serde_json::json;
     use std::fs;
     use std::net::Ipv4Addr;
     use std::os::unix::prelude::PermissionsExt;
@@ -894,29 +893,22 @@ mod test {
         assert!(buf.lines().is_empty());
     }
 
-    async fn write_test_ssh_keys(env: &ffx_config::TestEnv) {
-        // Set the ssh key paths to something, the contents do no matter for this test.
-        env.context
-            .query("ssh.pub")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, json!([env.isolate_root.path().join("test_authorized_keys")]))
-            .expect("setting ssh pub key");
+    async fn setup_builder_with_ssh_keys(mut builder: TestEnvBuilder) -> TestEnvBuilder {
+        let isolate_root = builder.isolate_root();
+        let pub_key = isolate_root.join("test_authorized_keys");
+        let priv_key = isolate_root.join("test_ed25519_key");
+        fs::write(&priv_key, "test-key").expect("writing test key");
 
-        let ssh_priv = env.isolate_root.path().join("test_ed25519_key");
-        fs::write(&ssh_priv, "test-key").expect("writing test key");
-        env.context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, json!([ssh_priv.to_string_lossy()]))
-            .expect("setting ssh priv key");
+        builder
+            .user_config("ssh.pub", vec![pub_key.to_string_lossy()])
+            .user_config("ssh.priv", vec![priv_key.to_string_lossy()])
     }
 
     #[fuchsia::test]
     async fn test_start_with_failure() {
-        let env = ffx_config::test_init().unwrap();
-        write_test_ssh_keys(&env).await;
+        let builder = ffx_config::test_env();
+        let builder = setup_builder_with_ssh_keys(builder).await;
+        let env = builder.build().unwrap();
 
         let target = crate::target::Target::new_with_addrs(
             &env.context,
@@ -942,15 +934,16 @@ mod test {
 
     #[fuchsia::test]
     async fn test_start_ok() {
-        let env = ffx_config::test_init().unwrap();
+        let mut builder = ffx_config::test_env();
         const SUPPORTED_HOST_PIPE_SH: &str = include_str!("../../test_data/supported_host_pipe.sh");
 
-        let ssh_path = env.isolate_root.path().join("supported_host_pipe.sh");
+        let ssh_path = builder.isolate_root().join("supported_host_pipe.sh");
         fs::write(&ssh_path, SUPPORTED_HOST_PIPE_SH).expect("writing test script");
         fs::set_permissions(&ssh_path, fs::Permissions::from_mode(0o770))
             .expect("setting permissions");
 
-        write_test_ssh_keys(&env).await;
+        let builder = setup_builder_with_ssh_keys(builder).await;
+        let env = builder.build().unwrap();
 
         let target = crate::target::Target::new_with_addrs(
             &env.context,
@@ -977,15 +970,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ssh_command_includes_keepalive_timeout() {
-        let env = ffx_config::test_init().unwrap();
-        write_test_ssh_keys(&env).await;
+        let builder = ffx_config::test_env();
+        let builder = setup_builder_with_ssh_keys(builder).await;
 
-        env.context
-            .query(ffx_ssh::ssh::KEEPALIVE_TIMEOUT_CONFIG)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, json!(30))
-            .expect("setting keepalive timeout key");
+        let env = builder.user_config(ffx_ssh::ssh::KEEPALIVE_TIMEOUT_CONFIG, 30).build().unwrap();
 
         let addr = SocketAddr::new(Ipv4Addr::new(192, 0, 2, 0).into(), 2345);
         let cmd = tokio::process::Command::from(

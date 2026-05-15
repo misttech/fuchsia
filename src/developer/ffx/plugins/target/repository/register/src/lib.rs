@@ -273,7 +273,7 @@ mod test {
     use fdomain_fuchsia_pkg_rewrite::{
         EditTransactionRequest, EngineRequest, LiteralRule, Rule, RuleIteratorRequest,
     };
-    use ffx_config::ConfigLevel;
+
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_target_repository_register_args::parse_json_uri;
     use ffx_writer::{Format, TestBuffers};
@@ -472,18 +472,11 @@ mod test {
 
     async fn make_server_instance(
         root: &std::path::Path,
-        context: &EnvironmentContext,
         server_mode: ServerMode,
         name: &str,
         aliases: BTreeSet<String>,
     ) -> Result<()> {
         let instance_root = root.join("repo_servers");
-        context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(context, instance_root.to_string_lossy().into())
-            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
 
         let mgr = PkgServerInstances::new(instance_root);
         let repo_config = RepositoryConfigBuilder::new(
@@ -553,7 +546,15 @@ mod test {
     #[fuchsia::test]
     async fn test_register_standalone() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let instance_root = isolate_root.join("repo_servers");
+        let env = builder
+            .user_config("repository.process_dir", instance_root.to_string_lossy())
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -577,20 +578,12 @@ mod test {
 
         make_server_instance(
             env.isolate_root.path(),
-            &env.context,
             ServerMode::Foreground,
             REPO_NAME,
             BTreeSet::<String>::new(),
         )
         .await
         .expect("repo server instance");
-
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
 
         let tool = RegisterTool {
             cmd: RegisterCommand {
@@ -616,7 +609,15 @@ mod test {
     #[fuchsia::test]
     async fn test_register_standalone_product_bundle() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let instance_root = isolate_root.join("repo_servers");
+        let env = builder
+            .user_config("repository.process_dir", instance_root.to_string_lossy())
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
+            .user_config("repository.default", "test-repo")
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "127.7.7.1".to_string() }));
@@ -665,27 +666,12 @@ mod test {
         aliases.insert("fuchsia.com".into());
         make_server_instance(
             env.isolate_root.path(),
-            &env.context,
             ServerMode::Foreground,
             "test-repo.fuchsia.com",
             aliases,
         )
         .await
         .expect("repo server instance");
-
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
-
-        env.context
-            .query("repository.default")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, "test-repo".into())
-            .expect("set default repo name");
 
         let tool = RegisterTool {
             cmd: RegisterCommand {
@@ -715,7 +701,15 @@ mod test {
     #[fuchsia::test]
     async fn test_register_default_repository() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let default_repo_name = "default-repo";
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let instance_root = isolate_root.join("repo_servers");
+        let env = builder
+            .user_config("repository.default", default_repo_name)
+            .user_config("repository.process_dir", instance_root.to_string_lossy())
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -732,17 +726,8 @@ mod test {
         target_env
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
-        let default_repo_name = "default-repo";
-        env.context
-            .query("repository.default")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, default_repo_name.into())
-            .unwrap();
-
         make_server_instance(
             env.isolate_root.path(),
-            &env.context,
             ServerMode::Daemon,
             default_repo_name,
             BTreeSet::<String>::new(),
@@ -777,7 +762,14 @@ mod test {
     #[fuchsia::test]
     async fn test_register_storage_type() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let instance_root = isolate_root.join("repo_servers");
+        let env = builder
+            .user_config("repository.process_dir", instance_root.to_string_lossy())
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -798,16 +790,8 @@ mod test {
 
         let aliases = vec![String::from("my-alias")];
 
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
-
         make_server_instance(
             env.isolate_root.path(),
-            &env.context,
             ServerMode::Daemon,
             REPO_NAME,
             BTreeSet::<String>::new(),
@@ -839,7 +823,14 @@ mod test {
     #[fuchsia::test]
     async fn test_register_empty_aliases() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let instance_root = isolate_root.join("repo_servers");
+        let env = builder
+            .user_config("repository.process_dir", instance_root.to_string_lossy())
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -859,16 +850,8 @@ mod test {
         let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
         let (engine_proxy, _) = setup_fake_engine_proxy(Arc::clone(&client), None).await;
 
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
-
         make_server_instance(
             env.isolate_root.path(),
-            &env.context,
             ServerMode::Daemon,
             REPO_NAME,
             BTreeSet::<String>::new(),
@@ -900,7 +883,14 @@ mod test {
     #[fuchsia::test]
     async fn test_register_returns_error() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let instance_root = isolate_root.join("repo_servers");
+        let env = builder
+            .user_config("repository.process_dir", instance_root.to_string_lossy())
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -916,15 +906,8 @@ mod test {
         target_env
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
         make_server_instance(
             env.isolate_root.path(),
-            &env.context,
             ServerMode::Daemon,
             REPO_NAME,
             BTreeSet::<String>::new(),
@@ -961,7 +944,14 @@ mod test {
     #[fuchsia::test]
     async fn test_register_returns_error_machine() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let instance_root = isolate_root.join("repo_servers");
+        let env = builder
+            .user_config("repository.process_dir", instance_root.to_string_lossy())
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -977,16 +967,8 @@ mod test {
         target_env
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
-
         make_server_instance(
             env.isolate_root.path(),
-            &env.context,
             ServerMode::Foreground,
             REPO_NAME,
             BTreeSet::<String>::new(),
@@ -1031,7 +1013,14 @@ mod test {
     #[fuchsia::test]
     async fn test_register_machine() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let instance_root = isolate_root.join("repo_servers");
+        let env = builder
+            .user_config("repository.process_dir", instance_root.to_string_lossy())
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -1053,7 +1042,6 @@ mod test {
 
         make_server_instance(
             env.isolate_root.path(),
-            &env.context,
             ServerMode::Daemon,
             REPO_NAME,
             BTreeSet::<String>::new(),
@@ -1062,13 +1050,6 @@ mod test {
         .expect("repo server instance");
 
         let aliases = vec![String::from("my-alias")];
-
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
 
         let tool = RegisterTool {
             cmd: RegisterCommand {
@@ -1104,7 +1085,14 @@ mod test {
     #[fuchsia::test]
     async fn test_tunnel_required() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let instance_root = isolate_root.join("repo_servers");
+        let env = builder
+            .user_config("repository.process_dir", instance_root.to_string_lossy())
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) = FakeTarget::new(None);
 
@@ -1119,15 +1107,8 @@ mod test {
         target_env
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
         make_server_instance(
             env.isolate_root.path(),
-            &env.context,
             ServerMode::Daemon,
             REPO_NAME,
             BTreeSet::<String>::new(),
@@ -1163,18 +1144,18 @@ mod test {
     #[fuchsia::test]
     async fn test_address_override() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
-        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let instance_root = isolate_root.join("repo_servers");
+        let env = builder
+            .user_config("repository.process_dir", instance_root.to_string_lossy())
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
             .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
+            .expect("test env");
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
 
         make_server_instance(
             env.isolate_root.path(),
-            &env.context,
             ServerMode::Daemon,
             REPO_NAME,
             BTreeSet::<String>::new(),
@@ -1226,7 +1207,7 @@ mod test {
     #[fuchsia::test]
     async fn test_register_config_from_json_file() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let env = ffx_config::test_env().build().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
 
         let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
@@ -1260,7 +1241,7 @@ mod test {
     #[fuchsia::test]
     async fn test_register_config_from_json_file_via_url_scheme() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let env = ffx_config::test_env().build().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
 
         let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;
@@ -1294,7 +1275,7 @@ mod test {
     #[fuchsia::test]
     async fn test_register_config_from_json_file_invalid_arguments() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let env = ffx_config::test_env().build().expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
 
         let (repo_proxy, _) = setup_fake_repo_proxy(Arc::clone(&client), None, false).await;

@@ -137,7 +137,7 @@ mod test {
     use fdomain_fuchsia_pkg_rewrite::{
         EditTransactionRequest, EngineRequest, Rule, RuleIteratorRequest,
     };
-    use ffx_config::ConfigLevel;
+
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_writer::TestBuffers;
     use fidl_fuchsia_developer_ffx::{
@@ -291,7 +291,10 @@ mod test {
     #[fuchsia::test]
     async fn test_empty_args() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let env = ffx_config::test_env()
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -309,13 +312,6 @@ mod test {
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
-
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
 
         let tool = ReplaceTool {
             cmd: ReplaceCommand { json_uri: None, rule: None },
@@ -332,7 +328,10 @@ mod test {
     #[fuchsia::test]
     async fn test_incomplete_json_structure() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let env = ffx_config::test_env()
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -350,13 +349,6 @@ mod test {
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
-
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
 
         let tool = ReplaceTool {
             cmd: ReplaceCommand {
@@ -378,7 +370,10 @@ mod test {
     #[fuchsia::test]
     async fn test_valid_rule_via_command_line() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let env = ffx_config::test_env()
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -396,13 +391,6 @@ mod test {
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
-
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
 
         let tool = ReplaceTool {
             cmd: ReplaceCommand { json_uri: None, rule: Some(VALID_TEST_RULE.into()) },
@@ -419,7 +407,10 @@ mod test {
     #[fuchsia::test]
     async fn test_mutually_exclusive_command_line() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let env = ffx_config::test_env()
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -437,13 +428,6 @@ mod test {
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
-
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
 
         let tool = ReplaceTool {
             cmd: ReplaceCommand {
@@ -463,7 +447,10 @@ mod test {
     #[fuchsia::test]
     async fn test_valid_rule_via_uri() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().expect("test env");
+        let env = ffx_config::test_env()
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NAME)
+            .build()
+            .expect("test env");
         let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "repo", "test"]);
         let (_, fake_target_proxy) =
             FakeTarget::new(Some(SshHostAddrInfo { address: "1.2.3.4".to_string() }));
@@ -481,13 +468,6 @@ mod test {
             .set_behavior_for_test(ConnectionBehavior::DaemonConnector(Arc::new(fake_injector)));
 
         let engine_proxy = setup_fake_engine_proxy(Arc::clone(&client), None).await;
-
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, TARGET_NAME.into())
-            .expect("set default target");
 
         let rule_file = tempfile::NamedTempFile::new().unwrap();
 

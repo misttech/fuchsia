@@ -417,14 +417,11 @@ impl Config {
         Self { user, build, global, runtime, default }
     }
 
-    pub(crate) fn from_env(env: &Environment) -> Result<Self, StorageError> {
+    pub fn from_env(env: &Environment) -> Result<Self, StorageError> {
         let user_conf: Option<PathBuf> = env.get_user();
         let build_conf: Option<PathBuf> = env.get_build();
         let global_conf: Option<PathBuf> = env.get_global();
         let is_isolated = env.context().env_kind().is_isolated();
-        if !is_isolated {
-            log::debug!("Non isolated context {:?}", env.context().env_kind());
-        }
         let from_file =
             if is_isolated { ConfigFile::from_nonflushing_file } else { ConfigFile::from_file };
         let user = user_conf.as_deref().map(from_file).transpose()?;
@@ -438,6 +435,23 @@ impl Config {
             env.get_runtime_args().clone(),
             env.context().get_default_overrides(),
         ))
+    }
+
+    pub(crate) fn from_paths(
+        user_conf: Option<PathBuf>,
+        build_conf: Option<PathBuf>,
+        global_conf: Option<PathBuf>,
+        runtime: ConfigMap,
+        default_override: ConfigMap,
+        is_isolated: bool,
+    ) -> Result<Self, StorageError> {
+        let from_file =
+            if is_isolated { ConfigFile::from_nonflushing_file } else { ConfigFile::from_file };
+        let user = user_conf.as_deref().map(from_file).transpose()?;
+        let build = build_conf.as_deref().map(from_file).transpose()?;
+        let global = global_conf.as_deref().map(from_file).transpose()?;
+
+        Ok(Self::new(global, build, user, runtime, default_override))
     }
 
     #[cfg(test)]
@@ -462,7 +476,7 @@ impl Config {
         Ok(())
     }
 
-    pub(crate) fn save(&mut self) -> Result<(), StorageError> {
+    pub fn save(&mut self) -> Result<(), StorageError> {
         let files = [&mut self.global, &mut self.build, &mut self.user];
         // Try to save all files and only fail out if any of them fail afterwards (with the first error). This hopefully mitigates
         // any weird partial-save issues, though there's no way to eliminate them altogether (short of filesystem
@@ -553,6 +567,28 @@ impl Config {
     pub fn remove(&mut self, key: &str, level: ConfigLevel) -> Result<(), StorageError> {
         let file = self.get_level_mut(level)?;
         file.remove(key)
+    }
+
+    pub fn add(&mut self, key: &str, level: ConfigLevel, value: Value) -> Result<(), StorageError> {
+        if let Some(mut current) = self.get_in_level(key, level) {
+            if current.is_object() {
+                return Err(crate::api::ConfigError::ValidationError(
+                    crate::api::ValidationError::CannotAddToSubtree,
+                )
+                .into());
+            } else {
+                match current.as_array_mut() {
+                    Some(v) => {
+                        v.push(value);
+                        self.set(key, level, Value::Array(v.to_vec()))?
+                    }
+                    None => self.set(key, level, Value::Array(vec![current, value]))?,
+                }
+            }
+        } else {
+            self.set(key, level, value)?
+        };
+        Ok(())
     }
 
     pub(crate) fn iter(&self) -> PriorityIterator<'_> {

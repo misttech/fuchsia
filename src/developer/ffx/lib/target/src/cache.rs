@@ -329,14 +329,10 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_get_discovery_cache_dir() {
-        let test_env = ffx_config::test_init().unwrap();
         let cache_dir = "/tmp/cache";
-        test_env
-            .context
-            .query(DISCOVERY_CACHE_DIR_CONFIG)
-            .level(Some(ffx_config::ConfigLevel::User))
+        let test_env = ffx_config::test_env()
+            .user_config(DISCOVERY_CACHE_DIR_CONFIG, cache_dir.to_string())
             .build()
-            .set(&test_env.context, serde_json::Value::String(cache_dir.to_string()))
             .unwrap();
 
         let result = get_discovery_cache_dir(&test_env.context);

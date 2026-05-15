@@ -43,7 +43,6 @@ template("ffx_pkg_lib") {
       ":empty-repo-keys",
       ":empty-repo-metadata",
       "//src/lib/fuchsia",
-      "//third_party/rust_crates:pretty_assertions",
       "//third_party/rust_crates:tempfile",
     ]
 

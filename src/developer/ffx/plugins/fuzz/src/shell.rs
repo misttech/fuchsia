@@ -966,11 +966,11 @@ mod tests {
         script = ShellScript::try_new(&mut test)?;
         let mut badpath = PathBuf::from(test.root_dir());
         badpath.push("invalid");
-        env.context
-            .query(DEFAULT_FUZZING_OUTPUT_VARIABLE)
-            .level(Some(ffx_config::ConfigLevel::User))
+
+        let env2 = ffx_config::test_env()
+            .user_config(DEFAULT_FUZZING_OUTPUT_VARIABLE, serde_json::json!(&badpath))
             .build()
-            .set(&env.context, serde_json::json!(&badpath))?;
+            .unwrap();
         script.add(&mut test, format!("attach {}", TEST_URL));
         test.output_includes("invalid output directory");
 
@@ -993,13 +993,13 @@ mod tests {
         let cmdline = format!("attach -o {} {}", output_dir.to_string_lossy(), TEST_URL);
         script.add(&mut test, cmdline);
         test.output_includes("invalid command: a fuzzer is already attached.");
-        script.run(&env.context, &mut test).await?;
+        script.run(&env2.context, &mut test).await?;
         test.verify_output()
     }
 
     #[fuchsia::test]
     async fn test_get() -> Result<()> {
-        let env = ffx_config::test_init()?;
+        let env = ffx_config::test_env().build()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 
@@ -1026,7 +1026,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_set() -> Result<()> {
-        let env = ffx_config::test_init()?;
+        let env = ffx_config::test_env().build()?;
         let mut test = Test::try_new()?;
         let mut script = ShellScript::try_new(&mut test)?;
 

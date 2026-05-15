@@ -140,7 +140,7 @@ mod test {
     use camino::Utf8PathBuf;
     use fdomain_client::fidl::ServerEnd;
     use fdomain_fuchsia_pkg_rewrite::{EditTransactionRequest, EngineRequest, RuleIteratorRequest};
-    use ffx_config::ConfigLevel;
+
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_writer::TestBuffers;
     use fidl_fuchsia_pkg_ext::{
@@ -260,16 +260,16 @@ mod test {
     #[fuchsia::test]
     async fn test_deregister_default_repository_standalone() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().unwrap();
-
         let default_repo_name = "default-repo";
-        pkg::config::set_default_repository(&env.context, default_repo_name).unwrap();
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
+
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let env = builder
+            .user_config("repository.default", default_repo_name)
+            .user_config(TARGET_DEFAULT_KEY, "some-target")
+            .user_config("repository.process_dir", isolate_root.to_string_lossy())
             .build()
-            .set(&env.context, "some-target".into())
-            .expect("Setting default target");
+            .unwrap();
 
         let (repo_mgr, _) = setup_fake_repo_manager_server(Arc::clone(&client)).await;
 
@@ -294,16 +294,12 @@ mod test {
     async fn test_deregister_standalone_not_found() {
         let client = fdomain_local::local_client_empty();
         // command should still succeed if the repo_proxy returns NOT_FOUND.
-        let env = ffx_config::test_init().unwrap();
-
         let default_repo_name = "default-repo";
-        pkg::config::set_default_repository(&env.context, default_repo_name).unwrap();
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config("repository.default", default_repo_name)
+            .user_config(TARGET_DEFAULT_KEY, "some-target")
             .build()
-            .set(&env.context, "some-target".into())
-            .expect("Setting default target");
+            .unwrap();
 
         let repo_mgr = fake_proxy(Arc::clone(&client), move |req| match req {
             fdomain_fuchsia_pkg::RepositoryManagerRequest::Remove { responder, .. } => {
@@ -332,16 +328,12 @@ mod test {
     #[fuchsia::test]
     async fn test_deregister_with_scheme() {
         let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().unwrap();
-
         let default_repo_name = "default-repo";
-        pkg::config::set_default_repository(&env.context, default_repo_name).unwrap();
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config("repository.default", default_repo_name)
+            .user_config(TARGET_DEFAULT_KEY, "some-target")
             .build()
-            .set(&env.context, "some-target".into())
-            .expect("Setting default target");
+            .unwrap();
 
         let repo_mgr = fake_proxy(Arc::clone(&client), move |req| match req {
             fdomain_fuchsia_pkg::RepositoryManagerRequest::Remove { responder, .. } => {

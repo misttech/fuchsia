@@ -148,20 +148,16 @@ mod tests {
 
     #[fuchsia::test]
     async fn oot_default_config() {
-        let env = ffx_config::test_init().expect("Unable to initialize ffx_config.");
-
         let oot_test_default_configs =
             [Path::new("default/configs/a.triage"), Path::new("configs/b.triage")];
 
+        let env = ffx_config::test_env()
+            .user_config(DEFAULT_CONFIG_PATHS_VARIABLE, serde_json::json!(oot_test_default_configs))
+            .build()
+            .expect("Unable to initialize ffx_config.");
+
         let tempdir = tempdir().expect("Unable to create tempdir for testing.");
         let root = tempdir.path();
-
-        env.context
-            .query(DEFAULT_CONFIG_PATHS_VARIABLE)
-            .level(Some(ffx_config::ConfigLevel::User))
-            .build()
-            .set(&env.context, serde_json::json!(oot_test_default_configs))
-            .expect("Unable to set oot default config variable.");
 
         let config_files = get_or_default_config_files(&env.context, vec![], root.to_path_buf())
             .await

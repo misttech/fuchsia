@@ -119,7 +119,7 @@ impl RepoStopTool {
 mod tests {
     use super::*;
     use camino::Utf8PathBuf;
-    use ffx_config::{ConfigLevel, TestEnv};
+    use ffx_config::TestEnv;
     use fidl_fuchsia_pkg_ext::{
         RepositoryConfigBuilder, RepositoryRegistrationAliasConflictMode, RepositoryStorageType,
     };
@@ -201,16 +201,15 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_standalone_stop() {
-        let env = ffx_config::test_init().unwrap();
-        env.context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &env.context,
-                env.isolate_root.path().join("repo_servers").to_string_lossy().into(),
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let env = builder
+            .user_config(
+                "repository.process_dir",
+                isolate_root.join("repo_servers").to_string_lossy(),
             )
-            .expect("setting isolated process dir");
+            .build()
+            .unwrap();
 
         let (_mgr, _server_proc) =
             make_standalone_instance("default".into(), None, &env.context, &env)
@@ -232,16 +231,15 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_product_bundle_stop() {
-        let env = ffx_config::test_init().unwrap();
-        env.context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &env.context,
-                env.isolate_root.path().join("repo_servers").to_string_lossy().into(),
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let env = builder
+            .user_config(
+                "repository.process_dir",
+                isolate_root.join("repo_servers").to_string_lossy(),
             )
-            .expect("setting isolated process dir");
+            .build()
+            .unwrap();
 
         let product_bundle_path =
             Utf8PathBuf::from_path_buf(env.isolate_root.path().join("pb")).expect("utf8 path");

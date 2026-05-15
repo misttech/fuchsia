@@ -181,7 +181,7 @@ fn format_text(infos: Vec<PkgServerData>, full: bool) -> String {
 mod tests {
     use super::*;
     use camino::Utf8PathBuf;
-    use ffx_config::ConfigLevel;
+
     use ffx_writer::{Format, TestBuffers};
     use fidl_fuchsia_pkg_ext::{RepositoryConfigBuilder, RepositoryStorageType};
     use std::collections::BTreeSet;
@@ -190,14 +190,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_empty() {
-        let test_env = ffx_config::test_init().expect("test env");
-        test_env
-            .context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let test_env = builder
+            .user_config("repository.process_dir", isolate_root.to_string_lossy())
             .build()
-            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
-            .expect("Setting process dir");
+            .expect("test env");
 
         let tool = RepoListTool {
             cmd: ListCommand { full: false, names: vec![] },
@@ -215,14 +213,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_text() {
-        let test_env = ffx_config::test_init().expect("test env");
-        test_env
-            .context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let test_env = builder
+            .user_config("repository.process_dir", isolate_root.to_string_lossy())
             .build()
-            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
-            .expect("Setting process dir");
+            .expect("test env");
 
         let dir = test_env.context.get("repository.process_dir").expect("process_dir");
         let mgr = PkgServerInstances::new(dir);
@@ -264,14 +260,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_text_full() {
-        let test_env = ffx_config::test_init().expect("test env");
-        test_env
-            .context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let test_env = builder
+            .user_config("repository.process_dir", isolate_root.to_string_lossy())
             .build()
-            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
-            .expect("Setting process dir");
+            .expect("test env");
         let dir = test_env.context.get("repository.process_dir").expect("process_dir");
         let mgr = PkgServerInstances::new(dir);
         let addr = SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), 8000);
@@ -318,7 +312,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_filter_name() {
-        let env = ffx_config::test_init().expect("test env");
+        let env = ffx_config::test_env().build().expect("test env");
         let dir = env.context.get("repository.process_dir").expect("process_dir");
         let mgr = PkgServerInstances::new(dir);
         let addr = SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED), 8000);
@@ -379,14 +373,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_machine_and_schema() {
-        let test_env = ffx_config::test_init().expect("test env");
-        test_env
-            .context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let test_env = builder
+            .user_config("repository.process_dir", isolate_root.to_string_lossy())
             .build()
-            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
-            .expect("Setting process dir");
+            .expect("test env");
 
         let dir = test_env.context.get("repository.process_dir").expect("process_dir");
         let mgr = PkgServerInstances::new(dir);

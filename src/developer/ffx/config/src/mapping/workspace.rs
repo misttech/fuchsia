@@ -65,6 +65,7 @@ mod test {
             Some(workspace_dir.path().to_owned()),
             false,
         )
+        .unwrap()
     }
 
     #[test]

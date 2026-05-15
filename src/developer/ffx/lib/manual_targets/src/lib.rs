@@ -5,14 +5,18 @@
 use async_lock::Mutex;
 use async_trait::async_trait;
 
-use ffx_config::{ConfigLevel, EnvironmentContext};
+use ffx_config::environment::EnvironmentError;
+use ffx_config::{ConfigError, ConfigLevel, EnvironmentContext};
 use serde_json::{Map, Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(thiserror::Error, Debug)]
 pub enum ManualTargetsError {
     #[error("Config error: {0}")]
-    Config(#[from] ffx_config::api::ConfigError),
+    Config(#[from] ConfigError),
+
+    #[error("Environment error: {0}")]
+    Environment(#[from] EnvironmentError),
 
     #[error("Mock targets value is missing")]
     MockValueMissing,
@@ -78,21 +82,19 @@ impl Config {
 #[async_trait(?Send)]
 impl ManualTargets for Config {
     async fn storage_get(&self) -> Result<Value, ManualTargetsError> {
-        self.context
-            .query(MANUAL_TARGETS)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .get(&self.context)
-            .map_err(ManualTargetsError::Config)
+        let env = self.context.load()?;
+        let config = ffx_config::Config::from_env(&env).map_err(ConfigError::from)?;
+        config
+            .get_in_level(MANUAL_TARGETS, ConfigLevel::User)
+            .ok_or_else(|| ConfigError::NoValueSet(MANUAL_TARGETS).into())
     }
 
     async fn storage_set(&self, targets: Value) -> Result<(), ManualTargetsError> {
-        self.context
-            .query(MANUAL_TARGETS)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&self.context, targets.into())
-            .map_err(ManualTargetsError::Config)
+        let env = self.context.load()?;
+        let mut config = ffx_config::Config::from_env(&env).map_err(ConfigError::from)?;
+        config.set(MANUAL_TARGETS, ConfigLevel::User, targets).map_err(ConfigError::from)?;
+        config.save().map_err(ConfigError::from)?;
+        Ok(())
     }
 }
 
@@ -140,14 +142,18 @@ mod test {
         #[fuchsia::test]
         #[serial]
         async fn test_get_manual_targets() {
-            let env = ffx_config::test_init().unwrap();
+            let mut env = ffx_config::test_init().unwrap();
 
-            env.context
-                .query(MANUAL_TARGETS)
-                .level(Some(ConfigLevel::User))
-                .build()
-                .set(&env.context, json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345}))
+            let mut config = ffx_config::Config::from_env(&env.load()).unwrap();
+            config
+                .set(
+                    MANUAL_TARGETS,
+                    ConfigLevel::User,
+                    json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 12345}),
+                )
                 .unwrap();
+            config.save().unwrap();
+            env.reload_context().unwrap();
 
             let mt = Config::new_from_context(&env.context);
             let value = mt.get().await.unwrap();
@@ -159,12 +165,15 @@ mod test {
         #[fuchsia::test]
         #[serial]
         async fn test_add_manual_target() {
-            let env = ffx_config::test_init().unwrap();
+            let mut env = ffx_config::test_init().unwrap();
 
-            let mt = Config::new_from_context(&env.context);
+            let mut mt = Config::new_from_context(&env.context);
             mt.add("127.0.0.1:8022".to_string()).await.unwrap();
             // duplicate additions are ignored
             mt.add("127.0.0.1:8022".to_string()).await.unwrap();
+
+            env.reload_context().unwrap();
+            mt = Config::new_from_context(&env.context);
 
             let value = mt.get().await.unwrap();
             let targets = value.as_object().unwrap();
@@ -174,23 +183,32 @@ mod test {
         #[fuchsia::test]
         #[serial]
         async fn test_remove_manual_target() {
-            let env = ffx_config::test_init().unwrap();
+            let mut env = ffx_config::test_init().unwrap();
 
-            env.context
-                .query(MANUAL_TARGETS)
-                .level(Some(ConfigLevel::User))
-                .build()
-                .set(&env.context, json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 0}))
+            let mut config = ffx_config::Config::from_env(&env.load()).unwrap();
+            config
+                .set(
+                    MANUAL_TARGETS,
+                    ConfigLevel::User,
+                    json!({"127.0.0.1:8022": 0, "127.0.0.1:8023": 0}),
+                )
                 .unwrap();
+            config.save().unwrap();
 
-            let mt = Config::new_from_context(&env.context);
+            env.reload_context().unwrap();
+            let mut mt = Config::new_from_context(&env.context);
             let value = mt.get().await.unwrap();
             let targets = value.as_object().unwrap();
             assert!(targets.contains_key("127.0.0.1:8022"));
             assert!(targets.contains_key("127.0.0.1:8023"));
 
             mt.remove("127.0.0.1:8022".to_string()).await.unwrap();
+            env.reload_context().unwrap();
+            mt = Config::new_from_context(&env.context);
+
             mt.remove("127.0.0.1:8023".to_string()).await.unwrap();
+            env.reload_context().unwrap();
+            mt = Config::new_from_context(&env.context);
 
             let targets = mt.get_or_default().await;
             assert_eq!(targets, Map::<String, Value>::new());

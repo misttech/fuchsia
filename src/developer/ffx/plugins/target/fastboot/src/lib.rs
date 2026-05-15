@@ -466,29 +466,17 @@ mod test {
         }
     }
 
-    fn setup_ssh_paths(context: &EnvironmentContext) -> (NamedTempFile, NamedTempFile) {
-        let temp_ssh_priv = NamedTempFile::new().expect("creating temp file for ssh.priv");
-        context
-            .query("ssh.priv")
-            .level(Some(ffx_config::ConfigLevel::User))
-            .build()
-            .set(context, temp_ssh_priv.path().to_string_lossy().into())
-            .expect("creating temp ssh.priv");
-        let temp_ssh_pub = NamedTempFile::new().expect("creating temp file for ssh.pub");
-        context
-            .query("ssh.pub")
-            .level(Some(ffx_config::ConfigLevel::User))
-            .build()
-            .set(context, temp_ssh_pub.path().to_string_lossy().into())
-            .expect("creating temp ssh.pub");
-        (temp_ssh_priv, temp_ssh_pub)
-    }
-
     #[fuchsia::test]
     async fn test_authorize() -> Result<()> {
-        let env = ffx_config::test_init()?;
-        let (_priv, authorized_keys) = setup_ssh_paths(&env.context);
-        let authorized_keys_path = authorized_keys.path().to_string_lossy();
+        let temp_ssh_priv = NamedTempFile::new().expect("creating temp file for ssh.priv");
+        let temp_ssh_pub = NamedTempFile::new().expect("creating temp file for ssh.pub");
+        let authorized_keys_path = temp_ssh_pub.path().to_string_lossy().to_string();
+
+        let env = ffx_config::test_env()
+            .user_config("ssh.priv", temp_ssh_priv.path().to_str().unwrap())
+            .user_config("ssh.pub", temp_ssh_pub.path().to_str().unwrap())
+            .build()
+            .unwrap();
 
         let mut interface = MockInterface::default();
         let command =
@@ -500,7 +488,7 @@ mod test {
 
         assert_eq!(
             interface.staged_path.lock().unwrap().as_deref(),
-            Some(authorized_keys_path).as_deref()
+            Some(authorized_keys_path.as_str())
         );
         assert_eq!(
             *interface.oem_commands.lock().unwrap(),

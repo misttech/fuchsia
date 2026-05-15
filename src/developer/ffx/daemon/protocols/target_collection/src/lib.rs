@@ -928,14 +928,13 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use async_channel::{Receiver, Sender};
-    use ffx_config::ConfigLevel;
     use fidl_fuchsia_developer_ffx::TargetQuery;
     use fidl_fuchsia_net::{IpAddress, Ipv6Address};
     use futures::channel::oneshot::channel;
+    use manual_targets::ManualTargets;
     use protocols::testing::FakeDaemonBuilder;
     use serde_json::{Map, Value, json};
     use std::cell::RefCell;
-    use std::path::Path;
     use std::str::FromStr;
     use std::time::Instant;
     use tempfile::tempdir;
@@ -1060,27 +1059,13 @@ mod tests {
         }
     }
 
-    async fn init_test_config(env: &ffx_config::TestEnv, temp_dir: &Path) {
-        env.context
-            .query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, json!(temp_dir.display().to_string()))
-            .unwrap();
-    }
-
     #[fuchsia::test]
     async fn test_protocol_integration() {
-        let env = ffx_config::test_init().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
-        init_test_config(&env, temp.path()).await;
-
-        // Disable mDNS autoconnect to prevent RCS connection attempts in this test.
-        env.context
-            .query("discovery.mdns.autoconnect")
-            .level(Some(ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, temp.path().display().to_string())
+            .user_config("discovery.mdns.autoconnect", false)
             .build()
-            .set(&env.context, json!(false))
             .unwrap();
 
         const NAME: &'static str = "foo";
@@ -1302,17 +1287,16 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_persisted_manual_target_remove() {
-        let env = ffx_config::test_init().unwrap();
+        let temp = tempdir().expect("cannot get tempdir");
+        let env = ffx_config::test_env()
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, temp.path().display().to_string())
+            .build()
+            .unwrap();
+
         let mut map = Map::<String, Value>::new();
         map.insert("127.0.0.1:8022".to_string(), Value::Null);
-        env.context
-            .query("targets.manual")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, json!(map))
-            .expect("Setting manual targets");
-        let temp = tempdir().expect("cannot get tempdir");
-        init_test_config(&env, temp.path()).await;
+        let mt = Config::new_from_context(&env.context);
+        mt.storage_set(json!(map)).await.unwrap();
 
         let (manual_targets_loaded_sender, manual_targets_loaded_receiver) = channel::<()>();
         let tc_impl = Rc::new(RefCell::new(TargetCollectionProtocol::default()));
@@ -1351,9 +1335,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_add_target() {
-        let env = ffx_config::test_init().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
-        init_test_config(&env, temp.path()).await;
+        let env = ffx_config::test_env()
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, temp.path().display().to_string())
+            .build()
+            .unwrap();
 
         let fake_daemon = FakeDaemonBuilder::new(&env.context)
             .register_fidl_protocol::<FakeMdns>()
@@ -1379,9 +1365,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_add_target_with_port() {
-        let env = ffx_config::test_init().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
-        init_test_config(&env, temp.path()).await;
+        let env = ffx_config::test_env()
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, temp.path().display().to_string())
+            .build()
+            .unwrap();
 
         let fake_daemon = FakeDaemonBuilder::new(&env.context)
             .register_fidl_protocol::<FakeMdns>()
@@ -1407,9 +1395,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_persisted_manual_target_add() {
-        let env = ffx_config::test_init().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
-        init_test_config(&env, temp.path()).await;
+        let env = ffx_config::test_env()
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, temp.path().display().to_string())
+            .build()
+            .unwrap();
 
         let tc_impl = Rc::new(RefCell::new(TargetCollectionProtocol::default()));
         let fake_daemon = FakeDaemonBuilder::new(&env.context)
@@ -1440,22 +1430,22 @@ mod tests {
         assert_eq!(1, target_collection.targets(None).len());
         let mut map = Map::<String, Value>::new();
         map.insert("[fe80::1%1]:8022".to_string(), Value::Null);
-        assert_eq!(env.context.get::<Value, _>("targets.manual").unwrap(), json!(map));
+        let mt = Config::new_from_context(&env.context);
+        assert_eq!(mt.get().await.unwrap(), json!(map));
     }
 
     #[fuchsia::test]
     async fn test_persisted_manual_target_load() {
-        let env = ffx_config::test_init().unwrap();
+        let temp = tempdir().expect("cannot get tempdir");
+        let env = ffx_config::test_env()
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, temp.path().display().to_string())
+            .build()
+            .unwrap();
+
         let mut map = Map::<String, Value>::new();
         map.insert("127.0.0.1:8022".to_string(), Value::Null);
-        env.context
-            .query("targets.manual")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, json!(map))
-            .expect("Setting manual targets");
-        let temp = tempdir().expect("cannot get tempdir");
-        init_test_config(&env, temp.path()).await;
+        let mt = Config::new_from_context(&env.context);
+        mt.storage_set(json!(map)).await.unwrap();
 
         let tc_impl = Rc::new(RefCell::new(TargetCollectionProtocol::default()));
         let fake_daemon = FakeDaemonBuilder::new(&env.context)
@@ -1541,9 +1531,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_open_target_ambiguous() {
-        let env = ffx_config::test_init().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
-        init_test_config(&env, temp.path()).await;
+        let env = ffx_config::test_env()
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, temp.path().display().to_string())
+            .build()
+            .unwrap();
 
         let fake_daemon = FakeDaemonBuilder::new(&env.context)
             .register_fidl_protocol::<FakeMdns>()

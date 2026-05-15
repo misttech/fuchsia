@@ -130,20 +130,16 @@ impl EmuStopTool {
 mod tests {
     use super::*;
     use emulator_instance::{EmulatorInstanceData, EngineState, write_to_disk};
-    use ffx_config::ConfigLevel;
-    use serde_json::json;
+
     use tempfile::tempdir;
 
     #[fuchsia::test]
     async fn test_stop_existing() {
-        let env = ffx_config::test_init().unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
-        env.context
-            .query(EMU_INSTANCE_ROOT_DIR)
-            .level(Some(ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config(EMU_INSTANCE_ROOT_DIR, temp_path.to_str().unwrap())
             .build()
-            .set(&env.context, json!(temp_path))
-            .expect("setting instance dir config");
+            .unwrap();
 
         let emu_instances = EmulatorInstances::new(temp_path.clone());
         let the_name = "one_instance".to_string();
@@ -173,14 +169,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_multiple_running_error() {
-        let env = ffx_config::test_init().unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
-        env.context
-            .query(EMU_INSTANCE_ROOT_DIR)
-            .level(Some(ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config(EMU_INSTANCE_ROOT_DIR, temp_path.to_str().unwrap())
             .build()
-            .set(&env.context, json!(temp_path))
-            .expect("setting instance dir config");
+            .unwrap();
         let emu_instances = EmulatorInstances::new(temp_path.clone());
         let cmd = StopCommand::default();
         let data = EmulatorInstanceData::new_with_state("one_instance", EngineState::Staged);
@@ -201,14 +194,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_prefer_running() {
-        let env = ffx_config::test_init().unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
-        env.context
-            .query(EMU_INSTANCE_ROOT_DIR)
-            .level(Some(ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config(EMU_INSTANCE_ROOT_DIR, temp_path.to_str().unwrap())
             .build()
-            .set(&env.context, json!(temp_path))
-            .expect("setting instance dir config");
+            .unwrap();
         let emu_instances = EmulatorInstances::new(temp_path.clone());
         let cmd = StopCommand::default();
 
@@ -243,14 +233,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_multiple_running_auto_fail() {
-        let env = ffx_config::test_init().unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
-        env.context
-            .query(EMU_INSTANCE_ROOT_DIR)
-            .level(Some(ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config(EMU_INSTANCE_ROOT_DIR, temp_path.to_str().unwrap())
             .build()
-            .set(&env.context, json!(temp_path))
-            .expect("setting instance dir config");
+            .unwrap();
         let emu_instances = EmulatorInstances::new(temp_path.clone());
         let cmd = StopCommand::default();
 
@@ -288,14 +275,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_only_stopped_auto_succeed() {
-        let env = ffx_config::test_init().unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
-        env.context
-            .query(EMU_INSTANCE_ROOT_DIR)
-            .level(Some(ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config(EMU_INSTANCE_ROOT_DIR, temp_path.to_str().unwrap())
             .build()
-            .set(&env.context, json!(temp_path))
-            .expect("setting instance dir config");
+            .unwrap();
         let emu_instances = EmulatorInstances::new(temp_path.clone());
         let cmd = StopCommand::default();
 
@@ -314,14 +298,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_multiple_running() {
-        let env = ffx_config::test_init().unwrap();
         let temp_path = PathBuf::from(tempdir().unwrap().path());
-        env.context
-            .query(EMU_INSTANCE_ROOT_DIR)
-            .level(Some(ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config(EMU_INSTANCE_ROOT_DIR, temp_path.to_str().unwrap())
             .build()
-            .set(&env.context, json!(temp_path))
-            .expect("setting instance dir config");
+            .unwrap();
         let emu_instances = EmulatorInstances::new(temp_path.clone());
         let cmd = StopCommand { all: true, ..Default::default() };
         let data = EmulatorInstanceData::new_with_state("one_instance", EngineState::Staged);
@@ -339,14 +320,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_stop_not_running() {
-        let env = ffx_config::test_init().unwrap();
-        env.context
-            .query(EMU_INSTANCE_ROOT_DIR)
-            .level(Some(ConfigLevel::User))
+        let temp_dir = tempfile::tempdir().unwrap();
+        let env = ffx_config::test_env()
+            .user_config(EMU_INSTANCE_ROOT_DIR, temp_dir.path().to_string_lossy())
             .build()
-            .set(&env.context, json!(env.isolate_root.path()))
-            .expect("setting instance dir config");
-        let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
+            .unwrap();
+        let emu_instances = EmulatorInstances::new(temp_dir.path().to_path_buf());
         let mut cmd = StopCommand::default();
         let data = EmulatorInstanceData::new_with_state("one_instance", EngineState::Staged);
         let instance_dir = emu_instances.get_instance_dir("one_instance", true).unwrap();

@@ -141,39 +141,23 @@ mod tests {
 
     #[fuchsia::test]
     fn test_get_category_group() {
-        let env = ffx_config::test_init().unwrap();
         let birds = vec!["chickens", "bald_eagle", "blue-jay", "hawk*", "goose:gosling"];
-        env.context
-            .query("trace.category_groups.birds")
-            .level(Some(ffx_config::ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config("trace.category_groups.birds", json!(birds))
             .build()
-            .set(&env.context, json!(birds))
             .unwrap();
         assert_eq!(birds, get_category_group(&env.context, "birds").unwrap());
     }
 
     #[fuchsia::test]
     fn test_get_category_group_names() {
-        let env = ffx_config::test_init().unwrap();
         let birds = vec!["chickens", "ducks"];
         let bees = vec!["honey", "bumble"];
-        env.context
-            .query("trace.category_groups.birds")
-            .level(Some(ffx_config::ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config("trace.category_groups.birds", json!(birds))
+            .user_config("trace.category_groups.bees", json!(bees))
+            .user_config("trace.category_groups.*invalid", json!(bees))
             .build()
-            .set(&env.context, json!(birds))
-            .unwrap();
-        env.context
-            .query("trace.category_groups.bees")
-            .level(Some(ffx_config::ConfigLevel::User))
-            .build()
-            .set(&env.context, json!(bees))
-            .unwrap();
-        env.context
-            .query("trace.category_groups.*invalid")
-            .level(Some(ffx_config::ConfigLevel::User))
-            .build()
-            .set(&env.context, json!(bees))
             .unwrap();
         assert!(get_category_group_names(&env.context).unwrap().contains(&"birds".to_owned()));
         assert!(get_category_group_names(&env.context).unwrap().contains(&"bees".to_owned()));
@@ -212,13 +196,10 @@ mod tests {
 
     #[fuchsia::test]
     fn test_get_category_group_invalid_category() {
-        let env = ffx_config::test_init().unwrap();
         for invalid_category in INVALID_CATEGORIES {
-            env.context
-                .query("trace.category_groups.flawed")
-                .level(Some(ffx_config::ConfigLevel::User))
+            let env = ffx_config::test_env()
+                .user_config("trace.category_groups.flawed", vec![*invalid_category])
                 .build()
-                .set(&env.context, json!(vec![invalid_category]))
                 .unwrap();
             let err = get_category_group(&env.context, "flawed").unwrap_err();
             let expected_message = format!("invalid category \"{}\"", invalid_category);
@@ -232,13 +213,10 @@ mod tests {
 
     #[fuchsia::test]
     fn test_expand_categories() {
-        let env = ffx_config::test_init().unwrap();
         let birds = vec!["chickens", "bald_eagle", "hawk*", "goose:gosling", "blue-jay"];
-        env.context
-            .query("trace.category_groups.birds")
-            .level(Some(ffx_config::ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .user_config("trace.category_groups.birds", json!(birds))
             .build()
-            .set(&env.context, json!(birds))
             .unwrap();
         // The result should have all groups expanded, merge duplicate categories, and sort them.
         assert_eq!(

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::storage::Config;
 use crate::{ConfigLevel, ConfigMap};
 
 use fuchsia_lockfile::{Lockfile, LockfileCreateError};
@@ -13,7 +12,6 @@ use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -79,10 +77,10 @@ pub use kind::*;
 pub use test_env::*;
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
-struct EnvironmentFiles {
-    user: Option<PathBuf>,
-    build: Option<HashMap<PathBuf, PathBuf>>,
-    global: Option<PathBuf>,
+pub(crate) struct EnvironmentFiles {
+    pub(crate) user: Option<PathBuf>,
+    pub(crate) build: Option<HashMap<PathBuf, PathBuf>>,
+    pub(crate) global: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -151,16 +149,7 @@ impl Environment {
 
         Self::save_env_file(path, &self.files)?;
 
-        crate::cache::invalidate(&self.context.cache);
-
         Ok(())
-    }
-
-    pub(crate) fn config_from_cache(
-        self,
-    ) -> std::result::Result<Arc<RwLock<Config>>, EnvironmentError> {
-        Ok(crate::cache::load_config(&self.context.cache, || Config::from_env(&self))
-            .map_err(crate::ConfigError::from)?)
     }
 
     fn load_env_file(
@@ -489,7 +478,8 @@ mod test {
             ConfigMap::default(),
             Some(env_file_path.clone()),
             false,
-        );
+        )
+        .unwrap();
         assert!(!env_file_path.is_file(), "Environment file shouldn't exist yet");
         let mut env = context.load().expect("Should be able to load the environment");
 
@@ -519,7 +509,8 @@ mod test {
             ConfigMap::default(),
             Some(env_file_path.clone()),
             false,
-        );
+        )
+        .unwrap();
 
         assert!(!env_file_path.is_file(), "Environment file shouldn't exist yet");
         let mut env = Environment::new_empty(context.clone());

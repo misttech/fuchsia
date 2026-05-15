@@ -4,7 +4,8 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use ffx_config::ConfigLevel;
+use ffx_config::environment::EnvironmentError;
+use ffx_config::{ConfigError, ConfigLevel};
 use ffx_target_net::port_forwarder_overnet::PortForwarder;
 use fidl_fuchsia_developer_ffx as ffx;
 use fidl_fuchsia_net::SocketAddress;
@@ -24,6 +25,12 @@ pub enum ForwardError {
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("Environment error: {0}")]
+    Environment(#[from] EnvironmentError),
+
+    #[error("Config error: {0}")]
+    Config(#[from] ConfigError),
 }
 
 #[ffx_protocol]
@@ -118,8 +125,18 @@ impl FidlProtocol for Forward {
                 })?;
 
                 let environment = cx_clone.environment();
-                let query = environment.query(TUNNEL_CFG).level(Some(ConfigLevel::User)).build();
-                if let Err(e) = query.add(&environment, cfg) {
+                // Note: This updates the configuration on disk, but the in-memory
+                // `EnvironmentContext` snapshot remains stale. This is acceptable
+                // because `TUNNEL_CFG` is only read once at startup in `start()`.
+                let res = (|| -> std::result::Result<(), ForwardError> {
+                    let env = environment.load()?;
+                    let mut config =
+                        ffx_config::Config::from_env(&env).map_err(ConfigError::from)?;
+                    config.add(TUNNEL_CFG, ConfigLevel::User, cfg).map_err(ConfigError::from)?;
+                    config.save().map_err(ConfigError::from)?;
+                    Ok(())
+                })();
+                if let Err(e) = res {
                     log::warn!("Failed to persist tunnel configuration: {:?}", e);
                 }
 

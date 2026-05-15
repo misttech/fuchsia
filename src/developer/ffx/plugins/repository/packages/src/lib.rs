@@ -469,7 +469,7 @@ async fn extract_archive_impl(
 mod test {
     use super::*;
     use camino::Utf8PathBuf;
-    use ffx_config::ConfigLevel;
+
     use ffx_package_archive_utils::{ArchiveEntry, FarArchiveReader, read_file_entries};
     use ffx_writer::TestBuffers;
     use fidl_fuchsia_pkg_ext::{
@@ -490,15 +490,13 @@ mod test {
     async fn setup_repo<'a>(instance_name: &'a str, path: &'a Path) -> ffx_config::TestEnv {
         test_utils::make_pm_repo_dir(path).await;
 
-        let env = ffx_config::test_init().unwrap();
-        let repo_process_dir = env.isolate_root.path().join("repo_data");
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let repo_process_dir = isolate_root.join("repo_data");
 
-        // Override the default location for the process dir so it is test specific.
-        env.context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
+        let env = builder
+            .user_config("repository.process_dir", repo_process_dir.to_string_lossy())
             .build()
-            .set(&env.context, repo_process_dir.to_string_lossy().into())
             .unwrap();
 
         // Create a test repo

@@ -6,7 +6,7 @@ use anyhow::{Context, Result, anyhow};
 use errors::{ffx_bail, ffx_bail_with_code};
 use ffx_config::api::ConfigError;
 use ffx_config::{
-    ConfigLevel, EnvironmentContext, disable_metrics, enable_basic_metrics,
+    Config, ConfigLevel, EnvironmentContext, disable_metrics, enable_basic_metrics,
     enable_enhanced_metrics, print_config, show_metrics_status,
 };
 use ffx_config_plugin_args::{
@@ -140,24 +140,44 @@ fn exec_get<W: Write>(ctx: &EnvironmentContext, get_cmd: &GetCommand, writer: W)
 
 async fn exec_set(ctx: &EnvironmentContext, set_cmd: &SetCommand) -> Result<()> {
     log::debug!("Set command running...");
-    set_cmd.query(ctx).set(ctx, set_cmd.value.clone()).map_err(anyhow::Error::from)
+    let query = set_cmd.query(ctx);
+    let (key, level) = query.validate_write_query()?;
+    let mut env = ctx.load()?;
+    env.populate_defaults(&level)?;
+    let mut config = Config::from_env(&env)?;
+    config.set(key, level, set_cmd.value.clone())?;
+    config.save()?;
+    Ok(())
 }
 
 async fn exec_remove(ctx: &EnvironmentContext, remove_cmd: &RemoveCommand) -> Result<()> {
-    let entry = remove_cmd.query(ctx);
+    let query = remove_cmd.query(ctx);
+    let (key, level) = query.validate_write_query()?;
     // Check that there is a value before removing it.
-    if let Ok(Some(_val)) = entry.get_raw::<Option<Value>>(ctx) {
-        entry.remove(ctx).map_err(anyhow::Error::from)
+    if let Ok(Some(_val)) = query.get_raw::<Option<Value>>(ctx) {
+        let env = ctx.load()?;
+        let mut config = Config::from_env(&env)?;
+        config.remove(key, level)?;
+        config.save()?;
+        Ok(())
     } else {
         ffx_bail_with_code!(2, "Configuration key not found")
     }
 }
 
 async fn exec_add(ctx: &EnvironmentContext, add_cmd: &AddCommand) -> Result<()> {
-    add_cmd
-        .query(ctx)
-        .add(ctx, Value::String(format!("{}", add_cmd.value)))
-        .map_err(anyhow::Error::from)
+    let query = add_cmd.query(ctx);
+    let (key, level) = query.validate_write_query()?;
+    let mut env = ctx.load()?;
+    env.populate_defaults(&level)?;
+    let mut config = Config::from_env(&env)?;
+
+    let value = Value::String(format!("{}", add_cmd.value));
+
+    config.add(key, level, value)?;
+
+    config.save()?;
+    Ok(())
 }
 
 async fn exec_env_set<W: Write>(
@@ -208,11 +228,7 @@ async fn exec_env<W: Write>(
             }
         },
         None => {
-            writeln!(
-                writer,
-                "{}",
-                ctx.load().context("Loading environment file")?.display(&None)
-            )?;
+            writeln!(writer, "{}", ctx.load().context("Loading environment file")?.display(&None))?;
             Ok(())
         }
     }
@@ -279,13 +295,13 @@ mod test {
 
     use super::*;
     use errors::{FfxError, IntoExitCode};
-    use ffx_config::{SelectMode, test_init};
+    use ffx_config::{SelectMode, test_env};
     use ffx_writer::{Format, TestBuffers};
     use serde_json::json;
 
     #[fuchsia::test]
     async fn test_exec_env_set_set_values() -> Result<()> {
-        let test_env = test_init()?;
+        let test_env = ffx_config::test_env().build()?;
         let writer = Vec::<u8>::new();
         let cmd = EnvSetCommand { file: "test.json".into(), level: ConfigLevel::User };
         exec_env_set(&test_env.context, writer, &cmd).await?;
@@ -295,14 +311,8 @@ mod test {
 
     #[fuchsia::test]
     async fn test_gey_key() {
-        let test_env = test_init().expect("test env initialized");
-        test_env
-            .context
-            .query("some-key")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&test_env.context, "a value".into())
-            .expect("setting value");
+        let test_env =
+            test_env().user_config("some-key", "a value").build().expect("test env initialized");
 
         let get_cmd = GetCommand {
             name: Some("some-key".into()),
@@ -317,14 +327,12 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_key() {
-        let test_env = test_init().expect("test env initialized");
-        test_env
-            .context
-            .query("some-key")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&test_env.context, "a value".into())
-            .expect("setting value");
+        let mut test_env = ffx_config::test_env().build().expect("test env initialized");
+        let mut config = Config::from_env(&test_env.load()).unwrap();
+        config.set("some-key", ConfigLevel::User, "a value".into()).unwrap();
+        config.save().unwrap();
+
+        test_env.reload_context().unwrap();
 
         let remove_cmd = RemoveCommand { name: "some-key".into() };
 
@@ -336,6 +344,8 @@ mod test {
 
         exec_remove(&test_env.context, &remove_cmd).await.expect("remove");
 
+        test_env.reload_context().unwrap();
+
         let mut writer = Vec::<u8>::new();
         match exec_get(&test_env.context, &get_cmd, &mut writer) {
             Ok(_) => panic!("Expected error getting removed key"),
@@ -345,7 +355,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_remove_nonexistant_key() {
-        let test_env = test_init().expect("test env initialized");
+        let test_env = ffx_config::test_env().build().expect("test env initialized");
 
         let remove_cmd = RemoveCommand { name: "some-key".into() };
 
@@ -363,27 +373,25 @@ mod test {
 
     #[fuchsia::test]
     async fn test_list_processed_by_raw() {
-        let test_env = test_init().expect("test env");
+        let mut builder = test_env();
+        let isolate_root = builder.isolate_root();
         let mut writer = Vec::<u8>::new();
 
-        let private_path1 = test_env.isolate_root.path().join("privatekey1");
-        let private_path2 = test_env.isolate_root.path().join("privatekey2");
+        let private_path1 = isolate_root.join("privatekey1");
+        let private_path2 = isolate_root.join("privatekey2");
         fs::write(&private_path1, "path1").expect("key 1 written");
         fs::write(&private_path2, "path2").expect("key 2 written");
-        test_env
-            .context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &test_env.context,
+        let test_env = builder
+            .user_config(
+                "ssh.priv",
                 json!([
                     "$ENV_PATH_THAT_IS_NOT_SET_2",
                     private_path1.to_string_lossy(),
                     private_path2.to_string_lossy(),
                 ]),
             )
-            .expect("set ssh.priv");
+            .build()
+            .expect("test env");
 
         exec_get(
             &test_env.context,
@@ -407,27 +415,25 @@ mod test {
 
     #[fuchsia::test]
     async fn test_list_processed_by_substitute() {
-        let test_env = test_init().expect("test env");
+        let mut builder = test_env();
+        let isolate_root = builder.isolate_root();
         let mut writer = Vec::<u8>::new();
 
-        let private_path1 = test_env.isolate_root.path().join("privatekey1");
-        let private_path2 = test_env.isolate_root.path().join("privatekey2");
+        let private_path1 = isolate_root.join("privatekey1");
+        let private_path2 = isolate_root.join("privatekey2");
         fs::write(&private_path1, "path1").expect("key 1 written");
         fs::write(&private_path2, "path2").expect("key 2 written");
-        test_env
-            .context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &test_env.context,
+        let test_env = builder
+            .user_config(
+                "ssh.priv",
                 json!([
                     "$ENV_PATH_THAT_IS_NOT_SET_2",
                     private_path1.to_string_lossy(),
                     private_path2.to_string_lossy(),
                 ]),
             )
-            .expect("set ssh.priv");
+            .build()
+            .expect("test env");
 
         exec_get(
             &test_env.context,
@@ -453,26 +459,23 @@ mod test {
             env::var("ENV_SSH_PATH_FOR_TESTING_").is_err(),
             "Expected weird testing env variable to be unset"
         );
-        unsafe { env::set_var("ENV_SSH_PATH_FOR_TESTING_", "private_path1") };
 
-        let test_env = test_init().expect("test env");
+        let mut builder = test_env().env_var("ENV_SSH_PATH_FOR_TESTING_", "private_path1");
+        let isolate_root = builder.isolate_root();
         let mut writer = Vec::<u8>::new();
 
-        let private_path1 = test_env.isolate_root.path().join("privatekey1");
-        let private_path2 = test_env.isolate_root.path().join("privatekey2");
+        let private_path1 = isolate_root.join("privatekey1");
+        let private_path2 = isolate_root.join("privatekey2");
         fs::write(&private_path1, "path1").expect("key 1 written");
         fs::write(&private_path2, "path2").expect("key 2 written");
 
-        test_env
-            .context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &test_env.context,
+        let test_env = builder
+            .user_config(
+                "ssh.priv",
                 json!(["$ENV_SSH_PATH_FOR_TESTING_", private_path2.to_string_lossy(),]),
             )
-            .expect("set ssh.priv");
+            .build()
+            .expect("test env");
 
         exec_get(
             &test_env.context,
@@ -492,19 +495,17 @@ mod test {
 
     #[fuchsia::test]
     async fn test_list_single_by_file() {
-        let test_env = test_init().expect("test env");
+        let mut builder = test_env();
+        let isolate_root = builder.isolate_root();
         let mut writer = Vec::<u8>::new();
 
-        let private_path1 = test_env.isolate_root.path().join("privatekey1");
+        let private_path1 = isolate_root.join("privatekey1");
         fs::write(&private_path1, "path1").expect("key 1 written");
 
-        test_env
-            .context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
+        let test_env = builder
+            .user_config("ssh.priv", json!([private_path1.to_string_lossy(),]))
             .build()
-            .set(&test_env.context, json!([private_path1.to_string_lossy(),]))
-            .expect("set ssh.priv");
+            .expect("test env");
 
         exec_get(
             &test_env.context,
@@ -522,27 +523,25 @@ mod test {
 
     #[fuchsia::test]
     async fn test_list_processed_by_file() {
-        let test_env = test_init().expect("test env");
+        let mut builder = test_env();
+        let isolate_root = builder.isolate_root();
         let mut writer = Vec::<u8>::new();
 
-        let private_path1 = test_env.isolate_root.path().join("privatekey1");
-        let private_path2 = test_env.isolate_root.path().join("privatekey2");
+        let private_path1 = isolate_root.join("privatekey1");
+        let private_path2 = isolate_root.join("privatekey2");
         fs::write(&private_path1, "path1").expect("key 1 written");
         fs::write(&private_path2, "path2").expect("key 2 written");
-        test_env
-            .context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &test_env.context,
+        let test_env = builder
+            .user_config(
+                "ssh.priv",
                 json!([
                     "$ENV_PATH_THAT_IS_NOT_SET_2",
                     private_path1.to_string_lossy(),
                     private_path2.to_string_lossy(),
                 ]),
             )
-            .expect("set ssh.priv");
+            .build()
+            .expect("test env");
 
         exec_get(
             &test_env.context,
@@ -567,23 +566,22 @@ mod test {
             env::var("ENV_SSH_PATH_FOR_TESTING_2").is_err(),
             "Expected weird testing env variable to be unset"
         );
-        unsafe { env::set_var("ENV_SSH_PATH_FOR_TESTING_2", private_path1.path()) };
 
-        let test_env = test_init().expect("test env");
+        let mut builder = test_env()
+            .env_var("ENV_SSH_PATH_FOR_TESTING_2", private_path1.path().to_str().unwrap());
+        let isolate_root = builder.isolate_root();
         let mut writer = Vec::<u8>::new();
 
-        let private_path2 = test_env.isolate_root.path().join("privatekey2");
+        let private_path2 = isolate_root.join("privatekey2");
         fs::write(&private_path2, "path2").expect("key 2 written");
-        test_env
-            .context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &test_env.context,
+
+        let test_env = builder
+            .user_config(
+                "ssh.priv",
                 json!(["$ENV_SSH_PATH_FOR_TESTING_2", private_path2.to_string_lossy(),]),
             )
-            .expect("set ssh.priv");
+            .build()
+            .expect("test env");
 
         exec_get(
             &test_env.context,
@@ -601,38 +599,30 @@ mod test {
 
     #[fuchsia::test]
     async fn test_exec_check_mismatched_ssh_keys() {
-        let test_env = test_init().expect("test env");
+        let mut builder = test_env();
+        let isolate_root = builder.isolate_root();
 
-        let auth_key_path1 = test_env.isolate_root.path().join("authorized_keys1");
-        let private_path1 = test_env.isolate_root.path().join("privatekey1");
+        let auth_key_path1 = isolate_root.join("authorized_keys1");
+        let private_path1 = isolate_root.join("privatekey1");
 
-        let auth_key_path2 = test_env.isolate_root.path().join("authorized_keys2");
-        let private_path2 = test_env.isolate_root.path().join("privatekey2");
+        let auth_key_path2 = isolate_root.join("authorized_keys2");
+        let private_path2 = isolate_root.join("privatekey2");
 
-        test_env
-            .context
-            .query("ssh.pub")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &test_env.context,
+        let test_env = builder
+            .user_config(
+                "ssh.pub",
                 json!(["$ENV_PATH_THAT_IS_NOT_SET", auth_key_path2.to_string_lossy(), "someother"]),
             )
-            .expect("set ssh.pub");
-        test_env
-            .context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &test_env.context,
+            .user_config(
+                "ssh.priv",
                 json!([
                     "$ENV_PATH_THAT_IS_NOT_SET_2",
                     private_path1.to_string_lossy(),
                     "someother/place"
                 ]),
             )
-            .expect("set ssh.priv");
+            .build()
+            .expect("test env");
 
         let keys = SshKeyFiles {
             authorized_keys: auth_key_path1.clone(),
@@ -687,35 +677,27 @@ mod test {
 
     #[fuchsia::test]
     async fn test_exec_check_ok_ssh_keys() {
-        let test_env = test_init().expect("test env");
+        let mut builder = test_env();
+        let isolate_root = builder.isolate_root();
 
-        let auth_key_path = test_env.isolate_root.path().join("authorized_keys");
-        let private_path = test_env.isolate_root.path().join("privatekey");
+        let auth_key_path = isolate_root.join("authorized_keys");
+        let private_path = isolate_root.join("privatekey");
 
-        test_env
-            .context
-            .query("ssh.pub")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &test_env.context,
+        let test_env = builder
+            .user_config(
+                "ssh.pub",
                 json!(["$ENV_PATH_THAT_IS_NOT_SET", auth_key_path.to_string_lossy(), "someother"]),
             )
-            .expect("set ssh.pub");
-        test_env
-            .context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &test_env.context,
+            .user_config(
+                "ssh.priv",
                 json!([
                     "$ENV_PATH_THAT_IS_NOT_SET_2",
                     private_path.to_string_lossy(),
                     "someother/place"
                 ]),
             )
-            .expect("set ssh.priv");
+            .build()
+            .expect("test env");
 
         let keys = SshKeyFiles::load(&test_env.context).expect("new ssh keys");
 
@@ -750,35 +732,27 @@ mod test {
 
     #[fuchsia::test]
     async fn test_exec_check_empty_ssh_keys() {
-        let test_env = test_init().expect("test env");
+        let mut builder = test_env();
+        let isolate_root = builder.isolate_root();
 
-        let auth_key_path = test_env.isolate_root.path().join("authorized_keys");
-        let private_path = test_env.isolate_root.path().join("privatekey");
+        let auth_key_path = isolate_root.join("authorized_keys");
+        let private_path = isolate_root.join("privatekey");
 
-        test_env
-            .context
-            .query("ssh.pub")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &test_env.context,
+        let test_env = builder
+            .user_config(
+                "ssh.pub",
                 json!(["$ENV_PATH_THAT_IS_NOT_SET", auth_key_path.to_string_lossy(), "someother"]),
             )
-            .expect("set ssh.pub");
-        test_env
-            .context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(
-                &test_env.context,
+            .user_config(
+                "ssh.priv",
                 json!([
                     "$ENV_PATH_THAT_IS_NOT_SET_2",
                     private_path.to_string_lossy(),
                     "someother/place"
                 ]),
             )
-            .expect("set ssh.priv");
+            .build()
+            .expect("test env");
 
         let keys = SshKeyFiles::load(&test_env.context).expect("new ssh keys");
 

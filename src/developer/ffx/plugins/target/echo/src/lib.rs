@@ -154,7 +154,7 @@ mod test {
         proxy
     }
 
-    async fn run_echo_test(cmd: EchoCommand) -> String {
+    async fn run_echo_test(cmd: EchoCommand) -> Result<String> {
         let client = fdomain_local::local_client_empty();
         let fake_injector = Arc::new(FakeInjector {
             remote_factory_closure_f: Box::new(move || {
@@ -169,7 +169,7 @@ mod test {
                 Default::default(),
                 None,
                 true,
-            ),
+            )?,
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&env);
@@ -182,13 +182,13 @@ mod test {
 
         let result = tool.main(writer).await;
         assert!(result.is_ok());
-        buffers.into_stdout_str()
+        Ok(buffers.into_stdout_str())
     }
 
     #[fuchsia::test]
     async fn test_echo_with_no_text() -> Result<()> {
         let cmd = EchoCommand { text: None, repeat: false };
-        let output = run_echo_test(cmd).await;
+        let output = run_echo_test(cmd).await?;
         assert_eq!("SUCCESS: received \"Ffx\"\n".to_string(), output);
         Ok(())
     }
@@ -196,7 +196,7 @@ mod test {
     #[fuchsia::test]
     async fn test_echo_with_text() -> Result<()> {
         let cmd = EchoCommand { text: Some("test".to_string()), repeat: false };
-        let output = run_echo_test(cmd).await;
+        let output = run_echo_test(cmd).await?;
         assert_eq!("SUCCESS: received \"test\"\n".to_string(), output);
         Ok(())
     }
@@ -217,7 +217,7 @@ mod test {
                 Default::default(),
                 None,
                 true,
-            ),
+            )?,
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&env);
@@ -259,7 +259,7 @@ mod test {
                 Default::default(),
                 None,
                 true,
-            ),
+            )?,
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&env);

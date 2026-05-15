@@ -31,16 +31,16 @@ pub const ENV_FILE: &str = ".ffx_env";
 pub const USER_FILE: &str = ".ffx_user_config.json";
 pub const DEFAULT_BUILD_CONFIG_FILE: &str = "ffx-config.json";
 
-impl EnvironmentContext {
+impl EnvironmentKind {
     pub fn get_default_user_file_path(&self) -> std::result::Result<PathBuf, PathsError> {
-        match self.env_kind().isolate_root() {
+        match self.isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join(USER_FILE)),
             _ => get_default_user_file_path(),
         }
     }
 
     pub fn get_default_env_path(&self) -> std::result::Result<PathBuf, PathsError> {
-        match self.env_kind().isolate_root() {
+        match self.isolate_root() {
             Some(isolate_root) => Ok(isolate_root.join(ENV_FILE)),
             _ => default_env_path(),
         }
@@ -54,13 +54,34 @@ impl EnvironmentContext {
         Ok(filename)
     }
 
-    /// If this environment context has an explicitly set build config path,
-    /// return it. Otherwise None.
     pub fn get_build_config_file(&self) -> Option<&Utf8Path> {
-        match self.env_kind() {
+        match self {
             EnvironmentKind::ConfigDomain { domain, .. } => domain.get_build_config_file(),
             _ => None,
         }
+    }
+}
+
+impl EnvironmentContext {
+    pub fn get_default_user_file_path(&self) -> std::result::Result<PathBuf, PathsError> {
+        self.env_kind().get_default_user_file_path()
+    }
+
+    pub fn get_default_env_path(&self) -> std::result::Result<PathBuf, PathsError> {
+        self.env_kind().get_default_env_path()
+    }
+
+    pub fn get_default_build_dir_config_path(
+        &self,
+        build_dir: &Path,
+    ) -> std::result::Result<PathBuf, PathsError> {
+        self.env_kind().get_default_build_dir_config_path(build_dir)
+    }
+
+    /// If this environment context has an explicitly set build config path,
+    /// return it. Otherwise None.
+    pub fn get_build_config_file(&self) -> Option<&Utf8Path> {
+        self.env_kind().get_build_config_file()
     }
 
     pub fn get_default_ascendd_path(&self) -> std::result::Result<PathBuf, PathsError> {

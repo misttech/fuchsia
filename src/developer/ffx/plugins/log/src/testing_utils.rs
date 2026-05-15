@@ -262,7 +262,8 @@ impl TestEnvironment {
                 Default::default(),
                 None,
                 true,
-            ),
+            )
+            .unwrap(),
             &["some", "test"],
         );
         let target_env = target_behavior::target_interface(&fho_env);

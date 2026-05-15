@@ -26,6 +26,7 @@ use pkg::config::DEFAULT_REPO_NAME;
 use pkg::{
     PkgServerInfo, PkgServerInstanceInfo as _, PkgServerInstances, ServerMode, write_instance_info,
 };
+
 use signal_hook::consts::signal::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 use std::error::Error as _;
@@ -605,8 +606,8 @@ mod test {
     use assert_matches::assert_matches;
     use discovery::query::TargetInfoQuery;
     use fdomain_fuchsia_pkg_rewrite_ext::Rule;
+    use ffx_config::TestEnv;
     use ffx_config::keys::TARGET_DEFAULT_KEY;
-    use ffx_config::{ConfigLevel, TestEnv};
     use ffx_target::TargetProxy;
     use ffx_target_net_testutil::FakeNetstack;
     use ffx_writer::{Format, TestBuffers};
@@ -997,8 +998,10 @@ mod test {
         }
     }
 
-    async fn get_test_env() -> TestEnv {
-        ffx_config::test_init_with_daemon().expect("test initialization")
+    fn get_test_env_builder() -> ffx_config::environment::TestEnvBuilder {
+        ffx_config::test_env()
+            .runtime_config("connectivity.direct", false)
+            .runtime_config("connectivity.enable_network", false)
     }
 
     async fn make_fake_rcs_proxy_connector(
@@ -1138,7 +1141,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_serve_impl_validate_args() {
-        let env = get_test_env().await;
+        let env = get_test_env_builder().build().unwrap();
 
         let pb_path = env.isolate_root.path().join("some-pb");
         fs::create_dir_all(&pb_path).expect("pb temp dir");
@@ -1382,25 +1385,23 @@ mod test {
 
     #[fuchsia::test]
     async fn test_serve_impl_validate_args_running_servers() {
-        let env = get_test_env().await;
-
-        let instance_root = env.isolate_root.path().join("repo_instances");
+        let mut builder = get_test_env_builder();
+        let isolate_root = builder.isolate_root();
+        let instance_root = isolate_root.join("repo_instances");
         fs::create_dir_all(&instance_root).expect("instance root dir");
 
-        let repo_path = env.isolate_root.path().join("repo_path");
+        let repo_path = isolate_root.join("repo_path");
         fs::create_dir_all(&repo_path).expect("repo path dir");
+
+        let env = builder
+            .user_config("repository.process_dir", instance_root.to_string_lossy())
+            .build()
+            .unwrap();
 
         let instance_name = "devhost";
         let repo_config =
             RepositoryConfigBuilder::new(format!("fuchsia-pkg://{instance_name}").parse().unwrap())
                 .build();
-
-        env.context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, instance_root.to_string_lossy().into())
-            .expect("setting instance root config");
 
         let server_info = PkgServerInfo {
             name: instance_name.into(),
@@ -1545,7 +1546,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_serve_impl_validate_args_no_device() {
-        let env = get_test_env().await;
+        let env = get_test_env_builder().build().unwrap();
 
         let instance_root = env.isolate_root.path().join("repo_instances");
         fs::create_dir_all(&instance_root).expect("instance root dir");
@@ -1584,7 +1585,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_serve_impl_validate_args_too_many_devices() {
-        let env = get_test_env().await;
+        let env = get_test_env_builder().build().unwrap();
 
         let instance_root = env.isolate_root.path().join("repo_instances");
         fs::create_dir_all(&instance_root).expect("instance root dir");
@@ -1627,21 +1628,12 @@ mod test {
     #[test_case(false, false; "norefresh_tunelled")]
     #[fuchsia::test]
     async fn test_start_register(refresh_metadata: bool, direct_target_connection: bool) {
-        let test_env = get_test_env().await;
-        test_env
-            .context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
+        let mut builder = get_test_env_builder();
+        let isolate_root = builder.isolate_root();
+        let test_env = builder
+            .user_config("repository.process_dir", isolate_root.to_string_lossy())
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NODENAME)
             .build()
-            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
-            .expect("Setting process dir");
-
-        test_env
-            .context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&test_env.context, TARGET_NODENAME.into())
             .unwrap();
 
         let (fake_repo, mut fake_repo_rx) = FakeRepositoryManager::new();
@@ -1816,22 +1808,16 @@ mod test {
     #[test_case(false; "tunnelled")]
     #[fuchsia::test]
     async fn test_auto_reconnect(direct_target_connection: bool) {
-        let test_env = get_test_env().await;
-
-        test_env
-            .context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
+        let mut builder = get_test_env_builder();
+        let isolate_root = builder.isolate_root();
+        let test_env = builder
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NODENAME)
+            .user_config("ffx.isolated", true)
+            .user_config(ffx_config::keys::NETWORK_ENABLED, false)
+            .user_config(ffx_config::keys::USB_ENABLED, false)
+            .user_config("repository.process_dir", isolate_root.to_string_lossy())
             .build()
-            .set(&test_env.context, TARGET_NODENAME.into())
             .unwrap();
-        test_env
-            .context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
-            .expect("Setting process dir");
 
         let (fake_repo, mut fake_repo_rx) = FakeRepositoryManager::new();
         let (fake_engine, mut fake_engine_rx) = FakeEngine::new();
@@ -2038,14 +2024,12 @@ mod test {
 
     #[fuchsia::test]
     async fn test_no_device() {
-        let test_env = get_test_env().await;
-        test_env
-            .context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
+        let mut builder = get_test_env_builder();
+        let isolate_root = builder.isolate_root();
+        let test_env = builder
+            .user_config("repository.process_dir", isolate_root.to_string_lossy())
             .build()
-            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
-            .expect("Setting process dir");
+            .unwrap();
 
         let tmp_port_file = tempfile::NamedTempFile::new().unwrap();
         let tmp_port_file_path = tmp_port_file.path().to_owned();
@@ -2160,23 +2144,13 @@ mod test {
     #[test_case(false; "tunnelled")]
     #[fuchsia::test]
     async fn test_serve_product_bundle(direct_target_connection: bool) {
-        let test_env = get_test_env().await;
-
-        test_env
-            .context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
+        let mut builder = get_test_env_builder();
+        let isolate_root = builder.isolate_root();
+        let test_env = builder
+            .user_config(TARGET_DEFAULT_KEY, TARGET_NODENAME)
+            .user_config("repository.process_dir", isolate_root.to_string_lossy())
             .build()
-            .set(&test_env.context, TARGET_NODENAME.into())
             .unwrap();
-
-        test_env
-            .context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
-            .expect("Setting process dir");
 
         let tmp_pb_dir = tempfile::tempdir().unwrap();
         let pb_dir = Utf8Path::from_path(tmp_pb_dir.path()).unwrap().canonicalize_utf8().unwrap();
@@ -2411,14 +2385,12 @@ mod test {
 
     #[fuchsia::test]
     async fn test_trusted_root_file() {
-        let test_env = get_test_env().await;
-        test_env
-            .context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
+        let mut builder = get_test_env_builder();
+        let isolate_root = builder.isolate_root();
+        let test_env = builder
+            .user_config("repository.process_dir", isolate_root.to_string_lossy())
             .build()
-            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
-            .expect("Setting process dir");
+            .unwrap();
 
         let tmp_port_file = tempfile::NamedTempFile::new().unwrap();
 
@@ -2521,14 +2493,12 @@ mod test {
 
     #[fuchsia::test]
     async fn test_trusted_root_file_dynamic_port() {
-        let test_env = get_test_env().await;
-        test_env
-            .context
-            .query("repository.process_dir")
-            .level(Some(ConfigLevel::User))
+        let mut builder = get_test_env_builder();
+        let isolate_root = builder.isolate_root();
+        let test_env = builder
+            .user_config("repository.process_dir", isolate_root.to_string_lossy())
             .build()
-            .set(&test_env.context, test_env.isolate_root.path().to_string_lossy().into())
-            .expect("Setting process dir");
+            .unwrap();
 
         let tmp_port_file = tempfile::NamedTempFile::new().unwrap();
 

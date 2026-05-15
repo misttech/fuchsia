@@ -117,8 +117,7 @@ async fn make_ssh_command(
 #[cfg(test)]
 mod test {
     use super::*;
-    use ffx_config::ConfigLevel;
-    use ffx_config::environment::test_init;
+
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
     use serde_json::json;
@@ -127,20 +126,13 @@ mod test {
 
     #[fuchsia::test]
     async fn test_address_family() -> Result<()> {
-        let test_env = test_init()?;
-        let keys = [
-            test_env.isolate_root.path().join("path2"),
-            test_env.isolate_root.path().join("path1"),
-        ];
+        let env1 = ffx_config::test_env().build().unwrap();
+        let keys = [env1.isolate_root.path().join("path2"), env1.isolate_root.path().join("path1")];
         for k in &keys {
             fs::write(k, "")?;
         }
-        test_env
-            .context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&test_env.context, json!(&keys))?;
+        let test_env =
+            ffx_config::test_env().user_config("ssh.priv", json!(&keys)).build().unwrap();
         let addr = TargetIpAddr::from_str("127.0.0.1:34522")?;
         let cmd = SshCommand { sshconfig: None, command: vec![] };
         let ssh_cmd = make_ssh_command(&test_env.context, cmd, addr).await?;
@@ -166,20 +158,12 @@ mod test {
 
     #[fuchsia::test]
     async fn test_custom_config_file() -> Result<()> {
-        let test_env = test_init()?;
-        let keys = [
-            test_env.isolate_root.path().join("path2"),
-            test_env.isolate_root.path().join("path1"),
-        ];
+        let env1 = ffx_config::test_env().build().unwrap();
+        let keys = [env1.isolate_root.path().join("path2"), env1.isolate_root.path().join("path1")];
         for k in &keys {
             fs::write(k, "")?;
         }
-        test_env
-            .context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&test_env.context, json!(keys))?;
+        let test_env = ffx_config::test_env().user_config("ssh.priv", json!(keys)).build().unwrap();
         let addr = TargetIpAddr::from_str("[fe80::1%1]:22")?;
         let cmd = SshCommand {
             sshconfig: Some("/foo/bar/baz.conf".to_string()),

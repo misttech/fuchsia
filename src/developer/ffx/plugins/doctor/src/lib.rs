@@ -2252,7 +2252,7 @@ mod test {
     use super::*;
     use async_trait::async_trait;
     use emulator_instance::{EmulatorInstanceData, EngineState};
-    use ffx_config::{ConfigLevel, TestEnv};
+    use ffx_config::TestEnv;
     use ffx_doctor_test_utils::MockWriter;
     use fidl::Channel;
     use fidl::endpoints::{ProtocolMarker, Request, RequestStream, ServerEnd};
@@ -2270,6 +2270,7 @@ mod test {
     use pretty_assertions::{Comparison, assert_eq};
     use std::cell::Cell;
     use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
     use std::{fmt, fs};
     use tempfile::tempdir;
 
@@ -3000,52 +3001,44 @@ mod test {
         )
     }
 
-    fn setup_emu_dir(test_env: &TestEnv) -> Result<PathBuf> {
-        let emu_dir = test_env.isolate_root.path().join("emu_data");
+    fn setup_emu_dir(isolate_root: &Path) -> Result<PathBuf> {
+        let emu_dir = isolate_root.join("emu_data");
         fs::create_dir_all(&emu_dir)?;
-        test_env
-            .context
-            .query(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&test_env.context, json!(&emu_dir))?;
         Ok(emu_dir)
     }
 
-    async fn setup_ssh_keys(test_env: &TestEnv) -> Result<()> {
-        let pub_key = test_env.isolate_root.path().join("test_authorized_keys");
-        let priv_key = test_env.isolate_root.path().join("test_ed25519_key");
-        // Set the paths to use for the SSH keys
-        test_env
-            .context
-            .query("ssh.pub")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&test_env.context, json!([&pub_key]))?;
-        test_env
-            .context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&test_env.context, json!([&priv_key]))?;
-        let keys = SshKeyFiles::load(&test_env.context)?;
+    async fn setup_ssh_keys(isolate_root: &Path) -> Result<(PathBuf, PathBuf)> {
+        let pub_key = isolate_root.join("test_authorized_keys");
+        let priv_key = isolate_root.join("test_ed25519_key");
+        let keys = SshKeyFiles { authorized_keys: pub_key.clone(), private_key: priv_key.clone() };
         keys.create_keys_if_needed(false)?;
-        Ok(())
+        Ok((pub_key, priv_key))
     }
 
-    async fn setup_driver_socket_file(test_env: &TestEnv) -> Result<()> {
-        let socket_file_dir = test_env.isolate_root.path().join("test_usb_driver_socket");
+    async fn setup_driver_socket_file(isolate_root: &Path) -> Result<PathBuf> {
+        let socket_file_dir = isolate_root.join("test_usb_driver_socket");
         fs::create_dir_all(&socket_file_dir)?;
         let socket_file = socket_file_dir.join("socket");
         std::fs::File::create(&socket_file)?;
-        eprintln!("created file at: {}", socket_file.display());
-        test_env
-            .context
-            .query(usb_driver_api::CONFIG_USB_SOCKET_PATH)
-            .level(Some(ConfigLevel::User))
+        Ok(socket_file)
+    }
+
+    async fn setup_test_env() -> Result<ffx_config::TestEnv> {
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+
+        let (pub_key, priv_key) = setup_ssh_keys(&isolate_root).await?;
+        let emu_dir = setup_emu_dir(&isolate_root)?;
+        let socket_file = setup_driver_socket_file(&isolate_root).await?;
+
+        let test_env = builder
+            .user_config("ssh.pub", json!([&pub_key]))
+            .user_config("ssh.priv", json!([&priv_key]))
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, json!(&emu_dir))
+            .user_config(usb_driver_api::CONFIG_USB_SOCKET_PATH, json!(socket_file))
             .build()
-            .set(&test_env.context, json!(socket_file))?;
-        Ok(())
+            .unwrap();
+        Ok(test_env)
     }
 
     fn default_mock_driver_finder() -> MockUsbDriverFinder {
@@ -3058,10 +3051,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_single_try_no_daemon_running_no_targets_with_default_target() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
 
         let fake = FakeDaemonManager::new(
             vec![false],
@@ -3143,9 +3133,19 @@ mod test {
 
     #[fuchsia::test]
     async fn test_usb_driver_not_running() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+
+        let (pub_key, priv_key) =
+            setup_ssh_keys(&isolate_root).await.expect("setting up ssh test keys");
+        let emu_dir = setup_emu_dir(&isolate_root).expect("setting up emulator data");
+
+        let test_env = builder
+            .user_config("ssh.pub", json!([&pub_key]))
+            .user_config("ssh.priv", json!([&priv_key]))
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, json!(&emu_dir))
+            .build()
+            .unwrap();
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -3234,10 +3234,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_single_try_daemon_running_no_targets() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -3326,10 +3323,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_single_try_daemon_running_connection_error() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
+        let test_env = setup_test_env().await.unwrap();
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -3413,10 +3407,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_single_try_daemon_running_no_targets_default_target_empty() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
+        let test_env = setup_test_env().await.unwrap();
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -3505,10 +3496,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_two_tries_daemon_running_list_fails() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
 
         let fake = FakeDaemonManager::new(
             vec![true, false],
@@ -3751,10 +3739,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_connects_to_rcs_with_ssh_error_verbose() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
         let ledger = test_finds_target_connects_to_rcs_setup(
             &test_env,
             RcsTestArgs::default().verbose().with_ssh_error("some ssh error"),
@@ -3817,10 +3802,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ssh_connection_refused_recommends_tunnel() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
         let ledger = test_finds_target_connects_to_rcs_setup(
             &test_env,
             RcsTestArgs::default().with_ssh_error("Connection refused").with_reason(),
@@ -3834,10 +3816,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ssh_permission_denied_recommends_repave() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
         let ledger = test_finds_target_connects_to_rcs_setup(
             &test_env,
             RcsTestArgs::default()
@@ -3853,10 +3832,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_connects_to_rcs_verbose() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
         let ledger =
             test_finds_target_connects_to_rcs_setup(&test_env, RcsTestArgs::default().verbose())
                 .await;
@@ -3923,10 +3899,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_connects_to_rcs_normal() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
         let ledger =
             test_finds_target_connects_to_rcs_setup(&test_env, RcsTestArgs::default()).await;
         assert_eq!(
@@ -3969,10 +3942,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_with_filter() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
 
         let (tx, rx) = oneshot::channel::<()>();
 
@@ -4071,10 +4041,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_invalid_filter_finds_no_targets() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
 
         let (tx, rx) = oneshot::channel::<()>();
 
@@ -4244,10 +4211,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_single_try_daemon_running_no_targets_record_enabled() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -4349,10 +4313,7 @@ mod test {
         fake_recorder: Arc<Mutex<FakeRecorder>>,
         params: DoctorRecorderParameters,
     ) {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -4511,10 +4472,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_with_missing_nodename_verbose() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
 
         let ledger =
             test_finds_target_with_missing_nodename_setup(&test_env, LedgerViewMode::Verbose).await;
@@ -4581,10 +4539,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_with_missing_nodename_normal() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
 
         let ledger =
             test_finds_target_with_missing_nodename_setup(&test_env, LedgerViewMode::Normal).await;
@@ -4629,10 +4584,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_fastboot_target() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -4723,10 +4675,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_single_try_daemon_running_different_api_level() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let test_env = setup_test_env().await.unwrap();
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -4816,26 +4765,21 @@ mod test {
 
     #[fuchsia::test]
     async fn test_missing_ssh_keys() {
-        let test_env = ffx_config::test_env().build().unwrap();
-        let pub_key = test_env.isolate_root.path().join("test_authorized_keys");
-        let priv_key = test_env.isolate_root.path().join("test_ed25519_key");
-        // Set the paths to use for the SSH keys
-        test_env
-            .context
-            .query("ssh.pub")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&test_env.context, json!([&pub_key]))
-            .unwrap();
-        test_env
-            .context
-            .query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&test_env.context, json!([&priv_key]))
-            .unwrap();
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let pub_key = isolate_root.join("test_authorized_keys");
+        let priv_key = isolate_root.join("test_ed25519_key");
 
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        let socket_file = setup_driver_socket_file(&isolate_root)
+            .await
+            .expect("setting up fake driver socket file");
+
+        let test_env = builder
+            .user_config("ssh.pub", json!([&pub_key]))
+            .user_config("ssh.priv", json!([&priv_key]))
+            .user_config(usb_driver_api::CONFIG_USB_SOCKET_PATH, json!(socket_file))
+            .build()
+            .unwrap();
         // Do not generate the keys - so they are missing.
 
         let fake = FakeDaemonManager::new(
@@ -4987,12 +4931,18 @@ mod test {
         fs::write(&metadata_path, metadata_content.to_string()).expect("Failed to write metadata");
 
         // Configure ffx to use our temporary search path
-        let test_env = ffx_config::test_env()
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let socket_file = setup_driver_socket_file(&isolate_root)
+            .await
+            .expect("setting up fake driver socket file");
+
+        let test_env = builder
             .env_var(EnvironmentContext::FFX_BIN_ENV, "host-tools/ffx")
             .runtime_config("ffx.subtool-search-paths", json!([subtool_search_dir_path]))
+            .user_config(usb_driver_api::CONFIG_USB_SOCKET_PATH, json!(socket_file))
             .build()
             .expect("Setting up test environment");
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
 
         let fake_daemon = FakeDaemonManager::new(
             vec![true],
@@ -5050,9 +5000,19 @@ mod test {
 
     #[fuchsia::test]
     async fn test_check_emulators() -> Result<()> {
-        let test_env = ffx_config::test_env().build().unwrap();
-        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
-        let emu_dir = setup_emu_dir(&test_env)?;
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+
+        let socket_file = setup_driver_socket_file(&isolate_root)
+            .await
+            .expect("setting up fake driver socket file");
+        let emu_dir = setup_emu_dir(&isolate_root).expect("setting up emulator data");
+
+        let test_env = builder
+            .user_config(usb_driver_api::CONFIG_USB_SOCKET_PATH, json!(socket_file))
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, json!(&emu_dir))
+            .build()
+            .unwrap();
         // No instances
         {
             let mut writer = MockWriter::new();

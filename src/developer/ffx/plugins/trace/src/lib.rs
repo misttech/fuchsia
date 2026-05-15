@@ -1799,17 +1799,14 @@ Triggers:
     #[fuchsia::test]
     async fn test_handle_recording_error() {
         let target = "fuchsia-device";
-        let env =
-            ffx_config::test_env().env_var("FUCHSIA_NODENAME", target.into()).build().unwrap();
-        let context = &env.context;
         let output_file = "foo_bar_bazzle_wazzle.fxt";
         let log_dir = "important_log_file.log";
-        context
-            .query("log.dir")
-            .level(Some(ffx_config::ConfigLevel::User))
+        let env = ffx_config::test_env()
+            .env_var("FUCHSIA_NODENAME", target.into())
+            .user_config("log.dir", log_dir)
             .build()
-            .set(&env.context, log_dir.into())
             .unwrap();
+        let context = &env.context;
 
         struct Test {
             error: RecordingError,

@@ -8,6 +8,7 @@ use crate::{ConfigMap, Environment, EnvironmentContext};
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::{NamedTempFile, TempDir};
 
@@ -29,9 +30,17 @@ pub struct TestEnv {
 }
 
 impl TestEnv {
-    fn new_isolated(env_vars: EnvVars, runtime_args: ConfigMap) -> Result<Self> {
-        let env_file = NamedTempFile::new().context("tmp access failed")?;
-        let isolate_root = tempfile::tempdir()?;
+    fn new_isolated(
+        env_vars: EnvVars,
+        runtime_args: ConfigMap,
+        user_config: ConfigMap,
+        global_config: ConfigMap,
+        build_config: ConfigMap,
+        isolate_root: TempDir,
+    ) -> Result<Self> {
+        let mut env_file = NamedTempFile::new().context("tmp access failed")?;
+        env_file.write_all(b"{}")?;
+        env_file.flush()?;
 
         let context = EnvironmentContext::isolated(
             ExecutableKind::Test,
@@ -42,12 +51,28 @@ impl TestEnv {
             None,
             false,
         )?;
-        Self::build_test_env(context, env_file, isolate_root)
+        Self::build_test_env(
+            context,
+            env_file,
+            isolate_root,
+            user_config,
+            global_config,
+            build_config,
+        )
     }
 
-    fn new_intree(build_dir: &Path, env_vars: EnvVars, runtime_args: ConfigMap) -> Result<Self> {
-        let env_file = NamedTempFile::new().context("tmp access failed")?;
-        let isolate_root = tempfile::tempdir()?;
+    fn new_intree(
+        build_dir: &Path,
+        env_vars: EnvVars,
+        runtime_args: ConfigMap,
+        user_config: ConfigMap,
+        global_config: ConfigMap,
+        build_config: ConfigMap,
+        isolate_root: TempDir,
+    ) -> Result<Self> {
+        let mut env_file = NamedTempFile::new().context("tmp access failed")?;
+        env_file.write_all(b"{}")?;
+        env_file.flush()?;
 
         let context = EnvironmentContext::new(
             EnvironmentKind::InTree {
@@ -59,21 +84,43 @@ impl TestEnv {
             runtime_args,
             Some(env_file.path().to_owned()),
             false,
-        );
-        Self::build_test_env(context, env_file, isolate_root)
+        )?;
+        Self::build_test_env(
+            context,
+            env_file,
+            isolate_root,
+            user_config,
+            global_config,
+            build_config,
+        )
     }
 
     fn build_test_env(
         context: EnvironmentContext,
         env_file: NamedTempFile,
         isolate_root: TempDir,
+        user_config: ConfigMap,
+        global_config: ConfigMap,
+        build_config: ConfigMap,
     ) -> Result<Self> {
-        let global_file = NamedTempFile::new().context("tmp access failed")?;
+        let mut global_file = NamedTempFile::new().context("tmp access failed")?;
+        serde_json::to_writer_pretty(&mut global_file, &Value::Object(global_config))?;
+        global_file.flush()?;
         let global_file_path = global_file.path().to_owned();
-        let user_file = NamedTempFile::new().context("tmp access failed")?;
+
+        let mut user_file = NamedTempFile::new().context("tmp access failed")?;
+        serde_json::to_writer_pretty(&mut user_file, &Value::Object(user_config))?;
+        user_file.flush()?;
         let user_file_path = user_file.path().to_owned();
-        let build_file =
-            context.build_dir().and(Some(NamedTempFile::new().context("tmp access failed")?));
+
+        let build_file = if let Some(_dir) = context.build_dir() {
+            let mut f = NamedTempFile::new().context("tmp access failed")?;
+            serde_json::to_writer_pretty(&mut f, &Value::Object(build_config))?;
+            f.flush()?;
+            Some(f)
+        } else {
+            None
+        };
 
         LOG_INIT.call_once(|| {
             let logging = crate::logging::build_logger_with_destinations(
@@ -89,7 +136,7 @@ impl TestEnv {
             }
         });
 
-        let test_env =
+        let mut test_env =
             TestEnv { env_file, context, user_file, build_file, global_file, isolate_root };
 
         let mut env = Environment::new_empty(test_env.context.clone());
@@ -102,11 +149,41 @@ impl TestEnv {
         env.set_global(Some(&global_file_path));
         env.save().context("saving env file")?;
 
+        test_env.reload_context()?;
+
         Ok(test_env)
     }
 
     pub fn load(&self) -> Environment {
         self.context.load().expect("opening test env file")
+    }
+
+    pub fn reload_context(&mut self) -> Result<()> {
+        let context = match self.context.env_kind() {
+            EnvironmentKind::Isolated { .. } => EnvironmentContext::isolated(
+                self.context.exe_kind(),
+                self.isolate_root.path().to_owned(),
+                self.context.env_vars.clone().unwrap_or_default(),
+                self.context.runtime_args.clone(),
+                Some(self.env_file.path().to_owned()),
+                None,
+                self.context.no_environment,
+            )?,
+            EnvironmentKind::InTree { tree_root, build_dir } => EnvironmentContext::new(
+                EnvironmentKind::InTree {
+                    tree_root: tree_root.clone(),
+                    build_dir: build_dir.clone(),
+                },
+                self.context.exe_kind(),
+                self.context.env_vars.clone(),
+                self.context.runtime_args.clone(),
+                Some(self.env_file.path().to_owned()),
+                self.context.no_environment,
+            )?,
+            _ => anyhow::bail!("Cannot reload context for this environment kind"),
+        };
+        self.context = context;
+        Ok(())
     }
 }
 
@@ -115,6 +192,10 @@ pub struct TestEnvBuilder {
     build_dir: Option<PathBuf>,
     env_vars: EnvVars,
     runtime_config: ConfigMap,
+    user_config: ConfigMap,
+    global_config: ConfigMap,
+    build_config: ConfigMap,
+    isolate_root: Option<tempfile::TempDir>,
 }
 
 /// Creates a TestEnvBuilder with the following defaults:
@@ -147,6 +228,14 @@ impl TestEnvBuilder {
         self
     }
 
+    /// Returns the path to the isolate root, creating it if it doesn't exist.
+    pub fn isolate_root(&mut self) -> PathBuf {
+        if self.isolate_root.is_none() {
+            self.isolate_root = Some(tempfile::tempdir().unwrap());
+        }
+        self.isolate_root.as_ref().unwrap().path().to_owned()
+    }
+
     /// Sets a key to a value in the runtime config.
     /// Keys are allowed to be nested, meaning that keys like "target.default"
     /// or "repository.server.mode" are valid.
@@ -159,17 +248,61 @@ impl TestEnvBuilder {
         self
     }
 
+    /// Sets a key to a value in the user config.
+    pub fn user_config<T>(mut self, key: &str, value: T) -> Self
+    where
+        T: Into<Value>,
+    {
+        let key_vec: Vec<&str> = key.split('.').collect();
+        nested_set(&mut self.user_config, key_vec[0], &key_vec[1..], value.into());
+        self
+    }
+
+    /// Sets a key to a value in the global config.
+    pub fn global_config<T>(mut self, key: &str, value: T) -> Self
+    where
+        T: Into<Value>,
+    {
+        let key_vec: Vec<&str> = key.split('.').collect();
+        nested_set(&mut self.global_config, key_vec[0], &key_vec[1..], value.into());
+        self
+    }
+
+    /// Sets a key to a value in the build config.
+    pub fn build_config<T>(mut self, key: &str, value: T) -> Self
+    where
+        T: Into<Value>,
+    {
+        let key_vec: Vec<&str> = key.split('.').collect();
+        nested_set(&mut self.build_config, key_vec[0], &key_vec[1..], value.into());
+        self
+    }
+
     /// Builds a TestEnv backed by EnvironmentKind::Isolated by default, else
     /// EnvironmentKind::InTree if a `.in_tree()` is specified.
     ///
     /// You must hold the returned object object for the duration of the test.
     /// Not doing so will result in strange behaviour.
-    pub fn build(self) -> Result<TestEnv> {
+    pub fn build(mut self) -> Result<TestEnv> {
+        let isolate_root = self.isolate_root.take().unwrap_or_else(|| tempfile::tempdir().unwrap());
         let env = match self.build_dir {
-            Some(build_dir) => {
-                TestEnv::new_intree(build_dir.as_path(), self.env_vars, self.runtime_config)
-            }
-            None => TestEnv::new_isolated(self.env_vars, self.runtime_config),
+            Some(build_dir) => TestEnv::new_intree(
+                build_dir.as_path(),
+                self.env_vars,
+                self.runtime_config,
+                self.user_config,
+                self.global_config,
+                self.build_config,
+                isolate_root,
+            ),
+            None => TestEnv::new_isolated(
+                self.env_vars,
+                self.runtime_config,
+                self.user_config,
+                self.global_config,
+                self.build_config,
+                isolate_root,
+            ),
         }?;
 
         Ok(env)

@@ -118,29 +118,13 @@ mod test {
         let env = test_env()
             .runtime_config(TARGET_DEFAULT_KEY, "distraction-target1")
             .in_tree(&test_build_dir.path())
+            .user_config(TARGET_DEFAULT_KEY, "distraction-target2")
+            .build_config(TARGET_DEFAULT_KEY, "distraction-target3")
+            .global_config(TARGET_DEFAULT_KEY, "distraction-target4")
             .build()
             .unwrap();
         let test_buffers = TestBuffers::default();
         let mut writer = SimpleWriter::new_test(&test_buffers);
-
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, "distraction-target2".into())
-            .expect("default target setting");
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::Build))
-            .build()
-            .set(&env.context, "distraction-target3".into())
-            .expect("default target setting");
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::Global))
-            .build()
-            .set(&env.context, "distraction-target4".into())
-            .expect("default target setting");
 
         exec_target_default_impl(
             &env.context,
@@ -164,29 +148,13 @@ mod test {
             .env_var("FUCHSIA_NODENAME", "stateless-nodename-target")
             .env_var("FUCHSIA_DEVICE_ADDR", "stateless-device-addr-target")
             .runtime_config(TARGET_DEFAULT_KEY, "distraction-target1")
+            .user_config(TARGET_DEFAULT_KEY, "distraction-target2")
+            .build_config(TARGET_DEFAULT_KEY, "distraction-target3")
+            .global_config(TARGET_DEFAULT_KEY, "distraction-target4")
             .build()
             .unwrap();
         let test_buffers = TestBuffers::default();
         let mut writer = SimpleWriter::new_test(&test_buffers);
-
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, "distraction-target2".into())
-            .expect("default target setting");
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::Build))
-            .build()
-            .set(&env.context, "distraction-target3".into())
-            .expect("default target setting");
-        env.context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::Global))
-            .build()
-            .set(&env.context, "distraction-target4".into())
-            .expect("default target setting");
 
         exec_target_default_impl(
             &env.context,
@@ -208,7 +176,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_default_with_machine_raw() {
-        let config_env = ffx_config::test_init().unwrap();
+        let config_env = ffx_config::test_env().build().unwrap();
         let ffx =
             FfxCommandLine::new(None, &["ffx", "--machine", "raw", "target", "default", "get"])
                 .unwrap();
@@ -220,7 +188,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_target_default_with_machine_json_fails() {
-        let config_env = ffx_config::test_init().unwrap();
+        let config_env = ffx_config::test_env().build().unwrap();
         let ffx =
             FfxCommandLine::new(None, &["ffx", "--machine", "json", "target", "default", "get"])
                 .unwrap();

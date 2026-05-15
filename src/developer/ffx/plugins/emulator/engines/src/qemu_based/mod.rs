@@ -1168,8 +1168,8 @@ mod tests {
         DataAmount, DataUnits, EmulatorInstanceData, EmulatorInstanceInfo, EmulatorInstances,
         EngineType, PortMapping,
     };
-    use ffx_config::environment::EnvironmentKind;
-    use ffx_config::{ConfigLevel, TestEnv};
+    use ffx_config::environment::{EnvironmentKind, TestEnvBuilder};
+
     use serde::{Deserialize, Serialize};
     use std::io::Read;
     use std::os::unix::net::UnixListener;
@@ -1224,14 +1224,9 @@ mod tests {
         }
     }
 
-    pub(crate) async fn make_fake_sdk(env: &TestEnv) {
-        env.context
-            .query("sdk.root")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, env.isolate_root.path().to_string_lossy().into())
-            .expect("sdk.root setting");
-        let manifest_path = env.isolate_root.path().join("meta/manifest.json");
+    pub(crate) async fn make_fake_sdk(mut builder: TestEnvBuilder) -> TestEnvBuilder {
+        let isolate_root = builder.isolate_root();
+        let manifest_path = isolate_root.join("meta/manifest.json");
         fs::create_dir_all(manifest_path.parent().unwrap()).expect("temp sdk dir");
         fs::write(
             &manifest_path,
@@ -1248,63 +1243,40 @@ mod tests {
 
         const ECHO_SCRIPT_CONTENTS: &str = "#!/bin/bash\necho \"$@\"";
 
-        let fake_qemu = env.isolate_root.path().join("fake_qemu");
+        let fake_qemu = isolate_root.join("fake_qemu");
         fs::write(&fake_qemu, ECHO_SCRIPT_CONTENTS).expect("fake qemu");
         fs::set_permissions(&fake_qemu, fs::Permissions::from_mode(0o770))
             .expect("setting permissions");
-        env.context
-            .query("sdk.overrides.qemu_internal")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, fake_qemu.to_string_lossy().into())
-            .expect("qemu override");
-        env.context
-            .query("sdk.overrides.crosvm_internal")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, fake_qemu.to_string_lossy().into())
-            .expect("crosvm override");
 
-        let fake_aemu = env.isolate_root.path().join("fake_aemu");
+        let fake_aemu = isolate_root.join("fake_aemu");
         fs::write(&fake_aemu, ECHO_SCRIPT_CONTENTS).expect("fake aemu");
         fs::set_permissions(&fake_aemu, fs::Permissions::from_mode(0o770))
             .expect("setting permissions");
-        env.context
-            .query("sdk.overrides.aemu_internal")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, fake_qemu.to_string_lossy().into())
-            .expect("aemu override");
 
-        let fake_fvm = env.isolate_root.path().join("fake_fvm");
+        let fake_fvm = isolate_root.join("fake_fvm");
         fs::write(&fake_fvm, ECHO_SCRIPT_CONTENTS).expect("fake fvm");
         fs::set_permissions(&fake_fvm, fs::Permissions::from_mode(0o770))
             .expect("setting permissions");
-        env.context
-            .query("sdk.overrides.fvm")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, fake_fvm.to_string_lossy().into())
-            .expect("fvm override");
 
-        let fake_zbi = env.isolate_root.path().join("fake_zbi");
+        let fake_zbi = isolate_root.join("fake_zbi");
         fs::write(&fake_zbi, ECHO_SCRIPT_CONTENTS).expect("fake zbi");
         fs::set_permissions(&fake_zbi, fs::Permissions::from_mode(0o770))
             .expect("setting permissions");
-        env.context
-            .query("sdk.overrides.zbi")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, fake_zbi.to_string_lossy().into())
-            .expect("zbi override");
+
+        builder
+            .user_config("sdk.root", isolate_root.to_string_lossy())
+            .user_config("sdk.overrides.qemu_internal", fake_qemu.to_string_lossy())
+            .user_config("sdk.overrides.crosvm_internal", fake_qemu.to_string_lossy())
+            .user_config("sdk.overrides.aemu_internal", fake_qemu.to_string_lossy())
+            .user_config("sdk.overrides.fvm", fake_fvm.to_string_lossy())
+            .user_config("sdk.overrides.zbi", fake_zbi.to_string_lossy())
     }
     // Note that the caller MUST initialize the ffx_config environment before calling this function
     // since we override config values as part of the test. This looks like:
     //     let env = ffx_config::test_init()?;
     // The returned structure must remain in scope for the duration of the test to function
     // properly.
-    async fn setup(
-        env: &EnvironmentContext,
+    async fn setup_files(
         guest: &mut GuestConfig,
         temp: &TempDir,
         disk_image_format: DiskImageFormat,
@@ -1337,28 +1309,10 @@ mod tests {
             .open(&*disk_image_path)
             .map_err(|e| bug!("cannot create test disk image file: {e}"))?;
 
-        env.query(config::EMU_INSTANCE_ROOT_DIR)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env, json!(root.display().to_string()))
-            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
-
         guest.kernel_image = Some(kernel_path);
         guest.ramdisk = Some(Ramdisk { path: zbi_path, kind: RamdiskKind::Zbi });
         guest.ovmf_vars = ovmf_path;
         guest.disk_image = Some(disk_image_path);
-
-        // Set the paths to use for the SSH keys
-        env.query("ssh.pub")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env, json!([root.join("test_authorized_keys")]))
-            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
-        env.query("ssh.priv")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env, json!([root.join("test_ed25519_key")]))
-            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
 
         Ok(PathBuf::from(root))
     }
@@ -1376,19 +1330,27 @@ mod tests {
     }
 
     async fn test_staging_no_reuse_common(disk_image_format: DiskImageFormat) -> Result<()> {
-        let env = ffx_config::test_init()?;
-        make_fake_sdk(&env).await;
         let temp = tempdir().map_err(|e| bug!("cannot get tempdir: {e}"))?;
+        let root = temp.path();
+
+        let mut builder = ffx_config::test_env();
+        builder = make_fake_sdk(builder).await;
+        builder = builder
+            .user_config(config::EMU_INSTANCE_ROOT_DIR, root.display().to_string())
+            .user_config("ssh.pub", json!([root.join("test_authorized_keys")]))
+            .user_config("ssh.priv", json!([root.join("test_ed25519_key")]));
+
+        let env = builder.build().expect("test env");
+
         let instance_name = "test-instance";
         let mut emu_config = EmulatorConfiguration::default();
         emu_config.device.storage = DataAmount { quantity: 32, units: DataUnits::Bytes };
 
-        let root = setup(&env.context, &mut emu_config.guest, &temp, disk_image_format).await?;
+        setup_files(&mut emu_config.guest, &temp, disk_image_format).await?;
         fs::create_dir_all(&root.join(instance_name)).expect("create test-instance dir");
 
-        let tempdir = temp.into_path();
-        emu_config.guest.vbmeta_key_file = Some(tempdir.join("atx_psk.pem"));
-        emu_config.guest.vbmeta_key_metadata_file = Some(tempdir.join("avb_atx_metadata.bin"));
+        emu_config.guest.vbmeta_key_file = Some(root.join("atx_psk.pem"));
+        emu_config.guest.vbmeta_key_metadata_file = Some(root.join("avb_atx_metadata.bin"));
         fs::write(emu_config.guest.vbmeta_key_file.as_ref().unwrap(), VBMETA_TEST_KEY)
             .map_err(|e| bug!("cannot write test key file: {e}"))?;
         fs::write(
@@ -1440,8 +1402,8 @@ mod tests {
                 ),
                 is_gpt: true,
                 ovmf_vars: root.join(instance_name).join("OVMF_VARS.fd"),
-                vbmeta_key_file: Some(tempdir.join("atx_psk.pem")),
-                vbmeta_key_metadata_file: Some(tempdir.join("avb_atx_metadata.bin")),
+                vbmeta_key_file: Some(root.join("atx_psk.pem")),
+                vbmeta_key_metadata_file: Some(root.join("avb_atx_metadata.bin")),
                 ..Default::default()
             }
         } else {
@@ -1455,8 +1417,8 @@ mod tests {
                     disk_image_format.as_disk_image(root.join(instance_name).join("disk")),
                 ),
                 ovmf_vars: root.join("OVMF_VARS.fd"),
-                vbmeta_key_file: Some(tempdir.join("atx_psk.pem")),
-                vbmeta_key_metadata_file: Some(tempdir.join("avb_atx_metadata.bin")),
+                vbmeta_key_file: Some(root.join("atx_psk.pem")),
+                vbmeta_key_metadata_file: Some(root.join("avb_atx_metadata.bin")),
                 ..Default::default()
             }
         };
@@ -1486,8 +1448,8 @@ mod tests {
                 ),
                 is_gpt: true,
                 ovmf_vars: root.join(instance_name).join("OVMF_VARS.fd"),
-                vbmeta_key_file: Some(tempdir.join("atx_psk.pem")),
-                vbmeta_key_metadata_file: Some(tempdir.join("avb_atx_metadata.bin")),
+                vbmeta_key_file: Some(root.join("atx_psk.pem")),
+                vbmeta_key_metadata_file: Some(root.join("avb_atx_metadata.bin")),
                 ..Default::default()
             }
         } else {
@@ -1501,8 +1463,8 @@ mod tests {
                     disk_image_format.as_disk_image(root.join(instance_name).join("disk")),
                 ),
                 ovmf_vars: root.join("OVMF_VARS.fd"),
-                vbmeta_key_file: Some(tempdir.join("atx_psk.pem")),
-                vbmeta_key_metadata_file: Some(tempdir.join("avb_atx_metadata.bin")),
+                vbmeta_key_file: Some(root.join("atx_psk.pem")),
+                vbmeta_key_metadata_file: Some(root.join("avb_atx_metadata.bin")),
                 ..Default::default()
             }
         };
@@ -1559,19 +1521,27 @@ mod tests {
     }
 
     async fn test_staging_with_reuse_common(disk_image_format: DiskImageFormat) -> Result<()> {
-        let env = ffx_config::test_init()?;
-        make_fake_sdk(&env).await;
         let temp = tempdir().expect("cannot get tempdir");
+        let root = temp.path();
+
+        let mut builder = ffx_config::test_env();
+        builder = make_fake_sdk(builder).await;
+        builder = builder
+            .user_config(config::EMU_INSTANCE_ROOT_DIR, root.display().to_string())
+            .user_config("ssh.pub", json!([root.join("test_authorized_keys")]))
+            .user_config("ssh.priv", json!([root.join("test_ed25519_key")]));
+
+        let env = builder.build().expect("test env");
+
         let instance_name = "test-instance";
         let mut emu_config = EmulatorConfiguration::default();
         emu_config.device.storage = DataAmount { quantity: 32, units: DataUnits::Bytes };
 
-        let root = setup(&env.context, &mut emu_config.guest, &temp, disk_image_format).await?;
+        setup_files(&mut emu_config.guest, &temp, disk_image_format).await?;
         fs::create_dir_all(&root.join(instance_name)).expect("create test-instance dir");
 
-        let tempdir = temp.into_path();
-        emu_config.guest.vbmeta_key_file = Some(tempdir.join("atx_psk.pem"));
-        emu_config.guest.vbmeta_key_metadata_file = Some(tempdir.join("avb_atx_metadata.bin"));
+        emu_config.guest.vbmeta_key_file = Some(root.join("atx_psk.pem"));
+        emu_config.guest.vbmeta_key_metadata_file = Some(root.join("avb_atx_metadata.bin"));
         fs::write(emu_config.guest.vbmeta_key_file.as_ref().unwrap(), VBMETA_TEST_KEY)
             .map_err(|e| bug!("cannot write test key file: {e}"))?;
         fs::write(
@@ -1623,8 +1593,8 @@ mod tests {
                 ),
                 is_gpt: true,
                 ovmf_vars: root.join(instance_name).join("OVMF_VARS.fd"),
-                vbmeta_key_file: Some(tempdir.join("atx_psk.pem")),
-                vbmeta_key_metadata_file: Some(tempdir.join("avb_atx_metadata.bin")),
+                vbmeta_key_file: Some(root.join("atx_psk.pem")),
+                vbmeta_key_metadata_file: Some(root.join("avb_atx_metadata.bin")),
                 ..Default::default()
             }
         } else {
@@ -1638,8 +1608,8 @@ mod tests {
                     disk_image_format.as_disk_image(root.join(instance_name).join("disk")),
                 ),
                 ovmf_vars: root.join("OVMF_VARS.fd"),
-                vbmeta_key_file: Some(tempdir.join("atx_psk.pem")),
-                vbmeta_key_metadata_file: Some(tempdir.join("avb_atx_metadata.bin")),
+                vbmeta_key_file: Some(root.join("atx_psk.pem")),
+                vbmeta_key_metadata_file: Some(root.join("avb_atx_metadata.bin")),
                 ..Default::default()
             }
         };
@@ -1670,8 +1640,8 @@ mod tests {
                 ),
                 is_gpt: true,
                 ovmf_vars: root.join(instance_name).join("OVMF_VARS.fd"),
-                vbmeta_key_file: Some(tempdir.join("atx_psk.pem")),
-                vbmeta_key_metadata_file: Some(tempdir.join("avb_atx_metadata.bin")),
+                vbmeta_key_file: Some(root.join("atx_psk.pem")),
+                vbmeta_key_metadata_file: Some(root.join("avb_atx_metadata.bin")),
                 ..Default::default()
             }
         } else {
@@ -1685,8 +1655,8 @@ mod tests {
                     disk_image_format.as_disk_image(root.join(instance_name).join("disk")),
                 ),
                 ovmf_vars: root.join("OVMF_VARS.fd"),
-                vbmeta_key_file: Some(tempdir.join("atx_psk.pem")),
-                vbmeta_key_metadata_file: Some(tempdir.join("avb_atx_metadata.bin")),
+                vbmeta_key_file: Some(root.join("atx_psk.pem")),
+                vbmeta_key_metadata_file: Some(root.join("avb_atx_metadata.bin")),
                 ..Default::default()
             }
         };
@@ -1748,12 +1718,16 @@ mod tests {
     // depends on an external binary, making testing challenging.
     #[fuchsia::test]
     async fn test_staging_resize_fxfs() -> Result<()> {
-        let env = ffx_config::test_init()?;
-        make_fake_sdk(&env).await;
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
         let temp = tempdir().expect("cannot get tempdir");
+        let env = builder
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, temp.path().to_string_lossy())
+            .build()
+            .unwrap();
         let instance_name = "test-instance";
         let mut emu_config = EmulatorConfiguration::default();
-        let root = setup(&env.context, &mut emu_config.guest, &temp, DiskImageFormat::Fxfs).await?;
+        let root = setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Fxfs).await?;
 
         const EXPECTED_DATA: &[u8] = b"hello, world";
 
@@ -1811,12 +1785,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_embed_boot_data() -> Result<()> {
-        let env = ffx_config::test_init()?;
-        make_fake_sdk(&env).await;
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
         let mut emu_config = EmulatorConfiguration::default();
 
-        let root = setup(&env.context, &mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
+        let root = setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
 
         let Some(Ramdisk { path: src, kind: RamdiskKind::Zbi }) = emu_config.guest.ramdisk else {
             panic!("No ZBI path");
@@ -1830,12 +1805,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_embed_boot_data_with_kernel_cmdline() -> Result<()> {
-        let env = ffx_config::test_init()?;
-        make_fake_sdk(&env).await;
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
         let mut emu_config = EmulatorConfiguration::default();
 
-        let root = setup(&env.context, &mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
+        let root = setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
 
         let Some(Ramdisk { path: src, kind: RamdiskKind::Zbi }) = emu_config.guest.ramdisk else {
             panic!("No ZBI path");
@@ -1855,12 +1831,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_generate_vbmeta() -> Result<()> {
-        let env = ffx_config::test_init()?;
-        make_fake_sdk(&env).await;
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let _env = builder.build().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
         let mut emu_config = EmulatorConfiguration::default();
 
-        let root = setup(&env.context, &mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
+        let root = setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
 
         let tempdir = temp.into_path();
         let key_path = tempdir.join("atx_psk.pem");
@@ -1881,12 +1858,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_authorized_keys_to_boot_loader_file() -> Result<()> {
-        let env = ffx_config::test_init()?;
-        make_fake_sdk(&env).await;
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let _env = builder.build().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
         let mut emu_config = EmulatorConfiguration::default();
 
-        let _root = setup(&env.context, &mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
+        let _root = setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
 
         let tempdir = temp.into_path();
         let testkey = "some test key";
@@ -1958,12 +1936,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_read_port_mappings() -> Result<()> {
-        let env = ffx_config::test_init()?;
+        let env = ffx_config::test_env().build().unwrap();
         let temp = tempdir().expect("cannot get tempdir");
         let mut data: EmulatorInstanceData =
             EmulatorInstanceData::new_with_state("test-instance", EngineState::New);
-        let root = setup(
-            &env.context,
+        let root = setup_files(
             &mut data.get_emulator_configuration_mut().guest,
             &temp,
             DiskImageFormat::Fvm,

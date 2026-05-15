@@ -290,20 +290,12 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use ffx_config::{ConfigLevel, TestEnv};
+    use ffx_config::TestEnv;
     use ffx_writer::{Format, TestBuffers};
     use std::fs::File;
 
     async fn setup_test_env() -> TestEnv {
-        let env = ffx_config::test_init().unwrap();
-        env.context
-            .query(CONFIG_BASE_URLS)
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, serde_json::json!([]))
-            .unwrap();
-
-        env
+        ffx_config::test_env().user_config(CONFIG_BASE_URLS, serde_json::json!([])).build().unwrap()
     }
 
     #[fuchsia::test]

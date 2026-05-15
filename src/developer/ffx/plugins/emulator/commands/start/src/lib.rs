@@ -675,7 +675,7 @@ mod tests {
     use assembly_partitions_config::PartitionsConfig;
     use camino::{Utf8Path, Utf8PathBuf};
     use emulator_instance::{LogLevel, RuntimeConfig};
-    use ffx_config::{ConfigLevel, ConfigQueryBuilder, TestEnv};
+    use ffx_config::environment::TestEnvBuilder;
     use ffx_writer::TestBuffers;
     use pbms::ProductBundle;
     use product_bundle::ProductBundleV2;
@@ -861,14 +861,9 @@ mod tests {
         }
     }
 
-    async fn make_fake_sdk(env: &TestEnv) {
-        env.context
-            .query("sdk.root")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, env.isolate_root.path().to_string_lossy().into())
-            .expect("sdk.root setting");
-        let manifest_path = env.isolate_root.path().join("meta/manifest.json");
+    async fn make_fake_sdk(mut builder: TestEnvBuilder) -> TestEnvBuilder {
+        let isolate_root = builder.isolate_root();
+        let manifest_path = isolate_root.join("meta/manifest.json");
         fs::create_dir_all(manifest_path.parent().unwrap()).expect("temp sdk dir");
         fs::write(
             &manifest_path,
@@ -883,23 +878,21 @@ mod tests {
         )
         .expect("sdk manifest");
 
-        let ovmf_code = env.isolate_root.path().join("ovmf_code.fd");
+        let ovmf_code = isolate_root.join("ovmf_code.fd");
         fs::write(&ovmf_code, "ovmf").expect("fake ovmf");
 
-        env.context
-            .query("sdk.overrides.uefi_internal_x64")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, ovmf_code.to_string_lossy().into())
-            .expect("ovmf override");
+        builder
+            .user_config("sdk.root", isolate_root.to_string_lossy())
+            .user_config("sdk.overrides.uefi_internal_x64", ovmf_code.to_string_lossy())
     }
 
     // Check that a running instance is an error
     #[fuchsia::test]
     async fn test_start_with_running_instance() {
-        let env = ffx_config::test_init().unwrap();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let cmd = StartCommand::default();
         let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
@@ -939,9 +932,10 @@ mod tests {
     // Check that an existing instance that is not running is cleaned up.
     #[fuchsia::test]
     async fn test_start_with_instance_dir() {
-        let env = ffx_config::test_init().unwrap();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let cmd = StartCommand::default();
         let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
@@ -993,9 +987,10 @@ mod tests {
     // Check that new_engine gets called by default and get_engine_by_name doesn't
     #[fuchsia::test]
     async fn test_get_engine_no_reuse_makes_new() -> Result<()> {
-        let env = ffx_config::test_init().unwrap();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let cmd = StartCommand::default();
         let mut tool = make_test_emu_start_tool(&env.context, cmd).await;
@@ -1088,9 +1083,10 @@ mod tests {
     // Check that reuse and config.is_none calls get_engine_by_name
     #[fuchsia::test]
     async fn test_get_engine_without_config_does_reuse() -> Result<()> {
-        let env = ffx_config::test_init().unwrap();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let pb = ProductBundle::V2(make_test_product_bundle(env.isolate_root.path())?);
         let loaded_pb = LoadedProductBundle::new(pb.clone(), "some/path/to_bundle");
@@ -1138,9 +1134,10 @@ mod tests {
     // reuse is checked to be false, by watching do_stage. stage() is only called on non-reused instances.
     #[fuchsia::test]
     async fn test_get_engine_doesnotexist_creates_new() -> Result<()> {
-        let env = ffx_config::test_init().unwrap();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let cmd = StartCommand { reuse: true, net: Some("user".into()), ..Default::default() };
 
@@ -1183,15 +1180,10 @@ mod tests {
     // Check that if DoesExist, then cmd.name is updated too
     #[fuchsia::test]
     async fn test_get_engine_updates_cmd_name_when_blank() -> Result<()> {
-        let env = ffx_config::test_init().unwrap();
-        make_fake_sdk(&env).await;
-
-        env.context
-            .query("emu.name")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, "".into())
-            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
+        let mut builder = ffx_config::test_env();
+        builder = make_fake_sdk(builder).await;
+        builder = builder.user_config("emu.name", "");
+        let env = builder.build().expect("test env");
 
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
 
@@ -1239,9 +1231,10 @@ mod tests {
     // Ensure dry-run stops after building command, doesn't run
     #[fuchsia::test]
     async fn test_dry_run() -> Result<()> {
-        let env = ffx_config::test_init().unwrap();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let cmd = StartCommand {
             dry_run: true,
@@ -1287,9 +1280,10 @@ mod tests {
     // Ensure stage stops after staging the files, doesn't run
     #[fuchsia::test]
     async fn test_stage() -> Result<()> {
-        let env = ffx_config::test_init().unwrap();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let cmd = StartCommand { stage: true, net: Some("user".into()), ..Default::default() };
 
@@ -1329,9 +1323,10 @@ mod tests {
     // Ensure start goes through config and staging by default and calls start
     #[fuchsia::test]
     async fn test_start() -> Result<()> {
-        let env = ffx_config::test_init().unwrap();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let cmd = StartCommand::default();
 
@@ -1372,9 +1367,10 @@ mod tests {
     // Ensure start() skips the stage() call if the reuse flag is true
     #[fuchsia::test]
     async fn test_reuse_doesnt_stage() -> Result<()> {
-        let env = ffx_config::test_init().unwrap();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let pb = ProductBundle::V2(make_test_product_bundle(env.isolate_root.path())?);
         let loaded_pb = LoadedProductBundle::new(pb.clone(), "some/path/to_bundle");
@@ -1453,9 +1449,10 @@ mod tests {
     // Check that the final command reflects changes from the edit stage
     #[fuchsia::test]
     async fn test_edit() -> Result<()> {
-        let env = ffx_config::test_init().unwrap();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let cmd = StartCommand { edit: true, ..Default::default() };
 
@@ -1510,10 +1507,11 @@ mod tests {
     // Check that the final command reflects changes from staging
     #[fuchsia::test]
     async fn test_staging_edits() -> Result<()> {
-        let env = ffx_config::test_init().unwrap();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let env_context = env.context.clone();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let cmd = StartCommand::default();
 
@@ -1565,9 +1563,10 @@ mod tests {
     // and sets the disk hashes in the config.
     #[fuchsia::test]
     async fn test_check_if_reusable_new() {
-        let env = ffx_config::test_init().unwrap();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let pb = ProductBundle::V2(
             make_test_product_bundle(env.isolate_root.path()).expect("test product bundle"),
@@ -1624,9 +1623,10 @@ mod tests {
     // Checks that if the existing instance has matching disk hashes, it is reused.
     #[fuchsia::test]
     async fn test_check_if_reusable_matching() {
-        let env = ffx_config::test_init().unwrap();
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
         let pb = ProductBundle::V2(
             make_test_product_bundle(env.isolate_root.path()).expect("test product bundle"),
         );
@@ -1687,8 +1687,9 @@ mod tests {
     async fn test_check_if_reusable_applies_args() {
         // Setup the test environment and SDK. This is boilerplate for
         // any test running ffx.
-        let env = ffx_config::test_init().unwrap();
-        make_fake_sdk(&env).await;
+        let builder = ffx_config::test_env();
+        let builder = make_fake_sdk(builder).await;
+        let env = builder.build().unwrap();
         // Create a test product bundle. This is boilerplate for
         // any test that needs to use a product bundle. See the
         // make_test_product_bundle function to get the specific contents
@@ -2087,9 +2088,17 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_uefi_vbmeta_from_ffx_config() {
-        let env = ffx_config::test_init().unwrap();
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let tmpfile = tmp.path().display().to_string();
+
+        let mut builder = ffx_config::test_env();
+        builder = make_fake_sdk(builder).await;
+        builder = builder
+            .user_config("emu.vbmeta.key", tmpfile.clone())
+            .user_config("emu.vbmeta.metadata", tmpfile.clone());
+        let env = builder.build().expect("test env");
+
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -2099,22 +2108,6 @@ mod tests {
         pb.product_name = "pb.x64".into();
         let pb = ProductBundle::V2(pb);
         let loaded_pb = LoadedProductBundle::new(pb.clone(), "some/path/to_bundle");
-
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        let tmpfile = tmp.path().display().to_string();
-
-        env.context
-            .query("emu.vbmeta.key")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, tmpfile.clone().into())
-            .expect("emu.vbmeta.key setting");
-        env.context
-            .query("emu.vbmeta.metadata")
-            .level(Some(ConfigLevel::User))
-            .build()
-            .set(&env.context, tmpfile.clone().into())
-            .expect("emu.vbmeta.metadata setting");
 
         let cmd = StartCommand {
             uefi: true,
@@ -2147,9 +2140,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_uefi_vbmeta_from_cmd_line() {
-        let env = ffx_config::test_init().unwrap();
+        let mut builder = ffx_config::test_env();
+        builder = make_fake_sdk(builder).await;
+        builder = builder
+            .user_config("emu.vbmeta.key", "/some/vbmeta/key")
+            .user_config("emu.vbmeta.metadata", "/some/vbmeta/metadata");
+        let env = builder.build().expect("test env");
+
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -2159,25 +2157,6 @@ mod tests {
         pb.product_name = "pb.x64".into();
         let pb = ProductBundle::V2(pb);
         let loaded_pb = LoadedProductBundle::new(pb.clone(), "some/path/to_bundle");
-
-        env.context
-            .query(ConfigQueryBuilder {
-                name: Some("emu.vbmeta.key"),
-                level: Some(ConfigLevel::User),
-                ..Default::default()
-            })
-            .build()
-            .set(&env.context, "/some/vbmeta/key".into())
-            .unwrap();
-        env.context
-            .query(ConfigQueryBuilder {
-                name: Some("emu.vbmeta.metadata"),
-                level: Some(ConfigLevel::User),
-                ..Default::default()
-            })
-            .build()
-            .set(&env.context, "/some/vbmeta/metadata".into())
-            .unwrap();
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let tmpfile = tmp.path().display().to_string();
@@ -2215,9 +2194,14 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_finalize_start_command_uefi_vbmeta_non_existing_files() {
-        let env = ffx_config::test_init().unwrap();
+        let mut builder = ffx_config::test_env();
+        builder = make_fake_sdk(builder).await;
+        builder = builder
+            .user_config("emu.vbmeta.key", "/some/vbmeta/key")
+            .user_config("emu.vbmeta.metadata", "/some/vbmeta/metadata");
+        let env = builder.build().expect("test env");
+
         let emu_instances = EmulatorInstances::new(PathBuf::from(env.isolate_root.path()));
-        make_fake_sdk(&env).await;
 
         let test_buffers = TestBuffers::default();
         let mut writer = VerifiedMachineWriter::new_test(None, &test_buffers);
@@ -2227,25 +2211,6 @@ mod tests {
         pb.product_name = "pb.x64".into();
         let pb = ProductBundle::V2(pb);
         let loaded_pb = LoadedProductBundle::new(pb.clone(), "some/path/to_bundle");
-
-        env.context
-            .query(ConfigQueryBuilder {
-                name: Some("emu.vbmeta.key"),
-                level: Some(ConfigLevel::User),
-                ..Default::default()
-            })
-            .build()
-            .set(&env.context, "/some/vbmeta/key".into())
-            .unwrap();
-        env.context
-            .query(ConfigQueryBuilder {
-                name: Some("emu.vbmeta.metadata"),
-                level: Some(ConfigLevel::User),
-                ..Default::default()
-            })
-            .build()
-            .set(&env.context, "/some/vbmeta/metadata".into())
-            .unwrap();
 
         let cmd = StartCommand {
             uefi: true,
