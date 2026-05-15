@@ -138,7 +138,8 @@ pub struct StartCommand {
 
     /// store the emulator log at the provided filesystem path. By default, all output goes to
     /// a log file in the emulator working directory. The path to this file is printed onscreen
-    /// during start-up.
+    /// during start-up. Note that the virtual serial port logs are automatically written to an
+    /// accompanying file at the same path with a `.serial` suffix (e.g., `<path>.serial`).
     #[argh(option, short = 'l')]
     pub log: Option<PathBuf>,
 
