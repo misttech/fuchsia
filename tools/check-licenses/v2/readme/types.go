@@ -19,6 +19,7 @@ type Readme struct {
 	Description              string
 	LocalModifications       string
 	Deprecated               string
+	UpstreamRevision         string
 
 	// LicenseFiles contains the file-level metadata for multi-license projects.
 	// This represents the hierarchical "License File: foo \n -> License: bar" structure.

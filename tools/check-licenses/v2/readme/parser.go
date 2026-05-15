@@ -42,6 +42,8 @@ var knownDirectives = map[string]bool{
 	"Modifications":              true, // Legacy alias
 	"Deprecated":                 true, // Legacy
 	"License":                    true, // Legacy flat root directive
+	"Upstream revision":          true,
+	"Upstream Revision":          true,
 }
 
 var knownFileDirectives = map[string]bool{
@@ -210,50 +212,8 @@ func Parse(data []byte) ([]*Readme, error) {
 					continue
 				}
 
-				// If the line looks like a new unknown directive (Key: Value with no leading indent), stop.
-				// However, lines like "Note: something" or "http://foo" can have colons.
-				// We only consider it a new directive if it matches known patterns or is capitalized without spaces.
-				parts := strings.SplitN(line, ":", 2)
-				if len(parts) == 2 && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
-					keyStr := strings.TrimSpace(parts[0])
-					if keyStr != "" {
-						// Heuristic: Is this actually a new field?
-						// It is a new field if it's a known directive, OR if it has no spaces (like 'LicenseFile'),
-						// OR if it's explicitly capitalized like a proper noun 'Unknown Field'.
-						isField := false
-						if knownDirectives[keyStr] || knownFileDirectives[keyStr] {
-							isField = true
-						} else if !strings.Contains(keyStr, " ") {
-							isField = true
-						} else {
-							// E.g., "Unknown Field:" -> check if words are capitalized
-							words := strings.Split(keyStr, " ")
-							if len(words) > 0 && len(words[0]) > 0 && words[0][0] >= 'A' && words[0][0] <= 'Z' {
-								// We assume it's an unknown field.
-								// However, "Note: It has colons!" would trigger this.
-								// Let's only assume it's a field if it has a space after the colon.
-								if strings.HasPrefix(parts[1], " ") {
-									isField = true
-								}
-							}
-						}
-
-						// "Note:" is a common false positive in descriptions
-						if keyStr == "Note" {
-							isField = false
-						}
-
-						if isField {
-							// It's a new unknown field. Store it.
-							readme.UnknownFields = append(readme.UnknownFields, UnknownField{
-								Key:   keyStr,
-								Value: strings.TrimSpace(parts[1]),
-							})
-							currentKey = ""
-							continue
-						}
-					}
-				}
+				// Heuristic: Any line (including unknown Key: Value pairs) found while actively parsing a multi-line
+				// directive (like Description or Local Modifications) is treated as a continuation of the paragraph.
 
 				if trimmed == "" {
 					currentValue.WriteString("\n")
@@ -321,6 +281,8 @@ func assignValue(r *Readme, key, value string) {
 		r.LocalModifications = value
 	case "Deprecated":
 		r.Deprecated = value
+	case "Upstream revision", "Upstream Revision":
+		r.UpstreamRevision = value
 	}
 }
 

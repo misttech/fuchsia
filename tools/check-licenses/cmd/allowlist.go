@@ -144,7 +144,7 @@ func AddAllowlistEntry(fuchsiaDir, licenseName, projectPath, bug, description st
 		return "", fmt.Errorf("failed to create config directory %s: %w", configDir, err)
 	}
 
-	baseName := findProjectBasename(fuchsiaDir, projectPath, builder.Config.ManifestProjectNames)
+	baseName := findProjectBasename(fuchsiaDir, projectPath, builder.Config)
 	destFile := filepath.Join(configDir, baseName+".json")
 
 	// Read, mutate and write config file

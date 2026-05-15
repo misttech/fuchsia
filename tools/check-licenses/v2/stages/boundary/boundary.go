@@ -103,6 +103,28 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 			}
 		}
 
+		// Inject virtual license files from READMEs into allFiles if their external reference exists on disk
+		existingFiles := make(map[string]bool)
+		for _, f := range allFiles {
+			existingFiles[f] = true
+		}
+		for root, readmes := range projectRoots {
+			for _, r := range readmes {
+				for _, lf := range r.LicenseFiles {
+					if lf.LicenseReference != "" && lf.Path != "" {
+						cleanPath := filepath.Clean(filepath.Join(root, lf.Path))
+						if !existingFiles[cleanPath] {
+							absExternal := filepath.Join(root, lf.LicenseReference)
+							if _, statErr := os.Stat(absExternal); statErr == nil {
+								allFiles = append(allFiles, cleanPath)
+								existingFiles[cleanPath] = true
+							}
+						}
+					}
+				}
+			}
+		}
+
 		// Sort to ensure deterministic grouping
 		sort.Strings(allFiles)
 

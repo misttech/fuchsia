@@ -122,7 +122,7 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 			if len(originalReadmes) > 0 && originalReadmes[0].Name != "" {
 				projectName = originalReadmes[0].Name
 			} else {
-				projectName = findProjectBasename(fuchsiaDir, relTargetPath, config.ManifestProjectNames)
+				projectName = findProjectBasename(fuchsiaDir, relTargetPath, config)
 			}
 
 			if relTargetPath == "" || relTargetPath == "." {

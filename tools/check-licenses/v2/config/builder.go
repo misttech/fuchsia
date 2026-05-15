@@ -234,7 +234,7 @@ type Package struct {
 func (b *Builder) LoadManifests() error {
 	dirsToScan := []string{
 		filepath.Join(b.FuchsiaDir, "manifests"),
-		filepath.Join(b.FuchsiaDir, "integration", "internal"),
+		filepath.Join(b.FuchsiaDir, "integration"),
 	}
 
 	for _, dir := range dirsToScan {
@@ -266,7 +266,7 @@ func (b *Builder) LoadManifests() error {
 				return nil // Skip files that aren't valid XML manifests
 			}
 
-			isPrivate := strings.Contains(filepath.ToSlash(path), "/integration/internal")
+			isPrivate := strings.Contains(filepath.ToSlash(path), "/internal")
 
 			// Map projects
 			for _, p := range m.Projects {

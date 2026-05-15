@@ -22,6 +22,9 @@ License File: third_party/NOTICE
   License: MIT, Apache-2.0
   License Type: Android
 
+Some Unfamiliar Key: Some weird value
+Another Unfamiliar Key: Wow
+
 Description:
   An awesome library for doing awesome things.
 
@@ -29,9 +32,6 @@ Description:
 
 Local Modifications:
   None.
-
-Some Unfamiliar Key: Some weird value
-Another Unfamiliar Key: Wow
 `
 
 	readmes, err := Parse([]byte(readmeText))

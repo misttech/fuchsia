@@ -85,7 +85,7 @@ func ReconstructCommand(commandPath string, args []string, placeholders []string
 	return cmdBuilder.String(), misplacedFlags
 }
 
-func findProjectBasename(fuchsiaDir, targetPath string, manifestProjectNames map[string]string) string {
+func findProjectBasename(fuchsiaDir, targetPath string, config *v2config.MasterConfig) string {
 	cleanTargetPath := filepath.Clean(targetPath)
 	absTargetPath := filepath.Join(fuchsiaDir, cleanTargetPath)
 
@@ -105,10 +105,27 @@ func findProjectBasename(fuchsiaDir, targetPath string, manifestProjectNames map
 		}
 	}
 
+	// Priority 1.5: Check Virtual Out-Of-Tree READMEs from MasterConfig
+	if config != nil && config.OutOfTreeReadmes != nil {
+		if virtualReadmePath, ok := config.OutOfTreeReadmes[cleanTargetPath]; ok {
+			absVirtualPath := virtualReadmePath
+			if !filepath.IsAbs(absVirtualPath) {
+				absVirtualPath = filepath.Join(fuchsiaDir, virtualReadmePath)
+			}
+			if _, err := os.Stat(absVirtualPath); err == nil {
+				if rootReadmes, _, err := v2readme.ParseAnyMetadata(absVirtualPath); err == nil && len(rootReadmes) > 0 && rootReadmes[0].Name != "" {
+					return filepath.Base(rootReadmes[0].Name)
+				}
+			}
+		}
+	}
+
 	// Priority 2: Check Jiri Manifest mapping
-	for p := cleanTargetPath; p != "." && p != "/"; p = filepath.Dir(p) {
-		if name, ok := manifestProjectNames[p]; ok {
-			return filepath.Base(name)
+	if config != nil && config.ManifestProjectNames != nil {
+		for p := cleanTargetPath; p != "." && p != "/"; p = filepath.Dir(p) {
+			if name, ok := config.ManifestProjectNames[p]; ok {
+				return filepath.Base(name)
+			}
 		}
 	}
 

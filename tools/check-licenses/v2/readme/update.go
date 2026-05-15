@@ -185,12 +185,14 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 		licenseType := "Single License"
 		licenseFileURL := ""
 		licenseReference := ""
+		notes := ""
 		if existing, ok := existingLicenses[r][relToReadme]; ok {
 			if existing.LicenseType != "" {
 				licenseType = existing.LicenseType
 			}
 			licenseFileURL = existing.LicenseFileURL
 			licenseReference = existing.LicenseReference
+			notes = existing.Notes
 		}
 
 		entry := LicenseEntry{
@@ -199,6 +201,7 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 			LicenseType:      licenseType,
 			LicenseFileURL:   licenseFileURL,
 			LicenseReference: licenseReference,
+			Notes:            notes,
 		}
 
 		if isPrimaryLicenseFile[cf.Path] {

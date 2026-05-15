@@ -33,6 +33,7 @@ func formatSingle(r *Readme) string {
 	writeField(&b, "Version", r.Version)
 	writeField(&b, "Upstream Git", r.UpstreamGit)
 	writeField(&b, "Revision", r.Revision)
+	writeField(&b, "Upstream Revision", r.UpstreamRevision)
 	writeField(&b, "Security Critical", r.SecurityCritical)
 	writeField(&b, "License Android Compatible", r.LicenseAndroidCompatible)
 	writeField(&b, "Location", r.Location)
@@ -110,17 +111,17 @@ func formatSingle(r *Readme) string {
 		b.WriteString("License File: " + r.LicenseFile + "\n")
 	}
 
-	writeMultiLineField(&b, "Description", r.Description)
-	writeMultiLineField(&b, "Local Modifications", r.LocalModifications)
-	writeMultiLineField(&b, "Deprecated", r.Deprecated)
-
-	// Append any unknown fields at the very bottom so they aren't lost
+	// Append any unknown fields right before Description so they aren't swallowed by multi-line fields
 	if len(r.UnknownFields) > 0 {
 		b.WriteString("\n")
 	}
 	for _, unknown := range r.UnknownFields {
 		writeField(&b, unknown.Key, unknown.Value)
 	}
+
+	writeMultiLineField(&b, "Description", r.Description)
+	writeMultiLineField(&b, "Local Modifications", r.LocalModifications)
+	writeMultiLineField(&b, "Deprecated", r.Deprecated)
 
 	return strings.TrimRight(b.String(), "\n") + "\n"
 }
