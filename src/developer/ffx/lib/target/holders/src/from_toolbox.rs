@@ -32,7 +32,8 @@ where
             self.backup.as_ref(),
             DEFAULT_PROXY_TIMEOUT,
         )
-        .await?;
+        .await
+        .map_err(anyhow::Error::from)?;
         Ok(proxy)
     }
 }

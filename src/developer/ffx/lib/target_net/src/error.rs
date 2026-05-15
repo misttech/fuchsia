@@ -45,6 +45,8 @@ pub enum Error {
         "timed out connecting to capability '{capability}' with moniker '{moniker}' after {duration:?}"
     )]
     TimedOutConnecting { moniker: String, capability: String, duration: std::time::Duration },
+    #[error("toolbox error: {0}")]
+    Toolbox(#[from] rcs::toolbox::ToolboxError),
     #[error("fdomain client error: {0}")]
     FDomain(#[from] fdomain_client::Error),
 }

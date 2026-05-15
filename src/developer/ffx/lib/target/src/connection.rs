@@ -41,6 +41,8 @@ pub enum ConnectionError {
     ConnectionStartError(String, String),
     #[error("internal error: {0}")]
     InternalError(#[from] anyhow::Error),
+    #[error("toolbox error: {0}")]
+    Toolbox(#[from] rcs::toolbox::ToolboxError),
     #[error("knock error: {0}")]
     KnockError(#[from] crate::KnockError),
     #[error("Overnet isn't supported for this target")]
@@ -170,8 +172,7 @@ impl Connection {
     /// Get an FDomain client that just forwards to Overnet.
     async fn pass_thru_client(&self) -> Result<Arc<fdomain_client::Client>, ConnectionError> {
         let rcs = self.rcs_proxy().await?;
-        let toolbox =
-            rcs::toolbox::open_toolbox(&rcs).await.map_err(ConnectionError::InternalError)?;
+        let toolbox = rcs::toolbox::open_toolbox(&rcs).await?;
 
         Ok(fdomain_local::local_client(move || {
             let (client, server) = fidl::endpoints::create_endpoints();

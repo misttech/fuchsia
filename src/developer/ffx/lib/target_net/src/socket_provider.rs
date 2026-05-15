@@ -4,6 +4,9 @@
 
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fidl_fuchsia_net_ext::SocketAddress as SocketAddressExt;
+use fidl_fuchsia_posix as fposix;
+use fidl_fuchsia_posix_socket as fsock;
+use fuchsia_async as fasync;
 use futures::{AsyncRead, AsyncWrite, Stream};
 use std::fmt;
 use std::fmt::Debug;
@@ -11,7 +14,6 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use {fidl_fuchsia_posix as fposix, fidl_fuchsia_posix_socket as fsock, fuchsia_async as fasync};
 
 use crate::{Error, Result};
 
@@ -183,8 +185,7 @@ impl SocketProvider {
             Some("core/network/netstack"),
             connect_timeout,
         )
-        .await
-        .map_err(Error::OpenProtocol)?;
+        .await?;
         Ok(Self { socket_provider })
     }
 
