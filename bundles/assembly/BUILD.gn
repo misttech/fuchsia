@@ -2106,6 +2106,10 @@ assembly_input_bundle("common_standard") {
           source = "//src/diagnostics/config/persistence/power.persist"
           destination = "power.persist"
         },
+        {
+          source = "//src/diagnostics/config/persistence/network_policy.persist"
+          destination = "network_policy.persist"
+        },
       ]
     },
   ]
