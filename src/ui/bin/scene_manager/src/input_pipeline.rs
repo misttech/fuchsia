@@ -337,31 +337,21 @@ async fn register_keyboard_related_input_handlers(
     assembly
 }
 
+// TODO(b/512079275): also remove this helper.
 /// Installs the handlers for mouse input.
 async fn register_mouse_related_input_handlers(
     incoming: &Incoming,
     assembly: InputPipelineAssembly,
     scene_manager: Arc<Mutex<dyn SceneManagerTrait>>,
-    input_pipeline_node: &inspect::Node,
     input_handlers_node: &inspect::Node,
     metrics_logger: metrics::MetricsLogger,
 ) -> InputPipelineAssembly {
     let (sender, mut receiver) = futures::channel::mpsc::channel(0);
 
-    // Add the touchpad gestures handler after the click-drag handler,
-    // since the gestures handler creates mouse events but already
-    // disambiguates between click and drag gestures.
-    let mut assembly = add_touchpad_gestures_handler(
-        assembly,
-        input_pipeline_node,
-        input_handlers_node,
-        metrics_logger.clone(),
-    );
-
     // mouse injector handler is the last handler for mouse event handling, it sends out mouse
     // events to scenic. Please double check tracing events, when changing the handlers assembly
     // order.
-    assembly = add_mouse_handler(
+    let assembly = add_mouse_handler(
         incoming,
         scene_manager.clone(),
         assembly,
@@ -451,7 +441,6 @@ async fn build_input_pipeline_assembly(
                 incoming,
                 assembly,
                 scene_manager.clone(),
-                node,
                 &input_handlers_node,
                 metrics_logger.clone(),
             )
@@ -568,19 +557,6 @@ async fn add_ime(
         assembly = assembly.add_handler(ime_handler);
     }
     assembly
-}
-
-fn add_touchpad_gestures_handler(
-    assembly: InputPipelineAssembly,
-    inspect_node: &inspect::Node,
-    input_handlers_node: &inspect::Node,
-    metrics_logger: metrics::MetricsLogger,
-) -> InputPipelineAssembly {
-    assembly.add_handler(crate::lib::make_touchpad_gestures_handler(
-        inspect_node,
-        input_handlers_node,
-        metrics_logger,
-    ))
 }
 
 pub async fn handle_device_listener_registry_request_stream(

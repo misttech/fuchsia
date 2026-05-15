@@ -42,9 +42,7 @@ pub use incoming::Incoming;
 use fidl_next_fuchsia_power_system as _;
 
 pub mod focus_listener;
-pub mod gestures;
 pub mod input_pipeline;
 pub mod metrics;
 
-pub use gestures::make_touchpad_gestures_handler;
 pub use utils::{CursorMessage, Position, Size};
