@@ -3,15 +3,16 @@
 // found in the LICENSE file.
 
 use crate::common::is_locked;
+use crate::error::FfxFastbootError;
 use crate::file_resolver::FileResolver;
 use crate::util::{Event, UnlockEvent};
-use anyhow::{Result, anyhow, bail};
+type Result<T> = std::result::Result<T, FfxFastbootError>;
+
 use async_fs::OpenOptions;
 use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use byteorder::{ByteOrder, LittleEndian};
 use chrono::Utc;
-use errors::{ffx_bail, ffx_error};
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, UploadProgress};
 use futures::prelude::*;
 use futures::try_join;
@@ -57,18 +58,24 @@ async fn get_unlock_challenge(
 ) -> Result<UnlockChallenge> {
     let dir = tempdir()?;
     let path = dir.path().join("challenge");
-    let filepath = path.to_str().ok_or_else(|| anyhow!("error getting tempfile path"))?;
-    fastboot_interface.oem(UNLOCK_CHALLENGE).await.map_err(|e| {
-        anyhow!("There was an error sending oem command \"{}\": {}", UNLOCK_CHALLENGE, e)
-    })?;
-    fastboot_interface
-        .get_staged(filepath)
+    let filepath = path.to_str().ok_or(FfxFastbootError::NonUtf8Path)?;
+    fastboot_interface.oem(UNLOCK_CHALLENGE).await?;
+    fastboot_interface.get_staged(filepath).await?;
+    let mut file = OpenOptions::new()
+        .read(true)
+        .open(path.clone())
         .await
-        .map_err(|e| anyhow!("There was an error sending upload command: {}", e))?;
-    let mut file = OpenOptions::new().read(true).open(path.clone()).await?;
-    let size = file.metadata().await?.len();
+        .map_err(|e| FfxFastbootError::FileOpen { path: path.clone(), source: e })?;
+    let size = file
+        .metadata()
+        .await
+        .map_err(|e| FfxFastbootError::FileMetadata { path: path.clone(), source: e })?
+        .len();
     if size != CHALLENGE_STRUCT_SIZE {
-        bail!("Device returned a file with invalid unlock challenge length")
+        return Err(FfxFastbootError::InvalidUnlockChallengeLength {
+            expected: CHALLENGE_STRUCT_SIZE,
+            found: size,
+        });
     }
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).await?;
@@ -98,25 +105,29 @@ struct UnlockCredentials {
 impl UnlockCredentials {
     pub async fn new<T: AsRef<Path>>(path: T) -> Result<Self> {
         let temp_dir = tempdir()?;
-        let file =
-            File::open(path).map_err(|e| ffx_error!("Could not open archive file: {}", e))?;
-        let mut archive =
-            ZipArchive::new(file).map_err(|e| ffx_error!("Could not read archive: {}", e))?;
+        let file = File::open(path.as_ref()).map_err(|e| FfxFastbootError::FileOpen {
+            path: path.as_ref().to_path_buf(),
+            source: e,
+        })?;
+        let mut archive = ZipArchive::new(file).map_err(FfxFastbootError::ZipArchiveOpen)?;
 
         for i in 0..archive.len() {
-            let mut archive_file = archive.by_index(i)?;
+            let mut archive_file = archive.by_index(i).map_err(FfxFastbootError::ZipArchiveRead)?;
             let outpath = archive_file.sanitized_name();
 
             let mut dest = PathBuf::new();
             dest.push(temp_dir.path());
             dest.push(outpath);
-            let mut outfile = File::create(&dest)?;
+            let mut outfile = File::create(&dest)
+                .map_err(|e| FfxFastbootError::FileOpen { path: dest.clone(), source: e })?;
             copy(&mut archive_file, &mut outfile)?;
         }
 
         // Decrypt the base64 key from the pem file.
         let puk_file = temp_dir.path().join(PUK);
-        let contents = async_fs::read_to_string(puk_file).await?;
+        let contents = async_fs::read_to_string(puk_file.clone())
+            .await
+            .map_err(|e| FfxFastbootError::FileOpen { path: puk_file, source: e })?;
 
         let private_key_pem = contents
             .replace(PRIVATE_KEY_BEGIN, "")
@@ -130,24 +141,41 @@ impl UnlockCredentials {
             intermediate_cert: [0; EXPECTED_CERTIFICATE_SIZE],
             unlock_cert: [0; EXPECTED_CERTIFICATE_SIZE],
             unlock_key: RsaKeyPair::from_pkcs8(&private_key_pem_bytes[..])
-                .map_err(|e| ffx_error!("Could not decode RSA private key: {}", e))?,
+                .map_err(FfxFastbootError::CryptoKeyRejected)?,
         };
 
         let pik_cert_file = temp_dir.path().join(PIK_CERT);
-        let mut pik_file = OpenOptions::new().read(true).open(pik_cert_file).await?;
-        let pik_size = pik_file.metadata().await?.len();
+        let mut pik_file = OpenOptions::new()
+            .read(true)
+            .open(pik_cert_file.clone())
+            .await
+            .map_err(|e| FfxFastbootError::FileOpen { path: pik_cert_file, source: e })?;
+        let pik_size = pik_file
+            .metadata()
+            .await? // TODO map metadata error if needed, it uses ? which works via From<io::Error>
+            .len();
         if pik_size as usize != EXPECTED_CERTIFICATE_SIZE {
-            bail!("Invalid intermediate key certificate length")
+            return Err(FfxFastbootError::InvalidCertificateLength {
+                expected: EXPECTED_CERTIFICATE_SIZE,
+                found: pik_size,
+            });
         }
         let mut pik_buffer = Vec::new();
         pik_file.read_to_end(&mut pik_buffer).await?;
         result.intermediate_cert.clone_from_slice(&pik_buffer[..]);
 
         let puk_cert_file = temp_dir.path().join(PUK_CERT);
-        let mut puk_file = OpenOptions::new().read(true).open(puk_cert_file).await?;
+        let mut puk_file = OpenOptions::new()
+            .read(true)
+            .open(puk_cert_file.clone())
+            .await
+            .map_err(|e| FfxFastbootError::FileOpen { path: puk_cert_file, source: e })?;
         let puk_size = puk_file.metadata().await?.len();
         if puk_size as usize != EXPECTED_CERTIFICATE_SIZE {
-            bail!("Invalid product unlock key certificate length")
+            return Err(FfxFastbootError::InvalidCertificateLength {
+                expected: EXPECTED_CERTIFICATE_SIZE,
+                found: puk_size,
+            });
         }
         let mut puk_buffer = Vec::new();
         puk_file.read_to_end(&mut puk_buffer).await?;
@@ -168,7 +196,7 @@ pub async fn unlock_device<F: FileResolver + Sync, T: FastbootInterface>(
     fastboot_interface: &mut T,
 ) -> Result<()> {
     if creds.len() == 0 {
-        ffx_bail!("No credentials given. Could not unlock device.")
+        return Err(FfxFastbootError::NoCredentialsGiven);
     }
     let search = Utc::now();
     messenger.send(Event::Unlock(UnlockEvent::SearchingForCredentials)).await?;
@@ -188,7 +216,7 @@ pub async fn unlock_device<F: FileResolver + Sync, T: FastbootInterface>(
             .await;
         }
     }
-    ffx_bail!("Key mismatch. Credentials given could not unlock the device.")
+    return Err(FfxFastbootError::UnlockKeyMismatch);
 }
 
 async fn unlock_device_with_creds<F: FastbootInterface>(
@@ -205,7 +233,7 @@ async fn unlock_device_with_creds<F: FastbootInterface>(
     unlock_creds
         .unlock_key
         .sign(&RSA_PKCS1_SHA512, &rng, &challenge.challenge_data, &mut signature)
-        .map_err(|_| ffx_error!("Could not sign unlocking keys"))?;
+        .map_err(FfxFastbootError::CryptoSigningError)?;
 
     let dir = tempdir()?;
     let path = dir.path().join("token");
@@ -215,7 +243,8 @@ async fn unlock_device_with_creds<F: FastbootInterface>(
         .create(true)
         .truncate(true)
         .open(path.clone())
-        .await?;
+        .await
+        .map_err(|e| FfxFastbootError::FileOpen { path: path.clone(), source: e })?;
 
     let mut buf = [0; 4];
     LittleEndian::write_u32(&mut buf, 1);
@@ -230,17 +259,12 @@ async fn unlock_device_with_creds<F: FastbootInterface>(
 
     messenger.send(Event::Unlock(UnlockEvent::BeginningUploadOfToken)).await?;
 
-    let file_path =
-        path.to_str().ok_or_else(|| anyhow!("Could not get path for temporary token file"))?;
+    let file_path = path.to_str().ok_or(FfxFastbootError::NonUtf8Path)?;
     let (prog_client, mut prog_server): (Sender<UploadProgress>, Receiver<UploadProgress>) =
         mpsc::channel(1);
-    let path = file_path.to_string();
+    let path_str = file_path.to_string();
     try_join!(
-        fastboot_interface.stage(&path, prog_client).map_err(|e| anyhow!(
-            "There was an error staging {}: {:?}",
-            file_path,
-            e
-        )),
+        fastboot_interface.stage(&path_str, prog_client).map_err(FfxFastbootError::Interface),
         async {
             loop {
                 match prog_server.recv().await {
@@ -253,16 +277,12 @@ async fn unlock_device_with_creds<F: FastbootInterface>(
         },
     )?;
 
-    fastboot_interface
-        .oem("vx-unlock")
-        .await
-        .map_err(|e| anyhow!("There was an error sending vx-unlock command: {}", e))?;
+    fastboot_interface.oem("vx-unlock").await?;
 
-    match is_locked(fastboot_interface).await {
-        Ok(true) => bail!("Could not unlock device."),
-        Ok(false) => Ok(()),
-        Err(e) => bail!("Could not verify unlocking worked: {}", e),
+    if is_locked(fastboot_interface).await? {
+        return Err(FfxFastbootError::UnlockFailed);
     }
+    Ok(())
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -271,6 +291,7 @@ async fn unlock_device_with_creds<F: FastbootInterface>(
 #[cfg(test)]
 mod test {
     use super::*;
+    type Result<T> = std::result::Result<T, anyhow::Error>;
 
     #[test]
     fn test_unlock_challenge() -> Result<()> {

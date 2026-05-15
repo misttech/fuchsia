@@ -3,21 +3,18 @@
 // found in the LICENSE file.
 
 use crate::common::{is_locked, lock_device, verify_variable_value};
-use anyhow::Result;
-use errors::ffx_bail;
+use crate::error::FfxFastbootError;
+type Result<T> = std::result::Result<T, FfxFastbootError>;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 
 const LOCKABLE_VAR: &str = "vx-unlockable";
 const EPHEMERAL: &str = "ephemeral";
-const EPHEMERAL_ERR: &str = "Cannot lock ephemeral devices. Reboot the device to unlock.";
-const LOCKED_ERR: &str = "Target is already locked.";
-
 pub async fn lock<F: FastbootInterface>(fastboot_interface: &mut F) -> Result<()> {
     if is_locked(fastboot_interface).await? {
-        ffx_bail!("{}", LOCKED_ERR);
+        return Err(FfxFastbootError::AlreadyLocked);
     }
     if verify_variable_value(LOCKABLE_VAR, EPHEMERAL, fastboot_interface).await? {
-        ffx_bail!("{}", EPHEMERAL_ERR);
+        return Err(FfxFastbootError::CannotLockEphemeral);
     }
     lock_device(fastboot_interface).await?;
     Ok(())
@@ -29,6 +26,7 @@ pub async fn lock<F: FastbootInterface>(fastboot_interface: &mut F) -> Result<()
 #[cfg(test)]
 mod test {
     use super::*;
+    type Result<T> = std::result::Result<T, anyhow::Error>;
     use crate::common::vars::LOCKED_VAR;
     use ffx_fastboot_interface::test::setup;
 

@@ -4,15 +4,16 @@
 
 use crate::common::crypto::unlock_device;
 use crate::common::{
-    Boot, Flash, MISSING_CREDENTIALS, MISSING_PRODUCT, Unlock, finish, flash_bootloader,
-    flash_product, is_locked, lock_device, verify_hardware,
+    Boot, Flash, Unlock, finish, flash_bootloader, flash_product, is_locked, lock_device,
+    verify_hardware,
 };
+use crate::error::FfxFastbootError;
 use crate::file_resolver::FileResolver;
 use crate::unlock::unlock;
 use crate::util::Event;
-use anyhow::Result;
+
+type Result<T> = std::result::Result<T, FfxFastbootError>;
 use async_trait::async_trait;
-use errors::ffx_bail;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 use ffx_flash_manifest::ManifestParams;
 use ffx_flash_manifest::v2::FlashManifest;
@@ -36,11 +37,11 @@ impl Flash for FlashManifest {
         }
         let product = match self.v1.0.iter().find(|product| product.name == cmd.product) {
             Some(res) => res,
-            None => ffx_bail!("{} {}", MISSING_PRODUCT, cmd.product),
+            None => return Err(FfxFastbootError::MissingProduct(cmd.product.clone())),
         };
         if product.requires_unlock && is_locked(fastboot_interface).await? {
             if self.credentials.len() == 0 {
-                ffx_bail!("{}", MISSING_CREDENTIALS);
+                return Err(FfxFastbootError::MissingCredentials);
             } else {
                 unlock_device(messenger, file_resolver, &self.credentials, fastboot_interface)
                     .await?;
@@ -101,6 +102,7 @@ impl Boot for FlashManifest {
 #[cfg(test)]
 mod test {
     use super::*;
+    type Result<T> = std::result::Result<T, anyhow::Error>;
     use crate::common::vars::{IS_USERSPACE_VAR, LOCKED_VAR, MAX_DOWNLOAD_SIZE_VAR, REVISION_VAR};
     use crate::file_resolver::test::TestResolver;
     use ffx_fastboot_interface::test::setup;
@@ -196,7 +198,8 @@ mod test {
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(())
     }
 
     #[fuchsia::test]
@@ -307,6 +310,7 @@ mod test {
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(())
     }
 }

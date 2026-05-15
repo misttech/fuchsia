@@ -17,7 +17,7 @@ use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, Variable};
 use ffx_fastboot_tool_args::{FastbootCommand, FastbootSubcommand};
 use ffx_writer::VerifiedMachineWriter;
 use fho::{FfxMain, FfxTool};
-use futures::try_join;
+use futures::{TryFutureExt, try_join};
 use schemars::JsonSchema;
 use serde::Serialize;
 use sparse::reader::SparseReader;
@@ -96,7 +96,8 @@ where
                     interface,
                     flash_min_timeout_seconds,
                     flash_timeout_rate_mb_per_second
-                ),
+                )
+                .map_err(anyhow::Error::from),
                 sink(server)
             )
             .map_err(fho::Error::from)?;

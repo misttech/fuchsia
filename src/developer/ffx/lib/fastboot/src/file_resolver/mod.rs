@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
+use crate::error::FfxFastbootError;
+type Result<T> = std::result::Result<T, FfxFastbootError>;
 use async_trait::async_trait;
 
 pub mod resolvers;
@@ -16,7 +17,6 @@ pub trait FileResolver {
 // tests
 pub mod test {
     use super::*;
-    use anyhow::Result;
     use async_trait::async_trait;
 
     pub struct TestResolver {}

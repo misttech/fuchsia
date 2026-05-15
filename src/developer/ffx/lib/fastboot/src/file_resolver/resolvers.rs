@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::error::FfxFastbootError;
 use crate::file_resolver::FileResolver;
-use anyhow::{Context, Result, anyhow, bail};
+type Result<T> = std::result::Result<T, FfxFastbootError>;
+
 use async_trait::async_trait;
-use errors::{ffx_bail, ffx_error};
 use flate2::read::GzDecoder;
 use std::fs::{File, create_dir_all};
 use std::io::copy;
@@ -41,7 +42,7 @@ impl FileResolver for EmptyResolver {
             if let Some(f) = parent.to_str() {
                 Ok(f.to_string())
             } else {
-                ffx_bail!("Only UTF-8 strings are currently supported in the flash manifest")
+                return Err(FfxFastbootError::NonUtf8Path);
             }
         }
     }
@@ -54,8 +55,9 @@ pub struct Resolver {
 impl Resolver {
     pub fn new(path: PathBuf) -> Result<Self> {
         Ok(Self {
-            root_path: path.canonicalize().with_context(|| {
-                format!("Getting absolute path of flashing manifest at {:?}", path)
+            root_path: path.canonicalize().map_err(|e| FfxFastbootError::CanonicalizePath {
+                path: path.clone(),
+                source: e,
             })?,
         })
     }
@@ -76,10 +78,10 @@ impl FileResolver for Resolver {
             if let Some(f) = parent.to_str() {
                 Ok(f.to_string())
             } else {
-                ffx_bail!("Only UTF-8 strings are currently supported file paths")
+                return Err(FfxFastbootError::NonUtf8Path);
             }
         } else {
-            bail!("Could not get file to upload");
+            return Err(FfxFastbootError::NoParentDirectory);
         }
     }
 }
@@ -94,9 +96,8 @@ impl ZipArchiveResolver {
     pub fn new(path: PathBuf) -> Result<Self> {
         let temp_dir = tempdir()?;
         let file = File::open(path.clone())
-            .map_err(|e| ffx_error!("Could not open archive file at {}. {}", path.display(), e))?;
-        let archive =
-            ZipArchive::new(file).map_err(|e| ffx_error!("Could not read archive: {}", e))?;
+            .map_err(|e| FfxFastbootError::FileOpen { path: path.clone(), source: e })?;
+        let archive = ZipArchive::new(file).map_err(FfxFastbootError::ZipArchiveOpen)?;
 
         Ok(Self { temp_dir, archive })
     }
@@ -108,7 +109,7 @@ impl FileResolver for ZipArchiveResolver {
         let mut file = self
             .archive
             .by_name(file)
-            .map_err(|_| anyhow!("File not found in archive: {}", file))?;
+            .map_err(|_| FfxFastbootError::FileNotFoundInArchive { file: file.to_string() })?;
 
         let mut outpath = PathBuf::new();
         outpath.push(self.temp_dir.path());
@@ -121,7 +122,7 @@ impl FileResolver for ZipArchiveResolver {
         log::debug!("Extracting to {}", self.temp_dir.path().display());
         let mut outfile = File::create(&outpath)?;
         copy(&mut file, &mut outfile)?;
-        Ok(outpath.to_str().ok_or_else(|| anyhow!("invalid temp file name"))?.to_owned())
+        Ok(outpath.to_str().ok_or_else(|| FfxFastbootError::InvalidTempFileName)?.to_owned())
     }
 }
 
@@ -133,7 +134,7 @@ impl TarResolver {
     pub fn new(path: PathBuf) -> Result<Self> {
         let temp_dir = tempdir()?;
         let file = File::open(path.clone())
-            .map_err(|e| ffx_error!("Could not open archive file: {}", e))?;
+            .map_err(|e| FfxFastbootError::FileOpen { path: path.clone(), source: e })?;
         log::debug!("Extracting to {}", temp_dir.path().display());
         // Tarballs can't do per file extraction well like Zip, so just unpack it all.
         match path.extension() {
@@ -145,7 +146,7 @@ impl TarResolver {
                 let mut archive = Archive::new(file);
                 archive.unpack(temp_dir.path())?;
             }
-            _ => ffx_bail!("Invalid tar archive"),
+            _ => return Err(FfxFastbootError::InvalidTarArchive),
         }
 
         Ok(Self { temp_dir })
@@ -164,7 +165,7 @@ impl FileResolver for TarResolver {
         if let Some(f) = parent.to_str() {
             Ok(f.to_string())
         } else {
-            ffx_bail!("Only UTF-8 strings are currently supported.")
+            return Err(FfxFastbootError::NonUtf8Path);
         }
     }
 }
@@ -177,6 +178,7 @@ mod test {
     // use tempfile::NamedTempFile;
 
     use super::*;
+    type Result<T> = std::result::Result<T, anyhow::Error>;
     use std::io::{Read, Write};
     use std::str::FromStr;
     use zip::CompressionMethod;

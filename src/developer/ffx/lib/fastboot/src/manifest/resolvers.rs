@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::error::FfxFastbootError;
 use crate::file_resolver::FileResolver;
 use crate::file_resolver::resolvers::{Resolver, TarResolver};
-use anyhow::{Result, anyhow};
+type Result<T> = std::result::Result<T, FfxFastbootError>;
 use async_trait::async_trait;
-use errors::{ffx_bail, ffx_error};
 use std::fs::{File, create_dir_all};
 use std::io::copy;
 use std::path::{Path, PathBuf};
@@ -34,10 +34,7 @@ impl FlashManifestResolver {
     pub fn new(path: PathBuf) -> Result<Self> {
         match path.is_file() {
             false => {
-                ffx_bail!(
-                    "Creating a FlashManifestResolver, path: {} is not a file",
-                    path.display()
-                );
+                return Err(FfxFastbootError::ManifestNotAFile { path: path.clone() });
             }
             true => Ok(Self(Resolver::new(path)?)),
         }
@@ -69,14 +66,13 @@ impl ArchiveResolver {
     pub fn new(path: PathBuf) -> Result<Self> {
         let temp_dir = tempdir()?;
         let file = File::open(path.clone())
-            .map_err(|e| ffx_error!("Could not open archive file: {}", e))?;
-        let mut archive =
-            ZipArchive::new(file).map_err(|e| ffx_error!("Could not read archive: {}", e))?;
+            .map_err(|e| FfxFastbootError::FileOpen { path: path.clone(), source: e })?;
+        let mut archive = ZipArchive::new(file).map_err(FfxFastbootError::ZipArchiveOpen)?;
         let mut internal_manifest_path = None;
         let mut manifest_path = None;
 
         for i in 0..archive.len() {
-            let mut archive_file = archive.by_index(i)?;
+            let mut archive_file = archive.by_index(i).map_err(FfxFastbootError::ZipArchiveRead)?;
             let outpath = archive_file.sanitized_name();
             if (&*archive_file.name()).ends_with("flash.json")
                 || (&*archive_file.name()).ends_with("flash-manifest.manifest")
@@ -103,7 +99,7 @@ impl ArchiveResolver {
             (Some(i), Some(m)) => {
                 Ok(Self { temp_dir, manifest_path: m, internal_manifest_path: i, archive })
             }
-            _ => ffx_bail!("Could not locate flash manifest in archive: {}", path.display()),
+            _ => Err(FfxFastbootError::FlashManifestNotFoundInArchive { path }),
         }
     }
 
@@ -121,13 +117,15 @@ impl FileResolver for ArchiveResolver {
                 path.push(p);
                 path.push(file);
                 self.archive
-                    .by_name(path.to_str().ok_or_else(|| anyhow!("invalid archive file name"))?)
-                    .map_err(|_| anyhow!("File not found in archive: {}", file))?
+                    .by_name(path.to_str().ok_or_else(|| FfxFastbootError::InvalidArchiveFileName)?)
+                    .map_err(|_| FfxFastbootError::FileNotFoundInArchive {
+                        file: file.to_string(),
+                    })?
             }
             None => self
                 .archive
                 .by_name(file)
-                .map_err(|_| anyhow!("File not found in archive: {}", file))?,
+                .map_err(|_| FfxFastbootError::FileNotFoundInArchive { file: file.to_string() })?,
         };
         let mut outpath = PathBuf::new();
         outpath.push(self.temp_dir.path());
@@ -139,7 +137,7 @@ impl FileResolver for ArchiveResolver {
         }
         let mut outfile = File::create(&outpath)?;
         copy(&mut file, &mut outfile)?;
-        Ok(outpath.to_str().ok_or_else(|| anyhow!("invalid temp file name"))?.to_owned())
+        Ok(outpath.to_str().ok_or_else(|| FfxFastbootError::InvalidTempFileName)?.to_owned())
     }
 }
 
@@ -156,7 +154,7 @@ impl FlashManifestTarResolver {
 
         match manifest_path {
             Some(m) => Ok(Self(resolver_inner, m.into_path())),
-            _ => ffx_bail!("Could not locate flash manifest in archive: {}", path.display()),
+            _ => Err(FfxFastbootError::FlashManifestNotFoundInArchive { path }),
         }
     }
 

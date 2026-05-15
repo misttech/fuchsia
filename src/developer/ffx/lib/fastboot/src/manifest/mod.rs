@@ -3,16 +3,17 @@
 // found in the LICENSE file.
 
 use crate::common::{Boot, Flash, Unlock};
+use crate::error::FfxFastbootError;
 use crate::file_resolver::FileResolver;
 use crate::file_resolver::resolvers::Resolver;
 use crate::manifest::resolvers::{
     ArchiveResolver, FlashManifestResolver, FlashManifestTarResolver, ManifestResolver,
 };
 use crate::util::Event;
-use anyhow::{Result, anyhow, bail};
+
+type Result<T> = std::result::Result<T, FfxFastbootError>;
 use async_trait::async_trait;
 use camino::Utf8Path;
-use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 use ffx_flash_manifest::{BootParams, Command, FlashManifestVersion, ManifestParams};
@@ -111,8 +112,7 @@ pub async fn from_sdk<F: FastbootInterface>(
     log::debug!("fastboot manifest from_sdk");
     match cmd.product_bundle.as_ref() {
         Some(b) => {
-            let product_bundle =
-                load_product_bundle(context, b).await.map_err(|e| anyhow::anyhow!(e))?.into();
+            let product_bundle = load_product_bundle(context, b).await?.into();
             FlashManifest {
                 resolver: Resolver::new(PathBuf::from(b))?,
                 version: FlashManifestVersion::from_product_bundle(&product_bundle)?,
@@ -120,9 +120,7 @@ pub async fn from_sdk<F: FastbootInterface>(
             .flash(messenger, fastboot_interface, cmd)
             .await
         }
-        None => ffx_bail!(
-            "Please supply the `--product-bundle` option to identify which product bundle to flash"
-        ),
+        None => Err(FfxFastbootError::ProductBundleRequired),
     }
 }
 
@@ -133,7 +131,7 @@ pub async fn from_local_product_bundle<F: FastbootInterface>(
     cmd: ManifestParams,
 ) -> Result<()> {
     log::debug!("fastboot manifest from_local_product_bundle");
-    let path = Utf8Path::from_path(&*path).ok_or_else(|| anyhow!("Error getting path"))?;
+    let path = Utf8Path::from_path(&*path).ok_or(FfxFastbootError::NonUtf8Path)?;
 
     match (path.is_file(), path.extension()) {
         (true, Some("zip")) => {
@@ -145,9 +143,10 @@ pub async fn from_local_product_bundle<F: FastbootInterface>(
             let temp_dir = tempfile::tempdir()?;
             let tdir_path = temp_dir.path().to_owned();
             let file = File::open(path)?;
-            let mut archive = zip::read::ZipArchive::new(file)?;
+            let mut archive =
+                zip::read::ZipArchive::new(file).map_err(FfxFastbootError::ZipArchiveOpen)?;
             for i in 0..archive.len() {
-                let mut file = archive.by_index(i)?;
+                let mut file = archive.by_index(i).map_err(FfxFastbootError::ZipArchiveRead)?;
                 if file.is_file() {
                     let ofile_path = tdir_path.join(file.sanitized_name());
                     if let Some(parent) = ofile_path.parent() {
@@ -158,13 +157,14 @@ pub async fn from_local_product_bundle<F: FastbootInterface>(
                 }
             }
             let tdir_path =
-                Utf8Path::from_path(&*tdir_path).ok_or_else(|| anyhow!("Error getting path"))?;
+                Utf8Path::from_path(&*tdir_path).ok_or(FfxFastbootError::NonUtf8Path)?;
             let pb_path = if std::fs::exists(tdir_path.join("product_bundle"))? {
                 tdir_path.join("product_bundle")
             } else {
                 tdir_path.to_owned()
             };
-            let product_bundle = ProductBundle::try_load_from(&pb_path)?;
+            let product_bundle = ProductBundle::try_load_from(&pb_path)
+                .map_err(FfxFastbootError::ProductBundleLoad)?;
             let flash_manifest_version =
                 FlashManifestVersion::from_product_bundle(&product_bundle)?;
             FlashManifest {
@@ -174,12 +174,12 @@ pub async fn from_local_product_bundle<F: FastbootInterface>(
             .flash(messenger, fastboot_interface, cmd)
             .await
         }
-        (true, extension) => Err(anyhow!(
-            "Attempting to flash using a Product Bundle file with unsupported extension: {:#?}",
-            extension
-        )),
+        (true, extension) => Err(FfxFastbootError::UnsupportedProductBundleExtension {
+            extension: extension.unwrap_or_default().to_string(),
+        }),
         (false, _) => {
-            let product_bundle = ProductBundle::try_load_from(path)?;
+            let product_bundle =
+                ProductBundle::try_load_from(path).map_err(FfxFastbootError::ProductBundleLoad)?;
             let flash_manifest_version =
                 FlashManifestVersion::from_product_bundle(&product_bundle)?;
             FlashManifest { resolver: Resolver::new(path.into())?, version: flash_manifest_version }
@@ -200,7 +200,7 @@ pub async fn from_in_tree<T: FastbootInterface>(
         log::debug!("in tree, but product bundle specified, use in-tree sdk");
         from_sdk(context, messenger, fastboot_interface, cmd).await
     } else {
-        bail!("manifest or product_bundle must be specified")
+        Err(FfxFastbootError::ManifestOrProductBundleRequired)
     }
 }
 
@@ -280,6 +280,7 @@ impl<F: FileResolver + Sync + Send> FlashManifest<F> {
 #[cfg(test)]
 mod test {
     use super::*;
+    type Result<T> = std::result::Result<T, anyhow::Error>;
     use assembly_partitions_config::{BootloaderPartition, BootstrapPartition, PartitionsConfig};
     use camino::Utf8PathBuf;
     use ffx_flash_manifest::ManifestFile;

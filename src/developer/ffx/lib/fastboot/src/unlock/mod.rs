@@ -3,16 +3,15 @@
 // found in the LICENSE file.
 
 use crate::common::crypto::unlock_device;
-use crate::common::{MISSING_CREDENTIALS, is_locked};
+use crate::common::is_locked;
+use crate::error::FfxFastbootError;
 use crate::file_resolver::FileResolver;
 use crate::util;
 use crate::util::Event;
-use anyhow::Result;
-use errors::ffx_bail;
+
+type Result<T> = std::result::Result<T, FfxFastbootError>;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 use tokio::sync::mpsc::Sender;
-
-const UNLOCKED_ERR: &str = "Target is already unlocked.";
 
 pub async fn unlock<F: FileResolver + Sync, T: FastbootInterface>(
     messages: Sender<Event>,
@@ -21,11 +20,11 @@ pub async fn unlock<F: FileResolver + Sync, T: FastbootInterface>(
     fastboot_interface: &mut T,
 ) -> Result<()> {
     if !is_locked(fastboot_interface).await? {
-        ffx_bail!("{}", UNLOCKED_ERR);
+        return Err(FfxFastbootError::AlreadyUnlocked);
     }
 
     if credentials.len() == 0 {
-        ffx_bail!("{}", MISSING_CREDENTIALS);
+        return Err(FfxFastbootError::MissingCredentials);
     }
 
     unlock_device(&messages, file_resolver, credentials, fastboot_interface).await?;
@@ -41,6 +40,7 @@ mod test {
     use tokio::sync::mpsc;
 
     use super::*;
+    type Result<T> = std::result::Result<T, anyhow::Error>;
     use crate::common::vars::LOCKED_VAR;
     use crate::file_resolver::resolvers::EmptyResolver;
     use ffx_fastboot_interface::test::setup;

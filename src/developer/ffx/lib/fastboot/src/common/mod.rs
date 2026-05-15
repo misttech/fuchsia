@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 use crate::common::vars::{IS_USERSPACE_VAR, LOCKED_VAR, MAX_DOWNLOAD_SIZE_VAR, REVISION_VAR};
+use crate::error::FfxFastbootError;
 use crate::file_resolver::FileResolver;
 use crate::manifest::{from_in_tree, from_local_product_bundle, from_path, from_sdk};
 use crate::util::Event;
-use anyhow::{Context, Result, anyhow, bail};
+
+type Result<T> = std::result::Result<T, FfxFastbootError>;
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
-use errors::ffx_bail;
 use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, RebootEvent, UploadProgress};
 use ffx_flash_manifest::{ManifestParams, OemFile};
@@ -70,10 +71,7 @@ pub trait Unlock {
         F: FileResolver + Sync + Send,
         T: FastbootInterface,
     {
-        ffx_bail!(
-            "This manifest does not support unlocking target devices. \n\
-        Please update to a newer version of manifest and try again."
-        )
+        return Err(FfxFastbootError::UnlockNotSupported);
     }
 }
 
@@ -106,17 +104,10 @@ pub async fn stage_file<F: FileResolver + Sync, T: FastbootInterface>(
     file: &str,
     fastboot_interface: &mut T,
 ) -> Result<()> {
-    let file_to_upload = if resolve {
-        file_resolver.get_file(file).await.context("reconciling file for upload")?
-    } else {
-        file.to_string()
-    };
+    let file_to_upload =
+        if resolve { file_resolver.get_file(file).await? } else { file.to_string() };
     log::debug!("Preparing to stage {}", file_to_upload);
-    fastboot_interface
-        .stage(&file_to_upload, prog_client)
-        .await
-        .map_err(|e| anyhow!(e))
-        .map_err(|e| anyhow!("There was an error staging {}: {:?}", file_to_upload, e))?;
+    fastboot_interface.stage(&file_to_upload, prog_client).await?;
     Ok(())
 }
 
@@ -130,12 +121,9 @@ async fn do_flash<F: FastbootInterface>(
     let (prog_client, mut prog_server): (Sender<UploadProgress>, Receiver<UploadProgress>) =
         mpsc::channel(1);
     try_join!(
-        fastboot_interface.flash(name, file_to_upload, prog_client, timeout).map_err(|e| anyhow!(
-            "There was an error flashing \"{}\" - {}: {:?}",
-            name,
-            file_to_upload,
-            e
-        )),
+        fastboot_interface
+            .flash(name, file_to_upload, prog_client, timeout)
+            .map_err(FfxFastbootError::Interface),
         async {
             loop {
                 match prog_server.recv().await {
@@ -196,8 +184,7 @@ pub async fn flash_partition<F: FileResolver + Sync, T: FastbootInterface>(
     min_timeout_secs: u64,
     flash_timeout_rate_mb_per_second: f64,
 ) -> Result<()> {
-    let file_to_upload =
-        file_resolver.get_file(file).await.context("reconciling file for upload")?;
+    let file_to_upload = file_resolver.get_file(file).await?;
     log::debug!("Preparing to upload {}", file_to_upload);
     flash_partition_impl(
         messenger,
@@ -220,12 +207,15 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
 ) -> Result<()> {
     // If the given file to flash is bigger than what the device can download
     // at once, we need to make a sparse image out of the given file
-    let mut file_handle = File::open(&file_to_upload)
-        .map_err(|e| anyhow!("Got error trying to open file \"{}\": {}", file_to_upload, e))?;
+    let mut file_handle = File::open(&file_to_upload).map_err(|e| FfxFastbootError::FileOpen {
+        path: PathBuf::from(&file_to_upload),
+        source: e,
+    })?;
     let file_size = file_handle
         .metadata()
-        .map_err(|e| {
-            anyhow!("Got error retrieving metadata for file \"{}\": {}", file_to_upload, e)
+        .map_err(|e| FfxFastbootError::FileMetadata {
+            path: PathBuf::from(&file_to_upload),
+            source: e,
         })?
         .len();
 
@@ -238,10 +228,7 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
     let timeout = Duration::seconds(timeout as i64);
     log::debug!("Estimated timeout: {}s for {}MB", timeout, megabytes);
 
-    let max_download_size_var = fastboot_interface
-        .get_var(MAX_DOWNLOAD_SIZE_VAR)
-        .await
-        .map_err(|e| anyhow!("Communication error with the device: {:?}", e))?;
+    let max_download_size_var = fastboot_interface.get_var(MAX_DOWNLOAD_SIZE_VAR).await?;
 
     log::trace!("Got max download size from device: {}", max_download_size_var);
     let trimmed_max_download_size_var = max_download_size_var.trim_start_matches("0x");
@@ -315,20 +302,16 @@ pub async fn verify_hardware(
     revision: &String,
     fastboot_interface: &mut impl FastbootInterface,
 ) -> Result<()> {
-    let rev = fastboot_interface
-        .get_var(REVISION_VAR)
-        .await
-        .map_err(|e| anyhow!("Communication error with the device: {:?}", e))?;
+    let rev = fastboot_interface.get_var(REVISION_VAR).await?;
     if let Some(r) = rev.split("-").next() {
         if r != *revision && rev != *revision {
-            ffx_bail!(
-                "Hardware mismatch! Trying to flash images built for {} but have {}",
-                revision,
-                r
-            );
+            return Err(FfxFastbootError::HardwareMismatch {
+                expected: revision.clone(),
+                found: r.to_string(),
+            });
         }
     } else {
-        ffx_bail!("Could not verify hardware revision of target device");
+        return Err(FfxFastbootError::HardwareVerificationFailure);
     }
     Ok(())
 }
@@ -339,11 +322,7 @@ pub async fn verify_variable_value(
     fastboot_interface: &mut impl FastbootInterface,
 ) -> Result<bool> {
     log::debug!("Verifying value for variable {} equals {}", var, value);
-    fastboot_interface
-        .get_var(var)
-        .await
-        .map_err(|e| anyhow!("Communication error with the device: {:?}", e))
-        .map(|res| res == value)
+    Ok(fastboot_interface.get_var(var).await.map(|res| res == value)?)
 }
 
 pub async fn reboot_bootloader<F: FastbootInterface>(
@@ -355,14 +334,14 @@ pub async fn reboot_bootloader<F: FastbootInterface>(
         mpsc::channel(1);
     let start_time = Utc::now();
     try_join!(
-        fastboot_interface.reboot_bootloader(reboot_client).map_err(|e| anyhow!(e)),
+        fastboot_interface.reboot_bootloader(reboot_client).map_err(FfxFastbootError::Interface),
         async move {
             match reboot_server.recv().await {
                 Some(RebootEvent::OnReboot) => {
                     return Ok(());
                 }
                 None => {
-                    bail!("Did not receive reboot signal");
+                    return Err(FfxFastbootError::RebootSignalMissing);
                 }
             };
         }
@@ -400,9 +379,7 @@ pub async fn stage_oem_files<F: FileResolver + Sync, T: FastbootInterface>(
         )?;
 
         messenger.send(Event::Oem { oem_command: oem_file.command().to_string() }).await?;
-        fastboot_interface.oem(oem_file.command()).await.map_err(|e| {
-            anyhow!("There was an error sending oem command \"{}\": {e}", oem_file.command())
-        })?;
+        fastboot_interface.oem(oem_file.command()).await?;
     }
     Ok(())
 }
@@ -569,7 +546,7 @@ where
 pub async fn finish<F: FastbootInterface>(fastboot_interface: &mut F) -> Result<()> {
     set_slot_a_active(fastboot_interface).await?;
     // LINT.IfChange
-    fastboot_interface.continue_boot().await.map_err(|_| anyhow!("Could not reboot device"))?;
+    fastboot_interface.continue_boot().await.map_err(FfxFastbootError::ContinueBootFailed)?;
     // LINT.ThenChange(//tools/lib/ffxutil/flash.go)
     Ok(())
 }
@@ -579,7 +556,8 @@ pub async fn is_locked(fastboot_interface: &mut impl FastbootInterface) -> Resul
 }
 
 pub async fn lock_device(fastboot_interface: &mut impl FastbootInterface) -> Result<()> {
-    fastboot_interface.oem(LOCK_COMMAND).await.map_err(|_| anyhow!("Could not lock device"))
+    fastboot_interface.oem(LOCK_COMMAND).await?;
+    Ok(())
 }
 
 pub async fn from_manifest<C, F>(
@@ -596,7 +574,7 @@ where
     match &cmd.manifest {
         Some(manifest) => {
             if !manifest.is_file() {
-                ffx_bail!("Manifest \"{}\" is not a file.", manifest.display());
+                return Err(FfxFastbootError::ManifestNotAFile { path: manifest.to_path_buf() });
             }
             from_path(&messenger, manifest.to_path_buf(), fastboot_interface, cmd).await
         }
@@ -620,7 +598,7 @@ where
                     SdkVersion::Version(_) => {
                         from_sdk(context, &messenger, fastboot_interface, cmd).await
                     }
-                    _ => ffx_bail!("Unknown SDK type"),
+                    _ => Err(FfxFastbootError::UnknownSdkType),
                 }
             }
         }

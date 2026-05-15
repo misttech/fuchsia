@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::error::FfxFastbootError;
 use crate::file_resolver::FileResolver;
 use crate::manifest::{Boot, Flash, Unlock};
 use crate::util::Event;
-use anyhow::Result;
+
+type Result<T> = std::result::Result<T, FfxFastbootError>;
 use async_trait::async_trait;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 use ffx_flash_manifest::ManifestParams;
@@ -72,6 +74,7 @@ impl Boot for FlashManifest {
 #[cfg(test)]
 mod test {
     use super::*;
+    type Result<T> = std::result::Result<T, anyhow::Error>;
     use crate::common::vars::{IS_USERSPACE_VAR, MAX_DOWNLOAD_SIZE_VAR, REVISION_VAR};
     use crate::file_resolver::test::TestResolver;
     use ffx_fastboot_interface::test::setup;
@@ -134,7 +137,8 @@ mod test {
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(())
     }
 
     #[fuchsia::test]
@@ -203,6 +207,7 @@ mod test {
                 ..Default::default()
             },
         )
-        .await
+        .await?;
+        Ok(())
     }
 }

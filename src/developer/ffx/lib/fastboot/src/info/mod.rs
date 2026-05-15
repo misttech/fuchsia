@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, anyhow};
+use crate::error::FfxFastbootError;
+type Result<T> = std::result::Result<T, FfxFastbootError>;
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, Variable};
-use futures::prelude::*;
 use std::io::Write;
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -27,7 +27,8 @@ pub async fn info<F: FastbootInterface>(
     messenger: Sender<Variable>,
     fastboot_interface: &mut F,
 ) -> Result<()> {
-    fastboot_interface.get_all_vars(messenger).map_err(|e| anyhow!(e)).await
+    fastboot_interface.get_all_vars(messenger).await?;
+    Ok(())
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -36,6 +37,7 @@ pub async fn info<F: FastbootInterface>(
 #[cfg(test)]
 mod test {
     use super::*;
+    type Result<T> = std::result::Result<T, anyhow::Error>;
     use ffx_fastboot_interface::test::setup;
     use tokio::sync::mpsc;
 

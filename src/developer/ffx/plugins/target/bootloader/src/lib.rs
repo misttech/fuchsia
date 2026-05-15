@@ -31,7 +31,7 @@ use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, UploadProgre
 use ffx_writer::VerifiedMachineWriter;
 use fho::{FfxContext, FfxMain, FfxTool, deferred, return_bug, return_user_error};
 use fidl::Error;
-use futures::try_join;
+use futures::{TryFutureExt, try_join};
 use schemars::JsonSchema;
 use serde::Serialize;
 use std::io::{Write, stdin};
@@ -450,14 +450,17 @@ pub async fn bootloader_impl(
         Info(_) => {
             let (client, server) = mpsc::channel(1);
             try_join!(
-                info(client, &mut fastboot_proxy),
+                info(client, &mut fastboot_proxy).map_err(anyhow::Error::from),
                 handle_variables_for_fastboot(writer, server)
             )
             .map_err(fho::Error::from)?;
             return Ok(());
         }
         Lock(_) => {
-            lock(&mut fastboot_proxy).await.map_err(fho::Error::from)?;
+            lock(&mut fastboot_proxy)
+                .await
+                .map_err(anyhow::Error::from)
+                .map_err(fho::Error::from)?;
             writeln!(writer, "Target is now locked.").bug_context("failed to write")?;
             return Ok(());
         }
@@ -481,9 +484,10 @@ pub async fn bootloader_impl(
                 Some(cred_file) => {
                     let (client, server) = mpsc::channel(1);
                     let credentials = vec![cred_file.to_string()];
-                    let mut resolver = EmptyResolver::new()?;
+                    let mut resolver = EmptyResolver::new().map_err(anyhow::Error::from)?;
                     try_join!(
-                        unlock(client, &mut resolver, &credentials, &mut fastboot_proxy,),
+                        unlock(client, &mut resolver, &credentials, &mut fastboot_proxy,)
+                            .map_err(anyhow::Error::from),
                         handle_events(writer, server)
                     )
                     .map_err(fho::Error::from)?;
@@ -499,7 +503,7 @@ pub async fn bootloader_impl(
             match zbi {
                 Some(z) => {
                     let (client, server) = mpsc::channel(1);
-                    let mut resolver = EmptyResolver::new()?;
+                    let mut resolver = EmptyResolver::new().map_err(anyhow::Error::from)?;
                     try_join!(
                         boot(
                             client,
@@ -507,7 +511,8 @@ pub async fn bootloader_impl(
                             z.to_owned(),
                             vbmeta.to_owned(),
                             &mut fastboot_proxy,
-                        ),
+                        )
+                        .map_err(anyhow::Error::from),
                         handle_upload(writer, server)
                     )
                     .map_err(fho::Error::from)?;
@@ -519,8 +524,11 @@ pub async fn bootloader_impl(
     }
 
     let (client, server) = mpsc::channel(1);
-    try_join!(from_manifest(ctx, client, cmd, &mut fastboot_proxy), handle_events(writer, server))
-        .map_err(fho::Error::from)?;
+    try_join!(
+        from_manifest(ctx, client, cmd, &mut fastboot_proxy).map_err(anyhow::Error::from),
+        handle_events(writer, server)
+    )
+    .map_err(fho::Error::from)?;
     return Ok(());
 }
 

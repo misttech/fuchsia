@@ -4,6 +4,7 @@
 
 pub mod boot;
 pub mod common;
+pub mod error;
 pub mod file_resolver;
 pub mod info;
 pub mod lock;

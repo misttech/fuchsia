@@ -3,8 +3,11 @@
 // found in the LICENSE file.
 
 use crate::common::stage_file;
+use crate::error::FfxFastbootError;
 use crate::file_resolver::FileResolver;
-use anyhow::{Result, anyhow};
+
+type Result<T> = std::result::Result<T, FfxFastbootError>;
+
 use byteorder::{ByteOrder, LittleEndian};
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, UploadProgress};
 use std::fs::{File, metadata};
@@ -104,12 +107,12 @@ pub async fn boot<F: FileResolver + Sync, T: FastbootInterface>(
         messenger,
         file_resolver,
         false, /* resolve */
-        path.to_str().ok_or_else(|| anyhow!("Could not get temp boot image path"))?,
+        path.to_str().ok_or(FfxFastbootError::NonUtf8Path)?,
         fastboot_interface,
     )
     .await?;
 
-    fastboot_interface.boot().await.map_err(|e| anyhow!("Fastboot error: {:?}", e))?;
+    fastboot_interface.boot().await?;
 
     Ok(())
 }

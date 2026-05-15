@@ -4,14 +4,15 @@
 
 use crate::boot::boot;
 use crate::common::{
-    Boot, Flash, MISSING_PRODUCT, Partition as PartitionTrait, Product as ProductTrait, UNLOCK_ERR,
-    Unlock, flash_and_reboot, is_locked,
+    Boot, Flash, Partition as PartitionTrait, Product as ProductTrait, Unlock, flash_and_reboot,
+    is_locked,
 };
+use crate::error::FfxFastbootError;
 use crate::file_resolver::FileResolver;
 use crate::util::Event;
-use anyhow::Result;
+
+type Result<T> = std::result::Result<T, FfxFastbootError>;
 use async_trait::async_trait;
-use errors::ffx_bail;
 use ffx_fastboot_interface::fastboot_interface::FastbootInterface;
 use ffx_flash_manifest::v1::{FlashManifest, Partition, Product};
 use ffx_flash_manifest::{ManifestParams, OemFile};
@@ -69,10 +70,10 @@ impl Flash for FlashManifest {
     {
         let product = match self.0.iter().find(|product| product.name == cmd.product) {
             Some(res) => res,
-            None => ffx_bail!("{} {}", MISSING_PRODUCT, cmd.product),
+            None => return Err(FfxFastbootError::MissingProduct(cmd.product.clone())),
         };
         if product.requires_unlock && is_locked(fastboot_interface).await? {
-            ffx_bail!("{}", UNLOCK_ERR);
+            return Err(FfxFastbootError::UnlockRequired);
         }
         flash_and_reboot(messenger, file_resolver, product, fastboot_interface, cmd).await
     }
@@ -97,7 +98,7 @@ impl Boot for FlashManifest {
     {
         let product = match self.0.iter().find(|product| product.name == cmd.product) {
             Some(res) => res,
-            None => ffx_bail!("{} {}", MISSING_PRODUCT, cmd.product),
+            None => return Err(FfxFastbootError::MissingProduct(cmd.product.clone())),
         };
         let partitions: Vec<&Partition> = product
             .partitions
@@ -123,7 +124,10 @@ impl Boot for FlashManifest {
                 })?;
                 Ok(())
             }
-            None => ffx_bail!("Could not find matching partitions for slot {}", slot),
+            None => Err(FfxFastbootError::MatchingPartitionsNotFound {
+                slot: slot.clone(),
+                missing: "zbi".to_string(),
+            }),
         }
     }
 }
@@ -134,6 +138,7 @@ impl Boot for FlashManifest {
 #[cfg(test)]
 mod test {
     use super::*;
+    type Result<T> = std::result::Result<T, anyhow::Error>;
     use crate::common::vars::{IS_USERSPACE_VAR, LOCKED_VAR, MAX_DOWNLOAD_SIZE_VAR};
     use crate::file_resolver::test::TestResolver;
     use ffx_fastboot_interface::test::setup;
