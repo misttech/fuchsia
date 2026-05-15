@@ -113,24 +113,6 @@ bool IsSchemaValid(const rapidjson::Document& json) {
   return true;
 }
 
-GracefulShutdownAction GracefulShutdownActionFromString(const std::string_view action) {
-  if (action == kActionPoweroff) {
-    return GracefulShutdownAction::kPoweroff;
-  }
-  if (action == kActionReboot) {
-    return GracefulShutdownAction::kReboot;
-  }
-  if (action == kActionRebootToRecovery) {
-    return GracefulShutdownAction::kRebootToRecovery;
-  }
-  if (action == kActionRebootToBootloader) {
-    return GracefulShutdownAction::kRebootToBootloader;
-  }
-
-  FX_LOGS(ERROR) << "Invalid persisted graceful shutdown action: " << action;
-  return GracefulShutdownAction::kNotParseable;
-}
-
 GracefulShutdownReason GracefulShutdownReasonFromString(const std::string_view reason) {
   if (reason == kReasonUserRequest) {
     return GracefulShutdownReason::kUserRequest;
@@ -224,6 +206,24 @@ GracefulShutdownReason FromReason(
 }
 
 }  // namespace
+
+GracefulShutdownAction FromGracefulShutdownActionString(std::string_view action) {
+  if (action == kActionPoweroff) {
+    return GracefulShutdownAction::kPoweroff;
+  }
+  if (action == kActionReboot) {
+    return GracefulShutdownAction::kReboot;
+  }
+  if (action == kActionRebootToRecovery) {
+    return GracefulShutdownAction::kRebootToRecovery;
+  }
+  if (action == kActionRebootToBootloader) {
+    return GracefulShutdownAction::kRebootToBootloader;
+  }
+
+  FX_LOGS(ERROR) << "Invalid persisted graceful shutdown action: " << action;
+  return GracefulShutdownAction::kNotParseable;
+}
 
 std::string ToString(const GracefulShutdownAction action) {
   switch (action) {
@@ -463,7 +463,7 @@ GracefulShutdownInfo FromJson(const std::string& content) {
 
   GracefulShutdownInfo shutdown_info;
   if (json.HasMember(kActionKey) && json[kActionKey].IsString()) {
-    shutdown_info.action = GracefulShutdownActionFromString(json[kActionKey].GetString());
+    shutdown_info.action = FromGracefulShutdownActionString(json[kActionKey].GetString());
   } else {
     // The fuchsia.hardware.power.statecontrol/Admin Shutdown method requires that clients supply an
     // action. If the file is present but the action is missing, that means that the build

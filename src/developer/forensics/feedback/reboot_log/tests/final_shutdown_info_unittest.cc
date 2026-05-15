@@ -6,6 +6,8 @@
 
 #include <fuchsia/feedback/cpp/fidl.h>
 
+#include <limits>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -459,6 +461,96 @@ TEST(FinalShutdownInfoTest, LastRebootReasonAnnotationHardReset) {
   const FinalShutdownInfo final_shutdown_info(FinalShutdownReason::kSpontaneousReboot);
   EXPECT_EQ(final_shutdown_info.ToSnapshotAnnotationReason(SpontaneousRebootReason::kHardReset),
             "hard reset");
+}
+
+TEST(FinalShutdownInfoTest, JsonSerializationWithCriticalProcess) {
+  FinalShutdownInfo info(FinalShutdownReason::kRootJobTermination, zx::msec(1000), zx::msec(500),
+                         "test-critical-process");
+  const std::string json = info.ToJson();
+
+  const std::optional<FinalShutdownInfo> parsed_info = FinalShutdownInfo::FromJson(json);
+  ASSERT_TRUE(parsed_info.has_value());
+
+  EXPECT_EQ(parsed_info->ToRebootReasonString(), info.ToRebootReasonString());
+  EXPECT_EQ(parsed_info->Uptime(), info.Uptime());
+  EXPECT_EQ(parsed_info->Runtime(), info.Runtime());
+  EXPECT_EQ(parsed_info->ToCrashSignature(SpontaneousRebootReason::kSpontaneous),
+            info.ToCrashSignature(SpontaneousRebootReason::kSpontaneous));
+}
+
+TEST(FinalShutdownInfoTest, JsonSerializationWithAction) {
+  FinalShutdownInfo info(FinalShutdownReason::kUserRequest, GracefulShutdownAction::kReboot,
+                         zx::msec(1000), zx::msec(500));
+  const std::string json = info.ToJson();
+
+  const std::optional<FinalShutdownInfo> parsed_info = FinalShutdownInfo::FromJson(json);
+  ASSERT_TRUE(parsed_info.has_value());
+
+  EXPECT_EQ(parsed_info->ToRebootReasonString(), info.ToRebootReasonString());
+  EXPECT_EQ(parsed_info->Uptime(), info.Uptime());
+  EXPECT_EQ(parsed_info->Runtime(), info.Runtime());
+  EXPECT_EQ(parsed_info->ToGracefulShutdownAction(), info.ToGracefulShutdownAction());
+}
+
+TEST(FinalShutdownInfoTest, FromJsonFailsIfMissingReason) {
+  const std::string json = R"({"uptime_ms": 1000})";
+  EXPECT_EQ(FinalShutdownInfo::FromJson(json).ToRebootReasonString(), "NOT PARSEABLE");
+}
+
+TEST(FinalShutdownInfoTest, FromJsonFailsIfActionAndCriticalProcessPresent) {
+  const std::string json = R"({
+    "reason": "ROOT JOB TERMINATION",
+    "graceful_action": "REBOOT",
+    "critical_process": "test-critical-process"
+  })";
+  EXPECT_EQ(FinalShutdownInfo::FromJson(json).ToRebootReasonString(), "NOT PARSEABLE");
+}
+
+TEST(FinalShutdownInfoTest, AllReasonsParseable) {
+  // Looping to max() over a switch statement without a default case will ensure that a developer
+  // can't forget to test a new enum value. Values outside the range of the enum will safely fall
+  // out of the switch statement.
+  for (int i = 0; i <= std::numeric_limits<std::uint8_t>::max(); ++i) {
+    const FinalShutdownReason reason = static_cast<FinalShutdownReason>(i);
+
+    switch (reason) {
+      case FinalShutdownReason::kNotParseable:
+      case FinalShutdownReason::kCold:
+      case FinalShutdownReason::kBrownout:
+      case FinalShutdownReason::kHwWatchdog:
+      case FinalShutdownReason::kUserHardReset:
+      case FinalShutdownReason::kSpontaneousReboot:
+      case FinalShutdownReason::kKernelPanic:
+      case FinalShutdownReason::kOom:
+      case FinalShutdownReason::kSwWatchdog:
+      case FinalShutdownReason::kRootJobTermination:
+      case FinalShutdownReason::kGenericGraceful:
+      case FinalShutdownReason::kUnexpectedReasonGraceful:
+      case FinalShutdownReason::kUserRequest:
+      case FinalShutdownReason::kSystemUpdate:
+      case FinalShutdownReason::kRetrySystemUpdate:
+      case FinalShutdownReason::kHighTemperature:
+      case FinalShutdownReason::kSessionFailure:
+      case FinalShutdownReason::kSysmgrFailure:
+      case FinalShutdownReason::kCriticalComponentFailure:
+      case FinalShutdownReason::kFdr:
+      case FinalShutdownReason::kZbiSwap:
+      case FinalShutdownReason::kNetstackMigration:
+      case FinalShutdownReason::kAndroidUnexpectedReason:
+      case FinalShutdownReason::kAndroidNoReason:
+      case FinalShutdownReason::kAndroidRescueParty:
+      case FinalShutdownReason::kAndroidCriticalProcessFailure:
+      case FinalShutdownReason::kDeveloperRequest:
+      case FinalShutdownReason::kUserRequestDeviceStuck:
+      case FinalShutdownReason::kSuspensionFailure:
+      case FinalShutdownReason::kBatteryDrained:
+        const FinalShutdownInfo info(reason);
+        const std::string json = info.ToJson();
+        EXPECT_EQ(info.ToRebootReasonString(),
+                  FinalShutdownInfo::FromJson(json).ToRebootReasonString());
+        break;
+    }
+  }
 }
 
 }  // namespace

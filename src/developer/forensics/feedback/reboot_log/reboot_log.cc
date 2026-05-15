@@ -9,6 +9,7 @@
 
 #include <utility>
 
+#include "src/developer/forensics/feedback/reboot_log/final_shutdown_info.h"
 #include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
 #include "src/developer/forensics/feedback/reboot_log/hw_shutdown_reason.h"
 #include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
@@ -348,9 +349,19 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
                                     const std::string& legacy_graceful_reboot_log_path,
                                     const std::string& previous_system_time_path,
                                     const std::string& previous_boot_kernel_log_path,
+                                    const std::string& final_shutdown_info_path,
                                     const bool not_a_fdr,
                                     const bool supports_user_initiated_poweroffs,
                                     const bool first_component_instance, RedactorBase* redactor) {
+  if (!first_component_instance) {
+    std::string content;
+    if (files::ReadFileToString(final_shutdown_info_path, &content)) {
+      // We shouldn't need the reboot log after the first component instance because it's only
+      // used for reboot reports.
+      return RebootLog(FinalShutdownInfo::FromJson(content), /*reboot_log_str=*/"");
+    }
+  }
+
   std::optional<std::string> zircon_reboot_log;
   std::optional<zx::duration> last_boot_uptime;
   std::optional<zx::duration> last_boot_runtime;
@@ -387,6 +398,10 @@ RebootLog RebootLog::ParseRebootLog(const std::string& zircon_reboot_log_path,
   if (first_component_instance) {
     const std::optional<std::string> dlog = ExtractDlogAndLogRebootLog(reboot_log);
     PersistDlog(dlog, redactor, previous_boot_kernel_log_path);
+
+    if (!files::WriteFile(final_shutdown_info_path, final_shutdown_info.ToJson())) {
+      FX_LOGS(ERROR) << "Failed to persist FinalShutdownInfo";
+    }
   }
 
   return RebootLog(final_shutdown_info, reboot_log);

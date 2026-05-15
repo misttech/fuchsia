@@ -10,10 +10,15 @@
 #include <utility>
 
 #include "src/developer/forensics/feedback/config.h"
+#include "src/developer/forensics/feedback/reboot_log/graceful_shutdown_info.h"
 #include "src/developer/forensics/feedback/reboot_log/hw_shutdown_reason.h"
 #include "src/developer/forensics/feedback/reboot_log/zircon_shutdown_reason.h"
 #include "src/developer/forensics/utils/cobalt/metrics.h"
 #include "src/developer/forensics/utils/time.h"
+#include "third_party/rapidjson/include/rapidjson/document.h"
+#include "third_party/rapidjson/include/rapidjson/error/en.h"
+#include "third_party/rapidjson/include/rapidjson/prettywriter.h"
+#include "third_party/rapidjson/include/rapidjson/stringbuffer.h"
 
 namespace forensics::feedback {
 namespace {
@@ -39,6 +44,98 @@ std::string GetSpontaneousRebootReason(const SpontaneousRebootReason spontaneous
     case SpontaneousRebootReason::kHardReset:
       return "hard reset";
   }
+}
+
+FinalShutdownReason FromRebootReasonString(const std::string& reason) {
+  if (reason == "COLD") {
+    return FinalShutdownReason::kCold;
+  }
+  if (reason == "KERNEL PANIC") {
+    return FinalShutdownReason::kKernelPanic;
+  }
+  if (reason == "OOM") {
+    return FinalShutdownReason::kOom;
+  }
+  if (reason == "HARDWARE WATCHDOG TIMEOUT") {
+    return FinalShutdownReason::kHwWatchdog;
+  }
+  if (reason == "SOFTWARE WATCHDOG TIMEOUT") {
+    return FinalShutdownReason::kSwWatchdog;
+  }
+  if (reason == "BROWNOUT") {
+    return FinalShutdownReason::kBrownout;
+  }
+  if (reason == "SPONTANEOUS") {
+    return FinalShutdownReason::kSpontaneousReboot;
+  }
+  if (reason == "ROOT JOB TERMINATION") {
+    return FinalShutdownReason::kRootJobTermination;
+  }
+  if (reason == "USER HARD RESET") {
+    return FinalShutdownReason::kUserHardReset;
+  }
+  if (reason == "GENERIC GRACEFUL") {
+    return FinalShutdownReason::kGenericGraceful;
+  }
+  if (reason == "UNEXPECTED REASON GRACEFUL") {
+    return FinalShutdownReason::kUnexpectedReasonGraceful;
+  }
+  if (reason == "USER REQUEST") {
+    return FinalShutdownReason::kUserRequest;
+  }
+  if (reason == "SYSTEM UPDATE") {
+    return FinalShutdownReason::kSystemUpdate;
+  }
+  if (reason == "RETRY SYSTEM UPDATE") {
+    return FinalShutdownReason::kRetrySystemUpdate;
+  }
+  if (reason == "HIGH TEMPERATURE") {
+    return FinalShutdownReason::kHighTemperature;
+  }
+  if (reason == "SESSION FAILURE") {
+    return FinalShutdownReason::kSessionFailure;
+  }
+  if (reason == "SYSMGR FAILURE") {
+    return FinalShutdownReason::kSysmgrFailure;
+  }
+  if (reason == "CRITICAL COMPONENT FAILURE") {
+    return FinalShutdownReason::kCriticalComponentFailure;
+  }
+  if (reason == "FACTORY DATA RESET") {
+    return FinalShutdownReason::kFdr;
+  }
+  if (reason == "ZBI SWAP") {
+    return FinalShutdownReason::kZbiSwap;
+  }
+  if (reason == "NETSTACK MIGRATION") {
+    return FinalShutdownReason::kNetstackMigration;
+  }
+  if (reason == "ANDROID UNEXPECTED REASON") {
+    return FinalShutdownReason::kAndroidUnexpectedReason;
+  }
+  if (reason == "ANDROID NO REASON") {
+    return FinalShutdownReason::kAndroidNoReason;
+  }
+  if (reason == "ANDROID RESCUE PARTY") {
+    return FinalShutdownReason::kAndroidRescueParty;
+  }
+  if (reason == "ANDROID CRITICAL PROCESS FAILURE") {
+    return FinalShutdownReason::kAndroidCriticalProcessFailure;
+  }
+  if (reason == "DEVELOPER REQUEST") {
+    return FinalShutdownReason::kDeveloperRequest;
+  }
+  if (reason == "USER REQUEST DEVICE STUCK") {
+    return FinalShutdownReason::kUserRequestDeviceStuck;
+  }
+  if (reason == "SUSPENSION FAILURE") {
+    return FinalShutdownReason::kSuspensionFailure;
+  }
+  if (reason == "BATTERY DRAINED") {
+    return FinalShutdownReason::kBatteryDrained;
+  }
+
+  return FinalShutdownReason::kNotParseable;
 }
 
 }  // namespace
@@ -775,6 +872,90 @@ ErrorOrString FinalShutdownInfo::ToSnapshotAnnotationGracefulAction() const {
     case GracefulShutdownAction::kNotParseable:
       return ErrorOrString(Error::kBadValue);
   }
+}
+
+std::string FinalShutdownInfo::ToJson() const {
+  rapidjson::Document json;
+  json.SetObject();
+  auto& allocator = json.GetAllocator();
+
+  json.AddMember("reason", ToRebootReasonString(), allocator);
+
+  if (graceful_shutdown_action_.has_value()) {
+    json.AddMember("graceful_action", ToString(*graceful_shutdown_action_), allocator);
+  }
+
+  if (uptime_.has_value()) {
+    json.AddMember("uptime_ms", uptime_->to_msecs(), allocator);
+  }
+
+  if (runtime_.has_value()) {
+    json.AddMember("runtime_ms", runtime_->to_msecs(), allocator);
+  }
+
+  if (critical_process_.has_value()) {
+    json.AddMember("critical_process", *critical_process_, allocator);
+  }
+
+  rapidjson::StringBuffer buffer;
+  rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
+  json.Accept(writer);
+
+  return buffer.GetString();
+}
+
+FinalShutdownInfo FinalShutdownInfo::FromJson(const std::string& content) {
+  rapidjson::Document json;
+  if (const rapidjson::ParseResult result = json.Parse(content.c_str()); !result) {
+    FX_LOGS(ERROR) << "Error parsing final shutdown info as JSON at offset " << result.Offset()
+                   << ", " << rapidjson::GetParseError_En(result.Code()) << ". Content: \n"
+                   << content;
+    return FinalShutdownInfo(FinalShutdownReason::kNotParseable);
+  }
+
+  if (!json.HasMember("reason") || !json["reason"].IsString()) {
+    FX_LOGS(ERROR) << "Failed to parse reason string from persisted final shutdown info json";
+    return FinalShutdownInfo(FinalShutdownReason::kNotParseable);
+  }
+
+  const FinalShutdownReason reason = FromRebootReasonString(json["reason"].GetString());
+
+  const std::optional<GracefulShutdownAction> graceful_action =
+      json.HasMember("graceful_action") && json["graceful_action"].IsString()
+          ? std::make_optional(
+                FromGracefulShutdownActionString(json["graceful_action"].GetString()))
+          : std::nullopt;
+
+  const std::optional<zx::duration> uptime =
+      json.HasMember("uptime_ms") && json["uptime_ms"].IsInt64()
+          ? std::make_optional(zx::msec(json["uptime_ms"].GetInt64()))
+          : std::nullopt;
+
+  const std::optional<zx::duration> runtime =
+      json.HasMember("runtime_ms") && json["runtime_ms"].IsInt64()
+          ? std::make_optional(zx::msec(json["runtime_ms"].GetInt64()))
+          : std::nullopt;
+
+  const std::optional<std::string> critical_process =
+      json.HasMember("critical_process") && json["critical_process"].IsString()
+          ? std::make_optional(json["critical_process"].GetString())
+          : std::nullopt;
+
+  if (critical_process.has_value() && graceful_action.has_value()) {
+    FX_LOGS(ERROR)
+        << "Persisted final shutdown info json has both a critical process and graceful action";
+    return FinalShutdownInfo(FinalShutdownReason::kNotParseable);
+  }
+
+  if (critical_process.has_value()) {
+    return FinalShutdownInfo(reason, uptime, runtime, critical_process);
+  }
+
+  if (graceful_action.has_value()) {
+    return FinalShutdownInfo(reason, graceful_action, uptime, runtime);
+  }
+
+  return FinalShutdownInfo(reason, uptime, runtime);
 }
 
 }  // namespace forensics::feedback

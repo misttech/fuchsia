@@ -68,6 +68,8 @@ struct GracefulShutdownInfo {
 std::string ToString(GracefulShutdownAction action);
 std::string ToString(GracefulShutdownReason reason);
 
+GracefulShutdownAction FromGracefulShutdownActionString(std::string_view action);
+
 // Extracts the ShutdownAction from |options| and returns the action as a GracefulShutdownAction.
 // Check-fails that |options| has the action set.
 GracefulShutdownAction ToGracefulShutdownAction(

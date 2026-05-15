@@ -23,7 +23,8 @@ class RebootLog {
                                   const std::string& graceful_shutdown_info_path,
                                   const std::string& legacy_graceful_reboot_log_path,
                                   const std::string& previous_system_time_path,
-                                  const std::string& previous_boot_kernel_log_path, bool not_a_fdr,
+                                  const std::string& previous_boot_kernel_log_path,
+                                  const std::string& final_shutdown_info_path, bool not_a_fdr,
                                   bool supports_user_initiated_poweroffs,
                                   bool first_component_instance, RedactorBase* redactor);
 

@@ -110,7 +110,8 @@ class ReporterTest : public UnitTestFixture, public testing::WithParamInterface<
   void ReportOnRebootLog() {
     const auto reboot_log = feedback::RebootLog::ParseRebootLog(
         zircon_reboot_log_path_, graceful_shutdown_info_path_, legacy_graceful_reboot_log_path_,
-        /*previous_system_time_path=*/"", /*previous_boot_kernel_log_path=*/"", not_a_fdr_,
+        /*previous_system_time_path=*/"", /*previous_boot_kernel_log_path=*/"",
+        /*final_shutdown_info_path=*/"", not_a_fdr_,
         /*supports_user_initiated_poweroffs=*/false, /*first_component_instance=*/true,
         redactor_.get());
     ReportOn(reboot_log);

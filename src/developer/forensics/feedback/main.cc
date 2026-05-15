@@ -97,8 +97,10 @@ int main() {
   RebootLog reboot_log = RebootLog::ParseRebootLog(
       "/boot/log/last-panic.txt", kPreviousGracefulShutdownInfoFile,
       kLegacyPreviousGracefulRebootReasonFile, kPreviousSystemTimePath, kPreviousBootKernelLogPath,
-      TestAndSetNotAFdr(), feedback_config->supports_user_initiated_poweroffs,
-      component.IsFirstInstance(), redactor.get());
+      kFinalShutdownInfoPath, TestAndSetNotAFdr(),
+      feedback_config->supports_user_initiated_poweroffs, component.IsFirstInstance(),
+      redactor.get());
+
 
   std::optional<std::string> local_device_id_path = kDeviceIdPath;
   if (feedback_config->remote_device_id_provider) {

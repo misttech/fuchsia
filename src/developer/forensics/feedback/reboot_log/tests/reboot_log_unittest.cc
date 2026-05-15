@@ -85,6 +85,7 @@ class RebootLogTest : public UnitTestFixture {
         InspectRoot().CreateBool("redaction_enabled", true));
     previous_boot_kernel_log_path_ =
         files::JoinPath(tmp_dir_.path(), "log.kernel.previous_boot.txt");
+    final_shutdown_info_path_ = files::JoinPath(tmp_dir_.path(), "final_shutdown_info.json");
   }
 
  protected:
@@ -129,16 +130,18 @@ class RebootLogTest : public UnitTestFixture {
                            const std::string& legacy_graceful_reboot_log_path,
                            const std::string& previous_system_time_path, bool not_a_fdr,
                            bool supports_user_initiated_poweroffs) {
-    return RebootLog::ParseRebootLog(
-        zircon_reboot_log_path, graceful_shutdown_info_path, legacy_graceful_reboot_log_path,
-        previous_system_time_path, previous_boot_kernel_log_path_, not_a_fdr,
-        supports_user_initiated_poweroffs, /*first_component_instance=*/true, redactor_.get());
+    return RebootLog::ParseRebootLog(zircon_reboot_log_path, graceful_shutdown_info_path,
+                                     legacy_graceful_reboot_log_path, previous_system_time_path,
+                                     previous_boot_kernel_log_path_, final_shutdown_info_path_,
+                                     not_a_fdr, supports_user_initiated_poweroffs,
+                                     /*first_component_instance=*/true, redactor_.get());
   }
 
   std::string zircon_reboot_log_path_;
   std::string graceful_shutdown_info_path_;
   std::string previous_system_time_path_;
   std::string previous_boot_kernel_log_path_;
+  std::string final_shutdown_info_path_;
   std::unique_ptr<RedactorBase> redactor_;
 
  private:
@@ -1049,7 +1052,8 @@ ZIRCON REBOOT REASON (USERSPACE ROOT JOB TERMINATION)
 
   RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                             /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
-                            previous_boot_kernel_log_path_, /*not_a_fdr=*/true,
+                            previous_boot_kernel_log_path_, final_shutdown_info_path_,
+                            /*not_a_fdr=*/true,
                             /*supports_user_initiated_poweroffs=*/true,
                             /*first_component_instance=*/true, redactor_.get());
 
@@ -1080,7 +1084,8 @@ FINAL REBOOT REASON (ROOT JOB TERMINATION))";
 
   RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
                             /*legacy_graceful_reboot_log_path=*/"", previous_system_time_path_,
-                            previous_boot_kernel_log_path_, /*not_a_fdr=*/true,
+                            previous_boot_kernel_log_path_, final_shutdown_info_path_,
+                            /*not_a_fdr=*/true,
                             /*supports_user_initiated_poweroffs=*/true,
                             /*first_component_instance=*/false, redactor_.get());
 
@@ -1121,6 +1126,43 @@ FINAL REBOOT REASON (ROOT JOB TERMINATION))";
   std::string dlog;
   ASSERT_TRUE(files::ReadFileToString(previous_boot_kernel_log_path_, &dlog));
   EXPECT_EQ(dlog, "<REDACTED>");
+}
+
+TEST_F(RebootLogTest, UsesPersistedFinalShutdownInfo) {
+  WriteZirconRebootLogContents(
+      "HW REBOOT REASON (UNKNOWN)\n\n"
+      "ZIRCON REBOOT REASON (NO CRASH)\n\nUPTIME (ms)\n1234\nRUNTIME (ms)\n1098");
+
+  RebootLog reboot_log = RebootLog::ParseRebootLog(
+      zircon_reboot_log_path_, graceful_shutdown_info_path_, "", previous_system_time_path_,
+      previous_boot_kernel_log_path_, final_shutdown_info_path_,
+      /*not_a_fdr=*/false, /*supports_user_initiated_poweroffs=*/false,
+      /*first_component_instance=*/true, redactor_.get());
+
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "FACTORY DATA RESET");
+  ASSERT_TRUE(files::IsFile(final_shutdown_info_path_));
+
+  reboot_log = RebootLog::ParseRebootLog(
+      zircon_reboot_log_path_, graceful_shutdown_info_path_, "", previous_system_time_path_,
+      previous_boot_kernel_log_path_, final_shutdown_info_path_,
+      /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false,
+      /*first_component_instance=*/false, redactor_.get());
+
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "FACTORY DATA RESET");
+}
+
+TEST_F(RebootLogTest, DoNotReparseIfFinalShutdownInfoIsUnparseable) {
+  WriteZirconRebootLogContents("HW REBOOT REASON (BROWNOUT)\n\n");
+
+  ASSERT_TRUE(files::WriteFile(final_shutdown_info_path_, "INVALID JSON"));
+
+  const RebootLog reboot_log = RebootLog::ParseRebootLog(
+      zircon_reboot_log_path_, graceful_shutdown_info_path_, "", previous_system_time_path_,
+      previous_boot_kernel_log_path_, final_shutdown_info_path_,
+      /*not_a_fdr=*/true, /*supports_user_initiated_poweroffs=*/false,
+      /*first_component_instance=*/false, redactor_.get());
+
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "NOT PARSEABLE");
 }
 
 }  // namespace

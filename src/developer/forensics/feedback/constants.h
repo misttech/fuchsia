@@ -44,6 +44,7 @@ constexpr char kLegacyCurrentGracefulRebootReasonFile[] = "/data/graceful_reboot
 
 constexpr char kPreviousGracefulShutdownInfoFile[] = "/tmp/graceful_shutdown_info.json";
 constexpr char kCurrentGracefulShutdownInfoFile[] = "/data/graceful_shutdown_info.json";
+constexpr char kFinalShutdownInfoPath[] = "/tmp/final_shutdown_info.json";
 
 constexpr char kNotAFdrFile[] = "/data/not_a_fdr.txt";
 

@@ -134,6 +134,9 @@ class FinalShutdownInfo {
   ErrorOrString ToSnapshotAnnotationTotalSuspendedTime() const;
   ErrorOrString ToSnapshotAnnotationGracefulAction() const;
 
+  std::string ToJson() const;
+  static FinalShutdownInfo FromJson(const std::string& content);
+
  private:
   FinalShutdownReason reason_;
   std::optional<GracefulShutdownAction> graceful_shutdown_action_;
