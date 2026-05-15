@@ -5,10 +5,10 @@ memory model to synchronize access to data.
 
 ## Usage Model
 
-You can use `RcuCell` to create a cell that can be used concurrently from
-multiple threads. Many threads can read from the cell concurrently and do not
-block on writers. When the cell is written, reads may continue to see the old
-value of the cell for some period of time.
+You can use `RcuBox` to create a `Cell<Box>` equivalent that can be used
+concurrently from multiple threads. Many threads can read from the cell
+concurrently and do not block on writers. When the cell is written, reads may
+continue to see the old value of the cell for some period of time.
 
 ```rust
 struct MyStruct {
@@ -17,7 +17,7 @@ struct MyStruct {
 }
 
 struct SharedStruct {
-  foo: RcuCell<MyStruct>
+  foo: RcuBox<MyStruct>
 }
 ```
 
@@ -58,11 +58,11 @@ sufficient progress.
 
 In order for the RCU state machine to make progress, the program using
 `fuchsia-rcu` must periodically call `rcu_synchronize`. Otherwise, memory
-allocated during `RcuCell::set` will never be freed.
+allocated during `RcuBox::set` will never be freed.
 
 ## Low-level interface
 
-`RcuCell` and similar high-level data structures are built on top of a low-level
+`RcuBox` and similar high-level data structures are built on top of a low-level
 interface to the RCU state machine. This interface synchronizes access to
 objects referenced through `std::sync::atomic::AtomicPtr`.
 

@@ -7,23 +7,22 @@ use crate::rcu_read_scope::RcuReadScope;
 use crate::state_machine::rcu_drop;
 use std::sync::Arc;
 
-/// An RCU (Read-Copy-Update) version of `Option<Arc<...>>`.
+/// An RCU (Read-Copy-Update) wrapper around `Option<Arc<T>>`.
 ///
-/// This Arc can be read from multiple threads concurrently without blocking.
-/// When the Arc is written, reads may continue to see the old value of the Arc
-/// for some period of time.
+/// The Arc can be dereferenced from multiple threads concurrently without blocking.
+/// When the Arc is replaced, reads may continue to see the old Arc pointer for some period of time.
 #[derive(Debug)]
 pub struct RcuOptionArc<T: Send + Sync + 'static> {
     ptr: RcuPtr<T>,
 }
 
 impl<T: Send + Sync + 'static> RcuOptionArc<T> {
-    /// Create a new `RcuOptionArc` from an `Option<Arc<T>>`.
+    /// Create a new RCU wrapper around an `Option<Arc<T>>`.
     pub fn new(data: Option<Arc<T>>) -> Self {
         Self { ptr: RcuPtr::new(Self::into_ptr(data)) }
     }
 
-    /// Read the value of the `RcuOptionArc`.
+    /// Read the value of the wrapped Arc, if present.
     ///
     /// The object referenced by the RCU Arc will remain valid until the `RcuReadGuard` is dropped.
     /// However, another thread running concurrently might see a different value for the object.
@@ -31,27 +30,27 @@ impl<T: Send + Sync + 'static> RcuOptionArc<T> {
         self.ptr.maybe_get()
     }
 
-    /// Returns a reference to the value of the `RcuOptionArc`.
+    /// Returns a reference to the value of the wrapped Arc, if present.
     ///
-    /// The object referenced by the RCU Arc will remain valid until the `RcuReadGuard` is dropped.
+    /// The object referenced by the RCU Arc will remain valid until the `RcuReadScope` is dropped.
     /// However, another thread running concurrently might see a different value for the object.
     pub fn as_ref<'a>(&self, scope: &'a RcuReadScope) -> Option<&'a T> {
         self.ptr.read(scope).as_ref()
     }
 
-    /// Write the value of the `RcuOptionArc`.
+    /// Write a new `Option<Arc<T>>` to the RCU wrapper.
     ///
-    /// Concurrent readers may continue to see the old value of the Arc until the RCU state machine
-    /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
+    /// Concurrent readers may continue to see the old Arc pointer until the RCU state machine has
+    /// made sufficient progress to ensure that no concurrent readers are holding read guards.
     pub fn update(&self, data: Option<Arc<T>>) {
         let ptr = Self::into_ptr(data);
         // SAFETY: We can pass `Self::into_ptr` to `Self::replace`.
         unsafe { self.replace(ptr) };
     }
 
-    /// Create a new `Option<Arc<T>>` to the object referenced by the `RcuOptionArc`.
+    /// Create a new `Arc<T>` to the object referenced by the wrapped Arc, if present.
     ///
-    /// This function returns a new `Option<Arc<T>>` to the object referenced by the `RcuOptionArc`,
+    /// This function returns a new `Option<Arc<T>>` to the object referenced by the wrapped Arc,
     /// potentially increasing the reference count of the object by one.
     pub fn to_option_arc(&self) -> Option<Arc<T>> {
         let guard = self.read()?;

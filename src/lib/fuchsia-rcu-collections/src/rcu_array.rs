@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_rcu::{RcuCell, RcuReadScope};
+use fuchsia_rcu::{RcuBox, RcuReadScope};
 
 /// An array-like data structure that can be read without locking.
 ///
@@ -12,7 +12,7 @@ use fuchsia_rcu::{RcuCell, RcuReadScope};
 /// writers.
 #[derive(Default, Debug)]
 pub struct RcuArray<T: Send + Sync + 'static> {
-    inner: RcuCell<Box<[T]>>,
+    inner: RcuBox<Box<[T]>>,
 }
 
 impl<T: Send + Sync + 'static> RcuArray<T> {
@@ -81,7 +81,7 @@ impl<T: Clone + Sync + Send + 'static> Clone for RcuArray<T> {
 /// Creates an `RcuArray` from a `Vec<T>`.
 impl<T: Send + Sync + 'static> From<Vec<T>> for RcuArray<T> {
     fn from(value: Vec<T>) -> Self {
-        Self { inner: RcuCell::new(value.into_boxed_slice()) }
+        Self { inner: RcuBox::new(value.into_boxed_slice()) }
     }
 }
 

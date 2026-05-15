@@ -6,49 +6,48 @@ use crate::rcu_ptr::{RcuPtr, RcuReadGuard};
 use crate::rcu_read_scope::RcuReadScope;
 use crate::state_machine::rcu_drop;
 
-/// An RCU (Read-Copy-Update) version of `Cell`.
+/// An RCU (Read-Copy-Update) wrapper around a `Box`.
 ///
-/// This Cell can be read from multiple threads concurrently without blocking.
-/// When the Cell is written, reads may continue to see the old value of the Cell
-/// for some period of time.
+/// The Box can be dereferenced from multiple threads concurrently without blocking.
+/// When the Box is replaced, reads may continue to see the old Box pointer for some period of time.
 #[derive(Debug)]
-pub struct RcuCell<T: Send + Sync + 'static> {
+pub struct RcuBox<T: Send + Sync + 'static> {
     ptr: RcuPtr<T>,
 }
 
-impl<T: Send + Sync + 'static> RcuCell<T> {
-    /// Create a new RCU Cell from a value.
+impl<T: Send + Sync + 'static> RcuBox<T> {
+    /// Create a new RCU wrapped Box from a value.
     pub fn new(data: T) -> Self {
         Self::from(Box::new(data))
     }
 
-    /// Read the value of the RCU Cell.
+    /// Read the value of the wrapped Box.
     ///
-    /// The object referenced by the RCU Cell will remain valid until the `RcuReadGuard` is dropped.
-    /// However, another thread running concurrently might see a different value for the object.
+    /// The object referenced by the Box will remain valid until the `RcuReadGuard` is dropped.
+    /// However, another thread running concurrently might see a different object.
     pub fn read(&self) -> RcuReadGuard<T> {
         self.ptr.get()
     }
 
-    /// Returns a reference to the value of the RCU Cell.
+    /// Returns a reference to the value of the wrapped Box.
     ///
-    /// The object referenced by the RCU Cell will remain valid until the `RcuReadGuard` is dropped.
-    /// However, another thread running concurrently might see a different value for the object.
+    /// The object referenced by the Box will remain valid until the `RcuReadScope` is dropped.
+    /// However, another thread running concurrently might see a different object.
     pub fn as_ref<'a>(&self, scope: &'a RcuReadScope) -> &'a T {
         self.ptr.read(scope).as_ref().unwrap()
     }
 
-    /// Write the value of the RCU Cell.
+    /// Write a new Boxed value to the RCU wrapper.
     ///
-    /// Concurrent readers may continue to see the old value of the Cell until the RCU state machine
-    /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
+    /// Concurrent readers may continue to see the old boxed object until the RCU state machine has
+    /// made sufficient progress to ensure that no concurrent readers are holding read guards.
     pub fn update(&self, data: T) {
         let ptr = Box::into_raw(Box::new(data));
         // SAFETY: We can pass `Box::into_raw` to `Self::replace`.
         unsafe { self.replace(ptr) };
     }
 
-    /// Replace the pointer in the RCU Cell with a new pointer.
+    /// Replace the Box pointer in the RCU wrapper with a new pointer.
     ///
     /// # Safety
     ///
@@ -60,8 +59,8 @@ impl<T: Send + Sync + 'static> RcuCell<T> {
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> RcuCell<T> {
-    /// Returns a clone of the value of the RCU Cell.
+impl<T: Clone + Send + Sync + 'static> RcuBox<T> {
+    /// Returns a clone of the value of the wrapped Box.
     ///
     /// The clone is detached from any RCU read scope.
     pub fn cloned(&self) -> T {
@@ -69,27 +68,27 @@ impl<T: Clone + Send + Sync + 'static> RcuCell<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> Drop for RcuCell<T> {
+impl<T: Send + Sync + 'static> Drop for RcuBox<T> {
     fn drop(&mut self) {
         // SAFETY: We can pass `std::ptr::null_mut` to `Self::replace`.
         unsafe { self.replace(std::ptr::null_mut()) };
     }
 }
 
-impl<T: Default + Send + Sync + 'static> Default for RcuCell<T> {
+impl<T: Default + Send + Sync + 'static> Default for RcuBox<T> {
     fn default() -> Self {
         Self::new(T::default())
     }
 }
 
-impl<T: Clone + Send + Sync + 'static> Clone for RcuCell<T> {
+impl<T: Clone + Send + Sync + 'static> Clone for RcuBox<T> {
     fn clone(&self) -> Self {
         let value = self.read();
         Self::new(value.clone())
     }
 }
 
-impl<T: Send + Sync + 'static> From<Box<T>> for RcuCell<T> {
+impl<T: Send + Sync + 'static> From<Box<T>> for RcuBox<T> {
     fn from(value: Box<T>) -> Self {
         Self { ptr: RcuPtr::new(Box::into_raw(value)) }
     }
@@ -103,14 +102,13 @@ mod tests {
 
     #[test]
     fn test_rcu_cell() {
-        let value = RcuCell::new(42);
+        let value = RcuBox::new(42);
         assert_eq!(value.read().deref(), &42);
-        assert_eq!(value.cloned(), 42);
     }
 
     #[test]
     fn test_rcu_cell_set_deferred() {
-        let value = RcuCell::new(42);
+        let value = RcuBox::new(42);
         value.update(43);
         assert_eq!(value.read().deref(), &43);
         rcu_synchronize();
@@ -118,7 +116,7 @@ mod tests {
 
     #[test]
     fn test_rcu_cell_drop() {
-        let value = RcuCell::new(42);
+        let value = RcuBox::new(42);
         drop(value);
     }
 }

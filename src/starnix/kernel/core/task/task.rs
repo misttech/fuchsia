@@ -18,7 +18,7 @@ use crate::task::{
 };
 use crate::vfs::{FdTable, FsContext, FsNodeHandle, FsString};
 use atomic_bitflags::atomic_bitflags;
-use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuOptionCell, RcuReadGuard};
+use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuOptionBox, RcuReadGuard};
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::{HeapRegs, RegisterStorageEnum};
@@ -722,7 +722,7 @@ pub struct TaskLiveState {
 
     /// The pid directory, so it doesn't have to be generated and thrown away on every access.
     /// See https://fxbug.dev/291962828 for details.
-    pub proc_pid_directory_cache: RcuOptionCell<FsNodeHandle>,
+    pub proc_pid_directory_cache: RcuOptionBox<FsNodeHandle>,
 }
 
 impl TaskLiveState {
@@ -926,7 +926,7 @@ pub struct Task {
     /// The live state of the task.
     ///
     /// This is `None` for zombie tasks.
-    pub live_state: RcuOptionCell<TaskLiveState>,
+    pub live_state: RcuOptionBox<TaskLiveState>,
 
     /// The stop state of the task, distinct from the stop state of the thread group.
     ///
@@ -1102,7 +1102,7 @@ impl Task {
                 thread_group_key: thread_group_key.clone(),
                 kernel: Arc::clone(&thread_group.kernel),
                 thread_group,
-                live_state: RcuOptionCell::new(Some(TaskLiveState {
+                live_state: RcuOptionBox::new(Some(TaskLiveState {
                     thread: RwLock::new(thread.map(Arc::new)),
                     files,
                     mm: RcuOptionArc::new(mm),

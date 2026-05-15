@@ -22,7 +22,7 @@ use super::PermissionFlags;
 use crate::task::{CurrentTask, TaskPersistentInfo};
 use crate::vfs::{DirEntry, FileHandle, FileObject, FileSystem, FileSystemOps, FsNode};
 use audit::{Auditable, audit_decision, audit_todo_decision};
-use fuchsia_rcu::{RcuCell, RcuReadGuard};
+use fuchsia_rcu::{RcuBox, RcuReadGuard};
 use indexmap::IndexSet;
 use selinux::permission_check::PermissionCheck;
 use selinux::policy::{FsUseType, XpermsKind};
@@ -628,14 +628,14 @@ impl FileSystemState {
 /// Holds security state associated with a [`crate::vfs::FsNode`].
 #[derive(Debug)]
 pub(super) struct FsNodeState {
-    label: RcuCell<FsNodeLabelAndClass>,
+    label: RcuBox<FsNodeLabelAndClass>,
     update_lock: Mutex<()>,
 }
 
 impl Default for FsNodeState {
     fn default() -> Self {
         Self {
-            label: RcuCell::new(FsNodeLabelAndClass {
+            label: RcuBox::new(FsNodeLabelAndClass {
                 label: FsNodeLabel::Uninitialized,
                 class: None,
             }),

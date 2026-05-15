@@ -2,22 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_rcu::{RcuCell, RcuReadScope};
+use fuchsia_rcu::{RcuBox, RcuReadScope};
 use starnix_types::string::{FsStr, FsString};
 
 /// An RCU-protected string.
 ///
-/// This type wraps an `RcuCell<FsString>` and provides a convenient API for reading
+/// This type wraps an `RcuBox<FsString>` and provides a convenient API for reading
 /// the string as an `FsStr` within an `RcuReadScope`.
 #[derive(Debug, Default)]
 pub struct RcuString {
-    cell: RcuCell<FsString>,
+    cell: RcuBox<FsString>,
 }
 
 impl RcuString {
     /// Create a new `RcuString`.
     pub fn new(value: impl Into<FsString>) -> Self {
-        Self { cell: RcuCell::new(value.into()) }
+        Self { cell: RcuBox::new(value.into()) }
     }
 
     /// Read the string value.

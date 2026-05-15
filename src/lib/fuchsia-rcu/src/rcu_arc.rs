@@ -7,23 +7,22 @@ use crate::rcu_read_scope::RcuReadScope;
 use crate::state_machine::rcu_drop;
 use std::sync::Arc;
 
-/// An RCU (Read-Copy-Update) version of `Arc`.
+/// An RCU (Read-Copy-Update) wrapper around an `Arc`.
 ///
-/// This Arc can be read from multiple threads concurrently without blocking.
-/// When the Arc is written, reads may continue to see the old value of the Arc
-/// for some period of time.
+/// The Arc can be dereferenced from multiple threads concurrently without blocking.
+/// When the Arc is replaced, reads may continue to see the old Arc pointer for some period of time.
 #[derive(Debug)]
 pub struct RcuArc<T: Send + Sync + 'static> {
     ptr: RcuPtr<T>,
 }
 
 impl<T: Send + Sync + 'static> RcuArc<T> {
-    /// Create a new RCU Arc from an `Arc`.
+    /// Create a new RCU wrapper around an `Arc`.
     pub fn new(data: Arc<T>) -> Self {
         Self { ptr: RcuPtr::new(Self::into_ptr(data)) }
     }
 
-    /// Read the value of the RCU Arc.
+    /// Read the value of the wrapped Arc.
     ///
     /// The object referenced by the RCU Arc will remain valid until the `RcuReadGuard` is dropped.
     /// However, another thread running concurrently might see a different value for the object.
@@ -31,28 +30,28 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
         self.ptr.get()
     }
 
-    /// Returns a reference to the value of the RCU Arc.
+    /// Returns a reference to the value of the wrapped Arc.
     ///
-    /// The object referenced by the RCU Arc will remain valid until the `RcuReadGuard` is dropped.
+    /// The object referenced by the RCU Arc will remain valid until the `RcuReadScope` is dropped.
     /// However, another thread running concurrently might see a different value for the object.
     pub fn as_ref<'a>(&self, scope: &'a RcuReadScope) -> &'a T {
         self.ptr.read(scope).as_ref().unwrap()
     }
 
-    /// Write the value of the RCU Arc.
+    /// Write a new Arc to the RCU wrapper.
     ///
-    /// Concurrent readers may continue to see the old value of the Arc until the RCU state machine
-    /// has made sufficient progress to ensure that no concurrent readers are holding read guards.
+    /// Concurrent readers may continue to see the old Arc pointer until the RCU state machine has
+    /// made sufficient progress to ensure that no concurrent readers are holding read guards.
     pub fn update(&self, data: Arc<T>) {
         let ptr = Self::into_ptr(data);
         // SAFETY: We can pass `Self::into_ptr` to `Self::replace`.
         unsafe { self.replace(ptr) };
     }
 
-    /// Create a new `Arc` to the object referenced by the RCU Arc.
+    /// Create a new `Arc` to the object referenced by the wrapped Arc.
     ///
-    /// This function returns a new `Arc` to the object referenced by the RCU Arc, increasing the
-    /// reference count of the object by one.
+    /// This function returns a new `Arc` to the object referenced by the wrapped Arc,
+    /// increasing the reference count of the object by one.
     pub fn to_arc(&self) -> Arc<T> {
         let guard = self.read();
         let ptr = guard.as_ptr();
@@ -72,7 +71,7 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
         Arc::into_raw(data) as *mut T
     }
 
-    /// Replace the pointer in the RCU Arc with a new pointer.
+    /// Replace the Arc pointer in the RCU wrapper with a new pointer.
     ///
     /// # Safety
     ///
