@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 use flex_client::ProxyHasDomain;
 use flex_fuchsia_developer_ffx_speedtest as fspeedtest;
 use futures::TryFutureExt as _;
+use schemars::JsonSchema;
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::throughput::BytesFormatter;
@@ -33,7 +35,7 @@ pub enum ClientError {
     Encoding(#[from] socket::MissingFieldError),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct PingReport {
     pub min: Duration,
     pub avg: Duration,
@@ -48,7 +50,8 @@ impl Display for PingReport {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum Direction {
     Tx,
     Rx,
@@ -76,7 +79,7 @@ pub struct SocketTransferParams {
     pub params: socket::TransferParams,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct SocketTransferReport {
     pub direction: Direction,
     pub client: SocketTransferReportInner,
@@ -94,11 +97,27 @@ impl Display for SocketTransferReport {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct SocketTransferReportInner {
     pub transfer_len: NonZeroU32,
     pub duration: Duration,
     pub throughput: Throughput,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum SpeedtestReport {
+    Ping(PingReport),
+    Socket(SocketTransferReport),
+}
+
+impl Display for SpeedtestReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ping(report) => Display::fmt(report, f),
+            Self::Socket(report) => Display::fmt(report, f),
+        }
+    }
 }
 
 impl Display for SocketTransferReportInner {

@@ -9,7 +9,7 @@ use component_debug_fdomain::lifecycle::{self, CreateError};
 use errors::ffx_error;
 use fdomain_fuchsia_developer_ffx_speedtest as fspeedtest;
 use ffx_speedtest_args::{Ping, Socket, SpeedtestCommand, Subcommand};
-use ffx_writer::{SimpleWriter, ToolIO as _};
+use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{Deferred, FfxMain, FfxTool};
 use fuchsia_async as fasync;
 use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
@@ -28,7 +28,7 @@ fho::embedded_plugin!(SpeedtestTool);
 
 #[async_trait::async_trait(?Send)]
 impl FfxMain for SpeedtestTool {
-    type Writer = SimpleWriter;
+    type Writer = VerifiedMachineWriter<Vec<client::SpeedtestReport>>;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let Self { cmd, remote_control } = self;
@@ -41,11 +41,12 @@ impl FfxMain for SpeedtestTool {
             client::Client::new(proxy).await.map_err(|e| fho::bug!(e))?
         };
 
+        let mut reports = Vec::new();
         loop {
-            match cmd {
+            let report = match cmd {
                 Subcommand::Ping(Ping { count }) => {
                     let report = client.ping(count).await.map_err(|e| fho::bug!(e))?;
-                    writer.line(report)?;
+                    client::SpeedtestReport::Ping(report)
                 }
                 Subcommand::Socket(Socket {
                     transfer_mb,
@@ -76,8 +77,13 @@ impl FfxMain for SpeedtestTool {
                     };
 
                     let report = client.socket(params).await.map_err(|e| fho::bug!(e))?;
-                    writer.line(report)?;
+                    client::SpeedtestReport::Socket(report)
                 }
+            };
+
+            writer.line(&report)?;
+            if writer.is_machine() {
+                reports.push(report);
             }
 
             match repeat {
@@ -92,6 +98,8 @@ impl FfxMain for SpeedtestTool {
                 fasync::Timer::new(delay).await;
             }
         }
+
+        writer.machine(&reports)?;
 
         Ok(())
     }

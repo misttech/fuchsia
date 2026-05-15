@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use schemars::JsonSchema;
+use serde::Serialize;
 use std::fmt::{self, Debug, Display};
 use std::time::Duration;
 
 /// Internal representation keeps a value in bits per second (bps).
-#[derive(Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, PartialEq, PartialOrd, Serialize, JsonSchema)]
 pub struct Throughput(f64);
 impl Throughput {
     pub fn from_len_and_duration(len: u32, duration: Duration) -> Self {
