@@ -160,11 +160,12 @@ impl DirectoryNodes {
         cgroup: &Arc<Cgroup>,
         directory: CgroupDirectoryHandle,
         fs: &FileSystemHandle,
+        owner: FsCred,
     ) -> FsNodeHandle {
         let id = cgroup.id();
         let node = fs.create_node_and_allocate_node_id(
             directory,
-            FsNodeInfo::new(mode!(IFDIR, 0o755), FsCred::root()),
+            FsNodeInfo::new(mode!(IFDIR, 0o755), owner),
         );
         let mut nodes = self.nodes.lock();
         nodes.insert(id, node.clone());

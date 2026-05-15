@@ -29,6 +29,16 @@ constexpr char EVENTS_POPULATED[] = "populated 1";
 constexpr char EVENTS_NOT_POPULATED[] = "populated 0";
 constexpr char PROC_CGROUP_PREFIX[] = "0::";
 
+MATCHER_P2(HasUidAndGid, expected_uid, expected_gid, "") {
+  struct stat st;
+  if (stat(arg.c_str(), &st) != 0) {
+    *result_listener << "stat failed with errno " << errno;
+    return false;
+  }
+  *result_listener << "actual UID is " << st.st_uid << ", GID is " << st.st_gid;
+  return st.st_uid == expected_uid && st.st_gid == expected_gid;
+}
+
 // Mounts cgroup2 in a temporary directory for each test case, and deletes all cgroups created by
 // `CreateCgroup` at the end of each test, and all mountpoints of the cgroup.
 class CgroupTest : public ::testing::Test {
@@ -589,7 +599,6 @@ TEST_F(CgroupTest, ForkedProcessInheritsCgroup) {
   ASSERT_TRUE(CheckFileHasLine(procfs_cgroup_path, procfs_cgroup_str));
 
   test_helper::ForkHelper fork_helper;
-  fork_helper.OnlyWaitForForkedChildren();
 
   fork_helper.RunInForkedProcess([procfs_cgroup_path, procfs_cgroup_str]() {
     // Child process should be in same cgroup as parent.
@@ -603,4 +612,59 @@ TEST_F(CgroupTest, ForkedProcessInheritsCgroup) {
     ASSERT_TRUE(procs_fd.is_valid());
     EXPECT_THAT(write(procs_fd.get(), pid_string.c_str(), pid_string.length()), SyscallSucceeds());
   }
+}
+
+TEST_F(CgroupTest, NewDirectoryOwnedByCreator) {
+  std::string parent_path = root_path() + "/delegate_parent";
+  std::string child_path = parent_path + "/child_owner";
+
+  // Create the parent delegation cgroup (automatically cleaned up by TearDown).
+  CreateCgroup(parent_path);
+
+  // Make the parent cgroup writable by others so user 1000:1000 can mkdir inside it.
+  ASSERT_THAT(chmod(parent_path.c_str(), 0777), SyscallSucceeds());
+
+  test_helper::ForkHelper fork_helper;
+  fork_helper.OnlyWaitForForkedChildren();
+
+  fork_helper.RunInForkedProcess([child_path]() {
+    // Drop privileges to UID 1000, GID 1000.
+    ASSERT_THAT(setgid(1000), SyscallSucceeds());
+    ASSERT_THAT(setuid(1000), SyscallSucceeds());
+
+    // Create the child cgroup.
+    ASSERT_THAT(mkdir(child_path.c_str(), 0777), SyscallSucceeds());
+  });
+
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+
+  // Verify that the new directory inherited the child creator's ownership.
+  EXPECT_THAT(child_path, HasUidAndGid(1000u, 1000u));
+
+  // Verify that the prepopulated cgroup.procs also inherited the ownership.
+  std::string procs_path = child_path + "/" + PROCS_FILE;
+  EXPECT_THAT(procs_path, HasUidAndGid(1000u, 1000u));
+
+  // Clean up the child cgroup manually so that TearDown can clean up the parent.
+  EXPECT_THAT(rmdir(child_path.c_str()), SyscallSucceeds());
+}
+
+TEST_F(CgroupTest, ChownDirectoryDoesNotPropagate) {
+  std::string child_path = root_path() + "/child_chown";
+  CreateCgroup(child_path);
+
+  // Initially created by root (0:0).
+  EXPECT_THAT(child_path, HasUidAndGid(0u, 0u));
+
+  std::string procs_path = child_path + "/" + PROCS_FILE;
+  EXPECT_THAT(procs_path, HasUidAndGid(0u, 0u));
+
+  // Perform a non-recursive chown on the directory.
+  ASSERT_THAT(chown(child_path.c_str(), 1000, 1000), SyscallSucceeds());
+
+  // The directory ownership must change.
+  EXPECT_THAT(child_path, HasUidAndGid(1000u, 1000u));
+
+  // The prepopulated interface files inside must STILL be owned by root (0:0).
+  EXPECT_THAT(procs_path, HasUidAndGid(0u, 0u));
 }

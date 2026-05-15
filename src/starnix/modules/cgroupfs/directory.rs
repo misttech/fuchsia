@@ -106,41 +106,42 @@ impl CgroupDirectory {
         cgroup: Weak<dyn CgroupOps>,
         fs: &FileSystemHandle,
         dir_nodes: Weak<DirectoryNodes>,
+        owner: FsCred,
     ) -> CgroupDirectoryHandle {
         let interface_files = BTreeMap::from([
             (
                 PROCS_FILE.into(),
                 fs.create_node_and_allocate_node_id(
                     ControlGroupNode::new(cgroup.clone()),
-                    FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
+                    FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
                 ),
             ),
             (
                 CONTROLLERS_FILE.into(),
                 fs.create_node_and_allocate_node_id(
                     BytesFile::new_node(b"".to_vec()),
-                    FsNodeInfo::new(mode!(IFREG, 0o444), FsCred::root()),
+                    FsNodeInfo::new(mode!(IFREG, 0o444), owner.clone()),
                 ),
             ),
             (
                 FREEZE_FILE.into(),
                 fs.create_node_and_allocate_node_id(
                     FreezeFile::new_node(cgroup.clone()),
-                    FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
+                    FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
                 ),
             ),
             (
                 EVENTS_FILE.into(),
                 fs.create_node_and_allocate_node_id(
                     EventsFile::new_node(cgroup.clone()),
-                    FsNodeInfo::new(mode!(IFREG, 0o444), FsCred::root()),
+                    FsNodeInfo::new(mode!(IFREG, 0o444), owner.clone()),
                 ),
             ),
             (
                 KILL_FILE.into(),
                 fs.create_node_and_allocate_node_id(
                     KillFile::new_node(cgroup.clone()),
-                    FsNodeInfo::new(mode!(IFREG, 0o200), FsCred::root()),
+                    FsNodeInfo::new(mode!(IFREG, 0o200), owner.clone()),
                 ),
             ),
             (
@@ -150,7 +151,7 @@ impl CgroupDirectory {
                         bug_ref!("https://fxbug.dev/489195565"),
                         b"domain".to_vec(),
                     ),
-                    FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
+                    FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
                 ),
             ),
             (
@@ -160,7 +161,7 @@ impl CgroupDirectory {
                         bug_ref!("https://fxbug.dev/489194399"),
                         b"".to_vec(),
                     ),
-                    FsNodeInfo::new(mode!(IFREG, 0o644), FsCred::root()),
+                    FsNodeInfo::new(mode!(IFREG, 0o644), owner.clone()),
                 ),
             ),
         ]);
@@ -239,7 +240,7 @@ impl FsNodeOps for CgroupDirectoryHandle {
         _current_task: &CurrentTask,
         name: &FsStr,
         _mode: FileMode,
-        _owner: FsCred,
+        owner: FsCred,
     ) -> Result<FsNodeHandle, Errno> {
         let dir_nodes = self.dir_nodes()?;
         let cgroup = self.cgroup()?.new_child(name)?;
@@ -247,8 +248,9 @@ impl FsNodeOps for CgroupDirectoryHandle {
             Arc::downgrade(&cgroup) as Weak<dyn CgroupOps>,
             &node.fs(),
             self.dir_nodes.clone(),
+            owner.clone(),
         );
-        let child = dir_nodes.add_node(&cgroup, directory, &node.fs());
+        let child = dir_nodes.add_node(&cgroup, directory, &node.fs(), owner);
 
         node.update_info(|info| {
             info.link_count += 1;
