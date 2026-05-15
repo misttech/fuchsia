@@ -13,7 +13,7 @@ use net_types::ip::{Ipv4Addr, Ipv6Addr};
 use netsvc_proto::debuglog::DebugLogPacket;
 use netsvc_proto::netboot::NetbootPacket;
 use netsvc_proto::tftp::TftpPacket;
-use packet::{BufferView, ParsablePacket};
+use packet::{BufferView, NoOpParsingContext, ParsablePacket};
 use packet_formats::arp::ArpPacket;
 use packet_formats::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
 use packet_formats::icmp::{IcmpParseArgs, Icmpv4Packet, Icmpv6Packet};
@@ -57,10 +57,10 @@ enum PacketFormatsPacketType {
     IgmpPacket,
     Ipv4,
     Ipv6,
-    TcpSegmentv4(Fuzzed<TcpParseArgs<Ipv4Addr>>),
-    TcpSegmentv6(Fuzzed<TcpParseArgs<Ipv6Addr>>),
-    UdpPacketv4(Fuzzed<UdpParseArgs<Ipv4Addr>>),
-    UdpPacketv6(Fuzzed<UdpParseArgs<Ipv6Addr>>),
+    TcpSegmentv4(Fuzzed<TcpParseArgs<Ipv4Addr, NoOpParsingContext>>),
+    TcpSegmentv6(Fuzzed<TcpParseArgs<Ipv6Addr, NoOpParsingContext>>),
+    UdpPacketv4(Fuzzed<UdpParseArgs<Ipv4Addr, NoOpParsingContext>>),
+    UdpPacketv6(Fuzzed<UdpParseArgs<Ipv6Addr, NoOpParsingContext>>),
 }
 
 trait ParseAndIgnore<A, B: SplitByteSlice> {

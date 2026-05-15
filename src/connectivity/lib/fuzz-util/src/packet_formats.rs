@@ -91,7 +91,9 @@ impl<'a, A: IpAddress + FromBytes> Arbitrary<'a> for Fuzzed<IcmpParseArgs<A>> {
     }
 }
 
-impl<'a, A: IpAddress + FromBytes> Arbitrary<'a> for Fuzzed<UdpParseArgs<A>> {
+impl<'a, A: IpAddress + FromBytes> Arbitrary<'a>
+    for Fuzzed<UdpParseArgs<A, packet::NoOpParsingContext>>
+{
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         let src = A::arbitrary_from_bytes(u)?;
         let dst = A::arbitrary_from_bytes(u)?;
@@ -99,7 +101,9 @@ impl<'a, A: IpAddress + FromBytes> Arbitrary<'a> for Fuzzed<UdpParseArgs<A>> {
     }
 }
 
-impl<'a, A: IpAddress + FromBytes> Arbitrary<'a> for Fuzzed<TcpParseArgs<A>> {
+impl<'a, A: IpAddress + FromBytes> Arbitrary<'a>
+    for Fuzzed<TcpParseArgs<A, packet::NoOpParsingContext>>
+{
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         let src = A::arbitrary_from_bytes(u)?;
         let dst = A::arbitrary_from_bytes(u)?;

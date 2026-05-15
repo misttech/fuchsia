@@ -64,7 +64,8 @@ use netstack3_ip::{
 };
 use netstack3_trace::trace_duration;
 use packet::{
-    BufferMut, FragmentedByteSlice, NestablePacketBuilder as _, Nested, ParsablePacket, ParseBuffer,
+    BufferMut, FragmentedByteSlice, NestablePacketBuilder as _, Nested, NoOpParsingContext,
+    ParsablePacket, ParseBuffer,
 };
 use packet_formats::ip::{DscpAndEcn, IpProto, IpProtoExt};
 use packet_formats::udp::{UdpPacket, UdpPacketBuilder, UdpPacketRaw, UdpParseArgs};
@@ -1514,7 +1515,8 @@ fn receive_ip_packet<
     let src_port = packet.src_port();
     // Unfortunately, type inference isn't smart enough for us to just do
     // packet.parse_metadata().
-    let parse_meta = ParsablePacket::<_, UdpParseArgs<I::Addr>>::parse_metadata(&packet);
+    let parse_meta =
+        ParsablePacket::<_, UdpParseArgs<I::Addr, NoOpParsingContext>>::parse_metadata(&packet);
 
     /// The maximum number of socket IDs that are expected to receive a given
     /// packet. While it's possible for this number to be exceeded, it's

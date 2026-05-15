@@ -346,8 +346,8 @@ pub fn overwrite_icmpv6_checksum(buf: &mut [u8], checksum: [u8; 2]) -> ParseResu
 #[cfg(test)]
 mod crateonly {
     use crate::TransportChecksumAction;
-    use crate::tcp::{TcpEnvelope, TcpSerializationContext};
-    use crate::udp::{UdpEnvelope, UdpSerializationContext};
+    use crate::tcp::{TcpEnvelope, TcpParseContext, TcpSerializationContext};
+    use crate::udp::{UdpEnvelope, UdpParseContext, UdpSerializationContext};
     use packet::SerializationContext;
     use std::sync::Once;
 
@@ -402,6 +402,20 @@ mod crateonly {
             ()
         }
         fn checksum_action(&mut self) -> TransportChecksumAction {
+            self.0
+        }
+    }
+
+    /// A [`TcpParseContext`] and [`UdpParseContext`] that forces a specific
+    /// checksum validation action to be used (or skipped).
+    pub(crate) struct ForceSkipChecksumValidation(pub bool);
+    impl UdpParseContext for ForceSkipChecksumValidation {
+        fn skip_checksum_verification(&mut self) -> bool {
+            self.0
+        }
+    }
+    impl TcpParseContext for ForceSkipChecksumValidation {
+        fn skip_checksum_verification(&mut self) -> bool {
             self.0
         }
     }

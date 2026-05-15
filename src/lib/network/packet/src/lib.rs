@@ -1636,6 +1636,10 @@ impl ParseMetadata {
     }
 }
 
+/// An empty packet parsing context.
+#[derive(Copy, Clone, Default, Debug, Eq, PartialEq)]
+pub struct NoOpParsingContext;
+
 /// A packet which can be parsed from a buffer.
 ///
 /// A `ParsablePacket` is a packet which can be parsed from the body of a

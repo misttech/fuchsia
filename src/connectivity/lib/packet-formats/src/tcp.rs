@@ -19,9 +19,9 @@ use explicit::ResultExt as _;
 use net_types::ip::IpAddress;
 use packet::{
     BufferView, BufferViewMut, ByteSliceInnerPacketBuilder, EmptyBuf, FragmentedBytesMut, FromRaw,
-    InnerPacketBuilder, MaybeParsed, NestablePacketBuilder, NoOpSerializationContext,
-    PacketBuilder, PacketConstraints, ParsablePacket, ParseMetadata, PartialPacketBuilder,
-    SerializationContext, SerializeTarget, Serializer, SplitByteSliceBufView,
+    InnerPacketBuilder, MaybeParsed, NestablePacketBuilder, NoOpParsingContext,
+    NoOpSerializationContext, PacketBuilder, PacketConstraints, ParsablePacket, ParseMetadata,
+    PartialPacketBuilder, SerializationContext, SerializeTarget, Serializer, SplitByteSliceBufView,
 };
 use zerocopy::byteorder::network_endian::{U16, U32};
 use zerocopy::{
@@ -262,16 +262,36 @@ pub struct TcpSegment<B> {
     body: B,
 }
 
-/// Arguments required to parse a TCP segment.
-pub struct TcpParseArgs<A: IpAddress> {
-    src_ip: A,
-    dst_ip: A,
+/// Context for parsing TCP segments that may be subject to hardware checksum offloading.
+pub trait TcpParseContext {
+    /// Returns true if the checksum verification should be skipped.
+    fn skip_checksum_verification(&mut self) -> bool;
 }
 
-impl<A: IpAddress> TcpParseArgs<A> {
+impl TcpParseContext for NoOpParsingContext {
+    fn skip_checksum_verification(&mut self) -> bool {
+        false
+    }
+}
+
+/// Arguments required to parse a TCP segment.
+pub struct TcpParseArgs<A: IpAddress, C> {
+    src_ip: A,
+    dst_ip: A,
+    context: C,
+}
+
+impl<A: IpAddress> TcpParseArgs<A, NoOpParsingContext> {
     /// Construct a new `TcpParseArgs`.
-    pub fn new(src_ip: A, dst_ip: A) -> TcpParseArgs<A> {
-        TcpParseArgs { src_ip, dst_ip }
+    pub fn new(src_ip: A, dst_ip: A) -> Self {
+        TcpParseArgs { src_ip, dst_ip, context: NoOpParsingContext }
+    }
+}
+
+impl<A: IpAddress, C> TcpParseArgs<A, C> {
+    /// Construct a new `TcpParseArgs` with a parsing context.
+    pub fn with_context(src_ip: A, dst_ip: A, context: C) -> Self {
+        TcpParseArgs { src_ip, dst_ip, context }
     }
 }
 
@@ -283,8 +303,8 @@ impl<A: IpAddress> TcpParseArgs<A> {
 ///      needless copies.
 /// This prevents parsing a `TcpSegment` from a `MutableByteSlice`, but we deem
 /// that acceptable because it's not a known requirement.
-impl<B: SplitByteSlice + CloneableByteSlice, A: IpAddress> ParsablePacket<B, TcpParseArgs<A>>
-    for TcpSegment<B>
+impl<B: SplitByteSlice + CloneableByteSlice, A: IpAddress, C: TcpParseContext>
+    ParsablePacket<B, TcpParseArgs<A, C>> for TcpSegment<B>
 {
     type Error = ParseError;
 
@@ -293,19 +313,19 @@ impl<B: SplitByteSlice + CloneableByteSlice, A: IpAddress> ParsablePacket<B, Tcp
         ParseMetadata::from_packet(header_len, self.body.len(), 0)
     }
 
-    fn parse<BV: BufferView<B>>(buffer: BV, args: TcpParseArgs<A>) -> ParseResult<Self> {
+    fn parse<BV: BufferView<B>>(buffer: BV, args: TcpParseArgs<A, C>) -> ParseResult<Self> {
         TcpSegmentRaw::<B>::parse(buffer, ()).and_then(|u| TcpSegment::try_from_raw_with(u, args))
     }
 }
 
-impl<B: SplitByteSlice + CloneableByteSlice, A: IpAddress>
-    FromRaw<TcpSegmentRaw<B>, TcpParseArgs<A>> for TcpSegment<B>
+impl<B: SplitByteSlice + CloneableByteSlice, A: IpAddress, C: TcpParseContext>
+    FromRaw<TcpSegmentRaw<B>, TcpParseArgs<A, C>> for TcpSegment<B>
 {
     type Error = ParseError;
 
     fn try_from_raw_with(
         raw: TcpSegmentRaw<B>,
-        args: TcpParseArgs<A>,
+        TcpParseArgs { src_ip, dst_ip, mut context }: TcpParseArgs<A, C>,
     ) -> Result<Self, Self::Error> {
         // See for details: https://en.wikipedia.org/wiki/Transmission_Control_Protocol#TCP_segment_structure
 
@@ -332,17 +352,15 @@ impl<B: SplitByteSlice + CloneableByteSlice, A: IpAddress>
             );
         }
 
-        let parts = [Ref::bytes(&hdr_prefix), options.bytes(), body.deref().as_ref()];
-        let checksum = compute_transport_checksum_parts(
-            args.src_ip,
-            args.dst_ip,
-            IpProto::Tcp.into(),
-            parts.iter(),
-        )
-        .ok_or_else(debug_err_fn!(ParseError::Format, "segment too large"))?;
+        if !context.skip_checksum_verification() {
+            let parts = [Ref::bytes(&hdr_prefix), options.bytes(), body.deref().as_ref()];
+            let checksum =
+                compute_transport_checksum_parts(src_ip, dst_ip, IpProto::Tcp.into(), parts.iter())
+                    .ok_or_else(debug_err_fn!(ParseError::Format, "segment too large"))?;
 
-        if checksum != [0, 0] {
-            return debug_err!(Err(ParseError::Checksum), "invalid checksum");
+            if checksum != [0, 0] {
+                return debug_err!(Err(ParseError::Checksum), "invalid checksum");
+            }
         }
 
         if hdr_prefix.src_port == U16::ZERO || hdr_prefix.dst_port == U16::ZERO {
@@ -1782,6 +1800,35 @@ mod tests {
             Some(4),
             5,
         )
+    }
+
+    #[test_case(TEST_SRC_IPV4, TEST_DST_IPV4, true; "ipv4 skip")]
+    #[test_case(TEST_SRC_IPV4, TEST_DST_IPV4, false; "ipv4 validate")]
+    #[test_case(TEST_SRC_IPV6, TEST_DST_IPV6, true; "ipv6 skip")]
+    #[test_case(TEST_SRC_IPV6, TEST_DST_IPV6, false; "ipv6 validate")]
+    fn test_parse_invalid_checksum<A: IpAddress>(src: A, dst: A, skip: bool) {
+        let mut buf = new_builder(src, dst)
+            .wrap_body(EmptyBuf)
+            .serialize_vec_outer(&mut NoOpSerializationContext)
+            .unwrap()
+            .as_ref()
+            .to_vec();
+
+        // Corrupt the checksum.
+        buf[CHECKSUM_OFFSET] ^= 0xFF;
+        buf[CHECKSUM_OFFSET + 1] ^= 0xFF;
+
+        let mut bv = &buf[..];
+        let res = bv.parse_with::<_, TcpSegment<_>>(TcpParseArgs::with_context(
+            src,
+            dst,
+            ForceSkipChecksumValidation(skip),
+        ));
+        if skip {
+            assert_matches!(res, Ok(_));
+        } else {
+            assert_matches!(res, Err(ParseError::Checksum));
+        }
     }
 
     #[test]

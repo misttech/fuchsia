@@ -17,9 +17,9 @@ use core::ops::Range;
 use net_types::ip::{Ip, IpAddress, IpVersionMarker};
 use packet::{
     BufferView, BufferViewMut, ByteSliceInnerPacketBuilder, EmptyBuf, FragmentedBytesMut, FromRaw,
-    InnerPacketBuilder, MaybeParsed, NestablePacketBuilder, NoOpSerializationContext,
-    PacketBuilder, PacketConstraints, ParsablePacket, ParseMetadata, PartialPacketBuilder,
-    SerializationContext, SerializeTarget, Serializer,
+    InnerPacketBuilder, MaybeParsed, NestablePacketBuilder, NoOpParsingContext,
+    NoOpSerializationContext, PacketBuilder, PacketConstraints, ParsablePacket, ParseMetadata,
+    PartialPacketBuilder, SerializationContext, SerializeTarget, Serializer,
 };
 use zerocopy::byteorder::network_endian::U16;
 use zerocopy::{
@@ -110,59 +110,87 @@ pub struct UdpPacket<B> {
     body: B,
 }
 
-/// Arguments required to parse a UDP packet.
-pub struct UdpParseArgs<A: IpAddress> {
-    src_ip: A,
-    dst_ip: A,
+/// Context for parsing UDP packets that may be subject to hardware checksum offloading.
+pub trait UdpParseContext {
+    /// Returns true if the checksum verification should be skipped.
+    fn skip_checksum_verification(&mut self) -> bool;
 }
 
-impl<A: IpAddress> UdpParseArgs<A> {
-    /// Construct a new `UdpParseArgs`.
-    pub fn new(src_ip: A, dst_ip: A) -> UdpParseArgs<A> {
-        UdpParseArgs { src_ip, dst_ip }
+impl UdpParseContext for NoOpParsingContext {
+    fn skip_checksum_verification(&mut self) -> bool {
+        false
     }
 }
 
-impl<B: SplitByteSlice, A: IpAddress> FromRaw<UdpPacketRaw<B>, UdpParseArgs<A>> for UdpPacket<B> {
+/// Arguments required to parse a UDP packet.
+pub struct UdpParseArgs<A: IpAddress, C> {
+    src_ip: A,
+    dst_ip: A,
+    context: C,
+}
+
+impl<A: IpAddress> UdpParseArgs<A, NoOpParsingContext> {
+    /// Construct a new `UdpParseArgs`.
+    pub fn new(src_ip: A, dst_ip: A) -> Self {
+        UdpParseArgs { src_ip, dst_ip, context: NoOpParsingContext }
+    }
+}
+
+impl<A: IpAddress, C> UdpParseArgs<A, C> {
+    /// Construct a new `UdpParseArgs` with a parsing context.
+    pub fn with_context(src_ip: A, dst_ip: A, context: C) -> Self {
+        UdpParseArgs { src_ip, dst_ip, context }
+    }
+}
+
+impl<B: SplitByteSlice, A: IpAddress, C: UdpParseContext>
+    FromRaw<UdpPacketRaw<B>, UdpParseArgs<A, C>> for UdpPacket<B>
+{
     type Error = ParseError;
 
-    fn try_from_raw_with(raw: UdpPacketRaw<B>, args: UdpParseArgs<A>) -> Result<Self, Self::Error> {
+    fn try_from_raw_with(
+        raw: UdpPacketRaw<B>,
+        UdpParseArgs { src_ip, dst_ip, mut context }: UdpParseArgs<A, C>,
+    ) -> Result<Self, Self::Error> {
         // See for details: https://en.wikipedia.org/wiki/User_Datagram_Protocol#Packet_structure
         let header = raw
             .header
             .ok_or_else(|_| debug_err!(ParseError::Format, "too few bytes for header"))?;
         let body = raw.body.ok_or_else(|_| debug_err!(ParseError::Format, "incomplete body"))?;
 
-        let checksum = header.checksum;
-        // A 0 checksum indicates that the checksum wasn't computed. In IPv4,
-        // this means that it shouldn't be validated. In IPv6, the checksum is
-        // mandatory, so this is an error.
-        if checksum != [0, 0] {
-            let parts = [Ref::bytes(&header), body.deref().as_ref()];
-            let checksum = compute_transport_checksum_parts(
-                args.src_ip,
-                args.dst_ip,
-                IpProto::Udp.into(),
-                parts.iter(),
-            )
-            .ok_or_else(debug_err_fn!(ParseError::Format, "packet too large"))?;
-
-            // Even the checksum is transmitted as 0xFFFF, the checksum of the whole
-            // UDP packet should still be 0. This is because in 1's complement, it is
-            // not possible to produce +0(0) from adding non-zero 16-bit words.
-            // Since our 0xFFFF ensures there is at least one non-zero 16-bit word,
-            // the addition can only produce -0(0xFFFF) and after negation, it is
-            // still 0. A test `test_udp_checksum_0xffff` is included to make sure
-            // this is true.
+        if !context.skip_checksum_verification() {
+            let checksum = header.checksum;
+            // A 0 checksum indicates that the checksum wasn't computed. In
+            // IPv4, this means that it shouldn't be validated. In IPv6, the
+            // checksum is mandatory, so this is an error.
             if checksum != [0, 0] {
-                return debug_err!(
-                    Err(ParseError::Checksum),
-                    "invalid checksum {:X?}",
-                    header.checksum,
-                );
+                let parts = [Ref::bytes(&header), body.deref().as_ref()];
+                let checksum = compute_transport_checksum_parts(
+                    src_ip,
+                    dst_ip,
+                    IpProto::Udp.into(),
+                    parts.iter(),
+                )
+                .ok_or_else(debug_err_fn!(ParseError::Format, "packet too large"))?;
+
+                // Even the checksum is transmitted as 0xFFFF, the checksum of
+                // the whole UDP packet should still be 0. This is because in
+                // 1's complement, it is not possible to produce +0(0) from
+                // adding non-zero 16-bit words. Since our 0xFFFF ensures there
+                // is at least one non-zero 16-bit word, the addition can only
+                // produce -0(0xFFFF) and after negation, it is still 0. A test
+                // `test_udp_checksum_0xffff` is included to make sure this is
+                // true.
+                if checksum != [0, 0] {
+                    return debug_err!(
+                        Err(ParseError::Checksum),
+                        "invalid checksum {:X?}",
+                        header.checksum,
+                    );
+                }
+            } else if A::Version::VERSION.is_v6() {
+                return debug_err!(Err(ParseError::Format), "missing checksum");
             }
-        } else if A::Version::VERSION.is_v6() {
-            return debug_err!(Err(ParseError::Format), "missing checksum");
         }
 
         if header.dst_port.get() == 0 {
@@ -173,14 +201,16 @@ impl<B: SplitByteSlice, A: IpAddress> FromRaw<UdpPacketRaw<B>, UdpParseArgs<A>> 
     }
 }
 
-impl<B: SplitByteSlice, A: IpAddress> ParsablePacket<B, UdpParseArgs<A>> for UdpPacket<B> {
+impl<B: SplitByteSlice, A: IpAddress, C: UdpParseContext> ParsablePacket<B, UdpParseArgs<A, C>>
+    for UdpPacket<B>
+{
     type Error = ParseError;
 
     fn parse_metadata(&self) -> ParseMetadata {
         ParseMetadata::from_packet(Ref::bytes(&self.header).len(), self.body.len(), 0)
     }
 
-    fn parse<BV: BufferView<B>>(buffer: BV, args: UdpParseArgs<A>) -> ParseResult<Self> {
+    fn parse<BV: BufferView<B>>(buffer: BV, args: UdpParseArgs<A, C>) -> ParseResult<Self> {
         UdpPacketRaw::<B>::parse(buffer, IpVersionMarker::<A::Version>::default())
             .and_then(|u| UdpPacket::try_from_raw_with(u, args))
     }
@@ -712,9 +742,11 @@ impl<B> Debug for UdpPacket<B> {
 
 #[cfg(test)]
 mod tests {
+    use assert_matches::assert_matches;
     use byteorder::{ByteOrder, NetworkEndian};
     use net_types::ip::{Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
     use packet::{Buf, NestableSerializer as _, ParseBuffer, ParseBufferMut};
+    use test_case::test_case;
 
     use super::*;
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
@@ -722,6 +754,7 @@ mod tests {
     use crate::ipv6::{Ipv6Header, Ipv6Packet};
     use crate::testutil::*;
     use crate::update_transport_checksum_pseudo_header;
+    use packet::NoOpSerializationContext;
 
     const TEST_SRC_IPV4: Ipv4Addr = Ipv4Addr::new([1, 2, 3, 4]);
     const TEST_DST_IPV4: Ipv4Addr = Ipv4Addr::new([5, 6, 7, 8]);
@@ -913,6 +946,36 @@ mod tests {
                     .unwrap_err(),
                 ParseError::Format
             );
+        }
+    }
+
+    #[test_case(TEST_SRC_IPV4, TEST_DST_IPV4, true; "ipv4 skip")]
+    #[test_case(TEST_SRC_IPV4, TEST_DST_IPV4, false; "ipv4 validate")]
+    #[test_case(TEST_SRC_IPV6, TEST_DST_IPV6, true; "ipv6 skip")]
+    #[test_case(TEST_SRC_IPV6, TEST_DST_IPV6, false; "ipv6 validate")]
+    fn test_parse_invalid_checksum<A: IpAddress>(src: A, dst: A, skip: bool) {
+        let mut buf =
+            UdpPacketBuilder::new(src, dst, NonZeroU16::new(1), NonZeroU16::new(2).unwrap())
+                .wrap_body(EmptyBuf)
+                .serialize_vec_outer(&mut NoOpSerializationContext)
+                .unwrap()
+                .as_ref()
+                .to_vec();
+
+        // Corrupt the checksum.
+        buf[CHECKSUM_OFFSET] ^= 0xFF;
+        buf[CHECKSUM_OFFSET + 1] ^= 0xFF;
+
+        let mut bv = &buf[..];
+        let res = bv.parse_with::<_, UdpPacket<_>>(UdpParseArgs::with_context(
+            src,
+            dst,
+            ForceSkipChecksumValidation(skip),
+        ));
+        if skip {
+            assert_matches!(res, Ok(_));
+        } else {
+            assert_matches!(res, Err(ParseError::Checksum));
         }
     }
 
