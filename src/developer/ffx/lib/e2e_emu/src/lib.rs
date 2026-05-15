@@ -56,10 +56,7 @@ pub enum IsolatedEmulatorError {
     NoStdout,
 
     #[error("Could not resolve target")]
-    ResolutionError(#[from] ffx_target::FromTargetHandleError),
-
-    #[error("Could not list targets")]
-    ListTargetsError(#[source] anyhow::Error),
+    ResolutionError(#[from] ffx_target::FfxTargetCrateError),
 
     #[error("Command spawn failed: {0}")]
     CommandSpawn(#[source] std::io::Error),
@@ -309,8 +306,7 @@ impl IsolatedEmulator {
         let query = TargetInfoQuery::NodenameOrSerial(self.emu_name().to_string());
         let targets =
             ffx_target::list_targets(fho_env.environment_context(), query, false, false, false)
-                .await
-                .map_err(|e| IsolatedEmulatorError::ListTargetsError(e))?;
+                .await?;
         let target_info = targets.first().ok_or_else(|| IsolatedEmulatorError::NoTargetFound {
             emu_name: self.emu_name().to_string(),
         })?;

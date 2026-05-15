@@ -5,7 +5,6 @@ use addr::TargetIpAddr;
 use anyhow::{Context as _, Result};
 use compat_info::CompatibilityInfo;
 use discovery::{DiscoverySources, TargetHandle};
-use errors::ffx_bail;
 use ffx_config::keys::TARGET_DEFAULT_KEY;
 
 use ffx_config::{ConfigLevel, EnvironmentContext};
@@ -39,6 +38,7 @@ pub mod usb_connector;
 pub mod vsock_connector;
 
 mod cache;
+mod error;
 mod fdomain_transport;
 mod fidl_pipe;
 mod resolve;
@@ -51,11 +51,12 @@ pub use cache::{
 pub use connection::{Connection, ConnectionError};
 pub use discovery::desc::{Description, FastbootInterface};
 pub use discovery::query::TargetInfoQuery;
+pub use error::FfxTargetCrateError;
 pub use fidl_pipe::{FidlPipe, create_overnet_socket};
 pub use info::TargetInfo;
 pub use list::list_targets;
 pub use resolve::{
-    DefaultTargetResolver, FromTargetHandleError, Resolution, TargetResolver, build_discovery,
+    DefaultTargetResolver, Resolution, TargetResolver, build_discovery,
     discover_single_default_target, get_discovered_targets, get_discovery_stream,
     maybe_locally_resolve_target_spec, resolve_target_address,
 };
@@ -761,7 +762,7 @@ pub async fn add_manual_target(
             ffx::AddTargetResponder_Request::Error { err, .. } => Err(err),
         }
     } else {
-        ffx_bail!("ffx lost connection to the daemon before receiving a response.");
+        anyhow::bail!("ffx lost connection to the daemon before receiving a response.");
     };
 
     // Change TargetAddrInfo to TargetAddr so ip can be extracted.

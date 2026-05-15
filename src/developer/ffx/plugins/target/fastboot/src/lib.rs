@@ -252,7 +252,8 @@ async fn cmd_impl(
     writer: &mut VerifiedMachineWriter<FastbootMessage>,
     command: &FastbootCommand,
 ) -> fho::Result<()> {
-    let handle = ffx_target::discover_single_default_target(ctx).await?;
+    let handle =
+        ffx_target::discover_single_default_target(ctx).await.map_err(anyhow::Error::from)?;
 
     if !matches!(handle.state, TargetState::Fastboot(_)) {
         ffx_bail!("This plugin only works when the target is in Fastboot mode");

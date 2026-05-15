@@ -53,7 +53,7 @@ async fn new_device_connection(
     // scripts to use potentially stale cache data, and the caller can make sure
     // to pass an address directly if they don't want to wait for discovery.
     let resolution = ffx_target::resolve_target_address(target_spec, false, ctx).await?;
-    resolution.get_connection(ctx).await
+    resolution.get_connection(ctx).await.map_err(anyhow::Error::from)
 }
 
 impl EnvContext {

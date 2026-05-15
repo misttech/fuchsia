@@ -95,7 +95,9 @@ impl FfxMain for BootloaderTool {
     type Writer = VerifiedMachineWriter<BootloaderToolMessage>;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        let handle = ffx_target::discover_single_default_target(&self.ctx).await?;
+        let handle = ffx_target::discover_single_default_target(&self.ctx)
+            .await
+            .map_err(anyhow::Error::from)?;
         let handle = match &handle.state {
             TargetState::Fastboot { .. } => {
                 // Nothing to do

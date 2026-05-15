@@ -164,15 +164,14 @@ pub async fn list_targets(
     include_usb: bool,
     include_mdns: bool,
     connect: bool,
-) -> Result<Vec<TargetInfo>> {
+) -> std::result::Result<Vec<TargetInfo>, crate::FfxTargetCrateError> {
     // When explicitly listing all targets, we don't want to use the
     // cache, for a couple reasons:
     // * explicitly listing the targets probably warrants accurate results
     // * if we get back a stale target, we don't want to waste time trying
     //   to connect to RCS
-    let stream =
-        get_discovery_stream(query, include_usb, include_mdns, ctx).map_err(anyhow::Error::from)?;
-    handles_to_infos(stream, ctx, connect).await
+    let stream = get_discovery_stream(query, include_usb, include_mdns, ctx)?;
+    Ok(handles_to_infos(stream, ctx, connect).await?)
 }
 
 #[cfg(test)]

@@ -153,7 +153,10 @@ async fn direct_connector_try_connect<T: TryFromEnv>(
     loop {
         let target_spec = {
             let resolution = dc.resolution().await?;
-            resolution.ensure_connected(env.environment_context()).await?;
+            resolution
+                .ensure_connected(env.environment_context())
+                .await
+                .map_err(|e| e.into_command_error())?;
             resolution.target_spec()
         };
         return match T::try_from_env(env).await {

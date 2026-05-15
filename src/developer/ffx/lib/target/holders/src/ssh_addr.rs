@@ -28,7 +28,7 @@ impl TryFromEnv for SshAddrHolder {
                 tia.into()
             }
             target_behavior::ConnectionBehavior::DirectConnector(connector) => {
-                connector.resolution().await?.addr()?
+                connector.resolution().await?.addr().map_err(|e| e.into_command_error())?
             }
         }))
     }

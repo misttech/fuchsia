@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::TargetInfo;
-use anyhow::{Context, bail};
+
 use chrono::prelude::*;
 use discovery::query::TargetInfoQuery;
 use ffx_config::EnvironmentContext;
@@ -69,14 +69,33 @@ pub enum CacheError {
         #[source]
         err: std::io::Error,
     },
+
+    #[error("could not get discovery cache file path")]
+    NoCacheFile,
+
+    #[error("cannot stat cache file at {path:?}")]
+    StatFile {
+        path: PathBuf,
+        #[source]
+        err: std::io::Error,
+    },
+
+    #[error("cannot remove cache file at {path:?}")]
+    RemoveFile {
+        path: PathBuf,
+        #[source]
+        err: std::io::Error,
+    },
 }
 
 /// Create the target discovery cache file. The directory containing the file
 /// must already exist. This will list the current targets, but will not try to
 /// make an RCS connection to them.
-pub async fn create_target_cache(context: &EnvironmentContext) -> anyhow::Result<Vec<TargetInfo>> {
+pub async fn create_target_cache(
+    context: &EnvironmentContext,
+) -> std::result::Result<Vec<TargetInfo>, crate::FfxTargetCrateError> {
     let Some(cache_file) = get_discovery_cache_file(context) else {
-        bail!("Could not get discovery cache file");
+        return Err(CacheError::NoCacheFile.into());
     };
     let infos =
         crate::list::list_targets(context, TargetInfoQuery::First, true, true, true).await?;
@@ -99,13 +118,17 @@ pub async fn create_target_cache(context: &EnvironmentContext) -> anyhow::Result
 }
 
 /// Remove the target cache file, if it exists.
-pub fn remove_target_cache(context: &EnvironmentContext) -> anyhow::Result<()> {
+pub fn remove_target_cache(
+    context: &EnvironmentContext,
+) -> std::result::Result<(), crate::FfxTargetCrateError> {
     let Some(cache_file) = get_discovery_cache_file(context) else {
         return Ok(());
     };
-    if std::fs::exists(&cache_file).context(format!("Cannot stat {}", cache_file.display()))? {
+    if std::fs::exists(&cache_file)
+        .map_err(|e| CacheError::StatFile { path: cache_file.clone(), err: e })?
+    {
         std::fs::remove_file(&cache_file)
-            .context(format!("cannot remove {}", cache_file.display()))?;
+            .map_err(|e| CacheError::RemoveFile { path: cache_file.clone(), err: e })?;
     }
     Ok(())
 }

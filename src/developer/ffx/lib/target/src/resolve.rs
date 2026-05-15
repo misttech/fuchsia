@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use crate::info;
 use addr::{TargetAddr, TargetIpAddr};
-use anyhow::{Result, bail};
+use anyhow::Result;
 use discovery::query::TargetInfoQuery;
 use discovery::{Discovery, DiscoveryBuilder, DiscoverySources, TargetEvent, TargetHandle};
 use fdomain_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlProxy};
@@ -153,23 +153,18 @@ where
 /// Discover a target; useful when we don't necessarily want to make a connection,
 /// but we _do_ want to get the information available when discovering (TargetState,
 /// etc).
-pub async fn discover_single_default_target(ctx: &EnvironmentContext) -> Result<TargetHandle> {
+pub async fn discover_single_default_target(
+    ctx: &EnvironmentContext,
+) -> std::result::Result<TargetHandle, crate::FfxTargetCrateError> {
     let query_s = get_target_specifier(ctx)?;
     let query = TargetInfoQuery::try_from(query_s)?;
 
     // Note: this will use the target cache if it exists
     let handles = get_discovered_targets(query.clone(), true, true, ctx).await?;
-    expect_single_target(&query, handles)
+    let res = expect_single_target(&query, handles)
         .or_else_maybe_analytics(|e| target_error_to_analytics(e).map(Into::into))
-        .await
-        .map_err(|e| {
-            // Going straight from e => anyhow::Error causes the error Framework we
-            // use to return a Bug since it cannot be properly downcast to an
-            // FfxError properly. Manually cast to a FfxError here before wrapping
-            // it.
-            let wrapped: errors::FfxError = e.into();
-            wrapped.into()
-        })
+        .await?;
+    Ok(res)
 }
 
 /// A trait for resolving target queries into concrete target information.
@@ -456,7 +451,7 @@ pub fn get_discovery_stream(
     usb: bool,
     mdns: bool,
     ctx: &EnvironmentContext,
-) -> Result<impl Stream<Item = TargetHandle>> {
+) -> std::result::Result<impl Stream<Item = TargetHandle>, crate::FfxTargetCrateError> {
     let mut sources =
         DiscoverySources::MANUAL | DiscoverySources::EMULATOR | DiscoverySources::FASTBOOT_FILE;
     if usb {
@@ -469,7 +464,7 @@ pub fn get_discovery_stream(
     if mdns && ctx.get(keys::NETWORK_ENABLED).unwrap_or(true) {
         sources = sources | DiscoverySources::MDNS;
     }
-    get_discovery_stream_with_sources(query, sources, ctx)
+    Ok(get_discovery_stream_with_sources(query, sources, ctx)?)
 }
 
 /// Return a list of handles matching the query. If a target matches the query
@@ -482,7 +477,7 @@ pub async fn get_discovered_targets(
     usb: bool,
     mdns: bool,
     ctx: &EnvironmentContext,
-) -> Result<Vec<TargetHandle>> {
+) -> std::result::Result<Vec<TargetHandle>, crate::FfxTargetCrateError> {
     let mut sources =
         DiscoverySources::MANUAL | DiscoverySources::EMULATOR | DiscoverySources::FASTBOOT_FILE;
     if usb {
@@ -496,7 +491,7 @@ pub async fn get_discovered_targets(
         sources = sources | DiscoverySources::MDNS;
     }
     // Get nodename, in case we're trying to find an exact match
-    get_discovered_targets_with_sources(query, sources, ctx).await
+    Ok(get_discovered_targets_with_sources(query, sources, ctx).await?)
 }
 
 impl TargetResolver for DefaultTargetResolver {
@@ -538,9 +533,11 @@ impl TargetResolver for DefaultTargetResolver {
             let identify = resolution
                 .identify(ctx)
                 .on_timeout(ssh_timeout, || {
-                    Err(anyhow::anyhow!(
-                        "timeout after {ssh_timeout:?} identifying manual target {t:?}"
-                    ))
+                    Err(crate::error::TargetResolutionError::ManualTargetTimeout {
+                        addr,
+                        timeout: ssh_timeout,
+                    }
+                    .into())
                 })
                 .await?;
 
@@ -700,12 +697,6 @@ impl Display for Resolution {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum FromTargetHandleError {
-    #[error("Target {node_name:?} did not have a product address")]
-    NoProductAddress { node_name: Option<String> },
-}
-
 impl Resolution {
     fn from_target(target: ResolutionTarget) -> Self {
         Self {
@@ -728,17 +719,19 @@ impl Resolution {
 
     pub fn from_target_handle(
         th: TargetHandle,
-    ) -> std::result::Result<Self, FromTargetHandleError> {
+    ) -> std::result::Result<Self, crate::FfxTargetCrateError> {
         let target = ResolutionTarget::from_target_handle(&th).ok_or_else(|| {
-            FromTargetHandleError::NoProductAddress { node_name: th.node_name.clone() }
+            crate::error::TargetResolutionError::MissingProductAddress {
+                node_name: th.node_name.clone(),
+            }
         })?;
         Ok(Self { discovered: Some(th), ..Self::from_target(target) })
     }
 
-    pub fn addr(&self) -> Result<SocketAddr> {
+    pub fn addr(&self) -> std::result::Result<SocketAddr, crate::FfxTargetCrateError> {
         match self.target {
             ResolutionTarget::Addr(addr) => Ok(addr),
-            _ => bail!("target does not connect via networking"),
+            _ => Err(crate::error::TargetResolutionError::NonNetworkTarget.into()),
         }
     }
 
@@ -762,11 +755,17 @@ impl Resolution {
         self.target.to_spec()
     }
 
-    pub async fn ensure_connected(&self, context: &EnvironmentContext) -> Result<()> {
+    pub async fn ensure_connected(
+        &self,
+        context: &EnvironmentContext,
+    ) -> std::result::Result<(), crate::FfxTargetCrateError> {
         self.get_connection(context).await.map(|_| ())
     }
 
-    pub async fn ensure_not_terminated(&self, context: &EnvironmentContext) -> Result<()> {
+    pub async fn ensure_not_terminated(
+        &self,
+        context: &EnvironmentContext,
+    ) -> std::result::Result<(), crate::FfxTargetCrateError> {
         if self.connection.lock().await.is_some() {
             self.ensure_connected(context).await
         } else {
@@ -774,7 +773,10 @@ impl Resolution {
         }
     }
 
-    pub async fn get_connection(&self, context: &EnvironmentContext) -> Result<Arc<Connection>> {
+    pub async fn get_connection(
+        &self,
+        context: &EnvironmentContext,
+    ) -> std::result::Result<Arc<Connection>, crate::FfxTargetCrateError> {
         // Hold a lock to make sure only one connection is being initialized at a time.
         // Note that this is a tokio Mutex, not a std Mutex, so it's safe to hold across
         // await points.
@@ -790,7 +792,7 @@ impl Resolution {
             match &self.target {
                 ResolutionTarget::Addr(socket_addr) => {
                     if !context.get(keys::NETWORK_ENABLED).unwrap_or(true) {
-                        bail!("Network connections are disabled");
+                        return Err(crate::error::TargetResolutionError::NetworkDisabled.into());
                     }
                     let connector = SshConnector::new(
                         netext::ScopedSocketAddr::from_socket_addr(*socket_addr)?,
@@ -805,7 +807,7 @@ impl Resolution {
                 }
                 ResolutionTarget::Usb(cid) => {
                     if !context.get(keys::USB_ENABLED).unwrap_or(false) {
-                        bail!("USB connections are disabled");
+                        return Err(crate::error::TargetResolutionError::UsbDisabled.into());
                     }
                     let connector = UsbConnector::new(*cid, context).await?;
                     emit_target_connection_event("USB").await;
@@ -817,7 +819,7 @@ impl Resolution {
                 }
                 ResolutionTarget::Vsock(cid) => {
                     if !context.get(keys::VSOCK_ENABLED).unwrap_or(false) {
-                        bail!("VSOCK connections are disabled");
+                        return Err(crate::error::TargetResolutionError::VsockDisabled.into());
                     }
                     let connector = VSockConnector::new(*cid);
                     emit_target_connection_event("VSOCK").await;
@@ -839,7 +841,10 @@ impl Resolution {
         if let Ok(guard) = self.connection.try_lock() { guard.as_ref().cloned() } else { None }
     }
 
-    async fn get_rcs_proxy(&self, context: &EnvironmentContext) -> Result<RemoteControlProxy> {
+    async fn get_rcs_proxy(
+        &self,
+        context: &EnvironmentContext,
+    ) -> std::result::Result<RemoteControlProxy, crate::FfxTargetCrateError> {
         // Hold a lock to make sure only one RCS proxy is being initialized at a time.
         // Note that this is a tokio Mutex, not a std Mutex, so it's safe to hold across
         // await points.
@@ -852,7 +857,10 @@ impl Resolution {
         Ok(rcs_proxy_guard.as_ref().unwrap().clone())
     }
 
-    pub async fn identify(&self, context: &EnvironmentContext) -> Result<IdentifyHostResponse> {
+    pub async fn identify(
+        &self,
+        context: &EnvironmentContext,
+    ) -> std::result::Result<IdentifyHostResponse, crate::FfxTargetCrateError> {
         // Hold a lock to make sure only one IdentifyHost is being called at a time.
         // Note that this is a tokio Mutex, not a std Mutex, so it's safe to hold across
         // await points.
@@ -863,7 +871,7 @@ impl Resolution {
                 rcs_proxy
                     .identify_host()
                     .await?
-                    .map_err(|e| anyhow::anyhow!("Error identifying host: {e:?}"))?,
+                    .map_err(crate::FfxTargetCrateError::IdentifyHost)?,
             );
         }
         // Unwrap safety: either the guard was already Some(), or we just initialized it with Some()

@@ -66,7 +66,9 @@ async fn reboot_direct(
 ) -> Result<(), fho::Error> {
     let state = reboot_state(&cmd)?;
     // Discover the device, because we may need to reach it directly if it's in fastboot mode
-    let handle = ffx_target::discover_single_default_target(context).await?;
+    let handle = ffx_target::discover_single_default_target(context)
+        .await
+        .map_err(|e| e.into_command_error())?;
     reboot_direct_with_handle(handle, admin_proxy, state, context).await
 }
 

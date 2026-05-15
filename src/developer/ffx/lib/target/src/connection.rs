@@ -73,7 +73,9 @@ impl Connection {
 
     /// Attempts to connect to an FDomain client. Will start a pass-through client if necessary,
     /// returning `true` for the second item in the tuple if this is indeed a pass-through client.
-    pub async fn fdomain_client(&self) -> Result<(Arc<fdomain_client::Client>, bool)> {
+    pub async fn fdomain_client(
+        &self,
+    ) -> std::result::Result<(Arc<fdomain_client::Client>, bool), ConnectionError> {
         let mut fdomain = self.fdomain.lock().await;
         if let Some(fdomain) = fdomain.clone() {
             Ok((fdomain, false))

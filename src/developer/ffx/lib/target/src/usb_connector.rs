@@ -33,7 +33,10 @@ impl Debug for UsbConnector {
 }
 
 impl UsbConnector {
-    pub async fn new(cid: u32, env_context: &EnvironmentContext) -> Result<Self> {
+    pub async fn new(
+        cid: u32,
+        env_context: &EnvironmentContext,
+    ) -> std::result::Result<Self, crate::FfxTargetCrateError> {
         let socket_path: PathBuf = env_context.get(usb_driver_api::CONFIG_USB_SOCKET_PATH)?;
 
         try_daemon_autostart(&socket_path, env_context);

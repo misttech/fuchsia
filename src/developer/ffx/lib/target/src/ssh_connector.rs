@@ -83,7 +83,7 @@ impl SshConnector {
 
     /// This is mainly for diagnostics/reporting info to the user. This takes the usual command
     /// with which fdomain is started and converts it into a readable string.
-    pub async fn fdomain_command(&self) -> Result<String> {
+    pub async fn fdomain_command(&self) -> std::result::Result<String, crate::FfxTargetCrateError> {
         let cmd = make_fdomain_ssh_command(self.target.clone(), &self.env_context).await?;
         let envs = cmd
             .as_std()

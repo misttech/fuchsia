@@ -396,7 +396,9 @@ impl FlashTool {
         cmd: FlashCommand,
         writer: &mut VerifiedMachineWriter<FlashMessage>,
     ) -> fho::Result<()> {
-        let handle = ffx_target::discover_single_default_target(&self.ctx).await?;
+        let handle = ffx_target::discover_single_default_target(&self.ctx)
+            .await
+            .map_err(anyhow::Error::from)?;
 
         let handle = match &handle.state {
             TargetState::Fastboot(_) => {

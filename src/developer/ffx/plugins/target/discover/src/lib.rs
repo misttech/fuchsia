@@ -86,7 +86,8 @@ impl DiscoveryRunner for RealDiscoveryRunner {
         if matches!(self.output_mode, Output::All) {
             println!("Discovered devices:");
         }
-        let devices = ffx_target::create_target_cache(&self.context).await?;
+        let devices =
+            ffx_target::create_target_cache(&self.context).await.map_err(anyhow::Error::from)?;
         if matches!(self.output_mode, Output::All) {
             for h in devices {
                 print_device(h);
