@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, anyhow};
 use chrono::prelude::*;
 use std::collections::HashMap;
 use std::fs::File;
@@ -18,7 +17,7 @@ pub trait Recorder {
 
     fn add_content(&mut self, file_name: &str, content: String);
 
-    fn generate(&self, output_dir: PathBuf) -> Result<PathBuf>;
+    fn generate(&self, output_dir: PathBuf) -> Result<PathBuf, crate::DoctorUtilsError>;
 }
 pub struct DoctorRecorder {
     resource: HashMap<String, String>,
@@ -31,7 +30,11 @@ impl DoctorRecorder {
     }
 
     #[allow(clippy::unused_io_amount)] // TODO(https://fxbug.dev/42177039)
-    fn copy_file(&self, source: &PathBuf, zip: &mut ZipWriter<File>) -> Result<()> {
+    fn copy_file(
+        &self,
+        source: &PathBuf,
+        zip: &mut ZipWriter<File>,
+    ) -> Result<(), crate::DoctorUtilsError> {
         let mut f = File::open(source)?;
         let source_name = source.file_name().unwrap().to_string_lossy();
         zip.start_file(
@@ -46,7 +49,8 @@ impl DoctorRecorder {
             }
         }
 
-        copy(&mut f, zip).map(|_| {}).map_err(|e| anyhow!(e))
+        copy(&mut f, zip).map(|_| {})?;
+        Ok(())
     }
 }
 
@@ -63,7 +67,7 @@ impl Recorder for DoctorRecorder {
             .or_insert(content);
     }
 
-    fn generate(&self, output_dir: PathBuf) -> Result<PathBuf> {
+    fn generate(&self, output_dir: PathBuf) -> Result<PathBuf, crate::DoctorUtilsError> {
         let fname = format!("ffx-record-{}.zip", Local::now().format("%Y%m%d-%H%M%S"));
         let mut output_path = output_dir;
         output_path.push(fname);
@@ -89,10 +93,10 @@ impl Recorder for DoctorRecorder {
                 file_name,
                 FileOptions::default().compression_method(CompressionMethod::Stored),
             )?;
-            zip.write(resource.as_bytes()).map_err(|e| anyhow!(e))?;
+            zip.write(resource.as_bytes()).map(|_| {})?;
         }
 
-        zip.finish().map_err(|e| anyhow!(e))?;
+        zip.finish()?;
 
         Ok(output_path)
     }
@@ -101,6 +105,7 @@ impl Recorder for DoctorRecorder {
 #[cfg(test)]
 mod test {
     use super::*;
+    use anyhow::Result;
     use std::collections::HashSet;
     use std::io::Read;
     use tempfile::tempdir;

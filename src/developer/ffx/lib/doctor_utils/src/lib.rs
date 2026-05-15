@@ -8,9 +8,11 @@ use std::fmt;
 use termion::{color, style};
 
 pub use daemon_manager::{DaemonManager, DefaultDaemonManager};
+pub use error::DoctorUtilsError;
 pub use recorder::{DoctorRecorder, Recorder};
 
 mod daemon_manager;
+mod error;
 mod recorder;
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]

@@ -1,7 +1,7 @@
 // Copyright 2020 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use anyhow::{Result, anyhow};
+
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_daemon::{
@@ -26,15 +26,15 @@ fn daemon_start_regex(for_sock: &Path) -> String {
 #[async_trait]
 pub trait DaemonManager {
     // Kills any running daemons. Returns a bool indicating whether any daemons were killed.
-    async fn kill_all(&self) -> Result<bool>;
+    async fn kill_all(&self) -> Result<bool, crate::DoctorUtilsError>;
 
-    async fn get_pid(&self) -> Result<Vec<usize>>;
+    async fn get_pid(&self) -> Result<Vec<usize>, crate::DoctorUtilsError>;
 
     async fn is_daemon_running(&self) -> bool;
 
-    async fn spawn(&self) -> Result<()>;
+    async fn spawn(&self) -> Result<(), crate::DoctorUtilsError>;
 
-    async fn find_and_connect(&self) -> Result<DaemonProxy>;
+    async fn find_and_connect(&self) -> Result<DaemonProxy, crate::DoctorUtilsError>;
 }
 
 pub struct DefaultDaemonManager {
@@ -56,7 +56,7 @@ impl DefaultDaemonManager {
 #[async_trait]
 impl DaemonManager for DefaultDaemonManager {
     // Kills any running daemons. Returns a bool indicating whether any daemons were killed.
-    async fn kill_all(&self) -> Result<bool> {
+    async fn kill_all(&self) -> Result<bool, crate::DoctorUtilsError> {
         // Preferentially use pkill -- it will kill more possibilities
         let result = if which::which("pkill").is_ok() {
             // If ffx was started with a --config or a --target, as fx does, there
@@ -97,7 +97,7 @@ impl DaemonManager for DefaultDaemonManager {
         } else {
             let socket_details = SocketDetails::new(self.socket_path.clone());
             if let Some(pid) = socket_details.get_running_pid() {
-                try_to_kill_pid(pid).await.map_err(|e| anyhow::anyhow!("{:?}", e))?;
+                try_to_kill_pid(pid).await?;
                 true
             } else {
                 false
@@ -108,7 +108,7 @@ impl DaemonManager for DefaultDaemonManager {
     }
 
     // Get the pid of any running daemons.
-    async fn get_pid(&self) -> Result<Vec<usize>> {
+    async fn get_pid(&self) -> Result<Vec<usize>, crate::DoctorUtilsError> {
         // Preferentially use pgrep -- it will find more possibilities
         if which::which("pgrep").is_ok() {
             // If ffx was started with a --config or a --target, as fx does, there
@@ -130,8 +130,8 @@ impl DaemonManager for DefaultDaemonManager {
             if !cmd.status.success() {
                 match cmd.status.code() {
                     Some(1) => (), //Ignore pgrep status for not finding data
-                    Some(code) => return Err(anyhow!("pgrep status code = {}", code)),
-                    _ => return Err(anyhow!("pgrep status error")),
+                    Some(code) => return Err(crate::DoctorUtilsError::ProcessStatusCode(code)),
+                    _ => return Err(crate::DoctorUtilsError::ProcessStatusError),
                 }
             }
 
@@ -150,13 +150,11 @@ impl DaemonManager for DefaultDaemonManager {
         is_daemon_running_at_path(&self.socket_path)
     }
 
-    async fn spawn(&self) -> Result<()> {
-        spawn_daemon(&self.context).await.map_err(anyhow::Error::new)
+    async fn spawn(&self) -> Result<(), crate::DoctorUtilsError> {
+        Ok(spawn_daemon(&self.context).await?)
     }
 
-    async fn find_and_connect(&self) -> Result<DaemonProxy> {
-        find_and_connect(&self.context, &self.node, self.socket_path.clone())
-            .await
-            .map_err(anyhow::Error::new)
+    async fn find_and_connect(&self) -> Result<DaemonProxy, crate::DoctorUtilsError> {
+        Ok(find_and_connect(&self.context, &self.node, self.socket_path.clone()).await?)
     }
 }

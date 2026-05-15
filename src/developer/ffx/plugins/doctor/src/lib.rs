@@ -576,16 +576,18 @@ async fn doctor_record(
                 let default_err_msg =
                     Err(anyhow!("{}\nCould not write to: {}\n{}", e, path, advice));
 
-                match e.downcast_ref::<zip::result::ZipError>() {
-                    Some(zip::result::ZipError::Io(io_error)) => match io_error.raw_os_error() {
-                        Some(27) => Err(anyhow!(
-                            "{}\nMake sure you can write files larger than 1MB to: {}\n{}",
-                            e,
-                            path,
-                            advice
-                        ))?,
-                        _ => default_err_msg?,
-                    },
+                match &e {
+                    doctor_utils::DoctorUtilsError::Zip(zip::result::ZipError::Io(io_error)) => {
+                        match io_error.raw_os_error() {
+                            Some(27) => Err(anyhow!(
+                                "{}\nMake sure you can write files larger than 1MB to: {}\n{}",
+                                e,
+                                path,
+                                advice
+                            ))?,
+                            _ => default_err_msg?,
+                        }
+                    }
                     _ => default_err_msg?,
                 }
             }
@@ -2492,7 +2494,10 @@ mod test {
             // Do nothing, we don't verify output in tests.
         }
 
-        fn generate(&self, output_dir: PathBuf) -> Result<PathBuf> {
+        fn generate(
+            &self,
+            output_dir: PathBuf,
+        ) -> std::result::Result<PathBuf, doctor_utils::DoctorUtilsError> {
             assert_eq!(output_dir, self.expected_output_dir);
             self.generate_called.set(true);
             Ok(Self::result_path())
@@ -2515,17 +2520,20 @@ mod test {
             // Do nothing, we don't verify output in tests.
         }
 
-        fn generate(&self, _output_dir: PathBuf) -> Result<PathBuf> {
+        fn generate(
+            &self,
+            _output_dir: PathBuf,
+        ) -> std::result::Result<PathBuf, doctor_utils::DoctorUtilsError> {
             panic!("generate should not be called.")
         }
     }
 
     struct FakeStateManager {
-        kill_results: Vec<Result<bool>>,
+        kill_results: Vec<Result<bool, doctor_utils::DoctorUtilsError>>,
         daemons_running_results: Vec<bool>,
-        spawn_results: Vec<Result<()>>,
-        find_and_connect_results: Vec<Result<DaemonProxy>>,
-        get_pid_results: Vec<Result<Vec<usize>>>,
+        spawn_results: Vec<Result<(), doctor_utils::DoctorUtilsError>>,
+        find_and_connect_results: Vec<Result<DaemonProxy, doctor_utils::DoctorUtilsError>>,
+        get_pid_results: Vec<Result<Vec<usize>, doctor_utils::DoctorUtilsError>>,
     }
 
     struct FakeDaemonManager {
@@ -2535,10 +2543,10 @@ mod test {
     impl FakeDaemonManager {
         fn new(
             daemons_running_results: Vec<bool>,
-            kill_results: Vec<Result<bool>>,
-            spawn_results: Vec<Result<()>>,
-            find_and_connect_results: Vec<Result<DaemonProxy>>,
-            get_pid_results: Vec<Result<Vec<usize>>>,
+            kill_results: Vec<Result<bool, doctor_utils::DoctorUtilsError>>,
+            spawn_results: Vec<Result<(), doctor_utils::DoctorUtilsError>>,
+            find_and_connect_results: Vec<Result<DaemonProxy, doctor_utils::DoctorUtilsError>>,
+            get_pid_results: Vec<Result<Vec<usize>, doctor_utils::DoctorUtilsError>>,
         ) -> Self {
             return FakeDaemonManager {
                 state_manager: Arc::new(Mutex::new(FakeStateManager {
@@ -2578,13 +2586,13 @@ mod test {
 
     #[async_trait]
     impl DaemonManager for FakeDaemonManager {
-        async fn kill_all(&self) -> Result<bool> {
+        async fn kill_all(&self) -> Result<bool, doctor_utils::DoctorUtilsError> {
             let mut state = self.state_manager.lock().await;
             assert!(!state.kill_results.is_empty(), "too many calls to kill_all");
             state.kill_results.remove(0)
         }
 
-        async fn get_pid(&self) -> Result<Vec<usize>> {
+        async fn get_pid(&self) -> Result<Vec<usize>, doctor_utils::DoctorUtilsError> {
             let mut state = self.state_manager.lock().await;
             assert!(!state.get_pid_results.is_empty(), "too many calls to spawn");
             state.get_pid_results.remove(0)
@@ -2599,13 +2607,13 @@ mod test {
             state.daemons_running_results.remove(0)
         }
 
-        async fn spawn(&self) -> Result<()> {
+        async fn spawn(&self) -> Result<(), doctor_utils::DoctorUtilsError> {
             let mut state = self.state_manager.lock().await;
             assert!(!state.spawn_results.is_empty(), "too many calls to spawn");
             state.spawn_results.remove(0)
         }
 
-        async fn find_and_connect(&self) -> Result<DaemonProxy> {
+        async fn find_and_connect(&self) -> Result<DaemonProxy, doctor_utils::DoctorUtilsError> {
             let mut state = self.state_manager.lock().await;
             assert!(
                 !state.find_and_connect_results.is_empty(),
@@ -3327,7 +3335,9 @@ mod test {
             vec![true],
             vec![],
             vec![],
-            vec![Err(anyhow!("Some error message"))],
+            vec![Err(doctor_utils::DoctorUtilsError::Daemon(Box::new(
+                ffx_daemon::DaemonError::Circuit("Some error message".to_string()),
+            )))],
             vec![Ok(vec![1])],
         );
         let mut handler = FakeStepHandler::new();
@@ -3381,7 +3391,7 @@ mod test {
                    \n    [i] No Emulator instances\
                    \n[✗] Checking daemon\
                    \n    [✓] Daemon found: [1]\
-                   \n    [✗] Error connecting to daemon: Some error message. Run `ffx doctor --restart-daemon`\
+                   \n    [✗] Error connecting to daemon: Daemon core error: Circuit error: Some error message. Run `ffx doctor --restart-daemon`\
                    \n[!] FFX USB Driver\
                    \n    [!] ffx-usb-driver is running.\
                    \n        [✓] PID: 1\
@@ -4200,9 +4210,9 @@ mod test {
             vec![Ok(())],
             vec![Ok(setup_responsive_daemon_server())],
             vec![
-                Err(anyhow!("some error msg")),
-                Err(anyhow!("some error msg")),
-                Err(anyhow!("some error msg")),
+                Err(doctor_utils::DoctorUtilsError::ProcessStatusError),
+                Err(doctor_utils::DoctorUtilsError::ProcessStatusError),
+                Err(doctor_utils::DoctorUtilsError::ProcessStatusError),
             ],
         );
         let ledger_view = Box::new(FakeLedgerView::new());
