@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 use crate::Error;
-use analytics::{get_notice, opt_out_for_this_invocation};
+use analytics::{add_custom_event, get_notice, opt_out_for_this_invocation};
 use ffx_config::EnvironmentContext;
 use ffx_metrics::{add_ffx_launch_event, enhanced_analytics, init_metrics_svc};
 use fuchsia_async::TimeoutExt;
 use itertools::Itertools;
 use regex::Regex;
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::process::ExitStatus;
 use std::sync::LazyLock;
@@ -21,6 +22,7 @@ pub struct MetricsSession {
     enabled: bool,
     upload_timeout: Duration,
     session_start: Instant,
+    connection_mode: &'static str,
 }
 
 pub struct CommandStats {
@@ -65,8 +67,15 @@ impl MetricsSession {
         if !enabled {
             opt_out_for_this_invocation().await.map_err(anyhow::Error::from)?
         }
+        let connection_mode = if context.is_strict() {
+            "strict"
+        } else if context.get_direct_connection_mode() {
+            "direct"
+        } else {
+            "daemon"
+        };
         let session_start = Instant::now();
-        Ok(Self { enabled, session_start, upload_timeout })
+        Ok(Self { enabled, session_start, upload_timeout, connection_mode })
     }
 
     pub async fn print_notice(&self, out: &mut impl Write) -> Result<()> {
@@ -97,7 +106,16 @@ impl MetricsSession {
             let timing_in_millis = command_duration.as_millis();
             let redacted_args = redacted_args.iter().map(AsRef::as_ref).join(" ");
             let enhanced_args = enhanced_args.map(|val| val.iter().map(AsRef::as_ref).join(" "));
+            let connection_mode = self.connection_mode;
             let analytics_task = fuchsia_async::Task::local(async move {
+                let _ = add_custom_event(
+                    Some("ffx_connection_mode"),
+                    Some(connection_mode),
+                    None,
+                    BTreeMap::new(),
+                )
+                .await;
+
                 if let Err(e) = add_ffx_launch_event(
                     redacted_args,
                     enhanced_args,
