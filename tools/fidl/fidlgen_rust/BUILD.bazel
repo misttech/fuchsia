@@ -12,9 +12,6 @@ go_binary_host_tool(
     target_compatible_with = HOST_OS_CONSTRAINTS,
     visibility = [
         "//build/bazel/rules/fidl:__subpackages__",
-        # TODO(https://fxbug.dev/454452299): Remove this entry once Rust FIDL
-        # bindings are being exercised by the tests.
-        "//build/bazel/rules/tests:__subpackages__",
         "//visibility:public",  # For bazel2gn.
     ],
     deps = [

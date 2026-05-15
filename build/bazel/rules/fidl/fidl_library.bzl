@@ -18,6 +18,7 @@ load("//zircon/tools/zither:zither_library.bzl", "zither_library")
 load(":fidl_cc_library.bzl", "fidl_cpp_family")
 load(":fidl_compatibility_test.bzl", "fidl_compatibility_test")
 load(":fidl_ir.bzl", "fidl_ir")
+load(":fidl_rust_library.bzl", "fidl_rust_library")
 load(":fidl_summary.bzl", "fidl_summary")
 
 # LINT.IfChange(determine_fidlc_versioned_arg)
@@ -355,8 +356,15 @@ def _fidl_library_impl(
         )
 
     if enable_rust:
-        # TODO(https://fxbug.dev/454452299): Implement Rust bindings.
-        pass
+        fidl_rust_library(
+            name = name,
+            fidl_library_name = library_name,
+            fidl_ir_json = fidl_ir_target_name,
+            deps = deps,
+            contains_drivers = contains_drivers,
+            testonly = testonly,
+            visibility = visibility,
+        )
 
     if enable_rust_next:
         # TODO(https://fxbug.dev/454452299): Implement next-generation Rust bindings and conversions.

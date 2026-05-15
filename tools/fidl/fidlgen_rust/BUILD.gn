@@ -116,7 +116,6 @@ if (is_host) {
     visibility = [
       "*",
       "//build/bazel/rules/fidl/*",
-      "//build/bazel/rules/tests/*",
     ]
     deps = [
       "//tools/fidl/fidlgen_rust/codegen",
