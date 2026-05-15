@@ -865,7 +865,7 @@ void UsbCdcFunction::QueueTx(fnetdev::wire::NetworkDeviceImplQueueTxRequest *req
       *results_iter++ = {.id = buffer.id, .status = ZX_OK};
       continue;
     }
-    if (region.offset + region.length > data.size()) {
+    if (region.length > data.size() || region.offset > data.size() - region.length) {
       fdf::warn("Invalid VMO region for id {}", region.vmo);
       *results_iter++ = {.id = buffer.id, .status = ZX_ERR_INVALID_ARGS};
       continue;

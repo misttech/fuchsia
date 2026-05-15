@@ -719,7 +719,7 @@ void RndisFunction::QueueTx(QueueTxRequestView request, fdf::Arena& arena,
       continue;
     }
     std::span<uint8_t> data = stored_vmo->data();
-    if (region.offset + region.length > data.size()) {
+    if (region.length > data.size() || region.offset > data.size() - region.length) {
       *results_iter++ = {.id = buffer.id, .status = ZX_ERR_INVALID_ARGS};
       transmit_errors_++;
       continue;
