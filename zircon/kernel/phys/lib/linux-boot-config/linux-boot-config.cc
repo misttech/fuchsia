@@ -8,6 +8,7 @@
 
 #include <ctype.h>
 #include <lib/fit/defer.h>
+#include <stdio.h>
 
 #include <algorithm>
 
@@ -387,8 +388,8 @@ Key::CompareResult Key::Compare(std::string_view key) const {
   return CompareResult::kNoMatch;
 }
 
-fit::result<ParseError, LinuxBootConfig> LinuxBootConfig::Create(
-    std::span<const std::byte> initrd) {
+fit::result<ParseError, LinuxBootConfig> LinuxBootConfig::Create(std::span<const std::byte> initrd,
+                                                                 FILE* f) {
   if (initrd.size_bytes() < sizeof(Trailer)) {
     return fit::ok(LinuxBootConfig{});
   }
@@ -400,8 +401,11 @@ fit::result<ParseError, LinuxBootConfig> LinuxBootConfig::Create(
     return fit::ok(LinuxBootConfig{});
   }
 
+  // The spec requires a filesize alignment of 4, but we do not actually
+  // require this and we have encountered production violations of this
+  // alignment, so we pragmatically swallow any deviations.
   if (trailer.size % 4 != 0) {
-    return fit::error(ParseError("`bootconfig` file size is not properly aligned."));
+    fprintf(f, "Warning: `bootconfig` file size is not properly aligned.");
   }
 
   if (trailer.size + sizeof(Trailer) > initrd.size_bytes()) {

@@ -9,6 +9,7 @@
 
 #include <lib/fit/function.h>
 #include <lib/fit/result.h>
+#include <stdio.h>
 
 #include <array>
 #include <bit>
@@ -217,7 +218,6 @@ concept Visitor = requires(T visitor, const Key& key, const Value& value) {
 // adding from the previous checksum, and the `\0` padding bytes can be safely overwritten,
 // since they dont contribute to the checksum.
 constexpr uint32_t Checksum(std::span<const std::byte> bytes) {
-  ZX_ASSERT(bytes.size() % 4 == 0);
   auto as_nums = std::span(std::bit_cast<const uint8_t*>(bytes.data()), bytes.size_bytes());
   uint32_t accumulated = std::accumulate(as_nums.begin(), as_nums.end(), 0);
   return accumulated;
@@ -230,7 +230,8 @@ class LinuxBootConfig {
  public:
   // A bootconfig file is embedded in `initrd`, and can be modified by the bootloader.
   // The ramdisk consis on the first N bytes of he initrd, and the
-  static fit::result<ParseError, LinuxBootConfig> Create(std::span<const std::byte> initrd);
+  static fit::result<ParseError, LinuxBootConfig> Create(std::span<const std::byte> initrd,
+                                                         FILE* f = stdout);
 
   constexpr LinuxBootConfig() = default;
   explicit constexpr LinuxBootConfig(std::string_view contents) : contents_(contents) {}
