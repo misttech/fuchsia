@@ -156,13 +156,19 @@ pub enum IsolateError {
     Canonicalize(std::path::PathBuf, #[source] std::io::Error),
 
     #[error("Failed to start daemon: {0}")]
-    StartDaemon(#[from] ffx_daemon::DaemonError),
+    StartDaemon(#[source] Box<ffx_daemon::DaemonError>),
 
     #[error("Failed to execute ffx: {0}")]
     ExecuteFfx(#[from] ffx_executor::ExecutionError),
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+}
+
+impl From<ffx_daemon::DaemonError> for IsolateError {
+    fn from(err: ffx_daemon::DaemonError) -> Self {
+        Self::StartDaemon(Box::new(err))
+    }
 }
 
 impl FfxExecutor for Isolate {

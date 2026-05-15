@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::constants::DAEMON_LOG_BASENAME;
-use daemonize::daemonize;
+use daemonize::{DaemonizeError, daemonize};
 use errors::{FfxError, ffx_error};
 use ffx_config::EnvironmentContext;
 use fidl::endpoints::DiscoverableProtocolMarker;
@@ -44,7 +44,7 @@ pub enum DaemonError {
     RerunPrefix(#[from] ffx_config::environment::ContextError),
 
     #[error("Failed to start daemon: {0}")]
-    StartDaemon(#[source] anyhow::Error),
+    StartDaemon(#[from] DaemonizeError),
 
     #[error("Failed to kill daemon: {0}")]
     KillDaemon(#[source] nix::Error),
@@ -285,8 +285,8 @@ pub async fn spawn_daemon(context: &EnvironmentContext) -> Result<(), DaemonErro
         context.clone(),
         false,
     )
-    .await
-    .map_err(DaemonError::StartDaemon)
+    .await?;
+    Ok(())
 }
 
 // This function is only used by isolate dir implementations. This allows cleaning up the daemon process

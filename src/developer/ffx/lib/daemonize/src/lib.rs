@@ -2,12 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Result};
 use ffx_config::EnvironmentContext;
 use ffx_config::logging::LogDirHandling;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+
+#[derive(thiserror::Error, Debug)]
+pub enum DaemonizeError {
+    #[error("Config error: {0}")]
+    Config(#[from] ffx_config::environment::ContextError),
+
+    #[error("Failed to spawn daemon: {0}")]
+    Spawn(#[source] std::io::Error),
+
+    #[error("Failed to wait for daemon: {0}")]
+    Wait(#[source] std::io::Error),
+
+    #[error("Logging error: {0}")]
+    Logging(#[from] ffx_config::logging::LoggingError),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+}
 
 /// Daemonize the given command. This is used for long running tools like the daemon
 ///  and package serving. The args are the command line arguments, not including ffx, and any
@@ -19,7 +36,7 @@ pub async fn daemonize(
     log_basename: String,
     context: EnvironmentContext,
     keep_current_dir: bool,
-) -> Result<()> {
+) -> Result<(), DaemonizeError> {
     let mut cmd = context.rerun_prefix()?;
 
     let mut stdout = Stdio::null();
@@ -47,12 +64,10 @@ pub async fn daemonize(
     log::info!("Starting new background process {:?} {:?}", cmd.get_program(), cmd.get_args());
     // Run the command as a daemon process, keeping the current working directory
     // for the daemon process.
-    daemonize_cmd(&mut cmd, keep_current_dir)
-        .spawn()
-        .context("spawning daemon start")?
-        .wait()
-        .map(|_| ())
-        .context("waiting for daemon start")
+    let mut child =
+        daemonize_cmd(&mut cmd, keep_current_dir).spawn().map_err(DaemonizeError::Spawn)?;
+
+    child.wait().map(|_| ()).map_err(DaemonizeError::Wait)
 }
 
 /// daemonize adds a pre_exec to call daemon(3) causing the spawned
