@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
 use futures::Future;
 use futures::future::FusedFuture;
 use futures::stream::{FuturesUnordered, StreamExt, TryStream};
@@ -141,10 +140,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::anyhow;
     use fuchsia_async::Timer;
     use futures::future::ready;
     use futures::stream::{iter, once};
+    use std::io::ErrorKind;
     use std::time::Duration;
 
     async fn sleep_for_a_year() {
@@ -154,7 +153,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn single_element_stream_drops_when_terminated() {
-        let s = once(ready(Result::<_>::Ok(2u64)));
+        let s = once(ready(Result::<u64, std::io::Error>::Ok(2u64)));
         s.try_for_each_concurrent_while_connected(None, |_| async {
             sleep_for_a_year().await;
             panic!("this should never be fired")
@@ -165,9 +164,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn single_element_stream_errs_before_end() {
-        let s = once(ready(Result::<_>::Err(anyhow!("test err")))).chain(once(async {
+        let s = once(ready(Result::<u64, std::io::Error>::Err(std::io::Error::new(
+            ErrorKind::Other,
+            "test err",
+        ))))
+        .chain(once(async {
             sleep_for_a_year().await;
-            Result::<_>::Ok(1u64)
+            Result::<u64, std::io::Error>::Ok(1u64)
         }));
         let res = s
             .try_for_each_concurrent_while_connected(None, |_| {
@@ -183,13 +186,17 @@ mod tests {
 
     #[fuchsia::test]
     async fn stream_exits_with_internal_err() {
-        let s = iter(0u64..100).map(Result::<_>::Ok).chain(once(async {
+        let s = iter(0u64..100).map(Result::<u64, std::io::Error>::Ok).chain(once(async {
             sleep_for_a_year().await;
             Ok(1000u64)
         }));
         let res = s
             .try_for_each_concurrent_while_connected(Some(3), |i| async move {
-                if i == 63 { Err(anyhow!("test error")) } else { Ok(()) }
+                if i == 63 {
+                    Err(std::io::Error::new(ErrorKind::Other, "test error"))
+                } else {
+                    Ok(())
+                }
             })
             .await;
         assert!(res.is_err());

@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::prelude::*;
 use crate::{
     Context, DaemonProtocolProvider, FidlProtocol, NameToStreamHandlerMap, OvernetNodeError,
     ProtocolError, ProtocolRegister, StreamHandler,
 };
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use async_trait::async_trait;
 use ffx::DaemonError;
 use ffx_config::EnvironmentContext;
@@ -40,7 +41,7 @@ impl<F: FidlProtocol> InjectedStreamHandler<F> {
 
 #[async_trait(?Send)]
 impl<F: 'static + FidlProtocol> StreamHandler for InjectedStreamHandler<F> {
-    async fn start(&self, _cx: Context) -> Result<()> {
+    async fn start(&self, _cx: Context) -> Result<(), ProtocolError> {
         Ok(())
     }
 
@@ -48,9 +49,11 @@ impl<F: 'static + FidlProtocol> StreamHandler for InjectedStreamHandler<F> {
         &self,
         cx: Context,
         server: Arc<ServeInner>,
-    ) -> Result<LocalBoxFuture<'static, Result<()>>> {
+    ) -> Result<LocalBoxFuture<'static, Result<(), ProtocolError>>, ProtocolError> {
         if !self.started.get() {
-            self.inner.borrow_mut().start(&cx).await.map_err(|e| anyhow::anyhow!("{}", e))?;
+            self.inner.borrow_mut().start(&cx).await.map_err(|e| {
+                ProtocolError::StreamOpenError(StreamOpenError::Start(std::sync::Arc::new(e)))
+            })?;
             self.started.set(true);
         }
         let mut stream =
@@ -60,16 +63,22 @@ impl<F: 'static + FidlProtocol> StreamHandler for InjectedStreamHandler<F> {
         let inner = self.inner.clone();
         let fut = Box::pin(async move {
             while let Ok(Some(req)) = stream.try_next().await {
-                inner.borrow().handle(&cx, req).await.map_err(|e| anyhow::anyhow!("{}", e))?
+                inner.borrow().handle(&cx, req).await.map_err(|e| {
+                    ProtocolError::StreamOpenError(StreamOpenError::Serve(Arc::new(e)))
+                })?
             }
             Ok(())
         });
         Ok(fut)
     }
 
-    async fn shutdown(&self, cx: &Context) -> Result<()> {
+    async fn shutdown(&self, cx: &Context) -> Result<(), ProtocolError> {
         if !self.stopped.get() {
-            self.inner.borrow_mut().stop(cx).await.map_err(|e| anyhow::anyhow!("{}", e))?;
+            self.inner
+                .borrow_mut()
+                .stop(cx)
+                .await
+                .map_err(|e| ProtocolError::StreamOpenError(StreamOpenError::Stop(Arc::new(e))))?;
         } else {
             panic!("can only be stopped once");
         }
@@ -86,7 +95,7 @@ impl<P> StreamHandler for ClosureStreamHandler<P>
 where
     P: DiscoverableProtocolMarker,
 {
-    async fn start(&self, _cx: Context) -> Result<()> {
+    async fn start(&self, _cx: Context) -> Result<(), ProtocolError> {
         Ok(())
     }
 
@@ -94,13 +103,15 @@ where
         &self,
         cx: Context,
         server: Arc<ServeInner>,
-    ) -> Result<LocalBoxFuture<'static, Result<()>>> {
+    ) -> Result<LocalBoxFuture<'static, Result<(), ProtocolError>>, ProtocolError> {
         let mut stream = <P as ProtocolMarker>::RequestStream::from_inner(server, false);
         let weak_func = Rc::downgrade(&self.func);
         let fut = Box::pin(async move {
             while let Ok(Some(req)) = stream.try_next().await {
                 if let Some(func) = weak_func.upgrade() {
-                    (func)(&cx, req)?
+                    (func)(&cx, req).map_err(|e| {
+                        ProtocolError::StreamOpenError(StreamOpenError::Closure(e.to_string()))
+                    })?
                 }
             }
             Ok(())
@@ -108,7 +119,7 @@ where
         Ok(fut)
     }
 
-    async fn shutdown(&self, _: &Context) -> Result<()> {
+    async fn shutdown(&self, _: &Context) -> Result<(), ProtocolError> {
         Ok(())
     }
 }
@@ -142,10 +153,7 @@ impl FakeDaemon {
 
 #[async_trait(?Send)]
 impl DaemonProtocolProvider for FakeDaemon {
-    async fn open_protocol(
-        &self,
-        protocol_name: String,
-    ) -> std::result::Result<fidl::Channel, ProtocolError> {
+    async fn open_protocol(&self, protocol_name: String) -> Result<fidl::Channel, ProtocolError> {
         let (server, client) = fidl::Channel::create();
         self.register
             .as_ref()
@@ -159,14 +167,14 @@ impl DaemonProtocolProvider for FakeDaemon {
         Ok(client)
     }
 
-    fn overnet_node(&self) -> std::result::Result<Arc<overnet_core::Router>, OvernetNodeError> {
+    fn overnet_node(&self) -> Result<Arc<overnet_core::Router>, OvernetNodeError> {
         Ok(Arc::clone(&self.overnet_node))
     }
 
     async fn open_remote_control(
         &self,
         target_identifier: Option<String>,
-    ) -> Result<rcs::RemoteControlProxy> {
+    ) -> crate::context::ContextResult<rcs::RemoteControlProxy> {
         if let Some(rcs_handler) = self.rcs_handler.clone() {
             let (client, server) = fidl::endpoints::create_endpoints::<rcs::RemoteControlMarker>();
             fuchsia_async::Task::local(async move {
@@ -179,7 +187,7 @@ impl DaemonProtocolProvider for FakeDaemon {
             .detach();
             Ok(client.into_proxy())
         } else {
-            Err(anyhow!("FakeDaemon was not provided with an RCS implementation"))
+            panic!("FakeDaemon was not provided with an RCS implementation")
         }
     }
 
@@ -188,7 +196,7 @@ impl DaemonProtocolProvider for FakeDaemon {
         target_identifier: Option<String>,
         moniker: &str,
         protocol_name: &str,
-    ) -> Result<fidl::Channel> {
+    ) -> crate::context::ContextResult<fidl::Channel> {
         let (_, res) =
             self.open_target_proxy_with_info(target_identifier, moniker, protocol_name).await?;
         Ok(res)
@@ -199,15 +207,19 @@ impl DaemonProtocolProvider for FakeDaemon {
         target_identifier: Option<String>,
         _moniker: &str,
         protocol_name: &str,
-    ) -> Result<(ffx::TargetInfo, fidl::Channel)> {
+    ) -> crate::context::ContextResult<(ffx::TargetInfo, fidl::Channel)> {
         // This could cause some issues if we're building tests that expect targets that
         // are or aren't supposed to be connected. That would require using the
         // `get_connected` function here. For the time being there seems to be the
         // assumption that any target being added is going to be looked up later for
         // a test.
         Ok((
-            self.get_target_info(target_identifier).await.map_err(|err| anyhow!("{:?}", err))?,
-            self.open_protocol(protocol_name.to_string()).await?,
+            self.get_target_info(target_identifier).await.map_err(ContextError::Daemon)?,
+            self.open_protocol(protocol_name.to_string()).await.map_err(|e| {
+                ContextError::TargetRcsActivationError(
+                    crate::TargetRcsActivationError::ProtocolOpen(e),
+                )
+            })?,
         ))
     }
 

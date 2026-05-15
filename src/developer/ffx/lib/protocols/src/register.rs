@@ -8,6 +8,7 @@ use fuchsia_async::Task;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::fmt::Debug;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
@@ -74,10 +75,31 @@ impl ProtocolHandle {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum StreamOpenError {
+    #[error("Failed to start protocol: {0:?}")]
+    Start(Arc<dyn Debug + Send + Sync>),
+
+    #[error("Failed while serving protocol stream: {0:?}")]
+    Serve(Arc<dyn Debug + Send + Sync>),
+
+    #[error("Failed to stop protocol: {0:?}")]
+    Stop(Arc<dyn Debug + Send + Sync>),
+
+    #[error("Protocol singleton has been shutdown")]
+    Shutdown,
+
+    #[error("Protocol singleton has been stopped")]
+    Stopped,
+
+    #[error("Closure handler failed: {0}")]
+    Closure(String),
+}
+
 #[derive(Error, Debug)]
 pub enum ProtocolError {
-    #[error("protocol error: {0:?}")]
-    StreamOpenError(#[from] anyhow::Error),
+    #[error("protocol stream open error: {0}")]
+    StreamOpenError(#[from] StreamOpenError),
     #[error("bad protocol register state: {0:?}")]
     BadRegisterState(String),
     #[error("could not find protocol under the name: {0}")]
@@ -115,7 +137,7 @@ impl ProtocolRegister {
             .inner
             .protocol_map
             .get(&name)
-            .ok_or(ProtocolError::NoProtocolFound(name.clone()))?;
+            .ok_or_else(|| ProtocolError::NoProtocolFound(name.clone()))?;
         svc.start(cx).await.map_err(Into::into)
     }
 
@@ -131,7 +153,7 @@ impl ProtocolRegister {
             .inner
             .protocol_map
             .get(&name)
-            .ok_or(ProtocolError::NoProtocolFound(name.clone()))?;
+            .ok_or_else(|| ProtocolError::NoProtocolFound(name.clone()))?;
         let weak_inner = Rc::downgrade(&self.inner);
         let server = Arc::new(ServeInner::new(server_channel));
         let weak_server = Arc::downgrade(&server);
@@ -246,7 +268,7 @@ mod test {
             _target_identifier: Option<String>,
             _moniker: &str,
             _capability_name: &str,
-        ) -> Result<fidl::Channel> {
+        ) -> crate::context::ContextResult<fidl::Channel> {
             unimplemented!()
         }
 
@@ -255,7 +277,7 @@ mod test {
             _target_identifier: Option<String>,
             _moniker: &str,
             _capability_name: &str,
-        ) -> Result<(ffx::TargetInfo, fidl::Channel)> {
+        ) -> crate::context::ContextResult<(ffx::TargetInfo, fidl::Channel)> {
             unimplemented!()
         }
 

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::ProtocolError;
-use anyhow::Result;
+
 use async_trait::async_trait;
 use ffx::DaemonError;
 use ffx_config::EnvironmentContext;
@@ -24,29 +24,81 @@ pub enum OvernetNodeError {
     DaemonNotStarted,
 }
 
+#[derive(Debug, Error)]
+pub enum TargetRcsActivationError {
+    #[error("Getting default target failed: {0:?}")]
+    GetTarget(ffx::DaemonError),
+
+    #[error("Attempting to open RCS on a fastboot target: {0}")]
+    Fastboot(String),
+
+    #[error("Attempting to connect to RCS on a zedboot target: {0}")]
+    Zedboot(String),
+
+    #[error("Attempting to connect to RCS when daemon is not started")]
+    DaemonNotStarted,
+
+    #[error("Event stream closed")]
+    StreamClosed,
+
+    #[error("Protocol open error: {0}")]
+    ProtocolOpen(#[from] crate::ProtocolError),
+}
+
+#[derive(Debug, Error)]
+pub enum CapabilityConnectError {
+    #[error("Transport error: {0}")]
+    Transport(#[from] fidl::Error),
+
+    #[error("Capability connection failed: {0:?}")]
+    Capability(fidl_fuchsia_developer_remotecontrol::ConnectCapabilityError),
+}
+
+#[derive(Debug, Error)]
+pub enum ContextError {
+    #[error("FIDL system error: {0}")]
+    Fidl(#[from] fidl::Error),
+
+    #[error("Daemon component error: {0:?}")]
+    Daemon(ffx::DaemonError),
+
+    #[error("RCS disconnected after activation event")]
+    RcsDisconnected,
+
+    #[error("Failed to connect to capability {capability} in moniker {moniker}")]
+    TargetCapabilityConnectFailed {
+        moniker: String,
+        capability: String,
+        #[source]
+        detail: CapabilityConnectError,
+    },
+
+    #[error("Target RCS activation failed: {0}")]
+    TargetRcsActivationError(#[from] TargetRcsActivationError),
+}
+
+pub type ContextResult<T> = Result<T, ContextError>;
+
 #[async_trait(?Send)]
 pub trait DaemonProtocolProvider {
     /// Opens a proxy for the given protocol. Returns a channel to the proxy.
-    async fn open_protocol(
-        &self,
-        protocol_name: String,
-    ) -> std::result::Result<fidl::Channel, ProtocolError>;
+    async fn open_protocol(&self, protocol_name: String) -> Result<fidl::Channel, ProtocolError>;
 
     async fn open_target_proxy(
         &self,
         target_identifier: Option<String>,
         moniker: &str,
         capability_name: &str,
-    ) -> Result<fidl::Channel>;
+    ) -> ContextResult<fidl::Channel>;
 
-    fn overnet_node(&self) -> std::result::Result<Arc<overnet_core::Router>, OvernetNodeError> {
+    fn overnet_node(&self) -> Result<Arc<overnet_core::Router>, OvernetNodeError> {
         unimplemented!()
     }
 
     async fn open_remote_control(
         &self,
         _target_identifier: Option<String>,
-    ) -> Result<RemoteControlProxy> {
+    ) -> ContextResult<RemoteControlProxy> {
         unimplemented!()
     }
 
@@ -56,7 +108,7 @@ pub trait DaemonProtocolProvider {
         target_identifier: Option<String>,
         moniker: &str,
         capability_name: &str,
-    ) -> Result<(ffx::TargetInfo, fidl::Channel)>;
+    ) -> ContextResult<(ffx::TargetInfo, fidl::Channel)>;
 
     async fn get_target_info(
         &self,
@@ -66,7 +118,7 @@ pub trait DaemonProtocolProvider {
     async fn get_target_event_queue(
         &self,
         _target_identifier: Option<String>,
-    ) -> Result<(Rc<Target>, Queue<TargetEvent>)> {
+    ) -> ContextResult<(Rc<Target>, Queue<TargetEvent>)> {
         unimplemented!()
     }
 
@@ -104,7 +156,7 @@ impl Context {
         self.environment.clone()
     }
 
-    pub fn overnet_node(&self) -> std::result::Result<Arc<overnet_core::Router>, OvernetNodeError> {
+    pub fn overnet_node(&self) -> Result<Arc<overnet_core::Router>, OvernetNodeError> {
         self.inner.overnet_node()
     }
 
@@ -112,7 +164,7 @@ impl Context {
         &self,
         target_identifier: Option<String>,
         moniker: &'static str,
-    ) -> Result<P::Proxy>
+    ) -> ContextResult<P::Proxy>
     where
         P: fidl::endpoints::DiscoverableProtocolMarker,
     {
@@ -124,7 +176,7 @@ impl Context {
         &self,
         target_identifier: Option<String>,
         moniker: &'static str,
-    ) -> Result<(ffx::TargetInfo, P::Proxy)>
+    ) -> ContextResult<(ffx::TargetInfo, P::Proxy)>
     where
         P: fidl::endpoints::DiscoverableProtocolMarker,
     {
@@ -152,7 +204,7 @@ impl Context {
     pub async fn get_target_event_queue(
         &self,
         target_identifier: Option<String>,
-    ) -> Result<(Rc<Target>, Queue<TargetEvent>)> {
+    ) -> ContextResult<(Rc<Target>, Queue<TargetEvent>)> {
         self.inner.get_target_event_queue(target_identifier).await
     }
 
@@ -163,7 +215,7 @@ impl Context {
     pub async fn open_remote_control(
         &self,
         target_identifier: Option<String>,
-    ) -> Result<RemoteControlProxy> {
+    ) -> ContextResult<RemoteControlProxy> {
         self.inner.open_remote_control(target_identifier).await
     }
 
@@ -195,7 +247,7 @@ impl Context {
     /// }
     ///
     /// ```
-    pub async fn open_protocol<S>(&self) -> std::result::Result<S::Proxy, ProtocolError>
+    pub async fn open_protocol<S>(&self) -> Result<S::Proxy, ProtocolError>
     where
         S: fidl::endpoints::DiscoverableProtocolMarker,
     {

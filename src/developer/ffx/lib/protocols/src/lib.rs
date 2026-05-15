@@ -13,7 +13,10 @@ mod register;
 
 pub mod prelude;
 pub mod testing;
-pub use context::{Context, DaemonProtocolProvider, OvernetNodeError};
+pub use context::{
+    CapabilityConnectError, Context, DaemonProtocolProvider, OvernetNodeError,
+    TargetRcsActivationError,
+};
 pub use core_protocol_macros::ffx_protocol;
 pub use protocols::{FidlInstancedStreamHandler, FidlProtocol, FidlStreamHandler, StreamHandler};
-pub use register::{NameToStreamHandlerMap, ProtocolError, ProtocolRegister};
+pub use register::{NameToStreamHandlerMap, ProtocolError, ProtocolRegister, StreamOpenError};

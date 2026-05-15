@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use addr::TargetIpAddr;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, anyhow};
 use ascendd::Ascendd;
 use async_trait::async_trait;
 use errors::ffx_error;
@@ -32,6 +32,7 @@ use futures::executor::block_on;
 use futures::prelude::*;
 use notify::{RecursiveMode, Watcher};
 use overnet_core::ListablePeer;
+use protocols::prelude::*;
 use protocols::{DaemonProtocolProvider, ProtocolError, ProtocolRegister};
 use rcs::RcsConnection;
 use signal_hook::consts::signal::{SIGHUP, SIGINT, SIGTERM};
@@ -178,9 +179,7 @@ impl DaemonProtocolProvider for Daemon {
         Ok(client)
     }
 
-    fn overnet_node(
-        &self,
-    ) -> std::result::Result<Arc<overnet_core::Router>, protocols::OvernetNodeError> {
+    fn overnet_node(&self) -> Result<Arc<overnet_core::Router>, protocols::OvernetNodeError> {
         self.overnet_node.clone().ok_or(protocols::OvernetNodeError::DaemonNotStarted)
     }
 
@@ -189,7 +188,7 @@ impl DaemonProtocolProvider for Daemon {
         target_identifier: Option<String>,
         moniker: &str,
         capability_name: &str,
-    ) -> Result<fidl::Channel> {
+    ) -> ContextResult<fidl::Channel> {
         let (_, channel) =
             self.open_target_proxy_with_info(target_identifier, moniker, capability_name).await?;
         Ok(channel)
@@ -198,12 +197,8 @@ impl DaemonProtocolProvider for Daemon {
     async fn get_target_event_queue(
         &self,
         target_identifier: Option<String>,
-    ) -> Result<(Rc<Target>, events::Queue<TargetEvent>)> {
-        let target = self
-            .get_target(target_identifier)
-            .await
-            .map_err(|e| anyhow!("{:#?}", e))
-            .context("getting default target")?;
+    ) -> ContextResult<(Rc<Target>, events::Queue<TargetEvent>)> {
+        let target = self.get_target(target_identifier).await.map_err(ContextError::Daemon)?;
         let events = target.events.clone();
         Ok((target, events))
     }
@@ -213,19 +208,24 @@ impl DaemonProtocolProvider for Daemon {
         target_identifier: Option<String>,
         moniker: &str,
         capability_name: &str,
-    ) -> Result<(ffx::TargetInfo, fidl::Channel)> {
+    ) -> ContextResult<(ffx::TargetInfo, fidl::Channel)> {
         let target = self.get_rcs_ready_target(target_identifier).await?;
-        let rcs = target
-            .rcs()
-            .ok_or_else(|| anyhow!("rcs disconnected after event fired"))
-            .context("getting rcs instance")?;
+        let rcs = target.rcs().ok_or_else(|| ContextError::RcsDisconnected)?;
         // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
         let (client, server) = fidl::Channel::create();
         rcs.proxy
             .connect_capability(moniker, fsys::OpenDirType::ExposedDir, capability_name, server)
             .await
-            .context("transport error")?
-            .map_err(|e| anyhow!("Failed to connect to {capability_name} in {moniker}: {e:?}"))?;
+            .map_err(|e| ContextError::TargetCapabilityConnectFailed {
+                moniker: moniker.to_string(),
+                capability: capability_name.to_string(),
+                detail: CapabilityConnectError::Transport(e),
+            })?
+            .map_err(|e| ContextError::TargetCapabilityConnectFailed {
+                moniker: moniker.to_string(),
+                capability: capability_name.to_string(),
+                detail: CapabilityConnectError::Capability(e),
+            })?;
         log::debug!("Returning target and proxy for {}@{}", target.nodename_str(), target.id());
         return Ok((target.as_ref().into(), client));
     }
@@ -250,13 +250,10 @@ impl DaemonProtocolProvider for Daemon {
     async fn open_remote_control(
         &self,
         target_identifier: Option<String>,
-    ) -> Result<RemoteControlProxy> {
+    ) -> ContextResult<RemoteControlProxy> {
         let target = self.get_rcs_ready_target(target_identifier).await?;
         // Ensure auto-connect has at least started.
-        let mut rcs = target
-            .rcs()
-            .ok_or_else(|| anyhow!("rcs disconnected after event fired"))
-            .context("getting rcs instance")?;
+        let mut rcs = target.rcs().ok_or_else(|| ContextError::RcsDisconnected)?;
         let (proxy, remote) = fidl::endpoints::create_proxy::<RemoteControlMarker>();
         rcs.copy_to_channel(remote.into_channel());
         Ok(proxy)
@@ -273,7 +270,7 @@ impl DaemonProtocolProvider for Daemon {
 
 #[async_trait(?Send)]
 impl EventHandler<DaemonEvent> for DaemonEventHandler {
-    async fn on_event(&self, event: DaemonEvent) -> Result<events::Status> {
+    async fn on_event(&self, event: DaemonEvent) -> anyhow::Result<events::Status> {
         log::debug!("! DaemonEvent::{:?}", event);
 
         match event {
@@ -355,7 +352,7 @@ impl Daemon {
         }
     }
 
-    pub async fn start(&mut self, node: Arc<overnet_core::Router>) -> Result<()> {
+    pub async fn start(&mut self, node: Arc<overnet_core::Router>) -> anyhow::Result<()> {
         log::debug!("starting daemon");
         self.overnet_node = Some(Arc::clone(&node));
         let context = self.context.clone();
@@ -377,7 +374,7 @@ impl Daemon {
         self.serve(&context, node, quit_tx, quit_rx).await.context("Serving clients")
     }
 
-    async fn log_startup_info(&self, context: &EnvironmentContext) -> Result<()> {
+    async fn log_startup_info(&self, context: &EnvironmentContext) -> anyhow::Result<()> {
         let pid = std::process::id();
         let buildid = context.daemon_version_string()?;
         let version_info = build_info();
@@ -395,7 +392,7 @@ impl Daemon {
         Ok(())
     }
 
-    async fn start_protocols(&mut self) -> Result<()> {
+    async fn start_protocols(&mut self) -> anyhow::Result<()> {
         let cx = protocols::Context::new(self.clone(), self.context.clone());
 
         self.protocol_register
@@ -405,30 +402,31 @@ impl Daemon {
     }
 
     /// Awaits a target that has RCS active.
-    async fn get_rcs_ready_target(&self, target_query: Option<String>) -> Result<Rc<Target>> {
-        let target = self
-            .get_target(target_query)
-            .await
-            .map_err(|e| anyhow!("{:#?}", e))
-            .context("getting default target")?;
+    async fn get_rcs_ready_target(
+        &self,
+        target_query: Option<String>,
+    ) -> std::result::Result<Rc<Target>, TargetRcsActivationError> {
+        let target =
+            self.get_target(target_query).await.map_err(TargetRcsActivationError::GetTarget)?;
         if matches!(target.get_connection_state(), TargetConnectionState::Fastboot(_)) {
             let nodename =
                 target.nodename().unwrap_or_else(|| ffx_target::UNKNOWN_TARGET_NAME.to_string());
-            bail!("Attempting to open RCS on a fastboot target: {}", nodename);
+            return Err(TargetRcsActivationError::Fastboot(nodename));
         }
         if matches!(target.get_connection_state(), TargetConnectionState::Zedboot(_)) {
             let nodename =
                 target.nodename().unwrap_or_else(|| ffx_target::UNKNOWN_TARGET_NAME.to_string());
-            bail!("Attempting to connect to RCS on a zedboot target: {}", nodename);
+            return Err(TargetRcsActivationError::Zedboot(nodename));
         }
         let Some(overnet_node) = self.overnet_node.as_ref() else {
-            bail!("Attempting to connect to RCS when daemon is not started");
+            return Err(TargetRcsActivationError::DaemonNotStarted);
         };
         // Ensure auto-connect has at least started.
         target.run_host_pipe(overnet_node);
         let mut stream = target.events.stream().await;
         loop {
-            let e = stream.next_checked().await?;
+            let e =
+                stream.next_checked().await.map_err(|_| TargetRcsActivationError::StreamClosed)?;
             if e == TargetEvent::RcsActivated {
                 break;
             }
@@ -438,7 +436,7 @@ impl Daemon {
     }
 
     /// Start all discovery tasks
-    async fn start_discovery(&mut self, node: Arc<overnet_core::Router>) -> Result<()> {
+    async fn start_discovery(&mut self, node: Arc<overnet_core::Router>) -> anyhow::Result<()> {
         let daemon_event_handler =
             DaemonEventHandler::new(Arc::clone(&node), self.target_collection.clone());
         self.event_queue.add_handler(daemon_event_handler).await;
@@ -480,7 +478,7 @@ impl Daemon {
         self.ascendd.replace(Some(ascendd));
     }
 
-    fn start_socket_watch(&self, quit_tx: mpsc::Sender<()>) -> Result<RecommendedWatcher> {
+    fn start_socket_watch(&self, quit_tx: mpsc::Sender<()>) -> anyhow::Result<RecommendedWatcher> {
         let socket_path = self.socket_path.clone();
         let socket_dir = self.socket_path.parent().context("Getting parent directory of socket")?;
         let event_handler = move |res| {
@@ -609,7 +607,7 @@ impl Daemon {
         quit_tx: &mpsc::Sender<()>,
         stream: DaemonRequestStream,
         info: &VersionInfo,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         stream
             .map_err(|e| anyhow!("reading FIDL stream: {:#}", e))
             .try_for_each_concurrent_while_connected(None, |r| async {
@@ -694,7 +692,7 @@ impl Daemon {
         quit_tx: &mpsc::Sender<()>,
         req: DaemonRequest,
         info: &VersionInfo,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         log::debug!("daemon received request: {:?}", req);
 
         match req {
@@ -758,7 +756,7 @@ impl Daemon {
         node: Arc<overnet_core::Router>,
         quit_tx: mpsc::Sender<()>,
         mut quit_rx: mpsc::Receiver<()>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         let (sender, mut stream) = futures::channel::mpsc::unbounded();
 
         let mut info = build_info();
@@ -890,7 +888,7 @@ mod test {
     use std::str::FromStr;
     use std::time::Instant;
 
-    async fn spawn_test_daemon(env: &TestEnv) -> (DaemonProxy, Daemon, Task<Result<()>>) {
+    async fn spawn_test_daemon(env: &TestEnv) -> (DaemonProxy, Daemon, Task<anyhow::Result<()>>) {
         let tempdir = tempfile::tempdir().expect("Creating tempdir");
         let socket_path = tempdir.path().join("ascendd.sock");
         let d = Daemon::new(env.context.clone(), socket_path);
@@ -1051,7 +1049,7 @@ mod test {
     }
     #[async_trait(?Send)]
     impl EventHandler<DaemonEvent> for DaemonEventRecorder {
-        async fn on_event(&self, event: DaemonEvent) -> Result<events::Status> {
+        async fn on_event(&self, event: DaemonEvent) -> anyhow::Result<events::Status> {
             self.event_log.borrow_mut().push(event);
             Ok(events::Status::Waiting)
         }

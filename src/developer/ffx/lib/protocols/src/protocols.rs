@@ -1,8 +1,9 @@
 // Copyright 2021 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::Context;
-use anyhow::{Result, anyhow};
+use crate::register::ProtocolError;
+use crate::{Context, StreamOpenError};
+use anyhow::anyhow;
 use async_lock::RwLock;
 use async_trait::async_trait;
 use async_utils::async_once::Once;
@@ -76,7 +77,7 @@ pub trait FidlProtocol: Unpin + Default {
         &'a self,
         cx: &'a Context,
         mut stream: <Self::Protocol as ProtocolMarker>::RequestStream,
-    ) -> std::result::Result<(), Self::Error> {
+    ) -> Result<(), Self::Error> {
         while let Ok(Some(req)) = stream.try_next().await {
             self.handle(cx, req).await?
         }
@@ -86,15 +87,11 @@ pub trait FidlProtocol: Unpin + Default {
     /// Handles each individual request coming from a FIDL request stream. If
     /// interacting with another protocol, or some specific Daemon internal is
     /// necessary, use the [`Context`] object.
-    async fn handle(
-        &self,
-        cx: &Context,
-        req: Request<Self::Protocol>,
-    ) -> std::result::Result<(), Self::Error>;
+    async fn handle(&self, cx: &Context, req: Request<Self::Protocol>) -> Result<(), Self::Error>;
 
     /// Invoked before any streams are opened for the protocol. This will only
     /// ever be invoked once through the lifetime of this protocol.
-    async fn start(&mut self, _cx: &Context) -> std::result::Result<(), Self::Error> {
+    async fn start(&mut self, _cx: &Context) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -102,7 +99,7 @@ pub trait FidlProtocol: Unpin + Default {
     /// invoked after every active request stream has been stopped and every
     /// running [`FidlProtocol::handle`] function has exited. This function
     /// will only ever be invoked once.
-    async fn stop(&mut self, _cx: &Context) -> std::result::Result<(), Self::Error> {
+    async fn stop(&mut self, _cx: &Context) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -136,7 +133,7 @@ pub trait StreamHandler {
     ///
     /// For a non-instanced protocol this is typically invoked before
     /// [`StreamHandler::open`] begins handling the first stream.
-    async fn start(&self, cx: Context) -> Result<()>;
+    async fn start(&self, cx: Context) -> Result<(), ProtocolError>;
 
     /// Called when opening a new stream. This stream may be shutdown outside
     /// of the control of this object by the protocol register via the
@@ -145,11 +142,11 @@ pub trait StreamHandler {
         &self,
         cx: Context,
         server: Arc<ServeInner>,
-    ) -> Result<LocalBoxFuture<'static, Result<()>>>;
+    ) -> Result<LocalBoxFuture<'static, Result<(), ProtocolError>>, ProtocolError>;
 
     /// Called after every other stream handled via the `open` function has
     /// been shut down.
-    async fn shutdown(&self, cx: &Context) -> Result<()>;
+    async fn shutdown(&self, cx: &Context) -> Result<(), ProtocolError>;
 }
 
 #[async_trait(?Send)]
@@ -159,7 +156,7 @@ where
 {
     /// This is a no-op, as the protocol cannot be interacted with by the caller
     /// afterwards.
-    async fn start(&self, _cx: Context) -> Result<()> {
+    async fn start(&self, _cx: Context) -> Result<(), ProtocolError> {
         Ok(())
     }
 
@@ -169,27 +166,32 @@ where
         &self,
         cx: Context,
         server: Arc<ServeInner>,
-    ) -> Result<LocalBoxFuture<'static, Result<()>>> {
+    ) -> Result<LocalBoxFuture<'static, Result<(), ProtocolError>>, ProtocolError> {
         let stream = <F::Protocol as ProtocolMarker>::RequestStream::from_inner(server, false);
         let mut svc = F::default();
-        svc.start(&cx).await.map_err(|e| anyhow::anyhow!("{}", e))?;
+        svc.start(&cx)
+            .await
+            .map_err(|e| ProtocolError::StreamOpenError(StreamOpenError::Start(Arc::new(e))))?;
         let fut = Box::pin(async move {
             let serve_res = svc.serve(&cx, stream).await.map_err(|e| {
                 log::warn!("protocol failure while handling stream. Stopping protocol: {:?}", e);
-                anyhow::anyhow!("{}", e)
+                ProtocolError::StreamOpenError(StreamOpenError::Serve(Arc::new(e)))
             });
-            svc.stop(&cx).await.map_err(|e| anyhow::anyhow!("{}", e))?;
-            serve_res
+            let stop_res = svc.stop(&cx).await.map_err(|e| {
+                log::warn!("protocol failure while stopping stream: {:?}", e);
+                ProtocolError::StreamOpenError(StreamOpenError::Stop(Arc::new(e)))
+            });
+            serve_res.and(stop_res)
         });
         Ok(fut)
     }
 
-    async fn shutdown(&self, _cx: &Context) -> Result<()> {
+    async fn shutdown(&self, _cx: &Context) -> Result<(), ProtocolError> {
         Ok(())
     }
 }
 
-type StartFut = Shared<LocalBoxFuture<'static, Rc<Result<()>>>>;
+type StartFut = Shared<LocalBoxFuture<'static, Rc<anyhow::Result<()>>>>;
 
 /// The recommended stream handler for protocols. This type will only ever open
 /// one instance of the protocol across all streams.
@@ -203,7 +205,10 @@ impl<F: FidlProtocol> FidlStreamHandler<F>
 where
     F: 'static,
 {
-    fn make_start_fut(&self, cx: Context) -> Shared<LocalBoxFuture<'static, Rc<Result<()>>>> {
+    fn make_start_fut(
+        &self,
+        cx: Context,
+    ) -> Shared<LocalBoxFuture<'static, Rc<anyhow::Result<()>>>> {
         let inner = Rc::downgrade(&self.protocol);
         async move {
             // In order to have a clonable result here, this needs
@@ -227,7 +232,7 @@ where
         .shared()
     }
 
-    async fn start_protocol(&self, cx: &Context) -> Result<()> {
+    async fn start_protocol(&self, cx: &Context) -> anyhow::Result<()> {
         let cx = cx.clone();
         // async_once interacts with what we're doing here in a way that causes us to need to yield
         // a future from a future.
@@ -256,16 +261,20 @@ where
 {
     /// Starts the protocol at most once. Invoking this more than once will
     /// return the same result each time (including errors).
-    async fn start(&self, cx: Context) -> Result<()> {
-        self.start_protocol(&cx).await
+    async fn start(&self, cx: Context) -> Result<(), ProtocolError> {
+        self.start_protocol(&cx)
+            .await
+            .map_err(|e| ProtocolError::StreamOpenError(StreamOpenError::Start(Arc::new(e))))
     }
 
     async fn open(
         &self,
         cx: Context,
         server: Arc<ServeInner>,
-    ) -> Result<LocalBoxFuture<'static, Result<()>>> {
-        self.start_protocol(&cx).await?;
+    ) -> Result<LocalBoxFuture<'static, Result<(), ProtocolError>>, ProtocolError> {
+        self.start_protocol(&cx)
+            .await
+            .map_err(|e| ProtocolError::StreamOpenError(StreamOpenError::Start(Arc::new(e))))?;
         let stream = <F::Protocol as ProtocolMarker>::RequestStream::from_inner(server, false);
         let protocol = Rc::downgrade(&self.protocol);
         let fut = async move {
@@ -274,10 +283,12 @@ where
                     .read()
                     .await
                     .as_ref()
-                    .ok_or_else(|| anyhow!("protocol has been shutdown"))?
+                    .ok_or(ProtocolError::StreamOpenError(StreamOpenError::Shutdown))?
                     .serve(&cx, stream)
                     .await
-                    .map_err(|e| anyhow::anyhow!("{}", e))
+                    .map_err(|e| {
+                        ProtocolError::StreamOpenError(StreamOpenError::Serve(Arc::new(e)))
+                    })
             } else {
                 log::debug!("dropped singleton protocol Rc<_>");
                 Ok(())
@@ -286,15 +297,15 @@ where
         Ok(Box::pin(fut))
     }
 
-    async fn shutdown(&self, cx: &Context) -> Result<()> {
+    async fn shutdown(&self, cx: &Context) -> Result<(), ProtocolError> {
         self.protocol
             .write()
             .await
             .take()
-            .ok_or_else(|| anyhow!("protocol has been stopped"))?
+            .ok_or(ProtocolError::StreamOpenError(StreamOpenError::Stopped))?
             .stop(cx)
             .await
-            .map_err(|e| anyhow::anyhow!("{}", e))
+            .map_err(|e| ProtocolError::StreamOpenError(StreamOpenError::Stop(Arc::new(e))))
     }
 }
 
@@ -307,7 +318,7 @@ mod tests {
     use fidl_fuchsia_ffx_test as ffx_test;
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    fn noop_protocol_closure() -> impl Fn(&Context, ffx_test::NoopRequest) -> Result<()> {
+    fn noop_protocol_closure() -> impl Fn(&Context, ffx_test::NoopRequest) -> anyhow::Result<()> {
         |_, req| match req {
             ffx_test::NoopRequest::DoNoop { responder } => responder.send().map_err(Into::into),
         }
@@ -335,7 +346,7 @@ mod tests {
         type StreamHandler = FidlInstancedStreamHandler<Self>;
         type Error = anyhow::Error;
 
-        async fn handle(&self, cx: &Context, req: ffx_test::CounterRequest) -> Result<()> {
+        async fn handle(&self, cx: &Context, req: ffx_test::CounterRequest) -> anyhow::Result<()> {
             // This is just here for some additional stress.
             let noop_proxy = cx
                 .open_target_proxy::<ffx_test::NoopMarker>(
@@ -388,11 +399,11 @@ mod tests {
         type StreamHandler = FidlInstancedStreamHandler<Self>;
         type Error = anyhow::Error;
 
-        async fn handle(&self, _cx: &Context, _req: ffx_test::NoopRequest) -> Result<()> {
+        async fn handle(&self, _cx: &Context, _req: ffx_test::NoopRequest) -> anyhow::Result<()> {
             Err(anyhow!("this is intended to fail every time"))
         }
 
-        async fn stop(&mut self, _cx: &Context) -> Result<()> {
+        async fn stop(&mut self, _cx: &Context) -> anyhow::Result<()> {
             self.stopped = true;
             Ok(())
         }
@@ -405,7 +416,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn protocol_error_ensures_drop_test() -> Result<()> {
+    async fn protocol_error_ensures_drop_test() -> anyhow::Result<()> {
         let env = ffx_config::test_init().unwrap();
         let daemon = FakeDaemonBuilder::new(&env.context)
             .register_fidl_protocol::<NoopProtocolPanicker>()
@@ -427,7 +438,7 @@ mod tests {
         type StreamHandler = FidlStreamHandler<Self>;
         type Error = anyhow::Error;
 
-        async fn handle(&self, cx: &Context, req: ffx_test::CounterRequest) -> Result<()> {
+        async fn handle(&self, cx: &Context, req: ffx_test::CounterRequest) -> anyhow::Result<()> {
             // This is just here for some additional stress.
             let noop_proxy = cx
                 .open_target_proxy::<ffx_test::NoopMarker>(
@@ -447,7 +458,7 @@ mod tests {
             }
         }
 
-        async fn start(&mut self, cx: &Context) -> Result<()> {
+        async fn start(&mut self, cx: &Context) -> anyhow::Result<()> {
             let noop_proxy = cx
                 .open_target_proxy::<ffx_test::NoopMarker>(
                     None,
@@ -463,7 +474,7 @@ mod tests {
             Ok(())
         }
 
-        async fn stop(&mut self, _cx: &Context) -> Result<()> {
+        async fn stop(&mut self, _cx: &Context) -> anyhow::Result<()> {
             if !self.started {
                 panic!("this must be started before being shut down");
             }

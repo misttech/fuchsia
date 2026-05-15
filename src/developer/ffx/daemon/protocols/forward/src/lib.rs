@@ -89,11 +89,7 @@ impl FidlProtocol for Forward {
     type StreamHandler = FidlInstancedStreamHandler<Self>;
     type Error = ForwardError;
 
-    async fn handle(
-        &self,
-        cx: &Context,
-        req: ffx::TunnelRequest,
-    ) -> std::result::Result<(), ForwardError> {
+    async fn handle(&self, cx: &Context, req: ffx::TunnelRequest) -> Result<(), ForwardError> {
         let cx = cx.clone();
         let cx_clone = cx.clone();
 
@@ -179,7 +175,7 @@ impl FidlProtocol for Forward {
         }
     }
 
-    async fn start(&mut self, cx: &Context) -> std::result::Result<(), ForwardError> {
+    async fn start(&mut self, cx: &Context) -> Result<(), ForwardError> {
         log::info!("started port forwarding protocol");
 
         let tunnels: Vec<Value> = cx.environment().get(TUNNEL_CFG).unwrap_or_else(|_| Vec::new());
@@ -212,7 +208,7 @@ impl FidlProtocol for Forward {
         Ok(())
     }
 
-    async fn stop(&mut self, _cx: &Context) -> std::result::Result<(), ForwardError> {
+    async fn stop(&mut self, _cx: &Context) -> Result<(), ForwardError> {
         log::info!("stopped port forwarding protocol");
         Ok(())
     }
@@ -302,7 +298,7 @@ mod tests {
         async fn open_remote_control(
             &self,
             target_identifier: Option<String>,
-        ) -> Result<rcs::RemoteControlProxy> {
+        ) -> protocols::prelude::ContextResult<rcs::RemoteControlProxy> {
             let (client, server) = fidl::endpoints::create_endpoints::<rcs::RemoteControlMarker>();
             assert_eq!(target_identifier, Some("dummy_target".to_owned()));
 
@@ -335,7 +331,7 @@ mod tests {
         async fn open_protocol(
             &self,
             _name: String,
-        ) -> std::result::Result<fidl::Channel, protocols::ProtocolError> {
+        ) -> Result<fidl::Channel, protocols::ProtocolError> {
             unimplemented!()
         }
 
@@ -344,7 +340,7 @@ mod tests {
             _target_identifier: Option<String>,
             _moniker: &str,
             _capability_name: &str,
-        ) -> Result<fidl::Channel> {
+        ) -> protocols::prelude::ContextResult<fidl::Channel> {
             unimplemented!()
         }
 
@@ -353,7 +349,7 @@ mod tests {
             _target_identifier: Option<String>,
             _moniker: &str,
             _capability_name: &str,
-        ) -> Result<(ffx::TargetInfo, fidl::Channel)> {
+        ) -> protocols::prelude::ContextResult<(ffx::TargetInfo, fidl::Channel)> {
             unimplemented!()
         }
 
