@@ -1000,7 +1000,6 @@ impl ResolvedInstanceState {
         Ok(child)
     }
 
-    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401254441)
     fn add_target_dynamic_offers(
         mut dynamic_offers: Vec<fdecl::Offer>,
         child: &ChildDecl,
