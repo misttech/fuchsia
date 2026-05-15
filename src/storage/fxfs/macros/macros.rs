@@ -382,3 +382,145 @@ pub fn impl_fuzzy_hash(input: TokenStream) -> TokenStream {
         }
     })
 }
+
+#[proc_macro_derive(SerializeKey)]
+pub fn derive_serialize_key(input: TokenStream) -> TokenStream {
+    let input: syn::DeriveInput = parse_macro_input!(input);
+    let ident = input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    let serialize_body = match &input.data {
+        Data::Struct(s) => match &s.fields {
+            Fields::Named(fields) => {
+                let fields = fields.named.iter().map(|f| {
+                    let name = &f.ident;
+                    quote! { self.#name.serialize_key_to(serializer); }
+                });
+                quote! { #(#fields)* }
+            }
+            Fields::Unnamed(fields) => {
+                let fields = fields.unnamed.iter().enumerate().map(|(i, _)| {
+                    let i = Index::from(i);
+                    quote! { self.#i.serialize_key_to(serializer); }
+                });
+                quote! { #(#fields)* }
+            }
+            Fields::Unit => quote! {},
+        },
+        Data::Enum(e) => {
+            let arms = e.variants.iter().enumerate().map(|(i, variant)| {
+                let var_ident = &variant.ident;
+                let idx = i as u8;
+                match &variant.fields {
+                    Fields::Named(fields) => {
+                        let field_names: Vec<_> = fields.named.iter().map(|f| &f.ident).collect();
+                        quote! {
+                            Self::#var_ident { #(#field_names),* } => {
+                                serializer.write_bytes(&#idx.to_be_bytes());
+                                #(#field_names.serialize_key_to(serializer);)*
+                            }
+                        }
+                    }
+                    Fields::Unnamed(fields) => {
+                        let field_names: Vec<_> = (0..fields.unnamed.len())
+                            .map(|i| quote::format_ident!("f{}", i))
+                            .collect();
+                        quote! {
+                            Self::#var_ident(#(#field_names),*) => {
+                                serializer.write_bytes(&#idx.to_be_bytes());
+                                #(#field_names.serialize_key_to(serializer);)*
+                            }
+                        }
+                    }
+                    Fields::Unit => {
+                        quote! {
+                            Self::#var_ident => {
+                                serializer.write_bytes(&#idx.to_be_bytes());
+                            }
+                        }
+                    }
+                }
+            });
+            quote! {
+                match self {
+                    #(#arms)*
+                }
+            }
+        }
+        _ => unimplemented!("Unions not supported"),
+    };
+
+    let deserialize_body = match &input.data {
+        Data::Struct(s) => match &s.fields {
+            Fields::Named(fields) => {
+                let field_names = fields.named.iter().map(|f| &f.ident);
+                let field_tys = fields.named.iter().map(|f| &f.ty);
+                quote! {
+                    Ok(Self {
+                        #( #field_names: <#field_tys as crate::serialized_types::serialized_key::SerializeKey>::deserialize_key_from(deserializer)? ),*
+                    })
+                }
+            }
+            Fields::Unnamed(fields) => {
+                let field_tys = fields.unnamed.iter().map(|f| &f.ty);
+                quote! {
+                    Ok(Self (
+                        #( <#field_tys as crate::serialized_types::serialized_key::SerializeKey>::deserialize_key_from(deserializer)? ),*
+                    ))
+                }
+            }
+            Fields::Unit => quote! { Ok(Self) },
+        },
+        Data::Enum(e) => {
+            let arms = e.variants.iter().enumerate().map(|(i, variant)| {
+                let var_ident = &variant.ident;
+                let idx = i as u8;
+                match &variant.fields {
+                    Fields::Named(fields) => {
+                        let field_names = fields.named.iter().map(|f| &f.ident);
+                        let field_tys = fields.named.iter().map(|f| &f.ty);
+                        quote! {
+                            #idx => Ok(Self::#var_ident {
+                                #( #field_names: <#field_tys as crate::serialized_types::serialized_key::SerializeKey>::deserialize_key_from(deserializer)? ),*
+                            }),
+                        }
+                    }
+                    Fields::Unnamed(fields) => {
+                        let field_tys = fields.unnamed.iter().map(|f| &f.ty);
+                        quote! {
+                            #idx => Ok(Self::#var_ident (
+                                #( <#field_tys as crate::serialized_types::serialized_key::SerializeKey>::deserialize_key_from(deserializer)? ),*
+                            )),
+                        }
+                    }
+                    Fields::Unit => {
+                        quote! {
+                            #idx => Ok(Self::#var_ident),
+                        }
+                    }
+                }
+            });
+            quote! {
+                let tag = <u8 as crate::serialized_types::serialized_key::SerializeKey>::deserialize_key_from(deserializer)?;
+                match tag {
+                    #(#arms)*
+                    _ => anyhow::bail!("Invalid enum tag {} for {}", tag, stringify!(#ident)),
+                }
+            }
+        }
+        _ => unimplemented!("Unions not supported"),
+    };
+
+    TokenStream::from(quote! {
+        impl #impl_generics crate::serialized_types::serialized_key::SerializeKey for #ident #ty_generics #where_clause {
+            fn serialize_key_to<B: crate::serialized_types::varint::Buffer>(&self, serializer: &mut crate::serialized_types::serialized_key::KeySerializer<'_, B>) {
+                use crate::serialized_types::serialized_key::SerializeKey as _;
+                #serialize_body
+            }
+            fn deserialize_key_from(deserializer: &mut crate::serialized_types::serialized_key::KeyDeserializer<'_>) -> anyhow::Result<Self> {
+                use crate::serialized_types::serialized_key::SerializeKey as _;
+                #deserialize_body
+            }
+        }
+    })
+}

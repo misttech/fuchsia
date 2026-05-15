@@ -121,6 +121,7 @@ use fprint::TypeFingerprint;
 use fuchsia_inspect::HistogramProperty;
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
+use fxfs_macros::SerializeKey;
 use merge::{filter_marked_for_deletion, filter_tombstones, merge};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
@@ -298,7 +299,18 @@ pub type Hold<'a> = ReservationImpl<&'a Reservation, Reservation>;
 /// reference counts should never exceed 1, but that might change with snapshots and clones.
 pub type AllocatorKey = AllocatorKeyV32;
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, TypeFingerprint, Versioned)]
+#[derive(
+    Clone,
+    Debug,
+    Deserialize,
+    Eq,
+    Hash,
+    PartialEq,
+    Serialize,
+    TypeFingerprint,
+    Versioned,
+    SerializeKey,
+)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct AllocatorKeyV32 {
     pub device_range: Range<u64>,
@@ -306,7 +318,7 @@ pub struct AllocatorKeyV32 {
 
 impl SortByU64 for AllocatorKey {
     fn get_leading_u64(&self) -> u64 {
-        self.device_range.start
+        self.device_range.end
     }
 }
 
@@ -361,7 +373,10 @@ impl LayerKey for AllocatorKey {
 
 impl OrdUpperBound for AllocatorKey {
     fn cmp_upper_bound(&self, other: &AllocatorKey) -> std::cmp::Ordering {
-        self.device_range.end.cmp(&other.device_range.end)
+        self.device_range
+            .end
+            .cmp(&other.device_range.end)
+            .then(self.device_range.start.cmp(&other.device_range.start))
     }
 }
 

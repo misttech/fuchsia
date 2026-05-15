@@ -61,6 +61,8 @@ pub const DEFAULT_MAX_SERIALIZED_RECORD_SIZE: u64 = 4096;
 pub use fxfs_macros::{Migrate, Versioned, migrate_nodefault, migrate_to_version, versioned_type};
 pub use traits::{Version, Versioned, VersionedLatest};
 
+pub mod serialized_key;
+
 // For test use, we add [Versioned] and [VersionedLatest] to primitive integer types (i32, ...).
 #[cfg(test)]
 pub mod test_traits;

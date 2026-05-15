@@ -627,7 +627,7 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::future::join_all;
     use futures::{FutureExt as _, join};
-    use fxfs_macros::FuzzyHash;
+    use fxfs_macros::{FuzzyHash, SerializeKey};
     use std::hash::Hash;
     use std::ops::Bound;
     use std::time::{Duration, Instant};
@@ -645,6 +645,7 @@ mod tests {
         serde::Deserialize,
         TypeFingerprint,
         Versioned,
+        SerializeKey,
     )]
     struct TestKey(u64);
 

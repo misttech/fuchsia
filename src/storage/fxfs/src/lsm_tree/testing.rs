@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 use crate::lsm_tree::types::{
-    FuzzyHash, LayerKey, MergeType, OrdLowerBound, OrdUpperBound, SortByU64,
+    DefaultOrdLowerBound, DefaultOrdUpperBound, FuzzyHash, LayerKey, MergeType, OrdLowerBound,
+    OrdUpperBound, SortByU64,
 };
 use crate::serialized_types::{
     LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
 };
 use fprint::TypeFingerprint;
-use fxfs_macros::FuzzyHash;
+use fxfs_macros::{FuzzyHash, SerializeKey, impl_fuzzy_hash};
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
 
@@ -23,7 +24,17 @@ use std::ops::Range;
 /// - `cmp_lower_bound` compares `start` only.
 /// - `SortByU64` returns `end` to align with `cmp_upper_bound`.
 #[derive(
-    Clone, Eq, Hash, FuzzyHash, PartialEq, Debug, Serialize, Deserialize, TypeFingerprint, Versioned,
+    Clone,
+    Eq,
+    Hash,
+    FuzzyHash,
+    PartialEq,
+    Debug,
+    Serialize,
+    Deserialize,
+    TypeFingerprint,
+    Versioned,
+    SerializeKey,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct TestKey(pub Range<u64>);
@@ -76,3 +87,35 @@ impl PartialOrd for TestKey {
         Some(self.cmp(other))
     }
 }
+
+impl SortByU64 for i32 {
+    fn get_leading_u64(&self) -> u64 {
+        (*self as i64 - i32::MIN as i64) as u64
+    }
+}
+
+impl crate::serialized_types::serialized_key::SerializeKey for i32 {
+    fn serialize_key_to<B: crate::serialized_types::varint::Buffer>(
+        &self,
+        serializer: &mut crate::serialized_types::serialized_key::KeySerializer<'_, B>,
+    ) {
+        serializer.write_u64(crate::lsm_tree::types::SortByU64::get_leading_u64(self));
+    }
+    fn deserialize_key_from(
+        deserializer: &mut crate::serialized_types::serialized_key::KeyDeserializer<'_>,
+    ) -> Result<Self, anyhow::Error> {
+        let val = deserializer.read_u64()?;
+        Ok((val as i64 + i32::MIN as i64) as i32)
+    }
+}
+
+impl DefaultOrdUpperBound for i32 {}
+impl DefaultOrdLowerBound for i32 {}
+
+impl LayerKey for i32 {
+    fn merge_type(&self) -> MergeType {
+        MergeType::FullMerge
+    }
+}
+
+impl_fuzzy_hash!(i32);

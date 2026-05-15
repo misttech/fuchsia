@@ -9,6 +9,7 @@ use crate::lsm_tree::types::{OrdLowerBound, OrdUpperBound};
 use crate::round::{round_down, round_up};
 use bit_vec::BitVec;
 use fprint::TypeFingerprint;
+use fxfs_macros::SerializeKey;
 use serde::{Deserialize, Serialize};
 use std::cmp::{max, min};
 use std::hash::Hash;
@@ -32,7 +33,9 @@ pub const FSVERITY_MERKLE_ATTRIBUTE_ID: u64 = 2;
 /// (at time of writing this was only the used for file contents).
 pub type ExtentKey = ExtentKeyV32;
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, TypeFingerprint)]
+#[derive(
+    Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, TypeFingerprint, SerializeKey,
+)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct ExtentKeyV32 {
     pub range: Range<u64>,
@@ -117,10 +120,10 @@ impl ExtentKey {
 impl OrdUpperBound for ExtentKey {
     fn cmp_upper_bound(&self, other: &ExtentKey) -> std::cmp::Ordering {
         // The comparison uses the end of the range so that we can more easily do queries. Ties
-        // are broken by comparing the range start. Since we do not support overlapping keys
-        // within the same layer, ties can always be broken using layer index. Insertions into
-        // the mutable layer should always be done using merge_into, which will ensure keys don't
-        // end up overlapping.
+        // are broken by comparing the range start to provide a total ordering consistent with
+        // serialization. Since we do not support overlapping keys within the same layer, ties can
+        // always be broken using layer index. Insertions into the mutable layer should always be
+        // done using merge_into, which will ensure keys don't end up overlapping.
         self.range.end.cmp(&other.range.end).then(self.range.start.cmp(&other.range.start))
     }
 }

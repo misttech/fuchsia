@@ -127,6 +127,7 @@ fxfs_sources = [
   "src/range.rs",
   "src/round.rs",
   "src/serialized_types.rs",
+  "src/serialized_types/serialized_key.rs",
   "src/serialized_types/test_traits.rs",
   "src/serialized_types/tests.rs",
   "src/serialized_types/traits.rs",

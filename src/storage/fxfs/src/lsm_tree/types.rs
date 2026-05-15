@@ -4,6 +4,7 @@
 
 use crate::drop_event::DropEvent;
 use crate::object_handle::ReadObjectHandle;
+use crate::serialized_types::serialized_key::SerializeKey;
 use crate::serialized_types::{Version, Versioned, VersionedLatest};
 use anyhow::Error;
 use async_trait::async_trait;
@@ -20,7 +21,7 @@ pub use fxfs_macros::impl_fuzzy_hash;
 
 // Force keys to be sorted first by a u64, so that they can be located approximately based on only
 // that integer without the whole key.
-pub trait SortByU64 {
+pub trait SortByU64: Sized {
     // Return the u64 that is used as the first value when deciding on sort order of the key.
     fn get_leading_u64(&self) -> u64;
 }
@@ -68,6 +69,7 @@ pub trait Key:
     + Sync
     + Versioned
     + VersionedLatest
+    + SerializeKey
     + std::marker::Unpin
     + 'static
 {
@@ -89,6 +91,7 @@ impl<K> Key for K where
         + Sync
         + Versioned
         + VersionedLatest
+        + SerializeKey
         + std::marker::Unpin
         + 'static
 {
@@ -486,30 +489,4 @@ where
     fn get(&self) -> Option<ItemRef<'_, K, V>> {
         self.iter.get()
     }
-}
-
-#[cfg(test)]
-mod test_types {
-    use crate::lsm_tree::types::{
-        DefaultOrdLowerBound, DefaultOrdUpperBound, FuzzyHash, LayerKey, MergeType, SortByU64,
-        impl_fuzzy_hash,
-    };
-
-    impl DefaultOrdUpperBound for i32 {}
-    impl DefaultOrdLowerBound for i32 {}
-    impl SortByU64 for i32 {
-        fn get_leading_u64(&self) -> u64 {
-            if self >= &0 {
-                return u64::try_from(*self).unwrap() + u64::try_from(i32::MAX).unwrap() + 1;
-            }
-            u64::try_from(self + i32::MAX + 1).unwrap()
-        }
-    }
-    impl LayerKey for i32 {
-        fn merge_type(&self) -> MergeType {
-            MergeType::FullMerge
-        }
-    }
-
-    impl_fuzzy_hash!(i32);
 }

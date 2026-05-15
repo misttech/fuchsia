@@ -19,6 +19,7 @@ use crate::object_store::extent_record::{
 use crate::serialized_types::{Migrate, Versioned, migrate_nodefault, migrate_to_version};
 use fprint::TypeFingerprint;
 use fxfs_crypto::{WrappedKey, WrappingKeyId};
+use fxfs_macros::SerializeKey;
 use fxfs_unicode::CasefoldString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -46,7 +47,17 @@ pub enum ObjectDescriptorV32 {
 pub type ProjectProperty = ProjectPropertyV32;
 
 #[derive(
-    Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint,
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    TypeFingerprint,
+    SerializeKey,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum ProjectPropertyV32 {
@@ -59,7 +70,17 @@ pub enum ProjectPropertyV32 {
 pub type ObjectKeyData = ObjectKeyDataV54;
 
 #[derive(
-    Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize, TypeFingerprint,
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    TypeFingerprint,
+    SerializeKey,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum ObjectKeyDataV54 {
@@ -101,7 +122,17 @@ pub enum ObjectKeyDataV54 {
 }
 
 #[derive(
-    Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize, TypeFingerprint,
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    TypeFingerprint,
+    SerializeKey,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct EncryptedCasefoldChild {
@@ -111,7 +142,17 @@ pub struct EncryptedCasefoldChild {
 }
 
 #[derive(
-    Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize, TypeFingerprint,
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    TypeFingerprint,
+    SerializeKey,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct EncryptedChild(#[serde(with = "crate::zerocopy_serialization")] pub Vec<u8>);
@@ -119,7 +160,17 @@ pub struct EncryptedChild(#[serde(with = "crate::zerocopy_serialization")] pub V
 pub type AttributeKey = AttributeKeyV32;
 
 #[derive(
-    Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint,
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    TypeFingerprint,
+    SerializeKey,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum AttributeKeyV32 {
@@ -141,6 +192,7 @@ pub type ObjectKey = ObjectKeyV54;
     PartialOrd,
     Serialize,
     Deserialize,
+    SerializeKey,
     TypeFingerprint,
     Versioned,
 )]

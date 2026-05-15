@@ -802,7 +802,7 @@ mod tests {
     use crate::testing::fake_object::{FakeObject, FakeObjectHandle};
     use crate::testing::writer::Writer;
     use fprint::TypeFingerprint;
-    use fxfs_macros::FuzzyHash;
+    use fxfs_macros::{FuzzyHash, SerializeKey};
     use rand::Rng;
     use std::hash::Hash;
     use std::ops::{Bound, Range};
@@ -1373,6 +1373,7 @@ mod tests {
         serde::Deserialize,
         TypeFingerprint,
         Versioned,
+        SerializeKey,
     )]
     struct TestKeyWithFullMerge(Range<u64>);
 
@@ -1386,7 +1387,7 @@ mod tests {
 
     impl SortByU64 for TestKeyWithFullMerge {
         fn get_leading_u64(&self) -> u64 {
-            self.0.start
+            self.0.end
         }
     }
 
@@ -1511,6 +1512,7 @@ mod tests {
         serde::Deserialize,
         TypeFingerprint,
         Versioned,
+        SerializeKey,
     )]
     struct TestKeyWithDefaultLayerKey(Range<u64>);
 
@@ -1521,7 +1523,7 @@ mod tests {
 
     impl SortByU64 for TestKeyWithDefaultLayerKey {
         fn get_leading_u64(&self) -> u64 {
-            self.0.start
+            self.0.end
         }
     }
 

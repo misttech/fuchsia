@@ -2,6 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+//! # End-Key Indexing for File Extents
+//!
+//! Fxfs indexes file extents by their **end offset** because it avoids expensive reverse
+//! iteration (`Prev()`) during lookups in the LSM tree.
+//!
+//! If we indexed by start offset, a `Seek(>= X)` would return the extent starting *after* X,
+//! requiring a `Prev()` to find the extent actually containing X.
+//!
+//! By indexing by end offset, a `Seek(>= X + 1)` returns the first extent ending *after* X.
+//! Since extents do not overlap, this is the only extent that could possibly contain X,
+//! eliminating the need for backtracking.
+
 mod bloom_filter;
 pub mod cache;
 pub mod merge;
@@ -1109,6 +1121,7 @@ mod fuzz {
         LATEST_VERSION, Version, Versioned, VersionedLatest, versioned_type,
     };
     use arbitrary::Arbitrary;
+
     use fuzz::fuzz;
 
     use super::testing::TestKey;
