@@ -21,6 +21,20 @@ struct DirectConnectorInner {
     resolution: futures::lock::Mutex<Option<Arc<Resolution>>>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum TargetResolutionError {
+    #[error("Failed to resolve target from environment: {0}")]
+    Context(#[from] ffx_command_error::Error),
+}
+
+impl TargetResolutionError {
+    pub fn into_command_error(self) -> ffx_command_error::Error {
+        match self {
+            TargetResolutionError::Context(e) => e,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct DirectConnector(Arc<DirectConnectorInner>);
 
@@ -32,7 +46,7 @@ impl DirectConnector {
         }))
     }
 
-    pub async fn resolution(&self) -> anyhow::Result<Arc<Resolution>> {
+    pub async fn resolution(&self) -> std::result::Result<Arc<Resolution>, TargetResolutionError> {
         let mut resolution = self.0.resolution.lock().await;
 
         if let Some(resolution) = &*resolution {

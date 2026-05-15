@@ -25,7 +25,8 @@ impl TryFromEnv for NodenameHolder {
             }
             target_behavior::ConnectionBehavior::DirectConnector(conn) => {
                 conn.resolution()
-                    .await?
+                    .await
+                    .map_err(|e| e.into_command_error())?
                     .identify(&env.environment_context())
                     .await
                     .map_err(|e| e.into_command_error())?

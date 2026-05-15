@@ -72,7 +72,8 @@ impl TryFromEnv for HostAddrHolder {
             ConnectionBehavior::DirectConnector(ref direct) => {
                 let conn = direct
                     .resolution()
-                    .await?
+                    .await
+                    .map_err(|e| e.into_command_error())?
                     .get_connection(env.environment_context())
                     .await
                     .map_err(|e| e.into_command_error())?;
