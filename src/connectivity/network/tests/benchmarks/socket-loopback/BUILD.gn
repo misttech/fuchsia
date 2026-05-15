@@ -9,7 +9,7 @@ import("//build/components/fuchsia_unittest_package.gni")
 import("//build/test.gni")
 import("//build/testing/environments.gni")
 import("//build/testing/perf/test.gni")
-import("//src/starnix/tests/build/starnix_host_test_component.gni")
+import("//src/starnix/tests/build/starnix_toolchain_test_component.gni")
 import("//src/storage/fshost/generated_fshost_config.gni")
 
 test("loopback_socket_benchmarks") {
@@ -180,21 +180,20 @@ if (target_cpu != "riscv64") {
   ns2_test_targets = []
 }
 
-# TODO(b/298565565): Enable these on vim3.
 # TODO(https://fxbug.dev/359323478): Figure out a better way to disable these tests on Minfs without
 # relying on a global GN argument.
-if (host_os == "linux" && target_cpu == "x64" && !is_asan &&
-    data_filesystem_format != "minfs") {
-  starnix_host_test_component("loopback-socket-benchmarks-starnix") {
+if (target_cpu != "riscv64" && !is_asan && data_filesystem_format != "minfs") {
+  starnix_toolchain_test_component("loopback-socket-benchmarks-starnix") {
     test_label = ":loopback_socket_benchmarks"
     test_binary = "loopback_socket_benchmarks"
 
     manifest = "meta/loopback-socket-benchmarks-starnix.cml"
 
     test_type = "starnix"
+    is_starnix_benchmark = true
   }
 
-  starnix_host_test_component(
+  starnix_toolchain_test_component(
       "loopback-socket-benchmarks-starnix-with-netstack3") {
     test_label = ":loopback_socket_benchmarks"
     test_binary = "loopback_socket_benchmarks"
@@ -202,9 +201,10 @@ if (host_os == "linux" && target_cpu == "x64" && !is_asan &&
     manifest = "meta/loopback-socket-benchmarks-starnix-with-netstack3.cml"
 
     test_type = "starnix"
+    is_starnix_benchmark = true
   }
 
-  starnix_host_test_component(
+  starnix_toolchain_test_component(
       "loopback-socket-benchmarks-starnix-with-fake-netstack") {
     test_label = ":loopback_socket_benchmarks"
     test_binary = "loopback_socket_benchmarks"
@@ -212,6 +212,7 @@ if (host_os == "linux" && target_cpu == "x64" && !is_asan &&
     manifest = "meta/loopback-socket-benchmarks-starnix-with-fake-netstack.cml"
 
     test_type = "starnix"
+    is_starnix_benchmark = true
   }
 
   fuchsia_test_package("loopback-socket-benchmarks-starnix-pkg") {
@@ -370,10 +371,7 @@ foreach(test_config, benchmark_test_configs) {
 
 group("tests") {
   testonly = true
-  deps = all_test_targets
-  if (host_os == "linux") {
-    deps += [ ":loopback_socket_benchmarks($host_toolchain)" ]
-  }
+  deps = all_test_targets + [ ":loopback_socket_benchmarks($host_toolchain)" ]
 }
 
 group("benchmarks") {
