@@ -122,10 +122,6 @@
                 // TODO(https://fxbug.dev/436908596)
                 "Mmap.FixedAddressTooLow",
 
-                // TODO(https://fxbug.dev/437150943): I believe this is a kernel version issue.
-                "MountTest.BasicSharing",
-                "MountTest.BindIgnoresSharingFlags",
-
                 // TODO(https://fxbug.dev/437153843): I believe the tests / Starnix is incorrect.
                 "NetlinkSocket.RecvMsg",
                 "NetlinkSocket.NlctrlFamily",

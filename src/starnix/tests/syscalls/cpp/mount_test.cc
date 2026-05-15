@@ -57,6 +57,9 @@ class MountTest : public ::testing::Test {
       return;
     }
     ASSERT_EQ(rv, 0) << "unshare(CLONE_NEWNS) failed: " << strerror(errno) << "(" << errno << ")";
+    rv = mount(nullptr, "/", nullptr, MS_PRIVATE | MS_REC, nullptr);
+    ASSERT_EQ(rv, 0) << "mount(/, MS_PRIVATE | MS_REC) failed: " << strerror(errno) << "(" << errno
+                     << ")";
   }
 
   void SetUp() override {
