@@ -63,6 +63,9 @@ destructor automatically closes the handle when the object goes out of scope.
 ## Implement an Interrupt Handler
 
 ```cpp
+// Contains `driver_base2.h`.
+#include <lib/driver/component/cpp/driver_base2.h>
+
 // Contains `async::IrqMethod`.
 #include <lib/async/cpp/irq.h>
 
@@ -72,9 +75,9 @@ destructor automatically closes the handle when the object goes out of scope.
 // Contains `zx::interrupt`.
 #include <lib/zx/interrupt.h>
 
-class MyDriver : public fdf::DriverBase {
+class MyDriver : public fdf::DriverBase2 {
  public:
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     // ... Connect to FIDL service and get interrupt handle ...
     // interrupt_ = std::move(interrupt->value()->interrupt);
 
@@ -83,6 +86,7 @@ class MyDriver : public fdf::DriverBase {
     if (status != ZX_OK) {
       return zx::error(status);
     }
+
     return zx::ok();
   }
 

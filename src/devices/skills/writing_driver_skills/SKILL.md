@@ -41,7 +41,7 @@ dependencies are required.
 
 ```gn
 deps = [
-  # Provides fdf::DriverBase and incoming()
+  # Provides fdf::DriverBase2
   "//sdk/lib/driver/component/cpp",
 ]
 ```

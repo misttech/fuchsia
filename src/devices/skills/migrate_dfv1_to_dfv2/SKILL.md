@@ -57,50 +57,49 @@ Replace DDK headers with DFv2 headers:
 
 ```diff
 -#include <ddktl/device.h>
-+#include <lib/driver/component/cpp/driver_base.h>
-+#include <lib/driver/component/cpp/driver_export.h>
++#include <lib/driver/component/cpp/driver_base2.h>
++#include <lib/driver/component/cpp/driver_export2.h>
 ```
 
 ### B. Update Driver Class
 
-Migrate the driver class to inherit from `fdf::DriverBase`. Here is the diff
+Migrate the driver class to inherit from `fdf::DriverBase2`. Here is the diff
 showing the transformation:
 
 ```diff
 -class MyDriver : public ddk::Device<MyDriver, ...> {
 - public:
 -  MyDriver(zx_device_t* parent);
-+class MyDriver : public fdf::DriverBase {
++class MyDriver : public fdf::DriverBase2 {
 + public:
-+  MyDriver(fdf::DriverStartArgs start_args,
-+           fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-+      : fdf::DriverBase("my-driver", std::move(start_args), std::move(driver_dispatcher)) {}
++  MyDriver() : fdf::DriverBase2("my-driver") {}
 +
-+  zx::result<> Start() override;
++  zx::result<> Start(fdf::DriverContext context) override;
  };
 ```
 
 ### C. Implement Start Method
 
 In DFv1, initialization happens in the constructor, `Bind` static method, and
-`DdkInit`. In DFv2, all this logic should be moved to the `Start()` method.
+`DdkInit`. In DFv2, all this logic should be moved to the
+`Start(fdf::DriverContext context)` method.
 
 * Return `zx::ok()` on success.
-* Use `incoming()` to access incoming services (replacing
+* Use `context.incoming()` to access incoming services (replacing
   `device_get_protocol`). For details on how to connect to parent FIDL
   connections in C++, see the [Driver FIDL Usage Implementation Skill
   (C++)](/src/devices/skills/driver_fidl_usage/implementation/cpp/SKILL.md).
 
 ### D. Update Macros
 
-Replace `ZIRCON_DRIVER` with `FUCHSIA_DRIVER_EXPORT`. Here is the diff showing
+Replace `ZIRCON_DRIVER` with `FUCHSIA_DRIVER_EXPORT2`. Here is the diff showing
 the change:
 
 ```diff
 -ZIRCON_DRIVER(my_driver, driver_ops, "zircon", "0.1");
-+FUCHSIA_DRIVER_EXPORT(MyDriver);
++FUCHSIA_DRIVER_EXPORT2(MyDriver);
 ```
-(Note: `FUCHSIA_DRIVER_EXPORT` is usually placed in the `.cc` file).
+(Note: `FUCHSIA_DRIVER_EXPORT2` is usually placed in the `.cc` file).
 
 ### E. Update Logging
 
@@ -129,11 +128,10 @@ Skill](/src/devices/skills/migrate_dfv1_to_dfv2/dma/SKILL.md).
 
 ### H. Stop and Suspend the Driver
 
-In DFv1, drivers handle teardown and power state changes in `DdkUnbind` and
-`DdkSuspend`. In DFv2, teardown is managed by the framework invoking
-`PrepareStop` and `Stop` (or implicitly via RAII destructor cleanup), while
-power state transitions are coordinated through the Power Broker or specific
-FIDL protocols.
+In DFv1, drivers handle teardown in `DdkUnbind` and power state changes in
+`DdkSuspend`. In DFv2 (`DriverBase2`), teardown is handled by the framework
+invoking `Stop(StopCompleter)`. Power state transitions are coordinated through
+the Power Broker or specific FIDL protocols.
 
 #### Unbind
 
@@ -144,16 +142,15 @@ automatically.
 
 #### **Otherwise** (If the driver performs cleanup in `DdkUnbind`):
 
-Move that logic to the class destructor or override the `PrepareStop` or `Stop`
-methods in `fdf::DriverBase`.
+Move that logic to the class destructor for synchronous cleanup, or override the
+`Stop(StopCompleter)` method in `fdf::DriverBase2` for asynchronous cleanup.
 
 #### Suspend
 
 * In DFv2, suspend and power management are handled differently (often via the
   Power Broker or specific FIDL protocols). That said, any code that was in
-  `DdkSuspend` or hardware power-down logic should be moved into `PrepareStop`,
-  as it is called before the driver dispatchers are shut down, allowing you to
-  still perform asynchronous work or send messages to the hardware.
+  `DdkSuspend` or hardware power-down logic should be moved into
+  `Stop(StopCompleter)`.
 
 ### I. Use Platform Device (pdev)
 

@@ -37,11 +37,11 @@ how they specify the driver library:
 ### **If** the driver is written in C++:
 
 * **Headers**:
-  * **DFv2**: Includes `<lib/driver/component/cpp/driver_base.h>`.
+  * **DFv2**: Includes `<lib/driver/component/cpp/driver_base2.h>`.
   * **DFv1**: Includes `<lib/ddk/device.h>` or `<lib/ddk/driver.h>`.
 * **Driver Class Inheritance**:
-  * **DFv2**: Inherits from `fdf::DriverBase` and uses
-    `FUCHSIA_DRIVER_EXPORT(MyDriver)`.
+  * **DFv2**: Inherits from `fdf::DriverBase2` and uses
+    `FUCHSIA_DRIVER_EXPORT2(MyDriver)`.
   * **DFv1**: Inherits from `ddk::Device` (or uses raw hooks) and uses the
     `ZIRCON_DRIVER(...)` macro.
 * **Entry Point**:
@@ -86,8 +86,8 @@ type:
 | Feature | DFv1 (Legacy/Compat) | DFv2 (Modern) |
 | :--- | :--- | :--- |
 | **Manifest** | `.cml` with `compat` key | `.cml` with `binary` key |
-| **Headers** | `<lib/ddk/device.h>` | `<lib/driver/component/cpp/driver_base.h>` |
-| **C++ Base** | `ddk::Device` or raw hooks | `fdf::DriverBase` |
+| **Headers** | `<lib/ddk/device.h>` | `<lib/driver/component/cpp/driver_base2.h>` |
+| **C++ Base** | `ddk::Device` or raw hooks | `fdf::DriverBase2` |
 | **Logging** | `zxlogf` | `FDF_LOG` or `fdf::info/error` |
 | **Entry Point** | `bind()` or `create()` | `Start()` |
 | **Rust Support** | None | Full support via `fdf_component` |
