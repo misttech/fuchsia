@@ -124,6 +124,7 @@ futures-test = "=0.3.31"
 futures-util = "=0.3.31"
 getrandom = { version = "0.3.3", default-features = false, features = ["std"] }
 glob = "0.3.3"
+googletest = "0.14.2"
 gpt = "3.0.0"
 half = "2.7.1"
 handlebars = "4.3.5"
@@ -204,7 +205,7 @@ range-alloc = "0.1.4"
 rapidhash = { version = "1.4.0", features = ["unsafe"] }
 rayon = "1.10.0"
 ref-cast = "1.0.25"
-regex = "1.7.3"
+regex = "1.12.3"
 regex-lite = "0.1.9"
 regex-syntax = "0.8.10"
 ring = "0.17.8"
@@ -908,7 +909,7 @@ env_vars = [
   "CARGO_PKG_VERSION_PATCH=25",
 ]
 
-[gn.package.regex."1.7.3"]
+[gn.package.regex."1.12.3"]
 group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "regex_visibility" }
 
 [gn.package.ring."0.17.8"]

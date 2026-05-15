@@ -817,6 +817,14 @@ group("glob-0.3.3") {
   public_deps = [ ":glob-v0_3_3" ]
 }
 
+group("googletest") {
+  public_deps = [ ":googletest-v0_14_2" ]
+}
+
+group("googletest-0.14.2") {
+  public_deps = [ ":googletest-v0_14_2" ]
+}
+
 group("gpt") {
   public_deps = [ ":gpt-v3_0_0" ]
 }
@@ -1642,13 +1650,13 @@ group("ref-cast-1.0.25") {
 }
 
 group("regex") {
-  public_deps = [ ":regex-v1_7_3" ]
+  public_deps = [ ":regex-v1_12_3" ]
 
   visibility = regex_visibility
 }
 
-group("regex-1.7.3") {
-  public_deps = [ ":regex-v1_7_3" ]
+group("regex-1.12.3") {
+  public_deps = [ ":regex-v1_12_3" ]
 
   visibility = regex_visibility
 }
@@ -2868,17 +2876,17 @@ rustc_library("ahash-v0_8_12") {
   applicable_licenses = [ ":ahash-v0_8_12.license" ]
 }
 
-license("aho-corasick-v0_7_18.license") {
+license("aho-corasick-v1_1_4.license") {
   public_package_name = "aho_corasick"
   license_files =
       [ "//third_party/rust_crates/ask2patch/aho-corasick/LICENSE-MIT" ]
 }
 
-rustc_library("aho-corasick-v0_7_18") {
+rustc_library("aho-corasick-v1_1_4") {
   crate_name = "aho_corasick"
   source_root = "//third_party/rust_crates/ask2patch/aho-corasick/src/lib.rs"
-  output_name = "aho_corasick-753ae8ca48505855"
-  edition = "2018"
+  output_name = "aho_corasick-fbd28df6fc1eba00"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -2890,15 +2898,15 @@ rustc_library("aho-corasick-v0_7_18") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=753ae8ca48505855",
-    "-Cextra-filename=-753ae8ca48505855",
-    "--cfg=feature=\"default\"",
+    "-Cmetadata=fbd28df6fc1eba00",
+    "-Cextra-filename=-fbd28df6fc1eba00",
+    "--cfg=feature=\"perf-literal\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":aho-corasick-v0_7_18.license" ]
+  applicable_licenses = [ ":aho-corasick-v1_1_4.license" ]
 }
 
 rustc_library("android_system_properties-v0_1_5") {
@@ -3077,7 +3085,7 @@ rustc_library("arc-swap-v1_9_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":rustversion-v1_0_12($host_toolchain)" ]
+  deps += [ ":rustversion-v1_0_22($host_toolchain)" ]
 
   rustenv = []
 
@@ -8053,7 +8061,7 @@ rustc_library("eui48-v1_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":regex-v1_7_3" ]
+  deps += [ ":regex-v1_12_3" ]
   deps += [ ":serde-v1_0_228" ]
 
   rustenv = []
@@ -9605,6 +9613,74 @@ rustc_library("glob-v0_3_3") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":glob-v0_3_3.license" ]
+}
+
+license("googletest-v0_14_2.license") {
+  public_package_name = "googletest"
+  license_files =
+      [ "//third_party/rust_crates/vendor/googletest-0.14.2/LICENSE" ]
+}
+
+rustc_library("googletest-v0_14_2") {
+  crate_name = "googletest"
+  source_root = "//third_party/rust_crates/vendor/googletest-0.14.2/src/lib.rs"
+  output_name = "googletest-4cf6f29be45395b1"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":rustversion-v1_0_22($host_toolchain)" ]
+  deps += [ ":googletest_macro-v0_14_2($host_toolchain)" ]
+  deps += [ ":num-traits-v0_2_19" ]
+  deps += [ ":regex-v1_12_3" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=4cf6f29be45395b1",
+    "-Cextra-filename=-4cf6f29be45395b1",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":googletest-v0_14_2.license" ]
+}
+
+license("googletest_macro-v0_14_2.license") {
+  public_package_name = "googletest_macro"
+  license_files =
+      [ "//third_party/rust_crates/vendor/googletest_macro-0.14.2/LICENSE" ]
+}
+
+rustc_macro("googletest_macro-v0_14_2") {
+  crate_name = "googletest_macro"
+  source_root =
+      "//third_party/rust_crates/vendor/googletest_macro-0.14.2/src/lib.rs"
+  output_name = "googletest_macro-7197cc5aac8d7f93"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":proc-macro2-v1_0_106" ]
+  deps += [ ":quote-v1_0_45" ]
+  deps += [ ":syn-v2_0_117" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=7197cc5aac8d7f93",
+    "-Cextra-filename=-7197cc5aac8d7f93",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":googletest_macro-v0_14_2.license" ]
 }
 
 license("gpt-v3_0_0.license") {
@@ -11174,7 +11250,7 @@ rustc_library("json5format-v0_2_6") {
 
   deps = []
   deps += [ ":lazy_static-v1_5_0" ]
-  deps += [ ":regex-v1_7_3" ]
+  deps += [ ":regex-v1_12_3" ]
 
   rustenv = []
 
@@ -15388,7 +15464,7 @@ rustc_library("prost-build-v0_11_1") {
   deps += [ ":petgraph-v0_6_2" ]
   deps += [ ":prost-types-v0_11_1" ]
   deps += [ ":prost-v0_11_0" ]
-  deps += [ ":regex-v1_7_3" ]
+  deps += [ ":regex-v1_12_3" ]
   deps += [ ":tempfile-v3_2_0" ]
   deps += [ ":which-v4_0_2" ]
 
@@ -16694,43 +16770,43 @@ rustc_macro("ref-cast-impl-v1_0_25") {
   applicable_licenses = [ ":ref-cast-impl-v1_0_25.license" ]
 }
 
-license("regex-v1_7_3.license") {
+license("regex-v1_12_3.license") {
   public_package_name = "regex"
   license_files = [
-    "//third_party/rust_crates/vendor/regex-1.7.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/regex-1.7.3/LICENSE-MIT",
-    "//third_party/rust_crates/vendor/regex-1.7.3/src/testdata/LICENSE",
+    "//third_party/rust_crates/vendor/regex-1.12.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/regex-1.12.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("regex-v1_7_3") {
+rustc_library("regex-v1_12_3") {
   crate_name = "regex"
-  source_root = "//third_party/rust_crates/vendor/regex-1.7.3/src/lib.rs"
-  output_name = "regex-c7447a07c90d7939"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/regex-1.12.3/src/lib.rs"
+  output_name = "regex-7dae5611aefdebed"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":aho-corasick-v0_7_18" ]
+  deps += [ ":aho-corasick-v1_1_4" ]
   deps += [ ":memchr-v2_8_0" ]
-  deps += [ ":regex-syntax-v0_6_29" ]
+  deps += [ ":regex-automata-v0_4_14" ]
+  deps += [ ":regex-syntax-v0_8_10" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=c7447a07c90d7939",
-    "-Cextra-filename=-c7447a07c90d7939",
-    "--cfg=feature=\"aho-corasick\"",
+    "-Cmetadata=7dae5611aefdebed",
+    "-Cextra-filename=-7dae5611aefdebed",
     "--cfg=feature=\"default\"",
-    "--cfg=feature=\"memchr\"",
     "--cfg=feature=\"perf\"",
+    "--cfg=feature=\"perf-backtrack\"",
     "--cfg=feature=\"perf-cache\"",
     "--cfg=feature=\"perf-dfa\"",
     "--cfg=feature=\"perf-inline\"",
     "--cfg=feature=\"perf-literal\"",
+    "--cfg=feature=\"perf-onepass\"",
     "--cfg=feature=\"std\"",
     "--cfg=feature=\"unicode\"",
     "--cfg=feature=\"unicode-age\"",
@@ -16744,7 +16820,7 @@ rustc_library("regex-v1_7_3") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":regex-v1_7_3.license" ]
+  applicable_licenses = [ ":regex-v1_12_3.license" ]
 }
 
 license("regex-automata-v0_1_10.license") {
@@ -16782,6 +16858,64 @@ rustc_library("regex-automata-v0_1_10") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":regex-automata-v0_1_10.license" ]
+}
+
+license("regex-automata-v0_4_14.license") {
+  public_package_name = "regex_automata"
+  license_files = [
+    "//third_party/rust_crates/vendor/regex-automata-0.4.14/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/regex-automata-0.4.14/LICENSE-MIT",
+  ]
+}
+
+rustc_library("regex-automata-v0_4_14") {
+  crate_name = "regex_automata"
+  source_root =
+      "//third_party/rust_crates/vendor/regex-automata-0.4.14/src/lib.rs"
+  output_name = "regex_automata-26877e8e28d0140a"
+  edition = "2021"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":aho-corasick-v1_1_4" ]
+  deps += [ ":memchr-v2_8_0" ]
+  deps += [ ":regex-syntax-v0_8_10" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=26877e8e28d0140a",
+    "-Cextra-filename=-26877e8e28d0140a",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"dfa-onepass\"",
+    "--cfg=feature=\"hybrid\"",
+    "--cfg=feature=\"meta\"",
+    "--cfg=feature=\"nfa-backtrack\"",
+    "--cfg=feature=\"nfa-pikevm\"",
+    "--cfg=feature=\"nfa-thompson\"",
+    "--cfg=feature=\"perf-inline\"",
+    "--cfg=feature=\"perf-literal\"",
+    "--cfg=feature=\"perf-literal-multisubstring\"",
+    "--cfg=feature=\"perf-literal-substring\"",
+    "--cfg=feature=\"std\"",
+    "--cfg=feature=\"syntax\"",
+    "--cfg=feature=\"unicode\"",
+    "--cfg=feature=\"unicode-age\"",
+    "--cfg=feature=\"unicode-bool\"",
+    "--cfg=feature=\"unicode-case\"",
+    "--cfg=feature=\"unicode-gencat\"",
+    "--cfg=feature=\"unicode-perl\"",
+    "--cfg=feature=\"unicode-script\"",
+    "--cfg=feature=\"unicode-segment\"",
+    "--cfg=feature=\"unicode-word-boundary\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":regex-automata-v0_4_14.license" ]
 }
 
 license("regex-lite-v0_1_9.license") {
@@ -17977,10 +18111,10 @@ rustc_library("rustls-pemfile-v1_0_4") {
   applicable_licenses = [ ":rustls-pemfile-v1_0_4.license" ]
 }
 
-rustc_macro("rustversion-v1_0_12") {
+rustc_macro("rustversion-v1_0_22") {
   crate_name = "rustversion"
   source_root = "//third_party/rust_crates/empty/rustversion/src/lib.rs"
-  output_name = "rustversion-744e65d5c3ea769d"
+  output_name = "rustversion-afce81ab5c44fcc"
   edition = "2015"
   disable_clippy = true
   enforce_source_listing = false
@@ -17992,8 +18126,8 @@ rustc_macro("rustversion-v1_0_12") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=744e65d5c3ea769d",
-    "-Cextra-filename=-744e65d5c3ea769d",
+    "-Cmetadata=afce81ab5c44fcc",
+    "-Cextra-filename=-afce81ab5c44fcc",
   ]
 
   visibility = [ ":*" ]
@@ -19081,7 +19215,7 @@ rustc_macro("serial_test_derive-v0_8_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":rustversion-v1_0_12($host_toolchain)" ]
+  deps += [ ":rustversion-v1_0_22($host_toolchain)" ]
   deps += [ ":proc-macro-error-v1_0_4" ]
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
@@ -21670,7 +21804,7 @@ rustc_library("tracing-subscriber-v0_3_18") {
   deps += [ ":matchers-v0_1_0" ]
   deps += [ ":nu-ansi-term-v0_46_0" ]
   deps += [ ":once_cell-v1_21_3" ]
-  deps += [ ":regex-v1_7_3" ]
+  deps += [ ":regex-v1_12_3" ]
   deps += [ ":sharded-slab-v0_1_7" ]
   deps += [ ":smallvec-v1_15_1" ]
   deps += [ ":thread_local-v1_1_9" ]
@@ -22920,7 +23054,7 @@ rustc_library("valico-v2_4_2") {
   deps += [ ":jsonway-v2_0_0" ]
   deps += [ ":phf-v0_7_24" ]
   deps += [ ":publicsuffix-v1_5_6" ]
-  deps += [ ":regex-v1_7_3" ]
+  deps += [ ":regex-v1_12_3" ]
   deps += [ ":serde-v1_0_228" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":url-v1_7_2" ]

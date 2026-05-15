@@ -1171,6 +1171,18 @@ alias(
 )
 
 alias(
+    name = "googletest-0.14.2",
+    actual = "//third_party/rust_crates/vendor/googletest-0.14.2:googletest",
+    tags = ["manual"],
+)
+
+alias(
+    name = "googletest",
+    actual = "//third_party/rust_crates/vendor/googletest-0.14.2:googletest",
+    tags = ["manual"],
+)
+
+alias(
     name = "gpt-3.0.0",
     actual = "//third_party/rust_crates/vendor/gpt-3.0.0:gpt",
     tags = ["manual"],
@@ -2245,14 +2257,14 @@ alias(
 )
 
 alias(
-    name = "regex-1.7.3",
-    actual = "//third_party/rust_crates/vendor/regex-1.7.3:regex",
+    name = "regex-1.12.3",
+    actual = "//third_party/rust_crates/vendor/regex-1.12.3:regex",
     tags = ["manual"],
 )
 
 alias(
     name = "regex",
-    actual = "//third_party/rust_crates/vendor/regex-1.7.3:regex",
+    actual = "//third_party/rust_crates/vendor/regex-1.12.3:regex",
     tags = ["manual"],
 )
 

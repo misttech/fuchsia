@@ -4,7 +4,7 @@
 
 [package]
 name = "rustversion"
-version = "1.0.12"
+version = "1.0.22"
 authors = ["The Fuchsia Authors <rust-fuchsia@fuchsia.com>"]
 
 [lib]
