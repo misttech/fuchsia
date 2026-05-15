@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_FTL_BLOCK_DEVICE_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_FTL_BLOCK_DEVICE_H_
 
+#include <fidl/fuchsia.driver.token/cpp/fidl.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/badblock/c/banjo.h>
 #include <fuchsia/hardware/badblock/cpp/banjo.h>
@@ -36,7 +37,8 @@ struct BlockParams {
 
 class BlockDevice : public fdf::DriverBase,
                     public block_server::DriverInterface,
-                    public ftl::FtlInstance {
+                    public ftl::FtlInstance,
+                    public fidl::Server<fuchsia_driver_token::NodeToken> {
  public:
   BlockDevice(fdf::DriverStartArgs start_args,
               fdf::UnownedSynchronizedDispatcher driver_dispatcher);
@@ -45,6 +47,9 @@ class BlockDevice : public fdf::DriverBase,
   void Start(fdf::StartCompleter completer) override;
   void PrepareStop(fdf::PrepareStopCompleter completer) override;
   void Stop() override;
+
+  // fuchsia_driver_token::NodeToken implementation.
+  void Get(GetCompleter::Sync& completer) override;
 
   // block_server::DriverInterface implementation.
   void OnRequests(std::span<block_server::Request> requests) override;

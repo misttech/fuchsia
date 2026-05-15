@@ -40,6 +40,7 @@ fuchsia_rust_driver("driver") {
   deps = [
     ":cqhci_config",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/fidl/fuchsia.driver.token:fuchsia.driver.token_rust",
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
     "//sdk/fidl/fuchsia.hardware.cqhci:fuchsia.hardware.cqhci_rust_next",
     "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_rust",

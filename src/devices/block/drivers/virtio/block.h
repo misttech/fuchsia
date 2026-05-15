@@ -4,6 +4,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_VIRTIO_BLOCK_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_VIRTIO_BLOCK_H_
 
+#include <fidl/fuchsia.driver.token/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
@@ -282,7 +283,8 @@ class BlockDevice : public virtio::Device, public block_server::DriverInterface 
 
 class BlockDriver : public fdf::DriverBase2,
                     public ddk::BlockImplProtocol<BlockDriver>,
-                    public fidl::WireServer<fuchsia_hardware_block_volume::Node> {
+                    public fidl::WireServer<fuchsia_hardware_block_volume::Node>,
+                    public fidl::Server<fuchsia_driver_token::NodeToken> {
  public:
   static constexpr char kDriverName[] = "virtio-block";
 
@@ -299,6 +301,17 @@ class BlockDriver : public fdf::DriverBase2,
   // fuchsia.driver.framework.Node
   void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
 
+  // fuchsia_driver_token::NodeToken implementation.
+  void Get(GetCompleter::Sync& completer) override;
+
+  zx::event node_token() const {
+    zx::event copy;
+    if (node_token_.is_valid()) {
+      node_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &copy);
+    }
+    return copy;
+  }
+
  protected:
   // Override to inject dependency for unit testing.
   virtual zx::result<std::unique_ptr<BlockDevice>> CreateBlockDevice(
@@ -308,6 +321,7 @@ class BlockDriver : public fdf::DriverBase2,
 
  private:
   std::unique_ptr<BlockDevice> block_device_;
+  zx::event node_token_;
 
   fidl::WireSyncClient<fuchsia_driver_framework::Node> node_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;

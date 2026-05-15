@@ -27,6 +27,11 @@ zx_status_t Namespace::AddNamespace() {
           },
       .node = node_bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                                            fidl::kIgnoreBindingClosure),
+      .token =
+          [this](fidl::ServerEnd<fuchsia_driver_token::NodeToken> server_end) {
+            fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                             std::move(server_end), this);
+          },
   });
 
   auto result = controller_->driver_outgoing()->AddService<fuchsia_hardware_block_volume::Service>(
@@ -345,6 +350,15 @@ void Namespace::AddChild(AddChildRequestView request, AddChildCompleter::Sync& c
     return;
   }
   completer.ReplySuccess();
+}
+
+void Namespace::Get(GetCompleter::Sync& completer) {
+  zx::event token = controller_->node_token();
+  if (token.is_valid()) {
+    completer.Reply(zx::ok(std::move(token)));
+  } else {
+    completer.Reply(zx::error(ZX_ERR_NOT_FOUND));
+  }
 }
 
 }  // namespace nvme

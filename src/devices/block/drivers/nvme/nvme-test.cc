@@ -71,7 +71,12 @@ class TestConfig final {
 class NvmeTest : public ::testing::Test {
  public:
   void StartDriver() {
-    zx::result<> result = driver_test().StartDriver();
+    ASSERT_OK(zx::event::create(0, &node_token_));
+    zx::event token_copy;
+    ASSERT_OK(node_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy));
+
+    zx::result<> result = driver_test().StartDriverWithCustomStartArgs(
+        [&](fdf::DriverStartArgs& args) { args.node_token(std::move(token_copy)); });
     ASSERT_OK(result);
   }
 
@@ -104,12 +109,18 @@ class NvmeTest : public ::testing::Test {
 
  protected:
   fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
+  zx::event node_token_;
 };
 
 class NvmeTeardownTest : public ::testing::Test {
  public:
   void StartDriver() {
-    zx::result<> result = driver_test().StartDriver();
+    ASSERT_OK(zx::event::create(0, &node_token_));
+    zx::event token_copy;
+    ASSERT_OK(node_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy));
+
+    zx::result<> result = driver_test().StartDriverWithCustomStartArgs(
+        [&](fdf::DriverStartArgs& args) { args.node_token(std::move(token_copy)); });
     ASSERT_OK(result);
   }
 
@@ -117,6 +128,7 @@ class NvmeTeardownTest : public ::testing::Test {
 
  protected:
   fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
+  zx::event node_token_;
 };
 
 TEST_F(NvmeTest, BasicTest) {
@@ -472,6 +484,30 @@ TEST_F(NvmeTest, IoPushback) {
   ASSERT_OK(fifo->value()->fifo.read(sizeof(response), &response, 1, &actual_count));
   ASSERT_EQ(actual_count, 1u);
   ASSERT_OK(response.status);
+}
+
+TEST_F(NvmeTest, NodeToken) {
+  fake_nvme::FakeNamespace fake_ns;
+  TestNvme::controller_.AddNamespace(1, fake_ns);
+  driver_test().runtime().StartBackgroundDispatcher();
+
+  ASSERT_NO_FATAL_FAILURE(StartDriver());
+
+  zx::result connect_result =
+      driver_test().Connect<fuchsia_hardware_block_volume::Service::Token>("namespace-1");
+  ASSERT_OK(connect_result);
+
+  fidl::SyncClient<fuchsia_driver_token::NodeToken> client(std::move(connect_result.value()));
+  auto get_result = client->Get();
+  ASSERT_TRUE(get_result.is_ok());
+
+  zx_info_handle_basic_t info1, info2;
+  ASSERT_EQ(node_token_.get_info(ZX_INFO_HANDLE_BASIC, &info1, sizeof(info1), nullptr, nullptr),
+            ZX_OK);
+  ASSERT_EQ(
+      get_result->token().get_info(ZX_INFO_HANDLE_BASIC, &info2, sizeof(info2), nullptr, nullptr),
+      ZX_OK);
+  ASSERT_EQ(info1.koid, info2.koid);
 }
 
 }  // namespace nvme

@@ -386,6 +386,15 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
           });
     }
 
+    if (zx_status_t status = zx::event::create(0, &node_token_); status != ZX_OK) {
+      return status;
+    }
+    zx::event token_copy;
+    if (zx_status_t status = node_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy);
+        status != ZX_OK) {
+      return status;
+    }
+
     // Start driver
     zx::result result =
         driver_test_.StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
@@ -396,6 +405,7 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
           if (supply_power_framework) {
             args.power_element_args(std::move(power_args.value()));
           }
+          args.node_token(std::move(token_copy));
         });
     if (result.is_error()) {
       return result.status_value();
@@ -578,6 +588,7 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
   ddk::BlockImplProtocolClient boot2_;
   fidl::WireSharedClient<fuchsia_hardware_rpmb::Rpmb> rpmb_client_;
   std::atomic<bool> run_threads_ = true;
+  zx::event node_token_;
 
  private:
   static constexpr uint8_t kTestData[] = {
@@ -3122,6 +3133,30 @@ TEST_P(SdmmcBlockDeviceTest, PackedCommandReadError) {
     // The same packed command should now fail.
     EXPECT_EQ(client->FifoTransaction(requests, 2), ZX_ERR_IO);
   });
+}
+
+TEST_P(SdmmcBlockDeviceTest, NodeToken) {
+  ASSERT_OK(StartDriverForMmc());
+
+  zx::result connect_result =
+      driver_test_.Connect<fuchsia_hardware_block_volume::Service::Token>("user");
+  ASSERT_OK(connect_result);
+
+  fidl::SyncClient<fuchsia_driver_token::NodeToken> client(std::move(connect_result.value()));
+  auto get_result =
+      driver_test_
+          .RunOnBackgroundDispatcherSync<fidl::Result<fuchsia_driver_token::NodeToken::Get>>(
+              [&]() { return client->Get(); });
+  ASSERT_OK(get_result);
+  ASSERT_TRUE(get_result.value().is_ok());
+
+  zx_info_handle_basic_t info1, info2;
+  ASSERT_EQ(node_token_.get_info(ZX_INFO_HANDLE_BASIC, &info1, sizeof(info1), nullptr, nullptr),
+            ZX_OK);
+  ASSERT_EQ(get_result.value()->token().get_info(ZX_INFO_HANDLE_BASIC, &info2, sizeof(info2),
+                                                 nullptr, nullptr),
+            ZX_OK);
+  ASSERT_EQ(info1.koid, info2.koid);
 }
 
 INSTANTIATE_TEST_SUITE_P(SdmmcProtocolUsingFidlTest, SdmmcBlockDeviceTest, zxtest::Bool());

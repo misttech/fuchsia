@@ -240,6 +240,11 @@ zx_status_t SataDevice::AddDevice() {
             },
         .node = node_bindings_.CreateHandler(
             this, fdf::Dispatcher::GetCurrent()->async_dispatcher(), fidl::kIgnoreBindingClosure),
+        .token =
+            [this](fidl::ServerEnd<fuchsia_driver_token::NodeToken> server_end) {
+              fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                               std::move(server_end), this);
+            },
     });
 
     auto add_service_result =
@@ -452,6 +457,15 @@ void SataDevice::Shutdown(std::function<void()> callback) {
     });
   } else {
     callback();
+  }
+}
+
+void SataDevice::Get(GetCompleter::Sync& completer) {
+  zx::event token = controller_->node_token();
+  if (token.is_valid()) {
+    completer.Reply(zx::ok(std::move(token)));
+  } else {
+    completer.Reply(zx::error(ZX_ERR_NOT_FOUND));
   }
 }
 

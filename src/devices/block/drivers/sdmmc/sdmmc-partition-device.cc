@@ -120,6 +120,11 @@ zx_status_t PartitionDevice::AddDevice() {
           },
       .node = node_bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                                            fidl::kIgnoreBindingClosure),
+      .token =
+          [this](fidl::ServerEnd<fuchsia_driver_token::NodeToken> server_end) {
+            fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                             std::move(server_end), this);
+          },
   });
 
   if (sdmmc_parent_->SupportsInlineEncryption()) {
@@ -236,6 +241,15 @@ void PartitionDevice::SendReply(block_server::RequestId request, zx::result<> st
   ZX_DEBUG_ASSERT(block_server_);
   if (block_server_) {
     block_server_->SendReply(request, status);
+  }
+}
+
+void PartitionDevice::Get(GetCompleter::Sync& completer) {
+  zx::event token = sdmmc_parent_->parent()->node_token();
+  if (token.is_valid()) {
+    completer.Reply(zx::ok(std::move(token)));
+  } else {
+    completer.Reply(zx::error(ZX_ERR_NOT_FOUND));
   }
 }
 

@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_NVME_NAMESPACE_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_NVME_NAMESPACE_H_
 
+#include <fidl/fuchsia.driver.token/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/fdf/cpp/dispatcher.h>
@@ -27,7 +28,8 @@ namespace nvme {
 class Nvme;
 
 class Namespace : public block_server::DriverInterface,
-                  public fidl::WireServer<fuchsia_hardware_block_volume::Node> {
+                  public fidl::WireServer<fuchsia_hardware_block_volume::Node>,
+                  public fidl::Server<fuchsia_driver_token::NodeToken> {
  public:
   explicit Namespace(Nvme* controller, uint32_t namespace_id)
       : controller_(controller), namespace_id_(namespace_id) {}
@@ -42,6 +44,9 @@ class Namespace : public block_server::DriverInterface,
 
   // fidl::WireServer<fuchsia_hardware_block_volume::Node> implementations.
   void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
+
+  // fuchsia_driver_token::NodeToken implementation.
+  void Get(GetCompleter::Sync& completer) override;
 
   void CompleteIoCommand(IoCommand* io_cmd, zx_status_t status);
 

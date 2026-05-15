@@ -16,6 +16,7 @@ use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_driver_framework::{
     NodeAddArgs, NodeControllerMarker, NodeError, PowerElementArgs,
 };
+use fidl_fuchsia_driver_token as ftoken;
 use fidl_fuchsia_hardware_block_volume as fvolume;
 use fidl_fuchsia_hardware_inlineencryption as finlineencryption;
 use fidl_fuchsia_power_system as fpower;
@@ -78,6 +79,22 @@ async fn handle_node_requests(
                     error!(error:?; "Failed to add child node");
                 });
                 responder.send(res)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn handle_token_requests(
+    token: Arc<zx::Event>,
+    mut requests: ftoken::NodeTokenRequestStream,
+) -> Result<(), anyhow::Error> {
+    while let Some(request) = requests.next().await {
+        match request? {
+            ftoken::NodeTokenRequest::Get { responder } => {
+                responder.send(
+                    token.duplicate_handle(zx::Rights::SAME_RIGHTS).map_err(zx::Status::into_raw),
+                )?;
             }
         }
     }
@@ -326,6 +343,7 @@ impl Driver for CqhciDriver {
         let partitions = Arc::new(Mutex::new(partitions));
         let partitions_clone = partitions.clone();
         let node = Arc::new(context.take_node()?);
+        let node_token = context.start_args.node_token.take().map(Arc::new);
         let node_clone = node.clone();
         let inline_crypto_clone = inline_crypto.clone();
         let driver = CqhciDriver {
@@ -341,6 +359,7 @@ impl Driver for CqhciDriver {
                 fs.for_each_concurrent(None, move |(request, partition_name)| {
                     let partitions_clone = partitions_clone.clone();
                     let node_clone = node_clone.clone();
+                    let node_token = node_token.clone();
                     let inline_crypto_clone = inline_crypto_clone.clone();
                     async move {
                         match request {
@@ -385,6 +404,19 @@ impl Driver for CqhciDriver {
                                     }
                                 } else {
                                     error!("Inline encryption not supported by underlying device.");
+                                }
+                            }
+                            fvolume::ServiceRequest::Token(stream) => {
+                                if let Some(token) = node_token {
+                                    if let Err(error) = handle_token_requests(token, stream).await {
+                                        error!(
+                                            error:?;
+                                            "Failed to handle token requests \
+                                                for part {partition_name}"
+                                        );
+                                    }
+                                } else {
+                                    error!("Node token wasn't provided by framework");
                                 }
                             }
                         }

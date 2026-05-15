@@ -5,9 +5,12 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <fidl/fuchsia.driver.token/cpp/wire.h>
+#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.hardware.ramdisk/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/incoming/cpp/service.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/namespace.h>
@@ -155,6 +158,41 @@ TEST_F(RamdiskTests, RamdiskTestSimple) {
   // Seek to the start of the device and read the contents
   ASSERT_EQ(BRead(block_interface, out.data(), out.size(), 0), ZX_OK);
   ASSERT_EQ(memcmp(out.data(), buf.data(), out.size()), 0);
+}
+
+TEST_F(RamdiskTests, NodeToken) {
+  std::unique_ptr<RamdiskTest> ramdisk;
+  ASSERT_NO_FATAL_FAILURE(RamdiskTest::Create(zx_system_get_page_size(), 512, &ramdisk));
+
+  // Open /svc/fuchsia.hardware.block.volume.Service
+  fbl::unique_fd dir(open("/svc/fuchsia.hardware.block.volume.Service", O_RDONLY));
+  ASSERT_TRUE(dir.is_valid());
+
+  std::string instance_name;
+  zx_status_t status = fdio_watch_directory(
+      dir.get(),
+      [](int, int event, const char* name, void* cookie) {
+        if (event == WATCH_EVENT_ADD_FILE && strcmp(name, ".") != 0) {
+          *reinterpret_cast<std::string*>(cookie) = name;
+          return ZX_ERR_STOP;
+        }
+        return ZX_OK;
+      },
+      ZX_TIME_INFINITE, &instance_name);
+  ASSERT_EQ(status, ZX_ERR_STOP);
+
+  zx::result service =
+      component::OpenService<fuchsia_hardware_block_volume::Service>(instance_name);
+  ASSERT_EQ(service.status_value(), ZX_OK);
+
+  zx::result token_client = service->connect_token();
+  ASSERT_EQ(token_client.status_value(), ZX_OK);
+
+  fidl::WireResult result = fidl::WireCall(token_client.value())->Get();
+  ASSERT_TRUE(result.ok()) << result.FormatDescription();
+  const fit::result response = result.value();
+  ASSERT_TRUE(response.is_ok()) << zx_status_get_string(response.error_value());
+  ASSERT_TRUE(response.value()->token.is_valid());
 }
 
 zx::result<std::unique_ptr<block_client::Client>> CreateSession(

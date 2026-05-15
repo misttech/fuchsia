@@ -27,6 +27,7 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 use test_case::test_case;
+use zx;
 
 use fake_cqhci::{Blocker, FakeCqhci};
 
@@ -88,6 +89,29 @@ fn connect_inline_encryption_proxy(
 async fn test_driver_lifecycle() {
     let (_fixture, mut harness) = FakeCqhci::new(None);
     let started_driver = harness.start_driver().await.expect("failed to start driver");
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_node_token() {
+    let (_fixture, mut harness) = FakeCqhci::new(None);
+    let token = zx::Event::create();
+    harness = harness.set_node_token(token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    let incoming = started_driver.driver_outgoing();
+    let service = incoming
+        .service::<fidl_fuchsia_hardware_block_volume::ServiceProxy>()
+        .instance("user")
+        .connect()
+        .expect("failed to connect to service");
+
+    let token_proxy = service.connect_to_token().expect("failed to connect to token");
+    let res = token_proxy.get().await.expect("get failed");
+    assert!(res.is_ok());
+    let token = res.unwrap();
+    assert!(!token.is_invalid());
+
     started_driver.stop_driver().await;
 }
 

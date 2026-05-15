@@ -21,6 +21,7 @@ zx::result<> SdmmcRootDevice::Start(fdf::DriverContext context) {
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   node_name_ = context.node_name();
   config_ = context.take_config<sdmmc_config::Config>();
+  node_token_ = context.take_node_token();
   if (context.power_element_token().has_value()) {
     power_element_token_ = std::move(context.power_element_token().value());
   }

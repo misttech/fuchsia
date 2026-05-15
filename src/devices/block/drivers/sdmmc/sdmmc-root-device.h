@@ -45,6 +45,14 @@ class SdmmcRootDevice : public fdf::DriverBase2, public fdf_power::Suspendable<S
   const sdmmc_config::Config& config() const { return config_; }
   const zx::event& power_element_token() const { return power_element_token_; }
 
+  zx::event node_token() const {
+    zx::event copy;
+    if (node_token_.is_valid()) {
+      node_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &copy);
+    }
+    return copy;
+  }
+
   // Visible for testing.
   const std::variant<std::monostate, std::unique_ptr<SdioControllerDevice>,
                      std::unique_ptr<SdmmcBlockDevice>>&
@@ -91,7 +99,6 @@ class SdmmcRootDevice : public fdf::DriverBase2, public fdf_power::Suspendable<S
     return std::move(power_element_runner_);
   }
 
-
  protected:
   const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
   virtual zx_status_t Init(const fuchsia_hardware_sdmmc::SdmmcMetadata& metadata);
@@ -113,6 +120,7 @@ class SdmmcRootDevice : public fdf::DriverBase2, public fdf_power::Suspendable<S
   std::shared_ptr<fdf::Namespace> incoming_;
   std::optional<std::string> node_name_;
   zx::event power_element_token_;
+  zx::event node_token_;
   std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> power_element_runner_;
 
   std::optional<inspect::ComponentInspector> component_inspector_;

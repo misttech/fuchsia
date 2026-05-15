@@ -31,6 +31,7 @@ struct RamdiskControllerInner {
     counter: AtomicI32,
     volume_svc_dir: Arc<Simple>,
     scope: ExecutionScope,
+    node_token: Option<zx::Event>,
 }
 
 driver_register!(RamdiskController);
@@ -97,7 +98,14 @@ impl RamdiskControllerInner {
         let (ramdisk_client, ramdisk_server) =
             fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
         let scope = ExecutionScope::new();
-        let instance = Ramdisk::new(scope.clone(), vmo, partition_info, block_size, node_proxy)?;
+        let node_token = self
+            .node_token
+            .as_ref()
+            .map(|t| t.duplicate_handle(zx::Rights::SAME_RIGHTS))
+            .transpose()
+            .map_err(|_| Status::INTERNAL)?;
+        let instance =
+            Ramdisk::new(scope.clone(), vmo, partition_info, block_size, node_proxy, node_token)?;
         instance.serve(&scope, ramdisk_server);
 
         let publish = options.publish.unwrap_or(false);
@@ -115,6 +123,13 @@ impl RamdiskControllerInner {
             instance_dir.add_entry("node", endpoint(instance.node_request_handler())).map_err(
                 |error| {
                     warn!(error:?; "Failed to add node entry");
+                    Status::INTERNAL
+                },
+            )?;
+
+            instance_dir.add_entry("token", endpoint(instance.token_request_handler())).map_err(
+                |error| {
+                    warn!(error:?; "Failed to add token entry");
                     Status::INTERNAL
                 },
             )?;
@@ -173,6 +188,7 @@ impl Driver for RamdiskController {
 
     async fn start(mut context: DriverContext) -> Result<Self, Status> {
         let node = context.take_node()?;
+        let node_token = context.start_args.node_token.take();
         let volume_svc_dir = Simple::new();
         let scope = ExecutionScope::new();
         let inner = Arc::new(RamdiskControllerInner {
@@ -180,6 +196,7 @@ impl Driver for RamdiskController {
             counter: AtomicI32::new(0),
             volume_svc_dir: volume_svc_dir.clone(),
             scope: scope.clone(),
+            node_token,
         });
 
         let mut fs = ServiceFs::new();

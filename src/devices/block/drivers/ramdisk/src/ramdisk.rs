@@ -7,6 +7,7 @@ use block_server::async_interface::{Interface, SessionManager};
 use block_server::{BlockServer, DeviceInfo};
 use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
 use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_token as ftoken;
 use fidl_fuchsia_hardware_block_volume as fvolume;
 use fidl_fuchsia_hardware_ramdisk as framdisk;
 use fidl_fuchsia_io as fio;
@@ -45,6 +46,7 @@ struct RamdiskInner {
     state: Condition<RamdiskState>,
     node: fdf::NodeProxy,
     partition_info: block_server::PartitionInfo,
+    node_token: Option<zx::Event>,
 }
 
 impl Ramdisk {
@@ -54,6 +56,7 @@ impl Ramdisk {
         partition_info: block_server::PartitionInfo,
         block_size: u32,
         node: fdf::NodeProxy,
+        node_token: Option<zx::Event>,
     ) -> Result<Ramdisk, Status> {
         let block_count = partition_info.block_range.as_ref().map(|r| r.end - r.start).unwrap_or(0);
 
@@ -72,6 +75,7 @@ impl Ramdisk {
             state,
             node,
             partition_info,
+            node_token,
         });
 
         let block_server = Arc::new(BlockServer::new(block_size, ramdisk.clone()));
@@ -96,6 +100,41 @@ impl Ramdisk {
                                     let result =
                                         ramdisk.node.add_child(args, controller, None).await?;
                                     let _ = responder.send(result);
+                                    Ok(())
+                                }
+                            }
+                        }
+                    })
+                    .await;
+            });
+        }
+    }
+
+    pub fn token_request_handler(
+        &self,
+    ) -> impl Fn(ExecutionScope, fasync::Channel) + Send + Sync + 'static {
+        let ramdisk = self.ramdisk.clone();
+        move |_scope, channel| {
+            let requests = ftoken::NodeTokenRequestStream::from_channel(channel);
+            let ramdisk_clone = ramdisk.clone();
+            ramdisk.scope.spawn(async move {
+                let _ = requests
+                    .try_for_each(|request| {
+                        let ramdisk = ramdisk_clone.clone();
+                        async move {
+                            match request {
+                                ftoken::NodeTokenRequest::Get { responder } => {
+                                    let token = ramdisk
+                                        .node_token
+                                        .as_ref()
+                                        .map(|t| t.duplicate_handle(zx::Rights::SAME_RIGHTS))
+                                        .transpose();
+                                    let res = match token {
+                                        Ok(Some(t)) => Ok(t),
+                                        Ok(None) => Err(zx::Status::NOT_FOUND.into_raw()),
+                                        Err(s) => Err(s.into_raw()),
+                                    };
+                                    let _ = responder.send(res);
                                     Ok(())
                                 }
                             }

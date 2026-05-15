@@ -921,6 +921,7 @@ void BlockDevice::CleanupPendingTxns() {
 
 zx::result<> BlockDriver::Start(fdf::DriverContext context) {
   auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  node_token_ = context.take_node_token();
   {
     compat::DeviceServer::BanjoConfig banjo_config;
     banjo_config.callbacks[ZX_PROTOCOL_BLOCK_IMPL] = block_impl_server_.callback();
@@ -978,6 +979,11 @@ zx::result<> BlockDriver::Start(fdf::DriverContext context) {
               .node = node_bindings_.CreateHandler(
                   this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                   fidl::kIgnoreBindingClosure),
+              .token =
+                  [this](fidl::ServerEnd<fuchsia_driver_token::NodeToken> server_end) {
+                    fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                     std::move(server_end), this);
+                  },
           }));
       result.is_error()) {
     fdf::error("Failed to add volume service instance: {}", result);
@@ -1045,6 +1051,15 @@ void BlockDriver::AddChild(AddChildRequestView request, AddChildCompleter::Sync&
     return;
   }
   completer.ReplySuccess();
+}
+
+void BlockDriver::Get(GetCompleter::Sync& completer) {
+  zx::event token = node_token();
+  if (token.is_valid()) {
+    completer.Reply(zx::ok(std::move(token)));
+  } else {
+    completer.Reply(zx::error(ZX_ERR_NOT_FOUND));
+  }
 }
 
 }  // namespace virtio

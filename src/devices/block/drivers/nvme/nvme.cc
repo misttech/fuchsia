@@ -754,6 +754,7 @@ zx::result<fit::function<void()>> Nvme::InitResources() {
 zx::result<> Nvme::Start(fdf::DriverContext context) {
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   node_name_ = context.node_name();
+  node_token_ = context.take_node_token();
 
   zx::result<fit::function<void()>> release = InitResources();
   if (release.is_error()) {

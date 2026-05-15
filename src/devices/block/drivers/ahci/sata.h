@@ -6,6 +6,7 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_AHCI_SATA_H_
 
 #include <byteswap.h>
+#include <fidl/fuchsia.driver.token/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/fit/function.h>
@@ -188,7 +189,8 @@ inline void SataStringFix(uint16_t* buf, size_t size) {
 class Controller;
 
 class SataDevice : public block_server::DriverInterface,
-                   public fidl::WireServer<fuchsia_hardware_block_volume::Node> {
+                   public fidl::WireServer<fuchsia_hardware_block_volume::Node>,
+                   public fidl::Server<fuchsia_driver_token::NodeToken> {
  public:
   SataDevice(Controller* controller, uint32_t port, bool use_command_queue)
       : controller_(controller), port_(port), use_command_queue_(use_command_queue) {}
@@ -198,6 +200,9 @@ class SataDevice : public block_server::DriverInterface,
 
   // fidl::WireServer<fuchsia_hardware_block_volume::Node> implementations.
   void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
+
+  // fuchsia_driver_token::NodeToken implementation.
+  void Get(GetCompleter::Sync& completer) override;
 
   // Create a SATA device on |controller| at |port|.
   static zx::result<std::unique_ptr<SataDevice>> Bind(Controller* controller, uint32_t port,

@@ -437,6 +437,15 @@ class SdioControllerDeviceTest : public ::testing::Test {
           });
     }
 
+    if (zx_status_t status = zx::event::create(0, &node_token_); status != ZX_OK) {
+      return status;
+    }
+    zx::event token_copy;
+    if (zx_status_t status = node_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy);
+        status != ZX_OK) {
+      return status;
+    }
+
     zx::result<> result =
         driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& start_args) mutable {
           sdmmc_config::Config fake_config;
@@ -445,6 +454,7 @@ class SdioControllerDeviceTest : public ::testing::Test {
           if (supply_power_framework) {
             start_args.power_element_args(std::move(power_args.value()));
           }
+          start_args.node_token(std::move(token_copy));
         });
     if (result.is_error()) {
       return result.status_value();
@@ -469,6 +479,7 @@ class SdioControllerDeviceTest : public ::testing::Test {
   }
 
   FakeSdmmcDevice& sdmmc_ = TestSdmmcRootDevice::sdmmc_;
+  zx::event node_token_;
 
  private:
   fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;

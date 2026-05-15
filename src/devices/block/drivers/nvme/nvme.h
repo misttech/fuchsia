@@ -68,6 +68,14 @@ class Nvme : public fdf::DriverBase2 {
   std::shared_ptr<fdf::OutgoingDirectory>& driver_outgoing() { return outgoing(); }
   const std::optional<std::string>& driver_node_name() const { return node_name_; }
 
+  zx::event node_token() const {
+    zx::event copy;
+    if (node_token_.is_valid()) {
+      node_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &copy);
+    }
+    return copy;
+  }
+
  protected:
   // Returns a function for releasing the initialized resources. Override to inject dependency for
   // unit testing.
@@ -97,6 +105,7 @@ class Nvme : public fdf::DriverBase2 {
   std::shared_ptr<fdf::Namespace> incoming_;
   std::optional<inspect::ComponentInspector> component_inspector_;
   std::optional<std::string> node_name_;
+  zx::event node_token_;
   inspect::Node inspect_node_;
 
   std::mutex commands_lock_;

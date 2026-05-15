@@ -231,8 +231,14 @@ class TestConfig final {
 class BlockDriverTest : public ::testing::Test {
  public:
   void StartDriver(uint8_t status = VIRTIO_BLK_S_OK) {
+    zx::event token;
+    ASSERT_OK(zx::event::create(0, &token));
+    StartDriverWithNodeToken(std::move(token), status);
+  }
+  void StartDriverWithNodeToken(zx::event node_token, uint8_t status = VIRTIO_BLK_S_OK) {
     TestBlockDriver::backend_status_ = status;
-    zx::result<> result = driver_test().StartDriver();
+    zx::result<> result = driver_test().StartDriverWithCustomStartArgs(
+        [&](fdf::DriverStartArgs& args) { args.node_token(std::move(node_token)); });
     ASSERT_EQ(ZX_OK, result.status_value());
   }
   void TearDown() override {
@@ -472,6 +478,37 @@ TEST_F(BlockDriverTest, BarriersError) {
   };
 
   ASSERT_EQ(ZX_ERR_IO, client->FifoTransaction(requests, 1));
+}
+
+TEST_F(BlockDriverTest, NodeToken) {
+  zx::event token;
+  ASSERT_OK(zx::event::create(0, &token));
+  zx::event token_copy;
+  ASSERT_OK(token.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy));
+
+  StartDriverWithNodeToken(std::move(token));
+
+  zx::result connect_result =
+      driver_test().Connect<fuchsia_hardware_block_volume::Service::Token>();
+  ASSERT_OK(connect_result);
+
+  fidl::SyncClient<fuchsia_driver_token::NodeToken> client(std::move(connect_result.value()));
+
+  auto get_result =
+      driver_test()
+          .RunOnBackgroundDispatcherSync<fidl::Result<fuchsia_driver_token::NodeToken::Get>>(
+              [&]() { return client->Get(); });
+
+  ASSERT_OK(get_result);
+  ASSERT_TRUE(get_result.value().is_ok());
+
+  zx_info_handle_basic_t info1, info2;
+  ASSERT_EQ(token_copy.get_info(ZX_INFO_HANDLE_BASIC, &info1, sizeof(info1), nullptr, nullptr),
+            ZX_OK);
+  ASSERT_EQ(get_result.value()->token().get_info(ZX_INFO_HANDLE_BASIC, &info2, sizeof(info2),
+                                                 nullptr, nullptr),
+            ZX_OK);
+  ASSERT_EQ(info1.koid, info2.koid);
 }
 
 FUCHSIA_DRIVER_EXPORT2(TestBlockDriver);

@@ -279,7 +279,12 @@ const nand_protocol_ops_t FakeNand::kOps = {
 class BlockDeviceTest : public zxtest::Test {
  public:
   void SetUp() override {
-    ASSERT_OK(driver_test_.StartDriver());
+    ASSERT_OK(zx::event::create(0, &node_token_));
+    zx::event token_copy;
+    ASSERT_OK(node_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy));
+
+    ASSERT_OK(driver_test_.StartDriverWithCustomStartArgs(
+        [&](fdf::DriverStartArgs& args) { args.node_token(std::move(token_copy)); }));
     fidl::ClientEnd<fuchsia_io::Directory> svc_dir = driver_test_.ConnectToDriverSvcDir();
     zx::result service = component::OpenServiceAt<fuchsia_hardware_block_volume::Service>(svc_dir);
     ASSERT_OK(service);
@@ -331,6 +336,7 @@ class BlockDeviceTest : public zxtest::Test {
   fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
 
   std::unique_ptr<block_client::RemoteBlockDevice> client_;
+  zx::event node_token_;
 };
 
 TEST_F(BlockDeviceTest, GetInfo) {
@@ -470,6 +476,26 @@ TEST_F(BlockDeviceTest, GetInspectVmoContainsCountersAndWearCount) {
       hierarchy->node().get_property<inspect::UintPropertyValue>("nand.worn_blocks_detected");
   ASSERT_NOT_NULL(property_worn);
   EXPECT_EQ(property_worn->value(), 0);
+}
+
+TEST_F(BlockDeviceTest, NodeToken) {
+  fidl::ClientEnd<fuchsia_io::Directory> svc_dir = driver_test_.ConnectToDriverSvcDir();
+  zx::result service = component::OpenServiceAt<fuchsia_hardware_block_volume::Service>(svc_dir);
+  ASSERT_OK(service);
+  zx::result client_end = service->connect_token();
+  ASSERT_OK(client_end);
+
+  fidl::SyncClient<fuchsia_driver_token::NodeToken> client(std::move(client_end.value()));
+  auto get_result = client->Get();
+  ASSERT_TRUE(get_result.is_ok());
+
+  zx_info_handle_basic_t info1, info2;
+  ASSERT_EQ(node_token_.get_info(ZX_INFO_HANDLE_BASIC, &info1, sizeof(info1), nullptr, nullptr),
+            ZX_OK);
+  ASSERT_EQ(
+      get_result->token().get_info(ZX_INFO_HANDLE_BASIC, &info2, sizeof(info2), nullptr, nullptr),
+      ZX_OK);
+  ASSERT_EQ(info1.koid, info2.koid);
 }
 
 void ReadProperties(const zx::vmo& vmo, std::map<std::string, uint64_t>& counters,

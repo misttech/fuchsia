@@ -70,6 +70,12 @@ void BlockDevice::Start(fdf::StartCompleter completer) {
       },
       "volume");
   ZX_ASSERT(add_member_result.is_ok());
+  zx::result<> add_token_result = handler.AddMember<fuchsia_driver_token::NodeToken>(
+      [this](fidl::ServerEnd<fuchsia_driver_token::NodeToken> server_end) {
+        fidl::BindServer(dispatcher(), std::move(server_end), this);
+      },
+      "token");
+  ZX_ASSERT(add_token_result.is_ok());
   zx::result<> add_block_result =
       outgoing()->AddService<fuchsia_hardware_block_volume::Service>(std::move(handler));
   if (add_block_result.is_error()) {
@@ -302,6 +308,15 @@ bool BlockDevice::InitFtl() {
 
   FDF_LOG(INFO, "FTL: InitFtl ok");
   return true;
+}
+
+void BlockDevice::Get(GetCompleter::Sync& completer) {
+  zx::event token = node_token();
+  if (token.is_valid()) {
+    completer.Reply(zx::ok(std::move(token)));
+  } else {
+    completer.Reply(zx::error(ZX_ERR_NOT_FOUND));
+  }
 }
 
 }  // namespace ftl

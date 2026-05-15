@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_SDMMC_SDMMC_PARTITION_DEVICE_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_SDMMC_SDMMC_PARTITION_DEVICE_H_
 
+#include <fidl/fuchsia.driver.token/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.hardware.inlineencryption/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
@@ -26,7 +27,8 @@ class SdmmcBlockDevice;
 class PartitionDevice : public ddk::BlockImplProtocol<PartitionDevice>,
                         public ddk::BlockPartitionProtocol<PartitionDevice>,
                         public block_server::DriverInterface,
-                        public fidl::WireServer<fuchsia_hardware_block_volume::Node> {
+                        public fidl::WireServer<fuchsia_hardware_block_volume::Node>,
+                        public fidl::Server<fuchsia_driver_token::NodeToken> {
  public:
   PartitionDevice(SdmmcBlockDevice* sdmmc_parent, const block_info_t& block_info,
                   EmmcPartition partition);
@@ -50,6 +52,9 @@ class PartitionDevice : public ddk::BlockImplProtocol<PartitionDevice>,
   const block_impl_protocol_ops_t& block_impl_protocol_ops() const {
     return block_impl_protocol_ops_;
   }
+
+  // fuchsia_driver_token::NodeToken implementation.
+  void Get(GetCompleter::Sync& completer) override;
 
   void SendReply(block_server::RequestId, zx::result<>);
 

@@ -351,6 +351,7 @@ zx::result<std::unique_ptr<Bus>> Controller::CreateBus() {
 zx::result<> Controller::Start(fdf::DriverContext context) {
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   node_name_ = context.node_name();
+  node_token_ = context.take_node_token();
 
   if (AHCI_PAGE_SIZE != zx_system_get_page_size()) {
     fdf::error("System page size of {} does not match expected page size of {}\n",

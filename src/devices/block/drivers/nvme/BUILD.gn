@@ -28,6 +28,7 @@ group("tests") {
 
 common_deps = [
   ":nvme_bind",
+  "//sdk/fidl/fuchsia.driver.token:fuchsia.driver.token_cpp",
   "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
   "//sdk/lib/driver/component/cpp",
   "//sdk/lib/driver/mmio/cpp",
