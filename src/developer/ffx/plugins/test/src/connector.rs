@@ -27,7 +27,7 @@ impl SuiteRunnerConnector for RunConnector {
     async fn connect(&self) -> Result<ftest_manager::SuiteRunnerProxy, ConnectionError> {
         testing_lib::connect_to_suite_runner(&self.remote_control_proxy)
             .await
-            .map_err(ConnectionError)
+            .map_err(|e| ConnectionError(anyhow::Error::from(e)))
     }
 
     fn batch_size(&self) -> usize {

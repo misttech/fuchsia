@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
 use flex_fuchsia_developer_remotecontrol as fremotecontrol;
 use flex_fuchsia_test_manager as ftest_manager;
 
@@ -20,37 +19,37 @@ const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
 /// Connect to `fuchsia.test.manager.SuiteRunner` on a target device using an RCS connection.
 pub async fn connect_to_suite_runner(
     remote_control: &fremotecontrol::RemoteControlProxy,
-) -> Result<ftest_manager::SuiteRunnerProxy> {
-    Ok(rcs::connect_to_protocol::<ftest_manager::SuiteRunnerMarker>(
+) -> std::result::Result<ftest_manager::SuiteRunnerProxy, rcs::RcsError> {
+    rcs::connect_to_protocol::<ftest_manager::SuiteRunnerMarker>(
         TIMEOUT,
         SUITE_RUNNER_MONIKER,
         remote_control,
     )
-    .await?)
+    .await
 }
 
 /// Connect to `fuchsia.test.manager.TestCaseEnumerator` on a target device using an RCS connection.
 pub async fn connect_to_test_case_enumerator(
     remote_control: &fremotecontrol::RemoteControlProxy,
-) -> Result<ftest_manager::TestCaseEnumeratorProxy> {
-    Ok(rcs::connect_to_protocol::<ftest_manager::TestCaseEnumeratorMarker>(
+) -> std::result::Result<ftest_manager::TestCaseEnumeratorProxy, rcs::RcsError> {
+    rcs::connect_to_protocol::<ftest_manager::TestCaseEnumeratorMarker>(
         TIMEOUT,
         TEST_CASE_ENUMERATOR_MONIKER,
         remote_control,
     )
-    .await?)
+    .await
 }
 
 /// Connect to `fuchsia.test.manager.EarlyBootProfile` on a target device using an RCS connection.
 pub async fn connect_to_early_boot_profile(
     remote_control: &fremotecontrol::RemoteControlProxy,
-) -> Result<ftest_manager::EarlyBootProfileProxy> {
-    Ok(rcs::connect_to_protocol::<ftest_manager::EarlyBootProfileMarker>(
+) -> std::result::Result<ftest_manager::EarlyBootProfileProxy, rcs::RcsError> {
+    rcs::connect_to_protocol::<ftest_manager::EarlyBootProfileMarker>(
         TIMEOUT,
         EARLY_BOOT_PROFILE_MONIKER,
         remote_control,
     )
-    .await?)
+    .await
 }
 
 #[cfg(feature = "fdomain")]

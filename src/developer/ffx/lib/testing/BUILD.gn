@@ -30,7 +30,7 @@ template("testing_lib") {
       "src/fake_rcs.rs",
       "src/lib.rs",
     ]
-    deps = [ "//third_party/rust_crates:anyhow" ] + invoker.deps
+    deps = invoker.deps
 
     features = []
     if (defined(invoker.features)) {
