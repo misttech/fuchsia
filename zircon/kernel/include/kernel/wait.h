@@ -208,8 +208,6 @@ class WaitQueueBase : public ChainLockable {
   uint32_t magic() const { return magic_; }
   bool IsEmpty() const TA_REQ_SHARED(get_lock()) { return collection_.IsEmpty(); }
   uint32_t Count() const TA_REQ_SHARED(get_lock()) { return collection_.Count(); }
-  Thread* PeekFront() TA_REQ(get_lock()) { return collection_.PeekFront(); }
-  const Thread* PeekFront() const TA_REQ(get_lock()) { return collection_.PeekFront(); }
 
   // Remove a specific thread out of the wait queue it's blocked on, and deal
   // with any PI side effects.  Note: when calling this function:
@@ -227,17 +225,16 @@ class WaitQueueBase : public ChainLockable {
       TA_REL(get_lock(), ChainLockable::GetLock(*t))
           TA_REQ(chainlock_transaction_token, preempt_disabled_token);
 
-  // Recompute the effective profile of a thread which is known to be blocked in
-  // this wait queue, reordering the thread in the queue collection as needed.
-  //
-  // This method does not deal with the consequences of profile inheritance, and
-  // should only ever be called from one of the OwnedWaitQueue's Propagate
-  // methods (which will deal with the consequences)
-  void UpdateBlockedThreadEffectiveProfile(Thread& t) TA_REQ(get_lock(), t);
-
  protected:
+  friend struct BrwLockOps;
+  friend struct WaitQueueLockOps;
+  friend class Scheduler;
+
   explicit constexpr WaitQueueBase(uint32_t magic) : magic_(magic) {}
   ~WaitQueueBase();
+
+  Thread* PeekFront() TA_REQ(get_lock()) { return collection_.PeekFront(); }
+  const Thread* PeekFront() const TA_REQ(get_lock()) { return collection_.PeekFront(); }
 
   inline zx_status_t BlockEtcPreamble(Thread* current_thread, const Deadline& deadline,
                                       uint signal_mask, ResourceOwnership reason,
@@ -255,13 +252,15 @@ class WaitQueueBase : public ChainLockable {
 
   static void TimeoutHandler(Timer* timer, zx_instant_mono_t now, void* arg);
 
+  // Recompute the effective profile of a thread which is known to be blocked in
+  // this wait queue, reordering the thread in the queue collection as needed.
+  //
+  // This method does not deal with the consequences of profile inheritance, and
+  // should only ever be called from the scheduler's PI update code.
+  void UpdateBlockedThreadEffectiveProfile(Thread& t) TA_REQ(get_lock(), t);
+
   uint32_t magic_;
   WaitQueueCollection collection_ TA_GUARDED(get_lock());
-
-  // The OwnedWaitQueue subclass also manipulates the collection.
-  friend class OwnedWaitQueue;
-  friend struct BrwLockOps;
-  friend struct WaitQueueLockOps;
 };
 
 // A basic wait queue for blocking and unblocking threads without resource
@@ -276,6 +275,9 @@ class WaitQueue : public WaitQueueBase {
   WaitQueue(WaitQueue&&) = delete;
   WaitQueue& operator=(WaitQueue&) = delete;
   WaitQueue& operator=(WaitQueue&&) = delete;
+
+  // Expose direct access to PeekFront.
+  using WaitQueueBase::PeekFront;
 
   // Block on a wait queue.
   // The returned status is whatever the caller of WaitQueue::Wake_*() specifies.
