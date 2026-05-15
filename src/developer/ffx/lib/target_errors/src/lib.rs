@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::anyhow;
 use errors::{FfxError, IntoExitCode};
 use fidl_fuchsia_developer_ffx::{
     DaemonError, OpenTargetError, TargetConnectionError, TunnelError,
@@ -109,30 +108,38 @@ pub fn target_string(matcher: &Option<String>) -> String {
     }
 }
 
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum DaemonProtocolError {
+    #[error(
+        "The daemon protocol '{svc_name}' did not match any protocols on the daemon\nIf you are not developing this plugin or the protocol it connects to, then this is a bug\nPlease report it at https://fxbug.dev/new/ffx+User+Bug."
+    )]
+    ProtocolNotFound { svc_name: String },
+
+    #[error(
+        "The daemon protocol '{svc_name}' failed to open on the daemon.\nIf you are developing the protocol, there may be an internal failure when invoking the start\nfunction. See the ffx.daemon.log for details at `ffx config get log.dir -p sub`.\nIf you are NOT developing this plugin or the protocol it connects to, then this is a bug.\nPlease report it at https://fxbug.dev/new/ffx+User+Bug."
+    )]
+    ProtocolOpenError { svc_name: String },
+
+    #[error(
+        "While attempting to open the daemon protocol '{svc_name}', received an unexpected error:\n{unexpected:?}\nThis is not intended behavior and is a bug.\nPlease report it at https://fxbug.dev/new/ffx+User+Bug."
+    )]
+    Unexpected { svc_name: String, unexpected: DaemonError },
+}
+
 /// Convenience function for converting protocol connection requests into more
 /// diagnosable/actionable errors for the user.
-pub fn map_daemon_error(svc_name: &str, err: DaemonError) -> anyhow::Error {
+pub fn map_daemon_error(svc_name: &str, err: DaemonError) -> DaemonProtocolError {
     match err {
-        DaemonError::ProtocolNotFound => anyhow!(
-            "The daemon protocol '{svc_name}' did not match any protocols on the daemon
-If you are not developing this plugin or the protocol it connects to, then this is a bug
-Please report it at https://fxbug.dev/new/ffx+User+Bug."
-        ),
-        DaemonError::ProtocolOpenError => anyhow!(
-            "The daemon protocol '{svc_name}' failed to open on the daemon.
-If you are developing the protocol, there may be an internal failure when invoking the start
-function. See the ffx.daemon.log for details at `ffx config get log.dir -p sub`.
-If you are NOT developing this plugin or the protocol it connects to, then this is a bug.
-Please report it at https://fxbug.dev/new/ffx+User+Bug."
-        ),
-        unexpected => anyhow!(
-"While attempting to open the daemon protocol '{svc_name}', received an unexpected error:
-{unexpected:?}
-This is not intended behavior and is a bug.
-Please report it at https://fxbug.dev/new/ffx+User+Bug."
-        ),
+        DaemonError::ProtocolNotFound => {
+            DaemonProtocolError::ProtocolNotFound { svc_name: svc_name.to_string() }
+        }
+        DaemonError::ProtocolOpenError => {
+            DaemonProtocolError::ProtocolOpenError { svc_name: svc_name.to_string() }
+        }
+        unexpected => {
+            DaemonProtocolError::Unexpected { svc_name: svc_name.to_string(), unexpected }
+        }
     }
-    .into()
 }
 
 impl IntoExitCode for FfxTargetError {

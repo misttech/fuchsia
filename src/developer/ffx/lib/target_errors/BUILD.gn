@@ -17,7 +17,6 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/errors:lib",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/versioning/version-history/rust/data",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:thiserror",
   ]
   test_deps = [ "//third_party/rust_crates:regex" ]
