@@ -25,6 +25,11 @@
             type: "uint32",
             value: 10,
         },
+        {
+            config: "fuchsia.power.MaxSuspendEventsToLog",
+            type: "uint32",
+            value: 6144,
+        },
         { service: "fuchsia.power.broker.ElementInfoProviderService" },
     ],
     use: [
@@ -103,6 +108,14 @@
             // Sets the maximum number of active wake leases that will be logged to SAG's Inspect.
             from: "self",
             key: "max_active_wake_leases_to_log",
+            type: "uint32",
+        },
+        {
+            config: "fuchsia.power.MaxSuspendEventsToLog",
+
+            // Sets the maximum number of suspend events to log to SAG's Inspect.
+            from: "self",
+            key: "max_suspend_events_to_log",
             type: "uint32",
         },
     ],

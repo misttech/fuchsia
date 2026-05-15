@@ -286,6 +286,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -420,6 +421,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -509,6 +511,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -583,6 +586,7 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -667,6 +671,7 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -741,6 +746,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -825,6 +831,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -1057,6 +1064,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -1174,6 +1182,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -1248,6 +1257,7 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -1306,6 +1316,7 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -1625,6 +1636,7 @@ async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_wak
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -1710,6 +1722,7 @@ async fn test_activity_governor_acquire_wake_lease_raises_execution_state_to_sus
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -1911,12 +1924,60 @@ async fn test_activity_governor_handles_1000_wake_leases() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
             },
         }
     );
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_activity_governor_inspect_buffer_not_exceeded() -> Result<()> {
+    let (realm, activity_governor_moniker) = create_realm().await?;
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
+
+    let inspect = get_diagnostics_hierarchy_for(&activity_governor_moniker).await?;
+    let max_suspend_events_to_log = inspect
+        .get_property_by_path(&["config", "max_suspend_events_to_log"])
+        .expect("property max_suspend_events_to_log not found")
+        .uint()
+        .expect("max_suspend_events_to_log is not a uint");
+
+    // Rapidly acquire and drop wake leases.
+    for i in 0..max_suspend_events_to_log {
+        let _ = activity_governor.acquire_wake_lease(&format!("wake_lease{}", i)).await?;
+    }
+
+    let inspect = get_diagnostics_hierarchy_for(&activity_governor_moniker).await?;
+
+    let root_failed_allocations = inspect
+        .get_property_by_path(&["fuchsia.inspect.Stats", "failed_allocations"])
+        .expect("property failed_allocations not found")
+        .uint()
+        .expect("failed_allocations is not a uint");
+
+    assert_eq!(root_failed_allocations, 0);
+
+    let suspend_events_failed_allocations = inspect
+        .get_property_by_path(&["suspend_events", "fuchsia.inspect.Stats", "failed_allocations"])
+        .expect("property failed_allocations not found")
+        .uint()
+        .expect("failed_allocations is not a uint");
+
+    assert_eq!(suspend_events_failed_allocations, 0);
+
+    // Make sure the event list is full.
+    let suspend_events_node =
+        inspect.get_child_by_path(&[fobs::SUSPEND_EVENTS_NODE]).expect("property not found");
+    // fuchsia.inspect.Stats is a sibling node for the events, so we subtract 1 from the count.
+    assert_eq!(suspend_events_node.children.len() - 1, max_suspend_events_to_log as usize);
 
     Ok(())
 }
@@ -1982,6 +2043,7 @@ async fn test_activity_governor_handles_1000_acquired_wake_leases() -> Result<()
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -2404,6 +2466,7 @@ async fn test_acquire_wake_lease_blocks_during_suspend() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -2465,6 +2528,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -2505,6 +2569,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -2550,6 +2615,7 @@ async fn test_last_wake_lease_blocks_suspend_lifo() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -2633,6 +2699,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -2671,6 +2738,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -2716,6 +2784,7 @@ async fn test_last_wake_lease_blocks_suspend_fifo() -> Result<()> {
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -3309,6 +3378,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -3409,6 +3479,7 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,
@@ -3845,6 +3916,7 @@ async fn test_activity_governor_acquire_long_wake_lease_raises_execution_state_t
             config: {
                 use_suspender: true,
                 wait_for_suspending_token: false,
+                max_suspend_events_to_log: 6144u64,
                 suspend_resume_stuck_warning_timeout: 60u64,
                 max_active_wake_leases_to_log: 10u64,
                 reboot_on_stalled_suspend_blocker: false,

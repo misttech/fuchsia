@@ -233,7 +233,8 @@ async fn main() -> Result<()> {
     let topology = connect_to_protocol::<fbroker::TopologyMarker>()?;
     let crash_reporter = connect_to_protocol::<ffeedback::CrashReporterMarker>()?;
     let boost_proxy = connect_to_protocol::<fcpumanager::BoostMarker>()?;
-    let sag_event_logger = SagEventLogger::new(inspector.root());
+    let sag_event_logger =
+        SagEventLogger::new(inspector.root(), config.max_suspend_events_to_log as usize);
 
     let topology2 = topology.clone();
     let sag_event_logger2 = sag_event_logger.clone();

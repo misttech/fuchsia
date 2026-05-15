@@ -16,8 +16,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use strum_macros::{Display, EnumIter};
 
-// TODO(b/509625434): Convert to use value from config file
-const SUSPEND_EVENT_BUFFER_SIZE_EVENTS: usize = 6144;
 const SUSPEND_EVENT_BUFFER_SIZE_BYTES: usize = (2.5f32 * DEFAULT_VMO_SIZE_BYTES as f32) as usize; // 640K buffer
 
 static INSPECT_FIELD_EVENT_CAPACITY: &str = "event_capacity";
@@ -110,12 +108,15 @@ pub struct SagEventLogger {
 
     /// State recorder for `SystemSuspendState`.
     system_suspend_state: Arc<Mutex<EnumStateRecorder<SystemSuspendState>>>,
+
+    /// The number of events to keep in the internal ring buffer.
+    max_suspend_events_to_log: usize,
 }
 
 impl SagEventLogger {
-    pub fn new(node: &INode) -> Self {
+    pub fn new(node: &INode, max_suspend_events_to_log: usize) -> Self {
         let internal_event_log = Arc::new(Mutex::new(
-            VecDeque::<SagWakeLeaseEvent>::with_capacity(SUSPEND_EVENT_BUFFER_SIZE_EVENTS),
+            VecDeque::<SagWakeLeaseEvent>::with_capacity(max_suspend_events_to_log),
         ));
 
         let weak_arc_of_internal_event_log = Arc::downgrade(&internal_event_log);
@@ -246,10 +247,7 @@ impl SagEventLogger {
                 let inspector = fuchsia_inspect::Inspector::default();
                 let root = inspector.root();
 
-                root.record_uint(
-                    INSPECT_FIELD_EVENT_CAPACITY,
-                    SUSPEND_EVENT_BUFFER_SIZE_EVENTS as u64,
-                );
+                root.record_uint(INSPECT_FIELD_EVENT_CAPACITY, max_suspend_events_to_log as u64);
 
                 if let Some(internal_event_log) = weak_internal_log.upgrade() {
                     let timestamps = internal_event_log.lock();
@@ -261,7 +259,7 @@ impl SagEventLogger {
                             zx::BootDuration::from_nanos(tail_ns - head_ns).into_seconds();
                         root.record_int(INSPECT_FIELD_HISTORY_DURATION, duration);
 
-                        if timestamps.len() == SUSPEND_EVENT_BUFFER_SIZE_EVENTS {
+                        if timestamps.len() == max_suspend_events_to_log {
                             root.record_int(INSPECT_FIELD_HISTORY_DURATION_WHEN_FULL, duration);
                         }
                     } else {
@@ -293,6 +291,7 @@ impl SagEventLogger {
             _event_log_stats: Rc::new(RefCell::new(event_log_stats)),
             cumulative_suspend_duration: Arc::new(AtomicI64::new(0)),
             system_suspend_state,
+            max_suspend_events_to_log,
         }
     }
 
@@ -310,7 +309,7 @@ impl SagEventLogger {
             let mut internal_events = self.internal_event_log.lock();
             let mut event_number = self.internal_event_number.lock();
 
-            if internal_events.len() == SUSPEND_EVENT_BUFFER_SIZE_EVENTS {
+            if internal_events.len() == self.max_suspend_events_to_log {
                 internal_events.pop_front();
             }
             internal_events.push_back(SagWakeLeaseEvent {
