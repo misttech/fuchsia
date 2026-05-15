@@ -5,10 +5,10 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 
-use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_name as fnet_name, fidl_fuchsia_net_ndp as fnet_ndp,
-    fidl_fuchsia_net_ndp_ext as fnet_ndp_ext,
-};
+use fidl_fuchsia_net as fnet;
+use fidl_fuchsia_net_name as fnet_name;
+use fidl_fuchsia_net_ndp as fnet_ndp;
+use fidl_fuchsia_net_ndp_ext as fnet_ndp_ext;
 
 use anyhow::Context;
 use async_utils::stream::{Tagged, WithTag as _};
@@ -20,7 +20,8 @@ use log::{error, info, trace, warn};
 use net_types::{Scope, ScopeableAddress};
 use packet_formats::icmp::ndp as packet_formats_ndp;
 
-const DNS_PORT: u16 = 53;
+/// RFC-1035§4.2 specifies port 53 (decimal) as the default port for DNS requests.
+pub const DNS_PORT: u16 = 53;
 
 use crate::network;
 

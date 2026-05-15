@@ -715,7 +715,6 @@ pub struct NetCfg<'a> {
     // NetworkProperty Watchers
     netpol_networks_service: network::NetpolNetworksService,
 
-    enable_socket_proxy: bool,
     inspector: fuchsia_inspect::Inspector,
 }
 
@@ -1049,7 +1048,6 @@ impl<'a> NetCfg<'a> {
             allowed_upstream_device_classes,
             interface_provisioning_policy,
             netpol_networks_service,
-            enable_socket_proxy,
             inspector,
         })
     }
@@ -1191,10 +1189,14 @@ impl<'a> NetCfg<'a> {
                     }
                 }
             }
-            DnsServersUpdateSource::SocketProxy => {
-                // Remove the SocketProxy DNS servers when the server watcher is complete.
-                Ok(self.update_dns_servers(source, vec![]).await)
-            }
+            // TODO(https://fxbug.dev/475916525): Update the name of this source once these
+            // servers are provided directly by Starnix.
+            // SocketProxy DNS updates are pushed directly via the NetworkRegistry protocol
+            // rather than an active DNS server watcher stream. Thus, the watcher completion
+            // handler is a no-op.
+            // We need to maintain this variant to allow for SocketProxy DNS servers to be
+            // prioritized in dns-resolver over other DNS server sources.
+            DnsServersUpdateSource::SocketProxy => Ok(()),
         }
     }
 
@@ -1241,26 +1243,6 @@ impl<'a> NetCfg<'a> {
                 .is_none(),
             "dns watchers should be empty"
         );
-
-        if self.enable_socket_proxy {
-            let socketproxy_dns_server_watcher = fuchsia_component::client::connect_to_protocol::<
-                fnp_socketproxy::DnsServerWatcherMarker,
-            >()
-            .context("error connecting to socketproxy dns server watcher")?;
-            let socketproxy_dns_server_stream =
-                dns_server_watcher::new_dns_server_stream_socketproxy(
-                    socketproxy_dns_server_watcher,
-                )
-                .boxed();
-
-            assert!(
-                dns_watchers
-                    .get_mut()
-                    .insert(DnsServersUpdateSource::SocketProxy, socketproxy_dns_server_stream)
-                    .is_none(),
-                "dns watchers should be empty"
-            );
-        }
 
         let mut masquerade_handler = MasqueradeHandler::default();
 
@@ -1507,12 +1489,25 @@ impl<'a> NetCfg<'a> {
                         });
                 }
                 Event::DelegatedNetworksUpdate(update) => {
-                    self.netpol_networks_service
+                    match self
+                        .netpol_networks_service
                         .handle_delegated_networks_update(update)
                         .await
-                        .unwrap_or_else(|e| {
-                            error!("Could not handle delegated network update: {e:?}")
-                        });
+                    {
+                        Ok(network::DelegatedNetworkUpdateResult {
+                            dns_servers: Some(dns_servers),
+                        }) => {
+                            self.update_dns_servers(
+                                dns_server_watcher::DnsServersUpdateSource::SocketProxy,
+                                dns_servers,
+                            )
+                            .await;
+                        }
+                        Ok(network::DelegatedNetworkUpdateResult { dns_servers: None }) => {}
+                        Err(e) => {
+                            error!("Could not handle delegated network update: {e:?}");
+                        }
+                    }
                 }
                 Event::ProvisioningEvent(event) => {
                     self.handle_provisioning_event(
@@ -2179,7 +2174,26 @@ impl<'a> NetCfg<'a> {
                                         added to the socket-proxy, attempting addition",
                                         name, id
                                     );
-                                    state.handle_interface_new_candidate(&current_properties).await
+                                    state.handle_interface_new_candidate(&current_properties).await;
+
+                                    netpol_networks_service
+                                        .update(network::PropertyUpdate::ChangeNetwork(
+                                            network::NetworkId::fuchsia(InterfaceId(*id)),
+                                            network::NetworkUpdate::MakeDefault,
+                                        ))
+                                        .await;
+
+                                    let updated_dns =
+                                        netpol_networks_service.consolidated_dns_servers();
+                                    dns::update_servers(
+                                        lookup_admin,
+                                        dns_servers,
+                                        dns_server_watch_responders,
+                                        netpol_networks_service,
+                                        dns_server_watcher::DnsServersUpdateSource::SocketProxy,
+                                        updated_dns,
+                                    )
+                                    .await;
                                 }
                                 Some(false) => {
                                     info!(
@@ -2189,7 +2203,30 @@ impl<'a> NetCfg<'a> {
                                     );
                                     state
                                         .handle_interface_no_longer_candidate(InterfaceId(*id))
-                                        .await
+                                        .await;
+
+                                    netpol_networks_service
+                                        .update(network::PropertyUpdate::default_network_lost())
+                                        .await;
+
+                                    netpol_networks_service
+                                        .update(network::PropertyUpdate::ChangeNetwork(
+                                            network::NetworkId::fuchsia(InterfaceId(*id)),
+                                            network::NetworkUpdate::Remove,
+                                        ))
+                                        .await;
+
+                                    let updated_dns =
+                                        netpol_networks_service.consolidated_dns_servers();
+                                    dns::update_servers(
+                                        lookup_admin,
+                                        dns_servers,
+                                        dns_server_watch_responders,
+                                        netpol_networks_service,
+                                        dns_server_watcher::DnsServersUpdateSource::SocketProxy,
+                                        updated_dns,
+                                    )
+                                    .await;
                                 }
                                 None => (),
                             }
@@ -2939,6 +2976,7 @@ impl<'a> NetCfg<'a> {
                         network::NetworkUpdate::Properties(network::NetworkPropertiesChange {
                             added: true,
                             marks: None,
+                            dns_servers: None,
                             // TODO(https://fxbug.dev/487288886): Set the connectivity state for
                             // Fuchsia networks.
                             connectivity_state: None,
@@ -4095,7 +4133,6 @@ mod tests {
                 ),
                 interface_provisioning_policy: Default::default(),
                 netpol_networks_service: Default::default(),
-                enable_socket_proxy: false,
                 inspector: fuchsia_inspect::Inspector::default(),
             },
             ServerEnds {

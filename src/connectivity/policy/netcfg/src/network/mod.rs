@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::InterfaceId;
+use crate::dns::DNS_PORT;
 use crate::telemetry::{NetworkEventMetadata, TelemetryEvent, TelemetrySender};
 use anyhow::Context as _;
 use async_utils::stream::{Tagged, WithTag as _};
@@ -134,6 +135,7 @@ impl NetworkPropertyResponder {
 #[derive(Default, Clone)]
 struct NetworkProperties {
     socket_marks: Option<fnet::Marks>,
+    dns_servers: Vec<fnet_name::DnsServer_>,
     // TODO(https://fxbug.dev/486892417): Use this field for snapshot metrics.
     #[allow(dead_code)]
     connectivity_state: Option<fnp_socketproxy::ConnectivityState>,
@@ -161,7 +163,19 @@ impl RegisteredNetworks {
             PropertyUpdate::LoseDefaultNetwork => self.handle_default_network_update(None),
             PropertyUpdate::ChangeNetwork(network_id, network_change) => match network_change {
                 NetworkUpdate::Properties(event) => self.handle_changed_network(network_id, event),
-                NetworkUpdate::Remove => UpdateApplied::NetworkRemoved(network_id),
+                NetworkUpdate::Remove => {
+                    if self.default_network == Some(network_id) {
+                        error!("Cannot remove the default network. Update ignored.");
+                        UpdateApplied::None
+                    } else {
+                        if self.networks.remove(&network_id).is_some() {
+                            UpdateApplied::NetworkRemoved(network_id)
+                        } else {
+                            error!("Cannot remove a non-existent network. Update ignored.");
+                            UpdateApplied::None
+                        }
+                    }
+                }
                 NetworkUpdate::MakeDefault => self.handle_default_network_update(Some(network_id)),
             },
             PropertyUpdate::UpdateDns(dns_servers) => {
@@ -206,6 +220,7 @@ impl RegisteredNetworks {
         let NetworkPropertiesChange {
             added,
             marks: socket_marks,
+            dns_servers: changed_dns_servers,
             connectivity_state,
             name,
             network_type,
@@ -216,7 +231,13 @@ impl RegisteredNetworks {
             (false, Entry::Vacant(_), _, _) => Err("update a non-added network"),
             (_, _, NetworkId::Fuchsia(_), Some(_)) => Err("have a fuchsia network with marks"),
             (_, _, NetworkId::Delegated(_), None) => Err("have a delegated network without marks"),
-            (_, _, NetworkId::Fuchsia(_), None) => Ok((NetworkProperties::default(), added)),
+            (_, _, NetworkId::Fuchsia(_), None) => Ok((
+                NetworkProperties {
+                    dns_servers: changed_dns_servers.unwrap_or_default(),
+                    ..Default::default()
+                },
+                added,
+            )),
             (_, entry, NetworkId::Delegated(_), Some(socket_marks)) => {
                 let changed = if let Entry::Occupied(e) = entry {
                     e.get().get_marks() != Some(&socket_marks)
@@ -224,7 +245,11 @@ impl RegisteredNetworks {
                     true
                 };
                 Ok((
-                    NetworkProperties { socket_marks: Some(socket_marks), ..Default::default() },
+                    NetworkProperties {
+                        socket_marks: Some(socket_marks),
+                        dns_servers: changed_dns_servers.unwrap_or_default(),
+                        ..Default::default()
+                    },
                     changed,
                 ))
             }
@@ -248,6 +273,26 @@ impl RegisteredNetworks {
                 error!("Cannot {e}. Update ignored.");
                 UpdateApplied::None
             }
+        }
+    }
+
+    /// Returns the DNS servers for the default network if it is a Fuchsia network,
+    /// otherwise returns a concatenation of DNS servers from all delegated networks.
+    /// TODO(https://fxbug.dev/428712735): Remove once dns-resolver learns about DNS
+    /// via NetworkProperties.
+    pub fn consolidated_dns_servers(&self) -> Vec<fnet_name::DnsServer_> {
+        if let Some(NetworkId::Fuchsia(if_id)) = self.default_network {
+            self.networks
+                .get(&NetworkId::Fuchsia(if_id))
+                .map(|p| p.dns_servers.clone())
+                .unwrap_or_default()
+        } else {
+            self.networks
+                .iter()
+                .filter(|(id, _)| matches!(id, NetworkId::Delegated(_)))
+                .flat_map(|(_, p)| &p.dns_servers)
+                .cloned()
+                .collect()
         }
     }
 
@@ -335,6 +380,9 @@ impl PropertyUpdates for Vec<fnp_properties::PropertyUpdate> {
                             match &d.source {
                                 Some(source) => match source {
                                     fnet_name::DnsServerSource::StaticSource(_) => true,
+                                    // `extract_dns_servers` prefers IPv4 DNS
+                                    // over IPv6 DNS when DNS servers are
+                                    // provided by the SocketProxy.
                                     fnet_name::DnsServerSource::SocketProxy(
                                         fnet_name::SocketProxyDnsServerSource {
                                             source_interface,
@@ -394,6 +442,8 @@ pub struct NetworkPropertiesChange {
     pub added: bool,
     /// The new marks for the network.
     pub marks: Option<fnet::Marks>,
+    /// If present, contains the new DNS servers for this network.
+    pub dns_servers: Option<Vec<fnet_name::DnsServer_>>,
     /// The new connectivity state of the network.
     pub connectivity_state: Option<fnp_socketproxy::ConnectivityState>,
     /// The name of the network.
@@ -453,6 +503,17 @@ impl PropertyUpdate {
     }
 }
 
+/// The result of a delegated network update.
+///
+/// Returned to the main event loop to propagate system-wide configuration
+/// changes (such as DNS server updates) and notify active watchers.
+#[derive(Debug, PartialEq)]
+pub struct DelegatedNetworkUpdateResult {
+    /// If present, contains the new consolidated DNS servers known by the
+    /// network registry.
+    pub dns_servers: Option<Vec<fnet_name::DnsServer_>>,
+}
+
 #[derive(Default)]
 pub struct NetpolNetworksService {
     // The current generation
@@ -473,6 +534,11 @@ pub struct NetpolNetworksService {
 impl NetpolNetworksService {
     pub fn set_telemetry(&mut self, telemetry: TelemetrySender) {
         self.telemetry = Some(telemetry);
+    }
+
+    /// Returns the consolidated DNS servers from the Network Registry.
+    pub fn consolidated_dns_servers(&self) -> Vec<fnet_name::DnsServer_> {
+        self.network_registry.consolidated_dns_servers()
     }
 
     pub async fn handle_network_attributes_request(
@@ -598,52 +664,66 @@ impl NetpolNetworksService {
         Ok(())
     }
 
+    /// Handles delegated network updates coming from Starnix.
+    ///
+    /// Resolves network events requested through the `NetworkRegistry` interface, applies the
+    /// corresponding properties changes, and yields the computed DNS configuration targets for
+    /// output updates.
+    ///
+    /// TODO(https://fxbug.dev/428712735): Stop returning DnsServer list once
+    /// dns-resolver learns about DNS via NetworkProperties.
     pub async fn handle_delegated_networks_update(
         &mut self,
         update: Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<DelegatedNetworkUpdateResult, anyhow::Error> {
         use fnp_socketproxy::{
             NetworkInfo, NetworkRegistryAddError, NetworkRegistryRemoveError,
             NetworkRegistryRequest, NetworkRegistrySetDefaultError, NetworkRegistryUpdateError,
         };
 
-        match update {
+        let action_result = match update {
             Err(e) => {
                 error!(
                     "Encountered error watching for delegated network \
                                     updates: {e:?}"
                 );
-                Ok(())
+                return Err(anyhow::anyhow!(e));
             }
-            Ok(NetworkRegistryRequest::SetDefault { network_id, responder }) => responder.send(
-                (async || match network_id {
-                    // TODO(https://fxbug.dev/475266563): Stop using
-                    // `fuchsia.posix.socket.OptionalUint32` here.
+            Ok(NetworkRegistryRequest::SetDefault { network_id, responder }) => {
+                let update_result = match network_id {
                     fposix_socket::OptionalUint32::Value(interface_id) => {
-                        self.update(PropertyUpdate::ChangeNetwork(
-                            NetworkId::delegated(
-                                InterfaceId::try_from(interface_id)
-                                    .map_err(|_| NetworkRegistrySetDefaultError::NotFound)?,
-                            ),
-                            NetworkUpdate::MakeDefault,
-                        ))
-                        .await;
-                        Ok(())
+                        match InterfaceId::try_from(interface_id) {
+                            Ok(id) => {
+                                let delegated_id = NetworkId::delegated(id);
+                                self.update(PropertyUpdate::ChangeNetwork(
+                                    delegated_id,
+                                    NetworkUpdate::MakeDefault,
+                                ))
+                                .await;
+                                Ok(())
+                            }
+                            Err(_) => Err(NetworkRegistrySetDefaultError::NotFound),
+                        }
                     }
                     fposix_socket::OptionalUint32::Unset(_) => {
                         self.update(PropertyUpdate::default_network_lost()).await;
                         Ok(())
                     }
-                })()
-                .await,
-            ),
-            Ok(NetworkRegistryRequest::Add { network, responder }) => responder.send(
-                (async || {
-                    let network_id = network
-                        .network_id
-                        .and_then(|id| InterfaceId::try_from(id).ok())
+                };
+
+                self.respond_to_delegated_network_update(
+                    update_result,
+                    |reply| responder.send(reply),
+                    "failed to send SetDefault result",
+                )
+            }
+            Ok(NetworkRegistryRequest::Add { network, responder }) => {
+                let extracted_properties = (|| {
+                    let raw_network_id =
+                        network.network_id.ok_or(NetworkRegistryAddError::MissingNetworkId)?;
+                    let network_id = InterfaceId::try_from(raw_network_id)
                         .map(|id| NetworkId::delegated(id))
-                        .ok_or(NetworkRegistryAddError::MissingNetworkId)?;
+                        .map_err(|_| NetworkRegistryAddError::MissingNetworkId)?;
                     let NetworkInfo::Starnix(info) =
                         network.info.ok_or(NetworkRegistryAddError::MissingNetworkInfo)?
                     else {
@@ -653,30 +733,44 @@ impl NetpolNetworksService {
                     let mut marks = fnet::Marks::default();
                     marks.set_mark(fnet::MARK_DOMAIN_SO_MARK, info.mark);
 
-                    // TODO(https://fxbug.dev/477980011): Also include DNS update here,
-                    // rather than relying on DnsServerWatcher provided by socket-proxy.
-                    self.update(PropertyUpdate::ChangeNetwork(
-                        network_id,
-                        NetworkUpdate::Properties(NetworkPropertiesChange {
-                            added: true,
-                            marks: Some(marks),
-                            connectivity_state: network.connectivity,
-                            name: network.name,
-                            network_type: network.network_type,
-                        }),
-                    ))
-                    .await;
-                    Ok(())
-                })()
-                .await,
-            ),
-            Ok(NetworkRegistryRequest::Update { network, responder }) => responder.send(
-                (async || {
-                    let network_id = network
-                        .network_id
-                        .and_then(|id| InterfaceId::try_from(id).ok())
+                    let dns_servers =
+                        Self::extract_dns_servers(&network.dns_servers, raw_network_id.into());
+
+                    Ok((network_id, marks, dns_servers))
+                })();
+
+                let update_result = match extracted_properties {
+                    Ok((network_id, marks, dns_servers)) => {
+                        self.update(PropertyUpdate::ChangeNetwork(
+                            network_id,
+                            NetworkUpdate::Properties(NetworkPropertiesChange {
+                                added: true,
+                                marks: Some(marks),
+                                dns_servers: Some(dns_servers.clone()),
+                                connectivity_state: network.connectivity,
+                                name: network.name,
+                                network_type: network.network_type,
+                            }),
+                        ))
+                        .await;
+                        Ok(())
+                    }
+                    Err(e) => Err(e),
+                };
+
+                self.respond_to_delegated_network_update(
+                    update_result,
+                    |reply| responder.send(reply),
+                    "failed to send Add result",
+                )
+            }
+            Ok(NetworkRegistryRequest::Update { network, responder }) => {
+                let extracted_properties = (|| {
+                    let raw_network_id =
+                        network.network_id.ok_or(NetworkRegistryUpdateError::MissingNetworkId)?;
+                    let network_id = InterfaceId::try_from(raw_network_id)
                         .map(|id| NetworkId::delegated(id))
-                        .ok_or(NetworkRegistryUpdateError::MissingNetworkId)?;
+                        .map_err(|_| NetworkRegistryUpdateError::MissingNetworkId)?;
                     let NetworkInfo::Starnix(info) =
                         network.info.ok_or(NetworkRegistryUpdateError::MissingNetworkInfo)?
                     else {
@@ -685,40 +779,135 @@ impl NetpolNetworksService {
 
                     let mut marks = fnet::Marks::default();
                     marks.set_mark(fnet::MARK_DOMAIN_SO_MARK, info.mark);
-                    self.update(PropertyUpdate::ChangeNetwork(
-                        network_id,
-                        NetworkUpdate::Properties(NetworkPropertiesChange {
-                            added: false,
-                            marks: Some(marks),
-                            connectivity_state: network.connectivity,
-                            name: network.name,
-                            network_type: network.network_type,
-                        }),
-                    ))
-                    .await;
-                    Ok(())
-                })()
-                .await,
-            ),
-            Ok(NetworkRegistryRequest::Remove { network_id, responder }) => responder.send(
-                (async || {
-                    self.update(PropertyUpdate::ChangeNetwork(
-                        NetworkId::delegated(
-                            // Try to convert network_id to an `InterfaceId`. If
-                            // this fails (i.e. the network_id is 0) this is
-                            // treated the same as a `NOT_FOUND` error.
-                            InterfaceId::try_from(network_id)
-                                .map_err(|_| NetworkRegistryRemoveError::NotFound)?,
-                        ),
-                        NetworkUpdate::Remove,
-                    ))
-                    .await;
-                    Ok(())
-                })()
-                .await,
-            ),
+
+                    let dns_servers =
+                        Self::extract_dns_servers(&network.dns_servers, raw_network_id.into());
+
+                    Ok((network_id, marks, dns_servers))
+                })();
+
+                let update_result = match extracted_properties {
+                    Ok((network_id, marks, dns_servers)) => {
+                        self.update(PropertyUpdate::ChangeNetwork(
+                            network_id,
+                            NetworkUpdate::Properties(NetworkPropertiesChange {
+                                added: false,
+                                marks: Some(marks),
+                                dns_servers: Some(dns_servers.clone()),
+                                connectivity_state: network.connectivity,
+                                name: network.name,
+                                network_type: network.network_type,
+                            }),
+                        ))
+                        .await;
+                        Ok(())
+                    }
+                    Err(e) => Err(e),
+                };
+
+                self.respond_to_delegated_network_update(
+                    update_result,
+                    |reply| responder.send(reply),
+                    "failed to send Update result",
+                )
+            }
+            Ok(NetworkRegistryRequest::Remove { network_id, responder }) => {
+                let update_result = match InterfaceId::try_from(network_id) {
+                    Ok(id) => {
+                        let delegated_id = NetworkId::delegated(id);
+                        self.update(PropertyUpdate::ChangeNetwork(
+                            delegated_id,
+                            NetworkUpdate::Remove,
+                        ))
+                        .await;
+                        Ok(())
+                    }
+                    Err(_) => Err(NetworkRegistryRemoveError::NotFound),
+                };
+
+                self.respond_to_delegated_network_update(
+                    update_result,
+                    |reply| responder.send(reply),
+                    "failed to send Remove result",
+                )
+            }
+        };
+
+        Ok(action_result)
+    }
+
+    // Resolves the operation result, sends the success or failure status to
+    // the FIDL responder, and returns the updated network registry settings.
+    fn respond_to_delegated_network_update<E, F>(
+        &self,
+        operation_result: Result<(), E>,
+        send_response: F,
+        context_message: &'static str,
+    ) -> DelegatedNetworkUpdateResult
+    where
+        F: FnOnce(Result<(), E>) -> Result<(), fidl::Error>,
+    {
+        // Return consolidated DNS servers if the operation was successful.
+        let dns_servers = operation_result
+            .as_ref()
+            .ok()
+            .map(|()| self.network_registry.consolidated_dns_servers());
+
+        // Send success or failure status to the FIDL responder.
+        if let Err(e) = send_response(operation_result) {
+            if !e.is_closed() {
+                error!(
+                    "Failed to send delegated network update result \
+                for {context_message}: {e}"
+                );
+            }
         }
-        .context("while handling DelegatedNetwork request")
+
+        DelegatedNetworkUpdateResult { dns_servers }
+    }
+
+    // Converts `NetworkDnsServers` to `Vec<DnsServer_>` for a given network.
+    //
+    // Note: We prioritize IPv4 servers over IPv6 servers. This is impactful
+    // when sending DNS servers through NetworkProperties or to dns-resolver.
+    fn extract_dns_servers(
+        dns_servers: &Option<fnp_socketproxy::NetworkDnsServers>,
+        network_id: u64,
+    ) -> Vec<fnet_name::DnsServer_> {
+        let make_server = |address| fnet_name::DnsServer_ {
+            address: Some(address),
+            source: Some(fnet_name::DnsServerSource::SocketProxy(
+                fnet_name::SocketProxyDnsServerSource {
+                    source_interface: Some(network_id),
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+
+        dns_servers
+            .as_ref()
+            .map(|dns| {
+                dns.v4
+                    .as_ref()
+                    .into_iter()
+                    .flatten()
+                    .map(|&address| {
+                        make_server(fnet::SocketAddress::Ipv4(fnet::Ipv4SocketAddress {
+                            address,
+                            port: DNS_PORT,
+                        }))
+                    })
+                    .chain(dns.v6.as_ref().into_iter().flatten().map(|&address| {
+                        make_server(fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {
+                            address,
+                            port: DNS_PORT,
+                            zone_index: 0,
+                        }))
+                    }))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub(crate) async fn handle_network_token_resolver_request(
@@ -1046,6 +1235,7 @@ mod tests {
         let event = NetworkPropertiesChange {
             added: true,
             marks: Some(marks.clone()),
+            dns_servers: None,
             connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
             name: Some(NAME_1.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
@@ -1072,6 +1262,7 @@ mod tests {
         let event = NetworkPropertiesChange {
             added: false,
             marks: Some(marks.clone()),
+            dns_servers: None,
             connectivity_state: Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
             name: Some(NAME_1.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
@@ -1099,6 +1290,7 @@ mod tests {
         let event = NetworkPropertiesChange {
             added: false,
             marks: Some(new_marks.clone()),
+            dns_servers: None,
             connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
             name: Some(NAME_1.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
@@ -1131,6 +1323,7 @@ mod tests {
         let event = NetworkPropertiesChange {
             added: true,
             marks: None,
+            dns_servers: None,
             connectivity_state: Some(fnp_socketproxy::ConnectivityState::LocalConnectivity),
             name: Some(NAME_2.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Wifi),
@@ -1157,6 +1350,7 @@ mod tests {
         let event = NetworkPropertiesChange {
             added: false,
             marks: None,
+            dns_servers: None,
             connectivity_state: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
             name: Some(NAME_2.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Wifi),
@@ -1189,6 +1383,7 @@ mod tests {
         let event = NetworkPropertiesChange {
             added: false,
             marks: Some(marks.clone()),
+            dns_servers: None,
             connectivity_state: None,
             name: Some(NAME_1.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
@@ -1198,6 +1393,7 @@ mod tests {
         let event = NetworkPropertiesChange {
             added: true,
             marks: Some(marks.clone()),
+            dns_servers: None,
             connectivity_state: None,
             name: Some(NAME_1.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
@@ -1217,6 +1413,7 @@ mod tests {
         let event = NetworkPropertiesChange {
             added: true,
             marks: Some(marks.clone()),
+            dns_servers: None,
             connectivity_state: None,
             name: Some(NAME_1.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
@@ -1228,6 +1425,7 @@ mod tests {
         let event = NetworkPropertiesChange {
             added: true,
             marks: Some(marks.clone()),
+            dns_servers: None,
             connectivity_state: None,
             name: Some(NAME_1.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
@@ -1239,10 +1437,28 @@ mod tests {
         let event = NetworkPropertiesChange {
             added: true,
             marks: None,
+            dns_servers: None,
             connectivity_state: None,
             name: Some(NAME_1.to_string()),
             network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
         };
         assert_eq!(networks.handle_changed_network(delegated_id, event), UpdateApplied::None);
+
+        // Make the network default
+        assert_eq!(
+            networks.apply(PropertyUpdate::ChangeNetwork(network_id, NetworkUpdate::MakeDefault)),
+            UpdateApplied::DefaultNetworkChanged(None)
+        );
+
+        // Attempt to remove default network. This is invalid change since
+        // the default must be unset prior to removal.
+        assert_eq!(
+            networks.apply(PropertyUpdate::ChangeNetwork(network_id, NetworkUpdate::Remove)),
+            UpdateApplied::None
+        );
+
+        // Verify it was not removed
+        assert!(networks.networks.contains_key(&network_id));
+        assert_eq!(networks.default_network, Some(network_id));
     }
 }

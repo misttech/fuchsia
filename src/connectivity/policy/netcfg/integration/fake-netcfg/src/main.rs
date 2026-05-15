@@ -3,14 +3,12 @@
 // found in the LICENSE file.
 
 use dns_server_watcher::{DnsServers, DnsServersUpdateSource};
+use fidl_fuchsia_net_policy_properties as fnp_properties;
+use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
+use fidl_fuchsia_net_policy_testing as fnp_testing;
 use fuchsia_component::server::ServiceFs;
 use futures::stream::StreamExt as _;
 use log::debug;
-use {
-    fidl_fuchsia_net_policy_properties as fnp_properties,
-    fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy,
-    fidl_fuchsia_net_policy_testing as fnp_testing,
-};
 
 enum IncomingServices {
     FakeNetcfg(fnp_testing::FakeNetcfgRequestStream),
@@ -91,10 +89,18 @@ async fn main() {
                     responder.send().expect("Could not report response");
                 }
             },
-            Event::NetworkRegistryRequest(req) => networks_service
-                .handle_delegated_networks_update(req)
-                .await
-                .expect("Could not update delegated networks"),
+            Event::NetworkRegistryRequest(req) => {
+                // The DNS servers returned by the delegated networks update are dropped because
+                // fake-netcfg is a test mock that does not administer DNS server state
+                // via LookupAdmin.
+                let _update_result: netcfg::network::DelegatedNetworkUpdateResult =
+                    networks_service.handle_delegated_networks_update(req).await.unwrap_or_else(
+                        |e| {
+                            log::error!("Could not handle delegated network update: {e:?}");
+                            netcfg::network::DelegatedNetworkUpdateResult { dns_servers: None }
+                        },
+                    );
+            }
             Event::NetworksAttributesRequest((id, req)) => networks_service
                 .handle_network_attributes_request(id, req)
                 .await
