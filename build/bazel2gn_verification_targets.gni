@@ -35,6 +35,7 @@ bazel2gn_verification_targets = [
   "//sdk/rust/zx-status:verify_bazel2gn",
   "//sdk/rust/zx-sys:verify_bazel2gn",
   "//sdk/rust/zx-types:verify_bazel2gn",
+  "//sdk/rust/zx:verify_bazel2gn",
   "//src/connectivity/network/netstack/udp_serde:verify_bazel2gn",
   "//src/connectivity/network/testing/conformance/parseoutput:verify_bazel2gn",
   "//src/developer/ffx/command/error:verify_bazel2gn",
