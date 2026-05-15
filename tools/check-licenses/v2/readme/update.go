@@ -149,9 +149,15 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 
 		lics := make(map[string]bool)
 		for _, m := range cf.Matches {
-			if m.MatchType != "Copyright" && !strings.HasPrefix(m.MatchType, "_") {
+			if isPrimaryLicenseFile[cf.Path] {
+				lics[m.SPDXID] = true
+			} else if m.MatchType != "Copyright" && !strings.HasPrefix(m.MatchType, "_") {
 				lics[m.SPDXID] = true
 			}
+		}
+
+		if isPrimaryLicenseFile[cf.Path] && len(lics) == 0 {
+			lics["Unclassified"] = true
 		}
 
 		if !isPrimaryLicenseFile[cf.Path] {

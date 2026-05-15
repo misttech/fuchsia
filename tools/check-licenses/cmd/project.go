@@ -152,11 +152,13 @@ func RunProjectPipeline(ctx context.Context, fuchsiaDir, absDir string, config *
 
 	var foundLicenses []pipeline.ClassifiedFile
 	for result := range outChan {
-		hasLicense := false
-		for _, match := range result.Matches {
-			if match.MatchType != "Copyright" && !strings.HasPrefix(match.MatchType, "_") {
-				hasLicense = true
-				break
+		hasLicense := result.IsLicenseFile
+		if !hasLicense {
+			for _, match := range result.Matches {
+				if match.MatchType != "Copyright" {
+					hasLicense = true
+					break
+				}
 			}
 		}
 		if hasLicense {
@@ -192,7 +194,38 @@ func compareLicenseEntries(a, b []readme.LicenseEntry) bool {
 	return true
 }
 
-func verifyTargetCompliance(originalReadmes, updatedReadmes []*readme.Readme, absTarget, projectRoot string, isDir bool) error {
+func verifyTargetCompliance(originalReadmes, updatedReadmes []*readme.Readme, absTarget, projectRoot string, isDir bool, foundLicenses []pipeline.ClassifiedFile) error {
+	declaredPrimary := make(map[string]bool)
+	for _, r := range originalReadmes {
+		for _, lf := range r.LicenseFiles {
+			for _, part := range strings.Split(lf.License, ",") {
+				part = strings.TrimSpace(part)
+				if part != "" {
+					declaredPrimary[part] = true
+				}
+			}
+		}
+	}
+
+	relTargetClean, err := filepath.Rel(projectRoot, absTarget)
+	if err != nil {
+		return err
+	}
+
+	for _, cf := range foundLicenses {
+		relCf, _ := filepath.Rel(projectRoot, cf.Path)
+		if !isDir && filepath.Clean(relCf) != filepath.Clean(relTargetClean) {
+			continue
+		}
+		for _, match := range cf.Matches {
+			if strings.HasPrefix(match.MatchType, "_") {
+				if !declaredPrimary[match.SPDXID] {
+					return fmt.Errorf("source file %s contains a license header (%s) but the project does not declare this license in README.fuchsia", relCf, match.SPDXID)
+				}
+			}
+		}
+	}
+
 	if isDir {
 		if len(originalReadmes) != len(updatedReadmes) {
 			return fmt.Errorf("README.fuchsia structure is out of date")

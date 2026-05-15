@@ -138,11 +138,20 @@ func IsProjectBoundary(dir, fuchsiaDir string, outOfTreeReadmes map[string]strin
 		}
 	}
 
-	// Check physical
-	for _, name := range []string{"README.fuchsia", "go.mod", "Cargo.toml", "pubspec.yaml"} {
-		possiblePath := filepath.Join(dir, name)
-		if _, err := os.Stat(possiblePath); err == nil {
-			foundReadmePaths = append(foundReadmePaths, possiblePath)
+	// Check physical README.fuchsia
+	physReadme := filepath.Join(dir, "README.fuchsia")
+	if _, err := os.Stat(physReadme); err == nil {
+		foundReadmePaths = append(foundReadmePaths, physReadme)
+	}
+
+	// If neither virtual nor physical README.fuchsia exists, check fallback manifests
+	if len(foundReadmePaths) == 0 {
+		for _, name := range []string{"go.mod", "Cargo.toml", "pubspec.yaml"} {
+			possiblePath := filepath.Join(dir, name)
+			if _, err := os.Stat(possiblePath); err == nil {
+				foundReadmePaths = append(foundReadmePaths, possiblePath)
+				break
+			}
 		}
 	}
 

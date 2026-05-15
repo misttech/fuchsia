@@ -323,11 +323,12 @@ func (c *Classifier) ClassifyFile(path string, projectRoot string, isLicense boo
 				if match.Name != "" {
 					metrics.LicenseDetected.Inc(match.Name, "unrecognized", "unrecognized")
 					matches = append(matches, pipeline.LicenseMatch{
-						SPDXID:    match.Name,
-						MatchType: match.MatchType,
-						StartLine: match.StartLine,
-						EndLine:   match.EndLine,
-						Text:      extractLines(chunk, match.StartLine, match.EndLine),
+						SPDXID:      match.Name,
+						MatchType:   match.MatchType,
+						PatternName: match.Variant,
+						StartLine:   match.StartLine,
+						EndLine:     match.EndLine,
+						Text:        extractLines(chunk, match.StartLine, match.EndLine),
 					})
 				}
 			}

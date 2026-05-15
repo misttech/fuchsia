@@ -171,8 +171,12 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 				for _, match := range cf.Matches {
 					needsApproval := true
 					switch {
-					case match.MatchType == "Copyright" || match.MatchType == "Approved" || match.MatchType == "Permissive" || match.MatchType == "Notice" || match.MatchType == "Unencumbered" || match.MatchType == "Unclassified" || strings.HasPrefix(match.MatchType, "_"):
+					case match.MatchType == "Copyright" || match.MatchType == "Approved" || match.MatchType == "Permissive" || match.MatchType == "Notice" || match.MatchType == "Unencumbered" || match.MatchType == "Unclassified" || match.SPDXID == "FuchsiaCopyright":
 						needsApproval = false
+					case strings.HasPrefix(match.MatchType, "_"):
+						if _, isRestricted := v.AllowedLicenses[match.SPDXID]; !isRestricted {
+							needsApproval = false
+						}
 					}
 
 					if needsApproval {

@@ -65,8 +65,8 @@ func TestClassifyCommand_Execute(t *testing.T) {
 		t.Errorf("Expected ExitSuccess (0) for classifying file, got %v", status)
 	}
 
-	if !strings.Contains(output, "SPDX ID:    MIT") {
-		t.Errorf("Expected output to contain SPDX ID: MIT, got: %s", output)
+	if !strings.Contains(output, "SPDX ID:      MIT") || !strings.Contains(output, "Pattern Name: mit.txt") {
+		t.Errorf("Expected output to contain SPDX ID and Pattern Name, got: %s", output)
 	}
 }
 

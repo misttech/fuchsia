@@ -88,9 +88,10 @@ func (c *ClassifyCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...int
 	fmt.Printf("Found %d match(es) in %s:\n\n", len(cf.Matches), targetFile)
 	for i, match := range cf.Matches {
 		fmt.Printf("--- Match %d ---\n", i+1)
-		fmt.Printf("SPDX ID:    %s\n", match.SPDXID)
-		fmt.Printf("Match Type: %s\n", match.MatchType)
-		fmt.Printf("Lines:      %d-%d\n", match.StartLine, match.EndLine)
+		fmt.Printf("SPDX ID:      %s\n", match.SPDXID)
+		fmt.Printf("Pattern Name: %s\n", match.PatternName)
+		fmt.Printf("Match Type:   %s\n", match.MatchType)
+		fmt.Printf("Lines:        %d-%d\n", match.StartLine, match.EndLine)
 	}
 
 	return subcommands.ExitSuccess

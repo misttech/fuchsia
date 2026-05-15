@@ -35,11 +35,12 @@ type FilteredProject struct {
 
 // LicenseMatch represents a specific license pattern detected within a file.
 type LicenseMatch struct {
-	SPDXID    string // e.g., "MIT", "Apache-2.0", "FuchsiaCopyright"
-	MatchType string // e.g., "Notice", "Restricted", "Forbidden"
-	StartLine int    // 1-based line number where the match begins
-	EndLine   int    // 1-based line number where the match ends
-	Text      []byte // The exact matched text block
+	SPDXID      string // e.g., "MIT", "Apache-2.0", "FuchsiaCopyright"
+	MatchType   string // e.g., "Notice", "Restricted", "Forbidden"
+	PatternName string // e.g., "Apache-with-LLVM-Exception.txt" (actual matching pattern filename)
+	StartLine   int    // 1-based line number where the match begins
+	EndLine     int    // 1-based line number where the match ends
+	Text        []byte // The exact matched text block
 }
 
 // ClassifiedFile represents the output of the Ingestion Stage (Classifier).

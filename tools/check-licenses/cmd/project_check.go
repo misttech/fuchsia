@@ -95,7 +95,7 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 			}
 		}
 
-		originalReadmes, updatedReadmes, readmePath, _, _, _, err := RunProjectPipeline(ctx, fuchsiaDir, projectRoot, config, classifier)
+		originalReadmes, updatedReadmes, readmePath, _, _, foundLicenses, err := RunProjectPipeline(ctx, fuchsiaDir, projectRoot, config, classifier)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Error analyzing project %s: %v\n", targetPath, err)
 			hasErrors = true
@@ -110,7 +110,7 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 			continue
 		}
 
-		if err := verifyTargetCompliance(originalReadmes, updatedReadmes, absPath, projectRoot, info.IsDir()); err != nil {
+		if err := verifyTargetCompliance(originalReadmes, updatedReadmes, absPath, projectRoot, info.IsDir(), foundLicenses); err != nil {
 			relTarget, _ := filepath.Rel(fuchsiaDir, absPath)
 			if relTarget == "." {
 				relTarget = targetPath

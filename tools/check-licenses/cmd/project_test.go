@@ -344,3 +344,45 @@ func TestProjectCommand_LicenseReference(t *testing.T) {
 		t.Errorf("Expected License MIT to be populated from external reference, got:\n%s", content)
 	}
 }
+
+func TestProjectCommand_Update_UnclassifiedLicense(t *testing.T) {
+	tempDir := t.TempDir()
+
+	os.MkdirAll(filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs"), 0755)
+
+	projectDir := filepath.Join(tempDir, "third_party", "bar")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	os.WriteFile(filepath.Join(projectDir, "LICENSE"), []byte("Some completely unclassified proprietary text\n"), 0644)
+
+	readmeContent := []byte("Name: bar\nURL: http://bar\nVersion: 1.0\nSecurity Critical: no\n\nLicense File: LICENSE\n")
+	if err := os.WriteFile(filepath.Join(projectDir, "README.fuchsia"), readmeContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &ProjectCommand{
+		fuchsiaDir: tempDir,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fs)
+	fs.Parse([]string{"--fuchsia_dir", tempDir, "update", projectDir})
+	if status := cmd.Execute(ctx, fs); status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess for update, got %v", status)
+	}
+
+	updatedReadme, err := os.ReadFile(filepath.Join(projectDir, "README.fuchsia"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(updatedReadme)
+
+	if !strings.Contains(content, "License File: LICENSE") || !strings.Contains(content, "  License: Unclassified") {
+		t.Errorf("Expected LICENSE to be retained with Unclassified license, got:\n%s", content)
+	}
+}
