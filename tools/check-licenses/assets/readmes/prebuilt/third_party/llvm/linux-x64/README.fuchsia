@@ -1,10 +1,9 @@
 Name: The LLVM Project
+URL: https://github.com/llvm/llvm-project
+Security Critical: yes
 
 License File: LICENSE.TXT
- -> License File Format: Single License
- -> License Classifications: Apache-2.0, Copyright, NCSA
+  License: Apache-2.0-with-LLVM-Exception, Copyright, NCSA
 
-Description:
-
-
-Local Modifications:
+Source File: include/llvm/WindowsDriver/MSVCSetupApi.h
+  License: MIT
