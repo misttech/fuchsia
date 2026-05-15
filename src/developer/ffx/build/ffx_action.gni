@@ -44,12 +44,6 @@ import("//build/compiled_action.gni")
 #       For eg. `ffx-product`.
 #       See compiled_action()'s tool_output_name argument.
 #
-#   no_environment (optional; default=true)
-#       When true, adds the `--no-environment` flag to ffx. This disables
-#       reading the various implicit configuration files in order to be
-#       hermetic. If this option is set to false, it is up to the caller
-#       to make sure the correct input file specification is provided.
-#
 #   args (all optional)
 #   depfile
 #   deps
@@ -198,9 +192,6 @@ template("ffx_action") {
     inputs += [ env_file ]
 
     args = [ "--no-environment" ]
-    if (defined(invoker.no_environment) && invoker.no_environment == false) {
-      args = []
-    }
 
     # Pass the ffx config at runtime. ffx checks that it has read and write access to the
     # config files which causes hermetic actions error if using a global ffx config file.
