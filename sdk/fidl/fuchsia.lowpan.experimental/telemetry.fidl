@@ -1190,6 +1190,8 @@ type LinkMetricsEntry = table {
     1: link_margin uint8;
     /// RSSI value of the neighbor
     2: rssi int8;
+    /// IEEE 802.15.4 Extended Address of the neighbor
+    3: extended_address vector<uint8>:8;
 };
 
 /// Represents information associated with a radio link.
@@ -1582,6 +1584,70 @@ type UdpSocket = table {
     2: peer_name string:MAX_IP6_SOCK_ADDR_STRING_SIZE;
 };
 
+/// Enum for EID cache entry state.
+///
+/// Derived from [`otCacheEntryState`]
+/// (https://openthread.io/reference/group/api-thread-router#otcacheentrystate).
+type CacheEntryState = strict enum : uint8 {
+    CACHED = 0;
+    SNOOPED = 1;
+    QUERY = 2;
+    RETRY = 3;
+};
+
+/// Represents EID-to-RLOC cache entry info.
+type EidCacheEntry = table {
+    /// Target EID.
+    ///
+    /// Required.
+    1: target fuchsia.net.Ipv6Address;
+
+    /// Rloc16.
+    ///
+    /// Required.
+    2: rloc16 uint16;
+
+    /// Entry state.
+    ///
+    /// Required.
+    3: state CacheEntryState;
+
+    /// Indicates whether the entry can be evicted.
+    ///
+    /// Required.
+    4: can_evict bool;
+
+    /// Indicates whether in ramp-down mode while in `OT_CACHE_ENTRY_STATE_RETRY_QUERY`.
+    ///
+    /// Required.
+    5: ramp_down bool;
+
+    /// Indicates whether last transaction time and ML-EID are valid.
+    ///
+    /// Required.
+    6: valid_last_trans bool;
+
+    /// Last transaction time (applicable in cached state).
+    ///
+    /// Required.
+    7: last_trans_time zx.Time;
+
+    /// Mesh Local EID (applicable if entry in cached state).
+    ///
+    /// Required.
+    8: mesh_local_eid fuchsia.net.Ipv6Address;
+
+    /// Timeout (applicable if in snooped/query/retry-query states).
+    ///
+    /// Required.
+    9: timeout zx.Duration;
+
+    /// Retry delay (applicable if in query-retry state).
+    ///
+    /// Required.
+    10: retry_delay zx.Duration;
+};
+
 /// The maximum number of entries allowed in the neighbor-related inspect
 /// dump. This prevents the inspect tree from becoming excessively large.
 const MAX_NEIGHBOR_INSPECT_ENTRIES uint32 = 64;
@@ -1794,4 +1860,14 @@ type Telemetry = table {
     ///
     /// Only present on Thread networks.
     39: netstat vector<UdpSocket>:MAX_UDP_SOCKETS;
+
+    /// The EID-to-RLOC cache entries.
+    ///
+    /// Only present on Thread networks.
+    40: eid_cache_entries vector<EidCacheEntry>:MAX_NEIGHBOR_INSPECT_ENTRIES;
+
+    /// CCA threshold in dBm measured at the antenna connector.
+    ///
+    /// Only present on Thread networks.
+    41: cca_threshold fuchsia.lowpan.PowerDbm;
 };
