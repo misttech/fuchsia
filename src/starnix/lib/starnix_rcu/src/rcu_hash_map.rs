@@ -101,6 +101,11 @@ where
     pub fn keys<'a>(&'a self, scope: &'a RcuReadScope) -> impl Iterator<Item = &'a K> {
         self.iter(scope).map(|(k, _)| k)
     }
+
+    /// Returns the number of entries in the map.
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
 }
 
 // TODO(https://fxbug.dev/482462174): switch back to #[derive(Debug)]
@@ -407,6 +412,16 @@ mod tests {
         let mut keys: Vec<_> = map.keys(&scope).collect();
         keys.sort();
         assert_eq!(keys, vec![&1, &2, &3]);
+    }
+
+    #[test]
+    fn test_rcu_hash_map_len() {
+        let map = RcuHashMap::<i32, i32>::default();
+        map.insert(1, 10);
+        map.insert(2, 20);
+        map.insert(3, 30);
+
+        assert_eq!(map.len(), 3);
     }
 
     #[test]
