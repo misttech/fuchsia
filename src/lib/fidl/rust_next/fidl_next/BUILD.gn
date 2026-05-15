@@ -18,7 +18,7 @@ rustc_library("fidl_next") {
 
   with_unit_tests = true
 
-  # NOTE: this library is still experimental
+  # NOTE: these bindings are currently in a phased rollout
   visibility = [
     "//:developer_universe_packages",
     "//examples/*",
@@ -27,11 +27,7 @@ rustc_library("fidl_next") {
     "//sdk/fidl/*",
     "//sdk/lib/async/*",
     "//sdk/lib/driver/*",
-    "//src/devices/adc/drivers/aml-saradc:*",
-    "//src/devices/block/drivers/cqhci/*",
-    "//src/devices/interconnect/drivers/*",
-    "//src/devices/rtc/drivers/aml-rtc:*",
-    "//src/devices/spi/drivers/dw-spi:*",
+    "//src/devices/*",
     "//src/graphics/display/*",
     "//src/lib/fdomain/*",
     "//src/lib/fidl/rust_next/*",

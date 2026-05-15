@@ -9,7 +9,7 @@
 
 - Add `//src/lib/fidl/rust_next/fidl_next` as a dependency
 - Add your porting target to the allowlist in `//src/lib/fidl/rust_next/fidl_next/BUILD.gn`
-    - Look for `# NOTE: this library is still experimental` visibility list
+    - Look for `# NOTE: these bindings are currently in a phased rollout` visibility list
 - Add `enable_rust_next` to the FIDL targets you're using
 
 ## Examples
