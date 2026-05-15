@@ -1437,6 +1437,12 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                                                     "rssi",
                                                     link_metrics_entry.rssi.unwrap_or(0).into(),
                                                 );
+                                                if let Some(y) = &link_metrics_entry.extended_address {
+                                                    link_metrics_entry_node.record_string(
+                                                        "extended_address",
+                                                        y.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                                                    );
+                                                }
                                             },
                                         );
                                     }

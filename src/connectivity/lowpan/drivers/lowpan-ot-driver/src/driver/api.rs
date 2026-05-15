@@ -1147,6 +1147,7 @@ where
                         Some(fidl_fuchsia_lowpan_experimental::LinkMetricsEntry {
                             link_margin: Some(y.link_margin()),
                             rssi: Some(y.rssi()),
+                            extended_address: Some(x.into_array().to_vec()),
                             ..Default::default()
                         })
                     } else {
