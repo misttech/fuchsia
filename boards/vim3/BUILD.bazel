@@ -54,7 +54,22 @@ fuchsia_board_input_bundle(
         "//src/devices/gpio/drivers/aml-gpio",
         "//src/devices/i2c/drivers/aml-i2c",
         "//src/devices/usb/drivers/aml-usb-phy",
+    ],
+    version = build_info_version,
+)
+
+fuchsia_board_input_bundle(
+    name = "bazel_drivers_buttons",
+    bootfs_driver_packages = [
         "//src/ui/input/drivers/adc-buttons",
+    ],
+    version = build_info_version,
+)
+
+fuchsia_board_input_bundle_set(
+    name = "vim3_buttons_bibs",
+    board_input_bundles = [
+        ":bazel_drivers_buttons",
     ],
     version = build_info_version,
 )
@@ -92,6 +107,7 @@ fuchsia_board_input_bundle_set(
         ":main_bundle",
         ":bazel_drivers_base",
         ":bazel_drivers_media",
+        ":bazel_drivers_buttons",
     ],
     version = build_info_version,
 )
