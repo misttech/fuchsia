@@ -55,7 +55,7 @@ pub use fidl_pipe::{FidlPipe, create_overnet_socket};
 pub use info::TargetInfo;
 pub use list::list_targets;
 pub use resolve::{
-    DefaultTargetResolver, Resolution, TargetResolver, build_discovery,
+    DefaultTargetResolver, FromTargetHandleError, Resolution, TargetResolver, build_discovery,
     discover_single_default_target, get_discovered_targets, get_discovery_stream,
     maybe_locally_resolve_target_spec, resolve_target_address,
 };

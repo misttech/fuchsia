@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use crate::info;
 use addr::{TargetAddr, TargetIpAddr};
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use discovery::query::TargetInfoQuery;
 use discovery::{Discovery, DiscoveryBuilder, DiscoverySources, TargetEvent, TargetHandle};
 use fdomain_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlProxy};
@@ -700,6 +700,12 @@ impl Display for Resolution {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum FromTargetHandleError {
+    #[error("Target {node_name:?} did not have a product address")]
+    NoProductAddress { node_name: Option<String> },
+}
+
 impl Resolution {
     fn from_target(target: ResolutionTarget) -> Self {
         Self {
@@ -720,9 +726,12 @@ impl Resolution {
         Self::from_target(ResolutionTarget::Addr(addr))
     }
 
-    pub fn from_target_handle(th: TargetHandle) -> Result<Self> {
-        let target = ResolutionTarget::from_target_handle(&th)
-            .ok_or_else(|| anyhow!("Target {:?} did not have a product address", th.node_name))?;
+    pub fn from_target_handle(
+        th: TargetHandle,
+    ) -> std::result::Result<Self, FromTargetHandleError> {
+        let target = ResolutionTarget::from_target_handle(&th).ok_or_else(|| {
+            FromTargetHandleError::NoProductAddress { node_name: th.node_name.clone() }
+        })?;
         Ok(Self { discovered: Some(th), ..Self::from_target(target) })
     }
 

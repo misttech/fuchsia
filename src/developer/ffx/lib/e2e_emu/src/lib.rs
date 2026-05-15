@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, ensure};
 use async_stream::stream;
 use diagnostics_data::LogsData;
 use ffx_config::environment::ExecutableKind;
@@ -24,6 +23,48 @@ use discovery;
 use ffx_target::{Resolution, TargetInfoQuery};
 use target_behavior::{ConnectionBehavior, target_interface};
 
+#[derive(Debug, thiserror::Error)]
+pub enum IsolatedEmulatorError {
+    #[error("Failed to create temporary directory: {0}")]
+    TempDirCreate(#[source] std::io::Error),
+
+    #[error("Failed to create ffx isolate: {0}")]
+    IsolateCreate(#[source] ffx_isolate::IsolateError),
+
+    #[error("Ffx command {args:?} failed with stderr: {stderr}")]
+    FfxCommandFailed { args: Vec<String>, stderr: String },
+
+    #[error("No target found for emulator {}", emu_name)]
+    NoTargetFound { emu_name: String },
+
+    #[error("Failed during setup step '{step}': {source}")]
+    SetupFailed { step: String, source: Box<IsolatedEmulatorError> },
+
+    #[error("Failed to create log file at {path}: {source}")]
+    LogFileCreate { path: String, source: std::io::Error },
+
+    #[error("Failed to spawn log streaming command: {0}")]
+    LogStreamSpawn(#[source] std::io::Error),
+
+    #[error("Invalid Fuchsia repository name '{name}': {details}")]
+    InvalidRepositoryName { name: String, details: String },
+
+    #[error("JSON parsing failed: {0}")]
+    JsonParse(#[from] serde_json::Error),
+
+    #[error("Child process stdout is missing")]
+    NoStdout,
+
+    #[error("Could not resolve target")]
+    ResolutionError(#[from] ffx_target::FromTargetHandleError),
+
+    #[error("Could not list targets")]
+    ListTargetsError(#[source] anyhow::Error),
+
+    #[error("Command spawn failed: {0}")]
+    CommandSpawn(#[source] std::io::Error),
+}
+
 /// An isolated environment for testing ffx against a running emulator.
 pub struct IsolatedEmulator {
     emu_name: String,
@@ -41,7 +82,7 @@ impl IsolatedEmulator {
     /// Create an isolated ffx environment and start an emulator in it using the default product
     /// bundle and package repository from the Fuchsia build directory. Streams logs in the
     /// background and allows resolving packages from universe.
-    pub async fn start(name: &str) -> anyhow::Result<Self> {
+    pub async fn start(name: &str) -> Result<Self, IsolatedEmulatorError> {
         let symbol_index_path = std::env::var("SYMBOL_INDEX_PATH")
             .expect("SYMBOL_INDEX_PATH env var must be set -- run this test with 'fx test'");
         let package_repository_path = std::env::var("PACKAGE_REPOSITORY_PATH")
@@ -63,11 +104,11 @@ impl IsolatedEmulator {
         amber_files_path: &str,
         symbol_index_path: Option<&str>,
         startup_timeout_seconds: u32,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, IsolatedEmulatorError> {
         let emu_name = format!("{name}-emu");
 
         info!(name:% = name; "making ffx isolate");
-        let temp_dir = tempfile::TempDir::new().context("making temp dir")?;
+        let temp_dir = tempfile::TempDir::new().map_err(IsolatedEmulatorError::TempDirCreate)?;
 
         // Start with the non-isolated environment context - then build the isolate.
         let env_context = EnvironmentContext::detect(
@@ -89,7 +130,11 @@ impl IsolatedEmulator {
 
         let ffx_isolate = Isolate::new_in_test(name, ssh_priv_key.clone(), &env_context)
             .await
-            .context("creating ffx isolate")?;
+            .map_err(IsolatedEmulatorError::IsolateCreate)?;
+
+        // Workaround for analytics panic in isolated environment for Googlers
+        let metrics_dir = ffx_isolate.dir().join("metrics_home/.fuchsia/metrics");
+        let _ = std::fs::write(metrics_dir.join("analytics-status-internal"), "0");
 
         let package_server_name = format!("repo-{name}-{}", std::process::id());
         let this = Self {
@@ -101,22 +146,34 @@ impl IsolatedEmulator {
         };
 
         // now we have our isolate and can call ffx commands to configure our env and start an emu
-        this.ffx(&["config", "set", "ssh.priv", &ssh_priv_key.to_string_lossy()])
-            .await
-            .context("setting ssh private key config")?;
-        this.ffx(&["config", "set", "ssh.pub", &ssh_pub_key.to_string_lossy()])
-            .await
-            .context("setting ssh public key config")?;
-        this.ffx(&["config", "set", "log.level", "debug"])
-            .await
-            .context("setting ffx log level")?;
+        this.ffx(&["config", "set", "ssh.priv", &ssh_priv_key.to_string_lossy()]).await.map_err(
+            |e| IsolatedEmulatorError::SetupFailed {
+                step: "ssh.priv".to_string(),
+                source: Box::new(e),
+            },
+        )?;
+        this.ffx(&["config", "set", "ssh.pub", &ssh_pub_key.to_string_lossy()]).await.map_err(
+            |e| IsolatedEmulatorError::SetupFailed {
+                step: "ssh.pub".to_string(),
+                source: Box::new(e),
+            },
+        )?;
+        this.ffx(&["config", "set", "log.level", "debug"]).await.map_err(|e| {
+            IsolatedEmulatorError::SetupFailed {
+                step: "log.level".to_string(),
+                source: Box::new(e),
+            }
+        })?;
         if let Some(symbol_index_path) = symbol_index_path {
-            this.ffx(&["debug", "symbol-index", "add", symbol_index_path])
-                .await
-                .context("setting ffx symbol index path")?;
+            this.ffx(&["debug", "symbol-index", "add", symbol_index_path]).await.map_err(|e| {
+                IsolatedEmulatorError::SetupFailed {
+                    step: "symbol-index".to_string(),
+                    source: Box::new(e),
+                }
+            })?;
         }
 
-        this.ffx_isolate.start_daemon().await?;
+        this.ffx_isolate.start_daemon().await.map_err(IsolatedEmulatorError::IsolateCreate)?;
 
         info!("starting emulator {}", this.emu_name);
         let emulator_log = this.ffx_isolate.log_dir().join("emulator.log").display().to_string();
@@ -142,42 +199,54 @@ impl IsolatedEmulator {
             &product_bundle_path,
         ])
         .await
-        .context("running emulator command")?;
+        .map_err(|e| IsolatedEmulatorError::SetupFailed {
+            step: "emu start".to_string(),
+            source: Box::new(e),
+        })?;
 
         info!("streaming system logs to output directory");
         let mut system_logs_command = this
             .ffx_isolate
             .make_ffx_cmd(&this.make_args(&["log", "--severity", "TRACE", "--no-color"]))
-            .context("creating log streaming command")?;
+            .map_err(IsolatedEmulatorError::IsolateCreate)?;
 
-        let emulator_system_log =
-            std::fs::File::create(this.ffx_isolate.log_dir().join("system.log"))
-                .context("creating system log file")?;
+        let log_path_system = this.ffx_isolate.log_dir().join("system.log");
+        let emulator_system_log = std::fs::File::create(&log_path_system).map_err(|e| {
+            IsolatedEmulatorError::LogFileCreate {
+                path: log_path_system.display().to_string(),
+                source: e,
+            }
+        })?;
         system_logs_command.stdout(emulator_system_log);
 
-        let emulator_stderr_log =
-            std::fs::File::create(this.ffx_isolate.log_dir().join("system_err.log"))
-                .context("creating system stderr log file")?;
+        let log_path_err = this.ffx_isolate.log_dir().join("system_err.log");
+        let emulator_stderr_log = std::fs::File::create(&log_path_err).map_err(|e| {
+            IsolatedEmulatorError::LogFileCreate {
+                path: log_path_err.display().to_string(),
+                source: e,
+            }
+        })?;
         system_logs_command.stderr(emulator_stderr_log);
 
         this.children
             .lock()
             .unwrap()
-            .push(system_logs_command.spawn().context("spawning log streaming command")?);
+            .push(system_logs_command.spawn().map_err(IsolatedEmulatorError::LogStreamSpawn)?);
 
         // serve packages by creating a repository and a server, then registering the server
         if let Err(e) = fuchsia_url::RepositoryUrl::parse(&format!(
             "fuchsia-pkg://{}",
             this.package_server_name
         )) {
-            // underscores are usually the culprit.
-            if this.package_server_name.contains("_") {
-                anyhow::bail!(
-                    "Invalid Fuchsia repository name, underscores are not allowed. {}: {e}",
-                    this.package_server_name
-                )
-            }
-            anyhow::bail!("Invalid Fuchsia repository name  {}: {e}", this.package_server_name)
+            let details = if this.package_server_name.contains("_") {
+                format!("underscores are not allowed: {e}")
+            } else {
+                e.to_string()
+            };
+            return Err(IsolatedEmulatorError::InvalidRepositoryName {
+                name: this.package_server_name.clone(),
+                details,
+            });
         }
         this.ffx(&[
             "repository",
@@ -194,7 +263,10 @@ impl IsolatedEmulator {
             amber_files_path,
         ])
         .await
-        .context("starting repository server")?;
+        .map_err(|e| IsolatedEmulatorError::SetupFailed {
+            step: "repository server start".to_string(),
+            source: Box::new(e),
+        })?;
 
         this.ffx(&[
             "target",
@@ -206,7 +278,10 @@ impl IsolatedEmulator {
             "fuchsia.com",
         ])
         .await
-        .context("registering repository")?;
+        .map_err(|e| IsolatedEmulatorError::SetupFailed {
+            step: "target repository register".to_string(),
+            source: Box::new(e),
+        })?;
 
         Ok(this)
     }
@@ -230,14 +305,15 @@ impl IsolatedEmulator {
     pub async fn setup_fake_direct_connector(
         &self,
         fho_env: &fho::FhoEnvironment,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), IsolatedEmulatorError> {
         let query = TargetInfoQuery::NodenameOrSerial(self.emu_name().to_string());
         let targets =
             ffx_target::list_targets(fho_env.environment_context(), query, false, false, false)
-                .await?;
-        let target_info = targets
-            .first()
-            .ok_or_else(|| anyhow::anyhow!("No target found for emulator {}", self.emu_name()))?;
+                .await
+                .map_err(|e| IsolatedEmulatorError::ListTargetsError(e))?;
+        let target_info = targets.first().ok_or_else(|| IsolatedEmulatorError::NoTargetFound {
+            emu_name: self.emu_name().to_string(),
+        })?;
 
         let th = discovery::TargetHandle {
             node_name: target_info.nodename.clone(),
@@ -262,72 +338,86 @@ impl IsolatedEmulator {
     }
 
     /// Run an ffx command, logging stdout & stderr as INFO messages.
-    pub async fn ffx(&self, args: &[&str]) -> anyhow::Result<()> {
-        let output =
-            self.ffx_isolate.ffx(&self.make_args(args)).await.context("ffx() running ffx")?;
+    pub async fn ffx(&self, args: &[&str]) -> Result<(), IsolatedEmulatorError> {
+        let output = self
+            .ffx_isolate
+            .ffx(&self.make_args(args))
+            .await
+            .map_err(IsolatedEmulatorError::IsolateCreate)?;
         if !output.stdout.is_empty() {
             info!("stdout:\n{}", output.stdout);
         }
         if !output.stderr.is_empty() {
             info!("stderr:\n{}", output.stderr);
         }
-        ensure!(
-            output.status.success(),
-            format!("ffx must complete successfully. stderr: {}", output.stderr)
-        );
+        if !output.status.success() {
+            return Err(IsolatedEmulatorError::FfxCommandFailed {
+                args: args.iter().map(|s| s.to_string()).collect(),
+                stderr: output.stderr,
+            });
+        }
         Ok(())
     }
 
     /// Like [`IsolatedEmulator::ffx`], but runs synchronously, blocking the
     /// current thread until the ffx command exits.
-    pub fn ffx_sync(&self, args: &[&str]) -> anyhow::Result<()> {
+    pub fn ffx_sync(&self, args: &[&str]) -> Result<(), IsolatedEmulatorError> {
         let output = self
             .ffx_isolate
             .ffx_sync(&self.make_args(args))
-            .context("ffx() running ffx synchronously")?;
+            .map_err(IsolatedEmulatorError::IsolateCreate)?;
         if !output.stdout.is_empty() {
             info!("stdout:\n{}", output.stdout);
         }
         if !output.stderr.is_empty() {
             info!("stderr:\n{}", output.stderr);
         }
-        ensure!(output.status.success(), "ffx must complete successfully");
+        if !output.status.success() {
+            return Err(IsolatedEmulatorError::FfxCommandFailed {
+                args: args.iter().map(|s| s.to_string()).collect(),
+                stderr: output.stderr,
+            });
+        }
         Ok(())
     }
 
     /// Run an ffx command, returning stdout and logging stderr as an INFO message.
-    pub async fn ffx_output(&self, args: &[&str]) -> anyhow::Result<String> {
+    pub async fn ffx_output(&self, args: &[&str]) -> Result<String, IsolatedEmulatorError> {
         let output = self
             .ffx_isolate
             .ffx(&self.make_args(args))
             .await
-            .context("ffx_output() running ffx")?;
+            .map_err(IsolatedEmulatorError::IsolateCreate)?;
         if !output.stderr.is_empty() {
             info!("stderr:\n{}", output.stderr);
         }
-        ensure!(
-            output.status.success(),
-            "ffx must complete successfully. stdout: {}",
-            output.stdout
-        );
+        if !output.status.success() {
+            return Err(IsolatedEmulatorError::FfxCommandFailed {
+                args: args.iter().map(|s| s.to_string()).collect(),
+                stderr: output.stderr,
+            });
+        }
         Ok(output.stdout)
     }
 
     /// Run an ffx command with JSON machine output, returning T parsed from stdout and logging any
     /// stderr as an INFO message.
-    pub async fn ffx_json<T: DeserializeOwned>(&self, args: &[&str]) -> anyhow::Result<T> {
+    pub async fn ffx_json<T: DeserializeOwned>(
+        &self,
+        args: &[&str],
+    ) -> Result<T, IsolatedEmulatorError> {
         let mut all_args = vec!["--machine", "json"];
         all_args.extend(args);
         let output = self.ffx_output(&all_args).await?;
-        Ok(serde_json::from_str(&output).context("deserializing JSON")?)
+        Ok(serde_json::from_str(&output)?)
     }
 
     /// Create an ffx command, which allows for streaming stdout/stderr.
-    pub async fn ffx_cmd_capture(&self, args: &[&str]) -> anyhow::Result<Command> {
+    pub async fn ffx_cmd_capture(&self, args: &[&str]) -> Result<Command, IsolatedEmulatorError> {
         let mut cmd = self
             .ffx_isolate
             .make_ffx_cmd(&self.make_args(args))
-            .context("ffx_cmd_capture() running ffx")?;
+            .map_err(IsolatedEmulatorError::IsolateCreate)?;
         cmd.stdout(Stdio::piped());
         Ok(cmd)
     }
@@ -339,12 +429,12 @@ impl IsolatedEmulator {
     }
 
     /// Run an ssh command, logging stdout & stderr as INFO messages.
-    pub async fn ssh(&self, command: &[&str]) -> anyhow::Result<()> {
+    pub async fn ssh(&self, command: &[&str]) -> Result<(), IsolatedEmulatorError> {
         self.ffx(&Self::make_ssh_args(command)).await
     }
 
     /// Run an ssh command, returning stdout and logging stderr as an INFO message.
-    pub async fn ssh_output(&self, command: &[&str]) -> anyhow::Result<String> {
+    pub async fn ssh_output(&self, command: &[&str]) -> Result<String, IsolatedEmulatorError> {
         self.ffx_output(&Self::make_ssh_args(command)).await
     }
 
@@ -352,7 +442,7 @@ impl IsolatedEmulator {
         &self,
         mut receiver: futures::channel::mpsc::UnboundedReceiver<String>,
         reader_task: fuchsia_async::Task<Result<(), TrySendError<String>>>,
-    ) -> impl Stream<Item = anyhow::Result<LogsData>> {
+    ) -> impl Stream<Item = Result<LogsData, IsolatedEmulatorError>> {
         /// ffx log wraps each line from archivist in its own JSON object, unwrap those here
         #[derive(Deserialize)]
         struct FfxMachineLogLine {
@@ -370,7 +460,7 @@ impl IsolatedEmulator {
                     continue;
                 }
                 let ffx_message = serde_json::from_str::<FfxMachineLogLine>(&line)
-                    .context("parsing log line from ffx")?;
+                    .map_err(IsolatedEmulatorError::JsonParse)?;
                 yield Ok(ffx_message.data.target_log);
             }
             drop(reader_task)
@@ -381,14 +471,13 @@ impl IsolatedEmulator {
     pub async fn log_stream_for_moniker(
         &self,
         moniker: &str,
-    ) -> anyhow::Result<impl Stream<Item = anyhow::Result<LogsData>>> {
-        let mut output = self
-            .ffx_cmd_capture(&["--machine", "json", "log", "--moniker", moniker])
-            .await
-            .context("running ffx log")?;
+    ) -> Result<impl Stream<Item = Result<LogsData, IsolatedEmulatorError>>, IsolatedEmulatorError>
+    {
+        let mut output =
+            self.ffx_cmd_capture(&["--machine", "json", "log", "--moniker", moniker]).await?;
 
-        let mut child = output.spawn()?;
-        let stdout = child.stdout.take().context("no stdout")?;
+        let mut child = output.spawn().map_err(IsolatedEmulatorError::CommandSpawn)?;
+        let stdout = child.stdout.take().ok_or(IsolatedEmulatorError::NoStdout)?;
         self.children.lock().unwrap().push(child);
         let mut reader = BufReader::new(stdout);
         let (sender, receiver) = futures::channel::mpsc::unbounded();
@@ -404,7 +493,10 @@ impl IsolatedEmulator {
     }
 
     /// Collect the logs for a particular component.
-    pub async fn logs_for_moniker(&self, moniker: &str) -> anyhow::Result<Vec<LogsData>> {
+    pub async fn logs_for_moniker(
+        &self,
+        moniker: &str,
+    ) -> Result<Vec<LogsData>, IsolatedEmulatorError> {
         /// ffx log wraps each line from archivist in its own JSON object, unwrap those here
         #[derive(Deserialize)]
         struct FfxMachineLogLine {
@@ -416,18 +508,15 @@ impl IsolatedEmulator {
             target_log: LogsData,
         }
 
-        let output = self
-            .ffx_output(&["--machine", "json", "log", "--moniker", moniker, "dump"])
-            .await
-            .context("running ffx log")?;
+        let output =
+            self.ffx_output(&["--machine", "json", "log", "--moniker", moniker, "dump"]).await?;
 
         let mut parsed = vec![];
         for line in output.lines() {
             if line.is_empty() {
                 continue;
             }
-            let ffx_message = serde_json::from_str::<FfxMachineLogLine>(line)
-                .context("parsing log line from ffx")?;
+            let ffx_message = serde_json::from_str::<FfxMachineLogLine>(line)?;
             parsed.push(ffx_message.data.target_log);
         }
         Ok(parsed)
