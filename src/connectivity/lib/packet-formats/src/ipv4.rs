@@ -895,7 +895,7 @@ where
     I::Item: Borrow<Ipv4Option<'a>>,
 {
     fn context_state(&self) -> C::ContextState {
-        C::envelope_to_state(IpEnvelope::new())
+        C::envelope_to_state(IpEnvelope::new(true))
     }
 
     fn serialize(
@@ -1099,7 +1099,7 @@ impl NestablePacketBuilder for Ipv4PacketBuilder {
 
 impl<C: IpSerializationContext<Ipv4>> PacketBuilder<C> for Ipv4PacketBuilder {
     fn context_state(&self) -> C::ContextState {
-        C::envelope_to_state(IpEnvelope::new())
+        C::envelope_to_state(IpEnvelope::new(false))
     }
 
     fn serialize(

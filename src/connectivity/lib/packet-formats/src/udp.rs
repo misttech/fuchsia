@@ -35,7 +35,10 @@ use crate::{
 
 /// The size of a UDP header in bytes.
 pub const HEADER_BYTES: usize = 8;
-const CHECKSUM_OFFSET: usize = 6;
+
+/// The offset of the checksum field, in bytes, from the start of a UDP header.
+pub const CHECKSUM_OFFSET: usize = 6;
+
 const CHECKSUM_RANGE: Range<usize> = CHECKSUM_OFFSET..CHECKSUM_OFFSET + 2;
 
 #[derive(Debug, KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]

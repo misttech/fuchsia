@@ -61,13 +61,15 @@ impl IpProtoExt for Ipv6 {
 
 /// IP packet context relevant to serialization.
 pub struct IpEnvelope<I: IpExt> {
+    /// True if the IP packet has options (IPv4) or extension headers (IPv6).
+    pub has_options: bool,
     _marker: PhantomData<I>,
 }
 
 impl<I: IpExt> IpEnvelope<I> {
     /// Creates a new `IpEnvelope`.
-    pub fn new() -> Self {
-        Self { _marker: PhantomData }
+    pub fn new(has_options: bool) -> Self {
+        Self { has_options, _marker: PhantomData }
     }
 }
 

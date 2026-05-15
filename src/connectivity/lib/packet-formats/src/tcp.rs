@@ -48,7 +48,9 @@ pub const MAX_HDR_LEN: usize = 60;
 /// The maximum length of the options in a TCP header.
 pub const MAX_OPTIONS_LEN: usize = MAX_HDR_LEN - HDR_PREFIX_LEN;
 
-const CHECKSUM_OFFSET: usize = 16;
+/// The offset of the checksum field, in bytes, from the start of a TCP header.
+pub const CHECKSUM_OFFSET: usize = 16;
+
 const CHECKSUM_RANGE: Range<usize> = CHECKSUM_OFFSET..CHECKSUM_OFFSET + 2;
 
 #[derive(Debug, Default, KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned, PartialEq)]

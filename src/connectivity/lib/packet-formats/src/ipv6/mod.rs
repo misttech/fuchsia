@@ -1170,7 +1170,7 @@ macro_rules! impl_packet_builder_base {
 macro_rules! impl_packet_builder {
     {} => {
         fn context_state(&self) -> C::ContextState {
-            C::envelope_to_state(IpEnvelope::new())
+            C::envelope_to_state(IpEnvelope::new(self.extension_headers_len() > 0))
         }
 
         fn serialize(
