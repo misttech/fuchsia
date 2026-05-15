@@ -377,7 +377,8 @@ impl TraceTool {
     }
 
     async fn list_category_groups(&self, mut writer: Writer) -> fho::Result<()> {
-        let category_groups = ffx_trace::get_category_groups(&self.context)?;
+        let category_groups =
+            ffx_trace::get_category_groups(&self.context).map_err(anyhow::Error::from)?;
 
         if writer.is_machine() {
             writer.machine(&TraceOutput::ListCategoryGroups(category_groups))?;
@@ -430,7 +431,8 @@ impl TraceTool {
         let context = self.context.clone();
         let trace_proxy = self.get_trace_proxy().await?;
 
-        let expanded_categories = ffx_trace::expand_categories(&context, opts.categories.clone())?;
+        let expanded_categories = ffx_trace::expand_categories(&context, opts.categories.clone())
+            .map_err(anyhow::Error::from)?;
         let defer_transfer = match opts.buffering_mode {
             BufferingMode::Oneshot | BufferingMode::Circular => false,
             BufferingMode::Streaming => true,
@@ -586,7 +588,7 @@ impl TraceTool {
                 }
             };
             for ir_file in &opts.ir_path {
-                ordinals.add_ir_file(ir_file)?;
+                ordinals.add_ir_file(ir_file).map_err(anyhow::Error::from)?;
             }
 
             symbolize_ordinal(ordinal, &ordinals, writer)?;
@@ -642,7 +644,8 @@ fn post_process(
     writer: &mut Writer,
 ) -> Result<()> {
     let expanded_categories =
-        ffx_trace::expand_categories(context, categories.clone().unwrap_or(vec![]))?;
+        ffx_trace::expand_categories(context, categories.clone().unwrap_or(vec![]))
+            .map_err(anyhow::Error::from)?;
     let skip_symbolization = skip_symbolization
         || !expanded_categories.contains(&"kernel:ipc".to_string())
             && !expanded_categories.contains(&"kernel:*".to_string());

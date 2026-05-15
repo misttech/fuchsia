@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, anyhow, bail};
+use crate::error::{Result, TraceError};
 use ffx_config::EnvironmentContext;
 use fidl_codec_pure::library::LookupResult;
 use itertools::Itertools;
@@ -37,11 +37,11 @@ impl FidlLibraries {
                     map.add_ir_file(&ir_file_path)?;
                 }
             } else {
-                bail!("all_fidl_json.txt was not found in {build_dir:?}");
+                return Err(TraceError::AllFidlJsonNotFound { path: build_dir.to_path_buf() });
             }
             Ok(map)
         } else {
-            Err(anyhow!("No build directory found."))
+            Err(TraceError::NoBuildDirectory)
         }
     }
 
@@ -314,9 +314,11 @@ impl<'a, 'b> FidlMessage<'a, 'b> {
         let object_info = object_info_bytes
             .chunks_exact(std::mem::size_of::<zx_info_handle_basic_t>())
             .map(|chunk| {
-                zx_info_handle_basic_t::ref_from_bytes(chunk)
-                    .map(|x| x.clone())
-                    .map_err(|e| anyhow!(format!("{e}")))
+                zx_info_handle_basic_t::ref_from_bytes(chunk).map(|x| x.clone()).map_err(|_| {
+                    let static_chunk: &'static [u8] = Box::leak(chunk.to_vec().into_boxed_slice());
+                    let err = zx_info_handle_basic_t::ref_from_bytes(static_chunk).unwrap_err();
+                    TraceError::ObjectInfoDecode(err)
+                })
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Self { ordinal, bytes, object_info, obj_types, rights, ns })
@@ -353,7 +355,7 @@ impl<'a, 'b> FidlMessage<'a, 'b> {
             method
         } else {
             // Unknown method ordinal, can't decode the body into anything.
-            bail!("Unknown method ordinal {ordinal}", ordinal = self.ordinal);
+            return Err(TraceError::UnknownMethodOrdinal { ordinal: self.ordinal });
         };
 
         // Try decoding (if appropriate) the message as a request...
@@ -377,7 +379,7 @@ impl<'a, 'b> FidlMessage<'a, 'b> {
             ),
             (Some(Ok(request)), Some(Ok(response))) => {
                 eprintln!("Warning: Ambiguous request/response in decoding.");
-                bail!("Ambiguous:\n{request}\n{response}")
+                return Err(TraceError::AmbiguousDecoding { request, response });
             }
             (Some(Ok(value)), _) | (_, Some(Ok(value))) => Ok(value),
             (Some(Err(e)), _) | (_, Some(Err(e))) => Err(e),
@@ -386,16 +388,16 @@ impl<'a, 'b> FidlMessage<'a, 'b> {
 
     /// Try to decode this message, assuming it's a request.
     fn decode_as_request(&self) -> Result<fidl_codec_pure::Value> {
-        fidl_codec_pure::decode_request(&self.ns, self.bytes, self.make_handle_info())
-            .map(|(_, body)| body)
-            .map_err(|e| anyhow!(e))
+        let (_, body) =
+            fidl_codec_pure::decode_request(&self.ns, self.bytes, self.make_handle_info())?;
+        Ok(body)
     }
 
     /// Try to decode this message, assuming it's a response.
     fn decode_as_response(&self) -> Result<fidl_codec_pure::Value> {
-        fidl_codec_pure::decode_response(&self.ns, self.bytes, self.make_handle_info())
-            .map(|(_, body)| body)
-            .map_err(|e| anyhow!(e))
+        let (_, body) =
+            fidl_codec_pure::decode_response(&self.ns, self.bytes, self.make_handle_info())?;
+        Ok(body)
     }
 }
 

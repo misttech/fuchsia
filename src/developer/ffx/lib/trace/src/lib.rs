@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context, Result, anyhow};
+pub mod error;
+pub use error::{Result, TraceError};
 use ffx_config::EnvironmentContext;
 use fidl_fuchsia_tracing_controller::{ProviderSpec, TraceConfig};
 use regex::Regex;
@@ -39,17 +40,14 @@ pub fn get_category_group(
 ) -> Result<Vec<String>> {
     let category_group = ctx
         .get::<Vec<String>, _>(&format!("trace.category_groups.{}", category_group_name))
-        .context(format!(
-            "Error: no category group found for {0}, you can add this category locally by calling \
-              `ffx config set trace.category_groups.{0} '[\"list\", \"of\", \"categories\"]'`\
-              or globally by adding it to data/config.json in the ffx trace plugin.",
-            category_group_name
-        ))?;
+        .map_err(|_| TraceError::CategoryGroupNotFound {
+            group: category_group_name.to_string(),
+        })?;
     for category in &category_group {
-        validate_category_name(&category).context(format!(
-            "Error: #{} contains an invalid category \"{}\"",
-            category_group_name, category
-        ))?;
+        validate_category_name(&category).map_err(|_| TraceError::InvalidCategoryInGroup {
+            group: category_group_name.to_string(),
+            category: category.clone(),
+        })?;
     }
     Ok(category_group)
 }
@@ -59,8 +57,7 @@ pub fn get_category_groups(ctx: &EnvironmentContext) -> Result<HashMap<String, V
         .query("trace.category_groups")
         .select(ffx_config::SelectMode::All)
         .build()
-        .get::<Value>(ctx)
-        .context("could not query `trace.category_groups` in config.")?;
+        .get::<Value>(ctx)?;
 
     let mut category_group_map: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -82,8 +79,7 @@ pub fn get_category_group_names(ctx: &EnvironmentContext) -> Result<Vec<String>>
         .query("trace.category_groups")
         .select(ffx_config::SelectMode::All)
         .build()
-        .get::<Value>(ctx)
-        .context("could not query `trace.category_groups` in config.")?;
+        .get::<Value>(ctx)?;
     let mut group_names: Vec<String> = all_groups
         .as_array()
         .unwrap()
@@ -100,7 +96,7 @@ pub fn validate_category_name(category_name: &str) -> Result<()> {
     static VALID_CATEGORY_REGEX: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"^[^\*,\s"]*\*?$"#).unwrap());
     if !VALID_CATEGORY_REGEX.is_match(category_name) {
-        return Err(anyhow!("Error: category \"{}\" is invalid", category_name));
+        return Err(TraceError::InvalidCategoryName { name: category_name.to_string() });
     }
     Ok(())
 }

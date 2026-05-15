@@ -16,16 +16,17 @@ if (is_host) {
       "//sdk/rust/zx-types",
       "//src/developer/ffx/config:lib",
       "//src/lib/fidl_codec/rust:fidl_codec_pure",
-      "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:itertools",
       "//third_party/rust_crates:regex",
       "//third_party/rust_crates:serde_json",
+      "//third_party/rust_crates:thiserror",
       "//third_party/rust_crates:zerocopy",
     ]
 
     test_deps = [ "//src/lib/fuchsia" ]
 
     sources = [
+      "src/error.rs",
       "src/fidl.rs",
       "src/lib.rs",
     ]
