@@ -96,32 +96,47 @@ cat > "${DEST_DIR}/BUILD.gn" <<EOF
 # found in the LICENSE file.
 
 import("//build/python/python_library.gni")
+import("//build/testing/host_test_data.gni")
 
-# Copy the extracted files and the DSO to the target gen directory
-# so they can be used by python_library.
-copy("copy_pydantic_core_files") {
-  sources = [
-    "pydantic_core/__init__.py",
-    "pydantic_core/core_schema.py",
-    "pydantic_core/_pydantic_core.cpython-311-x86_64-linux-gnu.so",
-  ]
-  outputs = [
-    "\$target_gen_dir/pydantic_core/{{source_file_part}}",
-  ]
-}
+if (is_host) {
+  # Copy the extracted files and the DSO to the target gen directory so they can
+  # be used by python_library.
+  copy("copy_pydantic_core_files") {
+    sources = [
+      "pydantic_core/__init__.py",
+      "pydantic_core/core_schema.py",
+      "pydantic_core/_pydantic_core.cpython-311-x86_64-linux-gnu.so",
+    ]
+    outputs = [
+      "\$target_gen_dir/pydantic_core/{{source_file_part}}",
+    ]
+  }
 
-python_library("pydantic_core") {
-  enable_mypy = false
-  sources = [
-    "__init__.py",
-    "core_schema.py",
-  ]
-  source_root = "\$target_gen_dir/pydantic_core"
+  python_library("pydantic_core") {
+    enable_mypy = false
+    sources = [
+      "__init__.py",
+      "core_schema.py",
+    ]
+    source_root = "\$target_gen_dir/pydantic_core"
 
-  deps = [
-    ":copy_pydantic_core_files",
-    "//third_party/pylibs/typing_extensions",
-  ]
+    deps = [
+      ":copy_pydantic_core_files",
+      "//third_party/pylibs/typing_extensions",
+    ]
+  }
+
+  # Test targets should depend on this target to ensure that the library's
+  # binary components are available at runtime.
+  host_test_data("test_data") {
+    sources = [
+      "\$target_gen_dir/pydantic_core/__init__.py",
+      "\$target_gen_dir/pydantic_core/core_schema.py",
+      "\$target_gen_dir/pydantic_core/_pydantic_core.cpython-311-x86_64-linux-gnu.so",
+    ]
+
+    deps = [ ":copy_pydantic_core_files" ]
+  }
 }
 EOF
 
