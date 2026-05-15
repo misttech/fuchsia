@@ -27,17 +27,18 @@ InternalTouchEvent CreateCancelEvent(uint32_t device_id, uint32_t pointer_id, zx
 
 }  // namespace
 
-TouchInjector::TouchInjector(inspect::Node inspect_node, InjectorSettings settings,
-                             Viewport viewport,
+TouchInjector::TouchInjector(async_dispatcher_t* input_dispatcher, inspect::Node inspect_node,
+                             InjectorSettings settings, Viewport viewport,
                              fdf::ServerEnd<fuchsia_ui_pointerinjector_dso::Device> device,
                              fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
                                  is_descendant_and_connected,
                              fit::function<void(InternalTouchEvent, StreamId)> inject,
-                             fit::function<void()> on_channel_closed,
-                             async_dispatcher_t* dispatcher)
-    : Injector(std::move(inspect_node), std::move(settings), viewport, std::move(device),
-               std::move(is_descendant_and_connected), std::move(on_channel_closed), dispatcher),
+                             fit::function<void()> on_channel_closed)
+    : Injector(input_dispatcher, std::move(inspect_node), std::move(settings), viewport,
+               std::move(device), std::move(is_descendant_and_connected),
+               std::move(on_channel_closed)),
       inject_(std::move(inject)) {
+  FX_DCHECK(input_dispatcher);
   FX_DCHECK(inject_);
   FX_DCHECK(settings.device_type == fuchsia_ui_pointerinjector::wire::DeviceType::kTouch);
 }

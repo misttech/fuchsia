@@ -70,18 +70,20 @@ bool IsValidConfig(const fuchsia_ui_pointerinjector::wire::Config& config) {
 
 }  // namespace
 
-PointerinjectorRegistry::PointerinjectorRegistry(TouchInjectFunc inject_touch_exclusive,
+PointerinjectorRegistry::PointerinjectorRegistry(async_dispatcher_t* input_dispatcher,
+                                                 TouchInjectFunc inject_touch_exclusive,
                                                  TouchInjectFunc inject_touch_hit_tested,
-                                                 async_dispatcher_t* dispatcher,
                                                  inspect::Node inspect_node)
     : inject_touch_exclusive_(std::move(inject_touch_exclusive)),
       inject_touch_hit_tested_(std::move(inject_touch_hit_tested)),
-      dispatcher_(dispatcher),
-      inspect_node_(std::move(inspect_node)) {}
+      input_dispatcher_(input_dispatcher),
+      inspect_node_(std::move(inspect_node)) {
+  FX_DCHECK(input_dispatcher);
+}
 
 void PointerinjectorRegistry::Bind(fdf::Channel channel) {
   injector_registry_.AddBinding(
-      reinterpret_cast<fdf_dispatcher_t*>(dispatcher_),
+      reinterpret_cast<fdf_dispatcher_t*>(input_dispatcher_),
       fdf::ServerEnd<fuchsia_ui_pointerinjector_dso::Registry>(std::move(channel)), this,
       [](fidl::UnbindInfo unbind) {});
 }
@@ -133,6 +135,7 @@ void PointerinjectorRegistry::Register(RegisterRequestView request, fdf::Arena& 
   if (settings.device_type == fuchsia_ui_pointerinjector::DeviceType::kTouch) {
     const auto [_, success] = injectors_.emplace(
         id, std::make_unique<TouchInjector>(
+                input_dispatcher_,
                 inspect_node_.CreateChild(inspect_node_.UniqueName("touch-injector-")),
                 std::move(settings), viewport, std::move(injector),
                 std::move(is_descendant_and_connected),
@@ -145,7 +148,7 @@ void PointerinjectorRegistry::Register(RegisterRequestView request, fdf::Arena& 
                   TRACE_DURATION("input", "TouchInjector::inject_");
                   inject_func(std::move(event), stream_id);
                 },
-                std::move(on_channel_closed), dispatcher_));
+                std::move(on_channel_closed)));
     FX_CHECK(success) << "Injector already exists.";
   } else {
     FX_NOTREACHED();

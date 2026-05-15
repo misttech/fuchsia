@@ -24,8 +24,9 @@ using TouchInjectFunc = fit::function<void(InternalTouchEvent event, StreamId st
 // Handles the registration and config validation of fuchsia::ui::pointerinjector_dso clients.
 class PointerinjectorRegistry : public fdf::WireServer<fuchsia_ui_pointerinjector_dso::Registry> {
  public:
-  PointerinjectorRegistry(TouchInjectFunc inject_touch_exclusive,
-                          TouchInjectFunc inject_touch_hit_tested, async_dispatcher_t* dispatcher,
+  PointerinjectorRegistry(async_dispatcher_t* input_dispatcher,
+                          TouchInjectFunc inject_touch_exclusive,
+                          TouchInjectFunc inject_touch_hit_tested,
                           inspect::Node inspect_node = inspect::Node());
 
   void Bind(fdf::Channel channel);
@@ -50,7 +51,7 @@ class PointerinjectorRegistry : public fdf::WireServer<fuchsia_ui_pointerinjecto
   std::shared_ptr<const view_tree::Snapshot> view_tree_snapshot_ =
       std::make_shared<const view_tree::Snapshot>();
 
-  async_dispatcher_t* const dispatcher_;
+  async_dispatcher_t* const input_dispatcher_;
   inspect::Node inspect_node_;
 };
 

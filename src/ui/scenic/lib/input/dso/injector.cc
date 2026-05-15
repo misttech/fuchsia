@@ -137,18 +137,20 @@ bool AreValidExtents(const fidl::Array<fidl::Array<float, 2>, 2>& extents) {
 
 }  // namespace
 
-Injector::Injector(inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
+Injector::Injector(async_dispatcher_t* input_dispatcher, inspect::Node inspect_node,
+                   InjectorSettings settings, Viewport viewport,
                    fdf::ServerEnd<fuchsia_ui_pointerinjector_dso::Device> device,
                    fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
                        is_descendant_and_connected,
-                   fit::function<void()> on_channel_closed, async_dispatcher_t* dispatcher)
+                   fit::function<void()> on_channel_closed)
     : settings_(std::move(settings)),
       viewport_(viewport),
-      binding_(reinterpret_cast<fdf_dispatcher_t*>(dispatcher), std::move(device), this,
+      binding_(reinterpret_cast<fdf_dispatcher_t*>(input_dispatcher), std::move(device), this,
                std::mem_fn(&Injector::OnFidlClose)),
       is_descendant_and_connected_(std::move(is_descendant_and_connected)),
       on_channel_closed_(std::move(on_channel_closed)),
       inspector_(std::move(inspect_node)) {
+  FX_DCHECK(input_dispatcher);
   FX_DCHECK(is_descendant_and_connected_);
   FX_LOGS(INFO) << "Injector : Registered new injector with "
                 << " Device Id: " << settings_.device_id

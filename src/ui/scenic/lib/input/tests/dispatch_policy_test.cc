@@ -43,9 +43,8 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
  public:
   DispatchPolicyTest()
       : dispatcher_setter_(dispatcher(), dispatcher()),
-        input_system_(
-            context_provider_.context(), inspect_node_,
-            /*request_focus*/ [](auto...) {}, dispatcher()) {}
+        input_system_(dispatcher(), context_provider_.context(), inspect_node_,
+                      /*request_focus*/ [](auto...) {}) {}
 
   void SetUp() override {
     ::testing::Test::SetUp();

@@ -22,8 +22,8 @@ namespace scenic_impl::input {
 // Tracks and coordinates input APIs.
 class InputSystem {
  public:
-  InputSystem(sys::ComponentContext* context, inspect::Node& inspect_node,
-              RequestFocusFunc request_focus, async_dispatcher_t* dispatcher);
+  InputSystem(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
+              inspect::Node& inspect_node, RequestFocusFunc request_focus);
   ~InputSystem() = default;
 
   void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {

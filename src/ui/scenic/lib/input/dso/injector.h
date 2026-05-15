@@ -73,11 +73,12 @@ class InjectorInspector {
 // channel.
 class Injector : public fdf::WireServer<fuchsia_ui_pointerinjector_dso::Device> {
  public:
-  Injector(inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
+  Injector(async_dispatcher_t* input_dispatcher, inspect::Node inspect_node,
+           InjectorSettings settings, Viewport viewport,
            fdf::ServerEnd<fuchsia_ui_pointerinjector_dso::Device> device,
            fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
                is_descendant_and_connected,
-           fit::function<void()> on_channel_closed, async_dispatcher_t* dispatcher);
+           fit::function<void()> on_channel_closed);
 
   // Check the validity of a Viewport.
   // Returns ZX_OK if valid, otherwise logs an error message and return appropriate error code.

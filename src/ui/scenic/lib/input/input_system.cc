@@ -14,8 +14,8 @@
 
 namespace scenic_impl::input {
 
-InputSystem::InputSystem(sys::ComponentContext *context, inspect::Node &inspect_node,
-                         RequestFocusFunc request_focus, async_dispatcher_t *dispatcher)
+InputSystem::InputSystem(async_dispatcher_t *input_dispatcher, sys::ComponentContext *context,
+                         inspect::Node &inspect_node, RequestFocusFunc request_focus)
     : request_focus_(std::move(request_focus)),
       hit_tester_(inspect_node),
       mouse_system_(context, hit_tester_, [this](zx_koid_t koid) { request_focus_(koid); }),
@@ -48,6 +48,7 @@ InputSystem::InputSystem(sys::ComponentContext *context, inspect::Node &inspect_
 #if defined(FUCHSIA_DSO)
       ,
       pointerinjector_registry_dso_(
+          input_dispatcher,
           /*inject_touch_exclusive=*/
           [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id) {
             touch_system.InjectTouchEventExclusive(std::move(event), stream_id);
@@ -56,7 +57,8 @@ InputSystem::InputSystem(sys::ComponentContext *context, inspect::Node &inspect_
           [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id) {
             touch_system.InjectTouchEventHitTested(std::move(event), stream_id);
           },
-          dispatcher, inspect_node.CreateChild("PointerinjectorRegistryDso")) {
+          inspect_node.CreateChild("PointerinjectorRegistryDso")) {
+  FX_DCHECK(input_dispatcher);
   context->outgoing()->AddPublicService(
       [this](zx::channel zx_channel, async_dispatcher_t *unused_dispatcher) mutable {
         zx_handle_t handle;
