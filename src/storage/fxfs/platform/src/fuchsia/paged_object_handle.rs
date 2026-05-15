@@ -30,10 +30,11 @@ use vfs::temp_clone::{TempClonable, unblock};
 
 /// How much data each sync transaction in a given flush will cover.
 pub const FLUSH_BATCH_SIZE: u64 = 524_288;
-/// The amount of dirty bytes to trigger a background flush. This is double the `FLUSH_BATCH_SIZE`
-/// because bytes can be reserved and unreserved which are split into separate batches, so this
-/// value ensures that at least one of the two dirty page states has enough for a full batch.
-pub const BACKGROUND_FLUSH_THRESHOLD: u64 = FLUSH_BATCH_SIZE * 2;
+/// The amount of dirty bytes to trigger a background flush. This needs to be at least double the
+/// `FLUSH_BATCH_SIZE` because bytes can be reserved and unreserved which are split into separate
+/// batches and this value needs to ensure that at least one of the two dirty page states has enough
+/// for a full batch. Just using the minimum is a bit aggressive though, going higher.
+pub const BACKGROUND_FLUSH_THRESHOLD: u64 = FLUSH_BATCH_SIZE * 20;
 
 /// An expanding write will: mark a page as dirty, write to the page, and then update the content
 /// size. If a flush is triggered during an expanding write then query_dirty_ranges may return pages
@@ -3540,7 +3541,11 @@ mod tests {
     }
 
     async fn race_mark_dirty_with_background_flush(allocate_range: bool) {
-        let fixture = TestFixture::new_unencrypted().await;
+        let fixture = TestFixture::open(
+            DeviceHolder::new(FakeDevice::new(65536, 512)),
+            TestFixtureOptions::default(),
+        )
+        .await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
             let page_size = zx::system_get_page_size() as u64;

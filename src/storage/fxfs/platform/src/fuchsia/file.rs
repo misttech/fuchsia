@@ -804,7 +804,7 @@ impl GetVmo for FxFile {
 #[cfg(test)]
 mod tests {
     use super::FxFile;
-    use crate::fuchsia::paged_object_handle::FLUSH_BATCH_SIZE;
+    use crate::fuchsia::paged_object_handle::BACKGROUND_FLUSH_THRESHOLD;
     use crate::fuchsia::testing::{
         TestFixture, TestFixtureOptions, close_file_checked, open_dir_checked, open_file,
         open_file_checked,
@@ -1900,7 +1900,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_background_flush() {
-        let fixture = TestFixture::new().await;
+        let fixture = TestFixture::open(
+            DeviceHolder::new(FakeDevice::new(65536, 512)),
+            TestFixtureOptions::default(),
+        )
+        .await;
         {
             let root = fixture.root();
 
@@ -1948,7 +1952,10 @@ mod tests {
                     .background_flush_running
                     .load(std::sync::atomic::Ordering::Relaxed)
                 {
-                    assert!(offset <= FLUSH_BATCH_SIZE * 4, "Background flush not triggering");
+                    assert!(
+                        offset <= BACKGROUND_FLUSH_THRESHOLD * 2,
+                        "Background flush not triggering"
+                    );
                     stream
                         .write_at(zx::StreamWriteOptions::empty(), offset, &[0, 1, 2, 3, 4])
                         .expect("write should succeed");
