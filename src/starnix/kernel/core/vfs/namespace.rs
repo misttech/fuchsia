@@ -162,9 +162,9 @@ pub struct Mount {
     // Mount used to contain a Weak<Namespace>. It no longer does because since the mount point
     // hash was moved from Namespace to Mount, nothing actually uses it. Now that
     // Namespace::clone_namespace() is implemented in terms of Mount::clone_mount_recursive, it
-    // won't be trivial to add it back. I recommend turning the mountpoint field into an enum of
-    // Mountpoint or Namespace, maybe called "parent", and then traverse up to the top of the tree
-    // if you need to find a Mount's Namespace.
+    // won't be trivial to add it back. If you end up needing to find a Mount's Namespace, I
+    // recommend turning the mountpoint field into an enum of Mountpoint or Namespace, maybe called
+    // "parent", and then you can traverse up to the top of the tree.
 }
 type MountHandle = Arc<Mount>;
 
@@ -283,6 +283,11 @@ pub enum WhatToMount {
     Bind(NamespaceNode),
 }
 
+enum WhatSubmount {
+    New(WhatToMount, MountpointFlags),
+    Existing(MountHandle),
+}
+
 impl Mount {
     pub fn new(what: WhatToMount, mut flags: MountpointFlags) -> MountHandle {
         match what {
@@ -318,19 +323,14 @@ impl Mount {
     }
 
     /// Create the specified mount as a child. Also propagate it to the mount's peer group.
-    fn create_submount(
-        self: &MountHandle,
-        dir: &DirEntryHandle,
-        what: WhatToMount,
-        flags: MountpointFlags,
-    ) {
-        // TODO(tbodt): Making a copy here is necessary for lock ordering, because the peer group
-        // lock nests inside all mount locks (it would be impractical to reverse this because you
-        // need to lock a mount to get its peer group.) But it opens the door to race conditions
+    fn create_submount(self: &MountHandle, dir: &DirEntryHandle, what: WhatSubmount) {
+        // TODO(b/482453480): Making a copy here is necessary for lock ordering, because the peer
+        // group lock nests inside all mount locks (it would be impractical to reverse this because
+        // you need to lock a mount to get its peer group.) But it opens the door to race conditions
         // where if a peer are concurrently being added, the mount might not get propagated to the
-        // new peer. The only true solution to this is bigger locks, somehow using the same lock
-        // for the peer group and all of the mounts in the group. Since peer groups are fluid and
-        // can have mounts constantly joining and leaving and then joining other groups, the only
+        // new peer. The only true solution to this is bigger locks, somehow using the same lock for
+        // the peer group and all of the mounts in the group. Since peer groups are fluid and can
+        // have mounts constantly joining and leaving and then joining other groups, the only
         // sensible locking option is to use a single global lock for all mounts and peer groups.
         // This is almost impossible to express in rust. Help.
         //
@@ -341,11 +341,14 @@ impl Mount {
             state.peer_group().map(|g| g.copy_propagation_targets()).unwrap_or_default()
         };
 
-        // Create the mount after copying the peer groups, because in the case of creating a bind
+        // Create the mount after copying the peer list, because in the case of creating a bind
         // mount inside itself, the new mount would get added to our peer group during the
         // Mount::new call, but we don't want to replicate into it already. For an example see
         // MountTest.QuizBRecursion.
-        let mount = Mount::new(what, flags);
+        let mount = match what {
+            WhatSubmount::Existing(mount) => mount,
+            WhatSubmount::New(what, flags) => Mount::new(what, flags),
+        };
 
         if self.read().is_shared() {
             mount.write().make_shared();
@@ -386,6 +389,39 @@ impl Mount {
         }
 
         self.write().remove_submount_internal(mount_hash_key)
+    }
+
+    pub fn move_mount(
+        source_mount: &MountHandle,
+        target_mount: &MountHandle,
+        target_dir: &DirEntryHandle,
+    ) -> Result<(), Errno> {
+        // TODO(b/482453480): Moving a mount is supposed to be atomic, but this isn't. Trying to
+        // think of a way to ensure full atomicity in the current locking model led to a train of
+        // thought of spiraling complexity (you need to lock source_parent before source_mount, but
+        // you need to lock source_mount in order to get a reference to source_parent, and someone
+        // could move the mount again in between these operations, so you need to retry this.) So
+        // I'm settling for not trying for atomicitiy, plus a TODO comment.
+        let source_mountpoint = source_mount.read().mountpoint().ok_or_else(|| errno!(EIO))?;
+        let source_parent =
+            source_mountpoint.mount.as_ref().expect("a mountpoint must be part of a mount");
+
+        // First, disconnect the mount from its parent.
+        {
+            let mut source_parent = source_parent.write();
+            if source_parent.peer_group().is_some() {
+                // Sayeth mount(2):
+                // EINVAL A move operation (MS_MOVE) was attempted, but the parent mount of source
+                //        mount has propagation type MS_SHARED.
+                return error!(EINVAL);
+            }
+            let mut source_mount = source_mount.write();
+            source_parent.remove_submount_internal(source_mountpoint.mount_hash_key())?;
+            source_mount.mountpoint = None;
+        }
+
+        target_mount.create_submount(target_dir, WhatSubmount::Existing(Arc::clone(source_mount)));
+        Ok(())
     }
 
     /// Create a new mount with the same filesystem, flags, and peer group. Used to implement bind
@@ -1625,7 +1661,7 @@ impl NamespaceNode {
     pub fn mount(&self, what: WhatToMount, flags: MountpointFlags) -> Result<(), Errno> {
         let mountpoint = self.enter_mount();
         let mount = mountpoint.mount.as_ref().expect("a mountpoint must be part of a mount");
-        mount.create_submount(&mountpoint.entry, what, flags);
+        mount.create_submount(&mountpoint.entry, WhatSubmount::New(what, flags));
         Ok(())
     }
 

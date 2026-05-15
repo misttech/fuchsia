@@ -36,7 +36,7 @@ namespace {
 using ::testing::IsSupersetOf;
 using ::testing::UnorderedElementsAreArray;
 
-static bool skip_mount_tests = false;
+bool skip_mount_tests = false;
 
 class MountTest : public ::testing::Test {
  public:
@@ -100,7 +100,7 @@ class MountTest : public ::testing::Test {
     int err = MakeDir(name);
     if (err < 0)
       return err;
-    return Mount(name, name, MS_BIND);
+    return Mount(name, name, MS_BIND | MS_PRIVATE);
   }
 
   // Call mount with a null fstype and data.
@@ -180,6 +180,18 @@ TEST_F(MountTest, FlagVerification) {
   ASSERT_THAT(Mount(nullptr, "1", MS_SHARED | MS_PRIVATE), SyscallFailsWithErrno(EINVAL));
   ASSERT_THAT(Mount(nullptr, "1", MS_SHARED | MS_NOUSER), SyscallFailsWithErrno(EINVAL));
   ASSERT_THAT(Mount(nullptr, "1", MS_SHARED | MS_SILENT), SyscallSucceeds());
+}
+
+// Quiz question A from https://www.kernel.org/doc/Documentation/filesystems/sharedsubtree.txt
+TEST_F(MountTest, QuizAMountMove) {
+  ASSERT_SUCCESS(MakeDir("a"));
+  ASSERT_SUCCESS(Mount(nullptr, "1", MS_SHARED));
+  ASSERT_SUCCESS(Mount("1", "a", MS_BIND));
+  ASSERT_SUCCESS(Mount("a", "1/1", MS_MOVE));
+
+  ASSERT_TRUE(FileExists("1/1"));
+  ASSERT_TRUE(FileExists("1/1/1"));
+  ASSERT_TRUE(FileExists("1/1/1/1"));
 }
 
 // Quiz question B from https://www.kernel.org/doc/Documentation/filesystems/sharedsubtree.txt

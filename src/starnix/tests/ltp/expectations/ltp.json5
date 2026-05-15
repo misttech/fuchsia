@@ -137,7 +137,6 @@
                 "mmap12",
                 "mmap14",
                 "mount02",
-                "mount06",
                 "mprotect01",
                 "mprotect05",
                 "msync03",

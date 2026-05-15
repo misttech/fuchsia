@@ -19,9 +19,10 @@ use crate::vfs::timer::TimerFile;
 use crate::vfs::{
     CheckAccessReason, DirentSink64, EpollFileObject, FallocMode, FdFlags, FdNumber,
     FileAsyncOwner, FileHandle, FileSystemOptions, FlockOperation, FsStr, FsString, LookupContext,
-    NamespaceNode, PathWithReachability, RecordLockCommand, RenameFlags, SeekTarget, StatxFlags,
-    SymlinkMode, SymlinkTarget, TargetFdNumber, TimeUpdateType, UnlinkKind, ValueOrSize, WdNumber,
-    WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd, new_zombie_pidfd, splice,
+    Mount, NamespaceNode, PathWithReachability, RecordLockCommand, RenameFlags, SeekTarget,
+    StatxFlags, SymlinkMode, SymlinkTarget, TargetFdNumber, TimeUpdateType, UnlinkKind,
+    ValueOrSize, WdNumber, WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd,
+    new_zombie_pidfd, splice,
 };
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
@@ -1950,6 +1951,8 @@ pub fn sys_mount(
         do_mount_bind(locked, current_task, source_addr, target, flags)
     } else if flags.intersects(MountFlags::SHARED | MountFlags::PRIVATE | MountFlags::DOWNSTREAM) {
         do_mount_change_propagation_type(current_task, target, flags)
+    } else if flags.contains(MountFlags::MOVE) {
+        do_mount_move(locked, current_task, source_addr, target)
     } else {
         do_mount_create(
             locked,
@@ -2045,6 +2048,18 @@ fn do_mount_change_propagation_type(
     let mount = target.mount_if_root()?;
     mount.change_propagation(propagation_flag, flags.contains(MountFlags::REC));
     Ok(())
+}
+
+fn do_mount_move(
+    locked: &mut Locked<Unlocked>,
+    current_task: &CurrentTask,
+    source_addr: UserCString,
+    target: NamespaceNode,
+) -> Result<(), Errno> {
+    let source =
+        lookup_at(locked, current_task, FdNumber::AT_FDCWD, source_addr, LookupFlags::default())?;
+    let source_mount = source.mount_if_root()?;
+    Mount::move_mount(source_mount, target.mount.as_ref().expect(""), &target.entry)
 }
 
 fn do_mount_create(

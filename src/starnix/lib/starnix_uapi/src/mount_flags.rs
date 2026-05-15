@@ -28,6 +28,7 @@ atomic_bitflags! {
         // mount() control flags
         const REMOUNT = uapi::MS_REMOUNT;
         const BIND = uapi::MS_BIND;
+        const MOVE = uapi::MS_MOVE;
         const REC = uapi::MS_REC;
         const DOWNSTREAM = uapi::MS_SLAVE;
         const SHARED = uapi::MS_SHARED;
