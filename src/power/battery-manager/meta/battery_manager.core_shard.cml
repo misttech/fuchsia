@@ -21,9 +21,16 @@
             to: [ "#battery_manager" ],
         },
         {
-            service: "fuchsia.power.battery.InfoService",
+            service: [ "fuchsia.hardware.power.battery.Service" ],
             from: "parent",
             to: "#battery_manager",
+            availability: "optional",
+        },
+        {
+            service: [ "fuchsia.power.battery.InfoService" ],
+            from: "parent",
+            to: "#battery_manager",
+            availability: "optional",
         },
         {
             protocol: "fuchsia.power.system.ActivityGovernor",

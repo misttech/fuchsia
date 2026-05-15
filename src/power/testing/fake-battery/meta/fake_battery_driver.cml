@@ -16,13 +16,19 @@
             protocol: [ "fuchsia.power.battery.BatteryInfoProvider" ],
         },
         {
-            service: [ "fuchsia.power.battery.InfoService" ],
+            service: [
+                "fuchsia.hardware.power.battery.Service",
+                "fuchsia.power.battery.InfoService",
+            ],
         },
     ],
     expose: [
         {
-            service: "fuchsia.power.battery.InfoService",
-            from: 'self',
+            service: [
+                "fuchsia.hardware.power.battery.Service",
+                "fuchsia.power.battery.InfoService",
+            ],
+            from: "self",
         },
     ],
 }

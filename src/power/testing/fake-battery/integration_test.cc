@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.driver.test/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.power.battery/cpp/fidl.h>
 #include <fidl/fuchsia.power.battery/cpp/fidl.h>
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -26,6 +27,8 @@ class FakeBatteryRealmTest : public ::testing::Test {
     std::vector<fuchsia_component_test::Capability> exposes;
     exposes.emplace_back(fuchsia_component_test::Capability::WithService(
         fuchsia_component_test::Service{{.name = fuchsia_power_battery::InfoService::Name}}));
+    exposes.emplace_back(fuchsia_component_test::Capability::WithService(
+        fuchsia_component_test::Service{{.name = fuchsia_hardware_power_battery::Service::Name}}));
 
     fuchsia_driver_test::RealmArgs args{{
         .root_driver = "fuchsia-boot:///platform-bus#meta/platform-bus.cm",
@@ -56,9 +59,6 @@ class FakeBatteryRealmTest : public ::testing::Test {
 };
 
 TEST_F(FakeBatteryRealmTest, DriversExist) {
-  fidl::UnownedClientEnd<fuchsia_io::Directory> exposed{
-      Realm().component().exposed().unowned_channel()};
-
   fidl::ClientEnd<fuchsia_io::Directory> svc_root(
       Realm().component().CloneExposedDir().TakeChannel());
   component::SyncServiceMemberWatcher<fuchsia_power_battery::InfoService::Device> watcher(
@@ -75,4 +75,23 @@ TEST_F(FakeBatteryRealmTest, DriversExist) {
   ASSERT_EQ(ZX_OK, result2.status());
   const auto& info = result2.value().info;
   ASSERT_EQ(info.charge_source(), fuchsia_power_battery::ChargeSource::kAcAdapter);
+}
+
+TEST_F(FakeBatteryRealmTest, NewDriversExist) {
+  fidl::ClientEnd<fuchsia_io::Directory> svc_root(
+      Realm().component().CloneExposedDir().TakeChannel());
+  component::SyncServiceMemberWatcher<fuchsia_hardware_power_battery::Service::Battery> watcher(
+      svc_root.borrow());
+
+  zx::result result1 = watcher.GetNextInstance(false);
+  ASSERT_TRUE(result1.is_ok());
+
+  auto client_end = std::move(result1.value());
+  fidl::WireSyncClient client(std::move(client_end));
+
+  // Send a FIDL request.
+  fidl::WireResult result2 = client->GetStatus();
+  ASSERT_EQ(ZX_OK, result2.status());
+  const auto& status = result2.value()->status;
+  ASSERT_TRUE(status.source_status().present());
 }

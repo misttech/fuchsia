@@ -35,7 +35,14 @@
             storage: "data",
             path: "/userdata",
         },
-        { service: "fuchsia.power.battery.InfoService" },
+        {
+            service: "fuchsia.hardware.power.battery.Service",
+            availability: "optional",
+        },
+        {
+            service: "fuchsia.power.battery.InfoService",
+            availability: "optional",
+        },
         {
             protocol: "fuchsia.power.system.ActivityGovernor",
             availability: "optional",

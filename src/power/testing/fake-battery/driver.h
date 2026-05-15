@@ -11,6 +11,7 @@
 #include <zircon/types.h>
 
 #include "battery_protocol_server.h"
+#include "hardware_battery_server.h"
 
 namespace fake_battery {
 
@@ -22,6 +23,7 @@ class Driver : public fdf::DriverBase2 {
 
  private:
   std::unique_ptr<BatteryProtocolServer> protocol_server_battery_;
+  std::unique_ptr<HardwareBatteryServer> hardware_battery_server_;
 };
 
 }  // namespace fake_battery

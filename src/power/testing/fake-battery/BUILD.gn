@@ -19,9 +19,13 @@ source_set("common") {
     "battery_protocol_server.h",
     "driver.cc",
     "driver.h",
+    "hardware_battery_server.cc",
+    "hardware_battery_server.h",
   ]
 
   public_deps = [
+    "//sdk/fidl/fuchsia.hardware.power.battery:fuchsia.hardware.power.battery_cpp",
+    "//sdk/fidl/fuchsia.hardware.power.source:fuchsia.hardware.power.source_cpp",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
@@ -64,10 +68,11 @@ fuchsia_unittest_package("fake_battery_driver_tests") {
   deps = [ ":fake_battery_test_bin" ]
 }
 
-test("driver_integration_test") {
+test("fake_battery_integration_test") {
   sources = [ "integration_test.cc" ]
   deps = [
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_cpp",
+    "//sdk/fidl/fuchsia.hardware.power.battery:fuchsia.hardware.power.battery_cpp",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/device-watcher/cpp",
@@ -82,7 +87,7 @@ fuchsia_unittest_package("integration_tests") {
   package_name = "fake_battery_integration_test"
   deps = [
     # Test component.
-    ":driver_integration_test",
+    ":fake_battery_integration_test",
 
     # Driver(s) to be tested.
     ":fake_battery_component",

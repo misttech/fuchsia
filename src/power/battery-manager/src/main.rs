@@ -10,10 +10,10 @@ mod polisher;
 use crate::battery_manager::{BatteryManager, BatterySimulationStateObserver};
 use crate::battery_simulator::SimulatedBatteryInfoSource;
 use crate::history_logger::{HistoryLogger, HistoryLoggerConfig, RecorderConfig};
-use anyhow::{Context, Error};
+use anyhow::Error;
 use battery_manager_config::Config;
+use fidl_fuchsia_hardware_power_battery as fbattery;
 use fidl_fuchsia_power_battery as fpower;
-use fidl_fuchsia_power_battery::BatteryManagerRequestStream;
 use fidl_fuchsia_power_battery_test as spower;
 use fidl_fuchsia_power_system as fsystem;
 use fuchsia_async as fasync;
@@ -26,8 +26,13 @@ use log::{error, info, warn};
 use std::path::Path;
 use std::sync::{Arc, Weak};
 
+pub(crate) enum BatteryInfoSource {
+    New(fbattery::BatteryProxy),
+    ModernService(fpower::BatteryInfoProviderProxy),
+}
+
 enum IncomingService {
-    BatteryManager(BatteryManagerRequestStream),
+    BatteryManager(fpower::BatteryManagerRequestStream),
     BatterySimulator(spower::BatterySimulatorRequestStream),
 }
 
@@ -43,15 +48,78 @@ const PREV_BOOT_BATTERY_HISTORY_FILE: &str = "/tmp/history.txt";
 // the battery level measurements.
 const MAX_CHARGE_STATUS_MEASUREMENTS: usize = 144;
 
-async fn get_battery_info_provider_proxy() -> Result<fpower::BatteryInfoProviderProxy, Error> {
-    let device = fclient::Service::open(fpower::InfoServiceMarker)
-        .context("Failed to open service")?
-        .watch_for_any()
-        .await
-        .context("Failed to find instance")?
-        .connect_to_device()
-        .context("Failed to connect to device protocol")?;
-    return Ok(device);
+async fn get_battery_info_source() -> Result<BatteryInfoSource, Error> {
+    info!("Looking for battery info service (new or old)...");
+
+    let new_stream = match fclient::Service::open(fbattery::ServiceMarker) {
+        Ok(s) => match s.watch().await {
+            Ok(w) => Some(w),
+            Err(e) => {
+                warn!("Failed to watch new battery service: {:?}", e);
+                None
+            }
+        },
+        Err(e) => {
+            warn!("Failed to open new battery service: {:?}", e);
+            None
+        }
+    };
+
+    let old_stream = match fclient::Service::open(fpower::InfoServiceMarker) {
+        Ok(s) => match s.watch().await {
+            Ok(w) => Some(w),
+            Err(e) => {
+                warn!("Failed to watch old battery service: {:?}", e);
+                None
+            }
+        },
+        Err(e) => {
+            warn!("Failed to open old battery service: {:?}", e);
+            None
+        }
+    };
+
+    if new_stream.is_none() && old_stream.is_none() {
+        return Err(anyhow::anyhow!(
+            "Failed to initialize both battery service watchers. Check component manifest."
+        ));
+    }
+
+    // Use futures::stream::iter to turn Option<impl Stream> into a Stream,
+    // and flatten it to get a single stream of instances.
+    // If the original stream was None, it becomes an empty stream that never yields.
+    let mut new_stream = futures::stream::iter(new_stream).flatten().fuse();
+    let mut old_stream = futures::stream::iter(old_stream).flatten().fuse();
+
+    loop {
+        futures::select! {
+            instance_res = new_stream.select_next_some() => {
+                match instance_res {
+                    Ok(instance) => {
+                        if let Ok(proxy) = instance.connect_to_battery() {
+                            info!("Connected to new fuchsia.hardware.power.battery service");
+                            return Ok(BatteryInfoSource::New(proxy));
+                        }
+                        warn!("Failed to connect to an instance of the new service, looking for next...");
+                    }
+                    Err(e) => warn!("New service stream error: {:?}", e),
+                }
+            }
+            instance_res = old_stream.select_next_some() => {
+                match instance_res {
+                    Ok(instance) => {
+                        if let Ok(proxy) = instance.connect_to_device() {
+                            info!("Connected to fuchsia.power.battery service");
+                            return Ok(BatteryInfoSource::ModernService(proxy));
+                        }
+                        warn!("Failed to connect to an instance of the old service, looking for next...");
+                    }
+                    Err(e) => warn!("Old service stream error: {:?}", e),
+                }
+            }
+            complete => return Err(anyhow::anyhow!("All battery service streams closed")),
+        }
+    }
 }
 
 fn move_battery_history() {
@@ -112,10 +180,10 @@ async fn main() -> Result<(), Error> {
     log::info!(config:?; "config");
 
     fasync::Task::local(async move {
-        let proxy = match get_battery_info_provider_proxy().await {
-            Ok(p) => p,
+        let source = match get_battery_info_source().await {
+            Ok(s) => s,
             Err(e) => {
-                error!("Error getting battery info provider: {e:?}");
+                error!("Error getting battery info source: {e:?}");
                 return; // Exit the task on error
             }
         };
@@ -128,7 +196,7 @@ async fn main() -> Result<(), Error> {
         } else {
             None
         };
-        if let Err(e) = battery_manager_clone.start_watching_battery_info(proxy, sag).await {
+        if let Err(e) = battery_manager_clone.start_watching_battery_info(source, sag).await {
             error!("Error when watching battery info: {e:?}");
         }
     })
