@@ -31,6 +31,8 @@ use std::collections::HashSet;
 use std::pin::pin;
 use std::sync::Arc;
 
+const DEFAULT_DNS_PORT: u16 = 53;
+
 trait TakeNetwork {
     fn take_network(self) -> Option<fnp_properties::NetworkToken>;
 }
@@ -331,7 +333,6 @@ async fn test_track_dns_changes<N: Netstack, M: Manager>(name: &str) -> Result<(
     const NDP_DNS_SERVER2: fnet::Ipv6Address = fidl_ip_v6!("2001:db8::2");
     const NDP_DNS_SERVER3: fnet::Ipv6Address = fidl_ip_v6!("2001:db8::3");
 
-    const DEFAULT_DNS_PORT: u16 = 53;
     const TEST_NETWORK_ID: u32 = 2;
     const DNS_SERVER_LIST: [fnet::Ipv6Address; 3] =
         [NDP_DNS_SERVER1, NDP_DNS_SERVER2, NDP_DNS_SERVER3];
@@ -735,6 +736,146 @@ async fn test_fake_netcfg<N: Netstack>(name: &str) -> Result<(), anyhow::Error> 
     res1.expect("add network fidl error").expect("add network protocol error");
     let update = res2.expect("error while watching properties");
     assert_eq!(update, expected);
+
+    Ok(())
+}
+
+#[netstack_test]
+#[variant(N, Netstack)]
+#[variant(M, Manager)]
+async fn test_network_registry_dns_propagation<N: Netstack, M: Manager>(
+    name: &str,
+) -> Result<(), anyhow::Error> {
+    let _if_name = with_netcfg_owned_device::<M, N, _>(
+        name,
+        ManagerConfig::EnableSocketProxy,
+        NetcfgOwnedDeviceArgs {
+            use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
+            socket_proxy_type: SocketProxyType::None,
+            ..Default::default()
+        },
+        |_if_id, _network, _interface_state, realm, _sandbox| {
+            async move {
+                let delegated_networks = realm
+                    .connect_to_protocol_from_child::<fnp_socketproxy::NetworkRegistryMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to Netcfg NetworkRegistry");
+
+                let networks = realm
+                    .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
+                        realms::constants::netcfg::COMPONENT_NAME,
+                    )
+                    .expect("failed to connect to Networks");
+
+                const TEST_NETWORK_ID: u32 = 2;
+                const TEST_MARK: u32 = 123;
+                const NDP_DNS_SERVER: fnet::Ipv6Address = fidl_ip_v6!("2001:db8::1");
+
+                const TEST_NETWORK_ID_2: u32 = 3;
+                const TEST_MARK_2: u32 = 456;
+                const NDP_DNS_SERVER_2: fnet::Ipv6Address = fidl_ip_v6!("2001:db8::2");
+
+                // Add the first delegated network.
+                delegated_networks
+                    .add(&fnp_socketproxy::Network {
+                        network_id: Some(TEST_NETWORK_ID),
+                        info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                            fnp_socketproxy::StarnixNetworkInfo {
+                                mark: Some(TEST_MARK),
+                                ..Default::default()
+                            },
+                        )),
+                        dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+                            v6: Some(vec![NDP_DNS_SERVER]),
+                            v4: Some(vec![]),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    })
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to add network");
+
+                // Make the first delegated network default.
+                delegated_networks
+                    .set_default(&fposix_socket::OptionalUint32::Value(TEST_NETWORK_ID))
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to set default");
+
+                // Add second delegated network.
+                delegated_networks
+                    .add(&fnp_socketproxy::Network {
+                        network_id: Some(TEST_NETWORK_ID_2),
+                        info: Some(fnp_socketproxy::NetworkInfo::Starnix(
+                            fnp_socketproxy::StarnixNetworkInfo {
+                                mark: Some(TEST_MARK_2),
+                                ..Default::default()
+                            },
+                        )),
+                        dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
+                            v6: Some(vec![NDP_DNS_SERVER_2]),
+                            v4: Some(vec![]),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    })
+                    .await
+                    .expect("fidl error")
+                    .expect("failed to add network");
+
+                // Watch properties on default network and observe the DNS server configuration.
+                let network_token = networks
+                    .watch_default()
+                    .await
+                    .expect("failed to watch default network")
+                    .take_network()
+                    .expect("no default network token");
+
+                let watch_update =
+                    |networks: &fnp_properties::NetworksProxy,
+                     network: &fnp_properties::NetworkToken| {
+                        networks
+                            .watch_properties(fnp_properties::NetworksWatchPropertiesRequest {
+                                network: Some(network.duplicate().expect("couldn't duplicate")),
+                                properties: Some(vec![fnp_properties::Property::DnsConfiguration]),
+                                ..Default::default()
+                            })
+                            .fuse()
+                    };
+                let update = watch_update(&networks, &network_token)
+                    .await
+                    .expect("fidl error")
+                    .expect("protocol error");
+
+                let actual_servers: HashSet<_> = match update.as_slice() {
+                    [fnp_properties::PropertyUpdate::DnsConfiguration(dns_config)] => dns_config
+                        .servers
+                        .as_ref()
+                        .expect("DNS servers must be set")
+                        .iter()
+                        .map(|server| server.address.expect("server address must be present"))
+                        .collect(),
+                    u => panic!("unexpected property update {u:?}"),
+                };
+
+                // Per-network properties must ONLY return DNS servers belonging to that network.
+                let expected_isolated_servers =
+                    HashSet::from([fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {
+                        address: NDP_DNS_SERVER,
+                        port: DEFAULT_DNS_PORT,
+                        zone_index: 0,
+                    })]);
+                assert_eq!(actual_servers, expected_isolated_servers);
+
+                // Ensure that watch_properties does not return again with additional DNS updates.
+                assert!(watch_update(&networks, &network_token).now_or_never().is_none());
+            }
+            .boxed_local()
+        },
+    )
+    .await;
 
     Ok(())
 }
