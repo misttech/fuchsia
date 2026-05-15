@@ -245,7 +245,7 @@ fuchsia_package("pkg_for_bootstrap") {
   package_name = "test_manager"
   visibility = [
     ":*",
-    "//bundles/assembly:*",
+    "//bundles/assembly/*",
   ]
   deps = [
     ":test_manager_for_bootstrap_cmp",

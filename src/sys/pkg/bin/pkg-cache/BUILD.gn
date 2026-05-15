@@ -195,7 +195,7 @@ fuchsia_system_package("disable-executability-restrictions") {
     "//build/validate:non_production_tag",
   ]
   visibility = [
-    "//bundles/assembly:*",
+    "//bundles/assembly/*",
     "//src/sys/pkg:*",
   ]
 }
