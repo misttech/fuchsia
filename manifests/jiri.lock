@@ -65,26 +65,6 @@
         "instance_id": "xszoY6jKK24tdluHaPguCQ2NEiuFno7Gcfvk32vKuJ8C"
     },
     {
-        "package": "fuchsia/drivers/msd-arm-mali/debug/arm64",
-        "version": "git_revision:f963806bc6ef648594006eef329d4741729eff4b",
-        "instance_id": "5fRBivdF0b14pfwl2x56KnU8mxS0fd_zv5BEJJ1LvBgC"
-    },
-    {
-        "package": "fuchsia/drivers/msd-arm-mali/debug/debug-symbols-arm64",
-        "version": "git_revision:f963806bc6ef648594006eef329d4741729eff4b",
-        "instance_id": "2TsAOwkuohcolvReUDg9Tnr1_SLcPVnQo2sVz02i6GIC"
-    },
-    {
-        "package": "fuchsia/drivers/msd-arm-mali/release/arm64",
-        "version": "git_revision:f963806bc6ef648594006eef329d4741729eff4b",
-        "instance_id": "irMMoi04NscVsZumTLwCF5VqqrO2n_O26L71ld69UvcC"
-    },
-    {
-        "package": "fuchsia/drivers/msd-arm-mali/release/debug-symbols-arm64",
-        "version": "git_revision:f963806bc6ef648594006eef329d4741729eff4b",
-        "instance_id": "k4JxgbbzUhopPSqgzn1NZEt2KlaUPVVHRxkN4M4QbwEC"
-    },
-    {
         "package": "fuchsia/drivers/rtc/board_input_bundle_set",
         "version": "git_revision:9e4d55033ef6af20fd91c058bce06da0a2a62341",
         "instance_id": "iZ3SrEsKCNGy8JcImcocf9R3zmgosTpEIpqsaNgQ3CUC"

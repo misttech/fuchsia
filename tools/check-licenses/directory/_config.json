@@ -147,9 +147,7 @@
                 ],
                 "paths": [
                     "prebuilt/connectivity/bluetooth/bt-hci-virtual",
-                    "prebuilt/connectivity/bluetooth/bt-host",
-                    "prebuilt/drivers/msd-arm-mali-debug",
-                    "prebuilt/drivers/msd-arm-mali-release"
+                    "prebuilt/connectivity/bluetooth/bt-host"
                 ]
             },
             {

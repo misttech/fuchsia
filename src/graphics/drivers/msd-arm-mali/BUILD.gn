@@ -157,16 +157,3 @@ fuchsia_driver_package("msd-arm-mali") {
 group("msd-arm-mali_for_bazel") {
   deps = [ ":msd-arm-mali.bazel_input" ]
 }
-
-# This is the OOT built msd-arm-mali driver.
-# See https://fuchsia.googlesource.com/drivers/graphics/gpu/+/HEAD/drivers/msd-arm-mali/.
-prebuilt_package("msd-arm-mali-oot") {
-  package_name = "msd-arm-mali"
-
-  if (is_debug) {
-    variant = "debug"
-  } else {
-    variant = "release"
-  }
-  archive = "//prebuilt/drivers/msd-arm-mali-$variant/msd-arm-mali"
-}
