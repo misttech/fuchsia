@@ -116,11 +116,11 @@ void ContextManagerLoop(std::string_view dir, fit::closure ready) {
 
 // Starts a context manager process.
 // Returns a value that on destruction kills the process.
-auto ScopedContextManagerProcess(std::string_view dir) {
+auto ScopedContextManagerProcess(std::string_view dir, fit::closure ready) {
   auto fork_helper = std::make_unique<test_helper::ForkHelper>();
-  pid_t pid =
-      RunInForkedProcessWithLabel(*fork_helper, "test_u:test_r:binder_context_manager_test_t:s0",
-                                  [dir] { ContextManagerLoop(dir, [] {}); });
+  pid_t pid = RunInForkedProcessWithLabel(
+      *fork_helper, "test_u:test_r:binder_context_manager_test_t:s0",
+      [dir, ready = std::move(ready)]() mutable { ContextManagerLoop(dir, std::move(ready)); });
   auto cleanup = fit::defer([pid, fork_helper = std::move(fork_helper)]() {
     ASSERT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
     fork_helper->ExpectSignal(SIGKILL);
@@ -187,13 +187,16 @@ INSTANTIATE_TEST_SUITE_P(BinderTest, ContextManagerPermission, kContextManagerPe
 class CallPermission : public BinderTest, public testing::WithParamInterface<std::string_view> {};
 
 // Test doing a binder call with and without the `call` permission.
-// TODO(https://fxbug.dev/510748271): Re-enable test.
-TEST_P(CallPermission, DISABLED_DoCall) {
+TEST_P(CallPermission, DoCall) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   std::string_view label = CallPermission::GetParam();
   bool expect_success = !cpp23::contains(label, "_no_");
 
-  auto context_manager = ScopedContextManagerProcess(temp_dir_.path());
+  test_helper::Rendezvous context_manager_ready = test_helper::MakeRendezvous();
+  auto context_manager = ScopedContextManagerProcess(
+      temp_dir_.path(),
+      [ready = std::move(context_manager_ready.poker)]() mutable { ready.poke(); });
+  context_manager_ready.holder.hold();
 
   ASSERT_TRUE(RunSubprocessAs(label, [&] {
     fbl::unique_fd binder = OpenBinder(temp_dir_.path());
