@@ -136,6 +136,22 @@ func overwrittenPath(lit *syntax.Literal) (string, bool) {
 	return "", false
 }
 
+// overwrittenRaw returns the raw expression overwritten by comments, if any.
+//
+// It returns the raw expression and true if it is overwritten, otherwise it returns
+// an empty string and false.
+func overwrittenRaw(lit *syntax.Literal) (string, bool) {
+	comments := lit.Comments()
+	if comments != nil {
+		for _, c := range comments.Suffix {
+			if strings.HasPrefix(c.Text, rawOverwriteAnnotationPrefix) {
+				return strings.TrimSpace(c.Text[len(rawOverwriteAnnotationPrefix):]), true
+			}
+		}
+	}
+	return "", false
+}
+
 // bazelFilePathsToGN converts Bazel file paths to GN file paths, handling
 // overwritten paths.
 func bazelFilePathsToGN(expr syntax.Expr) (syntax.Expr, error) {
@@ -155,6 +171,10 @@ func bazelLdflagsToGN(expr syntax.Expr) (syntax.Expr, error) {
 	lit, ok := expr.(*syntax.Literal)
 	if !ok {
 		return expr, nil
+	}
+	if flag, ok := overwrittenRaw(lit); ok {
+		lit.Raw = flag
+		return lit, nil
 	}
 	if flag, ok := overwrittenPath(lit); ok {
 		lit.Raw = fmt.Sprintf(`"%s"`, flag)

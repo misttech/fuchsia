@@ -29,6 +29,10 @@ const skipAnnotation = "# @bazel2gn:skip"
 // and use the value specified in the annotation in the BUILD.gn file instead.
 const pathOverwriteAnnotationPrefix = "# @bazel2gn:path_overwrite:"
 
+// rawOverwriteAnnotationPrefix is a comment annotation prefix that indicates a value should be
+// overwritten with a raw GN expression.
+const rawOverwriteAnnotationPrefix = "# @bazel2gn:raw_overwrite:"
+
 // transformerAnnotationPrefix is a comment annotation prefix that indicates a transformer
 // should be applied to the next statement.
 const transformerAnnotationPrefix = "# @bazel2gn:transformer="

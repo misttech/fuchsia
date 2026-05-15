@@ -845,6 +845,21 @@ func TestCCConversion(t *testing.T) {
 }`,
 		},
 		{
+			name: "ldflags with raw_overwrite",
+			bazel: `cc_library(
+	name = "fdio",
+	ldflags = [
+		"-Wl,--version-script=sdk/lib/fdio/fdio.ld", # @bazel2gn:raw_overwrite:"-Wl,--version-script=" + rebase_path("fdio.ld", root_build_dir)
+	],
+)
+`,
+			wantGN: `source_set("fdio") {
+	ldflags = [
+		"-Wl,--version-script=" + rebase_path("fdio.ld", root_build_dir),
+	]
+}`,
+		},
+		{
 			name: "select in copts to configs",
 			bazel: `cc_library(
 	name = "foo",
