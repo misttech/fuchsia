@@ -416,10 +416,9 @@ class TestThread {
   // the TestThread object for the worst case lambda we will encounter in the
   // test suite.
   //
-  // Currently, this bound is 6 pointer's worth of storage.  If this grows in
-  // the future, this constexpr bound should be updated to match the new worst
-  // case storage requirement.
-  static constexpr size_t kMaxOpLambdaCaptureStorageBytes = sizeof(void*) * 6;
+  // If this grows in the future, this constexpr bound should be updated to
+  // match the new worst case storage requirement.
+  static constexpr size_t kMaxOpLambdaCaptureStorageBytes = sizeof(void*) * 8;
 
   TestThread() = default;
   ~TestThread() { Reset(); }
@@ -471,19 +470,25 @@ class TestThread {
       return thread_state::THREAD_DEATH;
     }
 
-    SingleChainLockGuard guard{IrqSaveOption, thread_->get_lock(),
+    SingleChainLockGuard guard{IrqSaveOption, thread().get_lock(),
                                CLT_TAG("TestThread::tstate (pi_tests)")};
-    return thread_->state();
+    return thread().state();
   }
 
   SchedDuration remaining_time_slice() const {
-    SingleChainLockGuard guard{IrqSaveOption, thread_->get_lock(),
+    SingleChainLockGuard guard{IrqSaveOption, thread().get_lock(),
                                CLT_TAG("TestThread::remaining_time_slice (pi_tests)")};
     const SchedDuration time_elapsed =
-        thread_->scheduler_state().state() == THREAD_RUNNING
-            ? SchedTime{current_mono_time()} - thread_->scheduler_state().last_started_running()
+        thread().scheduler_state().state() == THREAD_RUNNING
+            ? SchedTime{current_mono_time()} - thread().scheduler_state().last_started_running()
             : SchedDuration{0};
-    return thread_->scheduler_state().remaining_time_slice_ns() - time_elapsed;
+    return thread().scheduler_state().remaining_time_slice_ns() - time_elapsed;
+  }
+
+  uint64_t activation_count() const {
+    SingleChainLockGuard guard{IrqSaveOption, thread().get_lock(),
+                               CLT_TAG("TestThread::activation_count (pi_tests)")};
+    return thread().scheduler_state().activation_count();
   }
 
   struct StateSnapshot {
@@ -495,21 +500,21 @@ class TestThread {
     uint64_t activation_count;
   };
 
-  StateSnapshot snapshot() {
-    SingleChainLockGuard guard{IrqSaveOption, thread_->get_lock(),
+  StateSnapshot snapshot() const {
+    SingleChainLockGuard guard{IrqSaveOption, thread().get_lock(),
                                CLT_TAG("TestThread::snapshot (pi_tests)")};
     const SchedTime current_time{current_mono_time()};
-    const bool running = thread_->scheduler_state().state() == THREAD_RUNNING;
+    const bool running = thread().scheduler_state().state() == THREAD_RUNNING;
     const SchedDuration time_elapsed =
-        running ? current_time - thread_->scheduler_state().last_started_running()
+        running ? current_time - thread().scheduler_state().last_started_running()
                 : SchedDuration{0};
     return {
         current_time,
-        thread_->scheduler_state().remaining_time_slice_ns() - time_elapsed,
-        thread_->scheduler_state().start_time(),
-        thread_->scheduler_state().finish_time(),
-        thread_->scheduler_state().time_slice_ns(),
-        thread_->scheduler_state().activation_count(),
+        thread().scheduler_state().remaining_time_slice_ns() - time_elapsed,
+        thread().scheduler_state().start_time(),
+        thread().scheduler_state().finish_time(),
+        thread().scheduler_state().time_slice_ns(),
+        thread().scheduler_state().activation_count(),
     };
   }
 
@@ -1879,6 +1884,7 @@ bool pi_test_deadline_join_split_helper(const fbl::RefPtr<Profile>& active_profi
 
   do {
     retry_test = false;
+    ktl::atomic<bool> activation_count_changed{false};
 
     LockedOwnedWaitQueue owq1;
     LockedOwnedWaitQueue owq2;
@@ -1941,7 +1947,8 @@ bool pi_test_deadline_join_split_helper(const fbl::RefPtr<Profile>& active_profi
 
     // Have the active thread block on owq1, then have the pressure threads block
     // on owq1.
-    ASSERT_TRUE(active_thread.RunOp([&owq1, &owq2, &owq_count, &print_state, spin_duration]() {
+    ASSERT_TRUE(active_thread.RunOp([&owq1, &owq2, &owq_count, &print_state, spin_duration,
+                                     &activation_count_changed, &active_thread]() {
       print_state("start active");
 
       // Wait for all pressure threads to block on owq1.
@@ -1950,6 +1957,7 @@ bool pi_test_deadline_join_split_helper(const fbl::RefPtr<Profile>& active_profi
       }
 
       print_state("pre-spin");
+      const uint64_t pre_spin_activation_count = active_thread.activation_count();
 
       // Spin for a measurable duration (i.e. the expected consumed capacity) to
       // ensure that the active thread has accumulated a significant portion of
@@ -1957,6 +1965,11 @@ bool pi_test_deadline_join_split_helper(const fbl::RefPtr<Profile>& active_profi
       const zx_instant_mono_t spin_until = current_mono_time() + spin_duration;
       while (current_mono_time() < spin_until) {
         // Spin to consume time slice.
+      }
+
+      const uint64_t post_spin_activation_count = active_thread.activation_count();
+      if (post_spin_activation_count != pre_spin_activation_count) {
+        activation_count_changed.store(true);
       }
 
       print_state("post-spin");
@@ -1998,9 +2011,9 @@ bool pi_test_deadline_join_split_helper(const fbl::RefPtr<Profile>& active_profi
 
     print_state("end");
 
-    // If the total elapsed time is too long, assume VM time loss occurred and
-    // retry.
-    if (end_time - start_time > retry_duration) {
+    // If the total elapsed time is too long, or the activation count changed,
+    // assume VM time loss occurred and retry.
+    if (end_time - start_time > retry_duration || activation_count_changed.load()) {
       retry_test = true;
     } else {
       all_ok = verify_fn(active_thread, pressure_threads) && all_ok;
