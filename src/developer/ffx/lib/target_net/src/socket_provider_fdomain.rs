@@ -4,7 +4,12 @@
 
 use fdomain_client::fidl::{DiscoverableProtocolMarker, ProtocolMarker, Proxy};
 use fdomain_client::{AsHandleRef, Socket as AsyncSocket, Socket};
+use fdomain_fuchsia_developer_remotecontrol as frcs;
+use fdomain_fuchsia_net as fnet;
+use fdomain_fuchsia_posix as fposix;
+use fdomain_fuchsia_posix_socket as fsock;
 use fdomain_fuchsia_sys2::OpenDirType;
+use fuchsia_async as fasync;
 use futures::{AsyncRead, AsyncWrite, Stream};
 use std::fmt;
 use std::fmt::Debug;
@@ -12,11 +17,6 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use {
-    fdomain_fuchsia_developer_remotecontrol as frcs, fdomain_fuchsia_net as fnet,
-    fdomain_fuchsia_posix as fposix, fdomain_fuchsia_posix_socket as fsock,
-    fuchsia_async as fasync,
-};
 
 use crate::{Error, Result};
 
@@ -205,8 +205,7 @@ impl SocketProvider {
             Some("core/network/netstack"),
             connect_timeout,
         )
-        .await
-        .map_err(Error::OpenProtocol)?;
+        .await?;
         Ok(Self { socket_provider })
     }
 
@@ -331,7 +330,7 @@ pub async fn connect_with_timeout<P>(
     rcs_proxy: &frcs::RemoteControlProxy,
     backup_moniker: Option<impl AsRef<str>>,
     dur: Duration,
-) -> anyhow::Result<P::Proxy>
+) -> Result<P::Proxy>
 where
     P: DiscoverableProtocolMarker,
 {
@@ -370,16 +369,13 @@ where
     }
 
     let Some(backup) = backup_moniker.as_ref().map(|s| s.as_ref()) else {
-        return toolbox_res.map_err(|e| anyhow::anyhow!(e));
+        return toolbox_res;
     };
 
     // try to connect to the moniker given instead, but don't double
     // up the timeout.
     let timeout = dur.saturating_sub(toolbox_took);
-    let moniker_res =
-        open_with_timeout::<P>(timeout, &backup, OpenDirType::ExposedDir, &rcs_proxy).await;
-
-    moniker_res.map_err(|e| anyhow::anyhow!(e))
+    open_with_timeout::<P>(timeout, &backup, OpenDirType::ExposedDir, &rcs_proxy).await
 }
 
 pub async fn open_with_timeout_at<T: ProtocolMarker>(
@@ -388,7 +384,7 @@ pub async fn open_with_timeout_at<T: ProtocolMarker>(
     capability_set: OpenDirType,
     capability_name: &str,
     rcs_proxy: &frcs::RemoteControlProxy,
-) -> anyhow::Result<T::Proxy> {
+) -> Result<T::Proxy> {
     let connect_capability_fut = async move {
         // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
         let (proxy, server) = rcs_proxy.domain().create_proxy::<T>();
@@ -405,8 +401,15 @@ pub async fn open_with_timeout_at<T: ProtocolMarker>(
     futures::pin_mut!(fut, timer);
 
     futures::select! {
-        res = fut => res.map_err(|e| anyhow::anyhow!(e))?.map_err(|e| anyhow::anyhow!("{:?}", e)),
-        _ = timer => Err(anyhow::anyhow!("Timed out connecting to capability: '{}' with moniker: '{}'", capability_name, moniker)),
+        res = fut => {
+            res.map_err(Error::Fidl)?
+               .map_err(Error::ConnectCapability)
+        }
+        _ = timer => Err(Error::TimedOutConnecting {
+            moniker: moniker.to_string(),
+            capability: capability_name.to_string(),
+            duration: dur,
+        }),
     }
 }
 
@@ -415,7 +418,7 @@ pub async fn open_with_timeout<P: DiscoverableProtocolMarker>(
     moniker: &str,
     capability_set: OpenDirType,
     rcs_proxy: &frcs::RemoteControlProxy,
-) -> anyhow::Result<P::Proxy> {
+) -> Result<P::Proxy> {
     open_with_timeout_at::<P>(dur, moniker, capability_set, P::PROTOCOL_NAME, rcs_proxy).await
 }
 
