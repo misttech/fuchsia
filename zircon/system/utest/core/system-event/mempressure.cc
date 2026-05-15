@@ -153,7 +153,8 @@ static void CreateDiscardableVmo(zx::vmo& vmo) {
   ASSERT_OK(vmo.op_range(ZX_VMO_OP_UNLOCK, 0, size, nullptr, 0));
 }
 
-TEST(SystemEvent, MemoryStallEvent) {
+// TODO(https://fxbug.dev/513577268): Test is disabled.  See bug for details.
+TEST(SystemEvent, DISABLED_MemoryStallEvent) {
   zx::unowned_resource system_resource = maybe_standalone::GetSystemResource();
   if (!system_resource->is_valid()) {
     printf("System resource not available, skipping\n");
