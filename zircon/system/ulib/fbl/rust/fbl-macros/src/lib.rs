@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{ToTokens, quote};
 use syn::{DeriveInput, Fields, ItemStruct, parse_macro_input};
 
 /// Attribute macro to make a struct reference counted.
@@ -101,6 +101,64 @@ pub fn derive_recyclable(item: TokenStream) -> TokenStream {
                 unsafe { Ok(::core::ptr::NonNull::new_unchecked(raw)) }
             }
         }
+    };
+
+    TokenStream::from(expanded)
+}
+
+/// Derive macro to implement `SinglyLinkedListContainable` for a struct.
+///
+/// Mark fields that are nodes with `#[sll_node]`. To support multiple lists, use
+/// `#[sll_node(tag = MyTag)]`.
+#[proc_macro_derive(SinglyLinkedListContainable, attributes(sll_node))]
+pub fn derive_singly_linked_list_containable(item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    let name = &input.ident;
+
+    let fields = match input.data {
+        syn::Data::Struct(s) => s.fields,
+        _ => panic!("SinglyLinkedListContainable derive only supports structs"),
+    };
+
+    let mut impls = Vec::new();
+
+    for field in fields {
+        for attr in &field.attrs {
+            if attr.path().is_ident("sll_node") {
+                let field_name = field.ident.as_ref().unwrap();
+                let mut tag = None;
+
+                let _ = attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("tag") {
+                        let value = meta.value()?;
+                        let parsed_tag: syn::Type = value.parse()?;
+                        tag = Some(parsed_tag);
+                        Ok(())
+                    } else {
+                        let path_str = meta.path.to_token_stream().to_string();
+                        panic!("unsupported attribute: {}", path_str)
+                    }
+                });
+
+                let tag_type = tag.unwrap_or_else(|| syn::parse_quote! { ::fbl::DefaultObjectTag });
+
+                impls.push(quote! {
+                    impl ::fbl::SinglyLinkedListContainable<#name, #tag_type> for #name {
+                        fn get_node(&self) -> &::fbl::SinglyLinkedListNode<#name> {
+                            &self.#field_name
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    if impls.is_empty() {
+        panic!("At least one field must be marked with #[sll_node]");
+    }
+
+    let expanded = quote! {
+        #(#impls)*
     };
 
     TokenStream::from(expanded)
