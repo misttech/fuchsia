@@ -2105,9 +2105,10 @@ mod test {
         let local_node = overnet_core::Router::new(None).unwrap();
 
         let t = Target::new_named(&env.context, "hello-kitty");
-        let rcs_state = TargetConnectionState::Rcs(
-            RcsConnection::new(local_node.clone(), &mut NodeId { id: 1234 }).unwrap(),
-        );
+        let rcs_state = TargetConnectionState::Rcs(RcsConnection::new(
+            local_node.clone(),
+            &mut NodeId { id: 1234 },
+        ));
         t.set_state(rcs_state.clone());
 
         // Attempt to set the state to TargetConnectionState::Mdns, this transition should fail, as in
@@ -2123,9 +2124,10 @@ mod test {
         let local_node = overnet_core::Router::new(None).unwrap();
 
         let t = Target::new_named(&env.context, "hello-kitty");
-        let rcs_state = TargetConnectionState::Rcs(
-            RcsConnection::new(local_node.clone(), &mut NodeId { id: 1234 }).unwrap(),
-        );
+        let rcs_state = TargetConnectionState::Rcs(RcsConnection::new(
+            local_node.clone(),
+            &mut NodeId { id: 1234 },
+        ));
         t.set_state(rcs_state.clone());
 
         // Attempt to set the state to TargetConnectionState::Manual, this transition should fail, as in

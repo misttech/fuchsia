@@ -27,8 +27,7 @@ use {
 use {
     fidl::endpoints::{DiscoverableProtocolMarker, ProxyHasDomain},
     fidl_fuchsia_developer_remotecontrol::{
-        ConnectCapabilityError, IdentifyHostError, IdentifyHostResponse, RemoteControlMarker,
-        RemoteControlProxy,
+        ConnectCapabilityError, IdentifyHostResponse, RemoteControlMarker, RemoteControlProxy,
     },
     fidl_fuchsia_kernel as proto_fuchsia_kernel,
     fidl_fuchsia_overnet_protocol::NodeId,
@@ -39,7 +38,6 @@ use {
     },
     std::hash::{Hash, Hasher},
     std::sync::Arc,
-    timeout::TimeoutError,
 };
 
 #[cfg(feature = "fdomain")]
@@ -87,12 +85,12 @@ impl Eq for RcsConnection {}
 
 #[cfg(not(feature = "fdomain"))]
 impl RcsConnection {
-    pub fn new(node: Arc<overnet_core::Router>, id: &mut NodeId) -> Result<Self> {
+    pub fn new(node: Arc<overnet_core::Router>, id: &mut NodeId) -> Self {
         let (s, p) = fidl::Channel::create();
         RcsConnection::connect_to_service(Arc::clone(&node), id, s);
         let proxy = RemoteControlProxy::new(fidl::AsyncChannel::from_channel(p));
 
-        Ok(Self { node, proxy, overnet_id: id.clone() })
+        Self { node, proxy, overnet_id: id.clone() }
     }
 
     pub fn copy_to_channel(&mut self, channel: fidl::Channel) {
@@ -151,31 +149,19 @@ impl RcsConnection {
 }
 
 #[cfg(not(feature = "fdomain"))]
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum RcsConnectionError {
-    /// There is something wrong with the FIDL connection.
-    FidlConnectionError(fidl::Error),
-    /// There was a timeout trying to communicate with RCS.
-    ConnectionTimeoutError(TimeoutError),
-    /// There is an error from within Rcs itself.
-    RemoteControlError(IdentifyHostError),
+    #[error("FIDL connection error: {0}")]
+    FidlConnectionError(#[from] fidl::Error),
 
-    /// There is an error with the output from Rcs.
-    TargetError(anyhow::Error),
-}
+    #[error("Connection timeout error")]
+    ConnectionTimeoutError(#[from] timeout::TimeoutError),
 
-#[cfg(not(feature = "fdomain"))]
-impl std::fmt::Display for RcsConnectionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RcsConnectionError::FidlConnectionError(ferr) => {
-                write!(f, "fidl connection error: {}", ferr)
-            }
-            RcsConnectionError::ConnectionTimeoutError(_) => write!(f, "timeout error"),
-            RcsConnectionError::RemoteControlError(ierr) => write!(f, "internal error: {:?}", ierr),
-            RcsConnectionError::TargetError(error) => write!(f, "general error: {}", error),
-        }
-    }
+    #[error("Internal RemoteControl error: {0:?}")]
+    RemoteControlError(fidl_fuchsia_developer_remotecontrol::IdentifyHostError),
+
+    #[error("General error: {0}")]
+    TargetError(#[source] anyhow::Error),
 }
 
 pub const RCS_KNOCK_TIMEOUT: Duration = Duration::from_secs(1);

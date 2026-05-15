@@ -2423,8 +2423,7 @@ mod tests {
         let tc = TargetCollection::new(&env.context);
         let target = Target::new(&env.context);
         let node = overnet_core::Router::new(None).unwrap();
-        let rcs = RcsConnection::new(node, &mut fidl_fuchsia_overnet_protocol::NodeId { id: 1234 })
-            .expect("couldn't make RcsConnection");
+        let rcs = RcsConnection::new(node, &mut fidl_fuchsia_overnet_protocol::NodeId { id: 1234 });
         target.set_state(TargetConnectionState::Rcs(rcs));
         target.enable();
         let tid = target.id();

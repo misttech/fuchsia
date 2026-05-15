@@ -78,13 +78,7 @@ impl DaemonEventHandler {
 
     async fn handle_overnet_peer(&self, node_id: u64) {
         log::debug!("Got overnet peer {node_id}");
-        let rcs = match RcsConnection::new(Arc::clone(&self.node), &mut NodeId { id: node_id }) {
-            Ok(rcs) => rcs,
-            Err(e) => {
-                log::error!("Target from Overnet {} failed to connect to RCS: {:?}", node_id, e);
-                return;
-            }
-        };
+        let rcs = RcsConnection::new(Arc::clone(&self.node), &mut NodeId { id: node_id });
 
         let identify = match rcs.identify_host().await {
             Ok(v) => v,
