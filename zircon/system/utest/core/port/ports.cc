@@ -601,6 +601,85 @@ TEST(PortStressTest, MatchHandleCloseRace) {
   match_thread.join();
 }
 
+// This test validates that a timeout in a channel call does not trigger a panic.
+// This is a regression test for https://fxbug.dev/512083099
+TEST(PortStressTest, ChannelCallWaitQueuePanicRepro) {
+  zx::channel ch2_req, ch2_rep;
+  ASSERT_OK(zx::channel::create(0, &ch2_req, &ch2_rep));
+
+  std::atomic<bool> keep_running = true;
+
+  // Thread C (Event thread)
+  std::thread t_c([&]() {
+    zx_signals_t observed;
+    char buf[8] = {0};
+    uint32_t act_bytes, act_handles;
+    while (keep_running) {
+      ch2_rep.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), &observed);
+      ch2_rep.read(0, buf, nullptr, 8, 0, &act_bytes, &act_handles);
+    }
+  });
+
+  for (size_t i = 0; i < 1000; ++i) {
+    zx::channel ch1_req, ch1_rep;
+    ASSERT_OK(zx::channel::create(0, &ch1_req, &ch1_rep));
+
+    zx::port port;
+    ASSERT_OK(zx::port::create(0, &port));
+
+    ASSERT_OK(ch1_rep.wait_async(port, 123, ZX_CHANNEL_READABLE, 0));
+
+    std::atomic<bool> thread_a_timed_out = false;
+
+    // Thread B
+    std::thread t_b([&]() {
+      zx_port_packet_t packet;
+      port.wait(zx::time::infinite(), &packet);
+
+      while (!thread_a_timed_out) {
+        std::this_thread::yield();
+      }
+    });
+
+    // Thread A
+    std::thread t_a([&]() {
+      char buf[8] = {0};
+      zx_channel_call_args_t args = {
+          .wr_bytes = buf,
+          .wr_handles = nullptr,
+          .rd_bytes = buf,
+          .rd_handles = nullptr,
+          .wr_num_bytes = 8,
+          .wr_num_handles = 0,
+          .rd_num_bytes = 8,
+          .rd_num_handles = 0,
+      };
+      uint32_t act_bytes, act_handles;
+
+      // Call 1: make Thread B the owner
+      ch1_req.call(0, zx::deadline_after(zx::usec(1)), &args, &act_bytes, &act_handles);
+      thread_a_timed_out = true;
+
+      zx::nanosleep(zx::deadline_after(zx::usec(10)));
+
+      // Call 2: trigger Event::Signal on Thread C
+      for (int i = 0; i < 50; i++) {
+        ch2_req.call(0, zx::deadline_after(zx::usec(10)), &args, &act_bytes, &act_handles);
+        zx::nanosleep(zx::deadline_after(zx::usec(10)));  // Wait for C to read and block again
+      }
+    });
+
+    t_a.join();
+    t_b.join();
+  }
+
+  keep_running = false;
+  // Wake up C to exit
+  char buf[8] = {0};
+  ch2_req.write(0, buf, 8, nullptr, 0);
+  t_c.join();
+}
+
 TEST(PortTest, ThreadEvents) {
   zx::port port;
   zx::event event;

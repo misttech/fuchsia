@@ -778,5 +778,11 @@ zx_status_t ChannelDispatcher::MessageWaiter::EndWait(MessagePacketPtr* out) {
   }
   *out = ktl::move(msg_);
   channel_ = nullptr;
+#if EXPERIMENTAL_CHANNEL_CALL_PROPAGATION_ENABLED
+  // TODO(https://fxbug.dev/513440159): Resetting the owner due to an interrupted channel call
+  // breaks the PI chain in a way that cannot be re-connected when the call is resumed. Figure out
+  // a way to preserve the PI chain, while address https://fxbug.dev/512083099.
+  wait_queue_.ResetOwnerIfNoWaiters();
+#endif
   return status_;
 }
