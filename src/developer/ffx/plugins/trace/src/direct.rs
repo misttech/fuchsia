@@ -268,18 +268,15 @@ where
         }
     }
 
-    // Flush remaining of the last decompressed buffer.
+    // Flush any remaining uncompressed bytes buffered in ZSTD's internal decoder.
     loop {
-        let mut out_wrapper = zstd::stream::raw::OutBuffer::around(&mut output_buf);
-        let remaining = decoder.finish(&mut out_wrapper, true).map_err(|e| {
-            std_io::Error::new(std_io::ErrorKind::Other, format!("zstd finish: {e:?}"))
+        let status = decoder.run_on_buffers(&[], &mut output_buf).map_err(|e| {
+            std_io::Error::new(std_io::ErrorKind::Other, format!("zstd flush run: {e:?}"))
         })?;
-        let bytes = out_wrapper.as_slice();
-        if !bytes.is_empty() {
-            writer.write_all(bytes).await?;
-            total_written += bytes.len() as u64;
-        }
-        if remaining == 0 {
+        if status.bytes_written > 0 {
+            writer.write_all(&output_buf[..status.bytes_written]).await?;
+            total_written += status.bytes_written as u64;
+        } else {
             break;
         }
     }
@@ -347,5 +344,32 @@ mod tests {
         let bytes_written = decompress_zstd(reader, &mut output).await.unwrap();
         assert_eq!(bytes_written, original_data.len() as u64);
         assert_eq!(output, original_data);
+    }
+
+    #[fuchsia::test]
+    async fn test_copy_zstd_with_prefix_exceeds_buffer_size() {
+        // Compress 5 chunks of 30,000 bytes (150KB total) and flush after each chunk.
+        // This forces unaligned ZSTD block boundaries relative to the 128KB decompression buffer,
+        // ensuring that decompressed bytes from the final chunk remain buffered in decoder after EOF.
+        let chunk_data: Vec<u8> = (0..30_000).map(|i| (i % 256) as u8).collect();
+        let mut compressed_data = Vec::new();
+        {
+            let mut encoder = zstd::stream::write::Encoder::new(&mut compressed_data, 0).unwrap();
+            use std::io::Write;
+            for _ in 0..5 {
+                encoder.write_all(&chunk_data).unwrap();
+                encoder.flush().unwrap();
+            }
+            encoder.finish().unwrap();
+        }
+
+        let magic = &compressed_data[0..4];
+        let rest = &compressed_data[4..];
+        let reader = Cursor::new(magic).chain(Cursor::new(rest));
+        let mut output = Vec::new();
+
+        let bytes_written = decompress_zstd(reader, &mut output).await.unwrap();
+        assert_eq!(bytes_written, 150_000);
+        assert_eq!(output.len(), 150_000);
     }
 }
