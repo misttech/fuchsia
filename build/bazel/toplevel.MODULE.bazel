@@ -253,6 +253,20 @@ compact_python_runtime_repository(
 
 register_toolchains("@prebuilt_python//:all")
 
+# Create the @fuchsia_icu_config repository which contains the constants.bzl file
+# exporting generating configuration constants related to the ICU library flavors
+fuchsia_icu_config_repository = use_repo_rule(
+    "//build/bazel/icu:repository_rules.bzl",
+    "fuchsia_icu_config_repository",
+)
+
+fuchsia_icu_config_repository(
+    name = "fuchsia_icu_config",
+    # LINT.IfChange
+    content_hash_file = "fuchsia_build_generated/content_hashes/fuchsia_icu_config.hash",
+    # LINT.ThenChange(scripts/workspace_utils.py)
+)
+
 generate_prebuilt_rust_toolchain_repository = use_repo_rule(
     "//build/bazel/toolchains/rust:repository_rules.bzl",
     "generate_prebuilt_rust_toolchain_repository",
