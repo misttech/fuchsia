@@ -2082,3 +2082,31 @@ mod fxblob {
         fixture.tear_down().await;
     }
 }
+
+#[fuchsia::test]
+async fn debug_block_directory_has_bus_path() {
+    let mut builder = new_builder();
+    builder.with_disk().format_volumes(volumes_spec()).format_data(data_fs_spec());
+    let fixture = builder.build().await;
+
+    fixture.check_fs_type("blob", blob_fs_type()).await;
+    fixture.check_fs_type("data", data_fs_type()).await;
+
+    let block = fuchsia_fs::directory::open_directory(
+        fixture.exposed_dir(),
+        "debug_block",
+        fio::PERM_READABLE,
+    )
+    .await
+    .unwrap();
+
+    let bus_topology =
+        fuchsia_fs::directory::open_file(&block, "000/bus_path", fio::PERM_READABLE).await.unwrap();
+
+    let content = fuchsia_fs::file::read_to_string(&bus_topology).await.unwrap();
+    // Don't be too strict; just make sure it isn't <unknown> or <none> which come from fshost.
+    assert!(!content.is_empty());
+    assert!(!content.starts_with("<"));
+
+    fixture.tear_down().await;
+}

@@ -167,6 +167,7 @@
                 "fuchsia.driver.development.Manager",
                 "fuchsia.driver.framework.CompositeNodeManager",
                 "fuchsia.driver.token.Debug",
+                "fuchsia.driver.token.NodeBusTopology",
                 "fuchsia.firmware.crash.Reporter",
                 "fuchsia.firmware.crash.Watcher",
                 "fuchsia.memory.attribution.Provider",

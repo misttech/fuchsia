@@ -19,7 +19,9 @@ rustc_library("fshost_test_fixture") {
   deps = [
     "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
     "//sdk/fidl/fuchsia.component.test:fuchsia.component.test_rust",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
+    "//sdk/fidl/fuchsia.driver.token:fuchsia.driver.token_rust",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
     "//sdk/fidl/fuchsia.hardware.ramdisk:fuchsia.hardware.ramdisk_rust",

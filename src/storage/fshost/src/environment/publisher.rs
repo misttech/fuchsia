@@ -5,10 +5,13 @@
 use crate::device::Device;
 use anyhow::Error;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
+use fidl_fuchsia_driver_framework::{BusInfo, BusType, DeviceAddress};
+use fidl_fuchsia_driver_token as ftoken;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_storage_block::BlockMarker;
-use fs_management::filesystem::BlockConnector;
-use pseudo_fs::{LazyPseudoDirectory, PseudoDirectory, PseudoFile, ToPseudoDirectory};
+use fs_management::filesystem::{BlockConnector, DirBasedBlockConnector};
+use itertools::Itertools as _;
+use pseudo_fs::{LazyPseudoDirectoryAsync, PseudoDirectory, PseudoFile, ToPseudoDirectoryAsync};
 use std::sync::Arc;
 use vfs::ExecutionScope;
 use vfs::directory::helper::DirectlyMutable;
@@ -81,14 +84,16 @@ impl DevicePublisher {
     }
 
     pub fn publish_to_debug_block_dir(&self, device: &dyn Device, name: &str) -> Result<(), Error> {
-        let volume = device.block_connector()?;
-        self.debug_block_dir.add_entry(
-            name,
-            LazyPseudoDirectory::new(BlockDirectoryInfo {
-                volume,
-                source: device.source().as_bytes().into(),
-            }),
-        )?;
+        let service_dir = device.service_instance_directory()?;
+        let name = name.to_string();
+        let debug_block_dir = self.debug_block_dir.clone();
+        let source = device.source().to_string();
+
+        let info = BlockDirectoryInfo {
+            service_dir: DirBasedBlockConnector::new(service_dir, "volume".to_string()),
+            source: source.into_bytes().into_boxed_slice(),
+        };
+        debug_block_dir.add_entry(&name, LazyPseudoDirectoryAsync::new(info))?;
         Ok(())
     }
 
@@ -114,21 +119,116 @@ impl DevicePublisher {
     }
 }
 
+// Helper for Display
+// TODO(https://fxbug.dev/512559396): This should be in a library.
+struct BusPathType<'a>(&'a Option<BusType>);
+
+impl<'a> std::fmt::Display for BusPathType<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(BusType::Platform) => write!(f, "platform"),
+            Some(BusType::Acpi) => write!(f, "acpi"),
+            Some(BusType::DeviceTree) => write!(f, "device-tree"),
+            Some(BusType::Pci) => write!(f, "pci"),
+            Some(BusType::Usb) => write!(f, "usb"),
+            Some(BusType::Gpio) => write!(f, "gpio"),
+            Some(BusType::I2C) => write!(f, "i2c"),
+            Some(BusType::Spi) => write!(f, "spi"),
+            Some(BusType::Sdio) => write!(f, "sdio"),
+            Some(BusType::Uart) => write!(f, "uart"),
+            Some(BusType::Spmi) => write!(f, "spmi"),
+            Some(BusType::UsbPeripheral) => write!(f, "usb-peripheral"),
+            Some(BusType::Virtio) => write!(f, "virtio"),
+            Some(_) => write!(f, "<unknown>"),
+            None => write!(f, "<none>"),
+        }
+    }
+}
+
+// Helper for Display
+// TODO(https://fxbug.dev/512559396): This should be in a library.
+struct BusPathAddress<'a>(&'a Option<DeviceAddress>);
+
+impl<'a> std::fmt::Display for BusPathAddress<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(DeviceAddress::IntValue(val)) => write!(f, "{val:02X}"),
+            Some(DeviceAddress::ArrayIntValue(val)) => {
+                write!(f, "{}", val.iter().map(|v| format!("{v:02X}")).join(":"))
+            }
+            Some(DeviceAddress::CharIntValue(val)) => write!(f, "{val}"),
+            Some(DeviceAddress::ArrayCharIntValue(val)) => {
+                write!(f, "{}", val.iter().map(|v| v.to_string()).join(":"))
+            }
+            Some(DeviceAddress::StringValue(val)) => write!(f, "{val}"),
+            Some(_) => write!(f, "<unknown>"),
+            None => write!(f, "<none>"),
+        }
+    }
+}
+
+// Helper for Display
+// TODO(https://fxbug.dev/512559396): This should be in a library.
+struct BusPathElement<'a>(&'a BusInfo);
+
+impl<'a> std::fmt::Display for BusPathElement<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", BusPathType(&self.0.bus), BusPathAddress(&self.0.address))
+    }
+}
+
+// Helper for Display
+// TODO(https://fxbug.dev/512559396): This should be in a library.
+struct BusPath(Vec<BusInfo>);
+
+impl std::fmt::Display for BusPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, info) in self.0.iter().enumerate() {
+            if i > 0 {
+                write!(f, "/")?;
+            }
+            write!(f, "{}", BusPathElement(info))?;
+        }
+        Ok(())
+    }
+}
+
 struct BlockDirectoryInfo {
-    volume: Box<dyn BlockConnector + 'static>,
+    service_dir: DirBasedBlockConnector,
     source: Box<[u8]>,
 }
 
-impl ToPseudoDirectory for BlockDirectoryInfo {
-    fn to_pseudo_directory(self) -> Arc<PseudoDirectory> {
-        vfs::pseudo_directory! {
-            BlockMarker::PROTOCOL_NAME => endpoint(move |_scope, channel| {
-                self.volume.connect_channel_to_block(channel.into_zx_channel().into())
-                    .unwrap_or_else(|error| {
-                        log::error!(error:%; "failed to open volume");
-                    });
-            }),
-            "source" => PseudoFile::from_data(self.source),
+impl BlockDirectoryInfo {
+    async fn get_bus_path(&self) -> Result<BusPath, Error> {
+        let token_client = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
+            ftoken::NodeTokenMarker,
+        >(&self.service_dir.dir(), "token")?;
+        let token = token_client.get().await?.map_err(zx::Status::from_raw)?;
+        let bus_topo_client =
+            fuchsia_component::client::connect_to_protocol::<ftoken::NodeBusTopologyMarker>()?;
+        let path = bus_topo_client.get(token).await?.map_err(zx::Status::from_raw)?;
+        Ok(BusPath(path))
+    }
+}
+
+impl ToPseudoDirectoryAsync for BlockDirectoryInfo {
+    fn to_pseudo_directory(self) -> impl std::future::Future<Output = Arc<PseudoDirectory>> + Send {
+        async move {
+            let bus_path = self
+                .get_bus_path()
+                .await
+                .map(|b| b.to_string())
+                .unwrap_or_else(|_| "<unknown>".to_string());
+            vfs::pseudo_directory! {
+                BlockMarker::PROTOCOL_NAME => endpoint(move |_scope, channel| {
+                    self.service_dir.connect_channel_to_block(channel.into_zx_channel().into())
+                        .unwrap_or_else(|error| {
+                            log::error!(error:%; "failed to open volume");
+                        });
+                }),
+                "source" => PseudoFile::from_data(self.source),
+                "bus_path" => PseudoFile::from_data(bus_path.into_bytes()),
+            }
         }
     }
 }
@@ -139,6 +239,7 @@ mod tests {
     use crate::Parent;
     use async_trait::async_trait;
     use fidl::endpoints::Proxy;
+    use fidl_fuchsia_io::DirectoryProxy;
     use fidl_fuchsia_storage_block::BlockProxy;
     use fs_management::format::DiskFormat;
     use fuchsia_fs::directory::read_file_to_string;
@@ -148,7 +249,8 @@ mod tests {
 
     struct MockDevice {
         source: &'static str,
-        volume: mpsc::UnboundedSender<ServerEnd<BlockMarker>>,
+        scope: ExecutionScope,
+        dir: Arc<PseudoDirectory>,
     }
 
     #[async_trait]
@@ -180,12 +282,19 @@ mod tests {
         async fn partition_type(&mut self) -> Result<&[u8; 16], Error> {
             unimplemented!()
         }
+        fn service_instance_directory(&self) -> Result<DirectoryProxy, Error> {
+            let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+            vfs::directory::serve_on(
+                self.dir.clone(),
+                fio::PERM_READABLE,
+                self.scope.clone(),
+                server_end,
+            );
+            Ok(proxy)
+        }
         fn block_connector(&self) -> Result<Box<dyn BlockConnector>, Error> {
-            let volume = self.volume.clone();
-            Ok(Box::new(move |server_end: ServerEnd<BlockMarker>| {
-                volume.unbounded_send(server_end).unwrap();
-                Ok(())
-            }))
+            let dir = self.service_instance_directory()?;
+            Ok(Box::new(DirBasedBlockConnector::new(dir, "volume".to_string())))
         }
         fn block_proxy(&self) -> Result<BlockProxy, Error> {
             unimplemented!()
@@ -206,11 +315,16 @@ mod tests {
         vfs::directory::serve_on(
             device_publisher.debug_block_dir(),
             fio::PERM_READABLE,
-            scope,
+            scope.clone(),
             server_end,
         );
         let (sender, mut receiver) = mpsc::unbounded();
-        let mock_device = MockDevice { source: "mock-source", volume: sender };
+        let dir = vfs::pseudo_directory! {
+            "volume" => endpoint(move |_scope, channel| {
+                sender.unbounded_send(channel.into_zx_channel().into()).unwrap();
+            }),
+        };
+        let mock_device = MockDevice { source: "mock-source", scope: scope.clone(), dir };
         device_publisher.publish_to_debug_block_dir(&mock_device, "001").unwrap();
 
         // Check that the "source" file is correct.
@@ -227,10 +341,11 @@ mod tests {
             fio::Flags::PROTOCOL_SERVICE,
         )
         .unwrap();
-        let volume_client = receiver.next().await.unwrap();
+        let volume_server_end: fidl::endpoints::ServerEnd<BlockMarker> =
+            receiver.next().await.unwrap();
         assert_eq!(
             volume.as_channel().as_handle_ref().basic_info().unwrap().related_koid,
-            volume_client.channel().as_handle_ref().koid().unwrap()
+            volume_server_end.channel().as_handle_ref().koid().unwrap()
         );
     }
 }
