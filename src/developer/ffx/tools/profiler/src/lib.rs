@@ -445,10 +445,8 @@ async fn finalize_profile_session(
         options.pprof_conversion,
         context,
     ) {
-        return ffx_profiler::pprof::samples_to_pprof(
-            symbolized_record,
-            options.output.as_str().into(),
-        );
+        ffx_profiler::pprof::samples_to_pprof(symbolized_record, options.output.as_str().into())?;
+        return Ok(());
     } else {
         anyhow::bail!("Failed to symbolize profile");
     }

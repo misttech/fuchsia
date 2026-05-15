@@ -9,7 +9,7 @@ use profile_rust_proto::perfetto::third_party::perftools::profiles::{
 };
 
 use crate::symbolize::{ResolvedAddress, SymbolizedRecords};
-use anyhow::Result;
+
 use prost::Message;
 use std::collections::HashMap;
 use std::default::Default;
@@ -194,10 +194,10 @@ impl ProfileBuilder {
     }
 }
 
-pub fn samples_to_pprof(input: SymbolizedRecords, output: PathBuf) -> Result<()> {
+pub fn samples_to_pprof(input: SymbolizedRecords, output: PathBuf) -> Result<(), std::io::Error> {
     let builder = ProfileBuilder::new();
     let profile = builder.build_profile(input);
-    std::fs::write(output, profile.encode_to_vec()).map_err(|e| anyhow::anyhow!(e))?;
+    std::fs::write(output, profile.encode_to_vec())?;
     Ok(())
 }
 

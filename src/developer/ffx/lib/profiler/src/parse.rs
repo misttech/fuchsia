@@ -421,6 +421,7 @@ mod tests {
                     vec![vec![BacktraceDetails(0x43dc387f8e10), BacktraceDetails(0x3a656c4c85e)]],
                 ),
             ]),
+            ..Default::default()
         };
 
         let second_handler = ProfilingRecordHandler {
@@ -467,6 +468,7 @@ mod tests {
                     ],
                 ],
             )]),
+            ..Default::default()
         };
         let mut expected_handlers = HashMap::new();
         expected_handlers.insert(Pid(4207), second_handler);
