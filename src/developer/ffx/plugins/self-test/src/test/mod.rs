@@ -47,6 +47,7 @@ pub async fn new_isolate(env: &EnvironmentContext, name: &str) -> Result<ffx_iso
     let isolate = ffx_isolate::Isolate::new_with_sdk(name, ssh_key, &env).await?;
     set_value_in_isolate(&isolate, "watchdogs.host_pipe.enabled", true.into()).await?;
     set_value_in_isolate(&isolate, "ffx.isolated", true.into()).await?;
+    set_value_in_isolate(&isolate, "fastboot.network.tcp.retry_count", 0.into()).await?;
     // Globally change the log file to one appropriate to the isolate.  We'll reset it after
     // the test completes
     change_log_file(&subtest_log_file(&isolate))?;

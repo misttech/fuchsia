@@ -4,7 +4,6 @@
 
 use crate::{Config, ManualTargets};
 
-use anyhow::{Context as _, Result, anyhow};
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::Fastboot;
@@ -55,11 +54,9 @@ impl ManualTargetTester for TcpOpenManualTargetTester {
     async fn target_state(&mut self, target: SocketAddr) -> ManualTargetState {
         // We want to add a timeout, so instead of just not seeing the device at all, we can
         // return that it is Disconnected.
-        match timeout::timeout(MANUAL_CONNECT_TIMEOUT, tokio::net::TcpStream::connect(target))
-            .await
-            .context("timed out")
+        match timeout::timeout(MANUAL_CONNECT_TIMEOUT, tokio::net::TcpStream::connect(target)).await
         {
-            Ok(_) => {
+            Ok(Ok(_)) => {
                 // If we can get a fastboot var then we're fastboot
                 log::trace!("Could connect to SocketAddr: {}. Testing if Fastboot TCP", target);
                 match tcp_proxy(&target).await {
@@ -84,7 +81,7 @@ impl ManualTargetTester for TcpOpenManualTargetTester {
                     }
                 }
             }
-            Err(_) => {
+            _ => {
                 log::trace!("SocketAddr: {}. Could not Connect over TCP. Is Disconnected.", target);
                 ManualTargetState::Disconnected
             }
@@ -278,12 +275,12 @@ where
 /// Creates a FastbootProxy over TCP for a device at the given SocketAddr
 async fn tcp_proxy(
     addr: &SocketAddr,
-) -> Result<FastbootProxy<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>> {
+) -> std::result::Result<
+    FastbootProxy<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>,
+    crate::ManualTargetsError,
+> {
     let mut factory = OneshotTcpFactory::new(*addr);
-    let interface = factory
-        .open()
-        .await
-        .with_context(|| format!("connecting via TCP to Fastboot address: {addr}"))?;
+    let interface = factory.open().await.map_err(crate::ManualTargetsError::InterfaceFactory)?;
     Ok(FastbootProxy::<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStream>>>::new(
         addr.to_string(),
         interface,
@@ -312,7 +309,7 @@ impl InterfaceFactoryBase<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<Tcp
     {
         let interface = open_once(&self.addr, Duration::from_secs(1))
             .await
-            .with_context(|| format!("connecting via TCP to Fastboot address: {}", self.addr))?;
+            .map_err(|_| InterfaceFactoryError::ConnectionError("TCP".to_string(), self.addr, 1))?;
 
         Ok(interface)
     }
@@ -322,8 +319,10 @@ impl InterfaceFactoryBase<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<Tcp
     }
 
     async fn rediscover(&mut self) -> Result<(), InterfaceFactoryError> {
-        Err(anyhow!("OneshotTcpFactory does not support the rediscover function. It is oneshot...")
-            .into())
+        Err(InterfaceFactoryError::RediscoverTargetError(
+            "OneshotTcpFactory does not support the rediscover function. It is oneshot..."
+                .to_string(),
+        ))
     }
 }
 
@@ -339,7 +338,7 @@ impl InterfaceFactory<TcpNetworkInterface<MultithreadedTokioAsyncWrapper<TcpStre
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::Mock;
+    use crate::{ManualTargetsError, Mock};
 
     use async_trait::async_trait;
     use futures::channel::mpsc::unbounded;
@@ -356,15 +355,18 @@ mod test {
 
     #[async_trait(?Send)]
     impl ManualTargets for TestManualTargets {
-        async fn storage_set(&self, _targets: Value) -> Result<()> {
+        async fn storage_set(
+            &self,
+            _targets: Value,
+        ) -> std::result::Result<(), ManualTargetsError> {
             unimplemented!()
         }
 
-        async fn storage_get(&self) -> Result<Value> {
+        async fn storage_get(&self) -> std::result::Result<Value, ManualTargetsError> {
             unimplemented!()
         }
 
-        async fn get(&self) -> Result<Value> {
+        async fn get(&self) -> std::result::Result<Value, ManualTargetsError> {
             unimplemented!()
         }
 
@@ -379,11 +381,11 @@ mod test {
             }
         }
 
-        async fn add(&self, _target: String) -> Result<()> {
+        async fn add(&self, _target: String) -> std::result::Result<(), ManualTargetsError> {
             unimplemented!()
         }
 
-        async fn remove(&self, _target: String) -> Result<()> {
+        async fn remove(&self, _target: String) -> std::result::Result<(), ManualTargetsError> {
             unimplemented!()
         }
     }
@@ -399,7 +401,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_manual_target_watcher() -> Result<()> {
+    async fn test_manual_target_watcher() -> anyhow::Result<()> {
         let empty_signal = Arc::new(Mutex::new(false));
 
         let mut map_one = Map::new();
@@ -523,7 +525,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    async fn test_manual_target_change_state() -> Result<()> {
+    async fn test_manual_target_change_state() -> anyhow::Result<()> {
         let empty_signal = Arc::new(Mutex::new(false));
 
         let mut map_one = Map::new();

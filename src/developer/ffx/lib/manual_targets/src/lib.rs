@@ -2,13 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Result, anyhow};
 use async_lock::Mutex;
 use async_trait::async_trait;
 
 use ffx_config::{ConfigLevel, EnvironmentContext};
 use serde_json::{Map, Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[derive(thiserror::Error, Debug)]
+pub enum ManualTargetsError {
+    #[error("Config error: {0}")]
+    Config(#[from] ffx_config::api::ConfigError),
+
+    #[error("Mock targets value is missing")]
+    MockValueMissing,
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Interface factory error: {0}")]
+    InterfaceFactory(#[from] ffx_fastboot_interface::interface_factory::InterfaceFactoryError),
+}
 
 pub mod watcher;
 
@@ -20,10 +34,10 @@ const MANUAL_TARGETS: &'static str = "targets.manual";
 
 #[async_trait(?Send)]
 pub trait ManualTargets: Sync {
-    async fn storage_set(&self, targets: Value) -> Result<()>;
-    async fn storage_get(&self) -> Result<Value>;
+    async fn storage_set(&self, targets: Value) -> Result<(), ManualTargetsError>;
+    async fn storage_get(&self) -> Result<Value, ManualTargetsError>;
 
-    async fn get(&self) -> Result<Value> {
+    async fn get(&self) -> Result<Value, ManualTargetsError> {
         self.storage_get().await
     }
 
@@ -36,7 +50,7 @@ pub trait ManualTargets: Sync {
             .unwrap_or_default()
     }
 
-    async fn add(&self, target: String) -> Result<()> {
+    async fn add(&self, target: String) -> Result<(), ManualTargetsError> {
         let mut targets = self.get_or_default().await;
         // We always insert None so that we retain backwards-compatibility for manual targets,
         // which previously were stored as a map of addr->expiration-time
@@ -44,7 +58,7 @@ pub trait ManualTargets: Sync {
         self.storage_set(targets.into()).await
     }
 
-    async fn remove(&self, target: String) -> Result<()> {
+    async fn remove(&self, target: String) -> Result<(), ManualTargetsError> {
         let mut targets = self.get_or_default().await;
         targets.remove(&target);
         self.storage_set(targets.into()).await
@@ -63,22 +77,22 @@ impl Config {
 
 #[async_trait(?Send)]
 impl ManualTargets for Config {
-    async fn storage_get(&self) -> Result<Value> {
+    async fn storage_get(&self) -> Result<Value, ManualTargetsError> {
         self.context
             .query(MANUAL_TARGETS)
             .level(Some(ConfigLevel::User))
             .build()
             .get(&self.context)
-            .context("manual_targets::get")
+            .map_err(ManualTargetsError::Config)
     }
 
-    async fn storage_set(&self, targets: Value) -> Result<()> {
+    async fn storage_set(&self, targets: Value) -> Result<(), ManualTargetsError> {
         self.context
             .query(MANUAL_TARGETS)
             .level(Some(ConfigLevel::User))
             .build()
             .set(&self.context, targets.into())
-            .map_err(anyhow::Error::from)
+            .map_err(ManualTargetsError::Config)
     }
 }
 
@@ -90,11 +104,11 @@ pub struct Mock {
 
 #[async_trait(?Send)]
 impl ManualTargets for Mock {
-    async fn storage_get(&self) -> Result<Value> {
-        self.targets.lock().await.clone().map(|t| Ok(t)).unwrap_or(Err(anyhow!("value missing")))
+    async fn storage_get(&self) -> Result<Value, ManualTargetsError> {
+        self.targets.lock().await.clone().ok_or(ManualTargetsError::MockValueMissing)
     }
 
-    async fn storage_set(&self, targets: Value) -> Result<()> {
+    async fn storage_set(&self, targets: Value) -> Result<(), ManualTargetsError> {
         let _ = self
             .set_count
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |_| {

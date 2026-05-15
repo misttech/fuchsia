@@ -4,12 +4,12 @@
 
 use async_trait::async_trait;
 use errors::ffx_error;
-use ffx_config::EnvironmentContext;
+use ffx_config::{ConfigError, EnvironmentContext};
 use ffx_target_remove_args::RemoveCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{Deferred, FfxMain, FfxTool, Result, bug, deferred, return_bug, return_user_error};
 use fidl_fuchsia_developer_ffx as ffx;
-use manual_targets::{Config, ManualTargets};
+use manual_targets::{Config, ManualTargets, ManualTargetsError};
 use schemars::JsonSchema;
 use serde::Serialize;
 use target_holders::daemon_protocol;
@@ -105,13 +105,10 @@ impl RemoveTool {
     ) -> Result<String> {
         let list = match cfg.storage_get().await {
             Ok(v) => v,
-            Err(e) => {
-                if format!("{e:?}").to_lowercase().contains("no value") {
-                    return Ok("No manual targets found.".into());
-                } else {
-                    return_bug!(e)
-                }
+            Err(ManualTargetsError::Config(ConfigError::NoValueSet(_))) => {
+                return Ok("No manual targets found.".into());
             }
+            Err(e) => return_bug!(e),
         };
 
         if let Some(arr) = list.as_object() {
