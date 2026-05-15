@@ -51,31 +51,30 @@ KCOUNTER(vm_vmo_always_need, "vm.vmo.always_need")
 KCOUNTER(vm_vmo_range_update_from_parent_skipped, "vm.vmo.range_updated_from_parent.skipped")
 KCOUNTER(vm_vmo_range_update_from_parent_performed, "vm.vmo.range_updated_from_parent.performed")
 
-KCOUNTER(vm_reclaim_fail_no_reclamation_strategy, "vm.reclaim.fail.no_reclamation_strategy")
 KCOUNTER(vm_reclaim_fail_discardable, "vm.reclaim.fail.discardable")
-KCOUNTER(vm_reclaim_fail_vmo_high_priority, "vm.reclaim.fail.vmo.high_priority")
+KCOUNTER(vm_reclaim_fail_no_reclamation_strategy, "vm.reclaim.fail.no_reclamation_strategy")
+KCOUNTER(vm_reclaim_fail_page_incorrect, "vm.reclaim.fail.incorrect_page")
+KCOUNTER(vm_reclaim_fail_page_pinned, "vm.reclaim.fail.page_pinned")
 
-KCOUNTER(vm_reclaim_evict_range, "vm.reclaim.evict_range")
-KCOUNTER(vm_reclaim_evict_range_fail, "vm.reclaim.evict_range.fail")
-KCOUNTER(vm_reclaim_evict_fail_range_accessed, "vm.reclaim.evict.fail.range_accessed")
-KCOUNTER(vm_reclaim_evict_range_pages, "vm.reclaim.evict_range_pages")
-KCOUNTER(vm_reclaim_evict_fail_page_pinned, "vm.reclaim.evict.fail.page.pinned")
-KCOUNTER(vm_reclaim_evict_fail_page_dirty, "vm.reclaim.evict.fail.page.dirty")
-KCOUNTER(vm_reclaim_evict_fail_page_accessed, "vm.reclaim.evict.fail.page.accessed")
-KCOUNTER(vm_reclaim_evict_fail_page_always_need, "vm.reclaim.evict.fail.page.always_need")
-KCOUNTER(vm_reclaim_evict_fail_page_queue, "vm.reclaim_evict_range_fail_queue")
-KCOUNTER(vm_reclaim_evict_fail_page_incorrect, "vm.reclaim.incorrect_page")
+KCOUNTER(vm_reclaim_evict_range, "vm.reclaim.evict.range")
+KCOUNTER(vm_reclaim_evict_range_pages, "vm.reclaim.evict.range.pages")
+KCOUNTER(vm_reclaim_evict_fail_range, "vm.reclaim.evict.fail_range")
+KCOUNTER(vm_reclaim_evict_fail_page_always_need, "vm.reclaim.evict.fail.page_always_need")
+KCOUNTER(vm_reclaim_evict_fail_page_dirty, "vm.reclaim.evict.fail.page_dirty")
+KCOUNTER(vm_reclaim_evict_fail_page_wrong_queue, "vm.reclaim.evict.fail.page_wrong_queue")
 KCOUNTER(vm_reclaim_evict_fail_page_vmo_high_priority,
+         "vm.reclaim.evict.fail.page_vmo_high_priority")
+KCOUNTER(vm_reclaim_evict_fail_page_accessed, "vm.reclaim.evict.fail.page_accessed")
 
-         "vm.reclaim.evict.fail.page.vmo_high_priority")
 KCOUNTER(vm_reclaim_compress_success, "vm.reclaim.compress.success")
 KCOUNTER(vm_reclaim_compress_fail, "vm.reclaim.compress.fail")
 KCOUNTER(vm_reclaim_compress_zero, "vm.reclaim.compress.zero")
 KCOUNTER(vm_vmo_compress_marker, "vm.vmo.compress.marker")
-KCOUNTER(vm_vmo_compress_zero_slot, "vm.vmo.compress.marker")
+KCOUNTER(vm_vmo_compress_zero_slot, "vm.vmo.compress.zero_slot")
 KCOUNTER(vm_reclaim_compress_race, "vm.reclaim.compress.race")
 KCOUNTER(vm_reclaim_compress_fail_page_accessed, "vm.reclaim.compress.fail.page_accessed")
 KCOUNTER(vm_reclaim_compress_fail_uncached, "vm.reclaim.compress.fail.uncached")
+KCOUNTER(vm_reclaim_compress_fail_vmo_high_priority, "vm.reclaim.compress.fail.vmo_high_priority")
 
 KCOUNTER(vm_reclaim_unloan_page, "vm.reclaim_unloan_page")
 
@@ -185,25 +184,30 @@ VmObjectPaged* paged_backlink_locked(VmCowPages* cow) TA_REQ(cow->lock())
 void VmCowPages::DebugDumpReclaimCounters() {
   // Per reclaim attempt.
   printf("Failed reclaim: discardable %ld\n", vm_reclaim_fail_discardable.SumAcrossAllCpus());
-  printf("Failed reclaim: vmo high priority %ld\n",
-         vm_reclaim_fail_vmo_high_priority.SumAcrossAllCpus());
-  printf("Failed reclaim no_strategy %ld\n",
+  printf("Failed reclaim: no strategy %ld\n",
          vm_reclaim_fail_no_reclamation_strategy.SumAcrossAllCpus());
-  printf("Failed reclaim: evict range %ld\n", vm_reclaim_evict_range_fail.SumAcrossAllCpus());
-  printf("Failed reclaim: evict accessed range %ld\n",
-         vm_reclaim_evict_fail_page_accessed.SumAcrossAllCpus());
-  printf("Failed reclaim: incorrect_page %ld\n",
-         vm_reclaim_evict_fail_page_incorrect.SumAcrossAllCpus());
+  printf("Failed reclaim: evict range %ld\n", vm_reclaim_evict_fail_range.SumAcrossAllCpus());
+
   // Per page.
-  printf("Failed page: always_need %ld\n",
+  printf("Failed reclaim: incorrect page %ld\n", vm_reclaim_fail_page_incorrect.SumAcrossAllCpus());
+  printf("Failed reclaim: pinned %ld\n", vm_reclaim_fail_page_pinned.SumAcrossAllCpus());
+  printf("Failed reclaim: evict always need %ld\n",
          vm_reclaim_evict_fail_page_always_need.SumAcrossAllCpus());
-  printf("Failed page: pinned %ld\n", vm_reclaim_evict_fail_page_pinned.SumAcrossAllCpus());
-  printf("Failed page: dirty %ld\n", vm_reclaim_evict_fail_page_dirty.SumAcrossAllCpus());
+  printf("Failed reclaim: evict dirty %ld\n", vm_reclaim_evict_fail_page_dirty.SumAcrossAllCpus());
+  printf("Failed reclaim: evict wrong queue %ld\n",
+         vm_reclaim_evict_fail_page_wrong_queue.SumAcrossAllCpus());
+  printf("Failed reclaim: evict vmo high priority %ld\n",
+         vm_reclaim_evict_fail_page_vmo_high_priority.SumAcrossAllCpus());
+  printf("Failed reclaim: evict accessed %ld\n",
+         vm_reclaim_evict_fail_page_accessed.SumAcrossAllCpus());
+
   // Compression
-  printf("Failed reclaim: compress uncached %ld\n",
-         vm_reclaim_compress_fail_uncached.SumAcrossAllCpus());
   printf("Failed reclaim: compress accessed %ld\n",
          vm_reclaim_compress_fail_page_accessed.SumAcrossAllCpus());
+  printf("Failed reclaim: compress vmo high priority %ld\n",
+         vm_reclaim_compress_fail_vmo_high_priority.SumAcrossAllCpus());
+  printf("Failed reclaim: compress uncached %ld\n",
+         vm_reclaim_compress_fail_uncached.SumAcrossAllCpus());
 }
 
 uint32_t VmCowPages::DebugGetPopulatedSlotsCount() const {
@@ -7142,7 +7146,7 @@ ktl::optional<VmCowReclaimFailure> VmCowPages::CannotReclaimPageLocked(vm_page_t
   // Check this page is still a part of this VMO. After this any failures should mark the page as
   // accessed to prevent the page from remaining a reclamation candidate.
   if (!actual || !actual->IsPage() || actual->Page() != page) {
-    vm_reclaim_evict_fail_page_incorrect.Add(1);
+    vm_reclaim_fail_page_incorrect.Add(1);
     return VmCowReclaimFailure::IncorrectPage;
   }
   // Pinned pages could be in use by DMA so we cannot safely reclaim them.
@@ -7150,7 +7154,7 @@ ktl::optional<VmCowReclaimFailure> VmCowPages::CannotReclaimPageLocked(vm_page_t
     // Loaned pages should never end up pinned.
     DEBUG_ASSERT(!page->is_loaned());
     Pmm::Node().GetPageQueues()->MarkAccessed(page);
-    vm_reclaim_evict_fail_page_pinned.Add(1);
+    vm_reclaim_fail_page_pinned.Add(1);
     return VmCowReclaimFailure::Other;
   }
   return ktl::nullopt;
@@ -7208,7 +7212,7 @@ VmCowReclaimResult VmCowPages::ReclaimRangeForEviction(uint64_t offset, size_t l
     // Pages must be reclaimable.
     if (!is_page_reclaimable(page)) {
       num_failed_queue++;
-      vm_reclaim_evict_fail_page_queue.Add(1);
+      vm_reclaim_evict_fail_page_wrong_queue.Add(1);
       return false;
     }
     // Pinned pages could be in use by DMA so we cannot safely reclaim them.
@@ -7216,7 +7220,7 @@ VmCowReclaimResult VmCowPages::ReclaimRangeForEviction(uint64_t offset, size_t l
       // Loaned pages should never end up pinned.
       DEBUG_ASSERT(!page->is_loaned());
       Pmm::Node().GetPageQueues()->MarkAccessed(page);
-      vm_reclaim_evict_fail_page_pinned.Add(1);
+      vm_reclaim_fail_page_pinned.Add(1);
       return false;
     }
 
@@ -7257,11 +7261,11 @@ VmCowReclaimResult VmCowPages::ReclaimRangeForEviction(uint64_t offset, size_t l
   freed_list.FreePages(this);
 
   if (num_evicted_pages + num_evicted_loaned == 0) {
-    vm_reclaim_evict_range_fail.Add(1);
+    vm_reclaim_evict_fail_range.Add(1);
 
     // If all of the failures were from "wrong queue", consider the range accessed.
     if (num_failed_pages == num_failed_queue) {
-      vm_reclaim_evict_fail_range_accessed.Add(1);
+      vm_reclaim_evict_fail_page_accessed.Add(num_failed_pages);
       return fit::error(VmCowReclaimFailure::EvictAccessed);
     }
 
@@ -7380,7 +7384,7 @@ VmCowReclaimResult VmCowPages::ReclaimPageForCompression(vm_page_t* page, uint64
       // Not allowed to reclaim if high priority.
       if (high_priority_count_ != 0) {
         Pmm::Node().GetPageQueues()->MarkAccessed(page);
-        vm_reclaim_fail_vmo_high_priority.Add(1);
+        vm_reclaim_compress_fail_vmo_high_priority.Add(1);
         return fit::error(VmCowReclaimFailure::Other);
       }
       DEBUG_ASSERT(!page->is_loaned());
