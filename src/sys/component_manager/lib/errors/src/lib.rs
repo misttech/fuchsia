@@ -377,14 +377,14 @@ pub enum DynamicCapabilityError {
     #[error("a dynamic capability was not valid:\n\t{err}")]
     Invalid {
         #[source]
-        err: cm_fidl_validator::error::ErrorList,
+        err: Box<cm_fidl_validator::error::ErrorList>,
     },
     #[error("dynamic offers are not allowed for {typename}")]
     UnsupportedType { typename: &'static str },
     #[error("dynamic offer would create a cycle:\n\t{err}")]
     Cycle {
         #[source]
-        err: cm_fidl_validator::error::ErrorList,
+        err: Box<cm_fidl_validator::error::ErrorList>,
     },
     #[error("source for dynamic offer not found:\n\t{:?}", offer)]
     SourceNotFound { offer: cm_rust::offer::OfferDecl },
@@ -572,13 +572,13 @@ pub enum ResolveActionError {
         url: Url,
         moniker: Moniker,
         #[source]
-        err: ResolverError,
+        err: Box<ResolverError>,
     },
     #[error("resolve failed for `{url}`:\n\t{err}")]
     ResolverError {
         url: Url,
         #[source]
-        err: ResolverError,
+        err: Box<ResolverError>,
     },
     #[error("expose dir for `{moniker}`:\n\t{err}")]
     // TODO(https://fxbug.dev/42071713): Determine whether this is expected to fail.
@@ -608,7 +608,7 @@ pub enum ResolveActionError {
     AbiCompatibilityError {
         url: Url,
         #[source]
-        err: CompatibilityCheckError,
+        err: Box<CompatibilityCheckError>,
     },
     #[error(transparent)]
     Policy(#[from] PolicyError),
@@ -639,16 +639,14 @@ impl ResolveActionError {
 impl Into<fsys::ResolveError> for ResolveActionError {
     fn into(self) -> fsys::ResolveError {
         match self {
-            ResolveActionError::ResolverError {
-                err: ResolverError::PackageNotFound(_), ..
-            } => fsys::ResolveError::PackageNotFound,
-            ResolveActionError::ResolverError {
-                err: ResolverError::ManifestNotFound(_), ..
-            } => fsys::ResolveError::ManifestNotFound,
+            ResolveActionError::ResolverError { err, .. } => match *err {
+                ResolverError::PackageNotFound(_) => fsys::ResolveError::PackageNotFound,
+                ResolverError::ManifestNotFound(_) => fsys::ResolveError::ManifestNotFound,
+                _ => fsys::ResolveError::Internal,
+            },
             ResolveActionError::InstanceShutDown { .. }
             | ResolveActionError::InstanceDestroyed { .. } => fsys::ResolveError::InstanceNotFound,
             ResolveActionError::ExposeDirError { .. }
-            | ResolveActionError::ResolverError { .. }
             | ResolveActionError::StructuredConfigError { .. }
             | ResolveActionError::ComponentAddressParseError { .. }
             | ResolveActionError::AddStaticChildError { .. }
@@ -666,16 +664,14 @@ impl Into<fsys::ResolveError> for ResolveActionError {
 impl Into<fsys::StartError> for ResolveActionError {
     fn into(self) -> fsys::StartError {
         match self {
-            ResolveActionError::ResolverError {
-                err: ResolverError::PackageNotFound(_), ..
-            } => fsys::StartError::PackageNotFound,
-            ResolveActionError::ResolverError {
-                err: ResolverError::ManifestNotFound(_), ..
-            } => fsys::StartError::ManifestNotFound,
+            ResolveActionError::ResolverError { err, .. } => match *err {
+                ResolverError::PackageNotFound(_) => fsys::StartError::PackageNotFound,
+                ResolverError::ManifestNotFound(_) => fsys::StartError::ManifestNotFound,
+                _ => fsys::StartError::Internal,
+            },
             ResolveActionError::InstanceShutDown { .. }
             | ResolveActionError::InstanceDestroyed { .. } => fsys::StartError::InstanceNotFound,
             ResolveActionError::ExposeDirError { .. }
-            | ResolveActionError::ResolverError { .. }
             | ResolveActionError::StructuredConfigError { .. }
             | ResolveActionError::ComponentAddressParseError { .. }
             | ResolveActionError::AddStaticChildError { .. }

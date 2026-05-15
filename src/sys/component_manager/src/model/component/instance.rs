@@ -1029,12 +1029,12 @@ impl ResolvedInstanceState {
                 | fdecl::Offer::Dictionary(fdecl::OfferDictionary { target, .. }) => {
                     if target.is_some() {
                         return Err(DynamicCapabilityError::Invalid {
-                            err: cm_fidl_validator::error::ErrorList {
+                            err: Box::new(cm_fidl_validator::error::ErrorList {
                                 errs: vec![cm_fidl_validator::error::Error::extraneous_field(
                                     DeclType::Offer,
                                     "target",
                                 )],
-                            },
+                            }),
                         });
                     }
                 }
@@ -1051,7 +1051,6 @@ impl ResolvedInstanceState {
         Ok(dynamic_offers)
     }
 
-    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401254441)
     fn validate_dynamic_component(
         &self,
         dependencies: &mut DirectedGraph<DependencyNode>,
@@ -1067,9 +1066,9 @@ impl ResolvedInstanceState {
         )
         .map_err(|err| {
             if err.errs.iter().all(|e| matches!(e, ValidatorError::DependencyCycle(_))) {
-                DynamicCapabilityError::Cycle { err }
+                DynamicCapabilityError::Cycle { err: Box::new(err) }
             } else {
-                DynamicCapabilityError::Invalid { err }
+                DynamicCapabilityError::Invalid { err: Box::new(err) }
             }
         })?;
 
@@ -1085,7 +1084,6 @@ impl ResolvedInstanceState {
         Ok(())
     }
 
-    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401254441)
     pub fn validate_and_convert_dynamic_component(
         &mut self,
         dynamic_offers: Option<Vec<fdecl::Offer>>,

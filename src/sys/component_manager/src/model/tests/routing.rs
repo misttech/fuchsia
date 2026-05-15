@@ -1959,20 +1959,19 @@ async fn resolver_is_not_available() {
             match universe.start_instance(&["c"].try_into().unwrap()).await {
                 Err(ModelError::ActionError { err }) => match err.kind() {
                     ActionErrorKind::ResolveError {
-                        err:
-                            ResolveActionError::ResolverError {
-                                url,
-                                err: ResolverError::SchemeNotRegistered,
-                            },
-                    } => {
-                        assert_eq!(*url, "base://c");
-                    }
+                        err: ResolveActionError::ResolverError { url, err: boxed_err },
+                    } => match &**boxed_err {
+                        ResolverError::SchemeNotRegistered => {
+                            assert_eq!(*url, "base://c");
+                        }
+                        _ => panic!("expected SchemeNotRegistered, got {:?}", boxed_err),
+                    },
                     _ => panic!("expected ResolverError, got {:?}", err),
                 },
                 err => {
                     panic!("expected ResolverError, got {:?}", err);
                 }
-            };
+            }
         },
         // Wait for a request, and resolve it.
         async {
@@ -2062,20 +2061,19 @@ async fn resolver_component_decl_is_validated() {
             match universe.start_instance(&["b"].try_into().unwrap()).await {
                 Err(ModelError::ActionError { err }) => match err.kind() {
                     ActionErrorKind::ResolveError {
-                        err:
-                            ResolveActionError::ResolverError {
-                                url,
-                                err: ResolverError::ManifestInvalid(_),
-                            },
-                    } => {
-                        assert_eq!(*url, "base://b");
-                    }
+                        err: ResolveActionError::ResolverError { url, err: boxed_err },
+                    } => match &**boxed_err {
+                        ResolverError::ManifestInvalid(_) => {
+                            assert_eq!(*url, "base://b");
+                        }
+                        _ => panic!("expected ManifestInvalid, got {:?}", boxed_err),
+                    },
                     _ => panic!("expected ResolverError, got {:?}", err),
                 },
                 err => {
                     panic!("expected ResolverError, got {:?}", err);
                 }
-            };
+            }
         },
         // Wait for a request, and resolve it.
         async {

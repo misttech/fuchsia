@@ -68,14 +68,17 @@ async fn do_resolve(
             ResolveActionError::ComponentAddressParseError {
                 url: component.component_url.clone(),
                 moniker: component.moniker.clone(),
-                err,
+                err: Box::new(err),
             }
         })?;
     let component_info = abortable_scope
         .run(async {
-            let component_info =
-                component.perform_resolve(None, &component_address).await.map_err(|err| {
-                    ResolveActionError::ResolverError { url: component.component_url.clone(), err }
+            let component_info = component
+                .perform_resolve(None, &component_address)
+                .await
+                .map_err(|err| ResolveActionError::ResolverError {
+                    url: component.component_url.clone(),
+                    err: Box::new(err),
                 })?;
             Component::resolve_with_config(component_info, component.config_parent_overrides())
         })
@@ -92,7 +95,7 @@ async fn do_resolve(
         )
         .map_err(|err| ResolveActionError::AbiCompatibilityError {
             url: component_url.clone(),
-            err,
+            err: Box::new(err),
         })?;
     {
         let mut state = component.lock_state().await;

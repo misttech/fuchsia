@@ -162,7 +162,6 @@ pub struct Component {
 }
 
 impl Component {
-    #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401254441)
     pub fn resolve_with_config(
         ResolvedComponent {
             context_to_resolve_children,

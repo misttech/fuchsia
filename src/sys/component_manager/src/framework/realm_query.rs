@@ -47,7 +47,7 @@ pub fn serve(
 ) -> BoxFuture<'static, Result<(), anyhow::Error>> {
     async move {
         let stream = take_handle_as_stream::<fsys::RealmQueryMarker>(server_end);
-        serve_inner(source, stream).await;
+        serve_inner(source, stream).boxed().await;
         Ok(())
     }
     .boxed()
@@ -57,7 +57,7 @@ async fn serve_inner(scope: WeakComponentInstance, mut stream: fsys::RealmQueryR
     while let Some(request) = stream.next().await {
         match request {
             Ok(req) => {
-                if let Err(error) = handle_request(&scope, req).await {
+                if let Err(error) = handle_request(&scope, req).boxed().await {
                     warn!(error:?; "Could not respond to RealmQuery request");
                     break;
                 }
