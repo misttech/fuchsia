@@ -2,7 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, anyhow};
+#[derive(thiserror::Error, Debug)]
+pub enum SymbolIndexError {
+    #[error("Cannot find home directory")]
+    HomeDirectoryNotFound,
+
+    #[error("Cannot convert OsString into String: {0:?}")]
+    OsStringConversionError(std::ffi::OsString),
+
+    #[error("FFX Core Error: {0}")]
+    Ffx(#[from] errors::FfxError),
+
+    #[error("FFX Environment Context error: {0}")]
+    Context(#[from] ffx_config::environment::ContextError),
+
+    #[error("Serde JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
+pub type Result<T> = std::result::Result<T, SymbolIndexError>;
 use errors::ffx_error;
 use ffx_config::EnvironmentContext;
 use glob::glob as _glob;
@@ -13,8 +31,8 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 pub fn global_symbol_index_path() -> Result<String> {
-    Ok(pathbuf_to_string(home::home_dir().ok_or_else(|| anyhow!("cannot find home directory"))?)?
-        + "/.fuchsia/debug/symbol-index.json")
+    let home = home::home_dir().ok_or(SymbolIndexError::HomeDirectoryNotFound)?;
+    Ok(pathbuf_to_string(home)? + "/.fuchsia/debug/symbol-index.json")
 }
 
 // Ensures that symbols in the root or sdk.root are registered in the global symbol index.
@@ -218,10 +236,7 @@ fn glob(path: String) -> Vec<String> {
 }
 
 fn pathbuf_to_string(pathbuf: PathBuf) -> Result<String> {
-    pathbuf
-        .into_os_string()
-        .into_string()
-        .map_err(|s| anyhow!("Cannot convert OsString {:?} into String", s))
+    pathbuf.into_os_string().into_string().map_err(|s| SymbolIndexError::OsStringConversionError(s))
 }
 
 #[cfg(test)]

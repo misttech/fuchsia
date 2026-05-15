@@ -18,12 +18,12 @@ rustc_library("lib") {
     ":symbol_index_json($default_toolchain)",
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/errors:lib",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:glob",
     "//third_party/rust_crates:home",
     "//third_party/rust_crates:schemars",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:thiserror",
   ]
 
   test_deps = [

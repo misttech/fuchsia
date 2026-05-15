@@ -134,7 +134,8 @@ fn add(cmd: AddCommand, global_symbol_index_path: &str) -> Result<()> {
         }
     }
 
-    index.save(global_symbol_index_path)
+    index.save(global_symbol_index_path)?;
+    Ok(())
 }
 
 fn remove(cmd: RemoveCommand, global_symbol_index_path: &str) -> Result<()> {
@@ -147,7 +148,8 @@ fn remove(cmd: RemoveCommand, global_symbol_index_path: &str) -> Result<()> {
         index.ids_txts.retain(|ids_txt| ids_txt.path != path);
         index.build_id_dirs.retain(|build_id_dir| build_id_dir.path != path);
     }
-    index.save(global_symbol_index_path)
+    index.save(global_symbol_index_path)?;
+    Ok(())
 }
 
 fn clean(_cmd: CleanCommand, global_symbol_index_path: &str) -> Result<()> {
@@ -155,7 +157,8 @@ fn clean(_cmd: CleanCommand, global_symbol_index_path: &str) -> Result<()> {
     index.includes.retain(|include| Path::new(include).exists());
     index.ids_txts.retain(|ids_txt| Path::new(&ids_txt.path).exists());
     index.build_id_dirs.retain(|build_id_dir| Path::new(&build_id_dir.path).exists());
-    index.save(global_symbol_index_path)
+    index.save(global_symbol_index_path)?;
+    Ok(())
 }
 
 /// Resovle a relative from current_dir. Do nothing if |relative| is actually absolute.

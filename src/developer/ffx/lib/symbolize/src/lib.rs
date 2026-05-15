@@ -32,8 +32,7 @@ static SYMBOLIZER_LOCK: Mutex<()> = Mutex::new(());
 impl Symbolizer {
     /// Create a new symbolizer instance with a specific ffx context. Normally only needed in tests.
     pub fn with_context(context: &EnvironmentContext) -> Result<Self, CreateSymbolizerError> {
-        symbol_index::ensure_symbol_index_registered(&context)
-            .map_err(CreateSymbolizerError::SymbolIndexRegistration)?;
+        symbol_index::ensure_symbol_index_registered(&context)?;
 
         let _global_init = global_init::GlobalInitHandle::new();
 
@@ -191,7 +190,7 @@ pub enum CreateSymbolizerError {
 
     /// Couldn't register a symbol index.
     #[error("ffx couldn't register the symbol index: {}", _0)]
-    SymbolIndexRegistration(#[source] anyhow::Error),
+    SymbolIndexRegistration(#[from] symbol_index::SymbolIndexError),
 }
 
 /// Errors that can occur when adding mappings.
