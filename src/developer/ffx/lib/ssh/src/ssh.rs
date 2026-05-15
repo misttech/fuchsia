@@ -1,8 +1,7 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::config::{ParseSshConfigError, SshConfig};
-use anyhow::{Context as _, Result, anyhow};
+use crate::config::SshConfig;
 use ffx_config::EnvironmentContext;
 use netext::ScopedSocketAddr;
 use std::collections::hash_map::DefaultHasher;
@@ -18,6 +17,18 @@ const SSH_CONTROLMASTER_MODE: &str = "ssh.controlmaster.mode";
 const SSH_CONTROLMASTER_PATH: &str = "ssh.controlmaster.path";
 const SSH_CONTROLMASTER_DIR: &str = "ssh.controlmaster.dir";
 pub const KEEPALIVE_TIMEOUT_CONFIG: &str = "ssh.keepalive_timeout";
+
+#[derive(Error, Debug)]
+pub enum SshCommandError {
+    #[error("Missing SSH command")]
+    MissingSshCommand,
+    #[error("SSH configuration error: {0}")]
+    Config(#[from] crate::config::SshConfigError),
+    #[error("FFX configuration error: {0}")]
+    FfxConfig(#[from] ffx_config::ConfigError),
+    #[error("ControlMaster management error: {0}")]
+    ControlMaster(#[from] ManageSshControlMasterError),
+}
 
 #[derive(Error, Debug, Hash, Clone, PartialEq, Eq)]
 pub enum SshError {
@@ -87,11 +98,10 @@ impl From<&str> for SshError {
     }
 }
 
-pub fn get_ssh_key_paths_from_env(env: &EnvironmentContext) -> Result<Vec<String>> {
-    env.query(SSH_PRIV)
-        .build()
-        .get_file(env)
-        .context("getting path to an ssh private key from ssh.priv from env context")
+pub fn get_ssh_key_paths_from_env(
+    env: &EnvironmentContext,
+) -> Result<Vec<String>, SshCommandError> {
+    env.query(SSH_PRIV).build().get_file(env).map_err(SshCommandError::FfxConfig)
 }
 
 fn apply_auth_sock(cmd: &mut Command, context: &EnvironmentContext) {
@@ -110,7 +120,7 @@ async fn build_ssh_command_with_ssh_path(
     addr: ScopedSocketAddr,
     command: Vec<&str>,
     env: &EnvironmentContext,
-) -> Result<Command> {
+) -> Result<Command, SshCommandError> {
     let mut config = SshConfig::new()?;
     build_ssh_command_with_ssh_config(ssh_path, addr, &mut config, command, env).await
 }
@@ -120,7 +130,7 @@ pub async fn build_ssh_command_with_env(
     addr: ScopedSocketAddr,
     env: &EnvironmentContext,
     command: Vec<&str>,
-) -> Result<Command> {
+) -> Result<Command, SshCommandError> {
     let mut ssh_config = SshConfig::new()?;
     build_ssh_command_with_ssh_config_and_env(ssh_path, addr, &mut ssh_config, command, env).await
 }
@@ -131,7 +141,7 @@ pub async fn build_ssh_command_with_ssh_config(
     config: &mut SshConfig,
     command: Vec<&str>,
     env: &EnvironmentContext,
-) -> Result<Command> {
+) -> Result<Command, SshCommandError> {
     build_ssh_command_with_ssh_config_and_env(ssh_path, addr, config, command, env).await
 }
 
@@ -251,7 +261,7 @@ const MAX_SOCKET_LEN: usize = 100;
 #[derive(Error, Debug)]
 pub enum SpawnControlMasterError {
     #[error("parsing ssh configuration: {0}")]
-    ParseSshConfig(#[from] ParseSshConfigError),
+    ParseSshConfig(#[from] crate::config::SshConfigError),
     #[error("Socket path \"{path}\" is too long. Maximum is {max_allowed}")]
     SocketPathTooLong { path: PathBuf, max_allowed: usize },
     #[error("failed to start: {0}")]
@@ -321,9 +331,9 @@ async fn build_ssh_command_with_ssh_config_and_env(
     config: &mut SshConfig,
     command: Vec<&str>,
     env: &EnvironmentContext,
-) -> Result<Command> {
+) -> Result<Command, SshCommandError> {
     if ssh_path.is_empty() {
-        return Err(anyhow!("missing SSH command"));
+        return Err(SshCommandError::MissingSshCommand);
     }
 
     let keys = get_ssh_key_paths_from_env(env)?;
@@ -378,7 +388,7 @@ pub async fn build_ssh_command(
     env: &EnvironmentContext,
     addr: ScopedSocketAddr,
     command: Vec<&str>,
-) -> Result<Command> {
+) -> Result<Command, SshCommandError> {
     build_ssh_command_with_ssh_path("ssh", addr, command, env).await
 }
 
@@ -388,7 +398,7 @@ pub fn build_ssh_command_with_config_file(
     addr: ScopedSocketAddr,
     command: Vec<&str>,
     env: &EnvironmentContext,
-) -> Result<Command> {
+) -> Result<Command, SshCommandError> {
     let keys = get_ssh_key_paths_from_env(env)?;
 
     let mut c = Command::new("ssh");
@@ -418,6 +428,7 @@ pub fn build_ssh_command_with_config_file(
 #[cfg(test)]
 mod test {
     use super::*;
+    use anyhow::Result;
     use ffx_config::ConfigLevel;
     use pretty_assertions::assert_eq;
     use std::io::BufRead;
