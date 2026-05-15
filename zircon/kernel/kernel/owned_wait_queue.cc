@@ -552,6 +552,7 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
   // we need to propagate.
   OwnedWaitQueue* owq_iter;
   Thread* thread_iter;
+  bool skip_phase1 = false;
 
   if constexpr (kStartingFromThread) {
     thread_iter = &upstream_node;
@@ -571,9 +572,6 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
                        static_cast<WaitQueueBase*>(owq_iter));
     }
 
-    // OK - we are finally ready to get to work.  Use a slightly-evil(tm) goto in
-    // order to start our propagate loop with the proper phase (either
-    // thread-to-OWQ first, or OWQ-to-thread first)
     if constexpr (OpType == PropagateOp::RemoveSingleEdge) {
       // Are we starting from a thread during an edge remove operation?  If so,
       // and if we were the last thread to leave our wait queue, then we don't
@@ -589,7 +587,7 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
           return;
         }
         Propagate(upstream_node, *owq_iter, op, force_inheritance, old_target_ep);
-        goto start_from_owq;
+        skip_phase1 = true;
       }
     }
   } else {
@@ -599,11 +597,11 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
     thread_iter = &downstream_node;
     owq_iter->get_lock().AssertHeld();
     DEBUG_ASSERT(!owq_iter->IsEmpty());
-    goto start_from_owq;
+    skip_phase1 = true;
   }
 
   while (true) {
-    {
+    if (!skip_phase1) {
       // We should not be here if this OWQ has no waiters, or if we have not
       // found a place to store our ISS.  That special case was handled above.
       owq_iter->get_lock().AssertHeld();
@@ -682,10 +680,7 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
         break;
       }
     }
-
-    // clang-format off
-    [[maybe_unused]] start_from_owq:
-    // clang-format on
+    skip_phase1 = false;
 
     {
       // Propagate from the current owq_iter to the current thread_iter.
@@ -1464,45 +1459,48 @@ ktl::variant<ChainLock::Result, const void*> OwnedWaitQueue::LockPiChainCommon(
     StartNodeType& start) {
   Thread* next_thread{nullptr};
   WaitQueueBase* next_wq{nullptr};
+  bool skip_thread_lock = false;
 
   if constexpr (ktl::is_same_v<StartNodeType, Thread>) {
     next_thread = &start;
   } else {
     static_assert(ktl::is_base_of_v<WaitQueueBase, StartNodeType>);
     next_wq = &start;
-    goto start_from_next_wq;
+    skip_thread_lock = true;
   }
 
   while (true) {
-    // If we hit the end of the chain, we are done.
-    if (next_thread == nullptr) {
-      return ChainLock::Result::Ok;
-    }
+    if (!skip_thread_lock) {
+      // If we hit the end of the chain, we are done.
+      if (next_thread == nullptr) {
+        return ChainLock::Result::Ok;
+      }
 
-    // Try to lock the next thread; if we fail, implement the specified locking
-    // behavior.  We always propagate Backoff error codes.  In the case of a
-    // detected cycle, we either propagate the error, or we leave the current
-    // path locked and report the location of the cycle in our return code.
-    if (ChainLock::Result result; !next_thread->get_lock().AcquireOrResult(result)) {
-      if constexpr (Behavior == LockingBehavior::StopAtCycle) {
-        if (result == ChainLock::Result::Cycle) {
-          return static_cast<const void*>(next_thread);
+      // Try to lock the next thread; if we fail, implement the specified locking
+      // behavior.  We always propagate Backoff error codes.  In the case of a
+      // detected cycle, we either propagate the error, or we leave the current
+      // path locked and report the location of the cycle in our return code.
+      if (ChainLock::Result result; !next_thread->get_lock().AcquireOrResult(result)) {
+        if constexpr (Behavior == LockingBehavior::StopAtCycle) {
+          if (result == ChainLock::Result::Cycle) {
+            return static_cast<const void*>(next_thread);
+          }
         }
-      }
 
-      if (start.get_lock().MarkNeedsReleaseIfHeld()) {
-        UnlockPiChainCommon(start, next_thread);
-      }
+        if (start.get_lock().MarkNeedsReleaseIfHeld()) {
+          UnlockPiChainCommon(start, next_thread);
+        }
 
-      return result;
+        return result;
+      }
+      // We just checked for success, skip the assert and just mark this lock as
+      // held for the static analyzer's sake.
+      next_wq = next_thread->wait_queue_state().blocking_wait_queue_;
+      next_thread->get_lock().MarkReleased();
+      next_thread = nullptr;
     }
-    // We just checked for success, skip the assert and just mark this lock as
-    // held for the static analyzer's sake.
-    next_wq = next_thread->wait_queue_state().blocking_wait_queue_;
-    next_thread->get_lock().MarkReleased();
-    next_thread = nullptr;
+    skip_thread_lock = false;
 
-  [[maybe_unused]] start_from_next_wq:
     // If we hit the end of the chain, we are done.
     if (next_wq == nullptr) {
       return ChainLock::Result::Ok;
@@ -1572,7 +1570,6 @@ void OwnedWaitQueue::UnlockPiChainCommon(StartNodeType& start, const void* stop_
     if (stop) {
       return;
     }
-    goto start_from_next_wq;
   } else {
     static_assert(ktl::is_base_of_v<WaitQueueBase, StartNodeType>);
     next_thread = GetQueueOwner(&start);
@@ -1584,31 +1581,33 @@ void OwnedWaitQueue::UnlockPiChainCommon(StartNodeType& start, const void* stop_
   }
 
   while (true) {
-    // At this point, we should always have a next thread, and it should always
-    // be locked (we are always checking `is_held` for dropping the previous
-    // node's lock).
-    DEBUG_ASSERT(next_thread != nullptr);
-    next_thread->get_lock().MarkNeedsRelease();
+    // The first time entering the loop, the next thread may be nullptr if the
+    // initial node was a wait queue. After that, there should always be a next
+    // thread, and it should be locked (as we always check `is_held` before
+    // releasing the previous node's lock).
+    if (next_thread != nullptr) {
+      next_thread->get_lock().MarkNeedsRelease();
 
-    // If we do not have a next node, or that next node is not locked, we can
-    // drop the thread's lock and get out.  Note: it is important to make the
-    // check to see if the next node is locked before dropping the thread's
-    // lock.  Otherwise, it would be possible for us to realize that we have a
-    // next node, drop the thread's lock, then have that next node destroyed
-    // before we are able to check to see if we have it locked.
-    next_wq = next_thread->wait_queue_state().blocking_wait_queue_;
-    {
-      const bool stop = ShouldStopWaitQueue(next_wq);
-      next_thread->get_lock().Release();
-      if (stop) {
-        return;
+      // If we do not have a next node, or that next node is not locked, we can
+      // drop the thread's lock and get out.  Note: it is important to make the
+      // check to see if the next node is locked before dropping the thread's
+      // lock.  Otherwise, it would be possible for us to realize that we have a
+      // next node, drop the thread's lock, then have that next node destroyed
+      // before we are able to check to see if we have it locked.
+      next_wq = next_thread->wait_queue_state().blocking_wait_queue_;
+      {
+        const bool stop = ShouldStopWaitQueue(next_wq);
+        next_thread->get_lock().Release();
+        next_thread = nullptr;
+        if (stop) {
+          return;
+        }
       }
     }
 
-  [[maybe_unused]] start_from_next_wq:
-    // At this point, we should always have a next wait queue, and it should
-    // always be locked. Lock the wait queue in the chain, if any.
-    DEBUG_ASSERT(next_wq != nullptr);
+    // At this point, there should always be a next wait queue, and it should
+    // always be locked (as we always check `is_held` before releasing the
+    // previous node's lock).
     next_wq->get_lock().MarkNeedsRelease();
 
     // See the note above, we need to check to see if there is a next node, and
@@ -1617,6 +1616,7 @@ void OwnedWaitQueue::UnlockPiChainCommon(StartNodeType& start, const void* stop_
     {
       const bool stop = ShouldStopThread(next_thread);
       next_wq->get_lock().Release();
+      next_wq = nullptr;
       if (stop) {
         return;
       }
