@@ -284,3 +284,63 @@ func TestBelongsToProject(t *testing.T) {
 		})
 	}
 }
+
+func TestProjectCommand_LicenseReference(t *testing.T) {
+	tempDir := t.TempDir()
+
+	llvmPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
+	if err := os.MkdirAll(llvmPatternDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(llvmPatternDir, "llvm.txt"), []byte(mockMITLicenseText), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	os.MkdirAll(filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs"), 0755)
+
+	projectDir := filepath.Join(tempDir, "third_party", "my_proj")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	os.WriteFile(filepath.Join(projectDir, "LICENSE"), []byte("See external license\n"), 0644)
+
+	readmeContent := []byte("Name: my_proj\nURL: https://llvm\nVersion: 1.0\nSecurity Critical: no\n\nLicense File: LICENSE\n  License Reference: ../../tools/check-licenses/assets/patterns/Permissive/MIT/llvm.txt\n")
+	if err := os.WriteFile(filepath.Join(projectDir, "README.fuchsia"), readmeContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &ProjectCommand{
+		fuchsiaDir: tempDir,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	fsUpdate := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fsUpdate)
+	fsUpdate.Parse([]string{"--fuchsia_dir", tempDir, "update", projectDir})
+	if status := cmd.Execute(ctx, fsUpdate); status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess for update with License Reference, got %v", status)
+	}
+
+	fsCheck := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fsCheck)
+	fsCheck.Parse([]string{"--fuchsia_dir", tempDir, "check", projectDir})
+	if status := cmd.Execute(ctx, fsCheck); status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess for check with License Reference, got %v", status)
+	}
+
+	updatedReadme, err := os.ReadFile(filepath.Join(projectDir, "README.fuchsia"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(updatedReadme)
+
+	if !strings.Contains(content, "  License Reference: ../../tools/check-licenses/assets/patterns/Permissive/MIT/llvm.txt") {
+		t.Errorf("Expected License Reference to be preserved, got:\n%s", content)
+	}
+	if !strings.Contains(content, "  License: MIT") {
+		t.Errorf("Expected License MIT to be populated from external reference, got:\n%s", content)
+	}
+}

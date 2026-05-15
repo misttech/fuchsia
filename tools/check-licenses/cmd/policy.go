@@ -147,7 +147,7 @@ func AddPolicyException(fuchsiaDir, checkName, targetPath, bug, description stri
 	}
 
 	// Determine the config file name based on project name or top-level component
-	baseName := findProjectBasename(targetPath, builder.Config.ManifestProjectNames)
+	baseName := findProjectBasename(fuchsiaDir, targetPath, builder.Config.ManifestProjectNames)
 	destFile := filepath.Join(configDir, baseName+".json")
 
 	// Read, mutate and write config file

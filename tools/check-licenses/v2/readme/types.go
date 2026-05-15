@@ -41,16 +41,18 @@ type Readme struct {
 // LicenseEntry represents a single "License File:" entry and its associated
 // indented metadata fields (e.g., "-> License:").
 type LicenseEntry struct {
-	Path           string // The value of "License File:"
-	License        string // The value of "  License:" (e.g. "MIT")
-	LicenseType    string // The value of "  License Type:" (e.g. "Chromium")
-	LicenseFileURL string // The value of "  License File URL:"
+	Path             string // The value of "License File:"
+	License          string // The value of "  License:" (e.g. "MIT")
+	LicenseType      string // The value of "  License Type:" (e.g. "Chromium")
+	LicenseFileURL   string // The value of "  License File URL:"
+	LicenseReference string // The value of "  License Reference:" (external text pointer)
+	Notes            string // The value of "  Notes:"
 }
 
 // NonLicenseEntry represents a single "Non-License File:" entry and its explanation.
 type NonLicenseEntry struct {
-	Path        string // The value of "Non-License File:"
-	Explanation string // The value of "  Non-License File Explanation:"
+	Path  string // The value of "Non-License File:"
+	Notes string // The value of "  Notes:" (legacy alias: Non-License File Explanation)
 }
 
 // UnknownField represents an unrecognized Key: Value pair found in the README.

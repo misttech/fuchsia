@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
+	v2readme "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
 )
 
 // ReconstructCommand scans raw args to find -bug and -desc flags and their values,
@@ -84,23 +85,40 @@ func ReconstructCommand(commandPath string, args []string, placeholders []string
 	return cmdBuilder.String(), misplacedFlags
 }
 
-func findProjectBasename(targetPath string, manifestProjectNames map[string]string) string {
-	targetPath = filepath.Clean(targetPath)
+func findProjectBasename(fuchsiaDir, targetPath string, manifestProjectNames map[string]string) string {
+	cleanTargetPath := filepath.Clean(targetPath)
+	absTargetPath := filepath.Join(fuchsiaDir, cleanTargetPath)
 
-	// Walk up the path to find a match in manifests
-	for p := targetPath; p != "." && p != "/"; p = filepath.Dir(p) {
-		if _, ok := manifestProjectNames[p]; ok {
-			return filepath.Base(p)
+	// Priority 1: Check README.fuchsia (or Cargo.toml / go.mod) for an explicit Name
+	metadataFiles := []string{"README.fuchsia", "Cargo.toml", "go.mod", "pubspec.yaml"}
+	for _, mf := range metadataFiles {
+		metaPath := filepath.Join(absTargetPath, mf)
+		if _, err := os.Stat(metaPath); err == nil {
+			if rootReadmes, subReadmes, err := v2readme.ParseAnyMetadata(metaPath); err == nil {
+				if len(rootReadmes) > 0 && rootReadmes[0].Name != "" {
+					return filepath.Base(rootReadmes[0].Name)
+				}
+				if len(subReadmes) > 0 && subReadmes[0].Name != "" {
+					return filepath.Base(subReadmes[0].Name)
+				}
+			}
 		}
 	}
 
-	// Fallback for first-party or paths not in manifest
-	dir := filepath.Dir(targetPath)
+	// Priority 2: Check Jiri Manifest mapping
+	for p := cleanTargetPath; p != "." && p != "/"; p = filepath.Dir(p) {
+		if name, ok := manifestProjectNames[p]; ok {
+			return filepath.Base(name)
+		}
+	}
+
+	// Priority 3: Fallback for first-party or paths not in manifest
+	dir := filepath.Dir(cleanTargetPath)
 	if dir == "." || dir == "/" {
 		return "root"
 	}
 
-	parts := strings.Split(targetPath, string(filepath.Separator))
+	parts := strings.Split(cleanTargetPath, string(filepath.Separator))
 	if len(parts) > 0 && parts[0] != "" {
 		if parts[0] == "src" && len(parts) > 1 && parts[1] != "" {
 			return parts[1]

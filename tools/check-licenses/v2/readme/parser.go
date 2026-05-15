@@ -48,7 +48,9 @@ var knownFileDirectives = map[string]bool{
 	"License":                      true,
 	"License Type":                 true,
 	"License File URL":             true,
+	"License Reference":            true,
 	"Non-License File Explanation": true,
+	"Notes":                        true,
 }
 
 // isMultiLineField returns true if the given key is allowed to span multiple lines.
@@ -104,6 +106,10 @@ func Parse(data []byte) ([]*Readme, error) {
 								currentLicenseEntry.LicenseType = value
 							case "License File URL":
 								currentLicenseEntry.LicenseFileURL = value
+							case "License Reference":
+								currentLicenseEntry.LicenseReference = value
+							case "Notes":
+								currentLicenseEntry.Notes = value
 							}
 						} else if currentSourceEntry != nil {
 							switch key {
@@ -113,11 +119,15 @@ func Parse(data []byte) ([]*Readme, error) {
 								currentSourceEntry.LicenseType = value
 							case "License File URL":
 								currentSourceEntry.LicenseFileURL = value
+							case "License Reference":
+								currentSourceEntry.LicenseReference = value
+							case "Notes":
+								currentSourceEntry.Notes = value
 							}
 						} else if currentNonLicenseEntry != nil {
 							switch key {
-							case "Non-License File Explanation":
-								currentNonLicenseEntry.Explanation = value
+							case "Non-License File Explanation", "Notes":
+								currentNonLicenseEntry.Notes = value
 							}
 						}
 						currentKey = "" // File-level metadata interrupts any active multi-line field

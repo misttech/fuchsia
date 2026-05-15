@@ -57,6 +57,12 @@ func formatSingle(r *Readme) string {
 			if lf.LicenseFileURL != "" {
 				b.WriteString("  License File URL: " + lf.LicenseFileURL + "\n")
 			}
+			if lf.LicenseReference != "" {
+				b.WriteString("  License Reference: " + lf.LicenseReference + "\n")
+			}
+			if lf.Notes != "" {
+				b.WriteString("  Notes: " + lf.Notes + "\n")
+			}
 		}
 	}
 
@@ -75,6 +81,12 @@ func formatSingle(r *Readme) string {
 			if sf.LicenseFileURL != "" {
 				b.WriteString("  License File URL: " + sf.LicenseFileURL + "\n")
 			}
+			if sf.LicenseReference != "" {
+				b.WriteString("  License Reference: " + sf.LicenseReference + "\n")
+			}
+			if sf.Notes != "" {
+				b.WriteString("  Notes: " + sf.Notes + "\n")
+			}
 		}
 	}
 
@@ -84,8 +96,8 @@ func formatSingle(r *Readme) string {
 				b.WriteString("\n")
 			}
 			b.WriteString("Non-License File: " + nlf.Path + "\n")
-			if nlf.Explanation != "" {
-				b.WriteString("  Non-License File Explanation: " + nlf.Explanation + "\n")
+			if nlf.Notes != "" {
+				b.WriteString("  Notes: " + nlf.Notes + "\n")
 			}
 		}
 	}

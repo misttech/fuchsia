@@ -85,7 +85,7 @@ License File: %s
 
 	expectedProj1 := []pipeline.FileInfo{
 		{Path: filepath.Join(proj1Dir, "README.fuchsia")},
-		{Path: filepath.Join(proj1Dir, "lib", "util.cc"), LicenseParser: "Android"},
+		{Path: filepath.Join(proj1Dir, "lib", "util.cc"), LicenseParser: "Android", IsLicenseFile: true},
 		{Path: filepath.Join(proj1Dir, "main.cc")},
 	}
 	if !reflect.DeepEqual(results[proj1Dir], expectedProj1) {

@@ -17,6 +17,7 @@ type FileInfo struct {
 	Path          string
 	LicenseParser string // e.g., "Android", "Chromium", or "" (default)
 	IsNonLicense  bool
+	IsLicenseFile bool // Explicitly mark as primary license file
 }
 
 // Project represents the output of the Project Boundary Stage (Grouper).

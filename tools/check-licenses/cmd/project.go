@@ -121,6 +121,21 @@ func RunProjectPipeline(ctx context.Context, fuchsiaDir, absDir string, config *
 		})
 	}
 
+	for _, r := range originalReadmes {
+		for _, lf := range r.LicenseFiles {
+			if lf.LicenseReference != "" {
+				absExternal := filepath.Join(absDir, lf.LicenseReference)
+				if _, statErr := os.Stat(absExternal); statErr == nil {
+					filesToClassify = append(filesToClassify, pipeline.FileInfo{
+						Path:          absExternal,
+						LicenseParser: lf.LicenseType,
+						IsLicenseFile: true,
+					})
+				}
+			}
+		}
+	}
+
 	inChan := make(chan pipeline.FilteredProject, 1)
 	inChan <- pipeline.FilteredProject{
 		Project: pipeline.Project{
@@ -159,7 +174,7 @@ func compareLicenseEntries(a, b []readme.LicenseEntry) bool {
 		return false
 	}
 	for i := range a {
-		if a[i].Path != b[i].Path || a[i].License != b[i].License || a[i].LicenseFileURL != b[i].LicenseFileURL {
+		if a[i].Path != b[i].Path || a[i].License != b[i].License || a[i].LicenseFileURL != b[i].LicenseFileURL || a[i].LicenseReference != b[i].LicenseReference {
 			return false
 		}
 		typeA := a[i].LicenseType

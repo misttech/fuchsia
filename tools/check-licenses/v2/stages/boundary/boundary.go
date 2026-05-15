@@ -6,6 +6,7 @@ package boundary
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -126,6 +127,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 			parser := ""
 			listedInReadme := false
 			isNonLicense := false
+			isLicenseFile := false
 			if readmes, ok := projectRoots[root]; ok {
 				// Check all Readme structs registered at this boundary (handles sub-projects)
 				relToReadme, _ := filepath.Rel(root, file)
@@ -136,6 +138,13 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 						if filepath.Clean(lf.Path) == relToReadme || filepath.Clean(lf.Path) == relToFuchsia {
 							parser = lf.LicenseType
 							listedInReadme = true
+							isLicenseFile = true
+							if lf.LicenseReference != "" {
+								absExternal := filepath.Join(root, lf.LicenseReference)
+								if _, statErr := os.Stat(absExternal); statErr == nil {
+									file = absExternal
+								}
+							}
 							break
 						}
 					}
@@ -163,6 +172,7 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 				Path:          file,
 				LicenseParser: parser,
 				IsNonLicense:  isNonLicense,
+				IsLicenseFile: isLicenseFile,
 			})
 		}
 

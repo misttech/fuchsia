@@ -17,12 +17,25 @@ import (
 // Files that match any NonLicenseFile entries are ignored.
 func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, foundLicenses []pipeline.ClassifiedFile) {
 	fileToReadme := make(map[string]*Readme)
+	externalToFileEntry := make(map[string]string) // maps cf.Path (external) -> local Path (e.g. "LICENSE")
+
 	for _, cf := range foundLicenses {
+		relToFile, _ := filepath.Rel(absDir, cf.Path)
 		var bestMatch *Readme
 		bestPrefixLength := -1
-		relToFile, _ := filepath.Rel(absDir, cf.Path)
 
 		for _, r := range readmes {
+			for _, lf := range r.LicenseFiles {
+				if filepath.Clean(lf.LicenseReference) == relToFile {
+					bestMatch = r
+					externalToFileEntry[cf.Path] = lf.Path
+					break
+				}
+			}
+			if bestMatch != nil {
+				break
+			}
+
 			loc := filepath.Clean(r.Location)
 			if loc == "" || loc == "." {
 				if bestPrefixLength < 0 {
@@ -57,11 +70,6 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 		}
 	}
 
-	// First pass over the classified files: identify "primary" license files.
-	// Primary license files are the main LICENSE/NOTICE files for the project.
-	// We need to identify them so we can extract their licenses and use them as
-	// a baseline. If standard source files just repeat the same baseline licenses,
-	// we want to avoid listing every single one of them in the README.fuchsia.
 	isPrimaryLicenseFile := make(map[string]bool)
 	primaryLicensesByReadme := make(map[*Readme]map[string]bool)
 	for _, r := range readmes {
@@ -74,12 +82,18 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 			continue
 		}
 		relToReadme, _ := filepath.Rel(absDir, cf.Path)
+		if localPath, ok := externalToFileEntry[cf.Path]; ok {
+			relToReadme = localPath
+		} else if existing, ok := existingLicenses[r][relToReadme]; ok && existing.LicenseReference != "" {
+			// Skip local stub file! We only care about its external reference file!
+			continue
+		}
 
-		// A file is considered "primary" if the classifier identified it as a dedicated
-		// license file (e.g., named "LICENSE", "COPYING") or if it was already explicitly
-		// listed as a "License File:" in the existing README.
 		isPrimary := cf.IsLicenseFile
-		if !isPrimary {
+		if localPath, ok := externalToFileEntry[cf.Path]; ok {
+			isPrimary = true
+			relToReadme = localPath
+		} else if !isPrimary {
 			if r.LicenseFile == relToReadme {
 				isPrimary = true
 			} else {
@@ -94,8 +108,6 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 
 		if isPrimary {
 			isPrimaryLicenseFile[cf.Path] = true
-			// Aggregate all non-copyright SPDX IDs found in this primary file.
-			// This set represents the "expected" or "default" licenses for the project.
 			for _, m := range cf.Matches {
 				if m.MatchType != "Copyright" && !strings.HasPrefix(m.MatchType, "_") {
 					primaryLicensesByReadme[r][m.SPDXID] = true
@@ -117,6 +129,12 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 		}
 
 		relToReadme, _ := filepath.Rel(absDir, cf.Path)
+		if localPath, ok := externalToFileEntry[cf.Path]; ok {
+			relToReadme = localPath
+		} else if existing, ok := existingLicenses[r][relToReadme]; ok && existing.LicenseReference != "" {
+			continue
+		}
+
 		relToFuchsia, _ := filepath.Rel(fuchsiaDir, cf.Path)
 		isNonLicense := false
 		for _, nlf := range r.NonLicenseFiles {
@@ -140,9 +158,6 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 			if len(lics) == 0 {
 				continue
 			}
-			// If this is a normal source file, we only want to add it to the README
-			// if it introduces a NEW license that isn't already covered by the
-			// project's primary license files.
 			isSubset := true
 			for l := range lics {
 				if !primaryLicensesByReadme[r][l] {
@@ -150,9 +165,6 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 					break
 				}
 			}
-			// If all licenses found in this source file are already present in the
-			// primary license files, skip adding this source file to avoid a massive,
-			// redundant README.
 			if isSubset {
 				continue
 			}
@@ -166,18 +178,21 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 
 		licenseType := "Single License"
 		licenseFileURL := ""
+		licenseReference := ""
 		if existing, ok := existingLicenses[r][relToReadme]; ok {
 			if existing.LicenseType != "" {
 				licenseType = existing.LicenseType
 			}
 			licenseFileURL = existing.LicenseFileURL
+			licenseReference = existing.LicenseReference
 		}
 
 		entry := LicenseEntry{
-			Path:           relToReadme,
-			License:        strings.Join(licNames, ", "),
-			LicenseType:    licenseType,
-			LicenseFileURL: licenseFileURL,
+			Path:             relToReadme,
+			License:          strings.Join(licNames, ", "),
+			LicenseType:      licenseType,
+			LicenseFileURL:   licenseFileURL,
+			LicenseReference: licenseReference,
 		}
 
 		if isPrimaryLicenseFile[cf.Path] {

@@ -87,7 +87,7 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 				// If TargetExtensions is configured, skip files that don't match.
 				// However, ALWAYS classify files that look like dedicated license files
 				// (e.g., LICENSE, NOTICE, COPYING) regardless of their extension.
-				isLicense := IsLicenseFilename(path)
+				isLicense := fileInfo.IsLicenseFile || IsLicenseFilename(path)
 				if len(c.TargetExtensions) > 0 && !isLicense {
 					ext := filepath.Ext(path)
 					if !c.TargetExtensions[ext] {

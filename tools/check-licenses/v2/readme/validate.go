@@ -89,6 +89,12 @@ func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme, config *v2co
 				if _, err := os.Stat(filePath); os.IsNotExist(err) {
 					errs = append(errs, fmt.Errorf("Readme %d: License File does not exist: %s", i+1, filePath))
 				}
+				if lf.LicenseReference != "" {
+					refPath := filepath.Join(baseDir, lf.LicenseReference)
+					if _, err := os.Stat(refPath); os.IsNotExist(err) {
+						errs = append(errs, fmt.Errorf("Readme %d: License Reference file does not exist: %s", i+1, refPath))
+					}
+				}
 			}
 		}
 
@@ -97,6 +103,12 @@ func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme, config *v2co
 			filePath := filepath.Join(baseDir, sf.Path)
 			if _, err := os.Stat(filePath); os.IsNotExist(err) {
 				errs = append(errs, fmt.Errorf("Readme %d: Source File does not exist: %s", i+1, filePath))
+			}
+			if sf.LicenseReference != "" {
+				refPath := filepath.Join(baseDir, sf.LicenseReference)
+				if _, err := os.Stat(refPath); os.IsNotExist(err) {
+					errs = append(errs, fmt.Errorf("Readme %d: License Reference file does not exist: %s", i+1, refPath))
+				}
 			}
 		}
 
