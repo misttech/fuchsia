@@ -49,8 +49,11 @@ impl<R: futures::io::AsyncRead + Unpin> futures::io::AsyncRead for ProgressReade
                 self.total_bytes += n as u64;
                 let kbytes = self.total_bytes / 1024;
                 let elapsed = self.start_time.elapsed();
-                let rate =
-                    if elapsed.as_secs() > 0 { kbytes as f64 / elapsed.as_secs_f64() } else { 0.0 };
+                let rate = if elapsed.as_secs_f64() > 0.0 {
+                    kbytes as f64 / elapsed.as_secs_f64()
+                } else {
+                    0.0
+                };
                 self.status_update(format!("Read {kbytes}kB,  {rate:.2} kB/sec"), false);
                 Poll::Ready(Ok(n))
             }
