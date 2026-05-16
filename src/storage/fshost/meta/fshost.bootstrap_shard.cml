@@ -32,11 +32,6 @@
             to: "#fshost",
         },
         {
-            protocol: "fuchsia.driver.token.NodeBusTopology",
-            from: "#driver_manager",
-            to: "#fshost",
-        },
-        {
             protocol: [
                 "fuchsia.memorypressure.Provider",
                 "fuchsia.tracing.provider.Registry",

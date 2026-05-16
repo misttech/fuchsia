@@ -18,8 +18,6 @@ use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
 
 use fidl_fuchsia_boot as fboot;
-use fidl_fuchsia_driver_framework as fdf;
-use fidl_fuchsia_driver_token as ftoken;
 use fidl_fuchsia_feedback as ffeedback;
 use fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner;
 use fidl_fuchsia_hardware_block_volume as fvolume;
@@ -94,9 +92,6 @@ async fn run_mocks(
                     stream, force_fxfs_provisioner_failure, keymint_instance.clone())
             }
         ),
-        ftoken::NodeBusTopologyMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
-            run_node_bus_topology(stream)
-        }),
     };
 
     if let Some(server) = simulated_gpt {
@@ -235,23 +230,4 @@ async fn run_keymint(stream: fkeymint::SealingKeysRequestStream, keymint: Arc<Fa
 
 async fn run_keymint_admin(stream: fkeymint::AdminRequestStream, keymint: Arc<FakeKeymint>) {
     keymint.run_admin_service(stream).await.unwrap();
-}
-
-async fn run_node_bus_topology(mut stream: ftoken::NodeBusTopologyRequestStream) {
-    while let Some(request) = stream.next().await {
-        match request.unwrap() {
-            ftoken::NodeBusTopologyRequest::Get { token: _, responder } => {
-                let path = vec![fdf::BusInfo {
-                    bus: Some(fdf::BusType::Platform),
-                    address: Some(fdf::DeviceAddress::IntValue(1)),
-                    address_stability: Some(fdf::DeviceAddressStability::Stable),
-                    ..Default::default()
-                }];
-                responder.send(Ok(&path)).unwrap();
-            }
-            _ => {
-                unreachable!()
-            }
-        }
-    }
 }

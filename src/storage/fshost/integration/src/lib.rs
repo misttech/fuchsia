@@ -10,7 +10,6 @@ use fake_keymint::FakeKeymint;
 use fidl::endpoints::{ServiceMarker as _, create_proxy};
 use fidl_fuchsia_boot as fboot;
 use fidl_fuchsia_driver_test as fdt;
-use fidl_fuchsia_driver_token as ftoken;
 use fidl_fuchsia_feedback as ffeedback;
 use fidl_fuchsia_fshost_fxfsprovisioner as ffxfsprovisioner;
 use fidl_fuchsia_fxfs::{BlobReaderMarker, CryptManagementProxy, CryptProxy, KeyPurpose};
@@ -241,7 +240,6 @@ impl TestFixtureBuilder {
                     .capability(Capability::protocol::<ffxfsprovisioner::FxfsProvisionerMarker>())
                     .capability(Capability::protocol::<fkeymint::SealingKeysMarker>())
                     .capability(Capability::protocol::<fkeymint::AdminMarker>())
-                    .capability(Capability::protocol::<ftoken::NodeBusTopologyMarker>())
                     .from(&mocks)
                     .to(&fshost),
             )
