@@ -3,10 +3,7 @@
 # found in the LICENSE file.
 
 # NOTE: AUTOMATICALLY INCLUDED WITH `//scripts/cog/setup_cog_workspace.py`.
-# This section adds miscellaneous GN configuration required for cog workspaces.
+# This section adds miscellaneous GN configuration required for Cog workspaces.
 # ==================================================================================================
-
-# Disable xattr usage for RBE since it's not supported in cog workspaces.
-disable_xattr_for_rbe = true
 
 rbe_mode = "cloudtop"
