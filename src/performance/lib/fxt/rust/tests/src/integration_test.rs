@@ -186,6 +186,13 @@ async fn main() {
     prev_timestamp = current_timestamp;
     current_timestamp = record_timestamp(&async_begin).unwrap();
     assert!(prev_timestamp <= current_timestamp);
+    let expected_async_id = match &async_begin {
+        fxt::TraceRecord::Event(fxt::EventRecord {
+            payload: fxt::EventPayload::AsyncBegin { id },
+            ..
+        }) => *id,
+        _ => panic!("expected AsyncBegin event, got {:?}", async_begin),
+    };
     assert_eq!(
         async_begin,
         fxt::TraceRecord::Event(fxt::EventRecord {
@@ -196,7 +203,7 @@ async fn main() {
             category: "test_puppet".into(),
             name: "puppet_async".into(),
             args: vec![],
-            payload: fxt::EventPayload::AsyncBegin { id: 1 },
+            payload: fxt::EventPayload::AsyncBegin { id: expected_async_id },
         })
     );
 
@@ -219,7 +226,7 @@ async fn main() {
             category: "test_puppet".into(),
             name: "puppet_async_instant1".into(),
             args: vec![],
-            payload: fxt::EventPayload::AsyncInstant { id: 1 },
+            payload: fxt::EventPayload::AsyncInstant { id: expected_async_id },
         })
     );
     assert_eq!(instant_thread.next(), None, "must have observed all events from instant thread");
@@ -239,7 +246,7 @@ async fn main() {
             category: "test_puppet".into(),
             name: "puppet_async".into(),
             args: vec![],
-            payload: fxt::EventPayload::AsyncEnd { id: 1 },
+            payload: fxt::EventPayload::AsyncEnd { id: expected_async_id },
         })
     );
 
@@ -248,6 +255,13 @@ async fn main() {
     prev_timestamp = current_timestamp;
     current_timestamp = record_timestamp(&flow_begin).unwrap();
     assert!(prev_timestamp <= current_timestamp);
+    let expected_flow_id = match &flow_begin {
+        fxt::TraceRecord::Event(fxt::EventRecord {
+            payload: fxt::EventPayload::FlowBegin { id },
+            ..
+        }) => *id,
+        _ => panic!("expected FlowBegin event, got {:?}", flow_begin),
+    };
     assert_eq!(
         flow_begin,
         fxt::TraceRecord::Event(fxt::EventRecord {
@@ -258,7 +272,7 @@ async fn main() {
             category: "test_puppet".into(),
             name: "puppet_flow".into(),
             args: vec![],
-            payload: fxt::EventPayload::FlowBegin { id: 2 },
+            payload: fxt::EventPayload::FlowBegin { id: expected_flow_id },
         })
     );
 
@@ -282,7 +296,7 @@ async fn main() {
             category: "test_puppet".into(),
             name: "puppet_flow_step1".into(),
             args: vec![],
-            payload: fxt::EventPayload::FlowStep { id: 2 },
+            payload: fxt::EventPayload::FlowStep { id: expected_flow_id },
         })
     );
 
@@ -325,7 +339,7 @@ async fn main() {
             category: "test_puppet".into(),
             name: "puppet_flow".into(),
             args: vec![],
-            payload: fxt::EventPayload::FlowEnd { id: 2 },
+            payload: fxt::EventPayload::FlowEnd { id: expected_flow_id },
         })
     );
 

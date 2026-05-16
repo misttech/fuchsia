@@ -75,15 +75,14 @@ pub enum BufferingMode {
 pub struct Id(u64);
 
 impl Id {
-    /// Creates a new `Id`. `Id`s created by separate calls to `new` in the same process are
-    /// guaranteed to be distinct.
-    ///
-    /// WARNING: `Id::new` is likely to hit the UI bug where UIs group async
-    /// durations with the same trace id but different process ids. Use
-    /// `Id::random` instead. (Until https://fxbug.dev/42054669 is fixed.)
+    /// Creates a new `Id`.
     pub fn new() -> Self {
-        // Trivial no-argument function that cannot race.
-        Self(unsafe { sys::trace_generate_nonce() })
+        // Creates a new `Id` based on the current monotonic time and a random `u16` to, with high
+        // probability, be globally unique for the duration of the trace.
+        let ts = zx::BootInstant::get().into_nanos() as u64;
+        let high_order = ts << 16;
+        let low_order = rand::random::<u16>() as u64;
+        Self(high_order | low_order)
     }
 
     /// Creates a new `Id` based on the current montonic time and a random `u16` to, with high
