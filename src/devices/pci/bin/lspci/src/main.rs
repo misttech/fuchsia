@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 // All PCI layouts and information are documented in the PCI Local Bus Specification
-// https://pcisig.com/specifications/conventional/
+// https://pcisig.com/specification-overview/pci-conventional
 use anyhow::{anyhow, Context, Error};
 use fidl_fuchsia_hardware_pci::{Address, BusMarker, BusProxy, HeaderType};
 use fuchsia_fs::directory::{dir_contains, open_in_namespace, readdir, DirentKind};
