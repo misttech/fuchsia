@@ -117,6 +117,22 @@ where
         }
     }
 
+    /// Returns true if there is currently an active FIDL client connection to the `HandsFree`
+    /// protocol.
+    fn fidl_client_active(&mut self) -> bool {
+        self.hands_free_request_maybe_stream
+            .inner_mut()
+            .map_or(false, |s| !s.control_handle().is_closed())
+    }
+
+    /// Clear any active FIDL client connection resources, including outstanding responders.
+    fn clear_active_fidl_client(&mut self) {
+        // Reset the FIDL connection to the `HandsFree` protocol.
+        let _old_stream = MaybeStream::take(&mut self.hands_free_request_maybe_stream);
+        // Evict any outstanding `HandsFree.WatchPeerConnected` responders.
+        self.watch_peer_connected_hanging_get_matcher.clear_left_queue();
+    }
+
     /// Handle incoming profile events, HFP FIDL streams from new client connections and HandsFree
     /// FIDL protocol events. This is all the incoming events that are not specific to a single
     /// peer.
@@ -139,27 +155,29 @@ where
                 hands_free_request_stream_option = self.hands_free_connection_stream.next() => {
                     let stream_str = hands_free_request_stream_option
                      .as_ref().map(|_stream| "<stream>");
-                    debug!("HandsFree FIDL protocol client connected: {:?}", stream_str);
+                    info!("HandsFree FIDL protocol client connected: {:?}", stream_str);
                     let hands_free_request_stream = hands_free_request_stream_option
                         .ok_or_else(|| format_err!("HandsFree FIDL protocol connection stream closed."))?;
                     self.handle_hands_free_request_stream(hands_free_request_stream)
                 },
 
                 hands_free_request_option = self.hands_free_request_maybe_stream.next() => {
-                    debug!("Received HandsFree FIDL protocol request: {:?}",
+                    info!("Received HandsFree FIDL protocol request: {:?}",
                         hands_free_request_option);
-                    if let Some(Ok(hands_free_request)) = hands_free_request_option {
-                        self.handle_hands_free_request(hands_free_request)
-                    } else {
-                        warn!("Dropping HandsFree FIDL protocol request stream");
-                        let _old_stream =
-                            MaybeStream::take(&mut self.hands_free_request_maybe_stream);
-                    }
+                    let err = match hands_free_request_option {
+                        Some(Ok(hands_free_request)) => {
+                            self.handle_hands_free_request(hands_free_request);
+                            continue;
+                        }
+                        Some(Err(e)) => format!("{e:?}"),
+                        None => format!("HandsFree stream closed"),
+                    };
+                    warn!("Dropping HandsFree FIDL protocol request stream: {err}");
+                    self.clear_active_fidl_client();
                 }
                 watch_peer_connected_send_response_result = self.watch_peer_connected_hanging_get_matcher.next() => {
                     if let Some(Err(err)) = watch_peer_connected_send_response_result {
                         warn!("Error sending peer connected result: {:?}", err);
-                        Err(err)?
                     }
                     // None means the stream was closed, but that's not an error; it could reopen
                     // later when more elements are enqueued.
@@ -281,18 +299,19 @@ where
             .enqueue_right((peer_id, peer_handler_client_end));
     }
 
+    /// Attempts to serve a new FIDL client connection to the `HandsFree` protocol.
     fn handle_hands_free_request_stream(&mut self, stream: fidl_hfp::HandsFreeRequestStream) {
-        if self.hands_free_request_maybe_stream.is_some() {
-            info!(
-                "Got new HandsFree request stream while one already exists. Closing the new stream."
-            );
-            let control_handle = stream.control_handle();
-            control_handle.shutdown_with_epitaph(zx::Status::ALREADY_BOUND);
-        } else {
-            self.hands_free_request_maybe_stream.set(stream);
-            // TODO(http://fxbug.dev/127364) Update HangingGet with all peers.  Make sure to set the new PeerProxy
-            // on each peer.  Be careful of races between the new PeerProxy and any old ones
+        if self.fidl_client_active() {
+            info!("New `HandsFree` connection while one already exists. Closing the new stream.");
+            stream.control_handle().shutdown_with_epitaph(zx::Status::ALREADY_BOUND);
+            return;
         }
+
+        // Clear any stale FIDL responders from the previous FIDL client connection.
+        self.clear_active_fidl_client();
+        self.hands_free_request_maybe_stream.set(stream);
+        // TODO(https://fxbug.dev/42077961) Update HangingGet with all peers. Make sure to set the
+        // new PeerProxy on each peer. Careful of races between the new PeerProxy and any old ones
     }
 
     fn handle_hands_free_request(&mut self, request: fidl_hfp::HandsFreeRequest) {

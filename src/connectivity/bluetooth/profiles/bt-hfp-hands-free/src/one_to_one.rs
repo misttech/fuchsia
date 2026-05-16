@@ -58,6 +58,11 @@ impl<L, R, O> OneToOneMatcher<L, R, O> {
             waker.wake();
         }
     }
+
+    /// Clear all enqueued "left" items.
+    pub fn clear_left_queue(&mut self) {
+        self.lefts.clear();
+    }
 }
 
 impl<L, R, O> Unpin for OneToOneMatcher<L, R, O> {}

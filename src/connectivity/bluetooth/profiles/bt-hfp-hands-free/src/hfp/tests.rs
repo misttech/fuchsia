@@ -11,6 +11,9 @@ use async_test_helpers::run_while;
 use async_utils::PollExt;
 use bt_hfp::{audio, sco};
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_bluetooth_bredr as bredr;
+use fidl_fuchsia_bluetooth_hfp as fidl_hfp;
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::{Channel, PeerId};
 use futures::StreamExt;
 use futures::channel::mpsc;
@@ -20,10 +23,6 @@ use std::future::Future;
 use std::pin::{Pin, pin};
 use std::task::Poll;
 use test_profile_server::{ConnectChannel, TestProfileServer, TestProfileServerEndpoints};
-use {
-    fidl_fuchsia_bluetooth_bredr as bredr, fidl_fuchsia_bluetooth_hfp as fidl_hfp,
-    fuchsia_async as fasync,
-};
 
 use crate::config::HandsFreeFeatureSupport;
 use crate::hfp::{Hfp, SEARCH_RESULT_CONNECT_DELAY_SECONDS};
@@ -386,4 +385,69 @@ fn search_result_then_peer_connected_after_delay_starts_task_and_connects() {
 
     // And the task should not have exited,
     expect_channel_still_open(&mut exec, &near_sent);
+}
+
+#[fuchsia::test]
+fn client_disconnect_reconnect_does_not_crash_hfp() {
+    let mut exec = fasync::TestExecutor::new_with_fake_time();
+    exec.set_fake_time(ZERO_TIME);
+
+    let service_definition = service_definition::hands_free(HandsFreeFeatureSupport::default());
+    let profile_id = bredr::ServiceClassProfileIdentifier::HandsfreeAudioGateway;
+    let TestProfileServerEndpoints {
+        proxy: profile_proxy,
+        client: profile_client,
+        test_server: mut profile_server,
+    } = TestProfileServer::new(Some(service_definition), Some(profile_id));
+
+    let (mut hfp_fut, mut fidl_connection_sender) = hfp_future(profile_client, profile_proxy);
+    set_up_server(&mut exec, &mut profile_server);
+
+    // FIDL Client #1 connects and registers a watcher for peer events.
+    let (proxy1, stream1) = fidl::endpoints::create_proxy_and_stream::<fidl_hfp::HandsFreeMarker>();
+    fidl_connection_sender.try_send(stream1).unwrap();
+    run_hfp(&mut exec, &mut hfp_fut);
+
+    let mut watch_fut1 = Box::pin(proxy1.watch_peer_connected());
+    exec.run_until_stalled(&mut watch_fut1).expect_pending("watcher not responded to yet");
+    run_hfp(&mut exec, &mut hfp_fut);
+
+    // FIDL client #1 disconnects - should be detected by the HFP component.
+    drop(watch_fut1);
+    drop(proxy1);
+    run_hfp(&mut exec, &mut hfp_fut);
+
+    // FIDL client #2 connects and registers a watcher for peer events.
+    let (proxy2, stream2) = fidl::endpoints::create_proxy_and_stream::<fidl_hfp::HandsFreeMarker>();
+    fidl_connection_sender.try_send(stream2).unwrap();
+    run_hfp(&mut exec, &mut hfp_fut);
+
+    let mut watch_fut2 = Box::pin(proxy2.watch_peer_connected());
+    exec.run_until_stalled(&mut watch_fut2).expect_pending("watcher not responded to yet");
+
+    // Simulate remote AG peer connection.
+    let peer_channel = send_peer_connected(&mut profile_server);
+    run_hfp(&mut exec, &mut hfp_fut);
+
+    // Check that HFP main loop does not crash or terminate due to the stale Client 1 responder.
+    let mut hfp_fut = pin!(hfp_fut);
+    exec.run_until_stalled(&mut hfp_fut).expect_pending("HFP main loop remains active");
+
+    let result = exec
+        .run_until_stalled(&mut watch_fut2)
+        .expect("Client fut notified of peer")
+        .expect("successful FIDL result");
+    let _peer_handler = match result {
+        Ok((id, handler)) => {
+            assert_eq!(id, PEER_ID.into());
+            handler
+        }
+        Err(e) => panic!("Expected successful notification, got: {e:?}"),
+    };
+
+    // Peer should await incoming SCO connection.
+    let _sco_connection_server =
+        expect_sco_connect(&mut exec, &mut profile_server, /* initiator = */ false);
+
+    expect_channel_still_open(&mut exec, &peer_channel);
 }
