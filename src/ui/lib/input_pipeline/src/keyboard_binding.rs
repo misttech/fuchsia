@@ -537,11 +537,9 @@ impl KeyboardBinding {
     /// required report fields are present, but there are no pressed keys, an empty vector
     /// is returned.
     fn parse_pressed_keys(input_report: &InputReport) -> Option<Vec<fidl_fuchsia_input::Key>> {
-        input_report
-            .keyboard
-            .as_ref()
-            .and_then(|unwrapped_keyboard| unwrapped_keyboard.pressed_keys3.as_ref())
-            .and_then(|unwrapped_keys| Some(unwrapped_keys.iter().map(utils::key_to_old).collect()))
+        let keyboard = input_report.keyboard.as_ref()?;
+        let keys = keyboard.pressed_keys3.as_ref()?;
+        Some(keys.iter().map(utils::key_to_old).collect())
     }
 
     /// Sends key events to clients based on the new and previously pressed keys.

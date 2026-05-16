@@ -217,8 +217,12 @@ pub struct TouchContact {
 
 impl Eq for TouchContact {}
 
-impl From<&fidl_next_fuchsia_input_report::ContactInputReport> for TouchContact {
-    fn from(fidl_contact: &fidl_next_fuchsia_input_report::ContactInputReport) -> TouchContact {
+impl TryFrom<&fidl_next_fuchsia_input_report::ContactInputReport> for TouchContact {
+    type Error = anyhow::Error;
+
+    fn try_from(
+        fidl_contact: &fidl_next_fuchsia_input_report::ContactInputReport,
+    ) -> anyhow::Result<TouchContact> {
         let contact_size =
             if fidl_contact.contact_width.is_some() && fidl_contact.contact_height.is_some() {
                 Some(Size {
@@ -229,15 +233,16 @@ impl From<&fidl_next_fuchsia_input_report::ContactInputReport> for TouchContact 
                 None
             };
 
-        TouchContact {
-            id: fidl_contact.contact_id.unwrap_or_default(),
-            position: Position {
-                x: fidl_contact.position_x.unwrap_or_default() as f32,
-                y: fidl_contact.position_y.unwrap_or_default() as f32,
-            },
+        let id = fidl_contact.contact_id.context("contact_id is required")?;
+        let position_x = fidl_contact.position_x.context("position_x is required")?;
+        let position_y = fidl_contact.position_y.context("position_y is required")?;
+
+        Ok(TouchContact {
+            id,
+            position: Position { x: position_x as f32, y: position_y as f32 },
             pressure: fidl_contact.pressure,
             contact_size,
-        }
+        })
     }
 }
 
@@ -626,6 +631,7 @@ fn process_touch_screen_reports(
             previous_report,
             device_descriptor,
             inspect_status,
+            metrics_logger,
         );
         previous_report = prev_report;
         if let Some(event) = event {
@@ -720,6 +726,7 @@ fn process_single_touch_screen_report(
     previous_report: Option<InputReport>,
     device_descriptor: &input_device::InputDeviceDescriptor,
     inspect_status: &InputDeviceStatus,
+    metrics_logger: &metrics::MetricsLogger,
 ) -> (Option<InputReport>, Option<InputEvent>) {
     fuchsia_trace::flow_end!("input", "input_report", report.trace_id.unwrap_or(0).into());
 
@@ -743,12 +750,14 @@ fn process_single_touch_screen_report(
     ) = previous_report
         .as_ref()
         .and_then(|unwrapped_report| unwrapped_report.touch.as_ref())
-        .map(touch_contacts_and_buttons_from_touch_report)
+        .map(|touch_report| {
+            touch_contacts_and_buttons_from_touch_report(touch_report, metrics_logger)
+        })
         .unwrap_or_default();
     let (current_contacts, current_buttons): (
         SortedVecMap<u32, TouchContact>,
         Vec<fidl_next_fuchsia_input_report::TouchButton>,
-    ) = touch_contacts_and_buttons_from_touch_report(touch_report);
+    ) = touch_contacts_and_buttons_from_touch_report(touch_report, metrics_logger);
 
     // Don't send an event if there are no new contacts or pressed buttons.
     if previous_contacts.is_empty()
@@ -819,16 +828,27 @@ fn process_single_touch_screen_report(
 
 fn touch_contacts_and_buttons_from_touch_report(
     touch_report: &fidl_next_fuchsia_input_report::TouchInputReport,
+    metrics_logger: &metrics::MetricsLogger,
 ) -> (SortedVecMap<u32, TouchContact>, Vec<fidl_next_fuchsia_input_report::TouchButton>) {
-    // First unwrap all the optionals in the input report to get to the contacts.
-    let contacts: Vec<TouchContact> = touch_report
-        .contacts
-        .as_ref()
-        .and_then(|unwrapped_contacts| {
-            // Once the contacts are found, convert them into `TouchContact`s.
-            Some(unwrapped_contacts.iter().map(TouchContact::from).collect())
-        })
-        .unwrap_or_default();
+    let mut contacts = Vec::with_capacity(touch_report.contacts.as_ref().map_or(0, |v| v.len()));
+    if let Some(unwrapped_contacts) = &touch_report.contacts {
+        for contact in unwrapped_contacts {
+            match TouchContact::try_from(contact) {
+                Ok(c) => contacts.push(c),
+                Err(e) => {
+                    metrics_logger.log_warn(
+                        InputPipelineErrorMetricDimensionEvent::TouchReportContactMissingField,
+                        std::format!("failed to convert touch contact: {:?}", e),
+                    );
+                }
+            }
+        }
+    } else {
+        metrics_logger.log_warn(
+            InputPipelineErrorMetricDimensionEvent::TouchReportMissingContact,
+            "contacts missing in touch input report",
+        );
+    }
 
     (
         SortedVecMap::from_iter(contacts.into_iter().map(|contact| (contact.id, contact))),
