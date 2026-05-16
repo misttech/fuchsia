@@ -5156,6 +5156,23 @@ static bool vmo_compress_to_marker_anon_test() {
   END_TEST;
 }
 
+// Verify that we don't trigger a panic during destruction of an always-pinned, but empty VMO.
+//
+// This is a regression test for https://fxbug.dev/511552403.
+static bool vmo_always_pinned_with_no_pages_test() {
+  BEGIN_TEST;
+
+  fbl::RefPtr<VmObjectPaged> vmo;
+
+  // Note that this call will fail.  That's because we've requested a zero-sized always-pinned
+  // VMO, which is not a valid request.  However, under the hood, we'll make it far enough to create
+  // the VMO even thought it will be destroyed before the call returns.
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS,
+            VmObjectPaged::Create(PMM_ALLOC_FLAG_ANY, VmObjectPaged::kAlwaysPinned, 0, &vmo));
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(vmo_tests)
 VM_UNITTEST(vmo_create_test)
 VM_UNITTEST(vmo_create_maximum_size)
@@ -5231,6 +5248,7 @@ VM_UNITTEST(vmo_zero_partially_pinned_range_test)
 VM_UNITTEST(vmo_apply_unmap_to_child_with_kernel_mapping_test)
 VM_UNITTEST(vmo_compress_to_marker_pager_test)
 VM_UNITTEST(vmo_compress_to_marker_anon_test)
+VM_UNITTEST(vmo_always_pinned_with_no_pages_test)
 UNITTEST_END_TESTCASE(vmo_tests, "vmo", "VmObject tests")
 
 }  // namespace

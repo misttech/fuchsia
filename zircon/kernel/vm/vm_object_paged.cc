@@ -78,7 +78,7 @@ void VmObjectPaged::DestructorHelper() {
       if (unlikely(cow_pages_locked()->pinned_page_count_locked() == 0)) {
         // There's no pinned pages at all, so now perform a full attribution to validate that the
         // cow pages is truly empty and we are in the not fully initialized state.
-        AttributionCounts counts = GetAttributedMemoryInRangeLocked(0, size());
+        AttributionCounts counts = GetAttributedMemoryInRangeLocked(0, size_locked());
         ASSERT(counts == AttributionCounts{});
         unpin = false;
       }
