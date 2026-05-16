@@ -6,6 +6,7 @@ use super::subcommands::composite::args::CompositeCommand;
 use super::subcommands::disable::args::DisableCommand;
 use super::subcommands::doctor::args::DoctorCommand;
 use super::subcommands::dump::args::DumpCommand;
+use super::subcommands::enable::args::EnableCommand;
 use super::subcommands::host::args::HostCommand;
 use super::subcommands::list::args::ListCommand;
 use super::subcommands::list_composite_node_specs::args::ListCompositeNodeSpecsCommand;
@@ -48,6 +49,7 @@ impl<T: argh::ArgsInfo> argh::ArgsInfo for Boxed<T> {
 use static_checks_lib::args::StaticChecksCommand;
 
 pub type BoxedDisableCommand = Boxed<DisableCommand>;
+pub type BoxedEnableCommand = Boxed<EnableCommand>;
 pub type BoxedDoctorCommand = Boxed<DoctorCommand>;
 pub type BoxedDumpCommand = Boxed<DumpCommand>;
 pub type BoxedListCommand = Boxed<ListCommand>;
@@ -81,6 +83,7 @@ pub struct DriverCommand {
 #[argh(subcommand)]
 pub enum DriverSubCommand {
     Disable(BoxedDisableCommand),
+    Enable(BoxedEnableCommand),
     Doctor(BoxedDoctorCommand),
     Dump(BoxedDumpCommand),
     List(BoxedListCommand),
@@ -103,6 +106,7 @@ pub enum DriverSubCommand {
 #[argh(subcommand)]
 pub enum DriverSubCommand {
     Disable(BoxedDisableCommand),
+    Enable(BoxedEnableCommand),
     Doctor(BoxedDoctorCommand),
     Dump(BoxedDumpCommand),
     List(BoxedListCommand),

@@ -32,6 +32,15 @@ pub async fn driver(
                 .await
                 .context("Disable subcommand failed")?;
         }
+        DriverSubCommand::Enable(subcmd) => {
+            let driver_development_proxy = driver_connector
+                .get_driver_development_proxy(subcmd.0.select)
+                .await
+                .context("Failed to get driver development proxy")?;
+            subcommands::enable::enable(*subcmd.0, writer, driver_development_proxy)
+                .await
+                .context("Enable subcommand failed")?;
+        }
         DriverSubCommand::Doctor(subcmd) => {
             let driver_development_proxy = driver_connector
                 .get_driver_development_proxy(subcmd.0.select)

@@ -6,6 +6,7 @@ pub mod composite;
 pub mod disable;
 pub mod doctor;
 pub mod dump;
+pub mod enable;
 pub mod host;
 pub mod list;
 pub mod list_composite_node_specs;
