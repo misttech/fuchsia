@@ -5,6 +5,7 @@
 #include <lib/zx/eventpair.h>
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/object.h>
+
 #include <zxtest/zxtest.h>
 
 namespace {
@@ -128,6 +129,50 @@ TEST(EventPairTest, SignalingClosedPeerReturnsPeerClosed) {
 
   eventpair_1.reset();
   EXPECT_STATUS(ZX_ERR_PEER_CLOSED, eventpair_0.signal_peer(0, ZX_USER_SIGNAL_0));
+}
+
+TEST(EventPairTest, SignalAccessDeniedMissingSignalRight) {
+  zx::eventpair eventpair_0, eventpair_1;
+
+  ASSERT_OK(zx::eventpair::create(0, &eventpair_0, &eventpair_1));
+
+  zx_info_handle_basic_t info = {};
+  ASSERT_OK(eventpair_0.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+
+  zx::eventpair reduced_eventpair;
+  ASSERT_OK(eventpair_0.duplicate(info.rights & ~ZX_RIGHT_SIGNAL, &reduced_eventpair));
+
+  EXPECT_STATUS(ZX_ERR_ACCESS_DENIED, reduced_eventpair.signal(0, ZX_USER_SIGNAL_0));
+}
+
+TEST(EventPairTest, SignalPeerAccessDeniedMissingSignalPeerRight) {
+  zx::eventpair eventpair_0, eventpair_1;
+
+  ASSERT_OK(zx::eventpair::create(0, &eventpair_0, &eventpair_1));
+
+  zx_info_handle_basic_t info = {};
+  ASSERT_OK(eventpair_0.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+
+  zx::eventpair reduced_eventpair;
+  ASSERT_OK(eventpair_0.duplicate(info.rights & ~ZX_RIGHT_SIGNAL_PEER, &reduced_eventpair));
+
+  EXPECT_STATUS(ZX_ERR_ACCESS_DENIED, reduced_eventpair.signal_peer(0, ZX_USER_SIGNAL_0));
+}
+
+TEST(EventPairTest, WaitAccessDeniedMissingWaitRight) {
+  zx::eventpair eventpair_0, eventpair_1;
+
+  ASSERT_OK(zx::eventpair::create(0, &eventpair_0, &eventpair_1));
+
+  zx_info_handle_basic_t info = {};
+  ASSERT_OK(eventpair_0.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+
+  zx::eventpair reduced_eventpair;
+  ASSERT_OK(eventpair_0.duplicate(info.rights & ~ZX_RIGHT_WAIT, &reduced_eventpair));
+
+  zx_signals_t pending;
+  EXPECT_STATUS(ZX_ERR_ACCESS_DENIED,
+                reduced_eventpair.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite_past(), &pending));
 }
 
 }  // namespace
