@@ -12,7 +12,7 @@ pub fn make_sentinel<T, U>(ptr: *mut U) -> *mut T {
             "Type T must have alignment > 1 to be used with sentinel pointers"
         )
     };
-    ((ptr as usize) | CONTAINER_SENTINEL_BIT) as *mut T
+    ptr.map_addr(|addr| addr | CONTAINER_SENTINEL_BIT).cast()
 }
 
 /// Create a sentinel pointer from null.
@@ -22,7 +22,7 @@ pub const fn make_sentinel_null<T>() -> *mut T {
         core::mem::align_of::<T>() > 1,
         "Type T must have alignment > 1 to be used with sentinel pointers"
     );
-    CONTAINER_SENTINEL_BIT as *mut T
+    core::ptr::without_provenance_mut(CONTAINER_SENTINEL_BIT)
 }
 
 /// Turn a sentinel pointer back into a normal pointer.
@@ -33,7 +33,7 @@ pub fn unmake_sentinel<T, U>(sentinel: *mut U) -> *mut T {
             "Type T must have alignment > 1 to be used with sentinel pointers"
         )
     };
-    ((sentinel as usize) & !CONTAINER_SENTINEL_BIT) as *mut T
+    sentinel.map_addr(|addr| addr & !CONTAINER_SENTINEL_BIT).cast()
 }
 
 /// Test to see if a pointer is a sentinel pointer.
@@ -44,7 +44,7 @@ pub fn is_sentinel_ptr<T>(ptr: *const T) -> bool {
             "Type T must have alignment > 1 to be used with sentinel pointers"
         )
     };
-    ((ptr as usize) & CONTAINER_SENTINEL_BIT) != 0
+    (ptr.addr() & CONTAINER_SENTINEL_BIT) != 0
 }
 
 /// Test to see if a pointer (which may be a sentinel) is valid.
