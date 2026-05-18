@@ -7,8 +7,10 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/natural_types.h>
 #include <lib/component/outgoing/cpp/structured_config.h>
+#include <lib/driver/component/cpp/resume_completer.h>
 #include <lib/driver/component/cpp/start_completer.h>
 #include <lib/driver/component/cpp/stop_completer.h>
+#include <lib/driver/component/cpp/suspend_completer.h>
 #include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/driver/incoming/cpp/service_validator.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -265,6 +267,22 @@ class DriverBase2 {
   // After the completer is called, the framework will shutdown all of the driver's fdf dispatchers
   // and deallocate the driver.
   virtual void Stop(StopCompleter completer) { completer(zx::ok()); }
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  // Optional suspend hook. Called when power_managed_dispatchers_enabled is set in the manifest's
+  // program section. This hook is executed when the power element transitions to a suspended state,
+  // after all pending tasks have run.
+  virtual void SystemSuspend(SuspendCompleter completer) { completer(zx::ok()); }
+
+  // Optional resume hook. Called when power_managed_dispatchers_enabled is set in the manifest's
+  // program section. This hook is executed when the power element transitions to a running state or
+  // a wake vector triggers, before any other tasks are executed. |pe_lease| contains the lease
+  // associated with the wake if triggered by a wake vector.
+  virtual void SystemResume(std::optional<fuchsia_power_broker::LeaseToken> pe_lease,
+                            ResumeCompleter completer) {
+    completer(zx::ok());
+  }
+#endif
 
   // This can be used to log in driver factories:
   // `driver->logger().log(fdf::INFO, "...");`

@@ -76,6 +76,34 @@ class DriverServer2 final : public fdf::WireServer<fuchsia_driver_framework::Dri
     driver_->Stop(fdf::StopCompleter([this](zx::result<> result) { StopBinding(); }));
   }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  void Suspend(fdf::Arena& arena, SuspendCompleter::Sync& completer) override {
+    ZX_ASSERT(driver_);
+
+    fdf::SuspendCompleter suspend_completer(
+        [reply_arena = std::move(arena), reply_completer = completer.ToAsync()](
+            zx::result<> result) mutable { reply_completer.buffer(reply_arena).Reply(result); });
+
+    driver_->SystemSuspend(std::move(suspend_completer));
+  }
+
+  void Resume(ResumeRequestView request, fdf::Arena& arena,
+              ResumeCompleter::Sync& completer) override {
+    ZX_ASSERT(driver_);
+
+    fdf::ResumeCompleter resume_completer(
+        [reply_arena = std::move(arena), reply_completer = completer.ToAsync()](
+            zx::result<> result) mutable { reply_completer.buffer(reply_arena).Reply(result); });
+
+    std::optional<fuchsia_power_broker::LeaseToken> lease;
+    if (request->power_element_lease.is_valid()) {
+      lease.emplace(std::move(request->power_element_lease));
+    }
+
+    driver_->SystemResume(std::move(lease), std::move(resume_completer));
+  }
+#endif
+
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_driver_framework::Driver> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
     if (driver_) {

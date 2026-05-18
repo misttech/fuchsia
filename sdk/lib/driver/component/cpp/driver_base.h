@@ -6,11 +6,14 @@
 #define LIB_DRIVER_COMPONENT_CPP_DRIVER_BASE_H_
 
 #include <fidl/fuchsia.driver.framework/cpp/natural_types.h>
+#include <fidl/fuchsia.power.broker/cpp/wire.h>
 #include <lib/component/outgoing/cpp/structured_config.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/internal/concepts.h>
 #include <lib/driver/component/cpp/prepare_stop_completer.h>
+#include <lib/driver/component/cpp/resume_completer.h>
 #include <lib/driver/component/cpp/start_completer.h>
+#include <lib/driver/component/cpp/suspend_completer.h>
 #include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/driver/incoming/cpp/service_validator.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -20,9 +23,11 @@
 #include <lib/fit/function.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/stdcompat/span.h>
+#include <lib/zx/eventpair.h>
 #include <zircon/availability.h>
 
 #include <memory>
+#include <optional>
 
 namespace fdf_internal {
 
@@ -129,6 +134,22 @@ class DriverBase {
   // This ensures that there are no pending tasks on any of the driver dispatchers that will access
   // the driver after it has been destroyed.
   virtual void Stop() {}
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  // Optional suspend hook. Called when power_managed_dispatchers_enabled is set in the manifest's
+  // program section. This hook is executed when the power element transitions to a suspended state,
+  // after all pending tasks have run.
+  virtual void SystemSuspend(SuspendCompleter completer) { completer(zx::ok()); }
+
+  // Optional resume hook. Called when power_managed_dispatchers_enabled is set in the manifest's
+  // program section. This hook is executed when the power element transitions to a running state or
+  // a wake vector triggers, before any other tasks are executed. |pe_lease| contains the lease
+  // associated with the wake if triggered by a wake vector.
+  virtual void SystemResume(std::optional<fuchsia_power_broker::LeaseToken> pe_lease,
+                            ResumeCompleter completer) {
+    completer(zx::ok());
+  }
+#endif
 
   // This can be used to log in driver factories:
   // `FDF_LOGL(INFO, driver->logger(), "...");`

@@ -85,4 +85,17 @@ void CompatDriverServer::Stop(fdf::Arena& arena, StopCompleter::Sync& completer)
       fdf::PrepareStopCompleter([this](zx::result<> result) { binding_.reset(); }));
 }
 
+void CompatDriverServer::Suspend(fdf::Arena& arena, SuspendCompleter::Sync& completer) {
+  // The compat driver doesn't support automatic suspend yet.
+  // Reply with success to avoid blocking the build or runtime.
+  completer.buffer(arena).Reply(zx::ok());
+}
+
+void CompatDriverServer::Resume(ResumeRequestView request, fdf::Arena& arena,
+                                ResumeCompleter::Sync& completer) {
+  // The compat driver doesn't support automatic resume yet.
+  // Reply with success to avoid blocking the build or runtime.
+  completer.buffer(arena).Reply(zx::ok());
+}
+
 }  // namespace compat
