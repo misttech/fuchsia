@@ -648,9 +648,12 @@ func fuchsiaLogChecks() []FailureModeCheck {
 		// For https://fxbug.dev/42119650.
 		ret = append(ret, []FailureModeCheck{
 			&stringInLogCheck{String: "Timed out loading dynamic linker from fuchsia.ldsvc.Loader", Type: lt},
-			&stringInLogCheck{String: "ERROR: AddressSanitizer", Type: lt, AttributeToTest: true, ExceptBlocks: []*logBlock{
-				{startString: "[===ASAN EXCEPT BLOCK START===]", endString: "[===ASAN EXCEPT BLOCK END===]"},
-			}},
+			&stringInLogCheck{
+				String: "ERROR: AddressSanitizer", Type: lt, AttributeToTest: true, emitSyntheticTestCase: true,
+				ExceptBlocks: []*logBlock{
+					{startString: "[===ASAN EXCEPT BLOCK START===]", endString: "[===ASAN EXCEPT BLOCK END===]"},
+				},
+			},
 			&stringInLogCheck{String: "ERROR: LeakSanitizer", Type: lt, AttributeToTest: true, ExceptBlocks: []*logBlock{
 				// startString and endString should match string in //zircon/system/ulib/c/test/sanitizer/lsan-test.cc.
 				{startString: "[===LSAN EXCEPT BLOCK START===]", endString: "[===LSAN EXCEPT BLOCK END===]"},
