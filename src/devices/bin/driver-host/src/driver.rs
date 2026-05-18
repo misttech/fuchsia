@@ -2,18 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::conversion::convert_start_args;
 use crate::loader::{Library, LoaderService};
 use crate::modules::ModulesAndSymbols;
 use crate::utils::*;
-use fdf::{CurrentDispatcher, OnDispatcher};
+use fdf::OnDispatcher;
 use fdf_component::Incoming;
-use fidl::client::decode_transaction_body;
-use fidl::encoding::{DefaultFuchsiaResourceDialect, EmptyStruct, ResultType, clear_tls_buf};
 use fidl::endpoints::{ClientEnd, RequestStream, ServerEnd};
 use fidl_fuchsia_data as fdata;
 use fidl_fuchsia_driver_framework as fidl_fdf;
 use fidl_fuchsia_driver_host as fdh;
 use fidl_fuchsia_power_broker as fpb;
+use fidl_next::ClientDispatcher;
+use fidl_next_fuchsia_driver_framework as fidl_next_fdf;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::{FutureExt, TryStreamExt};
@@ -535,9 +536,11 @@ impl Driver {
     ) -> Result<(), Status> {
         self.inner.lock().shutdown_signaler = Some(shutdown_signaler);
 
-        let (completer, task_result) = oneshot::channel();
-        let (server_chan, mut client_chan) = fdf::Channel::<[u8]>::create();
-        {
+        let (client, server) = fdf_fidl::create_channel::<fidl_next_fdf::Driver>();
+        let client_dispatcher = ClientDispatcher::new(client);
+        let client = client_dispatcher.client();
+
+        let client_dispatcher_task = {
             let self_clone = self.clone();
             self.inner
                 .lock()
@@ -545,52 +548,38 @@ impl Driver {
                 .as_ref()
                 .expect("dispatcher should always be valid")
                 .downgrade()
-                .spawn(async move {
+                .compute(async move {
                     {
                         let mut inner = self_clone.inner.lock();
                         let hooks = &inner.hooks;
 
-                        inner.token = Some(hooks.initialize(server_chan.into_driver_handle()));
+                        inner.token =
+                            Some(hooks.initialize(server.into_untyped().into_driver_handle()));
                     };
 
-                    let start_msg =
-                        fidl_fdf::DriverRequest::start_as_message(fdf::Arena::new(), start_args, 1)
-                            .expect("Failed to create start message");
-                    if let Err(e) = client_chan.write(start_msg) {
-                        completer.send(Err(e)).unwrap();
-                        return;
-                    }
+                    client_dispatcher.run_client().await
+                })
+        };
 
-                    clear_tls_buf::<DefaultFuchsiaResourceDialect>();
-
-                    // It's possible that this may never return if the driver blocks its main thread
-                    // after replying? In that case we would probably want another dispatcher.
-                    match client_chan.read_bytes(CurrentDispatcher).await {
-                        Err(e) => {
-                            completer.send(Err(e)).unwrap();
-                        }
-                        Ok(None) => {
-                            // Invalid response.
-                            completer.send(Err(Status::INTERNAL)).unwrap();
-                        }
-                        Ok(Some(msg)) => {
-                            let buf = msg.data().unwrap().to_vec();
-                            let buf = fidl::MessageBufEtc::new_with(buf, Vec::new());
-                            match decode_transaction_body::<
-                                ResultType<EmptyStruct, i32>,
-                                DefaultFuchsiaResourceDialect,
-                                0x27be00ae42aa60c2,
-                            >(buf)
-                            {
-                                Ok(status) => {
-                                    let ret = status.map_err(Status::from_raw).map(|_| client_chan);
-                                    completer.send(ret).unwrap();
-                                }
-                                Err(_) => completer.send(Err(Status::INVALID_ARGS)).unwrap(),
-                            };
-                        }
-                    };
-                })?;
+        let start_args_next = convert_start_args(start_args);
+        let start_result = client.start(start_args_next).await;
+        match start_result {
+            Ok(fidl_next::FlexibleResult::Ok(())) => {}
+            Ok(fidl_next::FlexibleResult::Err(status)) => {
+                warn!("Driver failed to start: {}", status);
+                self.shutdown(driver_request);
+                return Err(Status::from_raw(status));
+            }
+            Ok(fidl_next::FlexibleResult::FrameworkErr(e)) => {
+                warn!("Driver start framework error: {:?}", e);
+                self.shutdown(driver_request);
+                return Err(Status::INTERNAL);
+            }
+            Err(e) => {
+                warn!("Driver start transport error: {:?}", e);
+                self.shutdown(driver_request);
+                return Err(Status::INTERNAL);
+            }
         }
 
         {
@@ -612,88 +601,54 @@ impl Driver {
             }
         }
 
-        let mut client_chan = match task_result.await.unwrap() {
-            Err(e) => {
-                // We need to shutdown the dispatcher if start failed.
-                self.shutdown(driver_request);
-                return Err(e);
-            }
-            Ok(client_chan) => client_chan,
-        };
-
-        let (driver_stop_requested_signaler, driver_stop_requested) = oneshot::channel();
-        let (driver_request_sender, driver_request_receiver) = oneshot::channel();
-        let (exit_sender, exit_receiver) = oneshot::channel();
+        let weak_self = Arc::downgrade(self);
         scope.spawn_local(async move {
             // This needs to run in the context of a thread running fuchsia_async, which means the
             // driver host's initial thread.
-            let mut stream = driver_request.into_stream();
+            let mut driver_request_stream = driver_request.into_stream();
+            let mut client_dispatcher_done = client_dispatcher_task.fuse();
 
-            futures::select! {
-                // The only request is stop and if we receive it, we assume it's a stop request.
-                _ = stream.try_next().fuse() => {
-                    driver_stop_requested_signaler.send(()).unwrap();
-                }
-                _ = exit_receiver.fuse() => (),
-            };
-            driver_request_sender
-                .send(ServerEnd::new(
-                    Arc::into_inner(stream.into_inner().0)
-                        .expect("outstanding references to channel, possibly unhandeled messages?")
-                        .into_channel()
-                        .into(),
-                ))
-                .unwrap();
-        });
-
-        let weak_self = Arc::downgrade(self);
-        self.inner
-            .lock()
-            .dispatcher
-            .as_ref()
-            .expect("dispatcher should always be valid")
-            .downgrade()
-            .spawn(async move {
-            // Wait for driver manager to issue stop or the driver to have dropped its end of the
-            // driver channel.
-            futures::select! {
-                _ = driver_stop_requested.fuse() => {
-                    let stop_msg = fidl_fdf::DriverRequest::stop_as_message(fdf::Arena::new())
-                        .expect("Failed to create stop message");
-                    match client_chan.write(stop_msg) {
-                        Ok(()) => {
-                            // Wait for client_chan to receive peer_closed.
-                            match client_chan.read_bytes(CurrentDispatcher).await {
-                                Err(e) => {
-                                    assert_eq!(e, Status::PEER_CLOSED, "Unexpected status {e}");
-                                }
-                                Ok(None) => {
-                                    log::error!("Expected PEER_CLOSED, received empty payload. Shuttingdown driver.");
-                                }
-                                Ok(Some(_msg)) => {
-                                    log::error!("Expected PEER_CLOSED, received payload");
-                                }
-                            };
-                        }
+            let should_stop = futures::select! {
+                res = driver_request_stream.try_next().fuse() => {
+                    match res {
+                        Ok(Some(request)) => match request {
+                            fdh::DriverRequest::Stop { control_handle: _ } => true,
+                        },
+                        Ok(None) => true,
                         Err(e) => {
-                            // It's possible the driver already decided to close its channel
-                            // before recieving stop.
-                            assert_eq!(e, Status::PEER_CLOSED, "Unexpected status {e}");
-                            log::error!("Driver has already closed its channel end before recieving stop");
+                            log::error!("Error in driver request stream: {e:?}");
+                            false
                         }
-                    };
-                },
-                _ = client_chan.read_bytes(CurrentDispatcher).fuse() => {
-                    let _ = exit_sender.send(());
-                },
+                    }
+                }
+                res = &mut client_dispatcher_done => {
+                    log::warn!("Client dispatcher finished unexpectedly: {:?}", res);
+                    false
+                }
             };
+
+            if should_stop {
+                if let Err(e) = client.stop().await {
+                    log::warn!("Failed to send stop request: {e:?}");
+                }
+                if let Err(e) = client_dispatcher_done.await {
+                    log::error!("Client dispatcher failed: {e:?}");
+                }
+            }
+
+            let server_end = ServerEnd::new(
+                Arc::into_inner(driver_request_stream.into_inner().0)
+                    .expect("outstanding references to channel, possibly unhandeled messages?")
+                    .into_channel()
+                    .into(),
+            );
 
             if let Some(strong_self) = weak_self.upgrade() {
-                strong_self.shutdown(driver_request_receiver.await.unwrap());
+                strong_self.shutdown(server_end);
             } else {
                 log::error!("Failed to upgrade weak pointer to driver");
             }
-        })?;
+        });
 
         Ok(())
     }

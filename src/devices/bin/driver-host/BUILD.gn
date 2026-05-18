@@ -20,10 +20,16 @@ _bin_common = {
   with_unit_tests = true
 
   deps = [
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust_next",
+    "//sdk/fidl/fuchsia.component.runner:fuchsia.component.runner_rust_next",
     "//sdk/fidl/fuchsia.data:fuchsia.data_rust",
+    "//sdk/fidl/fuchsia.data:fuchsia.data_rust_next",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust_next",
     "//sdk/fidl/fuchsia.driver.host:fuchsia.driver.host_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust_next",
     "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc_rust",
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
     "//sdk/fidl/fuchsia.system.state:fuchsia.system.state_rust",
@@ -31,6 +37,7 @@ _bin_common = {
     "//sdk/lib/driver/runtime/rust",
     "//sdk/lib/driver/runtime/rust/env",
     "//sdk/lib/driver/runtime/rust/fdf_sys",
+    "//sdk/lib/driver/runtime/rust/fidl",
     "//sdk/lib/scheduler/rust",
     "//sdk/rust/zx",
     "//src/devices/lib/driver-host-passive-abi",
@@ -39,6 +46,7 @@ _bin_common = {
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/driver_symbols:driver_symbols_rust",
     "//src/lib/fidl/rust/fidl",
+    "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
@@ -56,6 +64,7 @@ _bin_common = {
   ]
 
   sources = [
+    "src/conversion.rs",
     "src/driver.rs",
     "src/driver_host.rs",
     "src/loader.rs",

@@ -10,6 +10,7 @@ use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt};
 use std::rc::Rc;
 
+mod conversion;
 mod driver;
 mod driver_host;
 mod loader;
