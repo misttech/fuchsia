@@ -15,13 +15,18 @@ rustc_library("rust") {
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
     "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_rust_next",
     "//sdk/lib/driver/component/rust",
+    "//sdk/lib/driver/fake-bti/rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-sync",
   ]
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//sdk/lib/driver/fake-resource/cpp",
+    "//src/lib/fuchsia",
+  ]
+  public_configs = [ "//build/config/fuchsia:static_cpp_standard_library" ]
 
   sources = [ "src/lib.rs" ]
 }
