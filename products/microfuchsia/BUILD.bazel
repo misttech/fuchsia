@@ -130,6 +130,7 @@ fuchsia_product_configuration(
             "development_support": {
                 "vsock_development": True,
                 "include_bin_clock": False,
+                "include_bootstrap_testing_framework": True,
             },
             "storage": {
                 "filesystems": {

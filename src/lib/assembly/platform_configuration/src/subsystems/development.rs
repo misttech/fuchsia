@@ -204,7 +204,7 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
 
         if config.include_bootstrap_testing_framework {
             context.ensure_feature_set_level(
-                &[FeatureSetLevel::Bootstrap],
+                &[FeatureSetLevel::Bootstrap, FeatureSetLevel::Embeddable],
                 "Bootstrap Testing Framework",
             )?;
             builder.platform_bundle("testing_support_bootstrap")?;
