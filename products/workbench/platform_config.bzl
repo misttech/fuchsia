@@ -50,7 +50,6 @@ workbench_platform_config = {
     },
     "starnix": {
         "enabled": True,
-        "enable_android_support": True,
     },
     "usb": {
         "peripheral": {
