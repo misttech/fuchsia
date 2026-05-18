@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_sync::{MutexGuard, RwLockReadGuard, RwLockWriteGuard};
+use fuchsia_sync::{MappedMutexGuard, MappedRwLockReadGuard, MappedRwLockWriteGuard, MutexGuard, RwLockReadGuard, RwLockWriteGuard};
 use std::marker::PhantomData;
 
 #[cfg(feature = "detect_lock_dep_cycles")]
@@ -257,7 +257,7 @@ impl<T, L: crate::LockLevel> LockDepMutex<T, L> {
     #[inline(always)]
     pub fn lock(&self) -> LockDepGuard<'_, T, L> {
         let token = tracking::LockLevelToken::new();
-        LockDepGuard { inner: self.inner.lock(), _token: token }
+        LockDepGuard { inner: self.inner.lock(), token }
     }
 }
 
@@ -269,7 +269,18 @@ impl<T: Default, L: crate::LockLevel> Default for LockDepMutex<T, L> {
 
 pub struct LockDepGuard<'a, T, L> {
     inner: MutexGuard<'a, T>,
-    _token: tracking::LockLevelToken<L>,
+    token: tracking::LockLevelToken<L>,
+}
+
+impl<'a, T, L> LockDepGuard<'a, T, L> {
+    pub fn map<U: ?Sized, F>(guard: Self, f: F) -> MappedLockDepGuard<'a, U, L>
+    where
+        F: FnOnce(&mut T) -> &mut U,
+    {
+        let token = guard.token;
+        let inner = MutexGuard::map(guard.inner, f);
+        MappedLockDepGuard { inner, _token: token }
+    }
 }
 
 impl<'a, T, L> std::ops::Deref for LockDepGuard<'a, T, L> {
@@ -281,6 +292,25 @@ impl<'a, T, L> std::ops::Deref for LockDepGuard<'a, T, L> {
 }
 
 impl<'a, T, L> std::ops::DerefMut for LockDepGuard<'a, T, L> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+pub struct MappedLockDepGuard<'a, T: ?Sized, L> {
+    inner: MappedMutexGuard<'a, T>,
+    _token: tracking::LockLevelToken<L>,
+}
+
+impl<'a, T: ?Sized, L> std::ops::Deref for MappedLockDepGuard<'a, T, L> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<'a, T: ?Sized, L> std::ops::DerefMut for MappedLockDepGuard<'a, T, L> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
@@ -306,13 +336,13 @@ impl<T, L: crate::LockLevel> LockDepRwLock<T, L> {
     #[inline(always)]
     pub fn read(&self) -> LockDepReadGuard<'_, T, L> {
         let token = tracking::LockLevelToken::new();
-        LockDepReadGuard { inner: self.inner.read(), _token: token }
+        LockDepReadGuard { inner: self.inner.read(), token }
     }
 
     #[inline(always)]
     pub fn write(&self) -> LockDepWriteGuard<'_, T, L> {
         let token = tracking::LockLevelToken::new();
-        LockDepWriteGuard { inner: self.inner.write(), _token: token }
+        LockDepWriteGuard { inner: self.inner.write(), token }
     }
 }
 
@@ -324,7 +354,18 @@ impl<T: Default, L: crate::LockLevel> Default for LockDepRwLock<T, L> {
 
 pub struct LockDepReadGuard<'a, T, L> {
     inner: RwLockReadGuard<'a, T>,
-    _token: tracking::LockLevelToken<L>,
+    token: tracking::LockLevelToken<L>,
+}
+
+impl<'a, T, L> LockDepReadGuard<'a, T, L> {
+    pub fn map<U: ?Sized, F>(guard: Self, f: F) -> MappedLockDepReadGuard<'a, U, L>
+    where
+        F: FnOnce(&T) -> &U,
+    {
+        let token = guard.token;
+        let inner = RwLockReadGuard::map(guard.inner, f);
+        MappedLockDepReadGuard { inner, _token: token }
+    }
 }
 
 impl<'a, T, L> std::ops::Deref for LockDepReadGuard<'a, T, L> {
@@ -337,7 +378,7 @@ impl<'a, T, L> std::ops::Deref for LockDepReadGuard<'a, T, L> {
 
 pub struct LockDepWriteGuard<'a, T, L> {
     inner: RwLockWriteGuard<'a, T>,
-    _token: tracking::LockLevelToken<L>,
+    token: tracking::LockLevelToken<L>,
 }
 
 impl<'a, T, L> std::ops::Deref for LockDepWriteGuard<'a, T, L> {
@@ -349,6 +390,49 @@ impl<'a, T, L> std::ops::Deref for LockDepWriteGuard<'a, T, L> {
 }
 
 impl<'a, T, L> std::ops::DerefMut for LockDepWriteGuard<'a, T, L> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl<'a, T, L> LockDepWriteGuard<'a, T, L> {
+    pub fn map<U: ?Sized, F>(guard: Self, f: F) -> MappedLockDepWriteGuard<'a, U, L>
+    where
+        F: FnOnce(&mut T) -> &mut U,
+    {
+        let token = guard.token;
+        let inner = RwLockWriteGuard::map(guard.inner, f);
+        MappedLockDepWriteGuard { inner, _token: token }
+    }
+}
+
+pub struct MappedLockDepReadGuard<'a, T: ?Sized, L> {
+    inner: MappedRwLockReadGuard<'a, T>,
+    _token: tracking::LockLevelToken<L>,
+}
+
+impl<'a, T: ?Sized, L> std::ops::Deref for MappedLockDepReadGuard<'a, T, L> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+pub struct MappedLockDepWriteGuard<'a, T: ?Sized, L> {
+    inner: MappedRwLockWriteGuard<'a, T>,
+    _token: tracking::LockLevelToken<L>,
+}
+
+impl<'a, T: ?Sized, L> std::ops::Deref for MappedLockDepWriteGuard<'a, T, L> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<'a, T: ?Sized, L> std::ops::DerefMut for MappedLockDepWriteGuard<'a, T, L> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
