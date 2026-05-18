@@ -1550,5 +1550,392 @@ TEST(ChannelTest, NoSpuriousReadableSignalWhenRacing) {
   attempt.store(kAttempts);
 }
 
+TEST(ChannelWriteEtcTest, MoveSuccess) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+  zx_handle_t event_raw = event.get();
+
+  zx_handle_disposition_t disp = {
+      .operation = ZX_HANDLE_OP_MOVE,
+      .handle = event.release(),
+      .type = ZX_OBJ_TYPE_EVENT,
+      .rights = ZX_DEFAULT_EVENT_RIGHTS,
+      .result = ZX_OK,
+  };
+
+  ASSERT_OK(local.write_etc(0, nullptr, 0, &disp, 1));
+  EXPECT_OK(disp.result);
+
+  // Handle should be closed in sender.
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, zx_handle_close(event_raw));
+
+  // Read from remote.
+  zx_handle_info_t read_handle = {};
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  ASSERT_OK(remote.read_etc(0, nullptr, &read_handle, 0, 1, &actual_bytes, &actual_handles));
+  EXPECT_EQ(actual_handles, 1);
+  EXPECT_EQ(read_handle.type, ZX_OBJ_TYPE_EVENT);
+  EXPECT_EQ(read_handle.rights, ZX_DEFAULT_EVENT_RIGHTS);
+
+  zx_handle_close(read_handle.handle);
+}
+
+TEST(ChannelWriteEtcTest, DuplicateSuccess) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  zx_handle_disposition_t disp = {
+      .operation = ZX_HANDLE_OP_DUPLICATE,
+      .handle = event.get(),
+      .type = ZX_OBJ_TYPE_EVENT,
+      .rights = ZX_DEFAULT_EVENT_RIGHTS,
+      .result = ZX_OK,
+  };
+
+  ASSERT_OK(local.write_etc(0, nullptr, 0, &disp, 1));
+  EXPECT_OK(disp.result);
+
+  // Handle should still be valid in sender.
+  EXPECT_OK(zx_handle_check_valid(event.get()));
+
+  // Read from remote.
+  zx_handle_info_t read_handle = {};
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  ASSERT_OK(remote.read_etc(0, nullptr, &read_handle, 0, 1, &actual_bytes, &actual_handles));
+  EXPECT_EQ(actual_handles, 1);
+  EXPECT_EQ(read_handle.type, ZX_OBJ_TYPE_EVENT);
+  EXPECT_EQ(read_handle.rights, ZX_DEFAULT_EVENT_RIGHTS);
+
+  zx_handle_close(read_handle.handle);
+}
+
+TEST(ChannelWriteEtcTest, ReducedRightsSuccess) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  zx_rights_t reduced_rights = ZX_DEFAULT_EVENT_RIGHTS & ~ZX_RIGHT_SIGNAL;
+
+  zx_handle_disposition_t disp = {
+      .operation = ZX_HANDLE_OP_MOVE,
+      .handle = event.release(),
+      .type = ZX_OBJ_TYPE_EVENT,
+      .rights = reduced_rights,
+      .result = ZX_OK,
+  };
+
+  ASSERT_OK(local.write_etc(0, nullptr, 0, &disp, 1));
+  EXPECT_OK(disp.result);
+
+  // Read from remote.
+  zx_handle_info_t read_handle = {};
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  ASSERT_OK(remote.read_etc(0, nullptr, &read_handle, 0, 1, &actual_bytes, &actual_handles));
+  EXPECT_EQ(actual_handles, 1);
+  EXPECT_EQ(read_handle.type, ZX_OBJ_TYPE_EVENT);
+  EXPECT_EQ(read_handle.rights, reduced_rights);
+
+  zx_handle_close(read_handle.handle);
+}
+
+TEST(ChannelWriteEtcTest, InvalidOperationFailure) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+  zx_handle_t event_raw = event.get();
+
+  zx_handle_disposition_t disp = {
+      .operation = 9999,  // Invalid
+      .handle = event.release(),
+      .type = ZX_OBJ_TYPE_EVENT,
+      .rights = ZX_DEFAULT_EVENT_RIGHTS,
+      .result = ZX_OK,
+  };
+
+  ASSERT_EQ(local.write_etc(0, nullptr, 0, &disp, 1), ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(disp.result, ZX_ERR_INVALID_ARGS);
+
+  // The handle should have been closed anyway (since it was not DUPLICATE).
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, zx_handle_close(event_raw));
+}
+
+TEST(ChannelWriteEtcTest, WrongTypeFailure) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+  zx_handle_t event_raw = event.get();
+
+  zx_handle_disposition_t disp = {
+      .operation = ZX_HANDLE_OP_MOVE,
+      .handle = event.release(),
+      .type = ZX_OBJ_TYPE_VMO,  // Wrong type
+      .rights = ZX_DEFAULT_EVENT_RIGHTS,
+      .result = ZX_OK,
+  };
+
+  ASSERT_EQ(local.write_etc(0, nullptr, 0, &disp, 1), ZX_ERR_WRONG_TYPE);
+  EXPECT_EQ(disp.result, ZX_ERR_WRONG_TYPE);
+
+  // Handle should be closed.
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, zx_handle_close(event_raw));
+}
+
+TEST(ChannelWriteEtcTest, MissingTransferRightFailure) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  zx::event event_dup;
+  ASSERT_OK(event.duplicate(ZX_DEFAULT_EVENT_RIGHTS & ~ZX_RIGHT_TRANSFER, &event_dup));
+  zx_handle_t event_dup_raw = event_dup.get();
+
+  zx_handle_disposition_t disp = {
+      .operation = ZX_HANDLE_OP_MOVE,
+      .handle = event_dup.release(),
+      .type = ZX_OBJ_TYPE_EVENT,
+      .rights = ZX_DEFAULT_EVENT_RIGHTS & ~ZX_RIGHT_TRANSFER,
+      .result = ZX_OK,
+  };
+
+  ASSERT_EQ(local.write_etc(0, nullptr, 0, &disp, 1), ZX_ERR_ACCESS_DENIED);
+  EXPECT_EQ(disp.result, ZX_ERR_ACCESS_DENIED);
+
+  // Handle should be closed.
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, zx_handle_close(event_dup_raw));
+}
+
+TEST(ChannelWriteEtcTest, MissingDuplicateRightFailure) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  zx::event event_dup;
+  ASSERT_OK(event.duplicate(ZX_DEFAULT_EVENT_RIGHTS & ~ZX_RIGHT_DUPLICATE, &event_dup));
+  zx_handle_t event_dup_raw = event_dup.get();
+
+  zx_handle_disposition_t disp = {
+      .operation = ZX_HANDLE_OP_DUPLICATE,
+      .handle = event_dup.get(),
+      .type = ZX_OBJ_TYPE_EVENT,
+      .rights = ZX_DEFAULT_EVENT_RIGHTS & ~ZX_RIGHT_DUPLICATE,
+      .result = ZX_OK,
+  };
+
+  ASSERT_EQ(local.write_etc(0, nullptr, 0, &disp, 1), ZX_ERR_ACCESS_DENIED);
+  EXPECT_EQ(disp.result, ZX_ERR_ACCESS_DENIED);
+
+  // Handle should STILL be valid (since it was DUPLICATE).
+  EXPECT_OK(zx_handle_check_valid(event_dup_raw));
+}
+
+TEST(ChannelWriteEtcTest, ExpandedRightsFailure) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  zx::event event_dup;
+  ASSERT_OK(event.duplicate(ZX_DEFAULT_EVENT_RIGHTS & ~ZX_RIGHT_SIGNAL, &event_dup));
+  zx_handle_t event_dup_raw = event_dup.get();
+
+  zx_handle_disposition_t disp = {
+      .operation = ZX_HANDLE_OP_MOVE,
+      .handle = event_dup.release(),
+      .type = ZX_OBJ_TYPE_EVENT,
+      .rights = ZX_DEFAULT_EVENT_RIGHTS,  // Requesting signal right which we don't have
+      .result = ZX_OK,
+  };
+
+  ASSERT_EQ(local.write_etc(0, nullptr, 0, &disp, 1), ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(disp.result, ZX_ERR_INVALID_ARGS);
+
+  // Handle should be closed.
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, zx_handle_close(event_dup_raw));
+}
+
+TEST(ChannelWriteEtcTest, TransferSelfFailure) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  zx_handle_t local_raw = local.get();
+
+  zx_handle_disposition_t disp = {
+      .operation = ZX_HANDLE_OP_MOVE,
+      .handle = local_raw,
+      .type = ZX_OBJ_TYPE_CHANNEL,
+      .rights = ZX_DEFAULT_CHANNEL_RIGHTS,
+      .result = ZX_OK,
+  };
+
+  zx_handle_t local_released = local.release();
+  ASSERT_EQ(zx_channel_write_etc(local_released, 0, nullptr, 0, &disp, 1), ZX_ERR_NOT_SUPPORTED);
+  EXPECT_EQ(disp.result, ZX_ERR_NOT_SUPPORTED);
+
+  // The handle should have been closed.
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, zx_handle_close(local_released));
+}
+
+TEST(ChannelCallEtcTest, CallEtcSuccess) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  struct Request {
+    zx_txid_t txid;
+    char data[4];
+  } request = {.txid = 0, .data = {'a', 'b', 'c', 'd'}};
+
+  struct Reply {
+    zx_txid_t txid;
+    char data[4];
+  } reply = {};
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+
+  zx_handle_disposition_t wr_disp = {
+      .operation = ZX_HANDLE_OP_MOVE,
+      .handle = event.release(),
+      .type = ZX_OBJ_TYPE_EVENT,
+      .rights = ZX_DEFAULT_EVENT_RIGHTS,
+      .result = ZX_OK,
+  };
+
+  zx_handle_info_t rd_info = {};
+
+  zx_channel_call_etc_args_t args = {
+      .wr_bytes = &request,
+      .wr_handles = &wr_disp,
+      .rd_bytes = &reply,
+      .rd_handles = &rd_info,
+      .wr_num_bytes = sizeof(request),
+      .wr_num_handles = 1,
+      .rd_num_bytes = sizeof(reply),
+      .rd_num_handles = 1,
+  };
+
+  std::atomic<const char*> error = nullptr;
+
+  AutoJoinThread service_thread([&remote, &error]() {
+    zx_status_t status = remote.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), nullptr);
+    if (status != ZX_OK) {
+      error = "remote wait failed";
+      return;
+    }
+
+    struct Req {
+      zx_txid_t txid;
+      char data[4];
+    } req = {};
+    zx_handle_info_t req_handle = {};
+    uint32_t actual_bytes = 0;
+    uint32_t actual_handles = 0;
+
+    status = remote.read_etc(0, &req, &req_handle, sizeof(req), 1, &actual_bytes, &actual_handles);
+    if (status != ZX_OK) {
+      error = "remote read failed";
+      return;
+    }
+
+    if (actual_bytes != sizeof(req) || actual_handles != 1) {
+      error = "unexpected read sizes";
+      zx_handle_close(req_handle.handle);
+      return;
+    }
+
+    if (req_handle.type != ZX_OBJ_TYPE_EVENT) {
+      error = "unexpected handle type";
+      zx_handle_close(req_handle.handle);
+      return;
+    }
+
+    zx_handle_close(req_handle.handle);
+
+    struct Rep {
+      zx_txid_t txid;
+      char data[4];
+    } rep = {.txid = req.txid, .data = {'w', 'x', 'y', 'z'}};
+
+    zx::event reply_event;
+    status = zx::event::create(0, &reply_event);
+    if (status != ZX_OK) {
+      error = "failed to create reply event";
+      return;
+    }
+
+    zx_handle_disposition_t rep_disp = {
+        .operation = ZX_HANDLE_OP_MOVE,
+        .handle = reply_event.release(),
+        .type = ZX_OBJ_TYPE_EVENT,
+        .rights = ZX_DEFAULT_EVENT_RIGHTS,
+        .result = ZX_OK,
+    };
+
+    status = remote.write_etc(0, &rep, sizeof(rep), &rep_disp, 1);
+    if (status != ZX_OK) {
+      error = "remote write failed";
+      return;
+    }
+  });
+
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  ASSERT_OK(local.call_etc(0, zx::time::infinite(), &args, &actual_bytes, &actual_handles));
+  EXPECT_OK(wr_disp.result);
+
+  EXPECT_EQ(actual_bytes, sizeof(reply));
+  EXPECT_EQ(actual_handles, 1);
+  EXPECT_EQ(reply.data[0], 'w');
+  EXPECT_EQ(rd_info.type, ZX_OBJ_TYPE_EVENT);
+
+  zx_handle_close(rd_info.handle);
+
+  if (error != nullptr) {
+    FAIL("Service Thread reported error: %s\n", error.load());
+  }
+}
+
+TEST(ChannelCallEtcTest, CallEtcInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  char wr_buf[1] = {0};
+  char rd_buf[1] = {0};
+  zx_channel_call_etc_args_t args = {
+      .wr_bytes = wr_buf,
+      .wr_handles = nullptr,
+      .rd_bytes = rd_buf,
+      .rd_handles = nullptr,
+      .wr_num_bytes = 1,
+      .wr_num_handles = 0,
+      .rd_num_bytes = 1,
+      .rd_num_handles = 0,
+  };
+
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  ASSERT_EQ(local.call_etc(0, zx::time::infinite(), &args, &actual_bytes, &actual_handles),
+            ZX_ERR_INVALID_ARGS);
+}
+
 }  // namespace
 }  // namespace channel
