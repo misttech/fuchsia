@@ -9,20 +9,29 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import unittest
 from io import StringIO
 from typing import Any
 
 from cli.cli import main
 from daemon.daemon import UDS_PATH
-from fx_cmd.lib import FxCmd
+from portpicker import portpicker
 from shared.protocol import PROTOCOL_VERSION, HelloRequest, serialize
 
 DAEMON_CLEANUP_TIMEOUT = 5.0
 
 
-async def _cleanup_process_group(proc: subprocess.Popen[Any]) -> None:
+async def _cleanup_process_group(proc: subprocess.Popen[Any] | None) -> None:
     """Kills the process group of the given process."""
+    if proc is None:
+        return
+
+    if getattr(proc, "stdout_file", None) and not proc.stdout_file.closed:  # type: ignore
+        proc.stdout_file.close()  # type: ignore
+    if getattr(proc, "stderr_file", None) and not proc.stderr_file.closed:  # type: ignore
+        proc.stderr_file.close()  # type: ignore
+
     if proc.poll() is None:
         try:
             pgid = os.getpgid(proc.pid)
@@ -33,7 +42,7 @@ async def _cleanup_process_group(proc: subprocess.Popen[Any]) -> None:
                 )
             except asyncio.TimeoutError:
                 os.killpg(pgid, signal.SIGKILL)
-                proc.wait()
+                await asyncio.to_thread(proc.wait)
         except ProcessLookupError:
             pass
 
@@ -217,62 +226,137 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
     async def _setup_daemon_and_server(
         self,
     ) -> tuple[subprocess.Popen[Any], int]:
-        # Find an open port
-        temp_server = await asyncio.start_server(
-            lambda r, w: None, "127.0.0.1", 0
-        )
-        port = temp_server.sockets[0].getsockname()[1]
-        temp_server.close()
-        await temp_server.wait_closed()
+        port = portpicker.pick_unused_port()
+        proc: subprocess.Popen[Any] | None = None
+        read_fd: int | None = None
+        write_fd: int | None = None
+        stdout_file: Any = None
+        stderr_file: Any = None
 
         # Start fake DAP server
         self.fake_dap_server = await self.start_fake_dap_server(port)
 
-        # Start Daemon manually
-        fx_cmd = FxCmd()
-        args = [
-            "zxdb-daemon",
-            "--port",
-            str(port),
-            "--connect-to-existing",
-        ]
+        try:
+            read_fd, write_fd = os.pipe()
+            os.set_inheritable(write_fd, True)
 
-        read_fd, write_fd = os.pipe()
-        os.set_inheritable(write_fd, True)
-        args.append(f"--ready-fd={write_fd}")
+            # Start Daemon manually
+            # Tests are always run as a .pyz file, so sys.path[0] is the path to the .pyz archive.
+            current_dir = os.path.dirname(sys.path[0])
+            daemon_path = os.path.join(current_dir, "zxdb-daemon")
+            args = [
+                daemon_path,
+                "--port",
+                str(port),
+                "--connect-to-existing",
+                f"--ready-fd={write_fd}",
+            ]
 
-        cmd = fx_cmd.command_line(*args)
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            pass_fds=[write_fd],
-        )
+            # zxdb-daemon expects to be executed from the context of fuchsia-vendored-python, which is
+            # also how this test is always invoked. So it's safe for us to use our own interpreter to
+            # invoke the zxdb-daemon as well.
+            cmd = [sys.executable] + args
+            stdout_file = tempfile.TemporaryFile()
+            stderr_file = tempfile.TemporaryFile()
 
-        # Close write end in parent
-        os.close(write_fd)
+            proc = subprocess.Popen(
+                cmd,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True,
+                pass_fds=[write_fd],
+            )
+            setattr(proc, "stdout_file", stdout_file)
+            setattr(proc, "stderr_file", stderr_file)
 
-        # Wait for signal on the pipe
-        loop = asyncio.get_running_loop()
-        await asyncio.wait_for(
-            loop.run_in_executor(None, os.read, read_fd, 1), timeout=10.0
-        )
-        os.close(read_fd)
+            # Close write end in parent
+            os.close(write_fd)
+            write_fd = None
 
-        # Perform handshake to ensure daemon is connected to DAP server
-        reader, writer = await asyncio.open_unix_connection(UDS_PATH)
-        req = HelloRequest(version=PROTOCOL_VERSION)
-        writer.write(serialize(req).encode("utf-8"))
-        await writer.drain()
-        response = await asyncio.wait_for(reader.readline(), timeout=5.0)
-        writer.close()
-        await writer.wait_closed()
+            # Wait for signal on the pipe
+            loop = asyncio.get_running_loop()
+            future = loop.create_future()
 
-        resp_dict = json.loads(response.decode("utf-8"))
-        self.assertTrue(resp_dict.get("success"))
+            def on_read() -> None:
+                assert read_fd is not None
+                try:
+                    data = os.read(read_fd, 1)
+                    if not future.done():
+                        future.set_result(data)
+                except BlockingIOError:
+                    pass
+                except Exception as e:
+                    if not future.done():
+                        future.set_exception(e)
 
-        return proc, port
+            os.set_blocking(read_fd, False)
+            loop.add_reader(read_fd, on_read)
+            try:
+                await asyncio.wait_for(future, timeout=10.0)
+            finally:
+                loop.remove_reader(read_fd)
+            os.close(read_fd)
+            read_fd = None
+
+            # Perform handshake to ensure daemon is connected to DAP server
+            reader, writer = await asyncio.open_unix_connection(UDS_PATH)
+            req = HelloRequest(version=PROTOCOL_VERSION)
+            writer.write(serialize(req).encode("utf-8"))
+            await writer.drain()
+            response = await asyncio.wait_for(reader.readline(), timeout=5.0)
+            writer.close()
+            await writer.wait_closed()
+
+            resp_dict = json.loads(response.decode("utf-8"))
+            self.assertTrue(resp_dict.get("success"))
+
+            return proc, port
+        except Exception:
+            stderr_output = ""
+            if (
+                proc
+                and getattr(proc, "stderr_file", None)
+                and not getattr(proc, "stderr_file").closed
+            ):
+                getattr(proc, "stderr_file").seek(0)
+                stderr_output = (
+                    getattr(proc, "stderr_file")
+                    .read()
+                    .decode("utf-8", errors="replace")
+                )
+            elif stderr_file and not stderr_file.closed:
+                stderr_file.seek(0)
+                stderr_output = stderr_file.read().decode(
+                    "utf-8", errors="replace"
+                )
+
+            await _cleanup_process_group(proc)
+            if read_fd is not None:
+                try:
+                    os.close(read_fd)
+                except OSError:
+                    pass
+            if write_fd is not None:
+                try:
+                    os.close(write_fd)
+                except OSError:
+                    pass
+            if stdout_file and not stdout_file.closed:
+                try:
+                    stdout_file.close()
+                except OSError:
+                    pass
+            if stderr_file and not stderr_file.closed:
+                try:
+                    stderr_file.close()
+                except OSError:
+                    pass
+
+            if stderr_output:
+                print(
+                    f"[DAEMON CRASH STDERR]\n{stderr_output}", file=sys.stderr
+                )
+            raise
 
     async def test_daemon_lifecycle(self) -> None:
         """Tests that the daemon starts and stops correctly."""
@@ -452,9 +536,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(exit_code, 0)
 
         finally:
-            if proc.poll() is None:
-                proc.terminate()
-                proc.wait()
+            await _cleanup_process_group(proc)
 
     async def test_process_event(self) -> None:
         proc, _port = await self._setup_daemon_and_server()

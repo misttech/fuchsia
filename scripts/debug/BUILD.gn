@@ -22,17 +22,13 @@ if (is_host) {
 
   group("tests") {
     testonly = true
-    deps = [
-      "zxdb_cli/cli:cli_test",
-      "zxdb_cli/daemon:daemon_test",
-      "zxdb_cli/tests:cli_integration_test($host_toolchain)",
-    ]
+    deps = [ "zxdb_cli:tests" ]
   }
 
   group("install") {
     deps = [
       ":install-debug",
-      "zxdb_cli/daemon:install",
+      "zxdb_cli:install",
     ]
   }
 }

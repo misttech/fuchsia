@@ -23,6 +23,7 @@ group("tests") {
     ":build_id_conv_test($host_toolchain)",
     "clang/tests/stack_size_estimator:tests",
     "cog:tests",
+    "debug:tests($host_toolchain)",
     "disable_ctf_tests:tests",
     "ffx_complete:tests",
     "fortunes:tests",

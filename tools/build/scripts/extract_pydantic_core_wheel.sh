@@ -62,17 +62,26 @@ TEMP_INIT="${INIT_FILE}.tmp"
 cat > "${TEMP_INIT}" <<EOF
 from __future__ import annotations
 
+import os
 import sys
 from importlib.abc import Loader
 import importlib.util
 import importlib.machinery
+from pathlib import Path
 
 def _init():
     finder = importlib.machinery.PathFinder()
 
+    # Use the build directory set by the fx environment if available, as will be the case when 'fx
+    # debug cli' uses this module. Fallback to PWD if not set, which will be the case in
+    # infrastructure where tests are run using this module.
+    build_dir_env = os.environ.get('FUCHSIA_BUILD_DIR_FROM_FX')
+    build_dir = Path(build_dir_env) if build_dir_env else Path('.')
+
     # Relative path from root_build_dir.
-    shlib_dir = f'host_x64/gen/prebuilt/third_party/pydantic-core/pydantic_core'
-    search_path = [shlib_dir] + sys.path
+    shlib_dir = build_dir / 'host_x64/gen/prebuilt/third_party/pydantic-core/pydantic_core'
+
+    search_path = [str(shlib_dir)] + sys.path
     spec = finder.find_spec('_pydantic_core', path=search_path)
     if spec is None:
         raise Exception(f'Could not find _pydantic_core in {search_path}')
