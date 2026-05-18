@@ -54,62 +54,57 @@
 /// Immune to speculative execution information leak bugs such as Spectre V1.
 #[inline]
 pub fn conditional_select_nospec_eq(x: usize, y: usize, a: usize, b: usize) -> usize {
-    #[cfg(target_arch = "aarch64")]
-    {
-        let select: usize;
-        // SAFETY: CSDB barrier and conditional select are safe to use here to prevent
-        // speculative execution leaks.
-        // See "Cache Speculation Side-channels" whitepaper, section "Software Mitigation".
-        // "The combination of both a conditional select/conditional move and the new barrier are
-        // sufficient to address this problem on ALL Arm implementations..."
-        unsafe {
-            core::arch::asm!(
-                "cmp {x}, {y}",
-                "csel {select}, {a}, {b}, eq",
-                "csdb",
-                x = in(reg) x,
-                y = in(reg) y,
-                select = out(reg) select,
-                a = in(reg) a,
-                b = in(reg) b,
-                options(nostack, nomem)
-            );
+    cfg_select! {
+        // No mitigations defined for RISC-V.
+        target_arch = "riscv64" => {
+            if x == y { a } else { b }
         }
-        select
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        let mut select = a;
-        // SAFETY: CMOVNZ has data dependency on CMP and is safe to use here to prevent
-        // speculative execution leaks.
-        // See "Software Techniques for Managing Speculation on AMD Processors", Mitigation V1-2.
-        // See "Analyzing potential bounds check bypass vulnerabilities", Revision 002,
-        //   Section 5.2 Bounds clipping
-        unsafe {
-            core::arch::asm!(
-                "cmp {x}, {y}",
-                "cmovnz {select}, {b}",
-                x = in(reg) x,
-                y = in(reg) y,
-                select = inout(reg) select,
-                b = in(reg) b,
-                options(nostack, nomem)
-            );
+        target_arch = "aarch64" => {
+            let select: usize;
+            // SAFETY: CSDB barrier and conditional select are safe to use here to prevent
+            // speculative execution leaks.
+            // See "Cache Speculation Side-channels" whitepaper, section "Software Mitigation".
+            // "The combination of both a conditional select/conditional move and the new barrier are
+            // sufficient to address this problem on ALL Arm implementations..."
+            unsafe {
+                core::arch::asm!(
+                    "cmp {x}, {y}",
+                    "csel {select}, {a}, {b}, eq",
+                    "csdb",
+                    x = in(reg) x,
+                    y = in(reg) y,
+                    select = out(reg) select,
+                    a = in(reg) a,
+                    b = in(reg) b,
+                    options(nostack, nomem)
+                );
+            }
+            select
         }
-        select
-    }
-
-    // No mitigations defined for RISC-V.
-    #[cfg(target_arch = "riscv64")]
-    {
-        if x == y { a } else { b }
-    }
-
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "riscv64")))]
-    {
-        compile_error!("Provide implementations of conditional_select for your ARCH here");
-        0 // Needed to satisfy return type
+        target_arch = "x86_64" => {
+            let mut select = a;
+            // SAFETY: CMOVNZ has data dependency on CMP and is safe to use here to prevent
+            // speculative execution leaks.
+            // See "Software Techniques for Managing Speculation on AMD Processors", Mitigation V1-2.
+            // See "Analyzing potential bounds check bypass vulnerabilities", Revision 002,
+            //   Section 5.2 Bounds clipping
+            unsafe {
+                core::arch::asm!(
+                    "cmp {x}, {y}",
+                    "cmovnz {select}, {b}",
+                    x = in(reg) x,
+                    y = in(reg) y,
+                    select = inout(reg) select,
+                    b = in(reg) b,
+                    options(nostack, nomem)
+                );
+            }
+            select
+        }
+        _ => {
+            compile_error!("Provide implementations of conditional_select for your ARCH here");
+            0 // Needed to satisfy return type
+        }
     }
 }
 
@@ -117,62 +112,57 @@ pub fn conditional_select_nospec_eq(x: usize, y: usize, a: usize, b: usize) -> u
 /// Immune to speculative execution information leak bugs such as Spectre V1.
 #[inline]
 pub fn conditional_select_nospec_lt(x: usize, y: usize, a: usize, b: usize) -> usize {
-    #[cfg(target_arch = "aarch64")]
-    {
-        let select: usize;
-        // SAFETY: CSDB barrier and conditional select are safe to use here to prevent
-        // speculative execution leaks.
-        // See "Cache Speculation Side-channels" whitepaper, section "Software Mitigation".
-        // "The combination of both a conditional select/conditional move and the new barrier are
-        // sufficient to address this problem on ALL Arm implementations..."
-        unsafe {
-            core::arch::asm!(
-                "cmp {x}, {y}",
-                "csel {select}, {a}, {b}, lo",
-                "csdb",
-                x = in(reg) x,
-                y = in(reg) y,
-                select = out(reg) select,
-                a = in(reg) a,
-                b = in(reg) b,
-                options(nostack, nomem)
-            );
+    cfg_select! {
+        // No mitigations defined for RISC-V.
+        target_arch = "riscv64" => {
+            if x < y { a } else { b }
         }
-        select
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        let mut select = a;
-        // SAFETY: CMOVAE has data dependency on CMP and is safe to use here to prevent
-        // speculative execution leaks.
-        // See "Software Techniques for Managing Speculation on AMD Processors", Mitigation V1-2.
-        // See "Analyzing potential bounds check bypass vulnerabilities", Revision 002,
-        //   Section 5.2 Bounds clipping
-        unsafe {
-            core::arch::asm!(
-                "cmp {x}, {y}",
-                "cmovae {select}, {b}",
-                x = in(reg) x,
-                y = in(reg) y,
-                select = inout(reg) select,
-                b = in(reg) b,
-                options(nostack, nomem)
-            );
+        target_arch = "aarch64" => {
+            let select: usize;
+            // SAFETY: CSDB barrier and conditional select are safe to use here to prevent
+            // speculative execution leaks.
+            // See "Cache Speculation Side-channels" whitepaper, section "Software Mitigation".
+            // "The combination of both a conditional select/conditional move and the new barrier are
+            // sufficient to address this problem on ALL Arm implementations..."
+            unsafe {
+                core::arch::asm!(
+                    "cmp {x}, {y}",
+                    "csel {select}, {a}, {b}, lo",
+                    "csdb",
+                    x = in(reg) x,
+                    y = in(reg) y,
+                    select = out(reg) select,
+                    a = in(reg) a,
+                    b = in(reg) b,
+                    options(nostack, nomem)
+                );
+            }
+            select
         }
-        select
-    }
-
-    // No mitigations defined for RISC-V.
-    #[cfg(target_arch = "riscv64")]
-    {
-        if x < y { a } else { b }
-    }
-
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "riscv64")))]
-    {
-        compile_error!("Provide implementations of conditional_select for your ARCH here");
-        0 // Needed to satisfy return type
+        target_arch = "x86_64" => {
+            let mut select = a;
+            // SAFETY: CMOVAE has data dependency on CMP and is safe to use here to prevent
+            // speculative execution leaks.
+            // See "Software Techniques for Managing Speculation on AMD Processors", Mitigation V1-2.
+            // See "Analyzing potential bounds check bypass vulnerabilities", Revision 002,
+            //   Section 5.2 Bounds clipping
+            unsafe {
+                core::arch::asm!(
+                    "cmp {x}, {y}",
+                    "cmovae {select}, {b}",
+                    x = in(reg) x,
+                    y = in(reg) y,
+                    select = inout(reg) select,
+                    b = in(reg) b,
+                    options(nostack, nomem)
+                );
+            }
+            select
+        }
+        _ => {
+            compile_error!("Provide implementations of conditional_select for your ARCH here");
+            0 // Needed to satisfy return type
+        }
     }
 }
 

@@ -42,59 +42,54 @@
 /// Immune to speculative execution information leak bugs such as Spectre V1.
 #[inline]
 pub fn confine_array_index(index: usize, size: usize) -> usize {
-    #[cfg(target_arch = "aarch64")]
-    {
-        let safe_index: usize;
-        // SAFETY: CSDB barrier and conditional select are safe to use here to prevent
-        // speculative execution leaks.
-        // See "Cache Speculation Side-channels" whitepaper, section "Software Mitigation".
-        // "The combination of both a conditional select/conditional move and the new barrier are
-        // sufficient to address this problem on ALL Arm implementations..."
-        unsafe {
-            core::arch::asm!(
-                "cmp {index}, {size}",
-                "csel {safe_index}, {index}, xzr, lo",
-                "csdb",
-                index = in(reg) index,
-                size = in(reg) size,
-                safe_index = out(reg) safe_index,
-                options(nostack, nomem)
-            );
+    cfg_select! {
+        // No mitigations defined for RISC-V.
+        target_arch = "riscv64" => {
+            if index < size { index } else { 0 }
         }
-        safe_index
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        let mut safe_index: usize = 0;
-        // SAFETY: CMOVNZ has data dependency on CMP and is safe to use here to prevent
-        // speculative execution leaks.
-        // See "Software Techniques for Managing Speculation on AMD Processors", Mitigation V1-2.
-        // See "Analyzing potential bounds check bypass vulnerabilities", Revision 002,
-        //   Section 5.2 Bounds clipping
-        unsafe {
-            core::arch::asm!(
-                "cmp {size}, {index}",
-                "cmova {safe_index}, {index}",
-                size = in(reg) size,
-                index = in(reg) index,
-                safe_index = inout(reg) safe_index,
-                options(nostack, nomem)
-            );
+        target_arch = "aarch64" => {
+            let safe_index: usize;
+            // SAFETY: CSDB barrier and conditional select are safe to use here to prevent
+            // speculative execution leaks.
+            // See "Cache Speculation Side-channels" whitepaper, section "Software Mitigation".
+            // "The combination of both a conditional select/conditional move and the new barrier are
+            // sufficient to address this problem on ALL Arm implementations..."
+            unsafe {
+                core::arch::asm!(
+                    "cmp {index}, {size}",
+                    "csel {safe_index}, {index}, xzr, lo",
+                    "csdb",
+                    index = in(reg) index,
+                    size = in(reg) size,
+                    safe_index = out(reg) safe_index,
+                    options(nostack, nomem)
+                );
+            }
+            safe_index
         }
-        safe_index
-    }
-
-    // No mitigations defined for RISC-V.
-    #[cfg(target_arch = "riscv64")]
-    {
-        if index < size { index } else { 0 }
-    }
-
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "riscv64")))]
-    {
-        compile_error!("Provide implementations of confine_array_indexs for your ARCH here");
-        0 // Needed to satisfy return type
+        target_arch = "x86_64" => {
+            let mut safe_index: usize = 0;
+            // SAFETY: CMOVNZ has data dependency on CMP and is safe to use here to prevent
+            // speculative execution leaks.
+            // See "Software Techniques for Managing Speculation on AMD Processors", Mitigation V1-2.
+            // See "Analyzing potential bounds check bypass vulnerabilities", Revision 002,
+            //   Section 5.2 Bounds clipping
+            unsafe {
+                core::arch::asm!(
+                    "cmp {size}, {index}",
+                    "cmova {safe_index}, {index}",
+                    size = in(reg) size,
+                    index = in(reg) index,
+                    safe_index = inout(reg) safe_index,
+                    options(nostack, nomem)
+                );
+            }
+            safe_index
+        }
+        _ => {
+            compile_error!("Provide implementations of confine_array_indexs for your ARCH here");
+            0 // Needed to satisfy return type
+        }
     }
 }
 
