@@ -352,8 +352,8 @@ impl TryIntoFidl<fnet_sockets_ext::TcpInfo> for TcpSocketInfo<StackTime> {
             last_ack_recv,
             segs_out,
             segs_in,
-            snd_mss: _,
-            rcv_mss: _,
+            snd_mss,
+            rcv_mss,
             last_data_sent,
         } = self;
 
@@ -379,6 +379,8 @@ impl TryIntoFidl<fnet_sockets_ext::TcpInfo> for TcpSocketInfo<StackTime> {
             tcpi_last_data_sent_msec: last_data_sent.and_then(|i| {
                 now.checked_duration_since(i).map(|d| d.as_millis().try_into().unwrap_or(u32::MAX))
             }),
+            tcpi_snd_mss: snd_mss,
+            tcpi_rcv_mss: rcv_mss,
         })
     }
 }

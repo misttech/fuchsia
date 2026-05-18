@@ -58,8 +58,12 @@ type Info = table {
     /// The current RTO value in microseconds.
     11: rto_usec uint32;
     // 12: tcpi_ato uint32;
-    // 13: tcpi_snd_mss uint32;
-    // 14: tcpi_rcv_mss uint32;
+    /// The maximum segment size (MSS) this endpoint can send.
+    @available(added=NEXT)
+    13: tcpi_snd_mss uint32;
+    /// The maximum segment size (MSS) this endpoint can receive.
+    @available(added=NEXT)
+    14: tcpi_rcv_mss uint32;
     // 15: tcpi_unacked uint32;
     // 16: tcpi_sacked uint32;
     // 17: tcpi_lost uint32;

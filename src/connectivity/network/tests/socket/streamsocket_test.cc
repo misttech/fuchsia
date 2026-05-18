@@ -1136,6 +1136,11 @@ TEST_P(TcpInfoTest, GetTcpInfo) {
         ASSERT_EQ(info.tcpi_last_data_sent, initialization);
         ASSERT_EQ(info.tcpi_last_ack_recv, initialization);
 
+        // Likewise, but they're zero-initialized if there's no value from the
+        // Netstack.
+        ASSERT_EQ(info.tcpi_snd_mss, 0u);
+        ASSERT_EQ(info.tcpi_rcv_mss, 0u);
+
         ASSERT_NE(info.tcpi_total_retrans, initialization);
       }
 // TODO(https://fxbug.dev/42142786): our Linux sysroot is too old to know about this field.
@@ -1156,6 +1161,8 @@ TEST_P(TcpInfoTest, GetTcpInfo) {
       expected.tcpi_rttvar = info.tcpi_rttvar;
       expected.tcpi_snd_ssthresh = info.tcpi_snd_ssthresh;
       expected.tcpi_snd_cwnd = info.tcpi_snd_cwnd;
+      expected.tcpi_snd_mss = info.tcpi_snd_mss;
+      expected.tcpi_rcv_mss = info.tcpi_rcv_mss;
       if (GetParam() == NetstackVersion::NETSTACK3) {
         expected.tcpi_last_data_sent = info.tcpi_last_data_sent;
         expected.tcpi_last_ack_recv = info.tcpi_last_ack_recv;
@@ -1242,6 +1249,8 @@ TEST_P(TcpInfoTest, GetTcpInfoConnected) {
       ASSERT_NE(info.tcpi_last_data_sent, initialization);
       ASSERT_NE(info.tcpi_last_ack_recv, initialization);
       ASSERT_NE(info.tcpi_total_retrans, initialization);
+      ASSERT_GT(info.tcpi_snd_mss, 0u);
+      ASSERT_GT(info.tcpi_rcv_mss, 0u);
     }
     // TODO(https://fxbug.dev/42142786): our Linux sysroot is too old to know about this field.
 #if defined(__Fuchsia__)
@@ -1261,6 +1270,8 @@ TEST_P(TcpInfoTest, GetTcpInfoConnected) {
     expected.tcpi_rttvar = info.tcpi_rttvar;
     expected.tcpi_snd_ssthresh = info.tcpi_snd_ssthresh;
     expected.tcpi_snd_cwnd = info.tcpi_snd_cwnd;
+    expected.tcpi_snd_mss = info.tcpi_snd_mss;
+    expected.tcpi_rcv_mss = info.tcpi_rcv_mss;
     if (GetParam() == NetstackVersion::NETSTACK3) {
       expected.tcpi_last_data_sent = info.tcpi_last_data_sent;
       expected.tcpi_last_ack_recv = info.tcpi_last_ack_recv;

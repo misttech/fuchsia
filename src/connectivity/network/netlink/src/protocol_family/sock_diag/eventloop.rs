@@ -340,6 +340,8 @@ fn convert_tcp_info(info: fnet_sockets_ext::TcpInfo) -> TcpInfo {
         tcpi_segs_out,
         tcpi_segs_in,
         reorder_seen,
+        tcpi_snd_mss,
+        tcpi_rcv_mss,
     } = info;
 
     TcpInfo {
@@ -359,6 +361,8 @@ fn convert_tcp_info(info: fnet_sockets_ext::TcpInfo) -> TcpInfo {
         // TODO(https://fxbug.dev/404910001): Netstack2 only reports reordering
         // when using RACK, which Netstack3 doesn't support.
         reord_seen: if reorder_seen { 1 } else { 0 },
+        snd_mss: tcpi_snd_mss.unwrap_or(0),
+        rcv_mss: tcpi_rcv_mss.unwrap_or(0),
 
         // Unsupported fields are set to MAX values.
         retransmits: u8::MAX,
@@ -368,8 +372,6 @@ fn convert_tcp_info(info: fnet_sockets_ext::TcpInfo) -> TcpInfo {
         wscale: u8::MAX,
         delivery_rate_app_limited: u8::MAX,
         ato: u32::MAX,
-        snd_mss: u32::MAX,
-        rcv_mss: u32::MAX,
         unacked: u32::MAX,
         sacked: u32::MAX,
         lost: u32::MAX,
@@ -776,6 +778,8 @@ mod tests {
                         tcpi_segs_out: Some(900),
                         tcpi_segs_in: Some(1000),
                         reorder_seen: Some(true),
+                        tcpi_rcv_mss: Some(128),
+                        tcpi_snd_mss: Some(256),
                         __source_breaking: fidl::marker::SourceBreaking,
                     }),
                     __source_breaking: fidl::marker::SourceBreaking,
@@ -821,8 +825,8 @@ mod tests {
                     delivery_rate_app_limited: u8::MAX,
                     rto: 100,
                     ato: u32::MAX,
-                    snd_mss: u32::MAX,
-                    rcv_mss: u32::MAX,
+                    rcv_mss: 128,
+                    snd_mss: 256,
                     unacked: u32::MAX,
                     sacked: u32::MAX,
                     lost: u32::MAX,

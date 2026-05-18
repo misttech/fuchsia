@@ -92,6 +92,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.net.tcp/Info.tcpi_rcv_mss",
+        "ordinal": "14",
+        "type": "uint32"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.net.tcp/Info.tcpi_segs_in",
         "ordinal": "40",
         "type": "uint64"
@@ -101,6 +107,12 @@
         "name": "fuchsia.net.tcp/Info.tcpi_segs_out",
         "ordinal": "39",
         "type": "uint64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.net.tcp/Info.tcpi_snd_mss",
+        "ordinal": "13",
+        "type": "uint32"
     },
     {
         "kind": "table/member",

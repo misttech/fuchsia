@@ -718,6 +718,8 @@ async fn diagnostics_tcp_info<I: Ip>(name: &str) {
             tcpi_segs_out,
             tcpi_segs_in,
             reorder_seen,
+            tcpi_snd_mss,
+            tcpi_rcv_mss,
         } = {
             let transport = match socket {
                 fnet_sockets_ext::IpSocketState::V4(state) => {
@@ -755,6 +757,8 @@ async fn diagnostics_tcp_info<I: Ip>(name: &str) {
         assert_eq!(state, fnet_tcp::State::Established);
         assert_eq!(ca_state, fnet_tcp::CongestionControlState::Open);
         assert_eq!(reorder_seen, false);
+        assert_matches!(tcpi_snd_mss, Some(tcpi_snd_mss) => assert_gt!(tcpi_snd_mss, 0));
+        assert_matches!(tcpi_rcv_mss, Some(tcpi_rcv_mss) => assert_gt!(tcpi_rcv_mss, 0));
         (
             assert_matches!(
                 tcpi_last_data_sent_msec,

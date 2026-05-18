@@ -401,6 +401,10 @@ pub struct TcpInfo {
     pub tcpi_segs_in: u64,
     /// Whether reordering has been seen on the connection.
     pub reorder_seen: bool,
+    /// The send MSS for this endpoint.
+    pub tcpi_snd_mss: Option<u32>,
+    /// The receive MSS for this endpoint.
+    pub tcpi_rcv_mss: Option<u32>,
 }
 
 /// Error type for [`TcpInfo`] conversion.
@@ -429,6 +433,8 @@ impl TryFrom<fnet_tcp::Info> for TcpInfo {
             tcpi_segs_out,
             tcpi_segs_in,
             reorder_seen,
+            tcpi_snd_mss,
+            tcpi_rcv_mss,
             __source_breaking,
         } = value;
 
@@ -447,6 +453,8 @@ impl TryFrom<fnet_tcp::Info> for TcpInfo {
             tcpi_segs_out: tcpi_segs_out.ok_or(TcpInfoError::MissingField("tcpi_segs_out"))?,
             tcpi_segs_in: tcpi_segs_in.ok_or(TcpInfoError::MissingField("tcpi_segs_in"))?,
             reorder_seen: reorder_seen.ok_or(TcpInfoError::MissingField("reorder_seen"))?,
+            tcpi_snd_mss,
+            tcpi_rcv_mss,
         })
     }
 }
@@ -467,6 +475,8 @@ impl From<TcpInfo> for fnet_tcp::Info {
             tcpi_segs_out,
             tcpi_segs_in,
             reorder_seen,
+            tcpi_snd_mss,
+            tcpi_rcv_mss,
         } = info;
         fnet_tcp::Info {
             state: Some(state),
@@ -482,6 +492,8 @@ impl From<TcpInfo> for fnet_tcp::Info {
             tcpi_segs_out: Some(tcpi_segs_out),
             tcpi_segs_in: Some(tcpi_segs_in),
             reorder_seen: Some(reorder_seen),
+            tcpi_snd_mss,
+            tcpi_rcv_mss,
             __source_breaking: fidl::marker::SourceBreaking,
         }
     }
@@ -862,6 +874,8 @@ mod tests {
             tcpi_segs_out: Some(9),
             tcpi_segs_in: Some(10),
             reorder_seen: Some(true),
+            tcpi_snd_mss: Some(11),
+            tcpi_rcv_mss: Some(12),
             __source_breaking: fidl::marker::SourceBreaking,
         },
         TcpInfo {
@@ -878,6 +892,8 @@ mod tests {
             tcpi_segs_out: 9,
             tcpi_segs_in: 10,
             reorder_seen: true,
+            tcpi_snd_mss: Some(11),
+            tcpi_rcv_mss: Some(12),
         };
         "TcpInfo"
     )]
