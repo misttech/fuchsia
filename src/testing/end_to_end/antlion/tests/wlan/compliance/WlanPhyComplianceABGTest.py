@@ -186,8 +186,6 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
         if beacon_interval is not None:
             custom_uci_options["beacon_int"] = beacon_interval
-        if preamble is not None:
-            custom_uci_options["short_preamble"] = "1" if preamble else "0"
 
         if rts_threshold is not None:
             custom_uci_options["rts"] = rts_threshold
@@ -205,6 +203,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             custom_bss_uci_options["dtim_period"] = dtim_period
         if vendor_elements is not None:
             custom_bss_uci_options["vendor_elements"] = vendor_elements
+        if preamble is not None:
+            custom_bss_uci_options["short_preamble"] = 1 if preamble else 0
 
         final_country = country or "US"
 

@@ -236,17 +236,19 @@ DEFAULT_5G_CHANNEL = BssChannel(Band.BAND_5G, 36, VhtMode(bw=80))
 
 
 class UciBssOptions(TypedDict, total=False):
-    """A TypedDict for common custom UCI options for a 'wifi-iface' section.
-
-    'total=False' means all keys are optional. Add more options as needed.
-
-    Attributes:
-        dtim_period: DTIM period.
-        vendor_elements: Vendor-specific information elements.
-    """
+    """Common custom UCI options for a 'wifi-iface' section."""
 
     dtim_period: int
+    """DTIM period, range 1-255."""
+
     vendor_elements: str
+    """Vendor-specific information elements."""
+
+    short_preamble: Literal[0, 1]
+    """Use short preamble."""
+
+    wmm: Literal[0, 1]
+    """Enables WMM."""
 
 
 @dataclasses.dataclass
@@ -317,7 +319,6 @@ class UciRadioOptions(TypedDict, total=False):
     Attributes:
         frag: Fragment threshold.
         beacon_int: Beacon interval in milliseconds.
-        short_preamble: Use short preamble ("0" or "1").
         rts: RTS threshold.
         require_mode: Sets the minimum client capability level mode.
         country_ie: Enable IEEE 802.11d country IE.
@@ -327,19 +328,32 @@ class UciRadioOptions(TypedDict, total=False):
 
     frag: int
     beacon_int: int
-    short_preamble: Literal["0", "1"]
     rts: int
     require_mode: Literal["n", "ac", "ax"]
     country_ie: Literal[0, 1]
     supported_rates: list[int]
     basic_rate: list[int]
+    ieee80211h: int
+    ieee80211d: int
+    spectrum_mgmt_required: int
+    local_pwr_constraint: int
 
 
 class HostapdOptions(TypedDict, total=False):
     """A TypedDict for common hostapd options passed via UCI list hostapd_options.
 
     'total=False' means all keys are optional. Add more options as needed.
+
+    Attributes:
+        bss_load_update_period: BSS load update period in seconds.
+        chan_util_avg_period: Channel utilization average period.
+        wmm_ac_*: WMM parameters for different access categories (BK, BE, VI, VO).
+        assocresp_elements: Vendor-specific information elements for Association Response.
+        country3: 3rd byte of country code (e.g., 'O' for outdoor).
     """
+
+    bss_load_update_period: int
+    chan_util_avg_period: int
 
     # WMM parameters
     wmm_ac_bk_cwmin: int

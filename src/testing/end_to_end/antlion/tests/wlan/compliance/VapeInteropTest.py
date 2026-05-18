@@ -12,6 +12,15 @@ from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    Band,
+    BssChannel,
+    HtMode,
+    LegacyMode,
+    SecurityOpen,
+    SecurityWpa2,
+)
+from mobly_controller.openwrt_access_point.lib.profiles import actiontec
 
 
 class VapeInteropTest(base_test.WifiBaseTest):
@@ -29,9 +38,12 @@ class VapeInteropTest(base_test.WifiBaseTest):
 
         self.dut = self.get_dut(AssociationMode.POLICY)
 
-        if len(self.access_points) == 0:
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point = self.access_points[0]
+        else:
             raise signals.TestAbortClass("Requires at least one access point")
-        self.access_point = self.access_points[0]
 
         # Same for both 2g and 5g
         self.ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
@@ -44,7 +56,8 @@ class VapeInteropTest(base_test.WifiBaseTest):
             wpa2_cipher=hostapd_constants.WPA2_DEFAULT_CIPER,
         )
 
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
     def setup_test(self) -> None:
         if hasattr(self, "android_devices"):
@@ -62,32 +75,61 @@ class VapeInteropTest(base_test.WifiBaseTest):
         self.dut.disconnect()
         self.dut.reset_wifi()
         self.download_logs()
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
     def on_fail(self, record: TestResultRecord) -> None:
         super().on_fail(record)
-        self.access_point.stop_all_aps()
+        if self.access_point:
+            self.access_point.stop_all_aps()
 
     def test_associate_actiontec_pk5000_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="actiontec_pk5000",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = actiontec.actiontec_pk5000(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    LegacyMode(),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="actiontec_pk5000",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
+
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_actiontec_pk5000_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="actiontec_pk5000",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = actiontec.actiontec_pk5000(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    LegacyMode(),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="actiontec_pk5000",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
+
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -98,25 +140,51 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_actiontec_mi424wr_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="actiontec_mi424wr",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = actiontec.actiontec_mi424wr(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="actiontec_mi424wr",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
+
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_actiontec_mi424wr_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="actiontec_mi424wr",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = actiontec.actiontec_mi424wr(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="actiontec_mi424wr",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -407,6 +475,7 @@ class VapeInteropTest(base_test.WifiBaseTest):
             ssid=self.ssid,
             security=self.security_profile_wpa2,
         )
+
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
