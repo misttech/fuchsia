@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use async_trait::async_trait;
 use discovery::query::TargetInfoQuery;
-use ffx_command_error::Result;
+
 use fho::{FhoEnvironment, TryFromEnv};
 use std::ops::Deref;
 
@@ -26,7 +26,8 @@ impl From<discovery::query::TargetInfoQuery> for TargetInfoQueryHolder {
 
 #[async_trait(?Send)]
 impl TryFromEnv for TargetInfoQueryHolder {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = ffx_command_error::Error;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let env_context = env.environment_context();
         let target_spec = ffx_target::get_target_specifier(&env_context)?;
         let tiq = TargetInfoQuery::try_from(target_spec).map_err(|e| {

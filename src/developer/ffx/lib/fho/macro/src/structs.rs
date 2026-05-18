@@ -47,17 +47,19 @@ impl ToTokens for TryFromEnvInvocation<'_> {
             Normal(ty) => {
                 let ty_span = ty.span();
                 tokens.extend(quote_spanned! {ty_span=>
-                    // _env comes from the from_env function as part of the TryFromEnv
-                    // trait.
-                    <#ty as fho::TryFromEnv>::try_from_env(&_env)
+                    fho::macro_deps::futures::future::TryFutureExt::map_err(
+                        <#ty as fho::TryFromEnv>::try_from_env(&_env),
+                        |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e))
+                    )
                 });
             }
             Decorated(expr) => {
                 let expr_span = expr.span();
                 tokens.extend(quote_spanned! {expr_span=>
-                    // _env comes from the from_env function as part of the TryFromEnv
-                    // trait.
-                    fho::TryFromEnvWith::try_from_env_with(#expr, &_env)
+                    fho::macro_deps::futures::future::TryFutureExt::map_err(
+                        fho::TryFromEnvWith::try_from_env_with(#expr, &_env),
+                        |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e))
+                    )
                 });
             }
         }
@@ -344,7 +346,7 @@ mod tests {
         let mut vcc = VariableCreationCollection::new();
         vcc.add_field(fields.remove(0)).expect("correct kind of field");
         assert_eq!(
-            quote! { let bar = <u32 as fho::TryFromEnv>::try_from_env(&_env).await?; }.to_string(),
+            quote! { let bar = fho::macro_deps::futures::future::TryFutureExt::map_err(<u32 as fho::TryFromEnv>::try_from_env(&_env), |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e))).await?; }.to_string(),
             vcc.into_token_stream().to_string(),
         );
     }
@@ -372,7 +374,7 @@ mod tests {
         vcc.add_field(fields.remove(0)).expect("correct kind of field");
         vcc.add_field(fields.remove(0)).expect("correct kind of field");
         assert_eq!(
-            quote! { let (bar, baz) = fho::macro_deps::futures::try_join!(<u32 as fho::TryFromEnv>::try_from_env(&_env) , <u8 as fho::TryFromEnv>::try_from_env(&_env)) ? ; }.to_string(),
+            quote! { let (bar, baz) = fho::macro_deps::futures::try_join!(fho::macro_deps::futures::future::TryFutureExt::map_err(<u32 as fho::TryFromEnv>::try_from_env(&_env), |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e))), fho::macro_deps::futures::future::TryFutureExt::map_err(<u8 as fho::TryFromEnv>::try_from_env(&_env), |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e)))) ? ; }.to_string(),
             vcc.into_token_stream().to_string(),
         );
     }
@@ -399,7 +401,7 @@ mod tests {
         let mut vcc = VariableCreationCollection::new();
         vcc.add_field(fields.remove(0)).expect("correct kind of field");
         assert_eq!(
-            quote! { let bar = fho::TryFromEnvWith::try_from_env_with(something("stuff"), &_env).await ? ; }.to_string(),
+            quote! { let bar = fho::macro_deps::futures::future::TryFutureExt::map_err(fho::TryFromEnvWith::try_from_env_with(something("stuff"), &_env), |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e))).await ? ; }.to_string(),
             vcc.into_token_stream().to_string(),
         );
     }

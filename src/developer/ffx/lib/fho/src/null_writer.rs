@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::{FhoEnvironment, TryFromEnv};
-use ffx_command_error::Result;
+
 use std::fmt::Display;
 use writer::ToolIO;
 
@@ -14,7 +14,8 @@ pub struct NullWriter;
 
 #[async_trait::async_trait(?Send)]
 impl TryFromEnv for NullWriter {
-    async fn try_from_env(_env: &FhoEnvironment) -> Result<Self> {
+    type Error = std::convert::Infallible;
+    async fn try_from_env(_env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         Ok(NullWriter)
     }
 }

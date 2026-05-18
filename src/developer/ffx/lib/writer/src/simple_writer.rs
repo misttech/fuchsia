@@ -67,16 +67,26 @@ impl Write for SimpleWriter {
     }
 }
 
+#[derive(Debug)]
+pub struct InvalidMachineFormat;
+
+impl std::fmt::Display for InvalidMachineFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "invalid machine format: only raw supported")
+    }
+}
+
+impl std::error::Error for InvalidMachineFormat {}
+
 #[async_trait(?Send)]
 impl TryFromEnv for SimpleWriter {
-    async fn try_from_env(env: &FhoEnvironment) -> fho::Result<Self> {
+    type Error = InvalidMachineFormat;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let machine_format: Option<writer::Format> =
             env.ffx_command().global.machine.and_then(|mf| mf.into());
         match machine_format {
             Some(Format::Raw) | None => Ok(SimpleWriter::new()),
-            Some(_) => {
-                Err(fho::Error::User(anyhow::anyhow!("invalid machine format: only raw supported")))
-            }
+            Some(_) => Err(InvalidMachineFormat),
         }
     }
 }

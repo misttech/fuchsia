@@ -23,7 +23,10 @@ pub struct Connector<T: TryFromEnv> {
     _connects_to: std::marker::PhantomData<T>,
 }
 
-impl<T: TryFromEnv> Connector<T> {
+impl<T> Connector<T>
+where
+    T: TryFromEnv<Error = ffx_command_error::Error>,
+{
     const OPEN_TARGET_TIMEOUT: Duration = Duration::from_millis(500);
     const KNOCK_TARGET_TIMEOUT: Duration = ffx_target::DEFAULT_RCS_KNOCK_TIMEOUT;
 
@@ -54,8 +57,12 @@ impl<T: TryFromEnv> Connector<T> {
 }
 
 #[async_trait(?Send)]
-impl<T: TryFromEnv> TryFromEnv for Connector<T> {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+impl<T> TryFromEnv for Connector<T>
+where
+    T: TryFromEnv<Error = ffx_command_error::Error>,
+{
+    type Error = ffx_command_error::Error;
+    async fn try_from_env(env: &FhoEnvironment) -> Result<Self, Self::Error> {
         let target_env = target_interface(env);
         Ok(Connector { env: env.clone(), target_env, _connects_to: Default::default() })
     }
@@ -88,12 +95,15 @@ async fn knock_rcs(
     Ok(())
 }
 
-async fn daemon_try_connect<T: TryFromEnv>(
+async fn daemon_try_connect<T>(
     env: &FhoEnvironment,
     log_target_wait: &mut impl FnMut(&Option<String>, &Option<Error>) -> Result<()>,
     open_target_timeout: Duration,
     knock_target_timeout: Duration,
-) -> Result<T> {
+) -> Result<T>
+where
+    T: TryFromEnv<Error = ffx_command_error::Error>,
+{
     loop {
         return match T::try_from_env(env).await {
             Err(ffx_command_error::Error::User(e)) => {
@@ -145,11 +155,14 @@ async fn daemon_try_connect<T: TryFromEnv>(
     }
 }
 
-async fn direct_connector_try_connect<T: TryFromEnv>(
+async fn direct_connector_try_connect<T>(
     env: &FhoEnvironment,
     dc: &DirectConnector,
     log_target_wait: &mut impl FnMut(&Option<String>, &Option<Error>) -> Result<()>,
-) -> Result<T> {
+) -> Result<T>
+where
+    T: TryFromEnv<Error = ffx_command_error::Error>,
+{
     loop {
         let target_spec = {
             let resolution = dc.resolution().await.map_err(|e| e.into_command_error())?;

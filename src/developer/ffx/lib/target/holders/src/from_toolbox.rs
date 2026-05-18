@@ -4,7 +4,7 @@
 
 use crate::{DEFAULT_PROXY_TIMEOUT, connect_to_rcs};
 use async_trait::async_trait;
-use ffx_command_error::Result;
+
 use fho::{FhoEnvironment, TryFromEnvWith};
 use fidl::encoding::DefaultFuchsiaResourceDialect;
 use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
@@ -24,7 +24,11 @@ where
     P::Protocol: DiscoverableProtocolMarker,
 {
     type Output = P;
-    async fn try_from_env_with(self, env: &FhoEnvironment) -> Result<Self::Output> {
+    type Error = ffx_command_error::Error;
+    async fn try_from_env_with(
+        self,
+        env: &FhoEnvironment,
+    ) -> std::result::Result<Self::Output, Self::Error> {
         // start off by connecting to rcs
         let rcs = connect_to_rcs(env).await?;
         let proxy = rcs::toolbox::connect_with_timeout::<P::Protocol>(

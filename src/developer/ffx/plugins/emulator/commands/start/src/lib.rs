@@ -136,7 +136,8 @@ pub struct EngineOperationsData {
 
 #[async_trait(?Send)]
 impl TryFromEnv for EngineOperationsData {
-    async fn try_from_env(env: &fho::FhoEnvironment) -> Result<Self, fho::Error> {
+    type Error = fho::Error;
+    async fn try_from_env(env: &fho::FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let context = env.environment_context();
         let instance_dir: PathBuf =
             context.get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR).map_err(|e| bug!("{e}"))?;
@@ -777,7 +778,10 @@ mod tests {
 
     #[async_trait(?Send)]
     impl TryFromEnv for MockEngineOperations {
-        async fn try_from_env(_env: &fho::FhoEnvironment) -> fho::Result<Self> {
+        type Error = fho::Error;
+        async fn try_from_env(
+            _env: &fho::FhoEnvironment,
+        ) -> std::result::Result<Self, Self::Error> {
             Ok(Self::default())
         }
     }

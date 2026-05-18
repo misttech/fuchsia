@@ -7,7 +7,7 @@ use std::ops::Deref;
 use crate::TargetProxyHolder;
 use anyhow::anyhow;
 use async_trait::async_trait;
-use ffx_command_error::Result;
+
 use ffx_ssh::parse::HostAddr;
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl_fuchsia_developer_ffx as ffx_fidl;
@@ -56,7 +56,8 @@ impl From<String> for HostAddrHolder {
 
 #[async_trait(?Send)]
 impl TryFromEnv for HostAddrHolder {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = ffx_command_error::Error;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let target_env = target_interface(env);
         let behavior = target_env.init_connection_behavior(env.environment_context()).await?;
         match *behavior {

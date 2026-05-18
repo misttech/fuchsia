@@ -30,7 +30,8 @@ impl From<ffx_fidl::DaemonProxy> for DaemonProxyHolder {
 
 #[async_trait(?Send)]
 impl TryFromEnv for DaemonProxyHolder {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = ffx_command_error::Error;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let target_env = target_interface(env);
         let _b = target_env.init_daemon_connection_behavior(env.environment_context()).await?;
         // Might need to revisit whether it's necessary to cast every daemon_factory() invocation
@@ -55,7 +56,8 @@ where
     P::Protocol: fidl::endpoints::DiscoverableProtocolMarker,
 {
     type Output = P;
-    async fn try_from_env_with(self, env: &FhoEnvironment) -> Result<P> {
+    type Error = ffx_command_error::Error;
+    async fn try_from_env_with(self, env: &FhoEnvironment) -> std::result::Result<P, Self::Error> {
         load_daemon_protocol(env).await
     }
 }

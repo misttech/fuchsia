@@ -250,7 +250,8 @@ impl ShowToolWrapper {
 
 #[async_trait(?Send)]
 impl fho::TryFromEnv for ShowToolWrapper {
-    async fn try_from_env(env: &FhoEnvironment) -> fho::Result<Self> {
+    type Error = std::convert::Infallible;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         Ok(Self { env: env.clone(), inner: None })
     }
 }
@@ -2495,10 +2496,7 @@ mod test {
             // Do nothing, we don't verify output in tests.
         }
 
-        fn generate(
-            &self,
-            output_dir: PathBuf,
-        ) -> std::result::Result<PathBuf, doctor_utils::DoctorUtilsError> {
+        fn generate(&self, output_dir: PathBuf) -> Result<PathBuf, doctor_utils::DoctorUtilsError> {
             assert_eq!(output_dir, self.expected_output_dir);
             self.generate_called.set(true);
             Ok(Self::result_path())
@@ -2524,7 +2522,7 @@ mod test {
         fn generate(
             &self,
             _output_dir: PathBuf,
-        ) -> std::result::Result<PathBuf, doctor_utils::DoctorUtilsError> {
+        ) -> Result<PathBuf, doctor_utils::DoctorUtilsError> {
             panic!("generate should not be called.")
         }
     }

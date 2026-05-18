@@ -35,7 +35,8 @@ pub struct WithInstances<P: Instances>(PhantomData<P>);
 
 #[async_trait(?Send)]
 impl TryFromEnv for InstanceData {
-    async fn try_from_env(env: &fho::FhoEnvironment) -> Result<Self, fho::Error> {
+    type Error = fho::Error;
+    async fn try_from_env(env: &fho::FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let instance_root: PathBuf = env
             .environment_context()
             .get(ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
@@ -54,8 +55,14 @@ impl Instances for InstanceData {
 #[async_trait(?Send)]
 impl<T: Instances> TryFromEnvWith for WithInstances<T> {
     type Output = T;
-    async fn try_from_env_with(self, _env: &fho::FhoEnvironment) -> Result<T, fho::Error> {
-        Ok(T::try_from_env(_env).await?)
+    type Error = fho::Error;
+    async fn try_from_env_with(
+        self,
+        _env: &fho::FhoEnvironment,
+    ) -> std::result::Result<T, Self::Error> {
+        Ok(T::try_from_env(_env)
+            .await
+            .map_err(|e| fho::Error::Unexpected(anyhow::Error::new(e)))?)
     }
 }
 
@@ -120,7 +127,10 @@ mod tests {
 
     #[async_trait(?Send)]
     impl TryFromEnv for MockInstances {
-        async fn try_from_env(_env: &fho::FhoEnvironment) -> Result<Self, fho::Error> {
+        type Error = fho::Error;
+        async fn try_from_env(
+            _env: &fho::FhoEnvironment,
+        ) -> std::result::Result<Self, Self::Error> {
             Ok(MockInstances::new())
         }
     }

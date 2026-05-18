@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use std::ops::Deref;
 use target_behavior::target_interface;
 
-use ffx_command_error::Result;
 use fho::{FhoEnvironment, TryFromEnv, bug};
 
 /// Holder struct for the target's Nodename.
@@ -15,7 +14,8 @@ pub struct NodenameHolder(Option<String>);
 
 #[async_trait(?Send)]
 impl TryFromEnv for NodenameHolder {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = ffx_command_error::Error;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let target_env = target_interface(env);
         let behavior = target_env.init_connection_behavior(env.environment_context()).await?;
         let identity = match &*behavior {

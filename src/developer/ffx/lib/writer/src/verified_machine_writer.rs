@@ -162,7 +162,8 @@ where
 
 #[async_trait(?Send)]
 impl<T: serde::Serialize + schemars::JsonSchema> TryFromEnv for VerifiedMachineWriter<T> {
-    async fn try_from_env(env: &FhoEnvironment) -> fho::Result<Self> {
+    type Error = std::convert::Infallible;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let format = env.ffx_command().global.machine.and_then(|mf| mf.into());
         let format = match format {
             Some(Format::Raw) => None,

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use async_trait::async_trait;
 use errors::FfxError;
-use ffx_command_error::{FfxContext as _, Result};
+use ffx_command_error::FfxContext as _;
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl_fuchsia_developer_ffx as ffx_fidl;
 use std::ops::Deref;
@@ -28,7 +28,8 @@ impl From<ffx_fidl::TargetProxy> for TargetProxyHolder {
 
 #[async_trait(?Send)]
 impl TryFromEnv for TargetProxyHolder {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = ffx_command_error::Error;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let target_env = target_interface(env);
         let _behavior =
             target_env.init_daemon_connection_behavior(env.environment_context()).await?;

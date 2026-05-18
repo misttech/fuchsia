@@ -29,7 +29,9 @@ macro_rules! embedded_plugin {
             // Create the writer, and if the schema is flag is set,
             // try to print it and then exit.
             let mut writer: <$tool as $crate::FfxMain>::Writer =
-                $crate::TryFromEnv::try_from_env(&env).await?;
+                $crate::TryFromEnv::try_from_env(&env).await.map_err(|e| {
+                    $crate::Error::Unexpected($crate::macro_deps::anyhow::Error::new(e))
+                })?;
             if env.ffx_command().global.schema {
                 if <<$tool as $crate::FfxMain>::Writer as ToolIO>::has_schema() {
                     writer.try_print_schema()?;
@@ -104,7 +106,8 @@ pub(crate) mod tests {
 
     #[async_trait(?Send)]
     impl TryFromEnv for NewTypeString {
-        async fn try_from_env(_env: &FhoEnvironment) -> Result<Self> {
+        type Error = std::convert::Infallible;
+        async fn try_from_env(_env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
             Ok(Self(String::from("foobar")))
         }
     }
@@ -120,7 +123,8 @@ pub(crate) mod tests {
 
     #[async_trait(?Send)]
     impl TryFromEnv for TestWriter {
-        async fn try_from_env(_env: &FhoEnvironment) -> Result<Self> {
+        type Error = std::convert::Infallible;
+        async fn try_from_env(_env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
             Ok(TestWriter)
         }
     }

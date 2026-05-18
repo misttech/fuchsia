@@ -113,8 +113,9 @@ impl Write for CommandOutputMachineWriter {
 
 #[async_trait(?Send)]
 impl TryFromEnv for CommandOutputMachineWriter {
-    async fn try_from_env(env: &FhoEnvironment) -> fho::Result<Self> {
-        Ok(Self { inner: VerifiedMachineWriter::try_from_env(env).await? })
+    type Error = std::convert::Infallible;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
+        Ok(Self { inner: VerifiedMachineWriter::try_from_env(env).await.unwrap() })
     }
 }
 

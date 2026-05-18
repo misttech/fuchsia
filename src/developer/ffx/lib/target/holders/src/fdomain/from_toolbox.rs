@@ -7,7 +7,7 @@ use fdomain_client::fidl::{
     DiscoverableProtocolMarker as FDiscoverableProtocolMarker, FDomainResourceDialect,
     Proxy as FProxy,
 };
-use ffx_command_error::Result;
+
 use fho::{FhoEnvironment, TryFromEnvWith};
 use std::marker::PhantomData;
 
@@ -23,7 +23,11 @@ where
     P::Protocol: FDiscoverableProtocolMarker,
 {
     type Output = P;
-    async fn try_from_env_with(self, env: &FhoEnvironment) -> Result<Self::Output> {
+    type Error = ffx_command_error::Error;
+    async fn try_from_env_with(
+        self,
+        env: &FhoEnvironment,
+    ) -> std::result::Result<Self::Output, Self::Error> {
         // start off by connecting to rcs
         let rcs = connect_to_rcs(env).await?;
         let proxy = rcs_fdomain::toolbox::connect_with_timeout::<P::Protocol>(

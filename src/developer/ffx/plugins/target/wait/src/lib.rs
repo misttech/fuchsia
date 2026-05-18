@@ -37,7 +37,8 @@ pub struct DeviceWaiterImpl;
 
 #[async_trait(?Send)]
 impl fho::TryFromEnv for DeviceWaiterImpl {
-    async fn try_from_env(_env: &fho::FhoEnvironment) -> Result<Self> {
+    type Error = std::convert::Infallible;
+    async fn try_from_env(_env: &fho::FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         Ok(DeviceWaiterImpl)
     }
 }
@@ -132,7 +133,10 @@ mod test {
     // This is just here to satisfy trait bounds.
     #[async_trait(?Send)]
     impl fho::TryFromEnv for MockDeviceWaiter {
-        async fn try_from_env(_env: &fho::FhoEnvironment) -> Result<Self> {
+        type Error = std::convert::Infallible;
+        async fn try_from_env(
+            _env: &fho::FhoEnvironment,
+        ) -> std::result::Result<Self, Self::Error> {
             unimplemented!()
         }
     }

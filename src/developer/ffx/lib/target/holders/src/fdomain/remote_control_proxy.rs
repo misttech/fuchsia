@@ -34,7 +34,8 @@ impl From<RemoteControlProxy> for RemoteControlProxyHolder {
 
 #[async_trait(?Send)]
 impl TryFromEnv for RemoteControlProxyHolder {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = ffx_command_error::Error;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let target_env = target_interface(env);
         let behavior = target_env.init_connection_behavior(env.environment_context()).await?;
         match *behavior {

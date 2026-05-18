@@ -1,9 +1,9 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 use crate::FhoEnvironment;
 use async_trait::async_trait;
-use ffx_command_error::Result;
 use ffx_config::EnvironmentContext;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -15,20 +15,26 @@ use std::sync::Arc;
 /// FfxTool.
 #[async_trait(?Send)]
 pub trait TryFromEnv: Sized {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self>;
+    type Error: std::error::Error + Send + Sync + 'static;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error>;
 }
 
 #[async_trait(?Send)]
 pub trait TryFromEnvWith: 'static {
     type Output: 'static;
-    async fn try_from_env_with(self, env: &FhoEnvironment) -> Result<Self::Output>;
+    type Error: std::error::Error + Send + Sync + 'static;
+    async fn try_from_env_with(
+        self,
+        env: &FhoEnvironment,
+    ) -> std::result::Result<Self::Output, Self::Error>;
 }
 
 /// This is so that you can use a () somewhere that generically expects something
 /// to be TryFromEnv, but there's no meaningful type to put there.
 #[async_trait(?Send)]
 impl TryFromEnv for () {
-    async fn try_from_env(_env: &FhoEnvironment) -> Result<Self> {
+    type Error = std::convert::Infallible;
+    async fn try_from_env(_env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         Ok(())
     }
 }
@@ -38,7 +44,8 @@ impl<T> TryFromEnv for Arc<T>
 where
     T: TryFromEnv,
 {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = T::Error;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         T::try_from_env(env).await.map(Arc::new)
     }
 }
@@ -48,7 +55,8 @@ impl<T> TryFromEnv for Rc<T>
 where
     T: TryFromEnv,
 {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = T::Error;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         T::try_from_env(env).await.map(Rc::new)
     }
 }
@@ -58,38 +66,43 @@ impl<T> TryFromEnv for Box<T>
 where
     T: TryFromEnv,
 {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = T::Error;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         T::try_from_env(env).await.map(Box::new)
     }
 }
 
 #[async_trait(?Send)]
 impl<T> TryFromEnv for PhantomData<T> {
-    async fn try_from_env(_env: &FhoEnvironment) -> Result<Self> {
+    type Error = std::convert::Infallible;
+    async fn try_from_env(_env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         Ok(PhantomData)
     }
 }
 
 #[async_trait(?Send)]
-impl<T> TryFromEnv for Result<T>
+impl<T> TryFromEnv for std::result::Result<T, T::Error>
 where
     T: TryFromEnv,
 {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = std::convert::Infallible;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         Ok(T::try_from_env(env).await)
     }
 }
 
 #[async_trait(?Send)]
 impl TryFromEnv for EnvironmentContext {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = std::convert::Infallible;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         Ok(env.environment_context().clone())
     }
 }
 
 #[async_trait(?Send)]
 impl TryFromEnv for FhoEnvironment {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = std::convert::Infallible;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         Ok(env.clone())
     }
 }
@@ -115,34 +128,43 @@ impl TryFromEnv for FhoEnvironment {
 ///     }
 /// }
 /// ```
-pub struct Deferred<T: 'static>(Pin<Box<dyn Future<Output = Result<T>>>>);
+pub struct Deferred<T: 'static, E = ffx_command_error::Error>(
+    Pin<Box<dyn Future<Output = std::result::Result<T, E>>>>,
+);
+
 #[async_trait(?Send)]
-impl<T> TryFromEnv for Deferred<T>
+impl<T> TryFromEnv for Deferred<T, T::Error>
 where
-    T: TryFromEnv,
+    T: TryFromEnv + 'static,
 {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = std::convert::Infallible;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let env = env.clone();
         Ok(Self(Box::pin(async move { T::try_from_env(&env).await })))
     }
 }
 
-impl<T: 'static> Deferred<T> {
+impl<T: 'static, E: 'static> Deferred<T, E> {
     /// Use the value provided to create a test-able Deferred value.
-    pub fn from_output(output: Result<T>) -> Self {
+    pub fn from_output(output: std::result::Result<T, E>) -> Self {
         Self(Box::pin(async move { output }))
     }
 }
 
 /// The implementation of the decorator returned by [`deferred`]
 pub struct WithDeferred<T>(T);
+
 #[async_trait(?Send)]
 impl<T> TryFromEnvWith for WithDeferred<T>
 where
     T: TryFromEnvWith + 'static,
 {
-    type Output = Deferred<T::Output>;
-    async fn try_from_env_with(self, env: &FhoEnvironment) -> Result<Self::Output> {
+    type Output = Deferred<T::Output, T::Error>;
+    type Error = std::convert::Infallible;
+    async fn try_from_env_with(
+        self,
+        env: &FhoEnvironment,
+    ) -> std::result::Result<Self::Output, Self::Error> {
         let env = env.clone();
         Ok(Deferred(Box::pin(async move { self.0.try_from_env_with(&env).await })))
     }
@@ -164,8 +186,8 @@ pub fn deferred<T: TryFromEnvWith>(inner: T) -> WithDeferred<T> {
     WithDeferred(inner)
 }
 
-impl<T> Future for Deferred<T> {
-    type Output = Result<T>;
+impl<T, E> Future for Deferred<T, E> {
+    type Output = std::result::Result<T, E>;
     fn poll(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -185,7 +207,8 @@ mod tests {
     struct AlwaysError;
     #[async_trait(?Send)]
     impl TryFromEnv for AlwaysError {
-        async fn try_from_env(_env: &FhoEnvironment) -> Result<Self> {
+        type Error = ffx_command_error::Error;
+        async fn try_from_env(_env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
             Err(Error::User(anyhow::anyhow!("boom")))
         }
     }
@@ -198,7 +221,7 @@ mod tests {
 
         let fho_env = FhoEnvironment::new(&config_env.context, &ffx);
 
-        Deferred::<AlwaysError>::try_from_env(&fho_env)
+        Deferred::<AlwaysError, ffx_command_error::Error>::try_from_env(&fho_env)
             .await
             .expect("Deferred result should be Ok")
             .await

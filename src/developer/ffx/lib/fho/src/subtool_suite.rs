@@ -43,12 +43,16 @@ impl<T: FfxTool> SubtoolBox for Subtool<T> {
         self.tool.borrow().as_ref().expect("subtool is gone?").has_schema()
     }
     async fn try_print_schema(&self, env: &FhoEnvironment) -> Result<()> {
-        let writer: <T as FfxMain>::Writer = TryFromEnv::try_from_env(env).await?;
+        let writer: <T as FfxMain>::Writer = TryFromEnv::try_from_env(env)
+            .await
+            .map_err(|e| ffx_command_error::Error::Unexpected(anyhow::Error::new(e)))?;
         self.tool.borrow_mut().take().expect("subtool is gone?").try_print_schema(writer).await
     }
 
     async fn run(&self, env: FhoEnvironment) -> Result<()> {
-        let writer: <T as FfxMain>::Writer = TryFromEnv::try_from_env(&env).await?;
+        let writer: <T as FfxMain>::Writer = TryFromEnv::try_from_env(&env)
+            .await
+            .map_err(|e| ffx_command_error::Error::Unexpected(anyhow::Error::new(e)))?;
         self.tool.borrow_mut().take().expect("subtool is gone?").main(writer).await
     }
 }

@@ -188,7 +188,9 @@ impl<T: FfxTool> ToolRunner for FhoTool<T> {
         if !analytics_command(&self.redacted_args.join(" ")) {
             metrics.print_notice(&mut std::io::stderr()).await?;
         }
-        let writer = TryFromEnv::try_from_env(&self.env).await?;
+        let writer = TryFromEnv::try_from_env(&self.env)
+            .await
+            .map_err(|e| Error::Unexpected(anyhow::Error::new(e)))?;
         let res: Result<ExitStatus> = if self.env.ffx_command().global.schema {
             if self.main.has_schema() {
                 self.main

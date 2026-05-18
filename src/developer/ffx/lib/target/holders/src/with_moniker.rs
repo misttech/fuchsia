@@ -28,7 +28,11 @@ where
     P::Protocol: fdomain_client::fidl::DiscoverableProtocolMarker,
 {
     type Output = P;
-    async fn try_from_env_with(self, env: &FhoEnvironment) -> Result<Self::Output> {
+    type Error = ffx_command_error::Error;
+    async fn try_from_env_with(
+        self,
+        env: &FhoEnvironment,
+    ) -> std::result::Result<Self::Output, Self::Error> {
         let rcs_instance = crate::fdomain::connect_to_rcs(&env).await?;
         crate::fdomain::open_moniker_fdomain(
             &rcs_instance,
@@ -47,7 +51,11 @@ where
     P::Protocol: fidl::endpoints::DiscoverableProtocolMarker,
 {
     type Output = P;
-    async fn try_from_env_with(self, env: &FhoEnvironment) -> Result<Self::Output> {
+    type Error = ffx_command_error::Error;
+    async fn try_from_env_with(
+        self,
+        env: &FhoEnvironment,
+    ) -> std::result::Result<Self::Output, Self::Error> {
         let rcs_instance = connect_to_rcs(&env).await?;
         crate::remote_control_proxy::open_moniker(
             &rcs_instance,
@@ -79,6 +87,7 @@ impl ExposedDirectoryConnector {
 #[async_trait(?Send)]
 impl TryFromEnvWith for ExposedDirectoryConnector {
     type Output = flex_fuchsia_io::DirectoryProxy;
+    type Error = ffx_command_error::Error;
 
     async fn try_from_env_with(self, env: &FhoEnvironment) -> Result<Self::Output> {
         let rcs = crate::fdomain::connect_to_rcs(env).await?;
@@ -128,6 +137,7 @@ where
     P::Protocol: fdomain_client::fidl::DiscoverableProtocolMarker,
 {
     type Output = Option<P>;
+    type Error = ffx_command_error::Error;
 
     async fn try_from_env_with(self, env: &FhoEnvironment) -> Result<Self::Output> {
         let rcs = crate::fdomain::connect_to_rcs(env).await?;

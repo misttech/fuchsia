@@ -20,7 +20,8 @@ struct SymbolIndexPath {
 
 #[async_trait(?Send)]
 impl fho::TryFromEnv for SymbolIndexPath {
-    async fn try_from_env(_env: &fho::FhoEnvironment) -> fho::Result<Self> {
+    type Error = fho::Error;
+    async fn try_from_env(_env: &fho::FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         Ok(SymbolIndexPath { inner: global_symbol_index_path().bug()? })
     }
 }

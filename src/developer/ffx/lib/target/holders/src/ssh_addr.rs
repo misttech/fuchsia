@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use std::ops::Deref;
 use target_behavior::target_interface;
 
-use ffx_command_error::Result;
 use fho::{FhoEnvironment, TryFromEnv, bug};
 use std::net::SocketAddr;
 
@@ -17,7 +16,8 @@ pub struct SshAddrHolder(SocketAddr);
 
 #[async_trait(?Send)]
 impl TryFromEnv for SshAddrHolder {
-    async fn try_from_env(env: &FhoEnvironment) -> Result<Self> {
+    type Error = ffx_command_error::Error;
+    async fn try_from_env(env: &FhoEnvironment) -> std::result::Result<Self, Self::Error> {
         let target_env = target_interface(env);
         let behavior = target_env.init_connection_behavior(env.environment_context()).await?;
         Ok(SshAddrHolder(match &*behavior {
