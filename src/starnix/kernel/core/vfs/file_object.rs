@@ -7,8 +7,8 @@ use crate::mm::{DesiredAddress, MappingName, MappingOptions, MemoryAccessorExt, 
 use crate::power::OnWakeOps;
 use crate::security;
 use crate::task::{
-    CurrentTask, CurrentTaskAndLocked, EventHandler, Task, ThreadGroupKey, WaitCallback,
-    WaitCanceler, Waiter, register_delayed_release,
+    CurrentTask, CurrentTaskAndLocked, EventHandler, ThreadGroupKey, WaitCallback, WaitCanceler,
+    Waiter, register_delayed_release,
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::file_server::serve_file;
@@ -1414,7 +1414,7 @@ impl FileAsyncOwner {
         match self {
             FileAsyncOwner::Unowned => (),
             FileAsyncOwner::Thread(id) | FileAsyncOwner::Process(id) => {
-                Task::from_weak(&current_task.get_task(id))?;
+                current_task.get_task(id)?;
             }
             FileAsyncOwner::ProcessGroup(pgid) => {
                 current_task

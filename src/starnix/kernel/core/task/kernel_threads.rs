@@ -11,7 +11,7 @@ use pin_project::pin_project;
 use scopeguard::ScopeGuard;
 use starnix_sync::{Locked, Unlocked};
 use starnix_task_command::TaskCommand;
-use starnix_types::ownership::WeakRef;
+
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::cell::{RefCell, RefMut};
@@ -153,7 +153,7 @@ impl Drop for KernelThreads {
 
 pub fn with_new_current_task<F, R>(
     locked: &mut Locked<Unlocked>,
-    system_task: &WeakRef<Task>,
+    system_task: &Weak<Task>,
     task_name: String,
     f: F,
 ) -> Result<R, Errno>

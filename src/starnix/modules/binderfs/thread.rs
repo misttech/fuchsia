@@ -824,8 +824,7 @@ pub struct SchedulerGuard(Option<ReleaseGuard<SchedulerState>>);
 
 impl SchedulerGuard {
     pub fn release_for_task(self, kernel: &Kernel, tid: pid_t) -> bool {
-        let task = kernel.pids.read().get_task(tid);
-        if let Some(task) = task.upgrade() {
+        if let Ok(task) = kernel.pids.read().get_task(tid) {
             self.release(&task);
             return true;
         } else {

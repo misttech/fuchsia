@@ -15,7 +15,6 @@ use starnix_sync::{
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
-use starnix_types::ownership::TempRef;
 use starnix_types::release_on_error;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
@@ -151,8 +150,7 @@ pub fn create_init_child_process<L>(
 where
     L: LockBefore<TaskRelease>,
 {
-    let weak_init = kernel.pids.read().get_task(1);
-    let init_task = weak_init.upgrade().ok_or_else(|| errno!(EINVAL))?;
+    let init_task = kernel.pids.read().get_task(1).map_err(|_| errno!(EINVAL))?;
 
     let fs = init_task.live()?.fs().fork();
 
@@ -332,7 +330,7 @@ where
     F: FnOnce(&mut Locked<L>, i32, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
     L: LockBefore<TaskRelease>,
 {
-    debug_assert!(pids.get_task(pid).upgrade().is_none());
+    debug_assert!(pids.get_task(pid).is_err());
 
     let process_group = ProcessGroup::new(pid, None);
     pids.add_process_group(process_group.clone());
@@ -373,8 +371,7 @@ where
         thread_state: Default::default(),
     };
     release_on_error!(builder, locked, {
-        let temp_task = TempRef::from(&builder.task);
-        builder.thread_group().add(&temp_task)?;
+        builder.thread_group().add(Arc::clone(&builder.task))?;
         for (resource, limit) in rlimits {
             builder
                 .thread_group()
@@ -383,7 +380,7 @@ where
                 .set(*resource, rlimit { rlim_cur: *limit, rlim_max: *limit });
         }
 
-        pids.add_task(&temp_task);
+        pids.add_task(Arc::clone(&builder.task));
         Ok(())
     });
     Ok(builder)
@@ -449,9 +446,8 @@ where
     ))
     .into();
     release_on_error!(current_task, locked, {
-        let temp_task = current_task.temp_task();
-        current_task.thread_group().add(&temp_task)?;
-        pids.add_task(&temp_task);
+        current_task.thread_group().add(Arc::clone(&current_task.task))?;
+        pids.add_task(Arc::clone(&current_task.task));
         Ok(())
     });
     Ok(current_task)

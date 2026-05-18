@@ -17,7 +17,6 @@ use futures::stream::AbortHandle;
 use futures::{FutureExt, StreamExt, select};
 use starnix_logging::{log_debug, log_error, log_trace, log_warn, track_stub};
 use starnix_sync::Mutex;
-use starnix_types::ownership::TempRef;
 use starnix_types::time::{duration_from_timespec, timespec_from_duration};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{SI_TIMER, itimerspec};
@@ -317,25 +316,23 @@ impl IntervalTimer {
                     }
                     SignalEventNotify::ThreadId(tid) => {
                         // Check if the target thread exists in the thread group.
-                        timer_thread_group.read().get_task(tid).map(TempRef::into_static).map(
-                            |target| {
-                                if let Some(signal_info) = self.signal_info() {
-                                    log_trace!(
-                                        signal = signal_info.signal.number(),
-                                        tid;
-                                        "sending signal for timer"
-                                    );
-                                    send_signal(
-                                        kernel.kthreads.unlocked_for_async().deref_mut(),
-                                        &target,
-                                        signal_info,
-                                    )
-                                    .unwrap_or_else(|e| {
-                                        log_warn!("Failed to queue timer signal: {}", e)
-                                    });
-                                }
-                            },
-                        );
+                        timer_thread_group.read().get_task(tid).map(|target| {
+                            if let Some(signal_info) = self.signal_info() {
+                                log_trace!(
+                                    signal = signal_info.signal.number(),
+                                    tid;
+                                    "sending signal for timer"
+                                );
+                                send_signal(
+                                    kernel.kthreads.unlocked_for_async().deref_mut(),
+                                    &target,
+                                    signal_info,
+                                )
+                                .unwrap_or_else(|e| {
+                                    log_warn!("Failed to queue timer signal: {}", e)
+                                });
+                            }
+                        });
                     }
                 }
             }

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #![recursion_limit = "512"]
+use starnix_types as _;
 
 mod component_runner;
 mod container;

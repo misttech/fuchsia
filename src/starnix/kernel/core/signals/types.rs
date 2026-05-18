@@ -9,7 +9,6 @@ use fuchsia_trace::{TraceCategoryContext, trace_site_t};
 use starnix_logging::{trace_instaflow_begin, trace_instaflow_end};
 use starnix_sync::{InterruptibleEvent, RwLock};
 use starnix_types::arch::ArchWidth;
-use starnix_types::ownership::WeakRef;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::{SigSet, Signal, UNBLOCKABLE_SIGNALS, UncheckedSignal};
 use starnix_uapi::union::struct_with_union_into_bytes;
@@ -22,7 +21,7 @@ use starnix_uapi::{
 use static_assertions::const_assert;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 const TRACE_CATEGORY: &'static str = "starnix:signals";
@@ -435,7 +434,7 @@ pub struct UncheckedSignalInfo {
     data: [u8; SI_DETAIL_SIZE],
 
     /// The task that sent this signal. None for kernel-originated signals.
-    sender: Option<WeakRef<Task>>,
+    sender: Option<Weak<Task>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -511,7 +510,7 @@ impl TryFrom<UncheckedSignalInfo> for SignalInfo {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct SignalInfo {
     pub signal: Signal,
     pub errno: i32,
@@ -526,11 +525,28 @@ pub struct SignalInfo {
     source: SignalSource,
 
     /// The task that sent this signal. None for kernel-originated signals.
-    sender: Option<WeakRef<Task>>,
+    sender: Option<Weak<Task>>,
 
     /// The trace id associated with this signal. Used to end the instaflow event when SignalInfo is
     /// dropped.
     trace_id: Option<fuchsia_trace::Id>,
+}
+
+impl PartialEq for SignalInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.signal == other.signal
+            && self.errno == other.errno
+            && self.code == other.code
+            && self.detail == other.detail
+            && self.force == other.force
+            && self.source == other.source
+            && match (&self.sender, &other.sender) {
+                (Some(lhs), Some(rhs)) => Weak::ptr_eq(lhs, rhs),
+                (None, None) => true,
+                _ => false,
+            }
+            && self.trace_id == other.trace_id
+    }
 }
 
 impl Eq for SignalInfo {}
@@ -669,7 +685,7 @@ impl SignalInfo {
         signal: Signal,
         code: i32,
         detail: SignalDetail,
-        sender: Option<WeakRef<Task>>,
+        sender: Option<Weak<Task>>,
     ) -> Self {
         Self::new(signal, 0, code, detail, false, sender)
     }
@@ -681,7 +697,7 @@ impl SignalInfo {
         code: i32,
         detail: SignalDetail,
         force: bool,
-        sender: Option<WeakRef<Task>>,
+        sender: Option<Weak<Task>>,
     ) -> Self {
         static CACHE: trace_site_t = trace_site_t::new(0);
         let trace_id = TraceCategoryContext::acquire_cached(TRACE_CATEGORY, &CACHE).map(|_context| {
@@ -733,8 +749,8 @@ impl SignalInfo {
     }
 
     /// Returns true if the signal was sent by the given task.
-    pub fn is_sent_by(&self, weak_task: &WeakRef<Task>) -> bool {
-        self.sender.as_ref().map_or(false, |sender| WeakRef::ptr_eq(sender, weak_task))
+    pub fn is_sent_by(&self, weak_task: &Weak<Task>) -> bool {
+        self.sender.as_ref().map_or(false, |sender| Weak::ptr_eq(sender, weak_task))
     }
 
     // TODO(tbodt): Add a bound requiring siginfo_t to be FromBytes. This will help ensure the

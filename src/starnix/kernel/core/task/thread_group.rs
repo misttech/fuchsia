@@ -28,7 +28,7 @@ use starnix_sync::{
     LockBefore, Locked, Mutex, OrderedMutex, ProcessGroupState, RwLock, ThreadGroupLimits, Unlocked,
 };
 use starnix_task_command::TaskCommand;
-use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef};
+use starnix_types::ownership::{OwnedRef, Releasable};
 use starnix_types::stats::TaskTimeStats;
 use starnix_types::time::{itimerspec_from_itimerval, timeval_from_duration};
 use starnix_uapi::arc_key::WeakKey;
@@ -47,7 +47,7 @@ use starnix_uapi::{
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use zx::{Koid, Status};
 
 /// A weak reference to a thread group that can be used in set and maps.
@@ -249,6 +249,14 @@ pub struct ThreadGroup {
     /// The lead task is typically the initial thread created in the thread group.
     pub leader: pid_t,
 
+    // TODO(https://fxbug.dev/508746892): Remove this once the `PidTable` lock is removed.
+    /// Cached weak reference to the leader task.
+    ///
+    /// This is used to break a deadlock in signal delivery, where a reference to the leader task
+    /// must be obtained in order to do access checks in situations where the leader has exited and
+    /// is no longer in the task list.
+    pub leader_task: OnceLock<Weak<Task>>,
+
     /// The signal actions that are registered for this process.
     pub signal_actions: Arc<SignalActions>,
 
@@ -404,7 +412,7 @@ impl ProcessSelector {
                 if p == tid {
                     true
                 } else {
-                    if let Some(task_ref) = pid_table.get_task(tid).upgrade() {
+                    if let Ok(task_ref) = pid_table.get_task(tid) {
                         task_ref.get_pid() == p
                     } else {
                         false
@@ -413,7 +421,7 @@ impl ProcessSelector {
             }
             ProcessSelector::Any => true,
             ProcessSelector::Pgid(pgid) => {
-                if let Some(task_ref) = pid_table.get_task(tid).upgrade() {
+                if let Ok(task_ref) = pid_table.get_task(tid) {
                     pid_table.get_process_group(pgid).as_ref()
                         == Some(&task_ref.thread_group().read().process_group)
                 } else {
@@ -695,6 +703,7 @@ impl ThreadGroup {
                 process,
                 root_vmar,
                 leader,
+                leader_task: OnceLock::new(),
                 signal_actions,
                 timers: Default::default(),
                 drop_notifier: Default::default(),
@@ -787,15 +796,13 @@ impl ThreadGroup {
 
         // Interrupt each task. Unlock the group because send_signal will lock the group in order
         // to call set_stopped.
-        // SAFETY: tasks is kept on the stack. The static is required to ensure the lock on
-        // ThreadGroup can be dropped.
-        let tasks = state.tasks().map(TempRef::into_static).collect::<Vec<_>>();
+        let tasks = state.tasks();
         drop(state);
 
         // Detach from any ptraced tasks, killing the ones that set PTRACE_O_EXITKILL.
         let tracees = self.ptracees.lock().keys().cloned().collect::<Vec<_>>();
         for tracee in tracees {
-            if let Some(task_ref) = pids.get_task(tracee).clone().upgrade() {
+            if let Ok(task_ref) = pids.get_task(tracee) {
                 let mut should_send_sigkill = false;
                 if let Some(ptrace) = &task_ref.read().ptrace {
                     should_send_sigkill = ptrace.has_option(PtraceOptions::EXITKILL);
@@ -816,7 +823,7 @@ impl ThreadGroup {
         }
     }
 
-    pub fn add(&self, task: &TempRef<'_, Task>) -> Result<(), Errno> {
+    pub fn add(&self, task: Arc<Task>) -> Result<(), Errno> {
         let mut state = self.write();
         if state.is_terminating() {
             if state.tasks_count() == 0 {
@@ -829,16 +836,19 @@ impl ThreadGroup {
             }
             return error!(EINVAL);
         }
-        state.tasks.insert(task.tid, task.into());
+        if task.tid == self.leader {
+            let _ = self.leader_task.set(Arc::downgrade(&task));
+        }
+        state.tasks.insert(task.tid, (&task).into());
 
         Ok(())
     }
 
     /// Remove the task from the children of this ThreadGroup.
     ///
-    /// It is important that the task is taken as an `OwnedRef`. It ensures the tasks of the
+    /// It is important that the task is taken as an `Arc`. It ensures the tasks of the
     /// ThreadGroup are always valid as they are still valid when removed.
-    pub fn remove<L>(&self, locked: &mut Locked<L>, pids: &mut PidTable, task: &OwnedRef<Task>)
+    pub fn remove<L>(&self, locked: &mut Locked<L>, pids: &mut PidTable, task: &Arc<Task>)
     where
         L: LockBefore<ProcessGroupState>,
     {
@@ -949,7 +959,7 @@ impl ThreadGroup {
 
                 let maybe_zombie = 'compute_zombie: {
                     if let Some(tracer_pid) = tracer_pid {
-                        if let Some(ref tracer) = pids.get_task(tracer_pid).upgrade() {
+                        if let Ok(ref tracer) = pids.get_task(tracer_pid) {
                             break 'compute_zombie tracer
                                 .thread_group()
                                 .maybe_notify_tracer(task, pids, &parent, zombie);
@@ -1507,7 +1517,7 @@ impl ThreadGroup {
             .filter(|tracee_tid| selector.match_tid(**tracee_tid, &pids))
             .map(|tracee_tid| pids.get_task(*tracee_tid))
         {
-            if let Some(task_ref) = tracee.clone().upgrade() {
+            if let Ok(task_ref) = tracee {
                 let task_state = task_ref.write();
                 if task_state.ptrace.is_some() {
                     f(&task_ref, &task_state);
@@ -1792,8 +1802,7 @@ impl ThreadGroup {
         // Pick an arbitrary task in thread_group to check permissions.
         //
         // Tasks can technically have different credentials, but in practice they are kept in sync.
-        let state = self.read();
-        let target_task = state.get_live_task()?;
+        let target_task = self.read().get_any_task()?;
         current_task.can_signal(&target_task, unchecked_signal)?;
 
         // 0 is a sentinel value used to do permission checks.
@@ -1844,7 +1853,7 @@ impl ThreadGroup {
 
         // Prepare for shutting down the thread group.
         let (tg_name, mut on_exited) = {
-            // Nest this upgraded access so TempRefs aren't held across await-points.
+            // Nest this upgraded access so upgraded references aren't held across await-points.
             let Some(this) = this.upgrade() else {
                 return;
             };
@@ -1853,7 +1862,7 @@ impl ThreadGroup {
             let (on_exited_send, on_exited) = futures::channel::oneshot::channel();
             this.write().exit_notifier = Some(on_exited_send);
 
-            // We want to be able to log about this thread group without upgrading the WeakRef.
+            // We want to be able to log about this thread group without upgrading the `Weak`.
             let tg_name = format!("{this:?}");
 
             (tg_name, on_exited)
@@ -1920,8 +1929,8 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         })
     }
 
-    pub fn tasks(&self) -> impl Iterator<Item = TempRef<'_, Task>> + '_ {
-        self.tasks.values().flat_map(|t| t.upgrade())
+    pub fn tasks(&self) -> Vec<Arc<Task>> {
+        self.tasks.values().flat_map(|t| t.upgrade()).collect()
     }
 
     pub fn task_ids(&self) -> impl Iterator<Item = &tid_t> {
@@ -1932,7 +1941,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         self.tasks.contains_key(&tid)
     }
 
-    pub fn get_task(&self, tid: tid_t) -> Option<TempRef<'_, Task>> {
+    pub fn get_task(&self, tid: tid_t) -> Option<Arc<Task>> {
         self.tasks.get(&tid).and_then(|t| t.upgrade())
     }
 
@@ -2131,11 +2140,22 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     }
 
     /// Returns a task in the current thread group.
-    pub fn get_live_task(&self) -> Result<TempRef<'_, Task>, Errno> {
+    pub fn get_live_task(&self) -> Result<Arc<Task>, Errno> {
         self.tasks
-            .get(&self.leader())
-            .and_then(|t| t.upgrade())
-            .or_else(|| self.tasks().next())
+            .iter()
+            .find_map(|container| container.1.upgrade().filter(|task| task.live().is_ok()))
+            .ok_or_else(|| errno!(ESRCH))
+    }
+
+    /// Returns a task representative of the [`ThreadGroup`].
+    ///
+    /// If the task list contains at least one live task, an arbitrary live task is returned.
+    /// Otherwise, if the task list is empty, the process must be a zombie. In this case, the exited
+    /// leader task is returned.
+    pub fn get_any_task(&self) -> Result<Arc<Task>, Errno> {
+        self.get_live_task()
+            .ok()
+            .or_else(|| self.base.leader_task.get().and_then(|t| t.upgrade()))
             .ok_or_else(|| errno!(ESRCH))
     }
 
@@ -2213,7 +2233,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             pending_signals.enqueue(signal_info.clone());
             self.base.has_pending_signals.store(true, Ordering::Relaxed);
         }
-        let tasks: Vec<WeakRef<Task>> = self.tasks.values().map(|t| t.weak_clone()).collect();
+        let tasks: Vec<Weak<Task>> = self.tasks.values().map(|t| t.weak_clone()).collect();
 
         // Set state to waking before interrupting any tasks.
         if signal_info.signal == SIGKILL {
@@ -2261,11 +2281,11 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
 /// moment where the task is not yet released, yet the weak pointer is not upgradeable anymore.
 /// During this time, it is still necessary to access the persistent info to compute the state of
 /// the thread for the different wait syscalls.
-pub struct TaskContainer(WeakRef<Task>, TaskPersistentInfo);
+pub struct TaskContainer(Weak<Task>, TaskPersistentInfo);
 
-impl From<&TempRef<'_, Task>> for TaskContainer {
-    fn from(task: &TempRef<'_, Task>) -> Self {
-        Self(WeakRef::from(task), task.persistent_info.clone())
+impl From<&Arc<Task>> for TaskContainer {
+    fn from(task: &Arc<Task>) -> Self {
+        Self(Arc::downgrade(task), task.persistent_info.clone())
     }
 }
 
@@ -2276,11 +2296,11 @@ impl From<TaskContainer> for TaskPersistentInfo {
 }
 
 impl TaskContainer {
-    fn upgrade(&self) -> Option<TempRef<'_, Task>> {
+    fn upgrade(&self) -> Option<Arc<Task>> {
         self.0.upgrade()
     }
 
-    fn weak_clone(&self) -> WeakRef<Task> {
+    fn weak_clone(&self) -> Weak<Task> {
         self.0.clone()
     }
 

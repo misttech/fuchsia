@@ -31,7 +31,6 @@ use starnix_core::vfs::{
 use starnix_logging::{bug_ref, track_stub};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_task_command::TaskCommand;
-use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_types::time::duration_to_scheduler_clock;
 use starnix_uapi::auth::{
     CAP_SYS_NICE, CAP_SYS_RESOURCE, Capabilities, PTRACE_MODE_ATTACH_REALCREDS,
@@ -109,7 +108,7 @@ pub enum TaskEntryScope {
 /// them as unchanged when re-accessed.
 /// The `creds` stored within is applied to the directory node itself and child entries.
 pub struct TaskDirectory {
-    task_weak: WeakRef<Task>,
+    task_weak: Weak<Task>,
     scope: TaskEntryScope,
     inode_range: Range<ino_t>,
 }
@@ -126,9 +125,9 @@ impl Deref for TaskDirectoryNode {
 }
 
 impl TaskDirectory {
-    fn new(fs: &FileSystemHandle, task: &TempRef<'_, Task>, scope: TaskEntryScope) -> FsNodeHandle {
+    fn new(fs: &FileSystemHandle, task: &Arc<Task>, scope: TaskEntryScope) -> FsNodeHandle {
         let creds = task.real_creds().euid_as_fscred();
-        let task_weak = WeakRef::from(task);
+        let task_weak = Arc::downgrade(task);
         fs.create_node_and_allocate_node_id(
             TaskDirectoryNode(Arc::new(TaskDirectory {
                 task_weak,
@@ -320,7 +319,7 @@ impl FileOps for TaskDirectory {
 pub fn pid_directory(
     current_task: &CurrentTask,
     fs: &FileSystemHandle,
-    task: &TempRef<'_, Task>,
+    task: &Arc<Task>,
 ) -> FsNodeHandle {
     // proc(5): "The files inside each /proc/pid directory are normally
     // owned by the effective user and effective group ID of the process."
@@ -331,7 +330,7 @@ pub fn pid_directory(
 }
 
 /// Creates an [`FsNode`] that represents the `/proc/<pid>/task/<tid>` directory for `task`.
-fn tid_directory(fs: &FileSystemHandle, task: &TempRef<'_, Task>) -> FsNodeHandle {
+fn tid_directory(fs: &FileSystemHandle, task: &Arc<Task>) -> FsNodeHandle {
     TaskDirectory::new(fs, task, TaskEntryScope::Task)
 }
 
@@ -340,11 +339,11 @@ fn tid_directory(fs: &FileSystemHandle, task: &TempRef<'_, Task>) -> FsNodeHandl
 /// Reading the directory returns a list of all the currently open file descriptors for the
 /// associated task.
 struct FdDirectory {
-    task: WeakRef<Task>,
+    task: Weak<Task>,
 }
 
 impl FdDirectory {
-    fn new(task: WeakRef<Task>) -> Self {
+    fn new(task: Weak<Task>) -> Self {
         Self { task }
     }
 }
@@ -405,11 +404,11 @@ const NS_ENTRIES: &[&str] = &[
 /// /proc/<pid>/attr directory entry.
 struct AttrNode {
     attr: security::ProcAttr,
-    task: WeakRef<Task>,
+    task: Weak<Task>,
 }
 
 impl AttrNode {
-    fn new(task: WeakRef<Task>, attr: security::ProcAttr) -> impl FsNodeOps {
+    fn new(task: Weak<Task>, attr: security::ProcAttr) -> impl FsNodeOps {
         SimpleFileNode::new(move |_, _| Ok(AttrNode { attr, task: task.clone() }))
     }
 }
@@ -446,7 +445,7 @@ impl FileOps for AttrNode {
         let task = Task::from_weak(&self.task)?;
 
         // If the current task is not the target then writes are not allowed.
-        if current_task.temp_task() != task {
+        if current_task.task != task {
             return error!(EPERM);
         }
         if offset != 0 {
@@ -462,7 +461,7 @@ impl FileOps for AttrNode {
 
 /// /proc/[pid]/ns directory
 struct NsDirectory {
-    task: WeakRef<Task>,
+    task: Weak<Task>,
 }
 
 impl FsNodeOps for NsDirectory {
@@ -584,11 +583,11 @@ impl FsNodeOps for NsDirectory {
 /// Reading the directory returns a list of all the currently open file descriptors for the
 /// associated task.
 struct FdInfoDirectory {
-    task: WeakRef<Task>,
+    task: Weak<Task>,
 }
 
 impl FdInfoDirectory {
-    fn new(task: WeakRef<Task>) -> Self {
+    fn new(task: Weak<Task>) -> Self {
         Self { task }
     }
 }
@@ -693,8 +692,7 @@ impl FsNodeOps for TaskListDirectory {
         }
 
         let pid_state = thread_group.kernel.pids.read();
-        let weak_task = pid_state.get_task(tid);
-        let task = weak_task.upgrade().ok_or_else(|| errno!(ENOENT))?;
+        let task = pid_state.get_task(tid).map_err(|_| errno!(ENOENT))?;
         std::mem::drop(pid_state);
 
         Ok(tid_directory(&node.fs(), &task))
@@ -702,9 +700,9 @@ impl FsNodeOps for TaskListDirectory {
 }
 
 #[derive(Clone)]
-struct CgroupFile(WeakRef<Task>);
+struct CgroupFile(Weak<Task>);
 impl CgroupFile {
-    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         DynamicFile::new_node(Self(task))
     }
 }
@@ -741,10 +739,10 @@ fn fill_buf_from_addr_range(
 /// `CmdlineFile` implements `proc/<pid>/cmdline` file.
 #[derive(Clone)]
 pub struct CmdlineFile {
-    task: WeakRef<Task>,
+    task: Weak<Task>,
 }
 impl CmdlineFile {
-    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         DynamicFile::new_node(Self { task })
     }
 }
@@ -773,13 +771,9 @@ impl DynamicFileSource for CmdlineFile {
 struct PtraceCheckedNode {}
 
 impl PtraceCheckedNode {
-    pub fn new_node<F, O>(
-        task: WeakRef<Task>,
-        mode: PtraceAccessMode,
-        create_ops: F,
-    ) -> impl FsNodeOps
+    pub fn new_node<F, O>(task: Weak<Task>, mode: PtraceAccessMode, create_ops: F) -> impl FsNodeOps
     where
-        F: Fn(&mut Locked<FileOpsCore>, &CurrentTask, TempRef<'_, Task>) -> Result<O, Errno>
+        F: Fn(&mut Locked<FileOpsCore>, &CurrentTask, Arc<Task>) -> Result<O, Errno>
             + Send
             + Sync
             + 'static,
@@ -801,12 +795,12 @@ impl PtraceCheckedNode {
 /// `EnvironFile` implements `proc/<pid>/environ` file.
 #[derive(Clone)]
 pub struct EnvironFile {
-    task: WeakRef<Task>,
+    task: Weak<Task>,
 }
 impl EnvironFile {
-    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         PtraceCheckedNode::new_node(task, PTRACE_MODE_READ_FSCREDS, |_, _, task| {
-            Ok(DynamicFile::new(Self { task: task.into() }))
+            Ok(DynamicFile::new(Self { task: Arc::downgrade(&task) }))
         })
     }
 }
@@ -832,12 +826,12 @@ impl DynamicFileSource for EnvironFile {
 /// `AuxvFile` implements `proc/<pid>/auxv` file.
 #[derive(Clone)]
 pub struct AuxvFile {
-    task: WeakRef<Task>,
+    task: Weak<Task>,
 }
 impl AuxvFile {
-    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         PtraceCheckedNode::new_node(task, PTRACE_MODE_READ_FSCREDS, |_, _, task| {
-            Ok(DynamicFile::new(Self { task: task.into() }))
+            Ok(DynamicFile::new(Self { task: Arc::downgrade(&task) }))
         })
     }
 }
@@ -862,11 +856,11 @@ impl DynamicFileSource for AuxvFile {
 
 /// `CommFile` implements `proc/<pid>/comm` file.
 pub struct CommFile {
-    task: WeakRef<Task>,
+    task: Weak<Task>,
     info: TaskPersistentInfo,
 }
 impl CommFile {
-    pub fn new_node(task: WeakRef<Task>, info: TaskPersistentInfo) -> impl FsNodeOps {
+    pub fn new_node(task: Weak<Task>, info: TaskPersistentInfo) -> impl FsNodeOps {
         SimpleFileNode::new(move |_, _| {
             Ok(DynamicFile::new(CommFile { task: task.clone(), info: info.clone() }))
         })
@@ -931,9 +925,9 @@ impl DynamicFileSource for IoFile {
 
 /// `LimitsFile` implements `proc/<pid>/limits` file.
 #[derive(Clone)]
-pub struct LimitsFile(WeakRef<Task>);
+pub struct LimitsFile(Weak<Task>);
 impl LimitsFile {
-    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         DynamicFile::new_node(Self(task))
     }
 }
@@ -980,14 +974,14 @@ pub struct MemFile {
     // TODO: https://fxbug.dev/442459337 - Tear-down MemoryManager internals on process exit, to
     // avoid extension of the MM lifetime prolonging access to memory via "/proc/pid/mem", etc
     // beyond that of the actual process/address-space.
-    task: WeakRef<Task>,
+    task: Weak<Task>,
 }
 
 impl MemFile {
-    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         PtraceCheckedNode::new_node(task, PTRACE_MODE_ATTACH_REALCREDS, |_, _, task| {
             let mm = task.mm().ok().as_ref().map(Arc::downgrade).unwrap_or_default();
-            Ok(Self { mm, task: task.into() })
+            Ok(Self { mm, task: Arc::downgrade(&task) })
         })
     }
 }
@@ -1071,12 +1065,12 @@ impl FileOps for MemFile {
 
 #[derive(Clone)]
 pub struct StatFile {
-    task: WeakRef<Task>,
+    task: Weak<Task>,
     scope: TaskEntryScope,
 }
 
 impl StatFile {
-    pub fn new_node(task: WeakRef<Task>, scope: TaskEntryScope) -> impl FsNodeOps {
+    pub fn new_node(task: Weak<Task>, scope: TaskEntryScope) -> impl FsNodeOps {
         DynamicFile::new_node(Self { task, scope })
     }
 }
@@ -1234,10 +1228,10 @@ impl DynamicFileSource for StatFile {
 
 #[derive(Clone)]
 pub struct StatmFile {
-    task: WeakRef<Task>,
+    task: Weak<Task>,
 }
 impl StatmFile {
-    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         DynamicFile::new_node(Self { task })
     }
 }
@@ -1266,9 +1260,9 @@ impl DynamicFileSource for StatmFile {
 }
 
 #[derive(Clone)]
-pub struct StatusFile(WeakRef<Task>);
+pub struct StatusFile(Weak<Task>);
 impl StatusFile {
-    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         DynamicFile::new_node(Self(task))
     }
 }
@@ -1380,10 +1374,10 @@ impl DynamicFileSource for StatusFile {
     }
 }
 
-struct OomScoreFile(WeakRef<Task>);
+struct OomScoreFile(Weak<Task>);
 
 impl OomScoreFile {
-    fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         BytesFile::new_node(Self(task))
     }
 }
@@ -1400,9 +1394,9 @@ impl BytesFileOps for OomScoreFile {
 const OOM_ADJUST_MAX: i32 = uapi::OOM_ADJUST_MAX as i32;
 const OOM_SCORE_ADJ_MAX: i32 = uapi::OOM_SCORE_ADJ_MAX as i32;
 
-struct OomAdjFile(WeakRef<Task>);
+struct OomAdjFile(Weak<Task>);
 impl OomAdjFile {
-    fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         BytesFile::new_node(Self(task))
     }
 }
@@ -1439,10 +1433,10 @@ impl BytesFileOps for OomAdjFile {
     }
 }
 
-struct OomScoreAdjFile(WeakRef<Task>);
+struct OomScoreAdjFile(Weak<Task>);
 
 impl OomScoreAdjFile {
-    fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         BytesFile::new_node(Self(task))
     }
 }
@@ -1466,10 +1460,10 @@ impl BytesFileOps for OomScoreAdjFile {
     }
 }
 
-struct TimerslackNsFile(WeakRef<Task>);
+struct TimerslackNsFile(Weak<Task>);
 
 impl TimerslackNsFile {
-    fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         BytesFile::new_node(Self(task))
     }
 }
@@ -1503,10 +1497,10 @@ impl BytesFileOps for TimerslackNsFile {
     }
 }
 
-struct ClearRefsFile(WeakRef<Task>);
+struct ClearRefsFile(Weak<Task>);
 
 impl ClearRefsFile {
-    fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         BytesFile::new_node(Self(task))
     }
 }

@@ -32,8 +32,7 @@ impl DynamicFileSource for LoadavgFile {
             let curr_tids = pid_table.task_ids();
             let mut runnable_tasks = 0;
             for pid in &curr_tids {
-                let weak_task = pid_table.get_task(*pid);
-                if let Some(task) = weak_task.upgrade() {
+                if let Ok(task) = pid_table.get_task(*pid) {
                     if task.state_code() == TaskStateCode::Running {
                         runnable_tasks += 1;
                     }

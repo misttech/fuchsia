@@ -18,7 +18,6 @@ use selinux::{
     TaskAttrs,
 };
 use starnix_sync::{LockBefore, Locked, ThreadGroupLimits, Unlocked};
-use starnix_types::ownership::TempRef;
 use starnix_uapi::auth::{
     Credentials, PTRACE_MODE_ATTACH, PTRACE_MODE_NOAUDIT, PTRACE_MODE_READ, PtraceAccessMode,
 };
@@ -143,8 +142,7 @@ fn maybe_reset_rlimits<L>(
     // Compute the new soft resource limits for the current task.
     // For each resource, the new soft limit is the minimum of the current task's hard limit
     // and the initial task's soft limit.
-    let weak_init = current_task.kernel().pids.read().get_task(1);
-    let init_task = weak_init.upgrade().expect("get the initial task");
+    let init_task = current_task.kernel().pids.read().get_task(1).expect("get the initial task");
     let init_rlimits = { init_task.thread_group().limits.lock(locked).clone() };
     let mut current_rlimits = current_task.thread_group().limits.lock(locked);
     (Resource::ALL).iter().for_each(|resource| {
@@ -377,7 +375,7 @@ pub(in crate::security) fn bprm_creds_for_exec(
         )?;
 
         // Check that ptrace permission is allowed if the process is traced.
-        if let Some(ptracer) = current_task.ptracer_task().upgrade() {
+        if let Some(ptracer) = current_task.ptracer_task() {
             let tracer_sid = ptracer.real_creds().security_state.current_sid;
             // TODO: https://fxbug.dev/412581419 - SIGKILL the process on failure.
             check_permission(
@@ -969,7 +967,7 @@ pub(in crate::security) fn set_procattr(
             }
 
             // Check that ptrace permission is allowed if the process is traced.
-            if let Some(ptracer) = current_task.ptracer_task().upgrade() {
+            if let Some(ptracer) = current_task.ptracer_task() {
                 let tracer_sid = ptracer.real_creds().security_state.current_sid;
                 // TODO: https://fxbug.dev/412581419 - SIGKILL the process on failure.
                 check_permission(
@@ -1034,7 +1032,7 @@ pub(in crate::security) fn set_procattr(
 }
 
 /// Sets the sid of `fs_node` to be that of `task`.
-pub(in crate::security) fn fs_node_init_with_task(task: &TempRef<'_, Task>, fs_node: &FsNode) {
+pub(in crate::security) fn fs_node_init_with_task(task: &Task, fs_node: &FsNode) {
     fs_node_ensure_class(fs_node).unwrap();
     fs_node_set_label_with_task(fs_node, &task.persistent_info);
 }

@@ -40,7 +40,6 @@ use starnix_sync::{
 use starnix_types::arch::ArchWidth;
 use starnix_types::futex_address::FutexAddress;
 use starnix_types::math::{round_down_to_system_page_size, round_up_to_system_page_size};
-use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_types::user_buffer::{UserBuffer, UserBuffers};
 use starnix_uapi::auth::CAP_IPC_LOCK;
 use starnix_uapi::errors::Errno;
@@ -4702,14 +4701,13 @@ pub struct MemoryStats {
 #[derive(Clone)]
 pub struct ProcMapsFile {
     mm: Weak<MemoryManager>,
-    task: WeakRef<Task>,
+    task: Weak<Task>,
 }
 impl ProcMapsFile {
-    pub fn new(task: TempRef<'_, Task>) -> DynamicFile<Self> {
+    pub fn new(task: Arc<Task>) -> DynamicFile<Self> {
         // "maps" is empty for kthreads, rather than inaccessible.
         let mm = task.mm().map_or_else(|_| Weak::default(), |mm| Arc::downgrade(&mm));
-        let task = task.into();
-        DynamicFile::new(Self { mm, task })
+        DynamicFile::new(Self { mm, task: Arc::downgrade(&task) })
     }
 }
 
@@ -4739,13 +4737,13 @@ impl SequenceFileSource for ProcMapsFile {
 #[derive(Clone)]
 pub struct ProcSmapsFile {
     mm: Weak<MemoryManager>,
-    task: WeakRef<Task>,
+    task: Weak<Task>,
 }
 impl ProcSmapsFile {
-    pub fn new(task: TempRef<'_, Task>) -> DynamicFile<Self> {
+    pub fn new(task: Arc<Task>) -> DynamicFile<Self> {
         // "smaps" is empty for kthreads, rather than inaccessible.
         let mm = task.mm().map_or_else(|_| Weak::default(), |mm| Arc::downgrade(&mm));
-        DynamicFile::new(Self { mm, task: task.into() })
+        DynamicFile::new(Self { mm, task: Arc::downgrade(&task) })
     }
 }
 

@@ -35,7 +35,6 @@ use linux_uapi::{
 use selinux::{FileSystemMountOptions, SecurityPermission, SecurityServer, TaskAttrs};
 use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, trace_duration};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
-use starnix_types::ownership::TempRef;
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::auth::{Credentials, PtraceAccessMode};
 use starnix_uapi::device_id::DeviceId;
@@ -985,7 +984,7 @@ pub fn task_alloc_for_kernel() -> TaskAttrs {
 /// `task`'s security attributes, even if the task's security attributes change. Called for the
 /// /proc/<pid> `FsNode`s when they are created.
 /// Corresponds to the `task_to_inode` LSM hook.
-pub fn task_to_fs_node(current_task: &CurrentTask, task: &TempRef<'_, Task>, fs_node: &FsNode) {
+pub fn task_to_fs_node(current_task: &CurrentTask, task: &Task, fs_node: &FsNode) {
     track_hook_duration!("security.hooks.task_to_fs_node");
     // The fs_node_init_with_task hook doesn't require any policy-specific information. Only check
     // if SElinux is enabled before running it.
@@ -2557,7 +2556,7 @@ mod tests {
     async fn fs_node_task_to_fs_node_noop_selinux_disabled() {
         spawn_kernel_and_run(async |locked, current_task| {
             let node = &testing::create_test_file(locked, current_task).entry.node;
-            task_to_fs_node(current_task, &current_task.temp_task(), &node);
+            task_to_fs_node(current_task, &current_task.task, &node);
             assert_eq!(None, selinux_hooks::get_cached_sid(node));
         })
         .await;
@@ -3014,7 +3013,7 @@ mod tests {
             |_locked, current_task, security_server| {
                 security_server.set_enforcing(false);
                 assert_eq!(
-                    get_procattr(current_task, &current_task.temp_task(), ProcAttr::Exec),
+                    get_procattr(current_task, &current_task.task, ProcAttr::Exec),
                     Ok(Vec::new())
                 );
 
@@ -3042,14 +3041,11 @@ mod tests {
                 );
 
                 assert_eq!(
-                    get_procattr(current_task, &current_task.temp_task(), ProcAttr::Exec),
+                    get_procattr(current_task, &current_task.task, ProcAttr::Exec),
                     Ok(VALID_SECURITY_CONTEXT_WITH_NUL.into())
                 );
 
-                assert!(
-                    get_procattr(current_task, &current_task.temp_task(), ProcAttr::Current)
-                        .is_ok()
-                );
+                assert!(get_procattr(current_task, &current_task.task, ProcAttr::Current).is_ok());
             },
         )
         .await;
@@ -3082,7 +3078,7 @@ mod tests {
             );
 
             assert_eq!(
-                get_procattr(&current_task, &current_task.temp_task(), ProcAttr::Current),
+                get_procattr(&current_task, &current_task.task, ProcAttr::Current),
                 error!(EINVAL)
             );
         })

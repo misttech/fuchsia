@@ -180,17 +180,10 @@ pub async fn serve_container_controller(
                 }
                 fstarcontainer::ControllerRequest::GetVmoReferences { payload, responder } => {
                     if let Some(koid) = payload.koid {
-                        let thread_groups = system_task
-                            .kernel()
-                            .pids
-                            .read()
-                            .get_thread_groups()
-                            .collect::<Vec<_>>();
+                        let thread_groups = system_task.kernel().pids.read().get_thread_groups();
                         let mut results = vec![];
                         for thread_group in thread_groups {
-                            if let Some(leader) =
-                                system_task.get_task(thread_group.leader).upgrade()
-                            {
+                            if let Ok(leader) = system_task.get_task(thread_group.leader) {
                                 if let Ok(live) = leader.live() {
                                     let files = &live.files;
                                     let fds = files.get_all_fds();
@@ -587,6 +580,7 @@ mod tests {
     use assert_matches::assert_matches;
     use fidl_fuchsia_posix as fposix;
     use starnix_core::testing::*;
+    use zx;
 
     #[fuchsia::test]
     async fn lutex_controller_test() {

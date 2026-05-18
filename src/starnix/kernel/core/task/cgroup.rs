@@ -13,7 +13,6 @@ use crate::task::{Kernel, ThreadGroup, ThreadGroupKey, WaitQueue, Waiter};
 use crate::vfs::{FsStr, FsString, PathBuilder};
 use starnix_logging::{CATEGORY_STARNIX, log_warn, trace_duration, track_stub};
 use starnix_sync::{FileOpsCore, LockBefore, Locked, Mutex, MutexGuard, ThreadGroupLimits};
-use starnix_types::ownership::TempRef;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::SIGKILL;
 use starnix_uapi::{errno, error, pid_t};
@@ -415,10 +414,7 @@ impl CgroupState {
     where
         L: LockBefore<ThreadGroupLimits>,
     {
-        // Create static-lifetime TempRefs of Tasks so that we avoid don't hold the ThreadGroup
-        // lock while iterating and sending the signal.
-        // SAFETY: static TempRefs are released after all signals are queued.
-        let tasks = thread_group.read().tasks().map(TempRef::into_static).collect::<Vec<_>>();
+        let tasks = thread_group.read().tasks();
         for task in tasks {
             send_freeze_signal(locked, &task, self.create_freeze_waiter())
                 .expect("sending freeze signal should not fail");
@@ -429,10 +425,7 @@ impl CgroupState {
     where
         L: LockBefore<ThreadGroupLimits>,
     {
-        // Create static-lifetime TempRefs of Tasks so that we avoid don't hold the ThreadGroup
-        // lock while iterating and sending the signal.
-        // SAFETY: static TempRefs are released after all signals are queued.
-        let tasks = thread_group.read().tasks().map(TempRef::into_static).collect::<Vec<_>>();
+        let tasks = thread_group.read().tasks();
         for task in tasks {
             task.write().thaw();
             task.interrupt();
@@ -795,7 +788,7 @@ mod test {
                 .expect("add process to cgroup");
 
             assert_eq!(
-                root.get_cgroup(process.temp_task().thread_group()).unwrap().as_ptr(),
+                root.get_cgroup(process.thread_group()).unwrap().as_ptr(),
                 Arc::as_ptr(&cgroup)
             );
 

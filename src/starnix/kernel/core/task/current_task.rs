@@ -34,7 +34,7 @@ use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::Syscall;
 use starnix_task_command::TaskCommand;
 use starnix_types::futex_address::FutexAddress;
-use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef, release_on_error};
+use starnix_types::ownership::{Releasable, release_on_error};
 use starnix_uapi::auth::{
     CAP_KILL, CAP_SYS_ADMIN, CAP_SYS_PTRACE, Credentials, FsCred, PTRACE_MODE_FSCREDS,
     PTRACE_MODE_REALCREDS, PtraceAccessMode, UserAndOrGroupId,
@@ -63,20 +63,20 @@ use std::ffi::CString;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use zx::sys::zx_restricted_state_t;
 
 use super::ThreadGroupLifecycleWaitValue;
 
 pub struct TaskBuilder {
     /// The underlying task object.
-    pub task: OwnedRef<Task>,
+    pub task: Arc<Task>,
 
     pub thread_state: ThreadState<HeapRegs>,
 }
 
 impl TaskBuilder {
-    pub fn new(task: OwnedRef<Task>) -> Self {
+    pub fn new(task: Arc<Task>) -> Self {
         Self { task, thread_state: Default::default() }
     }
 
@@ -103,8 +103,6 @@ impl Releasable for TaskBuilder {
         // Build a temporary CurrentTask to run release actions that require ThreadState.
         let current_task = CurrentTask::new(self.task, self.thread_state.into());
         current_task.exit(locked);
-        let CurrentTask { task, .. } = current_task;
-        task.release(());
     }
 }
 
@@ -129,7 +127,7 @@ impl std::ops::Deref for TaskBuilder {
 /// See also `Task` for more information about tasks.
 pub struct CurrentTask {
     /// The underlying task object.
-    pub task: OwnedRef<Task>,
+    pub task: Arc<Task>,
 
     pub thread_state: ThreadState<RegisterStorageEnum>,
 
@@ -169,7 +167,6 @@ impl Releasable for CurrentTask {
 
     fn release<'a>(self, locked: Self::Context<'a>) {
         self.exit(locked);
-        self.task.release(());
     }
 }
 
@@ -187,7 +184,7 @@ impl fmt::Debug for CurrentTask {
 }
 
 impl CurrentTask {
-    pub fn new(task: OwnedRef<Task>, thread_state: ThreadState<RegisterStorageEnum>) -> Self {
+    pub fn new(task: Arc<Task>, thread_state: ThreadState<RegisterStorageEnum>) -> Self {
         let current_creds = RefCell::new(CurrentCreds::Cached(task.clone_creds()));
         Self {
             task,
@@ -219,10 +216,10 @@ impl CurrentTask {
 
         self.trigger_delayed_releaser(locked);
 
-        // We remove from the thread group here because the WeakRef in the pid
+        // We remove from the thread group here because the Weak in the pid
         // table to this task must be valid until this task is removed from the
         // thread group, and the code below will invalidate it.
-        // Moreover, this requires a OwnedRef of the task to ensure the tasks of
+        // Moreover, this requires an Arc of the task to ensure the tasks of
         // the thread group are always valid.
         let mut pids = self.kernel().pids.write();
         self.task.thread_group().remove(locked, &mut pids, &self.task);
@@ -324,12 +321,8 @@ impl CurrentTask {
         self.kernel().delayed_releaser.apply(locked, self);
     }
 
-    pub fn weak_task(&self) -> WeakRef<Task> {
-        WeakRef::from(&self.task)
-    }
-
-    pub fn temp_task(&self) -> TempRef<'_, Task> {
-        TempRef::from(&self.task)
+    pub fn weak_task(&self) -> Weak<Task> {
+        Arc::downgrade(&self.task)
     }
 
     /// Change the current and real creds of the task. This is invalid to call while temporary
@@ -1259,7 +1252,7 @@ impl CurrentTask {
             // For TSYNC to work, all of the other thread filters in this process have to
             // be a prefix of this thread's filters, and none of them can be in
             // strict mode.
-            let tasks = state.tasks().collect::<Vec<_>>();
+            let tasks = state.tasks();
             for task in &tasks {
                 if task.tid == self.tid {
                     continue;
@@ -1772,11 +1765,10 @@ impl CurrentTask {
         ));
 
         release_on_error!(child, locked, {
-            let child_task = TempRef::from(&child.task);
             // Drop the pids lock as soon as possible after creating the child. Destroying the child
             // and removing it from the pids table itself requires the pids lock, so if an early exit
             // takes place we have a self deadlock.
-            pids.add_task(&child_task);
+            pids.add_task(Arc::clone(&child.task));
             std::mem::drop(pids);
 
             // Child lock must be taken before this lock. Drop the lock on the task, take a writable
@@ -1793,9 +1785,9 @@ impl CurrentTask {
             }
 
             if clone_thread {
-                self.thread_group().add(&child_task)?;
+                self.thread_group().add(Arc::clone(&child.task))?;
             } else {
-                child.thread_group().add(&child_task)?;
+                child.thread_group().add(Arc::clone(&child.task))?;
 
                 // These manipulations of the signal handling state appear to be related to
                 // CLONE_SIGHAND and CLONE_VM rather than CLONE_THREAD. However, we do not support

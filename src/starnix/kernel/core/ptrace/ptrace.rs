@@ -20,7 +20,7 @@ use starnix_registers::HeapRegs;
 use starnix_sync::{LockBefore, Locked, MmDumpable, ThreadGroupLimits, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::SyscallDecl;
-use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard, TempRef};
+use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard};
 use starnix_uapi::auth::PTRACE_MODE_ATTACH_REALCREDS;
 use starnix_uapi::elf::ElfNoteType;
 use starnix_uapi::errors::Errno;
@@ -813,8 +813,7 @@ where
     L: LockBefore<ThreadGroupLimits>,
 {
     let mut pids = current_task.kernel().pids.write();
-    let weak_task = pids.get_task(pid);
-    let tracee = weak_task.upgrade().ok_or_else(|| errno!(ESRCH))?;
+    let tracee = pids.get_task(pid)?;
 
     if let Some(ptrace) = &tracee.read().ptrace {
         if ptrace.get_pid() != current_task.get_pid() {
@@ -1068,7 +1067,7 @@ where
 /// Makes the given thread group trace the given task.
 fn do_attach(
     thread_group: &ThreadGroup,
-    task: &TempRef<'_, Task>,
+    task: &Arc<Task>,
     attach_type: PtraceAttachType,
     options: PtraceOptions,
 ) -> Result<(), Errno> {
@@ -1102,16 +1101,16 @@ fn do_attach(
 /// tracee_task.  Typical for when inheriting ptrace state from another task.
 pub fn ptrace_attach_from_state<L>(
     locked: &mut Locked<L>,
-    tracee_task: &TempRef<'_, Task>,
+    tracee_task: &Arc<Task>,
     ptrace_state: PtraceCoreState,
 ) -> Result<(), Errno>
 where
     L: LockBefore<ThreadGroupLimits>,
 {
     {
-        let weak_tg =
+        let tracer_tg =
             tracee_task.thread_group().kernel.pids.read().get_thread_group(ptrace_state.pid);
-        let tracer_tg = weak_tg.ok_or_else(|| errno!(ESRCH))?;
+        let tracer_tg = tracer_tg.ok_or_else(|| errno!(ESRCH))?;
         do_attach(&tracer_tg, tracee_task, ptrace_state.attach_type, ptrace_state.options)?;
     }
     let mut state = tracee_task.write();
@@ -1142,15 +1141,11 @@ pub fn ptrace_traceme(current_task: &mut CurrentTask) -> Result<SyscallResult, E
         // TODO: Move this check into `do_attach()` so that there is a single `ptrace_access_check(tracer, tracee)`?
         {
             let pids = current_task.kernel().pids.read();
-            let parent_task = pids.get_task(parent.leader);
-            security::ptrace_traceme(
-                current_task,
-                parent_task.upgrade().ok_or_else(|| errno!(EINVAL))?.as_ref(),
-            )?;
+            let parent_task = pids.get_task(parent.leader).map_err(|_| errno!(EINVAL))?;
+            security::ptrace_traceme(current_task, &parent_task)?;
         }
 
-        let task_ref = OwnedRef::temp(&current_task.task);
-        do_attach(&parent, &task_ref, PtraceAttachType::Attach, PtraceOptions::empty())?;
+        do_attach(&parent, &current_task.task, PtraceAttachType::Attach, PtraceOptions::empty())?;
         Ok(starnix_syscalls::SUCCESS)
     } else {
         error!(EPERM)
@@ -1167,8 +1162,7 @@ pub fn ptrace_attach<L>(
 where
     L: LockBefore<MmDumpable>,
 {
-    let weak_task = current_task.kernel().pids.read().get_task(pid);
-    let tracee = weak_task.upgrade().ok_or_else(|| errno!(ESRCH))?;
+    let tracee = current_task.kernel().pids.read().get_task(pid)?;
 
     if tracee.thread_group == current_task.thread_group {
         return error!(EPERM);
@@ -1184,11 +1178,9 @@ where
         );
     } else if attach_type == PtraceAttachType::Seize {
         // When seizing, |data| should be used as the options bitmask.
-        if let Some(task_ref) = weak_task.upgrade() {
-            let mut state = task_ref.write();
-            if let Some(ptrace) = &mut state.ptrace {
-                ptrace.set_options_from_bits(data.ptr() as u32)?;
-            }
+        let mut state = tracee.write();
+        if let Some(ptrace) = &mut state.ptrace {
+            ptrace.set_options_from_bits(data.ptr() as u32)?;
         }
     }
     Ok(starnix_syscalls::SUCCESS)

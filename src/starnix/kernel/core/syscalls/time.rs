@@ -353,8 +353,7 @@ pub fn sys_nanosleep(
 ///
 /// Returns EINVAL if no such task can be found.
 fn get_thread_cpu_time(current_task: &CurrentTask, tid: tid_t) -> Result<i64, Errno> {
-    let weak_task = current_task.get_task(tid);
-    let task = weak_task.upgrade().ok_or_else(|| errno!(EINVAL))?;
+    let task = current_task.get_task(tid).map_err(|_| errno!(EINVAL))?;
     Ok(task.thread_runtime_info()?.cpu_time)
 }
 

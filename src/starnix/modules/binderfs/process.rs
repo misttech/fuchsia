@@ -751,7 +751,7 @@ impl BinderProcess {
     }
 
     /// Returns a task in the process
-    pub fn get_task(&self) -> Option<TempRef<'_, Task>> {
+    pub fn get_task(&self) -> Option<Arc<Task>> {
         get_task_for_thread_group(&self.key)
     }
 }
@@ -1085,9 +1085,6 @@ impl HandleTable {
 }
 
 /// Returns a task in the process keyed by `key`.
-fn get_task_for_thread_group(key: &ThreadGroupKey) -> Option<TempRef<'_, Task>> {
-    key.upgrade().and_then(|tg| {
-        let tg = tg.read();
-        tg.get_task(tg.leader()).or_else(|| tg.tasks().next()).map(TempRef::into_static)
-    })
+fn get_task_for_thread_group(key: &ThreadGroupKey) -> Option<Arc<Task>> {
+    key.upgrade().and_then(|tg| tg.read().get_live_task().ok())
 }

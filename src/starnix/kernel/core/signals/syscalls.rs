@@ -512,8 +512,7 @@ pub fn sys_kill(
                     // If we don't have process with `pid` then check if there is a task with
                     // the `pid`.
                     None => {
-                        let weak_task = pids.get_task(pid);
-                        let task = Task::from_weak(&weak_task)?;
+                        let task = pids.get_task(pid)?;
                         task.thread_group().clone()
                     }
                 }
@@ -530,11 +529,10 @@ pub fn sys_kill(
             // system processes. Linux allows a process to signal itself, but on
             // Linux the call kill(-1,sig) does not signal the calling process."
 
-            let thread_groups = pids.get_thread_groups();
-            signal_thread_groups(
-                current_task,
-                unchecked_signal,
-                thread_groups.into_iter().filter(|thread_group| {
+            let thread_groups: Vec<_> = pids
+                .get_thread_groups()
+                .into_iter()
+                .filter(|thread_group| {
                     if *current_task.thread_group() == *thread_group {
                         return false;
                     }
@@ -542,8 +540,9 @@ pub fn sys_kill(
                         return false;
                     }
                     true
-                }),
-            )?;
+                })
+                .collect();
+            signal_thread_groups(current_task, unchecked_signal, thread_groups)?;
         }
         _ => {
             // "If pid equals 0, then sig is sent to every process in the
@@ -605,8 +604,7 @@ pub fn sys_tkill(
     if tid <= 0 {
         return error!(EINVAL);
     }
-    let thread_weak = current_task.get_task(tid);
-    let thread = Task::from_weak(&thread_weak)?;
+    let thread = current_task.get_task(tid)?;
     send_unchecked_signal(locked, current_task, &thread, unchecked_signal, SI_TKILL)
 }
 
@@ -633,10 +631,8 @@ pub fn sys_tgkill(
     }
     let pids = current_task.kernel().pids.read();
 
-    let weak_target = pids.get_task(tid);
-    let thread = Task::from_weak(&weak_target)?;
+    let thread = pids.get_task(tid)?;
     verify_tgid_for_task(&thread, tgid, &pids)?;
-
     send_unchecked_signal(locked, current_task, &thread, unchecked_signal, SI_TKILL)
 }
 
@@ -672,8 +668,7 @@ pub fn sys_rt_sigqueueinfo(
     unchecked_signal: UncheckedSignal,
     siginfo_ref: UserAddress,
 ) -> Result<(), Errno> {
-    let weak_task = current_task.kernel().pids.read().get_task(tgid);
-    let task = &Task::from_weak(&weak_task)?;
+    let task = current_task.kernel().pids.read().get_task(tgid)?;
     task.thread_group().send_signal_unchecked_with_info(
         current_task,
         unchecked_signal,
@@ -702,9 +697,7 @@ pub fn sys_rt_tgsigqueueinfo(
 ) -> Result<(), Errno> {
     let pids = current_task.kernel().pids.read();
 
-    let thread_weak = pids.get_task(tid);
-    let task = Task::from_weak(&thread_weak)?;
-
+    let task = pids.get_task(tid)?;
     verify_tgid_for_task(&task, tgid, &pids)?;
     send_unchecked_signal_info(locked, current_task, &task, unchecked_signal, siginfo_ref)
 }

@@ -8,7 +8,8 @@ use fuchsia_rcu::RcuOptionBox;
 use starnix_logging::track_stub;
 use starnix_rcu::{RcuHashMap, RcuReadScope};
 use starnix_types::ownership::{TempRef, WeakRef};
-use starnix_uapi::{pid_t, tid_t};
+use starnix_uapi::errors::Errno;
+use starnix_uapi::{errno, pid_t, tid_t};
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
@@ -39,7 +40,7 @@ impl ProcessEntry {
 /// Entities identified by a pid.
 #[derive(Default, Debug)]
 struct PidEntry {
-    task: Option<WeakRef<Task>>,
+    task: Option<Weak<Task>>,
     process: ProcessEntry,
 }
 
@@ -114,14 +115,16 @@ impl PidTable {
         self.last_pid
     }
 
-    pub fn get_task(&self, tid: tid_t) -> WeakRef<Task> {
-        self.get_entry(tid).and_then(|entry| entry.task.clone()).unwrap_or_else(WeakRef::new)
+    pub fn get_task(&self, tid: tid_t) -> Result<Arc<Task>, Errno> {
+        self.get_entry(tid)
+            .and_then(|entry| entry.task.as_ref()?.upgrade())
+            .ok_or_else(|| errno!(ESRCH))
     }
 
-    pub fn add_task(&mut self, task: &TempRef<'_, Task>) {
+    pub fn add_task(&mut self, task: Arc<Task>) {
         let entry = self.get_entry_mut(task.tid);
         assert!(entry.task.is_none());
-        entry.task = Some(WeakRef::from(task));
+        entry.task = Some(Arc::downgrade(&task));
 
         // If we're not cloning a thread, add its thread group
         if task.is_leader() {
@@ -170,11 +173,12 @@ impl PidTable {
         }
     }
 
-    pub fn get_thread_groups(&self) -> impl Iterator<Item = Arc<ThreadGroup>> + '_ {
+    pub fn get_thread_groups(&self) -> Vec<Arc<ThreadGroup>> {
         self.table
             .iter()
             .flat_map(|(_pid, entry)| entry.process.thread_group())
             .flat_map(|g| g.upgrade())
+            .collect()
     }
 
     /// Replace process with the specified `pid` with the `zombie`.

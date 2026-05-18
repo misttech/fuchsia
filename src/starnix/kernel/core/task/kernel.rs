@@ -50,7 +50,6 @@ use starnix_logging::{SyscallLogFilter, log_debug, log_error, log_info, log_warn
 use starnix_sync::{
     FileOpsCore, KernelSwapFiles, LockEqualOrBefore, Locked, Mutex, OrderedMutex, RwLock,
 };
-use starnix_types::ownership::TempRef;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::open_flags::OpenFlags;
@@ -583,6 +582,7 @@ impl Kernel {
                 self.pids
                     .read()
                     .get_thread_groups()
+                    .into_iter()
                     .filter(|tg| tg.leader != SYSTEM_TASK_PID && tg.leader != INIT_PID)
                     .collect::<Vec<_>>()
             };
@@ -841,13 +841,13 @@ impl Kernel {
         // Avoid holding locks for the entire iteration.
         let all_thread_groups = {
             let pid_table = self.pids.read();
-            pid_table.get_thread_groups().collect::<Vec<_>>()
+            pid_table.get_thread_groups()
         };
         for thread_group in all_thread_groups {
             // Avoid holding the state lock while summarizing.
             let (ppid, tasks) = {
                 let tg = thread_group.read();
-                (tg.get_ppid() as i64, tg.tasks().map(TempRef::into_static).collect::<Vec<_>>())
+                (tg.get_ppid() as i64, tg.tasks())
             };
 
             let tg_node = thread_groups.create_child(format!("{}", thread_group.leader));

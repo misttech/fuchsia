@@ -22,7 +22,6 @@ use starnix_logging::{log_error, log_info, log_trace, track_stub};
 use starnix_sync::{Locked, RwLock, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_task_command::TaskCommand;
-use starnix_types::ownership::WeakRef;
 use starnix_types::time::timeval_from_duration;
 use starnix_uapi::auth::{
     CAP_SETGID, CAP_SETPCAP, CAP_SETUID, CAP_SYS_ADMIN, CAP_SYS_NICE, CAP_SYS_RESOURCE,
@@ -131,7 +130,7 @@ pub fn do_clone(
     }
 
     let tid = new_task.task.tid;
-    let task_ref = WeakRef::from(&new_task.task);
+    let task_ref = Arc::downgrade(&new_task.task);
     execute_task(locked, new_task, |_, _| Ok(()), |_| {}, ptrace_state)?;
 
     current_task.ptrace_event(locked, trace_kind, tid as u64);
@@ -380,8 +379,8 @@ pub fn sys_getppid(
     Ok(current_task.thread_group().read().get_ppid())
 }
 
-fn get_task_or_current(current_task: &CurrentTask, pid: pid_t) -> WeakRef<Task> {
-    if pid == 0 { current_task.weak_task() } else { current_task.get_task(pid) }
+fn get_task_or_current(current_task: &CurrentTask, pid: pid_t) -> Result<Arc<Task>, Errno> {
+    if pid == 0 { Ok(current_task.task.clone()) } else { current_task.get_task(pid) }
 }
 
 pub fn sys_getsid(
@@ -389,8 +388,7 @@ pub fn sys_getsid(
     current_task: &CurrentTask,
     pid: pid_t,
 ) -> Result<pid_t, Errno> {
-    let weak = get_task_or_current(current_task, pid);
-    let target_task = Task::from_weak(&weak)?;
+    let target_task = get_task_or_current(current_task, pid)?;
     security::check_task_getsid(current_task, &target_task)?;
     let sid = target_task.thread_group().read().process_group.session.leader;
     Ok(sid)
@@ -401,8 +399,7 @@ pub fn sys_getpgid(
     current_task: &CurrentTask,
     pid: pid_t,
 ) -> Result<pid_t, Errno> {
-    let weak = get_task_or_current(current_task, pid);
-    let task = Task::from_weak(&weak)?;
+    let task = get_task_or_current(current_task, pid)?;
 
     security::check_getpgid_access(current_task, &task)?;
     let pgid = task.thread_group().read().process_group.leader;
@@ -415,8 +412,7 @@ pub fn sys_setpgid(
     pid: pid_t,
     pgid: pid_t,
 ) -> Result<(), Errno> {
-    let weak = get_task_or_current(current_task, pid);
-    let task = Task::from_weak(&weak)?;
+    let task = get_task_or_current(current_task, pid)?;
 
     current_task.thread_group().setpgid(locked, current_task, &task, pgid)?;
     Ok(())
@@ -783,8 +779,7 @@ pub fn sys_sched_getscheduler(
         return error!(EINVAL);
     }
 
-    let weak = get_task_or_current(current_task, pid);
-    let target_task = Task::from_weak(&weak)?;
+    let target_task = get_task_or_current(current_task, pid)?;
     security::check_getsched_access(current_task, target_task.as_ref())?;
     let current_scheduler_state = target_task.read().scheduler_state;
     Ok(current_scheduler_state.policy_for_sched_getscheduler())
@@ -802,8 +797,7 @@ pub fn sys_sched_setscheduler(
         return error!(EINVAL);
     }
 
-    let weak = get_task_or_current(current_task, pid);
-    let target_task = Task::from_weak(&weak)?;
+    let target_task = get_task_or_current(current_task, pid)?;
 
     let reset_on_fork = policy & SCHED_RESET_ON_FORK != 0;
 
@@ -897,8 +891,7 @@ pub fn sys_sched_getaffinity(
 
     check_cpu_set_alignment(current_task, cpusetsize)?;
 
-    let weak = get_task_or_current(current_task, pid);
-    let _task = Task::from_weak(&weak)?;
+    let _task = get_task_or_current(current_task, pid)?;
 
     // sched_setaffinity() is not implemented. Fake affinity mask based on the number of CPUs.
     let mask = get_default_cpu_set();
@@ -918,8 +911,7 @@ pub fn sys_sched_setaffinity(
     if pid < 0 {
         return error!(EINVAL);
     }
-    let weak = get_task_or_current(current_task, pid);
-    let target_task = Task::from_weak(&weak)?;
+    let target_task = get_task_or_current(current_task, pid)?;
 
     check_cpu_set_alignment(current_task, cpusetsize)?;
 
@@ -957,8 +949,7 @@ pub fn sys_sched_getparam(
         return error!(EINVAL);
     }
 
-    let weak = get_task_or_current(current_task, pid);
-    let target_task = Task::from_weak(&weak)?;
+    let target_task = get_task_or_current(current_task, pid)?;
     let param_value = target_task.read().scheduler_state.get_sched_param();
     current_task.write_object(param, &param_value)?;
     Ok(())
@@ -974,8 +965,7 @@ pub fn sys_sched_setparam(
     if pid < 0 || param.is_null() {
         return error!(EINVAL);
     }
-    let weak = get_task_or_current(current_task, pid);
-    let target_task = Task::from_weak(&weak)?;
+    let target_task = get_task_or_current(current_task, pid)?;
 
     // TODO: https://fxbug.dev/425143440 - we probably want to improve the locking here.
     let current_state = target_task.read().scheduler_state;
@@ -1109,7 +1099,7 @@ pub fn sys_prctl(
             } else if arg2 == 0 {
                 PtraceAllowedPtracers::None
             } else {
-                if current_task.kernel().pids.read().get_task(arg2 as i32).upgrade().is_none() {
+                if current_task.kernel().pids.read().get_task(arg2 as i32).is_err() {
                     return error!(EINVAL);
                 }
                 PtraceAllowedPtracers::Some(arg2 as pid_t)
@@ -1385,8 +1375,7 @@ pub fn do_prlimit64<T>(
 where
     T: FromBytes + IntoBytes + Immutable + From<uapi::rlimit> + Into<uapi::rlimit>,
 {
-    let weak = get_task_or_current(current_task, pid);
-    let target_task = Task::from_weak(&weak)?;
+    let target_task = get_task_or_current(current_task, pid)?;
 
     // To get or set the resource of a process other than itself, the caller must have either:
     // * the same `uid`, `euid`, `saved_uid`, `gid`, `egid`, `saved_gid` as the target.
@@ -1482,8 +1471,7 @@ pub fn sys_capget(
         return error!(EINVAL);
     }
 
-    let weak = get_task_or_current(current_task, header.pid);
-    let target_task = Task::from_weak(&weak)?;
+    let target_task = get_task_or_current(current_task, header.pid)?;
 
     security::check_getcap_access(current_task, &target_task)?;
 
@@ -1595,8 +1583,7 @@ pub fn sys_capset(
             return error!(EPERM);
         }
     }
-    let weak = get_task_or_current(current_task, header.pid);
-    let target_task = Task::from_weak(&weak)?;
+    let target_task = get_task_or_current(current_task, header.pid)?;
 
     security::check_setcap_access(current_task, &target_task)?;
 
@@ -1739,8 +1726,7 @@ pub fn sys_getpriority(
         _ => return error!(EINVAL),
     }
     track_stub!(TODO("https://fxbug.dev/322893809"), "getpriority permissions");
-    let weak = get_task_or_current(current_task, who);
-    let target_task = Task::from_weak(&weak)?;
+    let target_task = get_task_or_current(current_task, who)?;
     let state = target_task.read();
     Ok(state.scheduler_state.normal_priority.raw_priority())
 }
@@ -1763,8 +1749,7 @@ pub fn sys_setpriority(
         _ => return error!(EINVAL),
     }
 
-    let weak = get_task_or_current(current_task, who);
-    let target_task = Task::from_weak(&weak)?;
+    let target_task = get_task_or_current(current_task, who)?;
 
     let normal_priority = NormalPriority::from_setpriority_syscall(priority);
 
@@ -1963,10 +1948,8 @@ pub fn sys_kcmp(
     index1: u64,
     index2: u64,
 ) -> Result<u32, Errno> {
-    let weak1 = current_task.get_task(pid1);
-    let weak2 = current_task.get_task(pid2);
-    let task1 = Task::from_weak(&weak1)?;
-    let task2 = Task::from_weak(&weak2)?;
+    let task1 = current_task.get_task(pid1)?;
+    let task2 = current_task.get_task(pid2)?;
 
     current_task.check_ptrace_access_mode(locked, PTRACE_MODE_READ_REALCREDS, &task1)?;
     current_task.check_ptrace_access_mode(locked, PTRACE_MODE_READ_REALCREDS, &task2)?;

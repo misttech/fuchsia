@@ -27,7 +27,6 @@ use starnix_sync::{
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
-use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef};
 use starnix_types::stats::TaskTimeStats;
 use starnix_uapi::auth::{Credentials, FsCred};
 use starnix_uapi::errors::Errno;
@@ -899,9 +898,8 @@ pub type TaskPersistentInfo = Arc<TaskPersistentInfoState>;
 /// See also `CurrentTask`, which represents the task corresponding to the thread that is currently
 /// executing.
 pub struct Task {
-    /// Weak reference to the `OwnedRef` of this `Task`. This allows to retrieve the
-    /// `TempRef` from a raw `Task`.
-    pub weak_self: WeakRef<Self>,
+    /// Weak reference to this `Task`. This allows us to retrieve an `Arc` from a raw `Task`.
+    pub weak_self: Weak<Self>,
 
     /// A unique identifier for this task.
     ///
@@ -1057,8 +1055,8 @@ impl Task {
         self.stop_state.load(Ordering::Relaxed)
     }
 
-    /// Upgrade a Reference to a Task, returning a ESRCH errno if the reference cannot be borrowed.
-    pub fn from_weak(weak: &WeakRef<Task>) -> Result<TempRef<'_, Task>, Errno> {
+    /// Upgrade a [`Weak<Task>`], returning [`Err(ESRCH)`] if the reference cannot be borrowed.
+    pub fn from_weak(weak: &Weak<Task>) -> Result<Arc<Task>, Errno> {
         weak.upgrade().ok_or_else(|| errno!(ESRCH))
     }
 
@@ -1092,11 +1090,11 @@ impl Task {
         seccomp_filters: SeccompFilterContainer,
         robust_list_head: RobustListHeadPtr,
         timerslack_ns: u64,
-    ) -> OwnedRef<Self> {
+    ) -> Arc<Self> {
         let thread_group_key = ThreadGroupKey::from(&thread_group);
-        OwnedRef::new_cyclic(|weak_self| {
+        Arc::new_cyclic(|weak_self| {
             let task = Task {
-                weak_self,
+                weak_self: weak_self.clone(),
                 tid,
                 thread_group_key: thread_group_key.clone(),
                 kernel: Arc::clone(&thread_group.kernel),
@@ -1169,17 +1167,8 @@ impl Task {
         self.persistent_info.clone_creds()
     }
 
-    pub fn ptracer_task(&self) -> WeakRef<Task> {
-        let ptracer = {
-            let state = self.read();
-            state.ptrace.as_ref().map(|p| p.core_state.pid)
-        };
-
-        let Some(ptracer) = ptracer else {
-            return WeakRef::default();
-        };
-
-        self.get_task(ptracer)
+    pub fn ptracer_task(&self) -> Option<Arc<Task>> {
+        self.get_task(self.read().ptrace.as_ref().map(|p| p.core_state.pid)?).ok()
     }
 
     /// Returns the live state of the task, if it exists.
@@ -1275,7 +1264,7 @@ impl Task {
 
     /// Blocks the caller until the task has exited or executed execve(). This is used to implement
     /// vfork() and clone(... CLONE_VFORK, ...). The task must have created with CLONE_EXECVE.
-    pub fn wait_for_execve(&self, task_to_wait: WeakRef<Task>) -> Result<(), Errno> {
+    pub fn wait_for_execve(&self, task_to_wait: Weak<Task>) -> Result<(), Errno> {
         let event = task_to_wait.upgrade().and_then(|t| t.vfork_event.clone());
         if let Some(event) = event {
             event
@@ -1313,7 +1302,7 @@ impl Task {
         Ok(())
     }
 
-    pub fn get_task(&self, tid: tid_t) -> WeakRef<Task> {
+    pub fn get_task(&self, tid: tid_t) -> Result<Arc<Task>, Errno> {
         self.kernel().pids.read().get_task(tid)
     }
 
@@ -1526,10 +1515,10 @@ impl Task {
     }
 }
 
-impl Releasable for Task {
-    type Context<'a> = ();
-
-    fn release<'a>(self, _context: Self::Context<'a>) {}
+impl Drop for Task {
+    fn drop(&mut self) {
+        debug_assert!(self.live_state.read().is_none());
+    }
 }
 
 impl MemoryAccessor for Task {
@@ -1642,8 +1631,8 @@ mod test {
             assert!(another_tid >= 2);
 
             let pids = kernel.pids.read();
-            assert_eq!(pids.get_task(1).upgrade().unwrap().get_tid(), 1);
-            assert_eq!(pids.get_task(another_tid).upgrade().unwrap().get_tid(), another_tid);
+            assert_eq!(pids.get_task(1).unwrap().get_tid(), 1);
+            assert_eq!(pids.get_task(another_tid).unwrap().get_tid(), another_tid);
         })
         .await;
     }

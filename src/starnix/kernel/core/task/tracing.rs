@@ -133,8 +133,7 @@ impl TracePerformanceEventManager {
 
         let ids = pid_table.task_ids();
         for tid in &ids {
-            let task_ref = pid_table.get_task(*tid);
-            let task = task_ref.upgrade().expect("Empty mapping for {tid}.");
+            let task = pid_table.get_task(*tid).expect("Empty mapping for {tid}.");
             let live = task.live().expect("tid {tid} is not live.");
             let pair = KoidPair {
                 process: task.thread_group().get_process_koid().ok(),

@@ -282,7 +282,7 @@ impl<Key: FutexKey> FutexTable<Key> {
         //        uaddr does not exist.
         current_task
             .get_task(new_owner_tid as i32)
-            .upgrade()
+            .ok()
             .and_then(|o| o.live().unwrap().thread.read().as_ref().map(Arc::clone))
             .map_or_else(
                 || error!(ESRCH),

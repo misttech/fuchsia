@@ -32,7 +32,6 @@ use starnix_core::{security, signals};
 use starnix_logging::{log_debug, log_error, log_info, log_warn};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_task_command::TaskCommand;
-use starnix_types::ownership::WeakRef;
 use starnix_uapi::auth::{Capabilities, Credentials};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errno;
@@ -46,7 +45,7 @@ use std::ffi::CString;
 use std::ops::DerefMut;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 /// Component controller epitaph value used as the base value to pass non-zero error
 /// codes to the calling component.
@@ -296,7 +295,7 @@ pub async fn start_component(
                         )?;
                         current_task.exec(locked, executable, program.binary, argv, environ)?;
 
-                        Ok(WeakRef::from(&current_task.task))
+                        Ok(Arc::downgrade(&current_task.task))
                     }
                 },
                 move |result| {
@@ -331,7 +330,7 @@ type TaskResult = Result<ExitStatus, Error>;
 /// If the task has completed, it will also close the controller channel.
 async fn serve_component_controller(
     controller: ComponentControllerRequestStream,
-    task: WeakRef<Task>,
+    task: Weak<Task>,
     task_complete: oneshot::Receiver<TaskResult>,
 ) {
     let controller_handle = controller.control_handle();

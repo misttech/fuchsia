@@ -11,7 +11,7 @@ use crate::mm::{
 };
 use crate::security;
 use crate::syscalls::time::TimeSpecPtr;
-use crate::task::{CurrentTask, Task};
+use crate::task::CurrentTask;
 use crate::time::TargetTime;
 use crate::time::utc::estimate_boot_deadline_from_utc;
 use crate::vfs::buffers::{OutputBuffer, UserBuffersInputBuffer, UserBuffersOutputBuffer};
@@ -301,8 +301,7 @@ pub fn sys_process_vm_readv(
         return Ok(0);
     }
 
-    let weak_remote_task = current_task.get_task(tid);
-    let remote_task = Task::from_weak(&weak_remote_task)?;
+    let remote_task = current_task.get_task(tid)?;
 
     current_task.check_ptrace_access_mode(locked, PTRACE_MODE_ATTACH_REALCREDS, &remote_task)?;
 
@@ -353,8 +352,7 @@ pub fn sys_process_vm_writev(
         return Ok(0);
     }
 
-    let weak_remote_task = current_task.get_task(tid);
-    let remote_task = Task::from_weak(&weak_remote_task)?;
+    let remote_task = current_task.get_task(tid)?;
 
     current_task.check_ptrace_access_mode(locked, PTRACE_MODE_ATTACH_REALCREDS, &remote_task)?;
 
@@ -392,8 +390,7 @@ pub fn sys_process_mrelease(
         return error!(EINVAL);
     }
     let file = current_task.get_file(pidfd)?;
-    let task = current_task.get_task(file.as_thread_group_key()?.pid());
-    let task = task.upgrade().ok_or_else(|| errno!(ESRCH))?;
+    let task = current_task.get_task(file.as_thread_group_key()?.pid())?;
     if !task.load_stopped().is_stopped() {
         return error!(EINVAL);
     }
@@ -721,8 +718,7 @@ pub fn sys_get_robust_list(
     if tid != 0 {
         security::check_task_capable(current_task, CAP_SYS_PTRACE)?;
     }
-    let task = if tid == 0 { current_task.weak_task() } else { current_task.get_task(tid) };
-    let task = Task::from_weak(&task)?;
+    let task = if tid == 0 { current_task.task.clone() } else { current_task.get_task(tid)? };
     current_task.write_object(user_head_ptr, &task.read().robust_list_head.addr())?;
     current_task.write_object(user_len_ptr, &std::mem::size_of::<robust_list_head>())?;
     Ok(())

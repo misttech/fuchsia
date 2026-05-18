@@ -190,8 +190,7 @@ impl FsNodeOps for ProcDirectoryNode {
             None => {
                 let pid_string = std::str::from_utf8(name).map_err(|_| errno!(ENOENT))?;
                 let pid = pid_string.parse::<pid_t>().map_err(|_| errno!(ENOENT))?;
-                let weak_task = current_task.get_task(pid);
-                let task = weak_task.upgrade().ok_or_else(|| errno!(ENOENT))?;
+                let task = current_task.get_task(pid)?;
                 // RCU scoping rules create a race condition such that multiple threads
                 // simultaneously reading proc_pid_directory_cache for the first time will result in
                 // duplicate caches being created. However, this is both unlikely and safe. In that

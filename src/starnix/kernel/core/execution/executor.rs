@@ -8,7 +8,6 @@ use crate::task::{CurrentTask, DelayedReleaser, ExitStatus, TaskBuilder};
 use anyhow::Error;
 use starnix_logging::{log_error, log_warn};
 use starnix_sync::{LockBefore, Locked, Mutex, TaskRelease, Unlocked};
-use starnix_types::ownership::WeakRef;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::os::unix::thread::JoinHandleExt;
@@ -102,14 +101,16 @@ where
         };
     };
 
-    let weak_task = WeakRef::from(&task_builder.task);
-    let ref_task = weak_task.upgrade().unwrap();
     if let Some(ptrace_state) = ptrace_state {
-        let _ =
-            ptrace_attach_from_state(locked.cast_locked::<TaskRelease>(), &ref_task, ptrace_state);
+        let _ = ptrace_attach_from_state(
+            locked.cast_locked::<TaskRelease>(),
+            &task_builder.task,
+            ptrace_state,
+        );
     }
 
     // Hold a lock on the task's thread slot until we have a chance to initialize it.
+    let ref_task = Arc::clone(&task_builder.task);
     let live_task = ref_task.live().unwrap();
     let mut task_thread_guard = live_task.thread.write();
 

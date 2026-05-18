@@ -17,12 +17,12 @@ use futures::channel::oneshot;
 use starnix_logging::{CATEGORY_STARNIX, log_debug, log_error, trace_duration};
 use starnix_sync::{Locked, Unlocked};
 use starnix_task_command::TaskCommand;
-use starnix_types::ownership::{WeakRef, release_after};
+use starnix_types::ownership::release_after;
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
 use std::future::Future;
-use std::sync::Arc;
 use std::sync::mpsc::{SendError, SyncSender, TrySendError, sync_channel};
+use std::sync::{Arc, Weak};
 use std::thread::JoinHandle;
 
 type BoxedClosure = Box<dyn FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> () + Send + 'static>;
@@ -195,7 +195,7 @@ where
 pub struct DynamicThreadSpawner {
     state: Arc<Mutex<DynamicThreadSpawnerState>>,
     /// The weak system task to create the kernel thread associated with each thread.
-    system_task: WeakRef<Task>,
+    system_task: Weak<Task>,
     /// A persistent thread that is used to create new thread. This ensures that threads are
     /// created from the initial starnix process and are not tied to a specific task.
     persistent_thread: RunningThread,
@@ -274,7 +274,7 @@ struct DynamicThreadSpawnerState {
 impl DynamicThreadSpawner {
     pub fn new(
         max_idle_threads: u8,
-        system_task: WeakRef<Task>,
+        system_task: Weak<Task>,
         debug_name: impl Into<String>,
     ) -> Self {
         let persistent_thread =
@@ -373,7 +373,7 @@ struct RunningThread {
 impl RunningThread {
     fn new(
         state: Arc<Mutex<DynamicThreadSpawnerState>>,
-        system_task: WeakRef<Task>,
+        system_task: Weak<Task>,
         debug_task_name: String,
         f: BoxedClosure,
     ) -> Self {
@@ -427,7 +427,7 @@ impl RunningThread {
         result
     }
 
-    fn new_persistent(system_task: WeakRef<Task>, task_name: String) -> Self {
+    fn new_persistent(system_task: Weak<Task>, task_name: String) -> Self {
         // The persistent thread doesn't need to do any rendez-vous when received task.
         let (sender, receiver) = sync_channel::<BoxedClosure>(20);
         let thread = Some(

@@ -25,7 +25,6 @@ use starnix_rcu::RcuHashMap;
 use starnix_sync::{
     BeforeFsNodeAppend, FileOpsCore, LockEqualOrBefore, Locked, Mutex, RwLock, Unlocked,
 };
-use starnix_types::ownership::WeakRef;
 use starnix_uapi::arc_key::{ArcKey, PtrKey, WeakKey};
 use starnix_uapi::auth::UserAndOrGroupId;
 use starnix_uapi::device_id::DeviceId;
@@ -780,7 +779,7 @@ impl CurrentTask {
     }
 }
 
-struct ProcMountsFileSource(WeakRef<Task>);
+struct ProcMountsFileSource(Weak<Task>);
 
 impl DynamicFileSource for ProcMountsFileSource {
     fn generate(
@@ -824,7 +823,7 @@ pub struct ProcMountsFile {
 }
 
 impl ProcMountsFile {
-    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         SimpleFileNode::new(move |_, _| {
             Ok(Self { dynamic_file: DynamicFile::new(ProcMountsFileSource(task.clone())) })
         })
@@ -860,9 +859,9 @@ impl FileOps for ProcMountsFile {
 }
 
 #[derive(Clone)]
-pub struct ProcMountinfoFile(WeakRef<Task>);
+pub struct ProcMountinfoFile(Weak<Task>);
 impl ProcMountinfoFile {
-    pub fn new_node(task: WeakRef<Task>) -> impl FsNodeOps {
+    pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         DynamicFile::new_node(Self(task))
     }
 }

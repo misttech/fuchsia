@@ -27,7 +27,6 @@ use crate::vfs::{
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_types::ownership::TempRef;
 use starnix_types::time::{
     duration_from_poll_timeout, duration_from_timespec, time_from_timespec, timespec_from_duration,
 };
@@ -2168,8 +2167,8 @@ pub fn sys_pidfd_open(
         let open_flags = if blocking { OpenFlags::empty() } else { OpenFlags::NONBLOCK };
 
         // Validate that a process (and not just a task) entry exists for the PID.
-        let task = pid_table.get_task(pid);
-        let file = match (pid_table.get_process(pid), task.upgrade()) {
+        let task = pid_table.get_task(pid).ok();
+        let file = match (pid_table.get_process(pid), task) {
             (Some(ProcessEntryRef::Process(proc)), Some(task)) => {
                 new_pidfd(locked, current_task, &proc, &*task.mm()?, open_flags)
             }
@@ -2199,7 +2198,7 @@ pub fn sys_pidfd_getfd(
     let file = current_task.get_file(pidfd)?;
     let tg = file.as_thread_group_key()?;
     let tg = tg.upgrade().ok_or_else(|| errno!(ESRCH))?;
-    let task = TempRef::into_static(tg.read().tasks().next().ok_or_else(|| errno!(ESRCH))?);
+    let task = tg.read().get_live_task()?;
 
     current_task.check_ptrace_access_mode(locked, PTRACE_MODE_ATTACH_REALCREDS, &task)?;
 
