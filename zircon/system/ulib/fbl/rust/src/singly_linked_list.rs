@@ -1157,6 +1157,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "miri does not support calling foreign functions")]
     fn test_cross_lang_list() {
         use core::ffi::c_void;
 
@@ -1506,6 +1507,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "miri does not support calling foreign functions")]
     fn test_interop_rust_list_cpp_unique_objects() {
         let destroyed1 = AtomicBool::new(false);
         let destroyed2 = AtomicBool::new(false);
@@ -1541,6 +1543,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "miri does not support calling foreign functions")]
     fn test_interop_cpp_list_rust_unique_objects() {
         let destroyed1 = Arc::new(AtomicBool::new(false));
         let destroyed2 = Arc::new(AtomicBool::new(false));
@@ -1583,6 +1586,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "miri does not support calling foreign functions")]
     fn test_interop_rust_list_cpp_ref_objects() {
         let destroyed1 = AtomicBool::new(false);
         let destroyed2 = AtomicBool::new(false);
@@ -1618,6 +1622,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "miri does not support calling foreign functions")]
     fn test_interop_cpp_list_rust_ref_objects() {
         let destroyed1 = Arc::new(AtomicBool::new(false));
         let destroyed2 = Arc::new(AtomicBool::new(false));

@@ -135,6 +135,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "miri does not support calling foreign functions")]
     fn test_canary_ffi() {
         const MAGIC_VAL: u32 = 0x12345678; // Must match the hardcoded value in C++ helper
         let canary = Canary::<MAGIC_VAL>::new();

@@ -163,6 +163,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "miri does not support calling foreign functions")]
     fn test_unique_ptr_cpp_drops() {
         let destroyed = AtomicBool::new(false);
         unsafe {

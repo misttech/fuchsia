@@ -177,6 +177,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "miri does not support calling foreign functions")]
     fn test_cpp_drops_reference() {
         let destroyed = Arc::new(AtomicBool::new(false));
         let ref_ptr =

@@ -56,7 +56,9 @@
 pub fn conditional_select_nospec_eq(x: usize, y: usize, a: usize, b: usize) -> usize {
     cfg_select! {
         // No mitigations defined for RISC-V.
-        target_arch = "riscv64" => {
+        //
+        // Miri is not run in security-critical contexts and does not support inline assembly.
+        any(miri, target_arch = "riscv64") => {
             if x == y { a } else { b }
         }
         target_arch = "aarch64" => {
@@ -114,7 +116,9 @@ pub fn conditional_select_nospec_eq(x: usize, y: usize, a: usize, b: usize) -> u
 pub fn conditional_select_nospec_lt(x: usize, y: usize, a: usize, b: usize) -> usize {
     cfg_select! {
         // No mitigations defined for RISC-V.
-        target_arch = "riscv64" => {
+        //
+        // Miri is not run in security-critical contexts and does not support inline assembly.
+        any(miri, target_arch = "riscv64") => {
             if x < y { a } else { b }
         }
         target_arch = "aarch64" => {

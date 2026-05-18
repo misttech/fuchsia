@@ -54,6 +54,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "miri does not support calling foreign functions")]
     fn test_cross_lang_ref_ptr() {
         use core::sync::atomic::{AtomicBool, Ordering};
 

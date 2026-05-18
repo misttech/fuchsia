@@ -44,7 +44,9 @@
 pub fn confine_array_index(index: usize, size: usize) -> usize {
     cfg_select! {
         // No mitigations defined for RISC-V.
-        target_arch = "riscv64" => {
+        //
+        // Miri is not run in security-critical contexts and does not support inline assembly.
+        any(miri, target_arch = "riscv64") => {
             if index < size { index } else { 0 }
         }
         target_arch = "aarch64" => {
