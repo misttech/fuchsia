@@ -285,10 +285,12 @@ impl<L> Locked<L> {
         let ptr2: *const S = source2;
         if ptr1 < ptr2 {
             let data1 = S::lock(source1);
+            let _token = crate::allow_subclass();
             let data2 = S::lock(source2);
             (data1, data2, Locked::fabricate())
         } else {
             let data2 = S::lock(source2);
+            let _token = crate::allow_subclass();
             let data1 = S::lock(source1);
             (data1, data2, Locked::fabricate())
         }

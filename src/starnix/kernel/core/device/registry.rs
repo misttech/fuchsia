@@ -13,7 +13,7 @@ use crate::vfs::pseudo::simple_directory::SimpleDirectoryMutator;
 use crate::vfs::{FileOps, FsStr, FsString, NamespaceNode};
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_logging::log_error;
-use starnix_sync::{InterruptibleEvent, LockBefore, LockEqualOrBefore, OrderedMutex};
+use starnix_sync::{InterruptibleEvent, LockBefore, LockDepGuard, LockEqualOrBefore, OrderedMutex};
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::as_any::AsAny;
 use starnix_uapi::device_id::{DYN_MAJOR_RANGE, DeviceId, MISC_DYNANIC_MINOR_RANGE, MISC_MAJOR};
@@ -21,7 +21,7 @@ use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 
-use starnix_sync::{FileOpsCore, Locked, MappedMutexGuard, MutexGuard};
+use starnix_sync::{FileOpsCore, Locked, MappedLockDepGuard};
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::ops::{Deref, Range};
 use std::sync::Arc;
@@ -655,11 +655,11 @@ impl DeviceRegistry {
         &'a self,
         locked: &'a mut Locked<L>,
         mode: DeviceMode,
-    ) -> MappedMutexGuard<'a, RegisteredDevices>
+    ) -> MappedLockDepGuard<'a, RegisteredDevices, starnix_sync::DeviceRegistryState>
     where
         L: LockBefore<starnix_sync::DeviceRegistryState>,
     {
-        MutexGuard::map(self.state.lock(locked), |state| match mode {
+        LockDepGuard::map(self.state.lock(locked), |state| match mode {
             DeviceMode::Char => &mut state.char_devices,
             DeviceMode::Block => &mut state.block_devices,
         })

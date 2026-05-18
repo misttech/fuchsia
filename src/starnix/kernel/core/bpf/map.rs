@@ -12,7 +12,7 @@ use ebpf::MapSchema;
 use ebpf_api::{Map, MapError, PinnedMap};
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_sync::{
-    EbpfMapStateLevel, EbpfStateLock, LockBefore, Locked, MutexGuard, OrderedMutex,
+    EbpfMapStateLevel, EbpfStateLock, LockBefore, LockDepGuard, Locked, OrderedMutex,
 };
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::auth::{CAP_BPF, CAP_NET_ADMIN, CAP_PERFMON, CAP_SYS_ADMIN};
@@ -169,7 +169,7 @@ impl BpfMap {
         L: LockBefore<EbpfMapStateLevel>,
     {
         let (guard, locked) = self.state.lock_and(locked);
-        (MutexGuard::map(guard, |s| &mut s.is_frozen), locked)
+        (LockDepGuard::map(guard, |s| &mut s.is_frozen), locked)
     }
 
     pub(crate) fn freeze<L>(&self, locked: &mut Locked<L>) -> Result<(), Errno>

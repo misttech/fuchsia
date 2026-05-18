@@ -3,10 +3,14 @@
 // found in the LICENSE file.
 
 // Use these crates so that we don't need to make the dependencies conditional.
-use {fuchsia_sync as _, lock_api as _};
+use fuchsia_sync as _;
+use lock_api as _;
 
-use crate::{LockAfter, LockBefore, LockFor, Locked, RwLockFor, UninterruptibleLock};
-use core::marker::PhantomData;
+use crate::{
+    LockAfter, LockBefore, LockDepMutex, LockDepRwLock, LockFor, Locked, RwLockFor,
+    UninterruptibleLock,
+};
+
 use lock_api::RawMutex;
 use std::{any, fmt};
 
@@ -86,27 +90,30 @@ pub fn ordered_lock_vec<'a, T>(mutexes: &[&'a Mutex<T>]) -> Vec<MutexGuard<'a, T
 /// A wrapper for mutex that requires a `Locked` context to acquire.
 /// This context must be of a level that precedes `L` in the lock ordering graph
 /// where `L` is a level associated with this mutex.
-pub struct OrderedMutex<T, L: LockAfter<UninterruptibleLock>> {
-    mutex: Mutex<T>,
-    _phantom: PhantomData<L>,
+pub struct OrderedMutex<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> {
+    mutex: LockDepMutex<T, L>,
 }
 
-impl<T: Default, L: LockAfter<UninterruptibleLock>> Default for OrderedMutex<T, L> {
+impl<T: Default, L: LockAfter<UninterruptibleLock> + crate::LockLevel> Default
+    for OrderedMutex<T, L>
+{
     fn default() -> Self {
-        Self { mutex: Default::default(), _phantom: Default::default() }
+        Self { mutex: LockDepMutex::new(T::default()) }
     }
 }
 
-impl<T: fmt::Debug, L: LockAfter<UninterruptibleLock>> fmt::Debug for OrderedMutex<T, L> {
+impl<T: fmt::Debug, L: LockAfter<UninterruptibleLock> + crate::LockLevel> fmt::Debug
+    for OrderedMutex<T, L>
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "OrderedMutex({:?}, {})", self.mutex, any::type_name::<L>())
     }
 }
 
-impl<T, L: LockAfter<UninterruptibleLock>> LockFor<L> for OrderedMutex<T, L> {
+impl<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> LockFor<L> for OrderedMutex<T, L> {
     type Data = T;
     type Guard<'a>
-        = MutexGuard<'a, T>
+        = crate::LockDepGuard<'a, T, L>
     where
         T: 'a,
         L: 'a;
@@ -115,9 +122,9 @@ impl<T, L: LockAfter<UninterruptibleLock>> LockFor<L> for OrderedMutex<T, L> {
     }
 }
 
-impl<T, L: LockAfter<UninterruptibleLock>> OrderedMutex<T, L> {
+impl<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> OrderedMutex<T, L> {
     pub const fn new(t: T) -> Self {
-        Self { mutex: Mutex::new(t), _phantom: PhantomData }
+        Self { mutex: LockDepMutex::new(t) }
     }
 
     pub fn lock<'a, P>(&'a self, locked: &'a mut Locked<P>) -> <Self as LockFor<L>>::Guard<'a>
@@ -140,11 +147,11 @@ impl<T, L: LockAfter<UninterruptibleLock>> OrderedMutex<T, L> {
 
 /// Lock two OrderedMutex of the same level in the consistent order. Returns both
 /// guards and a new locked context.
-pub fn lock_both<'a, T, L: LockAfter<UninterruptibleLock>, P>(
+pub fn lock_both<'a, T, L: LockAfter<UninterruptibleLock> + crate::LockLevel, P>(
     locked: &'a mut Locked<P>,
     m1: &'a OrderedMutex<T, L>,
     m2: &'a OrderedMutex<T, L>,
-) -> (MutexGuard<'a, T>, MutexGuard<'a, T>, &'a mut Locked<L>)
+) -> (crate::LockDepGuard<'a, T, L>, crate::LockDepGuard<'a, T, L>, &'a mut Locked<L>)
 where
     P: LockBefore<L>,
 {
@@ -154,32 +161,35 @@ where
 /// A wrapper for an RwLock that requires a `Locked` context to acquire.
 /// This context must be of a level that precedes `L` in the lock ordering graph
 /// where `L` is a level associated with this RwLock.
-pub struct OrderedRwLock<T, L: LockAfter<UninterruptibleLock>> {
-    rwlock: RwLock<T>,
-    _phantom: PhantomData<L>,
+pub struct OrderedRwLock<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> {
+    rwlock: LockDepRwLock<T, L>,
 }
 
-impl<T: Default, L: LockAfter<UninterruptibleLock>> Default for OrderedRwLock<T, L> {
+impl<T: Default, L: LockAfter<UninterruptibleLock> + crate::LockLevel> Default
+    for OrderedRwLock<T, L>
+{
     fn default() -> Self {
-        Self { rwlock: Default::default(), _phantom: Default::default() }
+        Self { rwlock: LockDepRwLock::new(T::default()) }
     }
 }
 
-impl<T: fmt::Debug, L: LockAfter<UninterruptibleLock>> fmt::Debug for OrderedRwLock<T, L> {
+impl<T: fmt::Debug, L: LockAfter<UninterruptibleLock> + crate::LockLevel> fmt::Debug
+    for OrderedRwLock<T, L>
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "OrderedRwLock({:?}, {})", self.rwlock, any::type_name::<L>())
     }
 }
 
-impl<T, L: LockAfter<UninterruptibleLock>> RwLockFor<L> for OrderedRwLock<T, L> {
+impl<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> RwLockFor<L> for OrderedRwLock<T, L> {
     type Data = T;
     type ReadGuard<'a>
-        = RwLockReadGuard<'a, T>
+        = crate::LockDepReadGuard<'a, T, L>
     where
         T: 'a,
         L: 'a;
     type WriteGuard<'a>
-        = RwLockWriteGuard<'a, T>
+        = crate::LockDepWriteGuard<'a, T, L>
     where
         T: 'a,
         L: 'a;
@@ -191,9 +201,9 @@ impl<T, L: LockAfter<UninterruptibleLock>> RwLockFor<L> for OrderedRwLock<T, L> 
     }
 }
 
-impl<T, L: LockAfter<UninterruptibleLock>> OrderedRwLock<T, L> {
+impl<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> OrderedRwLock<T, L> {
     pub const fn new(t: T) -> Self {
-        Self { rwlock: RwLock::new(t), _phantom: PhantomData }
+        Self { rwlock: LockDepRwLock::new(t) }
     }
 
     pub fn read<'a, P>(&'a self, locked: &'a mut Locked<P>) -> <Self as RwLockFor<L>>::ReadGuard<'a>

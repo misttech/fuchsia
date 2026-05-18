@@ -28,7 +28,7 @@ use starnix_registers::{HeapRegs, RegisterStorageEnum};
 use starnix_stack::clean_stack;
 use starnix_sync::{
     EventWaitGuard, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, MmDumpable,
-    ProcessGroupState, TaskRelease, Unlocked, WakeReason,
+    ProcessGroupState, TaskRelease, UninterruptibleLock, Unlocked, WakeReason, assert_lock_level,
 };
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::Syscall;
@@ -490,6 +490,8 @@ impl CurrentTask {
     {
         assert_ne!(run_state, RunState::Running);
 
+        // Check we do not hold any uninterruptible lock
+        assert_lock_level::<UninterruptibleLock>();
         // As an optimization, decommit unused pages of the stack to reduce memory pressure while
         // the thread is blocked.
         clean_stack();

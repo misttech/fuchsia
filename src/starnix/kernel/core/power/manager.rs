@@ -21,8 +21,8 @@ use futures::stream::{FusedStream, Next};
 use futures::{FutureExt, StreamExt};
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::{
-    EbpfSuspendLock, FileOpsCore, LockBefore, Locked, Mutex, MutexGuard, OrderedRwLock,
-    RwLockReadGuard,
+    EbpfSuspendLock, FileOpsCore, LockBefore, LockDepReadGuard, Locked, Mutex, MutexGuard,
+    OrderedRwLock,
 };
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::errors::Errno;
@@ -213,7 +213,7 @@ impl SuspendResumeManager {
     }
 }
 
-pub type EbpfSuspendGuard<'a> = RwLockReadGuard<'a, ()>;
+pub type EbpfSuspendGuard<'a> = LockDepReadGuard<'a, (), EbpfSuspendLock>;
 
 #[derive(Clone, Debug)]
 pub enum SuspendEvent {

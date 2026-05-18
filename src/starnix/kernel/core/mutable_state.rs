@@ -179,26 +179,26 @@ macro_rules! state_accessor {
 /// For a base struct named `Foo`, the read guard will be a struct named `FooReadGuard` and the
 /// write guard a struct named `FooWriteGuard`.
 macro_rules! ordered_state_accessor {
-    ($base_name:ident, $field_name:ident, $base_type:ty, $lock_level:ident) => {
+    ($base_name:ident, $field_name:ident, $base_type:ty, $lock_level:ident, $mutable_type:ty) => {
         paste::paste! {
         #[allow(dead_code)]
-        pub fn read<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> [<$base_name ReadGuard>]<'a>
+        pub fn read<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> $crate::mutable_state::Guard<'a, $base_type, starnix_sync::LockDepReadGuard<'a, $mutable_type, $lock_level>>
         where
             L: starnix_sync::LockBefore<$lock_level>
         {
-            $crate::mutable_state::ReadGuard::new(self, self.$field_name.read(locked))
+            $crate::mutable_state::Guard::new(self, self.$field_name.read(locked))
         }
         #[allow(dead_code)]
-        pub fn write<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> [<$base_name WriteGuard>]<'a>
+        pub fn write<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> $crate::mutable_state::Guard<'a, $base_type, starnix_sync::LockDepWriteGuard<'a, $mutable_type, $lock_level>>
         where
             L: starnix_sync::LockBefore<$lock_level>
         {
-            $crate::mutable_state::WriteGuard::new(self, self.$field_name.write(locked))
+            $crate::mutable_state::Guard::new(self, self.$field_name.write(locked))
         }
         }
     };
-    ($base_name:ident, $field_name:ident, $lock_level:ident) => {
-        ordered_state_accessor!($base_name, $field_name, $base_name, $lock_level);
+    ($base_name:ident, $field_name:ident, $lock_level:ident, $mutable_type:ty) => {
+        ordered_state_accessor!($base_name, $field_name, $base_name, $lock_level, $mutable_type);
     };
 }
 
@@ -288,7 +288,9 @@ impl<'a, B, S, G: DerefMut<Target = S>> DerefMut for Guard<'a, B, G> {
 }
 
 // Public re-export of macros allows them to be used like regular rust items.
-pub(crate) use {ordered_state_accessor, state_accessor, state_implementation};
+pub(crate) use ordered_state_accessor;
+pub(crate) use state_accessor;
+pub(crate) use state_implementation;
 
 #[cfg(test)]
 mod test {
