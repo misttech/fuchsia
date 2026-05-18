@@ -175,6 +175,23 @@ __EXPORT zx_status_t fdf_dispatcher_seal(fdf_dispatcher_t* dispatcher, uint32_t 
   return dispatcher->Seal(option);
 }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+__EXPORT fdf_dispatcher_t* fdf_dispatcher_get_always_on_dispatcher(fdf_dispatcher_t* dispatcher) {
+  return dispatcher;
+}
+
+__EXPORT zx_status_t fdf_dispatcher_register_wake_vector(fdf_dispatcher_t* dispatcher,
+                                                         zx_handle_t handle, zx_signals_t signals) {
+  return ZX_OK;
+}
+
+__EXPORT zx_status_t fdf_dispatcher_unregister_wake_vector(fdf_dispatcher_t* dispatcher,
+                                                           zx_handle_t handle,
+                                                           zx_signals_t signals) {
+  return ZX_OK;
+}
+#endif
+
 __EXPORT zx_status_t fdf_token_register(zx_handle_t token, fdf_dispatcher_t* dispatcher,
                                         fdf_token_t* handler) {
   return driver_runtime::DispatcherCoordinator::TokenRegister(token, dispatcher, handler);
@@ -368,6 +385,19 @@ __EXPORT zx_duration_mono_t fdf_env_scan_threads_for_stalls2(void) {
 __EXPORT void fdf_env_register_stall_scanner(fdf_env_stall_scanner_t* stall_scanner) {
   driver_runtime::GetDispatcherCoordinator().RegisterStallScanner(stall_scanner);
 }
+#endif
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(NEXT)
+__EXPORT void fdf_env_register_resume_requester(const void* driver,
+                                                fdf_env_resume_requester_t* requester) {}
+
+__EXPORT void fdf_env_driver_suspend(const void* driver, fdf_env_suspend_completer_t* completer) {
+  if (completer && completer->handler) {
+    completer->handler(completer);
+  }
+}
+
+__EXPORT void fdf_env_driver_resume(const void* driver) {}
 #endif
 
 __END_CDECLS

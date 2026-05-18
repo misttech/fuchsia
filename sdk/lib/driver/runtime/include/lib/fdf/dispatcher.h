@@ -7,6 +7,7 @@
 
 #include <lib/async/dispatcher.h>
 #include <lib/fdf/types.h>
+#include <zircon/availability.h>
 
 __BEGIN_CDECLS
 
@@ -173,6 +174,54 @@ void fdf_dispatcher_destroy(fdf_dispatcher_t* dispatcher);
 // ZX_ERR_ALREADY_EXISTS: The option did not exist on the dispatcher. This can happen if this is
 // called more than once with the same option, or if it was not created with the option.
 zx_status_t fdf_dispatcher_seal(fdf_dispatcher_t* dispatcher, uint32_t option);
+
+// Returns the always-on dispatcher interface for the given dispatcher.
+//
+// The primary user of this is the driver's fuchsia.driver.framework/Driver FIDL server
+// which executes the driver lifecycle methods (e.g. Start, Stop).
+//
+// The secondary user of this is for bindings and tasks that require execution during
+// suspend/resume lifecycle hooks. The driver host only calls these hooks when its safe
+// to do so (dependent elements still exist).
+//
+// WARNING: Any other use will lead to execution while suspended, which may be unexpected.
+fdf_dispatcher_t* fdf_dispatcher_get_always_on_dispatcher(fdf_dispatcher_t* dispatcher)
+    ZX_AVAILABLE_SINCE(NEXT);
+
+// Registers a wake vector. Callbacks for |signals| received on this handle while suspended,
+// wake the driver and execute after the driver's Resume hook, but before anything else.
+//
+// The handle wait does not need to be registered before this is called.
+// This is a sticky registration; all future waits registered with this handle will
+// automatically inherit this wakeability.
+//
+// Registration is cumulative; new signals are combined with any existing wake signals
+// registered for this handle.
+//
+// |handle| is borrowed
+// |dispatcher| is the dispatcher that the wake vector applies to.
+// |signals| are the signals that will wake the driver
+//
+// # Errors
+//
+// ZX_ERR_BAD_STATE: The dispatcher is suspended.
+zx_status_t fdf_dispatcher_register_wake_vector(fdf_dispatcher_t* dispatcher, zx_handle_t handle,
+                                                zx_signals_t signals) ZX_AVAILABLE_SINCE(NEXT);
+
+// Unregisters the signals on the given handle as wake vectors.
+//
+// If the |signals| provided don't exactly match the signals that are currently
+// registered, the delta between the two will still remain registered.
+//
+// |handle| is borrowed
+// |dispatcher| is the dispatcher that the wake vector is removed from.
+// |signals| are the signals that will be unregistered
+//
+// # Errors
+//
+// ZX_ERR_NOT_FOUND: The |handle| was never registered.
+zx_status_t fdf_dispatcher_unregister_wake_vector(fdf_dispatcher_t* dispatcher, zx_handle_t handle,
+                                                  zx_signals_t signals) ZX_AVAILABLE_SINCE(NEXT);
 
 __END_CDECLS
 

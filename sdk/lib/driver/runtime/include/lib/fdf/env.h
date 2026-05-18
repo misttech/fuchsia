@@ -45,6 +45,34 @@ struct fdf_env_stall_scanner {
   fdf_env_stall_scan_begin* handler;
 };
 
+typedef struct fdf_env_resume_requester fdf_env_resume_requester_t;
+
+// Called by the runtime to request to be resumed.
+typedef zx_status_t(fdf_env_resume_request)(fdf_env_resume_requester_t* requester);
+
+// Holds context for the resume request which will be called when the runtime needs to be
+// resumed.
+//
+// The client is responsible for retaining this structure in memory (and unmodified) until the
+// handler runs.
+struct fdf_env_resume_requester {
+  fdf_env_resume_request* handler;
+};
+
+typedef struct fdf_env_suspend_completer fdf_env_suspend_completer_t;
+
+// Called by the runtime to signal completion of suspend.
+typedef void(fdf_env_suspend_complete)(fdf_env_suspend_completer_t* completer);
+
+// Holds context for the suspend completion which will be called when the driver
+// has completed suspending.
+//
+// The client is responsible for retaining this structure in memory (and unmodified) until the
+// handler runs.
+struct fdf_env_suspend_completer {
+  fdf_env_suspend_complete* handler;
+};
+
 // When new dispatchers are created, enforce that scheduler_roles specified must line up with
 // roles previously registered via the `fdf_env_add_allowed_scheduler_role_for_driver` API.
 #define FDF_ENV_ENFORCE_ALLOWED_SCHEDULER_ROLES ((uint32_t)1u << 0)
@@ -222,6 +250,20 @@ zx_duration_mono_t fdf_env_scan_threads_for_stalls2(void) ZX_AVAILABLE_SINCE(29)
 
 // Registers a for callbacks for when stall scanning should occur.
 void fdf_env_register_stall_scanner(fdf_env_stall_scanner_t* scanner) ZX_AVAILABLE_SINCE(29);
+
+// Registers for callbacks for when the driver needs to be resumed.
+// The callback being triggered should eventually result in |fdf_env_driver_resume| being called.
+void fdf_env_register_resume_requester(const void* driver, fdf_env_resume_requester_t* requester)
+    ZX_AVAILABLE_SINCE(NEXT);
+
+// Asynchronously suspends the dispatchers owned by the driver.
+// The runtime will stop accepting new work and drain existing work before calling the completer.
+void fdf_env_driver_suspend(const void* driver, fdf_env_suspend_completer_t* completer)
+    ZX_AVAILABLE_SINCE(NEXT);
+
+// Resumes the dispatchers owned by the driver.
+// The runtime will move pending callbacks back to the main queue and start accepting new work.
+void fdf_env_driver_resume(const void* driver) ZX_AVAILABLE_SINCE(NEXT);
 
 __END_CDECLS
 
