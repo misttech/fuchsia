@@ -5,6 +5,7 @@
 //! Contexts for packet parsing and serialization in netstack3.
 
 use bitflags::bitflags;
+use core::num::NonZeroU16;
 use net_types::ip::IpInvariant;
 use packet::{
     DynamicSerializer, PacketBuilder, PacketConstraints, PartialSerializer, SerializationContext,
@@ -14,8 +15,8 @@ use packet_formats::TransportChecksumAction;
 use packet_formats::ethernet::{EthernetEnvelope, EthernetSerializationContext};
 use packet_formats::icmp::{IcmpEnvelope, IcmpSerializationContext};
 use packet_formats::ip::{IpEnvelope, IpExt, IpSerializationContext};
-use packet_formats::tcp::{TcpEnvelope, TcpSerializationContext};
-use packet_formats::udp::{UdpEnvelope, UdpSerializationContext};
+use packet_formats::tcp::{TcpEnvelope, TcpParseContext, TcpSerializationContext};
+use packet_formats::udp::{UdpEnvelope, UdpParseContext, UdpSerializationContext};
 use static_assertions::const_assert;
 
 /// The specific packet `Serializer` type used within netstack3.
@@ -408,13 +409,74 @@ impl TcpSerializationContext for NetworkSerializationContext {
     }
 }
 
+/// An indication of the checksums offloaded, if any, for a packet received from
+/// a device.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChecksumRxOffloading {
+    /// The device offloaded zero or more checksums.
+    ///
+    /// `Some(n)` can only be used to describe offloading of TCP and UDP
+    /// checksums.
+    Offloaded(Option<NonZeroU16>),
+    /// The device requires no checksum verification on packet ingress.
+    ///
+    /// NOTE: only intended to be used by the loopback interface.
+    FullyOffloaded,
+}
+
+impl Default for ChecksumRxOffloading {
+    fn default() -> Self {
+        ChecksumRxOffloading::Offloaded(None)
+    }
+}
+
+impl ChecksumRxOffloading {
+    fn skip_checksum_verification(&mut self) -> bool {
+        match self {
+            ChecksumRxOffloading::FullyOffloaded => true,
+            ChecksumRxOffloading::Offloaded(Some(n)) => {
+                *self = ChecksumRxOffloading::Offloaded(NonZeroU16::new(n.get() - 1));
+                true
+            }
+            ChecksumRxOffloading::Offloaded(None) => false,
+        }
+    }
+}
+
+/// Context for parsing network packets in netstack3.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct NetworkParsingContext {
+    /// Hardware checksum offloading context.
+    checksum_offload: ChecksumRxOffloading,
+}
+
+impl NetworkParsingContext {
+    /// Creates a new `NetworkParsingContext`.
+    pub fn new(checksum_offload: ChecksumRxOffloading) -> Self {
+        NetworkParsingContext { checksum_offload }
+    }
+}
+
+impl UdpParseContext for &mut NetworkParsingContext {
+    fn skip_checksum_verification(&mut self) -> bool {
+        self.checksum_offload.skip_checksum_verification()
+    }
+}
+
+impl TcpParseContext for &mut NetworkParsingContext {
+    fn skip_checksum_verification(&mut self) -> bool {
+        self.checksum_offload.skip_checksum_verification()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec::Vec;
     use assert_matches::assert_matches;
     use core::num::NonZeroU16;
     use net_types::ethernet::Mac;
-    use net_types::ip::{IpVersionMarker, Ipv4, Ipv4Addr, Ipv6Addr};
+    use net_types::ip::{IpAddress, IpVersionMarker, Ipv4, Ipv4Addr, Ipv6Addr};
     use packet::{
         Buf, FragmentedBytesMut, FromRaw, NestablePacketBuilder, NestableSerializer, PacketBuilder,
         PacketConstraints, ParseBuffer, SerializeTarget, Serializer,
@@ -1002,6 +1064,110 @@ mod tests {
             )
             .err(),
             Some(ParseError::Checksum),
+        );
+    }
+
+    fn build_udp_packet_invalid_csum<I: IpAddress>(
+        src_ip: I,
+        dst_ip: I,
+        body: &mut [u8],
+    ) -> Vec<u8> {
+        let mut buf = Buf::new(body, ..)
+            .wrap_in(UdpPacketBuilder::new(
+                src_ip,
+                dst_ip,
+                NonZeroU16::new(1),
+                NonZeroU16::new(2).unwrap(),
+            ))
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .as_ref()
+            .to_vec();
+
+        // Corrupt the checksum.
+        buf[packet_formats::udp::CHECKSUM_OFFSET] ^= 0xFF;
+        buf[packet_formats::udp::CHECKSUM_OFFSET + 1] ^= 0xFF;
+        buf
+    }
+
+    /// Builds a UDP packet containing `nesting-1` nested UDP packets, all with
+    /// invalid checksums.
+    fn build_nested_udp_packets_invalid_csums<I: IpAddress>(
+        src_ip: I,
+        dst_ip: I,
+        nesting: usize,
+    ) -> Vec<u8> {
+        let mut payload = alloc::vec![0u8; 100];
+        for _ in 0..nesting {
+            payload = build_udp_packet_invalid_csum(src_ip, dst_ip, &mut payload);
+        }
+        payload
+    }
+
+    #[test]
+    fn checksum_rx_offloading_none() {
+        let buf = build_nested_udp_packets_invalid_csums(SRC_IP_V4, DST_IP_V4, 1);
+
+        // `None` offloads no checksums so we expect to be unable to parse any
+        // UDP packets with invalid checksums.
+        let mut ctx = NetworkParsingContext::new(ChecksumRxOffloading::Offloaded(None));
+        let mut buf_ref: &[u8] = buf.as_ref();
+        assert_eq!(
+            buf_ref
+                .parse_with::<_, UdpPacket<_>>(UdpParseArgs::with_context(
+                    SRC_IP_V4, DST_IP_V4, &mut ctx
+                ))
+                .err(),
+            Some(ParseError::Checksum)
+        );
+    }
+
+    #[test]
+    fn checksum_rx_offloading_fully_offloaded() {
+        let mut buf = build_nested_udp_packets_invalid_csums(SRC_IP_V4, DST_IP_V4, 3);
+
+        // `FullyOffloaded` offloads all checksums so we expect to be able to
+        // parse an arbitrary number of UDP packets with invalid checksums.
+        let mut ctx = NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded);
+        for _ in 0..3 {
+            let mut buf_ref: &[u8] = buf.as_ref();
+            buf = buf_ref
+                .parse_with::<_, UdpPacket<_>>(UdpParseArgs::with_context(
+                    SRC_IP_V4, DST_IP_V4, &mut ctx,
+                ))
+                .expect("udp parse should succeed")
+                .body()
+                .to_vec();
+        }
+    }
+
+    #[test]
+    fn checksum_rx_offloading_offloaded() {
+        let mut buf = build_nested_udp_packets_invalid_csums(SRC_IP_V4, DST_IP_V4, 3);
+
+        // `Offloaded` indicates the number checksums not to verify so we expect
+        // to be able to parse exactly two UDP packets with invalid checksums.
+        let mut ctx = NetworkParsingContext::new(ChecksumRxOffloading::Offloaded(Some(
+            NonZeroU16::new(2).unwrap(),
+        )));
+        for _ in 0..2 {
+            let mut buf_ref: &[u8] = buf.as_ref();
+            buf = buf_ref
+                .parse_with::<_, UdpPacket<_>>(UdpParseArgs::with_context(
+                    SRC_IP_V4, DST_IP_V4, &mut ctx,
+                ))
+                .expect("udp parse should succeed")
+                .body()
+                .to_vec();
+        }
+        let mut buf_ref: &[u8] = buf.as_ref();
+        assert_eq!(
+            buf_ref
+                .parse_with::<_, UdpPacket<_>>(UdpParseArgs::with_context(
+                    SRC_IP_V4, DST_IP_V4, &mut ctx
+                ))
+                .err(),
+            Some(ParseError::Checksum)
         );
     }
 }

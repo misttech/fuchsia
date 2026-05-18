@@ -18,8 +18,8 @@ use netstack3_base::socket::{
 };
 use netstack3_base::{
     BidirectionalConverter as _, Control, CounterContext, CtxPair, EitherDeviceId, IpDeviceAddr,
-    Marks, Mss, NotFoundError, Payload, Segment, SegmentHeader, SeqNum, StrongDeviceIdentifier,
-    VerifiedTcpSegment, WeakDeviceIdentifier,
+    Marks, Mss, NetworkParsingContext, NotFoundError, Payload, Segment, SegmentHeader, SeqNum,
+    StrongDeviceIdentifier, VerifiedTcpSegment, WeakDeviceIdentifier,
 };
 use netstack3_filter::{
     FilterIpExt, SocketIngressFilterResult, SocketOpsFilter, TransportPacketSerializer,
@@ -185,9 +185,11 @@ where
                 return Ok(());
             }
         };
-        let packet = match buffer
-            .parse_with::<_, TcpSegment<_>>(TcpParseArgs::new(remote_ip.addr(), local_ip.addr()))
-        {
+        let packet = match buffer.parse_with::<_, TcpSegment<_>>(TcpParseArgs::with_context(
+            remote_ip.addr(),
+            local_ip.addr(),
+            &mut NetworkParsingContext::default(),
+        )) {
             Ok(packet) => packet,
             Err(err) => {
                 CounterContext::<TcpCountersWithoutSocket<I>>::counters(core_ctx)

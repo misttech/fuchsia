@@ -32,9 +32,10 @@ use netstack3_base::sync::{RwLock, StrongRc};
 use netstack3_base::{
     AnyDevice, BidirectionalConverter, ContextPair, CoreTxMetadataContext, CounterContext,
     DeviceIdContext, Inspector, InspectorDeviceExt, InstantContext, IpSocketPropertiesMatcher,
-    LocalAddressError, Mark, MarkDomain, Marks, MatcherBindingsTypes, PortAllocImpl,
-    ReferenceNotifiers, RemoveResourceResultWithContext, ResourceCounterContext as _, RngContext,
-    SettingsContext, SocketError, StrongDeviceIdentifier, WeakDeviceIdentifier, ZonedAddressError,
+    LocalAddressError, Mark, MarkDomain, Marks, MatcherBindingsTypes, NetworkParsingContext,
+    PortAllocImpl, ReferenceNotifiers, RemoveResourceResultWithContext,
+    ResourceCounterContext as _, RngContext, SettingsContext, SocketError, StrongDeviceIdentifier,
+    WeakDeviceIdentifier, ZonedAddressError,
 };
 use netstack3_datagram::{
     self as datagram, BoundDatagramSocketMap, BoundSocketState as DatagramBoundSocketState,
@@ -64,8 +65,7 @@ use netstack3_ip::{
 };
 use netstack3_trace::trace_duration;
 use packet::{
-    BufferMut, FragmentedByteSlice, NestablePacketBuilder as _, Nested, NoOpParsingContext,
-    ParsablePacket, ParseBuffer,
+    BufferMut, FragmentedByteSlice, NestablePacketBuilder as _, Nested, ParsablePacket, ParseBuffer,
 };
 use packet_formats::ip::{DscpAndEcn, IpProto, IpProtoExt};
 use packet_formats::udp::{UdpPacket, UdpPacketBuilder, UdpPacketRaw, UdpParseArgs};
@@ -1472,8 +1472,11 @@ fn receive_ip_packet<
     trace!("received UDP packet: {:x?}", buffer.as_mut());
     let src_ip: I::Addr = src_ip.into_addr();
 
-    let Ok(packet) = buffer.parse_with::<_, UdpPacket<_>>(UdpParseArgs::new(src_ip, dst_ip.get()))
-    else {
+    let Ok(packet) = buffer.parse_with::<_, UdpPacket<_>>(UdpParseArgs::with_context(
+        src_ip,
+        dst_ip.get(),
+        &mut NetworkParsingContext::default(),
+    )) else {
         // There isn't much we can do if the UDP packet is
         // malformed.
         CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx).rx_malformed.increment();
@@ -1516,7 +1519,9 @@ fn receive_ip_packet<
     // Unfortunately, type inference isn't smart enough for us to just do
     // packet.parse_metadata().
     let parse_meta =
-        ParsablePacket::<_, UdpParseArgs<I::Addr, NoOpParsingContext>>::parse_metadata(&packet);
+        ParsablePacket::<_, UdpParseArgs<I::Addr, &mut NetworkParsingContext>>::parse_metadata(
+            &packet,
+        );
 
     /// The maximum number of socket IDs that are expected to receive a given
     /// packet. While it's possible for this number to be exceeded, it's

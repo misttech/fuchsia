@@ -85,8 +85,8 @@ pub use matchers::{
 };
 pub use num::PositiveIsize;
 pub use packet::{
-    DynamicNetworkSerializer, NetworkPartialSerializer, NetworkSerializationContext,
-    NetworkSerializer,
+    DynamicNetworkSerializer, NetworkParsingContext, NetworkPartialSerializer,
+    NetworkSerializationContext, NetworkSerializer,
 };
 pub use port_alloc::{EphemeralPort, PortAllocImpl, simple_randomized_port_alloc};
 pub use resource_references::{
