@@ -9,6 +9,7 @@ libs = [
   "addr",
   "agents",
   "arg_parsing",
+  "auth",
   "buildid",
   "compat_info",
   "daemonize",

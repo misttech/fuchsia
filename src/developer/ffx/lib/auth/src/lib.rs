@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Context;
 use credentials::Credentials;
-use fho::Result;
+
 use gcs::auth;
 use gcs::error::GcsError;
 pub use pbms::AuthFlowChoice;
@@ -35,7 +34,10 @@ impl From<AuthError> for fho::Error {
     }
 }
 
-pub async fn mint_new_access_token<I>(auth_flow: &AuthFlowChoice, ui: &I) -> Result<String>
+pub async fn mint_new_access_token<I>(
+    auth_flow: &AuthFlowChoice,
+    ui: &I,
+) -> Result<String, AuthError>
 where
     I: structured_ui::Interface,
 {
@@ -57,8 +59,7 @@ where
                         "{}\nHint: You may need to run `gcloud auth login` to authenticate.",
                         String::from_utf8_lossy(&output.stderr)
                     ),
-                ))
-                .into());
+                )));
             }
             Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
         }
@@ -69,8 +70,7 @@ where
                     exec.into(),
                     output.status,
                     String::from_utf8_lossy(&output.stderr).to_string(),
-                ))
-                .into());
+                )));
             }
             Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
         }
@@ -80,22 +80,22 @@ where
             match auth::new_access_token(&credentials.gcs_credentials()).await {
                 Ok(a) => Ok(a),
                 Err(GcsError::NeedNewRefreshToken) => {
-                    update_refresh_token(auth_flow, ui).await.context("Updating refresh token")?;
+                    update_refresh_token(auth_flow, ui).await?;
                     // Make one additional attempt now that the refresh token
                     // is updated.
                     let credentials = credentials::Credentials::load_or_new().await;
                     auth::new_access_token(&credentials.gcs_credentials())
                         .await
-                        .map_err(|e| AuthError::AccessToken(e).into())
+                        .map_err(|e| AuthError::AccessToken(e))
                 }
-                Err(e) => Err(AuthError::AccessToken(e).into()),
+                Err(e) => Err(AuthError::AccessToken(e)),
             }
         }
-        AuthFlowChoice::NoAuth => Err(AuthError::AccessToken(GcsError::AuthRequired).into()),
+        AuthFlowChoice::NoAuth => Err(AuthError::AccessToken(GcsError::AuthRequired)),
     }
 }
 
-async fn update_refresh_token<I>(auth_flow: &AuthFlowChoice, ui: &I) -> Result<()>
+async fn update_refresh_token<I>(auth_flow: &AuthFlowChoice, ui: &I) -> Result<(), AuthError>
 where
     I: structured_ui::Interface,
 {
@@ -113,6 +113,6 @@ where
             credentials.save().await.map_err(|e| AuthError::Credentials(e))?;
             Ok(())
         }
-        Err(e) => Err(e.into()),
+        Err(e) => Err(e),
     }
 }

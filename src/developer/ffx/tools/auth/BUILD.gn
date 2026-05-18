@@ -10,7 +10,7 @@ rustc_library("lib") {
   edition = "2024"
 
   deps = [
-    "//src/developer/ffx/lib/auth:lib",
+    "//src/developer/ffx/lib/auth",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/structured_ui",
