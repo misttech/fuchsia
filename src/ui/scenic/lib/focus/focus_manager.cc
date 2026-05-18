@@ -101,6 +101,7 @@ void FocusManager::OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapsh
 
 void FocusManager::Register(
     fidl::InterfaceHandle<fuchsia::ui::focus::FocusChainListener> focus_chain_listener) {
+  utils::CheckIsOnInputThread();
   const uint64_t id = next_focus_chain_listener_id_++;
   fuchsia::ui::focus::FocusChainListenerPtr new_listener;
   new_listener.Bind(std::move(focus_chain_listener));

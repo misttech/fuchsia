@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"
 #include "src/ui/scenic/lib/view_tree/tests/utils.h"
 
@@ -38,12 +39,13 @@ void PopulateEndpointsWithSnapshots(GeometryProvider& geometry_provider, uint32_
 // Class fixture for TEST_F.
 class GeometryProviderTest : public gtest::TestLoopFixture {
  protected:
-  GeometryProviderTest() {
+  GeometryProviderTest() : dispatcher_setter_(dispatcher(), dispatcher()) {
     geometry_provider_.Register(client_.NewRequest(), kNodeA);
 
     FX_CHECK(client_.is_bound());
   }
 
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_;
   GeometryProvider geometry_provider_;
   fuog_ProviderPtr client_;
 };

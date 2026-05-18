@@ -120,9 +120,9 @@ scheduling::SessionId FlatlandManager::CreateFlatland(
     }
   });
 
-  // TODO(fxbug.dev/491886218): Address the edge case where the only Flatland connection(s) that
-  // require present credits, get disconnected but we continue to compute FuturePresentationInfo
-  // for no reason.
+  // TODO(https://fxbug.dev/491886218): Address the edge case where the only Flatland connection(s)
+  // that require present credits, get disconnected but we continue to compute
+  // FuturePresentationInfo for no reason.
   if (!config.skips_present_credits) {
     all_clients_opt_out_present_info_ = false;
   }

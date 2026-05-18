@@ -12,6 +12,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 
 namespace view_tree::test {
@@ -21,6 +22,8 @@ using fuchsia::ui::views::ViewRefInstalled_Watch_Result;
 
 TEST(ViewRefInstalledImplTest, AlreadyInstalled_ShouldReturnImmediately) {
   async::TestLoop test_loop;
+  utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
+                                                        test_loop.dispatcher());
 
   ViewRefInstalledImpl view_ref_installed_impl;
 
@@ -43,6 +46,8 @@ TEST(ViewRefInstalledImplTest, AlreadyInstalled_ShouldReturnImmediately) {
 
 TEST(ViewRefInstalledImplTest, AlreadyInstalledButDisconnected_ShouldReturnImmediately) {
   async::TestLoop test_loop;
+  utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
+                                                        test_loop.dispatcher());
 
   ViewRefInstalledImpl view_ref_installed_impl;
 
@@ -72,6 +77,8 @@ TEST(ViewRefInstalledImplTest, AlreadyInstalledButDisconnected_ShouldReturnImmed
 
 TEST(ViewRefInstalledImplTest, ViewRefWithBadHandle_ShouldReturnErrorImmediately) {
   async::TestLoop test_loop;
+  utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
+                                                        test_loop.dispatcher());
 
   ViewRefInstalledImpl view_ref_installed_impl;
 
@@ -88,6 +95,8 @@ TEST(ViewRefInstalledImplTest, ViewRefWithBadHandle_ShouldReturnErrorImmediately
 
 TEST(ViewRefInstalledImplTest, ViewRefWithBadRights_ShouldReturnErrorImmediately) {
   async::TestLoop test_loop;
+  utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
+                                                        test_loop.dispatcher());
 
   ViewRefInstalledImpl view_ref_installed_impl;
 
@@ -107,6 +116,8 @@ TEST(ViewRefInstalledImplTest, ViewRefWithBadRights_ShouldReturnErrorImmediately
 
 TEST(ViewRefInstalledImplTest, ViewRefWithClosedControlRef_ShouldReturnErrorImmediately) {
   async::TestLoop test_loop;
+  utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
+                                                        test_loop.dispatcher());
 
   ViewRefInstalledImpl view_ref_installed_impl;
 
@@ -124,6 +135,8 @@ TEST(ViewRefInstalledImplTest, ViewRefWithClosedControlRef_ShouldReturnErrorImme
 
 TEST(ViewRefInstalledImplTest, OnViewRefInstalled_ShouldFireWaitingCallbacks) {
   async::TestLoop test_loop;
+  utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
+                                                        test_loop.dispatcher());
 
   ViewRefInstalledImpl view_ref_installed_impl;
   auto [control_ref, view_ref] = scenic::ViewRefPair::New();
@@ -151,7 +164,8 @@ TEST(ViewRefInstalledImplTest, OnViewRefInstalled_ShouldFireWaitingCallbacks) {
 
 TEST(ViewRefInstalledImplTest, OnViewRefInvalidated_ShouldFireCallbackWithError) {
   async::TestLoop test_loop;
-  async_set_default_dispatcher(test_loop.dispatcher());
+  utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
+                                                        test_loop.dispatcher());
 
   ViewRefInstalledImpl view_ref_installed_impl;
 
@@ -174,6 +188,8 @@ TEST(ViewRefInstalledImplTest, OnViewRefInvalidated_ShouldFireCallbackWithError)
 
 TEST(ViewRefInstalledImplTest, InstalledThenInvalidated) {
   async::TestLoop test_loop;
+  utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
+                                                        test_loop.dispatcher());
 
   ViewRefInstalledImpl view_ref_installed_impl;
   bool has_fired = false;

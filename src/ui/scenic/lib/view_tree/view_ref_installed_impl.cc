@@ -8,6 +8,7 @@
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/rights.h>
 
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 
 namespace view_tree {
@@ -50,6 +51,7 @@ fuchsia::ui::views::ViewRefInstalled_Watch_Result InstalledMessage() {
 }  // namespace
 
 void ViewRefInstalledImpl::Publish(sys::ComponentContext* app_context) {
+  utils::CheckIsOnMainThread();
   FX_DCHECK(app_context);
   app_context->outgoing()->AddPublicService<ViewRefInstalled>(bindings_.GetHandler(this));
 }
@@ -57,6 +59,7 @@ void ViewRefInstalledImpl::Publish(sys::ComponentContext* app_context) {
 // |ViewRefInstalled|
 void ViewRefInstalledImpl::Watch(fuchsia::ui::views::ViewRef view_ref,
                                  ViewRefInstalled::WatchCallback callback) {
+  utils::CheckIsOnMainThread();
   if (!IsValidViewRef(view_ref)) {
     callback(InvalidMessage());
     return;
@@ -89,6 +92,8 @@ void ViewRefInstalledImpl::Watch(fuchsia::ui::views::ViewRef view_ref,
 }
 
 void ViewRefInstalledImpl::OnNewViewTreeSnapshot(std::shared_ptr<const Snapshot> snapshot) {
+  utils::CheckIsOnMainThread();
+
   // Remove any stale views from the installed_views_ set.
   for (auto it = installed_views_.begin(); it != installed_views_.end();) {
     if (!snapshot->view_tree.contains(*it) && !snapshot->unconnected_views.contains(*it)) {

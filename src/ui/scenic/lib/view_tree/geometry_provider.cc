@@ -11,6 +11,7 @@
 
 #include <measure_tape/hlcpp/measure_tape_for_geometry.h>
 
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/math.h"
 #include "src/ui/scenic/lib/utils/time.h"
@@ -30,11 +31,13 @@ const auto fuog_MAX_VIEW_COUNT = fuchsia::ui::observation::geometry::MAX_VIEW_CO
 
 void GeometryProvider::Register(fidl::InterfaceRequest<fuog_ViewTreeWatcher> endpoint,
                                 zx_koid_t context_view) {
+  utils::CheckIsOnMainThread();
   RegisterViewTreeWatcherImpl(std::move(endpoint), context_view);
 }
 
 void GeometryProvider::RegisterGlobalViewTreeWatcher(
     fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> endpoint) {
+  utils::CheckIsOnMainThread();
   RegisterViewTreeWatcherImpl(std::move(endpoint), std::nullopt);
 }
 
@@ -60,6 +63,8 @@ void GeometryProvider::RegisterViewTreeWatcherImpl(
 }
 
 void GeometryProvider::OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
+  utils::CheckIsOnMainThread();
+
   // Remove any dead endpoints.
   for (auto it = endpoints_.begin(); it != endpoints_.end();) {
     if (!it->second.IsAlive()) {
@@ -280,6 +285,8 @@ GeometryProvider::ProviderEndpoint::ProviderEndpoint(ProviderEndpoint&& original
 
 void GeometryProvider::ProviderEndpoint::AddViewTreeSnapshot(
     fuog_ViewTreeSnapshotPtr view_tree_snapshot) {
+  utils::CheckIsOnMainThread();
+
   view_tree_snapshots_.push_back(std::move(view_tree_snapshot));
 
   if (view_tree_snapshots_.size() > fuog_BUFFER_SIZE) {
@@ -292,6 +299,8 @@ void GeometryProvider::ProviderEndpoint::AddViewTreeSnapshot(
 }
 
 void GeometryProvider::ProviderEndpoint::Watch(fuog_ViewTreeWatcher::WatchCallback callback) {
+  utils::CheckIsOnMainThread();
+
   // Check if there is an ongoing Watch call. If there is an in-flight Watch call, close the channel
   // and remove itself from |endpoints_|.
   if (pending_callback_ != nullptr) {
