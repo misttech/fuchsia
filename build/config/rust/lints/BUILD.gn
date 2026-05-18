@@ -6,10 +6,6 @@
 config("clippy_warn_default") {
   # Use -W instead of -D to treat as a warning while iterating.
   rustflags = [
-    # TODO(https://fxbug.dev/512593099): Remove after toolchain roll.
-    "-Aunknown_lints",
-    "-Aclippy::useless_borrows_in_formatting",
-
     # LINT.IfChange(clippy_warn_default)
     # go/keep-sorted start
 
