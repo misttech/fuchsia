@@ -60,6 +60,18 @@ Create a list of the precise gaps discovered:
   `zx_timer_set`").
 - Untested boundary or invalid parameter inputs.
 
+### Step 4. Verify with Kernel Implementation
+Before finalizing the test plan, search for the syscall implementation under
+`zircon/kernel/object/` or `zircon/kernel/lib/syscalls/` to verify that the
+documented constraints (such as valid options, size limits, etc.) are actually
+checked or enforced by the kernel code.
+- If the kernel does not enforce a documented option (e.g., comments it out or
+  ignores it), **do not** write an assertion in the test that expects
+  `ZX_ERR_INVALID_ARGS` or similar failures. Asserting on unimplemented error
+  checks will cause tests to fail.
+- If you discover such a discrepancy, skip testing that specific parameter
+  validation or document it with a clear `TODO`.
+
 ---
 
 ## Phase 2: Writing & Verification (Coding Subagent)
@@ -113,8 +125,15 @@ Before handing off for review, compile and run the test locally:
 1.  Configure build (if needed): `fx set bringup.x64 --with-base
     //bundles/bringup:tests` or the existing configuration.
 2.  Build: `fx build`
-3.  Run the tests: `fx test --test-filter "<ObjectTypeTest>.*"` to run your new
-    tests and ensure they pass successfully.
+3.  Run the standalone test package: `fx test core-<object_type>-test-package`
+    (e.g. `fx test core-fifo-test-package`). Component tests run extremely fast
+    (~15-30s) and avoid VM/paging timeouts that occur in emulator boots when KVM
+    is unavailable.
+4.  Verify the new tests executed: If necessary, run `ffx log dump | grep -E
+    "(<ObjectType>Test|PASSED|FAILED)"` to confirm that your newly added tests
+    were executed and passed.
+5.  Format the code: Run `fx format-code` to ensure all modifications follow the
+    project formatting standards.
 
 ---
 
