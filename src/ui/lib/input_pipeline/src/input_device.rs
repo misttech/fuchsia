@@ -9,7 +9,6 @@ use crate::{
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_io as fio;
-use fidl_next_fuchsia_input_report as fidl_next_input_report;
 use fidl_next_fuchsia_input_report::{InputDevice, InputReport};
 use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::{
@@ -127,14 +126,17 @@ impl InputDeviceStatus {
         }
     }
 
-    pub fn count_received_report(&self, report: &InputReport) {
+    pub fn count_received_report_wire(
+        &self,
+        report: &fidl_next_fuchsia_input_report::wire::InputReport<'_>,
+    ) {
         self.reports_received_count.add(1);
-        match report.event_time {
+        match report.event_time() {
             Some(event_time) => {
                 self.driver_to_binding_latency_ms.insert(
-                    ((self.now)() - zx::MonotonicInstant::from_nanos(event_time)).into_millis(),
+                    ((self.now)() - zx::MonotonicInstant::from_nanos(event_time.0)).into_millis(),
                 );
-                self.last_received_timestamp_ns.set(event_time.try_into().unwrap());
+                self.last_received_timestamp_ns.set(event_time.0.try_into().unwrap());
             }
             None => (),
         }
@@ -361,8 +363,8 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
 ) where
     InputDeviceProcessReportsFn: 'static
         + Send
-        + FnMut(
-            Vec<InputReport>,
+        + for<'de> FnMut(
+            &[fidl_next_fuchsia_input_report::wire::InputReport<'_>],
             Option<InputReport>,
             &InputDeviceDescriptor,
             &mut UnboundedSender<Vec<InputEvent>>,
@@ -387,69 +389,71 @@ pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
         loop {
             let read_result = {
                 fuchsia_trace::duration!("input", "read_input_reports");
-                report_reader.read_input_reports().await
+                report_reader.read_input_reports().wire().await
             };
             match read_result {
-                Ok(Err(_service_error)) => break,
                 Err(_fidl_error) => break,
-                Ok(Ok(fidl_next_input_report::InputReportsReaderReadInputReportsResponse {
-                    reports,
-                })) => {
-                    fuchsia_trace::duration!("input", "input-device-process-reports");
-                    let (prev_report, inspect_receiver) = process_reports(
-                        reports,
-                        previous_report,
-                        &device_descriptor,
-                        &mut event_sender,
-                        &inspect_status,
-                        &metrics_logger,
-                        &feature_flags,
-                    );
-                    previous_report = prev_report;
+                Ok(decoded) => match decoded.as_ref() {
+                    Err(_service_error) => break,
+                    Ok(response) => {
+                        fuchsia_trace::duration!("input", "input-device-process-reports");
+                        // TODO: b/513602239 - use InputEvent instead of InputReport for previous
+                        // report. To avoid wire to natural type conversion.
+                        let (prev_report, inspect_receiver) = process_reports(
+                            response.reports.as_slice(),
+                            previous_report,
+                            &device_descriptor,
+                            &mut event_sender,
+                            &inspect_status,
+                            &metrics_logger,
+                            &feature_flags,
+                        );
+                        previous_report = prev_report;
 
-                    if let Some(previous_report) = previous_report.as_ref() {
-                        if previous_report.wake_lease.is_some() {
-                            inspect_status.count_wake_lease_leak();
+                        if let Some(previous_report) = previous_report.as_ref() {
+                            if previous_report.wake_lease.is_some() {
+                                inspect_status.count_wake_lease_leak();
 
-                            let error_code = match device_descriptor {
-                                InputDeviceDescriptor::TouchScreen(_) => {
-                                    Some(InputPipelineMetricDimensionEvent::TouchscreenPreviousReportHasWakeLease)
+                                let error_code = match device_descriptor {
+                                    InputDeviceDescriptor::TouchScreen(_) => {
+                                        Some(InputPipelineMetricDimensionEvent::TouchscreenPreviousReportHasWakeLease)
+                                    }
+                                    InputDeviceDescriptor::Touchpad(_) => {
+                                        Some(InputPipelineMetricDimensionEvent::TouchpadPreviousReportHasWakeLease)
+                                    }
+                                    InputDeviceDescriptor::Mouse(_) => {
+                                        Some(InputPipelineMetricDimensionEvent::MousePreviousReportHasWakeLease)
+                                    }
+                                    InputDeviceDescriptor::Keyboard(_) => {
+                                        Some(InputPipelineMetricDimensionEvent::KeyboardPreviousReportHasWakeLease)
+                                    }
+                                    InputDeviceDescriptor::ConsumerControls(_) => {
+                                        Some(InputPipelineMetricDimensionEvent::ButtonPreviousReportHasWakeLease)
+                                    }
+                                    InputDeviceDescriptor::LightSensor(_) => {
+                                        Some(InputPipelineMetricDimensionEvent::LightSensorPreviousReportHasWakeLease)
+                                    }
+                                    #[cfg(test)]
+                                    InputDeviceDescriptor::Fake => None,
+                                };
+                                if let Some(error_code) = error_code {
+                                    metrics_logger.log_error(error_code, std::format!("previous_report must not have a wake lease but does: {:?}", previous_report));
                                 }
-                                InputDeviceDescriptor::Touchpad(_) => {
-                                    Some(InputPipelineMetricDimensionEvent::TouchpadPreviousReportHasWakeLease)
-                                }
-                                InputDeviceDescriptor::Mouse(_) => {
-                                    Some(InputPipelineMetricDimensionEvent::MousePreviousReportHasWakeLease)
-                                }
-                                InputDeviceDescriptor::Keyboard(_) => {
-                                    Some(InputPipelineMetricDimensionEvent::KeyboardPreviousReportHasWakeLease)
-                                }
-                                InputDeviceDescriptor::ConsumerControls(_) => {
-                                    Some(InputPipelineMetricDimensionEvent::ButtonPreviousReportHasWakeLease)
-                                }
-                                InputDeviceDescriptor::LightSensor(_) => {
-                                    Some(InputPipelineMetricDimensionEvent::LightSensorPreviousReportHasWakeLease)
-                                }
-                                #[cfg(test)]
-                                InputDeviceDescriptor::Fake => None,
-                            };
-                            if let Some(error_code) = error_code {
-                                metrics_logger.log_error(error_code, std::format!("previous_report must not have a wake lease but does: {:?}", previous_report));
                             }
                         }
+
+                        // If a report generates multiple events asynchronously, we send them over a mpsc channel
+                        // to inspect_receiver. We update the event count on inspect_status here since we cannot
+                        // pass a reference to inspect_status to an async task in process_reports().
+                        match inspect_receiver {
+                            Some(mut receiver) => {
+                                while let Some(event) = receiver.next().await {
+                                    inspect_status.count_generated_event(event);
+                                }
+                            }
+                            None => (),
+                        };
                     }
-
-                    // If a report generates multiple events asynchronously, we send them over a mpsc channel
-                    // to inspect_receiver. We update the event count on inspect_status here since we cannot
-                    // pass a reference to inspect_status to an async task in process_reports().
-                    match inspect_receiver {
-                        Some(mut receiver) => {
-                            while let Some(event) = receiver.next().await {
-                                inspect_status.count_generated_event(event);
-                            }
-                        }
-                        None => (),
-                    };
                 }
             }
         }
@@ -768,7 +772,7 @@ mod tests {
     #[test_case(1; "positive value")]
     #[test_case(i64::MAX; "max value")]
     #[fuchsia::test(allow_stalls = false)]
-    async fn input_device_status_updates_latency_histogram_on_count_received_report(
+    async fn input_device_status_updates_latency_histogram_on_count_received_report_wire(
         latency_nsec: i64,
     ) {
         let mut expected_histogram = diagnostics_assertions::HistogramAssertion::exponential(
@@ -779,8 +783,11 @@ mod tests {
             inspector.root().clone_weak(),
             Box::new(move || zx::MonotonicInstant::from_nanos(latency_nsec)),
         );
-        input_device_status
-            .count_received_report(&InputReport { event_time: Some(0), ..InputReport::default() });
+        let decoded = crate::testing_utilities::report_to_wire(InputReport {
+            event_time: Some(0),
+            ..InputReport::default()
+        });
+        input_device_status.count_received_report_wire(&decoded);
         expected_histogram.insert_values([latency_nsec / 1000 / 1000]);
         diagnostics_assertions::assert_data_tree!(inspector, root: contains {
             driver_to_binding_latency_ms: expected_histogram,

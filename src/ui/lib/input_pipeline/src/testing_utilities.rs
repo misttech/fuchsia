@@ -871,9 +871,11 @@ macro_rules! assert_input_report_sequence_generates_events_with_feature_flags {
                 expected_last_received_timestamp = report_time.try_into().unwrap();
             }
         }
+        let decoded = $crate::testing_utilities::reports_to_wire($input_reports);
+
         let inspect_receiver: Option<UnboundedReceiver<InputEvent>>;
         (_, inspect_receiver) = <$DeviceType>::process_reports(
-            $input_reports,
+            &decoded,
             previous_report,
             &$device_descriptor,
             &mut event_sender.clone(),
@@ -1079,4 +1081,45 @@ where
     }))
     .detach();
     proxy
+}
+
+pub fn reports_to_wire(
+    reports: Vec<fidl_next_fuchsia_input_report::InputReport>,
+) -> fidl_next::Decoded<
+    ::fidl_next::wire::Vector<'static, fidl_next_fuchsia_input_report::wire::InputReport<'static>>,
+    ::fidl_next::fuchsia::channel::Buffer,
+> {
+    let constraint = (reports.len() as u64, ());
+    let buffer = ::fidl_next::EncoderExt::encode_with_constraint::<
+        ::fidl_next::wire::Vector<
+            'static,
+            fidl_next_fuchsia_input_report::wire::InputReport<'static>,
+        >,
+        _,
+    >(reports, constraint)
+    .unwrap();
+    ::fidl_next::AsDecoderExt::into_decoded_with_constraint::<
+        ::fidl_next::wire::Vector<
+            'static,
+            fidl_next_fuchsia_input_report::wire::InputReport<'static>,
+        >,
+    >(buffer, constraint)
+    .unwrap()
+}
+
+pub fn report_to_wire(
+    report: fidl_next_fuchsia_input_report::InputReport,
+) -> fidl_next::Decoded<
+    fidl_next_fuchsia_input_report::wire::InputReport<'static>,
+    ::fidl_next::fuchsia::channel::Buffer,
+> {
+    let buffer = ::fidl_next::EncoderExt::encode::<
+        fidl_next_fuchsia_input_report::wire::InputReport<'static>,
+        _,
+    >(report)
+    .unwrap();
+    ::fidl_next::AsDecoderExt::into_decoded::<
+        fidl_next_fuchsia_input_report::wire::InputReport<'static>,
+    >(buffer)
+    .unwrap()
 }

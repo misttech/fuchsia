@@ -6,7 +6,7 @@ use super::types::Rgbc;
 use crate::input_device::{
     self, Handled, InputDeviceBinding, InputDeviceDescriptor, InputDeviceStatus, InputEvent,
 };
-use crate::metrics;
+use crate::{metrics, utils};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use derivative::Derivative;
@@ -120,7 +120,7 @@ impl LightSensorBinding {
             inspect_status,
             metrics_logger,
             feature_flags,
-            move |report,
+            move |reports,
                   previous_report,
                   device_descriptor,
                   input_event_sender,
@@ -128,7 +128,7 @@ impl LightSensorBinding {
                   metrics_logger,
                   _feature_flags| {
                 Self::process_reports(
-                    report,
+                    reports,
                     previous_report,
                     device_descriptor,
                     input_event_sender,
@@ -279,7 +279,7 @@ impl LightSensorBinding {
     ///
     /// The returned [`InputReport`] is guaranteed to have no `wake_lease`.
     fn process_reports(
-        reports: Vec<InputReport>,
+        reports: &[fidl_next_fuchsia_input_report::wire::InputReport<'_>],
         mut previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
@@ -306,7 +306,7 @@ impl LightSensorBinding {
     }
 
     fn process_report(
-        report: InputReport,
+        report: &fidl_next_fuchsia_input_report::wire::InputReport<'_>,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
@@ -317,11 +317,11 @@ impl LightSensorBinding {
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> Option<InputReport> {
-        if let Some(trace_id) = report.trace_id {
-            fuchsia_trace::flow_end!("input", "input_report", trace_id.into());
+        if let Some(trace_id) = report.trace_id() {
+            fuchsia_trace::flow_end!("input", "input_report", trace_id.0.into());
         }
 
-        inspect_status.count_received_report(&report);
+        inspect_status.count_received_report_wire(report);
         let light_sensor_descriptor =
             if let input_device::InputDeviceDescriptor::LightSensor(light_sensor_descriptor) =
                 device_descriptor
@@ -332,7 +332,7 @@ impl LightSensorBinding {
             };
 
         // Input devices can have multiple types so ensure `report` is a KeyboardInputReport.
-        let sensor = match &report.sensor {
+        let sensor = match report.sensor() {
             None => {
                 inspect_status.count_filtered_report();
                 return previous_report;
@@ -340,7 +340,7 @@ impl LightSensorBinding {
             Some(sensor) => sensor,
         };
 
-        let values = match &sensor.values {
+        let values = match sensor.values() {
             None => {
                 inspect_status.count_filtered_report();
                 return None;
@@ -352,10 +352,10 @@ impl LightSensorBinding {
             device_event: input_device::InputDeviceEvent::LightSensor(LightSensorEvent {
                 device_proxy,
                 rgbc: Rgbc {
-                    red: values[light_sensor_descriptor.sensor_layout.red] as u16,
-                    green: values[light_sensor_descriptor.sensor_layout.green] as u16,
-                    blue: values[light_sensor_descriptor.sensor_layout.blue] as u16,
-                    clear: values[light_sensor_descriptor.sensor_layout.clear] as u16,
+                    red: values[light_sensor_descriptor.sensor_layout.red].0 as u16,
+                    green: values[light_sensor_descriptor.sensor_layout.green].0 as u16,
+                    blue: values[light_sensor_descriptor.sensor_layout.blue].0 as u16,
+                    clear: values[light_sensor_descriptor.sensor_layout.clear].0 as u16,
                 },
             }),
             device_descriptor: device_descriptor.clone(),
@@ -374,6 +374,7 @@ impl LightSensorBinding {
             );
         }
 
-        Some(report)
+        let natural_report = utils::input_report_to_natural(report);
+        Some(natural_report)
     }
 }

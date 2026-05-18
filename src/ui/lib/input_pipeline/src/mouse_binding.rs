@@ -448,7 +448,7 @@ impl MouseBinding {
     ///
     /// The returned [`InputReport`] is guaranteed to have no `wake_lease`.
     fn process_reports(
-        reports: Vec<InputReport>,
+        reports: &[fidl_next_fuchsia_input_report::wire::InputReport<'_>],
         mut previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
@@ -471,25 +471,25 @@ impl MouseBinding {
     }
 
     fn process_report(
-        mut report: InputReport,
+        report: &fidl_next_fuchsia_input_report::wire::InputReport<'_>,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<input_device::InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> Option<InputReport> {
-        if let Some(trace_id) = report.trace_id {
-            fuchsia_trace::flow_end!("input", "input_report", trace_id.into());
+        if let Some(trace_id) = report.trace_id() {
+            fuchsia_trace::flow_end!("input", "input_report", trace_id.0.into());
         }
 
         // Extract the wake_lease early to prevent it from leaking. If this is moved
         // below an early return, the lease could accidentally be stored inside
         // `previous_report`, which would prevent the system from suspending.
-        let wake_lease = report.wake_lease.take();
+        let wake_lease = utils::duplicate_wake_lease(report.wake_lease());
 
-        inspect_status.count_received_report(&report);
+        inspect_status.count_received_report_wire(report);
         // Input devices can have multiple types so ensure `report` is a MouseInputReport.
-        let mouse_report: &fidl_next_fuchsia_input_report::MouseInputReport = match &report.mouse {
+        let mouse_report = match report.mouse() {
             Some(mouse) => mouse,
             None => {
                 inspect_status.count_filtered_report();
@@ -499,7 +499,8 @@ impl MouseBinding {
 
         let previous_buttons: SortedVecSet<MouseButton> =
             buttons_from_optional_report(&previous_report.as_ref());
-        let current_buttons: SortedVecSet<MouseButton> = buttons_from_report(&report);
+        let current_buttons: SortedVecSet<MouseButton> =
+            buttons_from_mouse_report_wire(mouse_report);
 
         // Send a Down event with:
         // * affected_buttons: the buttons that were pressed since the previous report,
@@ -537,12 +538,12 @@ impl MouseBinding {
 
         // Create a location for the move event. Use the absolute position if available.
         let location = if let (Some(position_x), Some(position_y)) =
-            (mouse_report.position_x, mouse_report.position_y)
+            (mouse_report.position_x(), mouse_report.position_y())
         {
-            MouseLocation::Absolute(Position { x: position_x as f32, y: position_y as f32 })
+            MouseLocation::Absolute(Position { x: position_x.0 as f32, y: position_y.0 as f32 })
         } else {
-            let movement_x = mouse_report.movement_x.unwrap_or_default() as f32;
-            let movement_y = mouse_report.movement_y.unwrap_or_default() as f32;
+            let movement_x = mouse_report.movement_x().map(|x| x.0).unwrap_or_default() as f32;
+            let movement_y = mouse_report.movement_y().map(|y| y.0).unwrap_or_default() as f32;
             MouseLocation::Relative(RelativeLocation {
                 millimeters: Position {
                     x: movement_x / counts_per_mm as f32,
@@ -572,17 +573,17 @@ impl MouseBinding {
             }),
         );
 
-        let wheel_delta_v = match mouse_report.scroll_v {
+        let wheel_delta_v = match mouse_report.scroll_v() {
             None => None,
             Some(ticks) => {
-                Some(WheelDelta { raw_data: RawWheelDelta::Ticks(ticks), physical_pixel: None })
+                Some(WheelDelta { raw_data: RawWheelDelta::Ticks(ticks.0), physical_pixel: None })
             }
         };
 
-        let wheel_delta_h = match mouse_report.scroll_h {
+        let wheel_delta_h = match mouse_report.scroll_h() {
             None => None,
             Some(ticks) => {
-                Some(WheelDelta { raw_data: RawWheelDelta::Ticks(ticks), physical_pixel: None })
+                Some(WheelDelta { raw_data: RawWheelDelta::Ticks(ticks.0), physical_pixel: None })
             }
         };
 
@@ -624,7 +625,8 @@ impl MouseBinding {
             wake_lease,
         );
 
-        Some(report)
+        let natural_report = utils::input_report_to_natural(report);
+        Some(natural_report)
     }
 }
 
@@ -705,14 +707,13 @@ fn send_mouse_event(
     }
 }
 
-/// Returns the set of pressed buttons present in the given input report.
-///
-/// # Parameters
-/// - `report`: The input report to parse the mouse buttons from.
-fn buttons_from_report(
-    input_report: &fidl_next_fuchsia_input_report::InputReport,
+fn buttons_from_mouse_report_wire(
+    mouse_report: &fidl_next_fuchsia_input_report::wire::MouseInputReport<'_>,
 ) -> SortedVecSet<MouseButton> {
-    buttons_from_optional_report(&Some(input_report))
+    mouse_report
+        .pressed_buttons()
+        .map(|buttons| SortedVecSet::from_iter(buttons.iter().copied()))
+        .unwrap_or_default()
 }
 
 /// Returns the set of pressed buttons present in the given input report.

@@ -258,7 +258,7 @@ impl ConsumerControlsBinding {
     ///
     /// The returned [`InputReport`] is guaranteed to have no `wake_lease`.
     fn process_reports(
-        reports: Vec<InputReport>,
+        reports: &[fidl_next_fuchsia_input_report::wire::InputReport<'_>],
         mut previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
@@ -281,29 +281,36 @@ impl ConsumerControlsBinding {
     }
 
     fn process_report(
-        mut report: InputReport,
+        report: &fidl_next_fuchsia_input_report::wire::InputReport<'_>,
         previous_report: Option<InputReport>,
         device_descriptor: &input_device::InputDeviceDescriptor,
         input_event_sender: &mut UnboundedSender<Vec<InputEvent>>,
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> Option<InputReport> {
-        if let Some(trace_id) = report.trace_id {
-            fuchsia_trace::flow_end!("input", "input_report", trace_id.into());
+        if let Some(trace_id) = report.trace_id() {
+            fuchsia_trace::flow_end!("input", "input_report", trace_id.0.into());
         }
 
         // Extract the wake_lease early to prevent it from leaking. If this is moved
         // below an early return, the lease could accidentally be stored inside
         // `previous_report`, which would prevent the system from suspending.
-        let wake_lease = report.wake_lease.take();
+        let wake_lease = utils::duplicate_wake_lease(report.wake_lease());
 
-        inspect_status.count_received_report(&report);
+        inspect_status.count_received_report_wire(report);
         // Input devices can have multiple types so ensure `report` is a ConsumerControlInputReport.
-        let pressed_buttons: Vec<ConsumerControlButton> = match report.consumer_control {
+        let pressed_buttons: Vec<ConsumerControlButton> = match report.consumer_control() {
             Some(ref consumer_control_report) => consumer_control_report
-                .pressed_buttons
-                .as_ref()
-                .map(|buttons| buttons.iter().map(utils::consumer_control_button_to_old).collect())
+                .pressed_buttons()
+                .map(|buttons| {
+                    buttons
+                        .iter()
+                        .map(|&b| {
+                            let natural_button = fidl_next::FromWire::from_wire(b);
+                            utils::consumer_control_button_to_old(&natural_button)
+                        })
+                        .collect()
+                })
                 .unwrap_or_default(),
             None => {
                 inspect_status.count_filtered_report();
@@ -324,7 +331,8 @@ impl ConsumerControlsBinding {
             trace_id,
         );
 
-        Some(report)
+        let natural_report = utils::input_report_to_natural(report);
+        Some(natural_report)
     }
 }
 
