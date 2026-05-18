@@ -212,13 +212,13 @@
 //src/devices/tests/ddk-firmware-test:ddk-firmware-test
 //src/devices/tests/ddk-lifecycle:ddk-lifecycle-test-driver
 //src/devices/tests/ddk-topology-test:ddk-topology-test
-//src/devices/tests/devicetree:fake-board-driver
 //src/devices/tests/driver-inspect-test:fuchsia_driver
 //src/devices/tests/driver-multiname-test:parent_device
 //src/devices/tests/driver-runtime:child-driver
 //src/devices/tests/driver-runtime:parent-driver
 //src/devices/tests/driver-transport:child-drv
 //src/devices/tests/driver-transport:parent-drv
+//src/devices/tests/eval/devicetree/fake-board:fake-board-driver
 //src/devices/tests/fidl-bindlib-generation/child-driver:driver
 //src/devices/tests/fidl-bindlib-generation/parent-driver:driver
 //src/devices/tests/fidl-service:child-driver

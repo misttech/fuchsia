@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_TESTS_DEVICETREE_FAKE_BOARD_H_
-#define SRC_DEVICES_TESTS_DEVICETREE_FAKE_BOARD_H_
+#ifndef SRC_DEVICES_TESTS_EVAL_DEVICETREE_FAKE_BOARD_FAKE_BOARD_H_
+#define SRC_DEVICES_TESTS_EVAL_DEVICETREE_FAKE_BOARD_FAKE_BOARD_H_
 
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devicetree/manager/manager.h>
@@ -22,4 +22,4 @@ class FakeBoard : public fdf::DriverBase2 {
 
 }  // namespace devicetree_evaluation
 
-#endif  // SRC_DEVICES_TESTS_DEVICETREE_FAKE_BOARD_H_
+#endif  // SRC_DEVICES_TESTS_EVAL_DEVICETREE_FAKE_BOARD_FAKE_BOARD_H_

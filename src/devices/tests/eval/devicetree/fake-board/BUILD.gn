@@ -1,0 +1,38 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bind/bind.gni")
+import("//build/drivers.gni")
+
+driver_bind_rules("fake-board-bind") {
+  rules = "meta/fake-board.bind"
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
+    "//src/devices/bind/fuchsia.test.platform",
+  ]
+}
+
+fuchsia_cc_driver("fake-board-driver") {
+  output_name = "fake-board"
+  sources = [
+    "fake-board.cc",
+    "fake-board.h",
+  ]
+  deps = [
+    ":fake-board-bind",
+    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/devicetree/manager",
+    "//sdk/lib/driver/devicetree/visitors:load-visitors",
+    "//sdk/lib/driver/logging/cpp",
+    "//src/devices/lib/driver:driver_runtime",
+  ]
+}
+
+fuchsia_driver_component("fake-board-component") {
+  component_name = "fake-board"
+  manifest = "meta/fake-board.cml"
+  deps = [ ":fake-board-driver" ]
+  info = "meta/fake-board-info.json"
+}
