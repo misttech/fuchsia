@@ -1721,8 +1721,11 @@ mod tests {
         let builder = ffx_config::test_env();
         let builder = make_fake_sdk(builder).await;
         let temp = tempdir().expect("cannot get tempdir");
+        let root = temp.path();
         let env = builder
-            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, temp.path().to_string_lossy())
+            .user_config(ffx_config::keys::EMU_INSTANCE_ROOT_DIR, root.to_string_lossy())
+            .user_config("ssh.pub", json!([root.join("test_authorized_keys")]))
+            .user_config("ssh.priv", json!([root.join("test_ed25519_key")]))
             .build()
             .unwrap();
         let instance_name = "test-instance";
@@ -1785,18 +1788,23 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_embed_boot_data() -> Result<()> {
+        let temp = tempdir().expect("cannot get tempdir");
+        let root = temp.path();
         let builder = ffx_config::test_env();
         let builder = make_fake_sdk(builder).await;
-        let env = builder.build().unwrap();
-        let temp = tempdir().expect("cannot get tempdir");
+        let env = builder
+            .user_config("ssh.pub", json!([root.join("test_authorized_keys")]))
+            .user_config("ssh.priv", json!([root.join("test_ed25519_key")]))
+            .build()
+            .unwrap();
         let mut emu_config = EmulatorConfiguration::default();
 
-        let root = setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
+        let root_dir = setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
 
         let Some(Ramdisk { path: src, kind: RamdiskKind::Zbi }) = emu_config.guest.ramdisk else {
             panic!("No ZBI path");
         };
-        let dest = root.join("dest.zbi");
+        let dest = root_dir.join("dest.zbi");
 
         <TestEngine as QemuBasedEngine>::embed_boot_data(&env.context, &src, &dest, None).await?;
 
@@ -1805,18 +1813,23 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_embed_boot_data_with_kernel_cmdline() -> Result<()> {
+        let temp = tempdir().expect("cannot get tempdir");
+        let root = temp.path();
         let builder = ffx_config::test_env();
         let builder = make_fake_sdk(builder).await;
-        let env = builder.build().unwrap();
-        let temp = tempdir().expect("cannot get tempdir");
+        let env = builder
+            .user_config("ssh.pub", json!([root.join("test_authorized_keys")]))
+            .user_config("ssh.priv", json!([root.join("test_ed25519_key")]))
+            .build()
+            .unwrap();
         let mut emu_config = EmulatorConfiguration::default();
 
-        let root = setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
+        let root_dir = setup_files(&mut emu_config.guest, &temp, DiskImageFormat::Fvm).await?;
 
         let Some(Ramdisk { path: src, kind: RamdiskKind::Zbi }) = emu_config.guest.ramdisk else {
             panic!("No ZBI path");
         };
-        let dest = root.join("dest.zbi");
+        let dest = root_dir.join("dest.zbi");
 
         <TestEngine as QemuBasedEngine>::embed_boot_data(
             &env.context,
