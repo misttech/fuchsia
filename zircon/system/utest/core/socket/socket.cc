@@ -1144,4 +1144,79 @@ INSTANTIATE_TEST_SUITE_P(
     zxtest::Combine(zxtest::Values(ReadBufferFaultsAt::kBeginning, ReadBufferFaultsAt::kMiddle),
                     zxtest::Values(ReadBehaviour::kConsume, ReadBehaviour::kPeek)));
 
+TEST(SocketTest, CreateInvalidArgs) {
+  zx::socket local, remote;
+  EXPECT_STATUS(zx::socket::create(~ZX_SOCKET_DATAGRAM, &local, &remote), ZX_ERR_INVALID_ARGS);
+}
+
+TEST(SocketTest, WriteInvalidOptions) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  char buffer = 'a';
+  EXPECT_STATUS(local.write(1, &buffer, 1, nullptr), ZX_ERR_INVALID_ARGS);
+}
+
+TEST(SocketTest, WriteRights) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  zx_info_handle_basic_t info{};
+  ASSERT_OK(local.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+
+  zx::socket reduced_local;
+  ASSERT_OK(local.replace(info.rights & ~ZX_RIGHT_WRITE, &reduced_local));
+
+  char buffer = 'a';
+  EXPECT_STATUS(reduced_local.write(0, &buffer, 1, nullptr), ZX_ERR_ACCESS_DENIED);
+}
+
+TEST(SocketTest, WriteWrongType) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
+
+  char buffer = 'a';
+  EXPECT_STATUS(zx_socket_write(vmo.get(), 0, &buffer, 1, nullptr), ZX_ERR_WRONG_TYPE);
+}
+
+TEST(SocketTest, ReadInvalidOptions) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  char buffer = 'a';
+  ASSERT_OK(local.write(0, &buffer, 1, nullptr));
+
+  char read_buffer;
+  EXPECT_STATUS(remote.read(1, &read_buffer, 1, nullptr), ZX_ERR_INVALID_ARGS);
+}
+
+TEST(SocketTest, ReadRights) {
+  zx::socket local, remote;
+  ASSERT_OK(zx::socket::create(0, &local, &remote));
+
+  zx_info_handle_basic_t info{};
+  ASSERT_OK(remote.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+
+  zx::socket reduced_remote;
+  ASSERT_OK(remote.replace(info.rights & ~ZX_RIGHT_READ, &reduced_remote));
+
+  char read_buffer;
+  EXPECT_STATUS(reduced_remote.read(0, &read_buffer, 1, nullptr), ZX_ERR_ACCESS_DENIED);
+}
+
+TEST(SocketTest, ReadWrongType) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
+
+  char read_buffer;
+  EXPECT_STATUS(zx_socket_read(vmo.get(), 0, &read_buffer, 1, nullptr), ZX_ERR_WRONG_TYPE);
+}
+
+TEST(SocketTest, SetDispositionWrongType) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
+
+  EXPECT_STATUS(zx_socket_set_disposition(vmo.get(), 0, 0), ZX_ERR_WRONG_TYPE);
+}
+
 }  // namespace
