@@ -48,8 +48,10 @@ new drivers using Fuchsia's [driver framework version 2][dfv2] (DFv2).
 
 - [**Driver runtime API guidelines**][driver-runtime-api]: Follow these
   guidelines when defining C APIs in the driver runtime.
-- [**Driver rubric**][driver-rubric]: Follow these rules when creating a
-  new DFv2 driver in the Fuchsia source repository.
+- [**Driver C++ rubric**][driver-cpp-rubric]: Follow these rules when creating a
+  new C++ driver in the Fuchsia source repository.
+- [**Driver Rust rubric**][driver-rust-rubric]: Follow these rules when creating a
+  new Rust driver in the Fuchsia source repository.
 
 ## Concepts {:#concepts}
 
@@ -88,7 +90,8 @@ See the following tutorials under the **SDK** section:
 [vmo-pattern]: /docs/development/drivers/best_practices/vmo-registration-pattern.md
 [driver-stack-performance]: /docs/development/drivers/best_practices/driver_stack_performance.md
 [driver-runtime-api]: /docs/development/drivers/developer_guide/driver-runtime-api-guidelines.md
-[driver-rubric]: /docs/development/drivers/developer_guide/rubric.md
+[driver-cpp-rubric]: /docs/development/drivers/developer_guide/cpp-rubric.md
+[driver-rust-rubric]: /docs/development/drivers/developer_guide/rust-rubric.md
 [dma]: /docs/development/drivers/concepts/driver_development/dma.md
 [driver-codelab]: /docs/development/drivers/tutorials/sdk_build_driver/introduction.md
 [write-bind-rules]: /docs/development/sdk/write-bind-rules-for-driver.md

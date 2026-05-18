@@ -49,8 +49,10 @@ toc:
     section:
     - title: "Driver runtime API guidelines"
       path: /docs/development/drivers/developer_guide/driver-runtime-api-guidelines.md
-    - title: "Drivers rubric"
-      path: /docs/development/drivers/developer_guide/rubric.md
+    - title: "Driver C++ rubric"
+      path: /docs/development/drivers/developer_guide/cpp-rubric.md
+    - title: "Driver Rust rubric"
+      path: /docs/development/drivers/developer_guide/rust-rubric.md
   - title: "Concepts"
     section:
     - title: "DMA (Direct Memory Access)"

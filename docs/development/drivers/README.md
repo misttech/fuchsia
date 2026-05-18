@@ -74,7 +74,8 @@ section.
 - Guidelines
 
   - [Driver runtime API guidelines][driver-runtime-api-guidelines]
-  - [Drivers rubric][drivers-rubric]
+  - [Drivers C++ rubric][cpp-drivers-rubric]
+  - [Drivers Rust rubric][rust-drivers-rubric]
 
 - Concepts
 
@@ -157,7 +158,8 @@ section.
 [fuchsia-driver-development]: developer_guide/driver-development.md
 [composite-nodes]: developer_guide/create-a-composite-node.md
 [driver-runtime-api-guidelines]: developer_guide/driver-runtime-api-guidelines.md
-[drivers-rubric]: developer_guide/rubric.md
+[cpp-drivers-rubric]: developer_guide/cpp-rubric.md
+[rust-drivers-rubric]: developer_guide/rust-rubric.md
 [modifying-board-drivers]: driver_guides/display/board_driver_changes.md
 [what-does-a-display-controller-do]: driver_guides/display/hardware_concepts.md
 [registers-overview]: driver_guides/registers/overview.md
