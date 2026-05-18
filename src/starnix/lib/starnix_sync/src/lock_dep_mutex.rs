@@ -316,6 +316,50 @@ impl<'a, T: ?Sized, L> std::ops::DerefMut for MappedLockDepGuard<'a, T, L> {
     }
 }
 
+/// Locks two `LockDepMutex`es at the same level in a deadlock-free order.
+///
+/// This function uses `SubclassToken` to authorize locking multiple instances
+/// of the same level, satisfying `LockDep` constraints.
+pub fn lockdep_ordered_lock<'a, T, L: crate::LockLevel>(
+    mutex1: &'a LockDepMutex<T, L>,
+    mutex2: &'a LockDepMutex<T, L>,
+) -> (LockDepGuard<'a, T, L>, LockDepGuard<'a, T, L>) {
+    let (g1, g2) = crate::locks::ordered_lock(&mutex1.inner, &mutex2.inner);
+
+    let t1 = tracking::LockLevelToken::<L>::new();
+    let _subclass = tracking::SubclassToken::new();
+    let t2 = tracking::LockLevelToken::<L>::new();
+    (LockDepGuard { inner: g1, token: t1 }, LockDepGuard { inner: g2, token: t2 })
+}
+
+/// Locks a slice of `LockDepMutex`es at the same level in a deadlock-free order.
+///
+/// This function uses `SubclassToken` to authorize locking multiple instances
+/// of the same level, satisfying `LockDep` constraints.
+pub fn lockdep_ordered_lock_vec<'a, T, L: crate::LockLevel>(
+    mutexes: &[&'a LockDepMutex<T, L>],
+) -> Vec<LockDepGuard<'a, T, L>> {
+    let inners: Vec<&fuchsia_sync::Mutex<T>> = mutexes.iter().map(|m| &m.inner).collect();
+    let guards = crate::locks::ordered_lock_vec(&inners);
+
+    let mut tokens = Vec::with_capacity(mutexes.len());
+    #[allow(clippy::collection_is_never_read)]
+    let mut subclasses = Vec::with_capacity(mutexes.len() - 1);
+
+    for i in 0..mutexes.len() {
+        tokens.push(tracking::LockLevelToken::<L>::new());
+        if i < mutexes.len() - 1 {
+            subclasses.push(tracking::SubclassToken::new());
+        }
+    }
+
+    guards
+        .into_iter()
+        .zip(tokens.into_iter())
+        .map(|(inner, token)| LockDepGuard { inner, token })
+        .collect()
+}
+
 /// An RwLock that dynamically enforces lock ordering at runtime.
 pub struct LockDepRwLock<T, L> {
     inner: fuchsia_sync::RwLock<T>,
@@ -644,6 +688,47 @@ mod tests {
         // LevelA is before LevelB in the ordering.
         // So asserting LevelA after holding LevelB should panic!
         let _token = assert_lock_level::<LevelA>();
+    }
+
+    #[test]
+    fn test_lockdep_ordered_lock() {
+        let lock1: LockDepMutex<i32, LevelA> = LockDepMutex::new(1);
+        let lock2: LockDepMutex<i32, LevelA> = LockDepMutex::new(2);
+
+        {
+            tracking::clear_state();
+            let (g1, g2) = lockdep_ordered_lock(&lock1, &lock2);
+            assert_eq!(*g1, 1);
+            assert_eq!(*g2, 2);
+        }
+        {
+            tracking::clear_state();
+            let (g2, g1) = lockdep_ordered_lock(&lock2, &lock1);
+            assert_eq!(*g1, 1);
+            assert_eq!(*g2, 2);
+        }
+    }
+
+    #[test]
+    fn test_lockdep_ordered_lock_vec() {
+        let l0: LockDepMutex<i32, LevelA> = LockDepMutex::new(0);
+        let l1: LockDepMutex<i32, LevelA> = LockDepMutex::new(1);
+        let l2: LockDepMutex<i32, LevelA> = LockDepMutex::new(2);
+
+        {
+            tracking::clear_state();
+            let guards = lockdep_ordered_lock_vec(&[&l0, &l1, &l2]);
+            assert_eq!(*guards[0], 0);
+            assert_eq!(*guards[1], 1);
+            assert_eq!(*guards[2], 2);
+        }
+        {
+            tracking::clear_state();
+            let guards = lockdep_ordered_lock_vec(&[&l2, &l1, &l0]);
+            assert_eq!(*guards[0], 2);
+            assert_eq!(*guards[1], 1);
+            assert_eq!(*guards[2], 0);
+        }
     }
 }
 
