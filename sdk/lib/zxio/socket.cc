@@ -454,15 +454,41 @@ SockOptResult GetSockOptProcessor::StoreOption(const fsocket::wire::TcpInfo& val
       }
     }(value.ca_state());
   }
-  if (value.has_rto_usec()) {
-    info.tcpi_rto = value.rto_usec();
+
+  // These fields are unset when the current  TCP State doesn't have a value for
+  // them (e.g. RTT is unknown during the handshake).
+  info.tcpi_rto = value.has_rto_usec() ? value.rto_usec() : 0;
+  info.tcpi_rtt = value.has_rtt_usec() ? value.rtt_usec() : 0;
+  info.tcpi_rttvar = value.has_rtt_var_usec() ? value.rtt_var_usec() : 0;
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(31)
+  // Setting these to MAX doesn't change their value, but if and when we stop
+  // filling tcp_info with garbage, these should not default to zero. That would
+  // mean "last (data sent|ack received) 0 ms ago".
+  //
+  // The equivalent Linux behavior is to return the number of milliseconds since
+  // boot (it calculates boot_timestamp - last_<event>_timestamp and the event
+  // timestamps all start at 0).
+  info.tcpi_last_data_sent = value.has_tcpi_last_data_sent_msec()
+                                 ? value.tcpi_last_data_sent_msec()
+                                 : std::numeric_limits<uint32_t>::max();
+  info.tcpi_last_ack_recv = value.has_tcpi_last_ack_recv_msec()
+                                ? value.tcpi_last_ack_recv_msec()
+                                : std::numeric_limits<uint32_t>::max();
+
+  if (value.has_tcpi_segs_out()) {
+    info.tcpi_segs_out = static_cast<uint32_t>(std::min(
+        value.tcpi_segs_out(), static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())));
   }
-  if (value.has_rtt_usec()) {
-    info.tcpi_rtt = value.rtt_usec();
+  if (value.has_tcpi_segs_in()) {
+    info.tcpi_segs_in = static_cast<uint32_t>(std::min(
+        value.tcpi_segs_in(), static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())));
   }
-  if (value.has_rtt_var_usec()) {
-    info.tcpi_rttvar = value.rtt_var_usec();
+  if (value.has_tcpi_total_retrans()) {
+    info.tcpi_total_retrans = value.tcpi_total_retrans();
   }
+#endif
+
   if (value.has_snd_ssthresh()) {
     info.tcpi_snd_ssthresh = value.snd_ssthresh();
   }

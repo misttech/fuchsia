@@ -16,7 +16,6 @@
                 "LocalhostTest.AcceptAfterReset",
                 "LocalhostTest.RaceLocalPeerClose",
                 "LocalhostTest.GetAddrInfo",
-                "NetStreamTest.GetTcpInfo",
                 "NetStreamTest.GetSocketAcceptConn",
                 "NetStreamTest.ConnectTwice",
                 "NetStreamTest/ConnectAcrossIpVersionTest.ConnectReturnsError/IPv*_WithPreexistingErr",
@@ -32,6 +31,12 @@
                 "NetStreamSocketsTest.PartialWriteStress",
                 "NetStreamTest/ConnectingIOTest.BlockedIO/CloseListener*",
                 "NetStreamTest/BlockedIOTest.CloseWhileBlocked/close*Linger*",
+
+                // These two are Netstack2-specific.
+                // TODO(https://fxbug.dev/372466789): Remove these when NS2 is
+                // deleted and the tests are cleaned up.
+                "TcpInfo/TcpInfoTest.GetTcpInfo/0",
+                "TcpInfo/TcpInfoTest.GetTcpInfoConnected/0",
             ],
         },
     ],

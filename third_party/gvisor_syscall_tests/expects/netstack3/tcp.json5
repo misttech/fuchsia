@@ -89,7 +89,6 @@
                 "AllTCPSockets/AllSocketPairTest.GetSocketOutOfBandInlineOption/*",
                 "AllTCPSockets/AllSocketPairTest.GetSocketRcvbufOption/*",
                 "AllTCPSockets/AllSocketPairTest.GetSetSocketRcvlowatOption/*",
-                "AllTCPSockets/TCPSocketPairTest.CheckTcpInfoFields/*",
                 "AllTCPSockets/TCPSocketPairTest.ShutdownRdUnreadDataShouldCauseNoPacketsUnlessClosed/*",
                 "AllTCPSockets/TCPSocketPairTest.TCPCorkDefault/*",
                 "AllTCPSockets/TCPSocketPairTest.SetTCPCork/*",

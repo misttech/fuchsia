@@ -607,6 +607,11 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
         Ok((want_addr.then_some(addr), client))
     }
 
+    fn get_tcp_info(self) -> Result<fposix_socket::TcpInfo, ErrnoError> {
+        let Self { data: BindingData { id, .. }, ctx } = self;
+        Ok(ctx.api().tcp().get_tcp_info(id).into_fidl().into())
+    }
+
     fn get_error(self) -> Result<(), ErrnoError> {
         let Self {
             data: BindingData { id, peer: _, task_data: _, task_control: _, data_notifier: _ },
@@ -1399,12 +1404,13 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
                 respond_not_supported!("stream::GetTcpWindowClamp", responder);
             }
             fposix_socket::StreamSocketRequest::GetTcpInfo { responder } => {
-                warn!(
-                    "stream::GetTcpInfo is not supported, \
-                     returning fposix_socket::TcpInfo::default()"
-                );
                 responder
-                    .send(Ok(&fposix_socket::TcpInfo::default()))
+                    .send(
+                        self.get_tcp_info()
+                            .log_errno_error("stream::GetTcpInfo")
+                            .as_ref()
+                            .map_err(|e| *e),
+                    )
                     .unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::SetTcpQuickAck { value, responder } => {

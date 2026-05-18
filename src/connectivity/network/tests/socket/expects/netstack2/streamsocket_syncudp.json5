@@ -19,5 +19,13 @@
                 "ReuseAddrTestsV6/ReuseAddrTest.TCPListenerReuseAddrConflicts/V6Loopback_V6Any",
             ],
         },
+        {
+            type: "skip",
+            matchers: [
+                // These two are Netstack3-specific.
+                "TcpInfo/TcpInfoTest.GetTcpInfo/1",
+                "TcpInfo/TcpInfoTest.GetTcpInfoConnected/1",
+            ],
+        },
     ],
 }

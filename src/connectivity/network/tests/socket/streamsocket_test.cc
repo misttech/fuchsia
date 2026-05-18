@@ -1099,7 +1099,16 @@ TEST(NetStreamTest, NonBlockingConnectRefused) {
   EXPECT_EQ(close(acptfd.release()), 0) << strerror(errno);
 }
 
-TEST(NetStreamTest, GetTcpInfo) {
+// TODO(https://fxbug.dev/372466789): Remove and simplify test when Netstack2 is
+// deleted.
+enum class NetstackVersion {
+  NETSTACK2,
+  NETSTACK3,
+};
+
+class TcpInfoTest : public testing::TestWithParam<NetstackVersion> {};
+
+TEST_P(TcpInfoTest, GetTcpInfo) {
   fbl::unique_fd fd;
   ASSERT_TRUE(fd = fbl::unique_fd(socket(AF_INET, SOCK_STREAM, 0))) << strerror(errno);
 
@@ -1122,9 +1131,20 @@ TEST(NetStreamTest, GetTcpInfo) {
       ASSERT_NE(info.tcpi_rttvar, initialization);
       ASSERT_NE(info.tcpi_snd_ssthresh, initialization);
       ASSERT_NE(info.tcpi_snd_cwnd, initialization);
+      if (GetParam() == NetstackVersion::NETSTACK3) {
+        // These two aren't set if no data has been sent yet.
+        ASSERT_EQ(info.tcpi_last_data_sent, initialization);
+        ASSERT_EQ(info.tcpi_last_ack_recv, initialization);
+
+        ASSERT_NE(info.tcpi_total_retrans, initialization);
+      }
 // TODO(https://fxbug.dev/42142786): our Linux sysroot is too old to know about this field.
 #if defined(__Fuchsia__)
       ASSERT_NE(info.tcpi_reord_seen, initialization);
+      if (GetParam() == NetstackVersion::NETSTACK3) {
+        ASSERT_NE(info.tcpi_segs_in, initialization);
+        ASSERT_NE(info.tcpi_segs_out, initialization);
+      }
 #endif
 
       tcp_info expected;
@@ -1136,9 +1156,18 @@ TEST(NetStreamTest, GetTcpInfo) {
       expected.tcpi_rttvar = info.tcpi_rttvar;
       expected.tcpi_snd_ssthresh = info.tcpi_snd_ssthresh;
       expected.tcpi_snd_cwnd = info.tcpi_snd_cwnd;
+      if (GetParam() == NetstackVersion::NETSTACK3) {
+        expected.tcpi_last_data_sent = info.tcpi_last_data_sent;
+        expected.tcpi_last_ack_recv = info.tcpi_last_ack_recv;
+        expected.tcpi_total_retrans = info.tcpi_total_retrans;
+      }
 // TODO(https://fxbug.dev/42142786): our Linux sysroot is too old to know about this field.
 #if defined(__Fuchsia__)
       expected.tcpi_reord_seen = info.tcpi_reord_seen;
+      if (GetParam() == NetstackVersion::NETSTACK3) {
+        expected.tcpi_segs_in = info.tcpi_segs_in;
+        expected.tcpi_segs_out = info.tcpi_segs_out;
+      }
 #endif
 
       ASSERT_EQ(memcmp(&info, &expected, sizeof(tcp_info)), 0);
@@ -1156,6 +1185,104 @@ TEST(NetStreamTest, GetTcpInfo) {
 
   EXPECT_EQ(close(fd.release()), 0) << strerror(errno);
 }
+
+TEST_P(TcpInfoTest, GetTcpInfoConnected) {
+  fbl::unique_fd listener;
+  ASSERT_TRUE(listener = fbl::unique_fd(socket(AF_INET, SOCK_STREAM, 0))) << strerror(errno);
+
+  sockaddr_in addr = LoopbackSockaddrV4(0);
+  ASSERT_EQ(bind(listener.get(), reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)), 0)
+      << strerror(errno);
+
+  socklen_t addrlen = sizeof(addr);
+  ASSERT_EQ(getsockname(listener.get(), reinterpret_cast<sockaddr*>(&addr), &addrlen), 0)
+      << strerror(errno);
+  ASSERT_EQ(addrlen, sizeof(addr));
+
+  ASSERT_EQ(listen(listener.get(), 0), 0) << strerror(errno);
+
+  fbl::unique_fd fd;
+  ASSERT_TRUE(fd = fbl::unique_fd(socket(AF_INET, SOCK_STREAM, 0))) << strerror(errno);
+  ASSERT_EQ(connect(fd.get(), reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)), 0)
+      << strerror(errno);
+
+  fbl::unique_fd server;
+  ASSERT_TRUE(server = fbl::unique_fd(accept(listener.get(), nullptr, nullptr))) << strerror(errno);
+  EXPECT_EQ(close(listener.release()), 0) << strerror(errno);
+
+  // Send and receive data from both client and server to avoid races between
+  // data reception, ACKs, etc.
+  ASSERT_EQ(send(fd.get(), "hello", 5, 0), 5) << strerror(errno);
+  char buf[5];
+  ASSERT_EQ(read(server.get(), buf, sizeof(buf)), 5) << strerror(errno);
+
+  ASSERT_EQ(send(server.get(), "world", 5, 0), 5) << strerror(errno);
+  ASSERT_EQ(read(fd.get(), buf, sizeof(buf)), 5) << strerror(errno);
+
+  tcp_info info;
+  socklen_t info_len = sizeof(tcp_info);
+  ASSERT_EQ(getsockopt(fd.get(), SOL_TCP, TCP_INFO, &info, &info_len), 0) << strerror(errno);
+  ASSERT_EQ(sizeof(tcp_info), info_len);
+
+  if (kIsFuchsia) {
+    // Unsupported fields are intentionally initialized with garbage for explicitness.
+    constexpr int kGarbage = 0xff;
+    uint32_t initialization;
+    memset(&initialization, kGarbage, sizeof(initialization));
+
+    ASSERT_NE(info.tcpi_state, initialization);
+    ASSERT_NE(info.tcpi_ca_state, initialization);
+    ASSERT_NE(info.tcpi_rto, initialization);
+    ASSERT_NE(info.tcpi_rtt, initialization);
+    ASSERT_NE(info.tcpi_rttvar, initialization);
+    // Netstack2 and Netstack3 set this to UINT32_MAX when not in slow start.
+    ASSERT_EQ(info.tcpi_snd_ssthresh, initialization);
+    ASSERT_NE(info.tcpi_snd_cwnd, initialization);
+    if (GetParam() == NetstackVersion::NETSTACK3) {
+      ASSERT_NE(info.tcpi_last_data_sent, initialization);
+      ASSERT_NE(info.tcpi_last_ack_recv, initialization);
+      ASSERT_NE(info.tcpi_total_retrans, initialization);
+    }
+    // TODO(https://fxbug.dev/42142786): our Linux sysroot is too old to know about this field.
+#if defined(__Fuchsia__)
+    ASSERT_NE(info.tcpi_reord_seen, initialization);
+    if (GetParam() == NetstackVersion::NETSTACK3) {
+      ASSERT_NE(info.tcpi_segs_in, initialization);
+      ASSERT_NE(info.tcpi_segs_out, initialization);
+    }
+#endif
+
+    tcp_info expected;
+    memset(&expected, kGarbage, sizeof(expected));
+    expected.tcpi_state = info.tcpi_state;
+    expected.tcpi_ca_state = info.tcpi_ca_state;
+    expected.tcpi_rto = info.tcpi_rto;
+    expected.tcpi_rtt = info.tcpi_rtt;
+    expected.tcpi_rttvar = info.tcpi_rttvar;
+    expected.tcpi_snd_ssthresh = info.tcpi_snd_ssthresh;
+    expected.tcpi_snd_cwnd = info.tcpi_snd_cwnd;
+    if (GetParam() == NetstackVersion::NETSTACK3) {
+      expected.tcpi_last_data_sent = info.tcpi_last_data_sent;
+      expected.tcpi_last_ack_recv = info.tcpi_last_ack_recv;
+      expected.tcpi_total_retrans = info.tcpi_total_retrans;
+    }
+    // TODO(https://fxbug.dev/42142786): our Linux sysroot is too old to know about this field.
+#if defined(__Fuchsia__)
+    expected.tcpi_reord_seen = info.tcpi_reord_seen;
+    if (GetParam() == NetstackVersion::NETSTACK3) {
+      expected.tcpi_segs_in = info.tcpi_segs_in;
+      expected.tcpi_segs_out = info.tcpi_segs_out;
+    }
+#endif
+
+    ASSERT_EQ(memcmp(&info, &expected, sizeof(tcp_info)), 0);
+  }
+
+  EXPECT_EQ(close(fd.release()), 0) << strerror(errno);
+}
+
+INSTANTIATE_TEST_SUITE_P(TcpInfo, TcpInfoTest,
+                         testing::Values(NetstackVersion::NETSTACK2, NetstackVersion::NETSTACK3));
 
 TEST(NetStreamTest, GetSocketAcceptConn) {
   fbl::unique_fd fd;
