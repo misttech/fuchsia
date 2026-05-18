@@ -21,6 +21,12 @@ pub struct WithMoniker<P, D> {
     _p: PhantomData<(fn() -> P, D)>,
 }
 
+impl<P, D> WithMoniker<P, D> {
+    pub fn new(moniker: impl Into<String>) -> Self {
+        Self { moniker: moniker.into(), timeout: DEFAULT_PROXY_TIMEOUT, _p: PhantomData }
+    }
+}
+
 #[async_trait(?Send)]
 impl<P> TryFromEnvWith for WithMoniker<P, fdomain_client::fidl::FDomainResourceDialect>
 where
@@ -34,6 +40,12 @@ where
         env: &FhoEnvironment,
     ) -> std::result::Result<Self::Output, Self::Error> {
         let rcs_instance = crate::fdomain::connect_to_rcs(&env).await?;
+        if let Ok(proxy) =
+            rcs_fdomain::toolbox::connect_with_timeout::<P::Protocol>(&rcs_instance, self.timeout)
+                .await
+        {
+            return Ok(proxy);
+        }
         crate::fdomain::open_moniker_fdomain(
             &rcs_instance,
             rcs_fdomain::OpenDirType::ExposedDir,
@@ -57,6 +69,11 @@ where
         env: &FhoEnvironment,
     ) -> std::result::Result<Self::Output, Self::Error> {
         let rcs_instance = connect_to_rcs(&env).await?;
+        if let Ok(proxy) =
+            rcs::toolbox::connect_with_timeout::<P::Protocol>(&rcs_instance, self.timeout).await
+        {
+            return Ok(proxy);
+        }
         crate::remote_control_proxy::open_moniker(
             &rcs_instance,
             rcs::OpenDirType::ExposedDir,
@@ -118,7 +135,7 @@ pub fn exposed_dir(
 
 /// The implementation of the decorator returned by [`optional_moniker`].
 pub struct OptionalProtocolConnector<P> {
-    backup: Option<String>,
+    moniker: String,
     timeout: Duration,
     _p: PhantomData<fn() -> P>,
 }
@@ -141,9 +158,15 @@ where
 
     async fn try_from_env_with(self, env: &FhoEnvironment) -> Result<Self::Output> {
         let rcs = crate::fdomain::connect_to_rcs(env).await?;
-        let output = match rcs_fdomain::toolbox::connect_with_timeout::<P::Protocol>(
+        if let Ok(proxy) =
+            rcs_fdomain::toolbox::connect_with_timeout::<P::Protocol>(&rcs, self.timeout).await
+        {
+            return Ok(Some(proxy));
+        }
+        let output = match crate::fdomain::open_moniker_fdomain(
             &rcs,
-            self.backup.as_ref(),
+            rcs_fdomain::OpenDirType::ExposedDir,
+            &self.moniker,
             self.timeout,
         )
         .await
@@ -158,18 +181,18 @@ where
     }
 }
 
-/// Connects to an optional protocol that may be exposed by the toolbox
-/// or the component with the given moniker.
+/// Connects to an optional protocol that may be exposed by the
+/// component with the given moniker.
 ///
 /// Essentially, this is the optional version of `fho::moniker`.
 ///
 /// If the component with the moniker does not exist or fails to connect,
 /// the field is set to None.
 pub fn optional_moniker<P: fdomain_client::fidl::Proxy>(
-    or_moniker: impl Into<String>,
+    moniker: impl Into<String>,
 ) -> OptionalProtocolConnector<P> {
     OptionalProtocolConnector {
-        backup: Some(or_moniker.into()),
+        moniker: moniker.into(),
         timeout: DEFAULT_PROXY_TIMEOUT,
         _p: PhantomData {},
     }

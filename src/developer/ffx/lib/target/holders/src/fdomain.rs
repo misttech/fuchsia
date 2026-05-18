@@ -1,7 +1,8 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::from_toolbox::WithToolbox;
+
+use crate::with_moniker::WithMoniker;
 use fdomain_client::fidl::{FDomainResourceDialect, Proxy as FProxy};
 use ffx_command_error::Result;
 use fho::{FhoEnvironment, TryFromEnv as _};
@@ -9,7 +10,7 @@ use fho::{FhoEnvironment, TryFromEnv as _};
 mod from_toolbox;
 mod remote_control_proxy;
 
-pub use from_toolbox::{toolbox, toolbox_or};
+pub use from_toolbox::toolbox;
 pub use remote_control_proxy::{
     RemoteControlProxyHolder, fake_async_proxy, fake_proxy, open_moniker_fdomain,
 };
@@ -29,8 +30,8 @@ pub use remote_control_proxy::{
 ///     foo_proxy: FooProxy,
 /// }
 /// ```
-pub fn moniker<P: FProxy>(moniker: impl AsRef<str>) -> WithToolbox<P, FDomainResourceDialect> {
-    toolbox_or(moniker)
+pub fn moniker<P: FProxy>(moniker: impl AsRef<str>) -> WithMoniker<P, FDomainResourceDialect> {
+    WithMoniker::new(moniker.as_ref())
 }
 
 pub(crate) async fn connect_to_rcs(env: &FhoEnvironment) -> Result<RemoteControlProxyHolder> {

@@ -50,7 +50,6 @@ fn sanitize_connection_error(error: &ConnectionError) -> String {
             format!("ConnectionStartError: {reason}")
         }
         InternalError(_) => "InternalError".to_owned(),
-        Toolbox(_) => "ToolboxError".to_owned(),
         KnockError(_) => "KnockError".to_owned(),
         OvernetUnsupported => "OvernetUnsupported".to_owned(),
     }

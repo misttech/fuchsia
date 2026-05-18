@@ -23,8 +23,8 @@ mod with_moniker;
 
 pub use daemon_proxy::{DaemonProxyHolder, daemon_protocol};
 pub use fake_injector::FakeInjector;
-use from_toolbox::WithToolbox;
-pub use from_toolbox::{toolbox, toolbox_or};
+
+pub use from_toolbox::toolbox;
 pub use host_ssh_addr::HostAddrHolder;
 pub use nodename::NodenameHolder;
 pub use remote_control_proxy::{RemoteControlProxyHolder, fake_async_proxy, fake_proxy};
@@ -32,7 +32,8 @@ pub use ssh_addr::SshAddrHolder;
 pub use target_info_query::TargetInfoQueryHolder;
 pub use target_proxy::TargetProxyHolder;
 pub use with_moniker::{
-    ExposedDirectoryConnector, OptionalProtocolConnector, exposed_dir, optional_moniker,
+    ExposedDirectoryConnector, OptionalProtocolConnector, WithMoniker, exposed_dir,
+    optional_moniker,
 };
 
 const DEFAULT_PROXY_TIMEOUT: Duration = Duration::from_secs(15);
@@ -54,8 +55,8 @@ const DEFAULT_PROXY_TIMEOUT: Duration = Duration::from_secs(15);
 /// ```
 pub fn moniker<P: Proxy>(
     moniker: impl AsRef<str>,
-) -> WithToolbox<P, DefaultFuchsiaResourceDialect> {
-    toolbox_or(moniker)
+) -> WithMoniker<P, DefaultFuchsiaResourceDialect> {
+    WithMoniker::new(moniker.as_ref())
 }
 
 pub(crate) async fn connect_to_rcs(env: &FhoEnvironment) -> Result<RemoteControlProxyHolder> {

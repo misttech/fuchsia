@@ -184,21 +184,15 @@ async fn connect_to_target(
         _ => false,
     };
     // Connect to ArchiveAccessor
-    let diagnostics_client = rcs_fdomain::toolbox::connect_with_timeout::<ArchiveAccessorMarker>(
-        &rcs_client,
-        None::<String>,
-        TIMEOUT,
-    )
-    .await
-    .map_err(anyhow::Error::from)?;
+    let diagnostics_client =
+        rcs_fdomain::toolbox::connect_with_timeout::<ArchiveAccessorMarker>(&rcs_client, TIMEOUT)
+            .await
+            .map_err(anyhow::Error::from)?;
     // Connect to LogSettings
-    let log_settings_client = rcs_fdomain::toolbox::connect_with_timeout::<LogSettingsMarker>(
-        &rcs_client,
-        None::<String>,
-        TIMEOUT,
-    )
-    .await
-    .map_err(anyhow::Error::from)?;
+    let log_settings_client =
+        rcs_fdomain::toolbox::connect_with_timeout::<LogSettingsMarker>(&rcs_client, TIMEOUT)
+            .await
+            .map_err(anyhow::Error::from)?;
     // Setup stream
     let (local, remote) = rcs_client.domain().create_stream_socket();
     diagnostics_client

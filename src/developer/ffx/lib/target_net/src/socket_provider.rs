@@ -180,12 +180,10 @@ impl SocketProvider {
         connect_timeout: Duration,
         rcs_proxy: &RemoteControlProxy,
     ) -> Result<Self> {
-        let socket_provider = rcs::toolbox::connect_with_timeout::<fsock::ProviderMarker>(
-            rcs_proxy,
-            Some("core/network/netstack"),
-            connect_timeout,
-        )
-        .await?;
+        let socket_provider =
+            rcs::toolbox::connect_with_timeout::<fsock::ProviderMarker>(rcs_proxy, connect_timeout)
+                .await
+                .map_err(Error::OpenProtocol)?;
         Ok(Self { socket_provider })
     }
 

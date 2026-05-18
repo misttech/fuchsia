@@ -2,69 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use anyhow::{Context, Result};
 use std::time::{Duration, Instant};
-
-#[derive(thiserror::Error, Debug)]
-pub enum ToolboxError {
-    #[error(
-        "Attempted to find protocol marker {protocol_name} at \
-'/toolbox', but it wasn't available. \n\n\
-Make sure the target is connected and otherwise functioning, \
-and that it is configured to provide capabilities over the \
-network to host tools.\n\n\
-If the protocol is provided by a component that is not in the \
-base image, you may need to have a package server running and \
-available to your target. Source: {source}
-"
-    )]
-    ProtocolNotFoundAtToolbox {
-        protocol_name: String,
-        #[source]
-        source: crate::RcsError,
-    },
-
-    #[error(
-        "Attempted to find protocol marker {protocol_name} at \
-'/toolbox' or '{backup_moniker}', but it wasn't available \
-at either of those monikers.\n\n\
-Make sure the target is connected and otherwise functioning, \
-and that it is configured to provide capabilities over the \
-network to host tools.\n\n\
-If the protocol is provided by a component that is not in the \
-base image, you may need to have a package server running and \
-available to your target. Source: {source}
-"
-    )]
-    ProtocolNotFoundAtBackup {
-        protocol_name: String,
-        backup_moniker: String,
-        #[source]
-        source: crate::RcsError,
-    },
-
-    #[error("FIDL error: {0}")]
-    Fidl(#[from] fidl::Error),
-
-    #[error("RCS error: {0}")]
-    Rcs(#[from] crate::RcsError),
-
-    #[cfg(not(feature = "fdomain"))]
-    #[error("Moniker error: {0}")]
-    Moniker(#[from] moniker::MonikerError),
-
-    #[cfg(not(feature = "fdomain"))]
-    #[error("Open directory error: {0:?}")]
-    OpenDirectory(sys2::OpenError),
-
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[cfg(feature = "fdomain")]
-    #[error("FDomain client error: {0}")]
-    FDomain(#[from] fdomain_client::Error),
-}
-
-pub type Result<T> = std::result::Result<T, ToolboxError>;
 
 #[cfg(feature = "fdomain")]
 use {
@@ -92,24 +31,25 @@ async fn connect_realm_query(
 ) -> Result<sys2::RealmQueryProxy> {
     // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
     let (query, server) = fidl::endpoints::create_proxy::<sys2::RealmQueryMarker>();
-    let res = rcs
-        .connect_capability(
-            moniker,
-            sys2::OpenDirType::NamespaceDir,
-            &format!("svc/{}.root", sys2::RealmQueryMarker::PROTOCOL_NAME),
-            server.into_channel(),
-        )
-        .await;
-
-    let res = res.map_err(crate::RcsError::Fidl)?;
-    res.map_err(|e| crate::RcsError::ConnectionFailed {
-        moniker: moniker.to_string(),
-        capability: sys2::RealmQueryMarker::PROTOCOL_NAME.to_string(),
-        error: e,
-    })?;
+    rcs.connect_capability(
+        moniker,
+        sys2::OpenDirType::NamespaceDir,
+        &format!("svc/{}.root", sys2::RealmQueryMarker::PROTOCOL_NAME),
+        server.into_channel(),
+    )
+    .await?
+    .map_err(|e| anyhow::anyhow!("{e:?}"))?;
     return Ok(query);
 }
 
+// Note: this function is copied from component_debug, so we don't need to
+// depend on it (and therefore slow down the entire build). The only difference
+// is that it does not map errors into component_debug's OpenError.
+// Not so great that this is duplicating code.. but this is "legacy"
+// (non-FDomain) code, so its lifetime is limited.
+// Note: do not make this function pub: that way the compiler will remind us to
+// remove it once we get rid of the non-FDomain code path.
+// Opens the specified directory type in a component instance identified by `moniker`.
 #[cfg(not(feature = "fdomain"))]
 async fn open_instance_directory(
     moniker: &moniker::Moniker,
@@ -118,10 +58,11 @@ async fn open_instance_directory(
 ) -> Result<fio::DirectoryProxy> {
     let moniker_str = moniker.to_string();
     let (dir_client, dir_server) = realm.domain().create_proxy::<fio::DirectoryMarker>();
-    let res = realm.open_directory(&moniker_str, dir_type.clone().into(), dir_server).await;
-
-    let res = res.map_err(crate::RcsError::Fidl)?;
-    res.map_err(ToolboxError::OpenDirectory)?;
+    realm
+        .open_directory(&moniker_str, dir_type.clone().into(), dir_server)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e:?}"))?
+        .map_err(|e| anyhow::anyhow!("{e:?}"))?;
     Ok(dir_client)
 }
 
@@ -140,14 +81,12 @@ pub async fn open_toolbox(rcs: &RemoteControlProxy) -> Result<fio::DirectoryProx
     let namespace_dir =
         open_instance_directory(&moniker, sys2::OpenDirType::NamespaceDir.into(), &query).await?;
     let (ret, server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-    namespace_dir
-        .open(
-            "svc",
-            fio::Flags::PROTOCOL_DIRECTORY | fio::PERM_READABLE,
-            &fio::Options::default(),
-            server.into(),
-        )
-        .map_err(crate::RcsError::Fidl)?;
+    namespace_dir.open(
+        "svc",
+        fio::Flags::PROTOCOL_DIRECTORY | fio::PERM_READABLE,
+        &fio::Options::default(),
+        server.into(),
+    )?;
 
     Ok(ret)
 }
@@ -155,8 +94,7 @@ pub async fn open_toolbox(rcs: &RemoteControlProxy) -> Result<fio::DirectoryProx
 /// Open the service directory of the toolbox.
 #[cfg(feature = "fdomain")]
 pub async fn open_toolbox(rcs: &RemoteControlProxy) -> Result<fio::DirectoryProxy> {
-    let channel = rcs.domain().namespace().await?;
-    Ok(fio::DirectoryProxy::from_channel(channel))
+    rcs.domain().namespace().await.map_err(Into::into).map(fio::DirectoryProxy::from_channel)
 }
 
 /// Connects to a protocol available in the namespace of the `toolbox` component.
@@ -165,15 +103,12 @@ pub async fn open_toolbox(rcs: &RemoteControlProxy) -> Result<fio::DirectoryProx
 /// given `backup_moniker`.
 pub async fn connect_with_timeout<P>(
     rcs_proxy: &RemoteControlProxy,
-    backup_moniker: Option<impl AsRef<str>>,
     dur: Duration,
 ) -> Result<P::Proxy>
 where
     P: DiscoverableProtocolMarker,
 {
     let protocol_name = P::PROTOCOL_NAME;
-    // time this so that we can use an appropriately shorter timeout for the attempt
-    // to connect by the backup (if there is one)
     let start_time = Instant::now();
     let toolbox_res = crate::open_with_timeout_at::<P>(
         dur,
@@ -201,27 +136,20 @@ where
         }
     };
 
-    let toolbox_took = Instant::now() - start_time;
+    toolbox_res.context(toolbox_error_message(protocol_name))
+}
 
-    let Some(backup) = backup_moniker.as_ref().map(|s| s.as_ref()) else {
-        return toolbox_res.map_err(|e| ToolboxError::ProtocolNotFoundAtToolbox {
-            protocol_name: protocol_name.to_string(),
-            source: e,
-        });
-    };
-    if let Ok(toolbox) = toolbox_res {
-        return Ok(toolbox);
-    }
-
-    // try to connect to the moniker given instead, but don't double
-    // up the timeout.
-    let timeout = dur.saturating_sub(toolbox_took);
-    let moniker_res =
-        crate::open_with_timeout::<P>(timeout, &backup, OpenDirType::ExposedDir, &rcs_proxy).await;
-
-    moniker_res.map_err(|e| ToolboxError::ProtocolNotFoundAtBackup {
-        protocol_name: protocol_name.to_string(),
-        backup_moniker: backup.to_string(),
-        source: e,
-    })
+fn toolbox_error_message(protocol_name: &str) -> String {
+    format!(
+        "\
+        Attempted to find protocol marker {protocol_name} at \
+        '/toolbox', but it wasn't available. \n\n\
+        Make sure the target is connected and otherwise functioning, \
+        and that it is configured to provide capabilities over the \
+        network to host tools.\n\n\
+        If the protocol is provided by a component that is not in the \
+        base image, you may need to have a package server running and \
+        available to your target.
+    "
+    )
 }

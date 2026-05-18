@@ -665,26 +665,34 @@ pub(crate) mod tests {
                 server_channel,
                 responder,
                 ..
-            } => match capability_name.as_str() {
-                RepositoryManagerMarker::PROTOCOL_NAME => {
-                    repo_manager.spawn(
-                        fidl::endpoints::ServerEnd::<RepositoryManagerMarker>::new(server_channel)
+            } => {
+                let capability_name =
+                    capability_name.strip_prefix("svc/").unwrap_or(capability_name.as_str());
+                match capability_name {
+                    RepositoryManagerMarker::PROTOCOL_NAME => {
+                        repo_manager.spawn(
+                            fidl::endpoints::ServerEnd::<RepositoryManagerMarker>::new(
+                                server_channel,
+                            )
                             .into_stream(),
-                    );
-                    responder.send(Ok(())).expect("Could not send response")
+                        );
+                        responder.send(Ok(())).expect("Could not send response")
+                    }
+                    EngineMarker::PROTOCOL_NAME => {
+                        engine.spawn(
+                            fidl::endpoints::ServerEnd::<EngineMarker>::new(server_channel)
+                                .into_stream(),
+                        );
+                        responder.send(Ok(())).expect("Could not send response")
+                    }
+                    "fuchsia.posix.socket.Provider" => {
+                        responder.send(Ok(())).unwrap();
+                    }
+                    _ => {
+                        responder.send(Err(ConnectCapabilityError::NoMatchingCapabilities)).unwrap()
+                    }
                 }
-                EngineMarker::PROTOCOL_NAME => {
-                    engine.spawn(
-                        fidl::endpoints::ServerEnd::<EngineMarker>::new(server_channel)
-                            .into_stream(),
-                    );
-                    responder.send(Ok(())).expect("Could not send response")
-                }
-                "fuchsia.posix.socket.Provider" => {
-                    responder.send(Ok(())).unwrap();
-                }
-                _ => responder.send(Err(ConnectCapabilityError::NoMatchingCapabilities)).unwrap(),
-            },
+            }
             _ => panic!("Unexpected request: {:?}", req),
         }
     }

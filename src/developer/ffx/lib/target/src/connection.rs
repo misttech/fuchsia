@@ -41,8 +41,6 @@ pub enum ConnectionError {
     ConnectionStartError(String, String),
     #[error("internal error: {0}")]
     InternalError(#[from] anyhow::Error),
-    #[error("toolbox error: {0}")]
-    Toolbox(#[from] rcs::toolbox::ToolboxError),
     #[error("knock error: {0}")]
     KnockError(#[from] crate::KnockError),
     #[error("Overnet isn't supported for this target")]
