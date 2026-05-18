@@ -50,6 +50,7 @@ class ViewTreeSnapshotter final {
   std::vector<OnNewViewTree> subscriber_callbacks_;
 
   std::vector<std::unique_ptr<const SubtreeSnapshot>> cached_subtree_snapshots_;
+  uint64_t next_sequence_number_ = 1;
 };
 
 }  // namespace view_tree

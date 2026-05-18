@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include "src/ui/scenic/lib/utils/helpers.h"
+#include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 
 namespace view_tree::test {
 
@@ -289,6 +290,18 @@ TEST(ViewNodeComparisonTest, Comprehensive) {
     };
     EXPECT_NE(view_node_1, view_node_2);
   }
+}
+
+TEST(SnapshotHolderTest, MonotonicSequenceNumber) {
+  SnapshotHolder holder;
+
+  auto snapshot1 = std::make_shared<Snapshot>();
+  snapshot1->sequence_number = 1;
+  holder.SetSnapshot(snapshot1);
+
+  auto snapshot2 = std::make_shared<Snapshot>();
+  snapshot2->sequence_number = 2;
+  holder.SetSnapshot(snapshot2);  // Should succeed.
 }
 
 }  // namespace view_tree::test

@@ -25,10 +25,20 @@ using view_tree::ViewNode;
 
 namespace {
 
+static uint64_t g_next_sequence_number = 1;
+
+// Creates an empty snapshot.
+std::shared_ptr<const view_tree::Snapshot> EmptySnapshot() {
+  auto snapshot = std::make_shared<view_tree::Snapshot>();
+  snapshot->sequence_number = g_next_sequence_number++;
+  return snapshot;
+}
+
 // Creates a snapshot with the following one-node topology:
 //     A
 std::shared_ptr<const view_tree::Snapshot> OneNodeSnapshot() {
   auto snapshot = std::make_shared<view_tree::Snapshot>();
+  snapshot->sequence_number = g_next_sequence_number++;
 
   snapshot->root = kNodeA;
   auto& view_tree = snapshot->view_tree;
@@ -43,6 +53,7 @@ std::shared_ptr<const view_tree::Snapshot> OneNodeSnapshot() {
 //     B
 std::shared_ptr<view_tree::Snapshot> TwoNodeSnapshot() {
   auto snapshot = std::make_shared<view_tree::Snapshot>();
+  snapshot->sequence_number = g_next_sequence_number++;
 
   snapshot->root = kNodeA;
   auto& view_tree = snapshot->view_tree;
@@ -60,6 +71,7 @@ std::shared_ptr<view_tree::Snapshot> TwoNodeSnapshot() {
 //     C
 std::shared_ptr<const view_tree::Snapshot> ThreeNodeSnapshot() {
   auto snapshot = std::make_shared<view_tree::Snapshot>();
+  snapshot->sequence_number = g_next_sequence_number++;
 
   snapshot->root = kNodeA;
   auto& view_tree = snapshot->view_tree;
@@ -78,6 +90,7 @@ std::shared_ptr<const view_tree::Snapshot> ThreeNodeSnapshot() {
 //   D
 std::shared_ptr<const view_tree::Snapshot> FourNodeSnapshot() {
   auto snapshot = std::make_shared<view_tree::Snapshot>();
+  snapshot->sequence_number = g_next_sequence_number++;
 
   snapshot->root = kNodeA;
   auto& view_tree = snapshot->view_tree;
@@ -99,6 +112,7 @@ std::shared_ptr<const view_tree::Snapshot> FourNodeSnapshot() {
 // TODO(https://fxbug.dev/471250287): ViewRef koids don't match keys in view tree!
 std::shared_ptr<const view_tree::Snapshot> FourNodeSnapshotWithViewRefs() {
   auto snapshot = std::make_shared<view_tree::Snapshot>();
+  snapshot->sequence_number = g_next_sequence_number++;
 
   snapshot->root = kNodeA;
   auto& view_tree = snapshot->view_tree;
@@ -136,7 +150,7 @@ TEST(FocusManagerTest, EmptyTransitions) {
   EXPECT_TRUE(focus_manager.focus_chain().empty());
 
   // Empty snapshot should not affect the empty focus chain.
-  focus_manager.OnNewViewTreeSnapshot(std::make_shared<view_tree::Snapshot>());
+  focus_manager.OnNewViewTreeSnapshot(EmptySnapshot());
   EXPECT_TRUE(focus_manager.focus_chain().empty());
 
   // A non-empty snapshot should affect the focus chain.
@@ -322,7 +336,7 @@ TEST(FocusManagerTest, ViewRemoval_ShouldShortenFocusChain) {
   focus_manager.OnNewViewTreeSnapshot(OneNodeSnapshot());
   EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA));
 
-  focus_manager.OnNewViewTreeSnapshot(std::make_shared<view_tree::Snapshot>());
+  focus_manager.OnNewViewTreeSnapshot(EmptySnapshot());
   EXPECT_TRUE(focus_manager.focus_chain().empty());
 }
 
@@ -439,6 +453,7 @@ TEST(FocusManagerTest, AutoFocus_FocusMovedDueToViewTreeChange) {
 TEST(FocusManagerTest, AutoFocus_LoopShouldLandOnTopMostNode) {
   FocusManager focus_manager;
   auto snapshot = std::make_shared<view_tree::Snapshot>();
+  snapshot->sequence_number = g_next_sequence_number++;
   {
     snapshot->root = kNodeA;
     auto& view_tree = snapshot->view_tree;
@@ -553,6 +568,7 @@ TEST_F(FocusChainTest, FocusChainChangedButNotFocus) {
 
   // Scene 1.
   auto snapshot = std::make_shared<view_tree::Snapshot>();
+  snapshot->sequence_number = g_next_sequence_number++;
   {
     snapshot->root = koid_A;
     auto& view_tree = snapshot->view_tree;
@@ -569,6 +585,7 @@ TEST_F(FocusChainTest, FocusChainChangedButNotFocus) {
 
   // Scene 2.
   snapshot = std::make_shared<view_tree::Snapshot>();
+  snapshot->sequence_number = g_next_sequence_number++;
   {
     snapshot->root = koid_A;
     auto& view_tree = snapshot->view_tree;

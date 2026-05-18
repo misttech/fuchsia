@@ -15,6 +15,12 @@ namespace view_tree {
 
 // Holds a view tree snapshot and allows checking out a single reference at a time
 // to ensure consistency within a call stack.
+//
+// Architectural note: this is an ideal extension point to allow input subsystems to access
+// versioned view tree snapshots.  For example, an action which continues across multiple input
+// events, such as a mouse-down-drag-up action, could process each event against a consistent
+// snapshot, not whichever happens to be the latest.  No current use case requires this, so it
+// seemed appropriate to write this note.
 class SnapshotHolder {
  public:
   // A move-only reference to the snapshot. Only one can be checked out at a time.

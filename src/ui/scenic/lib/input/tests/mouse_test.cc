@@ -58,32 +58,6 @@ InternalMouseEvent MouseEventTemplate(zx_koid_t target, bool button_down = false
   return event;
 }
 
-// Creates a new snapshot with a hit test that returns |hits|, and a ViewTree with a straight
-// hierarchy matching |hierarchy|.
-std::shared_ptr<view_tree::Snapshot> NewSnapshot(std::vector<zx_koid_t> hits,
-                                                 std::vector<zx_koid_t> hierarchy) {
-  auto snapshot = std::make_shared<view_tree::Snapshot>();
-
-  if (!hierarchy.empty()) {
-    snapshot->root = hierarchy[0];
-    const auto [_, success] = snapshot->view_tree.try_emplace(hierarchy[0]);
-    FX_DCHECK(success);
-    if (hierarchy.size() > 1) {
-      snapshot->view_tree[hierarchy[0]].children = {hierarchy[1]};
-      for (size_t i = 1; i < hierarchy.size() - 1; ++i) {
-        snapshot->view_tree[hierarchy[i]].parent = hierarchy[i - 1];
-        snapshot->view_tree[hierarchy[i]].children = {hierarchy[i + 1]};
-      }
-      snapshot->view_tree[hierarchy.back()].parent = hierarchy[hierarchy.size() - 2];
-    }
-  }
-
-  snapshot->hit_testers.emplace_back(
-      [hits](auto...) { return view_tree::SubtreeHitTestResult{.hits = hits}; });
-
-  return snapshot;
-}
-
 }  // namespace
 
 class MouseTest : public gtest::TestLoopFixture {
@@ -124,6 +98,34 @@ class MouseTest : public gtest::TestLoopFixture {
     mouse_source->Watch(watch_loops_.at(index));
   }
 
+ protected:
+  // Creates a new snapshot with a hit test that returns |hits|, and a ViewTree with a straight
+  // hierarchy matching |hierarchy|.
+  std::shared_ptr<view_tree::Snapshot> NewSnapshot(std::vector<zx_koid_t> hits,
+                                                   std::vector<zx_koid_t> hierarchy) {
+    auto snapshot = std::make_shared<view_tree::Snapshot>();
+    snapshot->sequence_number = next_sequence_number_++;
+
+    if (!hierarchy.empty()) {
+      snapshot->root = hierarchy[0];
+      const auto [_, success] = snapshot->view_tree.try_emplace(hierarchy[0]);
+      FX_DCHECK(success);
+      if (hierarchy.size() > 1) {
+        snapshot->view_tree[hierarchy[0]].children = {hierarchy[1]};
+        for (size_t i = 1; i < hierarchy.size() - 1; ++i) {
+          snapshot->view_tree[hierarchy[i]].parent = hierarchy[i - 1];
+          snapshot->view_tree[hierarchy[i]].children = {hierarchy[i + 1]};
+        }
+        snapshot->view_tree[hierarchy.back()].parent = hierarchy[hierarchy.size() - 2];
+      }
+    }
+
+    snapshot->hit_testers.emplace_back(
+        [hits](auto...) { return view_tree::SubtreeHitTestResult{.hits = hits}; });
+
+    return snapshot;
+  }
+
  private:
   utils::ScopedThreadDispatcherSetter dispatcher_setter_;
   // Must be initialized before |mouse_system_|.
@@ -139,6 +141,7 @@ class MouseTest : public gtest::TestLoopFixture {
  private:
   // Holds watch loop state alive for the duration of the test.
   std::vector<std::function<void(std::vector<fup_MouseEvent>)>> watch_loops_;
+  uint64_t next_sequence_number_ = 1;
 };
 
 TEST_F(MouseTest, Watch_WithNoInjectedEvents_ShouldNeverReturn) {

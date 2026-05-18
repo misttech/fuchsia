@@ -62,33 +62,6 @@ fup_TouchResponse MakeTouchResponse(fup_TouchResponseType response_type) {
   return response;
 }
 
-// Creates a new snapshot with a hit test that returns |hits|, and a ViewTree with a straight
-// hierarchy matching |hierarchy|.
-std::shared_ptr<view_tree::Snapshot> NewSnapshot(std::vector<zx_koid_t> hits,
-                                                 std::vector<zx_koid_t> hierarchy) {
-  auto snapshot = std::make_shared<view_tree::Snapshot>();
-
-  if (!hierarchy.empty()) {
-    snapshot->root = hierarchy[0];
-    const auto [_, success] = snapshot->view_tree.try_emplace(hierarchy[0]);
-    FX_DCHECK(success);
-    if (hierarchy.size() > 1) {
-      snapshot->view_tree[hierarchy[0]].children = {hierarchy[1]};
-      for (size_t i = 1; i < hierarchy.size() - 1; ++i) {
-        snapshot->view_tree[hierarchy[i]].parent = hierarchy[i - 1];
-        snapshot->view_tree[hierarchy[i]].children = {hierarchy[i + 1]};
-      }
-      snapshot->view_tree[hierarchy.back()].parent = hierarchy[hierarchy.size() - 2];
-    }
-  }
-
-  snapshot->hit_testers.emplace_back([hits = std::move(hits)](auto...) mutable {
-    return view_tree::SubtreeHitTestResult{.hits = std::move(hits)};
-  });
-
-  return snapshot;
-}
-
 }  // namespace
 
 class GestureDisambiguationTest : public gtest::TestLoopFixture {
@@ -113,10 +86,40 @@ class GestureDisambiguationTest : public gtest::TestLoopFixture {
     touch_system_.SetViewTreeSnapshot(snapshot);
   }
 
+ protected:
+  // Creates a new snapshot with a hit test that returns |hits|, and a ViewTree with a straight
+  // hierarchy matching |hierarchy|.
+  std::shared_ptr<view_tree::Snapshot> NewSnapshot(std::vector<zx_koid_t> hits,
+                                                   std::vector<zx_koid_t> hierarchy) {
+    auto snapshot = std::make_shared<view_tree::Snapshot>();
+    snapshot->sequence_number = next_sequence_number_++;
+
+    if (!hierarchy.empty()) {
+      snapshot->root = hierarchy[0];
+      const auto [_, success] = snapshot->view_tree.try_emplace(hierarchy[0]);
+      FX_DCHECK(success);
+      if (hierarchy.size() > 1) {
+        snapshot->view_tree[hierarchy[0]].children = {hierarchy[1]};
+        for (size_t i = 1; i < hierarchy.size() - 1; ++i) {
+          snapshot->view_tree[hierarchy[i]].parent = hierarchy[i - 1];
+          snapshot->view_tree[hierarchy[i]].children = {hierarchy[i + 1]};
+        }
+        snapshot->view_tree[hierarchy.back()].parent = hierarchy[hierarchy.size() - 2];
+      }
+    }
+
+    snapshot->hit_testers.emplace_back([hits = std::move(hits)](auto...) mutable {
+      return view_tree::SubtreeHitTestResult{.hits = std::move(hits)};
+    });
+
+    return snapshot;
+  }
+
  private:
   utils::ScopedThreadDispatcherSetter dispatcher_setter_;
   // Must be initialized before |touch_system_|.
   sys::testing::ComponentContextProvider context_provider_;
+  uint64_t next_sequence_number_ = 1;
 
  protected:
   inspect::Node inspect_node_;

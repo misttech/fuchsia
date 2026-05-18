@@ -121,7 +121,8 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
   // Client4 Client3
   std::shared_ptr<view_tree::Snapshot> NewSnapshot(std::vector<zx_koid_t> hits) {
     auto snapshot = std::make_shared<view_tree::Snapshot>();
-    auto& [root, view_tree, _1, _2] = *snapshot;
+    snapshot->sequence_number = next_sequence_number_++;
+    auto& [root, view_tree, _1, _2, _3] = *snapshot;
     root = RootKoid();
     view_tree[RootKoid()] = {.children = {Client1Koid()}};
     view_tree[Client1Koid()] = {.parent = RootKoid(), .children = {Client2Koid()}};
@@ -156,6 +157,7 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
   inspect::Node inspect_node_;
 
  protected:
+  uint64_t next_sequence_number_ = 1;
   scenic_impl::input::InputSystem input_system_;
   fuchsia::ui::pointerinjector::DevicePtr injector_;
   fuchsia::ui::pointer::TouchSourcePtr client1_ptr_;

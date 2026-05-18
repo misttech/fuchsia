@@ -26,24 +26,25 @@ namespace {
 
 enum : zx_koid_t { kNodeA = 1, kNodeB };
 
-// Creates a snapshot with the following two-node topology:
-//     A
-//     |
-//     B
-std::shared_ptr<const view_tree::Snapshot> TwoNodeSnapshot() {
-  auto snapshot = std::make_shared<view_tree::Snapshot>();
-
-  snapshot->root = kNodeA;
-  auto& view_tree = snapshot->view_tree;
-  view_tree[kNodeA] = view_tree::ViewNode{.parent = ZX_KOID_INVALID, .children = {kNodeB}};
-  view_tree[kNodeB] = view_tree::ViewNode{.parent = kNodeA};
-
-  return snapshot;
-}
-
 // Class fixture for TEST_F.
 class ViewRefFocusedTest : public gtest::TestLoopFixture {
  protected:
+  // Creates a snapshot with the following two-node topology:
+  //     A
+  //     |
+  //     B
+  std::shared_ptr<const view_tree::Snapshot> TwoNodeSnapshot() {
+    auto snapshot = std::make_shared<view_tree::Snapshot>();
+    snapshot->sequence_number = next_sequence_number_++;
+
+    snapshot->root = kNodeA;
+    auto& view_tree = snapshot->view_tree;
+    view_tree[kNodeA] = view_tree::ViewNode{.parent = ZX_KOID_INVALID, .children = {kNodeB}};
+    view_tree[kNodeB] = view_tree::ViewNode{.parent = kNodeA};
+
+    return snapshot;
+  }
+
   ViewRefFocusedTest() : focus_manager_() {}
 
   void SetUp() override {
@@ -66,6 +67,9 @@ class ViewRefFocusedTest : public gtest::TestLoopFixture {
   focus::FocusManager focus_manager_;
   fuchsia::ui::views::ViewRefFocusedPtr node_a_focused_;
   fuchsia::ui::views::ViewRefFocusedPtr node_b_focused_;
+
+ private:
+  uint64_t next_sequence_number_ = 1;
 };
 
 TEST_F(ViewRefFocusedTest, NoFocus_NoResponse) {

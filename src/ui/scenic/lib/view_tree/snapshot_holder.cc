@@ -21,7 +21,11 @@ SnapshotHolder::Ref SnapshotHolder::GetSnapshot() {
 
 void SnapshotHolder::SetSnapshot(std::shared_ptr<const Snapshot> ptr) {
   utils::CheckIsOnMainThread();
+  FX_DCHECK(ptr);
   std::scoped_lock lock(mutex_);
+  FX_DCHECK(ptr->sequence_number > snapshot_->sequence_number)
+      << "Snapshot sequence number must strictly monotonically increase! New: "
+      << ptr->sequence_number << ", Old: " << snapshot_->sequence_number;
   snapshot_ = std::move(ptr);
 }
 
@@ -55,6 +59,7 @@ SnapshotHolder::Ref& SnapshotHolder::Ref::operator=(Ref&& other) noexcept {
 SnapshotHolder::Ref::~Ref() {
   FX_DCHECK(!ptr_ == !holder_) << "Pointer must be null if-and-only-if holder is null";
   if (holder_) {
+    utils::CheckIsOnInputThread();
     holder_->ref_exists_ = false;
   }
 }

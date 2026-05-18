@@ -42,7 +42,8 @@ void TreeWalk(const std::unordered_map<zx_koid_t, ViewNode>& view_tree, zx_koid_
 bool ValidateSnapshot(const Snapshot& snapshot) {
   TRACE_DURATION("gfx", "ViewTreeSnapshotter::ValidateSnapshot");
 
-  const auto& [root, view_tree, unconnected_views, hit_testers] = snapshot;
+  const auto& [root, view_tree, unconnected_views, sequence_number, hit_testers] = snapshot;
+  FX_DCHECK(sequence_number > 0);
   if (view_tree.empty() && root == ZX_KOID_INVALID) {
     return true;
   }
@@ -153,6 +154,7 @@ void ViewTreeSnapshotter::UpdateSnapshot() {
   }
 
   auto new_snapshot = std::make_shared<Snapshot>();
+  new_snapshot->sequence_number = next_sequence_number_++;
   std::multimap<zx_koid_t, zx_koid_t> tree_boundaries;
   {
     size_t reserved_view_tree_size = 0;

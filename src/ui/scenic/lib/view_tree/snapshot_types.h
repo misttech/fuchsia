@@ -89,6 +89,7 @@ class Snapshot {
   std::unordered_map<zx_koid_t, ViewNode> view_tree;
   // Must be fully disjoint from |view_tree|.
   std::unordered_set<zx_koid_t> unconnected_views;
+  uint64_t sequence_number = 0;
 
   // List of hit testers provided by all subtrees. When performing hit tests each hit tester is
   // tried until a hit is found. This lets each subtree have customized hit testing.

@@ -57,33 +57,6 @@ InternalTouchEvent PointerEventTemplate(zx_koid_t target, float x, float y, impl
   return event;
 }
 
-// Creates a new snapshot with a hit test that returns |hits|, and a ViewTree with a straight
-// hierarchy matching |hierarchy|.
-std::shared_ptr<view_tree::Snapshot> NewSnapshot(std::vector<zx_koid_t> hits,
-                                                 std::vector<zx_koid_t> hierarchy) {
-  auto snapshot = std::make_shared<view_tree::Snapshot>();
-
-  if (!hierarchy.empty()) {
-    snapshot->root = hierarchy[0];
-    const auto [_, success] = snapshot->view_tree.try_emplace(hierarchy[0]);
-    FX_DCHECK(success);
-    if (hierarchy.size() > 1) {
-      snapshot->view_tree[hierarchy[0]].children = {hierarchy[1]};
-      for (size_t i = 1; i < hierarchy.size() - 1; ++i) {
-        snapshot->view_tree[hierarchy[i]].parent = hierarchy[i - 1];
-        snapshot->view_tree[hierarchy[i]].children = {hierarchy[i + 1]};
-      }
-      snapshot->view_tree[hierarchy.back()].parent = hierarchy[hierarchy.size() - 2];
-    }
-  }
-
-  snapshot->hit_testers.emplace_back([hits = std::move(hits)](auto...) mutable {
-    return view_tree::SubtreeHitTestResult{.hits = hits};
-  });
-
-  return snapshot;
-}
-
 class MockAccessibilityPointerEventListener
     : public fuchsia::ui::input::accessibility::PointerEventListener {
  public:
@@ -164,6 +137,34 @@ class AccessibilityPointerEventsTest : public gtest::TestLoopFixture {
   scenic_impl::input::HitTester hit_tester_;
 
  protected:
+  // Creates a new snapshot with a hit test that returns |hits|, and a ViewTree with a straight
+  // hierarchy matching |hierarchy|.
+  std::shared_ptr<view_tree::Snapshot> NewSnapshot(std::vector<zx_koid_t> hits,
+                                                   std::vector<zx_koid_t> hierarchy) {
+    auto snapshot = std::make_shared<view_tree::Snapshot>();
+    snapshot->sequence_number = next_sequence_number_++;
+
+    if (!hierarchy.empty()) {
+      snapshot->root = hierarchy[0];
+      const auto [_, success] = snapshot->view_tree.try_emplace(hierarchy[0]);
+      FX_DCHECK(success);
+      if (hierarchy.size() > 1) {
+        snapshot->view_tree[hierarchy[0]].children = {hierarchy[1]};
+        for (size_t i = 1; i < hierarchy.size() - 1; ++i) {
+          snapshot->view_tree[hierarchy[i]].parent = hierarchy[i - 1];
+          snapshot->view_tree[hierarchy[i]].children = {hierarchy[i + 1]};
+        }
+        snapshot->view_tree[hierarchy.back()].parent = hierarchy[hierarchy.size() - 2];
+      }
+    }
+
+    snapshot->hit_testers.emplace_back([hits = std::move(hits)](auto...) mutable {
+      return view_tree::SubtreeHitTestResult{.hits = hits};
+    });
+
+    return snapshot;
+  }
+
   scenic_impl::input::TouchSystem touch_system_;
   std::unordered_map<StreamId, TouchInteractionStatus> client_contests_;
 
@@ -193,6 +194,7 @@ class AccessibilityPointerEventsTest : public gtest::TestLoopFixture {
   }
 
   fuchsia::ui::pointer::TouchSourcePtr client_ptr_;
+  uint64_t next_sequence_number_ = 1;
 };
 
 // This test makes sure that first to register win is working.
