@@ -372,6 +372,12 @@ impl FileOps for LayeredFileOps {
             }
         }
 
+        // Allow subclassing for FileObjectOffset because the lock on the
+        // inner file's offset is acquired while holding the lock on the
+        // outer (layered) file's offset.
+        // This is safe because the locks are on different file instances
+        // and follow a strict outer-to-inner hierarchy, preventing cycles.
+        let _token = starnix_sync::allow_subclass();
         let mut root_file_offset = self.root_file.offset.copy();
         let mut wrapper =
             DirentSinkWrapper { sink, mappings: &self.fs.mappings, offset: &mut *root_file_offset };

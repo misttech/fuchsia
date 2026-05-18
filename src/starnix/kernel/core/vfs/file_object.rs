@@ -33,7 +33,8 @@ use starnix_logging::{
     CATEGORY_STARNIX_MM, impossible_error, log_error, trace_duration, track_stub,
 };
 use starnix_sync::{
-    BeforeFsNodeAppend, FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Mutex, Unlocked,
+    BeforeFsNodeAppend, FileObjectOffset, FileOpsCore, LockBefore, LockEqualOrBefore, Locked,
+    Mutex, Unlocked,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::math::round_up_to_system_page_size;
@@ -1470,7 +1471,7 @@ pub struct FileObjectState {
 
     pub fs: FileSystemHandle,
 
-    pub offset: RcuAtomic<off_t>,
+    pub offset: RcuAtomic<off_t, FileObjectOffset>,
 
     flags: AtomicOpenFlags,
 

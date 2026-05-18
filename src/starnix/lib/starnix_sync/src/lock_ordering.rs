@@ -10,6 +10,9 @@ lock_ordering! {
     Unlocked => UninterruptibleLock,
     // Artificial level for ResourceAccessor.add_file_with_flags(..)
     Unlocked => ResourceAccessorLevel,
+    // Level for FileObject offset lock.
+    Unlocked => FileObjectOffset,
+    FileObjectOffset => BeforeFsNodeAppend,
     // Artificial level for methods in FsNodeOps/FileOps that require access to the
     // FsNode.append_lock
     Unlocked => BeforeFsNodeAppend,
