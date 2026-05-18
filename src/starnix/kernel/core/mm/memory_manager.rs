@@ -246,6 +246,9 @@ struct Mappings {
     ///
     /// This is used to detect stale mappings in `handle_page_fault`.
     generation: u64,
+
+    /// The cached sum of the lengths of all mapped ranges.
+    total_usage: usize,
 }
 
 impl Deref for Mappings {
@@ -256,10 +259,51 @@ impl Deref for Mappings {
     }
 }
 
-impl DerefMut for Mappings {
-    fn deref_mut(&mut self) -> &mut Self::Target {
+impl Mappings {
+    pub fn insert(&mut self, range: std::ops::Range<UserAddress>, value: Mapping) -> Vec<Mapping> {
         self.generation = self.generation.wrapping_add(1);
-        &mut self.map
+        let range_len = range.end - range.start;
+        let removed_len: usize = self
+            .map
+            .range(range.clone())
+            .map(|(r, _)| {
+                let intersection = r.intersect(&range);
+                intersection.end - intersection.start
+            })
+            .sum();
+        let removed = self.map.insert(range, value);
+        self.total_usage = self.total_usage.saturating_add(range_len).saturating_sub(removed_len);
+        removed
+    }
+
+    pub fn remove(&mut self, range: std::ops::Range<UserAddress>) -> Vec<Mapping> {
+        self.generation = self.generation.wrapping_add(1);
+        let removed_len: usize = self
+            .map
+            .range(range.clone())
+            .map(|(r, _)| {
+                let intersection = r.intersect(&range);
+                intersection.end - intersection.start
+            })
+            .sum();
+        let removed = self.map.remove(range);
+        self.total_usage = self.total_usage.saturating_sub(removed_len);
+        removed
+    }
+
+    pub fn append_non_overlapping(
+        &mut self,
+        range: std::ops::Range<UserAddress>,
+        value: Mapping,
+    ) -> bool {
+        self.generation = self.generation.wrapping_add(1);
+        let range_len = range.end - range.start;
+        if self.map.append_non_overlapping(range, value) {
+            self.total_usage = self.total_usage.saturating_add(range_len);
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -2582,12 +2626,8 @@ impl MemoryManagerState {
             None => return error!(EINVAL),
         };
 
-        let mappings_in_range = self
-            .mappings
-            .map
-            .range(addr..end)
-            .map(|(r, m)| (r.clone(), m.clone()))
-            .collect::<Vec<_>>();
+        let mappings_in_range =
+            self.mappings.range(addr..end).map(|(r, m)| (r.clone(), m.clone())).collect::<Vec<_>>();
 
         if mappings_in_range.is_empty() {
             return error!(EINVAL);
@@ -4343,7 +4383,7 @@ impl MemoryManager {
     }
 
     pub fn get_total_usage(&self) -> usize {
-        self.state.read().mappings.iter().map(|(range, _)| range.end - range.start).sum()
+        self.state.read().mappings.total_usage
     }
 
     pub fn get_stats(&self, current_task: &CurrentTask) -> MemoryStats {
