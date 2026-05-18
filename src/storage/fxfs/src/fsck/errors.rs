@@ -57,7 +57,7 @@ pub struct Allocation {
 
 impl From<ItemRef<'_, AllocatorKey, AllocatorValue>> for Allocation {
     fn from(item: ItemRef<'_, AllocatorKey, AllocatorValue>) -> Self {
-        Self { range: item.key.device_range.clone(), value: item.value.clone() }
+        Self { range: (*item.key.device_range).clone(), value: item.value.clone() }
     }
 }
 

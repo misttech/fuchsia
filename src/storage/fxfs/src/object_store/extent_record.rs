@@ -7,9 +7,10 @@
 use crate::checksum::{Checksums, ChecksumsV38};
 use crate::lsm_tree::types::{OrdLowerBound, OrdUpperBound};
 use crate::round::{round_down, round_up};
+use crate::serialized_types::serialized_key::{KeyDeserializer, KeySerializer, SerializeKey};
+use crate::serialized_types::varint::Buffer;
 use bit_vec::BitVec;
 use fprint::TypeFingerprint;
-use fxfs_macros::SerializeKey;
 use serde::{Deserialize, Serialize};
 use std::cmp::{max, min};
 use std::hash::Hash;
@@ -33,12 +34,52 @@ pub const FSVERITY_MERKLE_ATTRIBUTE_ID: u64 = 2;
 /// (at time of writing this was only the used for file contents).
 pub type ExtentKey = ExtentKeyV32;
 
-#[derive(
-    Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, TypeFingerprint, SerializeKey,
-)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct ExtentKeyV32 {
     pub range: Range<u64>,
+}
+
+impl SerializeKey for ExtentKeyV32 {
+    fn serialize_key_to<B: Buffer>(&self, serializer: &mut KeySerializer<'_, B>) {
+        assert_eq!(self.range.end % 512, 0, "Extent end must be 512-byte aligned");
+        assert_eq!(self.range.start % 512, 0, "Extent start must be 512-byte aligned");
+        serializer.write_u64(self.range.end / 512);
+        serializer.write_u64(self.range.start / 512);
+    }
+
+    fn deserialize_key_from(deserializer: &mut KeyDeserializer<'_>) -> Result<Self, anyhow::Error> {
+        let end =
+            deserializer.read_u64()?.checked_mul(512).ok_or_else(|| anyhow::anyhow!("Overflow"))?;
+        let start =
+            deserializer.read_u64()?.checked_mul(512).ok_or_else(|| anyhow::anyhow!("Overflow"))?;
+        Ok(Self { range: start..end })
+    }
+}
+
+impl std::ops::Deref for ExtentKey {
+    type Target = Range<u64>;
+    fn deref(&self) -> &Self::Target {
+        &self.range
+    }
+}
+
+impl std::ops::DerefMut for ExtentKey {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.range
+    }
+}
+
+impl From<Range<u64>> for ExtentKey {
+    fn from(range: Range<u64>) -> Self {
+        Self { range }
+    }
+}
+
+impl From<ExtentKey> for Range<u64> {
+    fn from(key: ExtentKey) -> Self {
+        key.range
+    }
 }
 
 const EXTENT_HASH_BUCKET_SIZE: u64 = 1 * 1024 * 1024;
@@ -308,8 +349,72 @@ mod tests {
     use crate::checksum::Checksums;
     use crate::lsm_tree::types::{OrdLowerBound, OrdUpperBound};
     use crate::object_store::VOLUME_DATA_KEY_ID;
+    use crate::serialized_types::serialized_key::{KeyDeserializer, SerializeKey};
     use bit_vec::BitVec;
     use std::cmp::Ordering;
+
+    #[test]
+    fn test_extent_key_serialization() {
+        let key = ExtentKey::new(1024..2048);
+        let mut buf = Vec::new();
+
+        // Serialize
+        {
+            let mut ser =
+                crate::serialized_types::serialized_key::KeySerializer::new(&mut buf, Some(0));
+            key.serialize_key_to(&mut ser);
+            ser.finalize();
+        }
+
+        let (mut deser, length) = KeyDeserializer::new(&buf, Some(0)).unwrap();
+        assert_eq!(length, buf.len());
+        let decoded_key = ExtentKey::deserialize_key_from(&mut deser).unwrap();
+
+        assert_eq!(key, decoded_key);
+
+        // Verify bytes:
+        // 2048 / 512 = 4.
+        // 1024 / 512 = 2.
+        // Delta encoding applies to first field (end = 4). Base is 0. 4 - 0 = 4.
+        // Second field is start = 2. Base is None (taken). So writes 2.
+        // Buffer should be [0, 2, 4, 2].
+        assert_eq!(buf, vec![0, 2, 4, 2]);
+    }
+
+    #[test]
+    fn test_extent_key_deserialization_overflow() {
+        let mut buf = Vec::new();
+        {
+            let mut ser =
+                crate::serialized_types::serialized_key::KeySerializer::new(&mut buf, None);
+            ser.write_u64(u64::MAX);
+            ser.write_u64(u64::MAX);
+            ser.finalize();
+        }
+        let (mut deser, length) = KeyDeserializer::new(&buf, None).unwrap();
+        assert_eq!(length, buf.len());
+        let result = ExtentKey::deserialize_key_from(&mut deser);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Overflow");
+    }
+
+    #[test]
+    #[should_panic(expected = "Extent end must be 512-byte aligned")]
+    fn test_extent_key_serialization_unaligned_end_panics() {
+        let key = ExtentKey::new(1024..2049);
+        let mut buf = Vec::new();
+        let mut ser = crate::serialized_types::serialized_key::KeySerializer::new(&mut buf, None);
+        key.serialize_key_to(&mut ser);
+    }
+
+    #[test]
+    #[should_panic(expected = "Extent start must be 512-byte aligned")]
+    fn test_extent_key_serialization_unaligned_start_panics() {
+        let key = ExtentKey::new(1025..2048);
+        let mut buf = Vec::new();
+        let mut ser = crate::serialized_types::serialized_key::KeySerializer::new(&mut buf, None);
+        key.serialize_key_to(&mut ser);
+    }
 
     #[test]
     fn test_extent_cmp() {

@@ -247,6 +247,7 @@ impl SerializeKey for std::ops::Range<u64> {
 mod tests {
     use super::*;
     use crate::lsm_tree::types::OrdUpperBound;
+    use crate::object_store::ExtentKey;
     use crate::object_store::allocator::AllocatorKey;
     use crate::object_store::object_record::{ObjectKey, ObjectKeyData};
 
@@ -276,13 +277,13 @@ mod tests {
         keys.push(ObjectKey { object_id: 1, data: ObjectKeyData::Child { name: "a".repeat(300) } });
 
         // Extent edge cases
-        keys.push(ObjectKey::extent(1, 0, 100..200));
-        keys.push(ObjectKey::extent(1, 0, 100..150));
-        keys.push(ObjectKey::extent(1, 0, 50..150));
-        keys.push(ObjectKey::extent(1, 0, 150..200));
-        keys.push(ObjectKey::extent(2, 0, 100..200));
-        keys.push(ObjectKey::extent(1, 0, 0..100));
-        keys.push(ObjectKey::extent(1, 0, 50..100));
+        keys.push(ObjectKey::extent(1, 0, 100 * 512..200 * 512));
+        keys.push(ObjectKey::extent(1, 0, 100 * 512..150 * 512));
+        keys.push(ObjectKey::extent(1, 0, 50 * 512..150 * 512));
+        keys.push(ObjectKey::extent(1, 0, 150 * 512..200 * 512));
+        keys.push(ObjectKey::extent(2, 0, 100 * 512..200 * 512));
+        keys.push(ObjectKey::extent(1, 0, 0..100 * 512));
+        keys.push(ObjectKey::extent(1, 0, 50 * 512..100 * 512));
 
         // Compare all pairs. We compare against `cmp_upper_bound` which is now a total order
         // for ranges (comparing end then start), matching serialization order.
@@ -311,13 +312,13 @@ mod tests {
     #[test]
     fn test_allocator_key_order_matches_cmp_upper_bound() {
         let mut keys = Vec::new();
-        keys.push(AllocatorKey { device_range: 0..100 });
-        keys.push(AllocatorKey { device_range: 0..200 });
-        keys.push(AllocatorKey { device_range: 100..200 });
-        keys.push(AllocatorKey { device_range: 100..150 });
-        keys.push(AllocatorKey { device_range: 50..150 });
-        keys.push(AllocatorKey { device_range: 0..50 });
-        keys.push(AllocatorKey { device_range: 50..100 });
+        keys.push(AllocatorKey { device_range: ExtentKey::new(0..100 * 512) });
+        keys.push(AllocatorKey { device_range: ExtentKey::new(0..200 * 512) });
+        keys.push(AllocatorKey { device_range: ExtentKey::new(100 * 512..200 * 512) });
+        keys.push(AllocatorKey { device_range: ExtentKey::new(100 * 512..150 * 512) });
+        keys.push(AllocatorKey { device_range: ExtentKey::new(50 * 512..150 * 512) });
+        keys.push(AllocatorKey { device_range: ExtentKey::new(0..50 * 512) });
+        keys.push(AllocatorKey { device_range: ExtentKey::new(50 * 512..100 * 512) });
 
         // Compare all pairs. We compare against `cmp_upper_bound` which is now a total order
         // for ranges, matching serialization order.
@@ -358,7 +359,8 @@ mod tests {
         }
 
         // Deserialize
-        let (mut deser, _) = KeyDeserializer::new(&buf, Some(base)).unwrap();
+        let (mut deser, length) = KeyDeserializer::new(&buf, Some(base)).unwrap();
+        assert_eq!(length, buf.len());
         let decoded_val = deser.read_u64().unwrap();
 
         assert_eq!(val, decoded_val);
@@ -394,7 +396,8 @@ mod tests {
         }
 
         // Deserialize
-        let (mut deser, _) = KeyDeserializer::new(&buf, Some(base)).unwrap();
+        let (mut deser, length) = KeyDeserializer::new(&buf, Some(base)).unwrap();
+        assert_eq!(length, buf.len());
         let decoded_val1 = deser.read_u64().unwrap();
         let decoded_val2 = deser.read_u64().unwrap();
 
@@ -415,7 +418,8 @@ mod tests {
         }
 
         // Deserialize
-        let (mut deser, _) = KeyDeserializer::new(&buf, None).unwrap();
+        let (mut deser, length) = KeyDeserializer::new(&buf, None).unwrap();
+        assert_eq!(length, buf.len());
         let decoded_val = deser.read_u64().unwrap();
 
         assert_eq!(val, decoded_val);
@@ -432,7 +436,8 @@ mod tests {
 
         // Deserialize with base = Some(1).
         // read_u64 should try to add 1 to u64::MAX and return error.
-        let (mut deser, _) = KeyDeserializer::new(&buf, Some(1)).unwrap();
+        let (mut deser, length) = KeyDeserializer::new(&buf, Some(1)).unwrap();
+        assert_eq!(length, buf.len());
         assert!(deser.read_u64().is_err());
     }
 
@@ -463,7 +468,8 @@ mod tests {
             ser.finalize();
         }
 
-        let (mut deser, _) = KeyDeserializer::new(&buf, Some(base)).unwrap();
+        let (mut deser, length) = KeyDeserializer::new(&buf, Some(base)).unwrap();
+        assert_eq!(length, buf.len());
         deser.read_varint().unwrap(); // Reads val1 (delta)
         deser.read_u64().unwrap(); // Tries to read val2 as u64.
     }

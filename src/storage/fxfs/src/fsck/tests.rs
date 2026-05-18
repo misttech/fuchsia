@@ -386,7 +386,7 @@ async fn test_malformed_allocation() {
                 fs.block_size(),
             );
             let item = Item::new(
-                AllocatorKey { device_range: end..end },
+                AllocatorKey { device_range: (end..end).into() },
                 AllocatorValue::Abs { count: 2, owner_object_id: 9 },
             );
             writer.write(item.as_item_ref()).await.expect("write failed");
@@ -3871,7 +3871,7 @@ async fn test_full_disk(read_only: bool) {
                 fs.block_size(),
             );
             let item = Item::new(
-                AllocatorKey { device_range: 0..end },
+                AllocatorKey { device_range: (0..end).into() },
                 AllocatorValue::Abs { count: 2, owner_object_id: 9 },
             );
             writer.write(item.as_item_ref()).await.expect("write failed");
@@ -4287,7 +4287,9 @@ async fn test_invalid_bloom_filter_for_allocator() {
             for i in 0..item_count as u64 {
                 // The range per item needs to be disjoint to avoid them being merged.
                 items.push(Item::new(
-                    AllocatorKey { device_range: (2 * i * 100)..(2 * i + 1) * 100 },
+                    AllocatorKey {
+                        device_range: ((2 * i * 100 * 512)..(2 * i + 1) * 100 * 512).into(),
+                    },
                     AllocatorValue::Abs { count: 1, owner_object_id: 1 },
                 ));
             }

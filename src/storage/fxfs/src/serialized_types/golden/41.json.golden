@@ -1,6 +1,6 @@
 {
   "AllocatorInfo": "struct {layers:Vec<u64>,allocated_bytes:BTreeMap<u64,u64>,marked_for_deletion:HashSet<u64>,limit_bytes:BTreeMap<u64,u64>}",
-  "AllocatorKey": "struct {device_range:Range<u64>}",
+  "AllocatorKey": "struct {device_range:struct {range:Range<u64>}}",
   "AllocatorValue": "enum {None,Abs(count:u64,owner_object_id:u64)}",
   "EncryptedMutations": "struct {transactions:Vec<(struct {file_offset:u64,checksum:u64,version:struct {major:u32,minor:u8}},u64,)>,data:Vec<u8>,mutations_key_roll:Vec<(usize,struct {wrapping_key_id:u128,key:WrappedKeyBytes},)>}",
   "FsverityMetadata": "struct {root_digest:enum {Sha256([u8;32]),Sha512(Vec<u8>)},salt:Vec<u8>}",

@@ -958,7 +958,7 @@ impl<'a> ScannedStore<'a> {
             ))?;
         }
         let item = Item::new(
-            AllocatorKey { device_range: device_offset..device_offset + len },
+            AllocatorKey { device_range: ExtentKey::new(device_offset..device_offset + len) },
             AllocatorValue::Abs { count: 1, owner_object_id: self.store_id },
         );
         let lower_bound: AllocatorKey = item.key.lower_bound_for_merge_into();

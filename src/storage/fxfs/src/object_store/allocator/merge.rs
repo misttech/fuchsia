@@ -5,6 +5,7 @@
 use crate::lsm_tree::merge::ItemOp::{Discard, Keep, Replace};
 use crate::lsm_tree::merge::{MergeLayerIterator, MergeResult};
 use crate::lsm_tree::types::{Item, LayerIterator};
+use crate::object_store::ExtentKey;
 use crate::object_store::allocator::{AllocatorKey, AllocatorValue};
 use anyhow::Error;
 use std::collections::HashSet;
@@ -39,8 +40,9 @@ pub fn merge(
                 right: Replace(
                     Item::new(
                         AllocatorKey {
-                            device_range: left.key().device_range.start
-                                ..right.key().device_range.end,
+                            device_range: ExtentKey::new(
+                                left.key().device_range.start..right.key().device_range.end,
+                            ),
                         },
                         left.value().clone(),
                     )
@@ -68,8 +70,9 @@ pub fn merge(
                         Replace(
                             Item::new(
                                 AllocatorKey {
-                                    device_range: left.key().device_range.end
-                                        ..right.key().device_range.end,
+                                    device_range: ExtentKey::new(
+                                        left.key().device_range.end..right.key().device_range.end,
+                                    ),
                                 },
                                 right.value().clone(),
                             )
@@ -97,8 +100,9 @@ pub fn merge(
                         Replace(
                             Item::new(
                                 AllocatorKey {
-                                    device_range: right.key().device_range.end
-                                        ..left.key().device_range.end,
+                                    device_range: ExtentKey::new(
+                                        right.key().device_range.end..left.key().device_range.end,
+                                    ),
                                 },
                                 left.value().clone(),
                             )
@@ -122,7 +126,9 @@ pub fn merge(
         emit: Some(
             Item::new(
                 AllocatorKey {
-                    device_range: left.key().device_range.start..right.key().device_range.start,
+                    device_range: ExtentKey::new(
+                        left.key().device_range.start..right.key().device_range.start,
+                    ),
                 },
                 left.value().clone(),
             )
@@ -131,7 +137,9 @@ pub fn merge(
         left: Replace(
             Item::new(
                 AllocatorKey {
-                    device_range: right.key().device_range.start..left.key().device_range.end,
+                    device_range: ExtentKey::new(
+                        right.key().device_range.start..left.key().device_range.end,
+                    ),
                 },
                 left.value().clone(),
             )
@@ -178,10 +186,10 @@ mod tests {
         expected: &[(Range<u64>, AllocatorValue)],
     ) {
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
-        tree.insert(Item::new(AllocatorKey { device_range: right.0 }, right.1))
+        tree.insert(Item::new(AllocatorKey { device_range: right.0.into() }, right.1))
             .expect("insert error");
         tree.seal();
-        tree.insert(Item::new(AllocatorKey { device_range: left.0 }, left.1))
+        tree.insert(Item::new(AllocatorKey { device_range: left.0.into() }, left.1))
             .expect("insert error");
         let layer_set = tree.layer_set();
         let mut merger = layer_set.merger();
@@ -190,7 +198,7 @@ mod tests {
             .expect("filter failed");
         for e in expected {
             let ItemRef { key, value, .. } = iter.get().expect("get failed");
-            assert_eq!((key, value), (&AllocatorKey { device_range: e.0.clone() }, &e.1));
+            assert_eq!((key, value), (&AllocatorKey { device_range: e.0.clone().into() }, &e.1));
             iter.advance().await.expect("advance failed");
         }
         assert!(iter.get().is_none());
@@ -335,7 +343,7 @@ mod tests {
         //  1. Alloc object_id A, write layer file.
         //  2. Dealloc object_id A, Alloc object_id B, write layer file.
         //  3. Dealloc object_id B, Alloc object_id A.
-        let key = AllocatorKey { device_range: 0..100 };
+        let key = AllocatorKey { device_range: (0..100 * 512).into() };
         let lower_bound = AllocatorKey::lower_bound_for_merge_into(&key);
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
         tree.merge_into(

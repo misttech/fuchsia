@@ -106,7 +106,7 @@ use crate::object_store::transaction::{
     AllocatorMutation, AssocObj, LockKey, Mutation, Options, Transaction, WriteGuard, lock_keys,
 };
 use crate::object_store::{
-    DataObjectHandle, DirectWriter, HandleOptions, ObjectStore, ReservedId, tree,
+    DataObjectHandle, DirectWriter, ExtentKey, HandleOptions, ObjectStore, ReservedId, tree,
 };
 use crate::range::RangeExt;
 use crate::round::{round_div, round_down, round_up};
@@ -308,12 +308,12 @@ pub type AllocatorKey = AllocatorKeyV32;
     PartialEq,
     Serialize,
     TypeFingerprint,
-    Versioned,
     SerializeKey,
+    Versioned,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct AllocatorKeyV32 {
-    pub device_range: Range<u64>,
+    pub device_range: ExtentKey,
 }
 
 impl SortByU64 for AllocatorKey {
@@ -338,7 +338,7 @@ impl Iterator for AllocatorKeyPartitionIterator {
             let start = self.device_range.start;
             self.device_range.start = start.saturating_add(EXTENT_HASH_BUCKET_SIZE);
             let end = std::cmp::min(self.device_range.start, self.device_range.end);
-            let key = AllocatorKey { device_range: start..end };
+            let key = AllocatorKey { device_range: ExtentKey::new(start..end) };
             let hash = crate::stable_hash::stable_hash(key);
             Some(hash)
         }
@@ -361,7 +361,7 @@ impl FuzzyHash for AllocatorKey {
 impl AllocatorKey {
     /// Returns a new key that is a lower bound suitable for use with merge_into.
     pub fn lower_bound_for_merge_into(self: &AllocatorKey) -> AllocatorKey {
-        AllocatorKey { device_range: 0..self.device_range.start }
+        AllocatorKey { device_range: ExtentKey::new(0..self.device_range.start) }
     }
 }
 
@@ -761,7 +761,7 @@ impl<'a> Drop for TrimmableExtents<'a> {
             inner.strategy.free(device_range.clone()).expect("drop trim extent");
             self.allocator
                 .temporary_allocations
-                .erase(&AllocatorKey { device_range: device_range.clone() });
+                .erase(&AllocatorKey { device_range: ExtentKey::new(device_range.clone()) });
         }
         inner.trim_reserved_bytes = 0;
     }
@@ -989,7 +989,8 @@ impl Allocator {
                     iter.advance().await?;
                     range
                 }
-                Some(ItemRef { key: AllocatorKey { device_range, .. }, .. }) => {
+                Some(ItemRef { key, .. }) => {
+                    let device_range = &key.device_range;
                     if device_range.end < last_offset {
                         iter.advance().await?;
                         continue;
@@ -1046,7 +1047,11 @@ impl Allocator {
         let mut merger = layer_set.merger();
         let mut iter = self
             .filter(
-                merger.query(Query::FullRange(&AllocatorKey { device_range: offset..0 })).await?,
+                merger
+                    .query(Query::FullRange(&AllocatorKey {
+                        device_range: ExtentKey::new(offset..0),
+                    }))
+                    .await?,
                 false,
             )
             .await?;
@@ -1093,7 +1098,7 @@ impl Allocator {
                 // temporary_allocations while holding the lock.
                 inner.strategy.remove(prefix.clone());
                 self.temporary_allocations.insert(AllocatorItem {
-                    key: AllocatorKey { device_range: prefix.clone() },
+                    key: AllocatorKey { device_range: ExtentKey::new(prefix.clone()) },
                     value: AllocatorValue::Abs { owner_object_id: INVALID_OBJECT_ID, count: 1 },
                 })?;
                 result.add_extent(prefix);
@@ -1451,7 +1456,8 @@ impl Allocator {
                 // While we know rebuild_strategy and take_for_trim are not running (we hold guard),
                 // apply temporary_allocation removals.
                 for device_range in inner.dropped_temporary_allocations.drain(..) {
-                    self.temporary_allocations.erase(&AllocatorKey { device_range });
+                    self.temporary_allocations
+                        .erase(&AllocatorKey { device_range: ExtentKey::new(device_range) });
                 }
 
                 match inner.strategy.allocate(len) {
@@ -1501,7 +1507,7 @@ impl Allocator {
             assert_eq!(owner_object_id, reservation_owner.unwrap_or(owner_object_id));
             inner.remove_reservation(reservation_owner, len);
             self.temporary_allocations.insert(AllocatorItem {
-                key: AllocatorKey { device_range: result.clone() },
+                key: AllocatorKey { device_range: ExtentKey::new(result.clone()) },
                 value: AllocatorValue::Abs { owner_object_id, count: 1 },
             })?;
         }
@@ -1543,7 +1549,7 @@ impl Allocator {
             owner_entry.uncommitted_allocated_bytes += len;
             inner.strategy.remove(device_range.clone());
             self.temporary_allocations.insert(AllocatorItem {
-                key: AllocatorKey { device_range: device_range.clone() },
+                key: AllocatorKey { device_range: ExtentKey::new(device_range.clone()) },
                 value: AllocatorValue::Abs { owner_object_id, count: 1 },
             })?;
         }
@@ -1615,7 +1621,8 @@ impl Allocator {
         // range in temporary_allocations twice (once for allocate, once for deallocate).
         let mut inner = self.inner.lock();
         for device_range in inner.dropped_temporary_allocations.drain(..) {
-            self.temporary_allocations.erase(&AllocatorKey { device_range });
+            self.temporary_allocations
+                .erase(&AllocatorKey { device_range: ExtentKey::new(device_range) });
         }
 
         // We can't reuse deallocated space immediately because failure to successfully flush will
@@ -1624,7 +1631,7 @@ impl Allocator {
         // after a successful flush so we know the region is safe to reuse.
         self.temporary_allocations
             .insert(AllocatorItem {
-                key: AllocatorKey { device_range: dealloc_range.clone() },
+                key: AllocatorKey { device_range: ExtentKey::new(dealloc_range.clone()) },
                 value: AllocatorValue::Abs { owner_object_id, count: 1 },
             })
             .context("tracking deallocated")?;
@@ -1684,7 +1691,8 @@ impl Allocator {
             *(totals.entry(dealloc.owner_object_id).or_default()) +=
                 dealloc.range.length().unwrap();
             inner.strategy.free(dealloc.range.clone()).expect("dealloced ranges");
-            self.temporary_allocations.erase(&AllocatorKey { device_range: dealloc.range.clone() });
+            self.temporary_allocations
+                .erase(&AllocatorKey { device_range: ExtentKey::new(dealloc.range.clone()) });
         }
 
         // This *must* come after we've removed the records from reserved reservations because the
@@ -1806,7 +1814,7 @@ impl JournalingObject for Allocator {
             Mutation::Allocator(AllocatorMutation::Allocate { device_range, owner_object_id }) => {
                 self.maximum_offset.fetch_max(device_range.end, Ordering::Relaxed);
                 let item = AllocatorItem {
-                    key: AllocatorKey { device_range: device_range.clone().into() },
+                    key: AllocatorKey { device_range: ExtentKey::new(device_range.clone().into()) },
                     value: AllocatorValue::Abs { count: 1, owner_object_id },
                 };
                 let len = item.key.device_range.length().unwrap();
@@ -1832,7 +1840,7 @@ impl JournalingObject for Allocator {
                 owner_object_id,
             }) => {
                 let item = AllocatorItem {
-                    key: AllocatorKey { device_range: device_range.into() },
+                    key: AllocatorKey { device_range: ExtentKey::new(device_range.into()) },
                     value: AllocatorValue::None,
                 };
                 let len = item.key.device_range.length().unwrap();
@@ -1849,7 +1857,7 @@ impl JournalingObject for Allocator {
                     if context.mode.is_live() {
                         inner.committed_deallocated.push_back(CommittedDeallocation {
                             log_file_offset: context.checkpoint.file_offset,
-                            range: item.key.device_range.clone(),
+                            range: (*item.key.device_range).clone(),
                             owner_object_id,
                         });
                     }
@@ -1904,11 +1912,11 @@ impl JournalingObject for Allocator {
                 }
                 inner.strategy.free(device_range.clone().into()).expect("drop mutaton");
                 self.temporary_allocations
-                    .erase(&AllocatorKey { device_range: device_range.into() });
+                    .erase(&AllocatorKey { device_range: ExtentKey::new(device_range.into()) });
             }
             Mutation::Allocator(AllocatorMutation::Deallocate { device_range, .. }) => {
                 self.temporary_allocations
-                    .erase(&AllocatorKey { device_range: device_range.into() });
+                    .erase(&AllocatorKey { device_range: ExtentKey::new(device_range.into()) });
             }
             _ => {}
         }
@@ -2194,7 +2202,9 @@ mod tests {
     use crate::object_store::{Directory, LockKey, NewChildStoreOptions, ObjectStore};
     use crate::range::RangeExt;
     use crate::round::round_up;
+    use crate::serialized_types::{LATEST_VERSION, Versioned};
     use crate::testing;
+    use bincode::Options as _;
     use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
     use std::cmp::{max, min};
@@ -2206,7 +2216,31 @@ mod tests {
     #[test]
     fn test_allocator_key_is_range_based() {
         // Make sure we disallow using allocator keys with point queries.
-        assert!(AllocatorKey { device_range: 0..100 }.is_range_key());
+        assert!(AllocatorKey { device_range: (0..100).into() }.is_range_key());
+    }
+
+    #[test]
+    fn test_allocator_key_serialization_compatibility() {
+        let range = 1024..2048;
+        let key = AllocatorKey { device_range: range.clone().into() };
+
+        // 1. Serialize the range directly using bincode (which is what the manual
+        //    Versioned implementation did)
+        let options = bincode::DefaultOptions::new().allow_trailing_bytes();
+        let expected_bytes = options.serialize(&range).unwrap();
+
+        // 2. Serialize AllocatorKey via our derived Versioned implementation
+        let mut key_bytes = Vec::new();
+        key.serialize_into(&mut key_bytes).unwrap();
+
+        // Verify they are byte-compatible
+        assert_eq!(key_bytes, expected_bytes);
+
+        // 3. Deserialize a Range<u64> as AllocatorKey via our derived Versioned
+        //    implementation
+        let deserialized_key =
+            AllocatorKey::deserialize_from(&mut &expected_bytes[..], LATEST_VERSION).unwrap();
+        assert_eq!(deserialized_key, key);
     }
 
     #[fuchsia::test]
@@ -2214,11 +2248,11 @@ mod tests {
         let skip_list = SkipListLayer::new(100);
         let items = [
             Item::new(
-                AllocatorKey { device_range: 0..100 },
+                AllocatorKey { device_range: (0..100 * 512).into() },
                 AllocatorValue::Abs { count: 1, owner_object_id: 99 },
             ),
             Item::new(
-                AllocatorKey { device_range: 100..200 },
+                AllocatorKey { device_range: (100 * 512..200 * 512).into() },
                 AllocatorValue::Abs { count: 1, owner_object_id: 99 },
             ),
         ];
@@ -2232,7 +2266,7 @@ mod tests {
         assert_eq!(
             (key, value),
             (
-                &AllocatorKey { device_range: 0..200 },
+                &AllocatorKey { device_range: (0..200 * 512).into() },
                 &AllocatorValue::Abs { count: 1, owner_object_id: 99 }
             )
         );
@@ -2245,14 +2279,14 @@ mod tests {
         let lsm_tree = LSMTree::new(merge, Box::new(NullCache {}));
         lsm_tree
             .insert(Item::new(
-                AllocatorKey { device_range: 100..200 },
+                AllocatorKey { device_range: (100 * 512..200 * 512).into() },
                 AllocatorValue::Abs { count: 1, owner_object_id: 99 },
             ))
             .expect("insert error");
         lsm_tree.seal();
         lsm_tree
             .insert(Item::new(
-                AllocatorKey { device_range: 0..100 },
+                AllocatorKey { device_range: (0..100 * 512).into() },
                 AllocatorValue::Abs { count: 1, owner_object_id: 99 },
             ))
             .expect("insert error");
@@ -2267,7 +2301,7 @@ mod tests {
         assert_eq!(
             (key, value),
             (
-                &AllocatorKey { device_range: 0..200 },
+                &AllocatorKey { device_range: (0..200 * 512).into() },
                 &AllocatorValue::Abs { count: 1, owner_object_id: 99 }
             )
         );
@@ -2280,14 +2314,14 @@ mod tests {
         let lsm_tree = LSMTree::new(merge, Box::new(NullCache {}));
         lsm_tree
             .insert(Item::new(
-                AllocatorKey { device_range: 100..200 },
+                AllocatorKey { device_range: (100 * 512..200 * 512).into() },
                 AllocatorValue::Abs { count: 1, owner_object_id: 99 },
             ))
             .expect("insert error");
         lsm_tree.seal();
         lsm_tree
             .insert(Item::new(
-                AllocatorKey { device_range: 0..100 },
+                AllocatorKey { device_range: (0..100 * 512).into() },
                 AllocatorValue::Abs { count: 1, owner_object_id: 98 },
             ))
             .expect("insert error");
@@ -2302,7 +2336,7 @@ mod tests {
         assert_eq!(
             (key, value),
             (
-                &AllocatorKey { device_range: 0..100 },
+                &AllocatorKey { device_range: (0..100 * 512).into() },
                 &AllocatorValue::Abs { count: 1, owner_object_id: 98 },
             )
         );
@@ -2311,7 +2345,7 @@ mod tests {
         assert_eq!(
             (key, value),
             (
-                &AllocatorKey { device_range: 100..200 },
+                &AllocatorKey { device_range: (100 * 512..200 * 512).into() },
                 &AllocatorValue::Abs { count: 1, owner_object_id: 99 }
             )
         );
@@ -2337,9 +2371,9 @@ mod tests {
         let mut allocations: Vec<Range<u64>> = Vec::new();
         while let Some(ItemRef { key: AllocatorKey { device_range }, .. }) = iter.get() {
             if let Some(r) = allocations.last() {
-                assert!(device_range.start >= r.end);
+                assert!(device_range.range.start >= r.end);
             }
-            allocations.push(device_range.clone());
+            allocations.push(device_range.range.clone());
             iter.advance().await.expect("advance failed");
         }
         allocations
@@ -2354,17 +2388,17 @@ mod tests {
             .expect("build iterator");
         let mut found = 0;
         while let Some(ItemRef { key: AllocatorKey { device_range }, .. }) = iter.get() {
-            let mut l = device_range.length().expect("Invalid range");
+            let mut l = device_range.range.length().expect("Invalid range");
             found += l;
             // Make sure that the entire range we have found completely overlaps with all the
             // allocations we expect to find.
             for range in expected_allocations {
-                l -= overlap(range, device_range);
+                l -= overlap(range, &device_range.range);
                 if l == 0 {
                     break;
                 }
             }
-            assert_eq!(l, 0, "range {device_range:?} not covered by expectations");
+            assert_eq!(l, 0, "range {:?} not covered by expectations", device_range.range);
             iter.advance().await.expect("advance failed");
         }
         // Make sure the total we found adds up to what we expect.

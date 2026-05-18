@@ -281,19 +281,21 @@ mod tests {
     #[test]
     fn test_range_key() {
         let mut filter = BloomFilterWriter::new(0, 2);
-        filter.insert(&AllocatorKey { device_range: 0..2097152 });
-        filter.insert(&AllocatorKey { device_range: 4194304..4194305 });
+        filter.insert(&AllocatorKey { device_range: (0..2097152).into() });
+        filter.insert(&AllocatorKey { device_range: (4194304..4194816).into() });
         let filter = BloomFilterReader::from(filter);
 
-        assert!(filter.maybe_contains(&AllocatorKey { device_range: 0..1 }));
-        assert!(filter.maybe_contains(&AllocatorKey { device_range: 2097151..2097152 }));
-        assert!(!filter.maybe_contains(&AllocatorKey { device_range: 2097152..2097153 }));
-        assert!(!filter.maybe_contains(&AllocatorKey { device_range: 3145727..3145728 }));
-        assert!(filter.maybe_contains(&AllocatorKey { device_range: 4193404..4194305 }));
+        assert!(filter.maybe_contains(&AllocatorKey { device_range: (0..512).into() }));
+        assert!(filter.maybe_contains(&AllocatorKey { device_range: (2096640..2097152).into() }));
+        assert!(!filter.maybe_contains(&AllocatorKey { device_range: (2097152..2097664).into() }));
+        assert!(!filter.maybe_contains(&AllocatorKey { device_range: (3145216..3145728).into() }));
+        assert!(filter.maybe_contains(&AllocatorKey { device_range: (4193792..4194816).into() }));
 
-        assert!(filter.maybe_contains(&AllocatorKey { device_range: 0..2097153 }));
-        assert!(filter.maybe_contains(&AllocatorKey { device_range: 2097152..4194305 }));
-        assert!(!filter.maybe_contains(&AllocatorKey { device_range: 104857600..104857601 }));
+        assert!(filter.maybe_contains(&AllocatorKey { device_range: (0..2097664).into() }));
+        assert!(filter.maybe_contains(&AllocatorKey { device_range: (2097152..4194816).into() }));
+        assert!(
+            !filter.maybe_contains(&AllocatorKey { device_range: (104857600..104858112).into() })
+        );
     }
 
     #[test]
