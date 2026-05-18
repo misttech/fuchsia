@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 
 /// Cache for access decisions.
 /// This cache has 4 slots per bucket, with 25 bytes of inline storage. A bucket is 64 bytes.
-pub(super) type ConcurrentAccessCache = LockFreeQueryCache<
+pub type ConcurrentAccessCache = LockFreeQueryCache<
     AccessCacheStorage,
     /*ways4*/ 1,
     /*u64*/ 3,
@@ -50,7 +50,7 @@ pub(super) type ConcurrentSidCache = LockFreeQueryCache<
 >;
 
 #[derive(Default)]
-pub(super) struct AccessCacheStorage;
+pub struct AccessCacheStorage;
 
 /// Storage for an access vector cache entry. We store the two sids (4 bytes each) in a u64, the
 /// allow and audit AccessVectors in another u64, and the class in a u8.

@@ -82,10 +82,10 @@ pub(super) trait Query {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
-pub(super) struct AccessQueryArgs {
-    pub(super) source_sid: SecurityId,
-    pub(super) target_sid: SecurityId,
-    pub(super) target_class: KernelClass,
+pub struct AccessQueryArgs {
+    pub source_sid: SecurityId,
+    pub target_sid: SecurityId,
+    pub target_class: KernelClass,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -105,7 +105,7 @@ pub(super) struct FifoQueryCache {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub(super) struct QueryCacheCapacity {
+pub struct QueryCacheCapacity {
     /// Capacities for the different caches. Due to limitations of the cache implementation,
     /// these will be rounded up so the number of buckets is a power of two.
     pub access_cache_capacity: usize,
@@ -211,7 +211,7 @@ impl FifoQueryCache {
 }
 
 /// Default size of an access vector cache shared by all threads in the system.
-const DEFAULT_SHARED_SIZE: QueryCacheCapacity = QueryCacheCapacity {
+pub const DEFAULT_SHARED_SIZE: QueryCacheCapacity = QueryCacheCapacity {
     // This was empirically determined to be a good default,
     access_cache_capacity: 2048,
     // The following were determined as a fraction of the access cache capacity.

@@ -5,3 +5,4 @@ fuchsia.sestarnix: sid_to_security_context_simple
 fuchsia.sestarnix: sid_to_security_context_c0_c255
 fuchsia.sestarnix: compute_access_decision_simple
 fuchsia.sestarnix: compute_access_decision_c0_c255
+fuchsia.sestarnix: concurrent_access_cache_get

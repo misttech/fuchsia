@@ -6,6 +6,9 @@
 
 use criterion::{Benchmark, Criterion};
 use fuchsia_criterion::FuchsiaCriterion;
+use selinux::policy::{AccessVector, KernelAccessDecision};
+use selinux::{AccessQueryArgs, ConcurrentAccessCache, KernelClass, SecurityId};
+use std::num::NonZeroU32;
 use std::time::Duration;
 
 const POLICY_BYTES: &[u8] =
@@ -15,7 +18,7 @@ fn load_policy_bench() -> Benchmark {
     Benchmark::new("load_policy", move |b| {
         b.iter(|| {
             let server = selinux::SecurityServer::new_default();
-            let _ = server.load_policy(POLICY_BYTES.to_vec());
+            let _ = criterion::black_box(server.load_policy(POLICY_BYTES.to_vec()));
         })
     })
 }
@@ -30,7 +33,9 @@ fn security_context_to_sid_bench(
     let server_clone = server.clone();
     Benchmark::new(format!("security_context_to_sid_{}", name_suffix), move |b| {
         b.iter(|| {
-            let _ = server_clone.security_context_to_sid(context_bytes.into()).unwrap();
+            let _ = criterion::black_box(
+                server_clone.security_context_to_sid(context_bytes.into()).unwrap(),
+            );
         })
     })
 }
@@ -46,7 +51,7 @@ fn sid_to_security_context_bench(
     let server_clone = server.clone();
     Benchmark::new(format!("sid_to_security_context_{}", name_suffix), move |b| {
         b.iter(|| {
-            let _ = server_clone.sid_to_security_context(sid).unwrap();
+            let _ = criterion::black_box(server_clone.sid_to_security_context(sid).unwrap());
         })
     })
 }
@@ -63,7 +68,38 @@ fn compute_access_decision_bench(
     let server_clone = server.clone();
     Benchmark::new(format!("compute_access_decision_{}", name_suffix), move |b| {
         b.iter(|| {
-            let _ = server_clone.compute_access_decision_raw(sid, sid, class_id);
+            let _ =
+                criterion::black_box(server_clone.compute_access_decision_raw(sid, sid, class_id));
+        })
+    })
+}
+
+fn concurrent_access_cache_get_bench() -> Benchmark {
+    let cache = ConcurrentAccessCache::new(selinux::DEFAULT_SHARED_SIZE.access_cache_capacity);
+    let value = KernelAccessDecision {
+        allow: AccessVector::ALL,
+        audit: AccessVector::NONE,
+        flags: 0,
+        todo_bug: None,
+    };
+
+    let keys: Vec<_> = (1..=1000)
+        .map(|i| AccessQueryArgs {
+            source_sid: SecurityId(NonZeroU32::new(i).unwrap()),
+            target_sid: SecurityId(NonZeroU32::new(i + 1).unwrap()),
+            target_class: KernelClass::Process,
+        })
+        .collect();
+
+    for key in &keys {
+        let _ = cache.get_or_try_insert::<()>(key, || Ok(value));
+    }
+
+    Benchmark::new("concurrent_access_cache_get", move |b| {
+        b.iter(|| {
+            for key in &keys {
+                let _ = criterion::black_box(cache.get_or_try_insert::<()>(key, || Ok(value)));
+            }
         })
     })
 }
@@ -108,4 +144,5 @@ fn main() {
         "fuchsia.sestarnix",
         compute_access_decision_bench("c0_c255", b"u:r:kernel:s0:c0.c255"),
     );
+    c.bench("fuchsia.sestarnix", concurrent_access_cache_get_bench());
 }
