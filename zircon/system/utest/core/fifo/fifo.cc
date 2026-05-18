@@ -454,4 +454,34 @@ TEST(FifoTest, WriteNoWriteRights) {
                 ZX_ERR_ACCESS_DENIED);
 }
 
+TEST(FifoTest, CreateZeroSize) {
+  zx::fifo fifo_a, fifo_b;
+  EXPECT_STATUS(zx::fifo::create(0, kElementSize, 0, &fifo_a, &fifo_b), ZX_ERR_OUT_OF_RANGE);
+  EXPECT_STATUS(zx::fifo::create(8, 0, 0, &fifo_a, &fifo_b), ZX_ERR_OUT_OF_RANGE);
+}
+
+TEST(FifoTest, CreateMaxBufferBoundary) {
+  zx::fifo fifo_a, fifo_b;
+  // Exact maximum size (4096 bytes)
+  EXPECT_OK(zx::fifo::create(512, 8, 0, &fifo_a, &fifo_b));
+
+  // Over maximum size (4104 bytes)
+  EXPECT_STATUS(zx::fifo::create(513, 8, 0, &fifo_a, &fifo_b), ZX_ERR_OUT_OF_RANGE);
+
+  // Over maximum size (4608 bytes)
+  EXPECT_STATUS(zx::fifo::create(512, 9, 0, &fifo_a, &fifo_b), ZX_ERR_OUT_OF_RANGE);
+}
+
+TEST(FifoTest, ReadWriteNullActualCount) {
+  zx::fifo fifo_a, fifo_b;
+  ASSERT_OK(zx::fifo::create(8, kElementSize, 0, &fifo_a, &fifo_b));
+
+  ElementType expected_element = 1234;
+  ASSERT_OK(fifo_a.write(kElementSize, &expected_element, 1, nullptr));
+
+  ElementType actual_element = 0;
+  ASSERT_OK(fifo_b.read(kElementSize, &actual_element, 1, nullptr));
+  EXPECT_EQ(actual_element, 1234u);
+}
+
 }  // namespace
