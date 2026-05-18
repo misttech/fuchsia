@@ -149,13 +149,13 @@ else
 fi
 
 # TODO(b/360931702): Allow setting the port independent of the IP address.
-# Default the port to 8083 if it is unset.
+# Default the port to 0 (ephemeral) if it is unset.
 if [[ -z "${port}" ]]; then
   port="$(fx-command-run ffx config get repository.server.default_port 2>/dev/null | tr -d '"')"
 fi
-# If it is still not set, just use 8083
+# If it is still not set, just use 0 to allocate a free port dynamically
 if [[ -z "${port}" ]]; then
-  port="8083"
+  port="0"
 fi
 
 # Error out if we can't start a package server.
@@ -167,8 +167,13 @@ fi
 
 if [[ "${no_device}" == "--no-device" ]]; then
   fx-info "Please note that '--no-device' disables automatic device configuration."
-  fx-info "Use 'fx -t DEVICE add-update-source --port ${port}' to reconfigure devices"
-  fx-info "as needed, since it is not persisted accross flashes."
+  if [[ "${port}" == "0" ]]; then
+    fx-info "Use 'ffx repository server list' to discover the dynamically allocated port,"
+    fx-info "then run 'fx -t DEVICE add-update-source --port PORT' to reconfigure devices"
+  else
+    fx-info "Use 'fx -t DEVICE add-update-source --port ${port}' to reconfigure devices"
+  fi
+  fx-info "as needed, since it is not persisted across flashes."
 else
   # Make sure the ssh config is present and has the expected private key
   check-ssh-config
