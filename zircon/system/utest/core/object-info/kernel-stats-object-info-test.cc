@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/core-test-utils.h>
 #include <lib/fit/defer.h>
 #include <lib/maybe-standalone-test/maybe-standalone.h>
 #include <lib/stdcompat/span.h>
@@ -385,6 +386,10 @@ TEST_F(KernelStatsGetInfoTest, CpuStats) {
 }
 
 TEST_F(KernelStatsGetInfoTest, CpuStatsMonotonicValues) {
+  if (std::optional<std::string_view> skip = core_test_utils::SkipBug363254896(); skip) {
+    ZXTEST_SKIP(*skip);
+  }
+
   if (!system_resource_->is_valid()) {
     printf("System resource not available, skipping\n");
     return;

@@ -23,5 +23,7 @@ source_set("object-info") {
     "//zircon/system/ulib/mini-process",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
+    "//zircon/system/utest/core/core-test-utils",
   ]
+  public_deps = [ "//zircon/system/utest/core/core-test-utils" ]
 }
