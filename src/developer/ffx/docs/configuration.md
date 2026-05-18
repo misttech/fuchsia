@@ -10,6 +10,23 @@ Note this document is (for now) manually updated and as such may be out of date.
 
 When updating, please add the value in alphabetical order.
 
+## Configuration Levels and Priority Layers
+
+The `ffx` configuration engine aggregates values across five discrete hierarchical priority levels (domains). When a key is queried, the engine scans these scopes sequentially, and the value found in the highest priority level overrides any values defined in lower levels:
+
+1.  **Runtime Level (`runtime`)**: Set dynamically on a per-invocation basis via host command line overrides flags (e.g. `--config`). This is the highest priority scope.
+2.  **User Level (`user`)**: User-specific configurations stored in the developer's home directory (`~/.fuchsia/config.json`). Applies universally across all active workspaces checkouts for that user.
+3.  **Build Level (`build`)**: Tied explicitly to the active Fuchsia build directory graph. Generated automatically during `fx set/build` loops and treated as read-only by `ffx`.
+4.  **Global Level (`global`)**: System-wide configuration scopes designed for system administrators to apply uniform organizational policies across multiple local users accounts.
+5.  **Default Level (`default`)**: Hard-coded, immutable fallback parameters compiled directly into the `ffx` binary modules and plugin libraries. This is the lowest priority layer.
+
+To inspect the aggregated environment view or see file locations maps, run:
+```posix-terminal
+ffx config env get
+```
+
+## Available Configuration Keys
+
     | Configuration Value                     | Documentation                      |
     | --------------------------------------- | ---------------------------------- |
     | `connectivity.direct`                   | Support direct target connections. |
