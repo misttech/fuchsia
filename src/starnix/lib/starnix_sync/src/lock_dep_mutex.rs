@@ -261,6 +261,12 @@ impl<T, L: crate::LockLevel> LockDepMutex<T, L> {
     }
 }
 
+impl<T: Default, L: crate::LockLevel> Default for LockDepMutex<T, L> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
 pub struct LockDepGuard<'a, T, L> {
     inner: MutexGuard<'a, T>,
     _token: tracking::LockLevelToken<L>,
@@ -307,6 +313,12 @@ impl<T, L: crate::LockLevel> LockDepRwLock<T, L> {
     pub fn write(&self) -> LockDepWriteGuard<'_, T, L> {
         let token = tracking::LockLevelToken::new();
         LockDepWriteGuard { inner: self.inner.write(), _token: token }
+    }
+}
+
+impl<T: Default, L: crate::LockLevel> Default for LockDepRwLock<T, L> {
+    fn default() -> Self {
+        Self::new(T::default())
     }
 }
 
