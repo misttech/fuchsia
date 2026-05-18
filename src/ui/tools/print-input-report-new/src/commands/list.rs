@@ -143,6 +143,7 @@ mod tests {
         DeviceDescriptor, DeviceInformation, InputDeviceRequest, InputDeviceRequestStream,
     };
     use futures::TryStreamExt;
+    use googletest::prelude::*;
     use std::sync::Arc;
 
     async fn handle_input_device_request(
@@ -202,25 +203,32 @@ mod tests {
         vfs::directory::serve_read_only(service_dir)
     }
 
+    #[gtest]
     #[fuchsia::test]
     async fn test_list_devices_to_string_csv() {
         let dir_proxy = setup_fake_service_directory();
 
         let csv_output = list_devices_to_string(&dir_proxy, OutputFormat::Csv).await.unwrap();
         let csv_lines: Vec<&str> = csv_output.lines().collect();
-        assert_eq!(csv_lines.len(), 3);
+        assert_that!(csv_lines, len(eq(3)));
 
         // CSV header
-        assert_eq!(
+        expect_eq!(
             csv_lines[0],
             "Instance,VendorId,ProductId,SerialNumber,ManufacturerName,ProductName"
         );
 
         // CSV rows
-        assert!(csv_lines.contains(&"instance1,0x1234,0x5678,Ser1,Manuf1,Prod1"));
-        assert!(csv_lines.contains(&"instance2,0xaaaa,0xbbbb,Ser2,Manuf2,Prod2"));
+        expect_that!(
+            csv_lines,
+            contains_each![
+                eq(&"instance1,0x1234,0x5678,Ser1,Manuf1,Prod1"),
+                eq(&"instance2,0xaaaa,0xbbbb,Ser2,Manuf2,Prod2"),
+            ]
+        );
     }
 
+    #[gtest]
     #[fuchsia::test]
     async fn test_list_devices_to_string_table() {
         let dir_proxy = setup_fake_service_directory();
@@ -228,16 +236,17 @@ mod tests {
         let table_output = list_devices_to_string(&dir_proxy, OutputFormat::Table).await.unwrap();
 
         let lines: Vec<&str> = table_output.lines().map(|line| line.trim()).collect();
-        assert_eq!(lines.len(), 3);
-        assert_eq!(
+        assert_that!(lines, len(eq(3)));
+        expect_eq!(
             lines[0],
             "Instance  | VendorId | ProductId | SerialNumber | ManufacturerName | ProductName"
         );
-        assert!(lines.contains(
-            &"instance1 | 0x1234   | 0x5678    | Ser1         | Manuf1           | Prod1"
-        ));
-        assert!(lines.contains(
-            &"instance2 | 0xaaaa   | 0xbbbb    | Ser2         | Manuf2           | Prod2"
-        ));
+        expect_that!(
+            lines,
+            contains_each![
+                eq(&"instance1 | 0x1234   | 0x5678    | Ser1         | Manuf1           | Prod1"),
+                eq(&"instance2 | 0xaaaa   | 0xbbbb    | Ser2         | Manuf2           | Prod2"),
+            ]
+        );
     }
 }
