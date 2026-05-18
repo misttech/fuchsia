@@ -259,6 +259,19 @@ impl<T, L: crate::LockLevel> LockDepMutex<T, L> {
         let token = tracking::LockLevelToken::new();
         LockDepGuard { inner: self.inner.lock(), token }
     }
+
+    /// Returns a mutable reference to the underlying data.
+    ///
+    /// Since this call borrows the `LockDepMutex` mutably, no actual locking takes place -- the
+    /// borrow checker statically ensures no other threads have access to the `LockDepMutex`.
+    pub fn get_mut(&mut self) -> &mut T {
+        self.inner.get_mut()
+    }
+
+    /// Consumes the `LockDepMutex`, returning the underlying data.
+    pub fn into_inner(self) -> T {
+        self.inner.into_inner()
+    }
 }
 
 impl<T: Default, L: crate::LockLevel> Default for LockDepMutex<T, L> {
@@ -375,6 +388,19 @@ impl<T: std::fmt::Debug, L> std::fmt::Debug for LockDepRwLock<T, L> {
 impl<T, L: crate::LockLevel> LockDepRwLock<T, L> {
     pub const fn new(value: T) -> Self {
         Self { inner: fuchsia_sync::RwLock::new(value), _level: PhantomData }
+    }
+
+    /// Returns a mutable reference to the underlying data.
+    ///
+    /// Since this call borrows the `LockDepRwLock` mutably, no actual locking takes place -- the
+    /// borrow checker statically ensures no other threads have access to the `LockDepRwLock`.
+    pub fn get_mut(&mut self) -> &mut T {
+        self.inner.get_mut()
+    }
+
+    /// Consumes the `LockDepRwLock`, returning the underlying data.
+    pub fn into_inner(self) -> T {
+        self.inner.into_inner()
     }
 
     #[inline(always)]
