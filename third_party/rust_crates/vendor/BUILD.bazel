@@ -2209,14 +2209,14 @@ alias(
 )
 
 alias(
-    name = "range-alloc-0.1.4",
-    actual = "//third_party/rust_crates/vendor/range-alloc-0.1.4:range_alloc",
+    name = "range-alloc-0.1.5",
+    actual = "//third_party/rust_crates/vendor/range-alloc-0.1.5:range_alloc",
     tags = ["manual"],
 )
 
 alias(
     name = "range-alloc",
-    actual = "//third_party/rust_crates/vendor/range-alloc-0.1.4:range_alloc",
+    actual = "//third_party/rust_crates/vendor/range-alloc-0.1.5:range_alloc",
     tags = ["manual"],
 )
 

@@ -1618,11 +1618,11 @@ group("rand_xorshift-0.4.0") {
 }
 
 group("range-alloc") {
-  public_deps = [ ":range-alloc-v0_1_4" ]
+  public_deps = [ ":range-alloc-v0_1_5" ]
 }
 
-group("range-alloc-0.1.4") {
-  public_deps = [ ":range-alloc-v0_1_4" ]
+group("range-alloc-0.1.5") {
+  public_deps = [ ":range-alloc-v0_1_5" ]
 }
 
 group("rapidhash") {
@@ -16500,18 +16500,18 @@ rustc_library("rand_xoshiro-v0_1_0") {
   applicable_licenses = [ ":rand_xoshiro-v0_1_0.license" ]
 }
 
-license("range-alloc-v0_1_4.license") {
+license("range-alloc-v0_1_5.license") {
   public_package_name = "range_alloc"
   license_files = [
-    "//third_party/rust_crates/vendor/range-alloc-0.1.4/LICENSE.APACHE",
-    "//third_party/rust_crates/vendor/range-alloc-0.1.4/LICENSE.MIT",
+    "//third_party/rust_crates/vendor/range-alloc-0.1.5/LICENSE.APACHE",
+    "//third_party/rust_crates/vendor/range-alloc-0.1.5/LICENSE.MIT",
   ]
 }
 
-rustc_library("range-alloc-v0_1_4") {
+rustc_library("range-alloc-v0_1_5") {
   crate_name = "range_alloc"
-  source_root = "//third_party/rust_crates/vendor/range-alloc-0.1.4/src/lib.rs"
-  output_name = "range_alloc-53a449b11fe0023a"
+  source_root = "//third_party/rust_crates/vendor/range-alloc-0.1.5/src/lib.rs"
+  output_name = "range_alloc-5e54d0671c85af92"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -16523,13 +16523,13 @@ rustc_library("range-alloc-v0_1_4") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=53a449b11fe0023a",
-    "-Cextra-filename=-53a449b11fe0023a",
+    "-Cmetadata=5e54d0671c85af92",
+    "-Cextra-filename=-5e54d0671c85af92",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":range-alloc-v0_1_4.license" ]
+  applicable_licenses = [ ":range-alloc-v0_1_5.license" ]
 }
 
 license("rapidhash-v1_4_0.license") {
