@@ -243,6 +243,12 @@ pub struct LockDepMutex<T, L> {
     _level: PhantomData<L>,
 }
 
+impl<T: std::fmt::Debug, L> std::fmt::Debug for LockDepMutex<T, L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "LockDepMutex({:?}, {})", self.inner, std::any::type_name::<L>())
+    }
+}
+
 impl<T, L: crate::LockLevel> LockDepMutex<T, L> {
     pub const fn new(value: T) -> Self {
         Self { inner: fuchsia_sync::Mutex::new(value), _level: PhantomData }
@@ -278,6 +284,12 @@ impl<'a, T, L> std::ops::DerefMut for LockDepGuard<'a, T, L> {
 pub struct LockDepRwLock<T, L> {
     inner: fuchsia_sync::RwLock<T>,
     _level: PhantomData<L>,
+}
+
+impl<T: std::fmt::Debug, L> std::fmt::Debug for LockDepRwLock<T, L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "LockDepRwLock({:?}, {})", self.inner, std::any::type_name::<L>())
+    }
 }
 
 impl<T, L: crate::LockLevel> LockDepRwLock<T, L> {
