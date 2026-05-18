@@ -425,4 +425,33 @@ TEST(FifoTest, WritePartialBadBuffer) {
                 ZX_ERR_INVALID_ARGS);
 }
 
+TEST(FifoTest, ReadNoReadRights) {
+  zx::fifo fifo_a, fifo_b;
+  ASSERT_OK(zx::fifo::create(8, kElementSize, 0, &fifo_a, &fifo_b));
+
+  zx_info_handle_basic_t info = {};
+  ASSERT_OK(fifo_b.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+
+  zx::fifo reduced_fifo;
+  ASSERT_OK(fifo_b.replace(info.rights & ~ZX_RIGHT_READ, &reduced_fifo));
+
+  ElementType actual_element;
+  EXPECT_STATUS(reduced_fifo.read(kElementSize, &actual_element, 1, nullptr), ZX_ERR_ACCESS_DENIED);
+}
+
+TEST(FifoTest, WriteNoWriteRights) {
+  zx::fifo fifo_a, fifo_b;
+  ASSERT_OK(zx::fifo::create(8, kElementSize, 0, &fifo_a, &fifo_b));
+
+  zx_info_handle_basic_t info = {};
+  ASSERT_OK(fifo_a.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+
+  zx::fifo reduced_fifo;
+  ASSERT_OK(fifo_a.replace(info.rights & ~ZX_RIGHT_WRITE, &reduced_fifo));
+
+  ElementType expected_element = 42;
+  EXPECT_STATUS(reduced_fifo.write(kElementSize, &expected_element, 1, nullptr),
+                ZX_ERR_ACCESS_DENIED);
+}
+
 }  // namespace
