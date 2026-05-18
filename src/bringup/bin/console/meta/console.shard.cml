@@ -298,6 +298,12 @@
             to: "#console-launcher",
         },
         {
+            service: "fuchsia.hardware.temperature.Service",
+            from: "#boot-drivers",
+            to: "#console-launcher",
+            availability: "optional",
+        },
+        {
             service: "fuchsia.hardware.trippoint.DebugService",
             from: "#boot-drivers",
             to: "#console-launcher",

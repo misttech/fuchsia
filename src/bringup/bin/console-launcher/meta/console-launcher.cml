@@ -246,6 +246,10 @@
             availability: "optional",
         },
         {
+            service: "fuchsia.hardware.temperature.Service",
+            availability: "optional",
+        },
+        {
             service: "fuchsia.hardware.trippoint.DebugService",
             availability: "optional",
         },
