@@ -201,12 +201,15 @@ fn get_log_dirs(ctx: &Option<EnvironmentContext>) -> Result<Vec<String>, LibErro
 /// Print out useful hints about where important log information might be found after an error.
 pub fn print_log_hint<W: std::io::Write>(ctx: &Option<EnvironmentContext>, writer: &mut W) {
     let msg = match get_log_dirs(ctx) {
+        Ok(log_dirs) if log_dirs.is_empty() => {
+            "More information may be available in ffx host logs, but no configured log directory locations were discovered.".to_string()
+        }
         Ok(log_dirs) if log_dirs.len() == 1 => format!(
-            "More information may be available in ffx host logs in directory:\n    {}",
-            log_dirs[0]
+            "More information may be available in ffx host logs (ffx.log) in directory:\n    {}\nTo inspect, run: tail -f \"{}/ffx.log\"",
+            log_dirs[0], log_dirs[0]
         ),
         Ok(log_dirs) => format!(
-            "More information may be available in ffx host logs in directories:\n    {}",
+            "More information may be available in ffx host logs (ffx.log) in directories:\n    {}\nTo inspect, examine the ffx.log file within those paths.",
             log_dirs.join("\n    ")
         ),
         Err(err) => format!(

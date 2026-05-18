@@ -36,7 +36,9 @@ Error: Attempted to find protocol marker fuchsia.debugger.Launcher at '/toolbox'
 
 Make sure the target is connected and otherwise functioning, and that it is configured to provide capabilities over the network to host tools.
     1.  This service dependency exists but connecting to it failed with error CapabilityConnectFailed. Moniker: /core/debugger. Capability name: fuchsia.debugger.Launcher
-More information may be available in ffx host logs in directory:
+More information may be available in ffx host logs (ffx.log) in directory:
+    <directory>
+To inspect, run: tail -f "<directory>/ffx.log"
 ```
 
 If you see this type of error, make sure that `fx serve` is running in a
