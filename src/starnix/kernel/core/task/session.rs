@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use macro_rules_attribute::apply;
-use starnix_sync::RwLock;
+use starnix_sync::{LockBefore, Locked, ProcessGroupState, RwLock};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 
@@ -11,6 +11,7 @@ use crate::device::terminal::Terminal;
 use crate::mutable_state::{state_accessor, state_implementation};
 use crate::task::ProcessGroup;
 use starnix_uapi::pid_t;
+use starnix_uapi::signals::{SIGCONT, SIGHUP};
 
 #[derive(Debug)]
 pub struct SessionMutableState {
@@ -67,6 +68,39 @@ impl Session {
                 controlling_terminal: None,
             }),
         })
+    }
+
+    /// Disassociates the controlling terminal from the session.
+    pub fn disassociate_controlling_terminal<L>(&self, locked: &mut Locked<L>)
+    where
+        L: LockBefore<ProcessGroupState>,
+    {
+        // Read the controlling terminal. We must drop the read lock on the session
+        // before acquiring the write lock on the terminal to respect the lock ordering
+        // (Terminal before Session).
+        let controlling_terminal = {
+            let session_reader = self.read();
+            session_reader.controlling_terminal.clone()
+        };
+
+        if let Some(ct) = controlling_terminal {
+            let mut terminal_state = ct.terminal.write();
+            let mut session_writer = self.write();
+
+            // Verify it is still the same terminal
+            if session_writer
+                .controlling_terminal
+                .as_ref()
+                .map_or(false, |current_ct| current_ct.matches(&ct.terminal, ct.is_main))
+            {
+                session_writer.controlling_terminal = None;
+                terminal_state.controller = None;
+
+                if let Some(pg) = session_writer.get_foreground_process_group() {
+                    pg.send_signals(locked, &[SIGHUP, SIGCONT]);
+                }
+            }
+        }
     }
 
     state_accessor!(Session, mutable_state);

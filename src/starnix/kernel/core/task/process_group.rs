@@ -104,7 +104,18 @@ impl ProcessGroup {
     where
         L: LockBefore<ProcessGroupState>,
     {
-        self.write(locked).remove(thread_group)
+        let is_session_leader = self.session.leader == thread_group.leader;
+        let is_empty = self.write(locked).remove(thread_group);
+        if is_session_leader {
+            // If the exiting thread group is the session leader, disassociate the controlling
+            // terminal. This must be called after `remove` drops the ProcessGroup write lock to
+            // prevent deadlock. Calling it after `remove` also ensures that the exiting thread
+            // group is no longer in the process group when we attempt to send SIGHUP/SIGCONT to the
+            // foreground process group, avoiding a self-deadlock where the exiting thread group
+            // attempts to write-lock itself.
+            self.session.disassociate_controlling_terminal(locked);
+        }
+        is_empty
     }
 
     pub fn send_signals<L>(&self, locked: &mut Locked<L>, signals: &[Signal])
