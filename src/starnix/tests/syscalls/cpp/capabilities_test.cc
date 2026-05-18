@@ -24,6 +24,7 @@
 
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
@@ -765,5 +766,22 @@ TEST_F(CapsExecTest, NonRootUserExecutingNonSUIDProgram) {
     EXPECT_EQ(capabilities[cap_num].inheritable, expected_caps[test_case].inheritable);
     EXPECT_EQ(capabilities[cap_num].bounding, expected_caps[test_case].bounding);
     EXPECT_EQ(capabilities[cap_num].ambient, expected_caps[test_case].ambient);
+  }
+}
+
+TEST_F(CapsExecTest, SecurebitNoRootDropsCapabilitiesOnExec) {
+  std::vector<capability_t> capabilities;
+
+  ASSERT_TRUE(RunPrintCapabilities(
+      [&]() {
+        SAFE_SYSCALL(setresuid(kRootUid, kRootUid, kRootUid));
+        SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, SECBIT_NOROOT));
+        ASSERT_EQ(SAFE_SYSCALL(prctl(PR_GET_SECUREBITS)), SECBIT_NOROOT);
+      },
+      capabilities));
+
+  for (int cap = 0; cap <= cap_last_cap_; cap++) {
+    EXPECT_EQ(capabilities[cap].effective, 0);
+    EXPECT_EQ(capabilities[cap].permitted, 0);
   }
 }

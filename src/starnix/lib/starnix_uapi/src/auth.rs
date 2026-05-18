@@ -495,16 +495,17 @@ impl Credentials {
         //  then the file inheritable and permitted sets are ignored;
         //  instead they are notionally considered to be all ones (i.e.,
         //  all capabilities enabled).
-        let (file_permitted, file_inheritable) = if self.uid == 0 || self.euid == 0 {
-            (Capabilities::all(), Capabilities::all())
-        } else {
-            (Capabilities::empty(), Capabilities::empty())
-        };
+        let (file_permitted, file_inheritable) =
+            if (self.uid == 0 || self.euid == 0) && !self.securebits.contains(SecureBits::NOROOT) {
+                (Capabilities::all(), Capabilities::all())
+            } else {
+                (Capabilities::empty(), Capabilities::empty())
+            };
 
         // (2)  If the effective user ID of the process is 0 (root) or the
         //  file effective bit is in fact enabled, then the file
         //  effective bit is notionally defined to be one (enabled).
-        let file_effective = self.euid == 0;
+        let file_effective = self.euid == 0 && !self.securebits.contains(SecureBits::NOROOT);
 
         // TODO(https://fxbug.dev/328629782): File capabilities are honored for set-user-ID-root
         // binaries with capabilities executed by non-root users. See "Set-user-ID-root programs
