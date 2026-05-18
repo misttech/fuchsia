@@ -184,12 +184,23 @@ source_set("android") {
   deps = [ "//zircon/third_party/ulib/cksum" ]
 }
 
+source_set("iris") {
+  sources = [ "iris.cc" ]
+  public_deps = [
+    ":gpt",
+    ":paver-core",
+    "//src/lib/uuid",
+    "//zircon/system/ulib/hwreg",
+  ]
+}
+
 # Glob together all paver implementations into a single library until we can compose ZBI via
 # packages.
 source_set("paver") {
   public_deps = [
     ":android",
     ":astro",
+    ":iris",
     ":luis",
     ":moonflower",
     ":nelson",

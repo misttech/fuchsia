@@ -21,6 +21,7 @@
 #if defined(LEGACY_PAVER)
 #include "src/firmware/paver/android.h"
 #include "src/firmware/paver/astro.h"
+#include "src/firmware/paver/iris.h"
 #include "src/firmware/paver/luis.h"
 #include "src/firmware/paver/moonflower.h"
 #include "src/firmware/paver/nelson.h"
@@ -43,6 +44,8 @@
 #include "src/firmware/paver/uefi.h"
 #elif defined(android)
 #include "src/firmware/paver/android.h"
+#elif defined(iris)
+#include "src/firmware/paver/iris.h"
 #endif
 
 class LifecycleServer final : public fidl::WireServer<fuchsia_process_lifecycle::Lifecycle> {
@@ -108,6 +111,7 @@ int main(int argc, char** argv) {
   paver::DevicePartitionerFactory::Register(std::make_unique<paver::LuisPartitionerFactory>());
   paver::DevicePartitionerFactory::Register(std::make_unique<paver::Vim3PartitionerFactory>());
   paver::DevicePartitionerFactory::Register(std::make_unique<paver::UefiPartitionerFactory>());
+  paver::DevicePartitionerFactory::Register(std::make_unique<paver::IrisPartitionerFactory>());
   paver::DevicePartitionerFactory::Register(std::make_unique<paver::AndroidPartitionerFactory>());
   paver::DevicePartitionerFactory::Register(std::make_unique<paver::DefaultPartitionerFactory>());
 #elif defined(astro)
@@ -127,6 +131,8 @@ int main(int argc, char** argv) {
   paver::DevicePartitionerFactory::Register(std::make_unique<paver::UefiPartitionerFactory>());
 #elif defined(android)
   paver::DevicePartitionerFactory::Register(std::make_unique<paver::AndroidPartitionerFactory>());
+#elif defined(iris)
+  paver::DevicePartitionerFactory::Register(std::make_unique<paver::IrisPartitionerFactory>());
 #else
   paver::DevicePartitionerFactory::Register(std::make_unique<paver::DefaultPartitionerFactory>());
 #endif

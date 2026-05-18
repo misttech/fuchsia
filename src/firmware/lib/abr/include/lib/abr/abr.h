@@ -211,6 +211,16 @@ AbrResult AbrGetAndClearOneShotFlags(const AbrOps* abr_ops, AbrDataOneShotFlags*
  */
 uint8_t AbrGetNormalizedPriority(const AbrSlotData* slot_data);
 
+/* Returns the active boot slot index based on the provided slot boot metadata.
+ *
+ * Compares the normalized boot priorities of slot A and slot B. If the priority
+ * of slot B is strictly greater than the priority of slot A, returns `kAbrSlotIndexB`.
+ * If slot A's normalized priority is greater than or equal to slot B's, returns
+ * `kAbrSlotIndexA`. Returns `kAbrSlotIndexR` (recovery) if both slots are unbootable
+ * (having a normalized priority of 0).
+ */
+AbrSlotIndex AbrGetActiveSlotFromData(const AbrSlotData* data_a, const AbrSlotData* data_b);
+
 #ifdef __cplusplus
 }
 #endif

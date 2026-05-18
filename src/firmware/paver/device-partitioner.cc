@@ -216,7 +216,7 @@ zx::result<std::unique_ptr<PartitionClient>> FixedDevicePartitioner::FindPartiti
   // OK to assert; supported types all have a type GUID
   ZX_ASSERT(type);
 
-  zx::result partition = OpenBlockPartition(devices_, std::nullopt, type, ZX_SEC(5));
+  zx::result partition = OpenBlockPartition(devices_, std::nullopt, type, std::nullopt, ZX_SEC(5));
   if (partition.is_error()) {
     return partition.take_error();
   }

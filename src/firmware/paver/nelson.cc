@@ -73,8 +73,8 @@ bool NelsonPartitioner::SupportsPartition(const PartitionSpec& spec) const {
 }
 
 zx::result<std::unique_ptr<PartitionClient>> NelsonPartitioner::GetEmmcBootPartitionClient() const {
-  auto boot0_part =
-      OpenBlockPartition(non_gpt_devices_, std::nullopt, Uuid(GUID_EMMC_BOOT1_VALUE), ZX_SEC(5));
+  auto boot0_part = OpenBlockPartition(non_gpt_devices_, std::nullopt, Uuid(GUID_EMMC_BOOT1_VALUE),
+                                       std::nullopt, ZX_SEC(5));
   if (boot0_part.is_error()) {
     return boot0_part.take_error();
   }
@@ -83,8 +83,8 @@ zx::result<std::unique_ptr<PartitionClient>> NelsonPartitioner::GetEmmcBootParti
     return boot0.take_error();
   }
 
-  auto boot1_part =
-      OpenBlockPartition(non_gpt_devices_, std::nullopt, Uuid(GUID_EMMC_BOOT2_VALUE), ZX_SEC(5));
+  auto boot1_part = OpenBlockPartition(non_gpt_devices_, std::nullopt, Uuid(GUID_EMMC_BOOT2_VALUE),
+                                       std::nullopt, ZX_SEC(5));
   if (boot1_part.is_error()) {
     return boot1_part.take_error();
   }

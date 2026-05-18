@@ -80,9 +80,9 @@ uint8_t AbrGetNormalizedPriority(const AbrSlotData* slot) {
   return is_slot_bootable(slot) ? slot->priority : 0;
 }
 
-static AbrSlotIndex get_active_slot(const AbrData* abr_data) {
-  uint8_t priority_a = AbrGetNormalizedPriority(&abr_data->slot_data[kAbrSlotIndexA]);
-  uint8_t priority_b = AbrGetNormalizedPriority(&abr_data->slot_data[kAbrSlotIndexB]);
+AbrSlotIndex AbrGetActiveSlotFromData(const AbrSlotData* data_a, const AbrSlotData* data_b) {
+  uint8_t priority_a = AbrGetNormalizedPriority(data_a);
+  uint8_t priority_b = AbrGetNormalizedPriority(data_b);
   // zero priority means unbootable.
   if (priority_b > priority_a) {
     return kAbrSlotIndexB;
@@ -90,6 +90,11 @@ static AbrSlotIndex get_active_slot(const AbrData* abr_data) {
     return kAbrSlotIndexA;
   }
   return kAbrSlotIndexR;
+}
+
+static AbrSlotIndex get_active_slot(const AbrData* abr_data) {
+  return AbrGetActiveSlotFromData(&abr_data->slot_data[kAbrSlotIndexA],
+                                  &abr_data->slot_data[kAbrSlotIndexB]);
 }
 
 static bool is_slot_active(const AbrData* abr_data, AbrSlotIndex slot_index) {

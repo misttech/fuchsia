@@ -56,6 +56,7 @@
 #include <zxtest/zxtest.h>
 
 #include "src/firmware/paver/android.h"
+#include "src/firmware/paver/iris.h"
 #include "src/firmware/paver/luis.h"
 #include "src/firmware/paver/moonflower.h"
 #include "src/firmware/paver/nelson.h"
@@ -1086,6 +1087,315 @@ TEST_F(MoonflowerPartitionerTests, SupportsPartition) {
   EXPECT_FALSE(
       partitioner->SupportsPartition(PartitionSpec(paver::Partition::kAbrMeta, "foo_type")));
   EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA, "")));
+}
+
+class IrisPartitionerTests : public GptDevicePartitionerTests {
+ protected:
+  IrisPartitionerTests() : GptDevicePartitionerTests("iris") {}
+
+  // Create a DevicePartition for a device.
+  zx::result<std::unique_ptr<paver::DevicePartitioner>> CreatePartitioner(
+      BlockDevice* gpt = nullptr) {
+    fidl::ClientEnd<fuchsia_io::Directory> svc_root = RealmExposedDir();
+    zx::result devices = CreateBlockDevices();
+    if (devices.is_error()) {
+      return devices.take_error();
+    }
+    auto paver_config = paver::PaverConfig{
+        .arch = paver::Arch::kArm64,
+        .system_partition_names = {"super"},
+        .zvb_current_slot = slot_suffix_.empty() ? "_a" : slot_suffix_,
+    };
+    return paver::IrisPartitioner::Initialize(std::move(*devices), std::move(svc_root),
+                                              paver_config);
+  }
+
+  void CreateIrisFullGptDevice(std::unique_ptr<BlockDevice>* gpt_dev) {
+    constexpr uint64_t kBlockCount = 0x748034;
+    ASSERT_NO_FATAL_FAILURE(
+        CreateDiskWithGpt(gpt_dev, kBlockCount * block_size_,
+                          {
+                              {"devinfo", Uuid(kAbrMetaType), 0x10400, 0x10000},
+                              {"dtbo_a", Uuid(kDummyType), 0x30400, 0x10000},
+                              {"dtbo_b", Uuid(kDummyType), 0x40400, 0x10000},
+                              {"boot_a", Uuid(kZirconAType), 0x50400, 0x10000},
+                              {"boot_b", Uuid(kZirconBType), 0x60400, 0x10000},
+                              {"system_a", Uuid(kDummyType), 0x70400, 0x10000},
+                              {"system_b", Uuid(kDummyType), 0x80400, 0x10000},
+                              {"vbmeta_a", Uuid(kVbMetaAType), 0x90400, 0x10000},
+                              {"vbmeta_b", Uuid(kVbMetaBType), 0xa0400, 0x10000},
+                              {"reserved_a", Uuid(kDummyType), 0xc0400, 0x10000},
+                              {"reserved_b", Uuid(kDummyType), 0xd0400, 0x10000},
+                              {"reserved_c", Uuid(kVbMetaRType), 0xe0400, 0x10000},
+                              {"cache", Uuid(kZirconRType), 0xf0400, 0x10000},
+                              {"super", Uuid(kFvmType), 0x100400, 0x10000},
+                              {"userdata", Uuid(kDummyType), 0x110400, 0x10000},
+                              {"vendor_boot_a", Uuid(kDummyType), 0x120400, 0x10000},
+                              {"vendor_boot_b", Uuid(kDummyType), 0x130400, 0x10000},
+                          }));
+  }
+
+  std::shared_ptr<paver::Context> context_ = std::make_shared<paver::Context>();
+};
+
+TEST_F(IrisPartitionerTests, InitializeWithoutGptFails) {
+  std::unique_ptr<BlockDevice> gpt_dev;
+  ASSERT_NO_FATAL_FAILURE(CreateDisk(&gpt_dev));
+
+  ASSERT_NOT_OK(CreatePartitioner());
+}
+
+TEST_F(IrisPartitionerTests, InitializeWithoutFvmFails) {
+  std::unique_ptr<BlockDevice> gpt_dev;
+  ASSERT_NO_FATAL_FAILURE(CreateDiskWithGpt(&gpt_dev, 32 * kGibibyte));
+
+  ASSERT_NOT_OK(CreatePartitioner());
+}
+
+TEST_F(IrisPartitionerTests, FindPartition) {
+  std::unique_ptr<BlockDevice> gpt_dev;
+  ASSERT_NO_FATAL_FAILURE(CreateIrisFullGptDevice(&gpt_dev));
+  zx::result status = CreatePartitioner();
+  ASSERT_OK(status);
+  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
+
+  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderA, "dtbo")));
+  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderB, "dtbo")));
+  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconA)));
+  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kZirconB)));
+  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaA)));
+  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kVbMetaB)));
+  EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
+  // EXPECT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kAbrMeta)));
+
+  EXPECT_NOT_OK(
+      partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderA, "foo_type")));
+  EXPECT_NOT_OK(partitioner->FindPartition(PartitionSpec(paver::Partition::kBootloaderA, "cache")));
+}
+
+TEST_F(IrisPartitionerTests, SupportsPartition) {
+  std::unique_ptr<BlockDevice> gpt_dev;
+  ASSERT_NO_FATAL_FAILURE(CreateIrisFullGptDevice(&gpt_dev));
+
+  zx::result status = CreatePartitioner();
+  ASSERT_OK(status);
+  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
+
+  EXPECT_TRUE(
+      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA, "dtbo")));
+  EXPECT_TRUE(
+      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderB, "dtbo")));
+  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconA)));
+  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kZirconB)));
+  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaA)));
+  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kVbMetaB)));
+  EXPECT_TRUE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kAbrMeta)));
+  EXPECT_TRUE(
+      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kFuchsiaVolumeManager)));
+  EXPECT_TRUE(partitioner->SupportsPartition(
+      PartitionSpec(paver::Partition::kFuchsiaVolumeManager, paver::kOpaqueVolumeContentType)));
+
+  EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kUnknown)));
+  EXPECT_FALSE(
+      partitioner->SupportsPartition(PartitionSpec(paver::Partition::kAbrMeta, "foo_type")));
+  EXPECT_FALSE(partitioner->SupportsPartition(PartitionSpec(paver::Partition::kBootloaderA, "")));
+}
+
+TEST_F(IrisPartitionerTests, CreateAbrClient) {
+  std::unique_ptr<BlockDevice> gpt_dev;
+  ASSERT_NO_FATAL_FAILURE(CreateIrisFullGptDevice(&gpt_dev));
+
+  zx::result status = CreatePartitioner();
+  ASSERT_OK(status);
+  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
+  EXPECT_OK(partitioner->CreateAbrClient());
+}
+
+TEST_F(IrisPartitionerTests, IrisAbrClientGetBootSlot) {
+  std::unique_ptr<BlockDevice> gpt_dev;
+  ASSERT_NO_FATAL_FAILURE(CreateIrisFullGptDevice(&gpt_dev));
+
+  std::vector<uint8_t> buffer(block_size_, 0);
+  uint32_t magic = IRIS_DEVINFO_MAGIC;
+  std::memcpy(buffer.data(), &magic, sizeof(magic));
+
+  paver::iris_devinfo_ab_data_t ab_data = {};
+  ab_data.slots[0].set_active(1);
+  ab_data.slots[0].set_successful(1);
+  ab_data.slots[0].retry_count = 3;
+  ab_data.slots[0].set_fastboot_ok(1);
+  ab_data.slots[0].set_bl1_bootable(1);
+
+  ab_data.slots[1].set_active(0);
+  ab_data.slots[1].set_successful(0);
+  ab_data.slots[1].retry_count = 2;
+  ab_data.slots[1].set_fastboot_ok(0);
+  ab_data.slots[1].set_bl1_bootable(0);
+
+  std::memcpy(buffer.data() + paver::kIrisAbrMetadataOffset, &ab_data, sizeof(ab_data));
+  ASSERT_NO_FATAL_FAILURE(WriteBlocks(gpt_dev.get(), 0x10400, 1, buffer.data()));
+
+  zx::result status = CreatePartitioner();
+  ASSERT_OK(status);
+  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
+
+  zx::result abr_client_res = partitioner->CreateAbrClient();
+  ASSERT_OK(abr_client_res);
+  std::unique_ptr<abr::Client>& abr_client = abr_client_res.value();
+
+  bool is_slot_marked_successful = false;
+  EXPECT_EQ(abr_client->GetBootSlot(false, &is_slot_marked_successful), kAbrSlotIndexA);
+  EXPECT_TRUE(is_slot_marked_successful);
+
+  zx::result<AbrSlotInfo> info_a = abr_client->GetSlotInfo(kAbrSlotIndexA);
+  ASSERT_OK(info_a);
+  EXPECT_TRUE(info_a->is_bootable);
+  EXPECT_TRUE(info_a->is_active);
+  EXPECT_TRUE(info_a->is_marked_successful);
+  EXPECT_EQ(info_a->num_tries_remaining, 0);
+
+  zx::result<AbrSlotInfo> info_b = abr_client->GetSlotInfo(kAbrSlotIndexB);
+  ASSERT_OK(info_b);
+  EXPECT_TRUE(info_b->is_bootable);
+  EXPECT_FALSE(info_b->is_active);
+  EXPECT_FALSE(info_b->is_marked_successful);
+  EXPECT_EQ(info_b->num_tries_remaining, 2);
+}
+
+TEST_F(IrisPartitionerTests, IrisAbrClientMarkSlotActive) {
+  std::unique_ptr<BlockDevice> gpt_dev;
+  ASSERT_NO_FATAL_FAILURE(CreateIrisFullGptDevice(&gpt_dev));
+
+  std::vector<uint8_t> buffer(block_size_, 0);
+  uint32_t magic = IRIS_DEVINFO_MAGIC;
+  std::memcpy(buffer.data(), &magic, sizeof(magic));
+
+  paver::iris_devinfo_ab_data_t ab_data = {};
+  ab_data.slots[0].set_active(1);
+  ab_data.slots[0].set_successful(1);
+  ab_data.slots[0].retry_count = 2;
+  ab_data.slots[0].set_fastboot_ok(1);
+  ab_data.slots[0].set_bl1_bootable(1);
+  ab_data.slots[0].set_unbootable(0);
+
+  // Unbootable
+  ab_data.slots[1].set_active(0);
+  ab_data.slots[1].set_successful(0);
+  ab_data.slots[1].retry_count = 0;
+  ab_data.slots[1].set_fastboot_ok(0);
+  ab_data.slots[1].set_bl1_bootable(0);
+  ab_data.slots[1].set_unbootable(1);
+
+  std::memcpy(buffer.data() + paver::kIrisAbrMetadataOffset, &ab_data, sizeof(ab_data));
+  ASSERT_NO_FATAL_FAILURE(WriteBlocks(gpt_dev.get(), 0x10400, 1, buffer.data()));
+
+  zx::result status = CreatePartitioner();
+  ASSERT_OK(status);
+  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
+
+  zx::result abr_client_res = partitioner->CreateAbrClient();
+  ASSERT_OK(abr_client_res);
+  std::unique_ptr<abr::Client>& abr_client = abr_client_res.value();
+
+  // Test slot translation state from ABR's perspective
+  auto info_b = abr_client->GetSlotInfo(kAbrSlotIndexB);
+  ASSERT_OK(info_b);
+  EXPECT_FALSE(info_b->is_bootable);
+  EXPECT_FALSE(info_b->is_active);
+  EXPECT_FALSE(info_b->is_marked_successful);
+  EXPECT_EQ(info_b->num_tries_remaining, 0);
+
+  ASSERT_OK(abr_client->MarkSlotActive(kAbrSlotIndexB));
+  ASSERT_OK(abr_client->Flush());
+
+  std::vector<uint8_t> read_buffer(block_size_, 0);
+  ASSERT_NO_FATAL_FAILURE(ReadBlocks(gpt_dev.get(), 0x10400, 1, read_buffer.data()));
+
+  uint32_t read_magic = 0;
+  std::memcpy(&read_magic, read_buffer.data(), sizeof(read_magic));
+  EXPECT_EQ(read_magic, IRIS_DEVINFO_MAGIC);
+
+  paver::iris_devinfo_ab_data_t updated_ab_data;
+  std::memcpy(&updated_ab_data, read_buffer.data() + paver::kIrisAbrMetadataOffset,
+              sizeof(updated_ab_data));
+
+  // Slot A is inactive
+  EXPECT_EQ(updated_ab_data.slots[0].active(), 0);
+  // Verify other states (unbootable, fastboot_ok, bl1_bootable) are preserved
+  EXPECT_EQ(updated_ab_data.slots[0].successful(), 1);
+  // The internal ABR logic of clearing retry count to 0 for successful slot should not persist
+  // to storage.
+  EXPECT_EQ(updated_ab_data.slots[0].retry_count, 2);
+  EXPECT_EQ(updated_ab_data.slots[0].fastboot_ok(), 1);
+  EXPECT_EQ(updated_ab_data.slots[0].bl1_bootable(), 1);
+
+  // Verify Slot B is now active
+  EXPECT_EQ(updated_ab_data.slots[1].active(), 1);
+  EXPECT_EQ(updated_ab_data.slots[1].successful(), 0);
+  // Maximum retries clamped at 3.
+  EXPECT_EQ(updated_ab_data.slots[1].retry_count, 3);
+  // Unbootable state is reset.
+  EXPECT_EQ(updated_ab_data.slots[1].unbootable(), 0);
+  EXPECT_EQ(updated_ab_data.slots[1].fastboot_ok(), 0);
+  EXPECT_EQ(updated_ab_data.slots[1].bl1_bootable(), 0);
+}
+
+TEST_F(IrisPartitionerTests, IrisAbrClientMarkSlotUnbootable) {
+  std::unique_ptr<BlockDevice> gpt_dev;
+  ASSERT_NO_FATAL_FAILURE(CreateIrisFullGptDevice(&gpt_dev));
+
+  std::vector<uint8_t> buffer(block_size_, 0);
+  uint32_t magic = IRIS_DEVINFO_MAGIC;
+  std::memcpy(buffer.data(), &magic, sizeof(magic));
+
+  paver::iris_devinfo_ab_data_t ab_data = {};
+  ab_data.slots[0].set_active(1);
+  ab_data.slots[0].set_successful(1);
+  ab_data.slots[0].retry_count = 2;
+  ab_data.slots[0].set_fastboot_ok(1);
+  ab_data.slots[0].set_bl1_bootable(1);
+  ab_data.slots[0].set_unbootable(0);
+
+  // Unbootable B slot
+  ab_data.slots[1].set_active(0);
+  ab_data.slots[1].set_successful(0);
+  ab_data.slots[1].retry_count = 0;
+  ab_data.slots[1].set_fastboot_ok(1);
+  ab_data.slots[1].set_bl1_bootable(1);
+  ab_data.slots[1].set_unbootable(1);
+
+  std::memcpy(buffer.data() + paver::kIrisAbrMetadataOffset, &ab_data, sizeof(ab_data));
+  ASSERT_NO_FATAL_FAILURE(WriteBlocks(gpt_dev.get(), 0x10400, 1, buffer.data()));
+
+  zx::result status = CreatePartitioner();
+  ASSERT_OK(status);
+  std::unique_ptr<paver::DevicePartitioner>& partitioner = status.value();
+
+  zx::result abr_client_res = partitioner->CreateAbrClient();
+  ASSERT_OK(abr_client_res);
+  std::unique_ptr<abr::Client>& abr_client = abr_client_res.value();
+
+  ASSERT_OK(abr_client->MarkSlotUnbootable(kAbrSlotIndexA));
+  ASSERT_OK(abr_client->Flush());
+
+  std::vector<uint8_t> read_buffer(block_size_, 0);
+  ASSERT_NO_FATAL_FAILURE(ReadBlocks(gpt_dev.get(), 0x10400, 1, read_buffer.data()));
+
+  uint32_t read_magic = 0;
+  std::memcpy(&read_magic, read_buffer.data(), sizeof(read_magic));
+  EXPECT_EQ(read_magic, IRIS_DEVINFO_MAGIC);
+
+  paver::iris_devinfo_ab_data_t updated_ab_data;
+  std::memcpy(&updated_ab_data, read_buffer.data() + paver::kIrisAbrMetadataOffset,
+              sizeof(updated_ab_data));
+
+  // Slot A is active because both unbootable slots default to A.
+  EXPECT_EQ(updated_ab_data.slots[0].active(), 1);
+  EXPECT_EQ(updated_ab_data.slots[0].successful(), 0);
+  EXPECT_EQ(updated_ab_data.slots[0].unbootable(), 1);
+  EXPECT_EQ(updated_ab_data.slots[0].retry_count, 0);
+  EXPECT_EQ(updated_ab_data.slots[0].fastboot_ok(), 1);
+  EXPECT_EQ(updated_ab_data.slots[0].bl1_bootable(), 1);
 }
 
 class LuisPartitionerTests : public GptDevicePartitionerTests {

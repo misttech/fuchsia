@@ -13,6 +13,7 @@
 #include <lib/fdio/directory.h>
 #include <lib/fdio/watcher.h>
 
+#include <string>
 #include <string_view>
 
 #include <fbl/algorithm.h>
@@ -35,11 +36,10 @@ namespace skipblock = fuchsia_hardware_skipblock;
 // Not static so test can manipulate it.
 zx_duration_t g_wipe_timeout = ZX_SEC(3);
 
-zx::result<std::unique_ptr<VolumeConnector>> OpenBlockPartition(const paver::BlockDevices& devices,
-                                                                std::optional<Uuid> unique_guid,
-                                                                std::optional<Uuid> type_guid,
-                                                                zx_duration_t timeout) {
-  ZX_ASSERT(unique_guid || type_guid);
+zx::result<std::unique_ptr<VolumeConnector>> OpenBlockPartition(
+    const paver::BlockDevices& devices, std::optional<Uuid> unique_guid,
+    std::optional<Uuid> type_guid, std::optional<std::string_view> name, zx_duration_t timeout) {
+  ZX_ASSERT(unique_guid || type_guid || name);
 
   auto cb = [&](const zx::channel& chan) {
     if (type_guid) {
@@ -71,6 +71,23 @@ zx::result<std::unique_ptr<VolumeConnector>> OpenBlockPartition(const paver::Blo
         }
         return false;
       }
+    }
+    if (name) {
+      auto result =
+          fidl::WireCall(fidl::UnownedClientEnd<partition::Block>(chan.borrow()))->GetName();
+      if (!result.ok()) {
+        ERROR("Failed to GetName: %s\n", result.status_string());
+        return false;
+      }
+      const auto& response = result.value();
+      if (response.status != ZX_OK) {
+        if (response.status != ZX_ERR_NOT_SUPPORTED) {
+          ERROR("Failed to GetName: %s\n", zx_status_get_string(response.status));
+        }
+        return false;
+      }
+      std::string_view part_name(response.name.data(), response.name.size());
+      return part_name == *name;
     }
     return true;
   };

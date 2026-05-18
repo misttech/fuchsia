@@ -47,7 +47,7 @@ zx::result<std::unique_ptr<SkipBlockPartitionClient>> SkipBlockDevicePartitioner
 zx::result<std::unique_ptr<PartitionClient>> SkipBlockDevicePartitioner::FindFvmPartition() const {
   // FVM partition is managed so it should expose a normal block device.
   zx::result partition =
-      OpenBlockPartition(devices_, std::nullopt, Uuid(GUID_FVM_VALUE), ZX_SEC(5));
+      OpenBlockPartition(devices_, std::nullopt, Uuid(GUID_FVM_VALUE), std::nullopt, ZX_SEC(5));
   if (partition.is_error()) {
     return partition.take_error();
   }
