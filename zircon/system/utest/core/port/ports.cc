@@ -1356,4 +1356,122 @@ TEST(PortStressTest, CancelKeyCloseRace) {
   EXPECT_TRUE(status == ZX_OK || status == ZX_ERR_NOT_FOUND);
 }
 
+TEST(PortTest, CreateInvalidOptions) {
+  zx::port port;
+  // Options other than 0 and ZX_PORT_BIND_TO_INTERRUPT should return ZX_ERR_INVALID_ARGS.
+  EXPECT_EQ(zx::port::create(0x1234u, &port), ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(zx::port::create(2u, &port), ZX_ERR_INVALID_ARGS);
+}
+
+TEST(PortTest, QueueWrongType) {
+  zx::event event;
+  ASSERT_OK(zx::event::create(0u, &event));
+
+  constexpr zx_port_packet_t packet = {1ull, ZX_PKT_TYPE_USER, 0, {{}}};
+  // Passing a non-port handle to zx_port_queue returns ZX_ERR_WRONG_TYPE.
+  EXPECT_EQ(zx_port_queue(event.get(), &packet), ZX_ERR_WRONG_TYPE);
+}
+
+TEST(PortTest, QueueAccessDenied) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(0u, &port));
+
+  // Remove ZX_RIGHT_WRITE
+  zx::port reduced_port;
+  ASSERT_OK(port.replace(ZX_DEFAULT_PORT_RIGHTS & ~ZX_RIGHT_WRITE, &reduced_port));
+
+  constexpr zx_port_packet_t packet = {1ull, ZX_PKT_TYPE_USER, 0, {{}}};
+  EXPECT_EQ(reduced_port.queue(&packet), ZX_ERR_ACCESS_DENIED);
+}
+
+TEST(PortTest, WaitWrongType) {
+  zx::event event;
+  ASSERT_OK(zx::event::create(0u, &event));
+
+  zx_port_packet_t packet = {};
+  // Passing a non-port handle to zx_port_wait returns ZX_ERR_WRONG_TYPE.
+  EXPECT_EQ(zx_port_wait(event.get(), ZX_TIME_INFINITE, &packet), ZX_ERR_WRONG_TYPE);
+}
+
+TEST(PortTest, WaitAccessDenied) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(0u, &port));
+
+  // Remove ZX_RIGHT_READ
+  zx::port reduced_port;
+  ASSERT_OK(port.replace(ZX_DEFAULT_PORT_RIGHTS & ~ZX_RIGHT_READ, &reduced_port));
+
+  zx_port_packet_t packet = {};
+  EXPECT_EQ(reduced_port.wait(zx::time::infinite(), &packet), ZX_ERR_ACCESS_DENIED);
+}
+
+TEST(PortTest, WaitNullPacket) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(0u, &port));
+
+  // Queue a packet first so zx_port_wait returns immediately instead of blocking,
+  // and copy_to_user fails with ZX_ERR_INVALID_ARGS.
+  constexpr zx_port_packet_t packet = {1ull, ZX_PKT_TYPE_USER, 0, {{}}};
+  ASSERT_OK(port.queue(&packet));
+
+  // Passing null packet pointer returns ZX_ERR_INVALID_ARGS.
+  EXPECT_EQ(zx_port_wait(port.get(), ZX_TIME_INFINITE, nullptr), ZX_ERR_INVALID_ARGS);
+}
+
+TEST(PortTest, CancelWrongType) {
+  zx::event event;
+  ASSERT_OK(zx::event::create(0u, &event));
+
+  zx::event source;
+  ASSERT_OK(zx::event::create(0u, &source));
+
+  // Passing non-port handle to zx_port_cancel returns ZX_ERR_WRONG_TYPE.
+  EXPECT_EQ(zx_port_cancel(event.get(), source.get(), 0u), ZX_ERR_WRONG_TYPE);
+}
+
+TEST(PortTest, CancelAccessDenied) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(0u, &port));
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0u, &event));
+
+  // 1. Port lacks WRITE
+  zx::port reduced_port;
+  ASSERT_OK(port.duplicate(ZX_DEFAULT_PORT_RIGHTS & ~ZX_RIGHT_WRITE, &reduced_port));
+  EXPECT_EQ(reduced_port.cancel(event, 0u), ZX_ERR_ACCESS_DENIED);
+
+  // 2. Source lacks WAIT
+  zx::event reduced_event;
+  ASSERT_OK(event.duplicate(ZX_DEFAULT_EVENT_RIGHTS & ~ZX_RIGHT_WAIT, &reduced_event));
+  EXPECT_EQ(port.cancel(reduced_event, 0u), ZX_ERR_ACCESS_DENIED);
+}
+
+TEST(PortTest, CancelBadSourceHandle) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(0u, &port));
+
+  // Passing ZX_HANDLE_INVALID returns ZX_ERR_BAD_HANDLE.
+  EXPECT_EQ(port.cancel(*zx::unowned_event(ZX_HANDLE_INVALID), 0u), ZX_ERR_BAD_HANDLE);
+}
+
+TEST(PortTest, CancelKeyWrongType) {
+  zx::event event;
+  ASSERT_OK(zx::event::create(0u, &event));
+
+  // Passing non-port handle returns ZX_ERR_WRONG_TYPE.
+  EXPECT_EQ(zx_port_cancel_key(event.get(), 0u, 0u), ZX_ERR_WRONG_TYPE);
+}
+
+TEST(PortTest, CancelKeyAccessDenied) {
+  zx::port port;
+  ASSERT_OK(zx::port::create(0u, &port));
+
+  // Remove ZX_RIGHT_WRITE
+  zx::port reduced_port;
+  ASSERT_OK(port.replace(ZX_DEFAULT_PORT_RIGHTS & ~ZX_RIGHT_WRITE, &reduced_port));
+
+  EXPECT_EQ(reduced_port.cancel_key(0u, 0u), ZX_ERR_ACCESS_DENIED);
+}
+
 }  // namespace
