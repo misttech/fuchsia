@@ -33,6 +33,12 @@ const pathOverwriteAnnotationPrefix = "# @bazel2gn:path_overwrite:"
 // overwritten with a raw GN expression.
 const rawOverwriteAnnotationPrefix = "# @bazel2gn:raw_overwrite:"
 
+// valueOverwriteAnnotationPrefix is a comment annotation prefix that indicates a value of a
+// dictionary entry should be overwritten in GN. In this case bazel2gn will ignore the value set
+// in the BUILD.bazel file and use the value specified in the annotation in the BUILD.gn file
+// instead.
+const valueOverwriteAnnotationPrefix = "# @bazel2gn:value_overwrite:"
+
 // transformerAnnotationPrefix is a comment annotation prefix that indicates a transformer
 // should be applied to the next statement.
 const transformerAnnotationPrefix = "# @bazel2gn:transformer="
@@ -179,6 +185,7 @@ var rustCommonAttrMap = map[string]string{
 	"with_host_unit_tests": "with_unit_tests",
 	"rustc_flags":          "rustflags",
 	"crate_root":           "source_root",
+	"rustc_env":            "rustenv",
 }
 
 // rustBinAttrMap maps from attribute name in Bazel Rust binary rules to GN parameter names.

@@ -94,6 +94,13 @@ import("//build/toolchain/restat.gni")
 #     The name of the target as it appears in the BUILD file. Enables tooling
 #     to find the template invocation in a BUILD file where this target was defined.
 #
+#
+#   The following fields are only used by Bazel-converted targets.
+#   See //build/tools/bazel2gn/README.md for details.
+#
+#      proc_macro_deps (optional)
+#        For proc_macro dependencies, has the same semantics as deps in GN.
+#
 # Example of usage:
 #
 #   rustc_macro("foo") {
@@ -202,6 +209,9 @@ template("rustc_macro") {
       deps = []
       if (defined(invoker.deps)) {
         deps += invoker.deps
+      }
+      if (defined(invoker.proc_macro_deps)) {
+        deps += invoker.proc_macro_deps
       }
 
       # TODO(https://fxbug.dev/42120123) remove "non_rust_deps"

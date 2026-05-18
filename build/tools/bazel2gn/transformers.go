@@ -152,6 +152,21 @@ func overwrittenRaw(lit *syntax.Literal) (string, bool) {
 	return "", false
 }
 
+// overwrittenValue returns the value overwritten by comments, if any.
+//
+// It returns the value and true if the value is overwritten, otherwise it returns
+// an empty string and false.
+func overwrittenValue(entry *syntax.DictEntry) (string, bool) {
+	if comments := entry.Comments(); comments != nil {
+		for _, c := range comments.Suffix {
+			if strings.HasPrefix(c.Text, valueOverwriteAnnotationPrefix) {
+				return strings.TrimSpace(c.Text[len(valueOverwriteAnnotationPrefix):]), true
+			}
+		}
+	}
+	return "", false
+}
+
 // bazelFilePathsToGN converts Bazel file paths to GN file paths, handling
 // overwritten paths.
 func bazelFilePathsToGN(expr syntax.Expr) (syntax.Expr, error) {

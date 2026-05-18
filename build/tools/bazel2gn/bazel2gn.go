@@ -378,6 +378,11 @@ func attrAssignmentToGN(expr *syntax.BinaryExpr, bazelRule string) ([]string, er
 		return tagsToGN(expr.Y)
 	}
 
+	// Intercept rustenv attribute to convert dict to list of strings.
+	if attrName == "rustenv" {
+		return rustenvToGN(expr.Y)
+	}
+
 	op, ok := attrGNAssignmentOps[attrName]
 	if !ok {
 		op = "="

@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/tools/json_merge:json_merge.bzl", "json_merge")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "data/config.json",
+    "daemon/data/config.json",
+    "lib/pbms/data/config.json",
+])
+
+# TODO(https://fxbug.dev/512659653): Match the target in GN to include configs for more plugins and
+# subtools.
+json_merge(
+    name = "ffx-defaults.json",
+    srcs = [
+        "daemon/data/config.json",
+        "data/config.json",
+        "lib/pbms/data/config.json",
+    ],
+    deep_merge = True,
+)
