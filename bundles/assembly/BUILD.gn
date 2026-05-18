@@ -1607,6 +1607,10 @@ assembly_input_bundle("core_realm_eng") {
       components = [ "bt-hfp-hf-tool" ]
     },
     {
+      package = "bt-map-mce-tool"
+      components = [ "bt-map-mce-tool" ]
+    },
+    {
       package = "display-test"
       components = [ "display-test" ]
     },
