@@ -154,8 +154,8 @@ impl Channel {
     ) -> Result<(), Status> {
         loop {
             // Ensure the capacity slices are the entire `Vec`s.
-            bytes.truncate(0);
-            handles.truncate(0);
+            bytes.clear();
+            handles.clear();
             match self.read_uninit(bytes.spare_capacity_mut(), handles.spare_capacity_mut()) {
                 ChannelReadResult::Ok((byte_slice, handle_slice)) => {
                     // Drop the output slices before mutating the input buffers.

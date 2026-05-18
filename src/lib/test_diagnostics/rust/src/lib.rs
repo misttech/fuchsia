@@ -182,7 +182,7 @@ impl<W: Write + Send + 'static> Write for StdoutBufferInner<W> {
             None => self.writer.write(bytes),
             Some(buf) if buf.len() + bytes.len() > self.max_capacity => {
                 self.writer.write_all(&buf)?;
-                buf.truncate(0);
+                buf.clear();
                 self.writer.write(bytes)
             }
             Some(buf) => Write::write(buf, bytes),

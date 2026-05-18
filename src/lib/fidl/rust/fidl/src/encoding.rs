@@ -829,7 +829,7 @@ impl<'a, D: ResourceDialect> Encoder<'a, D> {
                     (padding_ptr as *mut u64).write_unaligned(0);
                 }
             }
-            handles.truncate(0);
+            handles.clear();
             Encoder { buf, handles, context, _dialect: PhantomData }
         }
         let mut encoder = prepare_for_encoding(context, buf, handles, T::inline_size(context));

@@ -69,7 +69,7 @@ fn char_len(s: &str) -> usize {
 fn new_line(current_line: &mut String, out: &mut String) {
     out.push('\n');
     out.push_str(current_line);
-    current_line.truncate(0);
+    current_line.clear();
 }
 
 #[cfg(test)]

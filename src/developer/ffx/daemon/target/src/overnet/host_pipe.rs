@@ -61,7 +61,7 @@ impl LogBuffer {
 
     pub fn clear(&self) {
         let mut buf = self.buf.borrow_mut();
-        buf.truncate(0);
+        buf.clear();
     }
 }
 
