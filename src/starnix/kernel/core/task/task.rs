@@ -21,14 +21,13 @@ use atomic_bitflags::atomic_bitflags;
 use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuOptionBox, RcuReadGuard};
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
-use starnix_registers::{HeapRegs, RegisterStorageEnum};
+use starnix_registers::HeapRegs;
 use starnix_sync::{
-    LockBefore, Locked, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard, TaskRelease,
-    TerminalLock,
+    LockBefore, Locked, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard, TerminalLock,
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
-use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard, TempRef, WeakRef};
+use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef};
 use starnix_types::stats::TaskTimeStats;
 use starnix_uapi::auth::{Credentials, FsCred};
 use starnix_uapi::errors::Errno;
@@ -1528,34 +1527,9 @@ impl Task {
 }
 
 impl Releasable for Task {
-    type Context<'a> = (ThreadState<RegisterStorageEnum>, &'a mut Locked<TaskRelease>);
+    type Context<'a> = ();
 
-    fn release<'a>(self, context: Self::Context<'a>) {
-        let (thread_state, locked) = context;
-
-        self.ptrace_disconnect();
-
-        self.signal_vfork();
-
-        // Drop fields that can end up owning a FsNode to ensure no FsNode are owned by this task.
-        if let Ok(live) = self.live() {
-            live.files.release();
-            live.mm.update(None);
-        }
-        self.live_state.update(None);
-
-        // Rebuild a temporary CurrentTask to run the release actions that requires a CurrentState.
-        let current_task = CurrentTask::new(OwnedRef::new(self), thread_state.into());
-
-        // Apply any delayed releasers left.
-        current_task.trigger_delayed_releaser(locked);
-
-        // Drop the task now that is has been released. This requires to take it from the OwnedRef
-        // and from the resulting ReleaseGuard.
-        let CurrentTask { mut task, .. } = current_task;
-        let task = OwnedRef::take(&mut task).expect("task should not have been re-owned");
-        let _task: Self = ReleaseGuard::take(task);
-    }
+    fn release<'a>(self, _context: Self::Context<'a>) {}
 }
 
 impl MemoryAccessor for Task {

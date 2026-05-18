@@ -100,19 +100,11 @@ impl Releasable for TaskBuilder {
     type Context<'a> = &'a mut Locked<TaskRelease>;
 
     fn release<'a>(self, locked: Self::Context<'a>) {
-        let kernel = Arc::clone(self.kernel());
-        let mut pids = kernel.pids.write();
-
-        // We remove from the thread group here because the WeakRef in the pid
-        // table to this task must be valid until this task is removed from the
-        // thread group, and the code below will invalidate it.
-        // Moreover, this requires a OwnedRef of the task to ensure the tasks of
-        // the thread group are always valid.
-        self.task.thread_group().remove(locked, &mut pids, &self.task);
-        drop(pids);
-
-        let context = (self.thread_state.into(), locked);
-        self.task.release(context);
+        // Build a temporary CurrentTask to run release actions that require ThreadState.
+        let current_task = CurrentTask::new(self.task, self.thread_state.into());
+        current_task.exit(locked);
+        let CurrentTask { task, .. } = current_task;
+        task.release(());
     }
 }
 
@@ -176,22 +168,8 @@ impl Releasable for CurrentTask {
     type Context<'a> = &'a mut Locked<TaskRelease>;
 
     fn release<'a>(self, locked: Self::Context<'a>) {
-        self.notify_robust_list();
-        let _ignored = self.clear_child_tid_if_needed(locked);
-
-        let kernel = Arc::clone(self.kernel());
-        let mut pids = kernel.pids.write();
-
-        // We remove from the thread group here because the WeakRef in the pid
-        // table to this task must be valid until this task is removed from the
-        // thread group, and the code below will invalidate it.
-        // Moreover, this requires a OwnedRef of the task to ensure the tasks of
-        // the thread group are always valid.
-        self.task.thread_group().remove(locked, &mut pids, &self.task);
-        drop(pids);
-
-        let context = (self.thread_state, locked);
-        self.task.release(context);
+        self.exit(locked);
+        self.task.release(());
     }
 }
 
@@ -218,6 +196,39 @@ impl CurrentTask {
             security_state: Default::default(),
             _local_marker: Default::default(),
         }
+    }
+
+    /// Exit the task by dropping its running state.
+    pub fn exit(&self, locked: &mut Locked<TaskRelease>) {
+        // When this method returns, the following invariants must be met:
+        // 1. No new references to live `Task` state must be obtainable.
+        // 2. All externally-visible `Task` state must reflect that the `Task` has exited.
+        // 3. All observers of `Task` exit events must be notified.
+
+        self.notify_robust_list();
+        let _ignored = self.clear_child_tid_if_needed(locked);
+
+        self.signal_vfork();
+
+        // Drop fields that can end up owning a FsNode to ensure no FsNode are owned by this task.
+        if let Ok(live) = self.task.live() {
+            live.files.release();
+            live.mm.update(None);
+        }
+        self.live_state.update(None);
+
+        self.trigger_delayed_releaser(locked);
+
+        // We remove from the thread group here because the WeakRef in the pid
+        // table to this task must be valid until this task is removed from the
+        // thread group, and the code below will invalidate it.
+        // Moreover, this requires a OwnedRef of the task to ensure the tasks of
+        // the thread group are always valid.
+        let mut pids = self.kernel().pids.write();
+        self.task.thread_group().remove(locked, &mut pids, &self.task);
+        drop(pids);
+
+        self.ptrace_disconnect();
     }
 
     /// Returns the [`TaskLiveState`] for the [`Task`].
