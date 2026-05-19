@@ -11,6 +11,16 @@ import fuchsia_wlan_base_test
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
 from mobly import asserts, signals, test_runner
+from mobly_controller import openwrt_access_point
+from mobly_controller.openwrt_access_point import OpenWrtAP
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    AccessPointConfig,
+    Band,
+    BssSettings,
+    RadioConfig,
+    SecurityOpen,
+)
 
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.affordances.connectivity.wlan.utils.types import ClientStatusIdle
@@ -25,15 +35,22 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         It does the following things:
             * Assigns `device` variable with FuchsiaDevice object
             * Assigns `access_point` variable with AccessPoint object
+            * Assigns `openwrt_ap` variable with OpenWrtAP object
         """
         await super().setup_class()
+
+        openwrt_aps: list[OpenWrtAP] | None = await self.register_controller(
+            openwrt_access_point, required=False, min_number=0
+        )
+        self.openwrt_ap: OpenWrtAP | None = (
+            openwrt_aps[0] if openwrt_aps else None
+        )
 
         access_points: list[
             access_point.AccessPoint
         ] | None = await self.register_controller(
             access_point, required=False, min_number=0
         )
-
         self.access_point: access_point.AccessPoint | None = (
             access_points[0] if access_points else None
         )
@@ -125,16 +142,34 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             * wlan.disconnect()
             * wlan.status()
         """
-        if not self.access_point:
+        if not self.openwrt_ap and not self.access_point:
             raise signals.TestSkip("Access point required for this test")
 
-        test_ssid = "test"
-        access_point.setup_ap(
-            access_point=self.access_point,
-            profile_name="whirlwind",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=test_ssid,
-        )
+        test_ssid = AccessPointConfig.random_string()
+        if self.openwrt_ap:
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        channel=DEFAULT_2G_CHANNEL,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=test_ssid,
+                                security=SecurityOpen(),
+                            )
+                        ],
+                    )
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
+        else:
+            assert self.access_point is not None
+            access_point.setup_ap(
+                access_point=self.access_point,
+                profile_name="whirlwind",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=test_ssid,
+            )
 
         end_time = time.time() + 30
         while time.time() < end_time:

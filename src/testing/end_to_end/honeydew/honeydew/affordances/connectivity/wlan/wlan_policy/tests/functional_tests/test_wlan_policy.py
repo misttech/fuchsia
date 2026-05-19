@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 """Mobly test for wlan policy affordance."""
 
-import random
-import string
 import time
 from typing import AsyncIterator
 
@@ -13,6 +11,16 @@ import fuchsia_wlan_base_test
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
 from mobly import asserts, signals, test_runner
+from mobly_controller import openwrt_access_point
+from mobly_controller.openwrt_access_point import OpenWrtAP
+from mobly_controller.openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    AccessPointConfig,
+    Band,
+    BssSettings,
+    RadioConfig,
+    SecurityOpen,
+)
 
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.affordances.connectivity.wlan.utils.types import (
@@ -32,21 +40,6 @@ WLAN_INTERFACE_TIMEOUT = 30
 DEFAULT_GET_UPDATE_TIMEOUT = 60
 
 
-def random_str(
-    size: int = 6, chars: str = string.ascii_lowercase + string.digits
-) -> str:
-    """Generate a random string.
-
-    Args:
-        size: Length of output string
-        chars: Characters to use
-
-    Returns:
-        A random string of length size using the characters in chars.
-    """
-    return "".join(random.choice(chars) for _ in range(size))
-
-
 class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """WlanPolicy affordance tests"""
 
@@ -54,12 +47,18 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """setup_class is called once before running tests."""
         await super().setup_class()
 
+        openwrt_aps: list[OpenWrtAP] | None = await self.register_controller(
+            openwrt_access_point, required=False, min_number=0
+        )
+        self.openwrt_ap: OpenWrtAP | None = (
+            openwrt_aps[0] if openwrt_aps else None
+        )
+
         access_points: list[
             access_point.AccessPoint
         ] | None = await self.register_controller(
             access_point, required=False, min_number=0
         )
-
         self.access_point: access_point.AccessPoint | None = (
             access_points[0] if access_points else None
         )
@@ -115,16 +114,34 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
     async def test_ap_auto_connect(self) -> None:
         """Verify Fuchsia can auto-connect to a saved network."""
-        if not self.access_point:
+        if not self.openwrt_ap and not self.access_point:
             raise signals.TestSkip("Access point required for this test")
 
-        test_ssid = random_str()
-        access_point.setup_ap(
-            access_point=self.access_point,
-            profile_name="whirlwind",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=test_ssid,
-        )
+        test_ssid = AccessPointConfig.random_string()
+        if self.openwrt_ap:
+            config = AccessPointConfig(
+                radios=[
+                    RadioConfig.generate(
+                        channel=DEFAULT_2G_CHANNEL,
+                        bss_settings=[
+                            BssSettings(
+                                ssid=test_ssid,
+                                security=SecurityOpen(),
+                            )
+                        ],
+                    )
+                ]
+            )
+            self.openwrt_ap.configure_wifi(config)
+            self.openwrt_ap.verify_wifi_status(band=Band.BAND_2G)
+        else:
+            assert self.access_point is not None
+            access_point.setup_ap(
+                access_point=self.access_point,
+                profile_name="whirlwind",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=test_ssid,
+            )
 
         await self.dut.wlan_policy.start_client_connections()
         await self.dut.wlan_policy.set_new_update_listener()
@@ -204,7 +221,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             wait_for_confirmation=True
         )
 
-        test_ssid = random_str()
+        test_ssid = AccessPointConfig.random_string()
         await self.dut.wlan_policy.save_network(test_ssid, SecurityType.NONE)
         asserts.assert_equal(
             await self.dut.wlan_policy.get_saved_networks(),
@@ -221,7 +238,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             wait_for_confirmation=True
         )
 
-        test_ssid = random_str()
+        test_ssid = AccessPointConfig.random_string()
         asserts.assert_equal(
             await self.dut.wlan_policy.connect(test_ssid, SecurityType.NONE),
             f_wlan_policy.RequestStatus.REJECTED_NOT_SUPPORTED,
@@ -248,7 +265,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             [],
         )
 
-        test_ssid = random_str()
+        test_ssid = AccessPointConfig.random_string()
         await self.dut.wlan_policy.save_network(test_ssid, SecurityType.NONE)
         asserts.assert_equal(
             await self.dut.wlan_policy.get_saved_networks(),
@@ -265,7 +282,7 @@ class WlanPolicyTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self,
     ) -> None:
         """Verify remove() works without enabling client connections."""
-        test_ssid = random_str()
+        test_ssid = AccessPointConfig.random_string()
 
         # Removing a network that doesn't exist shouldn't error.
         await self.dut.wlan_policy.remove_network(test_ssid, SecurityType.NONE)
