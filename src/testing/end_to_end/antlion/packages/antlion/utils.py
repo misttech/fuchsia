@@ -929,21 +929,27 @@ def ping(
     else:
         raise ValueError(f"Unsupported comm_channel: {type(comm_channel)}")
 
+    stdout = ping_result.stdout.decode("utf-8")
+    stderr = ping_result.stderr.decode("utf-8")
+    raw_output = stdout
+    if stderr:
+        raw_output += "\n" + stderr
+
     summary = re.search(
         "([0-9]+) packets transmitted.*?([0-9]+) received.*?([0-9]+)% packet "
         "loss.*?time ([0-9]+)",
-        ping_result.stdout.decode("utf-8"),
+        stdout,
     )
     rtt_stats = re.search(
         "= ([0-9.]+)/([0-9.]+)/([0-9.]+)/([0-9.]+)",
-        ping_result.stdout.decode("utf-8"),
+        stdout,
     )
     return PingResult(
-        exit_status=ping_result.returncode,
-        stdout=ping_result.stdout.decode("utf-8"),
-        stderr=ping_result.stderr.decode("utf-8"),
-        transmitted=int(summary.group(1)) if summary else None,
-        received=int(summary.group(2)) if summary else None,
+        raw_output=raw_output,
+        success=ping_result.returncode == 0,
+        requested=count,
+        transmitted=int(summary.group(1)) if summary else 0,
+        received=int(summary.group(2)) if summary else 0,
         time_ms=float(summary.group(4)) / 1000 if summary else None,
         rtt_min_ms=float(rtt_stats.group(1)) if rtt_stats else None,
         rtt_avg_ms=float(rtt_stats.group(2)) if rtt_stats else None,
@@ -954,11 +960,11 @@ def ping(
 
 @dataclass
 class PingResult:
-    exit_status: int
-    stdout: str
-    stderr: str
-    transmitted: int | None
-    received: int | None
+    raw_output: str
+    success: bool
+    requested: int
+    transmitted: int
+    received: int
     time_ms: float | None
     rtt_min_ms: float | None
     rtt_avg_ms: float | None
@@ -966,8 +972,17 @@ class PingResult:
     rtt_mdev_ms: float | None
 
     @property
-    def success(self) -> bool:
-        return self.exit_status == 0
+    def any_pings_received(self) -> bool:
+        """True if at least one ping was received."""
+        return self.received > 0
+
+    @property
+    def all_pings_received(self) -> bool:
+        """True if all requested pings were received."""
+        return (
+            self.received == self.requested
+            and self.transmitted == self.requested
+        )
 
 
 def ip_in_subnet(ip: str, subnet: str) -> bool:

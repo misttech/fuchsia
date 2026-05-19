@@ -248,33 +248,3 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
         # Maintain the invariant that every test starts with no access points.
         if isinstance(self.class_test_kit.access_point, AccessPoint):
             self.class_test_kit.access_point.stop_all_aps()
-
-    def ping(
-        self,
-        dest_ip: str,
-        count: int = 3,
-        interval: int = 1000,
-        timeout: int = 1000,
-        size: int = 25,
-        additional_ping_params: str | None = None,
-    ) -> str:
-        """Pings from a Fuchsia device to an IPv4 address or hostname
-
-        Args:
-            dest_ip: (str) The ip or hostname to ping.
-            count: (int) How many icmp packets to send.
-            interval: (int) How long to wait between pings (ms)
-            timeout: (int) How long to wait before having the icmp packet
-                timeout (ms).
-            size: (int) Size of the icmp packet.
-            additional_ping_params: (str) command option flags to
-                append to the command string
-        """
-        logger.info(f"Pinging {dest_ip}...")
-        if not additional_ping_params:
-            additional_ping_params = ""
-
-        return self.dut.ffx.run_ssh_cmd(
-            f"ping -c {count} -i {interval} -t {timeout} -s {size} "
-            f"{additional_ping_params} {dest_ip}"
-        )

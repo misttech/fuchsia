@@ -19,6 +19,9 @@ from antlion.controllers.iperf_client import IPerfClientBase
 from antlion.controllers.pdu import PduDevice
 from antlion.test_utils.wifi import wifi_test_utils as awutils
 from antlion.utils import PingResult, adb_shell_ping
+from honeydew.affordances.connectivity.netstack.errors import (
+    HoneydewNetstackError,
+)
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
@@ -301,12 +304,11 @@ class AndroidWlanDevice(SupportsWLAN):
             self.device, dest_ip, count=count, timeout=timeout
         )
         return PingResult(
-            exit_status=0 if success else 1,
-            # TODO: Implement the rest if needed for any tests
-            stdout="",
-            stderr="",
-            transmitted=None,
-            received=None,
+            raw_output="",
+            success=success,
+            requested=count,
+            transmitted=count if success else 0,
+            received=count if success else 0,
             time_ms=None,
             rtt_min_ms=None,
             rtt_avg_ms=None,
@@ -491,14 +493,40 @@ class FuchsiaWlanDevice(SupportsWLAN):
         size: int = 25,
         additional_ping_params: str | None = None,
     ) -> PingResult:
-        return self.device.ping(
-            dest_ip,
-            count=count,
-            interval=interval,
-            timeout=timeout,
-            size=size,
-            additional_ping_params=additional_ping_params,
-        )
+        try:
+            hd_result = self.device.honeydew_fd.netstack_deprecated_sync.ping(
+                dest_ip,
+                count=count,
+                interval=interval,
+                timeout=timeout,
+                size=size,
+                additional_ping_params=additional_ping_params,
+            )
+            return PingResult(
+                raw_output=hd_result.raw_output,
+                success=hd_result.any_pings_received,
+                requested=count,
+                transmitted=hd_result.transmitted,
+                received=hd_result.received,
+                time_ms=hd_result.time_ms,
+                rtt_min_ms=hd_result.rtt_min_ms,
+                rtt_avg_ms=hd_result.rtt_avg_ms,
+                rtt_max_ms=hd_result.rtt_max_ms,
+                rtt_mdev_ms=hd_result.rtt_mdev_ms,
+            )
+        except HoneydewNetstackError as e:
+            return PingResult(
+                raw_output=str(e),
+                success=False,
+                requested=count,
+                transmitted=0,
+                received=0,
+                time_ms=None,
+                rtt_min_ms=None,
+                rtt_avg_ms=None,
+                rtt_max_ms=None,
+                rtt_mdev_ms=None,
+            )
 
     def get_wlan_interface_id_list(self) -> Sequence[int]:
         return (

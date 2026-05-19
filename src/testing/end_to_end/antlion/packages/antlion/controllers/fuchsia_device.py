@@ -34,7 +34,6 @@ from antlion.controllers.fuchsia_lib.ssh import (
 from antlion.decorators import cached_property
 from antlion.types import ControllerConfig, Json
 from antlion.utils import (
-    PingResult,
     get_fuchsia_mdns_ipv6_address,
     get_interface_ip_addresses,
 )
@@ -47,7 +46,6 @@ from honeydew.auxiliary_devices.power_switch.power_switch_using_dmc import (
 from honeydew.transports.ffx.config import FfxConfig
 from honeydew.transports.ffx.ffx import FFX
 from honeydew.typing.custom_types import DeviceInfo, IpPort
-from libs.proc.runner import CalledProcessError
 from mobly import logger, signals
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "FuchsiaDevice"
@@ -593,91 +591,6 @@ class FuchsiaDevice:
             )
 
         self.log.info("Device has rebooted")
-
-    def ping(
-        self,
-        dest_ip: str,
-        count: int = 3,
-        interval: int = 1000,
-        timeout: int = 1000,
-        size: int = 25,
-        additional_ping_params: str | None = None,
-    ) -> PingResult:
-        """Pings from a Fuchsia device to an IPv4 address or hostname
-
-        Args:
-            dest_ip: (str) The ip or hostname to ping.
-            count: (int) How many icmp packets to send.
-            interval: (int) How long to wait between pings (ms)
-            timeout: (int) How long to wait before having the icmp packet
-                timeout (ms).
-            size: (int) Size of the icmp packet.
-            additional_ping_params: (str) command option flags to
-                append to the command string
-
-        Returns:
-            A dictionary for the results of the ping.  The dictionary contains
-            the following items:
-                status: Whether the ping was successful.
-                rtt_min: The minimum round trip time of the ping.
-                rtt_max: The minimum round trip time of the ping.
-                rtt_avg: The avg round trip time of the ping.
-                stdout: The standard out of the ping command.
-                stderr: The standard error of the ping command.
-        """
-        self.log.debug(f"Pinging {dest_ip}...")
-        if not additional_ping_params:
-            additional_ping_params = ""
-
-        stdout_str = ""
-        stderr_str = ""
-        exit_status = 0
-
-        try:
-            ping_result = self.ssh.run(
-                f"ping -c {count} -i {interval} -t {timeout} -s {size} "
-                f"{additional_ping_params} {dest_ip}"
-            )
-            stdout_str = ping_result.stdout.decode("utf-8")
-            stderr_str = ping_result.stderr.decode("utf-8")
-            exit_status = ping_result.returncode
-        except CalledProcessError as e:
-            self.log.debug(f"Failed to ping from host: {e}")
-            stdout_str = e.stdout.decode("utf-8")
-            stderr_str = e.stderr.decode("utf-8")
-            exit_status = e.returncode
-
-        stats_match = re.search(
-            r"(\d+) packets transmitted, (\d+) received, (\d+)% packet loss",
-            stdout_str,
-        )
-        rtt_match = re.search(
-            r"RTT Min/Max/Avg = \[ ([0-9.]+) / ([0-9.]+) / ([0-9.]+) \] ms",
-            stdout_str,
-        )
-
-        transmitted = int(stats_match.group(1)) if stats_match else None
-        received = int(stats_match.group(2)) if stats_match else None
-
-        if received is None:
-            received = len(
-                re.findall(
-                    r"\d+ bytes from .* icmp_seq=\d+ rtt=.* ms", stdout_str
-                )
-            )
-
-        return PingResult(
-            exit_status=exit_status,
-            stdout=stdout_str,
-            stderr=stderr_str,
-            transmitted=transmitted,
-            received=received,
-            time_ms=None,
-            rtt_min_ms=float(rtt_match.group(1)) if rtt_match else None,
-            rtt_avg_ms=float(rtt_match.group(3)) if rtt_match else None,
-            rtt_max_ms=float(rtt_match.group(2)) if rtt_match else None,
-            rtt_mdev_ms=None,
-        )
 
     def clean_up(self) -> None:
         """Cleans up the FuchsiaDevice object, releases any resources it

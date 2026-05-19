@@ -197,8 +197,8 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
             )
 
         try:
-            ping_result = self.ping(ap_address)
-            logger.info(f"Ping succeeded: {ping_result}")
+            ping_result = await self.dut.netstack.ping(ap_address)
+            logger.info(f"Ping succeeded: {ping_result.raw_output}")
         except Exception as e:
             logger.error(f"{e}")
             fail(f"Ping failed.")
