@@ -25,6 +25,70 @@ pub struct RegisterState<T: RegisterStorage> {
 }
 
 impl<T: RegisterStorage> RegisterState<T> {
+    pub fn to_user_regs_struct(&self) -> user_regs_struct {
+        user_regs_struct {
+            r15: self.r15,
+            r14: self.r14,
+            r13: self.r13,
+            r12: self.r12,
+            rbp: self.rbp,
+            rbx: self.rbx,
+            r11: self.r11,
+            r10: self.r10,
+            r9: self.r9,
+            r8: self.r8,
+            rax: self.rax,
+            rcx: self.rcx,
+            rdx: self.rdx,
+            rsi: self.rsi,
+            rdi: self.rdi,
+            orig_rax: self.orig_rax,
+            rip: self.ip,
+            cs: 0,
+            eflags: self.flags,
+            rsp: self.rsp,
+            ss: 0,
+            fs_base: self.fs_base,
+            gs_base: self.gs_base,
+            ds: 0,
+            es: 0,
+            fs: 0,
+            gs: 0,
+        }
+    }
+
+    pub fn to_user_regs_struct_arch32(&self) -> starnix_uapi::arch32::user_regs_struct {
+        unreachable!("arch32 not supported on x64")
+    }
+
+    pub fn from_user_regs_struct(&mut self, regs: &user_regs_struct) {
+        self.r15 = regs.r15;
+        self.r14 = regs.r14;
+        self.r13 = regs.r13;
+        self.r12 = regs.r12;
+        self.rbp = regs.rbp;
+        self.rbx = regs.rbx;
+        self.r11 = regs.r11;
+        self.r10 = regs.r10;
+        self.r9 = regs.r9;
+        self.r8 = regs.r8;
+        self.rax = regs.rax;
+        self.rcx = regs.rcx;
+        self.rdx = regs.rdx;
+        self.rsi = regs.rsi;
+        self.rdi = regs.rdi;
+        self.orig_rax = regs.orig_rax;
+        self.ip = regs.rip;
+        self.flags = regs.eflags;
+        self.rsp = regs.rsp;
+        self.fs_base = regs.fs_base;
+        self.gs_base = regs.gs_base;
+    }
+
+    pub fn from_user_regs_struct_arch32(&mut self, _regs: &starnix_uapi::arch32::user_regs_struct) {
+        unreachable!("arch32 not supported on x64")
+    }
+
     /// Saves any register state required to restart `syscall_number`.
     pub fn save_registers_for_restart(&mut self, syscall_number: u64) {
         // The `rax` register read from the thread's state is clobbered by

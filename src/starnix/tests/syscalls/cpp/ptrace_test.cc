@@ -439,11 +439,11 @@ TEST(PtraceTest, GetGeneralRegs) {
   struct iovec iov;
   iov.iov_base = regs_set;
 
-  // Expect error on incorrect size.
-  iov.iov_len = sizeof(regs_set[0]) - 1;
-  ASSERT_EQ(ptrace(PTRACE_GETREGSET, child_pid, NT_PRSTATUS, &iov), -1)
+  // Expect partial read on smaller size.
+  iov.iov_len = sizeof(regs_set[0]) - 8;
+  ASSERT_EQ(ptrace(PTRACE_GETREGSET, child_pid, NT_PRSTATUS, &iov), 0)
       << "Error " << errno << " " << strerror(errno);
-  ASSERT_EQ(errno, EINVAL);
+  ASSERT_EQ(iov.iov_len, sizeof(regs_set[0]) - 8);
 
   // Provide a too large value for iov_len to make sure that ptrace resets it
   // correctly

@@ -38,6 +38,53 @@ impl<T: RegisterStorage> ArchSpecific for RegisterState<T> {
 }
 
 impl<T: RegisterStorage> RegisterState<T> {
+    pub fn to_user_regs_struct(&self) -> user_regs_struct {
+        user_regs_struct {
+            regs: std::array::from_fn(|i| self.r[i]),
+            sp: self.sp,
+            pc: self.pc,
+            pstate: self.cpsr as u64,
+        }
+    }
+
+    pub fn to_user_regs_struct_arch32(&self) -> starnix_uapi::arch32::user_regs_struct {
+        let mut regs = [0u32; 18];
+        for i in 0..13 {
+            regs[i] = self.r[i] as u32;
+        }
+        regs[13] = self.sp as u32;
+        regs[14] = self.r[30] as u32;
+        regs[15] = self.pc as u32;
+        regs[16] = self.cpsr;
+        regs[17] = self.orig_x0 as u32;
+        starnix_uapi::arch32::user_regs_struct { regs }
+    }
+
+    pub fn from_user_regs_struct(&mut self, regs: &user_regs_struct) {
+        debug_assert!(!self.is_arch32());
+        for i in 0..31 {
+            self.r[i] = regs.regs[i];
+        }
+        self.sp = regs.sp;
+        self.pc = regs.pc;
+        self.cpsr = regs.pstate as u32;
+    }
+
+    pub fn from_user_regs_struct_arch32(&mut self, regs: &starnix_uapi::arch32::user_regs_struct) {
+        debug_assert!(self.is_arch32());
+        for i in 0..13 {
+            self.r[i] = regs.regs[i] as u64;
+        }
+        self.sp = regs.regs[13] as u64;
+        self.r[13] = self.sp;
+        self.r[30] = regs.regs[14] as u64;
+        self.r[14] = self.r[30];
+        self.pc = regs.regs[15] as u64;
+        self.r[15] = self.pc;
+        self.cpsr = regs.regs[16];
+        self.orig_x0 = regs.regs[17] as u64;
+    }
+
     pub fn is_thumb(&self) -> bool {
         const IS_THUMB_MASK: u64 =
             zx::sys::ZX_REG_CPSR_ARCH_32_MASK | zx::sys::ZX_REG_CPSR_THUMB_MASK;

@@ -80,7 +80,7 @@ macro_rules! struct_with_union_into_bytes {
                 // initialized to zero, ensures that all bytes of `bytes.bytes` are
                 // initialized, so we can safely return `bytes.bytes` as a byte array.
                 unsafe {
-                    std::ptr::write(&mut (&mut *(&mut bytes.bytes as *mut [u8; BYTES] as *mut $ty)).$($field).*, value);
+                    std::ptr::write(std::ptr::addr_of_mut!((*(&mut bytes.bytes as *mut [u8; BYTES] as *mut $ty)).$($field).*), value);
                 }
             }
         })*
@@ -233,4 +233,6 @@ macro_rules! arch_union_wrapper {
     };
 }
 
-pub use {arch_struct_with_union, arch_union_wrapper, struct_with_union_into_bytes};
+pub use arch_struct_with_union;
+pub use arch_union_wrapper;
+pub use struct_with_union_into_bytes;

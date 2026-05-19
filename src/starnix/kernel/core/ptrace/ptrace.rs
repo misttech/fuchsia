@@ -40,6 +40,7 @@ use starnix_uapi::{
     PTRACE_SYSCALL, PTRACE_SYSCALL_INFO_ENTRY, PTRACE_SYSCALL_INFO_EXIT, PTRACE_SYSCALL_INFO_NONE,
     clone_args, errno, error, pid_t, ptrace_syscall_info, tid_t, uapi,
 };
+use zerocopy::IntoBytes;
 
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
@@ -915,7 +916,7 @@ where
                 let mut len = iv.iov_len as usize;
                 ptrace_getregset(
                     current_task,
-                    &mut captured.thread_state,
+                    &captured.thread_state,
                     ElfNoteType::try_from(addr.ptr() as usize)?,
                     base,
                     &mut len,
@@ -950,7 +951,7 @@ where
                 let mut len = usize::MAX;
                 ptrace_getregset(
                     current_task,
-                    &mut captured.thread_state,
+                    &captured.thread_state,
                     ElfNoteType::PrStatus,
                     data.ptr() as u64,
                     &mut len,
@@ -1225,7 +1226,7 @@ pub fn ptrace_pokeuser(
 
 pub fn ptrace_getregset(
     current_task: &CurrentTask,
-    thread_state: &mut ThreadState<HeapRegs>,
+    thread_state: &ThreadState<HeapRegs>,
     regset_type: ElfNoteType,
     base: u64,
     len: &mut usize,
@@ -1233,22 +1234,14 @@ pub fn ptrace_getregset(
     match regset_type {
         ElfNoteType::PrStatus => {
             let user_regs_struct_len = UserRegsStructPtr::size_of_object_for(thread_state);
-            if *len < user_regs_struct_len {
-                return error!(EINVAL);
-            }
-            *len = user_regs_struct_len;
-            let mut i: usize = 0;
-            let mut reg_ptr = LongPtr::new(thread_state, base);
-            while i < *len {
-                let mut val = None;
-                thread_state
-                    .registers
-                    .apply_user_register(i, &mut |register| val = Some(*register as usize))?;
-                if let Some(val) = val {
-                    current_task.write_multi_arch_object(reg_ptr, val as u64)?;
-                }
-                i += reg_ptr.size_of_object();
-                reg_ptr = reg_ptr.next()?;
+            *len = std::cmp::min(*len, user_regs_struct_len);
+
+            if thread_state.is_arch32() {
+                let regs = thread_state.registers.to_user_regs_struct_arch32();
+                current_task.write_memory(UserAddress::from(base), &regs.as_bytes()[..*len])?;
+            } else {
+                let regs = thread_state.registers.to_user_regs_struct();
+                current_task.write_memory(UserAddress::from(base), &regs.as_bytes()[..*len])?;
             }
             Ok(())
         }
@@ -1263,7 +1256,7 @@ pub fn ptrace_setregset(
     thread_state: &mut ThreadState<HeapRegs>,
     regset_type: ElfNoteType,
     base: u64,
-    mut len: usize,
+    len: usize,
 ) -> Result<(), Errno> {
     match regset_type {
         ElfNoteType::PrStatus => {
@@ -1271,20 +1264,19 @@ pub fn ptrace_setregset(
             if len < user_regs_struct_len {
                 return error!(EINVAL);
             }
-            len = user_regs_struct_len;
-            let mut i: usize = 0;
-            let mut reg_ptr = LongPtr::new(thread_state, base);
-            while i < len {
-                let val = current_task.read_multi_arch_object(reg_ptr)?;
-                thread_state.registers.apply_user_register(i, &mut |register| *register = val)?;
-                i += reg_ptr.size_of_object();
-                reg_ptr = reg_ptr.next()?;
+
+            if thread_state.is_arch32() {
+                let mut regs = starnix_uapi::arch32::user_regs_struct::default();
+                current_task.read_memory_to_slice(UserAddress::from(base), regs.as_mut_bytes())?;
+                thread_state.registers.from_user_regs_struct_arch32(&regs);
+            } else {
+                let mut regs = starnix_uapi::user_regs_struct::default();
+                current_task.read_memory_to_slice(UserAddress::from(base), regs.as_mut_bytes())?;
+                thread_state.registers.from_user_regs_struct(&regs);
             }
             Ok(())
         }
-        _ => {
-            error!(EINVAL)
-        }
+        _ => error!(EINVAL),
     }
 }
 

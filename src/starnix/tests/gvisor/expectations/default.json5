@@ -944,9 +944,6 @@
                 // TODO(https://fxbug.dev/507795191): Fix and re-enable.
                 "Inotify.RmdirWithOpenDirFdDefersDeleteSelfUntilClose",
 
-                // TODO(https://fxbug.dev/507799355): Fix and re-enable.
-                "PtraceTest.GetRegSetPartialRead",
-
                 // TODO(https://fxbug.dev/507799657): Fix and re-enable.
                 "NetlinkRouteTest.ProcNetDevStableAcrossCalls",
 

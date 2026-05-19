@@ -77,7 +77,7 @@ impl SignalStackFrame {
                 .unwrap_or_default(),
             uc_sigmask: signal_state.mask().into(),
             uc_mcontext: sigcontext {
-                sc_regs: registers.clone().to_user_regs_struct(),
+                sc_regs: registers.to_user_regs_struct(),
                 __bindgen_anon_1: uapi::sigcontext__bindgen_ty_1 {
                     sc_fpregs: extended_pstate_to_riscv_fpregs(extended_pstate),
                 },

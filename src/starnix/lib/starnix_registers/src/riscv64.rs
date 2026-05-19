@@ -114,7 +114,7 @@ impl<T: RegisterStorage> RegisterState<T> {
         // No-op on RISC-V since there is no flags register.
     }
 
-    pub fn to_user_regs_struct(self) -> user_regs_struct {
+    pub fn to_user_regs_struct(&self) -> user_regs_struct {
         user_regs_struct {
             pc: self.pc,
             ra: self.ra,
@@ -149,6 +149,49 @@ impl<T: RegisterStorage> RegisterState<T> {
             t5: self.t5,
             t6: self.t6,
         }
+    }
+
+    pub fn to_user_regs_struct_arch32(&self) -> starnix_uapi::arch32::user_regs_struct {
+        unreachable!("arch32 not supported on riscv64")
+    }
+
+    pub fn from_user_regs_struct(&mut self, regs: &user_regs_struct) {
+        self.pc = regs.pc;
+        self.ra = regs.ra;
+        self.sp = regs.sp;
+        self.gp = regs.gp;
+        self.tp = regs.tp;
+        self.t0 = regs.t0;
+        self.t1 = regs.t1;
+        self.t2 = regs.t2;
+        self.s0 = regs.s0;
+        self.s1 = regs.s1;
+        self.a0 = regs.a0;
+        self.a1 = regs.a1;
+        self.a2 = regs.a2;
+        self.a3 = regs.a3;
+        self.a4 = regs.a4;
+        self.a5 = regs.a5;
+        self.a6 = regs.a6;
+        self.a7 = regs.a7;
+        self.s2 = regs.s2;
+        self.s3 = regs.s3;
+        self.s4 = regs.s4;
+        self.s5 = regs.s5;
+        self.s6 = regs.s6;
+        self.s7 = regs.s7;
+        self.s8 = regs.s8;
+        self.s9 = regs.s9;
+        self.s10 = regs.s10;
+        self.s11 = regs.s11;
+        self.t3 = regs.t3;
+        self.t4 = regs.t4;
+        self.t5 = regs.t5;
+        self.t6 = regs.t6;
+    }
+
+    pub fn from_user_regs_struct_arch32(&mut self, _regs: &starnix_uapi::arch32::user_regs_struct) {
+        unreachable!("arch32 not supported on riscv64")
     }
 
     /// Executes the given predicate on the register.
