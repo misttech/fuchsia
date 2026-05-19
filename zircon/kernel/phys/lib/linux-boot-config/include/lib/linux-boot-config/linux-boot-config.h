@@ -9,10 +9,14 @@
 
 #include <lib/fit/function.h>
 #include <lib/fit/result.h>
+#include <lib/stdcompat/bit.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <array>
 #include <bit>
+#include <cstddef>
+#include <cstdint>
 #include <numeric>
 #include <optional>
 #include <span>
@@ -187,7 +191,7 @@ struct Value {
   // User can look at the value type to determine what to do with the provided `value`.
   Action action;
 
-  // Actual bytes to be used, any surrounded quotes ar removed, and so are comments.
+  // Actual bytes to be used, any surrounded quotes are removed, and so are comments.
   std::string_view value;
 };
 
