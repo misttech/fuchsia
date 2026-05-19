@@ -12,6 +12,7 @@ mod array;
 mod canary;
 mod conditional_select_nospec;
 mod confine_array_index;
+mod doubly_linked_list;
 mod inline_array;
 mod opaque_ref_counted;
 mod ptr_traits;
@@ -34,7 +35,13 @@ pub use array::Array;
 pub use canary::{Canary, magic};
 pub use conditional_select_nospec::{conditional_select_nospec_eq, conditional_select_nospec_lt};
 pub use confine_array_index::confine_array_index;
-pub use fbl_macros::{Recyclable, SinglyLinkedListContainable, ref_counted};
+pub use doubly_linked_list::{
+    DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode, ForwardIterator,
+    ReverseIterator,
+};
+pub use fbl_macros::{
+    DoublyLinkedListContainable, Recyclable, SinglyLinkedListContainable, ref_counted,
+};
 pub use inline_array::InlineArray;
 pub use opaque_ref_counted::OpaqueRefCounted;
 pub use ptr_traits::{ManagedPtr, PtrTraits};

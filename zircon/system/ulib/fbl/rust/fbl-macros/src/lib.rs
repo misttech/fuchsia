@@ -163,3 +163,60 @@ pub fn derive_singly_linked_list_containable(item: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+/// Derive macro to implement `DoublyLinkedListContainable` for a struct.
+///
+/// Mark fields that are nodes with `#[dll_node]`. To support multiple lists, use
+/// `#[dll_node(tag = MyTag)]`.
+#[proc_macro_derive(DoublyLinkedListContainable, attributes(dll_node))]
+pub fn derive_doubly_linked_list_containable(item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    let name = &input.ident;
+
+    let fields = match input.data {
+        syn::Data::Struct(s) => s.fields,
+        _ => panic!("DoublyLinkedListContainable derive only supports structs"),
+    };
+
+    let mut impls = Vec::new();
+
+    for field in fields {
+        for attr in &field.attrs {
+            if attr.path().is_ident("dll_node") {
+                let field_name = field.ident.as_ref().unwrap();
+                let mut tag = None;
+
+                let _ = attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("tag") {
+                        let value = meta.value()?;
+                        let parsed_tag: syn::Type = value.parse()?;
+                        tag = Some(parsed_tag);
+                        Ok(())
+                    } else {
+                        Err(meta.error("unsupported attribute"))
+                    }
+                });
+
+                let tag_type = tag.unwrap_or_else(|| syn::parse_quote! { ::fbl::DefaultObjectTag });
+
+                impls.push(quote! {
+                    impl ::fbl::DoublyLinkedListContainable<#name, #tag_type> for #name {
+                        fn get_node(&self) -> &::fbl::DoublyLinkedListNode<#name> {
+                            &self.#field_name
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    if impls.is_empty() {
+        panic!("At least one field must be marked with #[dll_node]");
+    }
+
+    let expanded = quote! {
+        #(#impls)*
+    };
+
+    TokenStream::from(expanded)
+}

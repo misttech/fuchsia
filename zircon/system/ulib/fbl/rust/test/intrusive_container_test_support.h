@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <memory>
 
+#include <fbl/intrusive_double_list.h>
 #include <fbl/intrusive_single_list.h>
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
@@ -25,6 +26,7 @@ namespace interop {
 struct SharedUniqueObject {
   int value;
   fbl::SinglyLinkedListNodeState<std::unique_ptr<SharedUniqueObject>> sll_node_state_;
+  fbl::DoublyLinkedListNodeState<std::unique_ptr<SharedUniqueObject>> dll_node_state_;
   bool allocated_in_rust = false;
   std::atomic<bool>* destruction_flag = nullptr;
 
@@ -48,6 +50,7 @@ struct SharedRefObject : public fbl::RefCounted<SharedRefObject>,
                          public fbl::Recyclable<SharedRefObject> {
   int value;
   fbl::SinglyLinkedListNodeState<fbl::RefPtr<SharedRefObject>> sll_node_state_;
+  fbl::DoublyLinkedListNodeState<fbl::RefPtr<SharedRefObject>> dll_node_state_;
   bool allocated_in_rust = false;
   std::atomic<bool>* destruction_flag = nullptr;
 
@@ -72,20 +75,24 @@ static_assert(offsetof(SharedUniqueObject, value) == 0,
               "SharedUniqueObject::value offset mismatch");
 static_assert(offsetof(SharedUniqueObject, sll_node_state_) == 8,
               "SharedUniqueObject::sll_node_state_ offset mismatch");
-static_assert(offsetof(SharedUniqueObject, allocated_in_rust) == 16,
+static_assert(offsetof(SharedUniqueObject, dll_node_state_) == 16,
+              "SharedUniqueObject::dll_node_state_ offset mismatch");
+static_assert(offsetof(SharedUniqueObject, allocated_in_rust) == 32,
               "SharedUniqueObject::allocated_in_rust offset mismatch");
-static_assert(offsetof(SharedUniqueObject, destruction_flag) == 24,
+static_assert(offsetof(SharedUniqueObject, destruction_flag) == 40,
               "SharedUniqueObject::destruction_flag offset mismatch");
-static_assert(sizeof(SharedUniqueObject) == 32, "SharedUniqueObject size mismatch");
+static_assert(sizeof(SharedUniqueObject) == 48, "SharedUniqueObject size mismatch");
 
 static_assert(offsetof(SharedRefObject, value) == 4, "SharedRefObject::value offset mismatch");
 static_assert(offsetof(SharedRefObject, sll_node_state_) == 8,
               "SharedRefObject::sll_node_state_ offset mismatch");
-static_assert(offsetof(SharedRefObject, allocated_in_rust) == 16,
+static_assert(offsetof(SharedRefObject, dll_node_state_) == 16,
+              "SharedRefObject::dll_node_state_ offset mismatch");
+static_assert(offsetof(SharedRefObject, allocated_in_rust) == 32,
               "SharedRefObject::allocated_in_rust offset mismatch");
-static_assert(offsetof(SharedRefObject, destruction_flag) == 24,
+static_assert(offsetof(SharedRefObject, destruction_flag) == 40,
               "SharedRefObject::destruction_flag offset mismatch");
-static_assert(sizeof(SharedRefObject) == 32, "SharedRefObject size mismatch");
+static_assert(sizeof(SharedRefObject) == 48, "SharedRefObject size mismatch");
 #pragma GCC diagnostic pop
 
 }  // namespace interop

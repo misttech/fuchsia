@@ -14,6 +14,7 @@ rustc_library("fbl") {
     "src/canary.rs",
     "src/conditional_select_nospec.rs",
     "src/confine_array_index.rs",
+    "src/doubly_linked_list.rs",
     "src/inline_array.rs",
     "src/intrusive_container_test_support.rs",
     "src/lib.rs",
@@ -37,6 +38,7 @@ rustc_library("fbl") {
     "fbl-macros",
     "//src/lib/kalloc",
     "//src/lib/zr",
+    "//third_party/rust_crates:pin-init",
   ]
 }
 
@@ -45,6 +47,7 @@ source_set("test_support") {
   public_configs = [ "//build/config/fuchsia:static_cpp_standard_library" ]
   sources = [
     "test/canary_test.cc",
+    "test/doubly_linked_list_test.cc",
     "test/intrusive_container_test_support.cc",
     "test/intrusive_container_test_support.h",
     "test/opaque_ref_counted_test.cc",

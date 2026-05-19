@@ -4,7 +4,7 @@
 
 #![cfg(test)]
 
-use crate::SinglyLinkedListContainable;
+use crate::doubly_linked_list::DoublyLinkedListNode;
 use crate::opaque_ref_counted::OpaqueRefCounted;
 use crate::recyclable::Recyclable;
 use crate::ref_counted::{HasRefCount, RefCounted};
@@ -12,6 +12,7 @@ use crate::ref_ptr::RefPtr;
 use crate::singly_linked_list::SinglyLinkedListNode;
 use crate::tag::DefaultObjectTag;
 use crate::unique_ptr::UniquePtr;
+use crate::{DoublyLinkedListContainable, SinglyLinkedListContainable};
 use core::ffi::c_void;
 use core::ptr::NonNull;
 use kalloc::Box;
@@ -20,19 +21,18 @@ use zr::Opaque;
 pub trait TestValue: Sized {
     fn new(value: i32) -> Self {
         let _ = value;
-        unimplemented!()
+        unimplemented!("Type does not support direct creation")
     }
-
     fn new_ref_counted(value: i32) -> RefPtr<Self>
     where
         Self: HasRefCount + Recyclable,
     {
         let _ = value;
-        unimplemented!()
+        unimplemented!("Type does not support ref-counted creation")
     }
 }
 
-pub struct RawFactory<T> {
+pub struct RawFactory<T: Recyclable> {
     allocations: crate::Vector<*mut T>,
 }
 
@@ -42,18 +42,27 @@ impl<T: Recyclable + TestValue> RawFactory<T> {
     }
 
     pub fn create(&mut self, value: i32) -> *mut T {
-        let boxed = kalloc::Box::try_new(T::new(value)).unwrap();
-        let raw = kalloc::Box::into_raw(boxed);
-        self.allocations.push_back(raw).unwrap();
-        raw
+        let ptr = UniquePtr::into_raw(UniquePtr::try_new(T::new(value)).unwrap());
+        self.allocations.push_back(ptr).unwrap();
+        ptr
+    }
+
+    pub fn cleanup(&mut self, ptr: *mut T) {
+        if let Some(pos) = self.allocations.iter().position(|&x| x == ptr) {
+            self.allocations.erase(pos);
+        }
+        unsafe {
+            drop(UniquePtr::from_raw(ptr));
+        }
     }
 }
 
-impl<T> Drop for RawFactory<T> {
+impl<T: Recyclable> Drop for RawFactory<T> {
     fn drop(&mut self) {
-        for &raw in self.allocations.iter() {
-            // SAFETY: Reclaiming ownership to free the raw pointers leaked during tests.
-            let _ = unsafe { kalloc::Box::from_raw(raw) };
+        for &ptr in self.allocations.iter() {
+            unsafe {
+                drop(UniquePtr::from_raw(ptr));
+            }
         }
     }
 }
@@ -70,6 +79,10 @@ impl<T: Recyclable + TestValue> UniqueFactory<T> {
     pub fn create(&mut self, value: i32) -> UniquePtr<T> {
         UniquePtr::try_new(T::new(value)).unwrap()
     }
+
+    pub fn cleanup(&mut self, ptr: UniquePtr<T>) {
+        drop(ptr);
+    }
 }
 
 pub struct RefFactory<T> {
@@ -84,9 +97,13 @@ impl<T: HasRefCount + Recyclable + TestValue> RefFactory<T> {
     pub fn create(&mut self, value: i32) -> RefPtr<T> {
         T::new_ref_counted(value)
     }
+
+    pub fn cleanup(&mut self, ptr: RefPtr<T>) {
+        drop(ptr);
+    }
 }
 
-// Shared Interop Code (SLL only in this commit!)
+// Shared Interop Code
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_recycle_shared_ref_object(ptr: *mut c_void) {
@@ -104,12 +121,14 @@ pub extern "C" fn rust_free_shared_unique_object(ptr: *mut c_void) {
     }
 }
 
-#[derive(crate::SinglyLinkedListContainable)]
+#[derive(crate::SinglyLinkedListContainable, crate::DoublyLinkedListContainable)]
 #[repr(C)]
 pub struct SharedUniqueObject {
     pub value: i32,
     #[sll_node]
     sll_node: SinglyLinkedListNode<SharedUniqueObject>,
+    #[dll_node]
+    dll_node: DoublyLinkedListNode<SharedUniqueObject>,
     pub allocated_in_rust: bool,
     pub destruction_flag: *mut bool,
 }
@@ -119,6 +138,7 @@ impl SharedUniqueObject {
         Self {
             value,
             sll_node: SinglyLinkedListNode::new(),
+            dll_node: DoublyLinkedListNode::new(),
             allocated_in_rust: true,
             destruction_flag: core::ptr::null_mut(),
         }
@@ -170,6 +190,7 @@ pub struct SharedRefObject {
     __fbl_ref_counted_guard: (),
     pub value: i32,
     sll_node: SinglyLinkedListNode<SharedRefObject>,
+    dll_node: DoublyLinkedListNode<SharedRefObject>,
     pub allocated_in_rust: bool,
     pub destruction_flag: *mut bool,
 }
@@ -177,6 +198,12 @@ pub struct SharedRefObject {
 impl SinglyLinkedListContainable<SharedRefObject, DefaultObjectTag> for SharedRefObject {
     fn get_node(&self) -> &SinglyLinkedListNode<SharedRefObject> {
         &self.sll_node
+    }
+}
+
+impl DoublyLinkedListContainable<SharedRefObject, DefaultObjectTag> for SharedRefObject {
+    fn get_node(&self) -> &DoublyLinkedListNode<SharedRefObject> {
+        &self.dll_node
     }
 }
 
@@ -219,6 +246,7 @@ impl TestValue for SharedRefObject {
         crate::make_ref_counted!(SharedRefObject {
             value: value,
             sll_node: SinglyLinkedListNode::new(),
+            dll_node: DoublyLinkedListNode::new(),
             allocated_in_rust: true,
             destruction_flag: core::ptr::null_mut(),
         })
@@ -252,13 +280,15 @@ unsafe impl Recyclable for OpaqueRefCounted<CppRefObject> {
 
 ::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, value) == 0);
 ::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, sll_node) == 8);
-::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, allocated_in_rust) == 16);
-::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, destruction_flag) == 24);
-::zr::static_assert!(core::mem::size_of::<SharedUniqueObject>() == 32);
+::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, dll_node) == 16);
+::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, allocated_in_rust) == 32);
+::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, destruction_flag) == 40);
+::zr::static_assert!(core::mem::size_of::<SharedUniqueObject>() == 48);
 
 ::zr::static_assert!(core::mem::offset_of!(SharedRefObject, ref_count) == 0);
 ::zr::static_assert!(core::mem::offset_of!(SharedRefObject, value) == 4);
 ::zr::static_assert!(core::mem::offset_of!(SharedRefObject, sll_node) == 8);
-::zr::static_assert!(core::mem::offset_of!(SharedRefObject, allocated_in_rust) == 16);
-::zr::static_assert!(core::mem::offset_of!(SharedRefObject, destruction_flag) == 24);
-::zr::static_assert!(core::mem::size_of::<SharedRefObject>() == 32);
+::zr::static_assert!(core::mem::offset_of!(SharedRefObject, dll_node) == 16);
+::zr::static_assert!(core::mem::offset_of!(SharedRefObject, allocated_in_rust) == 32);
+::zr::static_assert!(core::mem::offset_of!(SharedRefObject, destruction_flag) == 40);
+::zr::static_assert!(core::mem::size_of::<SharedRefObject>() == 48);
