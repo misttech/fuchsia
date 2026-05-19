@@ -187,8 +187,10 @@ you would with a C++ driver.
 
 When testing drivers that use `MmioRegion`:
 
-* Avoid Manual Mocks: Instead of mocking `read`/`write` methods, use real VMOs
-  to back the memory region.
+* Prefer real VMOs: For simple use cases back the memory region with a real VMO,
+  don't mock `read`/`write` methods.
+* Advanced usages: Mocking `read`/`write` is reasonable for complex scenarios,
+  consider using [`MockMemoryOps`][mock-memory-ops] or something like it.
 * Use VMO Injection: In tests, create a `zx::Vmo`, map it using
   `VmoMapping::map()`, and pass the resulting `MmioRegion` to the driver.
 
@@ -222,3 +224,4 @@ When testing drivers that use `MmioRegion`:
 [test-harness]: https://fuchsia-docs.firebaseapp.com/rust/fdf_component/testing/harness/struct.TestHarness.html
 [examples-drivers]: /examples/drivers
 [dtr-lib]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_driver_test/index.html
+[mock-memory-ops]: https://fuchsia-docs.firebaseapp.com/rust/mmio/mock/struct.MockMemoryOps.html
