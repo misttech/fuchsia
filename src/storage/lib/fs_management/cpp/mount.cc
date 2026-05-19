@@ -133,10 +133,13 @@ fidl::ClientEnd<fuchsia_io::Directory> StartedSingleVolumeFilesystem::Release() 
 
 __EXPORT
 zx::result<> StartedSingleVolumeFilesystem::Unmount() {
-  auto resp = fidl::WireCall(admin_)->Shutdown();
-  admin_.reset();
+  zx_status_t status = ZX_OK;
+  if (admin_) {
+    status = fidl::WireCall(admin_)->Shutdown().status();
+    admin_.reset();
+  }
   export_root_.reset();
-  return zx::make_result(resp.status());
+  return zx::make_result(status);
 }
 
 __EXPORT
@@ -174,10 +177,13 @@ StartedMultiVolumeFilesystem::Release() {
 __EXPORT
 zx::result<> StartedMultiVolumeFilesystem::Unmount() {
   volumes_.clear();
-  auto resp = fidl::WireCall(admin_)->Shutdown();
-  admin_.reset();
+  zx_status_t status = ZX_OK;
+  if (admin_) {
+    status = fidl::WireCall(admin_)->Shutdown().status();
+    admin_.reset();
+  }
   exposed_dir_.reset();
-  return zx::make_result(resp.status());
+  return zx::make_result(status);
 }
 
 __EXPORT

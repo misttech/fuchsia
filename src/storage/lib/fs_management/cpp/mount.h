@@ -158,6 +158,7 @@ class __EXPORT StartedMultiVolumeFilesystem {
   }
   StartedMultiVolumeFilesystem& operator=(StartedMultiVolumeFilesystem&& o) noexcept {
     exposed_dir_ = std::move(o.exposed_dir_);
+    admin_ = std::move(o.admin_);
     volumes_ = std::move(o.volumes_);
     o.Release();
     return *this;
@@ -246,6 +247,7 @@ class __EXPORT StartedSingleVolumeMultiVolumeFilesystem : public SingleVolumeFil
   StartedSingleVolumeMultiVolumeFilesystem& operator=(
       StartedSingleVolumeMultiVolumeFilesystem&& o) noexcept {
     exposed_dir_ = std::move(o.exposed_dir_);
+    admin_ = std::move(o.admin_);
     volume_ = std::move(o.volume_);
     o.Release();
     return *this;
