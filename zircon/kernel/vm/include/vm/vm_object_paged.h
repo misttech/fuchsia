@@ -126,6 +126,9 @@ class VmObjectPaged final : public VmObject, public VmDeferredDeleter<VmObjectPa
     return cow_pages_->is_root_source_user_pager_backed();
   }
   bool is_dirty_tracked() const override { return cow_pages_->is_dirty_tracked(); }
+  // Streams are not supported on physical or contiguous VMOs.
+  bool is_stream_compatible() const override { return is_paged() && !is_contiguous(); }
+
   void mark_modified_locked() override TA_REQ(lock()) {
     return cow_pages_locked()->mark_modified_locked();
   }

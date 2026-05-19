@@ -279,6 +279,8 @@ class VmObject : public fbl::ContainableBaseClasses<
   virtual bool is_user_pager_backed() const { return false; }
   // Returns true if the VMO's pages require dirty bit tracking.
   virtual bool is_dirty_tracked() const { return false; }
+  // Returns true if streams are supported on the VMO.
+  virtual bool is_stream_compatible() const { return false; }
   // Marks the VMO as modified if the VMO tracks modified state (only supported for pager-backed
   // VMOs).
   virtual void mark_modified_locked() TA_REQ(lock()) {}

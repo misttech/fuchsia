@@ -184,8 +184,7 @@ ktl::pair<zx_status_t, size_t> VmObjectDispatcher::Write(
 zx_status_t VmObjectDispatcher::SetSize(uint64_t size) {
   canary_.Assert();
 
-  // No stream size management for physical or contiguous VMOs.
-  if (!vmo()->is_paged() || vmo()->is_contiguous()) {
+  if (!vmo()->is_stream_compatible()) {
     DEBUG_ASSERT(!vmo_->is_resizable());
     return ZX_ERR_UNAVAILABLE;
   }
@@ -302,8 +301,7 @@ zx_info_vmo_t VmObjectDispatcher::GetVmoInfo(zx_rights_t rights) {
 zx_status_t VmObjectDispatcher::SetStreamSize(uint64_t stream_size) {
   canary_.Assert();
 
-  // Set stream size is not supported for physical or contiguous VMOs.
-  if (vmo_->is_contiguous() || !vmo_->is_paged()) {
+  if (!vmo_->is_stream_compatible()) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -366,8 +364,8 @@ zx_status_t VmObjectDispatcher::SetStreamSize(uint64_t stream_size) {
 uint64_t VmObjectDispatcher::GetStreamSize() const {
   canary_.Assert();
 
-  // Stream size is always reported as 0 for physical & contiguous VMOs.
-  if (vmo_->is_contiguous() || !vmo_->is_paged()) {
+  // Stream size is always reported as 0 if the VMO doesn't support streams.
+  if (!vmo_->is_stream_compatible()) {
     return 0;
   }
 
@@ -575,8 +573,7 @@ zx_status_t VmObjectDispatcher::CreateChild(uint32_t options, uint64_t offset, u
 zx::result<fbl::RefPtr<StreamSizeManager>> VmObjectDispatcher::stream_size_manager() {
   Guard<CriticalMutex> guard{get_lock()};
   if (unlikely(!stream_size_mgr_)) {
-    // Physical & contiguous VMOs can't have associated stream.
-    if (!vmo_->is_paged() || vmo_->is_contiguous()) {
+    if (!vmo_->is_stream_compatible()) {
       return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
     auto result = StreamSizeManager::Create(vmo_->size());
