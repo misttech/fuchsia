@@ -95,7 +95,7 @@ pub async fn test_get_attrs<T: BackendTest>() -> Result<(), Error> {
         // Comparison is a little loose here because some backends have minimum granularity and may
         // round up sizes. We just verify we get at least the capacity we requested otherwise other
         // tests may fail as they depend on this precondition.
-        assert!(backend.get_attrs(ftrace::Id::random()).await?.capacity >= sectors);
+        assert!(backend.get_attrs(ftrace::Id::new()).await?.capacity >= sectors);
     }
 
     Ok(())
@@ -119,7 +119,7 @@ pub async fn test_read_per_sector_ranges<T: BackendTest>() -> Result<(), Error> 
     let request = Request::from_ref(ranges.as_slice(), Sector::from_raw_sector(0));
 
     // Create the backend and process the request.
-    backend.read(request, ftrace::Id::random()).await?;
+    backend.read(request, ftrace::Id::new()).await?;
 
     // Verify the file data was read into the device ranges.
     check_range(&ranges[0], 0xaa);
@@ -142,7 +142,7 @@ pub async fn test_read_multiple_sectors_per_range<T: BackendTest>() -> Result<()
     let request = Request::from_ref(slice::from_ref(&range), Sector::from_raw_sector(0));
 
     // Process the request.
-    backend.read(request, ftrace::Id::random()).await?;
+    backend.read(request, ftrace::Id::new()).await?;
 
     // Verify the file data was read into the device ranges.
     let (sector0, remain) = range.split_at(wire::VIRTIO_BLOCK_SECTOR_SIZE as usize).unwrap();
@@ -171,7 +171,7 @@ pub async fn test_read_subsector_range<T: BackendTest>() -> Result<(), Error> {
     let request = Request::from_ref(ranges.as_slice(), Sector::from_raw_sector(0));
 
     // Process the request.
-    backend.read(request, ftrace::Id::random()).await?;
+    backend.read(request, ftrace::Id::new()).await?;
 
     // Verify the correct data is read.
     check_range(&ranges[0], 0xaa);
@@ -202,7 +202,7 @@ pub async fn test_read_large<T: BackendTest>() -> Result<(), Error> {
     let request = Request::from_ref(slice::from_ref(&range), Sector::from_raw_sector(0));
 
     // Process the request.
-    backend.read(request, ftrace::Id::random()).await?;
+    backend.read(request, ftrace::Id::new()).await?;
 
     // Verify the file data was read into the descriptor.
     check_range(&range, 0xaa);
@@ -232,7 +232,7 @@ pub async fn test_read_concurrent<T: BackendTest>() -> Result<(), Error> {
                     slice::from_ref(&ranges[sector as usize]),
                     Sector::from_raw_sector(sector),
                 ),
-                ftrace::Id::random(),
+                ftrace::Id::new(),
             )
         })
         .collect();
@@ -264,7 +264,7 @@ pub async fn test_write_per_sector_ranges<T: BackendTest>() -> Result<(), Error>
 
     // Create the backend and write the ranges.
     let (backend, mut controller) = T::create_with_sectors(Sector::from_raw_sector(3)).await?;
-    backend.write(request, ftrace::Id::random()).await?;
+    backend.write(request, ftrace::Id::new()).await?;
 
     // Verify the data was written into the file.
     controller.check_sector(Sector::from_raw_sector(0), 0xaa)?;
@@ -292,7 +292,7 @@ pub async fn test_write_multiple_sectors_per_range<T: BackendTest>() -> Result<(
 
     // Execute the write.
     let (backend, mut controller) = T::create_with_sectors(Sector::from_raw_sector(3)).await?;
-    backend.write(request, ftrace::Id::random()).await?;
+    backend.write(request, ftrace::Id::new()).await?;
 
     // Verify the data was written to the file.
     controller.check_sector(Sector::from_raw_sector(0), 0xaa)?;
@@ -321,7 +321,7 @@ pub async fn test_write_subsector_range<T: BackendTest>() -> Result<(), Error> {
 
     // Execute the write.
     let (backend, mut controller) = T::create_with_sectors(Sector::from_raw_sector(1)).await?;
-    backend.write(request, ftrace::Id::random()).await?;
+    backend.write(request, ftrace::Id::new()).await?;
 
     // Verify the full sector was written correctly.
     controller.check_sector(Sector::from_raw_sector(0), 0xaa)?;
@@ -348,7 +348,7 @@ pub async fn test_write_large<T: BackendTest>() -> Result<(), Error> {
     // Create the backend and process the request.
     let (backend, mut controller) =
         T::create_with_sectors(Sector::from_raw_sector(SECTOR_SIZE)).await?;
-    backend.write(request, ftrace::Id::random()).await?;
+    backend.write(request, ftrace::Id::new()).await?;
 
     // Verify the data was written to the file.
     (0..SECTOR_SIZE)
@@ -382,7 +382,7 @@ pub async fn test_write_concurrent<T: BackendTest>() -> Result<(), Error> {
                     slice::from_ref(&ranges[sector as usize]),
                     Sector::from_raw_sector(sector),
                 ),
-                ftrace::Id::random(),
+                ftrace::Id::new(),
             )
         })
         .collect();
@@ -410,7 +410,7 @@ pub async fn test_read_write_loop<T: BackendTest>() -> Result<(), Error> {
             backend
                 .write(
                     Request::from_ref(slice::from_ref(&write_range), Sector::from_raw_sector(0)),
-                    ftrace::Id::random(),
+                    ftrace::Id::new(),
                 )
                 .await?;
         }
@@ -419,7 +419,7 @@ pub async fn test_read_write_loop<T: BackendTest>() -> Result<(), Error> {
             backend
                 .read(
                     Request::from_ref(slice::from_ref(&read_range), Sector::from_raw_sector(0)),
-                    ftrace::Id::random(),
+                    ftrace::Id::new(),
                 )
                 .await?;
             check_range(&read_range, i as u8);

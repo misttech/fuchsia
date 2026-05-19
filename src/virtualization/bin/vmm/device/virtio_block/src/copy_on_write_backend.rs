@@ -236,7 +236,7 @@ mod tests {
             let cow_backend = CopyOnWriteBackend::new(
                 Box::new(file_backend),
                 Box::new(memory_backend),
-                ftrace::Id::random(),
+                ftrace::Id::new(),
             )
             .await?;
             let cow_controller = CopyOnWriteBackendController {

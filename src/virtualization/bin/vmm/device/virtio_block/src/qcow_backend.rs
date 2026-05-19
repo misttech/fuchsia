@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::backend::{BlockBackend, DeviceAttrs, Request, Sector};
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use async_trait::async_trait;
 use fuchsia_trace as ftrace;
 use std::io::{Read, Seek};
@@ -128,7 +128,7 @@ mod tests {
 
         // Create the backend and process the request.
         let backend = create_backend();
-        backend.read(request, ftrace::Id::random()).await.expect("Failed to read from the backend");
+        backend.read(request, ftrace::Id::new()).await.expect("Failed to read from the backend");
 
         // Verify the file data was read into the device ranges.
         check_range(&ranges[0], 0x01);
@@ -145,7 +145,7 @@ mod tests {
 
         // Create the backend and process the request.
         let backend = create_backend();
-        backend.read(request, ftrace::Id::random()).await.expect("Failed to read from the backend");
+        backend.read(request, ftrace::Id::new()).await.expect("Failed to read from the backend");
 
         // Verify the file data was read into the device ranges.
         let (sector0, remain) = range.split_at(wire::VIRTIO_BLOCK_SECTOR_SIZE as usize).unwrap();
@@ -169,7 +169,7 @@ mod tests {
 
         // Create the backend and process the request.
         let backend = create_backend();
-        backend.read(request, ftrace::Id::random()).await.expect("Failed to read from the backend");
+        backend.read(request, ftrace::Id::new()).await.expect("Failed to read from the backend");
 
         // Verify the correct data is read.
         check_range(&ranges[0], 0x01);

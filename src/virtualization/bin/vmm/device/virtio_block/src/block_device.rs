@@ -172,7 +172,7 @@ impl BlockDevice {
     ) -> Result<Self, anyhow::Error> {
         // FIDL already enforces this upper bound.
         assert!(id.len() <= wire::VIRTIO_BLK_ID_LEN);
-        Ok(Self { device_attrs: backend.get_attrs(ftrace::Id::random()).await?, backend, id, mode })
+        Ok(Self { device_attrs: backend.get_attrs(ftrace::Id::new()).await?, backend, id, mode })
     }
 
     /// Returns the cached `DeviceAttrs` for this device.
@@ -189,7 +189,7 @@ impl BlockDevice {
         &self,
         mut chain: ReadableChain<'a, 'b, N, M>,
     ) -> Result<(), anyhow::Error> {
-        let trace_id = ftrace::Id::random();
+        let trace_id = ftrace::Id::new();
         let _trace = ftrace::async_enter!(trace_id, "machina", "BlockDevice::process_chain");
         let (mut chain, block_status) = match read_header(&mut chain) {
             Ok(header) => match header.request_type.get() {
