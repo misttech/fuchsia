@@ -112,6 +112,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	"genrule":             "action",
 	"package":             "package",
 	"test_suite":          "group",
+	"stamp_group":         "group",
 
 	// `exports_files()` is a concept specific to Bazel, so there is no need to convert it.
 	"exports_files": "__NO_GN_EQUIVALENT__",
@@ -156,6 +157,9 @@ var attrsToOmitByRules = map[string]map[string]bool{
 	"fx_cc_library":            {"includes": true},
 	"idk_cc_source_library":    {"includes": true},
 	"idk_cc_shared_library_zx": {"version_script": true},
+	// We do not need to include the "stamp" destination in GN because it is implicitly created by
+	// the rule.
+	"stamp_group": {"stamp": true},
 }
 
 // Common Bazel attributes that use different names in GN.

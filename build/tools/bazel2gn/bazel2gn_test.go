@@ -141,6 +141,22 @@ go_test("bazel2gn_tests") {
 }`,
 		},
 		{
+			name: "Stamp group",
+			bazel: `stamp_group(
+	name = "tests",
+	deps = [
+		"//tools/check-licenses/directory:directory_test",
+		"//tools/check-licenses/file:file_test",
+	],
+)`,
+			wantGN: `group("tests") {
+	deps = [
+		"//tools/check-licenses/directory:directory_test",
+		"//tools/check-licenses/file:file_test",
+	]
+}`,
+		},
+		{
 			name: "Simple Python targets",
 			bazel: `load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
