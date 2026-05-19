@@ -62,7 +62,7 @@ group_with_no_dir_target_deps("workbench_x64_unstable_tests") {
   testonly = true
   public_deps = [
     "//src/developer/ffx/lib/fuchsia-controller/end_to_end_tests/mobly:fuchsia_controller_tests_staging",
-    "//src/power/bench/power_framework:tests",
+    "//src/power/bench:tests",
     "//src/storage/blackout/host:blackout_emulator_unstable",
   ]
 }
@@ -96,7 +96,7 @@ group_with_no_dir_target_deps("workbench_vim3_unstable_tests") {
     "//scripts/memory:components_sql_test($host_toolchain)",
     "//src/developer/ffx/lib/fuchsia-controller/end_to_end_tests/mobly:fuchsia_controller_tests_staging",
     "//src/firmware/tests/lacewing:lacewing($host_toolchain)",
-    "//src/power/bench/power_framework:tests",
+    "//src/power/bench:tests",
     "//src/storage/blackout/host:blackout_workbench_vim3_unstable",
 
     # Do not run this test in CQ (stable_tests) until b/412361464 is fixed
