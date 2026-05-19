@@ -161,7 +161,7 @@ class OtRadioDevice : public DeviceType {
     OtRadioDevice& ot_radio_obj_;
   };
 
-  uint32_t inbound_allowance_ = 0;
+  std::atomic<uint32_t> inbound_allowance_ = 0;
   uint32_t outbound_allowance_ = kOutboundAllowanceInit;
   uint64_t inbound_cnt_ = 0;
   uint64_t outbound_cnt_ = 0;
