@@ -297,7 +297,7 @@ class WorkspaceSyncService:
     def sync_cog_to_cartfs(self) -> SyncResult:
         """Syncs changes from Cog to CartFS."""
         if not self.workspace.has_cartfs_dir:
-            with logger.set_level(min(logger.get_log_level(), logging.INFO)):
+            with logger.set_level(min(logger.get_log_level(), logging.DEBUG)):
                 logger.log_info(
                     "CartFS workspace is not initialized yet, initializing now..."
                 )
@@ -305,7 +305,7 @@ class WorkspaceSyncService:
                 logger.log_info("CartFS workspace initialized.")
 
         if not self.workspace.is_checkout_uptodate():
-            with logger.set_level(min(logger.get_log_level(), logging.INFO)):
+            with logger.set_level(min(logger.get_log_level(), logging.DEBUG)):
                 logger.log_info(
                     "CartFS checkout is not up to date, updating CartFS checkout..."
                 )
