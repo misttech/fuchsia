@@ -483,6 +483,18 @@ class AccessPointConfig:
         )
 
     @classmethod
+    def random_hex_string(cls, length: int = 10) -> str:
+        """Generates a random hexadecimal string.
+
+        Args:
+            length: The length of the random string.
+
+        Returns:
+            A random hexadecimal string.
+        """
+        return "".join(random.choices(string.hexdigits, k=length))
+
+    @classmethod
     def generate(
         cls,
         radios: list[RadioConfig] | None = None,

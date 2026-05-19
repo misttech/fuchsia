@@ -12,6 +12,7 @@ import time
 from enum import StrEnum
 from typing import Dict, List
 
+from antlion.controllers.utils_lib.commands.tcpdump import LinuxTcpdumpCommand
 from libs.ssh import connection, settings
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
@@ -94,6 +95,29 @@ class OpenWrtAP:
         self.dhcp = DhcpController(self.ssh)
         self.dhcp.reset_dhcp_config()
         self.reset_wifi_config()
+
+        # Check for tcpdump
+        try:
+            self.ssh.run("which tcpdump")
+        except Exception:
+            _LOGGER.error("tcpdump command not found on OpenWrt AP")
+
+        self.tcpdump = LinuxTcpdumpCommand(self.ssh)
+
+    @property
+    def default_subnet(self) -> str:
+        """Returns the default subnet for the AP."""
+        return "192.168.1.0/24"
+
+    @property
+    def wlan_2g_interface(self) -> str:
+        """Returns the default 2G wireless interface."""
+        return "phy1-ap0"
+
+    @property
+    def wlan_5g_interface(self) -> str:
+        """Returns the default 5G wireless interface."""
+        return "phy0-ap0"
 
     def _configure_bss(self, bss: BssSettings, radio: Radio) -> None:
         """Configures a BSS on the Access Point.

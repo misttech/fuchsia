@@ -10,11 +10,13 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import pstdev
+from typing import Literal, cast
 
 from antlion import utils
 from antlion.controllers.access_point import AccessPoint, setup_ap
-from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
 from antlion.controllers.ap_lib.regulatory_channels import COUNTRY_CHANNELS
 from antlion.controllers.fuchsia_device import FuchsiaDevice
 from antlion.controllers.iperf_client import (
@@ -27,6 +29,27 @@ from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
+from openwrt_access_point import OpenWrtAP
+from openwrt_access_point.lib.access_point_config import (
+    AccessPointConfig,
+    Band,
+    BssChannel,
+    BssSettings,
+    HtMode,
+    PhyMode,
+    RadioConfig,
+    Security,
+    SecurityOpen,
+    SecurityWep,
+    SecurityWpa,
+    SecurityWpa2,
+    SecurityWpa3,
+    SecurityWpaWpa2Mixed,
+    VhtMode,
+)
+from openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper,
+)
 
 DEFAULT_MIN_THROUGHPUT = 0.0
 DEFAULT_MAX_STD_DEV = 1.0
@@ -37,6 +60,8 @@ GRAPH_CIRCLE_SIZE = 10
 MAX_2_4_CHANNEL = 14
 TIME_TO_SLEEP_BETWEEN_RETRIES = 1
 WEP_HEX_STRING_LENGTH = 10
+MIN_WPA_PSK_LENGTH = 8
+AP_SSID_LENGTH_2G = 8
 
 MEGABITS_PER_SECOND = "Mbps"
 
@@ -46,7 +71,7 @@ class TestParams:
     country_code: str
     """Country code for the DUT to set before running the test."""
 
-    security_mode: SecurityMode
+    security_mode: Security
     """Security type of the network to create. None represents an open network."""
 
     channel: int
@@ -69,7 +94,7 @@ class TestParams:
 @dataclass(frozen=True)
 class ThroughputKey:
     country_code: str
-    security_mode: SecurityMode
+    security_mode: Security
     channel_bandwidth: int
 
     @staticmethod
@@ -107,6 +132,7 @@ class ChannelSweepTest(base_test.WifiBaseTest):
     def __init__(self, configs: TestRunConfig) -> None:
         super().__init__(configs)
         self.iperf_server: IPerfServerOverSsh | None = None
+        self.openwrt_ap: OpenWrtAP | None = None
         self.log = logging.getLogger()
         self.channel_throughput: ChannelThroughputMap = {}
 
@@ -118,7 +144,10 @@ class ChannelSweepTest(base_test.WifiBaseTest):
         tests: list[tuple[TestParams]] = []
 
         def generate_test_name(test: TestParams) -> str:
-            return f"test_{test.country_code}_{test.security_mode}_channel_{test.channel}_{test.channel_bandwidth}mhz"
+            sec_name = AccessPointConfigMapper.to_hostapd_security(
+                test.security_mode
+            ).value
+            return f"test_{test.country_code}_{sec_name}_channel_{test.channel}_{test.channel_bandwidth}mhz"
 
         def test_params(test_name: str) -> dict[str, float]:
             return self.user_params.get("channel_sweep_test_params", {}).get(
@@ -126,14 +155,15 @@ class ChannelSweepTest(base_test.WifiBaseTest):
             )
 
         for country_channels in [COUNTRY_CHANNELS["United States of America"]]:
-            for security_mode in [
-                SecurityMode.OPEN,
-                SecurityMode.WEP,
-                SecurityMode.WPA,
-                SecurityMode.WPA2,
-                SecurityMode.WPA_WPA2,
-                SecurityMode.WPA3,
-            ]:
+            security_modes: list[Security] = [
+                SecurityOpen(),
+                SecurityWep(),
+                SecurityWpa(),
+                SecurityWpa2(),
+                SecurityWpaWpa2Mixed(),
+                SecurityWpa3(),
+            ]
+            for security_mode in security_modes:
                 for (
                     channel,
                     bandwidths,
@@ -175,15 +205,28 @@ class ChannelSweepTest(base_test.WifiBaseTest):
             FuchsiaDevice, AssociationMode.POLICY
         )
 
-        if len(self.access_points) == 0:
-            raise signals.TestAbortClass("Requires at least one access point")
-        self.access_point = self.access_points[0]
-        self.access_point.stop_all_aps()
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+            self.iperf_server = IPerfServerOverSsh(
+                ssh_settings=self.openwrt_ap.ssh_settings,
+                port=5201,
+                test_interface="br-lan",
+            )
+            self.iperf_server.start()
+        else:
+            if len(self.access_points) == 0:
+                raise signals.TestAbortClass(
+                    "Requires at least one access point"
+                )
+            self.access_point = self.access_points[0]
+            self.access_point.stop_all_aps()
 
-        if len(self.iperf_servers) == 0:
-            raise signals.TestAbortClass("Requires at least one iperf server")
-        self.iperf_server = self.iperf_servers[0]
-        self.iperf_server.start()
+            if len(self.iperf_servers) == 0:
+                raise signals.TestAbortClass(
+                    "Requires at least one iperf server"
+                )
+            self.iperf_server = self.iperf_servers[0]
+            self.iperf_server.start()
 
         if len(self.iperf_clients) > 0:
             self.iperf_client = self.iperf_clients[0]
@@ -192,6 +235,12 @@ class ChannelSweepTest(base_test.WifiBaseTest):
 
     def teardown_class(self) -> None:
         self.write_graph()
+        if self.openwrt_ap is not None and self.iperf_server:
+            # Stop the manually created iperf server. This is required because we
+            # aren't registering the iperf server as a separate Mobly controller
+            # when using the OpenWRT AP as iperf, so Mobly won't automatically
+            # clean it up.
+            self.iperf_server.stop()
         super().teardown_class()
 
     def setup_test(self) -> None:
@@ -211,7 +260,8 @@ class ChannelSweepTest(base_test.WifiBaseTest):
         #                 'Failed to reset country code on FuchsiaDevice (%s). '
         #                 'Error: %s' % (fd.ip, clear_country_response['error'])
         #                 )
-        self.access_point.stop_all_aps()
+        if self.access_point is not None:
+            self.access_point.stop_all_aps()
         for ad in self.android_devices:
             ad.droid.wakeLockAcquireBright()
             ad.droid.wakeUpNow()
@@ -225,21 +275,24 @@ class ChannelSweepTest(base_test.WifiBaseTest):
         self.dut.turn_location_off_and_scan_toggle_off()
         self.dut.disconnect()
         self.download_logs()
-        self.access_point.stop_all_aps()
+        if self.access_point is not None:
+            self.access_point.stop_all_aps()
         super().teardown_test()
 
     def setup_ap(
         self,
         channel: int,
         channel_bandwidth: int,
-        security_profile: Security,
+        security_mode: Security,
+        password: str | None = None,
     ) -> str:
         """Start network on AP with basic configuration.
 
         Args:
             channel: channel to use for network
             channel_bandwidth: channel bandwidth in mhz to use for network,
-            security_profile: security type to use or None if open
+            security_mode: security type to use (Security)
+            password: password for the network if secured
 
         Returns:
             SSID of the newly created and running network
@@ -247,18 +300,64 @@ class ChannelSweepTest(base_test.WifiBaseTest):
         Raises:
             ConnectionError if network is not started successfully.
         """
-        ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
+        ssid = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
         try:
-            setup_ap(
-                access_point=self.access_point,
-                profile_name="whirlwind",
-                channel=channel,
-                security=security_profile,
-                force_wmm=True,
-                ssid=ssid,
-                vht_bandwidth=channel_bandwidth,
-                setup_bridge=True,
-            )
+            if self.openwrt_ap is not None:
+                band = (
+                    Band.BAND_2G if channel <= MAX_2_4_CHANNEL else Band.BAND_5G
+                )
+                phy_mode: PhyMode
+                if band == Band.BAND_2G:
+                    if channel_bandwidth == 40:
+                        ext = cast(
+                            Literal["+", "-"], "+" if channel <= 7 else "-"
+                        )
+                        phy_mode = HtMode(bw=40, extension=ext)
+                    else:
+                        phy_mode = HtMode(bw=20)
+                else:
+                    phy_mode = VhtMode(
+                        bw=cast(Literal[20, 40, 80, 160], channel_bandwidth)
+                    )
+
+                config = AccessPointConfig(
+                    radios=[
+                        RadioConfig(
+                            channel=BssChannel(
+                                band=band,
+                                number=channel,
+                                phy_mode=phy_mode,
+                            ),
+                            bss_settings=[
+                                BssSettings(
+                                    ssid=ssid,
+                                    security=security_mode,
+                                    password=password,
+                                )
+                            ],
+                        )
+                    ]
+                )
+                self.openwrt_ap.configure_wifi(config)
+                self.openwrt_ap.verify_wifi_status(band)
+            else:
+                # Legacy setup_ap expects antlion Security object
+                security_profile = DeprecatedSecurity(
+                    security_mode=AccessPointConfigMapper.to_hostapd_security(
+                        security_mode
+                    ),
+                    password=password,
+                )
+                setup_ap(
+                    access_point=self.access_point,
+                    profile_name="whirlwind",
+                    channel=channel,
+                    security=security_profile,
+                    force_wmm=True,
+                    ssid=ssid,
+                    vht_bandwidth=channel_bandwidth,
+                    setup_bridge=True,
+                )
             self.log.info(
                 "Network (ssid: %s) up on channel %s w/ channel bandwidth %s MHz",
                 ssid,
@@ -294,10 +393,13 @@ class ChannelSweepTest(base_test.WifiBaseTest):
             ConnectionError, if device does not have a valid ip address after
                 all retries.
         """
-        if channel <= MAX_2_4_CHANNEL:
-            subnet = self.access_point._AP_2G_SUBNET_STR
+        if self.openwrt_ap is not None:
+            subnet = self.openwrt_ap.default_subnet
         else:
-            subnet = self.access_point._AP_5G_SUBNET_STR
+            if channel <= MAX_2_4_CHANNEL:
+                subnet = self.access_point._AP_2G_SUBNET_STR
+            else:
+                subnet = self.access_point._AP_5G_SUBNET_STR
         end_time = time.time() + self.time_to_wait_for_ip_addr
         while time.time() < end_time:
             device_addresses = device.get_interface_ip_addresses(interface)
@@ -578,34 +680,70 @@ class ChannelSweepTest(base_test.WifiBaseTest):
             CountryCode(test.country_code)
         )
 
-        target_security = test.security_mode
-        if target_security is not SecurityMode.OPEN:
-            if test.security_mode is SecurityMode.WEP:
-                password = utils.rand_hex_str(WEP_HEX_STRING_LENGTH)
-            else:
-                password = utils.rand_ascii_str(
-                    hostapd_constants.MIN_WPA_PSK_LENGTH
+        if not isinstance(test.security_mode, SecurityOpen):
+            if isinstance(test.security_mode, SecurityWep):
+                password = AccessPointConfig.random_hex_string(
+                    WEP_HEX_STRING_LENGTH
                 )
-            security_profile = Security(
-                security_mode=test.security_mode, password=password
-            )
+            else:
+                password = AccessPointConfig.random_string(MIN_WPA_PSK_LENGTH)
         else:
             password = None
-            security_profile = Security()
 
         ssid = self.setup_ap(
-            test.channel, test.channel_bandwidth, security_profile
+            test.channel, test.channel_bandwidth, test.security_mode, password
         )
 
-        interface = (
-            self.access_point.wlan_2g
-            if test.channel in hostapd_constants.ALL_CHANNELS_2G
-            else self.access_point.wlan_5g
-        )
+        # DFS channels require a 60 second wait for CAC (Channel Availability Check)
+        if test.channel in [
+            52,
+            56,
+            60,
+            64,
+            100,
+            104,
+            108,
+            112,
+            116,
+            120,
+            124,
+            128,
+            132,
+            136,
+            140,
+            144,
+        ]:
+            self.log.info(
+                "Waiting 65 seconds for DFS Channel Availability Check (CAC)..."
+            )
+            time.sleep(65)
 
-        with self.access_point.tcpdump.start(interface, Path(self.log_path)):
+        if self.openwrt_ap is not None:
+            interface = (
+                self.openwrt_ap.wlan_2g_interface
+                if test.channel <= MAX_2_4_CHANNEL
+                else self.openwrt_ap.wlan_5g_interface
+            )
+            tcpdump_mgr = self.openwrt_ap.tcpdump.start(
+                interface, Path(self.log_path)
+            )
+        else:
+            interface = (
+                self.access_point.wlan_2g
+                if test.channel <= MAX_2_4_CHANNEL
+                else self.access_point.wlan_5g
+            )
+            tcpdump_mgr = self.access_point.tcpdump.start(
+                interface, Path(self.log_path)
+            )
+
+        with tcpdump_mgr:
             associated = self.dut.associate(
-                ssid, target_pwd=password, target_security=target_security
+                ssid,
+                target_pwd=password,
+                target_security=AccessPointConfigMapper.to_hostapd_security(
+                    test.security_mode
+                ),
             )
             if not associated:
                 self.log_to_file_and_throughput_data(test, None, None)
@@ -615,7 +753,8 @@ class ChannelSweepTest(base_test.WifiBaseTest):
             )
 
             assert self.iperf_server is not None
-            self.iperf_server.renew_test_interface_ip_address()
+            if self.openwrt_ap is None:
+                self.iperf_server.renew_test_interface_ip_address()
             if not isinstance(self.iperf_server.test_interface, str):
                 raise TypeError(
                     "For this test, iperf_server is required to specify the "
@@ -684,16 +823,42 @@ class ChannelSweepTest(base_test.WifiBaseTest):
             except Exception as e:
                 if self.iperf_server and self.iperf_server._ssh_session:
                     ssh = self.iperf_server._ssh_session
-                    self.log.warning(
-                        "iperf ps aux:\n%s",
-                        ssh.run(["sudo", "ps", "aux"]).stdout.decode("utf-8"),
-                    )
-                    self.log.warning(
-                        "iperf sockets:\n%s",
-                        ssh.run(["sudo", "ss", "-tulpn"]).stdout.decode(
-                            "utf-8"
-                        ),
-                    )
+                    if self.openwrt_ap is not None:
+                        try:
+                            self.log.warning(
+                                "iperf ps w:\n%s",
+                                ssh.run(["ps", "w"]).stdout.decode("utf-8"),
+                            )
+                        except Exception:
+                            pass
+                        try:
+                            self.log.warning(
+                                "iperf sockets:\n%s",
+                                ssh.run(["netstat", "-tulpn"]).stdout.decode(
+                                    "utf-8"
+                                ),
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            self.log.warning(
+                                "iperf ps aux:\n%s",
+                                ssh.run(["sudo", "ps", "aux"]).stdout.decode(
+                                    "utf-8"
+                                ),
+                            )
+                        except Exception:
+                            pass
+                        try:
+                            self.log.warning(
+                                "iperf sockets:\n%s",
+                                ssh.run(["sudo", "ss", "-tulpn"]).stdout.decode(
+                                    "utf-8"
+                                ),
+                            )
+                        except Exception:
+                            pass
                 raise e
 
 

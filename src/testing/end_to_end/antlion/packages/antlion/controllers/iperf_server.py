@@ -20,7 +20,7 @@ from typing import IO
 
 from antlion import context, utils
 from antlion.controllers.utils_lib.commands import nmcli
-from antlion.controllers.utils_lib.commands.command import optional, require
+from antlion.controllers.utils_lib.commands.command import optional
 from antlion.controllers.utils_lib.commands.journalctl import (
     LinuxJournalctlCommand,
 )
@@ -451,7 +451,7 @@ class IPerfServerOverSsh(IPerfServerBase):
         self._ssh_session: connection.SshConnection | None = (
             connection.SshConnection(ssh_settings)
         )
-        self._journalctl = require(LinuxJournalctlCommand(self._ssh_session))
+        self._journalctl = optional(LinuxJournalctlCommand(self._ssh_session))
 
         self._iperf_pid: str | None = None
         self._current_tag: str | None = None
@@ -620,6 +620,9 @@ class IPerfServerOverSsh(IPerfServerBase):
             self._ssh_session = None
 
     def get_systemd_journal(self) -> str:
+        if not self._journalctl:
+            return "journalctl not available"
+
         had_ssh = False if self._ssh_session is None else True
 
         self._journalctl.set_runner(self._get_ssh())
