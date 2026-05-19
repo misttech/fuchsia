@@ -15,6 +15,7 @@ mod confine_array_index;
 mod doubly_linked_list;
 mod inline_array;
 mod opaque_ref_counted;
+mod packed_pointer;
 mod ptr_traits;
 mod recyclable;
 mod ref_counted;
@@ -44,6 +45,7 @@ pub use fbl_macros::{
 };
 pub use inline_array::InlineArray;
 pub use opaque_ref_counted::OpaqueRefCounted;
+pub use packed_pointer::PackedPointer;
 pub use ptr_traits::{ManagedPtr, PtrTraits};
 pub use recyclable::Recyclable;
 pub use ref_counted::{HasRefCount, RefCounted};

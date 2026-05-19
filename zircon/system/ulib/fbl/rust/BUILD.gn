@@ -19,6 +19,7 @@ rustc_library("fbl") {
     "src/intrusive_container_test_support.rs",
     "src/lib.rs",
     "src/opaque_ref_counted.rs",
+    "src/packed_pointer.rs",
     "src/ptr_traits.rs",
     "src/recyclable.rs",
     "src/ref_counted.rs",
