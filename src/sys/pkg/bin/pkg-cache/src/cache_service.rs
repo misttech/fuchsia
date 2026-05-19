@@ -6,9 +6,12 @@ use crate::base_packages::{BasePackages, CachePackages};
 use crate::index::PackageIndex;
 use crate::upgradable_packages::UpgradablePackages;
 use anyhow::{Error, anyhow};
+use cobalt_sw_delivery_registry as metrics;
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
 use fidl_contrib::protocol_connector::ProtocolSender;
+use fidl_fuchsia_fxfs as ffxfs;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_metrics::MetricEvent;
 use fidl_fuchsia_pkg::{
     self as fpkg, NeededBlobsMarker, NeededBlobsRequest, NeededBlobsRequestStream,
@@ -22,6 +25,7 @@ use fuchsia_async::Task;
 use fuchsia_cobalt_builders::MetricEventExt as _;
 use fuchsia_hash::Hash;
 use fuchsia_inspect::{self as finspect, NumericProperty as _, Property as _};
+use fuchsia_trace as ftrace;
 use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
 use futures::{FutureExt as _, TryFutureExt as _, TryStreamExt as _};
 use log::{error, warn};
@@ -29,10 +33,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use zx::Status;
-use {
-    cobalt_sw_delivery_registry as metrics, fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
-    fuchsia_trace as ftrace,
-};
 
 mod missing_blobs;
 
@@ -67,7 +67,7 @@ pub(crate) async fn serve(
                     let id = serve_id.fetch_add(1, Ordering::SeqCst);
                     let meta_far_blob: BlobInfo = meta_far_blob.into();
                     let node = get_node.create_child(id.to_string());
-                    let trace_id = ftrace::Id::random();
+                    let trace_id = ftrace::Id::new();
                     let guard = ftrace::async_enter!(
                         trace_id,
                         c"app",
@@ -963,12 +963,13 @@ impl CobaltSenderExt for ProtocolSender<MetricEvent> {
 mod serve_needed_blobs_tests {
     use super::*;
     use assert_matches::assert_matches;
+    use fidl_fuchsia_fxfs as ffxfs;
     use fidl_fuchsia_pkg::{BlobInfoIteratorMarker, BlobInfoIteratorProxy, NeededBlobsProxy};
     use fuchsia_hash::HashRangeFull;
+    use fuchsia_inspect as finspect;
     use futures::stream::StreamExt as _;
     use futures::{future, stream};
     use test_case::test_case;
-    use {fidl_fuchsia_fxfs as ffxfs, fuchsia_inspect as finspect};
 
     #[test_case(fpkg::GcProtection::OpenPackageTracking; "open-package-tracking")]
     #[test_case(fpkg::GcProtection::Retained; "retained")]

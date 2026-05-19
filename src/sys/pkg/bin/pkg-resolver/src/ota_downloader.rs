@@ -4,12 +4,11 @@
 
 use crate::cache::ToResolveError as _;
 use anyhow::Context as _;
+use fidl_fuchsia_pkg_ext as pkg;
 use fidl_fuchsia_pkg_ext::ResolveError;
+use fidl_fuchsia_pkg_internal as fpkg_internal;
+use fuchsia_trace as ftrace;
 use futures::TryStreamExt as _;
-use {
-    fidl_fuchsia_pkg_ext as pkg, fidl_fuchsia_pkg_internal as fpkg_internal,
-    fuchsia_trace as ftrace,
-};
 
 pub(crate) async fn serve(
     stream: fpkg_internal::OtaDownloaderRequestStream,
@@ -59,7 +58,7 @@ async fn fetch_blob(
     let context = crate::cache::FetchBlobContext::new(
         write_blobs.make_open_blob(hash, overwrite_existing),
         base_url,
-        ftrace::Id::random(),
+        ftrace::Id::new(),
     );
     let () = blob_fetcher.push(hash, context).await.expect("processor exists").map_err(|e| {
         let resolve_error = e.to_resolve_error();

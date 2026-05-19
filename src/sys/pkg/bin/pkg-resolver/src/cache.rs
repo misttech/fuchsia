@@ -4,13 +4,16 @@
 
 use crate::repository::Repository;
 use crate::repository_manager::Stats;
+use cobalt_sw_delivery_registry as metrics;
 use fidl_contrib::protocol_connector::ProtocolSender;
 use fidl_fuchsia_metrics::MetricEvent;
 use fidl_fuchsia_pkg::{self as fpkg};
 use fidl_fuchsia_pkg_ext::{self as pkg, BlobId, BlobInfo};
+use fidl_fuchsia_pkg_http as fpkg_http;
 use fuchsia_cobalt_builders::MetricEventExt as _;
 use fuchsia_pkg::PackageDirectory;
 use fuchsia_sync::Mutex;
+use fuchsia_trace as ftrace;
 use fuchsia_url::PackageVariant;
 use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use futures::lock::Mutex as AsyncMutex;
@@ -21,10 +24,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tuf::metadata::{MetadataPath, MetadataVersion, TargetPath};
 use zx::Status;
-use {
-    cobalt_sw_delivery_registry as metrics, fidl_fuchsia_pkg_http as fpkg_http,
-    fuchsia_trace as ftrace,
-};
 
 pub use fidl_fuchsia_pkg_ext::BasePackageIndex;
 
@@ -572,7 +571,7 @@ async fn fetch_blob(
     context: FetchBlobContext,
     blob_fetch_params: BlobFetchParams,
 ) -> Result<(), FetchError> {
-    let trace_id = ftrace::Id::random();
+    let trace_id = ftrace::Id::new();
     let FetchBlobContext { blob_base_url, parent_trace_id, opener } = context;
     let guard = ftrace::async_enter!(
         trace_id,

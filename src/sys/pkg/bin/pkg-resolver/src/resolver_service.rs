@@ -157,7 +157,7 @@ impl Resolver for QueuedResolver {
         gc_protection: fpkg::GcProtection,
         eager_package_manager: Option<&AsyncRwLock<EagerPackageManager<Self>>>,
     ) -> Result<(PackageDirectory, pkg::ResolutionContext), pkg::ResolveError> {
-        let trace_id = ftrace::Id::random();
+        let trace_id = ftrace::Id::new();
         let guard = ftrace::async_enter!(
             trace_id, c"app", c"resolve",
             "url" => pkg_url.to_string().as_str(),
