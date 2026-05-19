@@ -24,15 +24,6 @@ use sorted_vec_map::SortedVecMap;
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
-/// Each mm of physical movement by the mouse translates to the cursor moving
-/// on the display by 10 logical pixels.
-/// Because pointer_display_scale_handler scaled for device pixel ratio, here
-/// only need to apply mm * logical pixel scale factor to get physical pixel.
-/// TODO(https://fxbug.dev/42066909): need to revisit this
-/// 1. allow users to adjust how fast the mouse move.
-/// 2. allow different value per monitor model.
-const MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL: f32 = 10.0;
-
 /// A [`MouseInjectorHandler`] parses mouse events and forwards them to Scenic through the
 /// fidl_fuchsia_pointerinjector protocols.
 pub struct MouseInjectorHandler {
@@ -394,14 +385,9 @@ impl MouseInjectorHandler {
     ) -> Result<(), anyhow::Error> {
         let mut new_position = match (mouse_event.location, mouse_descriptor) {
             (
-                mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation {
-                    millimeters,
-                }),
+                mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation { counts }),
                 _,
-            ) => {
-                self.inner().current_position
-                    + self.relative_movement_mm_to_phyical_pixel(millimeters)
-            }
+            ) => self.inner().current_position + counts,
             (
                 mouse_binding::MouseLocation::Absolute(position),
                 mouse_binding::MouseDeviceDescriptor {
@@ -463,10 +449,9 @@ impl MouseInjectorHandler {
         if let Some(injector) = injector {
             let relative_motion = match mouse_event.location {
                 mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation {
-                    millimeters: offset_mm,
+                    counts: offset_counts,
                 }) if mouse_event.phase == mouse_binding::MousePhase::Move => {
-                    let offset = self.relative_movement_mm_to_phyical_pixel(offset_mm);
-                    Some([offset.x, offset.y])
+                    Some([offset_counts.x, offset_counts.y])
                 }
                 _ => None,
             };
@@ -513,20 +498,8 @@ impl MouseInjectorHandler {
             pointer_id: Some(0),
             phase: Some(phase),
             position_in_viewport: Some([current_position.x, current_position.y]),
-            scroll_v: match mouse_event.wheel_delta_v {
-                Some(mouse_binding::WheelDelta {
-                    raw_data: mouse_binding::RawWheelDelta::Ticks(tick),
-                    ..
-                }) => Some(tick),
-                _ => None,
-            },
-            scroll_h: match mouse_event.wheel_delta_h {
-                Some(mouse_binding::WheelDelta {
-                    raw_data: mouse_binding::RawWheelDelta::Ticks(tick),
-                    ..
-                }) => Some(tick),
-                _ => None,
-            },
+            scroll_v: mouse_event.wheel_delta_v.as_ref().map(|delta| delta.ticks),
+            scroll_h: mouse_event.wheel_delta_h.as_ref().map(|delta| delta.ticks),
             scroll_v_physical_pixel: match mouse_event.wheel_delta_v {
                 Some(mouse_binding::WheelDelta { physical_pixel: Some(pixel), .. }) => {
                     Some(pixel.into())
@@ -611,16 +584,6 @@ impl MouseInjectorHandler {
             }
         }
     }
-
-    /// Converts a relative movement given in millimeters to movement in phyical pixel.
-    /// Because pointer_display_scale_handler scaled for device pixel ratio, this method
-    /// only need to apply phyical distance to logical pixel scale factor.
-    fn relative_movement_mm_to_phyical_pixel(&self, movement_mm: Position) -> Position {
-        Position {
-            x: movement_mm.x * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL,
-            y: movement_mm.y * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -645,8 +608,6 @@ mod tests {
 
     const DISPLAY_WIDTH_IN_PHYSICAL_PX: f32 = 100.0;
     const DISPLAY_HEIGHT_IN_PHYSICAL_PX: f32 = 100.0;
-    const COUNTS_PER_MM: u32 = 12;
-
     /// Returns an |input_device::InputDeviceDescriptor::MouseDescriptor|.
     const DESCRIPTOR: input_device::InputDeviceDescriptor =
         input_device::InputDeviceDescriptor::Mouse(mouse_binding::MouseDeviceDescriptor {
@@ -668,7 +629,6 @@ mod tests {
                 },
             }),
             buttons: None,
-            counts_per_mm: COUNTS_PER_MM,
         });
 
     /// Handles |fidl_fuchsia_pointerinjector_configuration::SetupRequest::GetViewRefs|.
@@ -912,17 +872,7 @@ mod tests {
         ticks: i64,
         physical_pixel: Option<f32>,
     ) -> Option<mouse_binding::WheelDelta> {
-        Some(mouse_binding::WheelDelta {
-            raw_data: mouse_binding::RawWheelDelta::Ticks(ticks),
-            physical_pixel,
-        })
-    }
-
-    fn wheel_delta_mm(mm: f32, physical_pixel: Option<f32>) -> Option<mouse_binding::WheelDelta> {
-        Some(mouse_binding::WheelDelta {
-            raw_data: mouse_binding::RawWheelDelta::Millimeters(mm),
-            physical_pixel,
-        })
+        Some(mouse_binding::WheelDelta { ticks, physical_pixel })
     }
 
     // Tests that a mouse move event both sends an update to scenic and sends the current cursor
@@ -930,46 +880,41 @@ mod tests {
     #[test_case(
         mouse_binding::MouseLocation::Relative(
             mouse_binding::RelativeLocation {
-                millimeters: Position { x: 1.0, y: 2.0 }
+                counts: Position { x: 10.0, y: 20.0 }
             }),
         Position {
-            x: DISPLAY_WIDTH_IN_PHYSICAL_PX / 2.0
-                + 1.0 * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL,
-            y: DISPLAY_HEIGHT_IN_PHYSICAL_PX / 2.0
-                + 2.0 * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL,
+            x: DISPLAY_WIDTH_IN_PHYSICAL_PX / 2.0 + 10.0,
+            y: DISPLAY_HEIGHT_IN_PHYSICAL_PX / 2.0 + 20.0,
         },
-        [
-            1.0 * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL,
-            2.0 * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL,
-        ]; "Valid move event."
+        [10.0, 20.0]; "Valid move event."
     )]
     #[test_case(
         mouse_binding::MouseLocation::Relative(
             mouse_binding::RelativeLocation {
-                millimeters: Position {
-                    x: DISPLAY_WIDTH_IN_PHYSICAL_PX / MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL + 2.0,
-                    y: DISPLAY_HEIGHT_IN_PHYSICAL_PX / MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL + 1.0,
+                counts: Position {
+                    x: DISPLAY_WIDTH_IN_PHYSICAL_PX + 2.0,
+                    y: DISPLAY_HEIGHT_IN_PHYSICAL_PX + 1.0,
                 }}),
         Position {
           x: DISPLAY_WIDTH_IN_PHYSICAL_PX,
           y: DISPLAY_HEIGHT_IN_PHYSICAL_PX,
         },
         [
-            DISPLAY_WIDTH_IN_PHYSICAL_PX + 2.0 * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL,
-            DISPLAY_HEIGHT_IN_PHYSICAL_PX + 1.0 * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL,
+            DISPLAY_WIDTH_IN_PHYSICAL_PX + 2.0,
+            DISPLAY_HEIGHT_IN_PHYSICAL_PX + 1.0,
         ]; "Move event exceeds max bounds."
     )]
     #[test_case(
         mouse_binding::MouseLocation::Relative(
             mouse_binding::RelativeLocation {
-                millimeters: Position {
-                    x: -(DISPLAY_WIDTH_IN_PHYSICAL_PX / MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL + 2.0),
-                    y: -(DISPLAY_HEIGHT_IN_PHYSICAL_PX / MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL + 1.0),
+                counts: Position {
+                    x: -(DISPLAY_WIDTH_IN_PHYSICAL_PX + 2.0),
+                    y: -(DISPLAY_HEIGHT_IN_PHYSICAL_PX + 1.0),
                 }}),
         Position { x: 0.0, y: 0.0 },
         [
-            -(DISPLAY_WIDTH_IN_PHYSICAL_PX + 2.0 * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL),
-            -(DISPLAY_HEIGHT_IN_PHYSICAL_PX + 1.0 * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL),
+            -(DISPLAY_WIDTH_IN_PHYSICAL_PX + 2.0),
+            -(DISPLAY_HEIGHT_IN_PHYSICAL_PX + 1.0),
         ]; "Move event exceeds min bounds."
     )]
     #[fuchsia::test(allow_stalls = false)]
@@ -1120,7 +1065,6 @@ mod tests {
                 wheel_v_range: None,
                 wheel_h_range: None,
                 buttons: None,
-                counts_per_mm: COUNTS_PER_MM,
             });
         let input_event = create_mouse_event(
             cursor_location,
@@ -1673,14 +1617,8 @@ mod tests {
         let event_time2 = event_time1.add(zx::MonotonicDuration::from_micros(1));
         let event_time3 = event_time2.add(zx::MonotonicDuration::from_micros(1));
         let zero_position = Position { x: 0.0, y: 0.0 };
-        let expected_position = Position {
-            x: 10.0 * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL,
-            y: 5.0 * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL,
-        };
-        let expected_relative_motion = [
-            10.0 * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL,
-            5.0 * MOUSE_DISTANCE_IN_MM_TO_DISPLAY_LOGICAL_PIXEL,
-        ];
+        let expected_position = Position { x: 10.0, y: 5.0 };
+        let expected_relative_motion = [10.0, 5.0];
         let event1 = create_mouse_event(
             mouse_binding::MouseLocation::Absolute(Position { x: 0.0, y: 0.0 }),
             None, /* wheel_delta_v */
@@ -1694,7 +1632,7 @@ mod tests {
         );
         let event2 = create_mouse_event(
             mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation {
-                millimeters: Position { x: 10.0, y: 5.0 },
+                counts: Position { x: 10.0, y: 5.0 },
             }),
             None, /* wheel_delta_v */
             None, /* wheel_delta_h */
@@ -1707,7 +1645,7 @@ mod tests {
         );
         let event3 = create_mouse_event(
             mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation {
-                millimeters: Position { x: 0.0, y: 0.0 },
+                counts: Position { x: 0.0, y: 0.0 },
             }),
             None, /* wheel_delta_v */
             None, /* wheel_delta_h */
@@ -1857,10 +1795,7 @@ mod tests {
         let cursor_relative_position = Position { x: 50.0, y: 75.0 };
         let cursor_location =
             mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation {
-                millimeters: Position {
-                    x: cursor_relative_position.x / COUNTS_PER_MM as f32,
-                    y: cursor_relative_position.y / COUNTS_PER_MM as f32,
-                },
+                counts: Position { x: cursor_relative_position.x, y: cursor_relative_position.y },
             });
         let event_time = zx::MonotonicInstant::get();
         let input_events = vec![create_mouse_event_with_handled(
@@ -1889,7 +1824,7 @@ mod tests {
 
     fn zero_relative_location() -> mouse_binding::MouseLocation {
         mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation {
-            millimeters: Position { x: 0.0, y: 0.0 },
+            counts: Position { x: 0.0, y: 0.0 },
         })
     }
 
@@ -1992,7 +1927,7 @@ mod tests {
     #[test_case(
         create_mouse_event(
             zero_relative_location(),
-            wheel_delta_mm(1.0, Some(120.0)),          /*wheel_delta_v*/
+            wheel_delta_ticks(1, Some(120.0)),          /*wheel_delta_v*/
             None,                                      /*wheel_delta_h*/
             Some(mouse_binding::PrecisionScroll::Yes), /*is_precision_scroll*/
             mouse_binding::MousePhase::Wheel,
@@ -2006,19 +1941,19 @@ mod tests {
             vec![],
             Position { x: 50.0, y: 50.0 },
             None,        /*relative_motion*/
-            None,        /*wheel_delta_v*/
+            Some(1),     /*wheel_delta_v*/
             None,        /*wheel_delta_h*/
             Some(120.0), /*wheel_delta_v_physical_pixel*/
             None,        /*wheel_delta_h_physical_pixel*/
             Some(true),  /*is_precision_scroll*/
             zx::MonotonicInstant::ZERO,
-        ); "v mm scroll with physical pixel"
+        ); "v precision scroll with physical pixel"
     )]
     #[test_case(
         create_mouse_event(
             zero_relative_location(),
             None,                                      /*wheel_delta_v*/
-            wheel_delta_mm(1.0, Some(120.0)),          /*wheel_delta_h*/
+            wheel_delta_ticks(1, Some(120.0)),          /*wheel_delta_h*/
             Some(mouse_binding::PrecisionScroll::Yes), /*is_precision_scroll*/
             mouse_binding::MousePhase::Wheel,
             SortedVecSet::new(),
@@ -2032,12 +1967,12 @@ mod tests {
             Position { x: 50.0, y: 50.0 },
             None,        /*relative_motion*/
             None,        /*wheel_delta_v*/
-            None,        /*wheel_delta_h*/
+            Some(1),     /*wheel_delta_h*/
             None,        /*wheel_delta_v_physical_pixel*/
             Some(120.0), /*wheel_delta_h_physical_pixel*/
             Some(true),  /*is_precision_scroll*/
             zx::MonotonicInstant::ZERO,
-        ); "h mm scroll with physical pixel"
+        ); "h precision scroll with physical pixel"
     )]
     /// Test simple scroll in vertical and horizontal.
     #[fuchsia::test(allow_stalls = false)]
@@ -2160,7 +2095,7 @@ mod tests {
 
         let zero_location =
             mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation {
-                millimeters: Position { x: 0.0, y: 0.0 },
+                counts: Position { x: 0.0, y: 0.0 },
             });
         let expected_position = Position { x: 50.0, y: 50.0 };
 

@@ -837,8 +837,6 @@ mod tests {
     use sorted_vec_map::SortedVecSet;
     use vfs::{pseudo_directory, service as pseudo_fs_service};
 
-    const COUNTS_PER_MM: u32 = 12;
-
     /// Returns the InputEvent sent over `sender`.
     ///
     /// # Parameters
@@ -852,10 +850,7 @@ mod tests {
         let input_event = input_device::InputEvent {
             device_event: input_device::InputDeviceEvent::Mouse(mouse_binding::MouseEvent::new(
                 mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation {
-                    millimeters: Position {
-                        x: offset.x / COUNTS_PER_MM as f32,
-                        y: offset.y / COUNTS_PER_MM as f32,
-                    },
+                    counts: Position { x: offset.x, y: offset.y },
                 }),
                 None, /* wheel_delta_v */
                 None, /* wheel_delta_h */
@@ -873,7 +868,6 @@ mod tests {
                     wheel_v_range: None,
                     wheel_h_range: None,
                     buttons: None,
-                    counts_per_mm: COUNTS_PER_MM,
                 },
             ),
             event_time: zx::MonotonicInstant::get(),
@@ -1116,7 +1110,6 @@ mod tests {
                 wheel_v_range: None,
                 wheel_h_range: None,
                 buttons: Some(vec![0]),
-                counts_per_mm: mouse_binding::DEFAULT_COUNTS_PER_MM,
             })
         );
 
@@ -1411,7 +1404,7 @@ mod tests {
         input_device::InputEvent {
             device_event: input_device::InputDeviceEvent::Mouse(mouse_binding::MouseEvent::new(
                 mouse_binding::MouseLocation::Relative(mouse_binding::RelativeLocation {
-                    millimeters: Position { x, y },
+                    counts: Position { x, y },
                 }),
                 None,
                 None,
@@ -1429,7 +1422,6 @@ mod tests {
                     wheel_v_range: None,
                     wheel_h_range: None,
                     buttons: None,
-                    counts_per_mm: 1,
                 },
             ),
             event_time: zx::MonotonicInstant::get(),

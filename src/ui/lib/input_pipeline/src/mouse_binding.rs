@@ -19,8 +19,6 @@ use zx;
 
 pub type MouseButton = u8;
 
-pub const DEFAULT_COUNTS_PER_MM: u32 = 40;
-
 /// Flag to indicate the scroll event is from device reporting precision delta.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum PrecisionScroll {
@@ -51,31 +49,21 @@ pub enum MousePhase {
 /// A [`RelativeLocation`] contains the relative mouse pointer location at the time of a pointer event.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct RelativeLocation {
-    /// A pointer location in millimeters.
-    pub millimeters: Position,
+    /// A pointer location in counts.
+    pub counts: Position,
 }
 
 impl Default for RelativeLocation {
     fn default() -> Self {
-        RelativeLocation { millimeters: Position::zero() }
+        RelativeLocation { counts: Position::zero() }
     }
 }
 
-/// [`RawWheelDelta`] is the wheel delta from driver or gesture arena.
-#[derive(Clone, Debug, PartialEq)]
-pub enum RawWheelDelta {
-    /// For tick based mouse wheel, driver will report how many ticks rotated in i64.
-    Ticks(i64),
-    /// For Touchpad, gesture arena will compute how many swipe distance in mm in f32.
-    Millimeters(f32),
-}
-
-/// A [`WheelDelta`] contains raw wheel delta from driver or gesture arena
+/// A [`WheelDelta`] contains raw wheel delta ticks from driver or gesture arena
 /// and scaled wheel delta in physical pixels.
 #[derive(Clone, Debug, PartialEq)]
-
 pub struct WheelDelta {
-    pub raw_data: RawWheelDelta,
+    pub ticks: i64,
     pub physical_pixel: Option<f32>,
 }
 
@@ -88,14 +76,15 @@ pub struct WheelDelta {
 ///
 /// ```
 /// let mouse_device_event = input_device::InputDeviceEvent::Mouse(MouseEvent::new(
-///     MouseLocation::Relative(RelativePosition {
-///       millimeters: Position { x: 4.0, y: 2.0 },
+///     MouseLocation::Relative(RelativeLocation {
+///       counts: Position { x: 40.0, y: 20.0 },
 ///     }),
-///     Some(1),
-///     Some(1),
+///     None, // wheel_delta_v
+///     None, // wheel_delta_h
 ///     MousePhase::Move,
 ///     SortedVecSet::from(vec![1]),
 ///     SortedVecSet::from(vec![1]),
+///     None, // is_precision_scroll
 ///     None, // wake_lease
 /// ));
 /// ```
@@ -206,8 +195,8 @@ impl MouseEvent {
         match self.location {
             MouseLocation::Relative(pos) => {
                 node.record_child("location_relative", move |location_node| {
-                    location_node.record_double("x", f64::from(pos.millimeters.x));
-                    location_node.record_double("y", f64::from(pos.millimeters.y));
+                    location_node.record_double("x", f64::from(pos.counts.x));
+                    location_node.record_double("y", f64::from(pos.counts.y));
                 })
             }
             MouseLocation::Absolute(pos) => {
@@ -220,12 +209,7 @@ impl MouseEvent {
 
         if let Some(wheel_delta_v) = &self.wheel_delta_v {
             node.record_child("wheel_delta_v", move |wheel_delta_v_node| {
-                match wheel_delta_v.raw_data {
-                    RawWheelDelta::Ticks(ticks) => wheel_delta_v_node.record_int("ticks", ticks),
-                    RawWheelDelta::Millimeters(mm) => {
-                        wheel_delta_v_node.record_double("millimeters", f64::from(mm))
-                    }
-                }
+                wheel_delta_v_node.record_int("ticks", wheel_delta_v.ticks);
                 if let Some(physical_pixel) = wheel_delta_v.physical_pixel {
                     wheel_delta_v_node.record_double("physical_pixel", f64::from(physical_pixel));
                 }
@@ -234,12 +218,7 @@ impl MouseEvent {
 
         if let Some(wheel_delta_h) = &self.wheel_delta_h {
             node.record_child("wheel_delta_h", move |wheel_delta_h_node| {
-                match wheel_delta_h.raw_data {
-                    RawWheelDelta::Ticks(ticks) => wheel_delta_h_node.record_int("ticks", ticks),
-                    RawWheelDelta::Millimeters(mm) => {
-                        wheel_delta_h_node.record_double("millimeters", f64::from(mm))
-                    }
-                }
+                wheel_delta_h_node.record_int("ticks", wheel_delta_h.ticks);
                 if let Some(physical_pixel) = wheel_delta_h.physical_pixel {
                     wheel_delta_h_node.record_double("physical_pixel", f64::from(physical_pixel));
                 }
@@ -308,10 +287,6 @@ pub struct MouseDeviceDescriptor {
 
     /// This is a vector of ids for the mouse buttons.
     pub buttons: Option<Vec<MouseButton>>,
-
-    /// This is the conversion factor between counts and millimeters for the
-    /// connected mouse input device.
-    pub counts_per_mm: u32,
 }
 
 #[async_trait]
@@ -420,7 +395,6 @@ impl MouseBinding {
             wheel_v_range: utils::axis_to_old(mouse_input_descriptor.scroll_v.as_ref()),
             wheel_h_range: utils::axis_to_old(mouse_input_descriptor.scroll_h.as_ref()),
             buttons: mouse_input_descriptor.buttons,
-            counts_per_mm: DEFAULT_COUNTS_PER_MM,
         };
 
         Ok((Self { event_sender: input_event_sender, device_descriptor }, input_device_status))
@@ -525,17 +499,6 @@ impl MouseBinding {
             }),
         );
 
-        let counts_per_mm = match device_descriptor {
-            input_device::InputDeviceDescriptor::Mouse(ds) => ds.counts_per_mm,
-            _ => {
-                metrics_logger.log_error(
-                    InputPipelineErrorMetricDimensionEvent::MouseDescriptionNotMouse,
-                    "mouse_binding::process_reports got device_descriptor not mouse".to_string(),
-                );
-                DEFAULT_COUNTS_PER_MM
-            }
-        };
-
         // Create a location for the move event. Use the absolute position if available.
         let location = if let (Some(position_x), Some(position_y)) =
             (mouse_report.position_x(), mouse_report.position_y())
@@ -545,10 +508,7 @@ impl MouseBinding {
             let movement_x = mouse_report.movement_x().map(|x| x.0).unwrap_or_default() as f32;
             let movement_y = mouse_report.movement_y().map(|y| y.0).unwrap_or_default() as f32;
             MouseLocation::Relative(RelativeLocation {
-                millimeters: Position {
-                    x: movement_x / counts_per_mm as f32,
-                    y: movement_y / counts_per_mm as f32,
-                },
+                counts: Position { x: movement_x, y: movement_y },
             })
         };
 
@@ -573,19 +533,13 @@ impl MouseBinding {
             }),
         );
 
-        let wheel_delta_v = match mouse_report.scroll_v() {
-            None => None,
-            Some(ticks) => {
-                Some(WheelDelta { raw_data: RawWheelDelta::Ticks(ticks.0), physical_pixel: None })
-            }
-        };
+        let wheel_delta_v = mouse_report
+            .scroll_v()
+            .map(|ticks| WheelDelta { ticks: ticks.0, physical_pixel: None });
 
-        let wheel_delta_h = match mouse_report.scroll_h() {
-            None => None,
-            Some(ticks) => {
-                Some(WheelDelta { raw_data: RawWheelDelta::Ticks(ticks.0), physical_pixel: None })
-            }
-        };
+        let wheel_delta_h = mouse_report
+            .scroll_h()
+            .map(|ticks| WheelDelta { ticks: ticks.0, physical_pixel: None });
 
         // Send a mouse wheel event.
         send_mouse_event(
@@ -742,7 +696,6 @@ mod tests {
     use sorted_vec_map::SortedVecSet;
 
     const DEVICE_ID: u32 = 1;
-    const COUNTS_PER_MM: u32 = 12;
 
     fn mouse_device_descriptor(device_id: u32) -> input_device::InputDeviceDescriptor {
         input_device::InputDeviceDescriptor::Mouse(MouseDeviceDescriptor {
@@ -764,12 +717,11 @@ mod tests {
                 },
             }),
             buttons: None,
-            counts_per_mm: COUNTS_PER_MM,
         })
     }
 
-    fn wheel_delta_ticks(delta: i64) -> Option<WheelDelta> {
-        Some(WheelDelta { raw_data: RawWheelDelta::Ticks(delta), physical_pixel: None })
+    fn wheel_delta_ticks(ticks: i64) -> Option<WheelDelta> {
+        Some(WheelDelta { ticks, physical_pixel: None })
     }
 
     /// Tests that a report containing no buttons but with movement generates a move event.
@@ -787,12 +739,7 @@ mod tests {
 
         let input_reports = vec![first_report];
         let expected_events = vec![testing_utilities::create_mouse_event(
-            MouseLocation::Relative(RelativeLocation {
-                millimeters: Position {
-                    x: 10.0 / COUNTS_PER_MM as f32,
-                    y: 16.0 / COUNTS_PER_MM as f32,
-                },
-            }),
+            MouseLocation::Relative(RelativeLocation { counts: Position { x: 10.0, y: 16.0 } }),
             None, /* wheel_delta_v */
             None, /* wheel_delta_h */
             None, /* is_precision_scroll */
@@ -875,12 +822,7 @@ mod tests {
                 &descriptor,
             ),
             testing_utilities::create_mouse_event(
-                MouseLocation::Relative(RelativeLocation {
-                    millimeters: Position {
-                        x: 10.0 / COUNTS_PER_MM as f32,
-                        y: 16.0 / COUNTS_PER_MM as f32,
-                    },
-                }),
+                MouseLocation::Relative(RelativeLocation { counts: Position { x: 10.0, y: 16.0 } }),
                 None, /* wheel_delta_v */
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
@@ -991,12 +933,7 @@ mod tests {
                 &descriptor,
             ),
             testing_utilities::create_mouse_event(
-                MouseLocation::Relative(RelativeLocation {
-                    millimeters: Position {
-                        x: 10.0 / COUNTS_PER_MM as f32,
-                        y: 16.0 / COUNTS_PER_MM as f32,
-                    },
-                }),
+                MouseLocation::Relative(RelativeLocation { counts: Position { x: 10.0, y: 16.0 } }),
                 None, /* wheel_delta_v */
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */
@@ -1072,12 +1009,7 @@ mod tests {
                 &descriptor,
             ),
             testing_utilities::create_mouse_event(
-                MouseLocation::Relative(RelativeLocation {
-                    millimeters: Position {
-                        x: 10.0 / COUNTS_PER_MM as f32,
-                        y: 16.0 / COUNTS_PER_MM as f32,
-                    },
-                }),
+                MouseLocation::Relative(RelativeLocation { counts: Position { x: 10.0, y: 16.0 } }),
                 None, /* wheel_delta_v */
                 None, /* wheel_delta_h */
                 None, /* is_precision_scroll */

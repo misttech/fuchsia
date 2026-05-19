@@ -368,8 +368,7 @@ mod tests {
     use crate::light_sensor::types::Rgbc;
     use crate::light_sensor_binding::{LightSensorDeviceDescriptor, LightSensorEvent};
     use crate::mouse_binding::{
-        MouseDeviceDescriptor, MouseLocation, MousePhase, PrecisionScroll, RawWheelDelta,
-        WheelDelta,
+        MouseDeviceDescriptor, MouseLocation, MousePhase, PrecisionScroll, WheelDelta,
     };
     use crate::testing_utilities::{
         consumer_controls_device_descriptor, create_consumer_controls_event,
@@ -447,7 +446,6 @@ mod tests {
             wheel_v_range: None,
             wheel_h_range: None,
             buttons: None,
-            counts_per_mm: 12u32,
         });
         let touch_screen_descriptor =
             InputDeviceDescriptor::TouchScreen(TouchScreenDeviceDescriptor {
@@ -494,14 +492,8 @@ mod tests {
             ),
             create_mouse_event(
                 MouseLocation::Absolute(Position { x: 7.0f32, y: 15.0f32 }),
-                Some(WheelDelta {
-                    raw_data: RawWheelDelta::Ticks(5i64),
-                    physical_pixel: Some(8.0f32),
-                }),
-                Some(WheelDelta {
-                    raw_data: RawWheelDelta::Millimeters(10.0f32),
-                    physical_pixel: Some(8.0f32),
-                }),
+                Some(WheelDelta { ticks: 5i64, physical_pixel: Some(8.0f32) }),
+                Some(WheelDelta { ticks: 10i64, physical_pixel: Some(8.0f32) }),
                 Some(PrecisionScroll::Yes),
                 MousePhase::Move,
                 SortedVecSet::from(vec![1u8]),
@@ -579,7 +571,7 @@ mod tests {
                         physical_pixel: 8.0f64,
                     },
                     wheel_delta_h: {
-                        millimeters: 10.0f64,
+                        ticks: 10i64,
                         physical_pixel: 8.0f64,
                     },
                     is_precision_scroll: "yes",
