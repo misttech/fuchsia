@@ -8,12 +8,12 @@ import time
 import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_internal as f_wlan_internal
 import fuchsia_wlan_base_test
+import openwrt_access_point
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
 from mobly import asserts, signals, test_runner
-from mobly_controller import openwrt_access_point
-from mobly_controller.openwrt_access_point import OpenWrtAP
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point import OpenWrtAP
+from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
     Band,
