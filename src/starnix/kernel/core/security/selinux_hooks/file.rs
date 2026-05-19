@@ -19,9 +19,9 @@ use crate::security::selinux_hooks::{
 use crate::task::CurrentTask;
 use crate::vfs::{FileHandle, FileObject, FsNodeHandle, canonicalize_ioctl_request};
 use linux_uapi::{
-    F_GETFD, F_GETLK, F_GETOWN, F_GETOWN_EX, F_SETFD, F_SETFL, F_SETLK, F_SETLKW, FIBMAP, FIGETBSZ,
-    FIOASYNC, FIOCLEX, FIONBIO, FIONCLEX, FIONREAD, FS_IOC_GETFLAGS, FS_IOC_GETVERSION,
-    FS_IOC_SETFLAGS, FS_IOC_SETVERSION,
+    F_GETFD, F_GETLK, F_GETOWN, F_GETOWN_EX, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_SETFD,
+    F_SETFL, F_SETLK, F_SETLKW, FIBMAP, FIGETBSZ, FIOASYNC, FIOCLEX, FIONBIO, FIONCLEX, FIONREAD,
+    FS_IOC_GETFLAGS, FS_IOC_GETVERSION, FS_IOC_SETFLAGS, FS_IOC_SETVERSION,
 };
 use selinux::{CommonFsNodePermission, PolicyCap, SecurityId, SecurityServer};
 use starnix_uapi::errors::Errno;
@@ -168,6 +168,10 @@ pub(in crate::security) fn check_file_lock_access(
     current_task: &CurrentTask,
     file: &FileObject,
 ) -> Result<(), Errno> {
+    // BPF supports some locking, but without the file "lock" permission.
+    if file.downcast_file::<BpfHandle>().is_some() {
+        return Ok(());
+    }
     let permission_check = build_permission_check(current_task, security_server);
     let subject_sid = current_task_state(current_task).current_sid;
     has_file_permissions(
@@ -194,7 +198,12 @@ pub(in crate::security) fn check_file_fcntl_access(
 
     match fcntl_cmd {
         F_GETFD | F_GETOWN | F_GETOWN_EX | F_SETFD => return Ok(()),
-        F_GETLK | F_SETLK | F_SETLKW => {
+        F_GETLK | F_SETLK | F_SETLKW | F_OFD_GETLK | F_OFD_SETLK | F_OFD_SETLKW => {
+            // BPF implements some lock operations but does not require file "lock"
+            // permission.
+            if file.downcast_file::<BpfHandle>().is_some() {
+                return Ok(());
+            }
             // Checks both the Lock and Use permissions.
             has_file_permissions(
                 &permission_check,

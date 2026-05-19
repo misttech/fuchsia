@@ -5,6 +5,7 @@
 #include "third_party/android/platform/bionic/libc/kernel/uapi/linux/bpf.h"
 
 #include <fcntl.h>
+#include <sys/file.h>
 #include <sys/mman.h>
 #include <syscall.h>
 
@@ -18,7 +19,27 @@
 
 namespace {
 
+constexpr char kContextLackingLockPermission[] = "test_u:test_r:bpf_map_read_write_t:s0";
+
 int bpf(int cmd, union bpf_attr* attr) { return (int)syscall(__NR_bpf, cmd, attr, sizeof(*attr)); }
+
+int BpfGetMapId(const int fd) {
+  struct bpf_map_info info = {};
+  union bpf_attr attr = {.info = {
+                             .bpf_fd = static_cast<uint32_t>(fd),
+                             .info_len = sizeof(info),
+                             .info = reinterpret_cast<uint64_t>(&info),
+                         }};
+  int rv = bpf(BPF_OBJ_GET_INFO_BY_FD, &attr);
+  if (rv) {
+    return rv;
+  }
+  if (attr.info.info_len < offsetof(bpf_map_info, id) + sizeof(info.id)) {
+    errno = EOPNOTSUPP;
+    return -1;
+  }
+  return info.id;
+}
 
 fbl::unique_fd CreateArrayMap() {
   bpf_attr attr = {
@@ -256,6 +277,107 @@ INSTANTIATE_TEST_SUITE_P(
         BpfPinTestParam("test_u:test_r:bpf_pin_all_rights_t:s0", BPF_F_RDONLY, true, true),
         BpfPinTestParam("test_u:test_r:bpf_pin_all_rights_t:s0", BPF_F_WRONLY, true, true),
         BpfPinTestParam("test_u:test_r:bpf_pin_all_rights_t:s0", 0, true, true)));
+
+struct BpfFcntlLockTestParam {
+  int cmd;
+  short lock_type;  // F_RDLCK or F_WRLCK
+};
+
+class BpfFcntlLockTest : public ::testing::TestWithParam<BpfFcntlLockTestParam> {};
+
+TEST_P(BpfFcntlLockTest, DoesNotRequireFileLock) {
+  auto [cmd, lock_type] = GetParam();
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  fbl::unique_fd mappable_map_fd = CreateArrayMap();
+  ASSERT_TRUE(mappable_map_fd.is_valid()) << strerror(errno);
+
+  bpf_attr attr = {
+      .pathname = reinterpret_cast<uintptr_t>(PIN_PATH),
+      .bpf_fd = static_cast<unsigned>(mappable_map_fd.get()),
+  };
+  EXPECT_THAT(bpf(BPF_OBJ_PIN, &attr), SyscallSucceeds());
+
+  EXPECT_TRUE(RunSubprocessAs(kContextLackingLockPermission, [&] {
+    bpf_attr attr = {
+        .pathname = reinterpret_cast<uintptr_t>(PIN_PATH),
+        .file_flags = 0,
+    };
+    fbl::unique_fd fd(bpf(BPF_OBJ_GET, &attr));
+    ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+    int lock_ret = -1;
+    if (cmd == F_SETLEASE) {
+      lock_ret = fcntl(fd.get(), cmd, lock_type);
+    } else {
+      off_t start_offset = BpfGetMapId(fd.get());
+      ASSERT_GT(start_offset, 0);
+      struct flock64 fl = {
+          .l_type = lock_type,
+          .l_whence = SEEK_SET,
+          .l_start = start_offset,
+          .l_len = 1,
+      };
+      lock_ret = fcntl(fd.get(), cmd, &fl);
+    }
+
+    if (cmd == F_SETLEASE) {
+      EXPECT_THAT(lock_ret, SyscallFailsWithErrno(EINVAL));
+    } else {
+      EXPECT_THAT(lock_ret, SyscallSucceeds());
+    }
+  }));
+
+  EXPECT_THAT(unlink(PIN_PATH), SyscallSucceeds());
+}
+
+std::string FcntlCmdToString(int cmd) {
+  switch (cmd) {
+    case F_OFD_SETLK:
+      return "OFD_SETLK";
+    case F_SETLK:
+      return "SETLK";
+    case F_SETLEASE:
+      return "SETLEASE";
+    default:
+      return std::to_string(cmd);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(BpfFcntlLockTestSuite, BpfFcntlLockTest,
+                         ::testing::Values(BpfFcntlLockTestParam{F_OFD_SETLK, F_WRLCK},
+                                           BpfFcntlLockTestParam{F_SETLK, F_WRLCK},
+                                           BpfFcntlLockTestParam{F_SETLEASE, F_WRLCK}),
+                         [](const testing::TestParamInfo<BpfFcntlLockTestParam>& info) {
+                           return FcntlCmdToString(info.param.cmd);
+                         });
+
+TEST(BpfFlockTest, DoesNotRequireFileLock) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  fbl::unique_fd mappable_map_fd = CreateArrayMap();
+  ASSERT_TRUE(mappable_map_fd.is_valid()) << strerror(errno);
+
+  bpf_attr attr = {
+      .pathname = reinterpret_cast<uintptr_t>(PIN_PATH),
+      .bpf_fd = static_cast<unsigned>(mappable_map_fd.get()),
+  };
+  EXPECT_THAT(bpf(BPF_OBJ_PIN, &attr), SyscallSucceeds());
+
+  EXPECT_TRUE(RunSubprocessAs(kContextLackingLockPermission, [&] {
+    bpf_attr attr = {
+        .pathname = reinterpret_cast<uintptr_t>(PIN_PATH),
+        .file_flags = 0,
+    };
+    fbl::unique_fd fd(bpf(BPF_OBJ_GET, &attr));
+    ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+    int lock_ret = flock(fd.get(), LOCK_EX);
+    EXPECT_THAT(lock_ret, SyscallSucceeds());
+  }));
+
+  EXPECT_THAT(unlink(PIN_PATH), SyscallSucceeds());
+}
 
 }  // namespace
 
