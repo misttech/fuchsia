@@ -9,41 +9,27 @@
 
 #include <debug.h>
 #include <endian.h>
+#include <lib/mmio-ptr/mmio-ptr.h>
 
 #include <dev/pci_common.h>
 #include <fbl/intrusive_single_list.h>
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
 
-class PciReg8 {
+template <typename T>
+class PciReg {
  public:
-  constexpr explicit PciReg8(uint16_t offset) : offset_(offset) {}
-  constexpr PciReg8() : offset_(0u) {}
+  constexpr explicit PciReg(uint16_t offset) : offset_(offset) {}
+  constexpr PciReg() : offset_(0u) {}
   constexpr uint16_t offset() const { return offset_; }
 
  private:
   uint16_t offset_;
 };
 
-class PciReg16 {
- public:
-  constexpr explicit PciReg16(uint16_t offset) : offset_(offset) {}
-  constexpr PciReg16() : offset_(0u) {}
-  constexpr uint16_t offset() const { return offset_; }
-
- private:
-  uint16_t offset_;
-};
-
-class PciReg32 {
- public:
-  constexpr explicit PciReg32(uint16_t offset) : offset_(offset) {}
-  constexpr PciReg32() : offset_(0u) {}
-  constexpr uint16_t offset() const { return offset_; }
-
- private:
-  uint16_t offset_;
-};
+using PciReg8 = PciReg<uint8_t>;
+using PciReg16 = PciReg<uint16_t>;
+using PciReg32 = PciReg<uint32_t>;
 
 /* PciConfig supplies the factory for creating the appropriate pci config
  * object based on the address space of the pci device. */
@@ -121,6 +107,7 @@ class PciConfig : public fbl::SinglyLinkedListable<fbl::RefPtr<PciConfig>>,
 
   // Virtuals
   void DumpConfig(uint16_t len) const;
+
   virtual uint8_t Read(const PciReg8 addr) const = 0;
   virtual uint16_t Read(const PciReg16 addr) const = 0;
   virtual uint32_t Read(const PciReg32 addr) const = 0;
@@ -131,7 +118,20 @@ class PciConfig : public fbl::SinglyLinkedListable<fbl::RefPtr<PciConfig>>,
 
  protected:
   PciConfig(uintptr_t base, PciAddrSpace addr_space) : addr_space_(addr_space), base_(base) {}
+
+  MMIO_PTR volatile uint8_t* mmio_base() const {
+    DEBUG_ASSERT(addr_space_ == PciAddrSpace::MMIO);
+    return reinterpret_cast<MMIO_PTR volatile uint8_t*>(base_);
+  }
+
+  uintptr_t pio_base() const {
+    DEBUG_ASSERT(addr_space_ == PciAddrSpace::PIO);
+    return base_;
+  }
+
   const PciAddrSpace addr_space_;
+
+ private:
   const uintptr_t base_;
 };
 

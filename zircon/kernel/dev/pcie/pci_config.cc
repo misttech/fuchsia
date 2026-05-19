@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <debug.h>
 #include <inttypes.h>
+#include <lib/mmio-ptr/mmio-ptr.h>
 #include <lib/pci/pio.h>
 #include <trace.h>
 
@@ -78,32 +79,41 @@ class PciPioConfig : public PciConfig {
 
 uint8_t PciPioConfig::Read(const PciReg8 addr) const {
   uint32_t val;
-  zx_status_t status = Pci::PioCfgRead(static_cast<uint32_t>(base_ + addr.offset()), &val, 8u);
+  zx_status_t status = Pci::PioCfgRead(static_cast<uint32_t>(pio_base() + addr.offset()), &val, 8u);
   DEBUG_ASSERT(status == ZX_OK);
   return static_cast<uint8_t>(val & 0xFF);
 }
+
 uint16_t PciPioConfig::Read(const PciReg16 addr) const {
   uint32_t val;
-  zx_status_t status = Pci::PioCfgRead(static_cast<uint32_t>(base_ + addr.offset()), &val, 16u);
+  zx_status_t status =
+      Pci::PioCfgRead(static_cast<uint32_t>(pio_base() + addr.offset()), &val, 16u);
   DEBUG_ASSERT(status == ZX_OK);
   return static_cast<uint16_t>(val & 0xFFFF);
 }
+
 uint32_t PciPioConfig::Read(const PciReg32 addr) const {
   uint32_t val;
-  zx_status_t status = Pci::PioCfgRead(static_cast<uint32_t>(base_ + addr.offset()), &val, 32u);
+  zx_status_t status =
+      Pci::PioCfgRead(static_cast<uint32_t>(pio_base() + addr.offset()), &val, 32u);
   DEBUG_ASSERT(status == ZX_OK);
   return val;
 }
+
 void PciPioConfig::Write(const PciReg8 addr, uint8_t val) const {
-  zx_status_t status = Pci::PioCfgWrite(static_cast<uint32_t>(base_ + addr.offset()), val, 8u);
+  zx_status_t status = Pci::PioCfgWrite(static_cast<uint32_t>(pio_base() + addr.offset()), val, 8u);
   DEBUG_ASSERT(status == ZX_OK);
 }
+
 void PciPioConfig::Write(const PciReg16 addr, uint16_t val) const {
-  zx_status_t status = Pci::PioCfgWrite(static_cast<uint32_t>(base_ + addr.offset()), val, 16u);
+  zx_status_t status =
+      Pci::PioCfgWrite(static_cast<uint32_t>(pio_base() + addr.offset()), val, 16u);
   DEBUG_ASSERT(status == ZX_OK);
 }
+
 void PciPioConfig::Write(const PciReg32 addr, uint32_t val) const {
-  zx_status_t status = Pci::PioCfgWrite(static_cast<uint32_t>(base_ + addr.offset()), val, 32u);
+  zx_status_t status =
+      Pci::PioCfgWrite(static_cast<uint32_t>(pio_base() + addr.offset()), val, 32u);
   DEBUG_ASSERT(status == ZX_OK);
 }
 
@@ -123,33 +133,31 @@ class PciMmioConfig : public PciConfig {
 
 // MMIO Config Implementation
 uint8_t PciMmioConfig::Read(const PciReg8 addr) const {
-  auto reg = reinterpret_cast<const volatile uint8_t*>(base_ + addr.offset());
-  return *reg;
+  return MmioRead8(mmio_base() + addr.offset());
 }
 
 uint16_t PciMmioConfig::Read(const PciReg16 addr) const {
-  auto reg = reinterpret_cast<const volatile uint16_t*>(base_ + addr.offset());
-  return LE16(*reg);
+  return LE16(
+      MmioRead16(reinterpret_cast<MMIO_PTR const volatile uint16_t*>(mmio_base() + addr.offset())));
 }
 
 uint32_t PciMmioConfig::Read(const PciReg32 addr) const {
-  auto reg = reinterpret_cast<const volatile uint32_t*>(base_ + addr.offset());
-  return LE32(*reg);
+  return LE32(
+      MmioRead32(reinterpret_cast<MMIO_PTR const volatile uint32_t*>(mmio_base() + addr.offset())));
 }
 
-void PciMmioConfig::Write(PciReg8 addr, uint8_t val) const {
-  auto reg = reinterpret_cast<volatile uint8_t*>(base_ + addr.offset());
-  *reg = val;
+void PciMmioConfig::Write(const PciReg8 addr, uint8_t val) const {
+  MmioWrite8(val, mmio_base() + addr.offset());
 }
 
-void PciMmioConfig::Write(PciReg16 addr, uint16_t val) const {
-  auto reg = reinterpret_cast<volatile uint16_t*>(base_ + addr.offset());
-  *reg = LE16(val);
+void PciMmioConfig::Write(const PciReg16 addr, uint16_t val) const {
+  MmioWrite16(LE16(val),
+              reinterpret_cast<MMIO_PTR volatile uint16_t*>(mmio_base() + addr.offset()));
 }
 
-void PciMmioConfig::Write(PciReg32 addr, uint32_t val) const {
-  auto reg = reinterpret_cast<volatile uint32_t*>(base_ + addr.offset());
-  *reg = LE32(val);
+void PciMmioConfig::Write(const PciReg32 addr, uint32_t val) const {
+  MmioWrite32(LE32(val),
+              reinterpret_cast<MMIO_PTR volatile uint32_t*>(mmio_base() + addr.offset()));
 }
 
 }  // namespace
