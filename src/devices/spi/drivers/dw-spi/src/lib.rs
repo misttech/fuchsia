@@ -8,17 +8,26 @@ use fidl::Serializable;
 use fidl_fuchsia_hardware_platform_device as fpdev;
 use fidl_fuchsia_hardware_spi_businfo as fspi_businfo;
 use fidl_next::{Request, Responder, ServerEnd};
+use fidl_next_fuchsia_hardware_clock as fclock;
+use fidl_next_fuchsia_hardware_gpio as fgpio;
+use fidl_next_fuchsia_hardware_powerdomain as fpowerdomain;
+use fidl_next_fuchsia_hardware_reset as freset;
 use fidl_next_fuchsia_hardware_spiimpl::{self, spi_impl as fspi_impl};
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
 use log::{error, info};
+use mmio::region::MmioRegion;
+use mmio::vmo::VmoMemory;
+use pdev::PlatformDevice;
 use zx::Status;
 
 struct DwSpiDriver {
     _node: Node,
     _scope: fasync::Scope,
-    _businfo_server: MetadataServer,
+    _businfo_server: Option<MetadataServer>,
+    _mmio: MmioRegion<VmoMemory>,
+    _cs_gpio: Option<fidl_next::Client<fgpio::Gpio>>,
 }
 
 driver_register!(DwSpiDriver);
@@ -143,10 +152,60 @@ impl Driver for DwSpiDriver {
                 Status::INTERNAL
             })?;
 
-        let businfo_server = MetadataServer::new(fspi_businfo::SpiBusMetadata::SERIALIZABLE_NAME)
-            .forward_from_pdev(&pdev)
-            .await
-            .inspect_err(|err| error!("Failed to forward SPI bus metadata: {err}"))?;
+        let powerdomain_service: fdf_component::ServiceInstance<fpowerdomain::Service> =
+            context.incoming.service().instance("power-domain").connect_next()?;
+        let (powerdomain_client, powerdomain_server) = fidl_next::fuchsia::create_channel();
+        powerdomain_service.domain(powerdomain_server).map_err(|_| Status::INTERNAL)?;
+        let powerdomain = powerdomain_client.spawn();
+
+        powerdomain.enable().await.map_err(|e| {
+            error!("Failed to enable power domain: {:?}", e);
+            Status::INTERNAL
+        })?;
+        info!("Power domain enabled successfully");
+
+        const CLOCK_NAMES: [&str; 2] = ["clock-bus", "clock-registers"];
+        for name in CLOCK_NAMES {
+            let clock_service: fdf_component::ServiceInstance<fclock::Service> =
+                context.incoming.service().instance(name).connect_next()?;
+            let (clock_client, clock_server) = fidl_next::fuchsia::create_channel();
+            clock_service.clock(clock_server).map_err(|_| Status::INTERNAL)?;
+            let clock = clock_client.spawn();
+
+            clock.enable().await.map_err(|e| {
+                error!("Failed to enable clock: {:?}", e);
+                Status::INTERNAL
+            })?;
+        }
+
+        let reset_service: fdf_component::ServiceInstance<freset::Service> =
+            context.incoming.service().instance("reset").connect_next()?;
+        let (reset_client, reset_server) = fidl_next::fuchsia::create_channel();
+        reset_service.reset(reset_server).map_err(|_| Status::INTERNAL)?;
+        let reset = reset_client.spawn();
+
+        reset.toggle().await.map_err(|e| {
+            error!("Failed to toggle reset: {:?}", e);
+            Status::INTERNAL
+        })?;
+
+        let mmio = pdev.map_mmio_by_id(0).await?;
+
+        let cs_gpio = {
+            let cs_gpio_service: fdf_component::ServiceInstance<fgpio::Service> =
+                context.incoming.service().instance("cs-gpio-0").connect_next()?;
+            let (cs_gpio_client, cs_gpio_server) = fidl_next::fuchsia::create_channel();
+            cs_gpio_service.device(cs_gpio_server).map_err(|_| Status::INTERNAL)?;
+
+            let cs_gpio = cs_gpio_client.spawn();
+
+            // The chip select GPIO is optional. Make a call on it do determine whether or not it
+            // has been provided to us.
+            match cs_gpio.release_interrupt().await {
+                Ok(Ok(_)) => Some(cs_gpio),
+                _ => None,
+            }
+        };
 
         let mut outgoing = ServiceFs::new();
 
@@ -161,8 +220,22 @@ impl Driver for DwSpiDriver {
             .build_driver_offer();
 
         let mut node_args = NodeBuilder::new(Self::NAME).add_offer(offer);
-        if let Some(offer) = businfo_server.serve(&mut outgoing, scope.to_handle(), "default") {
-            node_args = node_args.add_offer(offer);
+
+        let businfo_server = MetadataServer::new(fspi_businfo::SpiBusMetadata::SERIALIZABLE_NAME)
+            .forward_from_pdev(&pdev)
+            .await;
+        match businfo_server {
+            Ok(ref server) => {
+                if let Some(offer) = server.serve(&mut outgoing, scope.to_handle(), "default") {
+                    node_args = node_args.add_offer(offer);
+                }
+            }
+            Err(e) => {
+                if e != zx::Status::NOT_FOUND {
+                    error!("Failed to forward SPI bus metadata: {e}");
+                    return Err(e);
+                }
+            }
         }
 
         let node = context.take_node()?;
@@ -173,8 +246,18 @@ impl Driver for DwSpiDriver {
 
         info!("dw-spi driver initialized successfully");
 
-        Ok(Self { _node: node, _scope: scope, _businfo_server: businfo_server })
+        Ok(Self {
+            _node: node,
+            _scope: scope,
+            _businfo_server: businfo_server.ok(),
+            _mmio: mmio,
+            _cs_gpio: cs_gpio,
+        })
     }
 
     async fn stop(&self) {}
 }
+
+#[cfg(test)]
+#[path = "../tests/dw_spi_test.rs"]
+mod tests;
