@@ -841,8 +841,8 @@ mod test {
 
         let actual_format_costs = sysmem_config.format_costs.expect("format_costs");
 
-        println!("expected:\n{:#?}\n", &expected_format_costs);
-        println!("actual:\n{:#?}\n", &actual_format_costs);
+        println!("expected:\n{:#?}\n", expected_format_costs);
+        println!("actual:\n{:#?}\n", actual_format_costs);
 
         assert_eq!(expected_format_costs, actual_format_costs);
     }
