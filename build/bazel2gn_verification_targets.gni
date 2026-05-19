@@ -59,6 +59,7 @@ bazel2gn_verification_targets = [
   "//src/developer/ffx/lib/sdk:verify_bazel2gn",
   "//src/developer/ffx/lib/timeout:verify_bazel2gn",
   "//src/developer/ffx/lib/version:verify_bazel2gn",
+  "//src/developer/ffx/tools/efi:verify_bazel2gn",
   "//src/developer/lib/writer:verify_bazel2gn",
   "//src/lib/analytics/rust:verify_bazel2gn",
   "//src/lib/fidl/rust/fidl:verify_bazel2gn",
