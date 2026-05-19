@@ -43,6 +43,7 @@ go_library("main") {
   sources = [
     "main.go",
     "run.go",
+    "run_test.go",
   ]
   deps = [
     ":lib",
@@ -62,6 +63,10 @@ go_test("orchestrate_tests") {
   embed = [ ":lib" ]
 }
 
+go_test("cmd_tests") {
+  embed = [ ":main" ]
+}
+
 go_binary("orchestrate") {
   embed = [ ":main" ]
 }
@@ -78,6 +83,7 @@ sdk_host_tool("orchestrate_sdk") {
 group("tests") {
   testonly = true
   deps = [
+    ":cmd_tests",
     ":ffx_tests",
     ":orchestrate_tests",
     ":utils_tests",

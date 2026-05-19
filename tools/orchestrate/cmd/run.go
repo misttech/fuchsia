@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -19,6 +20,7 @@ type runCmd struct {
 	input        string
 	deviceConfig string
 	help         bool
+	overrides    string
 }
 
 func (*runCmd) Name() string {
@@ -37,6 +39,8 @@ func (r *runCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&r.deviceConfig, "device-config", "/etc/botanist/config.json", "File path for device config JSON file.")
 	f.StringVar(&r.input, "input", "", "File path for input JSON file.")
 	f.BoolVar(&r.help, "help", false, "Print usage for this command.")
+	f.StringVar(&r.overrides, "overrides", "", "JSON string configuration overrides (e.g. '{\"emulator\":{\"ffx_path\":\"foo\"}}'). Since these are merged with the base input configuration, changing run targets (eg: emulator to hardware) requires unsetting the previous run target. See config.go for more details.")
+
 }
 
 func (r *runCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
@@ -50,11 +54,21 @@ func (r *runCmd) Execute(_ context.Context, f *flag.FlagSet, _ ...any) subcomman
 	}
 	oc := orchestrate.NewOrchestrateConfig()
 	runInput, err := oc.ReadRunInput(r.input)
-	fmt.Printf("Run input: %+v\n", runInput)
 	if err != nil {
 		fmt.Printf("Reading run input failed: %v\n", err)
 		return subcommands.ExitFailure
 	}
+	if r.overrides != "" {
+		if err := json.Unmarshal([]byte(r.overrides), runInput); err != nil {
+			fmt.Printf("Applying overrides failed (invalid JSON): %v\n", err)
+			return subcommands.ExitFailure
+		}
+		if err := runInput.Validate(); err != nil {
+			fmt.Printf("Applying overrides failed (invalid configuration): %v\n", err)
+			return subcommands.ExitFailure
+		}
+	}
+	fmt.Printf("Run input: %+v\n", runInput)
 	// Botanist's config.json and serial logging will only be present when
 	// testing with hardware.
 	var deviceConfig *orchestrate.DeviceConfig

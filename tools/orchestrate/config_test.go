@@ -96,6 +96,11 @@ func TestReadRunInput(t *testing.T) {
 			jsonData: "{\"hardware\": {\"ffx_path\":\"foo\",\"transfer_url\":\"gs://foo/bar.json\",\"local_pb\":\"foo/bar\"}}",
 			wantErr:  true,
 		},
+		{
+			name:     "Hardware And Emulator Mutually Exclusive",
+			jsonData: "{\"hardware\": {\"ffx_path\":\"foo\",\"transfer_url\":\"gs://foo/bar.json\"}, \"emulator\": {\"ffx_path\":\"bar\",\"transfer_url\":\"gs://baz\"}}",
+			wantErr:  true,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

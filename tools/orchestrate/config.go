@@ -127,6 +127,22 @@ func (ri *RunInput) HasExperiment(experiment string) bool {
 	return slices.Contains(ri.ExperimentSlice, experiment)
 }
 
+func (ri *RunInput) Validate() error {
+	if ri.IsHardware() && ri.IsEmulator() {
+		return fmt.Errorf("hardware and emulator are mutually exclusive targets")
+	}
+	// TODO: We should check ri.IsTarget() && ri.IsHost(), but unfortunately there isn't a possible
+	// way of doing so based on the current implementation of IsHost() (defined as !IsTarget()).
+	if ri.IsTarget() && (ri.Target().TransferURL == "") == (ri.Target().LocalPB == "") {
+		return fmt.Errorf(
+			"transfer_url = %q and local_pb = %q are mutually exclusive",
+			ri.Target().TransferURL,
+			ri.Target().LocalPB,
+		)
+	}
+	return nil
+}
+
 // ReadRunInput reads RunInput from a given path.
 func (oc *OrchestrateConfig) ReadRunInput(path string) (*RunInput, error) {
 	content, err := oc.ReadFile(path)
@@ -137,12 +153,8 @@ func (oc *OrchestrateConfig) ReadRunInput(path string) (*RunInput, error) {
 	if err = json.Unmarshal(content, &data); err != nil {
 		return nil, fmt.Errorf("Unmarshal: %w", err)
 	}
-	if data.IsTarget() && (data.Target().TransferURL == "") == (data.Target().LocalPB == "") {
-		return nil, fmt.Errorf(
-			"transfer_url = %q and local_pb = %q are mutually exclusive",
-			data.Target().TransferURL,
-			data.Target().LocalPB,
-		)
+	if err := data.Validate(); err != nil {
+		return nil, err
 	}
 	return &data, nil
 }
