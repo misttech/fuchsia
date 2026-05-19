@@ -341,9 +341,13 @@ zx_status_t OtRadioDevice::ReadRadioPacket() {
         if ((inbound_allowance_ == 0) && spinel_framer_.get()) {
           spinel_framer_->SetInboundAllowanceStatus(false);
         }
-        async::PostTask(loop_.dispatcher(), [this, pkt = std::move(spi_rx_buffer_),
-                                             len = std::move(spi_rx_buffer_len_)]() {
-          this->HandleRadioRxFrame(pkt, len);
+
+        // Deep copy the buffer into a thread-isolated std::vector.
+        std::vector<uint8_t> pkt(spi_rx_buffer_, spi_rx_buffer_ + spi_rx_buffer_len_);
+
+        async::PostTask(loop_.dispatcher(), [this, pkt = std::move(pkt)]() {
+          this->HandleRadioRxFrame(const_cast<uint8_t*>(pkt.data()),
+                                   static_cast<uint16_t>(pkt.size()));
         });
       } else {
         // Loop thread is not running, this is one off case to be handled
