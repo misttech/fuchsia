@@ -438,9 +438,10 @@ static bool pmm_node_low_mem_alloc_failure_test() {
 
   // Waiting for an allocation should block, although to only try with a very small timeout to not
   // make this test take too long.
-  EXPECT_EQ(
-      ZX_ERR_TIMED_OUT,
-      node.node().WaitForSinglePageAllocation(Deadline::after_mono(ZX_MSEC(10))).status_value());
+  EXPECT_EQ(ZX_ERR_TIMED_OUT,
+            node.node()
+                .WaitForSinglePageAllocation(Deadline::after_mono(ZX_MSEC(10)), true)
+                .status_value());
 
   // Free the list.
   node.node().FreeList(&list);
@@ -455,7 +456,7 @@ static bool pmm_node_low_mem_alloc_failure_test() {
   // cannot guarantee that any small finite number of allocation attempts will work.
   // We can check that waiting to retry an allocation completes with no timeout though.
   {
-    auto alloc_page = node.node().WaitForSinglePageAllocation(Deadline::infinite_past());
+    auto alloc_page = node.node().WaitForSinglePageAllocation(Deadline::infinite_past(), true);
     ASSERT_NE(alloc_page.status_value(), ZX_ERR_TIMED_OUT);
     if (alloc_page.is_ok()) {
       node.node().FreePage(alloc_page.value());
@@ -471,7 +472,7 @@ static bool pmm_node_low_mem_alloc_failure_test() {
   // Signal should not yet be set, and allocations should not be delayed.
   EXPECT_FALSE(node.IsEventSignaled());
   {
-    auto alloc_page = node.node().WaitForSinglePageAllocation(Deadline::infinite_past());
+    auto alloc_page = node.node().WaitForSinglePageAllocation(Deadline::infinite_past(), true);
     ASSERT_NE(alloc_page.status_value(), ZX_ERR_TIMED_OUT);
     if (alloc_page.is_ok()) {
       node.node().FreePage(alloc_page.value());
@@ -482,9 +483,10 @@ static bool pmm_node_low_mem_alloc_failure_test() {
   ASSERT_OK(node.node().AllocPages(1, 0, &list));
   result = node.node().AllocPage(PMM_ALLOC_FLAG_CAN_WAIT);
   EXPECT_EQ(result.status_value(), ZX_ERR_SHOULD_WAIT);
-  EXPECT_EQ(
-      ZX_ERR_TIMED_OUT,
-      node.node().WaitForSinglePageAllocation(Deadline::after_mono(ZX_MSEC(10))).status_value());
+  EXPECT_EQ(ZX_ERR_TIMED_OUT,
+            node.node()
+                .WaitForSinglePageAllocation(Deadline::after_mono(ZX_MSEC(10)), true)
+                .status_value());
 
   node.node().FreeList(&list);
 
@@ -503,9 +505,10 @@ static bool pmm_node_explicit_should_wait_test() {
   // Allocations that can wait should be blocked.
   zx::result<vm_page_t*> result = node.node().AllocPage(PMM_ALLOC_FLAG_CAN_WAIT);
   EXPECT_EQ(result.status_value(), ZX_ERR_SHOULD_WAIT);
-  EXPECT_EQ(
-      ZX_ERR_TIMED_OUT,
-      node.node().WaitForSinglePageAllocation(Deadline::after_mono(ZX_MSEC(10))).status_value());
+  EXPECT_EQ(ZX_ERR_TIMED_OUT,
+            node.node()
+                .WaitForSinglePageAllocation(Deadline::after_mono(ZX_MSEC(10)), true)
+                .status_value());
 
   // A regular allocation should work.
   result = node.node().AllocPage(0);
@@ -516,7 +519,7 @@ static bool pmm_node_explicit_should_wait_test() {
   EXPECT_TRUE(node.ResetDefaultMemEvent());
 
   {
-    auto alloc_page = node.node().WaitForSinglePageAllocation(Deadline::infinite_past());
+    auto alloc_page = node.node().WaitForSinglePageAllocation(Deadline::infinite_past(), true);
     ASSERT_NE(alloc_page.status_value(), ZX_ERR_TIMED_OUT);
     if (alloc_page.is_ok()) {
       node.node().FreePage(alloc_page.value());
@@ -534,7 +537,7 @@ struct PmmWaiterArgs {
 
 static int pmm_waiter_thread(void* arg) {
   PmmWaiterArgs* args = static_cast<PmmWaiterArgs*>(arg);
-  auto result = args->node->WaitForSinglePageAllocation(Deadline::after_mono(ZX_SEC(2)));
+  auto result = args->node->WaitForSinglePageAllocation(Deadline::after_mono(ZX_SEC(2)), true);
   if (result.status_value() == ZX_ERR_TIMED_OUT) {
     args->timeout_count->fetch_add(1);
   } else if (result.status_value() == ZX_ERR_NO_MEMORY) {
@@ -584,7 +587,8 @@ static bool pmm_node_stop_returning_should_wait_test() {
 
   // Second call: may_allocate_evt_ might be unsignaled but since should_wait_ is Never, it should
   // not wait.
-  auto alloc_page2 = node.node().WaitForSinglePageAllocation(Deadline::after_mono(ZX_MSEC(10)));
+  auto alloc_page2 =
+      node.node().WaitForSinglePageAllocation(Deadline::after_mono(ZX_MSEC(10)), true);
   EXPECT_EQ(alloc_page2.status_value(), ZX_ERR_NO_MEMORY);
 
   // Clean up.
@@ -635,6 +639,105 @@ static bool pmm_node_stop_returning_should_wait_concurrent_test() {
   EXPECT_EQ(timeout_count.load(), 0);
   // Verify that all threads failed with NO_MEMORY.
   EXPECT_EQ(no_memory_count.load(), kNumWaiters);
+
+  // Clean up.
+  node.node().FreeList(&list);
+
+  END_TEST;
+}
+
+struct PmmSuspendKillWaiterArgs {
+  PmmNode* node;
+  bool suspendable;
+  zx_duration_mono_t timeout;
+  ktl::atomic<zx_status_t> result;
+};
+
+static int pmm_suspend_kill_waiter_thread(void* arg) {
+  PmmSuspendKillWaiterArgs* args = static_cast<PmmSuspendKillWaiterArgs*>(arg);
+  auto res = args->node->WaitForSinglePageAllocation(Deadline::after_mono(args->timeout),
+                                                     args->suspendable);
+  args->result.store(res.status_value());
+  if (res.is_ok()) {
+    args->node->FreePage(res.value());
+  }
+  return 0;
+}
+
+// Verifies that WaitForSinglePageAllocation with suspendable = true is interrupted immediately
+// when the thread is suspended, returning ZX_ERR_INTERNAL_INTR_RETRY.
+static bool pmm_node_suspendable_wait_test() {
+  BEGIN_TEST;
+
+  ManagedPmmNode node;
+
+  // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
+  list_node list = LIST_INITIAL_VALUE(list);
+  zx_status_t status = node.node().AllocPages(ManagedPmmNode::kNumPages, 0, &list);
+  EXPECT_EQ(ZX_OK, status);
+
+  // Place the node directly into a state that forbids allocations.
+  EXPECT_TRUE(node.SetFreeMemorySignal(0, ManagedPmmNode::kNumPages, UINT64_MAX));
+
+  PmmSuspendKillWaiterArgs args{&node.node(), true, ZX_SEC(5), ZX_OK};
+
+  // Start a thread that will wait in a suspendable state.
+  Thread* thread = Thread::Create("pmm suspendable waiter", pmm_suspend_kill_waiter_thread, &args,
+                                  DEFAULT_PRIORITY);
+  thread->Resume();
+
+  // Give the thread time to block.
+  Thread::Current::SleepRelative(ZX_MSEC(100));
+
+  // Suspend the thread.
+  thread->Suspend();
+
+  // Wait for the thread to complete (it should exit immediately due to suspension).
+  thread->Join(nullptr, ZX_TIME_INFINITE);
+
+  // Verify that the thread returned ZX_ERR_INTERNAL_INTR_RETRY.
+  EXPECT_EQ(args.result.load(), ZX_ERR_INTERNAL_INTR_RETRY);
+
+  // Clean up.
+  node.node().FreeList(&list);
+
+  END_TEST;
+}
+
+// Verifies that WaitForSinglePageAllocation with suspendable = false ignores suspend signals
+// and blocks until the timeout expires, returning ZX_ERR_TIMED_OUT.
+static bool pmm_node_non_suspendable_wait_test() {
+  BEGIN_TEST;
+
+  ManagedPmmNode node;
+
+  // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
+  list_node list = LIST_INITIAL_VALUE(list);
+  zx_status_t status = node.node().AllocPages(ManagedPmmNode::kNumPages, 0, &list);
+  EXPECT_EQ(ZX_OK, status);
+
+  // Place the node directly into a state that forbids allocations.
+  EXPECT_TRUE(node.SetFreeMemorySignal(0, ManagedPmmNode::kNumPages, UINT64_MAX));
+
+  // Use a short 200ms timeout so the test completes quickly.
+  PmmSuspendKillWaiterArgs args{&node.node(), false, ZX_MSEC(200), ZX_OK};
+
+  // Start a thread that will wait in a non-suspendable state.
+  Thread* thread = Thread::Create("pmm non-suspendable waiter", pmm_suspend_kill_waiter_thread,
+                                  &args, DEFAULT_PRIORITY);
+  thread->Resume();
+
+  // Give the thread time to block.
+  Thread::Current::SleepRelative(ZX_MSEC(50));
+
+  // Suspend the thread (which should be ignored by the Wait loop).
+  thread->Suspend();
+
+  // Wait for the thread to complete (it should wait out the full 200ms timeout).
+  thread->Join(nullptr, ZX_TIME_INFINITE);
+
+  // Verify that the thread returned ZX_ERR_TIMED_OUT instead of ZX_ERR_INTERNAL_INTR_RETRY.
+  EXPECT_EQ(args.result.load(), ZX_ERR_TIMED_OUT);
 
   // Clean up.
   node.node().FreeList(&list);
@@ -943,6 +1046,8 @@ VM_UNITTEST(pmm_node_low_mem_alloc_failure_test)
 VM_UNITTEST(pmm_node_explicit_should_wait_test)
 VM_UNITTEST(pmm_node_stop_returning_should_wait_test)
 VM_UNITTEST(pmm_node_stop_returning_should_wait_concurrent_test)
+VM_UNITTEST(pmm_node_suspendable_wait_test)
+VM_UNITTEST(pmm_node_non_suspendable_wait_test)
 VM_UNITTEST(pmm_checker_test)
 VM_UNITTEST(pmm_checker_is_valid_fill_size_test)
 VM_UNITTEST(pmm_get_arena_info_test)

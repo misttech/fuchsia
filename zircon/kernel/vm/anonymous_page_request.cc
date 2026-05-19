@@ -20,7 +20,7 @@ namespace {
 constinit ktl::atomic<bool> dump_info_before_panic_token = true;
 }  // namespace
 
-zx::result<> AnonymousPageRequest::Allocate() {
+zx::result<> AnonymousPageRequest::Allocate(bool suspendable) {
   DEBUG_ASSERT(active_);
   DEBUG_ASSERT(!has_page());
 
@@ -51,7 +51,7 @@ zx::result<> AnonymousPageRequest::Allocate() {
 
   while (true) {
     zx::result<vm_page_t*> page_alloc =
-        Pmm::Node().WaitForSinglePageAllocation(Deadline::after_mono(kReportWaitTime));
+        Pmm::Node().WaitForSinglePageAllocation(Deadline::after_mono(kReportWaitTime), suspendable);
     if (page_alloc.is_error()) {
       // System is not making forward progress, lets try again.
       if (page_alloc.error_value() == ZX_ERR_TIMED_OUT) {

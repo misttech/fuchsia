@@ -624,7 +624,7 @@ PageRequest* LazyPageRequest::get() {
 zx_status_t MultiPageRequest::Wait(bool suspendable) {
   if (anonymous_.is_active()) {
     DEBUG_ASSERT(!dirty_active_ && !read_active_);
-    return anonymous_.Allocate().status_value();
+    return anonymous_.Allocate(suspendable).status_value();
   }
   // Exactly one of read and dirty should be considered active.
   DEBUG_ASSERT(dirty_active_ ^ read_active_);

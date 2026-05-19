@@ -1233,7 +1233,7 @@ const char* PmmNode::AllocFailure::TypeToString(Type type) {
   return "UNKNOWN";
 }
 
-zx::result<vm_page_t*> PmmNode::WaitForSinglePageAllocation(Deadline deadline) {
+zx::result<vm_page_t*> PmmNode::WaitForSinglePageAllocation(Deadline deadline, bool suspendable) {
   bool skip_wait = false;
   {
     Guard<Mutex> guard{&lock_};
@@ -1245,13 +1245,16 @@ zx::result<vm_page_t*> PmmNode::WaitForSinglePageAllocation(Deadline deadline) {
   }
 
   if (!skip_wait) {
-    zx_status_t wait_result = may_allocate_evt_.Wait(deadline);
+    // Ignore the suspend signal if not suspendable, and retry the wait if interrupted.
+    const uint signal_mask = suspendable ? 0 : THREAD_SIGNAL_SUSPEND;
+    zx_status_t wait_result;
+    do {
+      wait_result = may_allocate_evt_.Wait(deadline, signal_mask);
+    } while (wait_result == ZX_ERR_INTERNAL_INTR_RETRY && !suspendable);
 
     // Let the caller handle the error and retry if necessary.
-    // This could be `ZX_ERR_TIMED_OUT`, `ZX_ERR_INTERNAL_INTR_KILLED`(thread killed)
-    // or `ZX_ERR_INTERNAL_INTR_RETRY`(thread suspended).
-    //
-    // TODO(https://fxbug.dev/443281947): Handle thread suspension.
+    // This could be `ZX_ERR_TIMED_OUT`, `ZX_ERR_INTERNAL_INTR_KILLED` (thread killed)
+    // or `ZX_ERR_INTERNAL_INTR_RETRY` (thread suspended, if suspendable is true).
     if (wait_result != ZX_OK) {
       return zx::error(wait_result);
     }

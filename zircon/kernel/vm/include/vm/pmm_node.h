@@ -186,7 +186,11 @@ class PmmNode {
   // may return spurious `ZX_ERR_SHOULD_WAIT`, in such cases, if the system is
   // not in a low memory state, a thread is woken up anyway, so forward
   // progress can be made.
-  zx::result<vm_page_t*> WaitForSinglePageAllocation(Deadline deadline);
+  //
+  // If |suspendable| is true, the wait will terminate early with
+  // `ZX_ERR_INTERNAL_INTR_RETRY` if the thread is suspended. If false, suspension is ignored and
+  // the wait continues.
+  zx::result<vm_page_t*> WaitForSinglePageAllocation(Deadline deadline, bool suspendable);
 
   void StopReturningShouldWait();
 

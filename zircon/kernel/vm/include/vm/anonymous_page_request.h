@@ -41,7 +41,7 @@ class AnonymousPageRequest {
   void Cancel() { active_ = false; }
 
   // On success, a page is allocated.
-  zx::result<> Allocate();
+  zx::result<> Allocate(bool suspendable = true);
 
   // Retrieves a possibly allocated `page_request`.
   vm_page_t* take_page() { return ktl::exchange(page_, nullptr); }
