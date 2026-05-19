@@ -2977,18 +2977,6 @@ alias(
 )
 
 alias(
-    name = "tinyjson-2.5.1",
-    actual = "//third_party/rust_crates/vendor/tinyjson-2.5.1:tinyjson",
-    tags = ["manual"],
-)
-
-alias(
-    name = "tinyjson",
-    actual = "//third_party/rust_crates/vendor/tinyjson-2.5.1:tinyjson",
-    tags = ["manual"],
-)
-
-alias(
     name = "tokio-1.38.1",
     actual = "//third_party/rust_crates/vendor/tokio-1.38.1:tokio",
     tags = ["manual"],

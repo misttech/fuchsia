@@ -1880,7 +1880,6 @@ dependencies = [
  "test-case",
  "textwrap 0.16.2",
  "thiserror 2.0.18",
- "tinyjson",
  "tokio",
  "tokio-rustls",
  "tokio-stream",
@@ -5253,12 +5252,6 @@ checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if 1.0.4",
 ]
-
-[[package]]
-name = "tinyjson"
-version = "2.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ab95735ea2c8fd51154d01e39cf13912a78071c2d89abc49a7ef102a7dd725a"
 
 [[package]]
 name = "tinyvec"

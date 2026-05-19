@@ -2237,24 +2237,6 @@ group("thiserror-2.0.18") {
   public_deps = [ ":thiserror-v2_0_18" ]
 }
 
-import("//third_party/rust_crates/private_visibility.gni")
-
-if (!(current_os == "fuchsia")) {
-  group("tinyjson") {
-    public_deps = [ ":tinyjson-v2_5_1" ]
-
-    visibility = private_visibility
-  }
-}
-
-if (!(current_os == "fuchsia")) {
-  group("tinyjson-2.5.1") {
-    public_deps = [ ":tinyjson-v2_5_1" ]
-
-    visibility = private_visibility
-  }
-}
-
 if (!(current_os == "fuchsia")) {
   group("tokio") {
     public_deps = [ ":tokio-v1_38_1" ]
@@ -20980,36 +20962,6 @@ rustc_library("thread_local-v1_1_9") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":thread_local-v1_1_9.license" ]
-}
-
-license("tinyjson-v2_5_1.license") {
-  public_package_name = "tinyjson"
-  license_files =
-      [ "//third_party/rust_crates/vendor/tinyjson-2.5.1/LICENSE.txt" ]
-}
-
-rustc_library("tinyjson-v2_5_1") {
-  crate_name = "tinyjson"
-  source_root = "//third_party/rust_crates/vendor/tinyjson-2.5.1/src/lib.rs"
-  output_name = "tinyjson-59ab06257b3a31b0"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=59ab06257b3a31b0",
-    "-Cextra-filename=-59ab06257b3a31b0",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":tinyjson-v2_5_1.license" ]
 }
 
 license("tinyvec-v1_3_1.license") {
