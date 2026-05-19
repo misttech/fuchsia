@@ -706,6 +706,7 @@ void App::InitializeHeartbeat(display::Display& display) {
       [this] {
         TRACE_DURATION("gfx", "App on_cpu_work_done");
         view_tree_snapshotter_->UpdateSnapshot();
+        flatland_engine_->UpdateLinkWatchersAfterViewTreePublished();
         // Clears scene state, so must happen after ViewTree update, etc.
         flatland_engine_->CleanUpFrame();
 

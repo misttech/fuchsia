@@ -54,6 +54,16 @@ class Engine {
                             const FlatlandDisplay& display,
                             scheduling::FramePresentedCallback callback);
 
+  // Dispatches updated layout information (coordinate transforms, view dimensions,
+  // device pixel ratio, etc.) to layout observers and link watchers based on the
+  // current frame's scene state.
+  //
+  // CRITICAL: This must be called *after* the new ViewTree snapshot has been fully
+  // updated and published (e.g. in `UpdateSnapshot()`), but *before* the frame's scene
+  // state is cleared by `CleanUpFrame()`. This ensures layout observers do not query
+  // or receive layout updates against a stale ViewTree snapshot.
+  void UpdateLinkWatchersAfterViewTreePublished();
+
   // Resets internal state to prepare for the next frame.
   //
   // This completes the frame cycle; it must be called after every invocation of
@@ -80,7 +90,8 @@ class Engine {
   // Holds the per-frame scene state that is generated from the latest UberStructs from each
   // Flatland session, linked together by the LinkSystem.
   struct SceneState {
-    void Initialize(Engine& engine, TransformHandle root_transform);
+    void Initialize(Engine& engine, TransformHandle root_transform,
+                    glm::vec2 device_pixel_ratio = {1.f, 1.f});
 
     // Clear all fields without deallocating memory.
     void Clear();
@@ -95,6 +106,8 @@ class Engine {
 
     // Only used internally to compute `image_rectangles`, but stashed to avoid reallocating memory.
     flatland::GlobalImageSampleRegionVector image_sample_regions;
+
+    glm::vec2 device_pixel_ratio = {1.f, 1.f};
   };
 
   // Initialize all inspect::Nodes, so that the Engine state can be observed.

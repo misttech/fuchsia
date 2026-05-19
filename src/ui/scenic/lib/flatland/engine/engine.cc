@@ -99,7 +99,7 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
   FX_DCHECK(cleared_scene_state_);
   current_scene_state_ = std::move(cleared_scene_state_);
   SceneState& scene_state = *current_scene_state_;
-  scene_state.Initialize(*this, display.root_transform());
+  scene_state.Initialize(*this, display.root_transform(), display.display()->device_pixel_ratio());
 
   display::Display* const hw_display = display.display();
 
@@ -125,14 +125,6 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
   }
   FLATLAND_VERBOSE_LOG << str.str();
 #endif
-
-  // TODO(https://fxbug.dev/460278647): Defer UpdateLinkWatchers() to `on_cpu_work_done()`.  Also
-  // UpdateDevicePixelRatio(), although we'd have to stash the device_pixel_ratio somewhere
-  // (maybe just in the SceneState?).
-  link_system_->UpdateLinkWatchers(scene_state.topology_data.topology_vector,
-                                   scene_state.topology_data.live_handles,
-                                   scene_state.global_matrices, scene_state.snapshot.map);
-  link_system_->UpdateDevicePixelRatio(hw_display->device_pixel_ratio());
 
   if (auto it = seen_display_ids_.find(hw_display->display_id());
       it == seen_display_ids_.end() || !it->second) {
@@ -199,6 +191,18 @@ void Engine::RecordFrameResult(DisplayCompositor::RenderFrameResult result) {
   }
 }
 
+void Engine::UpdateLinkWatchersAfterViewTreePublished() {
+  TRACE_DURATION("gfx", "flatland::Engine::UpdateLinkWatchersAfterViewTreePublished");
+  utils::CheckIsOnMainThread();
+  FX_DCHECK(current_scene_state_);
+
+  const auto& scene_state = *current_scene_state_;
+  link_system_->UpdateLinkWatchers(scene_state.topology_data.topology_vector,
+                                   scene_state.topology_data.live_handles,
+                                   scene_state.global_matrices, scene_state.snapshot.map);
+  link_system_->UpdateDevicePixelRatio(scene_state.device_pixel_ratio);
+}
+
 void Engine::CleanUpFrame() {
   TRACE_DURATION("gfx", "flatland::Engine::CleanUpFrame");
   utils::CheckIsOnMainThread();
@@ -253,7 +257,7 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
   TransformHandle root = display.root_transform();
 
   SceneState scene_state;
-  scene_state.Initialize(*this, root);
+  scene_state.Initialize(*this, root, display.display()->device_pixel_ratio());
   const auto hw_display = display.display();
   CullRectanglesInPlace(&scene_state.image_rectangles, &scene_state.images,
                         hw_display->width_in_px(), hw_display->height_in_px());
@@ -261,8 +265,10 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
   return std::make_pair(std::move(scene_state.image_rectangles), std::move(scene_state.images));
 }
 
-void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transform) {
+void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transform,
+                                    glm::vec2 device_pixel_ratio) {
   TRACE_DURATION("gfx", "flatland::Engine::SceneState::Initialize");
+  this->device_pixel_ratio = device_pixel_ratio;
   snapshot = engine.uber_struct_system_->Snapshot();
 
   const auto links = engine.link_system_->GetResolvedTopologyLinks();
