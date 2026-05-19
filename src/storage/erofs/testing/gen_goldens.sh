@@ -9,9 +9,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 
 cd "$SCRIPT_DIR"
 
-# Recreate the golden file even if it exists
+# Recreate the golden files even if they exists
 rm -f data/simple.erofs
+rm -f data/simple_512.erofs
 
-mkfs.erofs data/simple.erofs data/simple
+mkdir -p data/simple/large_dir
+for i in $(seq 1 50); do
+  echo "file $i" > "data/simple/large_dir/file_number_$i"
+done
+
+mkfs.erofs -b 4096 data/simple.erofs data/simple
+mkfs.erofs -b 512 data/simple_512.erofs data/simple
+
+# Clean up
+rm -rf data/simple/large_dir
 
 echo "All golden EROFS images generated successfully."

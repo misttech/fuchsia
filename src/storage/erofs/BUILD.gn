@@ -18,12 +18,17 @@ rustc_library("erofs") {
 
   deps = [
     "//sdk/rust/zx",
+    "//third_party/rust_crates:bitflags",
+    "//third_party/rust_crates:crc",
     "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:thiserror",
     "//third_party/rust_crates:zerocopy",
   ]
 
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:test-case",
+  ]
 
   sources = [
     "src/format.rs",
