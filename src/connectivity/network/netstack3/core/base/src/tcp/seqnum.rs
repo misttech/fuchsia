@@ -20,8 +20,14 @@ use explicit::ResultExt as _;
 ///   computer modulo arithmetic, so great care should be taken in programming
 ///   the comparison of such values.
 ///
-/// For any sequence number, there are 2**31 numbers after it and 2**31 - 1
-/// numbers before it.
+/// For any sequence number, there are 2**31 - 1 numbers after it and 2**31
+/// numbers before it. It is an arbitrary decision to make the "before" region
+/// larger than the "after" region. The TCP RFC does not specify what the
+/// relationship should be between two sequence numbers that are 2**31 apart.
+/// Per https://datatracker.ietf.org/doc/html/rfc1982#section-3.2, this
+/// relationship is UNDEFINED, and implementations are free to decide.
+///
+/// Using a larger "before" region matches Linux semantics.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct SeqNum(u32);
 
@@ -481,5 +487,15 @@ mod tests {
         // Verify that deconstructing a maximum `WindowSize` into it's
         // constituents is valid.
         assert_eq!(WindowSize::MAX.scale(), WindowScale::MAX);
+    }
+
+    // Verify that every sequence number has 2^31 sequence numbers before it,
+    // and 2^31-1 sequence numbers after it.
+    #[test]
+    fn seqnum_boundaries() {
+        assert!(SeqNum((1 << 31) - 1).after(SeqNum(0)));
+        assert!(!SeqNum((1 << 31) - 1).before(SeqNum(0)));
+        assert!(SeqNum(1 << 31).before(SeqNum(0)));
+        assert!(!SeqNum(1 << 31).after(SeqNum(0)));
     }
 }
