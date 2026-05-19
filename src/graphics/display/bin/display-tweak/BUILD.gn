@@ -25,7 +25,7 @@ rustc_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 
-  test_deps = [ "//third_party/rust_crates:assert_matches" ]
+  test_deps = [ "//third_party/rust_crates:googletest" ]
 
   sources = [
     "src/backlight.rs",

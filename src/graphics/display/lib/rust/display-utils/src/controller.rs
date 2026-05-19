@@ -434,13 +434,13 @@ async fn wait_for_initial_displays(
 mod tests {
     use super::{Coordinator, DisplayId, VsyncEvent};
     use anyhow::{Context, Result, format_err};
-    use assert_matches::assert_matches;
     use display_mocks::{MockCoordinator, create_proxy_and_mock};
     use fidl_fuchsia_hardware_display as display;
     use fidl_fuchsia_hardware_display_types as display_types;
     use fuchsia_async::TestExecutor;
     use futures::task::Poll;
     use futures::{FutureExt, StreamExt, pin_mut, select};
+    use googletest::{assert_that, expect_eq, expect_that, gtest, matchers};
 
     async fn init_with_proxy_and_listener_requests(
         coordinator_proxy: display::CoordinatorProxy,
@@ -466,12 +466,14 @@ mod tests {
         ))
     }
 
+    #[gtest]
     #[fuchsia::test]
     async fn test_init_fails_with_no_device_dir() {
         let result = Coordinator::init(crate::types::ClientPriority(300)).await;
-        assert_matches!(result, Err(_));
+        expect_that!(&result, matchers::err(matchers::anything()));
     }
 
+    #[gtest]
     #[fuchsia::test]
     async fn test_init_with_no_displays() -> Result<()> {
         let (coordinator_proxy, listener_requests, mut mock) = create_proxy_and_mock()?;
@@ -479,7 +481,7 @@ mod tests {
 
         let coordinator =
             init_with_proxy_and_listener_requests(coordinator_proxy, listener_requests).await?;
-        assert!(coordinator.displays().is_empty());
+        expect_that!(&coordinator.displays(), matchers::is_empty());
 
         Ok(())
     }
@@ -487,6 +489,7 @@ mod tests {
     // TODO(https://fxbug.dev/42075852): We should have an automated test verifying that
     // the service provided by driver framework can be opened correctly.
 
+    #[gtest]
     #[fuchsia::test]
     async fn test_init_with_displays() -> Result<()> {
         let displays = [
@@ -521,13 +524,14 @@ mod tests {
 
         let coordinator =
             init_with_proxy_and_listener_requests(coordinator_proxy, listener_requests).await?;
-        assert_eq!(coordinator.displays().len(), 2);
-        assert_eq!(coordinator.displays()[0].0, displays[0]);
-        assert_eq!(coordinator.displays()[1].0, displays[1]);
+        expect_eq!(coordinator.displays().len(), 2);
+        expect_eq!(coordinator.displays()[0].0, displays[0]);
+        expect_eq!(coordinator.displays()[1].0, displays[1]);
 
         Ok(())
     }
 
+    #[gtest]
     #[test]
     fn test_vsync_listener_single() -> Result<()> {
         // Drive an executor directly for this test to avoid having to rely on timeouts for cases
@@ -552,14 +556,16 @@ mod tests {
         // Send a single event.
         mock.emit_vsync_event(ID.0, STAMP)?;
         let vsync_event = executor.run_until_stalled(&mut event_handlers);
-        assert_matches!(
-            vsync_event,
-            Poll::Ready(Ok(VsyncEvent { id: ID, timestamp: _, config: STAMP }))
-        );
+        assert_that!(&vsync_event, matchers::matches_pattern!(Poll::Ready(matchers::anything())));
+        let Poll::Ready(result) = vsync_event else { unreachable!() };
+        let VsyncEvent { id, config, .. } = result.unwrap();
+        expect_eq!(id, ID);
+        expect_eq!(config, STAMP);
 
         Ok(())
     }
 
+    #[gtest]
     #[test]
     fn test_vsync_listener_multiple() -> Result<()> {
         // Drive an executor directly for this test to avoid having to rely on timeouts for cases
@@ -583,30 +589,31 @@ mod tests {
         // Process the FIDL events. The FIDL server Future should not complete as it runs
         // indefinitely.
         let fidl_server_result = executor.run_until_stalled(&mut fidl_server);
-        assert_matches!(fidl_server_result, Poll::Pending);
+        assert_that!(fidl_server_result, matchers::matches_pattern!(Poll::Pending));
 
         // Process the vsync listener.
         let vsync_event = executor.run_until_stalled(&mut Box::pin(async { vsync.next().await }));
-        assert_matches!(
-            vsync_event,
-            Poll::Ready(Some(VsyncEvent { id: ID1, timestamp: _, config: STAMP }))
-        );
+        assert_that!(&vsync_event, matchers::matches_pattern!(Poll::Ready(matchers::anything())));
+        let Poll::Ready(Some(VsyncEvent { id, config, .. })) = vsync_event else { unreachable!() };
+        expect_eq!(id, ID1);
+        expect_eq!(config, STAMP);
 
         let vsync_event = executor.run_until_stalled(&mut Box::pin(async { vsync.next().await }));
-        assert_matches!(
-            vsync_event,
-            Poll::Ready(Some(VsyncEvent { id: ID2, timestamp: _, config: STAMP }))
-        );
+        assert_that!(&vsync_event, matchers::matches_pattern!(Poll::Ready(matchers::anything())));
+        let Poll::Ready(Some(VsyncEvent { id, config, .. })) = vsync_event else { unreachable!() };
+        expect_eq!(id, ID2);
+        expect_eq!(config, STAMP);
 
         let vsync_event = executor.run_until_stalled(&mut Box::pin(async { vsync.next().await }));
-        assert_matches!(
-            vsync_event,
-            Poll::Ready(Some(VsyncEvent { id: ID1, timestamp: _, config: STAMP }))
-        );
+        assert_that!(&vsync_event, matchers::matches_pattern!(Poll::Ready(matchers::anything())));
+        let Poll::Ready(Some(VsyncEvent { id, config, .. })) = vsync_event else { unreachable!() };
+        expect_eq!(id, ID1);
+        expect_eq!(config, STAMP);
 
         Ok(())
     }
 
+    #[gtest]
     #[test]
     fn test_vsync_listener_display_id_filter() -> Result<()> {
         // Drive an executor directly for this test to avoid having to rely on timeouts for cases
@@ -634,15 +641,16 @@ mod tests {
         // Event from ID1 should get filtered out and the client should not receive any events.
         mock.emit_vsync_event(ID1.0, STAMP)?;
         let vsync_event = executor.run_until_stalled(&mut event_handlers);
-        assert_matches!(vsync_event, Poll::Pending);
+        assert_that!(vsync_event, matchers::matches_pattern!(Poll::Pending));
 
         // Event from ID2 should be received.
         mock.emit_vsync_event(ID2.0, STAMP)?;
         let vsync_event = executor.run_until_stalled(&mut event_handlers);
-        assert_matches!(
-            vsync_event,
-            Poll::Ready(Ok(VsyncEvent { id: ID2, timestamp: _, config: STAMP }))
-        );
+        assert_that!(&vsync_event, matchers::matches_pattern!(Poll::Ready(matchers::anything())));
+        let Poll::Ready(result) = vsync_event else { unreachable!() };
+        let VsyncEvent { id, config, .. } = result.unwrap();
+        expect_eq!(id, ID2);
+        expect_eq!(config, STAMP);
 
         Ok(())
     }

@@ -85,10 +85,11 @@ impl BacklightCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
+    use googletest::{expect_eq, expect_that, gtest, matchers};
 
-    use futures::{future, StreamExt};
+    use futures::{StreamExt, future};
 
+    #[gtest]
     #[fuchsia::test]
     async fn read_and_modify_state_no_changes() {
         let (device, mut backlight_request_stream) =
@@ -97,7 +98,10 @@ mod tests {
 
         let test_future = async move {
             let args = BacklightCmd { set_brightness: None, set_power: None };
-            assert_matches!(backlight.read_and_modify_state(&args).await, Ok(()));
+            expect_that!(
+                backlight.read_and_modify_state(&args).await,
+                matchers::ok(matchers::anything())
+            );
         };
         let service_future = async move {
             match backlight_request_stream.next().await.unwrap() {
@@ -112,6 +116,7 @@ mod tests {
         future::join(test_future, service_future).await;
     }
 
+    #[gtest]
     #[fuchsia::test]
     async fn read_and_modify_state_power_change() {
         let (device, mut backlight_request_stream) =
@@ -120,7 +125,10 @@ mod tests {
 
         let test_future = async move {
             let args = BacklightCmd { set_brightness: None, set_power: Some(false) };
-            assert_matches!(backlight.read_and_modify_state(&args).await, Ok(()));
+            expect_that!(
+                backlight.read_and_modify_state(&args).await,
+                matchers::ok(matchers::anything())
+            );
         };
         let service_future = async move {
             match backlight_request_stream.next().await.unwrap() {
@@ -133,8 +141,8 @@ mod tests {
             }
             match backlight_request_stream.next().await.unwrap() {
                 Ok(backlight::DeviceRequest::SetStateNormalized { state, responder }) => {
-                    assert_matches!(state, backlight::State { backlight_on: false, brightness: _ });
-                    assert_eq!(state.brightness, 0.5);
+                    expect_eq!(state.backlight_on, false);
+                    expect_eq!(state.brightness, 0.5);
                     responder.send(Ok(())).unwrap();
                 }
                 request => panic!("Unexpected request: {:?}", request),
@@ -143,6 +151,7 @@ mod tests {
         future::join(test_future, service_future).await;
     }
 
+    #[gtest]
     #[fuchsia::test]
     async fn read_and_modify_state_brightness_change() {
         let (device, mut backlight_request_stream) =
@@ -151,7 +160,10 @@ mod tests {
 
         let test_future = async move {
             let args = BacklightCmd { set_brightness: Some(1.0), set_power: None };
-            assert_matches!(backlight.read_and_modify_state(&args).await, Ok(()));
+            expect_that!(
+                backlight.read_and_modify_state(&args).await,
+                matchers::ok(matchers::anything())
+            );
         };
         let service_future = async move {
             match backlight_request_stream.next().await.unwrap() {
@@ -164,8 +176,8 @@ mod tests {
             }
             match backlight_request_stream.next().await.unwrap() {
                 Ok(backlight::DeviceRequest::SetStateNormalized { state, responder }) => {
-                    assert_matches!(state, backlight::State { backlight_on: true, brightness: _ });
-                    assert_eq!(state.brightness, 1.0);
+                    expect_eq!(state.backlight_on, true);
+                    expect_eq!(state.brightness, 1.0);
                     responder.send(Ok(())).unwrap();
                 }
                 request => panic!("Unexpected request: {:?}", request),
@@ -174,6 +186,7 @@ mod tests {
         future::join(test_future, service_future).await;
     }
 
+    #[gtest]
     #[fuchsia::test]
     async fn read_and_modify_state_read_error() {
         let (device, mut backlight_request_stream) =
@@ -183,8 +196,12 @@ mod tests {
         let test_future = async move {
             let args = BacklightCmd { set_brightness: Some(1.0), set_power: None };
             let result = backlight.read_and_modify_state(&args).await;
-            assert_matches!(result, Err(_));
-            assert_eq!(result.unwrap_err().to_string(), "Failed to get current backlight state");
+            expect_that!(
+                result,
+                matchers::err(matchers::displays_as(matchers::eq(
+                    "Failed to get current backlight state"
+                )))
+            );
         };
         let service_future = async move {
             match backlight_request_stream.next().await.unwrap() {
@@ -197,6 +214,7 @@ mod tests {
         future::join(test_future, service_future).await;
     }
 
+    #[gtest]
     #[fuchsia::test]
     async fn read_and_modify_state_modify_error() {
         let (device, mut backlight_request_stream) =
@@ -206,8 +224,12 @@ mod tests {
         let test_future = async move {
             let args = BacklightCmd { set_brightness: Some(1.0), set_power: None };
             let result = backlight.read_and_modify_state(&args).await;
-            assert_matches!(result, Err(_));
-            assert_eq!(result.unwrap_err().to_string(), "Failed to apply new backlight settings");
+            expect_that!(
+                result,
+                matchers::err(matchers::displays_as(matchers::eq(
+                    "Failed to apply new backlight settings"
+                )))
+            );
         };
         let service_future = async move {
             match backlight_request_stream.next().await.unwrap() {

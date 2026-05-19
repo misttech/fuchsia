@@ -273,231 +273,257 @@ impl From<&Color> for FidlColor {
 mod tests {
     use super::*;
     use fidl_fuchsia_images2::PixelFormat as FidlPixelFormat;
+    use googletest::prelude::*;
 
+    #[gtest]
     #[fuchsia::test]
     fn layer_id_from_fidl_layer_id() {
-        assert_eq!(LayerId(1), LayerId::from(FidlLayerId { value: 1 }));
-        assert_eq!(LayerId(2), LayerId::from(FidlLayerId { value: 2 }));
+        expect_eq!(LayerId(1), LayerId::from(FidlLayerId { value: 1 }));
+        expect_eq!(LayerId(2), LayerId::from(FidlLayerId { value: 2 }));
         const LARGE: u64 = 1 << 63;
-        assert_eq!(LayerId(LARGE), LayerId::from(FidlLayerId { value: LARGE }));
-        assert_eq!(INVALID_LAYER_ID, LayerId::from(FidlLayerId { value: INVALID_DISP_ID }));
+        expect_eq!(LayerId(LARGE), LayerId::from(FidlLayerId { value: LARGE }));
+        expect_eq!(INVALID_LAYER_ID, LayerId::from(FidlLayerId { value: INVALID_DISP_ID }));
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn fidl_layer_id_from_layer_id() {
-        assert_eq!(FidlLayerId { value: 1 }, FidlLayerId::from(LayerId(1)));
-        assert_eq!(FidlLayerId { value: 2 }, FidlLayerId::from(LayerId(2)));
+        expect_eq!(FidlLayerId { value: 1 }, FidlLayerId::from(LayerId(1)));
+        expect_eq!(FidlLayerId { value: 2 }, FidlLayerId::from(LayerId(2)));
         const LARGE: u64 = 1 << 63;
-        assert_eq!(FidlLayerId { value: LARGE }, FidlLayerId::from(LayerId(LARGE)));
-        assert_eq!(FidlLayerId { value: INVALID_DISP_ID }, FidlLayerId::from(INVALID_LAYER_ID));
+        expect_eq!(FidlLayerId { value: LARGE }, FidlLayerId::from(LayerId(LARGE)));
+        expect_eq!(FidlLayerId { value: INVALID_DISP_ID }, FidlLayerId::from(INVALID_LAYER_ID));
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn fidl_layer_id_to_layer_id() {
-        assert_eq!(LayerId(1), FidlLayerId { value: 1 }.into());
-        assert_eq!(LayerId(2), FidlLayerId { value: 2 }.into());
+        expect_eq!(LayerId(1), FidlLayerId { value: 1 }.into());
+        expect_eq!(LayerId(2), FidlLayerId { value: 2 }.into());
         const LARGE: u64 = 1 << 63;
-        assert_eq!(LayerId(LARGE), FidlLayerId { value: LARGE }.into());
-        assert_eq!(INVALID_LAYER_ID, FidlLayerId { value: INVALID_DISP_ID }.into());
+        expect_eq!(LayerId(LARGE), FidlLayerId { value: LARGE }.into());
+        expect_eq!(INVALID_LAYER_ID, FidlLayerId { value: INVALID_DISP_ID }.into());
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn layer_id_to_fidl_layer_id() {
-        assert_eq!(FidlLayerId { value: 1 }, LayerId(1).into());
-        assert_eq!(FidlLayerId { value: 2 }, LayerId(2).into());
+        expect_eq!(FidlLayerId { value: 1 }, LayerId(1).into());
+        expect_eq!(FidlLayerId { value: 2 }, LayerId(2).into());
         const LARGE: u64 = 1 << 63;
-        assert_eq!(FidlLayerId { value: LARGE }, LayerId(LARGE).into());
-        assert_eq!(FidlLayerId { value: INVALID_DISP_ID }, INVALID_LAYER_ID.into());
+        expect_eq!(FidlLayerId { value: LARGE }, LayerId(LARGE).into());
+        expect_eq!(FidlLayerId { value: INVALID_DISP_ID }, INVALID_LAYER_ID.into());
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn layer_id_default() {
         let default: LayerId = Default::default();
-        assert_eq!(default, INVALID_LAYER_ID);
+        expect_eq!(default, INVALID_LAYER_ID);
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn display_id_from_fidl_display_id() {
-        assert_eq!(DisplayId(1), DisplayId::from(FidlDisplayId { value: 1 }));
-        assert_eq!(DisplayId(2), DisplayId::from(FidlDisplayId { value: 2 }));
+        expect_eq!(DisplayId(1), DisplayId::from(FidlDisplayId { value: 1 }));
+        expect_eq!(DisplayId(2), DisplayId::from(FidlDisplayId { value: 2 }));
         const LARGE: u64 = 1 << 63;
-        assert_eq!(DisplayId(LARGE), DisplayId::from(FidlDisplayId { value: LARGE }));
-        assert_eq!(INVALID_DISPLAY_ID, DisplayId::from(FidlDisplayId { value: INVALID_DISP_ID }));
+        expect_eq!(DisplayId(LARGE), DisplayId::from(FidlDisplayId { value: LARGE }));
+        expect_eq!(INVALID_DISPLAY_ID, DisplayId::from(FidlDisplayId { value: INVALID_DISP_ID }));
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn fidl_display_id_from_display_id() {
-        assert_eq!(FidlDisplayId { value: 1 }, FidlDisplayId::from(DisplayId(1)));
-        assert_eq!(FidlDisplayId { value: 2 }, FidlDisplayId::from(DisplayId(2)));
+        expect_eq!(FidlDisplayId { value: 1 }, FidlDisplayId::from(DisplayId(1)));
+        expect_eq!(FidlDisplayId { value: 2 }, FidlDisplayId::from(DisplayId(2)));
         const LARGE: u64 = 1 << 63;
-        assert_eq!(FidlDisplayId { value: LARGE }, FidlDisplayId::from(DisplayId(LARGE)));
-        assert_eq!(
+        expect_eq!(FidlDisplayId { value: LARGE }, FidlDisplayId::from(DisplayId(LARGE)));
+        expect_eq!(
             FidlDisplayId { value: INVALID_DISP_ID },
             FidlDisplayId::from(INVALID_DISPLAY_ID)
         );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn fidl_display_id_to_display_id() {
-        assert_eq!(DisplayId(1), FidlDisplayId { value: 1 }.into());
-        assert_eq!(DisplayId(2), FidlDisplayId { value: 2 }.into());
+        expect_eq!(DisplayId(1), FidlDisplayId { value: 1 }.into());
+        expect_eq!(DisplayId(2), FidlDisplayId { value: 2 }.into());
         const LARGE: u64 = 1 << 63;
-        assert_eq!(DisplayId(LARGE), FidlDisplayId { value: LARGE }.into());
-        assert_eq!(INVALID_DISPLAY_ID, FidlDisplayId { value: INVALID_DISP_ID }.into());
+        expect_eq!(DisplayId(LARGE), FidlDisplayId { value: LARGE }.into());
+        expect_eq!(INVALID_DISPLAY_ID, FidlDisplayId { value: INVALID_DISP_ID }.into());
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn display_id_to_fidl_display_id() {
-        assert_eq!(FidlDisplayId { value: 1 }, DisplayId(1).into());
-        assert_eq!(FidlDisplayId { value: 2 }, DisplayId(2).into());
+        expect_eq!(FidlDisplayId { value: 1 }, DisplayId(1).into());
+        expect_eq!(FidlDisplayId { value: 2 }, DisplayId(2).into());
         const LARGE: u64 = 1 << 63;
-        assert_eq!(FidlDisplayId { value: LARGE }, DisplayId(LARGE).into());
-        assert_eq!(FidlDisplayId { value: INVALID_DISP_ID }, INVALID_DISPLAY_ID.into());
+        expect_eq!(FidlDisplayId { value: LARGE }, DisplayId(LARGE).into());
+        expect_eq!(FidlDisplayId { value: INVALID_DISP_ID }, INVALID_DISPLAY_ID.into());
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn display_id_default() {
         let default: DisplayId = Default::default();
-        assert_eq!(default, INVALID_DISPLAY_ID);
+        expect_eq!(default, INVALID_DISPLAY_ID);
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn buffer_collection_id_from_fidl_buffer_collection_id() {
-        assert_eq!(
+        expect_eq!(
             BufferCollectionId(1),
             BufferCollectionId::from(FidlBufferCollectionId { value: 1 })
         );
-        assert_eq!(
+        expect_eq!(
             BufferCollectionId(2),
             BufferCollectionId::from(FidlBufferCollectionId { value: 2 })
         );
         const LARGE: u64 = 1 << 63;
-        assert_eq!(
+        expect_eq!(
             BufferCollectionId(LARGE),
             BufferCollectionId::from(FidlBufferCollectionId { value: LARGE })
         );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn fidl_buffer_collection_id_from_buffer_collection_id() {
-        assert_eq!(
+        expect_eq!(
             FidlBufferCollectionId { value: 1 },
             FidlBufferCollectionId::from(BufferCollectionId(1))
         );
-        assert_eq!(
+        expect_eq!(
             FidlBufferCollectionId { value: 2 },
             FidlBufferCollectionId::from(BufferCollectionId(2))
         );
         const LARGE: u64 = 1 << 63;
-        assert_eq!(
+        expect_eq!(
             FidlBufferCollectionId { value: LARGE },
             FidlBufferCollectionId::from(BufferCollectionId(LARGE))
         );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn fidl_buffer_collection_id_to_buffer_collection_id() {
-        assert_eq!(BufferCollectionId(1), FidlBufferCollectionId { value: 1 }.into());
-        assert_eq!(BufferCollectionId(2), FidlBufferCollectionId { value: 2 }.into());
+        expect_eq!(BufferCollectionId(1), FidlBufferCollectionId { value: 1 }.into());
+        expect_eq!(BufferCollectionId(2), FidlBufferCollectionId { value: 2 }.into());
         const LARGE: u64 = 1 << 63;
-        assert_eq!(BufferCollectionId(LARGE), FidlBufferCollectionId { value: LARGE }.into());
+        expect_eq!(BufferCollectionId(LARGE), FidlBufferCollectionId { value: LARGE }.into());
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn buffer_collection_id_to_fidl_buffer_collection_id() {
-        assert_eq!(FidlBufferCollectionId { value: 1 }, BufferCollectionId(1).into());
-        assert_eq!(FidlBufferCollectionId { value: 2 }, BufferCollectionId(2).into());
+        expect_eq!(FidlBufferCollectionId { value: 1 }, BufferCollectionId(1).into());
+        expect_eq!(FidlBufferCollectionId { value: 2 }, BufferCollectionId(2).into());
         const LARGE: u64 = 1 << 63;
-        assert_eq!(FidlBufferCollectionId { value: LARGE }, BufferCollectionId(LARGE).into());
+        expect_eq!(FidlBufferCollectionId { value: LARGE }, BufferCollectionId(LARGE).into());
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn event_id_from_fidl_event_id() {
-        assert_eq!(EventId(1), EventId::from(FidlEventId { value: 1 }));
-        assert_eq!(EventId(2), EventId::from(FidlEventId { value: 2 }));
+        expect_eq!(EventId(1), EventId::from(FidlEventId { value: 1 }));
+        expect_eq!(EventId(2), EventId::from(FidlEventId { value: 2 }));
         const LARGE: u64 = 1 << 63;
-        assert_eq!(EventId(LARGE), EventId::from(FidlEventId { value: LARGE }));
-        assert_eq!(INVALID_EVENT_ID, EventId::from(FidlEventId { value: INVALID_DISP_ID }));
+        expect_eq!(EventId(LARGE), EventId::from(FidlEventId { value: LARGE }));
+        expect_eq!(INVALID_EVENT_ID, EventId::from(FidlEventId { value: INVALID_DISP_ID }));
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn fidl_event_id_from_event_id() {
-        assert_eq!(FidlEventId { value: 1 }, FidlEventId::from(EventId(1)));
-        assert_eq!(FidlEventId { value: 2 }, FidlEventId::from(EventId(2)));
+        expect_eq!(FidlEventId { value: 1 }, FidlEventId::from(EventId(1)));
+        expect_eq!(FidlEventId { value: 2 }, FidlEventId::from(EventId(2)));
         const LARGE: u64 = 1 << 63;
-        assert_eq!(FidlEventId { value: LARGE }, FidlEventId::from(EventId(LARGE)));
-        assert_eq!(FidlEventId { value: INVALID_DISP_ID }, FidlEventId::from(INVALID_EVENT_ID));
+        expect_eq!(FidlEventId { value: LARGE }, FidlEventId::from(EventId(LARGE)));
+        expect_eq!(FidlEventId { value: INVALID_DISP_ID }, FidlEventId::from(INVALID_EVENT_ID));
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn fidl_event_id_to_event_id() {
-        assert_eq!(EventId(1), FidlEventId { value: 1 }.into());
-        assert_eq!(EventId(2), FidlEventId { value: 2 }.into());
+        expect_eq!(EventId(1), FidlEventId { value: 1 }.into());
+        expect_eq!(EventId(2), FidlEventId { value: 2 }.into());
         const LARGE: u64 = 1 << 63;
-        assert_eq!(EventId(LARGE), FidlEventId { value: LARGE }.into());
-        assert_eq!(INVALID_EVENT_ID, FidlEventId { value: INVALID_DISP_ID }.into());
+        expect_eq!(EventId(LARGE), FidlEventId { value: LARGE }.into());
+        expect_eq!(INVALID_EVENT_ID, FidlEventId { value: INVALID_DISP_ID }.into());
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn event_id_to_fidl_event_id() {
-        assert_eq!(FidlEventId { value: 1 }, EventId(1).into());
-        assert_eq!(FidlEventId { value: 2 }, EventId(2).into());
+        expect_eq!(FidlEventId { value: 1 }, EventId(1).into());
+        expect_eq!(FidlEventId { value: 2 }, EventId(2).into());
         const LARGE: u64 = 1 << 63;
-        assert_eq!(FidlEventId { value: LARGE }, EventId(LARGE).into());
-        assert_eq!(FidlEventId { value: INVALID_DISP_ID }, INVALID_EVENT_ID.into());
+        expect_eq!(FidlEventId { value: LARGE }, EventId(LARGE).into());
+        expect_eq!(FidlEventId { value: INVALID_DISP_ID }, INVALID_EVENT_ID.into());
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn event_id_default() {
         let default: EventId = Default::default();
-        assert_eq!(default, INVALID_EVENT_ID);
+        expect_eq!(default, INVALID_EVENT_ID);
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn image_id_from_fidl_image_id() {
-        assert_eq!(ImageId(1), ImageId::from(FidlImageId { value: 1 }));
-        assert_eq!(ImageId(2), ImageId::from(FidlImageId { value: 2 }));
+        expect_eq!(ImageId(1), ImageId::from(FidlImageId { value: 1 }));
+        expect_eq!(ImageId(2), ImageId::from(FidlImageId { value: 2 }));
         const LARGE: u64 = 1 << 63;
-        assert_eq!(ImageId(LARGE), ImageId::from(FidlImageId { value: LARGE }));
-        assert_eq!(INVALID_IMAGE_ID, ImageId::from(FidlImageId { value: INVALID_DISP_ID }));
+        expect_eq!(ImageId(LARGE), ImageId::from(FidlImageId { value: LARGE }));
+        expect_eq!(INVALID_IMAGE_ID, ImageId::from(FidlImageId { value: INVALID_DISP_ID }));
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn fidl_image_id_from_image_id() {
-        assert_eq!(FidlImageId { value: 1 }, FidlImageId::from(ImageId(1)));
-        assert_eq!(FidlImageId { value: 2 }, FidlImageId::from(ImageId(2)));
+        expect_eq!(FidlImageId { value: 1 }, FidlImageId::from(ImageId(1)));
+        expect_eq!(FidlImageId { value: 2 }, FidlImageId::from(ImageId(2)));
         const LARGE: u64 = 1 << 63;
-        assert_eq!(FidlImageId { value: LARGE }, FidlImageId::from(ImageId(LARGE)));
-        assert_eq!(FidlImageId { value: INVALID_DISP_ID }, FidlImageId::from(INVALID_IMAGE_ID));
+        expect_eq!(FidlImageId { value: LARGE }, FidlImageId::from(ImageId(LARGE)));
+        expect_eq!(FidlImageId { value: INVALID_DISP_ID }, FidlImageId::from(INVALID_IMAGE_ID));
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn fidl_image_id_to_image_id() {
-        assert_eq!(ImageId(1), FidlImageId { value: 1 }.into());
-        assert_eq!(ImageId(2), FidlImageId { value: 2 }.into());
+        expect_eq!(ImageId(1), FidlImageId { value: 1 }.into());
+        expect_eq!(ImageId(2), FidlImageId { value: 2 }.into());
         const LARGE: u64 = 1 << 63;
-        assert_eq!(ImageId(LARGE), FidlImageId { value: LARGE }.into());
-        assert_eq!(INVALID_IMAGE_ID, FidlImageId { value: INVALID_DISP_ID }.into());
+        expect_eq!(ImageId(LARGE), FidlImageId { value: LARGE }.into());
+        expect_eq!(INVALID_IMAGE_ID, FidlImageId { value: INVALID_DISP_ID }.into());
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn image_id_to_fidl_image_id() {
-        assert_eq!(FidlImageId { value: 1 }, ImageId(1).into());
-        assert_eq!(FidlImageId { value: 2 }, ImageId(2).into());
+        expect_eq!(FidlImageId { value: 1 }, ImageId(1).into());
+        expect_eq!(FidlImageId { value: 2 }, ImageId(2).into());
         const LARGE: u64 = 1 << 63;
-        assert_eq!(FidlImageId { value: LARGE }, ImageId(LARGE).into());
-        assert_eq!(FidlImageId { value: INVALID_DISP_ID }, INVALID_IMAGE_ID.into());
+        expect_eq!(FidlImageId { value: LARGE }, ImageId(LARGE).into());
+        expect_eq!(FidlImageId { value: INVALID_DISP_ID }, INVALID_IMAGE_ID.into());
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn image_id_default() {
         let default: ImageId = Default::default();
-        assert_eq!(default, INVALID_IMAGE_ID);
+        expect_eq!(default, INVALID_IMAGE_ID);
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn color_from_fidl_color() {
-        assert_eq!(
+        expect_eq!(
             Color {
                 format: PixelFormat::R8G8B8A8,
                 bytes: [0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48]
@@ -509,9 +535,10 @@ mod tests {
         );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn fidl_color_from_color() {
-        assert_eq!(
+        expect_eq!(
             FidlColor {
                 format: FidlPixelFormat::R8G8B8A8,
                 bytes: [0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48]
@@ -523,9 +550,10 @@ mod tests {
         );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn fidl_color_to_color() {
-        assert_eq!(
+        expect_eq!(
             Color {
                 format: PixelFormat::R8G8B8A8,
                 bytes: [0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48]
@@ -538,9 +566,10 @@ mod tests {
         );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn color_to_fidl_color() {
-        assert_eq!(
+        expect_eq!(
             FidlColor {
                 format: FidlPixelFormat::R8G8B8A8,
                 bytes: [0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48]

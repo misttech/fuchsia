@@ -187,10 +187,11 @@ impl PanelCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use fidl_fuchsia_hardware_display_types as display_types;
     use futures::StreamExt;
+    use googletest::{expect_that, gtest, matchers};
 
+    #[gtest]
     #[fuchsia::test]
     async fn display_client_rpc_success() {
         let (provider, mut provider_request_stream) =
@@ -200,7 +201,10 @@ mod tests {
         let test_future = async move {
             let display_coordinator = provider_client.open_display_coordinator().await.unwrap();
             let mut display_client = display_coordinator.into_display_client().await.unwrap();
-            assert_matches!(display_client.set_panel_power(DisplayPowerMode::On).await, Ok(()));
+            expect_that!(
+                display_client.set_panel_power(DisplayPowerMode::On).await,
+                matchers::ok(matchers::anything())
+            );
         };
 
         let provider_service_future = async move {
@@ -254,6 +258,7 @@ mod tests {
         futures::join!(test_future, provider_service_future);
     }
 
+    #[gtest]
     #[fuchsia::test]
     async fn display_client_no_displays() {
         let (provider, mut provider_request_stream) =
@@ -265,10 +270,11 @@ mod tests {
             let mut display_client = display_coordinator.into_display_client().await.unwrap();
 
             let set_panel_power_result = display_client.set_panel_power(DisplayPowerMode::On).await;
-            assert_matches!(set_panel_power_result, Err(_));
-            assert_eq!(
-                set_panel_power_result.unwrap_err().to_string(),
-                "fuchsia.hardware.display.Coordinator reported no connected displays"
+            expect_that!(
+                set_panel_power_result,
+                matchers::err(matchers::displays_as(matchers::eq(
+                    "fuchsia.hardware.display.Coordinator reported no connected displays"
+                )))
             );
         };
 
@@ -296,6 +302,7 @@ mod tests {
         futures::join!(test_future, provider_service_future);
     }
 
+    #[gtest]
     #[fuchsia::test]
     async fn display_client_error_opening_coordinator() {
         let (provider, mut provider_request_stream) =
@@ -304,10 +311,11 @@ mod tests {
 
         let test_future = async move {
             let open_result = provider_client.open_display_coordinator().await;
-            assert_matches!(open_result, Err(_));
-            assert_eq!(
-                open_result.unwrap_err().to_string(),
-                "Failed to get display Coordinator from Provider"
+            expect_that!(
+                open_result,
+                matchers::err(matchers::displays_as(matchers::eq(
+                    "Failed to get display Coordinator from Provider"
+                )))
             );
         };
 
@@ -322,6 +330,7 @@ mod tests {
         futures::join!(test_future, provider_service_future);
     }
 
+    #[gtest]
     #[fuchsia::test]
     async fn display_client_error_waiting_for_display_info() {
         let (provider, mut provider_request_stream) =
@@ -331,10 +340,9 @@ mod tests {
         let test_future = async move {
             let display_coordinator = provider_client.open_display_coordinator().await.unwrap();
             let into_display_client_result = display_coordinator.into_display_client().await;
-            assert_matches!(into_display_client_result, Err(_));
-            assert_eq!(
-                into_display_client_result.unwrap_err().to_string(),
-                "failed to get display streams"
+            expect_that!(
+                into_display_client_result,
+                matchers::err(matchers::displays_as(matchers::eq("failed to get display streams")))
             );
         };
 

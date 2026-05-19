@@ -4,9 +4,10 @@
 
 #![allow(non_upper_case_globals)]
 
+use fidl_fuchsia_images2 as images2;
+use fidl_fuchsia_sysmem as sysmem;
 use std::{fmt, str};
 use thiserror::Error;
-use {fidl_fuchsia_images2 as images2, fidl_fuchsia_sysmem as sysmem};
 
 /// Pixel format definitions that bridge different versions of sysmem / images2
 /// formats Fuchsia uses for display and GPU drivers' internal image type
@@ -341,460 +342,709 @@ pub fn get_bytes_per_pixel(pixel_format: PixelFormat) -> Result<usize, GetBytesP
 #[cfg(test)]
 mod tests {
     use super::*;
+    use googletest::{expect_eq, expect_that, gtest, matchers};
     use std::str::FromStr;
 
+    #[gtest]
     #[fuchsia::test]
     fn pixel_format_from_str_invalid() {
-        assert_eq!(
-            PixelFormat::from_str("bad"),
-            Err(ParsePixelFormatError::UnsupportedFormat("bad".to_string()))
+        expect_that!(
+            &PixelFormat::from_str("bad"),
+            matchers::err(matchers::eq(&ParsePixelFormatError::UnsupportedFormat(
+                "bad".to_string()
+            )))
         );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn pixel_format_from_str_valid() {
-        assert_eq!(PixelFormat::from_str("invalid"), Ok(PixelFormat::Invalid));
-        assert_eq!(PixelFormat::from_str("rgba8888"), Ok(PixelFormat::R8G8B8A8));
-        assert_eq!(PixelFormat::from_str("r8g8b8a8"), Ok(PixelFormat::R8G8B8A8));
-        assert_eq!(PixelFormat::from_str("rgba32"), Ok(PixelFormat::R8G8B8A8));
-        assert_eq!(PixelFormat::from_str("bgra8888"), Ok(PixelFormat::Bgra32));
-        assert_eq!(PixelFormat::from_str("b8g8r8a8"), Ok(PixelFormat::Bgra32));
-        assert_eq!(PixelFormat::from_str("bgra32"), Ok(PixelFormat::Bgra32));
-        assert_eq!(PixelFormat::from_str("i420"), Ok(PixelFormat::I420));
-        assert_eq!(PixelFormat::from_str("m420"), Ok(PixelFormat::M420));
-        assert_eq!(PixelFormat::from_str("nv12"), Ok(PixelFormat::Nv12));
-        assert_eq!(PixelFormat::from_str("yuy2"), Ok(PixelFormat::Yuy2));
-        assert_eq!(PixelFormat::from_str("mjpeg"), Ok(PixelFormat::Mjpeg));
-        assert_eq!(PixelFormat::from_str("yv12"), Ok(PixelFormat::Yv12));
-        assert_eq!(PixelFormat::from_str("bgr888"), Ok(PixelFormat::Bgr24));
-        assert_eq!(PixelFormat::from_str("bgr24"), Ok(PixelFormat::Bgr24));
-        assert_eq!(PixelFormat::from_str("rgb565"), Ok(PixelFormat::Rgb565));
-        assert_eq!(PixelFormat::from_str("rgb332"), Ok(PixelFormat::Rgb332));
-        assert_eq!(PixelFormat::from_str("rgb2220"), Ok(PixelFormat::Rgb2220));
-        assert_eq!(PixelFormat::from_str("monol8"), Ok(PixelFormat::L8));
-        assert_eq!(PixelFormat::from_str("monor8"), Ok(PixelFormat::R8));
-        assert_eq!(PixelFormat::from_str("r8g8"), Ok(PixelFormat::R8G8));
-        assert_eq!(PixelFormat::from_str("a2r10g10b10"), Ok(PixelFormat::A2R10G10B10));
-        assert_eq!(PixelFormat::from_str("a2b10g10r10"), Ok(PixelFormat::A2B10G10R10));
-        assert_eq!(PixelFormat::from_str("donotcare"), Ok(PixelFormat::DoNotCare));
+        expect_that!(
+            &PixelFormat::from_str("invalid"),
+            matchers::ok(matchers::eq(&PixelFormat::Invalid))
+        );
+        expect_that!(
+            &PixelFormat::from_str("rgba8888"),
+            matchers::ok(matchers::eq(&PixelFormat::R8G8B8A8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("r8g8b8a8"),
+            matchers::ok(matchers::eq(&PixelFormat::R8G8B8A8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("rgba32"),
+            matchers::ok(matchers::eq(&PixelFormat::R8G8B8A8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("bgra8888"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgra32))
+        );
+        expect_that!(
+            &PixelFormat::from_str("b8g8r8a8"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgra32))
+        );
+        expect_that!(
+            &PixelFormat::from_str("bgra32"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgra32))
+        );
+        expect_that!(
+            &PixelFormat::from_str("i420"),
+            matchers::ok(matchers::eq(&PixelFormat::I420))
+        );
+        expect_that!(
+            &PixelFormat::from_str("m420"),
+            matchers::ok(matchers::eq(&PixelFormat::M420))
+        );
+        expect_that!(
+            &PixelFormat::from_str("nv12"),
+            matchers::ok(matchers::eq(&PixelFormat::Nv12))
+        );
+        expect_that!(
+            &PixelFormat::from_str("yuy2"),
+            matchers::ok(matchers::eq(&PixelFormat::Yuy2))
+        );
+        expect_that!(
+            &PixelFormat::from_str("mjpeg"),
+            matchers::ok(matchers::eq(&PixelFormat::Mjpeg))
+        );
+        expect_that!(
+            &PixelFormat::from_str("yv12"),
+            matchers::ok(matchers::eq(&PixelFormat::Yv12))
+        );
+        expect_that!(
+            &PixelFormat::from_str("bgr888"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgr24))
+        );
+        expect_that!(
+            &PixelFormat::from_str("bgr24"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgr24))
+        );
+        expect_that!(
+            &PixelFormat::from_str("rgb565"),
+            matchers::ok(matchers::eq(&PixelFormat::Rgb565))
+        );
+        expect_that!(
+            &PixelFormat::from_str("rgb332"),
+            matchers::ok(matchers::eq(&PixelFormat::Rgb332))
+        );
+        expect_that!(
+            &PixelFormat::from_str("rgb2220"),
+            matchers::ok(matchers::eq(&PixelFormat::Rgb2220))
+        );
+        expect_that!(
+            &PixelFormat::from_str("monol8"),
+            matchers::ok(matchers::eq(&PixelFormat::L8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("monor8"),
+            matchers::ok(matchers::eq(&PixelFormat::R8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("r8g8"),
+            matchers::ok(matchers::eq(&PixelFormat::R8G8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("a2r10g10b10"),
+            matchers::ok(matchers::eq(&PixelFormat::A2R10G10B10))
+        );
+        expect_that!(
+            &PixelFormat::from_str("a2b10g10r10"),
+            matchers::ok(matchers::eq(&PixelFormat::A2B10G10R10))
+        );
+        expect_that!(
+            &PixelFormat::from_str("donotcare"),
+            matchers::ok(matchers::eq(&PixelFormat::DoNotCare))
+        );
 
-        assert_eq!(PixelFormat::from_str("INVALID"), Ok(PixelFormat::Invalid));
-        assert_eq!(PixelFormat::from_str("RGBA8888"), Ok(PixelFormat::R8G8B8A8));
-        assert_eq!(PixelFormat::from_str("R8G8B8A8"), Ok(PixelFormat::R8G8B8A8));
-        assert_eq!(PixelFormat::from_str("RGBA32"), Ok(PixelFormat::R8G8B8A8));
-        assert_eq!(PixelFormat::from_str("BGRA8888"), Ok(PixelFormat::Bgra32));
-        assert_eq!(PixelFormat::from_str("B8G8R8A8"), Ok(PixelFormat::Bgra32));
-        assert_eq!(PixelFormat::from_str("BGRA32"), Ok(PixelFormat::Bgra32));
-        assert_eq!(PixelFormat::from_str("I420"), Ok(PixelFormat::I420));
-        assert_eq!(PixelFormat::from_str("M420"), Ok(PixelFormat::M420));
-        assert_eq!(PixelFormat::from_str("NV12"), Ok(PixelFormat::Nv12));
-        assert_eq!(PixelFormat::from_str("YUY2"), Ok(PixelFormat::Yuy2));
-        assert_eq!(PixelFormat::from_str("MJPEG"), Ok(PixelFormat::Mjpeg));
-        assert_eq!(PixelFormat::from_str("YV12"), Ok(PixelFormat::Yv12));
-        assert_eq!(PixelFormat::from_str("BGR888"), Ok(PixelFormat::Bgr24));
-        assert_eq!(PixelFormat::from_str("BGR24"), Ok(PixelFormat::Bgr24));
-        assert_eq!(PixelFormat::from_str("RGB565"), Ok(PixelFormat::Rgb565));
-        assert_eq!(PixelFormat::from_str("RGB332"), Ok(PixelFormat::Rgb332));
-        assert_eq!(PixelFormat::from_str("RGB2220"), Ok(PixelFormat::Rgb2220));
-        assert_eq!(PixelFormat::from_str("MONOL8"), Ok(PixelFormat::L8));
-        assert_eq!(PixelFormat::from_str("MONOR8"), Ok(PixelFormat::R8));
-        assert_eq!(PixelFormat::from_str("R8G8"), Ok(PixelFormat::R8G8));
-        assert_eq!(PixelFormat::from_str("A2R10G10B10"), Ok(PixelFormat::A2R10G10B10));
-        assert_eq!(PixelFormat::from_str("A2B10G10R10"), Ok(PixelFormat::A2B10G10R10));
-        assert_eq!(PixelFormat::from_str("DONOTCARE"), Ok(PixelFormat::DoNotCare));
+        expect_that!(
+            &PixelFormat::from_str("INVALID"),
+            matchers::ok(matchers::eq(&PixelFormat::Invalid))
+        );
+        expect_that!(
+            &PixelFormat::from_str("RGBA8888"),
+            matchers::ok(matchers::eq(&PixelFormat::R8G8B8A8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("R8G8B8A8"),
+            matchers::ok(matchers::eq(&PixelFormat::R8G8B8A8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("RGBA32"),
+            matchers::ok(matchers::eq(&PixelFormat::R8G8B8A8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("BGRA8888"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgra32))
+        );
+        expect_that!(
+            &PixelFormat::from_str("B8G8R8A8"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgra32))
+        );
+        expect_that!(
+            &PixelFormat::from_str("BGRA32"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgra32))
+        );
+        expect_that!(
+            &PixelFormat::from_str("I420"),
+            matchers::ok(matchers::eq(&PixelFormat::I420))
+        );
+        expect_that!(
+            &PixelFormat::from_str("M420"),
+            matchers::ok(matchers::eq(&PixelFormat::M420))
+        );
+        expect_that!(
+            &PixelFormat::from_str("NV12"),
+            matchers::ok(matchers::eq(&PixelFormat::Nv12))
+        );
+        expect_that!(
+            &PixelFormat::from_str("YUY2"),
+            matchers::ok(matchers::eq(&PixelFormat::Yuy2))
+        );
+        expect_that!(
+            &PixelFormat::from_str("MJPEG"),
+            matchers::ok(matchers::eq(&PixelFormat::Mjpeg))
+        );
+        expect_that!(
+            &PixelFormat::from_str("YV12"),
+            matchers::ok(matchers::eq(&PixelFormat::Yv12))
+        );
+        expect_that!(
+            &PixelFormat::from_str("BGR888"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgr24))
+        );
+        expect_that!(
+            &PixelFormat::from_str("BGR24"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgr24))
+        );
+        expect_that!(
+            &PixelFormat::from_str("RGB565"),
+            matchers::ok(matchers::eq(&PixelFormat::Rgb565))
+        );
+        expect_that!(
+            &PixelFormat::from_str("RGB332"),
+            matchers::ok(matchers::eq(&PixelFormat::Rgb332))
+        );
+        expect_that!(
+            &PixelFormat::from_str("RGB2220"),
+            matchers::ok(matchers::eq(&PixelFormat::Rgb2220))
+        );
+        expect_that!(
+            &PixelFormat::from_str("MONOL8"),
+            matchers::ok(matchers::eq(&PixelFormat::L8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("MONOR8"),
+            matchers::ok(matchers::eq(&PixelFormat::R8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("R8G8"),
+            matchers::ok(matchers::eq(&PixelFormat::R8G8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("A2R10G10B10"),
+            matchers::ok(matchers::eq(&PixelFormat::A2R10G10B10))
+        );
+        expect_that!(
+            &PixelFormat::from_str("A2B10G10R10"),
+            matchers::ok(matchers::eq(&PixelFormat::A2B10G10R10))
+        );
+        expect_that!(
+            &PixelFormat::from_str("DONOTCARE"),
+            matchers::ok(matchers::eq(&PixelFormat::DoNotCare))
+        );
 
-        assert_eq!(PixelFormat::from_str("Invalid"), Ok(PixelFormat::Invalid));
-        assert_eq!(PixelFormat::from_str("Rgba8888"), Ok(PixelFormat::R8G8B8A8));
-        assert_eq!(PixelFormat::from_str("R8g8b8a8"), Ok(PixelFormat::R8G8B8A8));
-        assert_eq!(PixelFormat::from_str("Rgba32"), Ok(PixelFormat::R8G8B8A8));
-        assert_eq!(PixelFormat::from_str("Bgra8888"), Ok(PixelFormat::Bgra32));
-        assert_eq!(PixelFormat::from_str("B8g8r8a8"), Ok(PixelFormat::Bgra32));
-        assert_eq!(PixelFormat::from_str("Bgra32"), Ok(PixelFormat::Bgra32));
-        assert_eq!(PixelFormat::from_str("I420"), Ok(PixelFormat::I420));
-        assert_eq!(PixelFormat::from_str("M420"), Ok(PixelFormat::M420));
-        assert_eq!(PixelFormat::from_str("Nv12"), Ok(PixelFormat::Nv12));
-        assert_eq!(PixelFormat::from_str("Yuy2"), Ok(PixelFormat::Yuy2));
-        assert_eq!(PixelFormat::from_str("Mjpeg"), Ok(PixelFormat::Mjpeg));
-        assert_eq!(PixelFormat::from_str("Yv12"), Ok(PixelFormat::Yv12));
-        assert_eq!(PixelFormat::from_str("Bgr888"), Ok(PixelFormat::Bgr24));
-        assert_eq!(PixelFormat::from_str("Bgr24"), Ok(PixelFormat::Bgr24));
-        assert_eq!(PixelFormat::from_str("Rgb565"), Ok(PixelFormat::Rgb565));
-        assert_eq!(PixelFormat::from_str("Rgb332"), Ok(PixelFormat::Rgb332));
-        assert_eq!(PixelFormat::from_str("Rgb2220"), Ok(PixelFormat::Rgb2220));
-        assert_eq!(PixelFormat::from_str("Monol8"), Ok(PixelFormat::L8));
-        assert_eq!(PixelFormat::from_str("Monor8"), Ok(PixelFormat::R8));
-        assert_eq!(PixelFormat::from_str("R8g8"), Ok(PixelFormat::R8G8));
-        assert_eq!(PixelFormat::from_str("A2r10g10b10"), Ok(PixelFormat::A2R10G10B10));
-        assert_eq!(PixelFormat::from_str("A2b10g10r10"), Ok(PixelFormat::A2B10G10R10));
-        assert_eq!(PixelFormat::from_str("DoNotCare"), Ok(PixelFormat::DoNotCare));
+        expect_that!(
+            &PixelFormat::from_str("Invalid"),
+            matchers::ok(matchers::eq(&PixelFormat::Invalid))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Rgba8888"),
+            matchers::ok(matchers::eq(&PixelFormat::R8G8B8A8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("R8g8b8a8"),
+            matchers::ok(matchers::eq(&PixelFormat::R8G8B8A8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Rgba32"),
+            matchers::ok(matchers::eq(&PixelFormat::R8G8B8A8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Bgra8888"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgra32))
+        );
+        expect_that!(
+            &PixelFormat::from_str("B8g8r8a8"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgra32))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Bgra32"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgra32))
+        );
+        expect_that!(
+            &PixelFormat::from_str("I420"),
+            matchers::ok(matchers::eq(&PixelFormat::I420))
+        );
+        expect_that!(
+            &PixelFormat::from_str("M420"),
+            matchers::ok(matchers::eq(&PixelFormat::M420))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Nv12"),
+            matchers::ok(matchers::eq(&PixelFormat::Nv12))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Yuy2"),
+            matchers::ok(matchers::eq(&PixelFormat::Yuy2))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Mjpeg"),
+            matchers::ok(matchers::eq(&PixelFormat::Mjpeg))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Yv12"),
+            matchers::ok(matchers::eq(&PixelFormat::Yv12))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Bgr888"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgr24))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Bgr24"),
+            matchers::ok(matchers::eq(&PixelFormat::Bgr24))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Rgb565"),
+            matchers::ok(matchers::eq(&PixelFormat::Rgb565))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Rgb332"),
+            matchers::ok(matchers::eq(&PixelFormat::Rgb332))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Rgb2220"),
+            matchers::ok(matchers::eq(&PixelFormat::Rgb2220))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Monol8"),
+            matchers::ok(matchers::eq(&PixelFormat::L8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("Monor8"),
+            matchers::ok(matchers::eq(&PixelFormat::R8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("R8g8"),
+            matchers::ok(matchers::eq(&PixelFormat::R8G8))
+        );
+        expect_that!(
+            &PixelFormat::from_str("A2r10g10b10"),
+            matchers::ok(matchers::eq(&PixelFormat::A2R10G10B10))
+        );
+        expect_that!(
+            &PixelFormat::from_str("A2b10g10r10"),
+            matchers::ok(matchers::eq(&PixelFormat::A2B10G10R10))
+        );
+        expect_that!(
+            &PixelFormat::from_str("DoNotCare"),
+            matchers::ok(matchers::eq(&PixelFormat::DoNotCare))
+        );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn get_bytes_per_pixel_valid() {
-        assert_eq!(get_bytes_per_pixel(PixelFormat::R8G8B8A8), Ok(4));
-        assert_eq!(get_bytes_per_pixel(PixelFormat::Bgra32), Ok(4));
-        assert_eq!(get_bytes_per_pixel(PixelFormat::Bgr24), Ok(3));
-        assert_eq!(get_bytes_per_pixel(PixelFormat::Rgb565), Ok(2));
-        assert_eq!(get_bytes_per_pixel(PixelFormat::Rgb332), Ok(1));
-        assert_eq!(get_bytes_per_pixel(PixelFormat::Rgb2220), Ok(1));
-        assert_eq!(get_bytes_per_pixel(PixelFormat::L8), Ok(1));
-        assert_eq!(get_bytes_per_pixel(PixelFormat::R8), Ok(1));
-        assert_eq!(get_bytes_per_pixel(PixelFormat::R8G8), Ok(2));
-        assert_eq!(get_bytes_per_pixel(PixelFormat::A2R10G10B10), Ok(4));
-        assert_eq!(get_bytes_per_pixel(PixelFormat::A2B10G10R10), Ok(4));
+        expect_that!(&get_bytes_per_pixel(PixelFormat::R8G8B8A8), matchers::ok(matchers::eq(&4)));
+        expect_that!(&get_bytes_per_pixel(PixelFormat::Bgra32), matchers::ok(matchers::eq(&4)));
+        expect_that!(&get_bytes_per_pixel(PixelFormat::Bgr24), matchers::ok(matchers::eq(&3)));
+        expect_that!(&get_bytes_per_pixel(PixelFormat::Rgb565), matchers::ok(matchers::eq(&2)));
+        expect_that!(&get_bytes_per_pixel(PixelFormat::Rgb332), matchers::ok(matchers::eq(&1)));
+        expect_that!(&get_bytes_per_pixel(PixelFormat::Rgb2220), matchers::ok(matchers::eq(&1)));
+        expect_that!(&get_bytes_per_pixel(PixelFormat::L8), matchers::ok(matchers::eq(&1)));
+        expect_that!(&get_bytes_per_pixel(PixelFormat::R8), matchers::ok(matchers::eq(&1)));
+        expect_that!(&get_bytes_per_pixel(PixelFormat::R8G8), matchers::ok(matchers::eq(&2)));
+        expect_that!(
+            &get_bytes_per_pixel(PixelFormat::A2R10G10B10),
+            matchers::ok(matchers::eq(&4))
+        );
+        expect_that!(
+            &get_bytes_per_pixel(PixelFormat::A2B10G10R10),
+            matchers::ok(matchers::eq(&4))
+        );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn get_bytes_per_pixel_invalid() {
-        assert_eq!(
-            get_bytes_per_pixel(PixelFormat::Invalid),
-            Err(GetBytesPerPixelError::UnsupportedFormat(PixelFormat::Invalid))
+        expect_that!(
+            &get_bytes_per_pixel(PixelFormat::Invalid),
+            matchers::err(matchers::eq(&GetBytesPerPixelError::UnsupportedFormat(
+                PixelFormat::Invalid
+            )))
         );
-        assert_eq!(
-            get_bytes_per_pixel(PixelFormat::I420),
-            Err(GetBytesPerPixelError::UnsupportedFormat(PixelFormat::I420))
+        expect_that!(
+            &get_bytes_per_pixel(PixelFormat::I420),
+            matchers::err(matchers::eq(&GetBytesPerPixelError::UnsupportedFormat(
+                PixelFormat::I420
+            )))
         );
-        assert_eq!(
-            get_bytes_per_pixel(PixelFormat::M420),
-            Err(GetBytesPerPixelError::UnsupportedFormat(PixelFormat::M420))
+        expect_that!(
+            &get_bytes_per_pixel(PixelFormat::M420),
+            matchers::err(matchers::eq(&GetBytesPerPixelError::UnsupportedFormat(
+                PixelFormat::M420
+            )))
         );
-        assert_eq!(
-            get_bytes_per_pixel(PixelFormat::Nv12),
-            Err(GetBytesPerPixelError::UnsupportedFormat(PixelFormat::Nv12))
+        expect_that!(
+            &get_bytes_per_pixel(PixelFormat::Nv12),
+            matchers::err(matchers::eq(&GetBytesPerPixelError::UnsupportedFormat(
+                PixelFormat::Nv12
+            )))
         );
-        assert_eq!(
-            get_bytes_per_pixel(PixelFormat::Yuy2),
-            Err(GetBytesPerPixelError::UnsupportedFormat(PixelFormat::Yuy2))
+        expect_that!(
+            &get_bytes_per_pixel(PixelFormat::Yuy2),
+            matchers::err(matchers::eq(&GetBytesPerPixelError::UnsupportedFormat(
+                PixelFormat::Yuy2
+            )))
         );
-        assert_eq!(
-            get_bytes_per_pixel(PixelFormat::Mjpeg),
-            Err(GetBytesPerPixelError::UnsupportedFormat(PixelFormat::Mjpeg))
+        expect_that!(
+            &get_bytes_per_pixel(PixelFormat::Mjpeg),
+            matchers::err(matchers::eq(&GetBytesPerPixelError::UnsupportedFormat(
+                PixelFormat::Mjpeg
+            )))
         );
-        assert_eq!(
-            get_bytes_per_pixel(PixelFormat::Yv12),
-            Err(GetBytesPerPixelError::UnsupportedFormat(PixelFormat::Yv12))
+        expect_that!(
+            &get_bytes_per_pixel(PixelFormat::Yv12),
+            matchers::err(matchers::eq(&GetBytesPerPixelError::UnsupportedFormat(
+                PixelFormat::Yv12
+            )))
         );
-        assert_eq!(
-            get_bytes_per_pixel(PixelFormat::DoNotCare),
-            Err(GetBytesPerPixelError::UnsupportedFormat(PixelFormat::DoNotCare))
+        expect_that!(
+            &get_bytes_per_pixel(PixelFormat::DoNotCare),
+            matchers::err(matchers::eq(&GetBytesPerPixelError::UnsupportedFormat(
+                PixelFormat::DoNotCare
+            )))
         );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn sysmem2_pixel_format_conversion() {
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::Invalid)),
             images2::PixelFormat::Invalid
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::R8G8B8A8)),
             images2::PixelFormat::R8G8B8A8
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::B8G8R8A8)),
             images2::PixelFormat::B8G8R8A8
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::I420)),
             images2::PixelFormat::I420
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::M420)),
             images2::PixelFormat::M420
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::Nv12)),
             images2::PixelFormat::Nv12
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::Yuy2)),
             images2::PixelFormat::Yuy2
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::Mjpeg)),
             images2::PixelFormat::Mjpeg
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::Yv12)),
             images2::PixelFormat::Yv12
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::B8G8R8)),
             images2::PixelFormat::B8G8R8
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::R5G6B5)),
             images2::PixelFormat::R5G6B5
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::R3G3B2)),
             images2::PixelFormat::R3G3B2
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::R2G2B2X2)),
             images2::PixelFormat::R2G2B2X2
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::L8)),
             images2::PixelFormat::L8
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::R8)),
             images2::PixelFormat::R8
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::R8G8)),
             images2::PixelFormat::R8G8
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::A2R10G10B10)),
             images2::PixelFormat::A2R10G10B10
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::A2B10G10R10)),
             images2::PixelFormat::A2B10G10R10
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(images2::PixelFormat::DoNotCare)),
             images2::PixelFormat::DoNotCare
         );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn sysmem_pixel_format_conversion() {
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::Invalid)),
             sysmem::PixelFormatType::Invalid
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::R8G8B8A8)),
             sysmem::PixelFormatType::R8G8B8A8
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::Bgra32)),
             sysmem::PixelFormatType::Bgra32
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::I420)),
             sysmem::PixelFormatType::I420
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::M420)),
             sysmem::PixelFormatType::M420
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::Nv12)),
             sysmem::PixelFormatType::Nv12
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::Yuy2)),
             sysmem::PixelFormatType::Yuy2
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::Mjpeg)),
             sysmem::PixelFormatType::Mjpeg
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::Yv12)),
             sysmem::PixelFormatType::Yv12
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::Bgr24)),
             sysmem::PixelFormatType::Bgr24
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::Rgb565)),
             sysmem::PixelFormatType::Rgb565
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::Rgb332)),
             sysmem::PixelFormatType::Rgb332
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::Rgb2220)),
             sysmem::PixelFormatType::Rgb2220
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::L8)),
             sysmem::PixelFormatType::L8
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::R8)),
             sysmem::PixelFormatType::R8
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::R8G8)),
             sysmem::PixelFormatType::R8G8
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::A2R10G10B10)),
             sysmem::PixelFormatType::A2R10G10B10
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::A2B10G10R10)),
             sysmem::PixelFormatType::A2B10G10R10
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(sysmem::PixelFormatType::DoNotCare)),
             sysmem::PixelFormatType::DoNotCare
         );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn sysmem2_to_sysmem_pixel_format_conversion() {
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::Invalid)),
             sysmem::PixelFormatType::Invalid
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::R8G8B8A8)),
             sysmem::PixelFormatType::R8G8B8A8
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::B8G8R8A8)),
             sysmem::PixelFormatType::Bgra32
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::I420)),
             sysmem::PixelFormatType::I420
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::M420)),
             sysmem::PixelFormatType::M420
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::Nv12)),
             sysmem::PixelFormatType::Nv12
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::Yuy2)),
             sysmem::PixelFormatType::Yuy2
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::Mjpeg)),
             sysmem::PixelFormatType::Mjpeg
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::Yv12)),
             sysmem::PixelFormatType::Yv12
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::B8G8R8)),
             sysmem::PixelFormatType::Bgr24
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::R5G6B5)),
             sysmem::PixelFormatType::Rgb565
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::R3G3B2)),
             sysmem::PixelFormatType::Rgb332
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::R2G2B2X2)),
             sysmem::PixelFormatType::Rgb2220
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::L8)),
             sysmem::PixelFormatType::L8
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::R8)),
             sysmem::PixelFormatType::R8
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::R8G8)),
             sysmem::PixelFormatType::R8G8
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::A2R10G10B10)),
             sysmem::PixelFormatType::A2R10G10B10
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::A2B10G10R10)),
             sysmem::PixelFormatType::A2B10G10R10
         );
-        assert_eq!(
+        expect_eq!(
             sysmem::PixelFormatType::from(PixelFormat::from(images2::PixelFormat::DoNotCare)),
             sysmem::PixelFormatType::DoNotCare
         );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn sysmem_to_sysmem2_pixel_format_conversion() {
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::Invalid)),
             images2::PixelFormat::Invalid
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::R8G8B8A8)),
             images2::PixelFormat::R8G8B8A8
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::Bgra32)),
             images2::PixelFormat::B8G8R8A8
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::I420)),
             images2::PixelFormat::I420
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::M420)),
             images2::PixelFormat::M420
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::Nv12)),
             images2::PixelFormat::Nv12
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::Yuy2)),
             images2::PixelFormat::Yuy2
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::Mjpeg)),
             images2::PixelFormat::Mjpeg
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::Yv12)),
             images2::PixelFormat::Yv12
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::Bgr24)),
             images2::PixelFormat::B8G8R8
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::Rgb565)),
             images2::PixelFormat::R5G6B5
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::Rgb332)),
             images2::PixelFormat::R3G3B2
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::Rgb2220)),
             images2::PixelFormat::R2G2B2X2
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::L8)),
             images2::PixelFormat::L8
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::R8)),
             images2::PixelFormat::R8
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::R8G8)),
             images2::PixelFormat::R8G8
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::A2R10G10B10)),
             images2::PixelFormat::A2R10G10B10
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::A2B10G10R10)),
             images2::PixelFormat::A2B10G10R10
         );
-        assert_eq!(
+        expect_eq!(
             images2::PixelFormat::from(PixelFormat::from(sysmem::PixelFormatType::DoNotCare)),
             images2::PixelFormat::DoNotCare
         );

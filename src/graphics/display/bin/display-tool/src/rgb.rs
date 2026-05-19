@@ -47,26 +47,65 @@ impl str::FromStr for Rgb888 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use googletest::{expect_that, gtest, matchers};
     use std::str::FromStr;
 
+    #[gtest]
     #[fuchsia::test]
     fn rgb_from_str_invalid() {
-        assert_eq!(Rgb888::from_str("zz00ff"), Err(ParseRgbError::UnexpectedCharacter));
-        assert_eq!(Rgb888::from_str("0000vv"), Err(ParseRgbError::UnexpectedCharacter));
-        assert_eq!(Rgb888::from_str("0x010101"), Err(ParseRgbError::UnexpectedCharacter));
+        expect_that!(
+            &Rgb888::from_str("zz00ff"),
+            matchers::err(matchers::eq(&ParseRgbError::UnexpectedCharacter))
+        );
+        expect_that!(
+            &Rgb888::from_str("0000vv"),
+            matchers::err(matchers::eq(&ParseRgbError::UnexpectedCharacter))
+        );
+        expect_that!(
+            &Rgb888::from_str("0x010101"),
+            matchers::err(matchers::eq(&ParseRgbError::UnexpectedCharacter))
+        );
 
-        assert_eq!(Rgb888::from_str(""), Err(ParseRgbError::IncorrectSize(0)));
-        assert_eq!(Rgb888::from_str("10101"), Err(ParseRgbError::IncorrectSize(5)));
-        assert_eq!(Rgb888::from_str("1010111"), Err(ParseRgbError::IncorrectSize(7)));
+        expect_that!(
+            &Rgb888::from_str(""),
+            matchers::err(matchers::eq(&ParseRgbError::IncorrectSize(0))),
+        );
+        expect_that!(
+            &Rgb888::from_str("10101"),
+            matchers::err(matchers::eq(&ParseRgbError::IncorrectSize(5)))
+        );
+        expect_that!(
+            &Rgb888::from_str("1010111"),
+            matchers::err(matchers::eq(&ParseRgbError::IncorrectSize(7)))
+        );
     }
 
+    #[gtest]
     #[fuchsia::test]
     fn rgb_from_str_valid() {
-        assert_eq!(Rgb888::from_str("ef0000"), Ok(Rgb888 { r: 0xef, g: 0x00, b: 0x00 }));
-        assert_eq!(Rgb888::from_str("00ab00"), Ok(Rgb888 { r: 0x00, g: 0xab, b: 0x00 }));
-        assert_eq!(Rgb888::from_str("0000cd"), Ok(Rgb888 { r: 0x00, g: 0x00, b: 0xcd }));
-        assert_eq!(Rgb888::from_str("012345"), Ok(Rgb888 { r: 0x01, g: 0x23, b: 0x45 }));
-        assert_eq!(Rgb888::from_str("000000"), Ok(Rgb888 { r: 0x00, g: 0x00, b: 0x00 }));
-        assert_eq!(Rgb888::from_str("ffffff"), Ok(Rgb888 { r: 0xff, g: 0xff, b: 0xff }));
+        expect_that!(
+            &Rgb888::from_str("ef0000"),
+            matchers::ok(matchers::eq(&Rgb888 { r: 0xef, g: 0x00, b: 0x00 }))
+        );
+        expect_that!(
+            &Rgb888::from_str("00ab00"),
+            matchers::ok(matchers::eq(&Rgb888 { r: 0x00, g: 0xab, b: 0x00 }))
+        );
+        expect_that!(
+            &Rgb888::from_str("0000cd"),
+            matchers::ok(matchers::eq(&Rgb888 { r: 0x00, g: 0x00, b: 0xcd }))
+        );
+        expect_that!(
+            &Rgb888::from_str("012345"),
+            matchers::ok(matchers::eq(&Rgb888 { r: 0x01, g: 0x23, b: 0x45 }))
+        );
+        expect_that!(
+            &Rgb888::from_str("000000"),
+            matchers::ok(matchers::eq(&Rgb888 { r: 0x00, g: 0x00, b: 0x00 }))
+        );
+        expect_that!(
+            &Rgb888::from_str("ffffff"),
+            matchers::ok(matchers::eq(&Rgb888 { r: 0xff, g: 0xff, b: 0xff }))
+        );
     }
 }

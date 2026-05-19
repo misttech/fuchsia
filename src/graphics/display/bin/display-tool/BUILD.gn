@@ -47,7 +47,10 @@ rustc_binary("bin") {
     "src/runner_multilayer.rs",
   ]
 
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//third_party/rust_crates:googletest",
+  ]
 }
 
 fuchsia_package_with_single_component("display-tool") {
