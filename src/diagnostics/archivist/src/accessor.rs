@@ -166,7 +166,7 @@ impl ArchiveAccessorServer {
             default_batch_timeout_seconds,
         )?;
 
-        let trace_id = ftrace::Id::random();
+        let trace_id = ftrace::Id::new();
         match params.data_type.ok_or(AccessorError::MissingDataType)? {
             DataType::Inspect => {
                 let _trace_guard = ftrace::async_enter!(
@@ -597,7 +597,7 @@ where
             let result_stats = Arc::clone(&result_stats_for_fut);
             let budget_tracker = Arc::clone(&budget_tracker_shared);
             async move {
-                let trace_id = ftrace::Id::random();
+                let trace_id = ftrace::Id::new();
                 let _trace_guard = ftrace::async_enter!(
                     trace_id,
                     TRACE_CATEGORY,
@@ -723,7 +723,7 @@ where
         while self.requests.wait_for_buffer().await.is_ok() {
             self.stats.add_request();
             let start_time = zx::MonotonicInstant::get();
-            let trace_id = ftrace::Id::random();
+            let trace_id = ftrace::Id::new();
             let _trace_guard = ftrace::async_enter!(
                 trace_id,
                 TRACE_CATEGORY,
@@ -1052,7 +1052,7 @@ mod tests {
             StreamMode::Subscribe,
             Arc::new(AccessorStats::new(Node::default()).new_inspect_batch_iterator()),
             None,
-            ftrace::Id::random(),
+            ftrace::Id::new(),
             Format::Json,
         )
         .expect("create batch iterator");

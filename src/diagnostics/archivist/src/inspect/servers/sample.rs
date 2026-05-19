@@ -83,7 +83,7 @@ impl SampleServer {
         minimum_sample_period: MonotonicDuration,
         scope: Scope,
     ) -> Self {
-        Self { scope, trace_id: ftrace::Id::random(), repo, minimum_sample_period }
+        Self { scope, trace_id: ftrace::Id::new(), repo, minimum_sample_period }
     }
 
     pub async fn install_and_serve(

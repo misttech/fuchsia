@@ -145,7 +145,7 @@ impl ReaderServer {
         let filename = snapshot_data.name.clone();
         let node_hierarchy_data = {
             let unfiltered_node_hierarchy_data: NodeHierarchyData = {
-                let trace_id = ftrace::Id::random();
+                let trace_id = ftrace::Id::new();
                 let _trace_guard = ftrace::async_enter!(
                     trace_id,
                     TRACE_CATEGORY,
@@ -177,7 +177,7 @@ impl ReaderServer {
                     let Some(node_hierarchy) = unfiltered_node_hierarchy_data.hierarchy else {
                         return Some(unfiltered_node_hierarchy_data);
                     };
-                    let trace_id = ftrace::Id::random();
+                    let trace_id = ftrace::Id::new();
                     let _trace_guard = ftrace::async_enter!(
                         trace_id,
                         TRACE_CATEGORY,
@@ -225,7 +225,7 @@ impl ReaderServer {
             return Some(node_hierarchy_data);
         };
 
-        let trace_id = ftrace::Id::random();
+        let trace_id = ftrace::Id::new();
         let _trace_guard = ftrace::async_enter!(
             trace_id,
             TRACE_CATEGORY,
@@ -790,7 +790,7 @@ mod tests {
             subscribe_to_manifest: false,
         };
 
-        let trace_id = ftrace::Id::random();
+        let trace_id = ftrace::Id::new();
         let static_hierarchy_allowlist = pipeline.static_hierarchy_allowlist();
         let reader_server = ReaderServer::stream(
             inspect_repo.fetch_inspect_data(&None, static_hierarchy_allowlist),
@@ -810,7 +810,7 @@ mod tests {
                     StreamMode::Snapshot,
                     stats,
                     None,
-                    ftrace::Id::random(),
+                    ftrace::Id::new(),
                     Format::Json,
                 )
                 .unwrap()

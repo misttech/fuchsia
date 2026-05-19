@@ -9,23 +9,24 @@ use crate::pipeline::ComponentAllowlist;
 use diagnostics_data::{self as schema, InspectHandleName};
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use fidl::endpoints::Proxy;
+use fidl_fuchsia_diagnostics as fdiagnostics;
+use fidl_fuchsia_inspect as finspect;
+use fidl_fuchsia_io as fio;
 use flyweights::FlyStr;
+use fuchsia_async as fasync;
 use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_inspect::UintProperty;
 use fuchsia_inspect::reader::snapshot::{Snapshot, SnapshotTree};
+use fuchsia_trace as ftrace;
 use futures::channel::oneshot;
 use futures::{FutureExt, Stream};
+use inspect_fidl_load as deprecated_inspect;
 use selectors::SelectorExt;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 use zx::{self as zx, AsHandleRef};
-use {
-    fidl_fuchsia_diagnostics as fdiagnostics, fidl_fuchsia_inspect as finspect,
-    fidl_fuchsia_io as fio, fuchsia_async as fasync, fuchsia_trace as ftrace,
-    inspect_fidl_load as deprecated_inspect,
-};
 
 const DIRECTORY_READ_TIMED_OUT: &str = "Reading Inspect handles from a directory timed out";
 
@@ -259,7 +260,7 @@ impl SnapshotData {
         parent_trace_id: ftrace::Id,
         timeout_counter: &UintProperty,
     ) -> SnapshotData {
-        let trace_id = ftrace::Id::random();
+        let trace_id = ftrace::Id::new();
         let _trace_guard = ftrace::async_enter!(
             trace_id,
             TRACE_CATEGORY,
@@ -514,7 +515,7 @@ impl UnpopulatedInspectDataContainer {
         global_stats: Arc<GlobalConnectionStats>,
         parent_trace_id: ftrace::Id,
     ) -> impl Stream<Item = PopulatedInspectDataContainer> {
-        let trace_id = ftrace::Id::random();
+        let trace_id = ftrace::Id::new();
         let trace_guard = ftrace::async_enter!(
             trace_id,
             TRACE_CATEGORY,
@@ -584,7 +585,7 @@ mod test {
         let mut stream = pin!(container.populate(
             0,
             Arc::new(GlobalConnectionStats::new(Node::default())),
-            ftrace::Id::random(),
+            ftrace::Id::new(),
         ));
         let res = stream.next().await.unwrap();
         assert_eq!(res.snapshot.name, None);
@@ -607,7 +608,7 @@ mod test {
         let mut stream = pin!(container.populate(
             1000000,
             Arc::new(GlobalConnectionStats::new(Node::default())),
-            ftrace::Id::random(),
+            ftrace::Id::new(),
         ));
         assert!(stream.next().await.is_none());
     }
