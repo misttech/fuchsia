@@ -144,101 +144,108 @@ std::shared_ptr<const view_tree::Snapshot> FourNodeSnapshotWithViewRefs() {
 
 }  // namespace
 
-TEST(FocusManagerTest, EmptyTransitions) {
-  FocusManager focus_manager;
+class FocusManagerTest : public gtest::TestLoopFixture {
+ public:
+  FocusManagerTest()
+      : snapshot_holder_(std::make_shared<view_tree::SnapshotHolder>()),
+        focus_manager_(dispatcher(), snapshot_holder_) {}
 
-  EXPECT_TRUE(focus_manager.focus_chain().empty());
+ protected:
+  std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
+  FocusManager focus_manager_;
+
+ private:
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_{dispatcher(), dispatcher()};
+};
+
+TEST_F(FocusManagerTest, EmptyTransitions) {
+  EXPECT_TRUE(focus_manager_.GetFocusChainForTest().empty());
 
   // Empty snapshot should not affect the empty focus chain.
-  focus_manager.OnNewViewTreeSnapshot(EmptySnapshot());
-  EXPECT_TRUE(focus_manager.focus_chain().empty());
+  snapshot_holder_->SetSnapshot(EmptySnapshot());
+  EXPECT_TRUE(focus_manager_.GetFocusChainForTest().empty());
 
   // A non-empty snapshot should affect the focus chain.
-  focus_manager.OnNewViewTreeSnapshot(OneNodeSnapshot());
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA));
+  snapshot_holder_->SetSnapshot(OneNodeSnapshot());
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA));
 
   // Submitting the same snapshot again should not change the focus chain.
-  focus_manager.OnNewViewTreeSnapshot(OneNodeSnapshot());
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA));
+  snapshot_holder_->SetSnapshot(OneNodeSnapshot());
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA));
 }
 
 // Tree topology:
 //     A
 //     |
 //     B
-TEST(FocusManagerTest, FocusTransferDownAllowed) {
-  FocusManager focus_manager;
-  focus_manager.OnNewViewTreeSnapshot(TwoNodeSnapshot());
+TEST_F(FocusManagerTest, FocusTransferDownAllowed) {
+  snapshot_holder_->SetSnapshot(TwoNodeSnapshot());
 
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeA, kNodeB), FocusChangeStatus::kAccept);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeB), FocusChangeStatus::kAccept);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 }
 
 // Tree topology:
 //     A
 //     |
 //     B
-TEST(FocusManagerTest, FocusTransferToSameNode_ShouldHaveNoEffect) {
-  FocusManager focus_manager;
-  focus_manager.OnNewViewTreeSnapshot(TwoNodeSnapshot());
+TEST_F(FocusManagerTest, FocusTransferToSameNode_ShouldHaveNoEffect) {
+  snapshot_holder_->SetSnapshot(TwoNodeSnapshot());
 
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeA, kNodeB), FocusChangeStatus::kAccept);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeB), FocusChangeStatus::kAccept);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeA, kNodeB), FocusChangeStatus::kAccept);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeB), FocusChangeStatus::kAccept);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 }
 
 // Tree topology:
 //     A
 //     |
 //     B
-TEST(FocusManagerTest, FocusTransferToSelfAllowed) {
-  FocusManager focus_manager;
-  focus_manager.OnNewViewTreeSnapshot(TwoNodeSnapshot());
+TEST_F(FocusManagerTest, FocusTransferToSelfAllowed) {
+  snapshot_holder_->SetSnapshot(TwoNodeSnapshot());
 
   // Transfer focus to B.
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeA, kNodeB), FocusChangeStatus::kAccept);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeB), FocusChangeStatus::kAccept);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 
   // Transfer focus back to A, on the authority of A.
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeA, kNodeA), FocusChangeStatus::kAccept);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA));
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeA), FocusChangeStatus::kAccept);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA));
 }
 
 // Tree topology:
 //     A
 //     |
 //     B
-TEST(FocusManagerTest, FocusTransferUpwardDenied) {
-  FocusManager focus_manager;
-  focus_manager.OnNewViewTreeSnapshot(TwoNodeSnapshot());
+TEST_F(FocusManagerTest, FocusTransferUpwardDenied) {
+  snapshot_holder_->SetSnapshot(TwoNodeSnapshot());
 
   // Transfer focus to B.
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeA, kNodeB), FocusChangeStatus::kAccept);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeB), FocusChangeStatus::kAccept);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 
   // Requesting change to A from B should fail and no change should be observed on the focus chain.
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeB, kNodeA),
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeB, kNodeA),
             FocusChangeStatus::kErrorRequestorNotRequestAncestor);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 }
 
 // Tree topology:
 //     A
 //     |
 //     B
-TEST(FocusManagerTest, FocusTransfer_ToNonFocusableNode_Denied) {
+TEST_F(FocusManagerTest, FocusTransfer_ToNonFocusableNode_Denied) {
   auto snapshot = TwoNodeSnapshot();
   snapshot->view_tree.at(kNodeB).is_focusable = false;
 
-  FocusManager focus_manager;
-  focus_manager.OnNewViewTreeSnapshot(snapshot);
+  snapshot_holder_->SetSnapshot(snapshot);
 
   // Transfer focus to B.
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeA, kNodeB),
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeB),
             FocusChangeStatus::kErrorRequestCannotReceiveFocus);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA));
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA));
 }
 
 // Tree topology:
@@ -247,25 +254,24 @@ TEST(FocusManagerTest, FocusTransfer_ToNonFocusableNode_Denied) {
 //     B      C
 //     |
 //     D
-TEST(FocusManagerTest, BranchedTree) {
-  FocusManager focus_manager;
-  focus_manager.OnNewViewTreeSnapshot(FourNodeSnapshot());
+TEST_F(FocusManagerTest, BranchedTree) {
+  snapshot_holder_->SetSnapshot(FourNodeSnapshot());
 
   // Transfer focus from A to C.
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeA, kNodeC), FocusChangeStatus::kAccept);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeC));
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeC), FocusChangeStatus::kAccept);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeC));
 
   // Transfer focus from A to D.
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeA, kNodeD), FocusChangeStatus::kAccept);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB, kNodeD));
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeD), FocusChangeStatus::kAccept);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB, kNodeD));
 
   // Transfer focus from A to B.
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeA, kNodeB), FocusChangeStatus::kAccept);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeB), FocusChangeStatus::kAccept);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 
   // Transfer focus from B to D.
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeB, kNodeD), FocusChangeStatus::kAccept);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB, kNodeD));
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeB, kNodeD), FocusChangeStatus::kAccept);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB, kNodeD));
 }
 
 // Tree topology:
@@ -274,19 +280,18 @@ TEST(FocusManagerTest, BranchedTree) {
 //     B      C
 //     |
 //     D
-TEST(FocusManagerTest, FocusTranser_WithRequestorNotInFocusChain_Denied) {
-  FocusManager focus_manager;
-  focus_manager.OnNewViewTreeSnapshot(FourNodeSnapshot());
+TEST_F(FocusManagerTest, FocusTranser_WithRequestorNotInFocusChain_Denied) {
+  snapshot_holder_->SetSnapshot(FourNodeSnapshot());
 
   // Transfer focus from A to C.
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeA, kNodeC), FocusChangeStatus::kAccept);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeC));
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeC), FocusChangeStatus::kAccept);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeC));
 
   // Attempt to transfer focus to D on the authority of B. Should fail since B is not in the focus
   // chain.
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeB, kNodeD),
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeB, kNodeD),
             FocusChangeStatus::kErrorRequestorNotAuthorized);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeC));
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeC));
 }
 
 // Tree topology:
@@ -295,23 +300,22 @@ TEST(FocusManagerTest, FocusTranser_WithRequestorNotInFocusChain_Denied) {
 //     B      C
 //     |
 //     D
-TEST(FocusManagerTest, SiblingTransferRequestsDenied) {
-  FocusManager focus_manager;
-  focus_manager.OnNewViewTreeSnapshot(FourNodeSnapshot());
+TEST_F(FocusManagerTest, SiblingTransferRequestsDenied) {
+  snapshot_holder_->SetSnapshot(FourNodeSnapshot());
 
   // Setup: Transfer to "D".
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeA, kNodeD), FocusChangeStatus::kAccept);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB, kNodeD));
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeD), FocusChangeStatus::kAccept);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB, kNodeD));
 
   // Transfer request from "B" to "C" denied.
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeB, kNodeC),
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeB, kNodeC),
             FocusChangeStatus::kErrorRequestorNotRequestAncestor);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB, kNodeD));
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB, kNodeD));
 
   // Transfer request from "D" to "C" denied.
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeD, kNodeC),
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeD, kNodeC),
             FocusChangeStatus::kErrorRequestorNotRequestAncestor);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB, kNodeD));
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB, kNodeD));
 }
 
 // Tree topology:
@@ -320,37 +324,35 @@ TEST(FocusManagerTest, SiblingTransferRequestsDenied) {
 //     B  ->  B  ->    ->
 //     |
 //     C
-TEST(FocusManagerTest, ViewRemoval_ShouldShortenFocusChain) {
-  FocusManager focus_manager;
-  focus_manager.OnNewViewTreeSnapshot(ThreeNodeSnapshot());
+TEST_F(FocusManagerTest, ViewRemoval_ShouldShortenFocusChain) {
+  snapshot_holder_->SetSnapshot(ThreeNodeSnapshot());
 
   // Emulate a focus transfer from "A" to "C".
-  EXPECT_EQ(focus_manager.RequestFocus(kNodeA, kNodeC), FocusChangeStatus::kAccept);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB, kNodeC));
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeC), FocusChangeStatus::kAccept);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB, kNodeC));
 
   // Client "C" destroys its view.
-  focus_manager.OnNewViewTreeSnapshot(TwoNodeSnapshot());
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  snapshot_holder_->SetSnapshot(TwoNodeSnapshot());
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 
   // Client "B" destroys its view.
-  focus_manager.OnNewViewTreeSnapshot(OneNodeSnapshot());
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA));
+  snapshot_holder_->SetSnapshot(OneNodeSnapshot());
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA));
 
-  focus_manager.OnNewViewTreeSnapshot(EmptySnapshot());
-  EXPECT_TRUE(focus_manager.focus_chain().empty());
+  snapshot_holder_->SetSnapshot(EmptySnapshot());
+  EXPECT_TRUE(focus_manager_.GetFocusChainForTest().empty());
 }
 
 // Tree topology:
 //  [] -> A (AutoFocus to B)
 //        |
 //        B
-TEST(FocusManagerTest, AutoFocus_BeforeSnapshot) {
-  FocusManager focus_manager;
-  focus_manager.SetAutoFocus(kNodeA, kNodeB);
-  EXPECT_TRUE(focus_manager.focus_chain().empty());
+TEST_F(FocusManagerTest, AutoFocus_BeforeSnapshot) {
+  focus_manager_.SetAutoFocusForTest(kNodeA, kNodeB);
+  EXPECT_TRUE(focus_manager_.GetFocusChainForTest().empty());
 
-  focus_manager.OnNewViewTreeSnapshot(TwoNodeSnapshot());
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  snapshot_holder_->SetSnapshot(TwoNodeSnapshot());
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 }
 
 // Tree topology:
@@ -358,14 +360,13 @@ TEST(FocusManagerTest, AutoFocus_BeforeSnapshot) {
 //                      ->  |
 //                          B
 // Adding the child after setting it as auto focus should cause focus to move.
-TEST(FocusManagerTest, AutoFocus_OnNewValidAutoFocusChild) {
-  FocusManager focus_manager;
-  focus_manager.OnNewViewTreeSnapshot(OneNodeSnapshot());
-  focus_manager.SetAutoFocus(kNodeA, kNodeB);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA));
+TEST_F(FocusManagerTest, AutoFocus_OnNewValidAutoFocusChild) {
+  snapshot_holder_->SetSnapshot(OneNodeSnapshot());
+  focus_manager_.SetAutoFocusForTest(kNodeA, kNodeB);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA));
 
-  focus_manager.OnNewViewTreeSnapshot(TwoNodeSnapshot());
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  snapshot_holder_->SetSnapshot(TwoNodeSnapshot());
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 }
 
 // Tree topology:
@@ -373,13 +374,12 @@ TEST(FocusManagerTest, AutoFocus_OnNewValidAutoFocusChild) {
 //  |  ->  |
 //  B      B
 // Setting auto focus after adding the child should cause focus to move.
-TEST(FocusManagerTest, AutoFocus_WithValidTarget) {
-  FocusManager focus_manager;
-  focus_manager.OnNewViewTreeSnapshot(TwoNodeSnapshot());
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA));
+TEST_F(FocusManagerTest, AutoFocus_WithValidTarget) {
+  snapshot_holder_->SetSnapshot(TwoNodeSnapshot());
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA));
 
-  focus_manager.SetAutoFocus(kNodeA, kNodeB);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  focus_manager_.SetAutoFocusForTest(kNodeA, kNodeB);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 }
 
 // Tree topology:
@@ -389,14 +389,13 @@ TEST(FocusManagerTest, AutoFocus_WithValidTarget) {
 //  |
 //  C
 // Focus moved due to RequestFocus() should trigger auto focus deferment.
-TEST(FocusManagerTest, AutoFocus_OnRequestFocus) {
-  FocusManager focus_manager;
-  focus_manager.SetAutoFocus(kNodeB, kNodeC);
-  focus_manager.OnNewViewTreeSnapshot(ThreeNodeSnapshot());
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA));
+TEST_F(FocusManagerTest, AutoFocus_OnRequestFocus) {
+  focus_manager_.SetAutoFocusForTest(kNodeB, kNodeC);
+  snapshot_holder_->SetSnapshot(ThreeNodeSnapshot());
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA));
 
-  focus_manager.RequestFocus(kNodeA, kNodeB);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB, kNodeC));
+  focus_manager_.RequestFocusForTest(kNodeA, kNodeB);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB, kNodeC));
 }
 
 // Tree topology:
@@ -407,15 +406,14 @@ TEST(FocusManagerTest, AutoFocus_OnRequestFocus) {
 //  C                      C
 // Same as AutoFocus_OnRequestFocus above, except we unset the auto focus target
 // before requesting focus and observe no auto focus deferment happening.
-TEST(FocusManagerTest, UnsetAutoFocus) {
-  FocusManager focus_manager;
-  focus_manager.SetAutoFocus(kNodeB, kNodeC);
-  focus_manager.OnNewViewTreeSnapshot(ThreeNodeSnapshot());
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA));
+TEST_F(FocusManagerTest, UnsetAutoFocus) {
+  focus_manager_.SetAutoFocusForTest(kNodeB, kNodeC);
+  snapshot_holder_->SetSnapshot(ThreeNodeSnapshot());
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA));
 
-  focus_manager.SetAutoFocus(kNodeB, ZX_KOID_INVALID);  // Unset.
-  focus_manager.RequestFocus(kNodeA, kNodeB);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  focus_manager_.SetAutoFocusForTest(kNodeB, ZX_KOID_INVALID);  // Unset.
+  focus_manager_.RequestFocusForTest(kNodeA, kNodeB);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 }
 
 // Tree topology:
@@ -425,17 +423,16 @@ TEST(FocusManagerTest, UnsetAutoFocus) {
 //   |
 //   D
 // Focus moved to ViewTree changes should trigger auto focus deferment.
-TEST(FocusManagerTest, AutoFocus_FocusMovedDueToViewTreeChange) {
+TEST_F(FocusManagerTest, AutoFocus_FocusMovedDueToViewTreeChange) {
   // Transfer focus from A to C, then set auto focus from A to B.
-  FocusManager focus_manager;
-  focus_manager.OnNewViewTreeSnapshot(FourNodeSnapshot());
-  focus_manager.RequestFocus(kNodeA, kNodeC);
-  focus_manager.SetAutoFocus(kNodeA, kNodeB);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeC));
+  snapshot_holder_->SetSnapshot(FourNodeSnapshot());
+  focus_manager_.RequestFocusForTest(kNodeA, kNodeC);
+  focus_manager_.SetAutoFocusForTest(kNodeA, kNodeB);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeC));
 
   // When C disappears the focus should transfer to B.
-  focus_manager.OnNewViewTreeSnapshot(TwoNodeSnapshot());
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  snapshot_holder_->SetSnapshot(TwoNodeSnapshot());
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 }
 
 // Tree topology:
@@ -450,8 +447,7 @@ TEST(FocusManagerTest, AutoFocus_FocusMovedDueToViewTreeChange) {
 // A should auto transfer focus to D, which is unfocusable so focus goes to C which is unfocusable
 // so focus goes to B which tries to transfer focus back to D, which would create a loop. The
 // highest node in the loop is B so focus should remain there.
-TEST(FocusManagerTest, AutoFocus_LoopShouldLandOnTopMostNode) {
-  FocusManager focus_manager;
+TEST_F(FocusManagerTest, AutoFocus_LoopShouldLandOnTopMostNode) {
   auto snapshot = std::make_shared<view_tree::Snapshot>();
   snapshot->sequence_number = g_next_sequence_number++;
   {
@@ -462,12 +458,12 @@ TEST(FocusManagerTest, AutoFocus_LoopShouldLandOnTopMostNode) {
     view_tree[kNodeC] = ViewNode{.parent = kNodeB, .children = {kNodeD}, .is_focusable = false};
     view_tree[kNodeD] = ViewNode{.parent = kNodeC, .is_focusable = false};
   }
-  focus_manager.OnNewViewTreeSnapshot(snapshot);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA));
+  snapshot_holder_->SetSnapshot(snapshot);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA));
 
-  focus_manager.SetAutoFocus(kNodeA, kNodeD);
-  focus_manager.SetAutoFocus(kNodeB, kNodeD);
-  EXPECT_THAT(focus_manager.focus_chain(), testing::ElementsAre(kNodeA, kNodeB));
+  focus_manager_.SetAutoFocusForTest(kNodeA, kNodeD);
+  focus_manager_.SetAutoFocusForTest(kNodeB, kNodeD);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 }
 
 class FocusChainTest : public gtest::TestLoopFixture,
@@ -510,14 +506,14 @@ class FocusChainTest : public gtest::TestLoopFixture,
     gtest::TestLoopFixture::TearDown();
   }
 
-  std::unique_ptr<utils::ScopedThreadDispatcherSetter> dispatcher_setter_;
-
  private:
+  std::unique_ptr<utils::ScopedThreadDispatcherSetter> dispatcher_setter_;
   fidl::Binding<fuchsia::ui::focus::FocusChainListener> focus_listener_;
 };
 
 TEST_F(FocusChainTest, RegisterBeforeSceneSetup_ShouldReturnEmptyFocusChain) {
-  FocusManager focus_manager;
+  auto snapshot_holder = std::make_shared<view_tree::SnapshotHolder>();
+  FocusManager focus_manager(dispatcher(), snapshot_holder);
 
   RegisterFocusListener(focus_manager);
   RunLoopUntilIdle();
@@ -556,13 +552,14 @@ TEST_F(FocusChainTest, FocusChainChangedButNotFocus) {
   const zx_koid_t koid_C = view_ref_C->koid();
 
   // Initialize focus manager.
-  FocusManager focus_manager;
+  auto snapshot_holder = std::make_shared<view_tree::SnapshotHolder>();
+  FocusManager focus_manager(dispatcher(), snapshot_holder);
   RegisterFocusListener(focus_manager);
   fuchsia::ui::views::ViewRefFocusedPtr vrf;
   focus_manager.RegisterViewRefFocused(koid_B, vrf.NewRequest());
   int view_ref_focused_count = 0;
   vrf->Watch([&view_ref_focused_count](auto) { view_ref_focused_count++; });
-  focus_manager.SetAutoFocus(koid_A, koid_B);
+  focus_manager.SetAutoFocusForTest(koid_A, koid_B);
   RunLoopUntilIdle();
   EXPECT_EQ(num_focus_chains_received_, 1u);
 
@@ -576,7 +573,8 @@ TEST_F(FocusChainTest, FocusChainChangedButNotFocus) {
         ViewNode{.parent = ZX_KOID_INVALID, .children = {koid_B}, .view_ref = view_ref_A};
     view_tree[koid_B] = ViewNode{.parent = koid_A, .view_ref = view_ref_B};
   }
-  focus_manager.OnNewViewTreeSnapshot(snapshot);
+  snapshot_holder->SetSnapshot(snapshot);
+  (void)focus_manager.GetFocusChainForTest();  // Trigger lazy update
   RunLoopUntilIdle();
 
   EXPECT_EQ(num_focus_chains_received_, 2u);
@@ -594,7 +592,8 @@ TEST_F(FocusChainTest, FocusChainChangedButNotFocus) {
     view_tree[koid_C] = ViewNode{.parent = koid_A, .children = {koid_B}, .view_ref = view_ref_C};
     view_tree[koid_B] = ViewNode{.parent = koid_C, .view_ref = view_ref_B};
   }
-  focus_manager.OnNewViewTreeSnapshot(snapshot);
+  snapshot_holder->SetSnapshot(snapshot);
+  (void)focus_manager.GetFocusChainForTest();  // Trigger lazy update
   RunLoopUntilIdle();
 
   EXPECT_EQ(num_focus_chains_received_, 3u);
@@ -609,10 +608,12 @@ TEST_F(FocusChainTest, FocusChainChangedButNotFocus) {
 //   |
 //   D
 TEST_F(FocusChainTest, RegisterAfterSceneSetup_ShouldReturnNonEmptyFocusChain) {
-  FocusManager focus_manager;
+  auto snapshot_holder = std::make_shared<view_tree::SnapshotHolder>();
+  FocusManager focus_manager(dispatcher(), snapshot_holder);
 
   // New view tree should set the focus to root.
-  focus_manager.OnNewViewTreeSnapshot(FourNodeSnapshotWithViewRefs());
+  snapshot_holder->SetSnapshot(FourNodeSnapshotWithViewRefs());
+  (void)focus_manager.GetFocusChainForTest();  // Trigger lazy update
   RegisterFocusListener(focus_manager);
   RunLoopUntilIdle();
   EXPECT_EQ(num_focus_chains_received_, 1u);
@@ -626,14 +627,16 @@ TEST_F(FocusChainTest, RegisterAfterSceneSetup_ShouldReturnNonEmptyFocusChain) {
 //       |
 //       D
 TEST_F(FocusChainTest, NewSnapshotAfterRegister_ShouldReturnNewFocusChain) {
-  FocusManager focus_manager;
+  auto snapshot_holder = std::make_shared<view_tree::SnapshotHolder>();
+  FocusManager focus_manager(dispatcher(), snapshot_holder);
 
   RegisterFocusListener(focus_manager);
   RunLoopUntilIdle();
   EXPECT_EQ(num_focus_chains_received_, 1u);
   EXPECT_TRUE(last_received_chain_.empty());
 
-  focus_manager.OnNewViewTreeSnapshot(FourNodeSnapshotWithViewRefs());
+  snapshot_holder->SetSnapshot(FourNodeSnapshotWithViewRefs());
+  (void)focus_manager.GetFocusChainForTest();  // Trigger lazy update
   RunLoopUntilIdle();
   EXPECT_EQ(num_focus_chains_received_, 2u);
   EXPECT_EQ(last_received_chain_.size(), 1u);
@@ -646,14 +649,15 @@ TEST_F(FocusChainTest, NewSnapshotAfterRegister_ShouldReturnNewFocusChain) {
 //  |           |
 //  D           D
 TEST_F(FocusChainTest, SameSnapshotTopologyTwice_ShouldNotSendNewFocusChain) {
-  FocusManager focus_manager;
+  auto snapshot_holder = std::make_shared<view_tree::SnapshotHolder>();
+  FocusManager focus_manager(dispatcher(), snapshot_holder);
 
-  focus_manager.OnNewViewTreeSnapshot(FourNodeSnapshotWithViewRefs());
+  snapshot_holder->SetSnapshot(FourNodeSnapshotWithViewRefs());
   RegisterFocusListener(focus_manager);
   RunLoopUntilIdle();
   EXPECT_EQ(num_focus_chains_received_, 1u);
 
-  focus_manager.OnNewViewTreeSnapshot(FourNodeSnapshotWithViewRefs());
+  snapshot_holder->SetSnapshot(FourNodeSnapshotWithViewRefs());
   RunLoopUntilIdle();
   EXPECT_EQ(num_focus_chains_received_, 1u);
 }
@@ -661,7 +665,11 @@ TEST_F(FocusChainTest, SameSnapshotTopologyTwice_ShouldNotSendNewFocusChain) {
 class FocusManagerInspectTest : public gtest::TestLoopFixture {
  public:
   FocusManagerInspectTest()
-      : inspector_(), focus_manager_(inspector_.GetRoot().CreateChild("focus_manager")) {}
+      : dispatcher_setter_(dispatcher(), dispatcher()),
+        inspector_(),
+        snapshot_holder_(std::make_shared<view_tree::SnapshotHolder>()),
+        focus_manager_(dispatcher(), snapshot_holder_,
+                       inspector_.GetRoot().CreateChild("focus_manager")) {}
 
   std::vector<uint64_t> GetInspectFocusChain() {
     auto hierarchy = ReadHierarchyFromInspector();
@@ -685,7 +693,9 @@ class FocusManagerInspectTest : public gtest::TestLoopFixture {
     return result;
   }
 
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_{dispatcher(), dispatcher()};
   inspect::Inspector inspector_;
+  std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
   FocusManager focus_manager_;
 };
 
@@ -696,18 +706,18 @@ class FocusManagerInspectTest : public gtest::TestLoopFixture {
 //     |
 //     C
 TEST_F(FocusManagerInspectTest, InspectTest) {
-  focus_manager_.OnNewViewTreeSnapshot(ThreeNodeSnapshot());
+  snapshot_holder_->SetSnapshot(ThreeNodeSnapshot());
 
   // Move focus to "C".
-  EXPECT_EQ(focus_manager_.RequestFocus(kNodeA, kNodeC), FocusChangeStatus::kAccept);
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeC), FocusChangeStatus::kAccept);
   EXPECT_THAT(GetInspectFocusChain(), testing::ElementsAre(kNodeA, kNodeB, kNodeC));
 
   // Move focus to "B".
-  EXPECT_EQ(focus_manager_.RequestFocus(kNodeA, kNodeB), FocusChangeStatus::kAccept);
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeB), FocusChangeStatus::kAccept);
   EXPECT_THAT(GetInspectFocusChain(), testing::ElementsAre(kNodeA, kNodeB));
 
   // Move focus to "A"
-  EXPECT_EQ(focus_manager_.RequestFocus(kNodeA, kNodeA), FocusChangeStatus::kAccept);
+  EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeA, kNodeA), FocusChangeStatus::kAccept);
   EXPECT_THAT(GetInspectFocusChain(), testing::ElementsAre(kNodeA));
 }
 

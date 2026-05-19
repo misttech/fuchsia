@@ -59,11 +59,13 @@ ViewFocuserRegistry::ViewFocuserEndpoint::ViewFocuserEndpoint(
 
 void ViewFocuserRegistry::ViewFocuserEndpoint::RequestFocus(ViewRef view_ref,
                                                             RequestFocusCallback response) {
+  TRACE_DURATION("input", "ViewFocuserEndpoint::RequestFocus");
   request_focus_(std::move(view_ref), std::move(response));
 }
 
 void ViewFocuserRegistry::ViewFocuserEndpoint::SetAutoFocus(
     fuchsia::ui::views::FocuserSetAutoFocusRequest request, SetAutoFocusCallback response) {
+  TRACE_DURATION("input", "ViewFocuserEndpoint::SetAutoFocus");
   zx_koid_t target = ZX_KOID_INVALID;
   if (request.has_view_ref()) {
     target = utils::ExtractKoid(request.view_ref());

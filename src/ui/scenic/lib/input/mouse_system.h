@@ -28,12 +28,10 @@ namespace scenic_impl::input {
 // lock.
 class MouseSystem {
  public:
-  explicit MouseSystem(sys::ComponentContext* context, HitTester& hit_tester_,
-                       RequestFocusFunc request_focus);
+  explicit MouseSystem(sys::ComponentContext* context,
+                       std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
+                       HitTester& hit_tester_, RequestFocusFunc request_focus);
   ~MouseSystem() = default;
-
-  // This is the only function allowed to be called from a non-input thread.
-  void SetViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot);
 
   void RegisterMouseSource(
       fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
@@ -63,7 +61,7 @@ class MouseSystem {
                         InternalMouseEvent event, StreamId stream_id, bool view_exit);
 
   /// Construction-time state.
-  view_tree::SnapshotHolder snapshot_holder_;
+  const std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
   HitTester& hit_tester_;
   const RequestFocusFunc request_focus_;
 

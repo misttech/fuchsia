@@ -70,11 +70,14 @@ glm::vec2 GetViewportNDCPoint(const InternalTouchEvent& internal_event) {
 
 }  // namespace
 
-TouchSystem::TouchSystem(sys::ComponentContext* context, HitTester& hit_tester,
-                         inspect::Node& parent_node)
-    : hit_tester_(hit_tester), contender_inspector_(parent_node.CreateChild("GestureContenders")) {
+TouchSystem::TouchSystem(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
+                         std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
+                         HitTester& hit_tester, inspect::Node& parent_node)
+    : snapshot_holder_(std::move(snapshot_holder)),
+      hit_tester_(hit_tester),
+      contender_inspector_(parent_node.CreateChild("GestureContenders")) {
   a11y_pointer_event_registry_.emplace(
-      context,
+      input_dispatcher, context,
       /*on_register=*/
       [this] {
         FX_CHECK(!contenders_.contains(a11y_contender_id_))
@@ -125,14 +128,13 @@ TouchSystem::TouchSystem(sys::ComponentContext* context, HitTester& hit_tester,
         EraseContender(a11y_contender_id_, ZX_KOID_INVALID);
         FX_LOGS(INFO) << "A11yLegacyContender destroyed";
       });
-  context->outgoing()->AddPublicService(local_hit_upgrade_registry_.GetHandler(this));
+  context->outgoing()->AddPublicService(
+      local_hit_upgrade_registry_.GetHandler(this, input_dispatcher));
 }
 
-void TouchSystem::SetViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
-  snapshot_holder_.SetSnapshot(std::move(snapshot));
+view_tree::SnapshotRef TouchSystem::GetViewTreeSnapshot() {
+  return snapshot_holder_->GetSnapshot();
 }
-
-view_tree::SnapshotRef TouchSystem::GetViewTreeSnapshot() { return snapshot_holder_.GetSnapshot(); }
 
 zx_koid_t TouchSystem::FindViewRefKoidOfRelatedChannel(
     const fidl::InterfaceHandle<fuchsia::ui::pointer::TouchSource>& original) const {

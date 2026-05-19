@@ -43,7 +43,8 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
  public:
   DispatchPolicyTest()
       : dispatcher_setter_(dispatcher(), dispatcher()),
-        input_system_(dispatcher(), context_provider_.context(), inspect_node_,
+        snapshot_holder_(std::make_shared<view_tree::SnapshotHolder>()),
+        input_system_(dispatcher(), context_provider_.context(), snapshot_holder_, inspect_node_,
                       /*request_focus*/ [](auto...) {}) {}
 
   void SetUp() override {
@@ -157,6 +158,7 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
   inspect::Node inspect_node_;
 
  protected:
+  std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
   uint64_t next_sequence_number_ = 1;
   scenic_impl::input::InputSystem input_system_;
   fuchsia::ui::pointerinjector::DevicePtr injector_;
@@ -209,7 +211,7 @@ class DispatchPolicyTestP : public DispatchPolicyTest, public testing::WithParam
 INSTANTIATE_TEST_SUITE_P(DispatchPolicyTest, DispatchPolicyTestP, testing::Bool());
 
 TEST_P(DispatchPolicyTestP, ExclusiveMode_ShouldDeliverTo_OnlyTarget) {
-  input_system_.OnNewViewTreeSnapshot(NewSnapshot(/*hits*/ {Client4Koid()}));
+  snapshot_holder_->SetSnapshot(NewSnapshot(/*hits*/ {Client4Koid()}));
 
   {  // Scene is set up. Inject with Client2 as exclusive target.
     RegisterInjector(
@@ -245,7 +247,7 @@ TEST_P(DispatchPolicyTestP, ExclusiveMode_ShouldDeliverTo_OnlyTarget) {
 }
 
 TEST_P(DispatchPolicyTestP, TopHitMode_OnLeafTarget_ShouldDeliverTo_OnlyTarget) {
-  input_system_.OnNewViewTreeSnapshot(NewSnapshot(/*hits*/ {Client3Koid()}));
+  snapshot_holder_->SetSnapshot(NewSnapshot(/*hits*/ {Client3Koid()}));
 
   {  // Inject with Client3 as target. Top hit is Client3.
     RegisterInjector(/*context=*/RootViewRef(),
@@ -282,7 +284,7 @@ TEST_P(DispatchPolicyTestP, TopHitMode_OnLeafTarget_ShouldDeliverTo_OnlyTarget) 
 
 TEST_P(DispatchPolicyTestP,
        TopHitMode_OnMidTreeTarget_ShouldDeliverTo_TopHitAndAncestorsUpToTarget) {
-  input_system_.OnNewViewTreeSnapshot(NewSnapshot(/*hits*/ {Client4Koid()}));
+  snapshot_holder_->SetSnapshot(NewSnapshot(/*hits*/ {Client4Koid()}));
 
   {  // Inject with Client2 as target. Top hit is Client4.
     RegisterInjector(/*context=*/RootViewRef(),

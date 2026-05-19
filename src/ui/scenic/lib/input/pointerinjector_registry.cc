@@ -69,20 +69,22 @@ bool IsValidConfig(const fuchsia::ui::pointerinjector::Config& config) {
 
 // LINT.IfChange
 PointerinjectorRegistry::PointerinjectorRegistry(
-    sys::ComponentContext* context, TouchInjectFunc inject_touch_exclusive,
-    TouchInjectFunc inject_touch_hit_tested, MouseInjectFunc inject_mouse_exclusive,
-    MouseInjectFunc inject_mouse_hit_tested,
+    async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
+    std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
+    TouchInjectFunc inject_touch_exclusive, TouchInjectFunc inject_touch_hit_tested,
+    MouseInjectFunc inject_mouse_exclusive, MouseInjectFunc inject_mouse_hit_tested,
     fit::function<void(StreamId stream_id)> cancel_mouse_stream, inspect::Node inspect_node)
     : inject_touch_exclusive_(std::move(inject_touch_exclusive)),
       inject_touch_hit_tested_(std::move(inject_touch_hit_tested)),
       inject_mouse_exclusive_(std::move(inject_mouse_exclusive)),
       inject_mouse_hit_tested_(std::move(inject_mouse_hit_tested)),
       cancel_mouse_stream_(std::move(cancel_mouse_stream)),
+      snapshot_holder_(std::move(snapshot_holder)),
       inspect_node_(std::move(inspect_node)) {
   if (context) {
     // Adding the service here is safe since the PointerinjectorRegistry instance in InputSystem is
     // created at construction time..
-    context->outgoing()->AddPublicService(injector_registry_.GetHandler(this));
+    context->outgoing()->AddPublicService(injector_registry_.GetHandler(this, input_dispatcher));
   }
 }
 
@@ -90,6 +92,8 @@ void PointerinjectorRegistry::Register(
     fuchsia::ui::pointerinjector::Config config,
     fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> injector,
     RegisterCallback callback) {
+  TRACE_DURATION("input", "PointerinjectorRegistry::Register");
+
   if (!IsValidConfig(config)) {
     // Errors printed inside IsValidConfig. Just return here.
     return;
@@ -103,7 +107,10 @@ void PointerinjectorRegistry::Register(
                       "was invalid.";
     return;
   }
-  if (!view_tree_snapshot_->IsDescendant(target_koid, context_koid)) {
+  auto snapshot_ref = snapshot_holder_->GetSnapshot();
+  const auto& snapshot = *snapshot_ref;
+
+  if (!snapshot.IsDescendant(target_koid, context_koid)) {
     FX_LOGS(ERROR) << "InjectorRegistry::Register : Argument |config.context| must be connected to "
                       "the Scene, and |config.target| must be a descendant of |config.context|";
     return;
@@ -121,9 +128,12 @@ void PointerinjectorRegistry::Register(
           utils::ColumnMajorMat3ArrayToMat4(config.viewport().viewport_to_context_transform()),
   };
 
+  // NOTE: this will be deleted in the next CL.
   fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
       is_descendant_and_connected = [this](zx_koid_t descendant, zx_koid_t ancestor) {
-        return view_tree_snapshot_->IsDescendant(descendant, ancestor);
+        TRACE_DURATION("input", "is_descendant_and_connected");
+        auto snapshot_ref = snapshot_holder_->GetSnapshot();
+        return snapshot_ref->IsDescendant(descendant, ancestor);
       };
   fit::function<void()> on_channel_closed = [this, id] { injectors_.erase(id); };
 

@@ -51,6 +51,7 @@ fuchsia::ui::views::ViewRefInstalled_Watch_Result InstalledMessage() {
 }  // namespace
 
 void ViewRefInstalledImpl::Publish(sys::ComponentContext* app_context) {
+  // TODO(https://fxbug.dev/513889104): left for future work if we want this on the input thread.
   utils::CheckIsOnMainThread();
   FX_DCHECK(app_context);
   app_context->outgoing()->AddPublicService<ViewRefInstalled>(bindings_.GetHandler(this));

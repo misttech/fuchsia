@@ -8,6 +8,8 @@
 #include <lib/fdf/token.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
+
 #if defined(FUCHSIA_DSO)
 #include <fidl/fuchsia.ui.pointerinjector.dso/cpp/driver/wire.h>
 #endif
@@ -15,13 +17,13 @@
 namespace scenic_impl::input {
 
 InputSystem::InputSystem(async_dispatcher_t *input_dispatcher, sys::ComponentContext *context,
+                         std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
                          inspect::Node &inspect_node, RequestFocusFunc request_focus)
-    : request_focus_(std::move(request_focus)),
-      hit_tester_(inspect_node),
-      mouse_system_(context, hit_tester_, [this](zx_koid_t koid) { request_focus_(koid); }),
-      touch_system_(context, hit_tester_, inspect_node),
+    : hit_tester_(inspect_node),
+      mouse_system_(context, snapshot_holder, hit_tester_, std::move(request_focus)),
+      touch_system_(input_dispatcher, context, snapshot_holder, hit_tester_, inspect_node),
       pointerinjector_registry_(
-          context,
+          input_dispatcher, context, snapshot_holder,
           /*inject_touch_exclusive=*/
           [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id) {
             touch_system.InjectTouchEventExclusive(std::move(event), stream_id);
@@ -48,7 +50,7 @@ InputSystem::InputSystem(async_dispatcher_t *input_dispatcher, sys::ComponentCon
 #if defined(FUCHSIA_DSO)
       ,
       pointerinjector_registry_dso_(
-          input_dispatcher,
+          input_dispatcher, snapshot_holder,
           /*inject_touch_exclusive=*/
           [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id) {
             touch_system.InjectTouchEventExclusive(std::move(event), stream_id);
@@ -73,8 +75,22 @@ InputSystem::InputSystem(async_dispatcher_t *input_dispatcher, sys::ComponentCon
       fuchsia_ui_pointerinjector_dso::Registry::kDiscoverableName);
 }
 #else
-  {
+{
 }
 #endif
+
+void InputSystem::RegisterTouchSource(
+    fidl::InterfaceRequest<fuchsia::ui::pointer::TouchSource> touch_source_request,
+    zx_koid_t client_view_ref_koid) {
+  utils::CheckIsOnInputThread();
+  touch_system_.RegisterTouchSource(std::move(touch_source_request), client_view_ref_koid);
+}
+
+void InputSystem::RegisterMouseSource(
+    fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
+    zx_koid_t client_view_ref_koid) {
+  utils::CheckIsOnInputThread();
+  mouse_system_.RegisterMouseSource(std::move(mouse_source_request), client_view_ref_koid);
+}
 
 }  // namespace scenic_impl::input

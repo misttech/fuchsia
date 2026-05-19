@@ -15,6 +15,7 @@
 #include <array>
 #include <mutex>
 
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/fidl_array_cast.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/math.h"
@@ -70,12 +71,14 @@ bool IsValidConfig(const fuchsia_ui_pointerinjector::wire::Config& config) {
 
 }  // namespace
 
-PointerinjectorRegistry::PointerinjectorRegistry(async_dispatcher_t* input_dispatcher,
-                                                 TouchInjectFunc inject_touch_exclusive,
-                                                 TouchInjectFunc inject_touch_hit_tested,
-                                                 inspect::Node inspect_node)
+PointerinjectorRegistry::PointerinjectorRegistry(
+    async_dispatcher_t* input_dispatcher,
+    std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
+    TouchInjectFunc inject_touch_exclusive, TouchInjectFunc inject_touch_hit_tested,
+    inspect::Node inspect_node)
     : inject_touch_exclusive_(std::move(inject_touch_exclusive)),
       inject_touch_hit_tested_(std::move(inject_touch_hit_tested)),
+      snapshot_holder_(std::move(snapshot_holder)),
       input_dispatcher_(input_dispatcher),
       inspect_node_(std::move(inspect_node)) {
   FX_DCHECK(input_dispatcher);
@@ -90,6 +93,8 @@ void PointerinjectorRegistry::Bind(fdf::Channel channel) {
 
 void PointerinjectorRegistry::Register(RegisterRequestView request, fdf::Arena& arena,
                                        RegisterCompleter::Sync& completer) {
+  TRACE_DURATION("input", "PointerinjectorRegistry::Register");
+
   auto& config = request->config;
   auto& injector = request->injector;
 
@@ -106,7 +111,10 @@ void PointerinjectorRegistry::Register(RegisterRequestView request, fdf::Arena& 
                       "was invalid.";
     return;
   }
-  if (!view_tree_snapshot_->IsDescendant(target_koid, context_koid)) {
+  auto snapshot_ref = snapshot_holder_->GetSnapshot();
+  const auto& snapshot = *snapshot_ref;
+
+  if (!snapshot.IsDescendant(target_koid, context_koid)) {
     FX_LOGS(ERROR) << "InjectorRegistry::Register : Argument |config.context| must be connected to "
                       "the Scene, and |config.target| must be a descendant of |config.context|";
     return;
@@ -126,9 +134,12 @@ void PointerinjectorRegistry::Register(RegisterRequestView request, fdf::Arena& 
           utils::ReinterpretFidlArrayAsStdArray(config.viewport().viewport_to_context_transform())),
   };
 
+  // NOTE: this will be deleted in the next CL.
   fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
       is_descendant_and_connected = [this](zx_koid_t descendant, zx_koid_t ancestor) {
-        return view_tree_snapshot_->IsDescendant(descendant, ancestor);
+        TRACE_DURATION("input", "is_descendant_and_connected");
+        auto snapshot_ref = snapshot_holder_->GetSnapshot();
+        return snapshot_ref->IsDescendant(descendant, ancestor);
       };
   fit::function<void()> on_channel_closed = [this, id] { injectors_.erase(id); };
 

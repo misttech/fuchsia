@@ -28,6 +28,7 @@
 #include "src/ui/scenic/lib/flatland/trusted_flatland_factory.h"
 #include "src/ui/scenic/lib/flatland/uber_struct_system.h"
 #include "src/ui/scenic/lib/focus/focus_manager.h"
+#include "src/ui/scenic/lib/input/input_manager.h"
 #include "src/ui/scenic/lib/input/input_system.h"
 #include "src/ui/scenic/lib/scheduling/default_frame_scheduler.h"
 #include "src/ui/scenic/lib/screen_capture/screen_capture_manager.h"
@@ -80,7 +81,7 @@ class App {
   void InitializeServices(escher::EscherUniquePtr escher,
                           std::shared_ptr<display::Display> display);
   void InitializeGraphics(std::shared_ptr<display::Display> display);
-  void InitializeInput();
+
   void InitializeHeartbeat(display::Display& display);
 
   async::Executor executor_;
@@ -124,18 +125,12 @@ class App {
 
   display::ColorConverter color_converter_;
 
-  std::optional<input::InputSystem> input_;
-  focus::FocusManager focus_manager_;
   std::optional<view_tree::ViewTreeSnapshotter> view_tree_snapshotter_;
   std::optional<screen_capture::ScreenCaptureManager> screen_capture_manager_;
   std::optional<screen_capture2::ScreenCapture2Manager> screen_capture2_manager_;
   std::optional<screenshot::ScreenshotManager> screenshot_manager_;
 
-  view_tree::ViewRefInstalledImpl view_ref_installed_impl_;
-
-  view_tree::GeometryProvider geometry_provider_;
-  view_tree::Registry observer_registry_;
-  view_tree::ScopedRegistry scoped_observer_registry_;
+  input::InputManager input_manager_;
 
   uint64_t flatland_frame_count_ = 0;
   uint64_t skipped_frame_count_ = 0;

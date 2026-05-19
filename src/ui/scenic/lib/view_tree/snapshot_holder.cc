@@ -5,6 +5,7 @@
 #include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <lib/trace/event.h>
 
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 
@@ -15,8 +16,14 @@ SnapshotHolder::SnapshotHolder() : snapshot_(std::make_shared<const view_tree::S
 SnapshotHolder::Ref SnapshotHolder::GetSnapshot() {
   utils::CheckIsOnInputThread();
   FX_DCHECK(!ref_exists_) << "Attempting to check out snapshot while another reference exists!";
-  std::scoped_lock lock(mutex_);
-  return Ref(*this, snapshot_);
+  std::shared_ptr<const Snapshot> snapshot;
+  {
+    std::scoped_lock lock(mutex_);
+    snapshot = snapshot_;
+  }
+  TRACE_INSTANT("input", "SnapshotHolder::GetSnapshot", TRACE_SCOPE_THREAD, "sequence_number",
+                snapshot->sequence_number);
+  return Ref(*this, std::move(snapshot));
 }
 
 void SnapshotHolder::SetSnapshot(std::shared_ptr<const Snapshot> ptr) {

@@ -27,7 +27,7 @@ class ViewRefFocusedRegistry {
 
   // Binds and registers endpoints in |pending_requests_| if its |view_ref_koid| is present in
   // |snapshot|. Remove and destroy any registered endpoint not present in |snapshot|.
-  void Update(const view_tree::Snapshot& snapshot);
+  void UpdateRegisteredViews(const view_tree::Snapshot& snapshot);
 
   // Focus changed, update state.
   void UpdateFocus(zx_koid_t old_focus, zx_koid_t new_focus);

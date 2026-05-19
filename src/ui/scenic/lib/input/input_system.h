@@ -23,29 +23,19 @@ namespace scenic_impl::input {
 class InputSystem {
  public:
   InputSystem(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
+              std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
               inspect::Node& inspect_node, RequestFocusFunc request_focus);
   ~InputSystem() = default;
 
-  void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
-    pointerinjector_registry_.OnNewViewTreeSnapshot(snapshot);
-#if defined(FUCHSIA_DSO)
-    pointerinjector_registry_dso_.OnNewViewTreeSnapshot(snapshot);
-#endif
-    touch_system_.SetViewTreeSnapshot(snapshot);
-    mouse_system_.SetViewTreeSnapshot(snapshot);
-  }
-
+  // Delegates to `touch_system_`.
   void RegisterTouchSource(
       fidl::InterfaceRequest<fuchsia::ui::pointer::TouchSource> touch_source_request,
-      zx_koid_t client_view_ref_koid) {
-    touch_system_.RegisterTouchSource(std::move(touch_source_request), client_view_ref_koid);
-  }
+      zx_koid_t client_view_ref_koid);
 
+  // Delegates to `mouse_system_`.
   void RegisterMouseSource(
       fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
-      zx_koid_t client_view_ref_koid) {
-    mouse_system_.RegisterMouseSource(std::move(mouse_source_request), client_view_ref_koid);
-  }
+      zx_koid_t client_view_ref_koid);
 
   // For tests.
   // TODO(https://fxbug.dev/42152433): Remove when integration tests are properly separated out.
@@ -56,12 +46,7 @@ class InputSystem {
     pointerinjector_registry_.Register(std::move(config), std::move(injector), std::move(callback));
   }
 
-  // Accessor for tests.
-  // TODO(https://fxbug.dev/42152433): Remove when integration tests are properly separated out.
-  scenic_impl::input::TouchSystem& touch_system() { return touch_system_; }
-
  private:
-  const RequestFocusFunc request_focus_;
   HitTester hit_tester_;
   MouseSystem mouse_system_;
   TouchSystem touch_system_;

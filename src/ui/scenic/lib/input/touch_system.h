@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <fuchsia/ui/pointer/augment/cpp/fidl.h>
+#include <lib/async/dispatcher.h>
 #include <lib/sys/cpp/component_context.h>
 
 #include <map>
@@ -29,16 +30,13 @@ namespace scenic_impl::input {
 // Tracks input APIs.
 //
 // Thread-unsafe.  All methods are expected to be called from the same thread (the "input thread").
-// The only exception is `SetViewTreeSnapshot()`, which replaces the existing snapshot under a mutex
-// lock.
+// The only exception is that `SnapshotHolder` can be updated from the main thread.
 class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
  public:
-  explicit TouchSystem(sys::ComponentContext* context, HitTester& hit_tester,
-                       inspect::Node& parent_node);
+  explicit TouchSystem(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
+                       std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
+                       HitTester& hit_tester, inspect::Node& parent_node);
   ~TouchSystem() = default;
-
-  // This is the only function allowed to be called from a non-input thread.
-  void SetViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot);
 
   fuchsia::ui::input::accessibility::PointerEventListenerPtr&
   accessibility_pointer_event_listener() {
@@ -106,7 +104,7 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
                                                      zx_koid_t bottom, zx_koid_t top) const;
 
   /// Construction-time state.
-  view_tree::SnapshotHolder snapshot_holder_;
+  const std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
 
   HitTester& hit_tester_;
 

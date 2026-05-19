@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 
 using fuchsia::ui::pointerinjector::DeviceType;
@@ -21,6 +22,8 @@ using fuchsia::ui::views::ViewRef;
 namespace input::test {
 
 namespace {
+
+static uint64_t g_next_sequence_number = 1;
 
 // clang-format off
 static constexpr std::array<float, 9> kIdentityMatrix = {
@@ -55,13 +58,14 @@ std::vector<fuchsia::ui::pointerinjector::Event> EventsTemplate() {
 class PointerinjectorRegistryTest : public gtest::TestLoopFixture {
  public:
   PointerinjectorRegistryTest()
-      : registry_(/*context*/
-                  nullptr,
-                  /*inject_touch_exclusive=*/[](auto...) {},
-                  /*inject_touch_hit_tested=*/[](auto...) {},
-                  /*inject_mouse_exclusive=*/[](auto...) {},
-                  /*inject_mouse_hit_tested=*/[](auto...) {},
-                  /*cancel_mouse_stream=*/[](auto...) {}, inspect::Node()) {}
+      : snapshot_holder_(std::make_shared<view_tree::SnapshotHolder>()),
+        registry_(
+            dispatcher(), /*context*/ nullptr, snapshot_holder_,
+            /*inject_touch_exclusive=*/[](auto...) {},
+            /*inject_touch_hit_tested=*/[](auto...) {},
+            /*inject_mouse_exclusive=*/[](auto...) {},
+            /*inject_mouse_hit_tested=*/[](auto...) {},
+            /*cancel_mouse_stream=*/[](auto...) {}, inspect::Node()) {}
 
  protected:
   struct ScenePair {
@@ -100,8 +104,7 @@ class PointerinjectorRegistryTest : public gtest::TestLoopFixture {
     return config;
   }
 
-  ScenePair SetupSceneWithParentAndChildViews(
-      scenic_impl::input::PointerinjectorRegistry* local_registry = nullptr) {
+  ScenePair SetupSceneWithParentAndChildViews() {
     ScenePair scene_pair;
     const zx_koid_t parent_koid = utils::ExtractKoid(scene_pair.parent.view_ref);
     const zx_koid_t child_koid = utils::ExtractKoid(scene_pair.child.view_ref);
@@ -111,18 +114,19 @@ class PointerinjectorRegistryTest : public gtest::TestLoopFixture {
     snapshot->root = parent_koid;
     snapshot->view_tree[parent_koid] = {.children = {child_koid}};
     snapshot->view_tree[child_koid] = {.parent = parent_koid};
-    if (local_registry) {
-      local_registry->OnNewViewTreeSnapshot(snapshot);
-    }
-    registry_.OnNewViewTreeSnapshot(snapshot);
+    snapshot_holder_->SetSnapshot(snapshot);
 
     return scene_pair;
   }
 
+  std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
   scenic_impl::input::PointerinjectorRegistry registry_;
 
  protected:
   uint64_t next_sequence_number_ = 1;
+
+ private:
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_{dispatcher(), dispatcher()};
 };
 
 class PointerinjectorRegistryTestP : public PointerinjectorRegistryTest,
@@ -433,7 +437,7 @@ TEST_F(PointerinjectorRegistryTest, RegisterAttemptWithBadContextOrTarget_Should
     // Empty the scene.
     auto empty_snapshot = std::make_shared<view_tree::Snapshot>();
     empty_snapshot->sequence_number = next_sequence_number_++;
-    registry_.OnNewViewTreeSnapshot(empty_snapshot);
+    snapshot_holder_->SetSnapshot(empty_snapshot);
 
     registry_.Register(std::move(config), injector.NewRequest(),
                        [&register_callback_fired] { register_callback_fired = true; });
@@ -554,8 +558,7 @@ TEST_P(PointerinjectorRegistryTestP,
   bool exclusive_mouse_used = false;
   bool hit_tested_mouse_used = false;
   scenic_impl::input::PointerinjectorRegistry registry(
-      /*context*/
-      nullptr,
+      dispatcher(), /*context*/ nullptr, snapshot_holder_,
       /*inject_touch_exclusive*/ [&exclusive_touch_used](auto...) { exclusive_touch_used = true; },
       /*inject_touch_hit_tested*/
       [&hit_tested_touch_used](auto...) { hit_tested_touch_used = true; },
@@ -563,7 +566,7 @@ TEST_P(PointerinjectorRegistryTestP,
       /*inject_mouse_hit_tested*/
       [&hit_tested_mouse_used](auto...) { hit_tested_mouse_used = true; },
       /*cancel_mouse_stream=*/[](auto...) {});
-  const auto [parent, child] = SetupSceneWithParentAndChildViews(&registry);
+  const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
   fuchsia::ui::pointerinjector::DevicePtr injector;
   bool register_callback_fired = false;
@@ -594,8 +597,7 @@ TEST_P(PointerinjectorRegistryTestP,
   bool exclusive_mouse_used = false;
   bool hit_tested_mouse_used = false;
   scenic_impl::input::PointerinjectorRegistry registry(
-      /*context*/
-      nullptr,
+      dispatcher(), /*context*/ nullptr, snapshot_holder_,
       /*inject_touch_exclusive*/ [&exclusive_touch_used](auto...) { exclusive_touch_used = true; },
       /*inject_touch_hit_tested*/
       [&hit_tested_touch_used](auto...) { hit_tested_touch_used = true; },
@@ -603,7 +605,7 @@ TEST_P(PointerinjectorRegistryTestP,
       /*inject_mouse_hit_tested*/
       [&hit_tested_mouse_used](auto...) { hit_tested_mouse_used = true; },
       /*cancel_mouse_stream=*/[](auto...) {});
-  const auto [parent, child] = SetupSceneWithParentAndChildViews(&registry);
+  const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
   fuchsia::ui::pointerinjector::DevicePtr injector;
   bool register_callback_fired = false;
@@ -629,14 +631,13 @@ TEST_P(PointerinjectorRegistryTestP,
 
 TEST_F(PointerinjectorRegistryTest, MouseDevice_CanRegisterMouseWithoutButtons) {
   scenic_impl::input::PointerinjectorRegistry registry(
-      /*context*/
-      nullptr,
+      dispatcher(), /*context*/ nullptr, snapshot_holder_,
       /*inject_touch_exclusive*/ [](auto...) {},
       /*inject_touch_hit_tested*/ [](auto...) {},
       /*inject_mouse_exclusive*/ [](const auto&...) {},
       /*inject_mouse_hit_tested*/ [](const auto&...) {},
       /*cancel_mouse_stream=*/[](auto...) {});
-  const auto [parent, child] = SetupSceneWithParentAndChildViews(&registry);
+  const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
   fuchsia::ui::pointerinjector::DevicePtr injector;
   bool register_callback_fired = false;
@@ -661,8 +662,7 @@ TEST_P(PointerinjectorRegistryTestP,
   bool exclusive_mouse_used = false;
   bool hit_tested_mouse_used = false;
   scenic_impl::input::PointerinjectorRegistry registry(
-      /*context*/
-      nullptr,
+      dispatcher(), /*context*/ nullptr, snapshot_holder_,
       /*inject_touch_exclusive*/ [&exclusive_touch_used](auto...) { exclusive_touch_used = true; },
       /*inject_touch_hit_tested*/
       [&hit_tested_touch_used](auto...) { hit_tested_touch_used = true; },
@@ -670,7 +670,7 @@ TEST_P(PointerinjectorRegistryTestP,
       /*inject_mouse_hit_tested*/
       [&hit_tested_mouse_used](auto...) { hit_tested_mouse_used = true; },
       /*cancel_mouse_stream=*/[](auto...) {});
-  const auto [parent, child] = SetupSceneWithParentAndChildViews(&registry);
+  const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
   fuchsia::ui::pointerinjector::DevicePtr injector;
   bool register_callback_fired = false;
@@ -702,8 +702,7 @@ TEST_P(PointerinjectorRegistryTestP,
   bool exclusive_mouse_used = false;
   bool hit_tested_mouse_used = false;
   scenic_impl::input::PointerinjectorRegistry registry(
-      /*context*/
-      nullptr,
+      dispatcher(), /*context*/ nullptr, snapshot_holder_,
       /*inject_touch_exclusive*/ [&exclusive_touch_used](auto...) { exclusive_touch_used = true; },
       /*inject_touch_hit_tested*/
       [&hit_tested_touch_used](auto...) { hit_tested_touch_used = true; },
@@ -711,7 +710,7 @@ TEST_P(PointerinjectorRegistryTestP,
       /*inject_mouse_hit_tested*/
       [&hit_tested_mouse_used](auto...) { hit_tested_mouse_used = true; },
       /*cancel_mouse_stream=*/[](auto...) {});
-  const auto [parent, child] = SetupSceneWithParentAndChildViews(&registry);
+  const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
   fuchsia::ui::pointerinjector::DevicePtr injector;
   bool register_callback_fired = false;
@@ -740,15 +739,14 @@ TEST_P(PointerinjectorRegistryTestP,
        MouseInjectorChannelDying_ShouldTriggerCancelMouseStreamCallback) {
   uint32_t cancel_mouse_stream_count = 0;
   scenic_impl::input::PointerinjectorRegistry registry(
-      /*context*/
-      nullptr,
+      dispatcher(), /*context*/ nullptr, snapshot_holder_,
       /*inject_touch_exclusive*/ [](auto...) {},
       /*inject_touch_hit_tested*/ [](auto...) {},
       /*inject_mouse_exclusive*/ [](auto...) {},
       /*inject_mouse_hit_tested*/ [](auto...) {},
       /*cancel_mouse_stream=*/
       [&cancel_mouse_stream_count](auto...) { cancel_mouse_stream_count++; });
-  const auto [parent, child] = SetupSceneWithParentAndChildViews(&registry);
+  const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
   {
     fuchsia::ui::pointerinjector::DevicePtr injector;
@@ -787,15 +785,14 @@ TEST_P(PointerinjectorRegistryTestP,
        MouseInjector_CancelEvent_ShouldTriggerCancelMouseStreamCallback) {
   uint32_t cancel_mouse_stream_count = false;
   scenic_impl::input::PointerinjectorRegistry registry(
-      /*context*/
-      nullptr,
+      dispatcher(), /*context*/ nullptr, snapshot_holder_,
       /*inject_touch_exclusive*/ [](auto...) {},
       /*inject_touch_hit_tested*/ [](auto...) {},
       /*inject_mouse_exclusive*/ [](auto...) {},
       /*inject_mouse_hit_tested*/ [](auto...) {},
       /*cancel_mouse_stream=*/
       [&cancel_mouse_stream_count](auto...) { cancel_mouse_stream_count++; });
-  const auto [parent, child] = SetupSceneWithParentAndChildViews(&registry);
+  const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
   fuchsia::ui::pointerinjector::DevicePtr injector;
   bool register_callback_fired = false;

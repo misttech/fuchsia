@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_INPUT_A11Y_REGISTRY_H_
 
 #include <fuchsia/ui/input/accessibility/cpp/fidl.h>
+#include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/fit/function.h>
 #include <lib/sys/cpp/component_context.h>
@@ -15,8 +16,8 @@ namespace scenic_impl::input {
 // Implementation of PointerEventRegistry API.
 class A11yPointerEventRegistry : public fuchsia::ui::input::accessibility::PointerEventRegistry {
  public:
-  A11yPointerEventRegistry(sys::ComponentContext* context, fit::function<void()> on_register,
-                           fit::function<void()> on_disconnect);
+  A11yPointerEventRegistry(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
+                           fit::function<void()> on_register, fit::function<void()> on_disconnect);
 
   // |fuchsia.ui.input.accessibility.PointerEventRegistry|
   void Register(fidl::InterfaceHandle<fuchsia::ui::input::accessibility::PointerEventListener>

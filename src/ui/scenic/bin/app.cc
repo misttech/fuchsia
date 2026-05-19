@@ -220,10 +220,8 @@ App::App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_disp
             FX_DCHECK(flatland_compositor_);
             return flatland_compositor_->SetMinimumRgb(minimum_rgb);
           })),
-      focus_manager_(inspect_node_.CreateChild("FocusManager")),
-      geometry_provider_(),
-      observer_registry_(geometry_provider_),
-      scoped_observer_registry_(geometry_provider_),
+      input_manager_(input_dispatcher_, app_context_.get(), inspect_node_,
+                     config_values_.pointer_auto_focus()),
       health_inspector_(display_manager_, display_power_manager_, root_node) {
   LogConfig(config_values_);
   pkg_dir_.Bind(std::move(pkg_dir));
@@ -234,12 +232,6 @@ App::App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_disp
   auto [dir, dir_server] = *fidl::CreateEndpoints<fuchsia_io::Directory>();
   vulkan_loader->ConnectToManifestFs(fuchsia::vulkan::loader::ConnectToManifestOptions{},
                                      dir_server.TakeChannel());
-
-  // Publish all protocols that are ready.
-  view_ref_installed_impl_.Publish(app_context_.get());
-  observer_registry_.Publish(app_context_.get());
-  scoped_observer_registry_.Publish(app_context_.get());
-  focus_manager_.Publish(*app_context_);
 
   auto vulkan_wait_log = std::make_unique<fxl::CancelableClosure>(
       [] { FX_LOGS(WARNING) << "SCENIC IS WAITING FOR VULKAN TO BE AVAILABLE..."; });
@@ -338,7 +330,6 @@ void App::InitializeServices(escher::EscherUniquePtr escher,
   }
 
   InitializeGraphics(display);
-  InitializeInput();
   InitializeHeartbeat(*display);
 }
 
@@ -438,36 +429,21 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
         display, std::move(importers),
         /*register_view_focuser*/
         [this](fidl::ServerEnd<fuchsia_ui_views::Focuser> focuser, zx_koid_t view_ref_koid) {
-          async::PostTask(input_dispatcher_,
-                          [this, focuser = std::move(focuser), view_ref_koid]() mutable {
-                            focus_manager_.RegisterViewFocuser(
-                                view_ref_koid, fidl::NaturalToHLCPP(std::move(focuser)));
-                          });
+          input_manager_.RegisterViewFocuser(std::move(focuser), view_ref_koid);
         },
         /*register_view_ref_focused*/
         [this](fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> vrf, zx_koid_t view_ref_koid) {
-          async::PostTask(input_dispatcher_, [this, vrf = std::move(vrf), view_ref_koid]() mutable {
-            focus_manager_.RegisterViewRefFocused(view_ref_koid,
-                                                  fidl::NaturalToHLCPP(std::move(vrf)));
-          });
+          input_manager_.RegisterViewRefFocused(std::move(vrf), view_ref_koid);
         },
         /*register_touch_source*/
         [this](fidl::ServerEnd<fuchsia_ui_pointer::TouchSource> touch_source,
                zx_koid_t view_ref_koid) {
-          async::PostTask(input_dispatcher_,
-                          [this, touch_source = std::move(touch_source), view_ref_koid]() mutable {
-                            input_->RegisterTouchSource(
-                                fidl::NaturalToHLCPP(std::move(touch_source)), view_ref_koid);
-                          });
+          input_manager_.RegisterTouchSource(std::move(touch_source), view_ref_koid);
         },
         /*register_mouse_source*/
         [this](fidl::ServerEnd<fuchsia_ui_pointer::MouseSource> mouse_source,
                zx_koid_t view_ref_koid) {
-          async::PostTask(input_dispatcher_,
-                          [this, mouse_source = std::move(mouse_source), view_ref_koid]() mutable {
-                            input_->RegisterMouseSource(
-                                fidl::NaturalToHLCPP(std::move(mouse_source)), view_ref_koid);
-                          });
+          input_manager_.RegisterMouseSource(std::move(mouse_source), view_ref_koid);
         });
 
     // TODO(https://fxbug.dev/42146099): these should be moved into FlatlandManager.
@@ -633,27 +609,11 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
   }
 }
 
-void App::InitializeInput() {
-  TRACE_DURATION("gfx", "App::InitializeInput");
-  input_.emplace(input_dispatcher_, app_context_.get(), inspect_node_,
-                 /*request_focus*/
-                 [this, use_auto_focus = config_values_.pointer_auto_focus()](zx_koid_t koid) {
-                   if (!use_auto_focus)
-                     return;
-
-                   const auto& focus_chain = focus_manager_.focus_chain();
-                   if (!focus_chain.empty()) {
-                     const zx_koid_t requestor = focus_chain[0];
-                     const zx_koid_t request = koid != ZX_KOID_INVALID ? koid : requestor;
-                     focus_manager_.RequestFocus(requestor, request);
-                   }
-                 });
-}
-
 void App::InitializeHeartbeat(display::Display& display) {
   TRACE_DURATION("gfx", "App::InitializeHeartbeat");
-  {  // Initialize ViewTreeSnapshotter
 
+  // Initialize ViewTreeSnapshotter
+  {
     // These callbacks are be called once per frame (at the end of OnCpuWorkDone()) and the results
     // used to build the ViewTreeSnapshot.
     // We create one per compositor.
@@ -668,20 +628,9 @@ void App::InitializeHeartbeat(display::Display& display) {
     // All subscriber callbacks get called with the new snapshot every time one is generated (once
     // per frame).
     std::vector<view_tree::ViewTreeSnapshotter::Subscriber> subscribers;
-    subscribers.push_back({.on_new_view_tree = [this](auto snapshot) {
-      input_->OnNewViewTreeSnapshot(std::move(snapshot));
-    }});
 
     subscribers.push_back({.on_new_view_tree = [this](auto snapshot) {
-      focus_manager_.OnNewViewTreeSnapshot(std::move(snapshot));
-    }});
-
-    subscribers.push_back({.on_new_view_tree = [this](auto snapshot) {
-      view_ref_installed_impl_.OnNewViewTreeSnapshot(std::move(snapshot));
-    }});
-
-    subscribers.push_back({.on_new_view_tree = [this](auto snapshot) {
-      geometry_provider_.OnNewViewTreeSnapshot(std::move(snapshot));
+      input_manager_.OnNewViewTreeSnapshot(std::move(snapshot));
     }});
 
     if (enable_snapshot_dump_) {

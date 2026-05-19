@@ -7,6 +7,7 @@ source_set("input") {
     ":constants",
     ":gesture_contender_interface",
     ":injection",
+    ":input_manager",
     ":legacy",
     ":mouse",
     ":system",
@@ -23,6 +24,7 @@ source_set("input_dso") {
     ":constants",
     ":gesture_contender_interface",
     ":injection",
+    ":input_manager_dso",
     ":legacy",
     ":mouse",
     ":system_dso",
@@ -47,6 +49,51 @@ source_set("system") {
   ]
 
   public_deps = [ "//src/ui/scenic/lib/view_tree:view_tree_snapshot" ]
+}
+
+source_set("input_manager_common") {
+  public_deps = [
+    ":constants",
+    ":legacy",
+    ":mouse",
+    ":touch",
+    ":utils",
+    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_hlcpp",
+    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_hlcpp",
+    "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry_hlcpp",
+    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_hlcpp",
+    "//src/ui/scenic/lib/focus",
+    "//src/ui/scenic/lib/view_tree:geometry_provider",
+    "//src/ui/scenic/lib/view_tree:observer_registry",
+    "//src/ui/scenic/lib/view_tree:scoped_observer_registry",
+    "//src/ui/scenic/lib/view_tree:view_ref_installed",
+    "//zircon/system/ulib/inspect",
+  ]
+}
+
+source_set("input_manager") {
+  sources = [
+    "input_manager.cc",
+    "input_manager.h",
+  ]
+  public_deps = [
+    ":injection",
+    ":input_manager_common",
+    ":system",
+  ]
+}
+
+source_set("input_manager_dso") {
+  defines = [ "FUCHSIA_DSO" ]
+  sources = [
+    "input_manager.cc",
+    "input_manager.h",
+  ]
+  public_deps = [
+    ":injection_dso",
+    ":input_manager_common",
+    ":system_dso",
+  ]
 }
 
 # Variant of ":system" that includes support for fuchsia.ui.pointerinjector.dso

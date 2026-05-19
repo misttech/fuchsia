@@ -5,11 +5,15 @@
 #include "src/ui/scenic/lib/focus/view_ref_focused_registry.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <lib/trace/event.h>
+
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 
 namespace focus {
 
 void ViewRefFocusedRegistry::Register(
     zx_koid_t view_ref_koid, fidl::InterfaceRequest<fuchsia::ui::views::ViewRefFocused> endpoint) {
+  utils::CheckIsOnInputThread();
   auto [_, inserted] = pending_requests_.try_emplace(view_ref_koid, std::move(endpoint));
   // This DCHECK does not assert an internally-guaranteed invariant: nothing prevents a client from
   // calling `Flatland.CreateView2` multiple times with the same control-ref/view-ref pair (in the
@@ -18,7 +22,10 @@ void ViewRefFocusedRegistry::Register(
   FX_DCHECK(inserted) << "endpoint emplace should always succeed";
 }
 
-void ViewRefFocusedRegistry::Update(const view_tree::Snapshot& snapshot) {
+void ViewRefFocusedRegistry::UpdateRegisteredViews(const view_tree::Snapshot& snapshot) {
+  TRACE_DURATION("input", "ViewRefFocusedRegistry::UpdateRegisteredViews");
+  utils::CheckIsOnInputThread();
+
   // Remove the clients which are removed from the snapshot.
   for (auto it = endpoints_.begin(); it != endpoints_.end();) {
     const zx_koid_t koid = it->first;
@@ -43,6 +50,9 @@ void ViewRefFocusedRegistry::Update(const view_tree::Snapshot& snapshot) {
 }
 
 void ViewRefFocusedRegistry::UpdateFocus(zx_koid_t old_focus, zx_koid_t new_focus) {
+  TRACE_DURATION("input", "ViewRefFocusedRegistry::UpdateFocus");
+  utils::CheckIsOnInputThread();
+
   FX_DCHECK(old_focus != new_focus) << "invariant";
   if (endpoints_.contains(old_focus)) {
     endpoints_.at(old_focus).UpdateFocus(false);
@@ -68,6 +78,7 @@ ViewRefFocusedRegistry::Endpoint::Endpoint(Endpoint&& original) noexcept
 
 void ViewRefFocusedRegistry::Endpoint::Watch(
     fuchsia::ui::views::ViewRefFocused::WatchCallback callback) {
+  utils::CheckIsOnInputThread();
   FX_DCHECK(!response_) << "precondition";
 
   if (focused_state_) {

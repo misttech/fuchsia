@@ -18,15 +18,16 @@
 
 namespace scenic_impl::input {
 
-MouseSystem::MouseSystem(sys::ComponentContext* context, HitTester& hit_tester,
-                         fit::function<void(zx_koid_t)> request_focus)
-    : hit_tester_(hit_tester), request_focus_(std::move(request_focus)) {}
+MouseSystem::MouseSystem(sys::ComponentContext* context,
+                         std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
+                         HitTester& hit_tester, RequestFocusFunc request_focus)
+    : snapshot_holder_(std::move(snapshot_holder)),
+      hit_tester_(hit_tester),
+      request_focus_(std::move(request_focus)) {}
 
-void MouseSystem::SetViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
-  snapshot_holder_.SetSnapshot(std::move(snapshot));
+view_tree::SnapshotRef MouseSystem::GetViewTreeSnapshot() {
+  return snapshot_holder_->GetSnapshot();
 }
-
-view_tree::SnapshotRef MouseSystem::GetViewTreeSnapshot() { return snapshot_holder_.GetSnapshot(); }
 
 void MouseSystem::RegisterMouseSource(
     fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
@@ -115,7 +116,7 @@ void MouseSystem::InjectMouseEventHitTested(InternalMouseEvent event, const Stre
     // Button down on an unlatched stream -> latch it to the top-most view.
     if (button_down) {
       mouse_receiver.latched = true;
-      request_focus_(mouse_receiver.view_koid);
+      request_focus_(mouse_receiver.view_koid, *snapshot);
     }
   }
 

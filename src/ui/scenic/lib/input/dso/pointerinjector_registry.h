@@ -15,7 +15,7 @@
 
 #include "src/ui/scenic/lib/input/dso/injector.h"
 #include "src/ui/scenic/lib/input/dso/touch_injector.h"
-#include "src/ui/scenic/lib/view_tree/snapshot_types.h"
+#include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 
 namespace scenic_impl::input_dso {
 
@@ -25,6 +25,7 @@ using TouchInjectFunc = fit::function<void(InternalTouchEvent event, StreamId st
 class PointerinjectorRegistry : public fdf::WireServer<fuchsia_ui_pointerinjector_dso::Registry> {
  public:
   PointerinjectorRegistry(async_dispatcher_t* input_dispatcher,
+                          std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
                           TouchInjectFunc inject_touch_exclusive,
                           TouchInjectFunc inject_touch_hit_tested,
                           inspect::Node inspect_node = inspect::Node());
@@ -33,10 +34,6 @@ class PointerinjectorRegistry : public fdf::WireServer<fuchsia_ui_pointerinjecto
 
   void Register(RegisterRequestView Request, fdf::Arena& arena,
                 RegisterCompleter::Sync& completer) override;
-
-  void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
-    view_tree_snapshot_ = std::move(snapshot);
-  }
 
  private:
   using InjectorId = uint64_t;
@@ -48,8 +45,7 @@ class PointerinjectorRegistry : public fdf::WireServer<fuchsia_ui_pointerinjecto
   const TouchInjectFunc inject_touch_exclusive_;
   const TouchInjectFunc inject_touch_hit_tested_;
 
-  std::shared_ptr<const view_tree::Snapshot> view_tree_snapshot_ =
-      std::make_shared<const view_tree::Snapshot>();
+  const std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
 
   async_dispatcher_t* const input_dispatcher_;
   inspect::Node inspect_node_;

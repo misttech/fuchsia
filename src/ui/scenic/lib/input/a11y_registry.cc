@@ -8,7 +8,8 @@
 
 namespace scenic_impl::input {
 
-A11yPointerEventRegistry::A11yPointerEventRegistry(sys::ComponentContext* context,
+A11yPointerEventRegistry::A11yPointerEventRegistry(async_dispatcher_t* input_dispatcher,
+                                                   sys::ComponentContext* context,
                                                    fit::function<void()> on_register,
                                                    fit::function<void()> on_disconnect)
     : on_register_(std::move(on_register)), on_disconnect_(std::move(on_disconnect)) {
@@ -16,7 +17,8 @@ A11yPointerEventRegistry::A11yPointerEventRegistry(sys::ComponentContext* contex
   FX_DCHECK(on_disconnect_);
   // Adding the service here is safe since the A11yPointerEventRegistry instance in InputSystem is
   // created at construction time.
-  context->outgoing()->AddPublicService(accessibility_pointer_event_registry_.GetHandler(this));
+  context->outgoing()->AddPublicService(
+      accessibility_pointer_event_registry_.GetHandler(this, input_dispatcher));
 }
 
 void A11yPointerEventRegistry::Register(

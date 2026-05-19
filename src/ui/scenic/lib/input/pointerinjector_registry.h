@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_LIB_INPUT_POINTERINJECTOR_REGISTRY_H_
 
 #include <fuchsia/ui/pointerinjector/cpp/fidl.h>
+#include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/fit/function.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -14,7 +15,7 @@
 #include <unordered_map>
 
 #include "src/ui/scenic/lib/input/injector.h"
-#include "src/ui/scenic/lib/view_tree/snapshot_types.h"
+#include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 
 namespace scenic_impl::input {
 
@@ -25,7 +26,9 @@ using MouseInjectFunc = fit::function<void(InternalMouseEvent event, StreamId st
 // LINT.IfChange
 class PointerinjectorRegistry : public fuchsia::ui::pointerinjector::Registry {
  public:
-  PointerinjectorRegistry(sys::ComponentContext* context, TouchInjectFunc inject_touch_exclusive,
+  PointerinjectorRegistry(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
+                          std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
+                          TouchInjectFunc inject_touch_exclusive,
                           TouchInjectFunc inject_touch_hit_tested,
                           MouseInjectFunc inject_mouse_exclusive,
                           MouseInjectFunc inject_mouse_hit_tested,
@@ -36,10 +39,6 @@ class PointerinjectorRegistry : public fuchsia::ui::pointerinjector::Registry {
   void Register(fuchsia::ui::pointerinjector::Config config,
                 fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> injector,
                 RegisterCallback callback) override;
-
-  void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
-    view_tree_snapshot_ = std::move(snapshot);
-  }
 
  private:
   using InjectorId = uint64_t;
@@ -54,8 +53,7 @@ class PointerinjectorRegistry : public fuchsia::ui::pointerinjector::Registry {
   const MouseInjectFunc inject_mouse_hit_tested_;
   const fit::function<void(StreamId stream_id)> cancel_mouse_stream_;
 
-  std::shared_ptr<const view_tree::Snapshot> view_tree_snapshot_ =
-      std::make_shared<const view_tree::Snapshot>();
+  const std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
 
   inspect::Node inspect_node_;
 };

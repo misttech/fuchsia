@@ -68,8 +68,10 @@ class GestureDisambiguationTest : public gtest::TestLoopFixture {
  public:
   GestureDisambiguationTest()
       : dispatcher_setter_(dispatcher(), dispatcher()),
+        snapshot_holder_(std::make_shared<view_tree::SnapshotHolder>()),
         hit_tester_(inspect_node_),
-        touch_system_(context_provider_.context(), hit_tester_, inspect_node_) {}
+        touch_system_(dispatcher(), context_provider_.context(), snapshot_holder_, hit_tester_,
+                      inspect_node_) {}
 
   void SetUp() override {
     ::testing::Test::SetUp();
@@ -83,7 +85,7 @@ class GestureDisambiguationTest : public gtest::TestLoopFixture {
   }
 
   void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
-    touch_system_.SetViewTreeSnapshot(snapshot);
+    snapshot_holder_->SetSnapshot(std::move(snapshot));
   }
 
  protected:
@@ -123,6 +125,7 @@ class GestureDisambiguationTest : public gtest::TestLoopFixture {
 
  protected:
   inspect::Node inspect_node_;
+  std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
   scenic_impl::input::HitTester hit_tester_;
   scenic_impl::input::TouchSystem touch_system_;
   fuchsia::ui::pointer::TouchSourcePtr client1_ptr_;

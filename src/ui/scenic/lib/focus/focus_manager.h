@@ -7,6 +7,8 @@
 
 #include <fuchsia/ui/focus/cpp/fidl.h>
 #include <fuchsia/ui/views/cpp/fidl.h>
+#include <lib/async/default.h>
+#include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/sys/cpp/component_context.h>
@@ -15,7 +17,7 @@
 
 #include "src/ui/scenic/lib/focus/view_focuser_registry.h"
 #include "src/ui/scenic/lib/focus/view_ref_focused_registry.h"
-#include "src/ui/scenic/lib/view_tree/snapshot_types.h"
+#include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 
 namespace focus {
 
@@ -34,7 +36,9 @@ enum class FocusChangeStatus {
 // Class for tracking focus state.
 class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry {
  public:
-  explicit FocusManager(inspect::Node inspect_node = inspect::Node());
+  explicit FocusManager(async_dispatcher_t* input_dispatcher,
+                        std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
+                        inspect::Node inspect_node = inspect::Node());
   FocusManager(FocusManager&& other) = delete;  // Disallow moving.
 
   void Publish(sys::ComponentContext& component_context);
@@ -44,20 +48,21 @@ class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry
   // - If |requestor| is not authorized to focus |request|, return error.
   // - If the |request| is not in |snapshot_.view_tree|, return error.
   // - If the |request| is otherwise valid, but violates the focus transfer policy, return error.
-  FocusChangeStatus RequestFocus(zx_koid_t requestor, zx_koid_t request);
+  FocusChangeStatus RequestFocus(zx_koid_t requestor, zx_koid_t request,
+                                 const view_tree::Snapshot& snapshot);
 
-  // Sets the auto focus target |requestor| to |target|.
-  // If |target| is ZX_KOID_INVALID the |requestor| entry is removed.
-  void SetAutoFocus(zx_koid_t requestor, zx_koid_t target);
-
-  // Saves the new snapshot and updates the focus chain accordingly.
-  void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot);
+  // Posts an async task to the input thread to eagerly inspect the latest view tree snapshot
+  // in `snapshot_holder_`, repair any broken focus chains, and notify outstanding hanging gets.
+  void OnNewViewTreeSnapshot();
 
   // |fuchsia.ui.focus.FocusChainListenerRegistry|
   void Register(
       fidl::InterfaceHandle<fuchsia::ui::focus::FocusChainListener> focus_chain_listener) override;
 
-  const std::vector<zx_koid_t>& focus_chain() { return focus_chain_; }
+  const std::vector<zx_koid_t>& GetFocusChain(const view_tree::Snapshot& snapshot) {
+    EnsureValidFocus(snapshot);
+    return focus_chain_;
+  }
 
   void RegisterViewRefFocused(zx_koid_t koid,
                               fidl::InterfaceRequest<fuchsia::ui::views::ViewRefFocused> vrf);
@@ -65,49 +70,64 @@ class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry
   void RegisterViewFocuser(zx_koid_t koid,
                            fidl::InterfaceRequest<fuchsia::ui::views::Focuser> focuser);
 
+  // Variants that conveniently obtain a snapshot from the snapshot holder.
+  FocusChangeStatus RequestFocusForTest(zx_koid_t requestor, zx_koid_t request);
+  void SetAutoFocusForTest(zx_koid_t requestor, zx_koid_t target);
+  const std::vector<zx_koid_t>& GetFocusChainForTest();
+
  private:
+  // Sets the auto focus target |requestor| to |target|.
+  // If |target| is ZX_KOID_INVALID the |requestor| entry is removed.
+  void SetAutoFocus(zx_koid_t requestor, zx_koid_t target, const view_tree::Snapshot& snapshot);
+
   // Ensure the focus chain is valid; preserve as much of the existing focus chain as possible.
   // - If the focus chain is still valid, do nothing.
   // - Otherwise, truncate the focus chain so that every pairwise parent-child relationship is valid
   //   in the current tree.
   // - If the entire focus chain is invalid, the new focus chain will contain only the new root.
   // - If the view tree is empty, the new focus chain is empty.
-  void RepairFocus();
+  void RepairFocus(const view_tree::Snapshot& snapshot);
+
+  // If the snapshot is new (based on its sequence number), then call `RepairFocus()`.
+  void EnsureValidFocus(const view_tree::Snapshot& snapshot);
 
   // Transfers focus to |koid| and generates the new focus chain.
   //  - |koid| must be allowed to receive focus and must exist in the current view tree snapshot.
   //  - If the |snapshot_| is empty, then |koid| is allowed to be ZX_KOID_INVALID and will generate
   //    an empty focus_chain_.
-  void SetFocus(zx_koid_t koid);
+  void SetFocus(zx_koid_t koid, const view_tree::Snapshot& snapshot);
 
   // Replaces the focus chain with a new one. Additionally, if the new focus chain is different from
   // the old one:
   // - send new focus chain to all FocusChainListeners.
   // - send focus gained/lost to all ViewRefFocused-type listeners.
-  void SetFocusChain(std::vector<zx_koid_t> update);
+  void SetFocusChain(std::vector<zx_koid_t> update, const view_tree::Snapshot& snapshot);
 
   // Dispatches the current focus chain to all registered listeners.
-  void DispatchFocusChain() const;
+  void DispatchFocusChain(const view_tree::Snapshot& snapshot) const;
   // Dispatches the current focus chain to |listener|.
-  void DispatchFocusChainTo(const fuchsia::ui::focus::FocusChainListenerPtr& listener) const;
+  void DispatchFocusChainTo(const fuchsia::ui::focus::FocusChainListenerPtr& listener,
+                            const view_tree::Snapshot& snapshot) const;
 
   // Dispatches focus events to view clients.
   void DispatchFocusEvents(zx_koid_t old_focus, zx_koid_t new_focus);
 
   // Resolves auto focus when |koid| has focus and returns the resulting koid.
-  zx_koid_t ResolveAutoFocus(zx_koid_t koid) const;
+  zx_koid_t ResolveAutoFocus(zx_koid_t koid, const view_tree::Snapshot& snapshot) const;
 
   // Get the auto focus target of |koid| or, if it's unfocusable, the first focusable ancestor of
   // the auto focus target. If there is no viable auto focus target of |koid| it returns |koid|.
-  zx_koid_t FindNextAutoFocusTarget(zx_koid_t koid) const;
+  zx_koid_t FindNextAutoFocusTarget(zx_koid_t koid, const view_tree::Snapshot& snapshot) const;
 
-  fuchsia::ui::views::ViewRef CloneViewRefOf(zx_koid_t koid) const;
-  fuchsia::ui::focus::FocusChain CloneFocusChain() const;
+  static fuchsia::ui::views::ViewRef CloneViewRefOf(zx_koid_t koid,
+                                                    const view_tree::Snapshot& snapshot);
+  fuchsia::ui::focus::FocusChain CloneFocusChain(const view_tree::Snapshot& snapshot) const;
 
+  async_dispatcher_t* input_dispatcher_;
   std::vector<zx_koid_t> focus_chain_;
 
-  std::shared_ptr<const view_tree::Snapshot> snapshot_ =
-      std::make_shared<const view_tree::Snapshot>();
+  const std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
+  uint64_t last_seen_sequence_number_ = 0;
 
   fidl::BindingSet<fuchsia::ui::focus::FocusChainListenerRegistry> focus_chain_listener_registry_;
   uint64_t next_focus_chain_listener_id_ = 0;

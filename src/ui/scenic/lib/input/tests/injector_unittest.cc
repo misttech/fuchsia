@@ -15,6 +15,7 @@
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/ui/scenic/lib/input/touch_injector.h"
+#include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/math.h"
 
 using Phase = fuchsia::ui::pointerinjector::EventPhase;
@@ -81,13 +82,14 @@ class InjectorTestP : public gtest::TestLoopFixture, public testing::WithParamIn
       injector->Inject(std::move(events), std::move(callback));
     }
   }
+
+ protected:
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_{dispatcher(), dispatcher()};
 };
 
 INSTANTIATE_TEST_SUITE_P(InjectorTest, InjectorTestP, testing::Bool());
 
 TEST_P(InjectorTestP, InjectedEvents_ShouldTriggerTheInjectLambda) {
-  async::TestLoop test_loop;
-
   // Set up an isolated Injector.
   DevicePtr injector;
 
@@ -111,7 +113,7 @@ TEST_P(InjectorTestP, InjectedEvents_ShouldTriggerTheInjectLambda) {
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)},
            [&injection_callback_fired] { injection_callback_fired = true; });
-    test_loop.RunUntilIdle();
+    RunLoopUntilIdle();
     if (!use_inject_events()) {
       EXPECT_TRUE(injection_callback_fired);
     }
@@ -127,7 +129,7 @@ TEST_P(InjectorTestP, InjectedEvents_ShouldTriggerTheInjectLambda) {
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)},
            [&injection_callback_fired] { injection_callback_fired = true; });
-    test_loop.RunUntilIdle();
+    RunLoopUntilIdle();
     if (!use_inject_events()) {
       EXPECT_TRUE(injection_callback_fired);
     }
@@ -143,7 +145,7 @@ TEST_P(InjectorTestP, InjectedEvents_ShouldTriggerTheInjectLambda) {
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)},
            [&injection_callback_fired] { injection_callback_fired = true; });
-    test_loop.RunUntilIdle();
+    RunLoopUntilIdle();
     if (!use_inject_events()) {
       EXPECT_TRUE(injection_callback_fired);
     }
@@ -154,10 +156,6 @@ TEST_P(InjectorTestP, InjectedEvents_ShouldTriggerTheInjectLambda) {
 }
 
 TEST_P(InjectorTestP, InjectionWithNoEvent_ShouldCloseChannel) {
-  // Test loop to be able to control dispatch without having to create an entire test class
-  // subclassing TestLoopFixture.
-  async::TestLoop test_loop;
-
   // Set up an isolated Injector.
   DevicePtr injector;
 
@@ -175,17 +173,13 @@ TEST_P(InjectorTestP, InjectionWithNoEvent_ShouldCloseChannel) {
   bool injection_callback_fired = false;
   // Inject nothing.
   Inject(injector, {}, [&injection_callback_fired] { injection_callback_fired = true; });
-  test_loop.RunUntilIdle();
+  RunLoopUntilIdle();
 
   EXPECT_FALSE(injection_callback_fired);
   EXPECT_TRUE(error_callback_fired);
 }
 
 TEST_P(InjectorTestP, ClientClosingChannel_ShouldTriggerCancelEvents_ForEachOngoingStream) {
-  // Test loop to be able to control dispatch without having to create an entire test class
-  // subclassing TestLoopFixture.
-  async::TestLoop test_loop;
-
   // Set up an isolated Injector.
   DevicePtr injector;
 
@@ -240,7 +234,7 @@ TEST_P(InjectorTestP, ClientClosingChannel_ShouldTriggerCancelEvents_ForEachOngo
 
   // Close the client side channel.
   injector = {};
-  test_loop.RunUntilIdle();
+  RunLoopUntilIdle();
 
   // Should receive two CANCEL events, since there should be two ongoing streams.
   EXPECT_FALSE(error_callback_fired);
@@ -248,10 +242,6 @@ TEST_P(InjectorTestP, ClientClosingChannel_ShouldTriggerCancelEvents_ForEachOngo
 }
 
 TEST_P(InjectorTestP, ServerClosingChannel_ShouldTriggerCancelEvents_ForEachOngoingStream) {
-  // Test loop to be able to control dispatch without having to create an entire test class
-  // subclassing TestLoopFixture.
-  async::TestLoop test_loop;
-
   // Set up an isolated Injector.
   DevicePtr injector;
 
@@ -306,7 +296,7 @@ TEST_P(InjectorTestP, ServerClosingChannel_ShouldTriggerCancelEvents_ForEachOngo
     events.emplace_back();
     Inject(injector, std::move(events), [] {});
   }
-  test_loop.RunUntilIdle();
+  RunLoopUntilIdle();
 
   EXPECT_TRUE(error_callback_fired);
   // Should receive CANCEL events for the two ongoing streams; 2 and 3.
@@ -314,10 +304,6 @@ TEST_P(InjectorTestP, ServerClosingChannel_ShouldTriggerCancelEvents_ForEachOngo
 }
 
 TEST_P(InjectorTestP, InjectionOfEmptyEvent_ShouldCloseChannel) {
-  // Test loop to be able to control dispatch without having to create an entire test class
-  // subclassing TestLoopFixture.
-  async::TestLoop test_loop;
-
   // Set up an isolated Injector.
   DevicePtr injector;
 
@@ -339,7 +325,7 @@ TEST_P(InjectorTestP, InjectionOfEmptyEvent_ShouldCloseChannel) {
   events.emplace_back(std::move(event));
   Inject(injector, {std::move(events)},
          [&injection_callback_fired] { injection_callback_fired = true; });
-  test_loop.RunUntilIdle();
+  RunLoopUntilIdle();
 
   EXPECT_FALSE(injection_lambda_fired);
   EXPECT_FALSE(injection_callback_fired);
@@ -347,10 +333,6 @@ TEST_P(InjectorTestP, InjectionOfEmptyEvent_ShouldCloseChannel) {
 }
 
 TEST_P(InjectorTestP, ClientClosingChannel_ShouldTriggerOnChannelClosedLambda) {
-  // Test loop to be able to control dispatch without having to create an entire test class
-  // subclassing TestLoopFixture.
-  async::TestLoop test_loop;
-
   // Set up an isolated Injector.
   DevicePtr injector;
 
@@ -368,17 +350,13 @@ TEST_P(InjectorTestP, ClientClosingChannel_ShouldTriggerOnChannelClosedLambda) {
 
   // Close the client side channel.
   injector = {};
-  test_loop.RunUntilIdle();
+  RunLoopUntilIdle();
 
   EXPECT_FALSE(client_error_callback_fired);
   EXPECT_TRUE(on_channel_closed_callback_fired);
 }
 
 TEST_P(InjectorTestP, ServerClosingChannel_ShouldTriggerOnChannelClosedLambda) {
-  // Test loop to be able to control dispatch without having to create an entire test class
-  // subclassing TestLoopFixture.
-  async::TestLoop test_loop;
-
   // Set up an isolated Injector.
   DevicePtr injector;
 
@@ -400,7 +378,7 @@ TEST_P(InjectorTestP, ServerClosingChannel_ShouldTriggerOnChannelClosedLambda) {
     events.emplace_back();
     Inject(injector, std::move(events), [] {});
   }
-  test_loop.RunUntilIdle();
+  RunLoopUntilIdle();
 
   EXPECT_TRUE(client_error_callback_fired);
   EXPECT_TRUE(on_channel_closed_callback_fired);
@@ -408,10 +386,6 @@ TEST_P(InjectorTestP, ServerClosingChannel_ShouldTriggerOnChannelClosedLambda) {
 
 // Test for lazy connectivity detection.
 TEST_P(InjectorTestP, InjectionWithBadConnectivity_ShouldCloseChannel) {
-  // Test loop to be able to control dispatch without having to create an entire test class
-  // subclassing TestLoopFixture.
-  async::TestLoop test_loop;
-
   // Set up an isolated Injector.
   DevicePtr injector;
 
@@ -442,7 +416,7 @@ TEST_P(InjectorTestP, InjectionWithBadConnectivity_ShouldCloseChannel) {
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)}, [] {});
-    test_loop.RunUntilIdle();
+    RunLoopUntilIdle();
   }
 
   // Connectivity was good. No problems.
@@ -458,7 +432,7 @@ TEST_P(InjectorTestP, InjectionWithBadConnectivity_ShouldCloseChannel) {
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)},
            [&injection_callback_fired] { injection_callback_fired = true; });
-    test_loop.RunUntilIdle();
+    RunLoopUntilIdle();
     EXPECT_FALSE(injection_callback_fired);
   }
 
@@ -485,6 +459,9 @@ class InjectorInvalidEventsTest : public gtest::TestLoopFixture,
       injector->Inject(std::move(events), std::move(callback));
     }
   }
+
+ protected:
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_{dispatcher(), dispatcher()};
 };
 
 INSTANTIATE_TEST_SUITE_P(InjectEventWithMissingField_ShouldCloseChannel, InjectorInvalidEventsTest,
@@ -554,6 +531,9 @@ class InjectorGoodEventStreamTest
       injector->Inject(std::move(events), std::move(callback));
     }
   }
+
+ protected:
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_{dispatcher(), dispatcher()};
 };
 
 static std::vector<std::vector<std::pair<uint32_t, Phase>>> GoodStreamTestData() {
@@ -671,6 +651,9 @@ class InjectorBadEventStreamTest
       injector->Inject(std::move(events), std::move(callback));
     }
   }
+
+ protected:
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_{dispatcher(), dispatcher()};
 };
 
 static std::vector<std::vector<std::pair<uint32_t, Phase>>> BadStreamTestData() {
@@ -767,8 +750,6 @@ TEST_P(InjectorBadEventStreamTest, InjectionWithBadEventStream_ShouldCloseChanne
 }
 
 TEST_P(InjectorTestP, InjectedViewport_ShouldNotTriggerInjectLambda) {
-  async::TestLoop test_loop;
-
   // Set up an isolated Injector.
   DevicePtr injector;
 
@@ -799,13 +780,13 @@ TEST_P(InjectorTestP, InjectedViewport_ShouldNotTriggerInjectLambda) {
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)},
            [&injection_callback_fired] { injection_callback_fired = true; });
-    test_loop.RunUntilIdle();
+    RunLoopUntilIdle();
     if (!use_inject_events()) {
       EXPECT_TRUE(injection_callback_fired);
     }
   }
 
-  test_loop.RunUntilIdle();
+  RunLoopUntilIdle();
 
   EXPECT_FALSE(inject_lambda_fired);
   EXPECT_FALSE(error_callback_fired);
@@ -829,6 +810,9 @@ class InjectorBadViewportTest : public gtest::TestLoopFixture,
       injector->Inject(std::move(events), std::move(callback));
     }
   }
+
+ protected:
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_{dispatcher(), dispatcher()};
 };
 
 static std::vector<ViewportPair> BadViewportTestData() {
@@ -1038,6 +1022,7 @@ class InjectorInspectionTest : public gtest::TestLoopFixture,
   DevicePtr injector_;
   uint64_t num_injections_ = 0;
   std::optional<scenic_impl::input::TouchInjector> injector_impl_;
+  utils::ScopedThreadDispatcherSetter dispatcher_setter_{dispatcher(), dispatcher()};
 };
 
 INSTANTIATE_TEST_SUITE_P(InjectorInspectionTest, InjectorInspectionTest, testing::Bool());
