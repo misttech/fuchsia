@@ -595,15 +595,6 @@ impl FdTable {
 
     /// Releases the `FdTable`, closing any files opened exclusively by this table.
     pub fn release(&self) {
-        // There is no guarantee that delayed releases can be processed after `release()` returns.
-        // To ensure that all delayed releases prompted by this `FdTable` release are registered by
-        // the time this method returns, explicitly clear the table. `FdTableInner` drop cannot be
-        // relied on because RCU may defer the drop until delayed releases are no longer applicable.
-        // This is only necessary if the `FdTable` is not shared.
-        let inner = self.inner.to_arc();
-        if Arc::strong_count(&inner) == 2 {
-            inner.write().retain(&RcuReadScope::new(), |_, _| false);
-        }
         self.inner.update(Default::default());
     }
 

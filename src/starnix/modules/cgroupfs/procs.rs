@@ -10,13 +10,13 @@
 //! Full details at https://docs.kernel.org/admin-guide/cgroup-v2.html#core-interface-files
 
 use starnix_core::fs_node_impl_not_dir;
-use starnix_core::task::{CgroupOps, CurrentTask, Kernel};
+use starnix_core::task::{CgroupOps, CurrentTask, Kernel, ProcessEntryRef};
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_core::vfs::{AppendLockWriteGuard, FileOps, FsNode, FsNodeOps, InputBuffer};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::{errno, pid_t};
+use starnix_uapi::{errno, error, pid_t};
 use std::sync::{Arc, Weak};
 
 pub struct ControlGroupNode {
@@ -79,12 +79,13 @@ impl DynamicFileSource for ControlGroupFile {
         let pid = pid_string.trim().parse::<pid_t>().map_err(|_| errno!(ENOENT))?;
 
         // Check if the pid is a valid task.
-        let thread_group = current_task
-            .kernel()
-            .pids
-            .read()
-            .get_thread_group(pid)
-            .ok_or_else(|| errno!(EINVAL))?;
+        let thread_group = if let Some(ProcessEntryRef::Process(thread_group)) =
+            current_task.kernel().pids.read().get_process(pid)
+        {
+            thread_group
+        } else {
+            return error!(EINVAL);
+        };
 
         self.cgroup()?.add_process(locked, &thread_group)?;
 

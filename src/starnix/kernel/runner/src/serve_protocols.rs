@@ -24,7 +24,7 @@ use starnix_core::execution::{create_init_child_process, execute_task_with_preru
 use starnix_core::fs::devpts::create_main_and_replica;
 use starnix_core::fs::fuchsia::create_fuchsia_pipe;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use starnix_core::task::{CurrentTask, ExitStatus, Kernel, LockedAndTask};
+use starnix_core::task::{CurrentTask, ExitStatus, Kernel, LockedAndTask, ProcessEntryRef};
 use starnix_core::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use starnix_core::vfs::file_server::serve_file_at;
 use starnix_core::vfs::socket::VsockSocket;
@@ -251,7 +251,9 @@ pub async fn serve_container_controller(
                     responder,
                 } => {
                     let pids = system_task.kernel().pids.read();
-                    if let Some(target_thread_group) = pids.get_thread_group(pid) {
+                    if let Some(ProcessEntryRef::Process(target_thread_group)) =
+                        pids.get_process(pid)
+                    {
                         #[allow(
                             clippy::undocumented_unsafe_blocks,
                             reason = "Force documented unsafe blocks in Starnix"

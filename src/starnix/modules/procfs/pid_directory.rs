@@ -358,9 +358,9 @@ impl FsNodeOps for FdDirectory {
         _current_task: &CurrentTask,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        let task = Task::from_weak(&self.task)?;
-        let fds = task.live().map_or_else(|_| Vec::new(), |live| live.files.get_all_fds());
-        Ok(VecDirectory::new_file(fds_to_directory_entries(fds)))
+        Ok(VecDirectory::new_file(fds_to_directory_entries(
+            Task::from_weak(&self.task)?.live()?.files.get_all_fds(),
+        )))
     }
 
     fn lookup(
@@ -370,11 +370,10 @@ impl FsNodeOps for FdDirectory {
         _current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
-        let task = Task::from_weak(&self.task)?;
-        let live = task.live().map_err(|_| errno!(ENOENT))?;
-        // Make sure that the file descriptor exists before creating the node.
         let fd = FdNumber::from_fs_str(name).map_err(|_| errno!(ENOENT))?;
-        let file = live.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
+        let task = Task::from_weak(&self.task)?;
+        // Make sure that the file descriptor exists before creating the node.
+        let file = task.live()?.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
         // Derive the symlink's mode from the mode in which the file was opened.
         let mode = FileMode::IFLNK | Access::from_open_flags(file.flags()).user_mode();
         let task_reference = self.task.clone();
@@ -603,9 +602,9 @@ impl FsNodeOps for FdInfoDirectory {
         _current_task: &CurrentTask,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        let task = Task::from_weak(&self.task)?;
-        let fds = task.live().map_or_else(|_| Vec::new(), |live| live.files.get_all_fds());
-        Ok(VecDirectory::new_file(fds_to_directory_entries(fds)))
+        Ok(VecDirectory::new_file(fds_to_directory_entries(
+            Task::from_weak(&self.task)?.live()?.files.get_all_fds(),
+        )))
     }
 
     fn lookup(
@@ -616,9 +615,8 @@ impl FsNodeOps for FdInfoDirectory {
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
         let task = Task::from_weak(&self.task)?;
-        let live = task.live().map_err(|_| errno!(ENOENT))?;
         let fd = FdNumber::from_fs_str(name).map_err(|_| errno!(ENOENT))?;
-        let file = live.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
+        let file = task.live()?.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
         let pos = file.offset.read();
         let flags = file.flags();
         let mut data = format!("pos:\t{}\nflags:\t0{:o}\n", pos, flags.bits()).into_bytes();
@@ -972,13 +970,18 @@ impl DynamicFileSource for LimitsFile {
 /// `MemFile` implements `proc/<pid>/mem` file.
 pub struct MemFile {
     mm: Weak<MemoryManager>,
+
+    // TODO: https://fxbug.dev/442459337 - Tear-down MemoryManager internals on process exit, to
+    // avoid extension of the MM lifetime prolonging access to memory via "/proc/pid/mem", etc
+    // beyond that of the actual process/address-space.
+    task: Weak<Task>,
 }
 
 impl MemFile {
     pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
         PtraceCheckedNode::new_node(task, PTRACE_MODE_ATTACH_REALCREDS, |_, _, task| {
             let mm = task.mm().ok().as_ref().map(Arc::downgrade).unwrap_or_default();
-            Ok(Self { mm })
+            Ok(Self { mm, task: Arc::downgrade(&task) })
         })
     }
 }
@@ -1009,6 +1012,9 @@ impl FileOps for MemFile {
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
+        let Some(_task) = self.task.upgrade() else {
+            return Ok(0);
+        };
         let Some(mm) = self.mm.upgrade() else {
             return Ok(0);
         };
@@ -1034,6 +1040,9 @@ impl FileOps for MemFile {
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
+        let Some(_task) = self.task.upgrade() else {
+            return Ok(0);
+        };
         let Some(mm) = self.mm.upgrade() else {
             return Ok(0);
         };
@@ -1293,9 +1302,7 @@ impl DynamicFileSource for StatusFile {
         writeln!(sink)?;
 
         if let Some(task) = task {
-            if let Ok(live) = task.live() {
-                writeln!(sink, "Umask:\t0{:03o}", live.fs().umask().bits())?;
-            }
+            writeln!(sink, "Umask:\t0{:03o}", task.live()?.fs().umask().bits())?;
             let task_state = task.read();
             writeln!(sink, "SigBlk:\t{:016x}", task_state.signal_mask().0)?;
             writeln!(sink, "SigPnd:\t{:016x}", task_state.task_specific_pending_signals().0)?;

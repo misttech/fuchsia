@@ -50,6 +50,10 @@
                 // regarding perf_event_open with invalid tracepoint ID.
                 "PerfEventTest.InvalidTracepointIdAndNoPermission",
 
+                // TODO: https://fxbug.dev/297440106 - Fix zombies to remain in "/proc/<pid>" with correct labels.
+                "ProcAttrTest.ZombieProcPid",
+                "ProcAttrTest.ZombieCurrentAttr",
+
                 // TODO: https://fxbug.dev/361552580 - Fix SELinuxFS API handling of unknown policy class Ids.
                 "SeLinuxFsCreate.InvalidComputeCreateClassId",
                 "SeLinuxFsAccess.UnknownClassIdIsAccepted",

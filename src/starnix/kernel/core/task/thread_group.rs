@@ -17,21 +17,22 @@ use crate::signals::{
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{
     ControllingTerminal, CurrentTask, ExitStatus, Kernel, PidTable, ProcessGroup, Session, Task,
-    TaskExitState, TaskLifecycleState, TaskMutableState, TaskPersistentInfo, TypedWaitQueue,
+    TaskMutableState, TaskPersistentInfo, TypedWaitQueue,
 };
 use crate::time::{IntervalTimerHandle, TimerTable};
 use itertools::Itertools;
 use macro_rules_attribute::apply;
 use starnix_lifecycle::{AtomicCounter, DropNotifier};
-use starnix_logging::{log_debug, log_info, log_warn, track_stub};
+use starnix_logging::{log_debug, log_error, log_info, log_warn, track_stub};
 use starnix_sync::{
     LockBefore, Locked, Mutex, OrderedMutex, ProcessGroupState, RwLock, ThreadGroupLimits, Unlocked,
 };
 use starnix_task_command::TaskCommand;
+use starnix_types::ownership::{OwnedRef, Releasable};
 use starnix_types::stats::TaskTimeStats;
 use starnix_types::time::{itimerspec_from_itimerval, timeval_from_duration};
 use starnix_uapi::arc_key::WeakKey;
-use starnix_uapi::auth::{CAP_SYS_ADMIN, CAP_SYS_RESOURCE};
+use starnix_uapi::auth::{CAP_SYS_ADMIN, CAP_SYS_RESOURCE, Credentials};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::personality::PersonalityFlags;
 use starnix_uapi::resource_limits::{Resource, ResourceLimits};
@@ -40,8 +41,8 @@ use starnix_uapi::signals::{
 };
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{
-    ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL, SA_NOCLDWAIT, SI_TKILL, SI_USER, SIG_IGN, errno,
-    error, itimerval, pid_t, rlimit, tid_t,
+    ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL, SI_TKILL, SI_USER, SIG_IGN, errno, error, itimerval,
+    pid_t, rlimit, tid_t, uid_t,
 };
 use std::collections::BTreeMap;
 use std::fmt;
@@ -88,12 +89,10 @@ impl<T: AsRef<ThreadGroup>> From<T> for ThreadGroupKey {
 /// Values used for waiting on the [ThreadGroup] lifecycle wait queue.
 #[repr(u64)]
 pub enum ThreadGroupLifecycleWaitValue {
-    /// Wait for updates to the exit status of tasks in the group.
+    /// Wait for updates to the WaitResults of tasks in the group.
     ChildStatus,
     /// Wait for updates to `stopped`.
     Stopped,
-    /// Wait for the thread group to fully exit.
-    Exited,
 }
 
 impl Into<u64> for ThreadGroupLifecycleWaitValue {
@@ -155,7 +154,7 @@ pub struct ThreadGroupMutableState {
     pub children: BTreeMap<pid_t, Weak<ThreadGroup>>,
 
     /// Child tasks that have exited, but not yet been waited for.
-    pub zombie_children: Vec<tid_t>,
+    pub zombie_children: Vec<OwnedRef<ZombieProcess>>,
 
     /// ptracees of this process that have exited, but not yet been waited for.
     pub zombie_ptracees: ZombiePtracees,
@@ -181,7 +180,8 @@ pub struct ThreadGroupMutableState {
     /// the value of `stopped`. If not None, contains the SignalInfo to return.
     pub last_signal: Option<SignalInfo>,
 
-    /// Whether the thread group is exiting or not, and if it is, the exit info of the thread group.
+    /// Whether the thread_group is terminating or not, and if it is, the exit info of the thread
+    /// group.
     run_state: ThreadGroupRunState,
 
     /// Time statistics accumulated from the children.
@@ -437,41 +437,164 @@ impl ProcessSelector {
             }
         }
     }
+}
 
-    pub fn match_task(&self, task: &Task) -> bool {
-        match *self {
-            ProcessSelector::Any => true,
-            ProcessSelector::Pid(pid) => task.thread_group_key.pid() == pid,
-            ProcessSelector::Pgid(pgid) => task.thread_group.read().process_group.leader == pgid,
-            ProcessSelector::Process(ref key) => task.thread_group_key == *key,
-        }
-    }
-
-    pub fn match_task_and_waiting_options(&self, task: &Task, options: &WaitingOptions) -> bool {
-        let Some(exit_state) = task.exit_state() else {
-            return false;
-        };
-
-        if !self.match_task(task) {
-            return false;
-        }
-
-        if options.wait_for_all {
-            return true;
-        }
-
-        // A "clone" zombie is one which has delivered no signal, or a signal other than SIGCHLD, to
-        // its parent upon exit.
-        options.wait_for_clone == (exit_state.signal != Some(SIGCHLD))
-    }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProcessExitInfo {
+    pub status: ExitStatus,
+    pub exit_signal: Option<Signal>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 enum ThreadGroupRunState {
     #[default]
     Running,
-    Exiting(ExitStatus),
-    Exited(ExitStatus),
+    Terminating(ExitStatus),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WaitResult {
+    pub pid: pid_t,
+    pub uid: uid_t,
+
+    pub exit_info: ProcessExitInfo,
+
+    /// Cumulative time stats for the process and its children.
+    pub time_stats: TaskTimeStats,
+}
+
+impl WaitResult {
+    // According to wait(2) man page, SignalInfo.signal needs to always be set to SIGCHLD
+    pub fn as_signal_info(&self) -> SignalInfo {
+        SignalInfo::with_detail(
+            SIGCHLD,
+            self.exit_info.status.signal_info_code(),
+            SignalDetail::SIGCHLD {
+                pid: self.pid,
+                uid: self.uid,
+                status: self.exit_info.status.signal_info_status(),
+            },
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct ZombieProcess {
+    pub thread_group_key: ThreadGroupKey,
+    pub pgid: pid_t,
+    pub uid: uid_t,
+
+    pub exit_info: ProcessExitInfo,
+
+    /// Cumulative time stats for the process and its children.
+    pub time_stats: TaskTimeStats,
+
+    /// Whether dropping this ZombieProcess should imply removing the pid from
+    /// the PidTable
+    pub is_canonical: bool,
+}
+
+impl PartialEq for ZombieProcess {
+    fn eq(&self, other: &Self) -> bool {
+        // We assume only one set of ZombieProcess data per process, so this should cover it.
+        self.thread_group_key == other.thread_group_key
+            && self.pgid == other.pgid
+            && self.uid == other.uid
+            && self.is_canonical == other.is_canonical
+    }
+}
+
+impl Eq for ZombieProcess {}
+
+impl PartialOrd for ZombieProcess {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ZombieProcess {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.thread_group_key.cmp(&other.thread_group_key)
+    }
+}
+
+impl ZombieProcess {
+    pub fn new(
+        thread_group: ThreadGroupStateRef<'_>,
+        credentials: &Credentials,
+        exit_info: ProcessExitInfo,
+    ) -> OwnedRef<Self> {
+        let time_stats = thread_group.base.time_stats() + thread_group.children_time_stats;
+        OwnedRef::new(ZombieProcess {
+            thread_group_key: thread_group.base.into(),
+            pgid: thread_group.process_group.leader,
+            uid: credentials.uid,
+            exit_info,
+            time_stats,
+            is_canonical: true,
+        })
+    }
+
+    pub fn pid(&self) -> pid_t {
+        self.thread_group_key.pid()
+    }
+
+    pub fn to_wait_result(&self) -> WaitResult {
+        WaitResult {
+            pid: self.pid(),
+            uid: self.uid,
+            exit_info: self.exit_info.clone(),
+            time_stats: self.time_stats,
+        }
+    }
+
+    pub fn as_artificial(&self) -> Self {
+        ZombieProcess {
+            thread_group_key: self.thread_group_key.clone(),
+            pgid: self.pgid,
+            uid: self.uid,
+            exit_info: self.exit_info.clone(),
+            time_stats: self.time_stats,
+            is_canonical: false,
+        }
+    }
+
+    pub fn matches_selector(&self, selector: &ProcessSelector) -> bool {
+        match *selector {
+            ProcessSelector::Any => true,
+            ProcessSelector::Pid(pid) => self.pid() == pid,
+            ProcessSelector::Pgid(pgid) => self.pgid == pgid,
+            ProcessSelector::Process(ref key) => self.thread_group_key == *key,
+        }
+    }
+
+    pub fn matches_selector_and_waiting_option(
+        &self,
+        selector: &ProcessSelector,
+        options: &WaitingOptions,
+    ) -> bool {
+        if !self.matches_selector(selector) {
+            return false;
+        }
+
+        if options.wait_for_all {
+            true
+        } else {
+            // A "clone" zombie is one which has delivered no signal, or a
+            // signal other than SIGCHLD to its parent upon termination.
+            options.wait_for_clone == (self.exit_info.exit_signal != Some(SIGCHLD))
+        }
+    }
+}
+
+impl Releasable for ZombieProcess {
+    type Context<'a> = &'a mut PidTable;
+
+    fn release<'a>(self, pids: &'a mut PidTable) {
+        if self.is_canonical {
+            pids.remove_zombie(self.pid());
+        }
+    }
 }
 
 impl ThreadGroup {
@@ -660,13 +783,13 @@ impl ThreadGroup {
         }
         let mut pids = self.kernel.pids.write();
         let mut state = self.write();
-        if !state.is_running() {
-            // The thread group is not running. All threads in the thread group have already been
-            // interrupted.
+        if state.is_terminating() {
+            // The thread group is already terminating and all threads in the thread group have
+            // already been interrupted.
             return;
         }
 
-        state.run_state = ThreadGroupRunState::Exiting(exit_status.clone());
+        state.run_state = ThreadGroupRunState::Terminating(exit_status.clone());
 
         // Drop ptrace zombies
         state.zombie_ptracees.release(&mut pids);
@@ -702,10 +825,10 @@ impl ThreadGroup {
 
     pub fn add(&self, task: Arc<Task>) -> Result<(), Errno> {
         let mut state = self.write();
-        if !state.is_running() {
+        if state.is_terminating() {
             if state.tasks_count() == 0 {
                 log_warn!(
-                    "Task {} with leader {} exiting while adding its first task, \
+                    "Task {} with leader {} terminating while adding its first task, \
                 not sending creation notification",
                     task.tid,
                     self.leader
@@ -725,304 +848,209 @@ impl ThreadGroup {
     ///
     /// It is important that the task is taken as an `Arc`. It ensures the tasks of the
     /// ThreadGroup are always valid as they are still valid when removed.
-    pub fn remove<L>(&self, locked: &mut Locked<L>, task: &Arc<Task>)
+    pub fn remove<L>(&self, locked: &mut Locked<L>, pids: &mut PidTable, task: &Arc<Task>)
     where
         L: LockBefore<ProcessGroupState>,
     {
-        let mut pids = task.kernel().pids.write();
+        task.set_ptrace_zombie(pids);
+        pids.remove_task(task.tid);
 
-        // To prevent nested locking with tracers, which may be ancestors to this thread group,
-        // only hold the thread group state lock long enough to remove the task.
-        let was_last_task = {
-            let mut state = self.write();
-            if state.tasks.remove(&task.tid).is_none() {
-                // The task has never been added. This should only happen when the thread group is
-                // not running.
-                debug_assert!(!state.is_running());
+        let mut state = self.write();
+
+        let persistent_info: TaskPersistentInfo =
+            if let Some(container) = state.tasks.remove(&task.tid) {
+                container.into()
+            } else {
+                // The task has never been added. The only expected case is that this thread was
+                // already terminating.
+                debug_assert!(state.is_terminating());
                 return;
-            }
-            state.tasks.is_empty()
-        };
+            };
 
-        // Locate the running tracer for the removed task. Tasks that have a tracer that is not
-        // running are processed as if they are not traced.
-        let tracer = task
-            .read()
-            .ptrace
-            .as_ref()
-            .map(|ptrace| ptrace.get_pid())
-            .and_then(|pid| pids.get_thread_group(pid))
-            .and_then(|tracer| {
-                let mut state = tracer.write();
-                if state.is_running() {
-                    // Mark this task as a zombie ptracee.
-                    state.zombie_ptracees.add(Arc::clone(task));
-                    tracer.ptracees.lock().remove(&task.tid);
-                    drop(state);
-                    Some(tracer)
+        if state.tasks.is_empty() {
+            let exit_status =
+                if let ThreadGroupRunState::Terminating(exit_status) = &state.run_state {
+                    exit_status.clone()
                 } else {
-                    None
+                    let exit_status = task.exit_status().unwrap_or_else(|| {
+                        log_error!("Exiting without an exit code.");
+                        ExitStatus::Exit(u8::MAX)
+                    });
+                    state.run_state = ThreadGroupRunState::Terminating(exit_status.clone());
+                    exit_status
+                };
+
+            // Replace PID table entry with a zombie.
+            let exit_info =
+                ProcessExitInfo { status: exit_status, exit_signal: state.exit_signal.clone() };
+            let zombie =
+                ZombieProcess::new(state.as_ref(), &persistent_info.real_creds(), exit_info);
+            pids.kill_process(self.leader, OwnedRef::downgrade(&zombie));
+
+            state.leave_process_group(locked, pids);
+
+            // I have no idea if dropping the lock here is correct, and I don't want to think about
+            // it. If problems do turn up with another thread observing an intermediate state of
+            // this exit operation, the solution is to unify locks. It should be sensible and
+            // possible for there to be a single lock that protects all (or nearly all) of the
+            // data accessed by both exit and wait. In gvisor and linux this is the lock on the
+            // equivalent of the PidTable. This is made more difficult by rust locks being
+            // containers that only lock the data they contain, but see
+            // https://docs.google.com/document/d/1YHrhBqNhU1WcrsYgGAu3JwwlVmFXPlwWHTJLAbwRebY/edit
+            // for an idea.
+            std::mem::drop(state);
+
+            // Remove the process from the cgroup2 pid table after TG lock is dropped.
+            // This function will hold the CgroupState lock which should be before the TG lock. See
+            // more in lock_cgroup2_pid_table comments.
+            self.kernel.cgroups.lock_cgroup2_pid_table().remove_process(self.into());
+
+            // We will need the immediate parent and the reaper. Once we have them, we can make
+            // sure to take the locks in the right order: parent before child.
+            let parent = self.read().parent.clone();
+            let reaper = self.find_reaper();
+
+            {
+                // Reparent the children.
+                if let Some(reaper) = reaper {
+                    let reaper = reaper.upgrade();
+                    {
+                        let mut reaper_state = reaper.write();
+                        let mut state = self.write();
+                        for (_pid, weak_child) in std::mem::take(&mut state.children) {
+                            if let Some(child) = weak_child.upgrade() {
+                                let mut child_state = child.write();
+
+                                child_state.exit_signal = Some(SIGCHLD);
+                                child_state.parent =
+                                    Some(ThreadGroupParent::new(Arc::downgrade(&reaper)));
+                                reaper_state.children.insert(child.leader, weak_child.clone());
+                            }
+                        }
+                        reaper_state.zombie_children.append(&mut state.zombie_children);
+                    }
+                    ZombiePtracees::reparent(self, &reaper);
+                } else {
+                    // If we don't have a reaper then just drop the zombies.
+                    let mut state = self.write();
+                    for zombie in state.zombie_children.drain(..) {
+                        zombie.release(pids);
+                    }
+                    state.zombie_ptracees.release(pids);
                 }
-            });
+            }
 
-        // Determine whether the task should be immediately reaped. Only leader tasks and active
-        // ptracees become zombies. All other tasks are transparently reaped upon removal from the
-        // thread group.
-        let zombify = task.is_leader() || tracer.is_some();
-        if !zombify {
-            pids.remove_task(task.tid);
-        }
+            // Clear the `parent` reference now that children have been re-`parent`ed.
+            self.write().parent = None;
 
-        // The thread group exits after its last task is removed.
-        if was_last_task {
-            // For the thread group exit itself, use the exit state from the last task to exit.
-            let leader =
-                pids.get_task(self.leader).expect("Thread group exits before reaping leader");
-            let exit_status = task.exit_state().expect("Last task has exited").status.clone();
-            let parent = self.do_exit(locked, &mut *pids, &leader, exit_status);
+            #[cfg(any(test, debug_assertions))]
+            {
+                let state = self.read();
+                assert!(state.zombie_children.is_empty());
+                assert!(state.zombie_ptracees.is_empty());
+            }
 
-            // For zombie notification, use the exit state from either the removed task, if it
-            // should zombify, or from the leader task.
-            let zombie = if zombify { task } else { &leader };
+            if let Some(ref parent) = parent {
+                let parent = parent.upgrade();
+                let mut tracer_pid = None;
+                if let Some(ptrace) = &task.read().ptrace {
+                    tracer_pid = Some(ptrace.get_pid());
+                }
+
+                let maybe_zombie = 'compute_zombie: {
+                    if let Some(tracer_pid) = tracer_pid {
+                        if let Ok(ref tracer) = pids.get_task(tracer_pid) {
+                            break 'compute_zombie tracer
+                                .thread_group()
+                                .maybe_notify_tracer(task, pids, &parent, zombie);
+                        }
+                    }
+                    Some(zombie)
+                };
+                if let Some(zombie) = maybe_zombie {
+                    parent.do_zombie_notifications(zombie);
+                }
+            } else {
+                zombie.release(pids);
+            }
+
+            // TODO: Set the error_code on the Zircon process object. Currently missing a way
+            // to do this in Zircon. Might be easier in the new execution model.
+
+            // Once the last zircon thread stops, the zircon process will also stop executing.
 
             if let Some(parent) = parent {
-                parent.upgrade().notify_zombie(&mut *pids, tracer.as_deref(), zombie);
-            } else {
-                // Do not leave orphaned zombies in the PID table. Reap immediately.
-                pids.remove_task(zombie.tid);
+                let parent = parent.upgrade();
+                parent.check_orphans(locked, pids);
             }
         }
     }
 
-    /// Finalize the exit of the [`ThreadGroup`] after its last task has been removed.
-    ///
-    /// Returns the [`ThreadGroupParent`] to notify of the exit.
-    fn do_exit<L>(
-        &self,
-        locked: &mut Locked<L>,
-        mut pids: &mut PidTable,
-        leader: &Task,
-        exit_status: ExitStatus,
-    ) -> Option<ThreadGroupParent>
-    where
-        L: LockBefore<ProcessGroupState>,
-    {
+    pub fn do_zombie_notifications(&self, zombie: OwnedRef<ZombieProcess>) {
         let mut state = self.write();
 
-        // Synchronize the exit state of the thread group and its leader task. The leader task is
-        // the representative of the thread group in the form of a zombie process. If not already
-        // set by exit_group, the exit status is taken from the last task to exit.
-        let exit_status = match &state.run_state {
-            ThreadGroupRunState::Exiting(status) => status.clone(),
-            _ => exit_status,
-        };
-        let mut exit_state = leader.exit_state().expect("Leader exits before thread group").clone();
-        exit_state.status = exit_status.clone();
-        // Include the time statistics of the thread group's reaped children in the leader
-        exit_state.time_stats += state.children_time_stats;
-        leader.lifecycle_state.update(TaskLifecycleState::Exited(exit_state));
-        state.run_state = ThreadGroupRunState::Exiting(exit_status.clone());
-
-        // Leave the process group.
-        state.leave_process_group(locked, &pids);
-
-        // Drop the lock on the thread group before removing the process from the cgroup2 PID table.
-        // The CgroupState lock must be taken before the ThreadGroup state lock.
-        // See lock_cgroup2_pid_table for details.
-        drop(state);
-        self.kernel.cgroups.lock_cgroup2_pid_table().remove_process(self.into());
-
-        // Reparent thread group children.
-        if let Some(reaper) = self.find_reaper() {
-            let reaper = reaper.upgrade();
-            {
-                // Parent thread groups must be locked before their children.
-                let mut reaper_state = reaper.write();
-                let mut state = self.write();
-                for (_pid, weak_child) in std::mem::take(&mut state.children) {
-                    if let Some(child) = weak_child.upgrade() {
-                        let mut child_state = child.write();
-                        child_state.exit_signal = Some(SIGCHLD);
-                        child_state.parent = Some(ThreadGroupParent::new(Arc::downgrade(&reaper)));
-                        reaper_state.children.insert(child.leader, weak_child.clone());
-                    }
-                }
-                reaper_state.zombie_children.append(&mut state.zombie_children);
-            }
-            ZombiePtracees::reparent(self, &reaper);
-        } else {
-            // This should only happen for the init process under specific conditions.
-            assert_eq!(self.leader, 1, "Non-init ThreadGroup exiting without reaper");
-
-            let mut state = self.write();
-
-            // Check for children that will be orphaned by this group exiting.
-            // TODO(https://fxbug.dev/507836238): Check what Linux does in this situation and match.
-            // It's difficult to observe Linux's behavior directly here, as it occurs very late in
-            // the system lifecycle, if at all. For now, we panic to catch a report of an actual
-            // occurrence.
-            assert_eq!(state.children.len(), 0);
-
-            // Immediately reap any remaining zombie children.
-            for tid in state.zombie_children.drain(..) {
-                pids.remove_task(tid);
-            }
-            state.zombie_ptracees.release(&mut pids);
-        }
-
-        // Check that reparenting did not leave any children behind.
-        #[cfg(any(test, debug_assertions))]
-        {
-            let state = self.read();
-            assert!(state.zombie_children.is_empty());
-            assert!(state.zombie_ptracees.is_empty());
-        }
-
-        // Clear the `parent` reference now that children have been reparented.
-        let parent = self.write().parent.take();
-        if let Some(ref parent) = parent {
-            let parent = parent.upgrade();
-            parent.check_orphans(locked, &pids);
-        }
-
-        // TODO: Set the error_code on the Zircon process object. Currently missing a way
-        // to do this in Zircon. Might be easier in the new execution model.
-
-        // Once the last zircon thread stops, the zircon process will also stop executing.
-
-        // Mark the thread group as exited and notify waiters.
-        let mut state = self.write();
-        state.run_state = ThreadGroupRunState::Exited(exit_status);
-        state.lifecycle_waiters.notify_value(ThreadGroupLifecycleWaitValue::Exited);
-        if let Some(notifier) = state.exit_notifier.take() {
-            let _ = notifier.send(());
-        }
-
-        parent
-    }
-
-    /// Notifies the tracer and/or the parent of a task's zombification, depending on whether the
-    /// tracer is watching the tracee and the tracer is the parent.
-    ///
-    /// Must be called on the parent [`ThreadGroup`].
-    fn notify_zombie(&self, pids: &mut PidTable, tracer: Option<&ThreadGroup>, task: &Task) {
-        // To avoid potential lock inversion with further zombie notification, this state lock must
-        // be dropped prior to calling `notify_zombie()` or `notify_child_zombie()`.
-        let mut state = self.write();
-
-        // When a parent process exits and reparents its children, it does so by taking its own
-        // lock, clearing its `children` map, and updating each child's `parent` pointer to the new
-        // `reaper` under the child's lock (respecting the Parent => Child lock ordering).
-        //
-        // If a child exits concurrently, it may read its parent pointer (obtaining this parent),
-        // drop its child lock, and then block trying to acquire this parent's lock (since the
-        // parent is currently exiting and holding the lock).
-        //
-        // While the child is blocked, the parent successfully reparents the child to the `reaper`
-        // and inserts it into `reaper.children` (believing the child is still running).
-        //
-        // When the child resumes, it will call `notify_zombie` on this OLD parent (using the
-        // captured parent pointer). If we were to process the notification here, it would be lost
-        // (since this parent is exiting and its zombie lists have already been moved to the
-        // reaper), and the `reaper` would never be notified that the child is a zombie, leaving a
-        // dangling weak reference in `reaper.children` which eventually causes a kernel panic.
-        //
-        // To resolve this, we temporarily acquire the child's read lock (respecting the Parent =>
-        // Child lock order since we hold the parent's write lock) to check if the child's parent
-        // has changed. If it has, we drop our parent lock (to prevent holding multiple parent locks
-        // concurrently and causing lock inversion) and forward the notification to the new parent.
-        let task_tg = task.thread_group();
-        let task_parent = task_tg.read().parent.clone();
-        if let Some(task_parent) = task_parent {
-            let task_parent = task_parent.upgrade();
-            let this = self.weak_self.upgrade().unwrap();
-            if !Arc::ptr_eq(&task_parent, &this) {
-                drop(state);
-                task_parent.notify_zombie(pids, tracer, task);
-                return;
-            }
-        }
-
-        let Some(tracer) = tracer else {
-            // There is no tracer. Notify the parent.
-            drop(state);
-            self.notify_child_zombie(pids, task);
-            return;
-        };
-
-        if self == tracer {
-            // The parent and tracer are the same. Reuse the parent state lock as the tracer lock.
-            if !state.zombie_ptracees.has_tracee(task.tid) {
-                // The parent/tracer has consumed the notification. No further action required.
-                return;
-            }
-            state.zombie_ptracees.remove(pids, task.tid);
-            drop(state);
-            self.notify_child_zombie(pids, task);
-            return;
-        }
-
-        let mut tracer_state = tracer.write();
-        if !tracer_state.is_running() {
-            // The tracer exited between zombie tracee registration and this notification step. The
-            // parent was notified during tracer exit. No further action required.
-            return;
-        }
-
-        if !tracer_state.zombie_ptracees.has_tracee(task.tid) {
-            // The tracer has consumed the notification. Notify the parent.
-            drop(tracer_state);
-            drop(state);
-            self.notify_child_zombie(pids, task);
-            return;
-        }
-
-        // Defer notification to the parent and notify the tracer.
-        tracer_state.zombie_ptracees.set_parent_of(task.tid, self);
-        drop(tracer_state);
-        state.deferred_zombie_ptracers.push(DeferredZombiePTracer::new(tracer, task));
-        state.children.remove(&task.get_pid());
-        drop(state);
-        task.write().notify_ptracers();
-    }
-
-    pub fn notify_child_zombie(&self, pids: &mut PidTable, task: &Task) {
-        let exit_state = task.exit_state().expect("Task is exited");
-
-        let mut state = self.write();
-        state.children.remove(&task.get_pid());
+        state.children.remove(&zombie.pid());
         state
             .deferred_zombie_ptracers
-            .retain(|tracer| tracer.tracee_thread_group_key != task.thread_group_key);
+            .retain(|dzp| dzp.tracee_thread_group_key != zombie.thread_group_key);
 
-        // Tasks that exit with an ignored signal or `SIGCHLD` with `SA_NOCLDWAIT` set are reaped
-        // immediately upon exit rather than being kept as zombies.
-        let reap = exit_state
-            .signal
-            .map(|signal| {
-                let sigaction = self.signal_actions.get(signal);
-                sigaction.sa_handler == SIG_IGN
-                    || (signal == SIGCHLD && (sigaction.sa_flags & SA_NOCLDWAIT as u64) != 0)
-            })
-            .unwrap_or(false);
+        let exit_signal = zombie.exit_info.exit_signal;
+        let mut signal_info = zombie.to_wait_result().as_signal_info();
 
-        if reap {
-            // Only count the zombie's time statistics upon reaping.
-            state.children_time_stats += exit_state.time_stats;
-            pids.remove_task(task.tid);
-        } else {
-            state.zombie_children.push(task.get_pid());
-        }
-
-        // Conditionally extract the signal information from the zombie only if the child specified
-        // an exit signal. When a child is created without an exit signal, it must not signal its
-        // parent upon exit.
-        let signal_info = exit_state.signal.map(|_| exit_state.as_signal_info());
-
+        state.zombie_children.push(zombie);
         state.lifecycle_waiters.notify_value(ThreadGroupLifecycleWaitValue::ChildStatus);
-        if let Some(signal_info) = signal_info {
+
+        // Send signals
+        if let Some(exit_signal) = exit_signal {
+            signal_info.signal = exit_signal;
             state.send_signal(signal_info);
         }
+    }
+
+    /// Notifies the tracer if appropriate.  Returns Some(zombie) if caller
+    /// needs to notify the parent, None otherwise.  The caller should probably
+    /// invoke parent.do_zombie_notifications(zombie) on the result.
+    fn maybe_notify_tracer(
+        &self,
+        tracee: &Task,
+        mut pids: &mut PidTable,
+        parent: &ThreadGroup,
+        zombie: OwnedRef<ZombieProcess>,
+    ) -> Option<OwnedRef<ZombieProcess>> {
+        if self.read().zombie_ptracees.has_tracee(tracee.tid) {
+            if self == parent {
+                // The tracer is the parent and has not consumed the
+                // notification.  Don't bother with the ptracee stuff, and just
+                // notify the parent.
+                self.write().zombie_ptracees.remove(pids, tracee.tid);
+                return Some(zombie);
+            } else {
+                // The tracer is not the parent and the tracer has not consumed
+                // the notification.
+                {
+                    // Tell the parent to expect a notification later.
+                    let mut parent_state = parent.write();
+                    parent_state
+                        .deferred_zombie_ptracers
+                        .push(DeferredZombiePTracer::new(self, tracee));
+                    parent_state.children.remove(&tracee.get_pid());
+                }
+                // Tell the tracer that there is a notification pending.
+                let mut state = self.write();
+                state.zombie_ptracees.set_parent_of(tracee.tid, Some(zombie), parent);
+                tracee.write().notify_ptracers();
+                return None;
+            }
+        } else if self == parent {
+            // The tracer is the parent and has already consumed the parent
+            // notification.  No further action required.
+            parent.write().children.remove(&tracee.tid);
+            zombie.release(&mut pids);
+            return None;
+        }
+        // The tracer is not the parent and has already consumed the parent
+        // notification.  Notify the parent.
+        Some(zombie)
     }
 
     /// Find the task which will adopt our children after we die.
@@ -1507,31 +1535,29 @@ impl ThreadGroup {
         selector: &ProcessSelector,
         options: &WaitingOptions,
         pids: &mut PidTable,
-    ) -> Option<TaskExitState> {
+    ) -> Option<WaitResult> {
         // This checks to see if the target is a zombie ptracee.
         let waitable_entry = self.write().zombie_ptracees.get_waitable_entry(selector, options);
         match waitable_entry {
             None => (),
-            Some((zombie, None)) => {
-                return zombie.exit_state().map(|state| state.clone());
-            }
-            Some((zombie, Some(tg))) => {
+            Some((zombie, None)) => return Some(zombie.to_wait_result()),
+            Some((zombie, Some((tg, z)))) => {
                 if let Some(tg) = tg.upgrade() {
                     if Arc::as_ptr(&tg) != self as *const Self {
-                        tg.notify_child_zombie(pids, &zombie);
+                        tg.do_zombie_notifications(z);
                     } else {
                         {
                             let mut state = tg.write();
-                            state.children.remove(&zombie.get_pid());
-                            state.deferred_zombie_ptracers.retain(|dzp| {
-                                dzp.tracee_thread_group_key != zombie.thread_group_key
-                            });
+                            state.children.remove(&z.pid());
+                            state
+                                .deferred_zombie_ptracers
+                                .retain(|dzp| dzp.tracee_thread_group_key != z.thread_group_key);
                         }
 
-                        pids.remove_task(zombie.tid);
+                        z.release(pids);
                     };
                 }
-                return zombie.exit_state().map(|state| state.clone());
+                return Some(zombie.to_wait_result());
             }
         }
 
@@ -1558,6 +1584,7 @@ impl ThreadGroup {
                 // thread's information (if we are in a different stop).
 
                 // The shared information:
+                let mut pid: i32 = 0;
                 let info = process_state.tasks.values().next().unwrap().info().clone();
                 let uid = info.real_creds().uid;
                 let mut exit_status = None;
@@ -1624,6 +1651,7 @@ impl ThreadGroup {
                             .as_mut()
                             .map(|ptrace| ptrace.get_last_signal(options.keep_waitable_state));
                     }
+                    pid = process_state.base.leader;
                 }
                 if exit_status == None {
                     if let Some(ptrace) = task_state.ptrace.as_mut() {
@@ -1656,14 +1684,14 @@ impl ThreadGroup {
                                 };
                             }
                         }
+                        pid = task_ref.get_tid();
                     }
                 }
                 if let Some(exit_status) = exit_status {
-                    return Some(TaskExitState {
-                        tid: task_ref.get_tid(),
+                    return Some(WaitResult {
+                        pid,
                         uid,
-                        status: exit_status,
-                        signal: exit_signal,
+                        exit_info: ProcessExitInfo { status: exit_status, exit_signal },
                         time_stats,
                     });
                 }
@@ -1830,10 +1858,6 @@ impl ThreadGroup {
                 return;
             };
 
-            if this.read().is_exited() {
-                return;
-            }
-
             // Register a channel to be notified when exit() is complete.
             let (on_exited_send, on_exited) = futures::channel::oneshot::channel();
             this.write().exit_notifier = Some(on_exited_send);
@@ -1878,7 +1902,7 @@ impl ThreadGroup {
 }
 
 pub enum WaitableChildResult {
-    ReadyNow(Box<TaskExitState>),
+    ReadyNow(Box<WaitResult>),
     ShouldWait,
     NoneFound,
 }
@@ -1895,12 +1919,8 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             .unwrap_or_else(|| TaskCommand::new(b"<leader exited>"))
     }
 
-    pub fn is_running(&self) -> bool {
-        matches!(self.run_state, ThreadGroupRunState::Running)
-    }
-
-    pub fn is_exited(&self) -> bool {
-        matches!(self.run_state, ThreadGroupRunState::Exited(_))
+    pub fn is_terminating(&self) -> bool {
+        !matches!(self.run_state, ThreadGroupRunState::Running)
     }
 
     pub fn children(&self) -> impl Iterator<Item = Arc<ThreadGroup>> + '_ {
@@ -1970,41 +1990,30 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
 
     pub fn get_waitable_zombie(
         &mut self,
-        zombie_list: &dyn Fn(&mut ThreadGroupMutableState) -> &mut Vec<tid_t>,
+        zombie_list: &dyn Fn(&mut ThreadGroupMutableState) -> &mut Vec<OwnedRef<ZombieProcess>>,
         selector: &ProcessSelector,
         options: &WaitingOptions,
         pids: &mut PidTable,
-    ) -> Option<TaskExitState> {
+    ) -> Option<WaitResult> {
         // We look for the last zombie in the vector that matches pid selector and waiting options
         let selected_zombie_position = zombie_list(self)
             .iter()
             .rev()
-            .position(|&tid| {
-                pids.get_task(tid)
-                    .map_or(false, |task| selector.match_task_and_waiting_options(&task, options))
-            })
+            .position(|zombie| zombie.matches_selector_and_waiting_option(selector, options))
             .map(|position_starting_from_the_back| {
                 zombie_list(self).len() - 1 - position_starting_from_the_back
             });
 
         selected_zombie_position.map(|position| {
-            let tid = if options.keep_waitable_state {
-                zombie_list(self)[position]
+            if options.keep_waitable_state {
+                zombie_list(self)[position].to_wait_result()
             } else {
-                zombie_list(self).remove(position)
-            };
-
-            let zombie = pids.get_task(tid).expect("Zombie task must not yet be reaped");
-            let result = zombie.exit_state().expect("Zombie task must have exited").clone();
-
-            if !options.keep_waitable_state {
-                self.children_time_stats += zombie.time_stats();
-                let tid = zombie.tid;
-                drop(zombie);
-                pids.remove_task(tid);
+                let zombie = zombie_list(self).remove(position);
+                self.children_time_stats += zombie.time_stats;
+                let result = zombie.to_wait_result();
+                zombie.release(pids);
+                result
             }
-
-            result
         })
     }
 
@@ -2036,7 +2045,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             Self::is_correct_exit_signal(options.wait_for_clone, child.read().exit_signal)
         };
 
-        // If wait_for_exited flag is disabled or no exited children were found we look for living children.
+        // If wait_for_exited flag is disabled or no terminated children were found we look for living children.
         let mut selected_children = self
             .children
             .values()
@@ -2062,7 +2071,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             if child.last_signal.is_some() {
                 let build_wait_result = |mut child: ThreadGroupWriteGuard<'_>,
                                          exit_status: &dyn Fn(SignalInfo) -> ExitStatus|
-                 -> TaskExitState {
+                 -> WaitResult {
                     let siginfo = if options.keep_waitable_state {
                         child.last_signal.clone().unwrap()
                     } else {
@@ -2074,13 +2083,15 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
                     } else {
                         exit_status(siginfo)
                     };
-                    let task_container = child.tasks.values().next().unwrap();
-                    let uid = task_container.1.real_creds().uid;
-                    TaskExitState {
-                        tid: child.base.leader,
+                    let info = child.tasks.values().next().unwrap().info();
+                    let uid = info.real_creds().uid;
+                    WaitResult {
+                        pid: child.base.leader,
                         uid,
-                        status: exit_status,
-                        signal: child.exit_signal.clone(),
+                        exit_info: ProcessExitInfo {
+                            status: exit_status,
+                            exit_signal: child.exit_signal,
+                        },
                         time_stats: child.base.time_stats() + child.children_time_stats,
                     }
                 };
@@ -2304,19 +2315,6 @@ mod test {
     use crate::testing::*;
 
     #[::fuchsia::test]
-    async fn test_shut_down() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-            let weak_tg = Arc::downgrade(child.thread_group());
-            child.thread_group().exit(locked, ExitStatus::Exit(0), None);
-            std::mem::drop(child);
-            // Verify that shut_down completes successfully and doesn't hang.
-            ThreadGroup::shut_down(weak_tg).await;
-        })
-        .await;
-    }
-
-    #[::fuchsia::test]
     async fn test_setsid() {
         spawn_kernel_and_run(async |locked, current_task| {
             fn get_process_group(task: &Task) -> Arc<ProcessGroup> {
@@ -2346,11 +2344,10 @@ mod test {
             let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
             child.thread_group().exit(locked, ExitStatus::Exit(42), None);
             std::mem::drop(child);
-            let tg = current_task.thread_group().read();
-            let tid = tg.zombie_children[0];
-            let zombie = current_task.kernel().pids.read().get_task(tid).unwrap();
-            let exit_state = zombie.exit_state().unwrap();
-            assert_eq!(exit_state.status, ExitStatus::Exit(42));
+            assert_eq!(
+                current_task.thread_group().read().zombie_children[0].exit_info.status,
+                ExitStatus::Exit(42)
+            );
         })
         .await;
     }

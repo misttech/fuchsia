@@ -401,7 +401,13 @@ impl CgroupState {
 
     // Goes through `processes` and remove processes that are no longer alive.
     fn update_processes(&mut self) {
-        self.processes.retain(|tg| tg.upgrade().is_some_and(|tg| tg.read().is_running()));
+        self.processes.retain(|thread_group| {
+            let Some(thread_group) = thread_group.upgrade() else {
+                return false;
+            };
+            let terminating = thread_group.read().is_terminating();
+            !terminating
+        });
     }
 
     fn freeze_thread_group<L>(&self, locked: &mut Locked<L>, thread_group: &ThreadGroup)

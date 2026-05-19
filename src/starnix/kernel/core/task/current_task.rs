@@ -12,13 +12,13 @@ use crate::task::loader::{ResolvedElf, load_executable, resolve_executable};
 use crate::task::waiter::WaiterOptions;
 use crate::task::{
     ExitStatus, RobustListHeadPtr, SeccompFilter, SeccompFilterContainer, SeccompNotifierHandle,
-    SeccompState, SeccompStateValue, Task, TaskExitState, TaskFlags, TaskLifecycleState,
-    TaskLiveStateGuard, ThreadState, Waiter,
+    SeccompState, SeccompStateValue, Task, TaskFlags, TaskLiveState, ThreadState, Waiter,
 };
 use crate::vfs::{
     CheckAccessReason, FdFlags, FdNumber, FileHandle, FsContext, FsStr, LookupContext, LookupVec,
     MAX_SYMLINK_FOLLOWS, NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
 };
+use fuchsia_rcu::RcuReadGuard;
 use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
 use starnix_logging::{
@@ -202,84 +202,30 @@ impl CurrentTask {
         // 2. All externally-visible `Task` state must reflect that the `Task` has exited.
         // 3. All observers of `Task` exit events must be notified.
 
-        // Extract `exit_signal` from `ThreadGroup` before acquiring the `Task` state lock to
-        // maintain consistent `ThreadGroupMutableState => TaskMutableState` lock ordering.
-        let exit_signal = self.thread_group().read().exit_signal.clone();
-
-        // Pre-teardown: Notify observers that depend on the `MemoryManager` being attached.
-        // TODO(https://fxbug.dev/507835515): Restructure these operations so that notifications are
-        // sent after the state transition, in Step 4. Having this pre-teardown step introduces race
-        // conditions in which a robust list/CLONE_CHILD_CLEARTID observer may wake to see a live
-        // task.
         self.notify_robust_list();
-        if let Err(e) = self.clear_child_tid_if_needed(locked) {
-            log_warn!("Failed to clear child TID for task {}: {:?}", self.tid, e);
-        }
+        let _ignored = self.clear_child_tid_if_needed(locked);
 
-        // Step 1: Extract live state needed during and after exit.
-        let exit_state = {
-            let state = self.read();
-            TaskExitState {
-                tid: self.tid,
-                uid: self.real_creds().uid,
-                // Use the default `ExitStatus` when one has not been provided. Not all exit paths
-                // populate the status. Test tasks and other tasks to which an executor is not
-                // attached, such as partially-spawned tasks, do not have a specified exit status.
-                status: state.exit_status().unwrap_or_default(),
-                signal: exit_signal,
-                time_stats: self.time_stats(),
-            }
-        };
+        self.signal_vfork();
 
-        // Step 2: Prevent new live state references from being made.
-        //
-        // The `TaskLiveState` itself will not be dropped until RCU callbacks are executed during
-        // `DelayedReleaser::apply()`, after `exit()` returns. To prevent readers concurrent to
-        // `exit()` from making new references to memory and files that may be kept beyond the next,
-        // final delayed release, these resources must be explicitly cleared.
+        // Drop fields that can end up owning a FsNode to ensure no FsNode are owned by this task.
         if let Ok(live) = self.task.live() {
             live.files.release();
             live.mm.update(None);
         }
+        self.live_state.update(None);
+
         self.trigger_delayed_releaser(locked);
 
-        // Step 3: Update the externally-visible state to reflect the exit.
-        //
-        // Synchronize the exit status between `TaskExitState` and `TaskMutableState` and setting
-        // the `RunState` while the state lock is held. Finally, replace the `TaskLiveState` with
-        // the `TaskExitState` in an RCU update. From this point onward, no new references to
-        // `TaskLiveState` can be made, and any existing references will be dropped at the next
-        // RCU synchronization.
-        let mut state = self.write();
-        if state.exit_status().is_none() {
-            state.set_exit_status(exit_state.status.clone());
-        }
-        state.set_run_state(RunState::Exited);
-        self.lifecycle_state.update(TaskLifecycleState::Exited(exit_state));
+        // We remove from the thread group here because the Weak in the pid
+        // table to this task must be valid until this task is removed from the
+        // thread group, and the code below will invalidate it.
+        // Moreover, this requires an Arc of the task to ensure the tasks of
+        // the thread group are always valid.
+        let mut pids = self.kernel().pids.write();
+        self.task.thread_group().remove(locked, &mut pids, &self.task);
+        drop(pids);
 
-        // Step 4: Notify observers of the exit event.
-        //
-        // Now that all externally-visible state consistently shows this `Task` as exited, wake
-        // waiters and notify the `ThreadGroup`.
-
-        // Clear `KernelSignals` now that new signals are blocked. This wakes signal waiters.
-        state.clear_kernel_signals();
-
-        // Drop seccomp filters. This ensures that any `SeccompNotifier` attached to this task is
-        // immediately notified of thread termination without waiting for RCU callbacks to drop the
-        // `Task` instance.
-        state.seccomp_filters = Default::default();
-
-        drop(state);
-
-        // Wake vfork event waiters. This event signals when a task is successfully forked; in the
-        // event that a task exits before fully forking, observers must be notified.
-        self.signal_vfork();
-
-        // Remove the task from its `ThreadGroup`. This causes the task to either become a zombie or
-        // be reaped, resulting in its removal from the `PidTable` and the `Task` instance being
-        // dropped.
-        self.thread_group().remove(locked, &self.task);
+        self.ptrace_disconnect();
     }
 
     /// Returns the [`TaskLiveState`] for the [`Task`].
@@ -289,7 +235,7 @@ impl CurrentTask {
     /// Calling `live()` on a [`CurrentTask`] for which the [`Task`] has no live state (i.e.
     /// zombie tasks) panics. However, such tasks should not have a `CurrentTask`.
     #[track_caller]
-    pub fn live(&self) -> TaskLiveStateGuard {
+    pub fn live(&self) -> RcuReadGuard<TaskLiveState> {
         self.task.live().expect("CurrentTask must have TaskLiveState")
     }
 
@@ -1881,7 +1827,13 @@ impl CurrentTask {
 
             if clone_pidfd {
                 let locked = locked.cast_locked::<TaskRelease>();
-                let file = new_pidfd(locked, self, child.thread_group(), OpenFlags::empty());
+                let file = new_pidfd(
+                    locked,
+                    self,
+                    child.thread_group(),
+                    &*child.mm()?,
+                    OpenFlags::empty(),
+                );
                 let pidfd = self.add_file(locked, file, FdFlags::CLOEXEC)?;
                 self.write_object(user_pidfd, &pidfd)?;
             }

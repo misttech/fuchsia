@@ -1045,12 +1045,10 @@ async fn wait_for_init_file(
                 Err(error) => return Some(Err(anyhow::Error::from(error))),
             };
 
-            if let Ok(task) = current_task.get_task(init_tid) {
-                if !task.is_live() {
-                    return Some(Err(anyhow!(
-                        "Init task terminated before startup_file_path was ready"
-                    )));
-                }
+            if current_task.get_task(init_tid).is_err() {
+                return Some(Err(anyhow!(
+                    "Init task terminated before startup_file_path was ready"
+                )));
             }
 
             None

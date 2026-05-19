@@ -48,17 +48,7 @@
 
                 // TODO(https://fxbug.dev/297440106)
                 // TODO(https://fxbug.dev/365540067)
-                "ZombieProcTest.MountInfo",
-                "ZombieProcTest.Fd",
-                "ZombieProcTest.Cwd",
-                "ZombieProcTest.FdInfo",
-                "ZombieProcTest.ClearRefs",
-                "ZombieProcTest.Mounts",
-                "ZombieProcTest.Schedstat",
-                "ZombieProcTest.Sched",
-                "ZombieProcTest.AttrCurrent",
-                "ZombieProcTest.Root",
-                "ZombieProcTest.PageMap",
+                "ZombieProcTest.*",
 
                 // TODO(https://fxbug.dev/493895527): Hangs; Fix and re-enable.
                 "PerfEventOpenTest.SampleIdIsValid",
@@ -142,6 +132,9 @@
                 // TODO(https://fxbug.dev/419882465): Need a more granular API to report these values correctly
                 "MMapProcTest.SmapsRssSplitMappingsStrict",
                 "MlockProcTest.MlockOnePageIncreasesVmLck",
+
+                // TODO(https://fxbug.dev/423010702)
+                "Task.KillZombieEPERM",
 
                 // TODO(https://fxbug.dev/439058791)
                 "DumpableTest.DumpableDropsOnUserChange",

@@ -10,7 +10,6 @@
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
-#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
@@ -157,35 +156,6 @@ TEST(PipeTest, PolloutFragmentation) {
   // Now POLLOUT will finally be asserted.
   EXPECT_EQ(poll(&p, 1, 0), 1);
   EXPECT_EQ(p.revents, POLLOUT);
-}
-
-// Verify that when the only writer (a child process) exits, the pipe is immediately closed even if
-// the child is not yet reaped.
-TEST(PipeTest, ZombieWriter) {
-  int pipe_fds[2];
-  // Create a non-blocking pipe so read won't block if the writer is still alive.
-  SAFE_SYSCALL(pipe2(pipe_fds, O_NONBLOCK));
-  fbl::unique_fd pipe_rd(pipe_fds[0]);
-  fbl::unique_fd pipe_wr(pipe_fds[1]);
-
-  test_helper::ForkHelper helper;
-  helper.RunInForkedProcess([read_fd = pipe_fds[0]] {
-    // Close read end so it is only a writer, then exit immediately.
-    // This should also close the write end.
-    close(read_fd);
-  });
-
-  // Close the parent's write end so the child is the only writer.
-  // Then wait for the child to exit and enter the zombie state.
-  pipe_wr.reset();
-  ASSERT_TRUE(helper.WaitForChildren());
-
-  // Read from the pipe.
-  //
-  // If the uniquely-owned file descriptor table was cleared correctly on child exit, the write-end
-  // is closed, and read() should return 0 immediately.
-  char buf[1];
-  EXPECT_THAT(read(pipe_rd.get(), buf, sizeof(buf)), SyscallSucceedsWithValue(0));
 }
 
 }  // namespace

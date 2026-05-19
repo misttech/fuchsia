@@ -583,11 +583,7 @@ impl Kernel {
                     .read()
                     .get_thread_groups()
                     .into_iter()
-                    .filter(|tg| {
-                        tg.leader != SYSTEM_TASK_PID
-                            && tg.leader != INIT_PID
-                            && !tg.read().is_exited()
-                    })
+                    .filter(|tg| tg.leader != SYSTEM_TASK_PID && tg.leader != INIT_PID)
                     .collect::<Vec<_>>()
             };
             if tgs.is_empty() {
@@ -843,7 +839,10 @@ impl Kernel {
         let mut mms_summarized = HashSet::new();
 
         // Avoid holding locks for the entire iteration.
-        let all_thread_groups = self.pids.read().get_thread_groups();
+        let all_thread_groups = {
+            let pid_table = self.pids.read();
+            pid_table.get_thread_groups()
+        };
         for thread_group in all_thread_groups {
             // Avoid holding the state lock while summarizing.
             let (ppid, tasks) = {

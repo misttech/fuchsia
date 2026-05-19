@@ -11,27 +11,27 @@ use crate::signals::{
     UncheckedSignalInfo, restore_from_signal_handler, send_signal,
 };
 use crate::task::{
-    CurrentTask, PidTable, ProcessSelector, Task, TaskExitState, TaskMutableState, ThreadGroup,
-    ThreadGroupLifecycleWaitValue, WaitableChildResult, Waiter,
+    CurrentTask, PidTable, ProcessEntryRef, ProcessSelector, Task, TaskMutableState, ThreadGroup,
+    ThreadGroupLifecycleWaitValue, WaitResult, WaitableChildResult, Waiter,
 };
 use crate::vfs::{FdFlags, FdNumber};
-use itertools::Itertools;
+use starnix_sync::{LockBefore, RwLockReadGuard, ThreadGroupLimits};
+use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef};
+use starnix_uapi::{tid_t, uapi};
+
 use starnix_logging::track_stub;
-use starnix_sync::{
-    InterruptibleEvent, LockBefore, Locked, RwLockReadGuard, ThreadGroupLimits, Unlocked,
-    WakeReason,
-};
+use starnix_sync::{InterruptibleEvent, Locked, Unlocked, WakeReason};
 use starnix_syscalls::SyscallResult;
 use starnix_types::time::{duration_from_timespec, timeval_from_duration};
 use starnix_uapi::errors::{EINTR, ETIMEDOUT, Errno, ErrnoResultExt};
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::signals::{SIGCHLD, SigSet, Signal, UNBLOCKABLE_SIGNALS, UncheckedSignal};
-use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef, UserAddress, UserRef};
+use starnix_uapi::signals::{SigSet, Signal, UNBLOCKABLE_SIGNALS, UncheckedSignal};
+use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::{
     __WALL, __WCLONE, __WNOTHREAD, P_ALL, P_PGID, P_PID, P_PIDFD, SFD_CLOEXEC, SFD_NONBLOCK,
     SI_TKILL, SIG_BLOCK, SIG_SETMASK, SIG_UNBLOCK, SS_AUTODISARM, SS_DISABLE, SS_ONSTACK,
     WCONTINUED, WEXITED, WNOHANG, WNOWAIT, WSTOPPED, WUNTRACED, errno, error, pid_t, rusage,
-    sigaltstack, tid_t, uapi,
+    sigaltstack,
 };
 use static_assertions::const_assert_eq;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -497,15 +497,27 @@ pub fn sys_kill(
     pid: pid_t,
     unchecked_signal: UncheckedSignal,
 ) -> Result<(), Errno> {
-    // Do not hold the PidTable read lock while delivering signals. Delivery requires a PidTable
-    // write lock to reap killed tasks.
     let pids = current_task.kernel().pids.read();
     match pid {
         pid if pid > 0 => {
             // "If pid is positive, then signal sig is sent to the process with
             // the ID specified by pid."
-            let target_thread_group = pids.get_task(pid)?.thread_group().clone();
-            drop(pids);
+            let target_thread_group = {
+                match pids.get_process(pid) {
+                    Some(ProcessEntryRef::Process(process)) => process,
+
+                    // Zombies cannot receive signals. Just ignore it.
+                    Some(ProcessEntryRef::Zombie(_zombie)) => return Ok(()),
+
+                    // If we don't have process with `pid` then check if there is a task with
+                    // the `pid`.
+                    None => {
+                        let task = pids.get_task(pid)?;
+                        task.thread_group().clone()
+                    }
+                }
+            };
+
             target_thread_group.send_signal_unchecked(current_task, unchecked_signal)?;
         }
         pid if pid == -1 => {
@@ -516,7 +528,8 @@ pub fn sys_kill(
             // signals to, except possibly for some implementation-defined
             // system processes. Linux allows a process to signal itself, but on
             // Linux the call kill(-1,sig) does not signal the calling process."
-            let thread_groups = pids
+
+            let thread_groups: Vec<_> = pids
                 .get_thread_groups()
                 .into_iter()
                 .filter(|thread_group| {
@@ -528,8 +541,7 @@ pub fn sys_kill(
                     }
                     true
                 })
-                .collect_vec();
-            drop(pids);
+                .collect();
             signal_thread_groups(current_task, unchecked_signal, thread_groups)?;
         }
         _ => {
@@ -542,12 +554,11 @@ pub fn sys_kill(
                 0 => current_task.thread_group().read().process_group.leader,
                 _ => negate_pid(pid)?,
             };
+
             let process_group = pids.get_process_group(process_group_id);
             let thread_groups = process_group
                 .iter()
-                .flat_map(|pg| pg.read(locked).thread_groups().collect_vec())
-                .collect_vec();
-            drop(pids);
+                .flat_map(|pg| pg.read(locked).thread_groups().collect::<Vec<_>>());
             signal_thread_groups(current_task, unchecked_signal, thread_groups)?;
         }
     };
@@ -560,11 +571,12 @@ fn verify_tgid_for_task(
     tgid: pid_t,
     pids: &RwLockReadGuard<'_, PidTable>,
 ) -> Result<(), Errno> {
-    let tg_task = pids.get_process(tgid)?;
-    if !tg_task.is_live() {
-        return error!(ESRCH);
-    }
-    if *task.thread_group() != *tg_task.thread_group() {
+    let thread_group = match pids.get_process(tgid) {
+        Some(ProcessEntryRef::Process(proc)) => proc,
+        Some(ProcessEntryRef::Zombie(_)) => return error!(EINVAL),
+        None => return error!(ESRCH),
+    };
+    if *task.thread_group() != thread_group {
         return error!(EINVAL);
     } else {
         Ok(())
@@ -851,7 +863,7 @@ fn wait_on_pid(
     current_task: &CurrentTask,
     selector: &ProcessSelector,
     options: &WaitingOptions,
-) -> Result<Option<TaskExitState>, Errno> {
+) -> Result<Option<WaitResult>, Errno> {
     let waiter = Waiter::new();
     loop {
         {
@@ -978,12 +990,7 @@ pub fn sys_waitid(
         }
 
         if !user_info.is_null() {
-            // From <https://man7.org/linux/man-pages/man2/wait.2.html>:
-            //
-            //   si_signo
-            //     Always set to SIGCHLD.
-            let mut siginfo = waitable_process.as_signal_info();
-            siginfo.signal = SIGCHLD;
+            let siginfo = waitable_process.as_signal_info();
             siginfo.write(current_task, user_info)?;
         }
     } else if id_type == P_PIDFD {
@@ -1043,7 +1050,7 @@ pub fn sys_wait4(
 
     if let Some(waitable_process) = wait_on_pid(locked, current_task, &selector, &waiting_options)?
     {
-        let status = waitable_process.status.wait_status();
+        let status = waitable_process.exit_info.status.wait_status();
 
         if !user_rusage.is_null() {
             track_stub!(TODO("https://fxbug.dev/322874768"), "real rusage from wait4");
@@ -1059,7 +1066,7 @@ pub fn sys_wait4(
             current_task.write_object(user_wstatus, &status)?;
         }
 
-        Ok(waitable_process.tid)
+        Ok(waitable_process.pid)
     } else {
         Ok(0)
     }
@@ -1125,7 +1132,7 @@ mod tests {
     use crate::signals::testing::dequeue_signal_for_test;
     use crate::signals::{SI_HEADER_SIZE, SignalInfoHeader, send_standard_signal};
     use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
-    use crate::task::{EventHandler, ExitStatus};
+    use crate::task::{EventHandler, ExitStatus, ProcessExitInfo};
     use crate::testing::*;
     use starnix_sync::Mutex;
     use starnix_types::math::round_up_to_system_page_size;
@@ -2111,11 +2118,13 @@ mod tests {
     async fn test_no_error_when_zombie() {
         spawn_kernel_and_run(async |locked, current_task| {
             let child = current_task.clone_task_for_test(locked, 0, Some(SIGCHLD));
-            let expected_result = TaskExitState {
-                tid: child.tid,
+            let expected_result = WaitResult {
+                pid: child.tid,
                 uid: 0,
-                status: ExitStatus::Exit(1),
-                signal: Some(SIGCHLD),
+                exit_info: ProcessExitInfo {
+                    status: ExitStatus::Exit(1),
+                    exit_signal: Some(SIGCHLD),
+                },
                 time_stats: Default::default(),
             };
             child.thread_group().exit(locked, ExitStatus::Exit(1), None);
@@ -2182,7 +2191,7 @@ mod tests {
 
             // Child is deleted, the thread must be able to terminate.
             let child_id = thread.join().expect("join");
-            assert_eq!(waited_child.tid, child_id);
+            assert_eq!(waited_child.pid, child_id);
         })
         .await;
     }
@@ -2345,7 +2354,7 @@ mod tests {
                 Ok(())
             );
             // The previous wait matched child2, only child1 should be in the available zombies.
-            assert_eq!(current_task.thread_group().read().zombie_children[0], child1_pid);
+            assert_eq!(current_task.thread_group().read().zombie_children[0].pid(), child1_pid);
 
             assert_eq!(
                 sys_waitid(
