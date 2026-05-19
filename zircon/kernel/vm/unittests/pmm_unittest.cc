@@ -745,6 +745,94 @@ static bool pmm_node_non_suspendable_wait_test() {
   END_TEST;
 }
 
+// Verifies that WaitForSinglePageAllocation returns ZX_ERR_INTERNAL_INTR_KILLED
+// when the thread is killed.
+static bool pmm_node_killed_wait_test() {
+  BEGIN_TEST;
+
+  ManagedPmmNode node;
+
+  // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
+  list_node list = LIST_INITIAL_VALUE(list);
+  zx_status_t status = node.node().AllocPages(ManagedPmmNode::kNumPages, 0, &list);
+  EXPECT_EQ(ZX_OK, status);
+
+  // Place the node directly into a state that forbids allocations.
+  EXPECT_TRUE(node.SetFreeMemorySignal(0, ManagedPmmNode::kNumPages, UINT64_MAX));
+
+  // Use a long timeout so the test doesn't time out.
+  PmmSuspendKillWaiterArgs args{&node.node(), true, ZX_SEC(5), ZX_OK};
+
+  // Start a thread that will wait.
+  Thread* thread =
+      Thread::Create("pmm killed waiter", pmm_suspend_kill_waiter_thread, &args, DEFAULT_PRIORITY);
+  thread->Resume();
+
+  // Give the thread time to block.
+  Thread::Current::SleepRelative(ZX_MSEC(100));
+
+  // Kill the thread.
+  thread->Kill();
+
+  // Wait for the thread to complete.
+  thread->Join(nullptr, ZX_TIME_INFINITE);
+
+  // Verify that the thread returned ZX_ERR_INTERNAL_INTR_KILLED.
+  EXPECT_EQ(args.result.load(), ZX_ERR_INTERNAL_INTR_KILLED);
+
+  // Clean up.
+  node.node().FreeList(&list);
+
+  END_TEST;
+}
+
+// Verifies that WaitForSinglePageAllocation with suspendable = false ignores suspend signals
+// but is interrupted immediately when the thread is killed, returning ZX_ERR_INTERNAL_INTR_KILLED.
+static bool pmm_node_suspend_then_killed_wait_test() {
+  BEGIN_TEST;
+
+  ManagedPmmNode node;
+
+  // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
+  list_node list = LIST_INITIAL_VALUE(list);
+  zx_status_t status = node.node().AllocPages(ManagedPmmNode::kNumPages, 0, &list);
+  EXPECT_EQ(ZX_OK, status);
+
+  // Place the node directly into a state that forbids allocations.
+  EXPECT_TRUE(node.SetFreeMemorySignal(0, ManagedPmmNode::kNumPages, UINT64_MAX));
+
+  // Use a long timeout so the test doesn't time out naturally.
+  PmmSuspendKillWaiterArgs args{&node.node(), false, ZX_SEC(5), ZX_OK};
+
+  // Start a thread that will wait in a non-suspendable state.
+  Thread* thread = Thread::Create("pmm suspend-then-killed waiter", pmm_suspend_kill_waiter_thread,
+                                  &args, DEFAULT_PRIORITY);
+  thread->Resume();
+
+  // Give the thread time to block.
+  Thread::Current::SleepRelative(ZX_MSEC(100));
+
+  // Suspend the thread (which should be ignored).
+  thread->Suspend();
+
+  // Give it some time to ensure it's still blocked.
+  Thread::Current::SleepRelative(ZX_MSEC(50));
+
+  // Now kill the thread.
+  thread->Kill();
+
+  // Wait for the thread to complete.
+  thread->Join(nullptr, ZX_TIME_INFINITE);
+
+  // Verify that the thread returned ZX_ERR_INTERNAL_INTR_KILLED.
+  EXPECT_EQ(args.result.load(), ZX_ERR_INTERNAL_INTR_KILLED);
+
+  // Clean up.
+  node.node().FreeList(&list);
+
+  END_TEST;
+}
+
 static bool pmm_checker_test_with_fill_size(size_t fill_size) {
   BEGIN_TEST;
 
@@ -1048,6 +1136,8 @@ VM_UNITTEST(pmm_node_stop_returning_should_wait_test)
 VM_UNITTEST(pmm_node_stop_returning_should_wait_concurrent_test)
 VM_UNITTEST(pmm_node_suspendable_wait_test)
 VM_UNITTEST(pmm_node_non_suspendable_wait_test)
+VM_UNITTEST(pmm_node_killed_wait_test)
+VM_UNITTEST(pmm_node_suspend_then_killed_wait_test)
 VM_UNITTEST(pmm_checker_test)
 VM_UNITTEST(pmm_checker_is_valid_fill_size_test)
 VM_UNITTEST(pmm_get_arena_info_test)
