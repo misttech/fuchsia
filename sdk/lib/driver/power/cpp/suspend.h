@@ -59,6 +59,35 @@ class ResumeCompleter final : public Completer {
   using Completer::operator();
 };
 
+// Drivers should use `Suspendable` to implement suspend and resume support for
+// their driver. The `fuchsia-suspendable` skill in //src/devices/skills for
+// agents should be able to do the basic integration. Information in that skill
+// is also a guide for human authors, but a summary is below.
+//
+// To properly use this mix-in drivers should:
+//   * Update their component manifest and add `suspend_enabled: "true"` to the
+//     program stanza.
+//   * Implement the virtual methods defined here.
+//   * Implement `std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>>
+//     take_power_element_runner()` in the driver.
+//   * Call `InitializeSuspend` in their start method, after
+//     `take_power_element_runner()` can return a valid value.
+//
+// `InitializeSuspend` does one of three things
+//   1) If suspend is not enabled based on `SuspendEnabled`, it returns
+//      `zx::ok` immediately.
+//   2) If `Driver::take_power_element_runner` returns a value it uses calls
+//      to `SetLevel` to levels 0 and 1 to drive calls to `BeforeSuspend` and
+//      `AfterResume`, respectively.
+//   3) If neither (1) nor (2), it registers a
+//      `fuchsia.power.system/SuspendBlocker` with the `ActivityGovernor`
+//      protocol.
+//
+// The typical implementation for `take_power_element_runner()` returns the
+// value from `DriverContext::take_power_element_runner()` from the
+// `DriverContext` instance passed to the driver's `Start` hook. The driver
+// should take the runner from `DriverContext` during `Start` and store and
+// then return it from the driver's `take_power_element_runner` implementation.
 template <typename Driver>
 class Suspendable {
  public:
@@ -162,13 +191,6 @@ class Suspendable {
     // is created.
     bool first_activation_occurred_ = false;
   };
-
-  // This call does one of three things
-  //   1) If suspend is not enabled based on `SuspendEnabled`, it returns `zx::ok` immediately.
-  //   2) If `Driver::take_power_element_runner` returns a value it uses calls to `SetLevel` to
-  //      levels 0 and 1 to drive calls to `BeforeSuspend` and `AfterResume`, respectively.
-  //   3) If neither (1) nor (2), it registers a `fuchsia.power.system/SuspendBlocker` with the
-  //      `ActivityGovernor` protocol.
 
   Server server_;
   std::variant<std::monostate, fidl::ServerBinding<fuchsia_power_system::SuspendBlocker>,
