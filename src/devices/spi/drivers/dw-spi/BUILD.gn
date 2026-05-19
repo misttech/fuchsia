@@ -33,6 +33,7 @@ fuchsia_rust_driver("dw-spi-driver") {
 
   sources = [
     "src/lib.rs",
+    "src/registers.rs",
     "tests/dw_spi_test.rs",
   ]
   deps = [
@@ -54,6 +55,7 @@ fuchsia_rust_driver("dw-spi-driver") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:bitfield",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
@@ -65,6 +67,7 @@ fuchsia_rust_driver("dw-spi-driver") {
     "//sdk/lib/driver/fake-powerdomain/rust",
     "//sdk/lib/driver/fake-reset/rust",
     "//src/lib/fuchsia",
+    "//src/lib/mapped-vmo",
   ]
 }
 

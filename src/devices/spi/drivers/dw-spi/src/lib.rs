@@ -17,20 +17,12 @@ use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
 use log::{error, info};
+use mmio::Register;
 use mmio::region::MmioRegion;
 use mmio::vmo::VmoMemory;
 use pdev::PlatformDevice;
 use zx::Status;
-
-struct DwSpiDriver {
-    _node: Node,
-    _scope: fasync::Scope,
-    _businfo_server: Option<MetadataServer>,
-    _mmio: MmioRegion<VmoMemory>,
-    _cs_gpio: Option<fidl_next::Client<fgpio::Gpio>>,
-}
-
-driver_register!(DwSpiDriver);
+mod registers;
 
 struct SpiImplServer {}
 
@@ -136,6 +128,49 @@ impl fidl_next_fuchsia_hardware_spiimpl::ServiceHandler for SpiImplService {
     }
 }
 
+struct DwSpiDriver {
+    _node: Node,
+    _scope: fasync::Scope,
+    _businfo_server: Option<MetadataServer>,
+    _mmio: registers::DwSpiRegsBlock<MmioRegion<VmoMemory>>,
+    _cs_gpio: Option<fidl_next::Client<fgpio::Gpio>>,
+}
+
+driver_register!(DwSpiDriver);
+
+impl DwSpiDriver {
+    fn init_registers(mmio: &mut registers::DwSpiRegsBlock<MmioRegion<VmoMemory>>) {
+        mmio.ssi_enr_mut().write(registers::SsiEnr::from_raw(0));
+
+        mmio.ctrlr0_mut().write({
+            let mut ctrlr0 = registers::CtrlR0::from_raw(0);
+            ctrlr0.set_spi_frf(0); // Standard SPI
+            ctrlr0.set_frf(0); // Motorola SPI
+            ctrlr0.set_dfs(7); // 8-bit (values 3-15 correspond to 4-16 bits, so 7 means 8 bits)
+            ctrlr0.set_tmod(0); // Transmit & Receive
+            ctrlr0
+        });
+
+        // TODO(511200585): Determine the clock divider based on the core clock and requested bus
+        // clock frequencies. For now it is hardcoded to a low frequency just to get things working.
+        mmio.baudr_mut().write({
+            let mut baudr = registers::Baudr::from_raw(0);
+            baudr.set_sckdv(500);
+            baudr
+        });
+
+        // Mask all interrupts initially in IMR
+        mmio.imr_mut().write(registers::Imr::from_raw(0));
+
+        // Enable SSI
+        mmio.ssi_enr_mut().write({
+            let mut ssi_enr = registers::SsiEnr::from_raw(0);
+            ssi_enr.set_ssi_en(true);
+            ssi_enr
+        });
+    }
+}
+
 impl Driver for DwSpiDriver {
     const NAME: &str = "dw-spi";
 
@@ -189,7 +224,8 @@ impl Driver for DwSpiDriver {
             Status::INTERNAL
         })?;
 
-        let mmio = pdev.map_mmio_by_id(0).await?;
+        let mut mmio = registers::DwSpiRegsBlock { mmio: pdev.map_mmio_by_id(0).await? };
+        DwSpiDriver::init_registers(&mut mmio);
 
         let cs_gpio = {
             let cs_gpio_service: fdf_component::ServiceInstance<fgpio::Service> =

@@ -22,6 +22,14 @@ async fn test_init() {
     let pdev = FakePDev::new();
 
     let vmo = Vmo::create(0x100).expect("Failed to create VMO");
+    vmo.set_cache_policy(zx::CachePolicy::UnCachedDevice).expect("Failed to set cache policy");
+    let mapping = mapped_vmo::Mapping::create_from_vmo(
+        &vmo,
+        0x100,
+        zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
+    )
+    .expect("Failed to map VMO");
+
     let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Failed to duplicate VMO");
     let mut pdev_config: fake_pdev::Config = Default::default();
     let mmio = fdevice::natural::Mmio { offset: Some(0), size: Some(0x100), vmo: Some(dup) };
@@ -53,4 +61,19 @@ async fn test_init() {
     assert!(clock_bus.enabled());
     assert!(clock_regs.enabled());
     assert!(reset.take_toggled());
+
+    let read_u32 = |offset: usize| -> u32 {
+        let mut bytes = [0u8; 4];
+        mapping.read_at(offset, &mut bytes);
+        u32::from_le_bytes(bytes)
+    };
+
+    let ctrlr0 = read_u32(0x0);
+    assert_eq!(ctrlr0, 7);
+
+    let ssi_enr = read_u32(0x8);
+    assert_eq!(ssi_enr, 1);
+
+    let baudr = read_u32(0x14);
+    assert_eq!(baudr, 500);
 }
