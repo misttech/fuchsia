@@ -9,6 +9,7 @@ fidl_library(
     srcs = [
         "interrupt.fidl",
     ],
+    enable_rust_next = True,
     visibility = ["//visibility:public"],
     deps = [
         "//zircon/vdso/zx",

@@ -35,6 +35,7 @@ if (is_host) {
 
 fidl("fuchsia.hardware.interrupt") {
   sources = [ "interrupt.fidl" ]
+  enable_rust_next = true
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }
