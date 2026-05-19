@@ -705,6 +705,15 @@
                     "Python wheel file, a zip archive which is extracted by a Jiri hook into ",
                     "prebuilt/third_party/pydantic-core, which has all licensing information."
                 ]
+            },
+            {
+                "paths": [
+                    "bundles/assembly/bazel_inputs/third_party"
+                ],
+                "notes": [
+                    "Not actually third party code, these are targets that redirect to ",
+                    "targets in //third_party."
+                ]
             }
         ]
     }

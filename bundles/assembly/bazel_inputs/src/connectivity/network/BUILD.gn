@@ -1,0 +1,25 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bazel/export_fuchsia_package_to_bazel.gni")
+
+export_fuchsia_package_to_bazel("netstack-migration") {
+  package = "//src/connectivity/network:netstack-migration"
+}
+
+export_fuchsia_package_to_bazel("netstack-migration_gub") {
+  package = "//src/connectivity/network:netstack-migration_gub"
+}
+
+export_fuchsia_package_to_bazel("netstack2") {
+  package = "//src/connectivity/network:netstack2"
+}
+
+export_fuchsia_package_to_bazel("netstack3") {
+  package = "//src/connectivity/network:netstack3"
+}
+
+export_fuchsia_package_to_bazel("netstack3_gub") {
+  package = "//src/connectivity/network:netstack3_gub"
+}

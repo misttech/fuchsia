@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 import("//build/components.gni")
 import("config.gni")  # icu_flavors, icu_fixup_deps
 
@@ -92,5 +93,23 @@ template("icu_fuchsia_package") {
       }
       public_deps += icu_public_deps
     }
+  }
+}
+
+# Exports an ICU package that comes in multiple ICU flavors to Bazel.
+template("export_icu_package_to_bazel") {
+  package_label = get_label_info(invoker.package, "label_no_toolchain")
+
+  foreach(icu_flavor, icu_flavors) {
+    export_fuchsia_package_to_bazel(
+        "${target_name}.icu_${icu_flavor.name}_${icu_flavor.commit_id}") {
+      forward_variables_from(invoker, "*", [ "package" ])
+      package =
+          "${package_label}.icu_${icu_flavor.name}_${icu_flavor.commit_id}"
+    }
+  }
+
+  export_fuchsia_package_to_bazel(target_name) {
+    forward_variables_from(invoker, "*")
   }
 }

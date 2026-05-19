@@ -44,6 +44,19 @@ template("platform_artifacts") {
       defined(invoker.check_production_eligibility) &&
       invoker.check_production_eligibility
 
+  # This ensures that the bazel_inputs for each AIB is defined, in preparation for moving
+  # the generation of AIBs from here in GN, to Bazel.  This just adds all of those
+  # groups of bazel_inputs() targets to the deps of the group, so that GN and ninja
+  # makes sure they all exist.
+  _aib_bazel_inputs = []
+  foreach(aib_label, invoker.deps) {
+    target_package = get_label_info(aib_label, "dir")
+    if (target_package == "//bundles/assembly") {
+      aib_name = get_label_info(aib_label, "name")
+      _aib_bazel_inputs += [ "//bundles/assembly/bazel_inputs:${aib_name}" ]
+    }
+  }
+
   generated_file(labels.aib_list) {
     forward_variables_from(invoker,
                            [
@@ -150,7 +163,7 @@ template("platform_artifacts") {
                              "visibility",
                            ])
 
-    deps = [ ":${labels.bazel_inputs}" ]
+    deps = _aib_bazel_inputs + [ ":${labels.bazel_inputs}" ]
 
     # Make the platform artifacts available to upstream dependencies.
     public_deps = [ ":${labels.platform_artifacts}" ]

@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/packages:prebuilt_package.bzl", "prebuilt_package")
+
+package(default_visibility = ["//bundles/assembly:__subpackages__"])
+
+prebuilt_package(
+    name = "netstack-migration",
+    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/network:netstack-migration",
+)
+
+prebuilt_package(
+    name = "netstack-migration_gub",
+    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/network:netstack-migration_gub",
+)
+
+prebuilt_package(
+    name = "netstack2",
+    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/network:netstack2",
+)
+
+prebuilt_package(
+    name = "netstack3",
+    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/network:netstack3",
+)
+
+prebuilt_package(
+    name = "netstack3_gub",
+    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/network:netstack3_gub",
+)
