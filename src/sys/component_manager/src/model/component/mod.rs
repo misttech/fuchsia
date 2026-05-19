@@ -1054,16 +1054,19 @@ impl ComponentInstance {
         &self,
         open_request: OpenRequest<'_>,
     ) -> Result<(), OpenOutgoingDirError> {
-        match *self.lock_state().await {
-            InstanceState::Resolved(ref mut resolved)
-            | InstanceState::Started(ref mut resolved, _) => {
-                let program_escrow =
-                    resolved.program_escrow().ok_or(OpenOutgoingDirError::InstanceNonExecutable)?;
-                program_escrow.open_outgoing(open_request).await?;
-                Ok(())
+        let escrow = {
+            let state = self.lock_state().await;
+            match &*state {
+                InstanceState::Resolved(resolved) | InstanceState::Started(resolved, _) => resolved
+                    .program_escrow()
+                    .cloned()
+                    .ok_or(OpenOutgoingDirError::InstanceNonExecutable)?,
+                _ => return Err(OpenOutgoingDirError::InstanceNotResolved),
             }
-            _ => Err(OpenOutgoingDirError::InstanceNotResolved),
-        }
+        };
+
+        escrow.open_outgoing(open_request).await?;
+        Ok(())
     }
 
     /// Returns a `DirectoryEntry` representation of the outgoing directory of the component. It

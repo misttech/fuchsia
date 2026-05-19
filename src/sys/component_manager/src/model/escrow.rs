@@ -7,17 +7,19 @@ use std::sync::Arc;
 
 use fasync::Task;
 use fidl::endpoints::{ServerEnd, create_proxy};
+use fidl_fuchsia_component_sandbox as fsandbox;
+use fidl_fuchsia_io as fio;
+use fuchsia_async as fasync;
 use futures::channel::{mpsc, oneshot};
-use futures::lock::Mutex;
 use futures::{FutureExt, StreamExt, select};
 use log::warn;
 use moniker::Moniker;
 use std::pin::pin;
+use std::sync::Mutex;
 use vfs::ExecutionScope;
 use vfs::directory::entry::OpenRequest;
 use vfs::remote::remote_dir;
 use zx::AsHandleRef;
-use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 use super::start::Start;
 use crate::model::component::StartReason;
@@ -85,6 +87,7 @@ impl Debug for EscrowedState {
 ///
 /// All operations are non-blocking with the exception of extracting the escrowed outgoing
 /// directory server endpoint, thus reducing the risks of deadlocks.
+#[derive(Clone)]
 pub struct Actor {
     sender: mpsc::UnboundedSender<Command>,
     // The usize is used to track how many requests have been sent to this proxy.
@@ -144,34 +147,37 @@ impl Actor {
     /// started, this will cause the escrowed state to become urgent and the component to be
     /// started.
     pub async fn open_outgoing(&self, open_request: OpenRequest<'_>) -> Result<(), zx::Status> {
-        let outgoing_dir_clone = {
-            let mut guard = self.outgoing_dir.lock().await;
-            let (open_counter, outgoing_dir) = &mut *guard;
-            *open_counter += 1;
-            if *open_counter % LIVENESS_CHECK_FREQUENCY == 0 {
-                let mut sync_fut = outgoing_dir.sync().fuse();
-                let mut timer = pin!(
-                    fasync::Timer::new(std::time::Duration::from_millis(
-                        LIVENESS_CHECK_TIMEOUT_MS.try_into().expect("failed to usize to u64")
-                    ))
-                    .fuse()
-                );
-                select! {
-                    _ = sync_fut => (),
-                    _ = timer => {
-                        warn!(
-                            "Checked outgoing directory liveness after {} requests, and it didn't \
-                            respond in {} milliseconds. If component is ignoring inbound requests, \
-                            its channel could fill and crash component manager. Moniker is {}",
-                            LIVENESS_CHECK_FREQUENCY,
-                            LIVENESS_CHECK_TIMEOUT_MS,
-                            self.moniker,
-                        );
-                    }
+        let (outgoing_dir_clone, needs_liveness_check) = {
+            let mut guard = self.outgoing_dir.lock().unwrap();
+            guard.0 += 1;
+            let needs_check = guard.0 % LIVENESS_CHECK_FREQUENCY == 0;
+            let dir_clone = Clone::clone(&guard.1);
+            (dir_clone, needs_check)
+        };
+
+        if needs_liveness_check {
+            let mut sync_fut = outgoing_dir_clone.sync().fuse();
+            let mut timer = pin!(
+                fasync::Timer::new(std::time::Duration::from_millis(
+                    LIVENESS_CHECK_TIMEOUT_MS.try_into().expect("failed to usize to u64")
+                ))
+                .fuse()
+            );
+            select! {
+                _ = sync_fut => (),
+                _ = timer => {
+                    warn!(
+                        "Checked outgoing directory liveness after {} requests, and it didn't \
+                        respond in {} milliseconds. If component is ignoring inbound requests, \
+                        its channel could fill and crash component manager. Moniker is {}",
+                        LIVENESS_CHECK_FREQUENCY,
+                        LIVENESS_CHECK_TIMEOUT_MS,
+                        self.moniker,
+                    );
                 }
             }
-            Clone::clone(&*outgoing_dir)
-        };
+        }
+
         open_request.open_remote(remote_dir(outgoing_dir_clone))
     }
 }
@@ -326,7 +332,7 @@ impl ActorImpl {
             // No outgoing directory server endpoint was escrowed. Mint a new pair and
             // update our client counterpart.
             let (client, server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-            *self.outgoing_dir.lock().await = (0, client);
+            *self.outgoing_dir.lock().unwrap() = (0, client);
             server
         };
         let escrow = EscrowedState {
