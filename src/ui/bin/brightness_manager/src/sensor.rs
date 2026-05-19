@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::{fs, io};
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_input_report::{
     DeviceDescriptor, InputDeviceMarker, InputDeviceProxy, InputReportsReaderMarker,
@@ -70,26 +70,21 @@ async fn open_sensor_input_report_reader() -> Result<AmbientLightInputReportRead
                     let mut blue = None;
 
                     for input in input_desc {
-                        match &input.values {
-                            Some(axes) => {
-                                for (i, val) in axes.iter().enumerate() {
-                                    let component = AmbientLightComponent {
-                                        report_index: i,
-                                        exponent: val.axis.unit.exponent,
-                                        report_id: input.report_id.unwrap_or(0),
-                                    };
-                                    match val.type_ {
-                                        SensorType::LightIlluminance => {
-                                            illuminance = Some(component)
-                                        }
-                                        SensorType::LightRed => red = Some(component),
-                                        SensorType::LightGreen => green = Some(component),
-                                        SensorType::LightBlue => blue = Some(component),
-                                        _ => {}
-                                    }
-                                }
+                        let axes =
+                            input.values.as_ref().context("SensorInputDescriptor has no values")?;
+                        for (i, val) in axes.iter().enumerate() {
+                            let component = AmbientLightComponent {
+                                report_index: i,
+                                exponent: val.axis.unit.exponent,
+                                report_id: input.report_id.unwrap_or(0),
+                            };
+                            match val.type_ {
+                                SensorType::LightIlluminance => illuminance = Some(component),
+                                SensorType::LightRed => red = Some(component),
+                                SensorType::LightGreen => green = Some(component),
+                                SensorType::LightBlue => blue = Some(component),
+                                _ => {}
                             }
-                            _ => {}
                         }
                     }
 
@@ -129,27 +124,23 @@ async fn read_sensor_input_report(
                     continue;
                 }
 
-                if let Some(sensor) = report.sensor {
-                    if let Some(values) = sensor.values {
-                        let f = |component: &Option<AmbientLightComponent>| match component {
-                            Some(val) => match val.exponent {
-                                0 => values[val.report_index] as f32,
-                                _ => {
-                                    values[val.report_index] as f32
-                                        * f32::powf(10.0, val.exponent as f32)
-                                }
-                            },
-                            None => 0.0,
-                        };
+                let sensor =
+                    report.sensor.context("sensor required in InputReport for sensor device")?;
+                let values = sensor.values.context("values required in SensorInputReport")?;
+                let f = |component: &Option<AmbientLightComponent>| match component {
+                    Some(val) => match val.exponent {
+                        0 => values[val.report_index] as f32,
+                        _ => values[val.report_index] as f32 * f32::powf(10.0, val.exponent as f32),
+                    },
+                    None => 0.0,
+                };
 
-                        let illuminance = f(&device.illuminance);
-                        let red = f(&device.red);
-                        let green = f(&device.green);
-                        let blue = f(&device.blue);
+                let illuminance = f(&device.illuminance);
+                let red = f(&device.red);
+                let green = f(&device.green);
+                let blue = f(&device.blue);
 
-                        return Ok(Some(AmbientLightInputRpt { illuminance, red, blue, green }));
-                    }
-                }
+                return Ok(Some(AmbientLightInputRpt { illuminance, red, blue, green }));
             }
             Ok(None)
         }
