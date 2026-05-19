@@ -13,9 +13,11 @@
 //! [strc]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/power/state_recorder
 //!
 
+use fuchsia_inspect as inspect;
 use fuchsia_inspect::Inspector;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_sync::Mutex;
+use fuchsia_trace as ftrace;
 use futures_util::FutureExt;
 use std::cmp::Eq;
 pub use std::collections::HashMap;
@@ -29,7 +31,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
 use strum::IntoEnumIterator;
-use {fuchsia_inspect as inspect, fuchsia_trace as ftrace, zx};
+use zx;
 
 static CSTR_POOL: LazyLock<Mutex<HashMap<String, &'static CStr>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -362,7 +364,7 @@ impl NamedU64StateRecorder {
 
         let (history, persistence) = setup_recording_backend(&node, &options, record_item)?;
 
-        let vthread = ftrace::VThread::new(name.clone(), ftrace::Id::random().into());
+        let vthread = ftrace::VThread::new(name.clone(), ftrace::Id::new().into());
 
         Ok(Self {
             manager,
@@ -993,7 +995,7 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
             history,
             persistence,
             _root_node: node,
-            trace_id: ftrace::Id::random(),
+            trace_id: ftrace::Id::new(),
             _phantom: PhantomData,
         })
     }
