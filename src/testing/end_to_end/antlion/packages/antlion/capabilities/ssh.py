@@ -442,6 +442,7 @@ class SSHProvider(Runner):
         command: list[str],
         stdout: IO[bytes] | int = subprocess.PIPE,
         stdin: IO[bytes] | int = subprocess.PIPE,
+        stderr: IO[bytes] | int = subprocess.PIPE,
     ) -> subprocess.Popen[bytes]:
         full_command = self.config.full_command(command)
         self.log.debug(
@@ -451,6 +452,6 @@ class SSHProvider(Runner):
             full_command,
             stdin=stdin,
             stdout=stdout if stdout else subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=stderr,
             preexec_fn=os.setpgrp,
         )

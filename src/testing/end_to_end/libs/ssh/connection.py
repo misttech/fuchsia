@@ -306,6 +306,7 @@ class SshConnection(Runner):
         command: list[str],
         stdout: IO[bytes] | int = subprocess.PIPE,
         stdin: IO[bytes] | int = subprocess.PIPE,
+        stderr: IO[bytes] | int = subprocess.PIPE,
     ) -> subprocess.Popen[bytes]:
         """Execute a child program in a new process."""
         extra_options: dict[str, str | int | bool] = {"BatchMode": True}
@@ -317,7 +318,9 @@ class SshConnection(Runner):
             self._settings,
             extra_options=extra_options,
         )
-        return subprocess.Popen(terminal_command, stdout=stdout, stdin=stdin)
+        return subprocess.Popen(
+            terminal_command, stdout=stdout, stdin=stdin, stderr=stderr
+        )
 
     def close(self) -> None:
         """Clean up open connections to remote host."""

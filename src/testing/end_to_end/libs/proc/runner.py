@@ -67,6 +67,7 @@ class Runner(Protocol):
         command: list[str],
         stdout: IO[bytes] | int = subprocess.PIPE,
         stdin: IO[bytes] | int = subprocess.PIPE,
+        stderr: IO[bytes] | int = subprocess.PIPE,
     ) -> subprocess.Popen[bytes]:
         """Execute a child program in a new process."""
         ...

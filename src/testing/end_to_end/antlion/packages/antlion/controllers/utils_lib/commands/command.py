@@ -92,6 +92,7 @@ class LinuxCommand(Command):
         args: list[str],
         sudo: bool = False,
         stdout: IO[bytes] | int = subprocess.PIPE,
+        stderr: IO[bytes] | int = subprocess.PIPE,
     ) -> subprocess.Popen[bytes]:
         """Start the command without having to specify the binary.
 
@@ -103,4 +104,4 @@ class LinuxCommand(Command):
             cmd = ["sudo", self._binary]
         else:
             cmd = [self._binary]
-        return self._runner.start(cmd + args, stdout)
+        return self._runner.start(cmd + args, stdout, stderr=stderr)
