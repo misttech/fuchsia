@@ -168,3 +168,31 @@ class PortClass(enum.IntEnum):
     VIRTUAL = 6
     LOWPAN = 7
     BLACKHOLE = 8  # not part of fuchsia.hardware.network/PortClass
+
+
+@dataclass
+class PingResult:
+    """Result of a ping operation."""
+
+    raw_output: str  # Raw stdout and stderr from ping command.
+    requested: int
+    transmitted: int
+    received: int
+    time_ms: float | None
+    rtt_min_ms: float | None
+    rtt_avg_ms: float | None
+    rtt_max_ms: float | None
+    rtt_mdev_ms: float | None
+
+    @property
+    def all_pings_received(self) -> bool:
+        """True if all requested pings were received."""
+        return (
+            self.received == self.requested
+            and self.transmitted == self.requested
+        )
+
+    @property
+    def any_pings_received(self) -> bool:
+        """True if at least one ping was received."""
+        return self.received > 0
