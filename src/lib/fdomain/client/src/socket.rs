@@ -170,7 +170,8 @@ fn convert_poll_res_to_async_read(
 ) -> Poll<std::io::Result<usize>> {
     let res = ready!(poll_res).or_else(|e| match e {
         Error::FDomain(proto::Error::TargetError(e))
-            if e == zx_status::Status::PEER_CLOSED.into_raw() =>
+            if e == zx_status::Status::PEER_CLOSED.into_raw()
+                || e == zx_status::Status::BAD_STATE.into_raw() =>
         {
             Ok(0)
         }
