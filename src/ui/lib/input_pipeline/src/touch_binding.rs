@@ -842,7 +842,7 @@ fn process_single_touch_screen_report(
                 && !current_contacts.contains_key(&contact.id)
         }));
 
-    let trace_id = fuchsia_trace::Id::random();
+    let trace_id = fuchsia_trace::Id::new();
     let event = create_touch_screen_event(
         SortedVecMap::from_iter(vec![
             (fidl_ui_input::PointerEventPhase::Add, added_contacts.clone()),

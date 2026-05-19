@@ -126,7 +126,7 @@ impl MediaButtonsHandler {
 
     fn clone_event(event: &fidl_ui_input::MediaButtonsEvent) -> fidl_ui_input::MediaButtonsEvent {
         // each copy of the event should have a unique trace flow id.
-        let trace_flow_id = fuchsia_trace::Id::random();
+        let trace_flow_id = fuchsia_trace::Id::new();
         fuchsia_trace::flow_begin!("input", "dispatch_media_buttons_to_listeners", trace_flow_id);
 
         fidl_ui_input::MediaButtonsEvent {

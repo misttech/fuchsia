@@ -318,7 +318,7 @@ impl ConsumerControlsBinding {
             }
         };
 
-        let trace_id = fuchsia_trace::Id::random();
+        let trace_id = fuchsia_trace::Id::new();
         fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
 
         send_consumer_controls_event(

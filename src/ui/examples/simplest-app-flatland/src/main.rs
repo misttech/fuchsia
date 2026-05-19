@@ -12,20 +12,23 @@ use fidl_fuchsia_element::{
     GraphicalPresenterMarker, GraphicalPresenterProxy, ViewControllerMarker, ViewControllerProxy,
     ViewSpec,
 };
+use fidl_fuchsia_math as fmath;
+use fidl_fuchsia_ui_app as fapp;
+use fidl_fuchsia_ui_composition as fland;
+use fidl_fuchsia_ui_input3 as fuiinput;
+use fidl_fuchsia_ui_pointer as fptr;
 use fidl_fuchsia_ui_pointer::EventPhase;
+use fidl_fuchsia_ui_views as fviews;
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::{self as component};
 use fuchsia_scenic::ViewRefPair;
+use fuchsia_trace as trace;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use futures::prelude::*;
 use internal_message::InternalMessage;
 use log::{error, warn};
 use std::env;
-use {
-    fidl_fuchsia_math as fmath, fidl_fuchsia_ui_app as fapp, fidl_fuchsia_ui_composition as fland,
-    fidl_fuchsia_ui_input3 as fuiinput, fidl_fuchsia_ui_pointer as fptr,
-    fidl_fuchsia_ui_views as fviews, fuchsia_async as fasync, fuchsia_trace as trace,
-};
 
 const IMAGE_ID: fland::ContentId = fland::ContentId { value: 2 };
 const TRANSFORM_ID: fland::TransformId = fland::TransformId { value: 3 };
@@ -397,7 +400,7 @@ async fn main() {
                     // Change color on every finger down event.
                     if phase == EventPhase::Add {
                         // Trace from now until the update is applied.
-                        let trace_id = trace::Id::random();
+                        let trace_id = trace::Id::new();
                         touch_updates.push(trace_id);
                         trace::flow_begin!("input", "touch_update", trace_id);
                         app.next_color();

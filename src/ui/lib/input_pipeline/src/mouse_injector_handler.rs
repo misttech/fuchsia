@@ -109,7 +109,7 @@ impl InputHandler for MouseInjectorHandler {
                         fuchsia_trace::flow_step!("input", "event_in_input_pipeline", id.into());
                         id
                     }
-                    None => fuchsia_trace::Id::random(),
+                    None => fuchsia_trace::Id::new(),
                 };
 
                 self.inspect_status.count_received_event(&event_time);
@@ -560,7 +560,7 @@ impl MouseInjectorHandler {
                             data: Some(pointerinjector::Data::Viewport(utils::viewport_to_next(
                                 &new_viewport,
                             ))),
-                            trace_flow_id: Some(fuchsia_trace::Id::random().into()),
+                            trace_flow_id: Some(fuchsia_trace::Id::new().into()),
                             ..Default::default()
                         }];
                         injector

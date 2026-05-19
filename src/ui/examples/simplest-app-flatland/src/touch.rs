@@ -86,7 +86,7 @@ pub fn spawn_touch_source_watcher(
                         );
 
                         // use different trace_id in this application to avoid confuse the trace.
-                        let trace_id = fuchsia_trace::Id::random();
+                        let trace_id = fuchsia_trace::Id::new();
 
                         fuchsia_trace::flow_begin!(
                             "input",

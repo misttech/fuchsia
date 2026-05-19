@@ -294,7 +294,7 @@ impl TouchInjectorHandler {
 
     fn clone_event(event: &fidl_ui_input::TouchButtonsEvent) -> fidl_ui_input::TouchButtonsEvent {
         // each copy of the event should have a unique trace flow id.
-        let trace_flow_id = fuchsia_trace::Id::random();
+        let trace_flow_id = fuchsia_trace::Id::new();
         fuchsia_trace::flow_begin!("input", "dispatch_touch_button_to_listeners", trace_flow_id);
 
         fidl_ui_input::TouchButtonsEvent {
@@ -550,7 +550,7 @@ impl TouchInjectorHandler {
         };
         let data = pointerinjector::Data::PointerSample(pointer_sample);
 
-        let trace_flow_id = fuchsia_trace::Id::random();
+        let trace_flow_id = fuchsia_trace::Id::new();
         let event = pointerinjector::Event {
             timestamp: Some(event_time.into_nanos()),
             data: Some(data),
@@ -630,7 +630,7 @@ impl TouchInjectorHandler {
                             data: Some(pointerinjector::Data::Viewport(utils::viewport_to_next(
                                 &new_viewport,
                             ))),
-                            trace_flow_id: Some(fuchsia_trace::Id::random().into()),
+                            trace_flow_id: Some(fuchsia_trace::Id::new().into()),
                             ..Default::default()
                         }];
                         injector

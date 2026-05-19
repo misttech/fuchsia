@@ -6,10 +6,11 @@ use crate::internal_message::InternalMessage;
 use fidl_fuchsia_ui_input3::{
     KeyEventStatus, KeyEventType, KeyboardListenerRequest, KeyboardListenerRequestStream,
 };
+use fuchsia_async as fasync;
+use fuchsia_trace as trace;
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedSender;
 use log::warn;
-use {fuchsia_async as fasync, fuchsia_trace as trace};
 
 pub fn spawn_keyboard_listener(
     mut stream: KeyboardListenerRequestStream,
@@ -20,7 +21,7 @@ pub fn spawn_keyboard_listener(
             match request {
                 Ok(KeyboardListenerRequest::OnKeyEvent { event, responder, .. }) => {
                     trace::duration!("input", "simplest_app::OnKeyEvent");
-                    let trace_id = trace::Id::random();
+                    let trace_id = trace::Id::new();
                     trace::flow_begin!("input", "keyboard_in_simplest_app", trace_id);
 
                     // We don't want to double change color when the user presses down and then releases.

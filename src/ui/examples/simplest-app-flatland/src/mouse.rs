@@ -32,7 +32,7 @@ pub fn spawn_mouse_source_watcher(
                         );
 
                         // use different trace_id in this application to avoid confuse the trace.
-                        let app_trace_id = fuchsia_trace::Id::random();
+                        let app_trace_id = fuchsia_trace::Id::new();
 
                         fuchsia_trace::flow_begin!(
                             "input",
