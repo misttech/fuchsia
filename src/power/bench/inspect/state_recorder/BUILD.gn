@@ -76,7 +76,47 @@ python_perf_test("power_framework_state_recorder_benchmarks") {
   package_deps = [ ":package" ]
 }
 
+if (is_fuchsia) {
+  rustc_binary("state-recorder-perf-bin") {
+    name = "state_recorder_perf_benchmarks"
+    with_unit_tests = false
+    testonly = true
+    edition = "2024"
+    source_root = "src/main.rs"
+    sources = [ "src/main.rs" ]
+    deps = [
+      "//sdk/lib/power/state_recorder/rust",
+      "//src/developer/fuchsia-criterion",
+      "//src/lib/diagnostics/inspect/rust",
+      "//src/lib/fuchsia-async",
+      "//third_party/rust_crates:anyhow",
+    ]
+  }
+
+  fuchsia_package_with_single_component("state_recorder_perf_benchmarks") {
+    deps = [ ":state-recorder-perf-bin" ]
+    testonly = true
+    manifest = "meta/state-recorder-perf-benchmarks.cml"
+  }
+}
+
+if (is_host) {
+  fuchsia_component_perf_test("state_recorder_perf_benchmarks_test") {
+    package = ":state_recorder_perf_benchmarks"
+    component_name = "state_recorder_perf_benchmarks"
+    expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.power.state_recorder_cpu.txt"
+  }
+}
+
+group("perf_bench") {
+  testonly = true
+  deps = [ ":state_recorder_perf_benchmarks_test($host_toolchain)" ]
+}
+
 group("tests") {
   testonly = true
-  deps = [ ":power_framework_state_recorder_benchmarks($host_toolchain)" ]
+  deps = [
+    ":power_framework_state_recorder_benchmarks($host_toolchain)",
+    ":state_recorder_perf_benchmarks_test($host_toolchain)",
+  ]
 }
