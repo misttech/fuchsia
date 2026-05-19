@@ -51,12 +51,34 @@ class IdlePowerThread final {
     Suspend,
   };
 
+  // Evaluates to true if the snapshotted state indicates the power thread should be scheduled
+  // instead of eligible work because it needs to perform a transition or power management function.
+  // Provides accessors to the snapshotted state to facilitate efficient asserts in code paths that
+  // have preconditions that should be checked.
+  class PendingPowerWorkPredicate {
+   public:
+    explicit constexpr PendingPowerWorkPredicate(State current, State target)
+        : current_{current}, target_(target) {}
+
+    constexpr bool is_pending() const {
+      return (current_ != State::Active && current_ != State::Wakeup) || current_ != target_;
+    }
+
+    explicit constexpr operator bool() const { return is_pending(); }
+
+    constexpr State current() const { return current_; }
+    constexpr State target() const { return target_; }
+
+   private:
+    const State current_;
+    const State target_;
+  };
+
   // Returns true if the power thread should be scheduled instead of eligible work because it needs
   // to perform a transition or power management function.
-  bool pending_power_work() const {
+  PendingPowerWorkPredicate pending_power_work() const {
     const StateMachine state = state_.load(ktl::memory_order_acquire);
-    return (state.current != State::Active && state.current != State::Wakeup) ||
-           state.current != state.target;
+    return PendingPowerWorkPredicate(state.current, state.target);
   }
 
   // The result of a transition request, including the status code of the request and the current

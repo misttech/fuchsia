@@ -609,7 +609,12 @@ void Scheduler::RemoveFirstThread(Thread* thread) {
 Scheduler::DequeueResult Scheduler::DequeueThread(
     SchedTime now, Guard<MonitoredSpinLock, NoIrqSave>& queue_guard) {
   percpu& self = percpu::Get(this_cpu_);
-  if (self.idle_power_thread.pending_power_work()) {
+  if (IdlePowerThread::PendingPowerWorkPredicate pending_work =
+          self.idle_power_thread.pending_power_work()) {
+    // If the idle power thread is in the (offline, offline) state, CPU hot plugging attempted to
+    // block before restoring the idle power thread.
+    DEBUG_ASSERT(pending_work.current() != IdlePowerThread::State::Offline ||
+                 pending_work.target() != IdlePowerThread::State::Offline);
     return &self.idle_power_thread.thread();
   }
 
