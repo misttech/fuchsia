@@ -104,7 +104,7 @@ async fn download_blob_impl(
     params: crate::resuming_get::Params,
     inspect: finspect::Node,
 ) -> Result<u64, DownloadBlobError> {
-    let trace_id = ftrace::Id::random();
+    let trace_id = ftrace::Id::new();
     let _guard = ftrace::async_enter!(
         trace_id, "app", "http-client-download-blob",
         "url" => url
