@@ -194,6 +194,7 @@ class FakeUsbFunction
                      SetConfiguredCompleter::Sync& completer) override {
     set_configured_called_ = true;
     configured_ = req->configured;
+    configured_history_.push_back(req->configured);
     if (on_set_configured_) {
       on_set_configured_();
     }
@@ -246,6 +247,7 @@ class FakeUsbFunction
   bool set_configured_called() const { return set_configured_called_; }
   void clear_set_configured_called() { set_configured_called_ = false; }
   bool configured() const { return configured_; }
+  const std::vector<bool>& configured_history() const { return configured_history_; }
   bool set_interface_called() const { return set_interface_called_; }
 
   void set_on_set_configured(fit::function<void()> cb) { on_set_configured_ = std::move(cb); }
@@ -266,6 +268,7 @@ class FakeUsbFunction
 
   bool set_configured_called_ = false;
   bool configured_ = false;
+  std::vector<bool> configured_history_;
   fit::function<void()> on_set_configured_;
 
   bool set_interface_called_ = false;
@@ -946,6 +949,88 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureAndRouteFidlCalls) {
   EXPECT_TRUE(fake_function->set_interface_called());
   EXPECT_EQ(interface_num, fake_function->interface());
   EXPECT_EQ(1, fake_function->alt_setting());
+}
+
+TEST_F(UsbPeripheralFunctionTest, RepeatedSetConfigurationFlaps) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  zx::result fake_function_result = BindFakeFunction();
+  ASSERT_OK(fake_function_result);
+  auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
+
+  fidl::WireResult alloc_res = function_client->AllocResources(1, {}, {});
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_TRUE(alloc_res->is_ok()) << zx_status_get_string(alloc_res->error_value());
+  uint8_t interface_num = alloc_res->value()->interface_nums[0];
+
+  // Valid descriptors for ValidateFunction (we pass UMS's descriptors)
+  usb_interface_descriptor_t intf_desc = {
+      .b_length = sizeof(usb_interface_descriptor_t),
+      .b_descriptor_type = USB_DT_INTERFACE,
+      .b_interface_number = interface_num,
+      .b_alternate_setting = 0,
+      .b_num_endpoints = 0,
+      .b_interface_class = 8,
+      .b_interface_sub_class = 6,
+      .b_interface_protocol = 80,
+      .i_interface = 0,
+  };
+
+  std::vector<uint8_t> descriptors(sizeof(intf_desc));
+  memcpy(descriptors.data(), &intf_desc, sizeof(intf_desc));
+
+  fidl::WireResult configure_res = function_client->Configure(
+      fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
+      std::move(fake_function_endpoint));
+
+  ASSERT_TRUE(configure_res.ok()) << configure_res.status_string();
+  ASSERT_TRUE(configure_res->is_ok());
+
+  // Controller starts when all functions are registered.
+  ExpectControllerStarted(true);
+
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  fidl::Arena arena;
+  std::vector<uint8_t> unused;
+
+  // Test SetConfigured via standard endpoint request
+  fdescriptor::wire::UsbSetup setup;
+  setup.bm_request_type = USB_DIR_OUT | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_SET_CONFIGURATION;
+  setup.w_value = 1;  // Configuration 1
+  setup.w_index = interface_num;
+  setup.w_length = 0;
+
+  fidl::WireUnownedResult config_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  EXPECT_TRUE(config_res.ok()) << config_res.FormatDescription();
+  ASSERT_OK(config_res.value());
+
+  EXPECT_TRUE(fake_function->set_configured_called());
+  EXPECT_TRUE(fake_function->configured());
+  ASSERT_EQ(fake_function->configured_history().size(), 1u);
+  EXPECT_TRUE(fake_function->configured_history()[0]);
+
+  // Test repeated SetConfiguration request causes configuration flap
+  fake_function->clear_set_configured_called();
+  fidl::WireUnownedResult config_res2 =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  EXPECT_TRUE(config_res2.ok()) << config_res2.FormatDescription();
+  ASSERT_OK(config_res2.value());
+
+  EXPECT_TRUE(fake_function->set_configured_called());
+  EXPECT_TRUE(fake_function->configured());
+  ASSERT_EQ(fake_function->configured_history().size(), 3u);
+  EXPECT_FALSE(fake_function->configured_history()[1]);
+  EXPECT_TRUE(fake_function->configured_history()[2]);
 }
 
 TEST_F(UsbPeripheralFunctionTest, ClearFunctionsWaitsForTeardown) {

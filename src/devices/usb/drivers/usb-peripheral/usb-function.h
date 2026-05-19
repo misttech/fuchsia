@@ -39,6 +39,9 @@ class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFuncti
         name_(std::format("function-{:03d}", index)) {}
   ~UsbFunction() override;
 
+  // If SetConfigured(true, ...) is called from an already configured state,
+  // then a deconfigure/reconfigure sequence is performed to reset the function
+  // state.
   void SetConfigured(bool configured, usb_speed_t speed,
                      fit::callback<void(zx_status_t)> completer);
   void SetInterface(uint8_t interface, uint8_t alt_setting,

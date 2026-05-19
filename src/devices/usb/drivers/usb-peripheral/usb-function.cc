@@ -397,14 +397,33 @@ void UsbFunction::OnNodeControllerUnbound(fidl::UnbindInfo info) {
 void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,
                                 fit::callback<void(zx_status_t)> completer) {
   TRACE_DURATION("usb-peripheral", __func__);
+
+  bool unconfigure_first = false;
   if (last_configured_.has_value() && *last_configured_ == configured) {
-    if (configured) {
-      fdf::warn("SetConfigured called twice with configured = true");
+    if (!configured) {
+      // Nothing to do since it's already in the desired unconfigured state.
+      completer(ZX_OK);
+      return;
     }
-    // Nothing to do since it's already in the desired state.
-    completer(ZX_OK);
-    return;
+
+    // From the USB 2.0 specification, section 9.1.1.5:
+    //
+    //    Before a USB device’s function may be used, the device must be
+    //    configured. From the device’s perspective, configuration involves
+    //    correctly processing a SetConfiguration() request with a non-zero
+    //    configuration value. Configuring a device or changing an alternate
+    //    setting causes all of the status and configuration values associated
+    //    with endpoints in the affected interfaces to be set to their default
+    //    values. This includes setting the data toggle of any endpoint using
+    //    data toggles to the value DATA0.
+    //
+    // The easy way to get compliance for all function drivers is to flap them
+    // before acknowledging the configuration change.
+    fdf::info("SetConfigured called twice with configured = true; forcing configuration flap on {}",
+              index_);
+    unconfigure_first = true;
   }
+
   last_configured_ = configured;
   if (!function_intf_.is_valid()) {
     fdf::error("SetConfigured failed as the interface is invalid.");
@@ -413,25 +432,66 @@ void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,
   }
 
   fdescriptor::wire::UsbSpeed fspeed = static_cast<fdescriptor::wire::UsbSpeed>(speed);
-  function_intf_->SetConfigured(configured, fspeed)
-      .ThenExactlyOnce([completer = std::move(completer)](
-                           fidl::WireUnownedResult<
-                               fuchsia_hardware_usb_function::UsbFunctionInterface::SetConfigured>&
-                               result) mutable {
-        if (!result.ok()) {
-          fdf::error("UsbFunctionInterface.SetConfigured FIDL call failed: {}",
-                     result.FormatDescription());
-          completer(result.status());
-          return;
-        }
-        if (result->is_error()) {
-          fdf::error("UsbFunctionInterface.SetConfigured error: {}",
-                     zx_status_get_string(result->error_value()));
-          completer(result->error_value());
-          return;
-        }
-        completer(ZX_OK);
-      });
+
+  auto send_set_configured = [configured, fspeed](UsbFunction* self,
+                                                  fit::callback<void(zx_status_t)> completer) {
+    if (!self) {
+      completer(ZX_ERR_CANCELED);
+      return;
+    }
+    if (!self->function_intf_.is_valid()) {
+      fdf::error("SetConfigured failed as the interface is invalid.");
+      completer(ZX_ERR_BAD_STATE);
+      return;
+    }
+    self->function_intf_->SetConfigured(configured, fspeed)
+        .ThenExactlyOnce(
+            [completer = std::move(completer)](
+                fidl::WireUnownedResult<
+                    fuchsia_hardware_usb_function::UsbFunctionInterface::SetConfigured>&
+                    result) mutable {
+              if (!result.ok()) {
+                fdf::error("UsbFunctionInterface.SetConfigured FIDL call failed: {}",
+                           result.FormatDescription());
+                completer(result.status());
+                return;
+              }
+              if (result->is_error()) {
+                fdf::error("UsbFunctionInterface.SetConfigured error: {}",
+                           zx_status_get_string(result->error_value()));
+                completer(result->error_value());
+                return;
+              }
+              completer(ZX_OK);
+            });
+  };
+
+  if (unconfigure_first) {
+    function_intf_->SetConfigured(false, fspeed)
+        .ThenExactlyOnce(
+            [weak_this = weak_from_this(), send_set_configured = std::move(send_set_configured),
+             completer = std::move(completer)](
+                fidl::WireUnownedResult<
+                    fuchsia_hardware_usb_function::UsbFunctionInterface::SetConfigured>&
+                    result) mutable {
+              if (!result.ok()) {
+                fdf::error("UsbFunctionInterface.SetConfigured FIDL call failed on deconfigure: {}",
+                           result.FormatDescription());
+                completer(result.status());
+                return;
+              }
+              if (result->is_error()) {
+                fdf::error("UsbFunctionInterface.SetConfigured error on deconfigure: {}",
+                           zx_status_get_string(result->error_value()));
+                completer(result->error_value());
+                return;
+              }
+              auto self = weak_this.lock();
+              send_set_configured(self.get(), std::move(completer));
+            });
+  } else {
+    send_set_configured(this, std::move(completer));
+  }
 }
 
 void UsbFunction::SetInterface(uint8_t interface, uint8_t alt_setting,
