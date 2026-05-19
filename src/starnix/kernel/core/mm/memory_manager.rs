@@ -304,6 +304,18 @@ impl Mappings {
             false
         }
     }
+
+    pub fn update_exact<F, E>(
+        &mut self,
+        range: &std::ops::Range<UserAddress>,
+        f: F,
+    ) -> Result<bool, E>
+    where
+        F: FnOnce(&mut Mapping) -> Result<(), E>,
+    {
+        self.generation = self.generation.wrapping_add(1);
+        self.map.update_exact(range, f)
+    }
 }
 
 pub struct MemoryManagerState {
@@ -826,33 +838,32 @@ impl MemoryManagerState {
         }
 
         for range in ranges_to_update {
-            let mut mappings = self.mappings.remove(range.clone());
-            assert_eq!(mappings.len(), 1, "Expected to remove exactly one mapping");
-            let mut mapping = mappings.pop().unwrap();
+            let updated = self.mappings.update_exact(&range, |mapping| {
+                let addr = SelectedAddress::FixedOverwrite(range.start);
+                let flags = mapping.flags();
+                let (backing, backing_memory_offset) = match mapping.get_backing_internal() {
+                    MappingBacking::Memory(backing) => {
+                        (backing.memory(), backing.address_to_offset(addr.addr()))
+                    }
+                    MappingBacking::PrivateAnonymous => {
+                        (&context.private_anonymous.backing, addr.addr().ptr() as u64)
+                    }
+                };
 
-            let addr = SelectedAddress::FixedOverwrite(range.start);
-            let flags = mapping.flags();
-            let (backing, backing_memory_offset) = match self.get_mapping_backing(&mapping) {
-                MappingBacking::Memory(backing) => {
-                    (backing.memory(), backing.address_to_offset(addr.addr()))
-                }
-                MappingBacking::PrivateAnonymous => {
-                    (&context.private_anonymous.backing, addr.addr().ptr() as u64)
-                }
-            };
+                let mapping_length = range.end - range.start;
+                context.map_in_user_vmar(
+                    addr,
+                    backing,
+                    backing_memory_offset,
+                    mapping_length,
+                    flags,
+                    false,
+                )?;
 
-            let mapping_length = range.end - range.start;
-            context.map_in_user_vmar(
-                addr,
-                backing,
-                backing_memory_offset,
-                mapping_length,
-                flags,
-                false,
-            )?;
-
-            mapping.set_mapping_mode(MappingMode::Eager);
-            let _ = self.mappings.insert(range.start..range.end, mapping);
+                mapping.set_mapping_mode(MappingMode::Eager);
+                Ok(())
+            })?;
+            assert!(updated, "Expected to update exactly one mapping");
         }
 
         Ok(true)

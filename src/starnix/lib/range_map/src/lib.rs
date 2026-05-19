@@ -463,6 +463,16 @@ where
         let node_start = &self.keys[0].start;
         *upper_bound.min(node_start)
     }
+
+    /// Updates the value indicated by `cursor`.
+    fn update<F, E>(&mut self, mut cursor: Cursor, f: F) -> Result<(), E>
+    where
+        F: FnOnce(&mut V) -> Result<(), E>,
+    {
+        let index = cursor.pop().expect("valid cursor");
+        assert!(cursor.is_empty(), "Cursor has excess depth");
+        f(&mut self.values[index])
+    }
 }
 
 /// The children of an internal node in the btree.
@@ -1110,6 +1120,20 @@ where
 
         *node_start
     }
+
+    /// Updates the value indicated by `cursor`.
+    fn update<F, E>(&mut self, mut cursor: Cursor, f: F) -> Result<(), E>
+    where
+        F: FnOnce(&mut V) -> Result<(), E>,
+    {
+        let index = cursor.pop().expect("valid cursor");
+        let result = match &mut self.children {
+            ChildList::Leaf(children) => Arc::make_mut(&mut children[index]).update(cursor, f),
+            ChildList::Internal(children) => Arc::make_mut(&mut children[index]).update(cursor, f),
+        };
+        self.update_max_gap();
+        result
+    }
 }
 
 /// A node in the btree.
@@ -1227,6 +1251,17 @@ where
     fn validate_keys(&self) {
         if let Node::Internal(node) = self {
             node.validate_keys();
+        }
+    }
+
+    /// Updates the value indicated by `cursor`.
+    fn update<F, E>(&mut self, cursor: Cursor, f: F) -> Result<(), E>
+    where
+        F: FnOnce(&mut V) -> Result<(), E>,
+    {
+        match self {
+            Node::Internal(node) => Arc::make_mut(node).update(cursor, f),
+            Node::Leaf(node) => Arc::make_mut(node).update(cursor, f),
         }
     }
 }
@@ -1718,6 +1753,51 @@ where
     pub fn find_at_or_after(&self, key: K) -> Option<(&Range<K>, &V)> {
         let mut iter = self.range(key..).filter(move |(range, _)| key <= range.start);
         iter.next()
+    }
+
+    /// Updates the value of an exact range in-place.
+    ///
+    /// Returns true if the range was found and updated, false otherwise.
+    pub fn update_exact<F, E>(&mut self, range: &Range<K>, f: F) -> Result<bool, E>
+    where
+        F: FnOnce(&mut V) -> Result<(), E>,
+    {
+        if range.end <= range.start {
+            return Ok(false);
+        }
+        if let Some((cursor, old_range, _)) = self.get_cursor_key_value(&range.start) {
+            if old_range.start == range.start && old_range.end == range.end {
+                self.node.update(cursor, f)?;
+
+                // Check if the mutated value is equal to neighbors, and merge if needed.
+                let mut needs_merge = false;
+                let value = self.node.get_key_value(cursor).map(|(_, v)| v.clone());
+                if let Some(value) = value {
+                    if let Some((prev_range, prev_value)) = self.range(..range.start).next_back() {
+                        if prev_range.end == range.start && value == *prev_value {
+                            needs_merge = true;
+                        }
+                    }
+                    if !needs_merge {
+                        if let Some((_, next_range, next_value)) =
+                            self.get_cursor_key_value(&range.end)
+                        {
+                            if next_range.start == range.end && value == next_value {
+                                needs_merge = true;
+                            }
+                        }
+                    }
+                }
+
+                if needs_merge {
+                    if let Some(value) = self.remove(range.clone()).pop() {
+                        let _ = self.insert(range.clone(), value);
+                    }
+                }
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
 
@@ -2652,5 +2732,90 @@ mod test {
         let removed = map.insert(0..10, 1);
         assert!(removed.is_empty(), "merging left should not return removed values");
         assert_eq!(map.get(15), Some((&(0..30), &1)));
+    }
+
+    #[::fuchsia::test]
+    fn test_update_exact() {
+        let mut map = RangeMap::<u32, i32>::default();
+        let _ = map.insert(10..20, 1);
+        let _ = map.insert(30..40, 2);
+        let _ = map.insert(50..60, 3);
+
+        // 1. Update non-existent range.
+        assert!(
+            !map.update_exact(&(10..15), |v| {
+                *v = 10;
+                Ok::<(), ()>(())
+            })
+            .unwrap()
+        );
+        assert!(
+            !map.update_exact(&(10..25), |v| {
+                *v = 10;
+                Ok::<(), ()>(())
+            })
+            .unwrap()
+        );
+
+        // 2. In-place update with no neighbors merging.
+        assert!(
+            map.update_exact(&(30..40), |v| {
+                *v = 20;
+                Ok::<(), ()>(())
+            })
+            .unwrap()
+        );
+        assert_eq!(map.get(35), Some((&(30..40), &20)));
+
+        // 3. Update triggering merge left.
+        let _ = map.insert(20..30, 5);
+        assert!(
+            map.update_exact(&(20..30), |v| {
+                *v = 1;
+                Ok::<(), ()>(())
+            })
+            .unwrap()
+        );
+        assert_eq!(map.get(15), Some((&(10..30), &1)));
+        assert_eq!(map.get(25), Some((&(10..30), &1)));
+        assert_eq!(map.get(35), Some((&(30..40), &20)));
+
+        // 4. Update triggering merge right.
+        assert!(
+            map.update_exact(&(30..40), |v| {
+                *v = 1;
+                Ok::<(), ()>(())
+            })
+            .unwrap()
+        );
+        assert_eq!(map.get(15), Some((&(10..40), &1)));
+        assert_eq!(map.get(25), Some((&(10..40), &1)));
+        assert_eq!(map.get(35), Some((&(10..40), &1)));
+
+        // 5. Update triggering merge both left and right.
+        let _ = map.insert(40..50, 5);
+        assert!(
+            map.update_exact(&(50..60), |v| {
+                *v = 1;
+                Ok::<(), ()>(())
+            })
+            .unwrap()
+        );
+        // Now we have 10..40 (value 1), 40..50 (value 5), 50..60 (value 1).
+        assert_eq!(map.get(15), Some((&(10..40), &1)));
+        assert_eq!(map.get(45), Some((&(40..50), &5)));
+        assert_eq!(map.get(55), Some((&(50..60), &1)));
+
+        assert!(
+            map.update_exact(&(40..50), |v| {
+                *v = 1;
+                Ok::<(), ()>(())
+            })
+            .unwrap()
+        );
+        // Now they should all be merged.
+        assert_eq!(map.get(15), Some((&(10..60), &1)));
+        assert_eq!(map.get(45), Some((&(10..60), &1)));
+        assert_eq!(map.get(55), Some((&(10..60), &1)));
     }
 }
