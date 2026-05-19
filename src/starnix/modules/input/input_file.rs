@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crossbeam::queue::SegQueue;
 use fuchsia_inspect::Inspector;
 use futures::FutureExt;
 use starnix_core::fileops_impl_nonseekable;
@@ -23,7 +24,6 @@ use starnix_uapi::{
     KEY_POWER, KEY_RIGHT, KEY_SLEEP, KEY_UP, KEY_VOLUMEDOWN, LED_CNT, MSC_CNT, REL_CNT, REL_WHEEL,
     SW_CNT, errno, error, uapi,
 };
-use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use zerocopy::IntoBytes as _; // for `as_bytes()`
@@ -253,7 +253,7 @@ pub struct InputFile {
     mt_tracking_id_axis_info: uapi::input_absinfo,
     x_axis_info: uapi::input_absinfo,
     y_axis_info: uapi::input_absinfo,
-    inner: Mutex<InputFileMutableState>,
+    events: SegQueue<LinuxEventWithTraceId>,
     waiters: WaitQueue,
     // InputFile will be initialized with an InputFileStatus that holds Inspect data
     // `None` for Uinput InputFiles
@@ -282,11 +282,6 @@ impl LinuxEventWithTraceId {
             _ => LinuxEventWithTraceId { event: event, trace_id: None },
         }
     }
-}
-
-// Mutable state of `InputFile`
-struct InputFileMutableState {
-    pub(super) events: VecDeque<LinuxEventWithTraceId>,
 }
 
 /// Returns the minimum number of bytes required to store `n_bits` bits.
@@ -420,7 +415,7 @@ impl InputFile {
                 // Y position.
                 ..uapi::input_absinfo::default()
             },
-            inner: Mutex::new(InputFileMutableState { events: VecDeque::new() }),
+            events: SegQueue::new(),
             waiters: WaitQueue::default(),
             inspect_status: Some(InputFileStatus::new(node)),
             device_name,
@@ -450,7 +445,7 @@ impl InputFile {
             mt_tracking_id_axis_info: uapi::input_absinfo::default(),
             x_axis_info: uapi::input_absinfo::default(),
             y_axis_info: uapi::input_absinfo::default(),
-            inner: Mutex::new(InputFileMutableState { events: VecDeque::new() }),
+            events: SegQueue::new(),
             waiters: WaitQueue::default(),
             inspect_status: Some(InputFileStatus::new(node)),
             device_name,
@@ -480,7 +475,7 @@ impl InputFile {
             mt_tracking_id_axis_info: uapi::input_absinfo::default(),
             x_axis_info: uapi::input_absinfo::default(),
             y_axis_info: uapi::input_absinfo::default(),
-            inner: Mutex::new(InputFileMutableState { events: VecDeque::new() }),
+            events: SegQueue::new(),
             waiters: WaitQueue::default(),
             inspect_status: Some(InputFileStatus::new(node)),
             device_name,
@@ -500,9 +495,8 @@ impl InputFile {
         if let Some(inspect) = &self.inspect_status {
             inspect.count_fd_notify_calls();
         }
-        {
-            let mut inner = self.inner.lock();
-            inner.events.extend(events.into_iter().map(LinuxEventWithTraceId::new));
+        for event in events {
+            self.events.push(LinuxEventWithTraceId::new(event));
         }
         self.waiters.notify_fd_events(FdEvents::POLLIN);
     }
@@ -511,19 +505,14 @@ impl InputFile {
         if let Some(inspect) = &self.inspect_status {
             inspect.count_fd_read_calls();
         }
-        let events = {
-            let mut inner = self.inner.lock();
-            let num_events = inner.events.len();
-            let limit = std::cmp::min(limit, num_events);
-            if num_events > limit {
-                log_info!(
-                    "There was only space in the given buffer to read {} of the {} queued events.",
-                    limit,
-                    num_events
-                );
+        let mut events = vec![];
+        for _ in 0..limit {
+            if let Some(event) = self.events.pop() {
+                events.push(event);
+            } else {
+                break;
             }
-            inner.events.drain(..limit).collect()
-        };
+        }
         // We do not notify if the buffer was not enough to read all events.
         // `query_events` will still return `FdEvents::POLLIN` if there are remaining events,
         // so the caller can continue reading or poll again.
@@ -783,7 +772,7 @@ impl FileOps for InputFile {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
-        Ok(if self.inner.lock().events.is_empty() { FdEvents::empty() } else { FdEvents::POLLIN })
+        Ok(if self.events.is_empty() { FdEvents::empty() } else { FdEvents::POLLIN })
     }
 }
 
