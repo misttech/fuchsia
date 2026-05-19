@@ -4,7 +4,7 @@
 
 """Define the json_validator_valico_test() macro."""
 
-load("//build/bazel/host_tests:host_test.bzl", "host_test")
+load("//build/bazel/host_tests:host_py_test.bzl", "host_py_test")
 
 def json_validator_valico_test(name, test_schema, test_document, extra_args = [], expect_failure = False):
     """Define a single test target that runs json_validator_valico.
@@ -23,19 +23,22 @@ def json_validator_valico_test(name, test_schema, test_document, extra_args = []
     # as a test argument, instead of hard-coding it in the test runner target.
     json_validator_valico = "//build/tools/json_validator:json_validator_valico"
 
-    host_test(
+    host_py_test(
         name = name,
-        binary = ":json_validator_valico_test_runner",
+        main = "json_validator_valico_test_runner.py",
+        srcs = ["json_validator_valico_test_runner.py"],
+        deps = [
+            "@rules_python//python/runfiles",
+        ],
         test_args = (["--expect-failure"] if expect_failure else []) + [
             "$(rlocationpath {})".format(json_validator_valico),
             "$(rlocationpath {})".format(test_schema),
             "$(rlocationpath {})".format(test_document),
         ] + extra_args,
-        data = [
+        test_data = [
             json_validator_valico,
             test_schema,
             test_document,
-            "@rules_python//python/runfiles",
         ],
         visibility = ["//visibility:public"],
     )
