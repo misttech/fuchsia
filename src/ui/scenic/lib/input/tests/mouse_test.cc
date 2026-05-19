@@ -64,9 +64,8 @@ class MouseTest : public gtest::TestLoopFixture {
  public:
   MouseTest()
       : dispatcher_setter_(dispatcher(), dispatcher()),
-        snapshot_holder_(std::make_shared<view_tree::SnapshotHolder>()),
         hit_tester_(inspect_node_),
-        mouse_system_(context_provider_.context(), snapshot_holder_, hit_tester_,
+        mouse_system_(context_provider_.context(), hit_tester_,
                       /*request_focus*/ [](auto...) {}) {}
 
   void SetUp() override {
@@ -81,7 +80,7 @@ class MouseTest : public gtest::TestLoopFixture {
   }
 
   void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
-    snapshot_holder_->SetSnapshot(std::move(snapshot));
+    current_snapshot_ = std::move(snapshot);
   }
 
   // Starts a recursive MouseSource::Watch() loop that collects all received events into
@@ -132,11 +131,11 @@ class MouseTest : public gtest::TestLoopFixture {
   // Must be initialized before |mouse_system_|.
   sys::testing::ComponentContextProvider context_provider_;
   inspect::Node inspect_node_;
-  std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
   scenic_impl::input::HitTester hit_tester_;
 
  protected:
   scenic_impl::input::MouseSystem mouse_system_;
+  std::shared_ptr<const view_tree::Snapshot> current_snapshot_;
   fuchsia::ui::pointer::MouseSourcePtr client1_ptr_;
   fuchsia::ui::pointer::MouseSourcePtr client2_ptr_;
 
@@ -177,13 +176,15 @@ TEST_F(MouseTest, ExclusiveInjection_ShouldBeDeliveredOnlyToTarget) {
   EXPECT_TRUE(received_events1.empty());
   EXPECT_TRUE(received_events2.empty());
 
-  mouse_system_.InjectMouseEventExclusive(MouseEventTemplate(kClient1Koid), kStream1Id);
+  mouse_system_.InjectMouseEventExclusive(MouseEventTemplate(kClient1Koid), kStream1Id,
+                                          *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events1.size(), 1u);
   EXPECT_TRUE(received_events2.empty());
 
   received_events1.clear();
-  mouse_system_.InjectMouseEventExclusive(MouseEventTemplate(kClient2Koid), kStream2Id);
+  mouse_system_.InjectMouseEventExclusive(MouseEventTemplate(kClient2Koid), kStream2Id,
+                                          *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events2.size(), 1u);
   EXPECT_TRUE(received_events1.empty());
@@ -203,7 +204,8 @@ TEST_F(MouseTest, HitTestedInjection_WithButtonUp_ShouldBeDeliveredOnlyToTopHit)
   OnNewViewTreeSnapshot(NewSnapshot(
       /*hits*/ {kClient1Koid, kClient2Koid},
       /*hierarchy*/ {kContextKoid, kClient1Koid, kClient2Koid}));
-  mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid), kStream1Id);
+  mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid), kStream1Id,
+                                          *current_snapshot_);
   RunLoopUntilIdle();
   ASSERT_EQ(received_events1.size(), 1u);
   ASSERT_TRUE(received_events1[0].has_stream_info());
@@ -214,7 +216,8 @@ TEST_F(MouseTest, HitTestedInjection_WithButtonUp_ShouldBeDeliveredOnlyToTopHit)
   OnNewViewTreeSnapshot(NewSnapshot(/*hits*/ {kClient2Koid, kClient1Koid},
                                     /*hierarchy*/ {kContextKoid, kClient1Koid, kClient2Koid}));
 
-  mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient2Koid), kStream1Id);
+  mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient2Koid), kStream1Id,
+                                          *current_snapshot_);
   RunLoopUntilIdle();
   {  // Client 1 gets an exit event, but no pointer sample.
     ASSERT_EQ(received_events1.size(), 2u);
@@ -249,7 +252,7 @@ TEST_F(MouseTest, HitTestedInjection_WithButtonDown_ShouldLatchToTopHit_AndOnlyD
 
   // Mouse button down.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/true),
-                                          kStream1Id);
+                                          kStream1Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events1.size(), 1u);
   EXPECT_TRUE(received_events2.empty());
@@ -260,14 +263,14 @@ TEST_F(MouseTest, HitTestedInjection_WithButtonDown_ShouldLatchToTopHit_AndOnlyD
 
   // Button still down. Still delivered to client 1.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/true),
-                                          kStream1Id);
+                                          kStream1Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events1.size(), 2u);
   EXPECT_TRUE(received_events2.empty());
 
   // Button up again. Client 1 gets a "View exited" event and client 2 gets its first hover event.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/false),
-                                          kStream1Id);
+                                          kStream1Id, *current_snapshot_);
   RunLoopUntilIdle();
   {  // Client 1 gets an exit event, but not a pointer sample.
     ASSERT_EQ(received_events1.size(), 3u);
@@ -302,7 +305,7 @@ TEST_F(MouseTest, LatchedClient_WhenNotInViewTree_ShouldReceiveViewExit) {
 
   // Mouse button down. Latch on client 2.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/true),
-                                          kStream1Id);
+                                          kStream1Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_TRUE(received_events1.empty());
   EXPECT_EQ(received_events2.size(), 1u);
@@ -313,9 +316,9 @@ TEST_F(MouseTest, LatchedClient_WhenNotInViewTree_ShouldReceiveViewExit) {
 
   // Button still down, but client 2 gets a ViewExit event and no more pointer samples.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/true),
-                                          kStream1Id);
+                                          kStream1Id, *current_snapshot_);
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/true),
-                                          kStream1Id);
+                                          kStream1Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_TRUE(received_events1.empty());
   {  // Client 2 gets an exit event but no pointer sample.
@@ -328,7 +331,7 @@ TEST_F(MouseTest, LatchedClient_WhenNotInViewTree_ShouldReceiveViewExit) {
 
   // Button up. Client 1 gets its first hover event.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/false),
-                                          kStream1Id);
+                                          kStream1Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events1.size(), 1u);
   EXPECT_EQ(received_events2.size(), 2u);
@@ -340,7 +343,7 @@ TEST_F(MouseTest, LatchedClient_WhenNotInViewTree_ShouldReceiveViewExit) {
 
   // And correctly gets another hover event.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/false),
-                                          kStream1Id);
+                                          kStream1Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events2.size(), 3u);
 }
@@ -362,7 +365,7 @@ TEST_F(MouseTest, Streams_ShouldLatchIndependently) {
 
   // Mouse button down Stream 1. Should latch to client 1.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/true),
-                                          kStream1Id);
+                                          kStream1Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events1.size(), 1u);
   EXPECT_TRUE(received_events2.empty());
@@ -373,21 +376,21 @@ TEST_F(MouseTest, Streams_ShouldLatchIndependently) {
 
   // Mouse button down Stream 2. Should latch to client 2.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/true),
-                                          kStream2Id);
+                                          kStream2Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events1.size(), 1u);
   EXPECT_EQ(received_events2.size(), 1u);
 
   // Stream 1 should continue going to client 1.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/true),
-                                          kStream1Id);
+                                          kStream1Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events1.size(), 2u);
   EXPECT_EQ(received_events2.size(), 1u);
 
   // Stream 2 should continue going to client 2.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/true),
-                                          kStream2Id);
+                                          kStream2Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events1.size(), 2u);
   EXPECT_EQ(received_events2.size(), 2u);
@@ -401,7 +404,8 @@ TEST_F(MouseTest, EmptyHitTest_ShouldDeliverToNoOne) {
   OnNewViewTreeSnapshot(NewSnapshot(
       /*hits*/ {kClient1Koid},
       /*hierarchy*/ {kContextKoid, kClient1Koid}));
-  mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid), kStream1Id);
+  mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid), kStream1Id,
+                                          *current_snapshot_);
   RunLoopUntilIdle();
   // Client 1 receives events.
   ASSERT_EQ(received_events.size(), 1u);
@@ -411,7 +415,8 @@ TEST_F(MouseTest, EmptyHitTest_ShouldDeliverToNoOne) {
   // Hit test returns empty.
   OnNewViewTreeSnapshot(NewSnapshot(/*hits*/ {}, /*hierarchy*/ {kContextKoid, kClient1Koid}));
 
-  mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid), kStream1Id);
+  mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid), kStream1Id,
+                                          *current_snapshot_);
   RunLoopUntilIdle();
   {  // Client 1 gets an exit event, but no pointer sample.
     ASSERT_EQ(received_events.size(), 2u);
@@ -423,13 +428,14 @@ TEST_F(MouseTest, EmptyHitTest_ShouldDeliverToNoOne) {
   received_events.clear();
 
   // Next injections returns nothing.
-  mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid), kStream1Id);
+  mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid), kStream1Id,
+                                          *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_TRUE(received_events.empty());
 
   // Button down returns nothing.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/true),
-                                          kStream1Id);
+                                          kStream1Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_TRUE(received_events.empty());
 
@@ -440,7 +446,7 @@ TEST_F(MouseTest, EmptyHitTest_ShouldDeliverToNoOne) {
 
   // Button up. Client 1 should now receive a hover event.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/false),
-                                          kStream1Id);
+                                          kStream1Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events.size(), 1u);
 }
@@ -462,7 +468,7 @@ TEST_F(MouseTest, CancelMouseStream_ShouldSendEvent_OnlyWhenThereIsOngoingStream
 
   // Mouse button down Stream 1. Should latch to client 1.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/true),
-                                          kStream1Id);
+                                          kStream1Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events1.size(), 1u);
   EXPECT_TRUE(received_events2.empty());
@@ -473,7 +479,7 @@ TEST_F(MouseTest, CancelMouseStream_ShouldSendEvent_OnlyWhenThereIsOngoingStream
 
   // Hover on stream 2. Should send to client 2
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/true),
-                                          kStream2Id);
+                                          kStream2Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events1.size(), 1u);
   EXPECT_EQ(received_events2.size(), 1u);
@@ -514,13 +520,13 @@ TEST_F(MouseTest, CancelMouseStream_ShouldSendEvent_OnlyWhenThereIsOngoingStream
 
   // Hover on stream 2. Should send to client 2
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/false),
-                                          kStream2Id);
+                                          kStream2Id, *current_snapshot_);
   // No top hit.
   OnNewViewTreeSnapshot(NewSnapshot(
       /*hits*/ {}, /*hierarchy*/ {kContextKoid, kClient1Koid, kClient2Koid}));
   // Client 2 gets a view exited event on the next one.
   mouse_system_.InjectMouseEventHitTested(MouseEventTemplate(kClient1Koid, /*button_down=*/false),
-                                          kStream2Id);
+                                          kStream2Id, *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events2.size(), 2u);
   received_events2.clear();

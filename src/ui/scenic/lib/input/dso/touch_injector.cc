@@ -27,16 +27,16 @@ InternalTouchEvent CreateCancelEvent(uint32_t device_id, uint32_t pointer_id, zx
 
 }  // namespace
 
-TouchInjector::TouchInjector(async_dispatcher_t* input_dispatcher, inspect::Node inspect_node,
-                             InjectorSettings settings, Viewport viewport,
-                             fdf::ServerEnd<fuchsia_ui_pointerinjector_dso::Device> device,
-                             fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
-                                 is_descendant_and_connected,
-                             fit::function<void(InternalTouchEvent, StreamId)> inject,
-                             fit::function<void()> on_channel_closed)
-    : Injector(input_dispatcher, std::move(inspect_node), std::move(settings), viewport,
-               std::move(device), std::move(is_descendant_and_connected),
-               std::move(on_channel_closed)),
+TouchInjector::TouchInjector(
+    async_dispatcher_t* input_dispatcher,
+    std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder, inspect::Node inspect_node,
+    InjectorSettings settings, Viewport viewport,
+    fdf::ServerEnd<fuchsia_ui_pointerinjector_dso::Device> device,
+    fit::function<void(InternalTouchEvent, StreamId stream_id, const view_tree::Snapshot& snapshot)>
+        inject,
+    fit::function<void()> on_channel_closed)
+    : Injector(input_dispatcher, std::move(snapshot_holder), std::move(inspect_node),
+               std::move(settings), viewport, std::move(device), std::move(on_channel_closed)),
       inject_(std::move(inject)) {
   FX_DCHECK(input_dispatcher);
   FX_DCHECK(inject_);
@@ -44,9 +44,9 @@ TouchInjector::TouchInjector(async_dispatcher_t* input_dispatcher, inspect::Node
 }
 
 void TouchInjector::ForwardEvent(fuchsia_ui_pointerinjector::wire::Event& event, StreamId stream_id,
-                                 uint64_t trace_flow_id) {
+                                 uint64_t trace_flow_id, const view_tree::Snapshot& snapshot) {
   FX_DCHECK(stream_id != kInvalidStreamId);
-  inject_(PointerInjectorEventToInternalTouchEvent(event, trace_flow_id), stream_id);
+  inject_(PointerInjectorEventToInternalTouchEvent(event, trace_flow_id), stream_id, snapshot);
 }
 
 InternalTouchEvent TouchInjector::PointerInjectorEventToInternalTouchEvent(
@@ -97,9 +97,10 @@ InternalTouchEvent TouchInjector::PointerInjectorEventToInternalTouchEvent(
 
 void TouchInjector::CancelStream(uint32_t pointer_id, StreamId stream_id) {
   const InjectorSettings& settings = Injector::settings();
+  auto snapshot_ref = GetViewTreeSnapshot();
   inject_(CreateCancelEvent(settings.device_id, pointer_id, settings.context_koid,
                             settings.target_koid),
-          stream_id);
+          stream_id, *snapshot_ref);
 }
 
 }  // namespace scenic_impl::input_dso

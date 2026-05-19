@@ -19,7 +19,8 @@
 
 namespace scenic_impl::input_dso {
 
-using TouchInjectFunc = fit::function<void(InternalTouchEvent event, StreamId stream_id)>;
+using TouchInjectFunc = fit::function<void(InternalTouchEvent event, StreamId stream_id,
+                                           const view_tree::Snapshot& snapshot)>;
 
 // Handles the registration and config validation of fuchsia::ui::pointerinjector_dso clients.
 class PointerinjectorRegistry : public fdf::WireServer<fuchsia_ui_pointerinjector_dso::Registry> {

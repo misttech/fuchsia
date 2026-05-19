@@ -16,6 +16,7 @@
 #include "src/lib/fxl/macros.h"
 #include "src/ui/scenic/lib/input/internal_pointer_event.h"
 #include "src/ui/scenic/lib/input/stream_id.h"
+#include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 
 namespace scenic_impl::input_dso {
 
@@ -73,11 +74,10 @@ class InjectorInspector {
 // channel.
 class Injector : public fdf::WireServer<fuchsia_ui_pointerinjector_dso::Device> {
  public:
-  Injector(async_dispatcher_t* input_dispatcher, inspect::Node inspect_node,
+  Injector(async_dispatcher_t* input_dispatcher,
+           std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder, inspect::Node inspect_node,
            InjectorSettings settings, Viewport viewport,
            fdf::ServerEnd<fuchsia_ui_pointerinjector_dso::Device> device,
-           fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
-               is_descendant_and_connected,
            fit::function<void()> on_channel_closed);
 
   // Check the validity of a Viewport.
@@ -91,13 +91,18 @@ class Injector : public fdf::WireServer<fuchsia_ui_pointerinjector_dso::Device> 
  protected:
   // Forwards the event to device-specific handler in InputSystem (and eventually the client).
   virtual void ForwardEvent(fuchsia_ui_pointerinjector::wire::Event& event, StreamId stream_id,
-                            uint64_t trace_flow_id) = 0;
+                            uint64_t trace_flow_id, const view_tree::Snapshot& snapshot) = 0;
 
   // Sends an appropriate Cancel event.
   virtual void CancelStream(uint32_t pointer_id, StreamId stream_id) = 0;
 
   const InjectorSettings& settings() const { return settings_; }
   const Viewport& viewport() const { return viewport_; }
+
+  // Should be called only once in a single call stack. The snapshot should be
+  // passed down into helper functions, rather than re-obtaining it, to ensure
+  // that a consistent snapshot is being used.
+  view_tree::SnapshotRef GetViewTreeSnapshot() { return snapshot_holder_->GetSnapshot(); }
 
  private:
   // Return value is either both valid, {ZX_OK, valid stream id} or both
@@ -122,6 +127,8 @@ class Injector : public fdf::WireServer<fuchsia_ui_pointerinjector_dso::Device> 
 
   void OnFidlClose(fidl::UnbindInfo info);
 
+  const std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
+
   // Client-defined data.
   const InjectorSettings settings_;
   Viewport viewport_;
@@ -135,9 +142,6 @@ class Injector : public fdf::WireServer<fuchsia_ui_pointerinjector_dso::Device> 
   // - REMOVE/CANCEL: remove stream from set.
   // Hence, each stream here matches ADD - CHANGE*.
   std::unordered_map<uint32_t, StreamId> ongoing_streams_;
-
-  fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
-      is_descendant_and_connected_;
 
   // Called both when an error is triggered by either the remote or the local side of the channel.
   // Triggers destruction of this object.

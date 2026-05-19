@@ -133,18 +133,17 @@ bool AreValidExtents(const std::array<std::array<float, 2>, 2>& extents) {
 
 }  // namespace
 
-Injector::Injector(inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
+Injector::Injector(std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
+                   inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
                    fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
-                   fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
-                       is_descendant_and_connected,
                    fit::function<void()> on_channel_closed)
-    : settings_(std::move(settings)),
+    : snapshot_holder_(std::move(snapshot_holder)),
+      settings_(std::move(settings)),
       viewport_(std::move(viewport)),
       binding_(this, std::move(device)),
-      is_descendant_and_connected_(std::move(is_descendant_and_connected)),
       on_channel_closed_(std::move(on_channel_closed)),
       inspector_(std::move(inspect_node)) {
-  FX_DCHECK(is_descendant_and_connected_);
+  FX_DCHECK(snapshot_holder_);
   FX_LOGS(INFO) << "Injector : Registered new injector with "
                 << " Device Id: " << settings_.device_id
                 << " Device Type: " << static_cast<uint32_t>(settings_.device_type)
@@ -176,16 +175,27 @@ void Injector::Inject(std::vector<fuchsia::ui::pointerinjector::Event> events,
 // side.
 void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) {
   TRACE_DURATION("input", "Injector::InjectEvents");
-  if (!is_descendant_and_connected_(settings_.target_koid, settings_.context_koid)) {
+
+  // Some of the clean-ups that are run when the channel is closed, e.g. in `CancelStream()`,
+  // obtain their own snapshot ref, which would violate the "only one ref checked out at a time"
+  // invariant.  Given that some of these cleanups are implemented by overridden methods, and
+  // that the channel is being closed anyway, it's easier to simply release our ref before closing
+  // the channel.
+  std::optional<view_tree::SnapshotHolder::Ref> snapshot_ref = snapshot_holder_->GetSnapshot();
+  const auto& snapshot = **snapshot_ref;
+
+  if (!snapshot.IsDescendant(settings_.target_koid, settings_.context_koid)) {
     FX_LOGS(ERROR) << "Inject() called with Context (koid: " << settings_.context_koid
                    << ") and Target (koid: " << settings_.target_koid
                    << ") making an invalid hierarchy.";
+    snapshot_ref.reset();
     CloseChannel(ZX_ERR_BAD_STATE);
     return;
   }
 
   if (events.empty()) {
     FX_LOGS(ERROR) << "Inject() called without any events";
+    snapshot_ref.reset();
     CloseChannel(ZX_ERR_INVALID_ARGS);
     return;
   }
@@ -194,6 +204,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
     TRACE_DURATION("input", "Injector::InjectEvents[event]");
     if (!event.has_timestamp() || !event.has_data()) {
       FX_LOGS(ERROR) << "Inject() called with an incomplete event";
+      snapshot_ref.reset();
       CloseChannel(ZX_ERR_INVALID_ARGS);
       return;
     }
@@ -208,6 +219,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
         const zx_status_t result = IsValidViewport(new_viewport);
         if (result != ZX_OK) {
           // Errors printed inside IsValidViewport. Just close channel here.
+          snapshot_ref.reset();
           CloseChannel(result);
           return;
         }
@@ -222,6 +234,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
 
       const auto [result, stream_id] = ValidatePointerSample(pointer_sample);
       if (result != ZX_OK) {
+        snapshot_ref.reset();
         CloseChannel(result);
         return;
       }
@@ -233,7 +246,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
       }
       TRACE_FLOW_BEGIN("input", "dispatch_event_to_client", event.trace_flow_id());
 
-      ForwardEvent(event, stream_id);
+      ForwardEvent(event, stream_id, snapshot);
       continue;
     } else {
       // Should be unreachable.

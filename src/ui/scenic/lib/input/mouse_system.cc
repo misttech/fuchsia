@@ -18,16 +18,9 @@
 
 namespace scenic_impl::input {
 
-MouseSystem::MouseSystem(sys::ComponentContext* context,
-                         std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
-                         HitTester& hit_tester, RequestFocusFunc request_focus)
-    : snapshot_holder_(std::move(snapshot_holder)),
-      hit_tester_(hit_tester),
-      request_focus_(std::move(request_focus)) {}
-
-view_tree::SnapshotRef MouseSystem::GetViewTreeSnapshot() {
-  return snapshot_holder_->GetSnapshot();
-}
+MouseSystem::MouseSystem(sys::ComponentContext* context, HitTester& hit_tester,
+                         RequestFocusFunc request_focus)
+    : hit_tester_(hit_tester), request_focus_(std::move(request_focus)) {}
 
 void MouseSystem::RegisterMouseSource(
     fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
@@ -69,19 +62,19 @@ void MouseSystem::SendEventToMouse(const view_tree::Snapshot& snapshot, zx_koid_
   }
 }
 
-void MouseSystem::InjectMouseEventExclusive(InternalMouseEvent event, const StreamId stream_id) {
-  auto snapshot = GetViewTreeSnapshot();
-  FX_DCHECK(snapshot->IsDescendant(event.target, event.context))
+void MouseSystem::InjectMouseEventExclusive(InternalMouseEvent event, const StreamId stream_id,
+                                            const view_tree::Snapshot& snapshot) {
+  FX_DCHECK(snapshot.IsDescendant(event.target, event.context))
       << "Should never allow injection into broken scene graph";
   FX_DCHECK(!current_exclusive_mouse_receivers_.contains(stream_id) ||
             current_exclusive_mouse_receivers_.at(stream_id) == event.target);
   current_exclusive_mouse_receivers_[stream_id] = event.target;
-  SendEventToMouse(*snapshot, event.target, std::move(event), stream_id, /*view_exit=*/false);
+  SendEventToMouse(snapshot, event.target, std::move(event), stream_id, /*view_exit=*/false);
 }
 
-void MouseSystem::InjectMouseEventHitTested(InternalMouseEvent event, const StreamId stream_id) {
-  auto snapshot = GetViewTreeSnapshot();
-  FX_DCHECK(snapshot->IsDescendant(event.target, event.context))
+void MouseSystem::InjectMouseEventHitTested(InternalMouseEvent event, const StreamId stream_id,
+                                            const view_tree::Snapshot& snapshot) {
+  FX_DCHECK(snapshot.IsDescendant(event.target, event.context))
       << "Should never allow injection into broken scene graph";
   // Grab the current mouse receiver or create a new one.
   MouseReceiver& mouse_receiver = current_mouse_receivers_[stream_id];
@@ -92,23 +85,22 @@ void MouseSystem::InjectMouseEventHitTested(InternalMouseEvent event, const Stre
 
   // If the scene graph breaks while latched -> send a "View Exited" event and invalidate the
   // receiver for the remainder of the latch.
-  if (mouse_receiver.latched && !snapshot->IsDescendant(mouse_receiver.view_koid, event.target) &&
+  if (mouse_receiver.latched && !snapshot.IsDescendant(mouse_receiver.view_koid, event.target) &&
       mouse_receiver.view_koid != event.target) {
-    SendEventToMouse(*snapshot, mouse_receiver.view_koid, std::move(event), stream_id,
+    SendEventToMouse(snapshot, mouse_receiver.view_koid, std::move(event), stream_id,
                      /*view_exit=*/true);
     mouse_receiver.view_koid = ZX_KOID_INVALID;
     return;
   }
   // If not latched, choose the current target by finding the top view.
   if (!mouse_receiver.latched) {
-    const zx_koid_t top_koid =
-        hit_tester_.TopHitTest(*snapshot, event, /*semantic_hit_test*/ false);
+    const zx_koid_t top_koid = hit_tester_.TopHitTest(snapshot, event, /*semantic_hit_test*/ false);
 
     // Determine the currently hovered view. If it's different than previously, send the
     // previous one a "View Exited" event.
     if (mouse_receiver.view_koid != top_koid) {
       // Send a clone of the event without transferring any possible wake lease.
-      SendEventToMouse(*snapshot, mouse_receiver.view_koid, event.ShallowClone(), stream_id,
+      SendEventToMouse(snapshot, mouse_receiver.view_koid, event.ShallowClone(), stream_id,
                        /*view_exit=*/true);
     }
     mouse_receiver.view_koid = top_koid;
@@ -116,12 +108,12 @@ void MouseSystem::InjectMouseEventHitTested(InternalMouseEvent event, const Stre
     // Button down on an unlatched stream -> latch it to the top-most view.
     if (button_down) {
       mouse_receiver.latched = true;
-      request_focus_(mouse_receiver.view_koid, *snapshot);
+      request_focus_(mouse_receiver.view_koid, snapshot);
     }
   }
 
   // Finally, send the event to the hovered/latched view.
-  SendEventToMouse(*snapshot, mouse_receiver.view_koid, std::move(event), stream_id,
+  SendEventToMouse(snapshot, mouse_receiver.view_koid, std::move(event), stream_id,
                    /*view_exit=*/false);
 }
 

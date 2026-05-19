@@ -28,23 +28,23 @@ ScrollInfo CreateScrollInfo(const fuchsia::input::report::Axis& axis,
 
 }  // namespace
 
-MouseInjector::MouseInjector(inspect::Node inspect_node, InjectorSettings settings,
-                             Viewport viewport,
-                             fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
-                             fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
-                                 is_descendant_and_connected,
-                             fit::function<void(InternalMouseEvent, StreamId)> inject,
-                             fit::function<void(StreamId stream_id)> cancel_stream,
-                             fit::function<void()> on_channel_closed)
-    : Injector(std::move(inspect_node), settings, std::move(viewport), std::move(device),
-               std::move(is_descendant_and_connected), std::move(on_channel_closed)),
+MouseInjector::MouseInjector(
+    std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder, inspect::Node inspect_node,
+    InjectorSettings settings, Viewport viewport,
+    fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
+    fit::function<void(InternalMouseEvent, StreamId stream_id, const view_tree::Snapshot& snapshot)>
+        inject,
+    fit::function<void(StreamId stream_id)> cancel_stream, fit::function<void()> on_channel_closed)
+    : Injector(std::move(snapshot_holder), std::move(inspect_node), std::move(settings),
+               std::move(viewport), std::move(device), std::move(on_channel_closed)),
       inject_(std::move(inject)),
       cancel_stream_(std::move(cancel_stream)) {
   FX_DCHECK(inject_);
   FX_DCHECK(settings.device_type == fuchsia::ui::pointerinjector::DeviceType::MOUSE);
 }
 
-void MouseInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id) {
+void MouseInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id,
+                                 const view_tree::Snapshot& snapshot) {
   TRACE_DURATION("input", "MouseInjector::ForwardEvent");
   {  // For CANCEL and REMOVE phase we need to cancel the stream. Otherwise inject normally.
     FX_DCHECK(event.has_data());
@@ -60,7 +60,7 @@ void MouseInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, Str
     }
   }
 
-  inject_(PointerInjectorEventToInternalMouseEvent(event), stream_id);
+  inject_(PointerInjectorEventToInternalMouseEvent(event), stream_id, snapshot);
 }
 
 InternalMouseEvent MouseInjector::PointerInjectorEventToInternalMouseEvent(

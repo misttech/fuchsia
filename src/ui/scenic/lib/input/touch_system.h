@@ -22,7 +22,6 @@
 #include "src/ui/scenic/lib/input/helper.h"
 #include "src/ui/scenic/lib/input/hit_tester.h"
 #include "src/ui/scenic/lib/input/touch_source_base.h"
-#include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"
 
 namespace scenic_impl::input {
@@ -34,7 +33,6 @@ namespace scenic_impl::input {
 class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
  public:
   explicit TouchSystem(async_dispatcher_t* input_dispatcher, sys::ComponentContext* context,
-                       std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
                        HitTester& hit_tester, inspect::Node& parent_node);
   ~TouchSystem() = default;
 
@@ -63,16 +61,13 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
   }
 
   // Injects a touch event directly to the View with koid |event.target|.
-  void InjectTouchEventExclusive(InternalTouchEvent event, StreamId stream_id);
+  void InjectTouchEventExclusive(InternalTouchEvent event, StreamId stream_id,
+                                 const view_tree::Snapshot& snapshot);
   // Injects a touch event by hit testing for appropriate targets.
-  void InjectTouchEventHitTested(InternalTouchEvent event, StreamId stream_id);
+  void InjectTouchEventHitTested(InternalTouchEvent event, StreamId stream_id,
+                                 const view_tree::Snapshot& snapshot);
 
  private:
-  // Should be called only once in a single call stack. The snapshot should be
-  // passed down into helper functions, rather than re-obtaining it, to ensure
-  // that a consistent snapshot is being used.
-  view_tree::SnapshotRef GetViewTreeSnapshot();
-
   // Finds the ViewRef koid registered with the other side of the |original| channel and returns it.
   // Returns ZX_KOID_INVALID if the related channel isn't found.
   zx_koid_t FindViewRefKoidOfRelatedChannel(
@@ -82,11 +77,11 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
       const view_tree::Snapshot& snapshot, const InternalTouchEvent& event);
 
   // Collects all the GestureContenders for a new touch event stream.
-  std::vector<ContenderId> CollectContenders(const view_tree::SnapshotRef& snapshot,
+  std::vector<ContenderId> CollectContenders(const view_tree::Snapshot& snapshot,
                                              StreamId stream_id, const InternalTouchEvent& event);
 
   // Updates the gesture arena and all contenders for stream |stream_id| with a new event.
-  void UpdateGestureContest(const view_tree::SnapshotRef& snapshot, InternalTouchEvent event,
+  void UpdateGestureContest(const view_tree::Snapshot& snapshot, InternalTouchEvent event,
                             StreamId stream_id);
 
   // Records a set of responses from a gesture disambiguation contender.
@@ -102,9 +97,6 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
 
   std::vector<zx_koid_t> GetAncestorChainTopToBottom(const view_tree::Snapshot& snapshot,
                                                      zx_koid_t bottom, zx_koid_t top) const;
-
-  /// Construction-time state.
-  const std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
 
   HitTester& hit_tester_;
 

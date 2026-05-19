@@ -27,24 +27,25 @@ InternalTouchEvent CreateCancelEvent(uint32_t device_id, uint32_t pointer_id, zx
 }  // namespace
 
 // LINT.IfChange
-TouchInjector::TouchInjector(inspect::Node inspect_node, InjectorSettings settings,
-                             Viewport viewport,
-                             fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
-                             fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
-                                 is_descendant_and_connected,
-                             fit::function<void(InternalTouchEvent, StreamId)> inject,
-                             fit::function<void()> on_channel_closed)
-    : Injector(std::move(inspect_node), settings, std::move(viewport), std::move(device),
-               std::move(is_descendant_and_connected), std::move(on_channel_closed)),
+TouchInjector::TouchInjector(
+    std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder, inspect::Node inspect_node,
+    InjectorSettings settings, Viewport viewport,
+    fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
+    fit::function<void(InternalTouchEvent, StreamId stream_id, const view_tree::Snapshot& snapshot)>
+        inject,
+    fit::function<void()> on_channel_closed)
+    : Injector(std::move(snapshot_holder), std::move(inspect_node), std::move(settings),
+               std::move(viewport), std::move(device), std::move(on_channel_closed)),
       inject_(std::move(inject)) {
   FX_DCHECK(inject_);
   FX_DCHECK(settings.device_type == fuchsia::ui::pointerinjector::DeviceType::TOUCH);
 }
 
-void TouchInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id) {
+void TouchInjector::ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id,
+                                 const view_tree::Snapshot& snapshot) {
   TRACE_DURATION("input", "TouchInjector::ForwardEvent");
   FX_DCHECK(stream_id != kInvalidStreamId);
-  inject_(PointerInjectorEventToInternalTouchEvent(event), stream_id);
+  inject_(PointerInjectorEventToInternalTouchEvent(event), stream_id, snapshot);
 }
 
 InternalTouchEvent TouchInjector::PointerInjectorEventToInternalTouchEvent(
@@ -96,9 +97,10 @@ InternalTouchEvent TouchInjector::PointerInjectorEventToInternalTouchEvent(
 
 void TouchInjector::CancelStream(uint32_t pointer_id, StreamId stream_id) {
   const InjectorSettings& settings = Injector::settings();
+  auto snapshot_ref = GetViewTreeSnapshot();
   inject_(CreateCancelEvent(settings.device_id, pointer_id, settings.context_koid,
                             settings.target_koid),
-          stream_id);
+          stream_id, *snapshot_ref);
 }
 // LINT.ThenChange(//src/ui/scenic/lib/input/dso/touch_injector.cc)
 

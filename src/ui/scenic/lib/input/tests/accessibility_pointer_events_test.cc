@@ -112,10 +112,8 @@ class AccessibilityPointerEventsTest : public gtest::TestLoopFixture {
  public:
   AccessibilityPointerEventsTest()
       : dispatcher_setter_(dispatcher(), dispatcher()),
-        snapshot_holder_(std::make_shared<view_tree::SnapshotHolder>()),
         hit_tester_(inspect_node_),
-        touch_system_(dispatcher(), context_provider_.context(), snapshot_holder_, hit_tester_,
-                      inspect_node_) {}
+        touch_system_(dispatcher(), context_provider_.context(), hit_tester_, inspect_node_) {}
 
   void SetUp() override {
     ::testing::Test::SetUp();
@@ -128,7 +126,7 @@ class AccessibilityPointerEventsTest : public gtest::TestLoopFixture {
   }
 
   void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
-    snapshot_holder_->SetSnapshot(std::move(snapshot));
+    current_snapshot_ = std::move(snapshot);
   }
 
  private:
@@ -136,7 +134,6 @@ class AccessibilityPointerEventsTest : public gtest::TestLoopFixture {
   // Must be initialized before |touch_system_|.
   sys::testing::ComponentContextProvider context_provider_;
   inspect::Node inspect_node_;
-  std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
   scenic_impl::input::HitTester hit_tester_;
 
  protected:
@@ -169,6 +166,7 @@ class AccessibilityPointerEventsTest : public gtest::TestLoopFixture {
   }
 
   scenic_impl::input::TouchSystem touch_system_;
+  std::shared_ptr<const view_tree::Snapshot> current_snapshot_;
   std::unordered_map<StreamId, TouchInteractionStatus> client_contests_;
 
  private:
@@ -227,7 +225,8 @@ TEST_F(AccessibilityPointerEventsTest, ConsumesPointerEvents) {
 
   // A touch sequence that starts at the (2.5,2.5) location of the 5x5 display.
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kAdd), kStream1Id);
+      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kAdd), kStream1Id,
+      *current_snapshot_);
   RunLoopUntilIdle();
 
   ASSERT_EQ(client_contests_.count(kStream1Id), 0u)
@@ -255,7 +254,8 @@ TEST_F(AccessibilityPointerEventsTest, ConsumesPointerEvents) {
   }
 
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kChange), kStream1Id);
+      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kChange), kStream1Id,
+      *current_snapshot_);
   RunLoopUntilIdle();
 
   ASSERT_NE(client_contests_.count(kStream1Id), 0u) << "Contest should have ended";
@@ -276,9 +276,11 @@ TEST_F(AccessibilityPointerEventsTest, ConsumesPointerEvents) {
 
   // Accessibility consumed the two events. Continue sending pointer events in the same stream.
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 2.5f, 3.5f, impl_Phase::kChange), kStream1Id);
+      PointerEventTemplate(kClientKoid, 2.5f, 3.5f, impl_Phase::kChange), kStream1Id,
+      *current_snapshot_);
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 2.5f, 3.5f, impl_Phase::kRemove), kStream1Id);
+      PointerEventTemplate(kClientKoid, 2.5f, 3.5f, impl_Phase::kRemove), kStream1Id,
+      *current_snapshot_);
   RunLoopUntilIdle();
 
   // Verify accessibility's events.
@@ -316,10 +318,11 @@ TEST_F(AccessibilityPointerEventsTest, ConsumesPointerEvents) {
   listener.events().clear();
 
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 3.5f, 1.5f, impl_Phase::kAdd), kStream2Id);
+      PointerEventTemplate(kClientKoid, 3.5f, 1.5f, impl_Phase::kAdd), kStream2Id,
+      *current_snapshot_);
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 3.5f, 1.5f, impl_Phase::kRemove),
-      kStream2Id);  // Consume happens here.
+      PointerEventTemplate(kClientKoid, 3.5f, 1.5f, impl_Phase::kRemove), kStream2Id,
+      *current_snapshot_);  // Consume happens here.
   RunLoopUntilIdle();
 
   ASSERT_NE(client_contests_.count(kStream1Id), 0u) << "Contest should have ended";
@@ -376,7 +379,8 @@ TEST_F(AccessibilityPointerEventsTest, RejectsPointerEvents) {
 
   // A touch sequence that starts at the (2.5,2.5) location of the 5x5 display.
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kAdd), kStream1Id);
+      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kAdd), kStream1Id,
+      *current_snapshot_);
   RunLoopUntilIdle();
 
   ASSERT_NE(client_contests_.count(kStream1Id), 0u) << "Contest should have ended";
@@ -411,9 +415,11 @@ TEST_F(AccessibilityPointerEventsTest, RejectsPointerEvents) {
 
   // Send the rest of the stream.
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 2.5f, 3.5f, impl_Phase::kChange), kStream1Id);
+      PointerEventTemplate(kClientKoid, 2.5f, 3.5f, impl_Phase::kChange), kStream1Id,
+      *current_snapshot_);
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 2.5f, 3.5f, impl_Phase::kRemove), kStream1Id);
+      PointerEventTemplate(kClientKoid, 2.5f, 3.5f, impl_Phase::kRemove), kStream1Id,
+      *current_snapshot_);
   RunLoopUntilIdle();
 
   EXPECT_TRUE(listener.events().empty())
@@ -434,22 +440,25 @@ TEST_F(AccessibilityPointerEventsTest, AlternatingResponses) {
   // First stream:
   // A touch sequence that starts at the (1.5,1.5) location of the 5x5 display.
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 1.5f, 1.5f, impl_Phase::kAdd), kStream1Id);
+      PointerEventTemplate(kClientKoid, 1.5f, 1.5f, impl_Phase::kAdd), kStream1Id,
+      *current_snapshot_);
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 1.5f, 1.5f, impl_Phase::kRemove),
-      kStream1Id);  // Consume happens here.
+      PointerEventTemplate(kClientKoid, 1.5f, 1.5f, impl_Phase::kRemove), kStream1Id,
+      *current_snapshot_);  // Consume happens here.
   // Second stream:
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kAdd), kStream2Id);
+      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kAdd), kStream2Id,
+      *current_snapshot_);
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kRemove),
-      kStream2Id);  // Reject happens here.
+      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kRemove), kStream2Id,
+      *current_snapshot_);  // Reject happens here.
   // Third stream:
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 3.5f, 3.5f, impl_Phase::kAdd), kStream3Id);
+      PointerEventTemplate(kClientKoid, 3.5f, 3.5f, impl_Phase::kAdd), kStream3Id,
+      *current_snapshot_);
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 3.5f, 3.5f, impl_Phase::kRemove),
-      kStream3Id);  // Consume happens here.
+      PointerEventTemplate(kClientKoid, 3.5f, 3.5f, impl_Phase::kRemove), kStream3Id,
+      *current_snapshot_);  // Consume happens here.
   RunLoopUntilIdle();
 
   ASSERT_NE(client_contests_.count(kStream1Id), 0u) << "Contest should have ended";
@@ -585,7 +594,8 @@ TEST_F(AccessibilityPointerEventsTest, DiscardActiveStreamOnConnection) {
   // Send in the input.
   // A touch sequence that starts at the (1.5,1.5) location of the 5x5 display.
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 1.5f, 1.5f, impl_Phase::kAdd), kStream1Id);
+      PointerEventTemplate(kClientKoid, 1.5f, 1.5f, impl_Phase::kAdd), kStream1Id,
+      *current_snapshot_);
   RunLoopUntilIdle();
 
   ASSERT_NE(client_contests_.count(kStream1Id), 0u) << "Contest should have ended";
@@ -596,9 +606,11 @@ TEST_F(AccessibilityPointerEventsTest, DiscardActiveStreamOnConnection) {
 
   // Sends the rest of the stream.
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 1.5f, 1.5f, impl_Phase::kChange), kStream1Id);
+      PointerEventTemplate(kClientKoid, 1.5f, 1.5f, impl_Phase::kChange), kStream1Id,
+      *current_snapshot_);
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 1.5f, 1.5f, impl_Phase::kRemove), kStream1Id);
+      PointerEventTemplate(kClientKoid, 1.5f, 1.5f, impl_Phase::kRemove), kStream1Id,
+      *current_snapshot_);
   RunLoopUntilIdle();
 
   EXPECT_TRUE(listener.is_registered());
@@ -615,7 +627,8 @@ TEST_F(AccessibilityPointerEventsTest, DispatchEventsAfterDisconnection) {
     // Send in the input.
     // A touch sequence that starts at the (2.5,2.5) location of the 5x5 display.
     touch_system_.InjectTouchEventHitTested(
-        PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kAdd), kStream1Id);
+        PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kAdd), kStream1Id,
+        *current_snapshot_);
     RunLoopUntilIdle();
 
     ASSERT_EQ(client_contests_.count(kStream1Id), 0u) << "Contest should not have ended";
@@ -645,7 +658,8 @@ TEST_F(AccessibilityPointerEventsTest, ExposeTopMostViewRefKoid) {
   // Scene is now set up; send in the input.
   // A touch sequence that starts at the (2.5,2.5) location of the 5x5 display.
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kAdd), kStream1Id);
+      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kAdd), kStream1Id,
+      *current_snapshot_);
   RunLoopUntilIdle();
 
   // Verify accessibility's events.
@@ -677,7 +691,8 @@ TEST_F(AccessibilityPointerEventsTest, ExposeTopMostViewRefKoid) {
                                     /*hierarchy*/ {kContextKoid, kClientKoid, kClient2Koid}));
   // Send in the rest of the stream.
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 1.5f, 3.5f, impl_Phase::kRemove), kStream1Id);
+      PointerEventTemplate(kClientKoid, 1.5f, 3.5f, impl_Phase::kRemove), kStream1Id,
+      *current_snapshot_);
   RunLoopUntilIdle();
 
   // Verify accessibility's events.
@@ -717,7 +732,8 @@ TEST_F(AccessibilityPointerEventsTest, NoAddLatchAndA11yAccepts) {
   OnNewViewTreeSnapshot(NewSnapshot(/*hits*/ {}, /*hierarchy*/ {kContextKoid, kClientKoid}));
   // Send in input.
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 0.5f, 0.5f, impl_Phase::kAdd), kStream1Id);
+      PointerEventTemplate(kClientKoid, 0.5f, 0.5f, impl_Phase::kAdd), kStream1Id,
+      *current_snapshot_);
   RunLoopUntilIdle();
 
   ASSERT_EQ(client_contests_.count(kStream1Id), 0u)
@@ -728,9 +744,11 @@ TEST_F(AccessibilityPointerEventsTest, NoAddLatchAndA11yAccepts) {
       NewSnapshot(/*hits*/ {kClientKoid}, /*hierarchy*/ {kContextKoid, kClientKoid}));
   // A touch sequence that starts at the (1.5,1.5) location of the 5x5 display.
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 1.5f, 1.5f, impl_Phase::kChange), kStream1Id);
+      PointerEventTemplate(kClientKoid, 1.5f, 1.5f, impl_Phase::kChange), kStream1Id,
+      *current_snapshot_);
   touch_system_.InjectTouchEventHitTested(
-      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kChange), kStream1Id);
+      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kChange), kStream1Id,
+      *current_snapshot_);
   RunLoopUntilIdle();
 
   ASSERT_EQ(client_contests_.count(kStream1Id), 0u)
@@ -775,7 +793,8 @@ TEST_F(AccessibilityPointerEventsTest, TopHitInjectionByNonRootView_IsNotDeliver
   OnNewViewTreeSnapshot(NewSnapshot(/*hits*/ {}, /*hierarchy*/ {kContextKoid, kClientKoid}));
   // A touch sequence that starts at the (2.5,2.5) location of the 5x5 display.
   touch_system_.InjectTouchEventExclusive(
-      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kAdd), kStream1Id);
+      PointerEventTemplate(kClientKoid, 2.5f, 2.5f, impl_Phase::kAdd), kStream1Id,
+      *current_snapshot_);
   RunLoopUntilIdle();
 
   ASSERT_NE(client_contests_.count(kStream1Id), 0u) << "Contest should have ended";

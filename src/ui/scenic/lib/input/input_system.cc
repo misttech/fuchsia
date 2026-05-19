@@ -20,25 +20,29 @@ InputSystem::InputSystem(async_dispatcher_t *input_dispatcher, sys::ComponentCon
                          std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
                          inspect::Node &inspect_node, RequestFocusFunc request_focus)
     : hit_tester_(inspect_node),
-      mouse_system_(context, snapshot_holder, hit_tester_, std::move(request_focus)),
-      touch_system_(input_dispatcher, context, snapshot_holder, hit_tester_, inspect_node),
+      mouse_system_(context, hit_tester_, std::move(request_focus)),
+      touch_system_(input_dispatcher, context, hit_tester_, inspect_node),
       pointerinjector_registry_(
           input_dispatcher, context, snapshot_holder,
           /*inject_touch_exclusive=*/
-          [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id) {
-            touch_system.InjectTouchEventExclusive(std::move(event), stream_id);
+          [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id,
+                                          const view_tree::Snapshot &snapshot) {
+            touch_system.InjectTouchEventExclusive(std::move(event), stream_id, snapshot);
           },
           /*inject_touch_hit_tested=*/
-          [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id) {
-            touch_system.InjectTouchEventHitTested(std::move(event), stream_id);
+          [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id,
+                                          const view_tree::Snapshot &snapshot) {
+            touch_system.InjectTouchEventHitTested(std::move(event), stream_id, snapshot);
           },
           /*inject_mouse_exclusive=*/
-          [&mouse_system = mouse_system_](InternalMouseEvent event, StreamId stream_id) {
-            mouse_system.InjectMouseEventExclusive(std::move(event), stream_id);
+          [&mouse_system = mouse_system_](InternalMouseEvent event, StreamId stream_id,
+                                          const view_tree::Snapshot &snapshot) {
+            mouse_system.InjectMouseEventExclusive(std::move(event), stream_id, snapshot);
           },
           /*inject_mouse_hit_tested=*/
-          [&mouse_system = mouse_system_](InternalMouseEvent event, StreamId stream_id) {
-            mouse_system.InjectMouseEventHitTested(std::move(event), stream_id);
+          [&mouse_system = mouse_system_](InternalMouseEvent event, StreamId stream_id,
+                                          const view_tree::Snapshot &snapshot) {
+            mouse_system.InjectMouseEventHitTested(std::move(event), stream_id, snapshot);
           },
           // Explicit call necessary to cancel mouse stream, because mouse stream itself does not
           // track phase.
@@ -52,12 +56,14 @@ InputSystem::InputSystem(async_dispatcher_t *input_dispatcher, sys::ComponentCon
       pointerinjector_registry_dso_(
           input_dispatcher, snapshot_holder,
           /*inject_touch_exclusive=*/
-          [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id) {
-            touch_system.InjectTouchEventExclusive(std::move(event), stream_id);
+          [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id,
+                                          const view_tree::Snapshot &snapshot) {
+            touch_system.InjectTouchEventExclusive(std::move(event), stream_id, snapshot);
           },
           /*inject_touch_hit_tested=*/
-          [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id) {
-            touch_system.InjectTouchEventHitTested(std::move(event), stream_id);
+          [&touch_system = touch_system_](InternalTouchEvent event, StreamId stream_id,
+                                          const view_tree::Snapshot &snapshot) {
+            touch_system.InjectTouchEventHitTested(std::move(event), stream_id, snapshot);
           },
           inspect_node.CreateChild("PointerinjectorRegistryDso")) {
   FX_DCHECK(input_dispatcher);

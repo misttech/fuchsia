@@ -13,16 +13,18 @@ namespace scenic_impl::input {
 // LINT.IfChange
 class TouchInjector : public Injector {
  public:
-  TouchInjector(inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
+  TouchInjector(std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
+                inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
                 fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
-                fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
-                    is_descendant_and_connected,
-                fit::function<void(InternalTouchEvent, StreamId stream_id)> inject,
+                fit::function<void(InternalTouchEvent, StreamId stream_id,
+                                   const view_tree::Snapshot& snapshot)>
+                    inject,
                 fit::function<void()> on_channel_closed);
 
  protected:
   // |Injector|
-  void ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id) override;
+  void ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id,
+                    const view_tree::Snapshot& snapshot) override;
   // |Injector|
   void CancelStream(uint32_t pointer_id, StreamId stream_id) override;
 
@@ -31,7 +33,7 @@ class TouchInjector : public Injector {
       fuchsia::ui::pointerinjector::Event& event);
 
   // Used to inject the event into InputSystem for dispatch to clients.
-  const fit::function<void(InternalTouchEvent, StreamId)> inject_;
+  const fit::function<void(InternalTouchEvent, StreamId, const view_tree::Snapshot&)> inject_;
 };
 // LINT.ThenChange(//src/ui/scenic/lib/input/dso/touch_injector.h)
 

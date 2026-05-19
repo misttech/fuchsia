@@ -13,17 +13,19 @@ namespace scenic_impl::input {
 // Implementation of the |fuchsia::ui::pointerinjector::Device| interface. One instance per channel.
 class MouseInjector : public Injector {
  public:
-  MouseInjector(inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
+  MouseInjector(std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
+                inspect::Node inspect_node, InjectorSettings settings, Viewport viewport,
                 fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
-                fit::function<bool(/*descendant*/ zx_koid_t, /*ancestor*/ zx_koid_t)>
-                    is_descendant_and_connected,
-                fit::function<void(InternalMouseEvent, StreamId stream_id)> inject,
+                fit::function<void(InternalMouseEvent, StreamId stream_id,
+                                   const view_tree::Snapshot& snapshot)>
+                    inject,
                 fit::function<void(StreamId stream_id)> cancel_stream,
                 fit::function<void()> on_channel_closed);
 
  protected:
   // |Injector|
-  void ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id) override;
+  void ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id,
+                    const view_tree::Snapshot& snapshot) override;
   // |Injector|
   void CancelStream(uint32_t pointer_id, StreamId stream_id) override;
 
@@ -32,7 +34,7 @@ class MouseInjector : public Injector {
       fuchsia::ui::pointerinjector::Event& event);
 
   // Used to inject the event into InputSystem for dispatch to clients.
-  const fit::function<void(InternalMouseEvent, StreamId)> inject_;
+  const fit::function<void(InternalMouseEvent, StreamId, const view_tree::Snapshot&)> inject_;
   // Explicit call necessary to cancel mouse stream, because mouse stream itself does not track
   // phase.
   const fit::function<void(StreamId)> cancel_stream_;
