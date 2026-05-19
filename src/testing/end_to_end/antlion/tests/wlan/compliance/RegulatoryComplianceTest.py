@@ -21,7 +21,7 @@ from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.types import CountryCode
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
     BssChannel,

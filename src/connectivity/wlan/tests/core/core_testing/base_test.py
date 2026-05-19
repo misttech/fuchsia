@@ -15,6 +15,7 @@ from datetime import timedelta
 import fidl_fuchsia_wlan_common as fw_common
 import fidl_fuchsia_wlan_device_service as fw_device_service
 import fidl_fuchsia_wlan_sme as fw_sme
+import openwrt_access_point
 from antlion import controllers
 from core_testing.handlers import DeviceWatcherEventHandler
 from fuchsia_controller_py import ZxStatus
@@ -23,8 +24,7 @@ from honeydew.typing.custom_types import FidlEndpoint
 from mobly import signals
 from mobly.asserts import assert_equal
 from mobly.records import TestResultRecord
-from mobly_controller import openwrt_access_point
-from mobly_controller.openwrt_access_point import OpenWrtAP
+from openwrt_access_point import OpenWrtAP
 
 
 @dataclass(frozen=True)

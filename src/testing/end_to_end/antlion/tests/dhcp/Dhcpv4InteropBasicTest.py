@@ -10,10 +10,7 @@ import time
 from antlion.controllers.ap_lib import dhcp_config
 from fuchsia_wlan_base_test.deprecated.dhcp import base_test
 from mobly import asserts, test_runner
-from mobly_controller.openwrt_access_point.lib.dhcp_config import (
-    DhcpConfig,
-    Lan,
-)
+from openwrt_access_point.lib.dhcp_config import DhcpConfig, Lan
 
 
 class Dhcpv4InteropBasicTest(base_test.Dhcpv4InteropFixture):

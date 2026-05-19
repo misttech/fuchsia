@@ -21,8 +21,8 @@ from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 from mobly.records import TestResultRecord
-from mobly_controller.openwrt_access_point.lib import capabilities
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point.lib import capabilities
+from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
     BssChannel,
@@ -35,7 +35,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     SecurityWpa2,
     UciRadioOptions,
 )
-from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
+from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
 )
 

@@ -28,8 +28,8 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from fuchsia_controller_py import Channel
 from mobly import signals, test_runner
 from mobly.asserts import assert_equal, assert_true
-from mobly_controller.openwrt_access_point import OpenWrtAP
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point import OpenWrtAP
+from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
     Band,
@@ -40,7 +40,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     SecurityWpa2,
     SecurityWpa3,
 )
-from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
+from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
 )
 

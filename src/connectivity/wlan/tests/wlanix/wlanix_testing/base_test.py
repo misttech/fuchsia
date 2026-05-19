@@ -10,6 +10,7 @@ from typing import Any, Sequence
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
 import fuchsia_base_test
+import openwrt_access_point
 from antlion import controllers
 from antlion.controllers.access_point import AccessPoint
 from antlion.controllers.ap_lib import hostapd_constants
@@ -20,8 +21,7 @@ from honeydew.typing.custom_types import FidlEndpoint
 from mobly import signals
 from mobly.asserts import assert_equal, fail
 from mobly.records import TestResultRecord
-from mobly_controller import openwrt_access_point
-from mobly_controller.openwrt_access_point import OpenWrtAP
+from openwrt_access_point import OpenWrtAP
 
 NL80211_ATTR_WIPHY = 1
 NL80211_ATTR_IFINDEX = 3

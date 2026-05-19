@@ -16,22 +16,16 @@ from libs.ssh import connection, settings
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
 from mobly import logger, utils
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
     BssSettings,
     SecurityOpen,
 )
-from mobly_controller.openwrt_access_point.lib.dhcp_config import (
-    DhcpConfig as DhcpConfig,
-)
-from mobly_controller.openwrt_access_point.lib.dhcp_config import (
-    Dnsmasq as Dnsmasq,
-)
-from mobly_controller.openwrt_access_point.lib.dhcp_config import Lan as Lan
-from mobly_controller.openwrt_access_point.lib.dhcp_controller import (
-    DhcpController,
-)
+from openwrt_access_point.lib.dhcp_config import DhcpConfig as DhcpConfig
+from openwrt_access_point.lib.dhcp_config import Dnsmasq as Dnsmasq
+from openwrt_access_point.lib.dhcp_config import Lan as Lan
+from openwrt_access_point.lib.dhcp_controller import DhcpController
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -215,7 +209,7 @@ class OpenWrtAP:
         For a list of available OpenWrt UCI capabilities, refer to:
         https://openwrt.org/docs/guide-user/network/wifi/basic#ht_high_throughput_capabilities
         """
-        from mobly_controller.openwrt_access_point.lib import capabilities
+        from openwrt_access_point.lib import capabilities
 
         # Start from a clean, controlled state by setting all known capabilities
         # to their default values.

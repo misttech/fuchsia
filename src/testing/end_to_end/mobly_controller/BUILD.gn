@@ -27,20 +27,10 @@ python_library("mobly_controller_no_testonly") {
   sources = [
     "__init__.py",
     "fuchsia_device.py",
-    "openwrt_access_point/__init__.py",
-    "openwrt_access_point/lib/__init__.py",
-    "openwrt_access_point/lib/access_point_config.py",
-    "openwrt_access_point/lib/access_point_config_mapper.py",
-    "openwrt_access_point/lib/capabilities.py",
-    "openwrt_access_point/lib/dhcp_config.py",
-    "openwrt_access_point/lib/dhcp_controller.py",
-    "openwrt_access_point/lib/hostapd_options.py",
-    "openwrt_access_point/lib/profiles/__init__.py",
-    "openwrt_access_point/lib/profiles/actiontec.py",
-    "openwrt_access_point/lib/uci_options.py",
   ]
   source_root = "."
   library_deps = [
+    "openwrt_access_point",
     "//src/testing/end_to_end/honeydew:honeydew_no_testonly",
     "//src/testing/end_to_end/libs",
   ]

@@ -3,9 +3,7 @@
 # found in the LICENSE file.
 
 
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
-    HostapdOptions,
-)
+from openwrt_access_point.lib.access_point_config import HostapdOptions
 
 
 # WMM

@@ -4,7 +4,7 @@
 import logging
 
 from libs.ssh import connection
-from mobly_controller.openwrt_access_point.lib.dhcp_config import DhcpConfig
+from openwrt_access_point.lib.dhcp_config import DhcpConfig
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 

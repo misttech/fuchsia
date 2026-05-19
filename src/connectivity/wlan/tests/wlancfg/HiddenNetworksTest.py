@@ -8,6 +8,7 @@ import logging
 import time
 
 import fuchsia_wlan_base_test
+import openwrt_access_point
 from antlion.controllers import access_point
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
@@ -27,9 +28,8 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
 )
 from mobly import signals, test_runner
 from mobly.config_parser import TestRunConfig
-from mobly_controller import openwrt_access_point
-from mobly_controller.openwrt_access_point import OpenWrtAP
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point import OpenWrtAP
+from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
     Band,

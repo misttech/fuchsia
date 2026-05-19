@@ -32,8 +32,8 @@ from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
 from mobly import signals, test_runner
 from mobly.asserts import assert_equal, assert_true, fail
-from mobly_controller.openwrt_access_point import OpenWrtAP
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point import OpenWrtAP
+from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
     Band,

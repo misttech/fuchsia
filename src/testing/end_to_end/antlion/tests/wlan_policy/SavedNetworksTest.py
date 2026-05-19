@@ -27,7 +27,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     WlanClientState,
 )
 from mobly import asserts, signals, test_runner
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point.lib.access_point_config import (
     DEFAULT_5G_CHANNEL,
     AccessPointConfig,
     Band,
@@ -38,7 +38,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     SecurityWpa2,
     SecurityWpa3,
 )
-from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
+from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
 )
 

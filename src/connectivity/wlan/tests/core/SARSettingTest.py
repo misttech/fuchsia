@@ -6,8 +6,8 @@ Tests for SAR settings.
 """
 import logging
 
-from mobly_controller.openwrt_access_point import OpenWrtAP
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point import OpenWrtAP
+from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
     Band,

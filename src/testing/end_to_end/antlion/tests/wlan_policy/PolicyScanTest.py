@@ -19,7 +19,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     SecurityType,
 )
 from mobly import asserts, signals, test_runner
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     DEFAULT_5G_CHANNEL,
     AccessPointConfig,

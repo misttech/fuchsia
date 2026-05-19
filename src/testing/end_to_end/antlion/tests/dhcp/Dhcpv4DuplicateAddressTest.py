@@ -12,7 +12,7 @@ from antlion.controllers.ap_lib import dhcp_config
 from antlion.controllers.utils_lib.commands import ip
 from fuchsia_wlan_base_test.deprecated.dhcp import base_test
 from mobly import asserts, signals, test_runner
-from mobly_controller.openwrt_access_point import DhcpConfig, Dnsmasq, Lan
+from openwrt_access_point import DhcpConfig, Dnsmasq, Lan
 
 
 class Dhcpv4DuplicateAddressTest(base_test.Dhcpv4InteropFixture):

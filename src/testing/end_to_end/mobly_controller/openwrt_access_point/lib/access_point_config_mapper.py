@@ -6,7 +6,7 @@ from antlion.controllers.ap_lib.hostapd_constants import BandType
 from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode as HostapdSecurityMode,
 )
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point.lib.access_point_config import (
     Band,
     RadioConfig,
     Security,
@@ -58,7 +58,7 @@ class AccessPointConfigMapper:
     def to_hostapd_n_cap(cap: str) -> object:
         """Maps a generic capability string to its hostapd_constants equivalent."""
         from antlion.controllers.ap_lib import hostapd_constants
-        from mobly_controller.openwrt_access_point.lib import capabilities
+        from openwrt_access_point.lib import capabilities
 
         mapping = {
             capabilities.N_CAPABILITY_LDPC: hostapd_constants.N_CAPABILITY_LDPC,
@@ -79,7 +79,7 @@ class AccessPointConfigMapper:
     def to_hostapd_ac_cap(cap: str) -> object:
         """Maps a generic capability string to its hostapd_constants equivalent."""
         from antlion.controllers.ap_lib import hostapd_constants
-        from mobly_controller.openwrt_access_point.lib import capabilities
+        from openwrt_access_point.lib import capabilities
 
         mapping = {
             capabilities.AC_CAPABILITY_MAX_MPDU_7991: hostapd_constants.AC_CAPABILITY_MAX_MPDU_7991,

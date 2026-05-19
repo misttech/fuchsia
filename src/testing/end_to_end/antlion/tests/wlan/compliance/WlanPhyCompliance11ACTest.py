@@ -21,7 +21,7 @@ from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
     BssChannel,
@@ -33,7 +33,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     SecurityWpa2,
     VhtMode,
 )
-from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
+from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
 )
 
@@ -53,7 +53,7 @@ Capabilities Not Supported on Whirlwind:
     - VHT TXOP Power Save [VHT-TXOP-PS]
     - HTC-VHT [HTC-VHT]
 """
-from mobly_controller.openwrt_access_point.lib import capabilities
+from openwrt_access_point.lib import capabilities
 
 VHT_MAX_MPDU_LEN = [
     capabilities.AC_CAPABILITY_MAX_MPDU_7991,

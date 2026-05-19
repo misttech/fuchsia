@@ -13,8 +13,8 @@ from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
-from mobly_controller.openwrt_access_point import OpenWrtAP
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point import OpenWrtAP
+from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
     BssChannel,
@@ -26,16 +26,16 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     UciBssOptions,
     UciRadioOptions,
 )
-from mobly_controller.openwrt_access_point.lib.access_point_config_mapper import (
+from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper,
 )
-from mobly_controller.openwrt_access_point.lib.hostapd_options import (
+from openwrt_access_point.lib.hostapd_options import (
     AssocRespIe,
     Country3,
     WmmAcm,
     WmmParams,
 )
-from mobly_controller.openwrt_access_point.lib.uci_options import (
+from openwrt_access_point.lib.uci_options import (
     BasicRate,
     SupportedRates,
     VendorElements,

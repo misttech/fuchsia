@@ -13,6 +13,7 @@ import os
 from typing import Any, TypedDict, TypeVar
 
 import fuchsia_async_extension
+import openwrt_access_point
 from antlion import context, controllers, utils
 from antlion.controllers.access_point import AccessPoint
 from antlion.controllers.android_device import AndroidDevice
@@ -39,8 +40,7 @@ from mobly import signals
 from mobly.base_test import BaseTestClass
 from mobly.config_parser import TestRunConfig
 from mobly.records import TestResultRecord
-from mobly_controller import openwrt_access_point
-from mobly_controller.openwrt_access_point import OpenWrtAP
+from openwrt_access_point import OpenWrtAP
 
 WifiEnums = wutils.WifiEnums
 MAX_AP_COUNT = 2
