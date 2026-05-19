@@ -426,8 +426,9 @@ void x86_feature_debug(void) {
   Printf("Microarchitecture: %V\n", arch::ToString(arch::GetMicroarchitecture(io)));
   Printf("Processor: %V\n", arch::ProcessorName(io).name());
   {
-    ktl::string_view hypervisor = arch::HypervisorName(io).name();
-    Printf("Hypervisor: %V\n", hypervisor.empty() ? "None" : hypervisor);
+    arch::HypervisorName hypervisor(io);
+    ktl::string_view name = hypervisor.name();
+    Printf("Hypervisor: %V\n", name.empty() ? "None" : name);
   }
 
   const auto version = io.Read<arch::CpuidVersionInfo>();
