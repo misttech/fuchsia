@@ -19,6 +19,7 @@ group("tests") {
     "block-relay:tests",
     "conformance:tests",
     "crypt:tests",
+    "erofs:tests",
     "ext4:tests",
     "f2fs:tests",
     "f2fs_reader:tests",
