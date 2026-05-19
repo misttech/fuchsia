@@ -183,6 +183,7 @@ policy_files = [
   "//src/starnix/lib/selinux/testdata/composite_policies/compiled/binder_policy",
   "//src/starnix/lib/selinux/testdata/composite_policies/compiled/bpf_policy",
   "//src/starnix/lib/selinux/testdata/composite_policies/compiled/capabilities_policy",
+  "//src/starnix/lib/selinux/testdata/composite_policies/compiled/fcntl_policy",
   "//src/starnix/lib/selinux/testdata/composite_policies/compiled/file_transition_policy",
   "//src/starnix/lib/selinux/testdata/composite_policies/compiled/genfscon_create_policy",
   "//src/starnix/lib/selinux/testdata/composite_policies/compiled/inherit_policy",

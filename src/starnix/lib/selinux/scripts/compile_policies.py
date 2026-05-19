@@ -77,6 +77,14 @@ _COMPOSITE_POLICY_PATHS = [
         [
             "base_policy.conf",
             "new_file/test_policy.conf",
+            "new_file/fcntl_policy.conf",
+        ],
+        "fcntl_policy",
+    ),
+    (
+        [
+            "base_policy.conf",
+            "new_file/test_policy.conf",
             "new_file/genfscon_create.conf",
         ],
         "genfscon_create_policy",

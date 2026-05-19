@@ -19,9 +19,10 @@ use crate::security::selinux_hooks::{
 use crate::task::CurrentTask;
 use crate::vfs::{FileHandle, FileObject, FsNodeHandle, canonicalize_ioctl_request};
 use linux_uapi::{
-    F_GETFD, F_GETLK, F_GETOWN, F_GETOWN_EX, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_SETFD,
-    F_SETFL, F_SETLK, F_SETLKW, FIBMAP, FIGETBSZ, FIOASYNC, FIOCLEX, FIONBIO, FIONCLEX, FIONREAD,
-    FS_IOC_GETFLAGS, FS_IOC_GETVERSION, FS_IOC_SETFLAGS, FS_IOC_SETVERSION,
+    F_GETFL, F_GETLK, F_GETLK64, F_GETSIG, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_SETFL,
+    F_SETLEASE, F_SETLK, F_SETLK64, F_SETLKW, F_SETLKW64, F_SETOWN, F_SETOWN_EX, F_SETSIG, FIBMAP,
+    FIGETBSZ, FIOASYNC, FIOCLEX, FIONBIO, FIONCLEX, FIONREAD, FS_IOC_GETFLAGS, FS_IOC_GETVERSION,
+    FS_IOC_SETFLAGS, FS_IOC_SETVERSION,
 };
 use selinux::{CommonFsNodePermission, PolicyCap, SecurityId, SecurityServer};
 use starnix_uapi::errors::Errno;
@@ -197,45 +198,14 @@ pub(in crate::security) fn check_file_fcntl_access(
     let subject_sid = current_task_state(current_task).current_sid;
 
     match fcntl_cmd {
-        F_GETFD | F_GETOWN | F_GETOWN_EX | F_SETFD => return Ok(()),
-        F_GETLK | F_SETLK | F_SETLKW | F_OFD_GETLK | F_OFD_SETLK | F_OFD_SETLKW => {
-            // BPF implements some lock operations but does not require file "lock"
-            // permission.
-            if file.downcast_file::<BpfHandle>().is_some() {
-                return Ok(());
-            }
-            // Checks both the Lock and Use permissions.
-            has_file_permissions(
-                &permission_check,
-                current_task,
-                subject_sid,
-                file,
-                &[CommonFsNodePermission::Lock],
-                current_task.into(),
-            )?;
-        }
-        _ => {
-            // Only checks the Use permission.
-            has_file_permissions(
-                &permission_check,
-                current_task,
-                subject_sid,
-                file,
-                NO_PERMISSIONS,
-                current_task.into(),
-            )?;
-        }
-    }
-
-    if fcntl_cmd == F_SETFL {
-        let new_flags = OpenFlags::from_bits_truncate(fcntl_arg as u32);
-        let old_flags = file.flags();
-
-        // If `O_APPEND` is being cleared then check the "write" permission.
-        // Although the flag only affects files opened with the writable bit
-        // set, the SELinux Test Suite validates that it is not possible to
-        // clear the `O_APPEND` bit from an `O_RDONLY` file.
-        if old_flags.contains(OpenFlags::APPEND) && !new_flags.contains(OpenFlags::APPEND) {
+        F_SETFL
+            if file.flags().contains(OpenFlags::APPEND)
+                && !OpenFlags::from_bits_truncate(fcntl_arg as u32).contains(OpenFlags::APPEND) =>
+        {
+            // If `O_APPEND` is being cleared then check the "write" permission.
+            // Although the flag only affects files opened with the writable bit
+            // set, the SELinux Test Suite validates that it is not possible to
+            // clear the `O_APPEND` bit from an `O_RDONLY` file.
             has_fs_node_permissions(
                 &build_permission_check(current_task, security_server),
                 current_task,
@@ -243,10 +213,35 @@ pub(in crate::security) fn check_file_fcntl_access(
                 file.node(),
                 &[CommonFsNodePermission::Write],
                 current_task.into(),
-            )?;
+            )
         }
+        F_SETFL | F_GETFL | F_SETSIG | F_GETSIG | F_SETOWN | F_SETOWN_EX => has_file_permissions(
+            &permission_check,
+            current_task,
+            subject_sid,
+            file,
+            NO_PERMISSIONS,
+            current_task.into(),
+        ),
+        F_GETLK | F_SETLK | F_SETLKW | F_GETLK64 | F_SETLK64 | F_SETLKW64 | F_OFD_GETLK
+        | F_OFD_SETLK | F_OFD_SETLKW | F_SETLEASE => {
+            // BPF implements some lock operations but does not require file "lock"
+            // permission.
+            if file.downcast_file::<BpfHandle>().is_some() {
+                return Ok(());
+            }
+            // TODO: https://fxbug.dev/512798827 - Integrate file_lock() in VFS and remove this.
+            has_file_permissions(
+                &permission_check,
+                current_task,
+                subject_sid,
+                file,
+                &[CommonFsNodePermission::Lock],
+                current_task.into(),
+            )
+        }
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 /// Checks if the requested protection changes `prot` can be applied to `mapping`.

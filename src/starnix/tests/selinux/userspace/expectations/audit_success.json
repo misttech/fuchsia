@@ -264,13 +264,127 @@
         {
             "name": "Fcntl/FcntlTest.WithoutFdUse/F_GETFL",
             "audit_expectations": [
-                "avc:  denied  { use } for path=2F746D702F2338202864656C6574656429 dev=\"tmpfs\" ino=8 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0"
+                "avc:  denied  { use } for path=2F746D702F233233202864656C6574656429 dev=\"tmpfs\" ino=23 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_GETLK",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=2F746D702F233330202864656C6574656429 dev=\"tmpfs\" ino=30 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_GETSIG",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=2F746D702F233235202864656C6574656429 dev=\"tmpfs\" ino=25 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
             ]
         },
         {
             "name": "Fcntl/FcntlTest.WithoutFdUse/F_SETFL",
             "audit_expectations": [
-                "avc:  denied  { use } for path=2F746D702F233131202864656C6574656429 dev=\"tmpfs\" ino=11 scontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_inherit_parent_t:s0 tclass=fd permissive=0"
+                "avc:  denied  { use } for path=2F746D702F233234202864656C6574656429 dev=\"tmpfs\" ino=24 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_SETLEASE",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=2F746D702F233231202864656C6574656429 dev=\"tmpfs\" ino=21 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_SETLK",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=2F746D702F233331202864656C6574656429 dev=\"tmpfs\" ino=31 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_SETLKW",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=2F746D702F233332202864656C6574656429 dev=\"tmpfs\" ino=32 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_SETOWN",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=2F746D702F233139202864656C6574656429 dev=\"tmpfs\" ino=19 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_SETSIG",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=2F746D702F233236202864656C6574656429 dev=\"tmpfs\" ino=26 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_OFD_GETLK",
+            "audit_expectations": [
+                "avc: denied { use } scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_OFD_SETLK",
+            "audit_expectations": [
+                "avc: denied { use } scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFdUse/F_OFD_SETLKW",
+            "audit_expectations": [
+                "avc: denied { use } scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFileLock/F_GETLK",
+            "audit_expectations": [
+                "avc:  denied  { lock } for path=2F746D702F233435202864656C6574656429 dev=\"tmpfs\" ino=45 scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFileLock/F_SETLEASE",
+            "audit_expectations": [
+                "avc:  denied  { lock } for path=2F746D702F233333202864656C6574656429 dev=\"tmpfs\" ino=33 scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFileLock/F_SETLK",
+            "audit_expectations": [
+                "avc:  denied  { lock } for path=2F746D702F233436202864656C6574656429 dev=\"tmpfs\" ino=46 scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFileLock/F_SETLKW",
+            "audit_expectations": [
+                "avc:  denied  { lock } for path=2F746D702F233437202864656C6574656429 dev=\"tmpfs\" ino=47 scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFileLock/F_OFD_GETLK",
+            "audit_expectations": [
+                "avc: denied { lock } scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFileLock/F_OFD_SETLK",
+            "audit_expectations": [
+                "avc: denied { lock } scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "Fcntl/FcntlTest.WithoutFileLock/F_OFD_SETLKW",
+            "audit_expectations": [
+                "avc: denied { lock } scontext=test_u:test_r:test_fcntl_child_no_lock_t:s0 tcontext=test_u:object_r:test_fcntl_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "FcntlOrderingTest.SetLeaseChecksMacBeforeArgs",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=2F746D702F2333202864656C6574656429 dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "FcntlOrderingTest.SetOwnChecksMacBeforeArgs",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=2F746D702F2332202864656C6574656429 dev=\"tmpfs\" ino=2 scontext=test_u:test_r:test_fcntl_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_fcntl_parent_t:s0 tclass=fd permissive=0"
             ]
         },
         {

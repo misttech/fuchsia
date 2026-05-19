@@ -301,14 +301,7 @@ pub fn sys_fcntl(
         _ => current_task.get_file(fd)?,
     };
 
-    match cmd {
-        // For the following values of cmd we need to perform more checks before running the
-        // `check_file_fcntl_access` LSM hook.
-        F_SETOWN | F_SETOWN_EX | F_ADD_SEALS | F_SETLEASE => {}
-        _ => {
-            security::check_file_fcntl_access(current_task, &file, cmd, arg)?;
-        }
-    };
+    security::check_file_fcntl_access(current_task, &file, cmd, arg)?;
 
     match cmd {
         F_DUPFD | F_DUPFD_CLOEXEC => {
@@ -359,7 +352,7 @@ pub fn sys_fcntl(
                 }
             };
             owner.validate(current_task)?;
-            security::check_file_fcntl_access(current_task, &file, cmd, arg)?;
+            // TODO: https://fxbug.dev/364569860 - Integrate with LSM file_setfowner hook.
             file.set_async_owner(owner);
             Ok(SUCCESS)
         }
@@ -376,7 +369,6 @@ pub fn sys_fcntl(
                 owner = FileAsyncOwner::Unowned;
             }
             owner.validate(current_task)?;
-            security::check_file_fcntl_access(current_task, &file, cmd, arg)?;
             file.set_async_owner(owner);
             Ok(SUCCESS)
         }
@@ -442,7 +434,6 @@ pub fn sys_fcntl(
                 // Cannot add seals if the file is not writable
                 return error!(EPERM);
             }
-            security::check_file_fcntl_access(current_task, &file, cmd, arg)?;
             let mut state = file.name.entry.node.write_guard_state.lock();
             let flags = SealFlags::from_bits_truncate(arg as u32);
             state.try_add_seal(flags)?;
@@ -458,14 +449,13 @@ pub fn sys_fcntl(
                 security::check_task_capable(current_task, CAP_LEASE)?;
             }
             let lease = FileLeaseType::from_bits(arg as u32)?;
-            security::check_file_fcntl_access(current_task, &file, cmd, arg)?;
             file.set_lease(current_task, lease)?;
             Ok(SUCCESS)
         }
         F_GETLEASE => Ok(file.get_lease(current_task).into()),
         F_SETSIG => {
             track_stub!(TODO("https://fxbug.dev/437972675"), "F_SETSIG");
-            return error!(EOPNOTSUPP);
+            return error!(EINVAL);
         }
         _ => file.fcntl(current_task, cmd, arg),
     }
