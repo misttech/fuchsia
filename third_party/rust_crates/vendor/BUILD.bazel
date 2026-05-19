@@ -31,18 +31,6 @@ filegroup(
 
 # Workspace Member Dependencies
 alias(
-    name = "adler2-2.0.1",
-    actual = "//third_party/rust_crates/vendor/adler2-2.0.1:adler2",
-    tags = ["manual"],
-)
-
-alias(
-    name = "adler2",
-    actual = "//third_party/rust_crates/vendor/adler2-2.0.1:adler2",
-    tags = ["manual"],
-)
-
-alias(
     name = "aes-0.8.4",
     actual = "//third_party/rust_crates/vendor/aes-0.8.4:aes",
     tags = ["manual"],
