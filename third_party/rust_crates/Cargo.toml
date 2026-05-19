@@ -16,9 +16,13 @@
 # More information is available in
 # https://fuchsia.dev/fuchsia-src/development/languages/rust/external_crates .
 
+[workspace]
+resolver = "3"
+
 [package]
 name = "fuchsia-third-party"
 version = "0.1.0"
+edition = "2024"
 
 [dependencies]
 # keep-sorted start
