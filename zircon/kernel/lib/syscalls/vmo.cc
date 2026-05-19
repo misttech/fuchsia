@@ -279,6 +279,7 @@ zx_status_t sys_vmo_create_child(zx_handle_t handle, uint32_t options, uint64_t 
   fbl::RefPtr<VmObject> child_vmo;
   bool no_write = false;
 
+  // VMO size is rounded up to the nearest page boundary.
   uint64_t vmo_size = 0;
   status = VmObject::RoundSize(size, &vmo_size);
   if (status != ZX_OK) {
@@ -335,7 +336,7 @@ zx_status_t sys_vmo_create_child(zx_handle_t handle, uint32_t options, uint64_t 
   zx_rights_t default_rights;
 
   // A reference child shares the same stream size manager as the parent.
-  if (options & ZX_VMO_CHILD_REFERENCE) {
+  if ((options & ZX_VMO_CHILD_REFERENCE) && vmo->vmo()->is_stream_compatible()) {
     auto result = vmo->stream_size_manager();
     if (result.is_error()) {
       return result.status_value();

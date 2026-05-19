@@ -95,7 +95,7 @@ zx_status_t VmObjectDispatcher::Create(fbl::RefPtr<VmObject> vmo, uint64_t strea
   fbl::RefPtr<StreamSizeManager> ssm;
   // If the initial stream size we want to track is exactly equal to the current VMO size then we
   // can defer creating the stream size manager till later.
-  if (stream_size != vmo->size()) {
+  if (stream_size != vmo->size() && vmo->is_stream_compatible()) {
     DEBUG_ASSERT(stream_size <= vmo->size());
     auto result = StreamSizeManager::Create(stream_size);
     if (result.is_error()) {

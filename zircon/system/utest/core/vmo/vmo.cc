@@ -1382,6 +1382,9 @@ TEST(VmoTestCase, StreamSizeSlicesAndReferences) {
 
 TEST(VmoTestCase, FaultBeyondStreamSizeNoPhysOrContig) {
   size_t vmo_size = _zx_system_get_page_size() * 2;
+  zx_info_vmo_t info;
+  uint64_t slice_size;
+  uint64_t stream_size;
 
   // 6 page VMAR.
   zx::vmar vmar;
@@ -1406,6 +1409,23 @@ TEST(VmoTestCase, FaultBeyondStreamSizeNoPhysOrContig) {
   ASSERT_EQ(ZX_ERR_NOT_SUPPORTED, vmar.map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC |
                                                ZX_VM_FAULT_BEYOND_STREAM_SIZE | ZX_VM_ALLOW_FAULTS,
                                            0, phys_vmo.vmo, 0, vmo_size, &addr));
+
+  // Can't create fault-beyond-stream-size mapping of a slice child of a physical VMO.
+  zx::vmo phys_slice;
+  ASSERT_OK(phys_vmo.vmo.create_child(ZX_VMO_CHILD_SLICE, 0, 1, &phys_slice));
+
+  // Type should be contiguous & slice size should be rounded up to kPageSize. Stream size should be
+  // 0.
+  ASSERT_OK(phys_slice.get_size(&slice_size));
+  EXPECT_OK(phys_slice.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr));
+  EXPECT_TRUE(info.flags & ZX_INFO_VMO_CONTIGUOUS);
+  ASSERT_EQ(slice_size, zx_system_get_page_size());
+  phys_slice.get_stream_size(&stream_size);
+  EXPECT_EQ(stream_size, 0);
+
+  ASSERT_EQ(ZX_ERR_NOT_SUPPORTED, vmar.map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC |
+                                               ZX_VM_FAULT_BEYOND_STREAM_SIZE | ZX_VM_ALLOW_FAULTS,
+                                           0, phys_slice, 0, zx_system_get_page_size(), &addr));
 
   // Can't create fault-beyond-stream-size mapping of contiguous VMO.
   zx::unowned_resource system_resource = maybe_standalone::GetSystemResource();
@@ -1433,6 +1453,22 @@ TEST(VmoTestCase, FaultBeyondStreamSizeNoPhysOrContig) {
   ASSERT_EQ(ZX_ERR_NOT_SUPPORTED, vmar.map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC |
                                                ZX_VM_FAULT_BEYOND_STREAM_SIZE | ZX_VM_ALLOW_FAULTS,
                                            0, contig_vmo, 0, vmo_size, &addr));
+
+  // Can't create fault-beyond-stream-size mapping of a child slice of a contiguous VMO.
+  zx::vmo contig_slice;
+  ASSERT_OK(contig_vmo.create_child(ZX_VMO_CHILD_SLICE, 0, 1, &contig_slice));
+
+  // Type should be contiguous & slice size should be rounded up to kPageSize.
+  ASSERT_OK(contig_slice.get_size(&slice_size));
+  EXPECT_OK(contig_slice.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr));
+  EXPECT_TRUE(info.flags & ZX_INFO_VMO_CONTIGUOUS);
+  ASSERT_EQ(slice_size, zx_system_get_page_size());
+  contig_slice.get_stream_size(&stream_size);
+  EXPECT_EQ(stream_size, 0);
+
+  ASSERT_EQ(ZX_ERR_NOT_SUPPORTED, vmar.map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC |
+                                               ZX_VM_FAULT_BEYOND_STREAM_SIZE | ZX_VM_ALLOW_FAULTS,
+                                           0, contig_slice, 0, zx_system_get_page_size(), &addr));
 }
 
 void RightsTestMapHelper(zx_handle_t vmo, size_t len, uint32_t flags, bool expect_success,
