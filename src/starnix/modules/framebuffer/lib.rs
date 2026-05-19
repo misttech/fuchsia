@@ -59,6 +59,7 @@ pub struct Framebuffer {
     pub info: RwLock<fb_var_screeninfo>,
     pub view_identity: Mutex<Option<fuiviews::ViewIdentityOnCreation>>,
     pub view_bound_protocols: Mutex<Option<fuicomposition::ViewBoundProtocols>>,
+    pub initial_view_id_annotation: String,
 }
 
 impl Framebuffer {
@@ -73,6 +74,7 @@ impl Framebuffer {
         system_task: &CurrentTask,
         aspect_ratio: Option<AspectRatio>,
         enable_visual_debugging: bool,
+        initial_view_id_annotation: String,
     ) -> Result<Arc<Framebuffer>, Errno>
     where
         L: LockEqualOrBefore<FileOpsCore>,
@@ -80,9 +82,9 @@ impl Framebuffer {
         let kernel = system_task.kernel();
         let registry = &kernel.device_registry;
 
-        let framebuffer = kernel
-            .expando
-            .get_or_try_init(|| Framebuffer::new(aspect_ratio, enable_visual_debugging))?;
+        let framebuffer = kernel.expando.get_or_try_init(|| {
+            Framebuffer::new(aspect_ratio, enable_visual_debugging, initial_view_id_annotation)
+        })?;
 
         let graphics_class = registry.objects.graphics_class();
         registry.register_device(
@@ -103,6 +105,7 @@ impl Framebuffer {
     fn new(
         aspect_ratio: Option<AspectRatio>,
         enable_visual_debugging: bool,
+        initial_view_id_annotation: String,
     ) -> Result<Self, Errno> {
         let mut info = fb_var_screeninfo::default();
 
@@ -151,6 +154,7 @@ impl Framebuffer {
                 info: RwLock::new(info),
                 view_identity: Default::default(),
                 view_bound_protocols: Default::default(),
+                initial_view_id_annotation,
             })
         } else {
             Ok(Self {
@@ -159,6 +163,7 @@ impl Framebuffer {
                 info: RwLock::new(info),
                 view_identity: Default::default(),
                 view_bound_protocols: Default::default(),
+                initial_view_id_annotation,
             })
         }
     }
@@ -179,6 +184,7 @@ impl Framebuffer {
                 view_bound_protocols,
                 view_identity,
                 incoming_dir,
+                self.initial_view_id_annotation.clone(),
             );
         }
     }

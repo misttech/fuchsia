@@ -80,6 +80,15 @@
             availability: "transitional",
         },
         {
+            config: "fuchsia.session.window.InitialViewIdAnnotation",
+            from: "parent",
+            key: "initial_view_id_annotation",
+            type: "string",
+            max_size: 32,
+            default: "starnix_framebuffer",
+            availability: "transitional",
+        },
+        {
             config: "fuchsia.starnix.config.container.CrashReportThrottling",
             key: "crash_report_throttling",
             type: "bool",

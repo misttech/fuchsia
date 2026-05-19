@@ -52,6 +52,9 @@ const ROOT_TRANSFORM_ID: fuicomposition::TransformId = fuicomposition::Transform
 /// The Flatland identifier for the framebuffer image.
 const FB_IMAGE_ID: fuicomposition::ContentId = fuicomposition::ContentId { value: 1 };
 
+const VIEW_ANNOTATION_NAMESPACE: &str = "window_manager";
+const VIEW_ANNOTATION_KEY: &str = "view_id";
+
 /// The Scene states that `FramebufferServer` may serve.
 #[derive(Copy, Clone)]
 pub enum SceneState {
@@ -259,6 +262,7 @@ pub fn start_presentation_loop(
     view_bound_protocols: fuicomposition::ViewBoundProtocols,
     view_identity: fuiviews::ViewIdentityOnCreation,
     incoming_dir: Option<fidl_fuchsia_io::DirectoryProxy>,
+    initial_view_id_annotation: String,
 ) {
     let flatland = server.flatland.clone();
     let mut flatland_event_stream = flatland.take_event_stream();
@@ -332,10 +336,10 @@ pub fn start_presentation_loop(
         let view_spec = felement::ViewSpec {
             annotations: Some(vec![felement::Annotation {
                 key: felement::AnnotationKey {
-                    namespace: "window_manager".to_string(),
-                    value: "view_id".to_string(),
+                    namespace: VIEW_ANNOTATION_NAMESPACE.to_string(),
+                    value: VIEW_ANNOTATION_KEY.to_string(),
                 },
-                value: felement::AnnotationValue::Text("starnix_framebuffer".to_string()),
+                value: felement::AnnotationValue::Text(initial_view_id_annotation.clone()),
             }]),
             viewport_creation_token: Some(link_token_pair.viewport_creation_token),
             ..Default::default()

@@ -76,6 +76,9 @@ pub struct Features {
     /// aid debugging.
     pub enable_visual_debugging: bool,
 
+    /// The value of the initial view ID annotation.
+    pub initial_view_id_annotation: String,
+
     /// Whether to enable gralloc.
     pub gralloc: bool,
 
@@ -206,10 +209,15 @@ impl Features {
                 wakeup_test,
                 mmcblk_stub,
                 android_usb,
+                initial_view_id_annotation,
             } => {
                 inspect_node.record_bool("selinux", selinux.enabled);
                 inspect_node.record_bool("ashmem", *ashmem);
                 inspect_node.record_bool("boot_notifier", *boot_notifier);
+                inspect_node.record_string(
+                    "initial_view_id_annotation",
+                    initial_view_id_annotation.as_str(),
+                );
                 inspect_node
                     .record_bool("data_collection_consent_sync", *data_collection_consent_sync);
                 inspect_node.record_string(
@@ -325,6 +333,7 @@ pub fn parse_features(
         ui_visual_debugging_level,
         additional_mounts,
         dirent_cache_size,
+        initial_view_id_annotation,
     } = &start_info.config;
 
     let mut features = Features::default();
@@ -492,6 +501,7 @@ pub fn parse_features(
     features.kernel.crash_report_throttling = *crash_report_throttling;
     features.kernel.cached_zx_map_info_bytes = *cached_zx_map_info_bytes;
     features.kernel.dirent_cache_size = *dirent_cache_size;
+    features.initial_view_id_annotation = initial_view_id_annotation.clone();
 
     Ok(features)
 }
@@ -511,6 +521,7 @@ pub fn run_container_features(
             system_task,
             features.aspect_ratio,
             features.enable_visual_debugging,
+            features.initial_view_id_annotation.clone(),
         )
         .context("initializing framebuffer")?;
 
