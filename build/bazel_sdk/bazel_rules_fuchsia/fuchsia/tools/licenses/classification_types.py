@@ -623,6 +623,8 @@ class LicensesClassifications:
         identify_license_output_path: str,
         license_paths_by_license_id: Dict[str, str],
     ) -> "LicensesClassifications":
+        import os
+
         json_output = json.load(open(identify_license_output_path, "r"))
 
         # Expected results from https://github.com/google/licenseclassifier/tree/main/tools/identify_license
@@ -654,6 +656,7 @@ class LicensesClassifications:
 
         identifications_by_license_id = defaultdict(list)
         for license_id, file_name in license_paths_by_license_id.items():
+            found_any = False
             if file_name in results_by_file_path.keys():
                 for match_json in results_by_file_path[file_name]:
                     identified_snippet = (
@@ -665,6 +668,33 @@ class LicensesClassifications:
                     identifications_by_license_id[license_id].append(
                         identified_snippet
                     )
+                    found_any = True
+
+            if not found_any:
+                # b/494274295: Under heavy parallel load in CQ, the identify_license
+                # tool can flakily hit its internal 1-second wall-time timeout for
+                # some files and return zero classifications.
+                #
+                # To prevent these flakes from crashing the build, we fall back to
+                # treating the entire file as a single [UNIDENTIFIED] placeholder
+                # snippet. This allows the license to be resolved via policy override
+                # rules (or fail standard verification if no override exists).
+                num_lines = 1
+                if os.path.exists(file_name):
+                    with open(file_name, "r") as f:
+                        num_lines = len(f.readlines())
+
+                placeholder_snippet = IdentifiedSnippet(
+                    identified_as=IdentifiedSnippet.UNIDENTIFIED_IDENTIFICATION,
+                    confidence=0.0,
+                    start_line=1,
+                    end_line=max(1, num_lines),
+                    conditions=set(["unidentified"]),
+                )
+                identifications_by_license_id[license_id].append(
+                    placeholder_snippet
+                )
+
         license_classifications = {}
         for (
             license_id,

@@ -143,6 +143,14 @@ def _check_for_missing_identifications(
             )
             if spdx_license.debug_hint:
                 detail += f"\n    Hint: {spdx_license.debug_hint}"
+
+            chains = spdx_index.dependency_chains_for_license(spdx_license)
+            dependents = [">".join([p.name for p in chain]) for chain in chains]
+            dependents = sorted(set(dependents))
+            if dependents:
+                dependents_str = "\n".join([f"      {d}" for d in dependents])
+                detail += f"\n    Dependents:\n{dependents_str}"
+
             error_details.append(detail)
 
         raise RuntimeError(
