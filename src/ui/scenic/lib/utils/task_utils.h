@@ -9,13 +9,16 @@
 #include <lib/async/default.h>
 #include <lib/async/dispatcher.h>
 #include <lib/fit/function.h>
+#include <lib/syslog/cpp/macros.h>
 
 namespace utils {
 
 // If `dispatcher` is the current dispatcher, invoke the `handler` closure immediately.  Otherwise,
 // post a task to invoke `handler`.
 inline void ExecuteOrPostTaskOnDispatcher(async_dispatcher_t* dispatcher, fit::closure handler) {
-  if (dispatcher == async_get_default_dispatcher()) {
+  async_dispatcher_t const* default_dispatcher = async_get_default_dispatcher();
+  FX_DCHECK(dispatcher && default_dispatcher);
+  if (dispatcher == default_dispatcher) {
     handler();
   } else {
     async::PostTask(dispatcher, std::move(handler));

@@ -95,6 +95,11 @@ int main(int argc, const char** argv) {
                        fidl::ServerEnd<fuchsia_io::Directory>(std::move(out_dir)),
                        std::move(config), inspector.root(), std::move(display_coordinator_promise),
                        [&render_loop, &input_loop] {
+                         // `Quit()` signals a graceful shutdown, allowing the loops to complete any
+                         // active task before terminating.  We must use `Quit()` instead of
+                         // `Shutdown()` here because this lambda runs on the render loop's own
+                         // thread, and calling `Shutdown()` (which blocks to join the loop's
+                         // threads) would result in a guaranteed self-join deadlock.
                          render_loop.Quit();
                          if (input_loop) {
                            input_loop->Quit();
@@ -108,6 +113,14 @@ int main(int argc, const char** argv) {
   }
 
   render_loop.Run();
+  // Reaching this point guarantees that `Quit()` has been called on both loops;
+  // otherwise, `render_loop.Run()` would not have returned.
+  if (input_loop) {
+    // `input_loop->Quit()` only signals the thread to stop asynchronously.  We must call
+    // `JoinThreads()` to guarantee the background thread has completely exited before `app`
+    // goes out of scope, preventing a shutdown use-after-free in input subsystems.
+    input_loop->JoinThreads();
+  }
   FX_LOGS(INFO) << "Quit main Scenic loop.";
 
   return 0;

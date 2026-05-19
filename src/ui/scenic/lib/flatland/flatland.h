@@ -569,7 +569,8 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
 
   std::unique_ptr<BindingData> binding_data_;
 
-  async::Executor executor_;
+  // Main-thread executor (*not* this Flatland's thread).
+  async::Executor main_thread_executor_;
 };
 
 }  // namespace flatland

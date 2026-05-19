@@ -127,11 +127,10 @@ scheduling::SessionId FlatlandManager::CreateFlatland(
     all_clients_opt_out_present_info_ = false;
   }
 
-  instance->impl = NewFlatland(instance->loop, std::move(request), id,
-                               std::bind(&FlatlandManager::DestroyInstanceFunction, this, id),
-                               flatland_presenter_, link_system_,
-                               uber_struct_system_->AllocateQueueForSession(id),
-                               buffer_collection_importers_, config);
+  instance->impl = NewFlatland(
+      instance->loop, std::move(request), id, [this, id] { DestroyInstanceFunction(id); },
+      flatland_presenter_, link_system_, uber_struct_system_->AllocateQueueForSession(id),
+      buffer_collection_importers_, config);
 
   zx_status_t status = instance->loop->loop().StartThread(name.c_str());
   FX_DCHECK(status == ZX_OK);
@@ -200,8 +199,8 @@ void FlatlandManager::CreateFlatlandDisplay(
   instance->display = hw_display;
   instance->impl = FlatlandDisplay::New(
       instance->loop, std::move(request), id, hw_display,
-      std::bind(&FlatlandManager::DestroyInstanceFunction, this, id), flatland_presenter_,
-      link_system_, uber_struct_system_->AllocateQueueForSession(id));
+      [this, id] { DestroyInstanceFunction(id); }, flatland_presenter_, link_system_,
+      uber_struct_system_->AllocateQueueForSession(id));
 
   // Don't set DPR on the link system right away. Provide the display with a callback to set
   // the DPR once it receives it.
