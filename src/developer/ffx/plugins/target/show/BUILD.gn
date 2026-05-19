@@ -13,6 +13,7 @@ ffx_plugin("ffx_target_show") {
     "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_rust_fdomain",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust_fdomain",
     "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_rust_fdomain",
+    "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_rust_fdomain",
     "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_rust_fdomain",
     "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
     "//src/developer/ffx/lib/addr:lib",

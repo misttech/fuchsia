@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use fdomain_fuchsia_buildinfo::ProviderProxy;
 use fdomain_fuchsia_feedback::{DeviceIdProviderProxy, LastRebootInfoProviderProxy};
 use fdomain_fuchsia_hwinfo::{Architecture, BoardProxy, DeviceProxy, ProductProxy};
+use fdomain_fuchsia_update_channel as fupdate_channel;
 use fdomain_fuchsia_update_channelcontrol::ChannelControlProxy;
 use ffx_target;
 use ffx_target_show_args as args;
@@ -35,6 +36,8 @@ pub struct ShowTool {
     fho_env: FhoEnvironment,
     rcs_proxy: RemoteControlProxyHolder,
     target_proxy: Deferred<TargetProxyHolder>,
+    #[with(moniker("/core/system-update"))]
+    channel_provider_proxy: fupdate_channel::ProviderProxy,
     #[with(moniker("/core/system-update"))]
     channel_control_proxy: ChannelControlProxy,
     #[with(moniker("/core/hwinfo"))]
@@ -83,7 +86,7 @@ impl ShowTool {
             gather_board_show(self.board_proxy),
             gather_device_show(self.device_proxy, self.device_id_proxy),
             gather_product_show(self.product_proxy),
-            gather_update_show(self.channel_control_proxy),
+            gather_update_show(self.channel_provider_proxy, self.channel_control_proxy),
             gather_build_info_show(self.build_info_proxy),
         ) {
             Ok((target, board, device, product, update, build)) => {
@@ -278,8 +281,11 @@ async fn gather_product_show(product: ProductProxy) -> Result<ProductData> {
 }
 
 /// Determine the update show of the device, including update channels.
-async fn gather_update_show(channel_control: ChannelControlProxy) -> Result<UpdateData> {
-    let current_channel = channel_control.get_current().await?;
+async fn gather_update_show(
+    channel_provider: fupdate_channel::ProviderProxy,
+    channel_control: ChannelControlProxy,
+) -> Result<UpdateData> {
+    let current_channel = channel_provider.get_current().await?;
     let next_channel = channel_control.get_target().await?;
 
     Ok(UpdateData { current_channel, next_channel })
@@ -460,6 +466,7 @@ mod tests {
             )
             .into(),
             target_proxy: setup_fake_target_server(),
+            channel_provider_proxy: setup_fake_channel_provider_server(Arc::clone(&client)),
             channel_control_proxy: setup_fake_channel_control_server(Arc::clone(&client)),
             board_proxy: setup_fake_board_server(Arc::clone(&client)),
             device_proxy: setup_fake_device_server(Arc::clone(&client)),
@@ -569,25 +576,34 @@ mod tests {
         assert_eq!(result.colorway, Some("fake_colorway".to_string()));
     }
 
+    fn setup_fake_channel_provider_server(
+        client: Arc<fdomain_client::Client>,
+    ) -> fupdate_channel::ProviderProxy {
+        fake_proxy(client, move |req| match req {
+            fupdate_channel::ProviderRequest::GetCurrent { responder } => {
+                responder.send("fake_channel").unwrap();
+            }
+        })
+    }
+
     fn setup_fake_channel_control_server(
         client: Arc<fdomain_client::Client>,
     ) -> ChannelControlProxy {
         fake_proxy(client, move |req| match req {
-            ChannelControlRequest::GetCurrent { responder } => {
-                responder.send("fake_channel").unwrap();
-            }
             ChannelControlRequest::GetTarget { responder } => {
                 responder.send("fake_target").unwrap();
             }
-            _ => assert!(false),
+            req => panic!("unexpected request {req:?}"),
         })
     }
 
     #[fuchsia::test]
     async fn test_gather_update_show() {
         let client = fdomain_local::local_client_empty();
-        let test_proxy = setup_fake_channel_control_server(client);
-        let result = gather_update_show(test_proxy).await.expect("gather update show");
+        let provider_proxy = setup_fake_channel_provider_server(client.clone());
+        let control_proxy = setup_fake_channel_control_server(client);
+        let result =
+            gather_update_show(provider_proxy, control_proxy).await.expect("gather update show");
         assert_eq!(result.current_channel, "fake_channel".to_string());
         assert_eq!(result.next_channel, "fake_target".to_string());
     }
@@ -619,6 +635,7 @@ mod tests {
             )
             .into(),
             target_proxy: setup_fake_target_server(),
+            channel_provider_proxy: setup_fake_channel_provider_server(Arc::clone(&client)),
             channel_control_proxy: setup_fake_channel_control_server(Arc::clone(&client)),
             board_proxy: setup_fake_board_server(Arc::clone(&client)),
             device_proxy: setup_fake_device_server(Arc::clone(&client)),
@@ -672,6 +689,7 @@ mod tests {
             )
             .into(),
             target_proxy: setup_fake_target_server(),
+            channel_provider_proxy: setup_fake_channel_provider_server(Arc::clone(&client)),
             channel_control_proxy: setup_fake_channel_control_server(Arc::clone(&client)),
             board_proxy: setup_fake_board_server(Arc::clone(&client)),
             device_proxy: setup_fake_device_server(Arc::clone(&client)),
