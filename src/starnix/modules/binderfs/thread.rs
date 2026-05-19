@@ -731,7 +731,7 @@ impl CommandTraceGuard {
             Command::FrozenBinder(_) => "FrozenBinder",
             Command::ClearFreezeNotificationDone(_) => "ClearFreezeNotificationDone",
         };
-        let id = fuchsia_trace::Id::random();
+        let id = fuchsia_trace::Id::new();
         let f = format!("{:?}", command);
         trace_instaflow_begin!(TRACE_CATEGORY, "BinderFlow", kind, id, "cmd" => &*f);
         Self(Some(CommandTraceGuardInner { id, kind }))

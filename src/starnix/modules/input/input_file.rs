@@ -272,7 +272,7 @@ impl LinuxEventWithTraceId {
     pub fn new(event: uapi::input_event) -> Self {
         match event.type_ as u32 {
             uapi::EV_SYN => {
-                let trace_id = fuchsia_trace::Id::random();
+                let trace_id = fuchsia_trace::Id::new();
                 trace_duration!("input", "linux_event_create");
                 trace_flow_begin!("input", "linux_event", trace_id);
                 LinuxEventWithTraceId { event: event, trace_id: Some(trace_id) }

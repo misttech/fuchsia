@@ -352,8 +352,8 @@ impl<'a> TraceEventQueue {
             .map_err(|_| errno!(ENOMEM))?
             .into();
         let ring_buffer = ring_buffer.with_zx_name(b"starnix:tracefs");
-        let async_id_read = fuchsia_trace::Id::random();
-        let async_id_write = fuchsia_trace::Id::random();
+        let async_id_read = fuchsia_trace::Id::new();
+        let async_id_write = fuchsia_trace::Id::new();
 
         Ok(Self {
             metadata: Mutex::new(metadata),
