@@ -130,6 +130,9 @@ pub enum RunState {
     /// When waiting on the `Waiter`, it should have a loop to prevent any signals except
     /// notification.
     Frozen(Waiter),
+
+    /// This thread is exited.
+    Exited,
 }
 
 impl Default for RunState {
@@ -144,7 +147,7 @@ impl RunState {
     /// If the task is blocked, you can break the task out of the wait using the `wake` function.
     pub fn is_blocked(&self) -> bool {
         match self {
-            RunState::Running => false,
+            RunState::Running | RunState::Exited => false,
             RunState::Waiter(waiter) => waiter.is_valid(),
             RunState::Event(_) | RunState::Frozen(_) => true,
         }
@@ -153,7 +156,7 @@ impl RunState {
     /// Unblock the task by interrupting whatever wait the task is blocked upon.
     pub fn wake(&self) {
         match self {
-            RunState::Running => (),
+            RunState::Running | RunState::Exited => (),
             RunState::Waiter(waiter) => waiter.interrupt(),
             RunState::Event(event) => event.interrupt(),
             // When frozen, the task immunes to any interrupts.
@@ -169,6 +172,7 @@ impl PartialEq<RunState> for RunState {
             (RunState::Waiter(lhs), RunState::Waiter(rhs)) => lhs == rhs,
             (RunState::Event(lhs), RunState::Event(rhs)) => Arc::ptr_eq(lhs, rhs),
             (RunState::Frozen(lhs), RunState::Frozen(rhs)) => lhs == rhs,
+            (RunState::Exited, RunState::Exited) => true,
             _ => false,
         }
     }

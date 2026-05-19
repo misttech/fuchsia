@@ -5,7 +5,7 @@
 use crate::mm::{IOVecPtr, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
 use crate::security;
 use crate::syscalls::time::{ITimerSpecPtr, TimeSpecPtr, TimeValPtr};
-use crate::task::{CurrentTask, EventHandler, ProcessEntryRef, ReadyItem, ReadyItemKey, Waiter};
+use crate::task::{CurrentTask, EventHandler, ReadyItem, ReadyItemKey, Waiter};
 use crate::time::{Timeline, TimerWakeup};
 use crate::vfs::aio::AioContext;
 use crate::vfs::buffers::{UserBuffersInputBuffer, UserBuffersOutputBuffer};
@@ -21,8 +21,7 @@ use crate::vfs::{
     FileAsyncOwner, FileHandle, FileSystemOptions, FlockOperation, FsStr, FsString, LookupContext,
     Mount, NamespaceNode, PathWithReachability, RecordLockCommand, RenameFlags, SeekTarget,
     StatxFlags, SymlinkMode, SymlinkTarget, TargetFdNumber, TimeUpdateType, UnlinkKind,
-    ValueOrSize, WdNumber, WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd,
-    new_zombie_pidfd, splice,
+    ValueOrSize, WdNumber, WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd, splice,
 };
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
@@ -2167,18 +2166,11 @@ pub fn sys_pidfd_open(
         let open_flags = if blocking { OpenFlags::empty() } else { OpenFlags::NONBLOCK };
 
         // Validate that a process (and not just a task) entry exists for the PID.
-        let task = pid_table.get_task(pid).ok();
-        let file = match (pid_table.get_process(pid), task) {
-            (Some(ProcessEntryRef::Process(proc)), Some(task)) => {
-                new_pidfd(locked, current_task, &proc, &*task.mm()?, open_flags)
-            }
-            (Some(ProcessEntryRef::Zombie(_)), _) => {
-                new_zombie_pidfd(locked, current_task, open_flags)
-            }
-            (None, Some(_)) => return error!(EINVAL),
-            _ => return error!(ESRCH),
-        };
-        file
+        let task = pid_table.get_task(pid)?;
+        if !task.is_leader() {
+            return error!(EINVAL);
+        }
+        new_pidfd(locked, current_task, &task.thread_group(), open_flags)
     };
 
     current_task.add_file(locked, file, FdFlags::CLOEXEC)

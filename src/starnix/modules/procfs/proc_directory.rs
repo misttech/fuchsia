@@ -28,7 +28,7 @@ use crate::uptime::UptimeFile;
 use crate::vmstat::VmStatFile;
 use crate::zoneinfo::ZoneInfoFile;
 use maplit::btreemap;
-use starnix_core::task::{CurrentTask, Kernel};
+use starnix_core::task::{CurrentTask, Kernel, TaskLifecycleState};
 use starnix_core::vfs::fs_registry::FsRegistry;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, SimpleFileNode};
 use starnix_core::vfs::pseudo::stub_empty_file::StubEmptyFile;
@@ -196,13 +196,19 @@ impl FsNodeOps for ProcDirectoryNode {
                 // duplicate caches being created. However, this is both unlikely and safe. In that
                 // event, the last cached to be installed wins the race and the only cost is the
                 // wasted work of creating multiple caches.
-                let live = task.live()?;
-                if let Some(pd) = live.proc_pid_directory_cache.cloned() {
-                    Ok(pd)
-                } else {
-                    let pd = pid_directory(current_task, &node.fs(), &task);
-                    live.proc_pid_directory_cache.update(Some(pd.clone()));
-                    Ok(pd)
+                match &*task.lifecycle_state() {
+                    TaskLifecycleState::Live(live) => {
+                        if let Some(pd) = live.proc_pid_directory_cache.cloned() {
+                            Ok(pd)
+                        } else {
+                            let pd = pid_directory(current_task, &node.fs(), &task);
+                            live.proc_pid_directory_cache.update(Some(pd.clone()));
+                            Ok(pd)
+                        }
+                    }
+                    TaskLifecycleState::Exited(_) => {
+                        Ok(pid_directory(current_task, &node.fs(), &task))
+                    }
                 }
             }
         }

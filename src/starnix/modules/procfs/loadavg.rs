@@ -29,7 +29,7 @@ impl DynamicFileSource for LoadavgFile {
             let kernel = self.0.upgrade().ok_or_else(|| errno!(EIO))?;
             let pid_table = kernel.pids.read();
 
-            let curr_tids = pid_table.task_ids();
+            let curr_tids = pid_table.live_task_ids();
             let mut runnable_tasks = 0;
             for pid in &curr_tids {
                 if let Ok(task) = pid_table.get_task(*pid) {

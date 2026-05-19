@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::task::CurrentTask;
-use crate::vfs::buffers::{InputBuffer, OutputBuffer, VecOutputBuffer};
+use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::pseudo::simple_file::SimpleFileNode;
 use crate::vfs::{
     Buffer, FileObject, FileOps, FsNodeOps, OutputBufferCallback, PeekBufferSegmentsCallback,
@@ -252,22 +252,13 @@ impl<Source: SequenceFileSource> FileOps for DynamicFile<Source> {
 
     fn seek(
         &self,
-        locked: &mut Locked<FileOpsCore>,
+        _locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
-        current_task: &CurrentTask,
+        _current_task: &CurrentTask,
         current_offset: off_t,
         target: SeekTarget,
     ) -> Result<off_t, Errno> {
-        let new_offset = default_seek(current_offset, target, || error!(EINVAL))?;
-
-        // Call `read(0)` to ensure the data is generated now instead of later (except, when
-        // seeking to the start of the file).
-        if new_offset > 0 {
-            let mut dummy_buf = VecOutputBuffer::new(0);
-            self.read_internal(locked, current_task, new_offset as usize, &mut dummy_buf)?;
-        }
-
-        Ok(new_offset)
+        default_seek(current_offset, target, || error!(EINVAL))
     }
 }
 
@@ -605,8 +596,12 @@ mod tests {
             assert_eq!(read(locked, 2).unwrap(), [1, 2]);
             assert_eq!(*counter.value.lock(), 2);
 
-            // Seeking to `pos > 0` should update the content.
+            // Seeking to `pos > 0` should NOT update the content immediately (lazy seek).
             file.seek(locked, &current_task, SeekTarget::Set(1)).unwrap();
+            assert_eq!(*counter.value.lock(), 2);
+
+            // Content should be updated on the following read.
+            assert_eq!(read(locked, 1).unwrap(), [3]);
             assert_eq!(*counter.value.lock(), 3);
         })
         .await;

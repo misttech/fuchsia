@@ -12,7 +12,7 @@ use crate::signals::{
 };
 use crate::task::{
     CurrentTask, PidTable, ProcessSelector, Task, TaskMutableState, ThreadGroup, ThreadState,
-    WaitQueue, ZombieProcess,
+    WaitQueue,
 };
 use bitflags::bitflags;
 use starnix_logging::track_stub;
@@ -20,7 +20,6 @@ use starnix_registers::HeapRegs;
 use starnix_sync::{LockBefore, Locked, MmDumpable, ThreadGroupLimits, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::SyscallDecl;
-use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard};
 use starnix_uapi::auth::PTRACE_MODE_ATTACH_REALCREDS;
 use starnix_uapi::elf::ElfNoteType;
 use starnix_uapi::errors::Errno;
@@ -40,8 +39,7 @@ use starnix_uapi::{
     PTRACE_SYSCALL, PTRACE_SYSCALL_INFO_ENTRY, PTRACE_SYSCALL_INFO_EXIT, PTRACE_SYSCALL_INFO_NONE,
     clone_args, errno, error, pid_t, ptrace_syscall_info, tid_t, uapi,
 };
-
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 
@@ -467,47 +465,23 @@ impl PtraceState {
 
 /// A zombie that must delivered to a tracer process for a traced process.
 struct TracedZombie {
-    /// An artificial zombie that must be delivered to the tracer program.
-    artificial_zombie: ZombieProcess,
+    /// The task that exited and became a zombie.
+    task: Arc<Task>,
 
-    /// An optional real zombie to be sent to the given ThreadGroup after the zomboe has been
-    /// delivered to the tracer.
-    delegate: Option<(Weak<ThreadGroup>, OwnedRef<ZombieProcess>)>,
-}
-
-impl Releasable for TracedZombie {
-    type Context<'a> = &'a mut PidTable;
-
-    fn release<'a>(self, pids: &'a mut PidTable) {
-        self.artificial_zombie.release(pids);
-        if let Some((_, z)) = self.delegate {
-            z.release(pids);
-        }
-    }
+    /// The thread group to notify after the tracer is done.
+    ///
+    /// This is tracked separately rather than relying on the task's thread group to ensure that
+    /// notifications for zombies reparented to a reaper are properly forwarded.
+    parent: Option<Weak<ThreadGroup>>,
 }
 
 impl TracedZombie {
-    fn new(artificial_zombie: ZombieProcess) -> ReleaseGuard<Self> {
-        ReleaseGuard::from(Self { artificial_zombie, delegate: None })
+    fn new(task: Arc<Task>) -> Self {
+        Self { task, parent: None }
     }
 
-    fn new_with_delegate(
-        artificial_zombie: ZombieProcess,
-        delegate: (Weak<ThreadGroup>, OwnedRef<ZombieProcess>),
-    ) -> ReleaseGuard<Self> {
-        ReleaseGuard::from(Self { artificial_zombie, delegate: Some(delegate) })
-    }
-
-    fn set_parent(
-        &mut self,
-        new_zombie: Option<OwnedRef<ZombieProcess>>,
-        new_parent: &ThreadGroup,
-    ) {
-        if let Some(new_zombie) = new_zombie {
-            self.delegate = Some((new_parent.weak_self.clone(), new_zombie));
-        } else {
-            self.delegate = self.delegate.take().map(|(_, z)| (new_parent.weak_self.clone(), z));
-        }
+    fn set_parent(&mut self, new_parent: &ThreadGroup) {
+        self.parent = Some(new_parent.weak_self.clone());
     }
 }
 
@@ -518,7 +492,7 @@ impl TracedZombie {
 pub struct ZombiePtracees {
     /// A list of zombies that have to be delivered to the ptracer.  The key is
     /// the tid of the traced process.
-    zombies: BTreeMap<tid_t, ReleaseGuard<TracedZombie>>,
+    zombies: BTreeMap<tid_t, TracedZombie>,
 }
 
 impl ZombiePtracees {
@@ -528,44 +502,33 @@ impl ZombiePtracees {
 
     /// Adds a zombie tracee to the list, but does not provide a parent task to
     /// notify when the tracer is done.
-    pub fn add(&mut self, pids: &mut PidTable, tid: tid_t, zombie: ZombieProcess) {
-        if let std::collections::btree_map::Entry::Vacant(entry) = self.zombies.entry(tid) {
+    pub fn add(&mut self, zombie: Arc<Task>) {
+        if let btree_map::Entry::Vacant(entry) = self.zombies.entry(zombie.tid) {
             entry.insert(TracedZombie::new(zombie));
-        } else {
-            zombie.release(pids);
         }
     }
 
     /// Delete any zombie ptracees for the given tid.
     pub fn remove(&mut self, pids: &mut PidTable, tid: tid_t) {
-        self.zombies.remove(&tid).release(pids);
+        if let Some(zombie) = self.zombies.remove(&tid) {
+            if let Some(tg) = zombie.parent.as_ref().and_then(|tg| tg.upgrade()) {
+                tg.notify_child_zombie(pids, &zombie.task);
+            }
+        }
     }
 
     pub fn is_empty(&self) -> bool {
         self.zombies.is_empty()
     }
 
-    /// Provide a parent task and a zombie to notify when the tracer has been
-    /// notified.
-    pub fn set_parent_of(
-        &mut self,
-        tracee: tid_t,
-        new_zombie: Option<OwnedRef<ZombieProcess>>,
-        new_parent: &ThreadGroup,
-    ) {
-        match self.zombies.entry(tracee) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                if let Some(new_zombie) = new_zombie {
-                    entry.insert(TracedZombie::new_with_delegate(
-                        new_zombie.as_artificial(),
-                        (new_parent.weak_self.clone(), new_zombie),
-                    ));
-                }
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                entry.get_mut().set_parent(new_zombie, new_parent);
-            }
-        }
+    pub fn len(&self) -> usize {
+        self.zombies.len()
+    }
+
+    /// Provide a parent task to notify when the tracer has been notified.
+    pub fn set_parent_of(&mut self, tracee: tid_t, new_parent: &ThreadGroup) {
+        let tracee = self.zombies.get_mut(&tracee).expect("Cannot reparent unknown tracee");
+        tracee.set_parent(new_parent);
     }
 
     /// When a parent dies without having been notified, replace it with a given
@@ -575,11 +538,9 @@ impl ZombiePtracees {
 
         for deferred_zombie_ptracer in &lockless_list {
             if let Some(tg) = deferred_zombie_ptracer.tracer_thread_group_key.upgrade() {
-                tg.write().zombie_ptracees.set_parent_of(
-                    deferred_zombie_ptracer.tracee_tid,
-                    None,
-                    new_parent,
-                );
+                tg.write()
+                    .zombie_ptracees
+                    .set_parent_of(deferred_zombie_ptracer.tracee_tid, new_parent);
             }
         }
         let mut new_state = new_parent.write();
@@ -590,14 +551,8 @@ impl ZombiePtracees {
     /// tracer terminates or detaches without acknowledging all pending tracees.
     pub fn release(&mut self, pids: &mut PidTable) {
         let mut entry = self.zombies.pop_first();
-        while let Some((_, mut zombie)) = entry {
-            if let Some((tg, z)) = zombie.delegate.take() {
-                if let Some(tg) = tg.upgrade() {
-                    tg.do_zombie_notifications(z);
-                }
-            }
-            zombie.release(pids);
-
+        while let Some((_, zombie)) = entry {
+            self.remove(pids, zombie.task.tid);
             entry = self.zombies.pop_first();
         }
     }
@@ -605,7 +560,7 @@ impl ZombiePtracees {
     /// Returns true iff there is a zombie waiting to be delivered to the tracers matching the
     /// given selector.
     pub fn has_zombie_matching(&self, selector: &ProcessSelector) -> bool {
-        self.zombies.values().any(|z| z.artificial_zombie.matches_selector(selector))
+        self.zombies.values().any(|z| selector.match_task(&*z.task))
     }
 
     /// Returns true iff the given `tid` is a traced thread that needs to deliver a zombie to the
@@ -621,30 +576,21 @@ impl ZombiePtracees {
         &mut self,
         selector: &ProcessSelector,
         options: &WaitingOptions,
-    ) -> Option<(ZombieProcess, Option<(Weak<ThreadGroup>, OwnedRef<ZombieProcess>)>)> {
-        // We look for the last zombie in the vector that matches pid
-        // selector and waiting options
-        let Some((t, found_zombie)) = self
+    ) -> Option<(Arc<Task>, Option<Weak<ThreadGroup>>)> {
+        let Some((tid, _)) = self
             .zombies
             .iter()
-            .map(|(t, z)| (*t, &z.artificial_zombie))
-            .rfind(|(_, zombie)| zombie.matches_selector_and_waiting_option(selector, options))
+            .map(|(tid, zombie)| (*tid, &zombie.task))
+            .rfind(|(_, task)| selector.match_task_and_waiting_options(task, options))
         else {
             return None;
         };
 
-        let result;
-        if !options.keep_waitable_state {
-            // Maybe notify child waiters.
-            result = self.zombies.remove(&t).map(|traced_zombie| {
-                let traced_zombie = ReleaseGuard::take(traced_zombie);
-                (traced_zombie.artificial_zombie, traced_zombie.delegate)
-            });
+        if options.keep_waitable_state {
+            self.zombies.get(&tid).map(|z| (Arc::clone(&z.task), None))
         } else {
-            result = Some((found_zombie.as_artificial(), None));
+            self.zombies.remove(&tid).map(|zombie| (zombie.task, zombie.parent))
         }
-
-        result
     }
 }
 
@@ -790,9 +736,10 @@ pub fn ptrace_detach<L>(
 where
     L: LockBefore<ThreadGroupLimits>,
 {
-    if let Err(x) = ptrace_cont(locked, &tracee, &data, true) {
-        return Err(x);
+    if !tracee.is_live() {
+        return error!(ESRCH);
     }
+    ptrace_cont(locked, &tracee, &data, true)?;
     let tid = tracee.get_tid();
     thread_group.ptracees.lock().remove(&tid);
     thread_group.write().zombie_ptracees.remove(pids, tid);
@@ -812,8 +759,7 @@ pub fn ptrace_dispatch<L>(
 where
     L: LockBefore<ThreadGroupLimits>,
 {
-    let mut pids = current_task.kernel().pids.write();
-    let tracee = pids.get_task(pid)?;
+    let tracee = current_task.kernel().pids.read().get_task(pid)?;
 
     if let Some(ptrace) = &tracee.read().ptrace {
         if ptrace.get_pid() != current_task.get_pid() {
@@ -851,6 +797,7 @@ where
             return Ok(starnix_syscalls::SUCCESS);
         }
         PTRACE_DETACH => {
+            let mut pids = current_task.kernel().pids.write();
             ptrace_detach(locked, &mut pids, current_task.thread_group(), tracee.as_ref(), &data)?;
             return Ok(starnix_syscalls::SUCCESS);
         }
@@ -1163,8 +1110,7 @@ where
     L: LockBefore<MmDumpable>,
 {
     let tracee = current_task.kernel().pids.read().get_task(pid)?;
-
-    if tracee.thread_group == current_task.thread_group {
+    if !tracee.is_live() || tracee.thread_group == current_task.thread_group {
         return error!(EPERM);
     }
 

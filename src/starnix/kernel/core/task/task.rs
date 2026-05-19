@@ -12,13 +12,13 @@ use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::tracing::KoidPair;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, EventHandler, Kernel,
-    NormalPriority, ProcessExitInfo, RealtimePriority, SchedulerState, SchedulingPolicy,
-    SeccompFilterContainer, SeccompState, SeccompStateValue, ThreadGroup, ThreadGroupKey,
-    ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess,
+    NormalPriority, RealtimePriority, SchedulerState, SchedulingPolicy, SeccompFilterContainer,
+    SeccompState, SeccompStateValue, ThreadGroup, ThreadGroupKey, ThreadState, UtsNamespaceHandle,
+    WaitCanceler, Waiter,
 };
 use crate::vfs::{FdTable, FsContext, FsNodeHandle, FsString};
 use atomic_bitflags::atomic_bitflags;
-use fuchsia_rcu::{RcuArc, RcuOptionArc, RcuOptionBox, RcuReadGuard};
+use fuchsia_rcu::{RcuArc, RcuBox, RcuOptionArc, RcuOptionBox, RcuReadGuard};
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::HeapRegs;
@@ -37,7 +37,7 @@ use starnix_uapi::user_address::{
 use starnix_uapi::{
     CLD_CONTINUED, CLD_DUMPED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, CLD_TRAPPED,
     FUTEX_BITSET_MATCH_ANY, errno, error, from_status_like_fdio, pid_t, sigaction_t, sigaltstack,
-    tid_t, uapi,
+    tid_t, uapi, uid_t,
 };
 use std::collections::VecDeque;
 use std::mem::MaybeUninit;
@@ -98,6 +98,13 @@ impl ExitStatus {
             | ExitStatus::Continue(siginfo, _)
             | ExitStatus::Stop(siginfo, _) => siginfo.signal.number() as i32,
         }
+    }
+}
+
+impl Default for ExitStatus {
+    fn default() -> Self {
+        // This is the default exit status to use when a task exits without providing one.
+        Self::Exit(0)
     }
 }
 
@@ -598,6 +605,10 @@ impl TaskMutableState<Base = Task> {
         self.exit_status.get_or_insert(status);
     }
 
+    pub fn exit_status(&self) -> Option<ExitStatus> {
+        self.exit_status.clone()
+    }
+
     /// The set of pending signals for the task, including the signals pending for the thread
     /// group.
     pub fn pending_signals(&self) -> SigSet {
@@ -683,6 +694,12 @@ impl TaskMutableState<Base = Task> {
         signal
     }
 
+    /// Clear the queue of pending internal signals.
+    pub fn clear_kernel_signals(&mut self) {
+        self.kernel_signals.clear();
+        self.set_flags(TaskFlags::KERNEL_SIGNALS_AVAILABLE, false);
+    }
+
     #[cfg(test)]
     pub fn queued_signal_count(&self, signal: Signal) -> usize {
         self.signals.queued_count(signal)
@@ -690,10 +707,9 @@ impl TaskMutableState<Base = Task> {
     }
 }
 
-/// The live state of a task.
-///
-/// This structure contains the state of a task that is only relevant while the task is alive. It
-/// is dropped when the task enters the zombie state.
+// TODO(https://fxbug.dev/513680195): Split some of these structures into their own files.
+
+/// [`Task`] lifecycle state dropped during task exit.
 pub struct TaskLiveState {
     /// A handle to the underlying Zircon thread object.
     ///
@@ -730,6 +746,85 @@ impl TaskLiveState {
 
     pub fn fs(&self) -> Arc<FsContext> {
         self.fs.to_arc()
+    }
+}
+
+/// [`Task`] lifecycle state populated during task exit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TaskExitState {
+    pub tid: tid_t,
+    pub uid: uid_t,
+    pub status: ExitStatus,
+    pub signal: Option<Signal>,
+    pub time_stats: TaskTimeStats,
+}
+
+impl TaskExitState {
+    pub fn as_signal_info(&self) -> SignalInfo {
+        SignalInfo::with_detail(
+            self.signal.unwrap_or(SIGCHLD),
+            self.status.signal_info_code(),
+            SignalDetail::SIGCHLD {
+                pid: self.tid,
+                uid: self.uid,
+                status: self.status.signal_info_status(),
+            },
+        )
+    }
+}
+
+/// Container for lifecycle-dependent [`Task`] state.
+pub enum TaskLifecycleState {
+    /// The task is live. It has resources such as an [`FdTable`] and [`MemoryManager`].
+    Live(TaskLiveState),
+    /// The task is exited.
+    Exited(TaskExitState),
+}
+
+// TODO(https://fxbug.dev/507835515): Redesign these guards.
+//
+// These guard types exist to project from `TaskLifecycleState` to one of its variants. Currently,
+// this is done by getting an `RcuReadGuard<TaskLifecycleState>`, checking whether it occupies the
+// expected variant, constructing the guard, and implementing `Deref` to access the inner
+// `TaskLiveState`, for example. This is functionally safe, but requires a redundant pattern match
+// at every dereference. The match is redundant because an immutable `TaskLifecycleState`, such as
+// the one pinned by the inner `RcuReadGuard`, cannot change; once it is determined that a given
+// variant is occupied, it will always occupy that variant.
+//
+// Something like `MappedRwLockReadGuard` would allow these guards to be removed by directly
+// projecting from `RcuReadGuard<TaskLifecycleState>` to `RcuReadGuard<TaskLiveState>`.
+
+/// An RCU read guard projecting to a task's [`TaskLiveState`].
+pub struct TaskLiveStateGuard {
+    guard: RcuReadGuard<TaskLifecycleState>,
+}
+
+impl Deref for TaskLiveStateGuard {
+    type Target = TaskLiveState;
+
+    fn deref(&self) -> &Self::Target {
+        // Note: This introduces an indirection through the top-level RCU lifecycle guard.
+        match &*self.guard {
+            TaskLifecycleState::Live(state) => state,
+            _ => unreachable!("TaskLiveStateGuard constructed without TaskLiveState"),
+        }
+    }
+}
+
+/// An RCU read guard projecting to a task's [`TaskExitState`].
+pub struct TaskExitStateGuard {
+    guard: RcuReadGuard<TaskLifecycleState>,
+}
+
+impl Deref for TaskExitStateGuard {
+    type Target = TaskExitState;
+
+    fn deref(&self) -> &Self::Target {
+        // Note: This introduces an indirection through the top-level RCU lifecycle guard.
+        match &*self.guard {
+            TaskLifecycleState::Exited(state) => state,
+            _ => unreachable!("TaskExitStateGuard constructed without TaskExitState"),
+        }
     }
 }
 
@@ -920,10 +1015,8 @@ pub struct Task {
     /// process.
     pub thread_group: Arc<ThreadGroup>,
 
-    /// The live state of the task.
-    ///
-    /// This is `None` for zombie tasks.
-    pub live_state: RcuOptionBox<TaskLiveState>,
+    /// The lifecycle state of the task.
+    pub(crate) lifecycle_state: RcuBox<TaskLifecycleState>,
 
     /// The stop state of the task, distinct from the stop state of the thread group.
     ///
@@ -991,58 +1084,6 @@ impl Task {
         self.flags().contains(TaskFlags::SPAWNED)
     }
 
-    /// When the task exits, if there is a notification that needs to propagate
-    /// to a ptracer, make sure it will propagate.
-    pub fn set_ptrace_zombie(&self, pids: &mut crate::task::PidTable) {
-        let pgid = self.thread_group().read().process_group.leader;
-        let exit_signal = self.thread_group().read().exit_signal.clone();
-        let mut state = self.write();
-        state.set_stopped(StopState::ForceAwake, None, None, None);
-        if let Some(ptrace) = &mut state.ptrace {
-            // Add a zombie that the ptracer will notice.
-            ptrace.last_signal_waitable = true;
-            let tracer_pid = ptrace.get_pid();
-            let tracer_tg = pids.get_thread_group(tracer_pid);
-            if let Some(tracer_tg) = tracer_tg {
-                drop(state);
-                let mut tracer_state = tracer_tg.write();
-
-                let exit_status = self.exit_status().unwrap_or_else(|| {
-                    starnix_logging::log_error!("Exiting without an exit code.");
-                    ExitStatus::Exit(u8::MAX)
-                });
-                let uid = self.real_creds().uid;
-                let exit_info = ProcessExitInfo { status: exit_status, exit_signal };
-                let zombie = ZombieProcess {
-                    thread_group_key: self.thread_group_key.clone(),
-                    pgid,
-                    uid,
-                    exit_info: exit_info,
-                    // ptrace doesn't need this.
-                    time_stats: TaskTimeStats::default(),
-                    is_canonical: false,
-                };
-
-                tracer_state.zombie_ptracees.add(pids, self.tid, zombie);
-            };
-        }
-    }
-
-    /// Disconnects this task from the tracer.
-    pub fn ptrace_disconnect(&self) {
-        // Get a reference to the ptracer thread group through the weak reference in PtraceCoreState
-        // to avoid acquiring a PidTable lock.
-        let tracer_tg = self
-            .read()
-            .ptrace
-            .as_ref()
-            .map(|p| p.core_state.thread_group.clone())
-            .and_then(|tg| tg.upgrade());
-        if let Some(tg) = tracer_tg {
-            tg.ptracees.lock().remove(&self.tid);
-        }
-    }
-
     pub fn exit_status(&self) -> Option<ExitStatus> {
         self.is_exitted().then(|| self.read().exit_status.clone()).flatten()
     }
@@ -1099,7 +1140,7 @@ impl Task {
                 thread_group_key: thread_group_key.clone(),
                 kernel: Arc::clone(&thread_group.kernel),
                 thread_group,
-                live_state: RcuOptionBox::new(Some(TaskLiveState {
+                lifecycle_state: RcuBox::new(TaskLifecycleState::Live(TaskLiveState {
                     thread: RwLock::new(thread.map(Arc::new)),
                     files,
                     mm: RcuOptionArc::new(mm),
@@ -1171,6 +1212,18 @@ impl Task {
         self.get_task(self.read().ptrace.as_ref().map(|p| p.core_state.pid)?).ok()
     }
 
+    /// Determine whether the task is live.
+    ///
+    /// NOTE: This method races with task exit. To both check the lifecycle state and access its
+    /// [`TaskLiveState`], use either [`Task::lifecycle_state()`] or [`Task::live()`].
+    pub fn is_live(&self) -> bool {
+        matches!(*self.lifecycle_state(), TaskLifecycleState::Live(_))
+    }
+
+    pub fn lifecycle_state(&self) -> RcuReadGuard<TaskLifecycleState> {
+        self.lifecycle_state.read()
+    }
+
     /// Returns the live state of the task, if it exists.
     ///
     /// # Errors
@@ -1178,8 +1231,22 @@ impl Task {
     /// Returns [`Err(ESRCH)`] if the task has already transitioned to a zombie state and its live
     /// resources have been dropped.
     #[track_caller]
-    pub fn live(&self) -> Result<RcuReadGuard<TaskLiveState>, Errno> {
-        self.live_state.read().ok_or_else(|| errno!(ESRCH))
+    pub fn live(&self) -> Result<TaskLiveStateGuard, Errno> {
+        let guard = self.lifecycle_state();
+        match &*guard {
+            TaskLifecycleState::Live(_) => Ok(TaskLiveStateGuard { guard }),
+            _ => error!(ESRCH),
+        }
+    }
+
+    /// Returns the exit state of the task if it has exited.
+    #[track_caller]
+    pub fn exit_state(&self) -> Option<TaskExitStateGuard> {
+        let guard = self.lifecycle_state();
+        match &*guard {
+            TaskLifecycleState::Exited(_) => Some(TaskExitStateGuard { guard }),
+            _ => None,
+        }
     }
 
     /// Returns the memory manager of the task, if it exists.
@@ -1455,37 +1522,40 @@ impl Task {
     }
 
     pub fn state_code(&self) -> TaskStateCode {
-        let status = self.read();
-        if status.exit_status.is_some() {
-            TaskStateCode::Zombie
-        } else if status.signals.run_state.is_blocked() {
-            let stop_state = self.load_stopped();
-            if stop_state.ptrace_only() && stop_state.is_stopped() {
-                TaskStateCode::TracingStop
-            } else {
-                TaskStateCode::Sleeping
+        match &*self.lifecycle_state() {
+            TaskLifecycleState::Live(_) => {
+                let status = self.read();
+                if status.signals.run_state.is_blocked() {
+                    let stop_state = self.load_stopped();
+                    if stop_state.ptrace_only() && stop_state.is_stopped() {
+                        TaskStateCode::TracingStop
+                    } else {
+                        TaskStateCode::Sleeping
+                    }
+                } else {
+                    TaskStateCode::Running
+                }
             }
-        } else {
-            TaskStateCode::Running
+            TaskLifecycleState::Exited(_) => TaskStateCode::Zombie,
         }
     }
 
     pub fn time_stats(&self) -> TaskTimeStats {
         use zx::Task;
-        // TODO(https://fxbug.dev/297440106): Return time stats for zombie tasks.
-        let live = match self.live() {
-            Ok(live) => live,
-            Err(_) => return TaskTimeStats::default(),
-        };
-        let info = match &*live.thread.read() {
-            Some(thread) => thread.get_runtime_info().expect("Failed to get thread stats"),
-            None => return TaskTimeStats::default(),
-        };
-
-        TaskTimeStats {
-            user_time: zx::MonotonicDuration::from_nanos(info.cpu_time),
-            // TODO(https://fxbug.dev/42078242): How can we calculate system time?
-            system_time: zx::MonotonicDuration::default(),
+        match &*self.lifecycle_state() {
+            TaskLifecycleState::Live(state) => {
+                let info = state
+                    .thread
+                    .read()
+                    .as_ref()
+                    .and_then(|thread| thread.get_runtime_info().ok())
+                    .unwrap_or_default();
+                TaskTimeStats {
+                    user_time: zx::MonotonicDuration::from_nanos(info.cpu_time),
+                    system_time: zx::MonotonicDuration::default(),
+                }
+            }
+            TaskLifecycleState::Exited(state) => state.time_stats,
         }
     }
 
@@ -1517,7 +1587,7 @@ impl Task {
 
 impl Drop for Task {
     fn drop(&mut self) {
-        debug_assert!(self.live_state.read().is_none());
+        debug_assert!(!self.is_live());
     }
 }
 

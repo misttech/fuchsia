@@ -131,10 +131,16 @@ impl TracePerformanceEventManager {
     fn read_existing_pid_map(pid_table: &PidTable) -> HashMap<tid_t, KoidPair> {
         let mut pid_map = HashMap::new();
 
-        let ids = pid_table.task_ids();
+        let ids = pid_table.live_task_ids();
         for tid in &ids {
-            let task = pid_table.get_task(*tid).expect("Empty mapping for {tid}.");
-            let live = task.live().expect("tid {tid} is not live.");
+            // Live tasks may exit at any time. Record a task only if a snapshot of its live state
+            // can be obtained.
+            let Ok(task) = pid_table.get_task(*tid) else {
+                continue;
+            };
+            let Ok(live) = task.live() else {
+                continue;
+            };
             let pair = KoidPair {
                 process: task.thread_group().get_process_koid().ok(),
                 thread: live.thread.read().as_ref().and_then(|t| t.koid().ok()),
