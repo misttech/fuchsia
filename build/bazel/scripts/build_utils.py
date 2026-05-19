@@ -724,7 +724,7 @@ class CommandRunner(object):
     """Convenience class to run commands.
 
     A small wrapper around subprocess.run(), which allows logging invocations
-    commands and resultsm as well as allow mock implementations for tests to
+    commands and results as well as allow mock implementations for tests to
     override the run_command_internal() method in derived classes.
     """
 
@@ -798,7 +798,18 @@ class CommandRunner(object):
         if self._log_cmd:
             self._log_cmd(cmd_args_to_string(cmd_args))
 
-        ret = self.run_command_internal(cmd_args, **subprocess_run_kwargs)
+        try:
+            ret = self.run_command_internal(cmd_args, **subprocess_run_kwargs)
+        except KeyboardInterrupt:
+            # As a special case, handle Ctrl-C as command failure,
+            # Using exit code 130 (i.e. 128 + SIGSGEV). This is consistent
+            # with what Ninja and other tools to, and avoids printing
+            # a huge Python stack trace when the user interrupted the
+            # build manually.
+            ret = CommandResult(
+                130, "", "KeyboardInterrupt", [str(c) for c in cmd_args]
+            )
+
         if self._log_result:
             self._log_result(ret)
 
