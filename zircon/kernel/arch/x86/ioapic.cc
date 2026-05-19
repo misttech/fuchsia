@@ -6,6 +6,7 @@
 #include <align.h>
 #include <assert.h>
 #include <lib/console.h>
+#include <lib/mmio-ptr/mmio-ptr.h>
 #include <lib/page/size.h>
 #include <lib/root_resource_filter.h>
 #include <trace.h>
@@ -24,9 +25,9 @@
 
 #include "arch/x86/apic.h"
 
-#define IO_APIC_IND(base) ((volatile uint32_t*)(((uint8_t*)(base)) + IO_APIC_IOREGSEL))
-#define IO_APIC_DAT(base) ((volatile uint32_t*)(((uint8_t*)(base)) + IO_APIC_IOWIN))
-#define IO_APIC_EOIR(base) ((volatile uint32_t*)(((uint8_t*)(base)) + 0x40))
+#define IO_APIC_IND(base) ((MMIO_PTR volatile uint32_t*)(((uint8_t*)(base)) + IO_APIC_IOREGSEL))
+#define IO_APIC_DAT(base) ((MMIO_PTR volatile uint32_t*)(((uint8_t*)(base)) + IO_APIC_IOWIN))
+#define IO_APIC_EOIR(base) ((MMIO_PTR volatile uint32_t*)(((uint8_t*)(base)) + 0x40))
 // The minimum address space required past the base address
 #define IO_APIC_WINDOW_SIZE 0x44
 // The minimum version that supported the EOIR
@@ -217,16 +218,16 @@ static struct io_apic* apic_io_resolve_global_irq(uint32_t irq) {
 static inline uint32_t apic_io_read_reg(struct io_apic* io_apic, uint8_t reg) {
   ASSERT(io_apic != nullptr);
   io_apic_lock::Get()->lock().AssertHeld();
-  *IO_APIC_IND(io_apic->vaddr) = reg;
-  uint32_t val = *IO_APIC_DAT(io_apic->vaddr);
+  MmioWrite32(reg, IO_APIC_IND(io_apic->vaddr));
+  uint32_t val = MmioRead32(IO_APIC_DAT(io_apic->vaddr));
   return val;
 }
 
 static inline void apic_io_write_reg(struct io_apic* io_apic, uint8_t reg, uint32_t val) {
   ASSERT(io_apic != nullptr);
   io_apic_lock::Get()->lock().AssertHeld();
-  *IO_APIC_IND(io_apic->vaddr) = reg;
-  *IO_APIC_DAT(io_apic->vaddr) = val;
+  MmioWrite32(reg, IO_APIC_IND(io_apic->vaddr));
+  MmioWrite32(val, IO_APIC_DAT(io_apic->vaddr));
 }
 
 static uint64_t apic_io_read_redirection_entry(struct io_apic* io_apic, uint32_t global_irq) {
@@ -279,7 +280,7 @@ void apic_io_issue_eoi(uint32_t global_irq, uint8_t vec) {
   Guard<SpinLock, IrqSave> guard{io_apic_lock::Get()};
 
   ASSERT(io_apic->version >= IO_APIC_EOIR_MIN_VERSION);
-  *IO_APIC_EOIR(io_apic->vaddr) = vec;
+  MmioWrite32(vec, IO_APIC_EOIR(io_apic->vaddr));
 }
 
 void apic_io_mask_irq(uint32_t global_irq, bool mask) {
