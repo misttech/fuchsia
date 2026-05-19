@@ -42,6 +42,7 @@ fidl("fuchsia.hardware.trippoint") {
   sdk_category = "partner"
   contains_drivers = true
   enable_hlcpp = true
+  enable_rust_next = true
   stable = false
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]

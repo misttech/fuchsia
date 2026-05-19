@@ -201,6 +201,7 @@ fidl_bazel2gn_verification_targets = [
   "//sdk/fidl/fuchsia.hardware.thermal:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.ti.metadata:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.tpmimpl:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.hardware.trippoint:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.ufs.phy:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.ufs:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.usb.dci:verify_bazel2gn",
