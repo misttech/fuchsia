@@ -9,13 +9,31 @@ import("//build/test.gni")
 
 cc_test_executable("arm_smmu_tests_binary") {
   # Tests
-  sources = [ "smmu_mode_string_tests.cc" ]
+  sources = [
+    "device_aspace_test.cc",
+    "page_cache_test.cc",
+    "smmu_mode_string_tests.cc",
+  ]
 
   # The subset of code being tested on the host
-  sources += [ "../smmu_mode.cc" ]
+  sources += [
+    "../device_aspace.cc",
+    "../smmu_mode.cc",
+    "../translation_table_helper.cc",
+  ]
 
   # Mocks and other dependencies
-  deps = [ "//zircon/system/ulib/zxtest" ]
+  sources += [
+    "//zircon/system/ulib/region-alloc/region-alloc.cc",
+    "mocks/pmm.cc",
+  ]
+
+  deps = [
+    "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/region-alloc:headers",
+    "//zircon/system/ulib/zx",
+    "//zircon/system/ulib/zxtest",
+  ]
 
   # This causes our local mock headers to be found before the actual kernel headers.
   include_dirs = [
