@@ -9,7 +9,6 @@ use starnix_logging::track_stub;
 use starnix_rcu::{RcuHashMap, RcuReadScope};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, pid_t, tid_t};
-use std::collections::hash_map::HashMap;
 use std::sync::Arc;
 
 // The maximal pid considered.
@@ -21,8 +20,7 @@ pub struct PidTable {
     last_pid: pid_t,
 
     /// The tasks in this table, organized by pid_t.
-    // TODO(https://fxbug.dev/501522235): Convert this to an RcuHashMap.
-    table: HashMap<pid_t, Arc<Task>>,
+    table: RcuHashMap<pid_t, Arc<Task>>,
 
     /// The process groups in this table, organized by pid_t.
     process_groups: RcuHashMap<pid_t, Arc<ProcessGroup>>,
@@ -50,7 +48,7 @@ impl PidTable {
                     r
                 }
             };
-            if self.table.get(&self.last_pid).is_none() {
+            if self.table.get(&RcuReadScope::new(), &self.last_pid).is_none() {
                 break;
             }
         }
@@ -58,7 +56,7 @@ impl PidTable {
     }
 
     pub fn get_task(&self, tid: tid_t) -> Result<Arc<Task>, Errno> {
-        self.table.get(&tid).cloned().ok_or_else(|| errno!(ESRCH))
+        self.table.get(&RcuReadScope::new(), &tid).cloned().ok_or_else(|| errno!(ESRCH))
     }
 
     pub fn add_task(&mut self, task: Arc<Task>) {
@@ -73,7 +71,7 @@ impl PidTable {
         }
     }
 
-    pub fn remove_task(&mut self, tid: tid_t) -> Option<Arc<Task>> {
+    pub fn remove_task(&self, tid: tid_t) -> Option<Arc<Task>> {
         let task = self.table.remove(&tid)?;
         if task.is_leader() {
             let scope = RcuReadScope::new();
@@ -86,19 +84,29 @@ impl PidTable {
     }
 
     pub fn get_process(&self, pid: pid_t) -> Result<Arc<Task>, Errno> {
-        self.table.get(&pid).filter(|task| task.is_leader()).cloned().ok_or_else(|| errno!(ESRCH))
+        let scope = RcuReadScope::new();
+        self.table
+            .get(&scope, &pid)
+            .filter(|task| task.is_leader())
+            .cloned()
+            .ok_or_else(|| errno!(ESRCH))
     }
 
     pub fn get_thread_group(&self, pid: pid_t) -> Option<Arc<ThreadGroup>> {
-        self.table.get(&pid).filter(|task| task.is_leader()).map(|task| task.thread_group.clone())
+        let scope = RcuReadScope::new();
+        self.table
+            .get(&scope, &pid)
+            .filter(|task| task.is_leader())
+            .map(|task| task.thread_group.clone())
     }
 
     pub fn get_thread_groups(&self) -> Vec<Arc<ThreadGroup>> {
         // Get the thread group of every leader task for which the thread group is not empty. The
         // leader itself may not be live, but the thread group still exists.
         // TODO(https://fxbug.dev/507835515): Clean this up. ThreadGroup::is_live would be helpful.
+        let scope = RcuReadScope::new();
         self.table
-            .iter()
+            .iter(&scope)
             .filter(|(_pid, task)| task.is_leader())
             .map(|(_pid, task)| task.thread_group.clone())
             .collect()
@@ -121,12 +129,22 @@ impl PidTable {
 
     /// Returns the process ids for all processes, including zombies.
     pub fn process_ids(&self) -> Vec<pid_t> {
-        self.table.iter().filter(|(_pid, task)| task.is_leader()).map(|(pid, _task)| *pid).collect()
+        let scope = RcuReadScope::new();
+        self.table
+            .iter(&scope)
+            .filter(|(_pid, task)| task.is_leader())
+            .map(|(pid, _task)| *pid)
+            .collect()
     }
 
     /// Returns the task ids for all the currently running tasks.
     pub fn live_task_ids(&self) -> Vec<tid_t> {
-        self.table.iter().filter(|(_pid, task)| task.is_live()).map(|(tid, _task)| *tid).collect()
+        let scope = RcuReadScope::new();
+        self.table
+            .iter(&scope)
+            .filter(|(_pid, task)| task.is_live())
+            .map(|(tid, _task)| *tid)
+            .collect()
     }
 
     pub fn last_pid(&self) -> pid_t {
