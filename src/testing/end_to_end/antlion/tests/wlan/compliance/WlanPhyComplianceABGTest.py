@@ -12,9 +12,6 @@ from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
-from mobly_controller.openwrt_access_point.lib.uci_radio_options import (
-    UciRadioOptions,
-)
 from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
@@ -41,6 +38,7 @@ from openwrt_access_point.lib.uci_options import (
     SupportedRates,
     VendorElements,
 )
+from openwrt_access_point.lib.uci_radio_options import UciRadioOptions
 
 
 class WlanPhyComplianceABGTest(base_test.WifiBaseTest):

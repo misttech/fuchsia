@@ -21,9 +21,6 @@ from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
 from mobly.records import TestResultRecord
-from mobly_controller.openwrt_access_point.lib.uci_radio_options import (
-    UciRadioOptions,
-)
 from openwrt_access_point.lib import capabilities
 from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
@@ -40,6 +37,7 @@ from openwrt_access_point.lib.access_point_config import (
 from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
 )
+from openwrt_access_point.lib.uci_radio_options import UciRadioOptions
 
 FREQUENCY_24: str = "2.4GHz"
 FREQUENCY_5: str = "5GHz"
