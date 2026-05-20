@@ -1950,10 +1950,31 @@ async fn test_activity_governor_inspect_buffer_not_exceeded() -> Result<()> {
         .uint()
         .expect("max_suspend_events_to_log is not a uint");
 
-    // Rapidly acquire and drop wake leases.
+    // Rapidly acquire and drop wake leases in batches to prevent handle/lease pile-up in SAG.
+    // The batch size of 100 is chosen to limit open handles while minimizing Inspect query overhead
+    // (avoiding test timeouts under high CQ load).
+    let batch_size = 100;
+
     for i in 0..max_suspend_events_to_log {
         let _ = activity_governor.acquire_wake_lease(&format!("wake_lease{}", i)).await?;
+        if (i + 1) % batch_size == 0 {
+            // Wait for all of the batched wake leases to be dropped and processed.
+            block_until_inspect_matches!(
+                activity_governor_moniker,
+                root: contains {
+                    ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
+                }
+            );
+        }
     }
+
+    // Wait for any remaining wake leases to be dropped and processed.
+    block_until_inspect_matches!(
+        activity_governor_moniker,
+        root: contains {
+            ref fobs::WAKE_LEASES_NODE: contains { active_count: 0u64 },
+        }
+    );
 
     let inspect = get_diagnostics_hierarchy_for(&activity_governor_moniker).await?;
 
@@ -3973,6 +3994,16 @@ async fn test_acquire_and_drop_wake_lease_during_before_suspend() -> Result<()> 
             .await
             .unwrap()
             .unwrap();
+
+        // Wait for the blocker's wake lease to be cleaned up before proceeding.
+        block_until_inspect_matches!(
+            activity_governor_moniker,
+            root: contains {
+                ref fobs::WAKE_LEASES_NODE: contains {
+                    active_count: 0u64,
+                },
+            }
+        );
 
         let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
         let () =
