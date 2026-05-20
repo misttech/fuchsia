@@ -36,6 +36,14 @@ BUILD_TYPES = struct(
     USER_DEBUG = "userdebug",
 )
 
+# Define the feature set levels available for products
+FEATURE_SET_LEVELS = struct(
+    EMBEDDABLE = "embeddable",
+    BOOTSTRAP = "bootstrap",
+    UTILITY = "utility",
+    STANDARD = "standard",
+)
+
 COMMON_PRODUCT_ASSEMBLY_ATTRIBUTES = {
     "product_config": attr.string(
         doc = "Raw json config. Used as a base template for the config.",

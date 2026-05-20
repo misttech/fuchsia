@@ -1,0 +1,21 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/assembly:assembly_input_bundle.bzl",
+    "assembly_input_bundle",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+assembly_input_bundle(
+    name = "bazel_test",
+    base_packages = [
+        "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/system-update-committer",
+    ],
+    kernel_cmdline = [
+        "this_is_a_test",
+        "and_so_is_this",
+    ],
+)
