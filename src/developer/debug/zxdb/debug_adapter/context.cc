@@ -27,6 +27,7 @@
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_terminate.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_threads.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_variables.h"
+#include "src/developer/debug/zxdb/debug_adapter/handlers/request_zxdb_detach.h"
 #include "src/developer/debug/zxdb/debug_adapter/server.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 
@@ -202,6 +203,13 @@ void DebugAdapterContext::Init() {
              std::function<void(dap::ResponseOrError<dap::TerminateResponse>)> callback) {
         DEBUG_LOG(DebugAdapter) << "TerminateRequest received";
         OnRequestTerminate(this, req, callback);
+      });
+
+  dap_->registerHandler(
+      [this](const dap::ZxdbDetachRequest& req,
+             std::function<void(dap::ResponseOrError<dap::ZxdbDetachResponse>)> callback) {
+        DEBUG_LOG(DebugAdapter) << "ZxdbDetachRequest received";
+        OnRequestZxdbDetach(this, req, callback);
       });
 
   dap_->registerHandler([this](const dap::DisconnectRequest& req) {

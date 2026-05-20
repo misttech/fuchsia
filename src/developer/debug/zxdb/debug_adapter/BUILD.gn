@@ -38,6 +38,8 @@ static_library("debug_adapter") {
     "handlers/request_threads.h",
     "handlers/request_variables.cc",
     "handlers/request_variables.h",
+    "handlers/request_zxdb_detach.cc",
+    "handlers/request_zxdb_detach.h",
     "server.cc",
     "server.h",
   ]
@@ -72,6 +74,7 @@ source_set("tests") {
     "handlers/request_step_out_unittest.cc",
     "handlers/request_threads_unittest.cc",
     "handlers/request_variables_unittest.cc",
+    "handlers/request_zxdb_detach_unittest.cc",
     "server_unittest.cc",
   ]
   deps = [
