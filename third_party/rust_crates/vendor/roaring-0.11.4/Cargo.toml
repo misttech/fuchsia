@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.82.0"
+rust-version = "1.90.0"
 name = "roaring"
-version = "0.11.3"
+version = "0.11.4"
 authors = [
     "Wim Looman <wim@nemo157.com>",
     "Kerollmops <kero@meilisearch.com>",
@@ -159,6 +159,10 @@ path = "tests/treemap_lib.rs"
 [[test]]
 name = "treemap_ops"
 path = "tests/treemap_ops.rs"
+
+[[test]]
+name = "treemap_range_checks"
+path = "tests/treemap_range_checks.rs"
 
 [[test]]
 name = "treemap_rank"

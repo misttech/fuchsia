@@ -272,6 +272,96 @@ impl RoaringTreemap {
         }
     }
 
+    /// Returns `true` if all values in the range are present in this set.
+    ///
+    /// An empty range is always contained.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use roaring::RoaringTreemap;
+    ///
+    /// let mut rb = RoaringTreemap::new();
+    /// // An empty range is always contained
+    /// assert!(rb.contains_range(7..7));
+    ///
+    /// rb.insert_range(1..0x1_0000_0000);
+    /// assert!(rb.contains_range(1..0x1_0000_0000));
+    /// assert!(rb.contains_range(2..0x1_0000_0000));
+    /// // 0 is not contained
+    /// assert!(!rb.contains_range(0..2));
+    /// // 0x1_0000_0000 is not contained
+    /// assert!(!rb.contains_range(1..=0x1_0000_0000));
+    /// ```
+    pub fn contains_range<R>(&self, range: R) -> bool
+    where
+        R: RangeBounds<u64>,
+    {
+        let (start, end) = match util::convert_range_to_inclusive(range) {
+            Some(range) => (*range.start(), *range.end()),
+            None => return true,
+        };
+        let (start_hi, start_lo) = util::split(start);
+        let (end_hi, end_lo) = util::split(end);
+
+        let mut expected_key = start_hi;
+        for (&key, bitmap) in self.map.range(start_hi..=end_hi) {
+            if key != expected_key {
+                return false;
+            }
+            let lo_start = if key == start_hi { start_lo } else { 0 };
+            let lo_end = if key == end_hi { end_lo } else { u32::MAX };
+            if !bitmap.contains_range(lo_start..=lo_end) {
+                return false;
+            }
+            match key.checked_add(1) {
+                Some(k) => expected_key = k,
+                None => return true,
+            }
+        }
+        expected_key > end_hi
+    }
+
+    /// Returns the number of elements in this set which are in the passed range.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use roaring::RoaringTreemap;
+    ///
+    /// let mut rb = RoaringTreemap::new();
+    /// rb.insert_range(0x1_0000_0000..0x4_0000_0000);
+    /// rb.insert(0x5_0000_0001);
+    /// rb.insert(0x5_0000_0005);
+    /// rb.insert(u64::MAX);
+    ///
+    /// assert_eq!(rb.range_cardinality(0..0x1_0000_0000), 0);
+    /// assert_eq!(rb.range_cardinality(0x1_0000_0000..0x4_0000_0000), 0x3_0000_0000);
+    /// assert_eq!(rb.range_cardinality(0x5_0000_0000..0x6_0000_0000), 2);
+    /// assert_eq!(rb.range_cardinality(0x1_0000_0000..0x1_0000_0000), 0);
+    /// assert_eq!(rb.range_cardinality(0x5_0000_0000..=u64::MAX), 3);
+    /// ```
+    pub fn range_cardinality<R>(&self, range: R) -> u64
+    where
+        R: RangeBounds<u64>,
+    {
+        let (start, end) = match util::convert_range_to_inclusive(range) {
+            Some(range) => (*range.start(), *range.end()),
+            None => return 0,
+        };
+        let (start_hi, start_lo) = util::split(start);
+        let (end_hi, end_lo) = util::split(end);
+
+        self.map
+            .range(start_hi..=end_hi)
+            .map(|(&key, bitmap)| {
+                let lo_start = if key == start_hi { start_lo } else { 0 };
+                let lo_end = if key == end_hi { end_lo } else { u32::MAX };
+                bitmap.range_cardinality(lo_start..=lo_end)
+            })
+            .sum::<u64>()
+    }
+
     /// Clears all integers in this set.
     ///
     /// # Examples
@@ -318,7 +408,8 @@ impl RoaringTreemap {
     /// assert!(rb.is_full());
     /// ```
     pub fn is_full(&self) -> bool {
-        self.map.len() == (u32::MAX as usize + 1) && self.map.values().all(RoaringBitmap::is_full)
+        self.map.len() == (u32::MAX as u64 + 1) as usize
+            && self.map.values().all(RoaringBitmap::is_full)
     }
 
     /// Returns the number of distinct integers added to the set.
@@ -340,6 +431,35 @@ impl RoaringTreemap {
     /// ```
     pub fn len(&self) -> u64 {
         self.map.values().map(RoaringBitmap::len).sum()
+    }
+
+    /// Optimizes the underlying bitmap storage and removes empty partitions.
+    ///
+    /// Returns true if the treemap storage was modified, false if not.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use roaring::RoaringTreemap;
+    ///
+    /// let mut rb = RoaringTreemap::from_iter(1000..100000);
+    /// rb.optimize();
+    /// ```
+    pub fn optimize(&mut self) -> bool {
+        let mut changed = false;
+
+        self.map.retain(|_, bitmap| {
+            changed |= bitmap.optimize();
+
+            if bitmap.is_empty() {
+                changed = true;
+                false
+            } else {
+                true
+            }
+        });
+
+        changed
     }
 
     /// Returns the minimum value in the set (if the set is non-empty).
@@ -455,5 +575,43 @@ impl Clone for RoaringTreemap {
 
     fn clone_from(&mut self, other: &Self) {
         self.map.clone_from(&other.map);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{RoaringBitmap, RoaringTreemap};
+    use alloc::vec::Vec;
+    use proptest::collection::btree_map;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn optimize_preserves_values(mut treemap in RoaringTreemap::arbitrary()) {
+            let before = treemap.iter().collect::<Vec<_>>();
+
+            treemap.optimize();
+
+            let after = treemap.iter().collect::<Vec<_>>();
+            prop_assert_eq!(before, after);
+        }
+
+        #[test]
+        fn optimize_prunes_empty_partitions_from_bitmaps(
+            bitmaps in btree_map(0u32..=16, RoaringBitmap::arbitrary(), 0usize..=16)
+        ) {
+            let mut treemap = RoaringTreemap::from_bitmaps(bitmaps);
+            let before = treemap.iter().collect::<Vec<_>>();
+            let had_empty_partition = treemap.bitmaps().any(|(_, bitmap)| bitmap.is_empty());
+
+            let changed = treemap.optimize();
+
+            prop_assert_eq!(treemap.iter().collect::<Vec<_>>(), before);
+            prop_assert!(treemap.bitmaps().all(|(_, bitmap)| !bitmap.is_empty()));
+
+            if had_empty_partition {
+                prop_assert!(changed);
+            }
+        }
     }
 }

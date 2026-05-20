@@ -1670,11 +1670,11 @@ group("rkyv-0.8.16") {
 }
 
 group("roaring") {
-  public_deps = [ ":roaring-v0_11_3" ]
+  public_deps = [ ":roaring-v0_11_4" ]
 }
 
-group("roaring-0.11.3") {
-  public_deps = [ ":roaring-v0_11_3" ]
+group("roaring-0.11.4") {
+  public_deps = [ ":roaring-v0_11_4" ]
 }
 
 group("rsa") {
@@ -17261,18 +17261,18 @@ rustc_macro("rkyv_derive-v0_8_16") {
   applicable_licenses = [ ":rkyv_derive-v0_8_16.license" ]
 }
 
-license("roaring-v0_11_3.license") {
+license("roaring-v0_11_4.license") {
   public_package_name = "roaring"
   license_files = [
-    "//third_party/rust_crates/vendor/roaring-0.11.3/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/roaring-0.11.3/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/roaring-0.11.4/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/roaring-0.11.4/LICENSE-MIT",
   ]
 }
 
-rustc_library("roaring-v0_11_3") {
+rustc_library("roaring-v0_11_4") {
   crate_name = "roaring"
-  source_root = "//third_party/rust_crates/vendor/roaring-0.11.3/src/lib.rs"
-  output_name = "roaring-d13d660550f7f7df"
+  source_root = "//third_party/rust_crates/vendor/roaring-0.11.4/src/lib.rs"
+  output_name = "roaring-81ffa754d7e54df0"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -17286,15 +17286,15 @@ rustc_library("roaring-v0_11_3") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d13d660550f7f7df",
-    "-Cextra-filename=-d13d660550f7f7df",
+    "-Cmetadata=81ffa754d7e54df0",
+    "-Cextra-filename=-81ffa754d7e54df0",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":roaring-v0_11_3.license" ]
+  applicable_licenses = [ ":roaring-v0_11_4.license" ]
 }
 
 license("rsa-v0_9_10.license") {

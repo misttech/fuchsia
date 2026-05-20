@@ -2281,14 +2281,14 @@ alias(
 )
 
 alias(
-    name = "roaring-0.11.3",
-    actual = "//third_party/rust_crates/vendor/roaring-0.11.3:roaring",
+    name = "roaring-0.11.4",
+    actual = "//third_party/rust_crates/vendor/roaring-0.11.4:roaring",
     tags = ["manual"],
 )
 
 alias(
     name = "roaring",
-    actual = "//third_party/rust_crates/vendor/roaring-0.11.3:roaring",
+    actual = "//third_party/rust_crates/vendor/roaring-0.11.4:roaring",
     tags = ["manual"],
 )
 
