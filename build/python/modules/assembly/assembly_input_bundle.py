@@ -538,7 +538,7 @@ class AIBCreator:
         )
         supported_build_types = set(["user", "userdebug", "eng"])
         if rule == "everything":
-            for level in supported_feature_set_levels:
+            for level in sorted(supported_feature_set_levels):
                 self.add_include_rule(attr, level)
             return
 
@@ -564,7 +564,7 @@ class AIBCreator:
         # rule is `<build_type>`
         elif rule in supported_build_types:
             build_type = rule
-            for level in supported_feature_set_levels:
+            for level in sorted(supported_feature_set_levels):
                 self.add_include_rule(attr, level + "::" + build_type)
             return
 
