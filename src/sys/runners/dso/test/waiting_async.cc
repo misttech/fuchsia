@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.process.lifecycle/cpp/fidl.h>
+#include <lib/async/cpp/task.h>
 #include <lib/async/dispatcher.h>
 #include <lib/fdf/dispatcher.h>
 #include <stdint.h>
@@ -52,7 +53,8 @@ int dso_main_async(int argc, const char** argv, const char** envp, zx_handle_t _
   run_counter.fetch_add(1);
 
   async_dispatcher_t* const dispatcher = fdf_dispatcher_get_async_dispatcher(fdf_dispatcher);
-  LifecycleHandler::Create(lifecycle, dispatcher);
+  async::PostTask(dispatcher,
+                  [dispatcher, lifecycle] { LifecycleHandler::Create(lifecycle, dispatcher); });
 
   return 0;
 }

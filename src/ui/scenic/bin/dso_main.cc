@@ -4,6 +4,7 @@
 
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/async/default.h>
 #include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
@@ -33,12 +34,10 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
   }
   zx::channel lifecycle(lifecycle_handle);
 
-  async_dispatcher_t* const dispatcher = fdf_dispatcher_get_async_dispatcher(fdf_dispatcher);
-  if (dispatcher == nullptr) {
+  async_dispatcher_t* const input_dispatcher = fdf_dispatcher_get_async_dispatcher(fdf_dispatcher);
+  if (input_dispatcher == nullptr) {
     return 2;
   }
-  async_set_default_dispatcher(dispatcher);
-  utils::ScopedThreadDispatcherSetter setter(dispatcher, dispatcher);
 
   // This call creates ComponentContext, but does not start serving immediately. Outgoing directory
   // is served by App, after App::InitializeServices() is completed.
@@ -47,13 +46,23 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
   zx::channel out_dir(directory_request_handle);
   zx::vmo config_vmo(config_handle);
   auto config = scenic_structured_config::Config::CreateFromVmo(std::move(config_vmo));
-  auto app_context = std::make_unique<sys::ComponentContext>(svc_dir, dispatcher);
+
+  async::Loop render_loop(&kAsyncLoopConfigAttachToCurrentThread);
 
   auto command_line = fxl::CommandLineFromArgcArgv(argc, argv);
   fxl::LogSettings base_settings;
   if (!ParseLogSettings(command_line, &base_settings)) {
     return 3;
   }
+
+  // Don't setup a trace provider, driver bindings will do that for us.
+
+  // This call creates ComponentContext, but does not start serving immediately. Outgoing directory
+  // is served by App, after App::InitializeServices() is completed.
+  auto app_context = std::make_unique<sys::ComponentContext>(svc_dir);
+
+  // Set up an inspect::Node to inject into the App.
+  auto* const inspector = new inspect::ComponentInspector(render_loop.dispatcher(), {});
 
   zx::channel log_client, log_server;
   zx::channel::create(0, &log_client, &log_server);
@@ -69,8 +78,6 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
   log_settings.BuildAndInitialize();
   FX_LOGS(INFO) << "Started";
 
-  // Don't setup a trace provider, driver bindings will do that for us.
-
   // Set up an inspect::Node to inject into the App.
   auto [inspect_client, inspect_server] = *fidl::CreateEndpoints<fuchsia_inspect::InspectSink>();
   s = svc_dir->Connect("fuchsia.inspect.InspectSink", inspect_server.TakeChannel());
@@ -80,7 +87,6 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
   }
   inspect::PublishOptions opts;
   opts.client_end.emplace(std::move(inspect_client));
-  auto* const inspector = new inspect::ComponentInspector{dispatcher, std::move(opts)};
 
   component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher(
       fidl::UnownedClientEnd<fuchsia_io::Directory>(svc_dir->unowned_channel()));
@@ -93,23 +99,41 @@ int dso_main_async(int argc, const char* argv[], const char* envp[], zx_handle_t
   fidl::ClientEnd<fuchsia_hardware_display::Provider> provider = std::move(provider_result).value();
   auto display_coordinator_promise = display::GetCoordinator(std::move(provider));
 
+  // Setup the input thread dispatcher, which runs on the fdf_dispatcher provided to dso_main.
+  utils::ScopedThreadDispatcherSetter setter(render_loop.dispatcher(), input_dispatcher);
+  async::PostTask(input_dispatcher, [input_dispatcher]() {
+    async_dispatcher_t* const current_dispatcher = async_get_default_dispatcher();
+    if (current_dispatcher == nullptr) {
+      async_set_default_dispatcher(input_dispatcher);
+    } else {
+      FX_CHECK(current_dispatcher == input_dispatcher) << "input thread dispatcher is wrong";
+    }
+  });
+
   // Instantiate Scenic app.
-  // TODO(https://fxbug.dev/485919515): Free `app` when the program terminates
-  auto* const app = new scenic_impl::App{dispatcher,
-                                         dispatcher,
+  // TODO(https://fxbug.dev/485919515): Free `app` and `inspector` when the program terminates. It
+  // is only safe to free `app` once `input_dispatcher` is no longer running code that may access
+  // it. Not freeing this is a simple way to avoid a use after free during shutdown.
+  auto* const app = new scenic_impl::App{render_loop.dispatcher(),
+                                         input_dispatcher,
                                          std::move(app_context),
                                          fidl::ClientEnd<fuchsia_io::Directory>(std::move(pkg_dir)),
                                          fidl::ServerEnd<fuchsia_io::Directory>(std::move(out_dir)),
                                          std::move(config),
                                          inspector->root(),
                                          std::move(display_coordinator_promise),
-                                         [lifecycle = std::move(lifecycle), inspector]() mutable {
-                                           delete inspector;
-                                           // Dropping `lifecycle` causes the component to exit.
-                                         }};
+                                         [&render_loop]() { render_loop.Quit(); }};
 
-  // TODO(https://fxbug.dev/403545512): Figure out if we should include here or in dso_runner
-  // fuchsia_scheduler::SetRoleForRootVmar("fuchsia.ui.scenic");
+  // Apply the scheduler role defined for Scenic.
+  const zx_status_t thread_status = fuchsia_scheduler::SetRoleForThisThread("fuchsia.scenic.main");
+  if (thread_status != ZX_OK) {
+    FX_LOGS(WARNING) << "Failed to apply profile to main thread: " << thread_status;
+  }
+
+  render_loop.Run();
+  FX_LOGS(INFO) << "Quit main Scenic loop.";
+
+  // Dropping `lifecycle` causes the component to exit and dso_runner to shutdown fdf_dispatcher.
 
   return 0;
 }

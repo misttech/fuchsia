@@ -404,30 +404,31 @@ impl Finish for Transformer {
                 (quote!(#tts), quote!(#ret_type))
             };
 
+        let exit = if is_nonempty_ret_type {
+            if returns_exit_code {
+                quote! {
+                    return match _result {
+                        ::std::process::ExitCode::SUCCESS => 0,
+                        ::std::process::ExitCode::FAILURE => 1,
+                        _ => 255,
+                    };
+                }
+            } else {
+                quote! {
+                    return match _result {
+                        Ok(_) => 0,
+                        Err(_) => 1,
+                    };
+                }
+            }
+        } else {
+            quote! {
+                return 0;
+            }
+        };
+
         let dso_start = match dso_syncness {
             Dso::Sync => {
-                let exit = if is_nonempty_ret_type {
-                    if returns_exit_code {
-                        quote! {
-                            return match _result {
-                                ::std::process::ExitCode::SUCCESS => 0,
-                                ::std::process::ExitCode::FAILURE => 1,
-                                _ => 255,
-                            };
-                        }
-                    } else {
-                        quote! {
-                            return match _result {
-                                Ok(_) => 0,
-                                Err(_) => 1,
-                            };
-                        }
-                    }
-                } else {
-                    quote! {
-                        return 0;
-                    }
-                };
                 quote! {
                     #[repr(C)]
                     pub struct dso_sync_input {
@@ -518,34 +519,9 @@ impl Finish for Transformer {
                     }
 
                     fn __dso_start_async(payload: ::fuchsia_dso::DsoStartAsyncPayload) -> ::std::ffi::c_int {
-                        // TODO(https://fxbug.dev/403545512): The need to spawn a thread here
-                        // should go away once full rust async / driver dispatcher integration is
-                        // available. For now, we spawn a thread to satisfy fuchsia-async's
-                        // expectation that the executor gets its own thread. Since this should
-                        // eventually go away we're fine with detaching the thread and not joining
-                        // it.
-                        //
-                        // Another compromise is that if dso_main_async returns an exit code
-                        // there's no practical way to propagate that code from here. For now,
-                        // always return 0, and once we run dso_main_async inline we can forward
-                        // the return code.
-                        //
-                        // SAFETY: We are sending pointers in `payload` across a thread boundary.
-                        // This is safe because:
-                        //
-                        // - _dso_start_async returns 0 so dso_runner won't immediately free the
-                        //   pointers.
-                        // - _dso_start_async won't free the pointers until either the dispatcher
-                        //    is shutdown, or the component composes the lifecycle channel which is
-                        //    part of the payload. Neither of these can complete before
-                        //    `dso_init_async` hands off control to the component's main. At this
-                        //    point it's the component's responsibility to make sure it doesn't
-                        //    deref the pointers past either of these points.
-                        _ = ::std::thread::spawn(move || {
-                            let args = ::fuchsia_dso::dso_init_async(payload);
-                            let _result = #ident(args);
-                        });
-                        0
+                        let args = ::fuchsia_dso::dso_init_async(payload);
+                        let _result = #ident(args);
+                        #exit
                     }
                 }
             }

@@ -66,17 +66,19 @@ InputSystem::InputSystem(async_dispatcher_t *input_dispatcher, sys::ComponentCon
             touch_system.InjectTouchEventHitTested(std::move(event), stream_id, snapshot);
           },
           inspect_node.CreateChild("PointerinjectorRegistryDso")) {
-  FX_DCHECK(input_dispatcher);
   context->outgoing()->AddPublicService(
-      [this](zx::channel zx_channel, async_dispatcher_t *unused_dispatcher) mutable {
-        zx_handle_t handle;
-        zx_status_t s = fdf_token_receive(zx_channel.release(), &handle);
-        if (s != ZX_OK) {
-          FX_LOGS(WARNING) << "FDF token failed cast to channel on "
-                           << fuchsia_ui_pointerinjector::Registry::kDiscoverableName;
-          return;
-        }
-        pointerinjector_registry_dso_.Bind(fdf::Channel(handle));
+      [this, input_dispatcher](zx::channel zx_channel,
+                               async_dispatcher_t *unused_dispatcher) mutable {
+        async::PostTask(input_dispatcher, [this, zx_channel = std::move(zx_channel)]() mutable {
+          zx_handle_t handle;
+          zx_status_t s = fdf_token_receive(zx_channel.release(), &handle);
+          if (s != ZX_OK) {
+            FX_LOGS(WARNING) << "FDF token failed cast to channel on "
+                             << fuchsia_ui_pointerinjector::Registry::kDiscoverableName;
+            return;
+          }
+          pointerinjector_registry_dso_.Bind(fdf::Channel(handle));
+        });
       },
       fuchsia_ui_pointerinjector_dso::Registry::kDiscoverableName);
 }

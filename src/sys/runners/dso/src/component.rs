@@ -9,7 +9,6 @@ use async_trait::async_trait;
 use derivative::Derivative;
 use elf_runner::ElfComponentLaunchInfo;
 use elf_runner::config::ElfProgramConfig;
-use fdf::OnDispatcher;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_runner as frunner;
@@ -166,19 +165,20 @@ impl Component {
                 }
             };
             let (tx, rx) = oneshot::channel();
-            control = InnerControl::Async(Some(AsyncControl {
+            control = InnerControl::Async(Some(Box::new(AsyncControl {
                 runtime_handle: Some(runtime_handle),
                 _driver: driver,
                 shutdown_done_tx: Some(tx),
                 resources: None,
-            }));
+                thread_handle: None,
+            })));
             dispatcher = Some(fdf_dispatcher);
             shutdown_done_rx = Some(rx);
         } else {
-            control = InnerControl::Sync(SyncControl {
+            control = InnerControl::Sync(Box::new(SyncControl {
                 terminate_cb: Some(terminate_routine),
                 thread_handle: None,
-            });
+            }));
             dispatcher = None;
             shutdown_done_rx = None;
         };
@@ -287,7 +287,7 @@ impl Component {
                     _envp_alloc: envp_alloc,
                 });
 
-                dispatcher.spawn(async move {
+                let h = thread::Builder::new().name(dso_name.clone().into()).spawn(move || {
                     // SAFETY: Inputs are not freed until the dispatcher is shutdown.
                     let code = unsafe {
                         hooks.dso_start_async(
@@ -305,7 +305,7 @@ impl Component {
                     } else {
                         drop(exit_code_tx);
                     }
-                }).unwrap();
+                }).expect("spawn async thread");
 
                 exit_wait = async move {
                     let mut shutdown_wait = async move {
@@ -338,6 +338,7 @@ impl Component {
                 }
                 .boxed()
                 .fuse();
+                control.thread_handle = Some(h);
             }
             InnerControl::Sync(control) => {
                 let (exit_tx, exit_rx) = oneshot::channel();
@@ -367,7 +368,7 @@ impl Component {
                         };
                         _ = exit_tx.send(Some(code));
                     })
-                    .expect("spawn component thread");
+                    .expect("spawn sync thread");
                 control.thread_handle = Some(h);
                 exit_wait = exit_rx.boxed().fuse();
             }
@@ -385,7 +386,7 @@ impl Component {
                 async move {
                     let mut event_stream = lifecycle_client2.take_event_stream();
                     while let Some(_) = event_stream.next().await {
-                        // TODO(https://fxbug.dev/403545512): Handle lifecycle events like OnEscrow
+                        // TODO(https://fxbug.dev/508351654): Handle lifecycle events like OnEscrow
                     }
                     // Lifecycle channel closed means component has exited.
                 }
@@ -435,9 +436,9 @@ impl Component {
 
 #[derive(Debug)]
 enum InnerControl {
-    Sync(SyncControl),
+    Sync(Box<SyncControl>),
     // `None` if shutdown has completed and there is nothing left to do
-    Async(Option<AsyncControl>),
+    Async(Option<Box<AsyncControl>>),
 }
 
 #[derive(Derivative)]
@@ -454,6 +455,7 @@ struct AsyncControl {
     _driver: Arc<()>,
     shutdown_done_tx: Option<oneshot::Sender<()>>,
     resources: Option<AsyncProgramResources>,
+    thread_handle: Option<thread::JoinHandle<()>>,
 }
 
 // SAFETY: [`AsyncProgramResources`] is only freed once the async component's dispatcher is shutdown.
@@ -475,14 +477,15 @@ impl Drop for AsyncControl {
     fn drop(&mut self) {
         // We may end up here without maybe_shutdown_dispatcher if an error preempted the component
         // from starting.
-        let Self { runtime_handle, _driver, shutdown_done_tx: _, resources } = self;
+        let Self { runtime_handle, _driver, shutdown_done_tx: _, resources, thread_handle: _ } =
+            self;
         // Must be done before dropping `_driver`, otherwise it will panic.
         runtime_handle.take().map(|r| r.shutdown(|_| {}));
         drop(resources.take());
     }
 }
 
-async fn maybe_shutdown_dispatcher(ctl: Option<AsyncControl>) {
+async fn maybe_shutdown_dispatcher(ctl: Option<Box<AsyncControl>>) {
     let Some(mut ctl) = ctl else {
         return;
     };

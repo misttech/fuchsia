@@ -128,6 +128,7 @@ fuchsia_cc_dso("waiting_async") {
   deps = [
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
     "//sdk/lib/async",
+    "//sdk/lib/async:async-cpp",
     "//zircon/system/ulib/zx",
   ]
 }
