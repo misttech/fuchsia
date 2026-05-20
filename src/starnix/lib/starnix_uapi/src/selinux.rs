@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 use std::num::NonZeroU32;
+use zerocopy::{Immutable, IntoBytes};
 
 /// Identifies a Security Context.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, IntoBytes, Immutable)]
 pub struct SecurityId(pub NonZeroU32);
 
 /// Initial Security Identifier (SID) values defined by the SELinux Reference Policy.

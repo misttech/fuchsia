@@ -51,7 +51,7 @@ macro_rules! declare_kernel_classes {
         $($(#[$variant_meta:meta])* $variant:ident ($variant_name:literal),)*
     }) => {
         named_enum! {
-            #[derive(VariantArray)]
+            #[derive(VariantArray, zerocopy::IntoBytes, zerocopy::Immutable)]
             $(#[$meta])* KernelClass {
                 $($(#[$variant_meta])* $variant ($variant_name),)*
             }
@@ -114,6 +114,7 @@ declare_kernel_classes! {
     /// A well-known class in SELinux policy that has a particular meaning in policy enforcement
     /// hooks.
     #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+    #[repr(u32)]
     {
         // keep-sorted start
         /// The SELinux "anon_inode" object class.

@@ -11,6 +11,7 @@ use crate::kernel_permissions::ClassPermission;
 use crate::policy::{KernelAccessDecision, XpermsKind};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
+use zerocopy::IntoBytes;
 
 /// Cache for access decisions.
 /// This cache has 4 slots per bucket, with 25 bytes of inline storage. A bucket is 64 bytes.
@@ -68,9 +69,7 @@ impl
 
     #[inline(always)]
     fn hash_key(&self, key: &Self::Key) -> u64 {
-        let mut hasher = rapidhash::RapidInlineHasher::default();
-        key.hash(&mut hasher);
-        hasher.finish()
+        rapidhash::rapidhash(key.as_bytes())
     }
 
     #[inline(always)]
@@ -305,9 +304,7 @@ impl
 
     #[inline(always)]
     fn hash_key(&self, key: &Self::Key) -> u64 {
-        let mut hasher = rapidhash::RapidInlineHasher::default();
-        key.hash(&mut hasher);
-        hasher.finish()
+        rapidhash::rapidhash(key.as_bytes())
     }
 
     #[inline(always)]

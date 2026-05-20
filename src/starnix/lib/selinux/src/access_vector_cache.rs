@@ -81,7 +81,8 @@ pub(super) trait Query {
     ) -> KernelXpermsAccessDecision;
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, zerocopy::IntoBytes, zerocopy::Immutable)]
+#[repr(C)]
 pub struct AccessQueryArgs {
     pub source_sid: SecurityId,
     pub target_sid: SecurityId,
