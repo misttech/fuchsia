@@ -484,6 +484,15 @@ def record_fuchsia_workspace(
         os.path.join(gn_output_dir, "gen", "assembly_developer_overrides.json"),
     )
 
+    generated.record_symlink(
+        os.path.join(
+            "workspace",
+            "fuchsia_build_generated",
+            "icu_build_config.json",
+        ),
+        os.path.join(gn_output_dir, "icu_build_config.json"),
+    )
+
     # LINT.IfChange
     generated.record_symlink(
         "workspace/fuchsia_build_generated/args.json",

@@ -399,7 +399,6 @@ platform_aib_names =
       "memory_monitor_with_memory_sampler",
       "memory_monitor_critical_reports",
       "memory_monitor2",
-      "memory_monitor_page_refaults",
 
       # Development and debug tools for power framework
       "power_framework_development_support",
@@ -445,7 +444,6 @@ platform_aib_names =
       "ui_eng.icu_default_${icu_git_info.default}",
       "ui_eng.icu_latest_${icu_git_info.latest}",
       "ui_package_eng",
-      "ui_package_eng_userdebug_with_synthetic_device_support",
       "ui_eng_dso",
       "ui_eng_dso.icu_default_${icu_git_info.default}",
       "ui_eng_dso.icu_latest_${icu_git_info.latest}",

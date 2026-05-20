@@ -8,5 +8,12 @@ package(default_visibility = ["//bundles/assembly:__subpackages__"])
 
 prebuilt_package(
     name = "codec_factory",
-    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/media/codec:codec_factory",
+    archive = select({
+        "//build/bazel/platforms:is_fuchsia_riscv64": "//bundles/assembly/bazel_inputs:does_not_exist.marker",
+        "//conditions:default": "@gn_targets//bundles/assembly/bazel_inputs/src/media/codec:codec_factory",
+    }),
+    target_compatible_with = select({
+        "//build/bazel/platforms:is_fuchsia_riscv64": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )

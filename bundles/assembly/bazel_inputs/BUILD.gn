@@ -761,7 +761,7 @@ group("testing_support") {
     "//bundles/assembly/bazel_inputs/src/sys/fuzzing:fuzz-manager",
     "//bundles/assembly/bazel_inputs/src/sys/fuzzing:fuzz-registry",
     "//bundles/assembly/bazel_inputs/src/sys/fuzzing/fuzzctl",
-    "//bundles/assembly/bazel_inputs/src/sys/run_test_suite:package",
+    "//bundles/assembly/bazel_inputs/src/sys/run_test_suite",
     "//bundles/assembly/bazel_inputs/src/sys/test_manager:pkg",
     "//bundles/assembly/bazel_inputs/src/sys/test_runners/elf:elf-test-ambient-exec-runner",
     "//bundles/assembly/bazel_inputs/src/sys/test_runners/elf:elf-test-create-raw-processes-ambient-exec-runner",
@@ -950,11 +950,8 @@ group("pkgfs_disable_executability_restrictions") {
 }
 
 group("virtualization_support") {
-  if (current_cpu != "riscv64") {
-    deps = [
-      "//bundles/assembly/bazel_inputs/src/virtualization/bin/vmm_launcher",
-    ]
-  }
+  deps =
+      [ "//bundles/assembly/bazel_inputs/src/virtualization/bin/vmm_launcher" ]
 }
 
 group("vsock_service") {
@@ -966,10 +963,8 @@ group("vsock_service_bootstrap") {
 }
 
 group("netstack2") {
-  if (current_cpu != "riscv64") {
-    deps =
-        [ "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack2" ]
-  }
+  deps =
+      [ "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack2" ]
 }
 
 group("netstack3") {
@@ -1004,15 +999,11 @@ group("netstack_migration") {
 }
 
 group("netstack_migration_packages") {
-  if (current_cpu != "riscv64") {
-    deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack-migration" ]
-  }
+  deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack-migration" ]
 }
 
 group("netstack_migration_packages_gub") {
-  if (current_cpu != "riscv64") {
-    deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack-migration_gub" ]
-  }
+  deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack-migration_gub" ]
 }
 
 group("network_tun") {
@@ -1131,9 +1122,7 @@ group("soundplayer") {
 }
 
 group("media_codecs") {
-  if (current_cpu != "riscv64") {
-    deps = [ "//bundles/assembly/bazel_inputs/src/media/codec:codec_factory" ]
-  }
+  deps = [ "//bundles/assembly/bazel_inputs/src/media/codec:codec_factory" ]
 }
 
 group("video_development_support") {

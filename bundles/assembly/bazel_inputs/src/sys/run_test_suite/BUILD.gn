@@ -8,3 +8,8 @@ export_fuchsia_package_to_bazel("package") {
   testonly = true
   package = "//src/sys/run_test_suite:package"
 }
+
+export_fuchsia_package_to_bazel("run_test_suite") {
+  testonly = true
+  package = "//src/sys/run_test_suite:run_test_suite"
+}

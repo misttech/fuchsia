@@ -262,9 +262,7 @@ fuchsia_icu_config_repository = use_repo_rule(
 
 fuchsia_icu_config_repository(
     name = "fuchsia_icu_config",
-    # LINT.IfChange
-    content_hash_file = "fuchsia_build_generated/content_hashes/fuchsia_icu_config.hash",
-    # LINT.ThenChange(scripts/workspace_utils.py)
+    icu_build_config_json = "fuchsia_build_generated/icu_build_config.json",
 )
 
 generate_prebuilt_rust_toolchain_repository = use_repo_rule(

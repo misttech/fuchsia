@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@fuchsia_rules_common//:local_actions.bzl", "LOCAL_ONLY_ACTION_KWARGS")
 load(
     "@fuchsia_rules_common//assembly:product_configuration.bzl",
     "BUILD_TYPES",
@@ -76,6 +77,7 @@ def _assembly_input_bundle_impl(ctx):
         arguments = [args],
         mnemonic = "AssemblyInputBundle",
         progress_message = "Creating Assembly Input Bundle %s" % ctx.label.name,
+        **LOCAL_ONLY_ACTION_KWARGS
     )
 
     return [

@@ -3682,7 +3682,6 @@ icu_assembly_input_bundle("ui_eng") {
   allowed_in = [ "eng" ]
   icu_cache_packages = [
     "//src/ui/a11y/bin/a11y_manager:a11y-manager",
-
     "//src/ui/bin/scene_manager:scene_manager",
   ]
   cache_packages = [

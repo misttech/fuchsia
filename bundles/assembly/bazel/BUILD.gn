@@ -1,0 +1,35 @@
+# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bazel/bazel_build_group.gni")
+import("//bundles/assembly/platform_aibs.gni")
+
+# Build all of the Bazel AIB targets (this is a temporary way to stitch them into the
+# build graph and make sure that their inputs are all prepped.
+bazel_build_group("bazel") {
+  testonly = true
+  no_sdk = true
+
+  subtargets = []
+  foreach(aib_name, platform_aib_names) {
+    subtargets += [
+      {
+        bazel_target = "//bundles/assembly:${aib_name}"
+        gn_target_name = "bazel_${aib_name}"
+        deps = [
+          "//bundles/assembly/bazel_inputs:${aib_name}",
+          "//src/sys/pkg/bin/package-tool:bazel_input($host_toolchain)",
+        ]
+
+        directory_outputs = [
+          {
+            bazel_dir = "{{BAZEL_TARGET_OUT_PATH}}"
+            ninja_dir = "bazel_built_aibs/${aib_name}"
+            tracked_files = [ "assembly_config.json" ]
+          },
+        ]
+      },
+    ]
+  }
+}

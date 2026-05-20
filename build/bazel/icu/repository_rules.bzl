@@ -7,14 +7,16 @@ A repository rule `fuchsia_icu_config_repository` generates an external repo
 that contains git commit ID information about the third party ICU repositories
 contained in @//third_party/icu.
 
-Defines a constant `icu_flavors` which is a struct containing these elements:
+Defines two constants:
+-  `icu_flavors` which is a list of available icu flavors (ie, 'stable', 'latest')
+-  `icu_commits` which is a dict of icu flavors to their respective commit ids.
 
-- `default_git_commit`(string): the detected git commit ID for
+- `default`(string): the detected git commit ID for
    `@//:third_party/icu_default`
-- `latest_git_commit`(string): the detected git commit ID for
+- `latest`(string): the detected git commit ID for
    `@//:third_party/icu_latest`
 
-This struct can be ingested by main build rules by using:
+This dict can be ingested by main build rules by using:
 
 In WORKSPACE.bazel:
 
@@ -34,29 +36,19 @@ load("@fuchsia_icu_config//:constants.bzl", "icu_flavors")
 
 _CONSTANTS_BZL_TEMPLATE = """# AUTO_GENERATED - DO NOT EDIT!
 
-icu_flavors = struct(
-    default_git_commit = "{default_commit}",
-    latest_git_commit = "{latest_commit}",
-)
+icu_flavors = [ "default", "latest" ]
+
+icu_commits = {icu_config}
+
 """
 
 def _fuchsia_icu_config_impl(repo_ctx):
-    ninja_build_dir_path = repo_ctx.path("%s/%s" % (repo_ctx.workspace_root, repo_ctx.attr.ninja_build_dir))
-
-    # Ensure this repository is regenerated any time the content hash file
-    # changes. Creating a content hash file at `fx gen` time allows
-    # grabbing the correct path to the real .git/HEAD when submodules are
-    # used, which is harder to use in Starlark than in Python.
-    if hasattr(repo_ctx.attr, "content_hash_file"):
-        repo_ctx.path(Label("@//:" + repo_ctx.attr.content_hash_file))
-
-    icu_build_config_file = repo_ctx.path("%s/icu_build_config.json" % ninja_build_dir_path)
+    icu_build_config_file = repo_ctx.path(Label("@//:" + repo_ctx.attr.icu_build_config_json))
     contents = repo_ctx.read(icu_build_config_file)
     icu_config = json.decode(contents)
 
     constants_bzl = _CONSTANTS_BZL_TEMPLATE.format(
-        default_commit = icu_config["default"],
-        latest_commit = icu_config["latest"],
+        icu_config = icu_config,
     )
 
     repo_ctx.file("constants.bzl", constants_bzl)
@@ -71,8 +63,8 @@ fuchsia_icu_config_repository = repository_rule(
     implementation = _fuchsia_icu_config_impl,
     doc = "Create a repository that contains ICU configuration information in its //:constants.bzl file.",
     attrs = {
-        "content_hash_file": attr.string(
-            doc = "Path to content hash file for this repository, relative to workspace root.",
+        "icu_build_config_json": attr.string(
+            doc = "Path to the icu configuration file., relative to the workspace root.",
             mandatory = False,
         ),
     },

@@ -2671,6 +2671,9 @@ group("root_targets") {
     # (the ":product_bundles" target itself is only a stub, so we need to include
     # its metadata target that actually follows the dependencies pass to it)
     ":product_bundles_metadata",
+
+    # Allow test-building of the AIBs in Bazel.
+    "//bundles/assembly/bazel",
   ]
 
   if (sdk_cross_compile_host_tools) {
