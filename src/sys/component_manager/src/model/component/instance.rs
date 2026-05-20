@@ -83,13 +83,18 @@ use runtime_capabilities::{
     WeakInstanceToken,
 };
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::{fmt, mem};
 use vfs::ToObjectRequest;
 use vfs::directory::entry::{DirectoryEntry, OpenRequest, SubNode};
 use vfs::directory::immutable::simple as pfs;
 use vfs::execution_scope::ExecutionScope;
 use zx;
+
+static DICTIONARY_ROUTER_PATH: LazyLock<Path> = LazyLock::new(|| {
+    Path::new(format!("/svc/{}", fsandbox::DictionaryRouterMarker::PROTOCOL_NAME))
+        .expect("Dictionary router path is statically known to be valid")
+});
 
 /// The mutable state of a component instance.
 pub enum InstanceState {
@@ -655,7 +660,7 @@ impl ResolvedInstanceState {
             "unable to construct dir connector router for capability type that doesn't \
                     have a source path",
         );
-        let path = vfs::path::Path::validate_and_split(format!("{}", path)).unwrap();
+        let path = vfs::path::Path::validate_and_split(path.to_string()).unwrap();
         let capability_source = match capability_decl {
             cm_rust::CapabilityDecl::Directory(_) | cm_rust::CapabilityDecl::Storage(_) => {
                 CapabilitySource::StorageBackingDirectory(StorageBackingDirectorySource {
@@ -1436,7 +1441,7 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
             .sub_directory_path
             .map(|s| RelativePath::new(s).expect("invalid path"))
             .unwrap_or_else(|| RelativePath::dot());
-        let subdir = vfs::path::Path::validate_and_split(format!("{}", subdir))
+        let subdir = vfs::path::Path::validate_and_split(subdir.to_string())
             .map_err(|_| RouterError::InvalidArgs)?;
         let path = subdir.with_prefix(&self.path);
         let flags = request.directory_rights.ok_or(RouterError::InvalidArgs)?;
@@ -1609,10 +1614,7 @@ impl Routable<Dictionary> for ProgramDictionaryRouter {
         const FLAGS: fio::Flags = fio::Flags::PROTOCOL_SERVICE;
         let path = vfs::Path::validate_and_split(self.source_path.to_string())
             .expect("path must be valid");
-        if &self.source_path
-            == &Path::new(format!("/svc/{}", fsandbox::DictionaryRouterMarker::PROTOCOL_NAME))
-                .expect("this will always be valid")
-        {
+        if self.source_path == *DICTIONARY_ROUTER_PATH {
             let (inner_router, server_end) = create_proxy::<fsandbox::DictionaryRouterMarker>();
             FLAGS.to_object_request(server_end.into_channel()).handle(|request| {
                 dir_entry.open_entry(OpenRequest::new(ExecutionScope::new(), FLAGS, path, request))
