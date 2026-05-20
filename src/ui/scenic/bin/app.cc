@@ -233,6 +233,7 @@ App::App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_disp
   vulkan_loader->ConnectToManifestFs(fuchsia::vulkan::loader::ConnectToManifestOptions{},
                                      dir_server.TakeChannel());
 
+  // Log a warning if Scenic is waiting for the Vulkan to load.
   auto vulkan_wait_log = std::make_unique<fxl::CancelableClosure>(
       [] { FX_LOGS(WARNING) << "SCENIC IS WAITING FOR VULKAN TO BE AVAILABLE..."; });
   PostDelayedTaskUntilCancelled(vulkan_wait_log->callback(), kWaitWarningInterval);
@@ -265,6 +266,7 @@ App::App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_disp
     escher_bridge.completer.complete_ok(nullptr);
   }
 
+  // Log a warning if Scenic is waiting for the Display to become available.
   auto display_wait_log = std::make_unique<fxl::CancelableClosure>(
       [] { FX_LOGS(WARNING) << "SCENIC IS WAITING FOR DISPLAY TO BE AVAILABLE..."; });
   PostDelayedTaskUntilCancelled(display_wait_log->callback(), kWaitWarningInterval);
@@ -278,8 +280,17 @@ App::App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_disp
                             display_wait_log = std::move(display_wait_log)]() mutable {
                              completer.complete_ok(display_manager_->default_display_shared());
                            });
+
+  // Log a warning if Scenic is waiting for the Display Coordinator channels to be provided.
+  auto dc_handles_wait_log = std::make_unique<fxl::CancelableClosure>([] {
+    FX_LOGS(WARNING) << "SCENIC IS WAITING FOR DISPLAY COORDINATOR HANDLES TO BE AVAILABLE...";
+  });
+  PostDelayedTaskUntilCancelled(dc_handles_wait_log->callback(), kWaitWarningInterval);
+
   executor_.schedule_task(dc_handles_promise.then(
-      [this](fpromise::result<::display::CoordinatorClientChannels, zx_status_t>& client_channels) {
+      [this, dc_handles_wait_log = std::move(dc_handles_wait_log)](
+          fpromise::result<::display::CoordinatorClientChannels, zx_status_t>&
+              client_channels) mutable {
         FX_CHECK(client_channels.is_ok()) << "Failed to get display coordinator:"
                                           << zx_status_get_string(client_channels.error());
         auto [coordinator_client, listener_server] = std::move(client_channels.value());

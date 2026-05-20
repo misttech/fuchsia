@@ -44,16 +44,20 @@ int main(int argc, const char** argv) {
   // Set up an inspect::Node to inject into the App.
   inspect::ComponentInspector inspector(render_loop.dispatcher(), {});
 
-  component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher;
-
-  // Deadline: if it takes 10 minutes to connect to the display, is anything really OK?
-  zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
-      watcher.GetNextInstance(/*stop_at_idle=*/false, zx::deadline_after(zx::min(10)));
-  if (provider_result.is_error()) {
-    FX_CHECK(false) << "Failed to connect to display provider: " << provider_result.status_string();
-  }
-  fidl::ClientEnd<fuchsia_hardware_display::Provider> provider = std::move(provider_result).value();
-  auto display_coordinator_promise = display::GetCoordinator(std::move(provider));
+  auto display_coordinator_promise =
+      fpromise::make_promise([]() -> fpromise::result<
+                                      fidl::ClientEnd<fuchsia_hardware_display::Provider>,
+                                      zx_status_t> {
+        component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher;
+        zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
+            watcher.GetNextInstance(/*stop_at_idle=*/false);
+        if (provider_result.is_error()) {
+          return fpromise::error(provider_result.error_value());
+        }
+        return fpromise::ok(std::move(provider_result).value());
+      }).and_then([](fidl::ClientEnd<fuchsia_hardware_display::Provider>& provider) {
+        return display::GetCoordinator(std::move(provider));
+      });
 
   zx::channel pkg_dir, pkg_server;
   zx::channel::create(0, &pkg_dir, &pkg_server);
