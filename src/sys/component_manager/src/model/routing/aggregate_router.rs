@@ -133,7 +133,7 @@ impl AggregateRouter {
             for service_entry in dir_entries {
                 instances.push(ServiceInstance {
                     instance_name: service_entry.name.clone(),
-                    child_name: format!("{}", service_entry.source_id),
+                    child_name: service_entry.source_id.to_string(),
                     child_instance_name: Name::new(service_entry.service_instance.clone()).unwrap(),
                 });
             }
@@ -201,51 +201,88 @@ impl AggregateRouter {
             AggregateSource::DirectoryRouter { source_instance: _, router } => Some(router),
             AggregateSource::Collection { collection_name: _ } => panic!("collections can't contribute to filtered aggregates, manifest validation should stop this"),
         });
+
         let mut routing_futures = FuturesUnordered::new();
+
         for router in source_dir_routers {
-            routing_futures.push(router.route(request.clone(), self.component.clone().into()));
-        }
-        let aggregate_dictionary = Dictionary::new();
-        while let Some(router_response) = routing_futures.next().await {
-            let source_dir = match router_response {
-                Ok(Some(dir_connector)) => dir_connector,
-                Ok(None) => {
-                    // If the capability is unavailable, then there's nothing for us to do here.
-                    continue;
-                }
-                Err(router_error) => {
+            let request = request.clone();
+            let target: WeakInstanceToken = self.component.clone().into();
+
+            routing_futures.push(async move {
+                let route_result = router.route(request, target).await;
+                let source_dir = match route_result {
+                    Ok(Some(dir_connector)) => dir_connector,
+                    Ok(None) => return None,
+                    Err(router_error) => {
+                        log::warn!(
+                            "failed to route service capability for aggregate: {:?}",
+                            router_error
+                        );
+                        return None;
+                    }
+                };
+
+                let (source_dir_proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
+                source_dir.send(server_end, RelativePath::dot(), None).inspect_err(|e|  {
                     log::warn!(
-                        "failed to route service capability for aggregate: {:?}",
-                        router_error
+                        "failed to open service capability for aggregate on dir connector {source_dir:?}: {:?}",
+                        e
                     );
-                    continue;
-                }
-            };
-            let (source_dir_proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
-            let Ok(()) = source_dir.send(server_end, RelativePath::dot(), None) else {
-                log::warn!(
-                    "failed to open service capability for aggregate on dir connector {source_dir:?}"
-                );
-                continue;
-            };
+                }).ok()?;
+
+                let entries = readdir(&source_dir_proxy).await.unwrap_or_default();
+                Some((source_dir, entries))
+            });
+        }
+
+        let aggregate_dictionary = Dictionary::new();
+
+        while let Some(result) = routing_futures.next().await {
+            let Some((source_dir, entries)) = result else { continue };
+
             // Renames have already been applied by the `with_service_renames_and_filter` function
             // in `source_dir`, so we don't need to do any remappings here.
-            for entry in readdir(&source_dir_proxy).await.unwrap_or_default() {
+            for entry in entries {
                 if &entry.name == "." || entry.kind != fuchsia_fs::directory::DirentKind::Directory
                 {
                     continue;
                 }
-                let path = RelativePath::new(&entry.name).unwrap();
+
+                let path = match RelativePath::new(&entry.name) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        log::warn!(
+                            "Ignoring invalid relative path from aggregate VFS: {}, error: {:?}",
+                            entry.name,
+                            e
+                        );
+                        continue;
+                    }
+                };
+
+                let name = match entry.name.parse::<Name>() {
+                    Ok(n) => n,
+                    Err(e) => {
+                        log::warn!(
+                            "Ignoring invalid component name from aggregate VFS: {}, error: {:?}",
+                            entry.name,
+                            e
+                        );
+                        continue;
+                    }
+                };
+
                 let sub_dir = source_dir.clone().with_subdir(path);
-                let name = entry.name.parse().expect("path returned from VFS is not a valid name");
-                let prev = aggregate_dictionary.insert(name, sub_dir.into());
-                assert!(
-                    prev.is_none(),
-                    "failed to insert into aggregate dictionary, name collisions should be \
-                            prevented by manifest validation",
-                );
+
+                aggregate_dictionary.insert(name.clone(), sub_dir.into()).inspect(|v| {
+                    log::warn!(
+                        "Name collision detected in aggregate dictionary for name: {name}. \
+                        An untrusted component may be serving duplicates.: {v:?}"
+                    );
+                });
             }
         }
+
         Ok(DirConnector::from_directory_entry(
             aggregate_dictionary
                 .try_into_directory_entry(self.scope.clone(), self.component.clone().into())
