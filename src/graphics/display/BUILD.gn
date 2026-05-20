@@ -16,6 +16,7 @@ group("drivers") {
     "drivers/goldfish-display",
     "drivers/intel-display",
     "drivers/virtio-gpu-display:component",
+    "drivers/virtio-gpu-display:component-rust",
   ]
 }
 
