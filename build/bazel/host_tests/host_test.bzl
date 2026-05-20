@@ -12,7 +12,6 @@ _DEBUG = False
 FuchsiaHostTestInfo = provider(
     doc = "Provider for Bazel host tests visible to Fuchsia test runners (`fx test` and `botanist`).",
     fields = {
-        "name": "The test name, used in `tests.json`, this may be different from test_label.name.",
         "test_label": "The canonical Bazel label of the host_test() target. Used by `fx test` " +
                       "to rebuild the test on demand.",
         "test_launcher": "A File value for the test launcher script.",
@@ -186,7 +185,6 @@ def _host_test_impl(ctx):
             executable = launcher,
         ),
         FuchsiaHostTestInfo(
-            name = ctx.attr.test_name or ctx.label.name,
             test_label = ctx.label,
             test_launcher = launcher,
             test_runtime_dir = runtime_dir.path,
@@ -238,10 +236,6 @@ host_test = rule(
                   "test target, as long as it doesn't have its own `args` attribute values.",
             mandatory = True,
             aspects = [collect_fuchsia_host_test_data_aspect],
-        ),
-        "test_name": attr.string(
-            doc = "Optional override for the name of the test, as seen by `fx test` and `botanist`. " +
-                  "The default is the host_test() target name. Used for display and grouping.",
         ),
         "test_args": attr.string_list(
             doc = "Arguments to pass to the test binary. Do *not* use `args` for this purpose.",

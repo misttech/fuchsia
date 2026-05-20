@@ -19,7 +19,7 @@ from build_utils import BazelLauncher, BazelPaths
 def generate_tests_json(
     bazel_paths: BazelPaths,
     command_runner: T.Optional[build_utils.CommandRunner] = None,
-) -> tuple[dict[str, T.Any], set[Path]]:
+) -> tuple[list[dict[str, T.Any]], set[Path]]:
     """Generate a tests.json file corresponding to all Bazel host test targets
 
     Args:
@@ -67,20 +67,27 @@ def generate_tests_json(
         if not line:
             continue
 
-        # The line if a JSON-encoded object that follows the tests.json schema with
+        # The line is a JSON-encoded object that follows the tests.json schema with
         # the following exceptions:
         #  - The 'bazel_execroot_path' and 'bazel_execroot_runtime_deps_path' fields
         #    are present instead of 'path' and 'runtime_deps_path', and they contain
         #    paths relative to the Bazel execroot instead of the Ninja build directory.
         cquery_test = json.loads(line)
+
         # LINT.IfChange(cquery_output_schema)
+
+        label = cquery_test["label"]
+
         test_spec = {
             "environments": [],
             "expects_ssh": False,
             "test": {
-                "name": cquery_test["name"],
-                "label": cquery_test["label"],
-                "source_label": cquery_test["source_label"],
+                "name": label,
+                "label": label,
+                # The source label indicates the location in the tree of the
+                # source code. For labels in the main workspace, ensure they
+                # start with "//".
+                "source_label": _normalize_label(label),
                 "path": make_execroot_path_relative_to_ninja_build_dir(
                     cquery_test["launcher_execroot_path"]
                 ),
@@ -100,3 +107,11 @@ def generate_tests_json(
         # LINT.ThenChange(//build/bazel/starlark/FuchsiaHostTestInfo.cquery:cquery_output_schema)
 
     return tests_json, {starlark_input}
+
+
+def _normalize_label(label: str) -> str:
+    """Return the given label in its normalized form (never starting with "@@//" or "@//")."""
+    for prefix in ("@@//", "@//"):
+        if label.startswith(prefix):
+            return "//" + label.removeprefix(prefix)
+    return label

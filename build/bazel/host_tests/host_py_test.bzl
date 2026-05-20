@@ -54,7 +54,6 @@ def legacy_host_py_test(
         name,
         binary_name = "",
         main = None,
-        test_name = "",
         test_args = [],
         test_data = [],
         tags = [],
@@ -71,8 +70,6 @@ def legacy_host_py_test(
       name: The name of the host test.
       binary_name: Optional. The name of the py_binary target, defaults to 'name + "_bin"'.
       main: Optional. The main entry point for the py_binary, defaults to 'name + ".py"'.
-      test_name: Optional. The name of the test, as seen by `fx test` and `botanist`,
-         defaults to 'name'.
       test_args: Arguments to pass to the test binary. Do not use `args`.
       test_data: Optional. The data dependencies for the test target itself.
       **kwargs: Arguments to pass to `py_binary`.
@@ -114,7 +111,6 @@ def legacy_host_py_test(
     host_test(
         name = name,
         binary = binary_name,
-        test_name = test_name,
         test_args = test_args,
         data = test_data,
         list_cases_argument = "list_host_python_unittests",
@@ -130,12 +126,11 @@ def legacy_host_py_test(
         visibility = visibility,
     )
 
-def _host_py_test_impl(name, visibility, binary_name = "", main = None, test_name = "", test_args = [], test_data = [], tags = [], **kwargs):
+def _host_py_test_impl(name, visibility, binary_name = "", main = None, test_args = [], test_data = [], tags = [], **kwargs):
     legacy_host_py_test(
         name = name,
         binary_name = binary_name,
         main = main,
-        test_name = test_name,
         test_args = test_args,
         test_data = test_data,
         tags = tags,
@@ -166,7 +161,6 @@ Accepts all py_binary() attributes, plus `binary_name` and `test_xxx` ones.
     # inherit_attrs = native.py_binary,
     attrs = {
         "binary_name": attr.string(default = "", doc = "The name of the py_binary target, defaults to 'name + \"_bin\"'."),
-        "test_name": attr.string(default = "", doc = "The name of the test, as seen by `fx test` and `botanist`, defaults to 'name'."),
         "test_args": attr.string_list(default = [], doc = "Arguments to pass to the test binary. Do not use `args`."),
         "test_data": attr.label_list(default = [], doc = "Data dependencies for the test target itself."),
     },

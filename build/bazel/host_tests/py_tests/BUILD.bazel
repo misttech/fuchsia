@@ -14,14 +14,12 @@ host_py_test(
     name = "simple_test",
     srcs = ["simple_test.py"],
     main = "simple_test.py",
-    test_name = "host_py_tests.simple_test",
 )
 
 host_py_test(
     name = "test_with_py_library",
     srcs = ["test_with_py_library.py"],
     main = "test_with_py_library.py",
-    test_name = "host_py_tests.test_with_py_library",
     deps = [":py_lib_for_test"],
 )
 
@@ -39,7 +37,6 @@ host_py_test(
     srcs = ["test_with_py_binary.py"],
     test_args = ["$(rlocationpath :test_with_py_library_bin)"],
     test_data = [":test_with_py_library_bin"],
-    test_name = "host_py_tests.test_with_py_binary",
     deps = ["@rules_python//python/runfiles"],
 )
 
@@ -49,7 +46,6 @@ host_py_test(
 host_py_test(
     name = "test_with_unittests",
     srcs = ["test_with_unittests.py"],
-    test_name = "host_py_tests.test_with_unittests",
 )
 
 # A test to invoke test_with_unittests with `--list_host_python_unittests` and verify
@@ -59,6 +55,5 @@ host_py_test(
     srcs = ["list_unittests_test.py"],
     test_args = ["$(rlocationpath :test_with_unittests)"],
     test_data = [":test_with_unittests"],
-    test_name = "host_py_tests.list_unittests_test",
     deps = ["@rules_python//python/runfiles"],
 )

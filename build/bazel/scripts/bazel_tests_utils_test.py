@@ -45,9 +45,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
 
         # Create some fake test info that matches what cquery would return
         test_info = {
-            "name": "my_test",
             "label": "//src/my_test:my_test",
-            "source_label": "//src/my_test:my_test",
             "launcher_execroot_path": "bin/my_test",
             "runtime_deps_json_execroot_path": "bin/my_test.runtime_deps.json",
             "os": "linux",
@@ -63,7 +61,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
 
         self.assertEqual(len(tests_json), 1)
         entry = tests_json[0]
-        self.assertEqual(entry["test"]["name"], "my_test")
+        self.assertEqual(entry["test"]["name"], "//src/my_test:my_test")
         self.assertEqual(entry["test"]["label"], "//src/my_test:my_test")
         self.assertEqual(entry["test"]["source_label"], "//src/my_test:my_test")
 
@@ -114,8 +112,8 @@ class BazelTestsUtilsTest(unittest.TestCase):
         )
 
         self.assertEqual(len(tests_json), 2)
-        self.assertEqual(tests_json[0]["test"]["name"], "test1")
-        self.assertEqual(tests_json[1]["test"]["name"], "test2")
+        self.assertEqual(tests_json[0]["test"]["name"], "//t1")
+        self.assertEqual(tests_json[1]["test"]["name"], "//t2")
 
         execroot_path = "gen/build/bazel/output_base/execroot/_main"
         self.assertEqual(
@@ -124,7 +122,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
                 "environments": [],
                 "expects_ssh": False,
                 "test": {
-                    "name": "test1",
+                    "name": f"//t1",
                     "label": "//t1",
                     "source_label": "//t1",
                     "path": f"{execroot_path}/p1",
@@ -140,7 +138,7 @@ class BazelTestsUtilsTest(unittest.TestCase):
                 "environments": [],
                 "expects_ssh": False,
                 "test": {
-                    "name": "test2",
+                    "name": f"//t2",
                     "label": "//t2",
                     "source_label": "//t2",
                     "path": f"{execroot_path}/p2",

@@ -10,7 +10,6 @@ load(":host_test_data.bzl", "host_test_data_files")
 def legacy_host_rustc_test(
         name,
         binary_name = "",
-        test_name = "",
         test_args = [],
         test_data = [],
         tags = [],
@@ -31,8 +30,6 @@ def legacy_host_rustc_test(
     Args:
       name: The name of the host test.
       binary_name: Optional. The name of the rustc_test target, defaults to 'name + "_bin"'.
-      test_name: Optional. The name of the test, as seen by `fx test` and `botanist`,
-         defaults to 'name'.
       test_args: Arguments to pass to the test binary. Do not use `args`.
       test_data: Optional. The data dependencies for the test target itself.
       tags: Optional: List of test tags.
@@ -88,7 +85,6 @@ def legacy_host_rustc_test(
     host_test(
         name = name,
         binary = wrapper_script,
-        test_name = test_name,
         test_args = test_args,
         data = test_data,
         target_compatible_with = HOST_CONSTRAINTS,
@@ -99,7 +95,6 @@ def _host_rustc_test_impl(
         name,
         visibility,
         binary_name = "",
-        test_name = "",
         test_args = [],
         test_data = [],
         tags = [],
@@ -107,7 +102,6 @@ def _host_rustc_test_impl(
     legacy_host_rustc_test(
         name = name,
         binary_name = binary_name,
-        test_name = test_name,
         test_args = test_args,
         test_data = test_data,
         tags = tags,
@@ -141,7 +135,6 @@ Accepts all rustc_test() attributes, plus `binary_name` and `test_xxx` ones.
     inherit_attrs = rustc_test,
     attrs = {
         "binary_name": attr.string(default = "", doc = "The name of the rustc_test target, defaults to 'name + \"_bin\"'."),
-        "test_name": attr.string(default = "", doc = "The name of the test, as seen by `fx test` and `botanist`, defaults to 'name'."),
         "test_args": attr.string_list(default = [], doc = "Arguments to pass to the test binary. Do not use `args`."),
         "test_data": attr.label_list(default = [], doc = "Data dependencies for the test target itself."),
     },
