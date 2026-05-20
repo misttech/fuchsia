@@ -310,7 +310,7 @@
              revision="fac008f70cef3cb97484ec4615f57cfd9046da07"/>
     <project name="third_party/luci-go"
              path="third_party/luci-go"
-             revision="f1e55bc43069e289b762596dbf98d0d9d9d1f592"
+             revision="c00497397f8832585f887956f6125482c3fa1157"
              remote="https://fuchsia.googlesource.com/third_party/luci-go"
              gerrithost="https://fuchsia-review.googlesource.com"/>
     <project name="third_party/lz4"
