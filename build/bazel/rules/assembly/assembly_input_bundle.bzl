@@ -73,6 +73,25 @@ def _assembly_input_bundle_impl(ctx):
         args.add("--kernel-cmdline", cmdline_file)
         inputs.append(cmdline_file)
 
+    if ctx.attr.shell_commands:
+        parsed_shell_commands = json.decode(ctx.attr.shell_commands)
+        for shell_cmd in parsed_shell_commands:
+            if "package" not in shell_cmd:
+                fail("shell_command entries must specify a package name: %s" % shell_cmd)
+            if "components" not in shell_cmd:
+                fail("shell_command components must be a list of strings pointing to binaries that are components in the package that make up the package: %s" % shell_cmd)
+            for key in shell_cmd.keys():
+                if key not in ["package", "components", "bootfs_package"]:
+                    fail("unknown field in shell_command entry:  %s" % key)
+
+        shell_commands_file = ctx.actions.declare_file(ctx.label.name + "shell_commands.json")
+        ctx.actions.write(
+            output = shell_commands_file,
+            content = json.encode_indent(parsed_shell_commands),
+        )
+        args.add("--shell-cmds-list", shell_commands_file.path)
+        inputs.append(shell_commands_file)
+
     ctx.actions.run(
         inputs = inputs,
         outputs = [out_dir],
@@ -104,6 +123,7 @@ _assembly_input_bundle = rule(
         "anchored_automatic_packages": attr.label_list(providers = [FuchsiaPackageInfo]),
         "anchored_on_demand_packages": attr.label_list(providers = [FuchsiaPackageInfo]),
         "kernel_cmdline": attr.string_list(),
+        "shell_commands": attr.string(),
         "_tool": attr.label(
             default = "//build/assembly/scripts:assembly_input_bundle_tool",
             executable = True,
@@ -128,6 +148,7 @@ def assembly_input_bundle(
         anchored_automatic_packages = [],
         anchored_on_demand_packages = [],
         kernel_cmdline = [],
+        shell_commands = [],
         **kwargs):
     """Creates an Assembly Input Bundle.
 
@@ -187,8 +208,20 @@ def assembly_input_bundle(
 
         kernel_cmdline: [list of strings] Kernel cmdline arguments.
 
+        shell_commands: [list of dicts] A list of dicts that describe the shell commands for each
+            listed package
+
+            Example:
+            shell_commands = [
+              {
+                package = "//third_party/sbase"
+                components = [ "ls" ]
+              },
+            ]
+
         **kwargs: Other arguments to pass to the rule.
     """
+
     _assembly_input_bundle(
         name = name,
         experimental = experimental,
@@ -205,6 +238,7 @@ def assembly_input_bundle(
         anchored_automatic_packages = anchored_automatic_packages,
         anchored_on_demand_packages = anchored_on_demand_packages,
         kernel_cmdline = kernel_cmdline,
+        shell_commands = json.encode_indent(shell_commands),
         **kwargs
     )
 

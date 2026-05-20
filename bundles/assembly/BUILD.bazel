@@ -279,6 +279,31 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/devices/bin/lsdev:package",
         "//bundles/assembly/bazel_inputs/src/diagnostics/iquery:package",
     ],
+    shell_commands = [
+        {
+            "bootfs_package": True,
+            "package": "bootpkg",
+            "components": ["bootpkg"],
+        },
+        {
+            "bootfs_package": True,
+            "package": "driver",
+            "components": ["driver"],
+        },
+        {
+            "bootfs_package": True,
+            "package": "lsdev",
+            "components": ["lsdev"],
+        },
+        {
+            "bootfs_package": True,
+            "package": "iquery",
+            "components": [
+                "iquery",
+                "inspect",
+            ],
+        },
+    ],
 )
 
 # This is a temporary AIB hold wlanphy driver. This driver will eventually
@@ -650,6 +675,12 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/testing/sl4f",
         "//bundles/assembly/bazel_inputs/src/sys/bin/start_sl4f",
     ],
+    shell_commands = [
+        {
+            "package": "start_sl4f",
+            "components": ["start_sl4f"],
+        },
+    ],
 )
 
 # Includes the bin/clock and clkctl developer tools
@@ -912,6 +943,203 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/third_party/sbase:%s_pkg" % bin
         for bin in _sbase_bins_in_base
     ],
+    shell_commands = [
+        {
+            "package": "fs_realm_tools",
+            "components": [
+                "mkfs",
+                "fsck",
+                "mount",
+                "umount",
+            ],
+        },
+        {
+            "package": "donut",
+            "components": ["donut"],
+        },
+        {
+            "package": "time",
+            "components": ["time"],
+        },
+        {
+            "package": "uname",
+            "components": ["uname"],
+        },
+        {
+            "package": "sched",
+            "components": ["sched"],
+        },
+        {
+            "package": "far",
+            "components": ["far"],
+        },
+        {
+            "package": "trace",
+            "components": ["trace"],
+        },
+        {
+            "package": "thrasher",
+            "components": ["thrasher"],
+        },
+        {
+            "package": "camera_benchmark",
+            "components": ["camera_benchmark_bin"],
+        },
+        {
+            "package": "camera_sensor_cli",
+            "components": ["camera_sensor_cli_bin"],
+        },
+        {
+            "package": "lowpanctl",
+            "components": ["lowpanctl"],
+        },
+        {
+            "package": "nc",
+            "components": ["nc"],
+        },
+        {
+            "package": "sockscripter",
+            "components": ["sockscripter"],
+        },
+        {
+            "package": "iperf3",
+            "components": ["iperf3"],
+        },
+        {
+            "package": "tcpdump",
+            "components": ["tcpdump"],
+        },
+        {
+            "package": "mdns-util",
+            "components": ["mdns-util"],
+        },
+        {
+            "package": "net-cli",
+            "components": ["net"],
+        },
+        {
+            "package": "dai-info",
+            "components": ["dai-info"],
+        },
+        {
+            "package": "bt-bredr-profile",
+            "components": ["bt-bredr-profile"],
+        },
+        {
+            "package": "bt-cli",
+            "components": ["bt-cli"],
+        },
+        {
+            "package": "bt-le-broadcast-assistant",
+            "components": ["bt-le-broadcast-assistant"],
+        },
+        {
+            "package": "bt-le-central",
+            "components": ["bt-le-central"],
+        },
+        {
+            "package": "bt-le-peripheral",
+            "components": ["bt-le-peripheral"],
+        },
+        {
+            "package": "bt-pairing-tool",
+            "components": ["bt-pairing-tool"],
+        },
+        {
+            "package": "bt-snoop-cli",
+            "components": ["bt-snoop-cli"],
+        },
+        {
+            "package": "bt-fct-hci",
+            "components": ["bt-fct-hci"],
+        },
+        {
+            "package": "bt-hci-tool",
+            "components": ["bt-hci-tool"],
+        },
+        {
+            "package": "bt-avdtp-tool",
+            "components": ["bt-avdtp-tool"],
+        },
+        {
+            "package": "bt-avrcp-controller",
+            "components": ["bt-avrcp-controller"],
+        },
+        {
+            "package": "bt-hfp-hf-tool",
+            "components": ["bt-hfp-hf-tool"],
+        },
+        {
+            "package": "bt-map-mce-tool",
+            "components": ["bt-map-mce-tool"],
+        },
+        {
+            "package": "display-test",
+            "components": ["display-test"],
+        },
+        {
+            "package": "display-tool",
+            "components": ["display-tool"],
+        },
+        {
+            "package": "display-tweak",
+            "components": ["display-tweak"],
+        },
+        {
+            "package": "magma-info",
+            "components": ["magma-info"],
+        },
+        {
+            "package": "mediasession_cli_tool",
+            "components": ["mediasession_cli_tool"],
+        },
+        {
+            "package": "fdr_cli",
+            "components": ["fdr"],
+        },
+        {
+            "package": "export-ffs",
+            "components": ["export-ffs"],
+        },
+        {
+            "package": "activity-ctl",
+            "components": ["activity_ctl"],
+        },
+        {
+            "package": "input",
+            "components": ["input"],
+        },
+        {
+            "package": "boringssl_tool",
+            "components": ["bssl"],
+        },
+        {
+            "package": "curl",
+            "components": ["curl"],
+        },
+        {
+            "package": "ssh-keygen",
+            "components": ["ssh-keygen"],
+        },
+        {
+            "package": "ssh",
+            "components": ["ssh"],
+        },
+        {
+            "package": "cowsay",
+            "components": ["cowsay"],
+        },
+        {
+            "package": "hwstress-cli",
+            "components": ["hwstress"],
+        },
+    ] + [
+        {
+            "package": bin,
+            "components": [bin],
+        }
+        for bin in sbase_binaries
+    ],
     # Add the sbase_binaries to on_demand_packages, unless they've already been added to
     # base_packages (via _sbase_bins_in_base).
     on_demand_packages = [
@@ -979,6 +1207,31 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/developer/forensics/snapshot:pkg",
         # log_listener shell tool.
         "//bundles/assembly/bazel_inputs/src/diagnostics/log_listener:log_listener_shell_pkg",
+    ],
+    shell_commands = [
+        {
+            "package": "remote-control",
+            "components": [
+                "fdomain_runner",
+                "remote_control_runner",
+                "remote_control_bin",
+            ],
+        },
+        {
+            "package": "scp",
+            "components": ["scp"],
+        },
+        {
+            "package": "snapshot",
+            "components": ["snapshot"],
+        },
+        {
+            "package": "log_listener_shell",
+            "components": [
+                "log",
+                "log_listener",
+            ],
+        },
     ],
 )
 
@@ -1252,6 +1505,16 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/diagnostics/detect:triage-detect",
         "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkgctl",
         "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/update",
+    ],
+    shell_commands = [
+        {
+            "package": "pkgctl",
+            "components": ["pkgctl"],
+        },
+        {
+            "package": "update-bin",
+            "components": ["update"],
+        },
     ],
 )
 
@@ -1638,6 +1901,13 @@ assembly_input_bundle(
         # are in the same package and loaded using relative urls.
         "//bundles/assembly/bazel_inputs/src/sys/test_manager:pkg_for_bootstrap",
     ],
+    shell_commands = [
+        {
+            "bootfs_package": True,
+            "package": "run-test-suite",
+            "components": ["run-test-suite"],
+        },
+    ],
 )
 
 # This AIB enables tracing support for userdebug configs
@@ -1695,6 +1965,16 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/sys/run_test_suite:run_test_suite",
         # CPU profiler
         "//bundles/assembly/bazel_inputs/src/performance/experimental/profiler",
+    ],
+    shell_commands = [
+        {
+            "package": "run_test_suite",
+            "components": ["run-test-suite"],
+        },
+        {
+            "package": "fuzzctl",
+            "components": ["fuzz_ctl"],
+        },
     ],
 )
 
@@ -1914,6 +2194,12 @@ assembly_input_bundle(
             "//bundles/assembly/bazel_inputs/src/virtualization/bin/vmm_launcher:vmm_launcher",
         ],
     }),
+    shell_commands = [
+        {
+            "package": "guest",
+            "components": ["guest"],
+        },
+    ],
 )
 
 # AIB to enable running Fuchsia as a virtualized guest.
@@ -2090,6 +2376,12 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/wlan/tools/wlantool:wlan-dev",
     ],
+    shell_commands = [
+        {
+            "package": "wlan",
+            "components": ["wlan-dev"],
+        },
+    ],
 )
 
 # WLAN support for WEP and WPA
@@ -2174,6 +2466,24 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/dsputil",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_util",
     ],
+    shell_commands = [
+        {
+            "package": "audio-codec-ctl",
+            "components": ["audio-codec-ctl"],
+        },
+        {
+            "package": "audio-driver-ctl",
+            "components": ["audio-driver-ctl"],
+        },
+        {
+            "package": "dsputil",
+            "components": ["dsputil"],
+        },
+        {
+            "package": "virtual_audio_util",
+            "components": ["virtual_audio"],
+        },
+    ],
 )
 
 # Tools for interactive debugging/development of platform full-stack audio
@@ -2191,6 +2501,36 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/vol",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/wav_player",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/wav_recorder",
+    ],
+    shell_commands = [
+        {
+            "package": "audio-capture-timestamp-validator",
+            "components": ["audio-capture-timestamp-validator"],
+        },
+        {
+            "package": "audio-effects-ctl",
+            "components": ["audio-effects-ctl"],
+        },
+        {
+            "package": "audio_listener",
+            "components": ["audio_listener"],
+        },
+        {
+            "package": "signal_generator",
+            "components": ["signal_generator"],
+        },
+        {
+            "package": "vol",
+            "components": ["vol"],
+        },
+        {
+            "package": "wav_player",
+            "components": ["wav_player"],
+        },
+        {
+            "package": "wav_recorder",
+            "components": ["wav_recorder"],
+        },
     ],
 )
 
@@ -2264,6 +2604,12 @@ assembly_input_bundle(
     ],
     cache_packages = [
         "//bundles/assembly/bazel_inputs/src/media/codec/examples:encode-file",
+    ],
+    shell_commands = [
+        {
+            "package": "encode-file",
+            "components": ["encode-file"],
+        },
     ],
 )
 
@@ -2575,6 +2921,17 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/devices/hrtimer/bin:hrtimer-ctl",
         "//bundles/assembly/bazel_inputs/src/power/system-activity-governor-controller:package",
+    ],
+    shell_commands = [
+        {
+            "bootfs_package": True,
+            "package": "powerutil",
+            "components": ["powerutil"],
+        },
+        {
+            "package": "hrtimer-ctl",
+            "components": ["hrtimer-ctl"],
+        },
     ],
 )
 

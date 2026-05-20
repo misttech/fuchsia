@@ -16,13 +16,10 @@ from assembly.assembly_input_bundle import AssemblyInputBundle
 UNSUPPORTED_FIELDS = {
     "kernel",
     "qemu_kernel",
-    "boot_args",
     "bootfs_files",
     "config_data",
     "blobs",
     "drivers",
-    "bootfs_shell_commands",
-    "shell_commands",
     "packages_to_compile",
     "bootfs_files_package",
     "memory_buckets",
