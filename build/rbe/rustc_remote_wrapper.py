@@ -411,8 +411,8 @@ class RustRemoteAction(object):
         return self._rust_action.target
 
     @property
-    def rust_sysroot(self) -> Optional[Path]:
-        return self._rust_action.rust_sysroot
+    def ensure_rust_sysroot(self) -> Path:
+        return self._rust_action.ensure_rust_sysroot
 
     @property
     def c_sysroot(self) -> Optional[Path]:
@@ -556,18 +556,21 @@ class RustRemoteAction(object):
             # else
             yield tok
 
-        # TODO(https://fxbug.dev/42057067): relocate rust sysroot to
-        # be indepedent of host-platform to make remote commands
-        # match for better caching.
-        # The rust sysroot is home to the standard libraries for
-        # all target platforms.
-        # Fuchsia currently uses the default sysroot location which is
-        # based on the *host* compiler path, but the remote compiler's
-        # default sysroot will be different.
-        # Inform the remote compiler to use the location of the sysroot
-        # of the *host* compiler.
-        fuchsia_use_host_rust_sysroot = self._rust_action.default_rust_sysroot()
-        yield f"--sysroot={fuchsia_use_host_rust_sysroot}"
+        if not self._rust_action.explicit_rust_sysroot:
+            # TODO(https://fxbug.dev/42057067): relocate rust sysroot to
+            # be independent of host-platform to make remote commands
+            # match for better caching.
+            # The rust sysroot is home to the standard libraries for
+            # all target platforms.
+            # Fuchsia currently uses the default sysroot location which is
+            # based on the *host* compiler path, but the remote compiler's
+            # default sysroot will be different.
+            # Inform the remote compiler to use the location of the sysroot
+            # of the *host* compiler.
+            fuchsia_use_host_rust_sysroot = (
+                self._rust_action.default_rust_sysroot()
+            )
+            yield f"--sysroot={fuchsia_use_host_rust_sysroot}"
 
     def _cleanup(self) -> None:
         _remove_files(self._cleanup_files)
@@ -703,10 +706,8 @@ class RustRemoteAction(object):
         # instead of whole directories.
         if not self.target:
             return
-        if not self.rust_sysroot:
-            raise ValueError("self.rust_sysroot is None")
         libunwind_a = (
-            self.rust_sysroot
+            self.ensure_rust_sysroot
             / fuchsia.rust_stdlib_subdir(  # relative to self.working_dir
                 target_triple=self.target
             )
@@ -723,10 +724,8 @@ class RustRemoteAction(object):
         """
         if not self.target:
             return
-        if not self.rust_sysroot:
-            raise ValueError("self.rust_sysroot is None")
         stdlib_dir = (
-            self.rust_sysroot
+            self.ensure_rust_sysroot
             / fuchsia.rust_stdlib_subdir(  # relative to self.working_dir
                 target_triple=self.target
             )

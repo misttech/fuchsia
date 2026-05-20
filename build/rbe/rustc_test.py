@@ -314,7 +314,8 @@ class RustActionTests(unittest.TestCase):
                 "foo.rlib",
             ]
         )
-        self.assertEqual(r.rust_sysroot, rust_sysroot)
+        self.assertEqual(r.explicit_rust_sysroot, rust_sysroot)
+        self.assertEqual(r.ensure_rust_sysroot, rust_sysroot)
 
     def test_fuse_ld(self) -> None:
         ld = Path("gold")
@@ -356,7 +357,7 @@ class RustActionTests(unittest.TestCase):
             "default_rust_sysroot",
             return_value=fake_default_sysroot,
         ) as mock_default:
-            self.assertEqual(r.rust_sysroot, fake_default_sysroot)
+            self.assertEqual(r.ensure_rust_sysroot, fake_default_sysroot)
         mock_default.assert_called_with()
 
     def test_target(self) -> None:

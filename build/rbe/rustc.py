@@ -647,9 +647,14 @@ class RustAction(object):
         return sysroot_rel
 
     @property
-    def rust_sysroot(self) -> Path:
+    def explicit_rust_sysroot(self) -> Optional[Path]:
+        """The sysroot specified on the command-line, if any."""
+        return self._attributes.sysroot
+
+    @property
+    def ensure_rust_sysroot(self) -> Path:
         """This is where the target rustlibs for all platforms live."""
-        return self._attributes.sysroot or self.default_rust_sysroot()
+        return self.explicit_rust_sysroot or self.default_rust_sysroot()
 
     @property
     def c_sysroot(self) -> Optional[Path]:

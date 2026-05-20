@@ -1376,6 +1376,43 @@ class RustRemoteActionPrepareTests(unittest.TestCase):
         # script should be in remote_action inputs
         self.assertIn(script, r.remote_action.inputs_relative_to_working_dir)
 
+    def test_remote_compile_command_explicit_sysroot(self) -> None:
+        exec_root = Path("/home/project")
+        working_dir = exec_root / "build-here"
+        compiler = Path("../tools/bin/rustc")
+        source = Path("../foo/src/lib.rs")
+        rlib = Path("obj/foo.rlib")
+        explicit_sysroot = Path("../my/custom/sysroot")
+        command = _strs(
+            [
+                compiler,
+                source,
+                "-o",
+                rlib,
+                f"--sysroot={explicit_sysroot}",
+            ]
+        )
+        r = rustc_remote_wrapper.RustRemoteAction(
+            ["--", *command],
+            exec_root=exec_root,
+            working_dir=working_dir,
+            auto_reproxy=False,
+        )
+        mocks = self.generate_prepare_mocks(
+            source_files_path_contents=[source],
+            compiler_shlibs=[Path("fake/lib/librustc.so")],
+        )
+        with contextlib.ExitStack() as stack:
+            for m in mocks:
+                stack.enter_context(m)
+            prepare_status = r.prepare()
+            remote_command = list(r.remote_compile_command())
+
+        self.assertEqual(prepare_status, 0)  # success
+        # Ensure exactly one --sysroot was present and it matches the explicit one.
+        sysroot_flags = [t for t in remote_command if t.startswith("--sysroot")]
+        self.assertEqual(sysroot_flags, [f"--sysroot={explicit_sysroot}"])
+
 
 class MainTests(unittest.TestCase):
     def test_help_implicit(self) -> None:
