@@ -286,6 +286,7 @@ async fn run_usb_link<S: AsyncRead + AsyncWrite + Send + 'static>(
             let _ = sender.send(UsbVsockHostEvent::AddedCid { cid, serial: serial.clone() }).await;
         });
 
+        log::info!("USB link established for {debug_name} now usb:cid:{cid}");
         cid
     } else {
         log::warn!(device:? = debug_name; "Host object disappeared before connection established");
