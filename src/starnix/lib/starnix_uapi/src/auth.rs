@@ -568,12 +568,14 @@ impl Credentials {
         if self.securebits.contains(SecureBits::NO_SETUID_FIXUP) {
             return;
         }
-        if !self.securebits.contains(SecureBits::KEEP_CAPS)
-            && (prev.uid == 0 || prev.euid == 0 || prev.saved_uid == 0)
-            && (self.uid != 0 && self.euid != 0 && self.saved_uid != 0)
-        {
-            self.cap_permitted = Capabilities::empty();
-            self.cap_effective = Capabilities::empty();
+        let was_any_zero = prev.uid == 0 || prev.euid == 0 || prev.saved_uid == 0;
+        let is_all_nonzero = self.uid != 0 && self.euid != 0 && self.saved_uid != 0;
+
+        if was_any_zero && is_all_nonzero {
+            if !self.securebits.contains(SecureBits::KEEP_CAPS) {
+                self.cap_permitted = Capabilities::empty();
+                self.cap_effective = Capabilities::empty();
+            }
             self.cap_ambient = Capabilities::empty();
         }
         // If the effective user ID is changed from 0 to nonzero, then

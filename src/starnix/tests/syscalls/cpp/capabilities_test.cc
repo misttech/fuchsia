@@ -372,6 +372,18 @@ TEST_F(CapsExecTest, ChangingFromRootUidDropsAllCapabilities) {
 
   ASSERT_EQ(geteuid(), kRootUid);
   helper.RunInForkedProcess([&]() {
+    // Effective capabilities are cleared when the effective UID transitions from root
+    // to non-root, so the effective UID before setting up the capabilities.
+    SAFE_SYSCALL(setresuid(kUser1Uid, kUser1Uid, 0));
+
+    // Set CAP_SYSLOG effective, inheritable and ambient, so we can check that the
+    // ambient and effective sets are cleared.
+    test_helper::SetCapabilityEffective(CAP_SYSLOG);
+    test_helper::SetCapabilityInheritable(CAP_SYSLOG);
+    test_helper::SetCapabilityAmbient(CAP_SYSLOG);
+    ASSERT_TRUE(test_helper::HasCapabilityAmbient(CAP_SYSLOG));
+    ASSERT_TRUE(test_helper::HasCapabilityEffective(CAP_SYSLOG));
+
     // Changing from a root uid to a non-root uid drops all capabilities.
     SAFE_SYSCALL(setresuid(kUser1Uid, kUser1Uid, kUser1Uid));
 
@@ -380,7 +392,7 @@ TEST_F(CapsExecTest, ChangingFromRootUidDropsAllCapabilities) {
       EXPECT_FALSE(test_helper::HasCapabilityAmbient(cap));
       EXPECT_FALSE(test_helper::HasCapabilityEffective(cap));
       EXPECT_FALSE(test_helper::HasCapabilityPermitted(cap));
-      EXPECT_FALSE(test_helper::HasCapabilityInheritable(cap));
+      EXPECT_EQ(test_helper::HasCapabilityInheritable(cap), cap == CAP_SYSLOG);
     }
   });
 }
@@ -390,7 +402,23 @@ TEST_F(CapsExecTest, ChangingFromRootUidWithKeepCapsDropsAllEffectiveCapabilitie
 
   ASSERT_EQ(geteuid(), kRootUid);
   helper.RunInForkedProcess([&]() {
+    // Effective capabilities are cleared when the effective UID transitions from root
+    // to non-root, so the effective UID before setting up the capabilities.
+    SAFE_SYSCALL(setresuid(kUser1Uid, kUser1Uid, 0));
+
+    // Set CAP_SYSLOG effective, inheritable and ambient, so we can check that the
+    // ambient bit is cleared even if SECBITS_KEEP_CAPS is set.
+    test_helper::SetCapabilityEffective(CAP_SYSLOG);
+    test_helper::SetCapabilityInheritable(CAP_SYSLOG);
+    test_helper::SetCapabilityAmbient(CAP_SYSLOG);
+    ASSERT_TRUE(test_helper::HasCapabilityAmbient(CAP_SYSLOG));
+    ASSERT_TRUE(test_helper::HasCapabilityEffective(CAP_SYSLOG));
+
+    // Required in order to be able to set `SECBIT_KEEP_CAPS`.
+    test_helper::SetCapabilityEffective(CAP_SETPCAP);
     SAFE_SYSCALL(prctl(PR_SET_SECUREBITS, SECBIT_KEEP_CAPS));
+    test_helper::UnsetCapabilityEffective(CAP_SETPCAP);
+
     // With SECBIT_KEEP_CAPS, changing from a root euid to a non-root euid drops all effective
     // capabilities.
     SAFE_SYSCALL(setresuid(kUser1Uid, kUser1Uid, kUser1Uid));
@@ -398,9 +426,9 @@ TEST_F(CapsExecTest, ChangingFromRootUidWithKeepCapsDropsAllEffectiveCapabilitie
     for (int cap = 0; cap <= cap_last_cap_; cap++) {
       EXPECT_TRUE(test_helper::HasCapabilityBounding(cap));
       EXPECT_FALSE(test_helper::HasCapabilityAmbient(cap));
-      EXPECT_FALSE(test_helper::HasCapabilityEffective(cap));
+      EXPECT_EQ(test_helper::HasCapabilityEffective(cap), cap == CAP_SYSLOG);
       EXPECT_TRUE(test_helper::HasCapabilityPermitted(cap));
-      EXPECT_FALSE(test_helper::HasCapabilityInheritable(cap));
+      EXPECT_EQ(test_helper::HasCapabilityInheritable(cap), cap == CAP_SYSLOG);
     }
   });
 }
