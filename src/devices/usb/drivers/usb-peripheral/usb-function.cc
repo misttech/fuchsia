@@ -20,6 +20,7 @@
 namespace usb_peripheral {
 
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+namespace ffunction = fuchsia_hardware_usb_function;
 
 zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent,
                                    const std::shared_ptr<fdf::Namespace>& incoming,
@@ -81,8 +82,8 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
     self->peripheral_->ReleaseResources(self->index_);
   });
 
-  zx::result result = outgoing->AddService<fuchsia_hardware_usb_function::UsbFunctionService>(
-      fuchsia_hardware_usb_function::UsbFunctionService::InstanceHandler({
+  zx::result result = outgoing->AddService<ffunction::UsbFunctionService>(
+      ffunction::UsbFunctionService::InstanceHandler({
           .device = bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure),
       }),
       name_);
@@ -107,7 +108,7 @@ zx::result<> UsbFunction::AddChild(fidl::UnownedClientEnd<fuchsia_driver_framewo
   };
 
   std::vector offers = compat_server_.CreateOffers2();
-  offers.push_back(fdf::MakeOffer2<fuchsia_hardware_usb_function::UsbFunctionService>(name_));
+  offers.push_back(fdf::MakeOffer2<ffunction::UsbFunctionService>(name_));
   offers.push_back(mac_address_metadata_server.MakeOffer());
   offers.push_back(serial_number_metadata_server.MakeOffer());
 
@@ -159,8 +160,7 @@ UsbFunction::~UsbFunction() {
     // This also ensures teardown synchronization in the parent, keeping the system
     // clean by the time the parent's completion callbacks execute.
     fdf::debug("UsbFunction destructor: cleaning up child {}", name_);
-    if (zx::result result =
-            outgoing_->RemoveService<fuchsia_hardware_usb_function::UsbFunctionService>(name_);
+    if (zx::result result = outgoing_->RemoveService<ffunction::UsbFunctionService>(name_);
         result.is_error()) {
       fdf::warn("Failed to remove usb-function service for {}: {}", name_, result);
     }
@@ -211,7 +211,7 @@ void UsbFunction::AllocResources(AllocResourcesRequest& request,
     return;
   }
 
-  fuchsia_hardware_usb_function::UsbFunctionAllocResourcesResponse response;
+  ffunction::UsbFunctionAllocResourcesResponse response;
   response.interface_nums(std::move(result->interface_nums));
   response.endpoint_addrs(std::move(result->endpoint_addrs));
   response.string_indices(std::move(result->string_indices));
@@ -341,7 +341,7 @@ void UsbFunction::FunctionEventHandler::on_fidl_error(fidl::UnbindInfo info) {
 }
 
 void UsbFunction::FunctionEventHandler::handle_unknown_event(
-    fidl::UnknownEventMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata) {
+    fidl::UnknownEventMetadata<ffunction::UsbFunctionInterface> metadata) {
   fdf::error("Unknown event on function interface: {}", metadata.event_ordinal);
 }
 
@@ -447,8 +447,7 @@ void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,
     self->function_intf_->SetConfigured(configured, fspeed)
         .ThenExactlyOnce(
             [completer = std::move(completer)](
-                fidl::WireUnownedResult<
-                    fuchsia_hardware_usb_function::UsbFunctionInterface::SetConfigured>&
+                fidl::WireUnownedResult<ffunction::UsbFunctionInterface::SetConfigured>&
                     result) mutable {
               if (!result.ok()) {
                 fdf::error("UsbFunctionInterface.SetConfigured FIDL call failed: {}",
@@ -471,8 +470,7 @@ void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,
         .ThenExactlyOnce(
             [weak_this = weak_from_this(), send_set_configured = std::move(send_set_configured),
              completer = std::move(completer)](
-                fidl::WireUnownedResult<
-                    fuchsia_hardware_usb_function::UsbFunctionInterface::SetConfigured>&
+                fidl::WireUnownedResult<ffunction::UsbFunctionInterface::SetConfigured>&
                     result) mutable {
               if (!result.ok()) {
                 fdf::error("UsbFunctionInterface.SetConfigured FIDL call failed on deconfigure: {}",
@@ -505,8 +503,7 @@ void UsbFunction::SetInterface(uint8_t interface, uint8_t alt_setting,
 
   function_intf_->SetInterface(interface, alt_setting)
       .ThenExactlyOnce([completer = std::move(completer)](
-                           fidl::WireUnownedResult<
-                               fuchsia_hardware_usb_function::UsbFunctionInterface::SetInterface>&
+                           fidl::WireUnownedResult<ffunction::UsbFunctionInterface::SetInterface>&
                                result) mutable {
         if (!result.ok()) {
           fdf::error("UsbFunctionInterface.SetInterface FIDL call failed: {}",
@@ -527,9 +524,8 @@ void UsbFunction::SetInterface(uint8_t interface, uint8_t alt_setting,
 // TODO(https://fxbug.dev/493657863): This call should be async like
 // SetConfigured and SetInterface once we can guarantee a single-dispatch of
 // USB_RECIP_DEVICE requests to bound functions.
-zx::result<std::vector<uint8_t>> UsbFunction::Control(
-    const fuchsia_hardware_usb_descriptor::wire::UsbSetup& setup,
-    cpp20::span<uint8_t> write_buffer) {
+zx::result<std::vector<uint8_t>> UsbFunction::Control(const fdescriptor::wire::UsbSetup& setup,
+                                                      cpp20::span<uint8_t> write_buffer) {
   TRACE_DURATION("usb-peripheral", __func__);
   if (!function_intf_.is_valid()) {
     fdf::error("Control failed as the interface is invalid.");
@@ -551,8 +547,7 @@ zx::result<std::vector<uint8_t>> UsbFunction::Control(
     return zx::error(result->error_value());
   }
 
-  fuchsia_hardware_usb_function::wire::UsbFunctionInterfaceControlResponse* response =
-      result->value();
+  ffunction::wire::UsbFunctionInterfaceControlResponse* response = result->value();
   size_t actual_read = response->read.size();
   if (actual_read > expected_read_size) {
     fdf::error("Control read too much data: {} > {}", actual_read, expected_read_size);
@@ -602,8 +597,7 @@ zx_status_t UsbFunction::CommonEndpointClearStall(uint8_t ep_address) {
 }
 
 zx_status_t UsbFunction::CommonEndpointConfigure(
-    uint8_t ep_address,
-    fuchsia_hardware_usb_function::EndpointConfiguration endpoint_configuration) {
+    uint8_t ep_address, ffunction::EndpointConfiguration endpoint_configuration) {
   if (!endpoint_configuration.descriptor().has_value()) {
     return ZX_ERR_INVALID_ARGS;
   }

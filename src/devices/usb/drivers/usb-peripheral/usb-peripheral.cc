@@ -37,6 +37,13 @@
 
 namespace usb_peripheral {
 
+namespace fdci = fuchsia_hardware_usb_dci;
+namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+namespace fendpoint = fuchsia_hardware_usb_endpoint;
+namespace ffunction = fuchsia_hardware_usb_function;
+namespace fperipheral = fuchsia_hardware_usb_peripheral;
+namespace fphy = fuchsia_hardware_usb_phy;
+
 zx_status_t UsbPeripheral::UsbDciCancelAll(uint8_t ep_address) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
   fidl::Arena arena;
@@ -55,8 +62,8 @@ zx_status_t UsbPeripheral::UsbDciCancelAll(uint8_t ep_address) {
   return ZX_OK;
 }
 
-zx_status_t UsbPeripheral::ConnectToEndpoint(
-    uint8_t ep_address, fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> ep) {
+zx_status_t UsbPeripheral::ConnectToEndpoint(uint8_t ep_address,
+                                             fidl::ServerEnd<fendpoint::Endpoint> ep) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
 
   auto result = dci_->ConnectToEndpoint(ep_address, std::move(ep));
@@ -73,7 +80,7 @@ zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
   TRACE_DURATION("usb-peripheral", __func__);
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   executor_.emplace(fdf::Dispatcher::GetCurrent()->async_dispatcher());
-  zx::result dci_fidl = incoming_->Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  zx::result dci_fidl = incoming_->Connect<fdci::UsbDciService::Device>();
   if (dci_fidl.is_error()) {
     fdf::error("Failed to connect dci fidl protocol: {}", dci_fidl);
   } else {
@@ -102,8 +109,7 @@ zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
   // Starting USB mode is determined from device metadata.
   // We read initial value and store it in dev->usb_mode, but do not actually
   // enable it until after all of our functions have bound.
-  zx::result metadata =
-      fdf_metadata::GetMetadataIfExists<fuchsia_hardware_usb_phy::Metadata>(incoming_);
+  zx::result metadata = fdf_metadata::GetMetadataIfExists<fphy::Metadata>(incoming_);
   if (metadata.is_error()) {
     fdf::error("Failed to get metadata: {}", metadata);
     return metadata.take_error();
@@ -133,11 +139,10 @@ zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
   child_ = std::move(child.value());
 
   // Advertise a service:
-  fuchsia_hardware_usb_peripheral::Service::InstanceHandler handler({
+  fperipheral::Service::InstanceHandler handler({
       .device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
   });
-  zx::result add_result =
-      outgoing()->AddService<fuchsia_hardware_usb_peripheral::Service>(std::move(handler));
+  zx::result add_result = outgoing()->AddService<fperipheral::Service>(std::move(handler));
   if (add_result.is_error()) {
     fdf::error("Failed to add service: {}", add_result);
     return add_result.take_error();
@@ -477,8 +482,7 @@ zx_status_t UsbPeripheral::CheckAndStartController() {
   if (send_event) {
     fdf::info("UsbPeripheral: Sending FunctionRegistered event");
     listener_->FunctionRegistered().Then(
-        [](fidl::WireUnownedResult<fuchsia_hardware_usb_peripheral::Events::FunctionRegistered>&
-               result) {
+        [](fidl::WireUnownedResult<fperipheral::Events::FunctionRegistered>& result) {
           if (!result.ok()) {
             fdf::error("Failed to send FunctionRegistered event: {}", result.status());
           }
@@ -605,17 +609,17 @@ zx_status_t UsbPeripheral::AllocInterfaceLocked(size_t function_index, uint8_t* 
   return ZX_ERR_NO_RESOURCES;
 }
 
-zx_status_t UsbPeripheral::AllocEndpointLocked(
-    size_t function_index, fuchsia_hardware_usb_function::EndpointDirection direction,
-    uint8_t* out_address) {
+zx_status_t UsbPeripheral::AllocEndpointLocked(size_t function_index,
+                                               ffunction::EndpointDirection direction,
+                                               uint8_t* out_address) {
   TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index, "direction",
                  fidl::ToUnderlying(direction));
   uint8_t start, end;
 
-  if (direction == fuchsia_hardware_usb_function::EndpointDirection::kOut) {
+  if (direction == ffunction::EndpointDirection::kOut) {
     start = kOutEpStart;
     end = kOutEpEnd;
-  } else if (direction == fuchsia_hardware_usb_function::EndpointDirection::kIn) {
+  } else if (direction == ffunction::EndpointDirection::kIn) {
     start = kInEpStart;
     end = kInEpEnd;
   } else {
@@ -637,8 +641,7 @@ zx_status_t UsbPeripheral::AllocEndpointLocked(
 
 zx::result<UsbPeripheral::ResourceAllocations> UsbPeripheral::AllocResources(
     size_t function_index, uint8_t interface_count,
-    std::span<fuchsia_hardware_usb_function::EndpointResource> endpoints,
-    std::span<std::string> strings) {
+    std::span<ffunction::EndpointResource> endpoints, std::span<std::string> strings) {
   TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index);
   fbl::AutoLock lock(&lock_);
 
@@ -678,7 +681,7 @@ zx::result<UsbPeripheral::ResourceAllocations> UsbPeripheral::AllocResources(
     allocations.interface_nums.push_back(intf_num);
   }
 
-  for (fuchsia_hardware_usb_function::EndpointResource& ep : endpoints) {
+  for (ffunction::EndpointResource& ep : endpoints) {
     uint8_t ep_addr;
     zx_status_t status = AllocEndpointLocked(function_index, ep.direction(), &ep_addr);
     if (status != ZX_OK) {
@@ -1099,7 +1102,7 @@ zx_status_t UsbPeripheral::AddFunctionDevices() {
   return ZX_OK;
 }
 
-void UsbPeripheral::CommonControl(const fuchsia_hardware_usb_descriptor::wire::UsbSetup& setup,
+void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
                                   cpp20::span<uint8_t> write_buffer,
                                   fit::callback<void(zx::result<std::vector<uint8_t>>)> completer) {
   uint8_t request_type = setup.bm_request_type;
@@ -1416,8 +1419,8 @@ void UsbPeripheral::SetStateChangeListener(SetStateChangeListenerRequestView req
                                            SetStateChangeListenerCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__);
   fbl::AutoLock lock(&lock_);
-  listener_ = fidl::WireSharedClient<fuchsia_hardware_usb_peripheral::Events>(
-      std::move(request->listener), dispatcher());
+  listener_ =
+      fidl::WireSharedClient<fperipheral::Events>(std::move(request->listener), dispatcher());
 }
 
 void UsbPeripheral::Stop(fdf::StopCompleter completer) {

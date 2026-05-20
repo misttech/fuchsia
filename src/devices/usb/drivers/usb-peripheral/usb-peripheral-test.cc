@@ -21,7 +21,6 @@
 #include <cstring>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <vector>
 
@@ -36,6 +35,9 @@
 
 namespace fdci = fuchsia_hardware_usb_dci;
 namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+namespace fendpoint = fuchsia_hardware_usb_endpoint;
+namespace ffunction = fuchsia_hardware_usb_function;
+namespace fperipheral = fuchsia_hardware_usb_peripheral;
 
 namespace usb_peripheral {
 
@@ -58,7 +60,7 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
                                            fidl::kIgnoreBindingClosure)});
   }
 
-  // fuchsia_hardware_usb_dci::UsbDci protocol.
+  // fdci::UsbDci protocol.
   void ConnectToEndpoint(ConnectToEndpointRequestView req,
                          ConnectToEndpointCompleter::Sync& completer) override {
     endpoints_[req->ep_addr] = std::move(req->ep);
@@ -130,7 +132,7 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
   }
 
-  void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_usb_dci::UsbDci> metadata,
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fdci::UsbDci> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {}
 
   fidl::ClientEnd<fdci::UsbDciInterface> TakeClient() {
@@ -147,7 +149,7 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
     stop_completion_ = stop_completion;
   }
 
-  fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> TakeEndpoint(uint8_t addr) {
+  fidl::ServerEnd<fendpoint::Endpoint> TakeEndpoint(uint8_t addr) {
     auto it = endpoints_.find(addr);
     if (it == endpoints_.end()) {
       return {};
@@ -174,12 +176,11 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   libsync::Completion* stop_completion_ = nullptr;
   fidl::ServerBindingGroup<fdci::UsbDci> bindings_;
   std::optional<fidl::ClientEnd<fdci::UsbDciInterface>> client_;
-  std::map<uint8_t, fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint>> endpoints_;
+  std::map<uint8_t, fidl::ServerEnd<fendpoint::Endpoint>> endpoints_;
 };
 
-class FakeUsbFunction
-    : public fidl::testing::WireTestBase<fuchsia_hardware_usb_function::UsbFunctionInterface>,
-      public std::enable_shared_from_this<FakeUsbFunction> {
+class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctionInterface>,
+                        public std::enable_shared_from_this<FakeUsbFunction> {
  public:
   void Control(ControlRequestView req, ControlCompleter::Sync& completer) override {
     control_called_ = true;
@@ -225,17 +226,16 @@ class FakeUsbFunction
     unbound_completion_.Reset();
   }
 
-  void handle_unknown_method(
-      fidl::UnknownMethodMetadata<fuchsia_hardware_usb_function::UsbFunctionInterface> metadata,
-      fidl::UnknownMethodCompleter::Sync& completer) override {}
+  void handle_unknown_method(fidl::UnknownMethodMetadata<ffunction::UsbFunctionInterface> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
 
   void Bind(fdf::UnownedSynchronizedDispatcher dispatcher,
-            fidl::ServerEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> server_end) {
+            fidl::ServerEnd<ffunction::UsbFunctionInterface> server_end) {
     dispatcher_ = std::move(dispatcher);
     binding_.emplace(fidl::BindServer(
         dispatcher_.value()->async_dispatcher(), std::move(server_end), shared_from_this(),
         [](FakeUsbFunction* impl, fidl::UnbindInfo info,
-           fidl::ServerEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> server_end) {
+           fidl::ServerEnd<ffunction::UsbFunctionInterface> server_end) {
           impl->unbound_completion_.Signal();
         }));
   }
@@ -276,11 +276,10 @@ class FakeUsbFunction
   uint8_t alt_setting_ = 0;
 
   std::optional<fdf::UnownedSynchronizedDispatcher> dispatcher_;
-  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_function::UsbFunctionInterface>>
-      binding_;
+  std::optional<fidl::ServerBindingRef<ffunction::UsbFunctionInterface>> binding_;
 };
 
-class FakeEvents : public fidl::WireServer<fuchsia_hardware_usb_peripheral::Events> {
+class FakeEvents : public fidl::WireServer<fperipheral::Events> {
  public:
   FakeEvents() = default;
   ~FakeEvents() { Unbind(); }
@@ -297,7 +296,7 @@ class FakeEvents : public fidl::WireServer<fuchsia_hardware_usb_peripheral::Even
     cleared_called_ = false;
   }
 
-  void Bind(fidl::ServerEnd<fuchsia_hardware_usb_peripheral::Events> server_end) {
+  void Bind(fidl::ServerEnd<fperipheral::Events> server_end) {
     binding_.emplace(fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
                                       std::move(server_end), this));
   }
@@ -311,7 +310,7 @@ class FakeEvents : public fidl::WireServer<fuchsia_hardware_usb_peripheral::Even
 
  private:
   bool cleared_called_ = false;
-  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_peripheral::Events>> binding_;
+  std::optional<fidl::ServerBindingRef<fperipheral::Events>> binding_;
 };
 
 class UsbPeripheralTestEnvironment : public fdf_testing::Environment {
@@ -465,8 +464,7 @@ class UsbPeripheralHarness : public ::testing::Test {
   }
 
   void RegisterFakeEvents(std::shared_ptr<FakeEvents> fake_events) {
-    auto [client_end, server_end] =
-        fidl::Endpoints<fuchsia_hardware_usb_peripheral::Events>::Create();
+    auto [client_end, server_end] = fidl::Endpoints<fperipheral::Events>::Create();
     fake_events->Bind(std::move(server_end));
     auto client = Client();
     ASSERT_TRUE(client->SetStateChangeListener(std::move(client_end)).ok());
@@ -493,42 +491,37 @@ class UsbPeripheralHarness : public ::testing::Test {
 
   fdf_testing::BackgroundDriverTest<UsbPeripheralTestConfig>& dut() { return driver_test_; }
 
-  fidl::WireSyncClient<fuchsia_hardware_usb_peripheral::Device> Client() {
-    auto client_end = driver_test_.Connect<fuchsia_hardware_usb_peripheral::Service::Device>();
+  fidl::WireSyncClient<fperipheral::Device> Client() {
+    auto client_end = driver_test_.Connect<fperipheral::Service::Device>();
     ZX_ASSERT_MSG(client_end.is_ok(), "Failed to connect to peripheral service: %s",
                   client_end.status_string());
-    return fidl::WireSyncClient<fuchsia_hardware_usb_peripheral::Device>{
-        std::move(client_end.value())};
+    return fidl::WireSyncClient<fperipheral::Device>{std::move(client_end.value())};
   }
 
-  zx::result<fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction>> ConnectFunction(
+  zx::result<fidl::WireSyncClient<ffunction::UsbFunction>> ConnectFunction(
       std::string name = "function-000") {
     ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
-    zx::result result =
-        dut().template Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>(name);
+    zx::result result = dut().template Connect<ffunction::UsbFunctionService::Device>(name);
     if (result.is_error()) {
       return result.take_error();
     }
     ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
-    return zx::ok(fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction>(
-        std::move(result.value())));
+    return zx::ok(fidl::WireSyncClient<ffunction::UsbFunction>(std::move(result.value())));
   }
 
-  zx::result<fidl::WireSyncClient<fuchsia_hardware_usb_peripheral::Device>> ConnectPeripheral() {
-    zx::result result = dut().template Connect<fuchsia_hardware_usb_peripheral::Service::Device>();
+  zx::result<fidl::WireSyncClient<fperipheral::Device>> ConnectPeripheral() {
+    zx::result result = dut().template Connect<fperipheral::Service::Device>();
     if (result.is_error()) {
       return result.take_error();
     }
-    return zx::ok(
-        fidl::WireSyncClient<fuchsia_hardware_usb_peripheral::Device>(std::move(result.value())));
+    return zx::ok(fidl::WireSyncClient<fperipheral::Device>(std::move(result.value())));
   }
 
   zx::result<std::tuple<std::shared_ptr<FakeUsbFunction>,
-                        fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface>>>
+                        fidl::ClientEnd<ffunction::UsbFunctionInterface>>>
   BindFakeFunction() {
     ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
-    zx::result endpoints =
-        fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
+    zx::result endpoints = fidl::CreateEndpoints<ffunction::UsbFunctionInterface>();
     if (endpoints.is_error()) {
       return endpoints.take_error();
     }
@@ -556,12 +549,12 @@ template <bool manage_lifetime>
 class PeripheralReadyTestBase : public UsbPeripheralHarness<manage_lifetime> {
  public:
   struct FunctionClients {
-    std::vector<fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction>> clients;
+    std::vector<fidl::WireSyncClient<ffunction::UsbFunction>> clients;
     std::vector<std::shared_ptr<FakeUsbFunction>> fakes;
   };
 
-  static fuchsia_hardware_usb_peripheral::wire::DeviceDescriptor CreateTestDeviceDescriptor() {
-    fuchsia_hardware_usb_peripheral::wire::DeviceDescriptor device_desc = {};
+  static fperipheral::wire::DeviceDescriptor CreateTestDeviceDescriptor() {
+    fperipheral::wire::DeviceDescriptor device_desc = {};
     device_desc.bcd_usb = 0x0200;
     device_desc.b_device_class = 0;
     device_desc.b_device_sub_class = 0;
@@ -577,48 +570,43 @@ class PeripheralReadyTestBase : public UsbPeripheralHarness<manage_lifetime> {
     return device_desc;
   }
 
-  static fidl::VectorView<
-      fidl::VectorView<fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor>>
+  static fidl::VectorView<fidl::VectorView<fperipheral::wire::FunctionDescriptor>>
   CreateTestFunctionDescriptors(fidl::AnyArena& arena) {
-    fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor func_desc = {
+    fperipheral::wire::FunctionDescriptor func_desc = {
         .interface_class = 0xFF,
         .interface_subclass = 0,
         .interface_protocol = 0,
     };
-    fidl::VectorView<fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor> functions(arena, 1);
+    fidl::VectorView<fperipheral::wire::FunctionDescriptor> functions(arena, 1);
     functions[0] = func_desc;
-    fidl::VectorView<fidl::VectorView<fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor>>
-        configs(arena, 1);
+    fidl::VectorView<fidl::VectorView<fperipheral::wire::FunctionDescriptor>> configs(arena, 1);
     configs[0] = functions;
     return configs;
   }
 
   zx::result<std::vector<uint8_t>> CreateTestRawFunctionDescriptors(
-      fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction>& function_client) {
+      fidl::WireSyncClient<ffunction::UsbFunction>& function_client) {
     uint8_t interface_num = 0xFF;
     uint8_t ep_out = 0xFF;
     uint8_t ep_in = 0xFF;
 
-    fuchsia_hardware_usb_function::wire::EndpointResource endpoints[2];
-    zx::result ep_ends1 = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+    ffunction::wire::EndpointResource endpoints[2];
+    zx::result ep_ends1 = fidl::CreateEndpoints<fendpoint::Endpoint>();
     if (ep_ends1.is_error()) {
       return ep_ends1.take_error();
     }
-    endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kOut;
+    endpoints[0].direction = ffunction::wire::EndpointDirection::kOut;
     endpoints[0].endpoint = std::move(ep_ends1->server);
 
-    zx::result ep_ends2 = fidl::CreateEndpoints<fuchsia_hardware_usb_endpoint::Endpoint>();
+    zx::result ep_ends2 = fidl::CreateEndpoints<fendpoint::Endpoint>();
     if (ep_ends2.is_error()) {
       return ep_ends2.take_error();
     }
-    endpoints[1].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
+    endpoints[1].direction = ffunction::wire::EndpointDirection::kIn;
     endpoints[1].endpoint = std::move(ep_ends2->server);
 
     fidl::WireResult res = function_client->AllocResources(
-        1,
-        fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>::FromExternal(
-            endpoints, 2),
-        {});
+        1, fidl::VectorView<ffunction::wire::EndpointResource>::FromExternal(endpoints, 2), {});
     if (!res.ok()) {
       return zx::error(res.status());
     }
@@ -803,7 +791,7 @@ TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsWhenNoneAdded) {
 
   auto client = this->Client();
 
-  zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_peripheral::Events>();
+  zx::result endpoints = fidl::CreateEndpoints<fperipheral::Events>();
   ASSERT_OK(endpoints);
 
   FakeEvents fake_events;
@@ -853,7 +841,7 @@ TEST_F(UnmanagedUsbPeripheralTest, KbootFunctionsOverrideFunctions) {
 TEST_F(UsbPeripheralFunctionTest, ConfigureAndRouteFidlCalls) {
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
       std::move(function_client_result.value());
 
   zx::result fake_function_result = BindFakeFunction();
@@ -954,7 +942,7 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureAndRouteFidlCalls) {
 TEST_F(UsbPeripheralFunctionTest, RepeatedSetConfigurationFlaps) {
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
       std::move(function_client_result.value());
 
   zx::result fake_function_result = BindFakeFunction();
@@ -1038,7 +1026,7 @@ TEST_F(UsbPeripheralFunctionTest, ClearFunctionsWaitsForTeardown) {
   ASSERT_OK(peripheral_client_result);
   auto peripheral_client = std::move(peripheral_client_result.value());
 
-  zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_peripheral::Events>();
+  zx::result endpoints = fidl::CreateEndpoints<fperipheral::Events>();
   ASSERT_OK(endpoints);
 
   FakeEvents fake_events;
@@ -1050,7 +1038,7 @@ TEST_F(UsbPeripheralFunctionTest, ClearFunctionsWaitsForTeardown) {
   // Add a function so there is something to clear.
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
       std::move(function_client_result.value());
 
   zx::result fake_function_result = BindFakeFunction();
@@ -1104,7 +1092,7 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureFailsIfInterfaceNotAllocated) {
 
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
       std::move(function_client_result.value());
 
   zx::result fake_function_result = BindFakeFunction();
@@ -1138,7 +1126,7 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureFailsIfInterfaceNotAllocated) {
 TEST_F(UsbPeripheralFunctionTest, ConfigureFailsIfAlreadyBound) {
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
       std::move(function_client_result.value());
 
   zx::result fake_function_result = BindFakeFunction();
@@ -1175,8 +1163,7 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureFailsIfAlreadyBound) {
   // Second call with a new endpoint should fail with ZX_ERR_ALREADY_BOUND.
   // The driver is already in kPeripheralReady because the first function was configured.
   ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
-  zx::result endpoints =
-      fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
+  zx::result endpoints = fidl::CreateEndpoints<ffunction::UsbFunctionInterface>();
   ASSERT_OK(endpoints);
   auto second_fake = std::make_shared<FakeUsbFunction>();
   second_fake->Bind(dut().runtime().StartBackgroundDispatcher(), std::move(endpoints->server));
@@ -1194,7 +1181,7 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureFailsIfAlreadyBound) {
 TEST_F(UsbPeripheralFunctionTest, DeconfigureAllowsReconfigure) {
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
       std::move(function_client_result.value());
 
   zx::result fake_function_result = BindFakeFunction();
@@ -1283,7 +1270,7 @@ TEST_F(UsbPeripheralFunctionTest, DeconfigureAllowsReconfigure) {
 TEST_F(UsbPeripheralFunctionTest, ControllerStoppedOnFunctionClose) {
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
       std::move(function_client_result.value());
 
   zx::result fake_function_result = BindFakeFunction();
@@ -1339,13 +1326,13 @@ TEST_F(UsbPeripheralFunctionTest, ControllerStoppedOnFunctionClose) {
 TEST_F(UsbPeripheralFunctionTest, AllocResources) {
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
       std::move(function_client_result.value());
 
-  fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint> ep_endpoints1 =
-      fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
-  fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint> ep_endpoints2 =
-      fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  fidl::Endpoints<fendpoint::Endpoint> ep_endpoints1 =
+      fidl::Endpoints<fendpoint::Endpoint>::Create();
+  fidl::Endpoints<fendpoint::Endpoint> ep_endpoints2 =
+      fidl::Endpoints<fendpoint::Endpoint>::Create();
 
   zx_info_handle_basic_t info1, info2;
   ASSERT_OK(ep_endpoints1.server.channel().get_info(ZX_INFO_HANDLE_BASIC, &info1, sizeof(info1),
@@ -1354,11 +1341,10 @@ TEST_F(UsbPeripheralFunctionTest, AllocResources) {
                                                     nullptr, nullptr));
 
   fidl::Arena arena;
-  auto endpoints =
-      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 2);
-  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
+  auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 2);
+  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
   endpoints[0].endpoint = std::move(ep_endpoints1.server);
-  endpoints[1].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kOut;
+  endpoints[1].direction = ffunction::wire::EndpointDirection::kOut;
   endpoints[1].endpoint = std::move(ep_endpoints2.server);
 
   auto strings = fidl::VectorView<fidl::StringView>(arena, 2);
@@ -1451,10 +1437,9 @@ TEST_F(UsbPeripheralFunctionTest, ResourceCleanupOnClose) {
   auto function_client = std::move(function_client_result.value());
 
   fidl::Arena arena;
-  auto endpoints =
-      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
-  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
-  auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+  auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
   auto strings = fidl::VectorView<fidl::StringView>(arena, 1);
@@ -1493,10 +1478,9 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
 
   // 1. Initial success allocation to have a baseline of "used" resources.
   {
-    auto endpoints =
-        fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
-    endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
-    auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+    auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
+    endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+    auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
     endpoints[0].endpoint = std::move(ep_endpoints.server);
 
     auto strings = fidl::VectorView<fidl::StringView>(arena, 1);
@@ -1518,10 +1502,9 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
   //    fails for interfaces. We already have 1 interface. Requesting
   //    UsbPeripheral::MAX_INTERFACES more should fail.
   {
-    auto endpoints =
-        fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
-    endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kOut;
-    auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+    auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
+    endpoints[0].direction = ffunction::wire::EndpointDirection::kOut;
+    auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
     endpoints[0].endpoint = std::move(ep_endpoints.server);
 
     auto strings = fidl::VectorView<fidl::StringView>(arena, 1);
@@ -1545,10 +1528,9 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
   //    fails for strings. Global strings (3) + Initial function strings taken.
   //    Requesting enough to exceed UsbPeripheral::MAX_STRINGS should fail.
   {
-    auto endpoints =
-        fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
-    endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kOut;
-    auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+    auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
+    endpoints[0].direction = ffunction::wire::EndpointDirection::kOut;
+    auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
     endpoints[0].endpoint = std::move(ep_endpoints.server);
 
     std::vector<fidl::StringView> strings_vec(UsbPeripheral::kMaxStrings,
@@ -1574,11 +1556,10 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
   //    UsbPeripheral::IN_EP_START + 1.
   {
     size_t total_in_eps = UsbPeripheral::kInEpEnd - UsbPeripheral::kInEpStart + 1;
-    auto endpoints = fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(
-        arena, total_in_eps);
+    auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, total_in_eps);
     for (size_t i = 0; i < total_in_eps; i++) {
-      endpoints[i].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
-      auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+      endpoints[i].direction = ffunction::wire::EndpointDirection::kIn;
+      auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
       endpoints[i].endpoint = std::move(ep_endpoints.server);
     }
 
@@ -1601,14 +1582,13 @@ TEST_F(UsbPeripheralFunctionTest, AllocResourcesRollback) {
 TEST_F(UsbPeripheralFunctionTest, EndpointSetStall) {
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
       std::move(function_client_result.value());
 
   fidl::Arena arena;
-  auto endpoints =
-      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
-  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
-  auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+  auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
   fidl::WireResult alloc_res = function_client->AllocResources(0, endpoints, {});
@@ -1645,14 +1625,13 @@ TEST_F(UsbPeripheralFunctionTest, EndpointSetStall) {
 TEST_F(UsbPeripheralFunctionTest, EndpointClearStall) {
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
       std::move(function_client_result.value());
 
   fidl::Arena arena;
-  auto endpoints =
-      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
-  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
-  auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+  auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
   fidl::WireResult alloc_res =
@@ -1693,14 +1672,13 @@ class UsbPeripheralFunctionConfigureEndpointTest : public UsbPeripheralFunctionT
 TEST_P(UsbPeripheralFunctionConfigureEndpointTest, ConfigureEndpoint) {
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
       std::move(function_client_result.value());
 
   fidl::Arena arena;
-  auto endpoints =
-      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
-  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
-  auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+  auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
   fidl::WireResult alloc_res =
@@ -1710,17 +1688,17 @@ TEST_P(UsbPeripheralFunctionConfigureEndpointTest, ConfigureEndpoint) {
 
   uint8_t ep_addr = alloc_res->value()->endpoint_addrs[0];
 
-  fuchsia_hardware_usb_function::wire::EndpointDescriptor desc = {
+  ffunction::wire::EndpointDescriptor desc = {
       .bm_attributes = 1,
       .w_max_packet_size = 2,
       .b_interval = 3,
   };
 
-  auto config_builder = fuchsia_hardware_usb_function::wire::EndpointConfiguration::Builder(arena);
+  auto config_builder = ffunction::wire::EndpointConfiguration::Builder(arena);
   config_builder.descriptor(desc);
 
   bool with_ss_companion = GetParam();
-  fuchsia_hardware_usb_function::wire::SuperSpeedEndpointCompanionDescriptor ss_desc;
+  ffunction::wire::SuperSpeedEndpointCompanionDescriptor ss_desc;
   if (with_ss_companion) {
     ss_desc = {
         .b_max_burst = 5,
@@ -1730,7 +1708,7 @@ TEST_P(UsbPeripheralFunctionConfigureEndpointTest, ConfigureEndpoint) {
     config_builder.super_speed_companion(ss_desc);
   }
 
-  fuchsia_hardware_usb_function::wire::EndpointConfiguration config = config_builder.Build();
+  ffunction::wire::EndpointConfiguration config = config_builder.Build();
 
   auto res = function_client->ConfigureEndpoint(ep_addr, config);
   ASSERT_TRUE(res.ok()) << res.FormatDescription();
@@ -1776,14 +1754,13 @@ INSTANTIATE_TEST_SUITE_P(UsbPeripheralFunctionConfigureEndpointTest,
 TEST_F(UsbPeripheralFunctionTest, DisableEndpoint) {
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
       std::move(function_client_result.value());
 
   fidl::Arena arena;
-  auto endpoints =
-      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
-  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
-  auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+  auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
   fidl::WireResult alloc_res =
@@ -1820,7 +1797,7 @@ TEST_F(UsbPeripheralFunctionTest, DisableEndpoint) {
 TEST_F(UsbPeripheralFunctionTest, ConfigureEndpointDuringSetConfigured) {
   zx::result function_client_result = ConnectFunction();
   ASSERT_OK(function_client_result);
-  fidl::WireSyncClient<fuchsia_hardware_usb_function::UsbFunction> function_client =
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
       std::move(function_client_result.value());
 
   zx::result fake_function_result = BindFakeFunction();
@@ -1828,10 +1805,9 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureEndpointDuringSetConfigured) {
   auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
 
   fidl::Arena arena;
-  auto endpoints =
-      fidl::VectorView<fuchsia_hardware_usb_function::wire::EndpointResource>(arena, 1);
-  endpoints[0].direction = fuchsia_hardware_usb_function::wire::EndpointDirection::kIn;
-  auto ep_endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
+  endpoints[0].direction = ffunction::wire::EndpointDirection::kIn;
+  auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
   endpoints[0].endpoint = std::move(ep_endpoints.server);
 
   fidl::WireResult alloc_res =
@@ -1868,12 +1844,11 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureEndpointDuringSetConfigured) {
   // function before responding to set configured.
   fake_function->set_on_set_configured([&]() {
     fidl::Arena arena;
-    fuchsia_hardware_usb_function::wire::EndpointDescriptor desc;
+    ffunction::wire::EndpointDescriptor desc;
     desc.bm_attributes = 2;
     desc.w_max_packet_size = 512;
     desc.b_interval = 0;
-    auto config_builder =
-        fuchsia_hardware_usb_function::wire::EndpointConfiguration::Builder(arena);
+    auto config_builder = ffunction::wire::EndpointConfiguration::Builder(arena);
     config_builder.descriptor(desc);
 
     auto res = function_client->ConfigureEndpoint(ep_addr, config_builder.Build());
@@ -1916,7 +1891,7 @@ TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsWhenAlreadyUnbound) {
 
   auto client = Client();
 
-  zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_peripheral::Events>();
+  zx::result endpoints = fidl::CreateEndpoints<fperipheral::Events>();
   ASSERT_OK(endpoints);
 
   FakeEvents fake_events;
@@ -2063,8 +2038,7 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, FaultyFunctionInterfaceReset) {
     auto clear_res = peripheral_client.value()->ClearFunctions();
     ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
 
-    fuchsia_hardware_usb_peripheral::wire::DeviceDescriptor device_desc =
-        CreateTestDeviceDescriptor();
+    fperipheral::wire::DeviceDescriptor device_desc = CreateTestDeviceDescriptor();
 
     fidl::Arena arena;
     auto configs = CreateTestFunctionDescriptors(arena);
@@ -2316,8 +2290,7 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, FaultyFunctionNodeUnbindReset) {
       auto clear_res = peripheral_client.value()->ClearFunctions();
       ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
 
-      fuchsia_hardware_usb_peripheral::wire::DeviceDescriptor device_desc =
-          CreateTestDeviceDescriptor();
+      fperipheral::wire::DeviceDescriptor device_desc = CreateTestDeviceDescriptor();
 
       fidl::Arena arena;
       auto configs = CreateTestFunctionDescriptors(arena);
