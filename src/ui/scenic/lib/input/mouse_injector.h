@@ -27,7 +27,8 @@ class MouseInjector : public Injector {
   void ForwardEvent(fuchsia::ui::pointerinjector::Event& event, StreamId stream_id,
                     const view_tree::Snapshot& snapshot) override;
   // |Injector|
-  void CancelStream(uint32_t pointer_id, StreamId stream_id) override;
+  void CancelStream(uint32_t pointer_id, StreamId stream_id,
+                    const view_tree::Snapshot& snapshot) override;
 
  private:
   InternalMouseEvent PointerInjectorEventToInternalMouseEvent(

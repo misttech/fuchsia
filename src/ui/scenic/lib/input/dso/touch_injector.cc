@@ -95,12 +95,12 @@ InternalTouchEvent TouchInjector::PointerInjectorEventToInternalTouchEvent(
   return internal_event;
 }
 
-void TouchInjector::CancelStream(uint32_t pointer_id, StreamId stream_id) {
+void TouchInjector::CancelStream(uint32_t pointer_id, StreamId stream_id,
+                                 const view_tree::Snapshot& snapshot) {
   const InjectorSettings& settings = Injector::settings();
-  auto snapshot_ref = GetViewTreeSnapshot();
   inject_(CreateCancelEvent(settings.device_id, pointer_id, settings.context_koid,
                             settings.target_koid),
-          stream_id, *snapshot_ref);
+          stream_id, snapshot);
 }
 
 }  // namespace scenic_impl::input_dso

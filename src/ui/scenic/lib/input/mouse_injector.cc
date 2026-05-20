@@ -132,7 +132,8 @@ InternalMouseEvent MouseInjector::PointerInjectorEventToInternalMouseEvent(
   return internal_event;
 }
 
-void MouseInjector::CancelStream(uint32_t pointer_id, StreamId stream_id) {
+void MouseInjector::CancelStream(uint32_t pointer_id, StreamId stream_id,
+                                 const view_tree::Snapshot& snapshot) {
   cancel_stream_(stream_id);
 }
 

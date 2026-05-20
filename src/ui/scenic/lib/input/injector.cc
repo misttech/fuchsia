@@ -153,7 +153,10 @@ Injector::Injector(std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
 
   binding_.set_error_handler([this](zx_status_t) {
     // Clean up ongoing streams before calling the supplied error handler.
-    CancelOngoingStreams();
+    if (!ongoing_streams_.empty()) {
+      view_tree::SnapshotRef snapshot_ref = GetViewTreeSnapshot();
+      CancelOngoingStreams(*snapshot_ref);
+    }
     // NOTE: Triggers destruction of this object.
     on_channel_closed_();
   });
@@ -176,27 +179,20 @@ void Injector::Inject(std::vector<fuchsia::ui::pointerinjector::Event> events,
 void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) {
   TRACE_DURATION("input", "Injector::InjectEvents");
 
-  // Some of the clean-ups that are run when the channel is closed, e.g. in `CancelStream()`,
-  // obtain their own snapshot ref, which would violate the "only one ref checked out at a time"
-  // invariant.  Given that some of these cleanups are implemented by overridden methods, and
-  // that the channel is being closed anyway, it's easier to simply release our ref before closing
-  // the channel.
-  std::optional<view_tree::SnapshotHolder::Ref> snapshot_ref = snapshot_holder_->GetSnapshot();
-  const auto& snapshot = **snapshot_ref;
+  view_tree::SnapshotRef snapshot_ref = GetViewTreeSnapshot();
+  const auto& snapshot = *snapshot_ref;
 
   if (!snapshot.IsDescendant(settings_.target_koid, settings_.context_koid)) {
     FX_LOGS(ERROR) << "Inject() called with Context (koid: " << settings_.context_koid
                    << ") and Target (koid: " << settings_.target_koid
                    << ") making an invalid hierarchy.";
-    snapshot_ref.reset();
-    CloseChannel(ZX_ERR_BAD_STATE);
+    CloseChannel(ZX_ERR_BAD_STATE, snapshot);
     return;
   }
 
   if (events.empty()) {
     FX_LOGS(ERROR) << "Inject() called without any events";
-    snapshot_ref.reset();
-    CloseChannel(ZX_ERR_INVALID_ARGS);
+    CloseChannel(ZX_ERR_INVALID_ARGS, snapshot);
     return;
   }
 
@@ -204,8 +200,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
     TRACE_DURATION("input", "Injector::InjectEvents[event]");
     if (!event.has_timestamp() || !event.has_data()) {
       FX_LOGS(ERROR) << "Inject() called with an incomplete event";
-      snapshot_ref.reset();
-      CloseChannel(ZX_ERR_INVALID_ARGS);
+      CloseChannel(ZX_ERR_INVALID_ARGS, snapshot);
       return;
     }
 
@@ -219,8 +214,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
         const zx_status_t result = IsValidViewport(new_viewport);
         if (result != ZX_OK) {
           // Errors printed inside IsValidViewport. Just close channel here.
-          snapshot_ref.reset();
-          CloseChannel(result);
+          CloseChannel(result, snapshot);
           return;
         }
       }
@@ -234,8 +228,7 @@ void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> eve
 
       const auto [result, stream_id] = ValidatePointerSample(pointer_sample);
       if (result != ZX_OK) {
-        snapshot_ref.reset();
-        CloseChannel(result);
+        CloseChannel(result, snapshot);
         return;
       }
 
@@ -313,16 +306,16 @@ StreamId Injector::ValidateEventStream(uint32_t pointer_id, EventPhase phase) {
   return stream_id;
 }
 
-void Injector::CancelOngoingStreams() {
+void Injector::CancelOngoingStreams(const view_tree::Snapshot& snapshot) {
   // Inject CANCEL event for each ongoing stream.
   for (const auto [pointer_id, stream_id] : ongoing_streams_) {
-    CancelStream(pointer_id, stream_id);
+    CancelStream(pointer_id, stream_id, snapshot);
   }
   ongoing_streams_.clear();
 }
 
-void Injector::CloseChannel(zx_status_t epitaph) {
-  CancelOngoingStreams();
+void Injector::CloseChannel(zx_status_t epitaph, const view_tree::Snapshot& snapshot) {
+  CancelOngoingStreams(snapshot);
   binding_.Close(epitaph);
   // NOTE: Triggers destruction of this object.
   on_channel_closed_();

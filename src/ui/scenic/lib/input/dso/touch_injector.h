@@ -29,7 +29,8 @@ class TouchInjector : public Injector {
   void ForwardEvent(fuchsia_ui_pointerinjector::wire::Event& event, StreamId stream_id,
                     uint64_t trace_flow_id, const view_tree::Snapshot& snapshot) override;
   // |Injector|
-  void CancelStream(uint32_t pointer_id, StreamId stream_id) override;
+  void CancelStream(uint32_t pointer_id, StreamId stream_id,
+                    const view_tree::Snapshot& snapshot) override;
 
  private:
   InternalTouchEvent PointerInjectorEventToInternalTouchEvent(

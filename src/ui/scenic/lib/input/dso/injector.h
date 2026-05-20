@@ -94,17 +94,18 @@ class Injector : public fdf::WireServer<fuchsia_ui_pointerinjector_dso::Device> 
                             uint64_t trace_flow_id, const view_tree::Snapshot& snapshot) = 0;
 
   // Sends an appropriate Cancel event.
-  virtual void CancelStream(uint32_t pointer_id, StreamId stream_id) = 0;
+  virtual void CancelStream(uint32_t pointer_id, StreamId stream_id,
+                            const view_tree::Snapshot& snapshot) = 0;
 
   const InjectorSettings& settings() const { return settings_; }
   const Viewport& viewport() const { return viewport_; }
 
+ private:
   // Should be called only once in a single call stack. The snapshot should be
   // passed down into helper functions, rather than re-obtaining it, to ensure
   // that a consistent snapshot is being used.
   view_tree::SnapshotRef GetViewTreeSnapshot() { return snapshot_holder_->GetSnapshot(); }
 
- private:
   // Return value is either both valid, {ZX_OK, valid stream id} or both
   // invalid: {error, kInvalidStreamId}
   std::pair<zx_status_t, StreamId> ValidatePointerSample(
@@ -117,13 +118,13 @@ class Injector : public fdf::WireServer<fuchsia_ui_pointerinjector_dso::Device> 
   StreamId ValidateEventStream(uint32_t pointer_id, fuchsia_ui_pointerinjector::EventPhase phase);
 
   // Injects a CANCEL event for each ongoing stream and stops tracking them.
-  void CancelOngoingStreams();
+  void CancelOngoingStreams(const view_tree::Snapshot& snapshot);
 
   // Closes the fidl channel. This triggers the destruction of the Injector object through the
   // error handler set in InputSystem.
   // NOTE: No further method calls or member accesses should be made after CloseChannel(), since
   // they might be made on a destroyed object.
-  void CloseChannel(zx_status_t epitaph);
+  void CloseChannel(zx_status_t epitaph, const view_tree::Snapshot& snapshot);
 
   void OnFidlClose(fidl::UnbindInfo info);
 
