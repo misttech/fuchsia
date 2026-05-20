@@ -62,6 +62,7 @@ if (is_host) {
       "spdx_test.go",
     ]
     embed = [ ":project" ]
+    visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//tools/check-licenses/file",
       "//tools/check-licenses/metrics",

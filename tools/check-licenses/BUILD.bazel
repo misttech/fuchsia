@@ -4,6 +4,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/rules:stamp_group.bzl", "stamp_group")
 load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
 
@@ -266,9 +267,13 @@ go_test(
     ],
 )
 
-test_suite(
+stamp_group(
     name = "tests",
-    tests = [
+    testonly = True,
+    stamp = "build.stamp",
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
+    deps = [
         ":v2_config_test",
         ":v2_pipeline_test",
         ":v2_readme_test",

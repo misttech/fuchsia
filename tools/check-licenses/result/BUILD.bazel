@@ -49,6 +49,7 @@ go_test(
         "testdata/spdx/one_package/want.json",
     ],
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
         "//third_party/golibs:github.com/google/go-cmp/cmp",
         "//third_party/golibs:github.com/spdx/tools-golang/spdx/common",

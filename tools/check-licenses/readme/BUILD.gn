@@ -85,6 +85,7 @@ if (is_host) {
       "testdata/rust/docs/some_other_license_file",
       "testdata/rust/want.json",
     ]
+    visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//third_party/golibs:github.com/google/go-cmp/cmp",
       "//tools/check-licenses/testutil",

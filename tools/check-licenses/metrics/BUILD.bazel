@@ -27,4 +27,5 @@ go_test(
     ],
     embed = [":metrics"],
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
 )

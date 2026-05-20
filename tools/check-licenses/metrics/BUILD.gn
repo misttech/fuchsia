@@ -52,5 +52,6 @@ if (is_host) {
       "timer_test.go",
     ]
     embed = [ ":metrics" ]
+    visibility = [ "//tools/check-licenses/*" ]
   }
 }

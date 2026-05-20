@@ -65,4 +65,5 @@ go_test(
     ],
     embed = [":main"],
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
 )

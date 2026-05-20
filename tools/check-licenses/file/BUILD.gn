@@ -66,6 +66,7 @@ if (is_host) {
       "testdata/example_google",
       "testdata/example_onedelimiter",
     ]
+    visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//third_party/golibs:github.com/google/go-cmp/cmp",
       "//tools/check-licenses/metrics",

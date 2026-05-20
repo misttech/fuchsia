@@ -37,6 +37,7 @@ go_test(
     ],
     embed = [":project"],
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
         "//tools/check-licenses/file",
         "//tools/check-licenses/metrics",

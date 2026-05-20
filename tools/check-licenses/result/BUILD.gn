@@ -74,6 +74,7 @@ if (is_host) {
       "testdata/spdx/multi_package_one_notice/want.json",
       "testdata/spdx/one_package/want.json",
     ]
+    visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//third_party/golibs:github.com/google/go-cmp/cmp",
       "//third_party/golibs:github.com/spdx/tools-golang/spdx/common",

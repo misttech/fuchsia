@@ -57,6 +57,7 @@ if (is_host) {
       "directory_test.go",
     ]
     embed = [ ":directory" ]
+    visibility = [ "//tools/check-licenses/*" ]
     deps = [
       "//third_party/golibs:github.com/google/go-cmp/cmp",
       "//tools/check-licenses/file",
