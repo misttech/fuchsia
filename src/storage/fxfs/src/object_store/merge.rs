@@ -1215,16 +1215,6 @@ mod tests {
                 result.push((start as u64..200, current_val, 3 - max_layers_needed));
             }
 
-            // TODO(https://fxbug.dev/510925696): This is not the state we want to be in.
-            // Since next_key returns 0..end+1, it starts at 0 and forces loading all layers
-            // on the first advance if we don't find a match at 0.
-            // In a subsequent CL, we should change next_key to return end..u64::MAX and apply
-            // search_key() to it for seeking, which will allow needs_more_iterators to be
-            // optimized and avoid this conservative behavior.
-            for i in 0..result.len() {
-                result[i].2 = 0;
-            }
-
             result
         };
 

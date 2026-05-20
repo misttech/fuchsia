@@ -75,11 +75,6 @@ pub trait Key:
 {
 }
 
-pub trait RangeKey: Key {
-    /// Returns if two keys overlap.
-    fn overlaps(&self, other: &Self) -> bool;
-}
-
 impl<K> Key for K where
     K: Clone
         + Debug
@@ -273,28 +268,35 @@ pub trait LayerKey: Clone {
     ///
     /// If you search and find the 0..100 key, then only layer 0 will be touched.  If you then want
     /// to advance to the 100..200 record, you can find it in layer 0 but unless you know that it
-    /// immediately follows the 0..100 key i.e. that there is no possible key, K, such that
-    /// 0..100 < K < 100..200, the merger has to consult all other layers to check. next_key should
-    /// return a key, N, such that if the merger encounters a key that is <= N (using
-    /// OrdLowerBound), it can stop touching more layers. If the merger decides that a new layer
-    /// needs to be consulted, it will use `search_key` on the result of `next_key` and use that to
-    /// find the appropriate starting record in the new layer.
+    /// immediately follows the 0..100 key i.e. that there is no possible key, K, such that 0..100 <
+    /// K < 100..200, the merger has to consult all other layers to check.  `next_key` should return
+    /// a search key for an extent that immediately follows.  In practice, for extents, this should
+    /// be 0..end + 1.
     ///
-    /// In practice, what this means for extents is `cmp_upper_bound` should sort by
-    /// (end, start), `cmp_lower_bound` should sort by (start) and `next_key` should be
-    /// (end, end + 1)."
     /// This is purely an optimisation; the default None will be correct but not performant.
     fn next_key(&self) -> Option<Self> {
         None
     }
-    /// Returns the search key for this extent; that is, a key which is <= this key under Ord and
-    /// OrdLowerBound.  Note that this is only used for Query::LimitedRange queries (where
-    /// `Self::partition` returns Some).
-    /// For example, if the tree has extents 50..150 and 150..200 and we wish to read 100..200, we'd
-    /// search for 0..101 which would set the iterator to 50..150.
-    fn search_key(&self) -> Self {
-        unreachable!()
+    /// Returns the search key (S) for this key (K), such that when when searching for S in a layer
+    /// file, it returns the earliest possible key that might be relevant to K.  Searching in a
+    /// layer file is done using `cmp_upper_bound` and the iterator will be positioned on a key that
+    /// is greater than or equal to S.  Returning `None` here is the right thing to do for
+    /// non-ranged based keys, in which case K is used to search for the key.  In practice, the
+    /// implementation should return `Some(0..start + 1)` for range based keys and `None` for
+    /// everything else.  As an example, if the tree has extents 50..150 and 150..200 and we wish to
+    /// search for 100..200, search_key would return 0..101 which would position the iterator on
+    /// 50..150.  If this method is overridden, `is_search_key` below should also be overridden.
+    fn search_key(&self) -> Option<Self> {
+        None
     }
+
+    /// If you override `search_key` you should override `is_search_key`.
+    fn is_search_key(&self) -> bool {
+        true
+    }
+
+    /// Returns true if the keys are overlapping or equal.
+    fn overlaps(&self, other: &Self) -> bool;
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]

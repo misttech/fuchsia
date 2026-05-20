@@ -8,7 +8,7 @@ use crate::log::*;
 use crate::lsm_tree::Query;
 use crate::lsm_tree::skip_list_layer::SkipListLayer;
 use crate::lsm_tree::types::{
-    BoxedLayerIterator, Item, Key, Layer, LayerIterator, OrdUpperBound, RangeKey, Value,
+    BoxedLayerIterator, Item, Key, Layer, LayerIterator, LayerKey, Value,
 };
 use crate::object_handle::INVALID_OBJECT_ID;
 use crate::object_store::allocator::{AllocatorKey, AllocatorValue, CoalescingIterator};
@@ -307,16 +307,6 @@ pub async fn fsck_volume_with_options(
     }
 }
 
-trait KeyExt: PartialEq {
-    fn overlaps(&self, other: &Self) -> bool;
-}
-
-impl<K: RangeKey + PartialEq> KeyExt for K {
-    fn overlaps(&self, other: &Self) -> bool {
-        RangeKey::overlaps(self, other)
-    }
-}
-
 struct Fsck<'a> {
     options: &'a FsckOptions<'a>,
     // A list of allocations generated based on all extents found across all scanned object stores.
@@ -437,10 +427,7 @@ impl<'a> Fsck<'a> {
             .context("scan_store failed")
     }
 
-    async fn check_layer_file_contents<
-        K: Key + KeyExt + OrdUpperBound + std::fmt::Debug,
-        V: Value + std::fmt::Debug,
-    >(
+    async fn check_layer_file_contents<K: Key + LayerKey, V: Value>(
         &self,
         // This is the object ID of the store or allocator that the layer files belong to.
         allocator_or_store_object_id: u64,

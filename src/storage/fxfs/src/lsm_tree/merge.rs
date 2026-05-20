@@ -262,16 +262,23 @@ pub enum Query<'a, K: Key + LayerKey + OrdLowerBound> {
     /// Note that it is an error to use `Point` for range-like keys.  Either `LimitedRange` or
     /// `FullRange` must be used instead.
     Point(&'a K),
-    /// LimitedRange queries position the iterator to `K::search_key`, and scans forward until the
-    /// first record which does not overlap the provided key.  In this case, the existence filters
-    /// for each layer file can be used, but we have to check for all possible keys in the range we
-    /// wish to search.  Obviously, that means that the range should be, well, limited.  Fuzzy
-    /// hashes permit this for extent-like keys, but these queries are not the right choice for
-    /// things like searching a directory.
+
+    /// LimitedRange queries allow for iteration over a range of keys.  The returned iterator will
+    /// not necessarily terminate at the end of the range; the caller should stop iterating when the
+    /// iterator passes the end of the range: the records returned cannot be relied upon as
+    /// accurate.  For a LimitedRange query, the existence filters for each layer file can be used,
+    /// but we have to check for all possible keys in the range we wish to search.  Obviously, that
+    /// means that the range should be, well, limited.  Fuzzy hashes permit this for extent-like
+    /// keys, but these queries are not the right choice for things like searching a directory.
     LimitedRange(&'a K),
-    /// FullRange queries position the iterator to a starting key, and scan forward to the
-    /// first key of a different type.  In this case, the existence filters are not used.
+
+    /// FullRange queries position the iterator to a starting key, and scans forward to the first
+    /// key of a different type.  In this case, the existence filters are not used.  The key should
+    /// be a search key (see `LayerKey::search_key`) (which, for extent based keys, would normally
+    /// be `0..start + 1`).  This kind of query will still used optimized merges if the keys found
+    /// support it.
     FullRange(&'a K),
+
     /// FullScan queries are intended to yield every record in the tree.  In this case, the
     /// existence filters are not used.
     FullScan,
@@ -349,17 +356,23 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> Merger<'a, K, V> {
             trace: self.trace,
             history: String::new(),
         };
-        let owned_bound;
-        let bound = match query {
+        let owned_key;
+        let search_key = match query {
             Query::Point(key) => Bound::Included(key),
-            Query::LimitedRange(key) => {
-                owned_bound = Bound::Included(key.search_key());
-                owned_bound.as_ref()
+            Query::LimitedRange(key) => match key.search_key() {
+                Some(k) => {
+                    owned_key = k;
+                    Bound::Included(&owned_key)
+                }
+                None => Bound::Included(key),
+            },
+            Query::FullRange(key) => {
+                assert!(key.is_search_key());
+                Bound::Included(key)
             }
-            Query::FullRange(start) => Bound::Included(start),
             Query::FullScan => Bound::Unbounded,
         };
-        merger_iter.seek(bound).await?;
+        merger_iter.seek(search_key).await?;
         Ok(merger_iter)
     }
 
@@ -394,23 +407,18 @@ impl<'a, 'b, K: Key + LayerKey + OrdLowerBound, V: Value> MergerIterator<'a, 'b,
         self.pending_iterators.len()
     }
 
-    async fn seek(&mut self, bound: Bound<&K>) -> Result<(), Error> {
-        let next_key = match bound {
-            Bound::Unbounded => None,
-            Bound::Included(key) => Some(key),
-            Bound::Excluded(_) => panic!("Excluded bounds not supported!"),
-        };
-
-        self.push_iterators(next_key, bound).await?;
-        self.advance_impl(bound).await
+    /// Positions the iterator using `search_key`.
+    async fn seek(&mut self, search_key: Bound<&K>) -> Result<(), Error> {
+        self.push_iterators(search_key).await?;
+        self.advance_impl(search_key).await
     }
 
     // Merges items from an array of layers using the provided merge function. The merge function is
     // repeatedly provided the lowest and the second lowest element, if one exists. In cases where
     // the two lowest elements compare equal, the element with the lowest layer (i.e. whichever
-    // comes first in the layers array) will come first.  `next_key_bound` is a bound for the next
+    // comes first in the layers array) will come first.  `search_key` is a bound for the next
     // key we expect.
-    async fn advance_impl(&mut self, next_key_bound: Bound<&K>) -> Result<(), Error> {
+    async fn advance_impl(&mut self, search_key: Bound<&K>) -> Result<(), Error> {
         loop {
             loop {
                 if self.heap.is_empty() {
@@ -456,7 +464,7 @@ impl<'a, 'b, K: Key + LayerKey + OrdLowerBound, V: Value> MergerIterator<'a, 'b,
                 }
             }
 
-            // If the item we're about to yield isn't within `next_key_bound`, ignore it and
+            // If the item we're about to yield isn't within `search_key`, ignore it and
             // continue.  To see how this would happen, imagine the following scenario:
             //
             //       0          10          20            30
@@ -475,7 +483,7 @@ impl<'a, 'b, K: Key + LayerKey + OrdLowerBound, V: Value> MergerIterator<'a, 'b,
             // 0..10 item back on the heap (see advance) and then merge, but that will yield the
             // 0..10 entry again, so here we need to skip over it, and then merge again, at which
             // point we should see the 10..20 entry as expected.
-            match next_key_bound {
+            match search_key {
                 Bound::Included(key)
                     if self.get().unwrap().key.cmp_upper_bound(key) == Ordering::Less => {}
                 Bound::Excluded(key)
@@ -491,53 +499,32 @@ impl<'a, 'b, K: Key + LayerKey + OrdLowerBound, V: Value> MergerIterator<'a, 'b,
         }
     }
 
-    // Returns whether more iterators are required for the given `next_key`.  See push_iterators.
-    fn needs_more_iterators(&self, next_key: Option<&K>, next_key_bound: Bound<&K>) -> bool {
+    // Returns whether more iterators are required for the given `search_key`.  See push_iterators.
+    fn needs_more_iterators(&self, search_key: Bound<&K>) -> bool {
         if self.pending_iterators.is_empty() {
             return false;
         }
         if self.heap.is_empty() {
             return true;
         }
-        let target;
-        match next_key_bound {
-            Bound::Included(k) => target = k,
-            Bound::Excluded(_) | Bound::Unbounded => return true,
-        }
+        let Bound::Included(target) = search_key else { return true };
         match target.merge_type() {
             MergeType::FullMerge => true,
-            MergeType::OptimizedMerge => {
-                match next_key {
-                    Some(k) => {
-                        self.heap.peek().unwrap().key().cmp_lower_bound(k) == Ordering::Greater
-                    }
-                    None => {
-                        // If we've found an exact match, return it since nothing needs to merge.
-                        self.heap.peek().unwrap().key().cmp_lower_bound(target) != Ordering::Equal
-                    }
-                }
-            }
+            MergeType::OptimizedMerge => !self.heap.peek().unwrap().key().overlaps(target),
         }
     }
 
     // Pushes additional iterators onto the heap until we are confident that the top element will
-    // yield what we are looking for.  If next_key is set, we will stop pushing iterators as soon as
-    // a key is encountered that equals or precedes it.  If next_key is None, then all layers are
-    // pushed.  next_key_bound is the bound to search for if another layer does need to be
-    // consulted.  See the comment for the MergeType trait.
-    async fn push_iterators(
-        &mut self,
-        next_key: Option<&K>,
-        next_key_bound: Bound<&K>,
-    ) -> Result<(), Error> {
-        while self.needs_more_iterators(next_key, next_key_bound) {
+    // yield what we are looking for.
+    async fn push_iterators(&mut self, search_key: Bound<&K>) -> Result<(), Error> {
+        while self.needs_more_iterators(search_key) {
             let iter = self.pending_iterators.pop().unwrap();
-            let sub_iter = iter.layer.as_ref().unwrap().seek(next_key_bound).await?;
+            let sub_iter = iter.layer.as_ref().unwrap().seek(search_key).await?;
             if self.trace {
                 writeln!(
                     self.history,
                     "merger: search for {:?}, found {:?}",
-                    next_key_bound,
+                    search_key,
                     sub_iter.get()
                 )
                 .unwrap();
@@ -575,23 +562,19 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> LayerIterator<K, V>
     for MergerIterator<'a, '_, K, V>
 {
     async fn advance(&mut self) -> Result<(), Error> {
-        let current_key;
-        let mut next_key = None;
-        let mut next_key_bound = Bound::Unbounded;
-        let owned_search_key;
+        let owned_key;
+        let mut search_key = Bound::Unbounded;
         if !self.pending_iterators.is_empty() {
             if let Some(ItemRef { key, .. }) = self.get() {
-                next_key = key.next_key();
-                match next_key {
-                    None => {
-                        // If there is no next key, we must now query all layers and the key we
-                        // search for is the immediate successor of the current key.
-                        current_key = Some(key.clone());
-                        next_key_bound = Bound::Excluded(current_key.as_ref().unwrap());
+                match key.next_key() {
+                    Some(k) => {
+                        assert!(k.is_search_key());
+                        owned_key = k;
+                        search_key = Bound::Included(&owned_key);
                     }
-                    Some(ref key) => {
-                        owned_search_key = Some(key.search_key());
-                        next_key_bound = Bound::Included(owned_search_key.as_ref().unwrap());
+                    None => {
+                        owned_key = key.clone();
+                        search_key = Bound::Excluded(&owned_key);
                     }
                 }
             }
@@ -600,28 +583,26 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> LayerIterator<K, V>
         // Advance the iterator for the current item and push it onto the heap, and also push any
         // additional iterators onto the heap (by calling push_iterators).
         if let Some(iterator) = self.item.take_iterator() {
-            if self.needs_more_iterators(next_key.as_ref(), next_key_bound) {
+            if self.needs_more_iterators(search_key) {
                 let existing_item = iterator.item().boxed();
                 iterator.advance().await?;
-                match &next_key {
-                    Some(next_key)
-                        if iterator.is_some()
-                            && iterator.key().cmp_lower_bound(next_key) != Ordering::Greater =>
-                    {
-                        // In this case, the key immediately following is a good candidate, and all
-                        // we need to do is merge it with existing iterators; we shouldn't need to
-                        // consult with any more iterators.
-                    }
-                    _ => {
-                        // We are going to need to consult more iterators so we need to go back to
-                        // the previous item so that we can merge with it.  See the comment in
-                        // advance_impl.
-                        iterator.replace(existing_item);
+                if let Bound::Included(s) = search_key
+                    && iterator.is_some()
+                    && iterator.key().merge_type() == MergeType::OptimizedMerge
+                    && s.overlaps(iterator.key())
+                {
+                    // In this case, the key immediately following is a good candidate, and all
+                    // we need to do is merge it with existing iterators; we shouldn't need to
+                    // consult with any more iterators.
+                } else {
+                    // We are going to need to consult more iterators so we need to go back to
+                    // the previous item so that we can merge with it.  See the comment in
+                    // advance_impl.
+                    iterator.replace(existing_item);
 
-                        // We must push other iterators here before pushing iterator onto the heap
-                        // because we know `iterator` would end up at the top of the heap.
-                        self.push_iterators(next_key.as_ref(), next_key_bound).await?;
-                    }
+                    // We must push other iterators here before pushing iterator onto the heap
+                    // because we know `iterator` would end up at the top of the heap.
+                    self.push_iterators(search_key).await?;
                 }
             } else {
                 iterator.advance().await?;
@@ -630,10 +611,10 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> LayerIterator<K, V>
                 self.heap.push(iterator);
             }
         } else {
-            self.push_iterators(next_key.as_ref(), next_key_bound).await?;
+            self.push_iterators(search_key).await?;
         }
 
-        self.advance_impl(next_key_bound).await
+        self.advance_impl(search_key).await
     }
 
     fn get(&self) -> Option<ItemRef<'_, K, V>> {
@@ -1291,7 +1272,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_seek_uses_minimum_number_of_iterators() {
         let skip_lists = [SkipListLayer::new(100), SkipListLayer::new(100)];
-        let items = [Item::new(TestKey(1..1), 1), Item::new(TestKey(1..1), 2)];
+        let items = [Item::new(TestKey(1..2), 1), Item::new(TestKey(1..2), 2)];
         skip_lists[0].insert(items[0].clone()).expect("insert error");
         skip_lists[1].insert(items[1].clone()).expect("insert error");
         let mut merger = Merger::new(
@@ -1299,7 +1280,10 @@ mod tests {
             |_left, _right| MergeResult::Other { emit: None, left: Discard, right: Keep },
             counters(),
         );
-        let iter = merger.query(Query::FullRange(&items[0].key)).await.expect("seek failed");
+        let iter = merger
+            .query(Query::FullRange(&items[0].key.search_key().unwrap()))
+            .await
+            .expect("seek failed");
 
         // Seek should only search in the first skip list, so no merge should take place, and we'll
         // know if it has because we'll see a different value (2 rather than 1).
@@ -1344,7 +1328,7 @@ mod tests {
                 &[(TestKey(1..2), 1), (TestKey(2..3), 2), (TestKey(4..5), 3)],
                 &[(TestKey(1..2), 4), (TestKey(2..3), 5), (TestKey(3..4), 6)],
             ],
-            Query::FullRange(&TestKey(1..2)),
+            Query::FullRange(&TestKey(1..2).search_key().unwrap()),
             &[(TestKey(1..2), 1), (TestKey(2..3), 2), (TestKey(3..4), 6), (TestKey(4..5), 3)],
         )
         .await;
@@ -1356,7 +1340,7 @@ mod tests {
         // but this time, the keys are at the end.
         test_advance(
             &[&[(TestKey(1..2), 1)], &[(TestKey(1..2), 2)]],
-            Query::FullRange(&TestKey(1..2)),
+            Query::FullRange(&TestKey(1..2).search_key().unwrap()),
             &[(TestKey(1..2), 1)],
         )
         .await;
@@ -1382,6 +1366,18 @@ mod tests {
     impl LayerKey for TestKeyWithFullMerge {
         fn merge_type(&self) -> MergeType {
             MergeType::FullMerge
+        }
+
+        fn search_key(&self) -> Option<Self> {
+            Some(Self(0..self.0.start + 1))
+        }
+
+        fn is_search_key(&self) -> bool {
+            self.0.start == 0
+        }
+
+        fn overlaps(&self, other: &Self) -> bool {
+            self.0.start < other.0.end && self.0.end > other.0.start
         }
     }
 
@@ -1435,21 +1431,21 @@ mod tests {
 
         test_advance(
             layer_set.as_slice(),
-            Query::FullRange(&TestKeyWithFullMerge(1..2)),
+            Query::FullRange(&TestKeyWithFullMerge(1..2).search_key().unwrap()),
             &full_merge_result,
         )
         .await;
 
         test_advance(
             layer_set.as_slice(),
-            Query::FullRange(&TestKeyWithFullMerge(2..3)),
+            Query::FullRange(&TestKeyWithFullMerge(2..3).search_key().unwrap()),
             &full_merge_result[2..],
         )
         .await;
 
         test_advance(
             layer_set.as_slice(),
-            Query::FullRange(&TestKeyWithFullMerge(3..4)),
+            Query::FullRange(&TestKeyWithFullMerge(3..4).search_key().unwrap()),
             &full_merge_result[4..],
         )
         .await;
@@ -1490,7 +1486,10 @@ mod tests {
             },
             counters(),
         );
-        let mut iter = merger.query(Query::FullRange(&items[0].key)).await.expect("seek failed");
+        let mut iter = merger
+            .query(Query::FullRange(&items[0].key.search_key().unwrap()))
+            .await
+            .expect("seek failed");
 
         let ItemRef { key, value, .. } = iter.get().expect("missing item");
         assert_eq!((key, *value), (&items[0].key, items[0].value + items[2].value));
@@ -1519,7 +1518,19 @@ mod tests {
     versioned_type! { 1.. => TestKeyWithDefaultLayerKey }
 
     // Default layer key is using `MergeType::FullMerge` and returns None for `next_key()`.
-    impl LayerKey for TestKeyWithDefaultLayerKey {}
+    impl LayerKey for TestKeyWithDefaultLayerKey {
+        fn search_key(&self) -> Option<Self> {
+            Some(Self(0..self.0.start + 1))
+        }
+
+        fn is_search_key(&self) -> bool {
+            self.0.start == 0
+        }
+
+        fn overlaps(&self, other: &Self) -> bool {
+            self.0.start < other.0.end && self.0.end > other.0.start
+        }
+    }
 
     impl SortByU64 for TestKeyWithDefaultLayerKey {
         fn get_leading_u64(&self) -> u64 {
@@ -1582,7 +1593,7 @@ mod tests {
                     (TestKeyWithDefaultLayerKey(3..4), 6),
                 ],
             ],
-            Query::FullRange(&TestKeyWithDefaultLayerKey(1..2)),
+            Query::FullRange(&TestKeyWithDefaultLayerKey(1..2).search_key().unwrap()),
             &[
                 (TestKeyWithDefaultLayerKey(1..2), 1),
                 (TestKeyWithDefaultLayerKey(1..2), 4),
@@ -1600,7 +1611,7 @@ mod tests {
         let skip_lists = [SkipListLayer::new(100), SkipListLayer::new(100)];
         let items = [
             Item::new(TestKeyWithDefaultLayerKey(2..3), 1),
-            Item::new(TestKeyWithDefaultLayerKey(1..1), 2),
+            Item::new(TestKeyWithDefaultLayerKey(0..1), 2),
         ];
         skip_lists[0].insert(items[0].clone()).expect("insert error");
         skip_lists[1].insert(items[1].clone()).expect("insert error");
@@ -1609,7 +1620,10 @@ mod tests {
             |_left, _right| MergeResult::EmitLeft,
             counters(),
         );
-        let iter = merger.query(Query::FullRange(&items[1].key)).await.expect("seek failed");
+        let iter = merger
+            .query(Query::FullRange(&items[1].key.search_key().unwrap()))
+            .await
+            .expect("seek failed");
 
         let ItemRef { key, value, .. } = iter.get().expect("missing item");
         assert_eq!((key, value), (&items[1].key, &items[1].value));
@@ -1629,7 +1643,10 @@ mod tests {
             |_left, _right| MergeResult::Other { emit: None, left: Discard, right: Keep },
             counters(),
         );
-        let iter = merger.query(Query::FullRange(&items[0].key)).await.expect("seek failed");
+        let iter = merger
+            .query(Query::FullRange(&items[0].key.search_key().unwrap()))
+            .await
+            .expect("seek failed");
 
         // Seek should only search in the first skip list, so no merge should take place, and we'll
         // know if it has because we'll see a different value (2 rather than 1).
@@ -1649,7 +1666,10 @@ mod tests {
             |_left, _right| MergeResult::Other { emit: None, left: Discard, right: Keep },
             counters(),
         );
-        let iter = merger.query(Query::FullRange(&TestKey(0..0))).await.expect("seek failed");
+        let iter = merger
+            .query(Query::FullRange(&TestKey(0..0).search_key().unwrap()))
+            .await
+            .expect("seek failed");
 
         // This should find the 2..2 key because of our merge function.
         let ItemRef { key, value, .. } = iter.get().expect("missing item");
@@ -1667,7 +1687,10 @@ mod tests {
             |_left, _right| MergeResult::Other { emit: None, left: Discard, right: Keep },
             counters(),
         );
-        let iter = merger.query(Query::FullRange(&TestKey(3..3))).await.expect("seek failed");
+        let iter = merger
+            .query(Query::FullRange(&TestKey(3..3).search_key().unwrap()))
+            .await
+            .expect("seek failed");
 
         assert!(iter.get().is_none());
     }
@@ -1675,7 +1698,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_all_discarded() {
         let skip_lists = [SkipListLayer::new(100), SkipListLayer::new(100)];
-        let items = [Item::new(TestKey(1..1), 1), Item::new(TestKey(2..2), 2)];
+        let items = [Item::new(TestKey(1..2), 1), Item::new(TestKey(2..3), 2)];
         skip_lists[0].insert(items[1].clone()).expect("insert error");
         skip_lists[1].insert(items[0].clone()).expect("insert error");
         let mut merger = Merger::new(
@@ -1685,32 +1708,6 @@ mod tests {
         );
         let iter = merger.query(Query::FullScan).await.expect("seek failed");
         assert!(iter.get().is_none());
-    }
-
-    #[fuchsia::test]
-    async fn test_seek_with_merged_key_less_than() {
-        let skip_lists = [SkipListLayer::new(100), SkipListLayer::new(100)];
-        let items = [Item::new(TestKey(1..8), 1), Item::new(TestKey(2..10), 2)];
-        skip_lists[0].insert(items[0].clone()).expect("insert error");
-        skip_lists[1].insert(items[1].clone()).expect("insert error");
-        let mut merger = Merger::new(
-            layer_ref_iter(&skip_lists),
-            |left, _right| {
-                if left.key() == &TestKey(1..8) {
-                    MergeResult::Other {
-                        emit: None,
-                        left: Replace(Item::new(TestKey(1..2), 1).boxed()),
-                        right: Keep,
-                    }
-                } else {
-                    MergeResult::EmitLeft
-                }
-            },
-            counters(),
-        );
-        let iter = merger.query(Query::FullRange(&TestKey(0..3))).await.expect("seek failed");
-        let ItemRef { key, value, .. } = iter.get().expect("missing item");
-        assert_eq!((key, value), (&items[1].key, &items[1].value));
     }
 
     #[fuchsia::test]
@@ -1751,7 +1748,10 @@ mod tests {
             },
             counters(),
         );
-        let mut iter = merger.query(Query::FullRange(&TestKey(0..1))).await.expect("seek failed");
+        let mut iter = merger
+            .query(Query::FullRange(&TestKey(0..1).search_key().unwrap()))
+            .await
+            .expect("seek failed");
         assert_eq!(iter.pending_iterators_len(), 2);
         let ItemRef { key, .. } = iter.get().expect("missing item");
         assert_eq!(key, &TestKey(0..10));
@@ -1975,22 +1975,19 @@ mod tests {
 
         let mut iter =
             merger.query(Query::LimitedRange(&TestKey(10..20))).await.expect("seek failed");
-        // TODO(https://fxbug.dev/510925696): This currently fails because search_key() returns
-        // 0..n+1 which matches all layers. In subsequent CL, we should have search_key() return
-        // n..n+1.
-        assert_eq!(iter.pending_iterators_len(), 0);
+        assert_eq!(iter.pending_iterators_len(), 1);
 
         let ItemRef { key, .. } = iter.get().expect("missing item");
         assert_eq!(key, &TestKey(10..20));
 
         iter.advance().await.expect("advance failed");
-        assert_eq!(iter.pending_iterators_len(), 0);
+        assert_eq!(iter.pending_iterators_len(), 1);
 
         let ItemRef { key, .. } = iter.get().expect("missing item");
         assert_eq!(key, &TestKey(20..30));
 
         iter.advance().await.expect("advance failed");
-        assert_eq!(iter.pending_iterators_len(), 0);
+        assert_eq!(iter.pending_iterators_len(), 1);
 
         let ItemRef { key, .. } = iter.get().expect("missing item");
         assert_eq!(key, &TestKey(30..40));

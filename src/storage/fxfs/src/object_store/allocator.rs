@@ -97,7 +97,7 @@ use crate::lsm_tree::cache::NullCache;
 use crate::lsm_tree::skip_list_layer::SkipListLayer;
 use crate::lsm_tree::types::{
     FuzzyHash, Item, ItemRef, Layer, LayerIterator, LayerKey, MergeType, OrdLowerBound,
-    OrdUpperBound, RangeKey, SortByU64, Value,
+    OrdUpperBound, SortByU64, Value,
 };
 use crate::lsm_tree::{LSMTree, Query, compact_with_iterator, layers_from_handles};
 use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle};
@@ -369,6 +369,23 @@ impl LayerKey for AllocatorKey {
     fn merge_type(&self) -> MergeType {
         MergeType::OptimizedMerge
     }
+
+    fn next_key(&self) -> Option<Self> {
+        Some(Self { device_range: ExtentKey::new(0..self.device_range.end + 1) })
+    }
+
+    fn search_key(&self) -> Option<Self> {
+        Some(Self { device_range: ExtentKey::new(0..self.device_range.start + 1) })
+    }
+
+    fn is_search_key(&self) -> bool {
+        self.device_range.start == 0
+    }
+
+    fn overlaps(&self, other: &Self) -> bool {
+        self.device_range.start < other.device_range.end
+            && self.device_range.end > other.device_range.start
+    }
 }
 
 impl OrdUpperBound for AllocatorKey {
@@ -405,13 +422,6 @@ impl Ord for AllocatorKey {
 impl PartialOrd for AllocatorKey {
     fn partial_cmp(&self, other: &AllocatorKey) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-impl RangeKey for AllocatorKey {
-    fn overlaps(&self, other: &Self) -> bool {
-        self.device_range.start < other.device_range.end
-            && self.device_range.end > other.device_range.start
     }
 }
 
@@ -1049,7 +1059,7 @@ impl Allocator {
             .filter(
                 merger
                     .query(Query::FullRange(&AllocatorKey {
-                        device_range: ExtentKey::new(offset..0),
+                        device_range: ExtentKey::new(0..offset + 1),
                     }))
                     .await?,
                 false,

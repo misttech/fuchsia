@@ -53,11 +53,19 @@ impl LayerKey for TestKey {
     }
 
     fn next_key(&self) -> Option<Self> {
-        Some(TestKey(self.0.end..self.0.end + 1))
+        Some(TestKey(0..self.0.end + 1))
     }
 
-    fn search_key(&self) -> Self {
-        TestKey(0..self.0.start + 1)
+    fn search_key(&self) -> Option<Self> {
+        Some(TestKey(0..self.0.start + 1))
+    }
+
+    fn is_search_key(&self) -> bool {
+        self.0.start == 0
+    }
+
+    fn overlaps(&self, other: &Self) -> bool {
+        self.0.start < other.0.end && self.0.end > other.0.start
     }
 }
 
@@ -115,6 +123,10 @@ impl DefaultOrdLowerBound for i32 {}
 impl LayerKey for i32 {
     fn merge_type(&self) -> MergeType {
         MergeType::FullMerge
+    }
+
+    fn overlaps(&self, other: &Self) -> bool {
+        self == other
     }
 }
 

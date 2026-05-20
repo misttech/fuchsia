@@ -11,7 +11,7 @@ use crate::checksum::Checksums;
 use crate::log::error;
 use crate::lsm_tree::types::{
     FuzzyHash, Item, ItemRef, LayerKey, LegacyItem, MergeType, OrdLowerBound, OrdUpperBound,
-    RangeKey, SortByU64, Value,
+    SortByU64, Value,
 };
 use crate::object_store::extent_record::{
     ExtentKey, ExtentKeyPartitionIterator, ExtentKeyV32, ExtentValue, ExtentValueV38,
@@ -398,7 +398,7 @@ impl LayerKey for ObjectKey {
                     object_id: self.object_id,
                     data: ObjectKeyData::Attribute(
                         *attr_id,
-                        AttributeKey::Extent(ExtentKey { range: range.end..range.end + 1 }),
+                        AttributeKey::Extent(ExtentKey { range: 0..range.end + 1 }),
                     ),
                 })
             }
@@ -406,20 +406,25 @@ impl LayerKey for ObjectKey {
         }
     }
 
-    fn search_key(&self) -> Self {
+    fn search_key(&self) -> Option<Self> {
         if let Self {
             object_id,
             data: ObjectKeyData::Attribute(attribute_id, AttributeKey::Extent(e)),
         } = self
         {
-            Self::attribute(*object_id, *attribute_id, AttributeKey::Extent(e.search_key()))
+            Some(Self::attribute(*object_id, *attribute_id, AttributeKey::Extent(e.search_key())))
         } else {
-            self.clone()
+            None
         }
     }
-}
 
-impl RangeKey for ObjectKey {
+    fn is_search_key(&self) -> bool {
+        match self {
+            Self { data: ObjectKeyData::Attribute(_, AttributeKey::Extent(e)), .. } => e.start == 0,
+            _ => true,
+        }
+    }
+
     fn overlaps(&self, other: &Self) -> bool {
         if self.object_id != other.object_id {
             return false;
@@ -1053,10 +1058,7 @@ pub type FxfsKeyV49 = fxfs_crypto::FxfsKey;
 #[cfg(test)]
 mod tests {
     use super::{ObjectKey, ObjectKeyV54, TimestampV49};
-    use crate::lsm_tree::types::{
-        FuzzyHash as _, LayerKey, OrdLowerBound, OrdUpperBound, RangeKey,
-    };
-    use std::cmp::Ordering;
+    use crate::lsm_tree::types::{FuzzyHash as _, LayerKey};
     use std::ops::Add;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -1081,18 +1083,13 @@ mod tests {
 
     #[test]
     fn test_next_key() {
-        let next_key = ObjectKey::extent(1, 0, 0..100).next_key().unwrap();
-        assert_eq!(ObjectKey::extent(1, 0, 101..200).cmp_lower_bound(&next_key), Ordering::Greater);
-        assert_eq!(ObjectKey::extent(1, 0, 100..200).cmp_lower_bound(&next_key), Ordering::Equal);
-        assert_eq!(ObjectKey::extent(1, 0, 100..101).cmp_lower_bound(&next_key), Ordering::Equal);
-        assert_eq!(ObjectKey::extent(1, 0, 99..100).cmp_lower_bound(&next_key), Ordering::Less);
-        assert_eq!(ObjectKey::extent(1, 0, 0..100).cmp_upper_bound(&next_key), Ordering::Less);
-        assert_eq!(ObjectKey::extent(1, 0, 99..100).cmp_upper_bound(&next_key), Ordering::Less);
-        assert_eq!(ObjectKey::extent(1, 0, 100..101).cmp_upper_bound(&next_key), Ordering::Equal);
-        assert_eq!(ObjectKey::extent(1, 0, 100..200).cmp_upper_bound(&next_key), Ordering::Greater);
-        assert_eq!(ObjectKey::extent(1, 0, 50..101).cmp_upper_bound(&next_key), Ordering::Less);
-        assert_eq!(ObjectKey::extent(1, 0, 50..200).cmp_upper_bound(&next_key), Ordering::Greater);
+        assert_eq!(
+            ObjectKey::extent(1, 0, 25..100).next_key().unwrap(),
+            ObjectKey::extent(1, 0, 0..101)
+        );
+        assert_eq!(ObjectKey::object(100).next_key(), None);
     }
+
     #[test]
     fn test_range_key() {
         // Make sure we disallow using extent keys with point queries. Other object keys should

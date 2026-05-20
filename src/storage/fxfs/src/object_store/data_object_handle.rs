@@ -1322,10 +1322,10 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             let mut merger = layer_set.merger();
             let aligned_old_size = round_down(old_size, block_size);
             let iter = merger
-                .query(Query::FullRange(&ObjectKey::extent(
+                .query(Query::FullRange(&ObjectKey::attribute(
                     self.object_id(),
                     self.attribute_id(),
-                    aligned_old_size..aligned_old_size + 1,
+                    AttributeKey::Extent(ExtentKey::search_key_from_offset(aligned_old_size)),
                 )))
                 .await?;
             if let Some(ItemRef {
