@@ -393,7 +393,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:199
+From //build/bazel/bazel_root_targets_list.gni:214
 
 ### bazel_upload_build_events
 
@@ -920,7 +920,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   ubsan = {
@@ -1002,7 +1002,7 @@ This should never be set as a build argument.
 }
   hwasan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
@@ -1082,7 +1082,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   ubsan = {
@@ -2231,6 +2231,14 @@ artifact. Schema is:
 }, {
   bazel_label = "//tools/jq5:jq5"
   install_host_tool = true
+}, {
+  bazel_label = "//tools/check-licenses:tests"
+  bazel_name = "build.stamp"
+  ninja_name = "tools_check-licenses_stamp_tests.stamp"
+}, {
+  bazel_label = "//tools/whereiscl:tests"
+  bazel_name = "build.stamp"
+  ninja_name = "tools_whereiscl_stamp_tests.stamp"
 }]
 ```
 
