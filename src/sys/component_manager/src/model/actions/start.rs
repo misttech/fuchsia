@@ -365,6 +365,25 @@ async fn start_component(
     let break_on_start_left;
     let break_on_start_right;
 
+    let escrowed_state_opt =
+        if start_context.runner.is_some() {
+            let actor_handle = {
+                let state = component.lock_state().await;
+                if let Some(r) = should_return_early(&state, &component.moniker) {
+                    return r;
+                }
+                state.get_resolved_state().and_then(|r| r.program_escrow().cloned()).ok_or(
+                    StartActionError::InstanceDestroyed { moniker: component.moniker.clone() },
+                )?
+            };
+
+            Some(actor_handle.will_start().await.ok_or(StartActionError::InstanceDestroyed {
+                moniker: component.moniker.clone(),
+            })?)
+        } else {
+            None
+        };
+
     {
         let mut state = component.lock_state().await;
 
@@ -389,10 +408,6 @@ async fn start_component(
             let component_instance = state
                 .instance_token(moniker, &component.context)
                 .ok_or(StartActionError::InstanceDestroyed { moniker: moniker.clone() })?;
-            let escrowed_state = state
-                .reap_escrowed_state_during_start()
-                .await
-                .ok_or(StartActionError::InstanceDestroyed { moniker: moniker.clone() })?;
 
             let start_info = StartInfo {
                 url: component.component_url.clone().into(),
@@ -407,6 +422,8 @@ async fn start_component(
                 break_on_start: Some(break_on_start_left),
                 component_instance,
             };
+
+            let escrowed_state = escrowed_state_opt.unwrap();
 
             Some(Program::start(&runner, start_info, escrowed_state, diagnostics_sender).map_err(
                 |err| StartActionError::StartProgramError { moniker: moniker.clone(), err },
@@ -425,6 +442,7 @@ async fn start_component(
         let timestamp_monotonic = started.timestamp_monotonic;
         runtime_info = RuntimeInfo::new(timestamp, timestamp_monotonic, diagnostics_receiver);
         runtime_dir = started.runtime_dir().cloned();
+
         state.replace(|instance_state| match instance_state {
             InstanceState::Resolved(resolved) => InstanceState::Started(resolved, started),
             other_state => panic!("starting an unresolved component: {:?}", other_state),

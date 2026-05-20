@@ -10,7 +10,7 @@ use crate::model::component::{
     WeakComponentInstance, WeakExtendedInstance,
 };
 use crate::model::context::ModelContext;
-use crate::model::escrow::{self, EscrowedState};
+use crate::model::escrow;
 use crate::model::events::hook_observer::HookObserver;
 use crate::model::events::names_from_filter;
 use crate::model::events::use_router::EventStreamUseRouter;
@@ -192,13 +192,6 @@ impl InstanceState {
             }
             InstanceState::Destroyed => None,
         }
-    }
-
-    /// Removes any escrowed state such that they can be passed back to the component
-    /// as it is started.
-    pub async fn reap_escrowed_state_during_start(&mut self) -> Option<EscrowedState> {
-        let escrow = self.get_resolved_state().and_then(|state| state.program_escrow())?;
-        escrow.will_start().await
     }
 
     /// Scope server_end to `StartedInstanceState`. This ensures that the channel will be kept

@@ -75,7 +75,7 @@ impl ActionCoordinator {
                 }
                 Some(Command::RunAction(action, notifier_sender)) => {
                     let Ok(component) = self.component.upgrade() else {
-                        return;
+                        continue;
                     };
                     let notifier =
                         ActionSet::register_no_wait(self.action_set.clone(), &component, action);
