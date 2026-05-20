@@ -168,6 +168,15 @@ TransferStatus BufferForwarder::WriteBuffer(cpp20::span<const uint8_t> data) con
       return TransferStatus::kWriteError;
     }
     data = data.subspan(actual);
+    total_bytes_written_ += actual;
+    if (total_bytes_written_ >= next_bytes_written_logging_threshold_) {
+      size_t bytes_written_interval_crossed =
+          (total_bytes_written_ / kBytesWrittenLoggingInterval) * kBytesWrittenLoggingInterval;
+      size_t interval_crossed_mb = bytes_written_interval_crossed / (1024 * 1024);
+      FX_LOGS(INFO) << "Trace size: streamed " << interval_crossed_mb << " MB";
+      next_bytes_written_logging_threshold_ =
+          bytes_written_interval_crossed + kBytesWrittenLoggingInterval;
+    }
   }
 
   return TransferStatus::kComplete;

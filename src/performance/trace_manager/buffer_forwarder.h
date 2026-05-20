@@ -14,6 +14,8 @@
 namespace tracing {
 class BufferForwarder {
  public:
+  static constexpr size_t kBytesWrittenLoggingInterval = 100 * 1024 * 1024;  // 100 MB
+
   explicit BufferForwarder(zx::socket destination) : destination_(std::move(destination)) {}
 
   // Write the FxT Magic Bytes to the underlying socket.
@@ -52,6 +54,10 @@ class BufferForwarder {
   // during the transfer.
   virtual TransferStatus WriteBuffer(cpp20::span<const uint8_t> data) const;
   const zx::socket destination_;
+
+ private:
+  mutable size_t next_bytes_written_logging_threshold_ = kBytesWrittenLoggingInterval;
+  mutable size_t total_bytes_written_ = 0;
 };
 }  // namespace tracing
 
