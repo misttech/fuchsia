@@ -1376,33 +1376,13 @@ is_heapdump = fuchsia_toolchain_tags + [ "heapdump" ] - [ "heapdump" ] !=
 # Prepend the prefix configs, if any, before the default ones.
 default_common_binary_configs = toolchain_variant.prefix_configs
 
-default_common_rust_configs = [
-  "//build/config/rust:parallel_frontend_threads",
-  "//build/config/rust:default_debug_assertions",
-  "//build/config/rust:error_format_human",
-  "//build/config/rust:incremental",
-  "//build/config/rust:no_features",
-  "//build/config/rust:target",
-  "//build/config/rust:cap_lints",
-  "//build/config/rust:2018_idioms",
-  "//build/config/rust/lints:allow_default",
-  "//build/config/rust/lints:warn_default",
-  "//build/config/rust/lints:deny_default",
-  "//build/config/rust/lints:toolchain_roll_exceptions",
-]
-if (is_fuchsia) {
-  default_common_rust_configs += [
-    "//build/config/rust:panic_abort",
-    "//build/config/rust:v0_symbol_mangling",
-  ]
-}
-if (is_analysis) {
-  default_common_rust_configs += [ "//build/config/rust:analysis" ]
-}
-
 # Note that Zircon toolchains and non-Zircon ones have a very different set
 # of default configs for all target types.
 if (zircon_toolchain == false) {
+  # Enable the rust compiler's parallel front-end for all binaries.
+  default_common_binary_configs +=
+      [ "//build/config/rust:parallel_frontend_threads" ]
+
   # All binary targets will get this list of configs by default.
   default_common_binary_configs += [
     "//build/config:compiler",
@@ -1419,11 +1399,24 @@ if (zircon_toolchain == false) {
     "//build/config:no_rtti",
     "//build/config:symbol_visibility_hidden",
     "//build/config:libcpp_remove_transitive_includes",
+    "//build/config/rust:default_debug_assertions",
+    "//build/config/rust:error_format_human",
+    "//build/config/rust:incremental",
+    "//build/config/rust:no_features",
+    "//build/config/rust:target",
+    "//build/config/rust:cap_lints",
+    "//build/config/rust:2018_idioms",
+    "//build/config/rust/lints:allow_default",
+    "//build/config/rust/lints:warn_default",
+    "//build/config/rust/lints:deny_default",
+    "//build/config/rust/lints:toolchain_roll_exceptions",
     "//build/config:werror",
     "//build/config:no-template-backtrace-limit",
   ]
 
-  default_common_binary_configs += default_common_rust_configs
+  if (is_analysis) {
+    default_common_binary_configs += [ "//build/config/rust:analysis" ]
+  }
 
   if (is_release) {
     default_common_binary_configs += [ "//build/config:release" ]
@@ -1438,6 +1431,8 @@ if (zircon_toolchain == false) {
       "//build/config:thread_safety_annotations",
       "//build/config/fuchsia:dynamic_rust_standard_library",
       "//build/config/fuchsia:large_rust_stack",
+      "//build/config/rust:panic_abort",
+      "//build/config/rust:v0_symbol_mangling",
 
       # TODO(mcgrathr): Perhaps restrict this to only affected code.
       # For now, safest to do it everywhere.
@@ -1500,6 +1495,10 @@ if (zircon_toolchain == false) {
     "//build/config:relative_paths",
     "//build/config:symbol_visibility_hidden",
     "//build/config:thread_safety_annotations",
+    "//build/config/rust/lints:allow_default",
+    "//build/config/rust/lints:warn_default",
+    "//build/config/rust/lints:deny_default",
+    "//build/config/rust/lints:toolchain_roll_exceptions",
     "//build/config:werror",
     "//build/config:no-template-backtrace-limit",
     "//build/config/zircon:compiler",
@@ -1507,8 +1506,6 @@ if (zircon_toolchain == false) {
     "//build/config/zircon:default_assert_level",
     "//build/config/zircon:default_icf",
   ]
-
-  default_common_binary_configs += default_common_rust_configs
 
   # NOTE: Contrary to the Fuchsia build, we start by removing common configs
   # then adding new ones. This is necessary because some Zircon kernel
