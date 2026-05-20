@@ -75,21 +75,13 @@
                     metric_type: "Occurrence",
                     selector: "bootstrap/fshost:root/minfs_upgrade:3_finished",
                 },
-
-                // TODO(https://fxbug.dev/443076588): delete metrics pointing at bootstrap/fshost/minfs and
-                // bootstrap/fshost/blobfs once storage-host is completely enabled. Keep the new metrics
-                // pointing at bootstrap/fshost/fvm2/fs-collection* and
-                // bootstrap/fshost/fvm2/blobfs-collection* instead.
                 {
                     event_codes: [
                         3,
                     ],
                     metric_id: 4008,
                     metric_type: "Occurrence",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.fvm:out_of_space_events",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.fvm:out_of_space_events",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.fvm:out_of_space_events",
                 },
                 {
                     event_codes: [
@@ -97,10 +89,7 @@
                     ],
                     metric_id: 9004,
                     metric_type: "Occurrence",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.detail:recovered_space_events",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.detail:recovered_space_events",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.detail:recovered_space_events",
                 },
                 {
                     event_codes: [
@@ -108,10 +97,7 @@
                     ],
                     metric_id: 61,
                     metric_type: "String",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.info:oldest_version",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.info:oldest_version",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.info:oldest_version",
                     upload_once: true,
                 },
                 {
@@ -120,10 +106,7 @@
                     ],
                     metric_id: 61,
                     metric_type: "String",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.info:oldest_version",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.info:oldest_version",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.info:oldest_version",
                     upload_once: true,
                 },
                 {
@@ -159,10 +142,7 @@
                     ],
                     metric_id: 62,
                     metric_type: "Integer",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.detail/fragmentation_metrics:total_nodes",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/fragmentation_metrics:total_nodes",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/fragmentation_metrics:total_nodes",
                     upload_once: true,
                 },
                 {
@@ -171,10 +151,7 @@
                     ],
                     metric_id: 63,
                     metric_type: "Integer",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.detail/fragmentation_metrics:files_in_use",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/fragmentation_metrics:files_in_use",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/fragmentation_metrics:files_in_use",
                     upload_once: true,
                 },
                 {
@@ -183,10 +160,7 @@
                     ],
                     metric_id: 64,
                     metric_type: "Integer",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.detail/fragmentation_metrics:extent_containers_in_use",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/fragmentation_metrics:extent_containers_in_use",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/fragmentation_metrics:extent_containers_in_use",
                     upload_once: true,
                 },
                 {
@@ -195,10 +169,7 @@
                     ],
                     metric_id: 65,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.detail/fragmentation_metrics:extents_per_file",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/fragmentation_metrics:extents_per_file",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/fragmentation_metrics:extents_per_file",
                     upload_once: true,
                 },
                 {
@@ -207,10 +178,7 @@
                     ],
                     metric_id: 66,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.detail/fragmentation_metrics:in_use_fragments",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/fragmentation_metrics:in_use_fragments",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/fragmentation_metrics:in_use_fragments",
                     upload_once: true,
                 },
                 {
@@ -219,10 +187,7 @@
                     ],
                     metric_id: 67,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.detail/fragmentation_metrics:free_fragments",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/fragmentation_metrics:free_fragments",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/fragmentation_metrics:free_fragments",
                     upload_once: true,
                 },
                 {
@@ -232,10 +197,7 @@
                     ],
                     metric_id: 49,
                     metric_type: "Integer",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.detail/compression_metrics:uncompressed_bytes",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/compression_metrics:uncompressed_bytes",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/compression_metrics:uncompressed_bytes",
                     upload_once: true,
                 },
                 {
@@ -245,10 +207,7 @@
                     ],
                     metric_id: 49,
                     metric_type: "Integer",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.detail/compression_metrics:zstd_chunked_bytes",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/compression_metrics:zstd_chunked_bytes",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.detail/compression_metrics:zstd_chunked_bytes",
                     upload_once: true,
                 },
                 {
@@ -258,10 +217,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.opstats/append:latency",
-                        "bootstrap/fshost/fvm2/blobfs-collection:root/fs.opstats/append:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/append:latency",
                 },
                 {
                     event_codes: [
@@ -270,10 +226,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.opstats/close:latency",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/close:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/close:latency",
                 },
                 {
                     event_codes: [
@@ -282,10 +235,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.opstats/create:latency",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/create:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/create:latency",
                 },
                 {
                     event_codes: [
@@ -294,10 +244,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.opstats/get_attr:latency",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/get_attr:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/get_attr:latency",
                 },
                 {
                     event_codes: [
@@ -306,10 +253,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.opstats/link:latency",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/link:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/link:latency",
                 },
                 {
                     event_codes: [
@@ -318,10 +262,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.opstats/lookup:latency",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/lookup:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/lookup:latency",
                 },
                 {
                     event_codes: [
@@ -330,10 +271,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.opstats/read:latency",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/read:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/read:latency",
                 },
                 {
                     event_codes: [
@@ -342,10 +280,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.opstats/read_dir:latency",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/read_dir:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/read_dir:latency",
                 },
                 {
                     event_codes: [
@@ -354,10 +289,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.opstats/set_attr:latency",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/set_attr:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/set_attr:latency",
                 },
                 {
                     event_codes: [
@@ -366,10 +298,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.opstats/sync:latency",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/sync:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/sync:latency",
                 },
                 {
                     event_codes: [
@@ -378,10 +307,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.opstats/truncate:latency",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/truncate:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/truncate:latency",
                 },
                 {
                     event_codes: [
@@ -390,10 +316,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.opstats/unlink:latency",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/unlink:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/unlink:latency",
                 },
                 {
                     event_codes: [
@@ -402,10 +325,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/fs.opstats/write:latency",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/write:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/fs.opstats/write:latency",
                 },
                 {
                     event_codes: [
@@ -414,10 +334,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.opstats/append:latency",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/append:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/append:latency",
                 },
                 {
                     event_codes: [
@@ -426,10 +343,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.opstats/close:latency",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/close:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/close:latency",
                 },
                 {
                     event_codes: [
@@ -438,10 +352,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.opstats/create:latency",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/create:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/create:latency",
                 },
                 {
                     event_codes: [
@@ -450,10 +361,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.opstats/get_attr:latency",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/get_attr:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/get_attr:latency",
                 },
                 {
                     event_codes: [
@@ -462,10 +370,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.opstats/link:latency",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/link:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/link:latency",
                 },
                 {
                     event_codes: [
@@ -474,10 +379,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.opstats/lookup:latency",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/lookup:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/lookup:latency",
                 },
                 {
                     event_codes: [
@@ -486,10 +388,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.opstats/read:latency",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/read:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/read:latency",
                 },
                 {
                     event_codes: [
@@ -498,10 +397,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.opstats/read_dir:latency",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/read_dir:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/read_dir:latency",
                 },
                 {
                     event_codes: [
@@ -510,10 +406,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.opstats/set_attr:latency",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/set_attr:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/set_attr:latency",
                 },
                 {
                     event_codes: [
@@ -522,10 +415,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.opstats/sync:latency",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/sync:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/sync:latency",
                 },
                 {
                     event_codes: [
@@ -534,10 +424,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.opstats/truncate:latency",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/truncate:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/truncate:latency",
                 },
                 {
                     event_codes: [
@@ -546,10 +433,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.opstats/unlink:latency",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/unlink:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/unlink:latency",
                 },
                 {
                     event_codes: [
@@ -558,10 +442,7 @@
                     ],
                     metric_id: 70,
                     metric_type: "IntHistogram",
-                    selector: [
-                        "bootstrap/fshost/minfs:root/fs.opstats/write:latency",
-                        "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/write:latency",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/fs-collection*:root/fs.opstats/write:latency",
                 },
                 {
                     event_codes: [],
@@ -609,10 +490,7 @@
                     ],
                     metric_id: 9008,
                     metric_type: "Integer",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/blob_layout_stats:compact_layout_blobs",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/blob_layout_stats:compact_layout_blobs",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/blob_layout_stats:compact_layout_blobs",
                 },
                 {
                     event_codes: [
@@ -620,10 +498,7 @@
                     ],
                     metric_id: 9008,
                     metric_type: "Integer",
-                    selector: [
-                        "bootstrap/fshost/blobfs:root/blob_layout_stats:padded_layout_blobs",
-                        "bootstrap/fshost/fvm2/blobfs-collection*:root/blob_layout_stats:padded_layout_blobs",
-                    ],
+                    selector: "bootstrap/fshost/fvm2/blobfs-collection*:root/blob_layout_stats:padded_layout_blobs",
                 },
             ],
             poll_rate_sec: 600,
