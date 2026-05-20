@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::prelude::ot::Error;
-use fidl_fuchsia_net_stack_ext::NetstackError;
+use lowpan_driver_common::net::RouteAdminError;
 use openthread::ot;
 use std::fmt::Debug;
 use zx_status::Status as ZxStatus;
@@ -56,7 +56,7 @@ impl From<ErrorAdapter<futures::channel::oneshot::Canceled>> for ZxStatus {
 
 pub trait ErrorExt {
     fn get_zx_status(&self) -> Option<ZxStatus>;
-    fn get_netstack_error(&self) -> Option<fidl_fuchsia_net_stack::Error>;
+    fn get_route_admin_error(&self) -> Option<RouteAdminError>;
     fn get_ot_error(&self) -> Option<ot::Error>;
 }
 
@@ -67,9 +67,9 @@ impl ErrorExt for anyhow::Error {
         self.downcast_ref::<ZxStatus>().map(|status| *status)
     }
 
-    /// If this error is based on a Netstack `Error`, then return it.
-    fn get_netstack_error(&self) -> Option<fidl_fuchsia_net_stack::Error> {
-        self.downcast_ref::<NetstackError>().map(|err| err.0)
+    /// If this error is based on a RouteAdminError, then return it.
+    fn get_route_admin_error(&self) -> Option<RouteAdminError> {
+        self.downcast_ref::<RouteAdminError>().map(|err| *err)
     }
 
     fn get_ot_error(&self) -> Option<ot::Error> {
@@ -92,8 +92,7 @@ impl ErrorResultExt for Result<(), anyhow::Error> {
         self.or_else(|err| {
             if err.get_zx_status() == Some(ZxStatus::ALREADY_EXISTS) {
                 Ok(())
-            } else if err.get_netstack_error() == Some(fidl_fuchsia_net_stack::Error::AlreadyExists)
-            {
+            } else if err.get_route_admin_error() == Some(RouteAdminError::AlreadyExists) {
                 Ok(())
             } else if err.get_ot_error() == Some(ot::Error::Already) {
                 Ok(())
@@ -108,7 +107,7 @@ impl ErrorResultExt for Result<(), anyhow::Error> {
         self.or_else(|err| {
             if err.get_zx_status() == Some(ZxStatus::NOT_FOUND) {
                 Ok(())
-            } else if err.get_netstack_error() == Some(fidl_fuchsia_net_stack::Error::NotFound) {
+            } else if err.get_route_admin_error() == Some(RouteAdminError::NotFound) {
                 Ok(())
             } else if err.get_ot_error() == Some(ot::Error::NotFound) {
                 Ok(())
@@ -121,11 +120,7 @@ impl ErrorResultExt for Result<(), anyhow::Error> {
     fn ignore_rejected(self) -> Result<(), Self::Error> {
         #[allow(clippy::if_same_then_else)] // TODO(https://fxbug.dev/42177056)
         self.or_else(|err| {
-            if err.get_ot_error() == Some(ot::Error::Rejected) {
-                Ok(())
-            } else {
-                Err(err)
-            }
+            if err.get_ot_error() == Some(ot::Error::Rejected) { Ok(()) } else { Err(err) }
         })
     }
 }

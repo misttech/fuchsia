@@ -18,8 +18,8 @@ use fidl_fuchsia_net as fnet;
 use fidl_fuchsia_net_ext as fnetext;
 use fidl_fuchsia_net_interfaces_admin as fnetifadmin;
 use fidl_fuchsia_net_interfaces_ext as fnetifext;
-use fidl_fuchsia_net_stack as fnetstack;
-use fidl_fuchsia_net_stack_ext::FidlReturn as _;
+use fidl_fuchsia_net_routes as fnetroutes;
+use fidl_fuchsia_net_routes_admin as fnetroutesadmin;
 use fidl_fuchsia_net_tun as ftun;
 use fuchsia_async::net::DatagramSocket;
 use fuchsia_component::client::{connect_channel_to_protocol, connect_to_protocol};
@@ -37,10 +37,52 @@ pub struct TunNetworkInterface {
     // TODO(https://fxbug.dev/42143339): use `control` after converting methods to async.
     control: fnetifext::admin::Control,
     control_sync: Mutex<fnetifadmin::ControlSynchronousProxy>,
-    stack_sync: Mutex<fnetstack::StackSynchronousProxy>,
+    route_set_v4_sync: Mutex<fnetroutesadmin::RouteSetV4SynchronousProxy>,
+    route_set_v6_sync: Mutex<fnetroutesadmin::RouteSetV6SynchronousProxy>,
     routes: Mutex<HashMap<fnet::Subnet, HashSet<std::net::Ipv6Addr>>>,
     mcast_socket: DatagramSocket,
     id: u64,
+}
+
+/// Error types for RouteSet and interface authentication.
+#[derive(thiserror::Error, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RouteAdminError {
+    /// An error returned by route set manipulation methods.
+    #[error("RouteSet error: {0:?}")]
+    RouteSet(fnetroutesadmin::RouteSetError),
+    /// An error returned by interface authentication method.
+    #[error("AuthenticateForInterface error: {0:?}")]
+    AuthenticateForInterface(fnetroutesadmin::AuthenticateForInterfaceError),
+    /// Route already exists in the route set.
+    #[error("Route already exists")]
+    AlreadyExists,
+    /// Route was not found in the route set.
+    #[error("Route not found")]
+    NotFound,
+}
+
+// A macro is used here instead of a generic function because the generated V4 and V6
+// synchronous FIDL proxies do not share common traits. Using a macro avoids writing
+// considerable custom trait boilerplate.
+macro_rules! init_route_set {
+    ($routes_marker:ty, $routes_proxy:ty, $route_set_proxy:ty, $proof:expr, $name:expr) => {{
+        let (routes_client, routes_server) = zx::Channel::create();
+        connect_channel_to_protocol::<$routes_marker>(routes_server)
+            .context(format!("failed to connect to RouteTable{}", $name))?;
+        let routes_sync = <$routes_proxy>::new(routes_client);
+
+        let (route_set_client, route_set_server) = zx::Channel::create();
+        routes_sync
+            .new_route_set(route_set_server.into())
+            .context(format!("failed to call new_route_set {}", $name))?;
+        let route_set_sync = <$route_set_proxy>::new(route_set_client);
+        route_set_sync
+            .authenticate_for_interface($proof, zx::MonotonicInstant::INFINITE)
+            .context(format!("failed to call authenticate {}", $name))?
+            .map_err(RouteAdminError::AuthenticateForInterface)
+            .context(format!("failed to authenticate {}", $name))?;
+        route_set_sync
+    }};
 }
 
 impl TunNetworkInterface {
@@ -134,9 +176,29 @@ impl TunNetworkInterface {
             .context("enable error")?
             .map_err(|e| anyhow::anyhow!("enable failed {:?}", e))?;
 
-        let (client, server) = zx::Channel::create();
-        connect_channel_to_protocol::<fnetstack::StackMarker>(server)?;
-        let stack_sync = Mutex::new(fnetstack::StackSynchronousProxy::new(client));
+        let grant = control_sync
+            .lock()
+            .get_authorization_for_interface(zx::MonotonicInstant::INFINITE)
+            .context("failed to get authorization for interface")?;
+        let proof_v4 = fnetifext::admin::proof_from_grant(&grant);
+        let proof_v6 = fnetifext::admin::proof_from_grant(&grant);
+
+        let route_set_v4_sync = init_route_set!(
+            fnetroutesadmin::RouteTableV4Marker,
+            fnetroutesadmin::RouteTableV4SynchronousProxy,
+            fnetroutesadmin::RouteSetV4SynchronousProxy,
+            proof_v4,
+            "V4"
+        );
+
+        let route_set_v6_sync = init_route_set!(
+            fnetroutesadmin::RouteTableV6Marker,
+            fnetroutesadmin::RouteTableV6SynchronousProxy,
+            fnetroutesadmin::RouteSetV6SynchronousProxy,
+            proof_v6,
+            "V6"
+        );
+
         let mcast_socket =
             DatagramSocket::new(Domain::IPV6, Some(Protocol::UDP)).expect("DatagramSocket::new()");
 
@@ -145,7 +207,8 @@ impl TunNetworkInterface {
             tun_port,
             control,
             control_sync,
-            stack_sync,
+            route_set_v4_sync: Mutex::new(route_set_v4_sync),
+            route_set_v6_sync: Mutex::new(route_set_v6_sync),
             mcast_socket,
             routes: Mutex::new(HashMap::new()),
             id,
@@ -290,37 +353,75 @@ impl NetworkInterface for TunNetworkInterface {
         let subnet = fnetext::apply_subnet_mask(addr);
 
         match subnet.addr {
-            fidl_fuchsia_net::IpAddress::Ipv4(fnet::Ipv4Address { addr: _ }) => {
-                let forwarding_entry = fnetstack::ForwardingEntry {
-                    subnet,
-                    device_id: self.id,
-                    next_hop: None,
-                    metric: 0,
+            fidl_fuchsia_net::IpAddress::Ipv4(addr) => {
+                let route = fnetroutes::RouteV4 {
+                    destination: fnet::Ipv4AddressWithPrefix {
+                        addr,
+                        prefix_len: subnet.prefix_len,
+                    },
+                    action: fnetroutes::RouteActionV4::Forward(fnetroutes::RouteTargetV4 {
+                        outbound_interface: self.id,
+                        next_hop: None,
+                    }),
+                    properties: fnetroutes::RoutePropertiesV4 {
+                        specified_properties: Some(fnetroutes::SpecifiedRouteProperties {
+                            metric: Some(fnetroutes::SpecifiedMetric::InheritedFromInterface(
+                                fnetroutes::Empty,
+                            )),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
                 };
-                self.stack_sync
+                let did_add = self
+                    .route_set_v4_sync
                     .lock()
-                    .add_forwarding_entry(&forwarding_entry, zx::MonotonicInstant::INFINITE)?
-                    .map_err(|e| anyhow::anyhow!("IPv4 add_forwarding_entry failed :{:?}", e))?;
+                    .add_route(&route, zx::MonotonicInstant::INFINITE)
+                    .context("failed to call add_route IPv4")?
+                    .map_err(RouteAdminError::RouteSet)
+                    .context("failed to add IPv4 forwarding entry")?;
+                if !did_add {
+                    return Err(anyhow::Error::new(RouteAdminError::AlreadyExists));
+                }
             }
-            fidl_fuchsia_net::IpAddress::Ipv6(fnet::Ipv6Address { addr }) => {
+            fidl_fuchsia_net::IpAddress::Ipv6(addr) => {
                 let mut routes = self.routes.lock();
                 if let Some(addresses) = routes.get_mut(&subnet) {
-                    addresses.insert(addr.into());
+                    addresses.insert(addr.addr.into());
                 } else {
-                    let forwarding_entry = fnetstack::ForwardingEntry {
-                        subnet,
-                        device_id: self.id,
-                        next_hop: None,
-                        metric: 0,
+                    let route = fnetroutes::RouteV6 {
+                        destination: fnet::Ipv6AddressWithPrefix {
+                            addr,
+                            prefix_len: subnet.prefix_len,
+                        },
+                        action: fnetroutes::RouteActionV6::Forward(fnetroutes::RouteTargetV6 {
+                            outbound_interface: self.id,
+                            next_hop: None,
+                        }),
+                        properties: fnetroutes::RoutePropertiesV6 {
+                            specified_properties: Some(fnetroutes::SpecifiedRouteProperties {
+                                metric: Some(fnetroutes::SpecifiedMetric::InheritedFromInterface(
+                                    fnetroutes::Empty,
+                                )),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        },
                     };
-                    self.stack_sync
+                    let did_add = self
+                        .route_set_v6_sync
                         .lock()
-                        .add_forwarding_entry(&forwarding_entry, zx::MonotonicInstant::INFINITE)?
-                        .expect("add_forwarding_entry");
-                    routes.insert(subnet, HashSet::from([addr.into()]));
+                        .add_route(&route, zx::MonotonicInstant::INFINITE)
+                        .context("failed to call add_route IPv6")?
+                        .map_err(RouteAdminError::RouteSet)
+                        .context("failed to add IPv6 forwarding entry")?;
+                    if !did_add {
+                        return Err(anyhow::Error::new(RouteAdminError::AlreadyExists));
+                    }
+                    routes.insert(subnet, HashSet::from([addr.addr.into()]));
                     info!(
                         "TunNetworkInterface: Successfully added forwarding entry for {}",
-                        std::net::Ipv6Addr::from(addr)
+                        std::net::Ipv6Addr::from(addr.addr)
                     );
                 }
             }
@@ -332,40 +433,80 @@ impl NetworkInterface for TunNetworkInterface {
         let subnet = fnetext::apply_subnet_mask(addr);
 
         match subnet.addr {
-            fidl_fuchsia_net::IpAddress::Ipv4(fnet::Ipv4Address { addr: _ }) => {
-                let forwarding_entry = fnetstack::ForwardingEntry {
-                    subnet,
-                    device_id: self.id,
-                    next_hop: None,
-                    metric: 0,
+            fidl_fuchsia_net::IpAddress::Ipv4(addr) => {
+                let route = fnetroutes::RouteV4 {
+                    destination: fnet::Ipv4AddressWithPrefix {
+                        addr,
+                        prefix_len: subnet.prefix_len,
+                    },
+                    action: fnetroutes::RouteActionV4::Forward(fnetroutes::RouteTargetV4 {
+                        outbound_interface: self.id,
+                        next_hop: None,
+                    }),
+                    properties: fnetroutes::RoutePropertiesV4 {
+                        specified_properties: Some(fnetroutes::SpecifiedRouteProperties {
+                            metric: Some(fnetroutes::SpecifiedMetric::InheritedFromInterface(
+                                fnetroutes::Empty,
+                            )),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
                 };
 
-                self.stack_sync
+                let did_remove = self
+                    .route_set_v4_sync
                     .lock()
-                    .del_forwarding_entry(&forwarding_entry, zx::MonotonicInstant::INFINITE)?
-                    .map_err(|e| anyhow::anyhow!("IPv4 del_forwarding_entry failed :{:?}", e))?;
+                    .remove_route(&route, zx::MonotonicInstant::INFINITE)
+                    .context("failed to call remove_route IPv4")?
+                    .map_err(RouteAdminError::RouteSet)
+                    .context("failed to remove IPv4 forwarding entry")?;
+                if !did_remove {
+                    return Err(anyhow::Error::new(RouteAdminError::NotFound));
+                }
             }
-            fidl_fuchsia_net::IpAddress::Ipv6(fnet::Ipv6Address { addr }) => {
+            fidl_fuchsia_net::IpAddress::Ipv6(addr) => {
                 let mut routes = self.routes.lock();
                 if let Some(addresses) = routes.get_mut(&subnet) {
-                    addresses.remove(&std::net::Ipv6Addr::from(addr));
+                    addresses.remove(&std::net::Ipv6Addr::from(addr.addr));
                     if addresses.is_empty() {
                         routes.remove(&subnet);
 
-                        let forwarding_entry = fnetstack::ForwardingEntry {
-                            subnet,
-                            device_id: self.id,
-                            next_hop: None,
-                            metric: 0,
+                        let route = fnetroutes::RouteV6 {
+                            destination: fnet::Ipv6AddressWithPrefix {
+                                addr,
+                                prefix_len: subnet.prefix_len,
+                            },
+                            action: fnetroutes::RouteActionV6::Forward(fnetroutes::RouteTargetV6 {
+                                outbound_interface: self.id,
+                                next_hop: None,
+                            }),
+                            properties: fnetroutes::RoutePropertiesV6 {
+                                specified_properties: Some(fnetroutes::SpecifiedRouteProperties {
+                                    metric: Some(
+                                        fnetroutes::SpecifiedMetric::InheritedFromInterface(
+                                            fnetroutes::Empty,
+                                        ),
+                                    ),
+                                    ..Default::default()
+                                }),
+                                ..Default::default()
+                            },
                         };
 
-                        self.stack_sync
+                        let did_remove = self
+                            .route_set_v6_sync
                             .lock()
-                            .del_forwarding_entry(&forwarding_entry, zx::MonotonicInstant::INFINITE)
-                            .squash_result()?;
+                            .remove_route(&route, zx::MonotonicInstant::INFINITE)
+                            .context("failed to call remove_route IPv6")?
+                            .map_err(RouteAdminError::RouteSet)
+                            .context("failed to remove IPv6 forwarding entry")?;
+                        if !did_remove {
+                            return Err(anyhow::Error::new(RouteAdminError::NotFound));
+                        }
                         info!(
                             "TunNetworkInterface: Successfully removed forwarding entry for {}",
-                            std::net::Ipv6Addr::from(addr)
+                            std::net::Ipv6Addr::from(addr.addr)
                         );
                     }
                 }
