@@ -205,6 +205,11 @@ template("rust_auxiliary") {
       if (defined(invoker.non_rust_deps)) {
         deps += invoker.non_rust_deps
       }
+
+      # The underlying targets add this to all kinds of crate targets.  It
+      # needs to match here in case the configs have inputs from these deps.
+      deps += toolchain_variant.source_deps
+
       mnemonic = "CLIPPY"
 
       inputs = [
@@ -326,6 +331,10 @@ template("rust_auxiliary") {
       if (defined(invoker.non_rust_deps)) {
         deps += invoker.non_rust_deps
       }
+
+      # The underlying targets add this to all kinds of crate targets.  It
+      # needs to match here in case the configs have inputs from these deps.
+      deps += toolchain_variant.source_deps
 
       _lint_cfg = [ "//build/config/rust:cap_lints" ]
       if (configs + _lint_cfg - _lint_cfg != configs) {
