@@ -1,0 +1,106 @@
+# Copyright 2026 The Fuchsia Authors
+#
+# Use of this source code is governed by a MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT
+
+import("//build/toolchain/toolchain_environment.gni")
+import("//build/zircon/c_utils.gni")
+import("//zircon/kernel/phys/kernel_elf_binary.gni")
+
+# Represents a kernel executable (i.e., a kernel in ELF form) evaluated under
+# the current switchset.
+#
+# Subtargets
+#
+#   * $target_name.rsp
+#     The link_output_rspfile() containing the output name of the kernel
+#     executable.
+#
+# Parameters
+#
+#   * deps
+#    - Optional: Additional sources to link into the kernel.
+#    - Type: list(label)
+#    - Default: []
+#
+#   * data_deps
+#    - Optional: Can be used to bring extra files into the kernel package or
+#      extra ZBI items into the image.
+#    - Type: list(label)
+#    - Default: []
+#
+#   * testonly, visibility
+#     - Optional: Standard GN meanings.
+#
+template("kernel_executable") {
+  assert(toolchain_environment == "kernel",
+         "kernel_executable() can only be used in the kernel environment")
+
+  main_target = target_name
+  validate_symbols_target = "_kernel_executable.$target_name.validate"
+  rsp_target = "$target_name.rsp"
+
+  kernel_elf_binary(main_target) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    if (defined(visibility)) {
+      visibility += [ ":*" ]
+    }
+
+    install_name = "vmzircon"
+
+    configs += [ "//zircon/kernel/switch:kernel.config" ]
+
+    deps = [
+      "//zircon/kernel/phys:physboot.kernel",
+      "//zircon/kernel/top",
+    ]
+
+    if (current_cpu == "arm64") {
+      deps += [ "//zircon/kernel/platform/generic-arm" ]
+    } else if (current_cpu == "riscv64") {
+      deps += [ "//zircon/kernel/platform/generic-riscv64" ]
+    } else if (current_cpu == "x64") {
+      deps += [ "//zircon/kernel/platform/pc" ]
+    }
+
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+
+    validations = [ ":$validate_symbols_target" ]
+  }
+
+  rspfile = "$target_gen_dir/$main_target.rsp"
+  link_output_rspfile(rsp_target) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    if (defined(visibility)) {
+      visibility += [ ":$validate_symbols_target" ]
+    }
+    deps = [ ":$main_target.binary" ]
+    outputs = [ rspfile ]
+  }
+
+  toolchain_utils_action(validate_symbols_target) {
+    forward_variables_from(invoker, [ "testonly" ])
+    visibility = [ ":*" ]
+    outputs = [ "$target_gen_dir/$target_name.stamp" ]
+    script = "//zircon/kernel/scripts/validate-kernel-symbols.py"
+    utils = [ "nm" ]
+    deps = [
+      ":$main_target.binary",
+      ":$rsp_target",
+    ]
+    sources = [ rspfile ]
+    depfile = "$target_gen_dir/$target_name.d"
+    args = rebase_path(sources + outputs + [ depfile ], root_build_dir)
+  }
+}
