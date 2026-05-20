@@ -77,8 +77,6 @@ impl CrashReporter {
             .live()
             .thread
             .read()
-            .as_ref()
-            .expect("coredumps occur in tasks with associated threads")
             .koid()
             .expect("handles for crashing threads are still valid");
         let linux_pid = current_task.thread_group().leader as i64;

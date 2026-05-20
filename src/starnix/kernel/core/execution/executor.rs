@@ -187,11 +187,12 @@ where
     )]
     let raw_thread_handle =
         unsafe { zx::Unowned::<'_, zx::Thread>::from_raw_handle(thrd_get_zx_handle(pthread)) };
-    *task_thread_guard = Some(Arc::new(
+    let thread = Arc::new(
         raw_thread_handle
             .duplicate_handle(zx::Rights::SAME_RIGHTS)
             .expect("must have RIGHT_DUPLICATE on handle we created"),
-    ));
+    );
+    task_thread_guard.set(thread);
     // Now that the task has a thread handle, update the thread's role using the policy configured.
     drop(task_thread_guard);
     if let Err(err) = ref_task.sync_scheduler_state_to_role() {

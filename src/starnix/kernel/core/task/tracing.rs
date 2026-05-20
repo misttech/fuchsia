@@ -137,7 +137,7 @@ impl TracePerformanceEventManager {
             let live = task.live().expect("tid {tid} is not live.");
             let pair = KoidPair {
                 process: task.thread_group().get_process_koid().ok(),
-                thread: live.thread.read().as_ref().and_then(|t| t.koid().ok()),
+                thread: live.thread.read().koid(),
             };
             // ignore entries with no process or thread.
             if pair.process.is_some() || pair.thread.is_some() {
@@ -162,7 +162,7 @@ mod tests {
         spawn_kernel_and_run(async move |locked, current_task| {
             let kernel = current_task.kernel();
             let pid = current_task.task.tid;
-            let tkoid = current_task.live().thread.read().as_ref().and_then(|t| t.koid().ok());
+            let tkoid = current_task.live().thread.read().koid();
             let pkoid = current_task.thread_group().get_process_koid().ok();
 
             let _another_current = create_task(locked, &kernel, "another-task");
@@ -228,9 +228,7 @@ mod tests {
 
             {
                 let another_current_live = another_current.live();
-                let mut thread = another_current_live.thread.write();
-                *thread = Some(Arc::new(test_thread));
-                drop(thread);
+                another_current_live.thread.write().set(Arc::new(test_thread));
             }
 
             let pid_map = manager.map.read().clone();

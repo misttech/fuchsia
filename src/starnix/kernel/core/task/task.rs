@@ -690,6 +690,36 @@ impl TaskMutableState<Base = Task> {
     }
 }
 
+/// A synchronized container for an optional Zircon thread and its cached KOID.
+#[derive(Debug)]
+pub struct ZirconThread {
+    thread: Option<Arc<zx::Thread>>,
+    koid: Option<zx::Koid>,
+}
+
+impl ZirconThread {
+    pub fn new(thread: Option<Arc<zx::Thread>>) -> Self {
+        let koid = thread.as_ref().and_then(|t| t.koid().ok());
+        Self { thread, koid }
+    }
+
+    pub fn set(&mut self, thread: Arc<zx::Thread>) {
+        self.koid = thread.koid().ok();
+        self.thread = Some(thread);
+    }
+
+    pub fn koid(&self) -> Option<zx::Koid> {
+        self.koid
+    }
+}
+
+impl std::ops::Deref for ZirconThread {
+    type Target = Option<Arc<zx::Thread>>;
+    fn deref(&self) -> &Self::Target {
+        &self.thread
+    }
+}
+
 /// The live state of a task.
 ///
 /// This structure contains the state of a task that is only relevant while the task is alive. It
@@ -699,7 +729,7 @@ pub struct TaskLiveState {
     ///
     /// Some tasks lack an underlying Zircon thread. These tasks are used internally by the
     /// Starnix kernel to track background work, typically on a `kthread`.
-    pub thread: RwLock<Option<Arc<zx::Thread>>>,
+    pub thread: RwLock<ZirconThread>,
 
     /// The file descriptor table for this task.
     ///
@@ -1100,7 +1130,7 @@ impl Task {
                 kernel: Arc::clone(&thread_group.kernel),
                 thread_group,
                 live_state: RcuOptionBox::new(Some(TaskLiveState {
-                    thread: RwLock::new(thread.map(Arc::new)),
+                    thread: RwLock::new(ZirconThread::new(thread.map(Arc::new))),
                     files,
                     mm: RcuOptionArc::new(mm),
                     fs: RcuArc::new(fs),
@@ -1477,7 +1507,7 @@ impl Task {
             Ok(live) => live,
             Err(_) => return TaskTimeStats::default(),
         };
-        let info = match &*live.thread.read() {
+        let info = match live.thread.read().as_ref() {
             Some(thread) => thread.get_runtime_info().expect("Failed to get thread stats"),
             None => return TaskTimeStats::default(),
         };
@@ -1510,7 +1540,7 @@ impl Task {
         let Some(ref mapping_table) = *self.kernel().pid_to_koid_mapping.read() else { return };
 
         let pkoid = self.thread_group().get_process_koid().ok();
-        let tkoid = live.thread.read().as_ref().and_then(|t| t.koid().ok());
+        let tkoid = live.thread.read().koid();
         mapping_table.write().insert(self.tid, KoidPair { process: pkoid, thread: tkoid });
     }
 }
