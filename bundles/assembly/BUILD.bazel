@@ -1439,6 +1439,7 @@ assembly_input_bundle(
     auto_include_in = [
         "standard",
     ],
+    memory_buckets = ["//src/developer/memory/buckets:buckets.json5"],
     base_packages = [
         # The SWD stack artifacts that enable OTAs
         "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/system-updater",
@@ -1809,6 +1810,7 @@ assembly_input_bundle(
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/starnix/runner:starnix_package",
     ],
+    memory_buckets = ["//src/developer/memory/buckets:starnix.json5"],
 )
 
 # Core adb support. Does not include daemon. Daemon should be included separately.
@@ -1987,6 +1989,7 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/camera/bin/device:camera_device",
         "//bundles/assembly/bazel_inputs/src/camera/bin/device_watcher:camera_device_watcher",
     ],
+    memory_buckets = ["//src/developer/memory/buckets:camera_buckets.json5"],
 )
 
 # buildifier: leave-alone
@@ -2052,6 +2055,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "fshost_fxfs",
+    memory_buckets = ["//src/developer/memory/buckets:fxfs_buckets.json5"],
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/storage/gpt/component:package",
         "//bundles/assembly/bazel_inputs/src/storage/fxfs:package",
@@ -2063,6 +2067,10 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "fshost_gpt_fvm_minfs",
+    memory_buckets = [
+        "//src/developer/memory/buckets:blobfs_buckets.json5",
+        "//src/developer/memory/buckets:minfs_buckets.json5",
+    ],
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/storage/gpt/component:package",
         "//bundles/assembly/bazel_inputs/src/storage/blobfs/bin:package",
@@ -2076,6 +2084,7 @@ assembly_input_bundle(
 assembly_input_bundle(
     name = "fshost_gpt_fvm_f2fs",
     allowed_in = ["eng"],
+    memory_buckets = ["//src/developer/memory/buckets:blobfs_buckets.json5"],
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/storage/gpt/component:package",
         "//bundles/assembly/bazel_inputs/src/storage/blobfs/bin:package",
@@ -2099,6 +2108,10 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "fshost_fvm_minfs",
+    memory_buckets = [
+        "//src/developer/memory/buckets:minfs_buckets.json5",
+        "//src/developer/memory/buckets:blobfs_buckets.json5",
+    ],
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/storage/blobfs/bin:package",
         "//bundles/assembly/bazel_inputs/src/storage/minfs/bin:package",
@@ -2353,6 +2366,7 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/connectivity/lowpan/drivers/lowpan-ot-driver",
         "//bundles/assembly/bazel_inputs/src/connectivity/lowpan/service:lowpanservice",
     ],
+    memory_buckets = ["//src/developer/memory/buckets:thread_lowpan_buckets.json5"],
 )
 
 # WLAN policy component
@@ -2999,6 +3013,7 @@ icu_assembly_input_bundle(
     icu_base_packages = [
         "//bundles/assembly/bazel_inputs/src/settings/service:setui_service",
     ],
+    memory_buckets = ["//src/developer/memory/buckets:setui_buckets.json5"],
 )
 
 # buildifier: leave-alone
@@ -3007,6 +3022,7 @@ icu_assembly_input_bundle(
     icu_base_packages = [
         "//bundles/assembly/bazel_inputs/src/settings/service:setui_service",
     ],
+    memory_buckets = ["//src/developer/memory/buckets:setui_buckets.json5"],
 )
 
 # Legacy fonts setup: fonts sourced from config-data.

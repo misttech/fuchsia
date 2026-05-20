@@ -22,7 +22,6 @@ UNSUPPORTED_FIELDS = {
     "drivers",
     "packages_to_compile",
     "bootfs_files_package",
-    "memory_buckets",
 }
 
 
@@ -39,7 +38,6 @@ def is_supported_file(path: Path) -> bool:
         "config_data": "config_data",
         "bootfs": "bootfs_files",
         "compiled_packages": "packages_to_compile",
-        "memory_buckets": "memory_buckets",
         "kernel": "kernel",
     }
 

@@ -57,7 +57,7 @@ def _assembly_input_bundle_impl(ctx):
                 output = list_file,
                 content = json.encode(manifests),
             )
-            args.add(arg_name, list_file.path)
+            args.add(arg_name, list_file)
             inputs.append(list_file)
 
             # Add all inputs from the packages
@@ -89,8 +89,13 @@ def _assembly_input_bundle_impl(ctx):
             output = shell_commands_file,
             content = json.encode_indent(parsed_shell_commands),
         )
-        args.add("--shell-cmds-list", shell_commands_file.path)
+        args.add("--shell-cmds-list", shell_commands_file)
         inputs.append(shell_commands_file)
+
+    if ctx.files.memory_buckets:
+        for memory_bucket_file in ctx.files.memory_buckets:
+            args.add("--memory-buckets", memory_bucket_file)
+            inputs.append(memory_bucket_file)
 
     ctx.actions.run(
         inputs = inputs,
@@ -124,6 +129,7 @@ _assembly_input_bundle = rule(
         "anchored_on_demand_packages": attr.label_list(providers = [FuchsiaPackageInfo]),
         "kernel_cmdline": attr.string_list(),
         "shell_commands": attr.string(),
+        "memory_buckets": attr.label_list(allow_files = True),
         "_tool": attr.label(
             default = "//build/assembly/scripts:assembly_input_bundle_tool",
             executable = True,
@@ -149,6 +155,7 @@ def assembly_input_bundle(
         anchored_on_demand_packages = [],
         kernel_cmdline = [],
         shell_commands = [],
+        memory_buckets = [],
         **kwargs):
     """Creates an Assembly Input Bundle.
 
@@ -219,6 +226,9 @@ def assembly_input_bundle(
               },
             ]
 
+        memory_buckets: [list of labels] Paths to memory bucket configs that should get merged
+            and passed to memory monitor.
+
         **kwargs: Other arguments to pass to the rule.
     """
 
@@ -239,6 +249,7 @@ def assembly_input_bundle(
         anchored_on_demand_packages = anchored_on_demand_packages,
         kernel_cmdline = kernel_cmdline,
         shell_commands = json.encode_indent(shell_commands),
+        memory_buckets = memory_buckets,
         **kwargs
     )
 
