@@ -81,13 +81,13 @@
     },
     {
         "package": "fuchsia/drivers/wlan/intel/iwlwifi/debug-symbols-x86_64",
-        "version": "git_revision:8e37aa38ff1b0feba7c1d23b9f676cdda0b12713",
+        "version": "git_revision:365654ea0f3ece68ec8cb5a020c77ebfd87ec937",
         "instance_id": "ei9g_xyyF54hb3uXuDDQfqG_paX0BBcOGglOixlLoRYC"
     },
     {
         "package": "fuchsia/drivers/wlan/intel/iwlwifi/x86_64",
-        "version": "git_revision:8e37aa38ff1b0feba7c1d23b9f676cdda0b12713",
-        "instance_id": "DR7h5_2mGqfu9_bWdWDJLNIkcARmBV13Sj_LF2ma5PwC"
+        "version": "git_revision:365654ea0f3ece68ec8cb5a020c77ebfd87ec937",
+        "instance_id": "5_HNQcph4lInvY81_kXiHviW4LmJRPa_4EJhfyVRQKwC"
     },
     {
         "package": "fuchsia/firmware/arm-trusted-firmware-qemu-bios",
