@@ -98,7 +98,58 @@ def _assembly_input_bundle_impl(ctx):
             inputs.append(memory_bucket_file)
 
     # Handle shards and generate compiled packages JSON
-    compiled_packages = []
+    compiled_packages = {}
+
+    if ctx.attr.compiled_packages:
+        parsed = json.decode(ctx.attr.compiled_packages)
+
+        # Build map from canonical label to path.
+        # Since str(dep.label) returns the canonical label string, we rely on the macro
+        # having canonicalized the labels in the JSON to match this format.
+        path_map = {}
+        for dep in ctx.attr.compiled_packages_inputs:
+            lbl = str(dep.label)
+            if FuchsiaPackageInfo in dep:
+                # For package inputs, map the label to the path of its package manifest,
+                # which is what the AIB creation tool expects.
+                path_map[lbl] = dep[FuchsiaPackageInfo].package_manifest.path
+
+                # Add all the package files (including the manifest) to the action's inputs.
+                inputs.extend(dep[FuchsiaPackageInfo].files)
+            else:
+                # For non-package inputs, they need to be a single file.
+                files = dep.files.to_list()
+                if len(files) > 1:
+                    fail(
+                        ("Label '%s' resolved to multiple files, but only single " +
+                         "files are supported in 'shards' and 'component_includes' " +
+                         "fields of 'compiled_packages'.") % lbl,
+                    )
+                if not files:
+                    fail("Label '%s' did not resolve to any files." % lbl)
+                path_map[lbl] = files[0].path
+
+                # Add the file to the action's inputs.
+                inputs.extend(files)
+
+        # Update parsed structure with paths
+        for pkg in parsed:
+            if "packages" in pkg:
+                pkg["packages"] = [path_map[lbl] for lbl in pkg["packages"]]
+
+            components = {}
+            if "components" in pkg:
+                for comp in pkg["components"]:
+                    if "shards" in comp:
+                        comp["shards"] = [path_map[lbl] for lbl in comp["shards"]]
+                    components[comp["component_name"]] = comp
+            pkg["components"] = components
+
+            if "component_includes" in pkg:
+                for inc in pkg["component_includes"]:
+                    if "source" in inc:
+                        inc["source"] = path_map[inc["source"]]
+            compiled_packages[pkg["name"]] = pkg
 
     shard_configs = [
         ("bootstrap_shards", "bootstrap", True),
@@ -107,26 +158,41 @@ def _assembly_input_bundle_impl(ctx):
         ("toolbox_shards", "toolbox", True),
     ]
 
-    for attr_name, package_name, is_bootfs in shard_configs:
+    for attr_name, name, is_bootfs in shard_configs:
         shards = getattr(ctx.attr, attr_name)
         if shards:
-            compiled_packages.append({
-                "name": package_name,
-                "components": [
-                    {
-                        "component_name": package_name,
-                        "shards": [f.path for f in getattr(ctx.files, attr_name)],
-                    },
-                ],
-                "bootfs_package": is_bootfs,
-            })
+            shard_paths = [f.path for f in getattr(ctx.files, attr_name)]
+
+            # Add the files from the hardcoded shards to the action's inputs.
             inputs.extend(getattr(ctx.files, attr_name))
 
+            # Get or create package
+            pkg = compiled_packages.setdefault(name, {
+                "name": name,
+                "components": {},
+                "bootfs_package": is_bootfs,
+            })
+
+            # Get or create component
+            comp = pkg["components"].setdefault(name, {
+                "component_name": name,
+                "shards": [],
+            })
+
+            comp["shards"].extend(shard_paths)
+
     if compiled_packages:
+        # Convert components dict to a list for JSON.
+        compiled_packages_list = []
+        for pkg in compiled_packages.values():
+            new_pkg = dict(pkg)
+            new_pkg["components"] = list(pkg["components"].values())
+            compiled_packages_list.append(new_pkg)
+
         compiled_packages_file = ctx.actions.declare_file(ctx.label.name + "_compiled_packages.json")
         ctx.actions.write(
             output = compiled_packages_file,
-            content = json.encode(compiled_packages),
+            content = json.encode_indent(compiled_packages_list),
         )
         args.add("--compiled-packages", compiled_packages_file)
         inputs.append(compiled_packages_file)
@@ -168,6 +234,9 @@ _assembly_input_bundle = rule(
         "core_shards": attr.label_list(allow_files = True),
         "root_shards": attr.label_list(allow_files = True),
         "toolbox_shards": attr.label_list(allow_files = True),
+        "compiled_packages": attr.string(),
+        # Internal attribute to pass labels extracted from compiled_packages by the macro.
+        "compiled_packages_inputs": attr.label_list(allow_files = True),
         "_tool": attr.label(
             default = "//build/assembly/scripts:assembly_input_bundle_tool",
             executable = True,
@@ -198,6 +267,7 @@ def assembly_input_bundle(
         core_shards = [],
         root_shards = [],
         toolbox_shards = [],
+        compiled_packages = [],
         **kwargs):
     """Creates an Assembly Input Bundle.
 
@@ -283,8 +353,81 @@ def assembly_input_bundle(
         toolbox_shards: [list of labels] A list of CML shard files to add to the "toolbox"
             component of the "toolbox" compiled package. This package is a bootfs package.
 
+        compiled_packages: [list of dicts] List of dicts that describe packages that are to be built
+            dynamically by Assembly, for example, the `core` package.
+
+            Example:
+            compiled_packages = [
+              {
+                name = "core"
+                packages = [ "//path/to:package" ]
+                components = [
+                  {
+                    component_name = "core"
+                    shards = [
+                            "//src/sys/process-resolver:process_resolver.core_shard.cml",
+                    ]
+                  },
+                ]
+                component_includes = [ ... ]
+              },
+            ]
+
+            shards [optional]
+              [list of labels] List of CML files to merge together when
+              compiling the component.
+
+            cmc_features [optional]
+              [list of strings] List of CMC features to enable for component
+              compilation.
+
+            component_includes [optional]
+              [list of dicts] List of source/destination pairs related to a
+              compiled package in the compiled_packages list that specifies cml files
+              that can be included by any cml shards in any platform AIB for the given
+              package. These files will be included in the Assembly Input Bundle.
+
         **kwargs: Other arguments to pass to the rule.
     """
+
+    # Extract labels from compiled_packages to pass to the rule.
+    #
+    # We also canonicalize the labels here (converting them to strings using str(Label(...))).
+    # This is done because the rule implementation needs to look up these labels in the
+    # compiled_packages_inputs list to get their file paths. Since str(dep.label) in the
+    # implementation returns a canonical label string, we must ensure the strings in our JSON
+    # match that canonical format, regardless of how the user wrote the label (e.g., relative
+    # vs absolute).
+    #
+    #  e.g.  //some/path/to:foo/bar.cml => "@@//some/path/to:foo/bar.cml"
+
+    compiled_packages_inputs = []
+    for pkg in compiled_packages:
+        if "packages" in pkg:
+            packages_labels = [str(Label(lbl)) for lbl in pkg["packages"]]
+            pkg["packages"] = packages_labels
+
+            # Add the package labels to the inputs list so Bazel tracks them as dependencies
+            # and makes their files available to the action.
+            compiled_packages_inputs.extend(packages_labels)
+        if "components" in pkg:
+            for comp in pkg["components"]:
+                if "shards" in comp:
+                    shards_labels = [str(Label(lbl)) for lbl in comp["shards"]]
+                    comp["shards"] = shards_labels
+
+                    # Add the shard labels to the inputs list so Bazel tracks them as dependencies.
+                    compiled_packages_inputs.extend(shards_labels)
+        if "component_includes" in pkg:
+            for inc in pkg["component_includes"]:
+                if "source" in inc:
+                    source_label = str(Label(inc["source"]))
+                    inc["source"] = source_label
+
+                    # Add the component include source labels to the inputs list so Bazel tracks them as dependencies.
+                    compiled_packages_inputs.append(source_label)
+
+    compiled_packages_inputs = depset(compiled_packages_inputs).to_list()
 
     _assembly_input_bundle(
         name = name,
@@ -308,6 +451,8 @@ def assembly_input_bundle(
         core_shards = core_shards,
         root_shards = root_shards,
         toolbox_shards = toolbox_shards,
+        compiled_packages = json.encode(compiled_packages),
+        compiled_packages_inputs = compiled_packages_inputs,
         **kwargs
     )
 

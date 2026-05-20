@@ -3235,18 +3235,18 @@ assembly_input_bundle("netstack2") {
   # The Go toolchain used for netstack2 does not support RISC-V.
   if (current_cpu != "riscv64") {
     base_packages = [ "//src/connectivity/network:netstack2" ]
-    compiled_packages = [
-      {
-        name = "network"
-        components = [
-          {
-            component_name = "network"
-            shards = [ "//src/connectivity/network/meta/netstack2.shard.cml" ]
-          },
-        ]
-      },
-    ]
   }
+  compiled_packages = [
+    {
+      name = "network"
+      components = [
+        {
+          component_name = "network"
+          shards = [ "//src/connectivity/network/meta/netstack2.shard.cml" ]
+        },
+      ]
+    },
+  ]
 }
 
 # Netstack3 as the netstack for use by base networking.
@@ -3338,20 +3338,19 @@ assembly_input_bundle("netstack_migration") {
   if (current_cpu != "riscv64") {
     core_shards =
         [ "//src/connectivity/network/meta/netstack-migration.core.shard.cml" ]
-    compiled_packages = [
-      {
-        name = "network"
-        components = [
-          {
-            component_name = "network"
-            shards = [
-              "//src/connectivity/network/meta/netstack-migration.shard.cml",
-            ]
-          },
-        ]
-      },
-    ]
   }
+  compiled_packages = [
+    {
+      name = "network"
+      components = [
+        {
+          component_name = "network"
+          shards =
+              [ "//src/connectivity/network/meta/netstack-migration.shard.cml" ]
+        },
+      ]
+    },
+  ]
 }
 
 # Netstack migration packages without unified binary.

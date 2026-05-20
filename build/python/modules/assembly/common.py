@@ -85,6 +85,12 @@ def fast_copy(src: FilePath, dst: FilePath, **kwargs: Any) -> FilePath:
     """A wrapper around os and os.path fns to correctly copy a file using a
     hardlink.
     """
+
+    # This is a cleaner error for this case than we'd get if we threw an exception
+    # from copy2().
+    if not os.path.exists(src):
+        raise FileNotFoundError(f"Source file {src} does not exist.")
+
     real_src_path = os.path.realpath(src)
     try:
         os.link(real_src_path, dst, **kwargs)

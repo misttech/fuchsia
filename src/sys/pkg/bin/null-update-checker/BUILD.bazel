@@ -4,8 +4,8 @@
 
 exports_files(
     [
-        "meta/tee_manager.core_shard.cml",
-        "meta/tee_manager.base.cml",
+        "meta/null_update_checker.core_shard.cml",
+        "meta/null_update_checker.system_update_shard.cml",
     ],
     visibility = ["//bundles/assembly:__subpackages__"],
 )

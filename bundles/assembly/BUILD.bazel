@@ -286,6 +286,22 @@ assembly_input_bundle(
     bootstrap_shards = [
         "//src/developer/toolbox:meta/toolbox.bootstrap_shard.cml",
     ],
+    compiled_packages = [
+        {
+            "name": "toolbox",
+            "bootfs_package": True,
+            "components": [
+                {
+                    "component_name": "toolbox",
+                    "shards": [
+                        "//src/developer/toolbox:meta/toolbox.cml",
+                        "//src/developer/console:meta/developer-console.toolbox_shard.cml",
+                    ],
+                    "cmc_features": ["use_dictionaries"],
+                },
+            ],
+        },
+    ],
 )
 
 # The most minimal AIB that is included in userdebug and eng assembled systems
@@ -556,11 +572,23 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "paver_shards_bootstrap",
+    bootstrap_shards = [
+        "//src/bringup/bin/paver:meta/paver.bootstrap_shard.cml",
+    ],
+    root_shards = [
+        "//src/bringup/bin/paver:meta/paver.bootfs.root_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "paver_shards_core",
+    core_shards = [
+        "//src/bringup/bin/paver:meta/paver.core_shard.cml",
+    ],
+    root_shards = [
+        "//src/bringup/bin/paver:meta/paver.base.root_shard.cml",
+    ],
 )
 
 # The console AIB is included by all eng and userdebug products, and can be
@@ -812,11 +840,72 @@ assembly_input_bundle(
     ],
     core_shards = [
         "//src/sys/core:meta/core.cml",
+
+        # TODO:  These shards should be folded into the above
+        # `core.cml` file itself as they are never omitted from it.
         # TODO:  These shards should be folded into the above
         # `core.cml` file itself as they are never omitted from it.
         "//src/developer/build_info:meta/build_info.core_shard.cml",
         "//src/developer/forensics:forensics.core_shard.cml",
         "//sdk/lib/inspect:offer.shard.cml",
+    ],
+    compiled_packages = [
+        {
+            "name": "core",
+            # These are not included into the core.cml directly, but may be included
+            # via other shards.
+            "component_includes": [
+                {
+                    "source": "//sdk/lib/inspect:offer.shard.cml",
+                    "destination": "inspect/offer.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/syslog:offer.shard.cml",
+                    "destination": "syslog/offer.shard.cml",
+                },
+                {
+                    "source": "//src/connectivity/bluetooth/profiles/bt-a2dp:meta/bt-a2dp-common.core_shard.cml",
+                    "destination": "src/connectivity/bluetooth/profiles/bt-a2dp/meta/bt-a2dp-common.core_shard.cml",
+                },
+                {
+                    "source": "//src/intl/intl_services:meta/intl.core_shard.base.cml",
+                    "destination": "src/intl/intl_services/meta/intl.core_shard.base.cml",
+                },
+                {
+                    "source": "//src/recovery/system/meta/core_shards:base.shard.cml",
+                    "destination": "src/recovery/system/meta/core_shards/base.shard.cml",
+                },
+                {
+                    "source": "//src/recovery/system/meta/core_shards:ui.shard.cml",
+                    "destination": "src/recovery/system/meta/core_shards/ui.shard.cml",
+                },
+                {
+                    "source": "//src/session/bin/session_manager:meta/session_manager.core_shard.cml",
+                    "destination": "src/session/bin/session_manager/meta/session_manager.core_shard.cml",
+                },
+                {
+                    "source": "//src/settings/service:meta/setui_service_base.core_shard.cml",
+                    "destination": "src/settings/service/meta/setui_service_base.core_shard.cml",
+                },
+                {
+                    "source": "//src/testing/sl4f:meta/sl4f_base.core_shard.cml",
+                    "destination": "src/testing/sl4f/meta/sl4f_base.core_shard.cml",
+                },
+                {
+                    "source": "//src/ui:meta/ui_routes_base.shard.cml",
+                    "destination": "src/ui/meta/ui_routes_base.shard.cml",
+                },
+            ],
+        },
+        {
+            "name": "system-update-realm",
+            "components": [
+                {
+                    "component_name": "system-update-realm",
+                    "shards": ["//src/sys/pkg:meta/system-update-realm.cml"],
+                },
+            ],
+        },
     ],
 )
 
@@ -905,6 +994,31 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "network_realm",
+    compiled_packages = [
+        {
+            "name": "network",
+            "components": [
+                {
+                    "component_name": "network",
+                    "shards": ["//src/connectivity/network:meta/common.shard.cml"],
+                },
+            ],
+            "component_includes": [
+                {
+                    "source": "//sdk/lib/inspect:offer.shard.cml",
+                    "destination": "inspect/offer.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/trace:offer.shard.cml",
+                    "destination": "trace/offer.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/syslog:offer.shard.cml",
+                    "destination": "syslog/offer.shard.cml",
+                },
+            ],
+        },
+    ],
 )
 
 # Network realm packages without unified binary.
@@ -958,6 +1072,17 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/policy/netcfg:package-advanced",
     ],
+    compiled_packages = [
+        {
+            "name": "network",
+            "components": [
+                {
+                    "component_name": "network",
+                    "shards": ["//src/connectivity/network:meta/network-with-virtualization.shard.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # Basic networking.
@@ -970,6 +1095,17 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "networking_basic",
+    compiled_packages = [
+        {
+            "name": "network",
+            "components": [
+                {
+                    "component_name": "network",
+                    "shards": ["//src/connectivity/network:meta/network-basic.shard.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # Basic networking packages without unified binary.
@@ -1633,6 +1769,35 @@ assembly_input_bundle(
         "//src/sys/pkg/bin/system-updater:meta/system_updater.core_shard.cml",
         "//src/developer/memory/pressure_signaler:meta/memory_pressure_signaler.core_shard.cml",
     ],
+    compiled_packages = [
+        {
+            "name": "diagnostics",
+            "components": [
+                {
+                    "component_name": "diagnostics",
+                    "shards": [
+                        "//src/diagnostics/realm:meta/diagnostics_realm.cml",
+                        "//sdk/lib/inspect:offer.shard.cml",
+                    ],
+                },
+            ],
+            "component_includes": [
+                {
+                    "source": "//sdk/lib/inspect:offer.shard.cml",
+                    "destination": "inspect/offer.shard.cml",
+                },
+            ],
+        },
+        {
+            "name": "system-update-realm",
+            "components": [
+                {
+                    "component_name": "system-update-realm",
+                    "shards": ["//src/sys/pkg/bin/system-updater:meta/system_updater.system_update_shard.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # This is exclusive to userdebug builds on the minimal support level.
@@ -1702,6 +1867,17 @@ assembly_input_bundle(
     ],
     core_shards = [
         "//src/diagnostics/detect:meta/detect.core_shard.cml",
+    ],
+    compiled_packages = [
+        {
+            "name": "diagnostics",
+            "components": [
+                {
+                    "component_name": "diagnostics",
+                    "shards": ["//src/diagnostics/detect:meta/detect.realm_shard.cml"],
+                },
+            ],
+        },
     ],
 )
 
@@ -1969,6 +2145,9 @@ assembly_input_bundle(
         "//src/connectivity/bluetooth/tools/bt-rootcanal:meta/bt-rootcanal.core_shard.cml",
     ],
 )
+
+#
+# Diagnostics Triage Support
 
 # Triage-detect support for magma arm mali devices
 # buildifier: leave-alone
@@ -2313,6 +2492,85 @@ assembly_input_bundle(
     root_shards = [
         "//src/storage/fshost:meta/fshost.root_shard.cml",
     ],
+    compiled_packages = [
+        {
+            "bootfs_package": True,
+            "name": "fshost",
+            "packages": ["//bundles/assembly/bazel_inputs/src/storage/fshost:pkg"],
+            "components": [
+                {
+                    "component_name": "fshost",
+                    "shards": [
+                        "//src/storage/fshost:meta/base_fshost.cml",
+                        "//src/storage/lib/fs_management:client.shard.cml",
+                        "//src/storage/fshost:meta/config.cml",
+                    ],
+                },
+            ],
+            "component_includes": [
+                {
+                    "source": "//sdk/lib/inspect:client.shard.cml",
+                    "destination": "inspect/client.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/inspect:offer.shard.cml",
+                    "destination": "inspect/offer.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/inspect:use.shard.cml",
+                    "destination": "inspect/use.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/syslog:client.shard.cml",
+                    "destination": "syslog/client.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/syslog:offer.shard.cml",
+                    "destination": "syslog/offer.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/syslog:use.shard.cml",
+                    "destination": "syslog/use.shard.cml",
+                },
+                {
+                    "source": "//src/storage/lib/fs_management:client.shard.cml",
+                    "destination": "src/storage/lib/fs_management/client.shard.cml",
+                },
+                {
+                    "source": "//src/storage/fshost:meta/fxblob_fshost_base.shard.cml",
+                    "destination": "src/storage/fshost/meta/fxblob_fshost_base.shard.cml",
+                },
+                {
+                    "source": "//src/storage/fshost:meta/non_gpt_fshost.shard.cml",
+                    "destination": "src/storage/fshost/meta/non_gpt_fshost.shard.cml",
+                },
+                {
+                    "source": "//src/storage/fshost:meta/gpt_fshost.shard.cml",
+                    "destination": "src/storage/fshost/meta/gpt_fshost.shard.cml",
+                },
+                {
+                    "source": "//src/storage/fshost:meta/fvm_fshost.cml",
+                    "destination": "src/storage/fshost/meta/fvm_fshost.cml",
+                },
+                {
+                    "source": "//src/storage/fshost:meta/fvm_fshost_base.shard.cml",
+                    "destination": "src/storage/fshost/meta/fvm_fshost_base.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/trace:client.shard.cml",
+                    "destination": "trace/client.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/trace:offer.shard.cml",
+                    "destination": "trace/offer.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/trace:use.shard.cml",
+                    "destination": "trace/use.shard.cml",
+                },
+            ],
+        },
+    ],
 )
 
 # AIB adding eng-build debug capabilities to fshost.
@@ -2321,6 +2579,18 @@ assembly_input_bundle(
     name = "fshost_eng",
     allowed_in = [
         "eng",
+    ],
+    compiled_packages = [
+        {
+            "bootfs_package": True,
+            "name": "fshost",
+            "components": [
+                {
+                    "component_name": "fshost",
+                    "shards": ["//src/storage/fshost:meta/eng_fshost.cml"],
+                },
+            ],
+        },
     ],
 )
 
@@ -2332,24 +2602,75 @@ assembly_input_bundle(
         "user",
         "userdebug",
     ],
+    compiled_packages = [
+        {
+            "bootfs_package": True,
+            "name": "fshost",
+            "components": [
+                {
+                    "component_name": "fshost",
+                    "shards": ["//src/storage/fshost:meta/non_eng_fshost.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # AIB adding recovery capabilities to fshost.
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "fshost_recovery",
+    compiled_packages = [
+        {
+            "bootfs_package": True,
+            "name": "fshost",
+            "components": [
+                {
+                    "component_name": "fshost",
+                    "shards": ["//src/storage/fshost:meta/recovery_fshost.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # AIB that stubs out recovery capabilities for builds that don't require recovery capabilities.
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "fshost_non_recovery",
+    compiled_packages = [
+        {
+            "bootfs_package": True,
+            "name": "fshost",
+            "components": [
+                {
+                    "component_name": "fshost",
+                    "shards": ["//src/storage/fshost:meta/non_recovery_fshost.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # AIB adding support for storage, needed by all fshost variants that use anything more than bootfs
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "fshost_storage",
+    compiled_packages = [
+        {
+            "bootfs_package": True,
+            "name": "fshost",
+            "components": [
+                {
+                    "component_name": "fshost",
+                    "shards": [
+                        "//src/storage/fshost:meta/core_fshost.cml",
+                        "//src/storage/fshost:meta/block_relay_child.shard.cml",
+                    ],
+                },
+            ],
+        },
+    ],
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/storage/block-relay:block-relay",
         "//bundles/assembly/bazel_inputs/src/storage/memfs:package",
@@ -2360,6 +2681,22 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "fshost_fxfs",
+    compiled_packages = [
+        {
+            "bootfs_package": True,
+            "name": "fshost",
+            "components": [
+                {
+                    "component_name": "fshost",
+                    "shards": [
+                        "//src/storage/fshost:meta/fxblob_fshost.cml",
+                        "//src/storage/fshost:meta/fxblob_fshost_base.shard.cml",
+                        "//src/storage/fshost:meta/gpt_fshost.shard.cml",
+                    ],
+                },
+            ],
+        },
+    ],
     memory_buckets = ["//src/developer/memory/buckets:fxfs_buckets.json5"],
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/storage/gpt/component:package",
@@ -2372,6 +2709,22 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "fshost_gpt_fvm_minfs",
+    compiled_packages = [
+        {
+            "bootfs_package": True,
+            "name": "fshost",
+            "components": [
+                {
+                    "component_name": "fshost",
+                    "shards": [
+                        "//src/storage/fshost:meta/fvm_fshost.cml",
+                        "//src/storage/fshost:meta/fvm_fshost_base.shard.cml",
+                        "//src/storage/fshost:meta/gpt_fshost.shard.cml",
+                    ],
+                },
+            ],
+        },
+    ],
     memory_buckets = [
         "//src/developer/memory/buckets:blobfs_buckets.json5",
         "//src/developer/memory/buckets:minfs_buckets.json5",
@@ -2389,6 +2742,22 @@ assembly_input_bundle(
 assembly_input_bundle(
     name = "fshost_gpt_fvm_f2fs",
     allowed_in = ["eng"],
+    compiled_packages = [
+        {
+            "bootfs_package": True,
+            "name": "fshost",
+            "components": [
+                {
+                    "component_name": "fshost",
+                    "shards": [
+                        "//src/storage/fshost:meta/fvm_fshost.cml",
+                        "//src/storage/fshost:meta/fvm_fshost_base.shard.cml",
+                        "//src/storage/fshost:meta/gpt_fshost.shard.cml",
+                    ],
+                },
+            ],
+        },
+    ],
     memory_buckets = ["//src/developer/memory/buckets:blobfs_buckets.json5"],
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/storage/gpt/component:package",
@@ -2406,6 +2775,18 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "fshost_provision_fxfs",
+    compiled_packages = [
+        {
+            "bootfs_package": True,
+            "name": "fshost",
+            "components": [
+                {
+                    "component_name": "fshost",
+                    "shards": ["//src/storage/fshost:meta/provision_fxfs_fshost.shard.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # AIB containing fshost support for minfs. Not compatible with fxfs.
@@ -2413,6 +2794,22 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "fshost_fvm_minfs",
+    compiled_packages = [
+        {
+            "bootfs_package": True,
+            "name": "fshost",
+            "components": [
+                {
+                    "component_name": "fshost",
+                    "shards": [
+                        "//src/storage/fshost:meta/non_gpt_fshost.shard.cml",
+                        "//src/storage/fshost:meta/fvm_fshost.cml",
+                        "//src/storage/fshost:meta/fvm_fshost_base.shard.cml",
+                    ],
+                },
+            ],
+        },
+    ],
     memory_buckets = [
         "//src/developer/memory/buckets:minfs_buckets.json5",
         "//src/developer/memory/buckets:blobfs_buckets.json5",
@@ -2450,6 +2847,17 @@ assembly_input_bundle(
     core_shards = [
         "//src/sys/pkg/bin/system-update-checker:meta/system_update_checker.core_shard.cml",
     ],
+    compiled_packages = [
+        {
+            "name": "system-update-realm",
+            "components": [
+                {
+                    "component_name": "system-update-realm",
+                    "shards": ["//src/sys/pkg/bin/system-update-checker:meta/system_update_checker.system_update_shard.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # buildifier: leave-alone
@@ -2460,6 +2868,17 @@ assembly_input_bundle(
     ],
     core_shards = [
         "//src/sys/pkg/bin/omaha-client:meta/omaha_client_service.core_shard.cml",
+    ],
+    compiled_packages = [
+        {
+            "name": "system-update-realm",
+            "components": [
+                {
+                    "component_name": "system-update-realm",
+                    "shards": ["//src/sys/pkg/bin/omaha-client:meta/omaha_client_service.system_update_shard.cml"],
+                },
+            ],
+        },
     ],
 )
 
@@ -2481,6 +2900,20 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/null-update-checker:package",
     ],
+    core_shards = [
+        "//src/sys/pkg/bin/null-update-checker:meta/null_update_checker.core_shard.cml",
+    ],
+    compiled_packages = [
+        {
+            "name": "system-update-realm",
+            "components": [
+                {
+                    "component_name": "system-update-realm",
+                    "shards": ["//src/sys/pkg/bin/null-update-checker:meta/null_update_checker.system_update_shard.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # Used on builds that do not include an update checker, i.e. neither system_update_checker nor omaha_client.
@@ -2488,6 +2921,17 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "no_update_checker",
+    compiled_packages = [
+        {
+            "name": "system-update-realm",
+            "components": [
+                {
+                    "component_name": "system-update-realm",
+                    "shards": ["//src/sys/pkg:meta/no_update_checker.system_update_shard.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # Include the system-update-configurator component as part of the SWD subsystem.
@@ -2499,6 +2943,17 @@ assembly_input_bundle(
     ],
     core_shards = [
         "//src/sys/pkg/bin/system-update-configurator:meta/core-shard.cml",
+    ],
+    compiled_packages = [
+        {
+            "name": "system-update-realm",
+            "components": [
+                {
+                    "component_name": "system-update-realm",
+                    "shards": ["//src/sys/pkg/bin/system-update-configurator:meta/system-update-shard.cml"],
+                },
+            ],
+        },
     ],
 )
 
@@ -2581,6 +3036,17 @@ assembly_input_bundle(
             "//bundles/assembly/bazel_inputs/src/connectivity/network:netstack2",
         ],
     }),
+    compiled_packages = [
+        {
+            "name": "network",
+            "components": [
+                {
+                    "component_name": "network",
+                    "shards": ["//src/connectivity/network:meta/netstack2.shard.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # Netstack3 as the netstack for use by base networking.
@@ -2589,6 +3055,17 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "netstack3",
+    compiled_packages = [
+        {
+            "name": "network",
+            "components": [
+                {
+                    "component_name": "network",
+                    "shards": ["//src/connectivity/network:meta/netstack3.shard.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # Netstack3 packages without unified binary.
@@ -2623,6 +3100,17 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "socket-proxy-enabled",
+    compiled_packages = [
+        {
+            "name": "network",
+            "components": [
+                {
+                    "component_name": "network",
+                    "shards": ["//src/connectivity/network:meta/socket-proxy-enabled.shard.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # Disable netpol network-socket-proxy. Either this or
@@ -2630,6 +3118,17 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "socket-proxy-disabled",
+    compiled_packages = [
+        {
+            "name": "network",
+            "components": [
+                {
+                    "component_name": "network",
+                    "shards": ["//src/connectivity/network:meta/socket-proxy-disabled.shard.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # Netpol socket-proxy packages without unified binary.
@@ -2656,6 +3155,17 @@ assembly_input_bundle(
             "//src/connectivity/network:meta/netstack-migration.core.shard.cml",
         ],
     }),
+    compiled_packages = [
+        {
+            "name": "network",
+            "components": [
+                {
+                    "component_name": "network",
+                    "shards": ["//src/connectivity/network:meta/netstack-migration.shard.cml"],
+                },
+            ],
+        },
+    ],
 )
 
 # Netstack migration packages without unified binary.
@@ -3395,6 +3905,48 @@ assembly_input_bundle(
     core_shards = [
         "//src/tests/assembly/assemble_image/compiled_package:meta/test.core_shard.cml",
     ],
+    compiled_packages = [
+        # Main definition for another package
+        {
+            "name": "for-test",
+            # Test that multiple components work
+            "components": [
+                {
+                    "component_name": "bar",
+                    "shards": ["//src/tests/assembly/assemble_image/compiled_package:meta/bar.cml"],
+                },
+                {
+                    "component_name": "baz",
+                    "shards": ["//src/tests/assembly/assemble_image/compiled_package:meta/test.cml"],
+                },
+            ],
+            # Test that component includes for bootfs packages work
+            "component_includes": [
+                {
+                    "source": "//src/tests/assembly/assemble_image/compiled_package:meta/test.include.cml",
+                    "destination": "test/include.cml",
+                },
+            ],
+        },
+        {
+            "name": "for-test2",
+            "components": [
+                {
+                    "component_name": "qux",
+                    "shards": ["//src/tests/assembly/assemble_image/compiled_package:meta/test.cml"],
+                },
+            ],
+            # Test that component includes for bootfs packages work
+            "component_includes": [
+                {
+                    "source": "//src/tests/assembly/assemble_image/compiled_package:meta/test.include.cml",
+                    "destination": "test/include.cml",
+                },
+            ],
+            # Test that bootfs packages work
+            "bootfs_package": True,
+        },
+    ],
 )
 
 # Emulator Support
@@ -3503,6 +4055,44 @@ assembly_input_bundle(
     name = "tee_manager",
     core_shards = [
         "//src/security/bin/tee_manager:meta/tee_manager.core_shard.cml",
+    ],
+    compiled_packages = [
+        {
+            "name": "tee_manager",
+            "packages": ["//bundles/assembly/bazel_inputs/src/security/bin/tee_manager:pkg"],
+            "components": [
+                {
+                    "component_name": "tee_manager",
+                    "shards": [],
+                },
+            ],
+            "component_includes": [
+                {
+                    "source": "//sdk/lib/syslog:client.shard.cml",
+                    "destination": "syslog/client.shard.cml",
+                },
+                {
+                    "source": "//src/security/bin/tee_manager:meta/tee_manager.base.cml",
+                    "destination": "tee_manager.base.cml",
+                },
+                {
+                    "source": "//sdk/lib/inspect:offer.shard.cml",
+                    "destination": "inspect/offer.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/syslog:offer.shard.cml",
+                    "destination": "syslog/offer.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/inspect:use.shard.cml",
+                    "destination": "inspect/use.shard.cml",
+                },
+                {
+                    "source": "//sdk/lib/syslog:use.shard.cml",
+                    "destination": "syslog/use.shard.cml",
+                },
+            ],
+        },
     ],
 )
 

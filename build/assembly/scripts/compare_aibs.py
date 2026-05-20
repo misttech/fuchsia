@@ -20,7 +20,6 @@ UNSUPPORTED_FIELDS = {
     "config_data",
     "blobs",
     "drivers",
-    "packages_to_compile",
     "bootfs_files_package",
 }
 
@@ -37,7 +36,6 @@ def is_supported_file(path: Path) -> bool:
     dir_to_fields = {
         "config_data": "config_data",
         "bootfs": "bootfs_files",
-        "compiled_packages": "packages_to_compile",
         "kernel": "kernel",
     }
 

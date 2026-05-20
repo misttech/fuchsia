@@ -11,15 +11,15 @@ delivery system itself.
 import builtins
 import functools
 import os
-import pathlib
 import shutil
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Optional, TextIO, Union
+from pathlib import Path
+from typing import Any, TextIO
 
 import serialization
 from assembly import package_copier
-from assembly.package_manifest import PackageManifest
+from assembly.package_manifest import BlobEntry, PackageManifest
 from serialization import json_load
 
 from .common import FileEntry, FilePath, fast_copy_makedirs
@@ -133,8 +133,6 @@ class CompiledPackageDefinitionFromGN:
     packages: list[FilePath] = field(default_factory=list)
     # Dictionary mapping components to cml files by name
     components: list[CompiledComponentDefinition] = field(default_factory=list)
-    # Other files to include in the compiled package
-    contents: set[FileEntry] = field(default_factory=set)
     # CML files included by the component cml
     component_includes: set[FileEntry] = field(default_factory=set)
     # Whether to extract the contents of this package into bootfs
@@ -318,7 +316,7 @@ class AssemblyInputBundle:
     )
     experimental: bool = False
     kernel: KernelInfo = field(default_factory=KernelInfo)
-    qemu_kernel: Optional[FilePath] = None
+    qemu_kernel: FilePath | None = None
     boot_args: set[str] = field(default_factory=set)
     bootfs_files: set[FileEntry] = field(default_factory=set)
     packages: set[PackageDetails] = field(default_factory=set)
@@ -334,7 +332,7 @@ class AssemblyInputBundle:
     packages_to_compile: list[CompiledPackageDefinition] = field(
         default_factory=list
     )
-    bootfs_files_package: Optional[FilePath] = None
+    bootfs_files_package: FilePath | None = None
     memory_buckets: set[FilePath] = field(default_factory=set)
 
     def __repr__(self) -> str:
@@ -376,8 +374,8 @@ class AssemblyInputBundle:
     def write_fini_manifest(
         self,
         file: TextIO,
-        base_dir: Optional[FilePath] = None,
-        rebase: Optional[FilePath] = None,
+        base_dir: FilePath | None = None,
+        rebase: FilePath | None = None,
     ) -> None:
         """Write a fini-style manifest of all files in the AssemblyInputBundle
         to the given |file|.
@@ -480,11 +478,11 @@ class AIBCreator:
         self.boot_args: set[str] = set()
 
         # The emulator kernel.
-        self.qemu_kernel: Optional[FilePath] = None
+        self.qemu_kernel: FilePath | None = None
 
         # Bootfs info
         self.bootfs_files: set[FileEntry] = set()
-        self.bootfs_files_package: Optional[FilePath] = None
+        self.bootfs_files_package: FilePath | None = None
 
         # The config_data entries
         self.config_data: FileEntryList = []
@@ -810,22 +808,39 @@ class AIBCreator:
                 with open(package_manifest_path, "r") as f:
                     package_manifest = json_load(PackageManifest, f)
                     package_manifests += [package_manifest_path]
+
+                    if package_manifest.blob_sources_relative == "file":
+
+                        def blob_source(blob: BlobEntry) -> str:
+                            return str(
+                                Path(package_manifest_path).parent
+                                / str(blob.source_path)
+                            )
+
+                    else:
+
+                        def blob_source(blob: BlobEntry) -> str:
+                            return str(blob.source_path)
+
                     for blob in package_manifest.blobs:
                         # We do not include the meta.far, because assembly will
                         # generate a new one with all the contents.
                         if blob.path != "meta/":
                             package_contents.append(
-                                FileEntry(str(blob.source_path), blob.path)
+                                FileEntry(str(blob_source(blob)), blob.path)
                             )
-            contents = package.contents
-            contents.update(package_contents)
             deps.update(package_manifests)
 
             # Copy the package contents entries
-            (copied_package_files, package_deps) = self._copy_file_entries(
-                contents,
-                os.path.join("compiled_packages", package.name, "files"),
-            )
+            try:
+                (copied_package_files, package_deps) = self._copy_file_entries(
+                    package_contents,
+                    os.path.join("compiled_packages", package.name, "files"),
+                )
+            except Exception as e:
+                raise AssemblyInputBundleCreationException(
+                    f"Failed to copy package contents for {package.name}: {e}"
+                )
 
             copied_definition = CompiledPackageDefinition(
                 name=package.name,
@@ -994,7 +1009,7 @@ class AIBCreator:
 
     def _copy_component_shards(
         self,
-        component_shards: Union[ComponentShards, list[FilePath]],
+        component_shards: ComponentShards | list[FilePath],
         package_name: str,
         component_name: str,
     ) -> tuple[list[FilePath], DepSet]:
@@ -1009,7 +1024,7 @@ class AIBCreator:
         return shard_file_paths, deps
 
     def _copy_file_entries(
-        self, entries: Union[FileEntrySet, FileEntryList], subdirectory: str
+        self, entries: FileEntrySet | FileEntryList, subdirectory: str
     ) -> tuple[FileEntryList, DepSet]:
         results: FileEntryList = []
         deps: DepSet = set()
@@ -1058,7 +1073,7 @@ class AIBCreator:
             # Crack the in-package path apart
             #
             # "meta" / "data" / package_name / path/to/file
-            parts = pathlib.Path(entry.destination).parts
+            parts = Path(entry.destination).parts
             if parts[:2] != ("meta", "data"):
                 raise ValueError(
                     "Found an unexpected destination path: {}".format(parts)

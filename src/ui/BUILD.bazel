@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 exports_files(
-    ["meta/ui.core_shard.cml"],
+    [
+        "meta/ui.core_shard.cml",
+        "meta/ui_routes_base.shard.cml",
+    ],
     visibility = ["//bundles/assembly:__subpackages__"],
 )

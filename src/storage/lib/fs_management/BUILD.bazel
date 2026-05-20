@@ -3,9 +3,6 @@
 # found in the LICENSE file.
 
 exports_files(
-    [
-        "meta/tee_manager.core_shard.cml",
-        "meta/tee_manager.base.cml",
-    ],
+    ["client.shard.cml"],
     visibility = ["//bundles/assembly:__subpackages__"],
 )

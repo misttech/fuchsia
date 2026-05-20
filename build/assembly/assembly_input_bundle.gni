@@ -212,13 +212,7 @@ import("//tools/cmc/build/restricted_features.gni")
 #             ]
 #           },
 #           ...
-#         ],
 #         component_includes = [ ... ]
-#         contents = [ {
-#           label = "//some/gn/label"
-#           source = "//some/gn/file/path"
-#           destination = "foo/bar"
-#         } ]
 #       },
 #     ]
 #
@@ -235,12 +229,6 @@ import("//tools/cmc/build/restricted_features.gni")
 #       compiled package in the compiled_packages list that specifies cml files
 #       that can be included by any cml shards in any platform AIB for the given
 #       package. These files will be included in the Assembly Input Bundle.
-#
-#     contents [optional]
-#       [list of GN scopes] List of GN scopes that describe a source/destination
-#       pair for a file to include in the package when it's compiled.  An
-#       optional 'label' field is required when the file is created by the
-#       build, and is the label of the target that creates the file.
 #
 #  bootstrap_shards [optional]
 #    [list of file paths] A list of CML shard files to add to the "bootstrap"
@@ -891,23 +879,6 @@ template("assembly_input_bundle") {
       # component includes for each package in the group.
       _inputs = []
       _deps = []
-
-      # Gather the deps and inputs files for the package contents.
-      if (defined(package.contents)) {
-        _contents = []
-        foreach(entry, package.contents) {
-          _inputs += [ entry.source ]
-          _deps += [ entry.label ]
-
-          _contents += [
-            {
-              destination = entry.destination
-              source = rebase_path("${entry.source}", root_build_dir)
-            },
-          ]
-        }
-        _package.contents = _contents
-      }
 
       # Gather the package manifests as input files
       if (defined(package.packages)) {

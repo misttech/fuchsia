@@ -3,6 +3,11 @@
 # found in the LICENSE file.
 
 exports_files(
-    ["meta/paver.bootstrap_shard.cml"],
+    [
+        "meta/paver.base.root_shard.cml",
+        "meta/paver.bootfs.root_shard.cml",
+        "meta/paver.bootstrap_shard.cml",
+        "meta/paver.core_shard.cml",
+    ],
     visibility = ["//bundles/assembly:__subpackages__"],
 )

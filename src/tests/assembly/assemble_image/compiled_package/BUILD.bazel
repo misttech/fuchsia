@@ -3,6 +3,11 @@
 # found in the LICENSE file.
 
 exports_files(
-    ["meta/test.core_shard.cml"],
+    [
+        "meta/test.core_shard.cml",
+        "meta/bar.cml",
+        "meta/test.cml",
+        "meta/test.include.cml",
+    ],
     visibility = ["//bundles/assembly:__subpackages__"],
 )

@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 exports_files(
-    ["meta/sl4f_assembly.core_shard.cml"],
+    [
+        "meta/sl4f_assembly.core_shard.cml",
+        "meta/sl4f_base.core_shard.cml",
+    ],
     visibility = ["//bundles/assembly:__subpackages__"],
 )

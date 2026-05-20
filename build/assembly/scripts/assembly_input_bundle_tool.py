@@ -19,7 +19,10 @@ from assembly import (
     PackageDetails,
     PackageManifest,
 )
-from assembly.assembly_input_bundle import CompiledPackageDefinitionFromGN
+from assembly.assembly_input_bundle import (
+    AssemblyInputBundleCreationException,
+    CompiledPackageDefinitionFromGN,
+)
 from depfile import DepFile
 from serialization import instance_from_dict, json_load
 
@@ -34,7 +37,7 @@ BOOTFS_COMPILED_PACKAGE_ALLOWLIST = [
 ]  # test package
 
 
-def create_bundle(args: argparse.Namespace) -> None:
+def create_bundle(args: argparse.Namespace) -> int:
     """Create an Assembly Input Bundle (AIB)."""
     aib_creator = AIBCreator(
         args.outdir,
@@ -146,7 +149,14 @@ def create_bundle(args: argparse.Namespace) -> None:
         add_memory_buckets(aib_creator, args.memory_buckets)
 
     # Create the AIB itself.
-    (assembly_input_bundle, assembly_config, deps) = aib_creator.build()
+    try:
+        (assembly_input_bundle, assembly_config, deps) = aib_creator.build()
+    except AssemblyInputBundleCreationException as e:
+        print(
+            f"\n\nERROR:  Unable to create AIB\n\n  Reason: {e}\n\n",
+            file=sys.stderr,
+        )
+        return 1
 
     # Write out a dep file if one is requested.
     if args.depfile:
@@ -160,6 +170,8 @@ def create_bundle(args: argparse.Namespace) -> None:
             assembly_input_bundle.write_fini_manifest(
                 export_manifest, base_dir=args.outdir
             )
+
+    return 0
 
 
 def add_pkg_list_from_file(
@@ -324,7 +336,7 @@ def _read_json_file(pkg_list_file: TextIO) -> list[dict[str, Any]]:
         raise
 
 
-def generate_package_creation_manifest(args: argparse.Namespace) -> None:
+def generate_package_creation_manifest(args: argparse.Namespace) -> int:
     """Generate a package creation manifest for an Assembly Input Bundle (AIB)
 
     Each AIB has a contents manifest that was created with it.  This file lists
@@ -355,8 +367,10 @@ def generate_package_creation_manifest(args: argparse.Namespace) -> None:
         output.write(contents_manifest)
         output.write("meta/package={}".format(args.meta_package))
 
+    return 0
 
-def generate_archive(args: argparse.Namespace) -> None:
+
+def generate_archive(args: argparse.Namespace) -> int:
     """Generate an archive of an Assembly Input Bundle (AIB)
 
     Each AIB has a contents manifest that was created with it.  This file lists
@@ -411,6 +425,8 @@ def generate_archive(args: argparse.Namespace) -> None:
     if args.depfile:
         with open(args.depfile, "w") as depfile:
             DepFile.from_deps(args.output, deps).write_to(depfile)
+
+    return 0
 
 
 def find_blob_in_manifests(
@@ -636,7 +652,7 @@ def main() -> int:
 
     if "handler" in args:
         # Dispatch to the handler fn.
-        args.handler(args)
+        return args.handler(args)
     else:
         # argparse doesn't seem to automatically catch that not subparser was
         # called, and so if there isn't a handler function (which is set by

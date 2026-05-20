@@ -8,6 +8,7 @@ exports_files(
         "meta/intl_small.core_shard.cml",
         "meta/intl_small_timezones.core_shard.cml",
         "meta/no_intl_timezones.core_shard.cml",
+        "meta/intl.core_shard.base.cml",
     ],
     visibility = ["//bundles/assembly:__subpackages__"],
 )
