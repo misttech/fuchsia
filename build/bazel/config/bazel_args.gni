@@ -105,6 +105,12 @@ if (_has_coverage_clang) {
   _build_args += [ "--features=coverage" ]
 }
 
+if (is_profile) {
+  _build_args += [ "--//build/bazel/config/variables:is_profile=True" ]
+} else {
+  _build_args += [ "--//build/bazel/config/variables:is_profile=False" ]
+}
+
 # Forward GN C/C++ compiler optimization configuration to Bazel
 if (_is_compilation_mode_dbg) {
   _build_args += [ "--compilation_mode=dbg" ]
