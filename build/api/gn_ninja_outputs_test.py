@@ -29,6 +29,33 @@ _NINJA_OUTPUTS = {
     ],
 }
 
+# Phony outputs should not appear, but they do, the tests
+# below verify that they are ignored. This dictionary
+# should match the content of _NINJA_OUTPUTS, except for
+# additional phony paths, and some GN labels that only
+# contain phony paths, and will be filtered out too.
+_NINJA_PHONY_OUTPUTS = {
+    "//:foo": ["obj/foo.stamp", "phony/objy/foo.validation"],
+    "//:foo.validation": ["phony/obj/foo.validation"],
+    "//:bar": [
+        "obj/bar.output",
+        "phony/obj/bar.validation",
+        "obj/bar.stamp",
+    ],
+    "//:zoo": [
+        "obj/zoo.output",
+        "obj/zoo.stamp",
+    ],
+    "//:zoo(//toolchain:secondary)": [
+        "secondary/obj/zoo.output",
+        "secondary/obj/zoo.stamp",
+        "secondary/phony/obj/zoo.validation",
+    ],
+    "//:zoo.validation(//toolchain:secondary)": [
+        "secondary/phony/obj/zoo.validation",
+    ],
+}
+
 
 class TestNinjaOutputsDatabase(unittest.TestCase):
     def setUp(self) -> None:
@@ -97,6 +124,16 @@ class TestNinjaOutputsDatabase(unittest.TestCase):
 
     def test_tabular_database(self) -> None:
         self.run_tests_for_class(gn_ninja_outputs.NinjaOutputsTabular)
+
+    def test_json_database_with_phony_outputs(self) -> None:
+        # Verify that phony outputs are removed.
+        input_path = self._root / "test_outputs.json"
+        with input_path.open("wt") as f:
+            json.dump(_NINJA_PHONY_OUTPUTS, f)
+
+        db = gn_ninja_outputs.NinjaOutputsJSON()
+        db.load_from_json(input_path)
+        self.run_tests(db)
 
     def test_json_database_with_duplicate_outputs(self) -> None:
         _NINJA_DUPLICATE_OUTPUTS = {

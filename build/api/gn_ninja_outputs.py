@@ -211,6 +211,27 @@ class NinjaOutputsJSON(NinjaOutputsBase):
 
     def _compute_path_map(self) -> None:
         self._path_to_label = {}
+
+        # First, remove all phony output paths, they are not real outputs
+        # but end up in the file due to GN bugs such as
+        # https://gn.issues.chromium.org/514612522. Some GN labels only
+        # have phony outputs and should also be removed from the map :-(
+        empty_labels: list[str] = []
+        for label, paths in self._label_to_paths.items():
+            new_paths = [
+                p
+                for p in paths
+                if not (p.startswith("phony/") or "/phony/" in p)
+            ]
+            if len(new_paths) == 0:
+                empty_labels.append(label)  # To remove key after iteration loop
+            elif len(new_paths) < len(paths):
+                self._label_to_paths[label] = new_paths
+
+        for label in empty_labels:
+            del self._label_to_paths[label]
+
+        # Second, look for duplicates.
         duplicate_outputs: dict[str, set[str]] = collections.defaultdict(set)
         for label, paths in self._label_to_paths.items():
             for path in paths:
