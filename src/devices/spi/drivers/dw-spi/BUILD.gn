@@ -72,7 +72,7 @@ fuchsia_rust_driver("dw-spi-driver") {
   ]
 }
 
-fuchsia_driver_component("component") {
+fuchsia_driver_component("dw-spi") {
   cm_label = ":manifest"
   deps = [
     ":bind_rules",
@@ -83,7 +83,7 @@ fuchsia_driver_component("component") {
 
 fuchsia_driver_package("package") {
   package_name = "dw-spi"
-  driver_components = [ ":component" ]
+  driver_components = [ ":dw-spi" ]
   export_to_bazel = true
 }
 

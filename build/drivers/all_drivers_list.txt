@@ -189,6 +189,7 @@
 //src/devices/serial/drivers/usb-cdc-acm:usb-cdc-acm-driver
 //src/devices/serial/drivers/virtio-console:virtio_console-driver
 //src/devices/spi/drivers/aml-spi:aml-spi-driver
+//src/devices/spi/drivers/dw-spi:dw-spi-driver
 //src/devices/spi/drivers/spi:spi-driver
 //src/devices/suspend/drivers/generic-suspend:generic-suspend-driver
 //src/devices/suspend/drivers/generic-suspend:generic-suspend-driver-with-fake-syscall
