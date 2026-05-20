@@ -65,6 +65,13 @@ assembly_input_bundle(
         "//src/diagnostics/archivist:meta/archivist.bootstrap_shard.cml",
         "//src/sys/bootstrap:meta/bootstrap.cml",
     ],
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/bus/drivers/platform:package",
+            "driver_components": ["meta/platform-bus.cm"],
+        },
+    ],
 )
 
 # This AIB contains Component Manager without tracing enabled.
@@ -145,31 +152,103 @@ assembly_input_bundle(
             "//src/sys/instrumentation_data_processor:meta/instrumentation_data_processor.bootstrap_shard.cml",
         ],
     }),
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/adc/drivers/adc:package",
+            "driver_components": ["meta/adc.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/block/drivers/core:package",
+            "driver_components": ["meta/block.core.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/block/drivers/sdmmc:package",
+            "driver_components": ["meta/sdmmc.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/clock/drivers/clock:package",
+            "driver_components": ["meta/clock.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/gpio/drivers/gpio:package",
+            "driver_components": ["meta/gpio.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/i2c/drivers/i2c:package",
+            "driver_components": ["meta/i2c.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/spi/drivers/spi:package",
+            "driver_components": ["meta/spi.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "display_drivers_boot",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/graphics/display/drivers/coordinator:package",
+            "driver_components": ["meta/display-coordinator.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "display_drivers_base",
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/graphics/display/drivers/coordinator:package",
+            "driver_components": ["meta/display-coordinator.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "pwm_driver",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/pwm/drivers/pwm:package",
+            "driver_components": ["meta/pwm.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "power_driver",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/power/drivers/power:package",
+            "driver_components": ["meta/power.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "registers_driver",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/registers/drivers/registers:package",
+            "driver_components": ["meta/registers.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
@@ -179,11 +258,25 @@ assembly_input_bundle(
         "userdebug",
         "eng",
     ],
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/ethernet/drivers/usb-cdc-function:package",
+            "driver_components": ["meta/usb-cdc-function.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "usb_cdc_function_base",
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/ethernet/drivers/usb-cdc-function:package",
+            "driver_components": ["meta/usb-cdc-function.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
@@ -227,41 +320,177 @@ assembly_input_bundle(
         "userdebug",
         "eng",
     ],
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/ethernet/drivers/ethernet/netdevice-migration:package",
+            "driver_components": ["meta/netdevice-migration.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/network/drivers/network-device:package",
+            "driver_components": ["meta/network-device.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "network_drivers_base",
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/ethernet/drivers/ethernet/netdevice-migration:package",
+            "driver_components": ["meta/netdevice-migration.cm"],
+        },
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/network/drivers/network-device:package",
+            "driver_components": ["meta/network-device.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "usb_peripheral_drivers_boot",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/usb-peripheral:package",
+            "driver_components": ["meta/usb-peripheral.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "usb_peripheral_drivers_base",
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/usb-peripheral:package",
+            "driver_components": ["meta/usb-peripheral.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "input_drivers",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/ui/input/drivers/buttons:package",
+            "driver_components": ["meta/buttons.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/ui/input/drivers/hid:package",
+            "driver_components": ["meta/hid.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/ui/input/drivers/hid-input-report:package",
+            "driver_components": ["meta/hid-input-report.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "usb_host_drivers",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/usb-bus:package",
+            "driver_components": ["meta/usb-bus.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/hci/transport/usb:package",
+            "driver_components": ["meta/bt-transport-usb.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/block/drivers/usb-mass-storage:package",
+            "driver_components": ["meta/usb-mass-storage.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/ethernet/drivers/usb-cdc-ecm:package",
+            "driver_components": ["meta/usb-cdc-ecm.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/ml/drivers/usb-harriet:package",
+            "driver_components": ["meta/usb-harriet.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/serial/drivers/usb-cdc-acm:package",
+            "driver_components": ["meta/usb-cdc-acm.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/usb-composite:package",
+            "driver_components": ["meta/usb-composite.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/usb-hub:package",
+            "driver_components": ["meta/usb-hub.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/media/audio/drivers/usb-audio:package",
+            "driver_components": ["meta/usb-audio.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/ui/input/drivers/usb-hid:package",
+            "driver_components": ["meta/usb-hid.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/serial/drivers/ftdi:package",
+            "driver_components": ["meta/ftdi.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/ethernet/drivers/asix-88179:package",
+            "driver_components": ["meta/asix-88179.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/ethernet/drivers/asix-88772b:package",
+            "driver_components": ["meta/asix-88772b.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "usb_rndis_function",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/ethernet/drivers/rndis-function:package",
+            "driver_components": ["meta/rndis-function.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "usb_ums_function",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/block/drivers/ums-function:package",
+            "driver_components": ["meta/ums-function.cm"],
+        },
+    ],
 )
 
 # The most-common, most-basic, AIB that is included in all userdebug and eng
@@ -366,36 +595,78 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "wlanphy_driver",
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/wlan/drivers/wlanphy:wlanphy",
+            "driver_components": ["meta/wlanphy.cm"],
+        },
+    ],
 )
 
 # AIB for the bt-transport-uart driver.
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "bt_transport_uart_driver",
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/hci/transport/uart:uart",
+            "driver_components": ["meta/bt-transport-uart.cm"],
+        },
+    ],
 )
 
 # AIB for the bus-pci driver
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "bus_pci_driver",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/bus/drivers/pci:bus-pci-package",
+            "driver_components": ["meta/bus-pci.cm"],
+        },
+    ],
 )
 
 # AIB for the bus-kpci driver
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "bus_kpci_driver",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/bus/drivers/pci:bus-kpci-package",
+            "driver_components": ["meta/bus-kpci.cm"],
+        },
+    ],
 )
 
 # AIB for the realtek-8211f driver
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "realtek_8211f_driver",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/ethernet/drivers/realtek-8211f:package",
+            "driver_components": ["meta/realtek-8211f.cm"],
+        },
+    ],
 )
 
 # AIB for the xHCI driver
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "xhci_driver",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/xhci:package",
+            "driver_components": ["meta/xhci.cm"],
+        },
+    ],
 )
 
 # AIB for the fake-battery driver
@@ -405,6 +676,13 @@ assembly_input_bundle(
     allowed_in = [
         "userdebug",
         "eng",
+    ],
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/power/testing/fake-battery:fake_battery",
+            "driver_components": ["meta/fake_battery.cm"],
+        },
     ],
 )
 
@@ -427,6 +705,13 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "sdhci_driver",
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/block/drivers/sdhci:package",
+            "driver_components": ["meta/sdhci.cm"],
+        },
+    ],
 )
 
 # AIB for the cqhci driver
@@ -438,6 +723,13 @@ assembly_input_bundle(
         "userdebug",
         "eng",
     ],
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/block/drivers/cqhci:package",
+            "driver_components": ["meta/cqhci.cm"],
+        },
+    ],
 )
 
 # AIB for the ufs driver
@@ -447,6 +739,13 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/block/drivers/ufs:ufs-pci-package",
+            "driver_components": ["meta/ufs-pci.cm"],
+        },
+    ],
 )
 
 # buildifier: leave-alone
@@ -454,6 +753,13 @@ assembly_input_bundle(
     name = "ufs_pdev_driver",
     allowed_in = [
         "eng",
+    ],
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/block/drivers/ufs:ufs-pdev-package",
+            "driver_components": ["meta/ufs-pdev.cm"],
+        },
     ],
 )
 
@@ -465,6 +771,13 @@ assembly_input_bundle(
     allowed_in = [
         "userdebug",
         "eng",
+    ],
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/interconnect/drivers/interconnect:package",
+            "driver_components": ["meta/interconnect.cm"],
+        },
     ],
 )
 
@@ -831,6 +1144,14 @@ assembly_input_bundle(
         # Developer.
         "//bundles/assembly/bazel_inputs/src/developer/forensics:pkg",
     ],
+    drivers = [
+        {
+            "set": "base",
+            # Fallback driver for uart nodes.
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/serial/drivers/serial:package",
+            "driver_components": ["meta/serial.cm"],
+        },
+    ],
     root_shards = [
         "//src/sys/core:meta/core.root_shard.cml",
     ],
@@ -851,7 +1172,6 @@ assembly_input_bundle(
     ],
     compiled_packages = [
         {
-            "name": "core",
             # These are not included into the core.cml directly, but may be included
             # via other shards.
             "component_includes": [
@@ -896,6 +1216,7 @@ assembly_input_bundle(
                     "destination": "src/ui/meta/ui_routes_base.shard.cml",
                 },
             ],
+            "name": "core",
         },
         {
             "name": "system-update-realm",
@@ -1607,6 +1928,16 @@ assembly_input_bundle(
         "userdebug",
         "eng",
     ],
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/developer/remote-control/usb:usb-vsock-package",
+            "driver_components": [
+                "meta/usb-vsock-service.cm",
+                "meta/overnet-usb.cm",
+            ],
+        },
+    ],
 )
 
 # Development and debug support tools for general networking
@@ -2263,6 +2594,13 @@ assembly_input_bundle(
         "userdebug",
         "eng",
     ],
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/developer/adb/drivers/usb-adb-function:package",
+            "driver_components": ["meta/usb-adb-function.cm"],
+        },
+    ],
 )
 
 # Userspace fastboot over usb support.
@@ -2279,6 +2617,13 @@ assembly_input_bundle(
     ],
     core_shards = [
         "//src/firmware/fastboot-usb:meta/fastboot_usb.core_shard.cml",
+    ],
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/firmware/drivers/usb-fastboot-function:pkg",
+            "driver_components": ["meta/usb-fastboot-function.cm"],
+        },
     ],
 )
 
@@ -3285,12 +3630,26 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "wlan_fullmac_support",
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/wlan/drivers/wlanif:wlanif",
+            "driver_components": ["meta/wlanif.cm"],
+        },
+    ],
 )
 
 # WLAN support for drivers that utilize a software MAC
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "wlan_softmac_support",
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/wlan/drivers/wlansoftmac:wlansoftmac",
+            "driver_components": ["meta/wlansoftmac.cm"],
+        },
+    ],
 )
 
 # WLAN support for interfacing with starnix.
@@ -3324,6 +3683,28 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/media/audio/drivers/intel-hda/codecs/hdmi:package",
+            "driver_components": ["meta/hdmi-audio-codec.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/media/audio/drivers/intel-hda/codecs/realtek:package",
+            "driver_components": ["meta/realtek-audio-codec.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/media/audio/drivers/intel-hda/controller:package",
+            "driver_components": ["meta/intel-hda.cm"],
+        },
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/media/audio/drivers/intel-hda/codecs/qemu:package",
+            "driver_components": ["meta/qemu-audio-codec.cm"],
+        },
+    ],
 )
 
 # Support for interactive debugging/development of platform audio
@@ -3332,6 +3713,18 @@ assembly_input_bundle(
     name = "audio_development_support",
     allowed_in = [
         "eng",
+    ],
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/media/audio/drivers/virtual-audio:virtual-audio",
+            "driver_components": ["meta/virtual-audio-driver.cm"],
+        },
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/media/audio/drivers/virtual-audio-legacy:virtual-audio-legacy",
+            "driver_components": ["meta/virtual-audio-legacy-driver.cm"],
+        },
     ],
     cache_packages = [
         "//bundles/assembly/bazel_inputs/src/media/audio/services/ffxdaemon:audio_ffx_daemon",
@@ -3854,6 +4247,13 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
+    drivers = [
+        {
+            "set": "bootfs",
+            "package_target": "//bundles/assembly/bazel_inputs/src/power/testing/system-integration/example/test-driver:power-system-integration-example-test-driver",
+            "driver_components": ["meta/power-system-integration-example-test-driver.cm"],
+        },
+    ],
 )
 
 # Power framework cli tools and ffx power support components
@@ -3948,6 +4348,12 @@ assembly_input_bundle(
         },
     ],
 )
+
+########
+#
+# Hardware Support AIBs
+#
+# These are used to provide support for specific hardware
 
 # Emulator Support
 #

@@ -197,6 +197,40 @@ def _assembly_input_bundle_impl(ctx):
         args.add("--compiled-packages", compiled_packages_file)
         inputs.append(compiled_packages_file)
 
+    # Handle drivers
+    drivers_list = []
+    if ctx.attr.drivers:
+        parsed_drivers = json.decode(ctx.attr.drivers)
+        path_map = {}
+        for dep in ctx.attr.drivers_inputs:
+            lbl = str(dep.label)
+            path_map[lbl] = dep[FuchsiaPackageInfo].package_manifest.path
+            inputs.extend(dep[FuchsiaPackageInfo].files)
+
+        for drv in parsed_drivers:
+            if "package_target" not in drv:
+                fail("driver entries must specify a package_target: %s" % drv)
+            if "driver_components" not in drv:
+                fail("driver entries must specify driver_components: %s" % drv)
+            if "set" not in drv:
+                fail("driver entries must specify set: %s" % drv)
+
+            lbl = drv["package_target"]
+            if lbl in path_map:
+                drv["package_target"] = path_map[lbl]
+            else:
+                fail("Driver package %s not found in inputs" % lbl)
+            drivers_list.append(drv)
+
+    if drivers_list:
+        drivers_file = ctx.actions.declare_file(ctx.label.name + "_drivers.json")
+        ctx.actions.write(
+            output = drivers_file,
+            content = json.encode(drivers_list),
+        )
+        args.add("--drivers-list", drivers_file)
+        inputs.append(drivers_file)
+
     ctx.actions.run(
         inputs = inputs,
         outputs = [out_dir],
@@ -237,6 +271,8 @@ _assembly_input_bundle = rule(
         "compiled_packages": attr.string(),
         # Internal attribute to pass labels extracted from compiled_packages by the macro.
         "compiled_packages_inputs": attr.label_list(allow_files = True),
+        "drivers": attr.string(),
+        "drivers_inputs": attr.label_list(providers = [FuchsiaPackageInfo]),
         "_tool": attr.label(
             default = "//build/assembly/scripts:assembly_input_bundle_tool",
             executable = True,
@@ -268,6 +304,7 @@ def assembly_input_bundle(
         root_shards = [],
         toolbox_shards = [],
         compiled_packages = [],
+        drivers = [],
         **kwargs):
     """Creates an Assembly Input Bundle.
 
@@ -387,6 +424,16 @@ def assembly_input_bundle(
               that can be included by any cml shards in any platform AIB for the given
               package. These files will be included in the Assembly Input Bundle.
 
+        drivers: [list of dicts] List of dicts that describe driver packages to include in the assembly input bundle.
+            Example:
+            drivers = [
+              {
+                package_target = "//path/to:driver_package"
+                driver_components = [ "meta/driver.cm" ]
+                set = "base"
+              }
+            ]
+
         **kwargs: Other arguments to pass to the rule.
     """
 
@@ -429,6 +476,24 @@ def assembly_input_bundle(
 
     compiled_packages_inputs = depset(compiled_packages_inputs).to_list()
 
+    # Extract labels from drivers to pass to the rule and canonicalize them.
+    #
+    # We canonicalize the labels here (converting them to strings using str(Label(...))).
+    # This is done because the rule implementation needs to look up these labels in the
+    # drivers_inputs list to get their file paths. Since str(dep.label) in the
+    # implementation returns a canonical label string, we must ensure the strings in our JSON
+    # match that canonical format.
+    #
+    #  e.g.  //some/path/to:foo/bar.cml => "@@//some/path/to:foo/bar.cml"
+
+    drivers_inputs = []
+    for drv in drivers:
+        if "package_target" in drv:
+            driver_label = str(Label(drv["package_target"]))
+            drv["package_target"] = driver_label
+            drivers_inputs.append(driver_label)
+    drivers_inputs = depset(drivers_inputs).to_list()
+
     _assembly_input_bundle(
         name = name,
         experimental = experimental,
@@ -453,6 +518,8 @@ def assembly_input_bundle(
         toolbox_shards = toolbox_shards,
         compiled_packages = json.encode(compiled_packages),
         compiled_packages_inputs = compiled_packages_inputs,
+        drivers = json.encode(drivers),
+        drivers_inputs = drivers_inputs,
         **kwargs
     )
 

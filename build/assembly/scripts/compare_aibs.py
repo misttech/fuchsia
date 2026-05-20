@@ -19,7 +19,6 @@ UNSUPPORTED_FIELDS = {
     "bootfs_files",
     "config_data",
     "blobs",
-    "drivers",
     "bootfs_files_package",
 }
 
