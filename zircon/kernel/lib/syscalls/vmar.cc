@@ -236,7 +236,7 @@ zx_status_t sys_vmar_map(zx_handle_t handle, zx_vm_option_t options, uint64_t vm
     return status;
   }
 
-  // Allocate CSM if creating a fault-beyond-stream-size mapping.
+  // Allocate SSM if creating a fault-beyond-stream-size mapping.
   if (options & ZX_VM_FAULT_BEYOND_STREAM_SIZE) {
     status = vmo->stream_size_manager().status_value();
     if (status != ZX_OK) {

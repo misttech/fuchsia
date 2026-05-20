@@ -1828,7 +1828,7 @@ uint64_t VmMapping::TrimmedObjectRangeLocked(uint64_t offset, uint64_t len) cons
     DEBUG_ASSERT(paged);
     AssertHeld(paged->lock_ref());
     auto stream_size_res = paged->saturating_stream_size_locked();
-    // Creating a fault-beyond-stream-size mapping should have allocated a CSM.
+    // Creating a fault-beyond-stream-size mapping should have allocated a SSM.
     DEBUG_ASSERT(stream_size_res);
     size_t stream_size = stream_size_res.value();
     DEBUG_ASSERT(stream_size <= vmo_size);
