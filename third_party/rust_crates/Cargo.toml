@@ -148,7 +148,6 @@ indexmap = { version = "2.13.0", features = ["serde"] }
 iota = "0.2.3"
 itertools = "0.14"
 itoa = "1.0"
-json-spanned-value = "0.2.2"
 json5format = "0.2.6"
 libc = { version = "0.2.186", features = ["extra_traits"] }
 libm = "0.2.15"
