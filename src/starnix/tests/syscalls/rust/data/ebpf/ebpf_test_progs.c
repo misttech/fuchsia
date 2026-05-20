@@ -46,6 +46,9 @@ struct test_result {
   __u32 retval;
   __u32 get_retval;
 
+  __u32 ether_type;
+  __u32 ifindex;
+
   __u32 sockaddr_family;
   __u32 sockaddr_port;
   __u32 sockaddr_ip[4];
@@ -96,6 +99,17 @@ int skb_test_prog(struct __sk_buff* skb) {
   if (fullsock) {
     *entry += fullsock->protocol;
   }
+
+  struct test_result result = {
+      .ether_type = skb->protocol,
+      .ifindex = skb->ifindex,
+  };
+  if (fullsock) {
+    result.sk_type = fullsock->type;
+    result.sk_protocol = fullsock->protocol;
+    result.sk_family = fullsock->family;
+  }
+  bpf_map_update_elem(&test_result, &zero, &result, 0);
 
   bpf_ringbuf_submit(entry, 0);
 

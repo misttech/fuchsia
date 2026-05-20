@@ -13,6 +13,7 @@ mod tests {
     use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
     use std::os::unix::net::UnixStream;
     use std::time::Duration;
+    use test_case::test_case;
     use zerocopy::{FromBytes, Immutable, IntoBytes};
 
     macro_rules! root_required {
@@ -294,7 +295,7 @@ mod tests {
 
     // LINT.IfChange
     #[repr(C)]
-    #[derive(Immutable, FromBytes)]
+    #[derive(Debug, Immutable, FromBytes)]
     struct TestResult {
         uid_gid: u64,
         pid_tgid: u64,
@@ -304,6 +305,9 @@ mod tests {
         retval: i32,
         get_retval: i32,
 
+        ether_type: u32,
+        ifindex: u32,
+
         sockaddr_family: u32,
         sockaddr_port: u32,
         sockaddr_ip: [u32; 4],
@@ -311,7 +315,6 @@ mod tests {
         sk_type: u32,
         sk_protocol: u32,
         sk_family: u32,
-
         _padding: u32,
     }
 
@@ -466,9 +469,46 @@ mod tests {
         }
     }
 
-    #[test]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    enum IpFamily {
+        V4,
+        V6,
+    }
+
+    impl IpFamily {
+        fn any_addr(&self) -> std::net::SocketAddr {
+            match self {
+                IpFamily::V4 => "0.0.0.0:0".parse().unwrap(),
+                IpFamily::V6 => "[::]:0".parse().unwrap(),
+            }
+        }
+
+        fn localhost_addr(&self) -> std::net::SocketAddr {
+            match self {
+                IpFamily::V4 => "127.0.0.1:0".parse().unwrap(),
+                IpFamily::V6 => "[::1]:0".parse().unwrap(),
+            }
+        }
+
+        fn ether_type(&self) -> u16 {
+            match self {
+                IpFamily::V4 => libc::ETH_P_IP as u16,
+                IpFamily::V6 => libc::ETH_P_IPV6 as u16,
+            }
+        }
+    }
+
+    fn get_loopback_ifindex() -> u32 {
+        let lo_index = unsafe { libc::if_nametoindex(b"lo\0".as_ptr() as *const libc::c_char) };
+        assert!(lo_index > 0, "Failed to get loopback interface index");
+        lo_index
+    }
+
+    #[test_case(IpFamily::V4, IpFamily::V4; "ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V4; "dual_stack_ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V6; "dual_stack_ipv6")]
     #[serial]
-    fn ebpf_egress() {
+    fn ebpf_egress(socket_family: IpFamily, packet_family: IpFamily) {
         root_required!();
 
         let mut maps = MapSet::new();
@@ -484,24 +524,33 @@ mod tests {
             .expect("Failed to poll ringbuffer FD");
         assert!(signaled == None);
 
-        let socket = UdpSocket::bind("127.0.0.1:0").expect("Failed to create UPD socket");
+        let socket =
+            UdpSocket::bind(socket_family.any_addr()).expect("Failed to create UDP socket");
         let cookie = get_socket_cookie(socket.as_fd()).expect("Failed to get SO_COOKIE");
         maps.set_target_cookie(cookie);
 
         let _attached = program.attach();
 
         // Send a UDP packet.
-        socket.send_to(&[1, 2, 3], "127.0.0.1:12345").expect("Failed to send UDP packet");
+        socket
+            .send_to(&[1, 2, 3], (packet_family.localhost_addr().ip(), 12345))
+            .expect("Failed to send UDP packet");
 
         // The ring buffer FD should be signalled by the program.
         let signaled = pollfd(maps.ringbuf(), libc::POLLIN, Duration::MAX)
             .expect("Failed to poll ringbuffer FD");
         assert!(signaled == Some(libc::POLLIN));
+
+        let test_result = maps.get_test_result();
+        assert_eq!(test_result.ether_type, u16::to_be(packet_family.ether_type() as u16) as u32);
+        assert_eq!(test_result.ifindex, get_loopback_ifindex());
     }
 
-    #[test]
+    #[test_case(IpFamily::V4, IpFamily::V4; "ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V4; "dual_stack_ipv4")]
+    #[test_case(IpFamily::V6, IpFamily::V6; "dual_stack_ipv6")]
     #[serial]
-    fn ebpf_ingress() {
+    fn ebpf_ingress(socket_family: IpFamily, packet_family: IpFamily) {
         root_required!();
 
         let mut maps = MapSet::new();
@@ -513,7 +562,8 @@ mod tests {
         );
 
         // Setup a listening socket.
-        let recv_socket = UdpSocket::bind("127.0.0.1:0").expect("Failed to create UPD socket");
+        let recv_socket =
+            UdpSocket::bind(socket_family.any_addr()).expect("Failed to create UDP socket");
         let recv_addr = recv_socket.local_addr().expect("Failed to get local socket addr");
 
         let cookie = get_socket_cookie(recv_socket.as_fd()).expect("Failed to get SO_COOKIE");
@@ -522,13 +572,19 @@ mod tests {
         let _attached = program.attach();
 
         // Send a UDP packet.
-        let send_socket = UdpSocket::bind("127.0.0.1:0").expect("Failed to create UPD socket");
-        send_socket.send_to(&[1, 2, 3], recv_addr).expect("Failed to send UDP packet");
+        let send_sock_addr = packet_family.localhost_addr();
+        let send_socket = UdpSocket::bind(send_sock_addr).expect("Failed to create UDP socket");
+        let send_to_addr = std::net::SocketAddr::new(send_sock_addr.ip(), recv_addr.port());
+        send_socket.send_to(&[1, 2, 3], send_to_addr).expect("Failed to send UDP packet");
 
         // The ring buffer FD should be signalled by the program.
         let signaled = pollfd(maps.ringbuf(), libc::POLLIN, Duration::MAX)
             .expect("Failed to poll ringbuffer FD");
         assert!(signaled == Some(libc::POLLIN));
+
+        let test_result = maps.get_test_result();
+        assert_eq!(test_result.ether_type, u16::to_be(packet_family.ether_type() as u16) as u32);
+        assert_eq!(test_result.ifindex, get_loopback_ifindex());
     }
 
     #[test]
