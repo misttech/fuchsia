@@ -81,7 +81,7 @@ closed protocol Eventpair {
     strict Create(struct {
         options uint32;
     }) -> (resource struct {
-        out0 Handle:EVENT;
-        out1 Handle:EVENT;
+        out0 Handle:EVENTPAIR;
+        out1 Handle:EVENTPAIR;
     }) error Status;
 };
