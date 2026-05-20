@@ -1,8 +1,6 @@
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-[build]
-target = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "thumbv7em-none-eabihf"]
 
 # A bit awkward but when we run the build manually with cargo, we need to have it fetch dependencies
 # normally from crates.io or we will have too many issues trying to coexist with Fuchsia

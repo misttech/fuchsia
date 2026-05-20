@@ -11,7 +11,5 @@ components = [
   "rust-std",
 ]
 targets = [
-  "x86_64-unknown-linux-gnu",
-  "aarch64-apple-darwin",
   "thumbv7em-none-eabihf"
 ]
