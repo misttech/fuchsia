@@ -27,6 +27,18 @@ pub enum TargetConnectionError {
     NonFatal(#[source] anyhow::Error),
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum ConnectionStreamError {
+    #[error("overnet connection read failure: {0}")]
+    ReadFailure(#[source] std::io::Error),
+
+    #[error("overnet connection write failure: {0}")]
+    WriteFailure(#[source] std::io::Error),
+
+    #[error("{0}")]
+    Forwarded(#[from] anyhow::Error),
+}
+
 /// Collection of connections established by a connector.
 pub enum TargetConnection {
     Overnet(OvernetConnection),
@@ -54,7 +66,7 @@ pub struct FDomainConnection {
     // implementation, this needs to be a buffered reader.
     pub(crate) output: Box<dyn AsyncBufRead + Unpin + Send>,
     pub(crate) input: Box<dyn AsyncWrite + Unpin + Send>,
-    pub(crate) errors: Receiver<anyhow::Error>,
+    pub(crate) errors: Receiver<ConnectionStreamError>,
     pub(crate) main_task: Option<Task<()>>,
 }
 
@@ -76,7 +88,7 @@ pub struct OvernetConnection {
     // implementation, this needs to be a buffered reader.
     pub(crate) output: Box<dyn AsyncBufRead + Unpin>,
     pub(crate) input: Box<dyn AsyncWrite + Unpin>,
-    pub(crate) errors: Receiver<anyhow::Error>,
+    pub(crate) errors: Receiver<ConnectionStreamError>,
     pub(crate) compat: Option<CompatibilityInfo>,
     pub(crate) main_task: Option<Task<()>>,
     pub(crate) ssh_host_address: Option<HostAddr>,
@@ -93,7 +105,7 @@ impl OvernetConnection {
         self,
         mut recv: W,
         send: R,
-        error_sender: Sender<anyhow::Error>,
+        error_sender: Sender<ConnectionStreamError>,
     ) -> Pin<Box<dyn Future<Output = ()> + 'a>>
     where
         R: AsyncRead + Unpin + Sized + 'a,
@@ -106,8 +118,7 @@ impl OvernetConnection {
                 tokio::io::copy_buf(&mut BufReader::with_capacity(BUFFER_SIZE, output), &mut recv)
                     .await
             {
-                let _ =
-                    err_clone.send(anyhow::anyhow!("overnet connection read failure: {e:?}")).await;
+                let _ = err_clone.send(ConnectionStreamError::ReadFailure(e)).await;
             };
         };
         let err_clone = error_sender.clone();
@@ -117,9 +128,7 @@ impl OvernetConnection {
                 tokio::io::copy_buf(&mut BufReader::with_capacity(BUFFER_SIZE, send), &mut input)
                     .await
             {
-                let _ = err_clone
-                    .send(anyhow::anyhow!("overnet connection write failure: {e:?}"))
-                    .await;
+                let _ = err_clone.send(ConnectionStreamError::WriteFailure(e)).await;
             }
         };
         let err_clone = error_sender.clone();

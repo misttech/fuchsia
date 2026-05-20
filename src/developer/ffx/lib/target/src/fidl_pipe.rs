@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use crate::fdomain_transport::FDomainTransport;
-use crate::target_connector::{TargetConnection, TargetConnectionError, TargetConnector};
+use crate::target_connector::{
+    ConnectionStreamError, TargetConnection, TargetConnectionError, TargetConnector,
+};
 use crate::{ConnectionError, FDomainConnection};
 use anyhow::Result;
 use async_channel::Receiver;
@@ -26,7 +28,7 @@ use std::time::Duration;
 #[derive(Debug)]
 pub struct FidlPipe {
     task: Option<Task<()>>,
-    error_queue: Receiver<anyhow::Error>,
+    error_queue: Receiver<ConnectionStreamError>,
     // Using atomic bool because turning `Task<()>` into a fused future didn't appear to behave as
     // intended, e.g. `terminated()` did not return `true` even if the task had run to completion.
     is_terminated: Arc<AtomicBool>,
@@ -154,7 +156,7 @@ impl FidlPipe {
             let FDomainConnection { output, input, mut errors, main_task } = fdomain_connection;
             let error_send = async move {
                 while let Some(error) = errors.next().await {
-                    let Ok(()) = error_sender.send(error.into()).await else { break };
+                    let Ok(()) = error_sender.send(error).await else { break };
                 }
             };
 
@@ -208,11 +210,11 @@ impl FidlPipe {
         ))
     }
 
-    pub fn error_stream(&self) -> Receiver<anyhow::Error> {
+    pub fn error_stream(&self) -> Receiver<ConnectionStreamError> {
         return self.error_queue.clone();
     }
 
-    pub fn try_drain_errors(&self) -> Option<Vec<anyhow::Error>> {
+    pub fn try_drain_errors(&self) -> Option<Vec<ConnectionStreamError>> {
         let mut pipe_errors = Vec::new();
         while let Ok(err) = self.error_queue.try_recv() {
             pipe_errors.push(err)
@@ -317,7 +319,8 @@ mod test {
             let sock2 = fidl::AsyncSocket::from_socket(sock2);
             let (error_tx, error_rx) = async_channel::unbounded();
             let error_task = Task::local(async move {
-                let _ = error_tx.send(anyhow::anyhow!("boom")).await;
+                let _ =
+                    error_tx.send(ConnectionStreamError::Forwarded(anyhow::anyhow!("boom"))).await;
             });
             let overnet = OvernetConnection {
                 output: Box::new(BufReader::new(sock1)),
@@ -333,7 +336,8 @@ mod test {
             let sock2 = fidl::AsyncSocket::from_socket(sock2);
             let (error_tx, error_rx) = async_channel::unbounded();
             let error_task = Task::local(async move {
-                let _ = error_tx.send(anyhow::anyhow!("boom")).await;
+                let _ =
+                    error_tx.send(ConnectionStreamError::Forwarded(anyhow::anyhow!("boom"))).await;
             });
             let fdomain = FDomainConnection {
                 output: Box::new(BufReader::new(sock1)),

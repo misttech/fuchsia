@@ -45,7 +45,7 @@ impl DirectConnector {
         }))
     }
 
-    pub async fn resolution(&self) -> std::result::Result<Arc<Resolution>, TargetResolutionError> {
+    pub async fn resolution(&self) -> Result<Arc<Resolution>, TargetResolutionError> {
         let mut resolution = self.0.resolution.lock().await;
 
         if let Some(resolution) = &*resolution {
@@ -239,10 +239,10 @@ impl FhoTargetEnvironmentInner {
                 if let Some(conn) = dc.get_connection_if_already_established() {
                     match err {
                         fho::Error::User(e) => {
-                            return fho::Error::User(conn.wrap_connection_errors(e));
+                            return fho::Error::User(conn.wrap_connection_errors(e).into());
                         }
                         fho::Error::Unexpected(e) => {
-                            return fho::Error::Unexpected(conn.wrap_connection_errors(e));
+                            return fho::Error::Unexpected(conn.wrap_connection_errors(e).into());
                         }
                         _ => (),
                     }

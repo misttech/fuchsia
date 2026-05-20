@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fidl_pipe::FidlPipe;
-use crate::target_connector::TargetConnector;
+use crate::target_connector::{ConnectionStreamError, TargetConnector};
 use anyhow::Result;
 use async_lock::Mutex;
 use compat_info::CompatibilityInfo;
@@ -47,6 +47,14 @@ pub enum ConnectionError {
     OvernetUnsupported,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum WrappedConnectionError {
+    #[error("{original:?}\n{pipe_errors:?}")]
+    WithPipeErrors { original: anyhow::Error, pipe_errors: Vec<ConnectionStreamError> },
+    #[error("{0:?}")]
+    NoPipeErrors(anyhow::Error),
+}
+
 impl Connection {
     /// Attempts to create a direct connection to a Fuchsia device using the passed connector. This
     /// constructor will not attempt to wait for a timeout, so it is best to use one against this
@@ -73,7 +81,7 @@ impl Connection {
     /// returning `true` for the second item in the tuple if this is indeed a pass-through client.
     pub async fn fdomain_client(
         &self,
-    ) -> std::result::Result<(Arc<fdomain_client::Client>, bool), ConnectionError> {
+    ) -> Result<(Arc<fdomain_client::Client>, bool), ConnectionError> {
         let mut fdomain = self.fdomain.lock().await;
         if let Some(fdomain) = fdomain.clone() {
             Ok((fdomain, false))
@@ -93,7 +101,7 @@ impl Connection {
         if rcs_info.is_none() {
             let (proxy, node_id) = overnet.connect_remote_control().await.map_err(|e| {
                 crate::KnockError::NonCritical(crate::KnockNonCriticalError::Custom(format!(
-                    "getting RCS proxy: {:?}",
+                    "getting RCS proxy: {}",
                     self.wrap_connection_errors(e)
                 )))
             })?;
@@ -112,7 +120,7 @@ impl Connection {
             .await
             .map_err(|e| {
                 crate::KnockError::NonCritical(crate::KnockNonCriticalError::Custom(format!(
-                    "connecting to new RCS proxy: {:?}",
+                    "connecting to new RCS proxy: {}",
                     self.wrap_connection_errors(e)
                 )))
             })?;
@@ -148,11 +156,11 @@ impl Connection {
     /// This function is used to overcome some of the shortcomings around FIDL errors, as on the
     /// host they are being used to simulate what is essentially a networked connection, and not an
     /// OS-backed operation (like when using FIDL on a Fuchsia device).
-    pub fn wrap_connection_errors(&self, e: anyhow::Error) -> anyhow::Error {
+    pub fn wrap_connection_errors(&self, e: anyhow::Error) -> WrappedConnectionError {
         if let Some(pipe_errors) = self.fidl_pipe.try_drain_errors() {
-            return anyhow::anyhow!("{e:?}\n{pipe_errors:?}");
+            return WrappedConnectionError::WithPipeErrors { original: e, pipe_errors };
         }
-        e
+        WrappedConnectionError::NoPipeErrors(e)
     }
 
     pub fn compatibility_info(&self) -> Option<CompatibilityInfo> {
@@ -324,7 +332,7 @@ pub mod testing {
     #[derive(Debug)]
     pub struct FakeOvernet {
         circuit_node: Arc<overnet_core::Router>,
-        error_receiver: Receiver<anyhow::Error>,
+        error_receiver: Receiver<ConnectionStreamError>,
         behavior: FakeOvernetBehavior,
         already_failed: bool,
     }
@@ -332,7 +340,7 @@ pub mod testing {
     impl FakeOvernet {
         pub fn new(
             circuit_node: Arc<overnet_core::Router>,
-            error_receiver: Receiver<anyhow::Error>,
+            error_receiver: Receiver<ConnectionStreamError>,
             behavior: FakeOvernetBehavior,
         ) -> Self {
             Self { circuit_node, error_receiver, behavior, already_failed: false }
@@ -474,7 +482,7 @@ mod test {
             FakeOvernetBehavior::CloseRcsImmediately,
         );
         let conn = Connection::new(circuit).await.expect("making connection");
-        error_sender.send(anyhow::anyhow!("kaboom")).await.unwrap();
+        error_sender.send(anyhow::anyhow!("kaboom").into()).await.unwrap();
         let err = conn.rcs_proxy().await.unwrap().echo_string("").await;
         assert!(err.is_err());
         let err_string = conn.wrap_connection_errors(err.unwrap_err().into()).to_string();

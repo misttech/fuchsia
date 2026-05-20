@@ -4,8 +4,8 @@
 
 use crate::Resolution;
 use crate::target_connector::{
-    BUFFER_SIZE, FDomainConnection, OvernetConnection, TargetConnection, TargetConnectionError,
-    TargetConnector,
+    BUFFER_SIZE, ConnectionStreamError, FDomainConnection, OvernetConnection, TargetConnection,
+    TargetConnectionError, TargetConnector,
 };
 use anyhow::Result;
 use async_channel::Sender;
@@ -103,7 +103,7 @@ type StderrLineReader = tokio::io::Lines<BufReader<BufReader<ChildStderr>>>;
 
 async fn read_stderr(
     mut stderr: StderrLineReader,
-    error_sender: Sender<anyhow::Error>,
+    error_sender: Sender<ConnectionStreamError>,
     ctx: &EnvironmentContext,
 ) {
     while let Ok(Some(line)) = stderr.next_line().await {
@@ -112,7 +112,10 @@ async fn read_stderr(
         // an ssh connection has failed. The error sender is only here to show the verbatim error
         // so that it can be drained in the event of the SshConnector disconnecting.
         if ffx_ssh::parse::ssh_stderr_to_pipe_error(&line).is_some() {
-            match error_sender.send(anyhow::anyhow!("SSH stderr: {line}")).await {
+            match error_sender
+                .send(ConnectionStreamError::Forwarded(anyhow::anyhow!("SSH stderr: {line}")))
+                .await
+            {
                 Err(_e) => break,
                 Ok(_) => {}
             }

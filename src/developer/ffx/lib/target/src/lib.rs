@@ -747,6 +747,14 @@ pub async fn add_manual_target(
     };
 
     let taddr = TargetIpAddr::from(&addr);
+    const DEFAULT_SSH_PORT: u16 = 22;
+    let taddr_str = match taddr.ip() {
+        IpAddr::V4(_) => format!("{}", taddr),
+        IpAddr::V6(_) => format!("[{}]", taddr),
+    };
+    let port = taddr.port();
+    let target = Some(format!("{}:{}", taddr_str, if port == 0 { DEFAULT_SSH_PORT } else { port }));
+
     let (client, mut stream) =
         fidl::endpoints::create_request_stream::<ffx::AddTargetResponder_Marker>();
     target_collection_proxy
@@ -756,30 +764,29 @@ pub async fn add_manual_target(
             client,
         )
         .context("calling AddTarget")?;
-    let res = if let Ok(Some(req)) = stream.try_next().await {
-        match req {
-            ffx::AddTargetResponder_Request::Success { .. } => Ok(()),
-            ffx::AddTargetResponder_Request::Error { err, .. } => Err(err),
+    let res = match stream.try_next().await {
+        Ok(Some(ffx::AddTargetResponder_Request::Success { .. })) => Ok(()),
+        Ok(Some(ffx::AddTargetResponder_Request::Error { err, .. })) => Err(err),
+        Err(e) => {
+            return Err(FfxTargetError::DaemonCommunicationError {
+                target: target.clone(),
+                error: std::sync::Arc::new(e),
+            }
+            .into());
         }
-    } else {
-        anyhow::bail!("ffx lost connection to the daemon before receiving a response.");
-    };
-
-    // Change TargetAddrInfo to TargetAddr so ip can be extracted.
-    // This is similar logic found in get_ssh_address().
-    const DEFAULT_SSH_PORT: u16 = 22;
-    let taddr_str = match taddr.ip() {
-        IpAddr::V4(_) => format!("{}", taddr),
-        IpAddr::V6(_) => format!("[{}]", taddr),
+        Ok(None) => {
+            return Err(FfxTargetError::DaemonError {
+                err: DaemonError::Timeout,
+                target: target.clone(),
+            }
+            .into());
+        }
     };
 
     // Pass formatted ip and port to target connection error, so it is more user friendly
     res.map_err(|e| {
         let err = e.connection_error.unwrap();
         let logs = e.connection_error_logs.map(|v| v.join("\n"));
-        let port = taddr.port();
-        let target =
-            Some(format!("{}:{}", taddr_str, if port == 0 { DEFAULT_SSH_PORT } else { port }));
         FfxTargetError::TargetConnectionError { err, target, logs }.into()
     })
 }
