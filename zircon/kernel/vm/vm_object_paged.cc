@@ -70,16 +70,15 @@ void VmObjectPaged::DestructorHelper() {
 
   if (unlikely(options_ & kAlwaysPinned)) {
     // It's possible that the final stage of construction of an always pinned vmo can fail, in which
-    // case it will be empty. This should be extremely unlikely, so as an efficient approximation we
-    // first check if there are any pinned pages.
+    // case it might not have any pinned pages. To avoid unpinning a range that has no pinned pages
+    // (which would panic), we first check if there are any pinned pages.
     bool unpin = true;
     {
       Guard<CriticalMutex> guard{lock()};
       if (unlikely(cow_pages_locked()->pinned_page_count_locked() == 0)) {
-        // There's no pinned pages at all, so now perform a full attribution to validate that the
-        // cow pages is truly empty and we are in the not fully initialized state.
-        AttributionCounts counts = GetAttributedMemoryInRangeLocked(0, size_locked());
-        ASSERT(counts == AttributionCounts{});
+        // There's no pinned pages at all. This can happen if the VMO is empty or if the final stage
+        // of construction failed, leaving committed-but-unpinned pages which will be cleaned up
+        // naturally when cow_pages_ is destroyed. We don't need to unpin anything.
         unpin = false;
       }
     }
