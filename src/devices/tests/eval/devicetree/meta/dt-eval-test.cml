@@ -5,10 +5,15 @@
     include: [
         "driver_test_realm/realm_builder/client.shard.cml",
         "sys/component/realm_builder.shard.cml",
-        "sys/testing/elf_test_runner.shard.cml",
+        "sys/testing/rust_test_runner.shard.cml",
         "syslog/client.shard.cml",
     ],
     program: {
-        binary: "bin/test-bin",
+        binary: "bin/test_bin",
     },
+    use: [
+        {
+            protocol: [ "fuchsia.process.Launcher" ],
+        },
+    ],
 }

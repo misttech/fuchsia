@@ -4,4 +4,4 @@
 
 using fuchsia.devicetree;
 
-fuchsia.devicetree.FIRST_COMPATIBLE == "fuchsia,test-device";
+false;

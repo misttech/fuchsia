@@ -4,5 +4,5 @@
 
 group("drivers") {
   testonly = true
-  deps = [ "devicetree/fake-board:fake-board-component" ]
+  deps = [ "devicetree:drivers" ]
 }
