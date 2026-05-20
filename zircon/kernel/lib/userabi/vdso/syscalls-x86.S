@@ -4,10 +4,10 @@
 
 /* define and implement the zircon syscall wrappers for x86-64 */
 
+#include <lib/arch/asm.h>
+
 #include "syscall-entry.h"
 #include "zircon-syscall-x86.S"
-
-.text
 
 .cfi_sections .eh_frame, .debug_frame
 
@@ -25,37 +25,37 @@
 //   arg 8: moved from 16(%rsp) to %r13
 
 .macro m_syscall name, num, nargs, public
-syscall_entry_begin \name
+  syscall_entry_begin \name
     .cfi_same_value %r12
     .cfi_same_value %r13
-.if \nargs <= 3
-    zircon_syscall \num, \name, \name
-    ret
-.elseif \nargs <= 6
-    mov      %rcx, %r10  // Argument 4
-    zircon_syscall \num, \name, \name
-    ret
-.elseif \nargs == 7
-    push_reg %r12
-    mov      0x10(%rsp), %r12  // Argument 7
-    mov      %rcx, %r10  // Argument 4
-    zircon_syscall \num, \name, \name
-    pop_reg  %r12
-    ret
-.elseif \nargs == 8
-    push_reg %r12
-    push_reg %r13
-    mov      0x18(%rsp), %r12  // Argument 7
-    mov      0x20(%rsp), %r13  // Argument 8
-    mov      %rcx, %r10  // Argument 4
-    zircon_syscall \num, \name, \name
-    pop_reg  %r13
-    pop_reg  %r12
-    ret
-.else
-.error "maximum 8 syscall arguments"
-.endif
-syscall_entry_end \name \public
+    .if \nargs <= 3
+      zircon_syscall \num, \name, \name
+      ret
+    .elseif \nargs <= 6
+      mov %rcx, %r10  // Argument 4
+      zircon_syscall \num, \name, \name
+      ret
+    .elseif \nargs == 7
+      push.spill %r12
+      mov      0x10(%rsp), %r12  // Argument 7
+      mov      %rcx, %r10  // Argument 4
+      zircon_syscall \num, \name, \name
+      pop.reload  %r12
+      ret
+    .elseif \nargs == 8
+      push.spill %r12
+      push.spill %r13
+      mov      0x18(%rsp), %r12  // Argument 7
+      mov      0x20(%rsp), %r13  // Argument 8
+      mov      %rcx, %r10  // Argument 4
+      zircon_syscall \num, \name, \name
+      pop.reload  %r13
+      pop.reload  %r12
+      ret
+    .else
+      .error "maximum 8 syscall arguments"
+    .endif
+  syscall_entry_end \name \public
 .endm
 
 #include "syscalls-stubs.S"

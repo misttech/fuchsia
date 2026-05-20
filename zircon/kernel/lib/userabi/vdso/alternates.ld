@@ -12,9 +12,10 @@
  * This file injects synthetic references to keep the symbols alive.
  */
 
-EXTERN(CODE_clock_get_monotonic_via_kernel_ticks)
+EXTERN(CODE_SYSCALL_zx_clock_get_boot_via_kernel)
 EXTERN(CODE_clock_get_boot_via_kernel_ticks)
+EXTERN(CODE_clock_get_details_mapped_via_kernel)
+EXTERN(CODE_clock_get_monotonic_via_kernel_ticks)
+EXTERN(CODE_clock_read_mapped_via_kernel)
 EXTERN(CODE_deadline_after_via_kernel_mono)
 EXTERN(CODE_deadline_after_via_kernel_ticks)
-EXTERN(CODE_clock_read_mapped_via_kernel)
-EXTERN(CODE_clock_get_details_mapped_via_kernel)

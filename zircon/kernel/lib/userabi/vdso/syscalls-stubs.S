@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/arch/asm.h>
 #include <lib/syscalls/zx-syscall-numbers.h>
 
 // One of these macros is invoked by syscalls.inc for each syscall.
@@ -25,11 +26,6 @@
 #undef INTERNAL_SYSCALL
 #undef BLOCKING_SYSCALL
 
-// Compatibility aliases
-
-#define ALIAS(oldname, newname) \
-.globl oldname ;\
-.type oldname,STT_FUNC ;\
-oldname = newname ;\
+// Compatibility aliases: `.alias old_name, new_name, export`
 
 // Currently no aliases!

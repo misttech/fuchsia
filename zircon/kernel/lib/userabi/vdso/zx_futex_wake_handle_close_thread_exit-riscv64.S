@@ -6,8 +6,6 @@
 #include "zircon-syscall-riscv64.S"
 #include <lib/syscalls/zx-syscall-numbers.h>
 
-.text
-
 .cfi_sections .eh_frame, .debug_frame
 
 // (value_ptr: a0, wake_count: a1, new_value: a2, handle: a3)

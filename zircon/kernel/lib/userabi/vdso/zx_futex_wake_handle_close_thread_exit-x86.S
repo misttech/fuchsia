@@ -13,39 +13,40 @@
 // (value_ptr: %rdi, wake_count: %esi, new_value: %edx, handle: %ecx)
 syscall_entry_begin zx_futex_wake_handle_close_thread_exit
 
-    // Store the value into the futex, which should signal that the stack is no longer in use.
-    // atomic_store_explicit(value_ptr, new_value, memory_order_release)
-    mov %edx, (%rdi)
+  // Store the value into the futex, which should signal that the stack is no
+  // longer in use.
+  // atomic_store_explicit(value_ptr, new_value, memory_order_release)
+  mov %edx, (%rdi)
 
-    // Now the stack might be gone and we can never return!
+  // Now the stack might be gone and we can never return!
 
-    // Save the handle argument in a callee-saves register (%rbx).
-    // Since this function cannot return, do not bother preserving the old contents.
-    mov %ecx, %ebx
+  // Save the handle argument in a callee-saves register (%rbx).  Since this
+  // function cannot return, do not bother preserving the old contents.
+  mov %ecx, %ebx
 
-    zircon_syscall ZX_SYS_futex_wake, zx_futex_wake, zx_futex_wake_handle_close_thread_exit
-    test %eax, %eax
-    jnz .Lfutex_wake_fail
+  zircon_syscall ZX_SYS_futex_wake, zx_futex_wake, zx_futex_wake_handle_close_thread_exit
+  test %eax, %eax
+  jnz .Lfutex_wake_fail
 
-    test %ebx, %ebx
-    jz .Lthread_exit
+  test %ebx, %ebx
+  jz .Lthread_exit
 
-    mov %ebx, %edi
-    zircon_syscall ZX_SYS_handle_close, zx_handle_close, zx_futex_wake_handle_close_thread_exit
-    test %eax, %eax
-    jnz .Lhandle_close_fail
+  mov %ebx, %edi
+  zircon_syscall ZX_SYS_handle_close, zx_handle_close, zx_futex_wake_handle_close_thread_exit
+  test %eax, %eax
+  jnz .Lhandle_close_fail
 
 .Lthread_exit:
-    zircon_syscall ZX_SYS_thread_exit, zx_thread_exit, zx_futex_wake_handle_close_thread_exit
+  zircon_syscall ZX_SYS_thread_exit, zx_thread_exit, zx_futex_wake_handle_close_thread_exit
 
-    // It should be impossible to get here.
+  // It should be impossible to get here.
 .Lthread_exit_returned:
-    ud2
+  ud2
 
-    // We can't recover in these cases, since our stack may have been freed.
+  // We can't recover in these cases, since our stack may have been freed.
 .Lfutex_wake_fail:
-    ud2
+  ud2
 .Lhandle_close_fail:
-    ud2
+  ud2
 
 syscall_entry_end zx_futex_wake_handle_close_thread_exit
