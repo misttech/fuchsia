@@ -119,7 +119,14 @@ class BazelTestsUtilsTest(unittest.TestCase):
         self.assertEqual(
             tests_json[0],
             {
-                "environments": [],
+                "environments": [
+                    {
+                        "dimensions": {
+                            "os": "Linux",
+                            "cpu": "x64",
+                        }
+                    }
+                ],
                 "expects_ssh": False,
                 "test": {
                     "name": f"//t1",
@@ -135,7 +142,14 @@ class BazelTestsUtilsTest(unittest.TestCase):
         self.assertEqual(
             tests_json[1],
             {
-                "environments": [],
+                "environments": [
+                    {
+                        "dimensions": {
+                            "os": "Linux",
+                            "cpu": "x64",
+                        }
+                    }
+                ],
                 "expects_ssh": False,
                 "test": {
                     "name": f"//t2",

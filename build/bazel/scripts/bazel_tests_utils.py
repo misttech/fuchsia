@@ -75,11 +75,22 @@ def generate_tests_json(
         cquery_test = json.loads(line)
 
         # LINT.IfChange(cquery_output_schema)
-
         label = cquery_test["label"]
+        cpu_map = {"x86_64": "x64", "aarch64": "arm64"}
+        cpu = cpu_map.get(cquery_test["cpu"], cquery_test["cpu"])
+        os_val = (
+            cquery_test["os"].capitalize() if cquery_test["os"] else "Linux"
+        )
 
         test_spec = {
-            "environments": [],
+            "environments": [
+                {
+                    "dimensions": {
+                        "os": os_val,
+                        "cpu": cpu,
+                    }
+                }
+            ],
             "expects_ssh": False,
             "test": {
                 "name": label,

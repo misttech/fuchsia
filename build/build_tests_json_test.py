@@ -189,13 +189,38 @@ class BuildTestsJsonTest(unittest.TestCase):
             stdout=json.dumps(test1) + "\n" + json.dumps(test2)
         )
 
+        dummy_host_test = {
+            "environments": [
+                {
+                    "dimensions": {
+                        "os": "Linux",
+                        "cpu": "x64",
+                    }
+                }
+            ],
+            "test": {
+                "name": "dummy_host_test",
+            },
+        }
         _, tests = self._test(
-            [], [], [], with_bazel_host_tests=True, command_runner=mock_runner
+            [dummy_host_test],
+            [],
+            [],
+            with_bazel_host_tests=True,
+            command_runner=mock_runner,
         )
 
         expected_tests_json = [
+            dummy_host_test,
             {
-                "environments": [],
+                "environments": [
+                    {
+                        "dimensions": {
+                            "os": "Linux",
+                            "cpu": "x64",
+                        }
+                    }
+                ],
                 "expects_ssh": False,
                 "test": {
                     "name": "@@//t1",
@@ -209,7 +234,14 @@ class BuildTestsJsonTest(unittest.TestCase):
                 },
             },
             {
-                "environments": [],
+                "environments": [
+                    {
+                        "dimensions": {
+                            "os": "Linux",
+                            "cpu": "x64",
+                        }
+                    }
+                ],
                 "expects_ssh": False,
                 "test": {
                     "name": "@@//t2",
@@ -228,7 +260,10 @@ class BuildTestsJsonTest(unittest.TestCase):
 
     def test_full(self):
         tests_from_metadata = [
-            {"test": {"name": "test1"}},
+            {
+                "test": {"name": "test1"},
+                "environments": [{"dimensions": {"os": "Linux"}}],
+            },
             {"test": {"name": "test2"}},
         ]
         tests_json = [{"test": {"name": "test1"}}, {"test": {"name": "test2"}}]
@@ -268,7 +303,10 @@ class BuildTestsJsonTest(unittest.TestCase):
         )
 
         expected_tests_json = [
-            {"test": {"name": "test1"}},
+            {
+                "test": {"name": "test1"},
+                "environments": [{"dimensions": {"os": "Linux"}}],
+            },
             {"test": {"name": "test2"}},
             {
                 "product_bundle": "my_pb",
@@ -281,7 +319,14 @@ class BuildTestsJsonTest(unittest.TestCase):
                 "test": {"name": "test2-my_pb"},
             },
             {
-                "environments": [],
+                "environments": [
+                    {
+                        "dimensions": {
+                            "os": "Linux",
+                            "cpu": "x64",
+                        }
+                    }
+                ],
                 "expects_ssh": False,
                 "test": {
                     "name": "@@//t1",
