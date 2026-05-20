@@ -51,10 +51,19 @@ impl LoggerCache {
         record: &log::Record,
         target: WeakInstanceToken,
     ) -> bool {
-        let mut cache = LOGGER_CACHE.lock();
-        if let Some(element) = cache.list.extract_if(|e| &e.0 == moniker).next() {
-            element.1.log(record);
-            cache.list.push_front(element);
+        let publisher_opt = {
+            let mut cache = LOGGER_CACHE.lock();
+            if let Some(element) = cache.list.extract_if(|e| &e.0 == moniker).next() {
+                let publisher = element.1.clone();
+                cache.list.push_front(element);
+                Some(publisher)
+            } else {
+                None
+            }
+        };
+
+        if let Some(publisher) = publisher_opt {
+            publisher.log(record);
             return true;
         }
 
@@ -63,6 +72,7 @@ impl LoggerCache {
         let Some(decl) = get_logsink_decl(&decl) else {
             return false;
         };
+
         let program_input_dict = &resolved_instance_state.sandbox.program_input;
         let router = match &decl {
             cm_rust::UseProtocolDecl {
@@ -114,10 +124,16 @@ impl LoggerCache {
         };
 
         publisher.log(record);
-        cache.list.push_front((moniker.clone(), publisher));
 
-        if cache.list.len() > CACHE_SIZE {
-            cache.list.pop_back();
+        {
+            let mut cache = LOGGER_CACHE.lock();
+            // Just in case another thread simultaneously handled a cache miss for the same moniker
+            cache.list.extract_if(|e| &e.0 == moniker).for_each(drop);
+
+            cache.list.push_front((moniker.clone(), publisher));
+            if cache.list.len() > CACHE_SIZE {
+                cache.list.pop_back();
+            }
         }
 
         true
