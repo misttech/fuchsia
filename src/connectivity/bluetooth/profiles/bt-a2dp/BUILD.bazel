@@ -1,0 +1,11 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+exports_files(
+    [
+        "meta/bt-a2dp-eager-with-audio-consumer.core_shard.cml",
+        "meta/bt-a2dp-eager.core_shard.cml",
+    ],
+    visibility = ["//bundles/assembly:__subpackages__"],
+)

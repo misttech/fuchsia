@@ -1,0 +1,12 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+exports_files(
+    [
+        "meta/debian_guest_manager.core_shard.cml",
+        "meta/termina_guest_manager.core_shard.cml",
+        "meta/zircon_guest_manager.core_shard.cml",
+    ],
+    visibility = ["//bundles/assembly:__subpackages__"],
+)

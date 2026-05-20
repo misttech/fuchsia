@@ -58,6 +58,13 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/diagnostics/archivist:package",
         "//bundles/assembly/bazel_inputs/src/power/shutdown-shim:package",
     ],
+    root_shards = [
+        "//src/sys/root:root.cml",
+    ],
+    bootstrap_shards = [
+        "//src/diagnostics/archivist:meta/archivist.bootstrap_shard.cml",
+        "//src/sys/bootstrap:meta/bootstrap.cml",
+    ],
 )
 
 # This AIB contains Component Manager without tracing enabled.
@@ -76,6 +83,9 @@ assembly_input_bundle(
     name = "component_manager_with_tracing",
     allowed_in = [
         "eng",
+    ],
+    root_shards = [
+        "//src/sys/component_manager:meta/component_manager_root_trace.root_shard.cml",
     ],
 )
 
@@ -101,6 +111,14 @@ _BOOTSTRAP_AIB_BOOTSTRAP_PKGS = [
     "//bundles/assembly/bazel_inputs/src/zircon/bin/role_manager:package",
 ]
 
+_BOOTSTRAP_AIB_BOOTSTRAP_SHARDS = [
+    "//src/bringup/bin/kernel-args-forwarder:meta/kernel_args_forwarder.bootstrap_shard.cml",
+    "//src/bringup/bin/sysinfo:meta/sysinfo.shard.cml",
+    "//src/sysmem/server:meta/sysmem.bootstrap_shard.cml",
+    "//src/bringup/bin/device-name-provider:meta/device-name-provider.bootstrap_shard.cml",
+    "//src/zircon/bin/role_manager:meta/role_manager.bootstrap_shard.cml",
+]
+
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "bootstrap",
@@ -109,13 +127,22 @@ assembly_input_bundle(
         "utility",
         "standard",
     ],
-    # Enabling profiling fundamentally changes how the platform is
-    # compiled and requires the addition of instrumentation_data_processor
-    # package in bootfs packages to collect and process profiles.
     bootfs_packages = select({
         "//conditions:default": _BOOTSTRAP_AIB_BOOTSTRAP_PKGS,
+        # Enabling profiling fundamentally changes how the platform is
+        # compiled and requires the addition of instrumentation_data_processor
+        # package in bootfs packages to collect and process profiles.
         "//build/bazel/config/select/is_profile:true": _BOOTSTRAP_AIB_BOOTSTRAP_PKGS + [
             "//bundles/assembly/bazel_inputs/src/sys/instrumentation_data_processor:instrumentation_data_processor_pkg",
+        ],
+    }),
+    bootstrap_shards = select({
+        "//conditions:default": _BOOTSTRAP_AIB_BOOTSTRAP_SHARDS,
+        # Enabling profiling fundamentally changes how the platform is
+        # compiled and requires the addition of instrumentation_data_processor
+        # shard to the bootstrap shard list.
+        "//build/bazel/config/select/is_profile:true": _BOOTSTRAP_AIB_BOOTSTRAP_SHARDS + [
+            "//src/sys/instrumentation_data_processor:meta/instrumentation_data_processor.bootstrap_shard.cml",
         ],
     }),
 )
@@ -173,6 +200,9 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/devices/usb/usb-policy",
         "//bundles/assembly/bazel_inputs/src/devices/usb/bin/usb-cli",
     ],
+    core_shards = [
+        "//src/devices/usb/usb-policy:meta/usb-policy.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
@@ -184,6 +214,9 @@ assembly_input_bundle(
         "standard::userdebug",
         "utility::eng",
         "utility::userdebug",
+    ],
+    core_shards = [
+        "//src/devices/usb/usb-policy:meta/usb-policy-starnix.core_shard.cml",
     ],
 )
 
@@ -246,6 +279,12 @@ assembly_input_bundle(
     bootfs_packages = [
         # Developer console allows SSH and FFX to start consoles.
         "//bundles/assembly/bazel_inputs/src/developer/console:package",
+    ],
+    root_shards = [
+        "//src/developer/toolbox:meta/toolbox.root_shard.cml",
+    ],
+    bootstrap_shards = [
+        "//src/developer/toolbox:meta/toolbox.bootstrap_shard.cml",
     ],
 )
 
@@ -363,6 +402,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/power/testing/fake-powersensor:fake_power_sensor_package",
     ],
+    core_shards = [
+        "//src/power/testing/fake-powersensor:meta/fake-power-sensor.core_shard.cml",
+    ],
 )
 
 # AIB for the sdhci driver
@@ -433,6 +475,9 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/microfuchsia/tee/binder-proxy",
         "//bundles/assembly/bazel_inputs/src/microfuchsia/tee",
     ],
+    bootstrap_shards = [
+        "//src/microfuchsia/tee:meta/tee.bootstrap_shard.cml",
+    ],
 )
 
 # The most minimal AIB that is included in eng assembled systems that are meant
@@ -483,6 +528,9 @@ assembly_input_bundle(
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/bringup/bin/kernel_debug_broker:pkg",
     ],
+    bootstrap_shards = [
+        "//src/bringup/bin/kernel_debug_broker:meta/kernel_debug_broker_userdebug.bootstrap_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
@@ -490,6 +538,9 @@ assembly_input_bundle(
     name = "kernel_debug_broker_user",
     allowed_in = [
         "user",
+    ],
+    bootstrap_shards = [
+        "//src/bringup/bin/kernel_debug_broker:meta/kernel_debug_broker_user.bootstrap_shard.cml",
     ],
 )
 
@@ -522,6 +573,9 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/bringup/bin/console:package",
         "//bundles/assembly/bazel_inputs/src/bringup/bin/console-launcher:package",
     ],
+    bootstrap_shards = [
+        "//src/bringup/bin/console:meta/console.shard.cml",
+    ],
 )
 
 # The ptysvc AIB is included by all eng and userdebug products.
@@ -536,6 +590,9 @@ assembly_input_bundle(
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/bringup/bin/ptysvc:package",
     ],
+    bootstrap_shards = [
+        "//src/bringup/bin/ptysvc:meta/ptysvc.bootstrap_shard.cml",
+    ],
 )
 
 # The virtcon AIB is included by all eng and userdebug products, and can be
@@ -546,6 +603,9 @@ assembly_input_bundle(
     name = "virtcon",
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/bringup/bin/virtcon:package",
+    ],
+    bootstrap_shards = [
+        "//src/bringup/bin/virtcon:meta/virtual-console.shard.cml",
     ],
 )
 
@@ -560,6 +620,9 @@ assembly_input_bundle(
     ],
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/bringup/bin/netsvc:package",
+    ],
+    bootstrap_shards = [
+        "//src/bringup/bin/netsvc:meta/netsvc.shard.cml",
     ],
 )
 
@@ -681,6 +744,9 @@ assembly_input_bundle(
             "components": ["start_sl4f"],
         },
     ],
+    core_shards = [
+        "//src/testing/sl4f:meta/sl4f_assembly.core_shard.cml",
+    ],
 )
 
 # Includes the bin/clock and clkctl developer tools
@@ -737,6 +803,21 @@ assembly_input_bundle(
         # Developer.
         "//bundles/assembly/bazel_inputs/src/developer/forensics:pkg",
     ],
+    root_shards = [
+        "//src/sys/core:meta/core.root_shard.cml",
+    ],
+    bootstrap_shards = [
+        "//src/devices/bin/driver_framework:meta/base_drivers.bootstrap_shard.cml",
+        "//src/sys/pkg/bin/pkg-cache:meta/pkg-cache.bootstrap_shard.cml",
+    ],
+    core_shards = [
+        "//src/sys/core:meta/core.cml",
+        # TODO:  These shards should be folded into the above
+        # `core.cml` file itself as they are never omitted from it.
+        "//src/developer/build_info:meta/build_info.core_shard.cml",
+        "//src/developer/forensics:forensics.core_shard.cml",
+        "//sdk/lib/inspect:offer.shard.cml",
+    ],
 )
 
 # Global Heapdump collector instance for heap memory profiling
@@ -752,6 +833,12 @@ assembly_input_bundle(
     ],
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/performance/memory/heapdump/collector",
+    ],
+    root_shards = [
+        "//src/sys/core:meta/heapdump.root_shard.cml",
+    ],
+    core_shards = [
+        "//src/sys/core:meta/heapdump.core_shard.cml",
     ],
 )
 
@@ -791,6 +878,9 @@ assembly_input_bundle(
         "userdebug",
         "eng",
     ],
+    core_shards = [
+        "//src/sys/time/timekeeper:timekeeper-persistence.core_shard.cml",
+    ],
 )
 
 # The bundle supporting wake alarms through Timekeeper.
@@ -801,6 +891,9 @@ assembly_input_bundle(
     allowed_in = [
         "userdebug",
         "eng",
+    ],
+    core_shards = [
+        "//src/sys/time/timekeeper:timekeeper-wake-alarms.core_shard.cml",
     ],
 )
 
@@ -1140,6 +1233,21 @@ assembly_input_bundle(
         }
         for bin in sbase_binaries
     ],
+    core_shards = [
+        # The process_resolver core shard (either the base-resolver or
+        # pkg-resolver variant) should only be present in
+        # the `core_realm_development_access` AIB, but it's required
+        # here to avoid a userdebug and eng variant of that AIB.
+        #
+        # eng uses the pkg-resolver, as opposed to the base-resolver,
+        # to support ephemeral resolution of shell packages.
+        "//src/sys/process-resolver:meta/process_resolver.pkg-resolver.core_shard.cml",
+        "//src/sys/core:meta/core-env-full-resolver.core_shard.cml",
+        "//src/sys/core:meta/lavapipe.core_shard.cml",
+        "//src/sys/core:meta/unrestricted-storage.core_shard.cml",
+        "//src/sys/tools/debug-dash-launcher:meta/debug_dash_launcher.core_shard.cml",
+        "//src/storage/fs_realm:meta/fs_realm.core_shard.cml",
+    ],
     # Add the sbase_binaries to on_demand_packages, unless they've already been added to
     # base_packages (via _sbase_bins_in_base).
     on_demand_packages = [
@@ -1160,6 +1268,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/sys/runners/dso:package",
     ],
+    core_shards = [
+        "//src/sys/runners/dso:meta/dso_runner.core_shard.cml",
+    ],
 )
 
 # This is common across all user and userdebug products that include the core
@@ -1178,6 +1289,27 @@ assembly_input_bundle(
     ],
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/pkg-resolver",
+    ],
+    core_shards = [
+        # user and userdebug only have the base resolver, not the full
+        # resolver.
+        "//src/sys/core:meta/core-env-base-resolver.core_shard.cml",
+
+        # The process_resolver core shard (either the base-resolver or
+        # pkg-resolver variant) should only be present in
+        # the `core_realm_development_access` AIB, but it's required
+        # here to avoid a userdebug and eng variant of that AIB.
+        #
+        # user and userdebug only have the base-resolver, not the
+        # pkg-resolver.
+        "//src/sys/process-resolver:meta/process_resolver.base-resolver.core_shard.cml",
+
+        # Lavapipe is only enabled on eng builds.
+        "//src/sys/core:meta/lavapipe-disabled.core_shard.cml",
+
+        # user and userdebug restrict access to the Storage capability
+        # to registered component ids.
+        "//src/sys/core:meta/restricted-storage.core_shard.cml",
     ],
 )
 
@@ -1207,6 +1339,16 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/developer/forensics/snapshot:pkg",
         # log_listener shell tool.
         "//bundles/assembly/bazel_inputs/src/diagnostics/log_listener:log_listener_shell_pkg",
+    ],
+    core_shards = [
+        "//src/developer/debug/debug_agent:meta/debug_agent.core_shard.cml",
+        "//src/developer/remote-control:meta/laboratory.core_shard.cml",
+        "//src/developer/remote-control:meta/remote-control.core_shard.cml",
+        "//src/developer/sshd-host:meta/sshd-host.core_shard.cml",
+        "//src/developer/toolbox:meta/toolbox.core_shard.cml",
+    ],
+    toolbox_shards = [
+        "//src/sys/core:meta/core.toolbox_shard.cml",
     ],
     shell_commands = [
         {
@@ -1270,6 +1412,14 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/sys/process-resolver",
         "//bundles/assembly/bazel_inputs/src/sys/tools/debug-dash-launcher",
     ],
+    bootstrap_shards = [
+        "//src/sys/process-resolver:meta/process_resolver.bootstrap_shard.cml",
+        "//src/sys/tools/debug-dash-launcher:meta/debug_dash_launcher.bootstrap_shard.cml",
+    ],
+    root_shards = [
+        "//src/sys/process-resolver:meta/process_resolver.root_shard.cml",
+        "//src/sys/tools/debug-dash-launcher:meta/debug_dash_launcher.root_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
@@ -1285,6 +1435,10 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/developer/vsock-sshd-host",
         # ffx's remote-control (remote access) components:
         "//bundles/assembly/bazel_inputs/src/developer/remote-control:remote-control-package",
+    ],
+    bootstrap_shards = [
+        "//src/developer/remote-control:meta/remote-control.bootstrap_shard.cml",
+        "//src/developer/vsock-sshd-host:meta/vsock-sshd-host.bootstrap_shard.cml",
     ],
 )
 
@@ -1373,6 +1527,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/devices/radar/bin/radar-proxy:radar-proxy-with-injector",
     ],
+    core_shards = [
+        "//src/devices/radar/bin/radar-proxy:meta/radar-proxy-with-injector.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
@@ -1381,11 +1538,17 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/devices/radar/bin/radar-proxy:radar-proxy-without-injector",
     ],
+    core_shards = [
+        "//src/devices/radar/bin/radar-proxy:meta/radar-proxy-without-injector.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "no_remote_feedback_id",
+    core_shards = [
+        "//src/developer/forensics/feedback_id:meta/no_remote_feedback_id.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
@@ -1415,6 +1578,9 @@ assembly_input_bundle(
     name = "factory_reset_trigger",
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/recovery/factory-reset-trigger",
+    ],
+    core_shards = [
+        "//src/recovery/factory-reset-trigger:meta/factory-reset-trigger.core_shard.cml",
     ],
 )
 
@@ -1458,6 +1624,15 @@ assembly_input_bundle(
         # Memory pressure monitoring
         "//bundles/assembly/bazel_inputs/src/developer/memory/pressure_signaler",
     ],
+    core_shards = [
+        "//src/diagnostics/realm:meta/diagnostics.core_shard.cml",
+        "//src/diagnostics/persistence:meta/diagnostics-persistence.core_shard.cml",
+        "//src/diagnostics/sampler:meta/sampler.core_shard.cml",
+        "//src/connectivity/network:meta/persistence.core_shard.cml",
+        "//src/intl/tzdata_provider:meta/tzdata_provider.core_shard.cml",
+        "//src/sys/pkg/bin/system-updater:meta/system_updater.core_shard.cml",
+        "//src/developer/memory/pressure_signaler:meta/memory_pressure_signaler.core_shard.cml",
+    ],
 )
 
 # This is exclusive to userdebug builds on the minimal support level.
@@ -1490,6 +1665,11 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/devices/bin/driver_playground:pkg",
         "//bundles/assembly/bazel_inputs/src/power/metrics-logger:metrics-logger-pkg",
     ],
+    core_shards = [
+        "//src/developer/process_explorer:meta/process_explorer.core_shard.cml",
+        "//src/devices/bin/driver_playground:meta/driver_playground.core_shard.cml",
+        "//src/power/metrics-logger:meta/metrics-logger.core_shard.cml",
+    ],
 )
 
 # This is common across all eng-mode and user-debug products, at the minimal or
@@ -1517,6 +1697,12 @@ assembly_input_bundle(
             "components": ["update"],
         },
     ],
+    root_shards = [
+        "//src/diagnostics/detect:meta/detect_userdebug.root_shard.cml",
+    ],
+    core_shards = [
+        "//src/diagnostics/detect:meta/detect.core_shard.cml",
+    ],
 )
 
 # Assembly support for memory_monitor (v1).
@@ -1526,6 +1712,9 @@ assembly_input_bundle(
     base_packages = [
         # memory_monitor with profiling disabled.
         "//bundles/assembly/bazel_inputs/src/developer/memory/monitor:monitor_without_memory_sampler",
+    ],
+    core_shards = [
+        "//src/developer/memory/monitor:meta/memory_monitor.core_shard.cml",
     ],
 )
 
@@ -1541,6 +1730,11 @@ assembly_input_bundle(
         # memory_monitor with profiling enabled.
         "//bundles/assembly/bazel_inputs/src/developer/memory/monitor:monitor_with_memory_sampler",
         "//bundles/assembly/bazel_inputs/src/performance/memory/sampler:memory_sampler",
+    ],
+    core_shards = [
+        "//src/developer/memory/monitor:meta/memory_monitor.core_shard.cml",
+        "//src/developer/memory/monitor:meta/memory_monitor_with_memory_sampler.core_shard.cml",
+        "//src/performance/memory/sampler:meta/memory_sampler.core_shard.cml",
     ],
 )
 
@@ -1564,6 +1758,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/performance/memory/attribution/monitor:monitor",
     ],
+    core_shards = [
+        "//src/performance/memory/attribution/monitor:meta/memory_monitor2.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
@@ -1572,11 +1769,20 @@ assembly_input_bundle(
     auto_include_in = [
         "standard",
     ],
+    core_shards = [
+        "//src/performance/memory/attribution/monitor:meta/page_refaults.core_shard.cml",
+    ],
+    root_shards = [
+        "//src/performance/memory/attribution/monitor:meta/page_refaults.root_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "detect_user",
+    root_shards = [
+        "//src/diagnostics/detect:meta/detect_user.root_shard.cml",
+    ],
 )
 
 ########
@@ -1596,6 +1802,9 @@ assembly_input_bundle(
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/profiles/bt-a2dp:without-config",
     ],
+    core_shards = [
+        "//src/connectivity/bluetooth/profiles/bt-a2dp:meta/bt-a2dp-eager.core_shard.cml",
+    ],
 )
 
 # For configurations without A2DP support to enable A2DP testing.
@@ -1604,6 +1813,10 @@ assembly_input_bundle(
     name = "bluetooth_a2dp_with_consumer",
     allowed_in = [
         "eng",
+    ],
+    core_shards = [
+        "//src/connectivity/bluetooth/profiles/bt-a2dp:meta/bt-a2dp-eager-with-audio-consumer.core_shard.cml",
+        "//src/media/audio/consumer:meta/audio_consumer.core_shard.cml",
     ],
 )
 
@@ -1614,6 +1827,9 @@ assembly_input_bundle(
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/profiles/bt-avrcp",
         "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/profiles/bt-avrcp-target",
+    ],
+    core_shards = [
+        "//src/connectivity/bluetooth/profiles/bt-avrcp:meta/bt-avrcp.core_shard.cml",
     ],
 )
 
@@ -1626,6 +1842,9 @@ assembly_input_bundle(
     ],
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/core/bt-init",
+    ],
+    core_shards = [
+        "//src/connectivity/bluetooth/core/bt-init:meta/bt-init.core_shard.cml",
     ],
 )
 
@@ -1645,6 +1864,9 @@ assembly_input_bundle(
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/profiles/bt-device-id:without-config",
     ],
+    core_shards = [
+        "//src/connectivity/bluetooth/profiles/bt-device-id:meta/bt-device-id.core_shard.cml",
+    ],
 )
 
 # Bluetooth profile support: HFP - Audio Gateway
@@ -1653,6 +1875,9 @@ assembly_input_bundle(
     name = "bluetooth_hfp_ag",
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:without-config",
+    ],
+    core_shards = [
+        "//src/connectivity/bluetooth/profiles/bt-hfp-audio-gateway:meta/bt-hfp-audio-gateway.core_shard.cml",
     ],
 )
 
@@ -1668,6 +1893,9 @@ assembly_input_bundle(
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/profiles/bt-hfp-hands-free:without-config",
     ],
+    core_shards = [
+        "//src/connectivity/bluetooth/profiles/bt-hfp-hands-free:meta/bt-hfp-hands-free.core_shard.cml",
+    ],
 )
 
 # Bluetooth profile support: MAP - MCE
@@ -1676,6 +1904,9 @@ assembly_input_bundle(
     name = "bluetooth_map_mce",
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/profiles/bt-map-mce",
+    ],
+    core_shards = [
+        "//src/connectivity/bluetooth/profiles/bt-map-mce:meta/bt-map-mce.core_shard.cml",
     ],
 )
 
@@ -1690,6 +1921,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/tools/bt-snoop",
     ],
+    core_shards = [
+        "//src/connectivity/bluetooth/tools/bt-snoop:meta/bt-snoop.core_shard.cml",
+    ],
 )
 
 # Bluetooth snoop support
@@ -1703,6 +1937,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/tools/bt-snoop",
     ],
+    core_shards = [
+        "//src/connectivity/bluetooth/tools/bt-snoop:meta/bt-snoop-eager.core_shard.cml",
+    ],
 )
 
 # Basic Bluetooth workflows for automated testing and tooling.
@@ -1715,6 +1952,9 @@ assembly_input_bundle(
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/testing/bt-affordances:bt-affordances-server",
     ],
+    core_shards = [
+        "//src/connectivity/bluetooth/testing/bt-affordances:meta/bt-affordances-server.core_shard.cml",
+    ],
 )
 
 # Support for Pandora Bluetooth test interface server and virtual HCI with Rootcanal.
@@ -1723,6 +1963,10 @@ assembly_input_bundle(
     name = "bluetooth_pandora",
     allowed_in = [
         "eng",
+    ],
+    core_shards = [
+        "//src/connectivity/bluetooth/testing/pandora/bt-pandora-server:meta/bt-pandora-server.core_shard.cml",
+        "//src/connectivity/bluetooth/tools/bt-rootcanal:meta/bt-rootcanal.core_shard.cml",
     ],
 )
 
@@ -1744,6 +1988,9 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/devices/bin/driver_manager/devfs:package",
         "//bundles/assembly/bazel_inputs/src/devices/bin/driver-index:package",
     ],
+    bootstrap_shards = [
+        "//src/devices/bin/driver_framework:meta/driver_framework.bootstrap_shard.cml",
+    ],
 )
 
 # Rust Driver Framework Support
@@ -1764,6 +2011,9 @@ assembly_input_bundle(
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/devices/bin/driver_manager_rust:package_with_heapdump",
         "//bundles/assembly/bazel_inputs/src/devices/bin/driver-host:package_with_heapdump",
+    ],
+    bootstrap_shards = [
+        "//src/devices/bin/driver_framework:meta/heapdump.bootstrap_shard.cml",
     ],
 )
 
@@ -1792,6 +2042,9 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/devices/bin/driver_manager:package_with_heapdump",
         "//bundles/assembly/bazel_inputs/src/devices/bin/driver-host:package_with_heapdump",
     ],
+    bootstrap_shards = [
+        "//src/devices/bin/driver_framework:meta/heapdump.bootstrap_shard.cml",
+    ],
 )
 
 # Full Package Driver Support
@@ -1801,6 +2054,9 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
+    bootstrap_shards = [
+        "//src/devices/bin/driver_framework:meta/full_drivers.bootstrap_shard.cml",
+    ],
 )
 
 # Core starnix support.
@@ -1809,6 +2065,12 @@ assembly_input_bundle(
     name = "starnix_support",
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/starnix/runner:starnix_package",
+    ],
+    root_shards = [
+        "//src/starnix/runner:meta/starnix_runner.root_shard.cml",
+    ],
+    core_shards = [
+        "//src/starnix/runner:meta/starnix_runner.core_shard.cml",
     ],
     memory_buckets = ["//src/developer/memory/buckets:starnix.json5"],
 )
@@ -1836,6 +2098,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/firmware/fastboot-usb:package",
     ],
+    core_shards = [
+        "//src/firmware/fastboot-usb:meta/fastboot_usb.core_shard.cml",
+    ],
 )
 
 # Core Nanohub support. Does not include driver. Driver should be included separately.
@@ -1853,6 +2118,12 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/starnix/modules/nanohub:google_nanohub",
         "//bundles/assembly/bazel_inputs/src/starnix/modules/nanohub:sockettunnel",
     ],
+    core_shards = [
+        "//src/starnix/modules/nanohub:meta/backlight.core_shard.cml",
+        "//src/starnix/modules/nanohub:meta/display.core_shard.cml",
+        "//src/starnix/modules/nanohub:meta/nanohub.core_shard.cml",
+        "//src/starnix/modules/nanohub:meta/sockettunnel.core_shard.cml",
+    ],
 )
 
 # Core FastRPC support. Does not include driver. Driver should be included separately.
@@ -1866,6 +2137,9 @@ assembly_input_bundle(
     ],
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/starnix/modules/fastrpc:google_fastrpc",
+    ],
+    core_shards = [
+        "//src/starnix/modules/fastrpc:meta/fastrpc.core_shard.cml",
     ],
 )
 
@@ -1883,6 +2157,9 @@ assembly_input_bundle(
     ],
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/starnix/modules/hvdcp_opti:hvdcp_opti",
+    ],
+    core_shards = [
+        "//src/starnix/modules/hvdcp_opti:meta/hvdcp_opti.core_shard.cml",
     ],
 )
 
@@ -1903,6 +2180,10 @@ assembly_input_bundle(
         # are in the same package and loaded using relative urls.
         "//bundles/assembly/bazel_inputs/src/sys/test_manager:pkg_for_bootstrap",
     ],
+    bootstrap_shards = [
+        "//src/sys/test_manager:meta/test_manager.bootstrap_shard.cml",
+        "//src/sys/testing:meta/test_realm.bootstrap_shard.cml",
+    ],
     shell_commands = [
         {
             "bootfs_package": True,
@@ -1922,6 +2203,9 @@ assembly_input_bundle(
     ],
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/performance/trace_manager",
+    ],
+    core_shards = [
+        "//src/performance/trace_manager:meta/trace_manager.core_shard.cml",
     ],
 )
 
@@ -1968,6 +2252,15 @@ assembly_input_bundle(
         # CPU profiler
         "//bundles/assembly/bazel_inputs/src/performance/experimental/profiler",
     ],
+    root_shards = [
+        "//src/sys/testing:meta/test_realm.root_shard.cml",
+    ],
+    core_shards = [
+        "//src/performance/experimental/profiler:meta/profiler.core_shard.cml",
+        "//src/sys/test_manager:meta/test_manager.core_shard.cml",
+        "//src/sys/fuzzing:meta/fuzzing.core-shard.cml",
+        "//src/sys/testing:meta/test_realm.core_shard.cml",
+    ],
     shell_commands = [
         {
             "package": "run_test_suite",
@@ -1989,6 +2282,9 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/camera/bin/device:camera_device",
         "//bundles/assembly/bazel_inputs/src/camera/bin/device_watcher:camera_device_watcher",
     ],
+    core_shards = [
+        "//src/camera:meta/camera.core_shard.cml",
+    ],
     memory_buckets = ["//src/developer/memory/buckets:camera_buckets.json5"],
 )
 
@@ -1997,6 +2293,9 @@ assembly_input_bundle(
     name = "factory_data",
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/factory/factory_store_providers",
+    ],
+    core_shards = [
+        "//src/factory/factory_store_providers:meta/factory_store_providers.core_shard.cml",
     ],
 )
 
@@ -2008,6 +2307,12 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "fshost_common",
+    bootstrap_shards = [
+        "//src/storage/fshost:meta/fshost.bootstrap_shard.cml",
+    ],
+    root_shards = [
+        "//src/storage/fshost:meta/fshost.root_shard.cml",
+    ],
 )
 
 # AIB adding eng-build debug capabilities to fshost.
@@ -2128,6 +2433,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/sys/cache_manager",
     ],
+    core_shards = [
+        "//src/sys/cache_manager:meta/cache_manager.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
@@ -2139,6 +2447,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/system-update-checker",
     ],
+    core_shards = [
+        "//src/sys/pkg/bin/system-update-checker:meta/system_update_checker.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
@@ -2146,6 +2457,9 @@ assembly_input_bundle(
     name = "omaha_client",
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/omaha-client:omaha-client-unconfigured",
+    ],
+    core_shards = [
+        "//src/sys/pkg/bin/omaha-client:meta/omaha_client_service.core_shard.cml",
     ],
 )
 
@@ -2183,6 +2497,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/system-update-configurator",
     ],
+    core_shards = [
+        "//src/sys/pkg/bin/system-update-configurator:meta/core-shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
@@ -2213,6 +2530,16 @@ assembly_input_bundle(
             "components": ["guest"],
         },
     ],
+    core_shards = select({
+        "//build/bazel/platforms:is_fuchsia_riscv64": [],
+        "//conditions:default": [
+            "//src/connectivity/network:meta/virtualization.core_shard.cml",
+            "//src/virtualization/bin/vmm_launcher:meta/vmm_launcher.core_shard.cml",
+            "//src/virtualization/bin/guest_manager:meta/debian_guest_manager.core_shard.cml",
+            "//src/virtualization/bin/guest_manager:meta/termina_guest_manager.core_shard.cml",
+            "//src/virtualization/bin/guest_manager:meta/zircon_guest_manager.core_shard.cml",
+        ],
+    }),
 )
 
 # AIB to enable running Fuchsia as a virtualized guest.
@@ -2221,6 +2548,9 @@ assembly_input_bundle(
     name = "vsock_service",
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/paravirtualization/vsock:vsock_service",
+    ],
+    core_shards = [
+        "//src/paravirtualization/vsock:meta/vsock_service.core_shard.cml",
     ],
 )
 
@@ -2234,6 +2564,9 @@ assembly_input_bundle(
     ],
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/paravirtualization/vsock:vsock_service",
+    ],
+    bootstrap_shards = [
+        "//src/paravirtualization/vsock:meta/vsock_service.bootstrap_shard.cml",
     ],
 )
 
@@ -2317,6 +2650,12 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "netstack_migration",
+    core_shards = select({
+        "//build/bazel/platforms:is_fuchsia_riscv64": [],
+        "//conditions:default": [
+            "//src/connectivity/network:meta/netstack-migration.core.shard.cml",
+        ],
+    }),
 )
 
 # Netstack migration packages without unified binary.
@@ -2356,6 +2695,9 @@ assembly_input_bundle(
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/network/tun/network-tun",
     ],
+    core_shards = [
+        "//src/connectivity/network/tun/network-tun:meta/network-tun.core_shard.cml",
+    ],
 )
 
 # Includes thread LoWPAN functionality.
@@ -2365,6 +2707,10 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/lowpan/drivers/lowpan-ot-driver",
         "//bundles/assembly/bazel_inputs/src/connectivity/lowpan/service:lowpanservice",
+    ],
+    core_shards = [
+        "//src/connectivity/lowpan/service:meta/lowpanservice.core_shard.cml",
+        "//src/connectivity/lowpan/drivers/lowpan-ot-driver:meta/lowpan-ot-driver.core_shard.cml",
     ],
     memory_buckets = ["//src/developer/memory/buckets:thread_lowpan_buckets.json5"],
 )
@@ -2376,6 +2722,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/location/regulatory_region",
         "//bundles/assembly/bazel_inputs/src/connectivity/wlan/wlancfg",
+    ],
+    core_shards = [
+        "//src/connectivity/wlan/wlancfg:meta/wlancfg.core_shard.cml",
     ],
 )
 
@@ -2405,6 +2754,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/wlan/wlandevicemonitor:wlandevicemonitor-legacy-privacy",
     ],
+    core_shards = [
+        "//src/connectivity/wlan/wlandevicemonitor:meta/wlandevicemonitor.core_shard.cml",
+    ],
 )
 
 # WLAN support for WPA2 and later
@@ -2413,6 +2765,9 @@ assembly_input_bundle(
     name = "wlan_contemporary_privacy_only_support",
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/wlan/wlandevicemonitor:wlandevicemonitor",
+    ],
+    core_shards = [
+        "//src/connectivity/wlan/wlandevicemonitor:meta/wlandevicemonitor.core_shard.cml",
     ],
 )
 
@@ -2435,6 +2790,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/wlan/wlanix",
     ],
+    core_shards = [
+        "//src/connectivity/wlan/wlanix:meta/wlanix.core_shard.cml",
+    ],
 )
 
 # Emergency Location provider
@@ -2443,6 +2801,9 @@ assembly_input_bundle(
     name = "location_emergency",
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/location/emergency",
+    ],
+    core_shards = [
+        "//src/connectivity/location/emergency:meta/emergency.core_shard.cml",
     ],
 )
 
@@ -2465,6 +2826,9 @@ assembly_input_bundle(
     cache_packages = [
         "//bundles/assembly/bazel_inputs/src/media/audio/services/ffxdaemon:audio_ffx_daemon",
     ],
+    core_shards = [
+        "//src/media/audio/services/ffxdaemon:meta/audio_ffx_daemon.core_shard.cml",
+    ],
 )
 
 # Tools for interactive debugging/development of audio drivers
@@ -2480,6 +2844,7 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/dsputil",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/virtual_audio_util",
     ],
+    # From //src/media/audio/tools.
     shell_commands = [
         {
             "package": "audio-codec-ctl",
@@ -2516,6 +2881,7 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/wav_player",
         "//bundles/assembly/bazel_inputs/src/media/audio/tools/wav_recorder",
     ],
+    # From //src/media/audio/tools.
     shell_commands = [
         {
             "package": "audio-capture-timestamp-validator",
@@ -2555,11 +2921,17 @@ assembly_input_bundle(
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/media/audio/services/device_registry",
     ],
+    core_shards = [
+        "//src/media/audio/services/device_registry:meta/audio_device_registry.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "audio_device_registry_demand",
+    core_shards = [
+        "//src/media/audio/services/device_registry:meta/audio_device_registry.demand.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
@@ -2567,6 +2939,9 @@ assembly_input_bundle(
     name = "audio_device_registry_eager",
     allowed_in = [
         "eng",
+    ],
+    core_shards = [
+        "//src/media/audio/services/device_registry:meta/audio_device_registry.eager.core_shard.cml",
     ],
 )
 
@@ -2582,11 +2957,17 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "audio_core_routing",
+    core_shards = [
+        "//src/media/audio/audio_core:meta/audio_core.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "audio_core_use_adc_device",
+    core_shards = [
+        "//src/media/audio/audio_core:meta/audio_core.core_shard.use_adc_device.cml",
+    ],
 )
 
 # Component that plays audio files using audio_core protocols.
@@ -2595,6 +2976,9 @@ assembly_input_bundle(
     name = "soundplayer",
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/media/sounds/soundplayer",
+    ],
+    core_shards = [
+        "//src/media/sounds/soundplayer:meta/soundplayer.core_shard.cml",
     ],
 )
 
@@ -2608,6 +2992,9 @@ assembly_input_bundle(
             "//bundles/assembly/bazel_inputs/src/media/codec:codec_factory",
         ],
     }),
+    core_shards = [
+        "//src/media/codec/factory:meta/codec_factory.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
@@ -2634,6 +3021,9 @@ assembly_input_bundle(
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/media/sessions:mediasession",
     ],
+    core_shards = [
+        "//src/media/sessions:meta/mediasession.core_shard.cml",
+    ],
 )
 
 # Session manager support
@@ -2642,6 +3032,9 @@ assembly_input_bundle(
     name = "session_manager",
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/session/bin/session_manager",
+    ],
+    core_shards = [
+        "//src/session/bin/session_manager:meta/session_manager.core_shard.cml",
     ],
 )
 
@@ -2658,6 +3051,9 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "ui",
+    core_shards = [
+        "//src/ui:meta/ui.core_shard.cml",
+    ],
 )
 
 # UI support for eng build types
@@ -2779,6 +3175,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/devices/thermal/bin/fan-controller",
     ],
+    core_shards = [
+        "//src/devices/thermal/bin/fan-controller:meta/fan-controller.core_shard.cml",
+    ],
 )
 
 # Battery support
@@ -2787,6 +3186,9 @@ assembly_input_bundle(
     name = "battery_manager",
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/power/battery-manager",
+    ],
+    core_shards = [
+        "//src/power/battery-manager:meta/battery_manager.core_shard.cml",
     ],
 )
 
@@ -2800,6 +3202,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/power/testing/topology-test-daemon:package",
     ],
+    core_shards = [
+        "//src/power/testing/topology-test-daemon:meta/topology-test-daemon.core_shard.cml",
+    ],
 )
 
 # Power metrics recorder support
@@ -2809,6 +3214,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/power/metrics-logger:metrics-logger-standalone-pkg",
     ],
+    core_shards = [
+        "//src/power/metrics-logger:meta/metrics-logger-standalone.core_shard.cml",
+    ],
 )
 
 # Sensors support
@@ -2817,6 +3225,9 @@ assembly_input_bundle(
     name = "sensors_framework",
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/sensors",
+    ],
+    core_shards = [
+        "//src/sensors:meta/sensors.core_shard.cml",
     ],
 )
 
@@ -2832,6 +3243,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/sensors:sensors_eng",
     ],
+    core_shards = [
+        "//src/sensors:meta/sensors_eng.core_shard.cml",
+    ],
 )
 
 # Brightness Manager support
@@ -2840,6 +3254,9 @@ assembly_input_bundle(
     name = "brightness_manager",
     flexible_packages = [
         "//bundles/assembly/bazel_inputs/src/ui/bin/brightness_manager:brightness_manager_pkg",
+    ],
+    core_shards = [
+        "//src/ui/bin/brightness_manager:meta/brightness_manager.core_shard.cml",
     ],
 )
 
@@ -2855,6 +3272,9 @@ assembly_input_bundle(
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/power/power-manager:package",
     ],
+    bootstrap_shards = [
+        "//src/power:meta/power-framework.shard.cml",
+    ],
 )
 
 # Power Framework CPU Manager.
@@ -2863,6 +3283,9 @@ assembly_input_bundle(
     name = "cpu_manager",
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/power/cpu-manager:package",
+    ],
+    bootstrap_shards = [
+        "//src/power:meta/cpu-manager.bootstrap_shard.cml",
     ],
 )
 
@@ -2877,6 +3300,9 @@ assembly_input_bundle(
     ],
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/power/system-activity-governor:package",
+    ],
+    bootstrap_shards = [
+        "//src/power:meta/sag.shard.cml",
     ],
 )
 
@@ -2936,6 +3362,11 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/devices/hrtimer/bin:hrtimer-ctl",
         "//bundles/assembly/bazel_inputs/src/power/system-activity-governor-controller:package",
     ],
+    # When the power framework becomes available on user builds by default,
+    # these tools should be moved to core_realm_development_access
+    core_shards = [
+        "//src/power/system-activity-governor-controller:meta/system-activity-governor-controller.core_shard.cml",
+    ],
     shell_commands = [
         {
             "bootfs_package": True,
@@ -2961,6 +3392,9 @@ assembly_input_bundle(
         # Some host e2e tests use this AIB and are using utility::user.
         "utility::user",
     ],
+    core_shards = [
+        "//src/tests/assembly/assemble_image/compiled_package:meta/test.core_shard.cml",
+    ],
 )
 
 # Emulator Support
@@ -2977,6 +3411,9 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "no_intl_timezones",
+    core_shards = [
+        "//src/intl/intl_services:meta/no_intl_timezones.core_shard.cml",
+    ],
 )
 
 # Assembly may select at most one bundle with intl_services name prefix.
@@ -2986,6 +3423,9 @@ icu_assembly_input_bundle(
     icu_base_packages = [
         "//bundles/assembly/bazel_inputs/src/intl/intl_services:pkg",
     ],
+    core_shards = [
+        "//src/intl/intl_services:meta/intl.core_shard.cml",
+    ],
 )
 
 # Assembly may select at most one bundle with intl_services name prefix.
@@ -2994,6 +3434,10 @@ icu_assembly_input_bundle(
     name = "intl_services_small",
     icu_base_packages = [
         "//bundles/assembly/bazel_inputs/src/intl/intl_services:pkg_small",
+    ],
+    core_shards = [
+        "//src/intl/intl_services:meta/intl_small_timezones.core_shard.cml",
+        "//src/intl/intl_services:meta/intl_small.core_shard.cml",
     ],
 )
 
@@ -3005,6 +3449,10 @@ icu_assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/intl/intl_services:pkg_small",
         "//bundles/assembly/bazel_inputs/src/intl/time_zone_info_service:pkg",
     ],
+    core_shards = [
+        "//src/intl/intl_services:meta/intl_small.core_shard.cml",
+        "//src/intl/time_zone_info_service:meta/time-zone-info-service.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
@@ -3012,6 +3460,9 @@ icu_assembly_input_bundle(
     name = "setui",
     icu_base_packages = [
         "//bundles/assembly/bazel_inputs/src/settings/service:setui_service",
+    ],
+    core_shards = [
+        "//src/settings/service:meta/setui_service.core_shard.cml",
     ],
     memory_buckets = ["//src/developer/memory/buckets:setui_buckets.json5"],
 )
@@ -3021,6 +3472,9 @@ icu_assembly_input_bundle(
     name = "setui_with_camera",
     icu_base_packages = [
         "//bundles/assembly/bazel_inputs/src/settings/service:setui_service",
+    ],
+    core_shards = [
+        "//src/settings/service:meta/setui_service_with_camera.core_shard.cml",
     ],
     memory_buckets = ["//src/developer/memory/buckets:setui_buckets.json5"],
 )
@@ -3047,6 +3501,9 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "tee_manager",
+    core_shards = [
+        "//src/security/bin/tee_manager:meta/tee_manager.core_shard.cml",
+    ],
 )
 
 # Static resources files to make available to product assembly subsystems.
@@ -3194,6 +3651,9 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/intl/tzdata_provider:zoneinfo_provider_pkg",
     ],
+    core_shards = [
+        "//src/intl/tzdata_provider:meta/zoneinfo_provider.core_shard.cml",
+    ],
 )
 
 # Assembly support for performing factory resets
@@ -3203,16 +3663,25 @@ assembly_input_bundle(
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/recovery/factory_reset:factory_reset_pkg",
     ],
+    core_shards = [
+        "//src/recovery/factory_reset:meta/factory_reset.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "factory_reset_tee",
+    core_shards = [
+        "//src/recovery/factory_reset:meta/factory_reset.tee.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "factory_reset_no_tee",
+    core_shards = [
+        "//src/recovery/factory_reset:meta/factory_reset.no_tee.core_shard.cml",
+    ],
 )
 
 # Assembly support for recovery-fdr
@@ -3221,6 +3690,9 @@ assembly_input_bundle(
     name = "recovery_fdr",
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/recovery/system:system_recovery_fdr",
+    ],
+    core_shards = [
+        "//src/recovery/system/meta/core_shards:system_recovery_fdr.core_shard.cml",
     ],
 )
 
@@ -3238,6 +3710,13 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/security/bin/root_ssl_certificates",
         "//bundles/assembly/bazel_inputs/src/cobalt/bin/app:cobalt",
     ],
+    core_shards = [
+        "//src/recovery/system/meta/core_shards:system_recovery_android.core_shard.cml",
+        "//src/developer/adb/bin/adb:meta/adb.core_shard.cml",
+        "//src/developer/adb/bin/adb-file-sync:meta/adb-file-sync.core_shard.cml",
+        "//src/developer/adb/bin/adb-reboot:meta/adb-reboot.core_shard.cml",
+        "//src/developer/adb/bin/adb-sideload:meta/adb-sideload.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
@@ -3248,11 +3727,17 @@ assembly_input_bundle(
         "userdebug",
         "eng",
     ],
+    core_shards = [
+        "//src/session/bin/session_manager:meta/session_manager_enable_pkg_cache.core_shard.cml",
+    ],
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "session_manager_disable_pkg_cache",
+    core_shards = [
+        "//src/session/bin/session_manager:meta/session_manager_disable_pkg_cache.core_shard.cml",
+    ],
 )
 
 # Includes GNSS functionality.
@@ -3266,5 +3751,8 @@ assembly_input_bundle(
     ],
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/location/gnss:gnss_service",
+    ],
+    core_shards = [
+        "//src/connectivity/location/gnss:meta/gnss-service.core-shard.cml",
     ],
 )

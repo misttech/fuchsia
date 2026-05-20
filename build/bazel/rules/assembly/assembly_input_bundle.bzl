@@ -97,6 +97,40 @@ def _assembly_input_bundle_impl(ctx):
             args.add("--memory-buckets", memory_bucket_file)
             inputs.append(memory_bucket_file)
 
+    # Handle shards and generate compiled packages JSON
+    compiled_packages = []
+
+    shard_configs = [
+        ("bootstrap_shards", "bootstrap", True),
+        ("core_shards", "core", False),
+        ("root_shards", "root", True),
+        ("toolbox_shards", "toolbox", True),
+    ]
+
+    for attr_name, package_name, is_bootfs in shard_configs:
+        shards = getattr(ctx.attr, attr_name)
+        if shards:
+            compiled_packages.append({
+                "name": package_name,
+                "components": [
+                    {
+                        "component_name": package_name,
+                        "shards": [f.path for f in getattr(ctx.files, attr_name)],
+                    },
+                ],
+                "bootfs_package": is_bootfs,
+            })
+            inputs.extend(getattr(ctx.files, attr_name))
+
+    if compiled_packages:
+        compiled_packages_file = ctx.actions.declare_file(ctx.label.name + "_compiled_packages.json")
+        ctx.actions.write(
+            output = compiled_packages_file,
+            content = json.encode(compiled_packages),
+        )
+        args.add("--compiled-packages", compiled_packages_file)
+        inputs.append(compiled_packages_file)
+
     ctx.actions.run(
         inputs = inputs,
         outputs = [out_dir],
@@ -130,6 +164,10 @@ _assembly_input_bundle = rule(
         "kernel_cmdline": attr.string_list(),
         "shell_commands": attr.string(),
         "memory_buckets": attr.label_list(allow_files = True),
+        "bootstrap_shards": attr.label_list(allow_files = True),
+        "core_shards": attr.label_list(allow_files = True),
+        "root_shards": attr.label_list(allow_files = True),
+        "toolbox_shards": attr.label_list(allow_files = True),
         "_tool": attr.label(
             default = "//build/assembly/scripts:assembly_input_bundle_tool",
             executable = True,
@@ -156,6 +194,10 @@ def assembly_input_bundle(
         kernel_cmdline = [],
         shell_commands = [],
         memory_buckets = [],
+        bootstrap_shards = [],
+        core_shards = [],
+        root_shards = [],
+        toolbox_shards = [],
         **kwargs):
     """Creates an Assembly Input Bundle.
 
@@ -229,6 +271,18 @@ def assembly_input_bundle(
         memory_buckets: [list of labels] Paths to memory bucket configs that should get merged
             and passed to memory monitor.
 
+        bootstrap_shards: [list of labels] A list of CML shard files to add to the "bootstrap"
+            component of the "bootstrap" compiled package. This package is a bootfs package.
+
+        core_shards: [list of labels] A list of CML shard files to add to the "core"
+            component of the "core" compiled package.
+
+        root_shards: [list of labels] A list of CML shard files to add to the "root"
+            component of the "root" compiled package. This package is a bootfs package.
+
+        toolbox_shards: [list of labels] A list of CML shard files to add to the "toolbox"
+            component of the "toolbox" compiled package. This package is a bootfs package.
+
         **kwargs: Other arguments to pass to the rule.
     """
 
@@ -250,6 +304,10 @@ def assembly_input_bundle(
         kernel_cmdline = kernel_cmdline,
         shell_commands = json.encode_indent(shell_commands),
         memory_buckets = memory_buckets,
+        bootstrap_shards = bootstrap_shards,
+        core_shards = core_shards,
+        root_shards = root_shards,
+        toolbox_shards = toolbox_shards,
         **kwargs
     )
 
