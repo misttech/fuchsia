@@ -12,11 +12,14 @@ use fidl_next_fuchsia_hardware_clock as fclock;
 use fidl_next_fuchsia_hardware_gpio as fgpio;
 use fidl_next_fuchsia_hardware_powerdomain as fpowerdomain;
 use fidl_next_fuchsia_hardware_reset as freset;
-use fidl_next_fuchsia_hardware_spiimpl::{self, spi_impl as fspi_impl};
+use fidl_next_fuchsia_hardware_spiimpl::{
+    self, SpiImplExchangeVectorResponse, SpiImplReceiveVectorResponse, spi_impl as fspi_impl,
+};
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
-use log::{error, info};
+use futures::channel::mpsc;
+use log::{error, info, warn};
 use mmio::Register;
 use mmio::region::MmioRegion;
 use mmio::vmo::VmoMemory;
@@ -24,7 +27,184 @@ use pdev::PlatformDevice;
 use zx::Status;
 mod registers;
 
-struct SpiImplServer {}
+const FIFO_SIZE: usize = 256;
+
+enum SpiImplRequest {
+    TransmitVector {
+        chip_select: u32,
+        data: Vec<u8>,
+        responder: Responder<fspi_impl::TransmitVector>,
+    },
+    ReceiveVector {
+        chip_select: u32,
+        size: usize,
+        responder: Responder<fspi_impl::ReceiveVector>,
+    },
+    ExchangeVector {
+        chip_select: u32,
+        txdata: Vec<u8>,
+        responder: Responder<fspi_impl::ExchangeVector>,
+    },
+}
+
+struct DwSpiDevice {
+    mmio: registers::DwSpiRegsBlock<MmioRegion<VmoMemory>>,
+    cs_gpio: Option<fidl_next::Client<fgpio::Gpio>>,
+}
+
+struct SpiImplServer {
+    tx: mpsc::UnboundedSender<SpiImplRequest>,
+}
+
+impl DwSpiDevice {
+    fn init_registers(&mut self) {
+        self.mmio.ssi_enr_mut().write(registers::SsiEnr::from_raw(0));
+
+        self.mmio.ctrlr0_mut().write({
+            let mut ctrlr0 = registers::CtrlR0::from_raw(0);
+            ctrlr0.set_spi_frf(0); // Standard SPI
+            ctrlr0.set_frf(0); // Motorola SPI
+            ctrlr0.set_dfs(7); // 8-bit (values 3-15 correspond to 4-16 bits, so 7 means 8 bits)
+            ctrlr0.set_tmod(0); // Transmit & Receive
+            ctrlr0
+        });
+
+        // TODO(511200585): Determine the clock divider based on the core clock and requested bus
+        // clock frequencies. For now it is hardcoded to a low frequency just to get things working.
+        self.mmio.baudr_mut().write({
+            let mut baudr = registers::Baudr::from_raw(0);
+            baudr.set_sckdv(500);
+            baudr
+        });
+
+        // Mask all interrupts initially in IMR
+        self.mmio.imr_mut().write(registers::Imr::from_raw(0));
+
+        // Enable SSI
+        self.mmio.ssi_enr_mut().write({
+            let mut ssi_enr = registers::SsiEnr::from_raw(0);
+            ssi_enr.set_ssi_en(true);
+            ssi_enr
+        });
+    }
+
+    async fn exchange_pio(
+        &mut self,
+        chip_select: u32,
+        mut txdata: &[u8],
+        rx: bool,
+        mut size: usize,
+    ) -> Result<Vec<u8>, Status> {
+        if size == 0 {
+            return Ok(vec![]);
+        }
+
+        assert!(txdata.len() > 0 || rx); // If there is no TX data then we must be receiving.
+        assert!(txdata.len() == 0 || txdata.len() == size); // TX size must match RX size.
+
+        // Only one chip select is supported for now.
+        if chip_select != 0 {
+            return Err(Status::NOT_FOUND);
+        }
+
+        if let Some(cs_gpio) = &self.cs_gpio {
+            cs_gpio.set_buffer_mode(fgpio::natural::BufferMode::OutputLow).wire().await.map_err(
+                |e| {
+                    error!("Failed to assert CS: {:?}", e);
+                    Status::IO
+                },
+            )?;
+        }
+
+        // TODO(https://fxbug.dev/500865936): Support DMA transfers for larger sizes.
+        // This is a placeholder indicating where DMA support would be added.
+        // For now, we only implement PIO.
+
+        // A target must be selected before the transfer can begin.
+        self.mmio.ser_mut().write({
+            let mut ser = registers::Ser::from_raw(0);
+            ser.set_ser(1);
+            ser
+        });
+
+        let mut rxdata = Vec::<u8>::with_capacity(if rx { size } else { 0 });
+
+        while size > 0 {
+            if self.mmio.sr().read().rfne() {
+                warn!("RX FIFO is not empty before starting transfer");
+            }
+
+            // Wait for the TX FIFO to be empty.
+            while !self.mmio.sr().read().tfe() {}
+
+            let transfer_size = std::cmp::min(size, FIFO_SIZE);
+
+            // Fill the TX FIFO up to available space or remaining data.
+            for i in 0..transfer_size {
+                let data = if txdata.len() > 0 { txdata[i] } else { 0xFF };
+                self.mmio.dr0_mut().write(registers::Dr0::from_raw(data as u32));
+            }
+
+            // Read the RX FIFO for the bytes we just sent.
+            for _ in 0..transfer_size {
+                // Wait for at least one byte to be in the RX FIFO.
+                while !self.mmio.sr().read().rfne() {}
+
+                let data = self.mmio.dr0().read().dr() as u8;
+                if rx {
+                    rxdata.push(data);
+                }
+            }
+
+            size -= transfer_size;
+            if txdata.len() > 0 {
+                txdata = &txdata[transfer_size..];
+            }
+        }
+
+        self.mmio.ser_mut().write(registers::Ser::from_raw(0));
+
+        if let Some(cs_gpio) = &self.cs_gpio {
+            cs_gpio.set_buffer_mode(fgpio::natural::BufferMode::OutputHigh).wire().await.map_err(
+                |e| {
+                    error!("Failed to deassert CS: {:?}", e);
+                    Status::IO
+                },
+            )?;
+        }
+
+        return Ok(rxdata);
+    }
+
+    async fn handle_request(&mut self, req: SpiImplRequest) {
+        match req {
+            SpiImplRequest::TransmitVector { chip_select, data, responder } => {
+                let result = self
+                    .exchange_pio(chip_select, &data, false, data.len())
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.into_raw());
+                let _ = responder.respond_with(result).await;
+            }
+            SpiImplRequest::ReceiveVector { chip_select, size, responder } => {
+                let result = self
+                    .exchange_pio(chip_select, &[], true, size)
+                    .await
+                    .map(|data| SpiImplReceiveVectorResponse { data })
+                    .map_err(|e| e.into_raw());
+                let _ = responder.respond_with(result).await;
+            }
+            SpiImplRequest::ExchangeVector { chip_select, txdata, responder } => {
+                let result = self
+                    .exchange_pio(chip_select, &txdata, true, txdata.len())
+                    .await
+                    .map(|rxdata| SpiImplExchangeVectorResponse { rxdata })
+                    .map_err(|e| e.into_raw());
+                let _ = responder.respond_with(result).await;
+            }
+        }
+    }
+}
 
 impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for SpiImplServer {
     async fn get_chip_select_count(&mut self, responder: Responder<fspi_impl::GetChipSelectCount>) {
@@ -33,26 +213,41 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for SpiImplServer 
 
     async fn transmit_vector(
         &mut self,
-        _request: Request<fspi_impl::TransmitVector>,
+        request: Request<fspi_impl::TransmitVector>,
         responder: Responder<fspi_impl::TransmitVector>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED.into_raw()).await;
+        let payload = request.payload();
+        let _ = self.tx.unbounded_send(SpiImplRequest::TransmitVector {
+            chip_select: payload.chip_select,
+            data: payload.data,
+            responder,
+        });
     }
 
     async fn receive_vector(
         &mut self,
-        _request: Request<fspi_impl::ReceiveVector>,
+        request: Request<fspi_impl::ReceiveVector>,
         responder: Responder<fspi_impl::ReceiveVector>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED.into_raw()).await;
+        let payload = request.payload();
+        let _ = self.tx.unbounded_send(SpiImplRequest::ReceiveVector {
+            chip_select: payload.chip_select,
+            size: payload.size as usize,
+            responder,
+        });
     }
 
     async fn exchange_vector(
         &mut self,
-        _request: Request<fspi_impl::ExchangeVector>,
+        request: Request<fspi_impl::ExchangeVector>,
         responder: Responder<fspi_impl::ExchangeVector>,
     ) {
-        let _ = responder.respond_err(Status::NOT_SUPPORTED.into_raw()).await;
+        let payload = request.payload();
+        let _ = self.tx.unbounded_send(SpiImplRequest::ExchangeVector {
+            chip_select: payload.chip_select,
+            txdata: payload.txdata,
+            responder,
+        });
     }
 
     async fn lock_bus(
@@ -120,11 +315,12 @@ impl fidl_next_fuchsia_hardware_spiimpl::SpiImplServerHandler for SpiImplServer 
 
 struct SpiImplService {
     scope: fasync::ScopeHandle,
+    tx: mpsc::UnboundedSender<SpiImplRequest>,
 }
 
 impl fidl_next_fuchsia_hardware_spiimpl::ServiceHandler for SpiImplService {
     fn device(&self, server_end: ServerEnd<fidl_next_fuchsia_hardware_spiimpl::SpiImpl>) {
-        server_end.spawn_on(SpiImplServer {}, &self.scope);
+        server_end.spawn_on(SpiImplServer { tx: self.tx.clone() }, &self.scope);
     }
 }
 
@@ -132,44 +328,9 @@ struct DwSpiDriver {
     _node: Node,
     _scope: fasync::Scope,
     _businfo_server: Option<MetadataServer>,
-    _mmio: registers::DwSpiRegsBlock<MmioRegion<VmoMemory>>,
-    _cs_gpio: Option<fidl_next::Client<fgpio::Gpio>>,
 }
 
 driver_register!(DwSpiDriver);
-
-impl DwSpiDriver {
-    fn init_registers(mmio: &mut registers::DwSpiRegsBlock<MmioRegion<VmoMemory>>) {
-        mmio.ssi_enr_mut().write(registers::SsiEnr::from_raw(0));
-
-        mmio.ctrlr0_mut().write({
-            let mut ctrlr0 = registers::CtrlR0::from_raw(0);
-            ctrlr0.set_spi_frf(0); // Standard SPI
-            ctrlr0.set_frf(0); // Motorola SPI
-            ctrlr0.set_dfs(7); // 8-bit (values 3-15 correspond to 4-16 bits, so 7 means 8 bits)
-            ctrlr0.set_tmod(0); // Transmit & Receive
-            ctrlr0
-        });
-
-        // TODO(511200585): Determine the clock divider based on the core clock and requested bus
-        // clock frequencies. For now it is hardcoded to a low frequency just to get things working.
-        mmio.baudr_mut().write({
-            let mut baudr = registers::Baudr::from_raw(0);
-            baudr.set_sckdv(500);
-            baudr
-        });
-
-        // Mask all interrupts initially in IMR
-        mmio.imr_mut().write(registers::Imr::from_raw(0));
-
-        // Enable SSI
-        mmio.ssi_enr_mut().write({
-            let mut ssi_enr = registers::SsiEnr::from_raw(0);
-            ssi_enr.set_ssi_en(true);
-            ssi_enr
-        });
-    }
-}
 
 impl Driver for DwSpiDriver {
     const NAME: &str = "dw-spi";
@@ -182,8 +343,8 @@ impl Driver for DwSpiDriver {
             .service_marker(fpdev::ServiceMarker)
             .connect()?
             .connect_to_device()
-            .map_err(|err| {
-                error!("Failed to connect to platform device: {err}");
+            .map_err(|e| {
+                error!("Failed to connect to platform device: {:?}", e);
                 Status::INTERNAL
             })?;
 
@@ -224,12 +385,11 @@ impl Driver for DwSpiDriver {
             Status::INTERNAL
         })?;
 
-        let mut mmio = registers::DwSpiRegsBlock { mmio: pdev.map_mmio_by_id(0).await? };
-        DwSpiDriver::init_registers(&mut mmio);
+        let mmio = registers::DwSpiRegsBlock { mmio: pdev.map_mmio_by_id(0).await? };
 
         let cs_gpio = {
             let cs_gpio_service: fdf_component::ServiceInstance<fgpio::Service> =
-                context.incoming.service().instance("cs-gpio-0").connect_next()?;
+                context.incoming.service().instance("gpio-cs-0").connect_next()?;
             let (cs_gpio_client, cs_gpio_server) = fidl_next::fuchsia::create_channel();
             cs_gpio_service.device(cs_gpio_server).map_err(|_| Status::INTERNAL)?;
 
@@ -238,20 +398,25 @@ impl Driver for DwSpiDriver {
             // The chip select GPIO is optional. Make a call on it do determine whether or not it
             // has been provided to us.
             match cs_gpio.release_interrupt().await {
-                Ok(Ok(_)) => Some(cs_gpio),
+                Ok(_) => Some(cs_gpio),
                 _ => None,
             }
         };
+
+        let mut device = DwSpiDevice { mmio, cs_gpio };
+        device.init_registers();
 
         let mut outgoing = ServiceFs::new();
 
         let scope = fasync::Scope::new_with_name(Self::NAME);
 
+        let (spi_req_tx, mut spi_req_rx) = mpsc::unbounded::<SpiImplRequest>();
+
         let offer = ServiceOffer::<fidl_next_fuchsia_hardware_spiimpl::Service>::new_next()
             .add_default_named_next(
                 &mut outgoing,
                 "default",
-                SpiImplService { scope: scope.to_handle() },
+                SpiImplService { scope: scope.to_handle(), tx: spi_req_tx },
             )
             .build_driver_offer();
 
@@ -267,7 +432,7 @@ impl Driver for DwSpiDriver {
                 }
             }
             Err(e) => {
-                if e != zx::Status::NOT_FOUND {
+                if e != Status::NOT_FOUND {
                     error!("Failed to forward SPI bus metadata: {e}");
                     return Err(e);
                 }
@@ -280,15 +445,15 @@ impl Driver for DwSpiDriver {
         context.serve_outgoing(&mut outgoing)?;
         scope.spawn(outgoing.collect());
 
+        scope.spawn_local(async move {
+            while let Some(req) = spi_req_rx.next().await {
+                device.handle_request(req).await;
+            }
+        });
+
         info!("dw-spi driver initialized successfully");
 
-        Ok(Self {
-            _node: node,
-            _scope: scope,
-            _businfo_server: businfo_server.ok(),
-            _mmio: mmio,
-            _cs_gpio: cs_gpio,
-        })
+        Ok(Self { _node: node, _scope: scope, _businfo_server: businfo_server.ok() })
     }
 
     async fn stop(&self) {}

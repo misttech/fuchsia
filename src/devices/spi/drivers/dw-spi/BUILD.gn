@@ -66,6 +66,7 @@ fuchsia_rust_driver("dw-spi-driver") {
     "//sdk/lib/driver/fake-platform-device/rust",
     "//sdk/lib/driver/fake-powerdomain/rust",
     "//sdk/lib/driver/fake-reset/rust",
+    "//sdk/lib/driver/runtime/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/mapped-vmo",
   ]

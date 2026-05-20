@@ -67,6 +67,12 @@ register! {
     }
 }
 
+register! {
+    Dr0, u32, 0x60, RW, {
+        pub dr, set_dr: 7, 0;
+    }
+}
+
 register_block! {
     pub struct DwSpiRegsBlock<M> {
         pub ctrlr0: CtrlR0,
@@ -76,5 +82,6 @@ register_block! {
         pub baudr: Baudr,
         pub sr: Sr,
         pub imr: Imr,
+        pub dr0: Dr0,
     }
 }
