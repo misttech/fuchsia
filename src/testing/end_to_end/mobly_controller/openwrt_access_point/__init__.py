@@ -146,6 +146,9 @@ class OpenWrtAP:
                     self.ssh.run(
                         f"uci add_list wireless.{bss.name}.{option}='{item}'"
                     )
+            elif isinstance(value, bool):
+                v = str(int(value))
+                self.ssh.run(f"uci set wireless.{bss.name}.{option}='{v}'")
             else:
                 self.ssh.run(f"uci set wireless.{bss.name}.{option}='{value}'")
 
@@ -207,6 +210,9 @@ class OpenWrtAP:
                         self.ssh.run(
                             f"uci add_list wireless.{radio}.{option}='{item}'"
                         )
+                elif isinstance(value, bool):
+                    v = str(int(value))
+                    self.ssh.run(f"uci set wireless.{radio}.{option}='{v}'")
                 else:
                     self.ssh.run(f"uci set wireless.{radio}.{option}='{value}'")
 

@@ -1,0 +1,30 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# THIS FILE IS GENERATED. DO NOT EDIT MANUALLY.
+# To update, edit uci_allow_list.yaml and run:
+#   python3 src/testing/end_to_end/mobly_controller/openwrt_access_point/lib/generator/generate_uci_options.py
+# Schema: wireless.wifi-iface.json
+# Tag: v25.12.4
+
+from typing import TypedDict
+
+
+class UciBssOptions(TypedDict, total=False):
+    """Generated from OpenWrt JSON schema.
+
+    Only includes attributes specified in the allow-list.
+    """
+
+    preamble: bool
+    """Short Preamble"""
+
+    dtim_period: int
+    """Set the DTIM (delivery traffic information message) period. There will be one DTIM per this many beacon frames. This may be set between 1 and 255. This option only has an effect on ap wifi-ifaces."""
+
+    vendor_elements: list[str]
+    """Additional vendor specific elements for Beacon and Probe Response frames"""
+
+    uapsd_advertisement_enabled: bool
+    """WMM-PS Unscheduled Automatic Power Save Delivery [U-APSD]"""

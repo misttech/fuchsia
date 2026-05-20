@@ -4,8 +4,8 @@
 
 # LINT.IfChange
 
-from mobly_controller.openwrt_access_point.lib import capabilities
-from mobly_controller.openwrt_access_point.lib.access_point_config import (
+from openwrt_access_point.lib import capabilities
+from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
     BssChannel,
@@ -14,10 +14,7 @@ from mobly_controller.openwrt_access_point.lib.access_point_config import (
     RadioConfig,
     Security,
 )
-from mobly_controller.openwrt_access_point.lib.uci_options import (
-    BasicRate,
-    SupportedRates,
-)
+from openwrt_access_point.lib.uci_options import BasicRate, SupportedRates
 
 
 def actiontec_pk5000(
@@ -46,15 +43,14 @@ def actiontec_pk5000(
                         password=password,
                         custom_uci_options={
                             "dtim_period": 3,
-                            "wmm": 0,  # force_wmm = False
-                            "short_preamble": 0,
+                            "preamble": True,
                         },
                     )
                 ],
                 custom_uci_options={
                     "beacon_int": 100,
                     "supported_rates": SupportedRates.CCK_AND_OFDM,
-                    "basic_rate": BasicRate.CCK_AND_OFDM,
+                    "basic_rates": BasicRate.CCK_AND_OFDM,
                 },
             )
         ]
@@ -91,16 +87,16 @@ def actiontec_mi424wr(
                         password=password,
                         custom_uci_options={
                             "dtim_period": 1,
-                            "wmm": 1,  # force_wmm = True
-                            "vendor_elements": vendor_elements,
-                            "short_preamble": 1,
+                            "vendor_elements": [vendor_elements],
+                            "preamble": True,
+                            # TODO(b/513469970): Investigate removal of 'wmm' option.
                         },
                     )
                 ],
                 custom_uci_options={
                     "beacon_int": 100,
                     "supported_rates": SupportedRates.CCK_AND_OFDM,
-                    "basic_rate": BasicRate.CCK_AND_OFDM,
+                    "basic_rates": BasicRate.CCK_AND_OFDM,
                 },
                 n_capabilities=CapabilitySelection.CUSTOM(
                     [

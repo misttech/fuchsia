@@ -16,7 +16,10 @@ python_library("openwrt_access_point") {
     "lib/dhcp_config.py",
     "lib/dhcp_controller.py",
     "lib/hostapd_options.py",
+    "lib/profiles/actiontec.py",
+    "lib/uci_bss_options.py",
     "lib/uci_options.py",
+    "lib/uci_radio_options.py",
   ]
 
   library_deps = [ "//src/testing/end_to_end/libs" ]

@@ -3,7 +3,55 @@
 # found in the LICENSE file.
 
 
-from openwrt_access_point.lib.access_point_config import HostapdOptions
+from typing import TypedDict
+
+
+class HostapdOptions(TypedDict, total=False):
+    """A TypedDict for common hostapd options passed via UCI list hostapd_options.
+
+    'total=False' means all keys are optional. Add more options as needed.
+
+    Attributes:
+        bss_load_update_period: BSS load update period in seconds.
+        chan_util_avg_period: Channel utilization average period.
+        wmm_ac_*: WMM parameters for different access categories (BK, BE, VI, VO).
+        assocresp_elements: Vendor-specific information elements for Association Response.
+        country3: 3rd byte of country code (e.g., 'O' for outdoor).
+    """
+
+    bss_load_update_period: int
+    chan_util_avg_period: int
+
+    # WMM parameters
+    wmm_ac_bk_cwmin: int
+    wmm_ac_bk_cwmax: int
+    wmm_ac_bk_aifs: int
+    wmm_ac_bk_txop_limit: int
+    wmm_ac_bk_acm: bool
+
+    wmm_ac_be_cwmin: int
+    wmm_ac_be_cwmax: int
+    wmm_ac_be_aifs: int
+    wmm_ac_be_txop_limit: int
+    wmm_ac_be_acm: bool
+
+    wmm_ac_vi_cwmin: int
+    wmm_ac_vi_cwmax: int
+    wmm_ac_vi_aifs: int
+    wmm_ac_vi_txop_limit: int
+    wmm_ac_vi_acm: bool
+
+    wmm_ac_vo_cwmin: int
+    wmm_ac_vo_cwmax: int
+    wmm_ac_vo_aifs: int
+    wmm_ac_vo_txop_limit: int
+    wmm_ac_vo_acm: bool
+
+    # Vendor IEs
+    assocresp_elements: str
+
+    # Regulatory
+    country3: str
 
 
 # WMM
@@ -67,10 +115,10 @@ class WmmParams:
 
 
 class WmmAcm:
-    BK: HostapdOptions = {"wmm_ac_bk_acm": 1}
-    BE: HostapdOptions = {"wmm_ac_be_acm": 1}
-    VI: HostapdOptions = {"wmm_ac_vi_acm": 1}
-    VO: HostapdOptions = {"wmm_ac_vo_acm": 1}
+    BK: HostapdOptions = {"wmm_ac_bk_acm": True}
+    BE: HostapdOptions = {"wmm_ac_be_acm": True}
+    VI: HostapdOptions = {"wmm_ac_vi_acm": True}
+    VO: HostapdOptions = {"wmm_ac_vo_acm": True}
 
 
 class AssocRespIe:

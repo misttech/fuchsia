@@ -7,7 +7,11 @@ import enum
 import random
 import re
 import string
-from typing import Literal, Mapping, Optional, Protocol, TypeAlias, TypedDict
+from typing import Literal, Optional, Protocol, TypeAlias
+
+from openwrt_access_point.lib.hostapd_options import HostapdOptions
+from openwrt_access_point.lib.uci_bss_options import UciBssOptions
+from openwrt_access_point.lib.uci_radio_options import UciRadioOptions
 
 
 class Band(enum.StrEnum):
@@ -235,22 +239,6 @@ DEFAULT_2G_CHANNEL = BssChannel(Band.BAND_2G, 1, HtMode(bw=40, extension="+"))
 DEFAULT_5G_CHANNEL = BssChannel(Band.BAND_5G, 36, VhtMode(bw=80))
 
 
-class UciBssOptions(TypedDict, total=False):
-    """Common custom UCI options for a 'wifi-iface' section."""
-
-    dtim_period: int
-    """DTIM period, range 1-255."""
-
-    vendor_elements: str
-    """Vendor-specific information elements."""
-
-    short_preamble: Literal[0, 1]
-    """Use short preamble."""
-
-    wmm: Literal[0, 1]
-    """Enables WMM."""
-
-
 @dataclasses.dataclass
 class BssSettings:
     """Settings for a BSS (Multiple SSIDs on the same radio).
@@ -266,9 +254,9 @@ class BssSettings:
     security: Security
     password: str | None = None
     hidden: bool = False
-    custom_uci_options: UciBssOptions | Mapping[
-        str, str | int
-    ] = dataclasses.field(default_factory=dict)
+    custom_uci_options: UciBssOptions = dataclasses.field(
+        default_factory=lambda: UciBssOptions()
+    )
 
     @property
     def name(self) -> str:
@@ -309,82 +297,6 @@ class CapabilitySelection:
     def CUSTOM(cls, capabilities: list[str]) -> "CapabilitySelection":
         """Provide a custom list of capabilities to enable."""
         return cls(mode="CUSTOM", capabilities=capabilities)
-
-
-class UciRadioOptions(TypedDict, total=False):
-    """A TypedDict for common custom UCI options for a 'wifi-device' section.
-
-    'total=False' means all keys are optional. Add more options as needed.
-
-    Attributes:
-        frag: Fragment threshold.
-        beacon_int: Beacon interval in milliseconds.
-        rts: RTS threshold.
-        require_mode: Sets the minimum client capability level mode.
-        country_ie: Enable IEEE 802.11d country IE.
-        supported_rates: Supported data rates.
-        basic_rate: Basic data rates.
-    """
-
-    frag: int
-    beacon_int: int
-    rts: int
-    require_mode: Literal["n", "ac", "ax"]
-    country_ie: Literal[0, 1]
-    supported_rates: list[int]
-    basic_rate: list[int]
-    ieee80211h: int
-    ieee80211d: int
-    spectrum_mgmt_required: int
-    local_pwr_constraint: int
-
-
-class HostapdOptions(TypedDict, total=False):
-    """A TypedDict for common hostapd options passed via UCI list hostapd_options.
-
-    'total=False' means all keys are optional. Add more options as needed.
-
-    Attributes:
-        bss_load_update_period: BSS load update period in seconds.
-        chan_util_avg_period: Channel utilization average period.
-        wmm_ac_*: WMM parameters for different access categories (BK, BE, VI, VO).
-        assocresp_elements: Vendor-specific information elements for Association Response.
-        country3: 3rd byte of country code (e.g., 'O' for outdoor).
-    """
-
-    bss_load_update_period: int
-    chan_util_avg_period: int
-
-    # WMM parameters
-    wmm_ac_bk_cwmin: int
-    wmm_ac_bk_cwmax: int
-    wmm_ac_bk_aifs: int
-    wmm_ac_bk_txop_limit: int
-    wmm_ac_bk_acm: Literal[0, 1]
-
-    wmm_ac_be_cwmin: int
-    wmm_ac_be_cwmax: int
-    wmm_ac_be_aifs: int
-    wmm_ac_be_txop_limit: int
-    wmm_ac_be_acm: Literal[0, 1]
-
-    wmm_ac_vi_cwmin: int
-    wmm_ac_vi_cwmax: int
-    wmm_ac_vi_aifs: int
-    wmm_ac_vi_txop_limit: int
-    wmm_ac_vi_acm: Literal[0, 1]
-
-    wmm_ac_vo_cwmin: int
-    wmm_ac_vo_cwmax: int
-    wmm_ac_vo_aifs: int
-    wmm_ac_vo_txop_limit: int
-    wmm_ac_vo_acm: Literal[0, 1]
-
-    # Vendor IEs
-    assocresp_elements: str
-
-    # Regulatory
-    country3: str
 
 
 # TODO(https://fxbug.dev/489258440): Make channel required param and provide easy way to use

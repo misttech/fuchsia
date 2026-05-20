@@ -4,7 +4,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Literal
 
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
@@ -13,18 +12,18 @@ from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
 from mobly.records import TestResultRecord
+from mobly_controller.openwrt_access_point.lib.uci_radio_options import (
+    UciRadioOptions,
+)
 from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
     BssChannel,
     BssSettings,
-    HostapdOptions,
     LegacyMode,
     RadioConfig,
     SecurityOpen,
-    UciBssOptions,
-    UciRadioOptions,
 )
 from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper,
@@ -32,9 +31,11 @@ from openwrt_access_point.lib.access_point_config_mapper import (
 from openwrt_access_point.lib.hostapd_options import (
     AssocRespIe,
     Country3,
+    HostapdOptions,
     WmmAcm,
     WmmParams,
 )
+from openwrt_access_point.lib.uci_bss_options import UciBssOptions
 from openwrt_access_point.lib.uci_options import (
     BasicRate,
     SupportedRates,
@@ -171,7 +172,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         beacon_interval: int | None = None,
         preamble: bool | None = None,
         hidden: bool = False,
-        country_ie: Literal[0, 1] | None = None,
+        ieee80211d: bool | None = None,
         country: str | None = None,
         supported_rates: list[int] | None = None,
         basic_rate: list[int] | None = None,
@@ -190,21 +191,21 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         if rts_threshold is not None:
             custom_uci_options["rts"] = rts_threshold
 
-        if country_ie is not None:
-            custom_uci_options["country_ie"] = country_ie
+        if ieee80211d is not None:
+            custom_uci_options["ieee80211d"] = ieee80211d
 
         if supported_rates is not None:
             custom_uci_options["supported_rates"] = supported_rates
         if basic_rate is not None:
-            custom_uci_options["basic_rate"] = basic_rate
+            custom_uci_options["basic_rates"] = basic_rate
 
         custom_bss_uci_options: UciBssOptions = {}
         if dtim_period is not None:
             custom_bss_uci_options["dtim_period"] = dtim_period
         if vendor_elements is not None:
-            custom_bss_uci_options["vendor_elements"] = vendor_elements
+            custom_bss_uci_options["vendor_elements"] = [vendor_elements]
         if preamble is not None:
-            custom_bss_uci_options["short_preamble"] = 1 if preamble else 0
+            custom_bss_uci_options["preamble"] = preamble
 
         final_country = country or "US"
 
@@ -482,7 +483,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
-            country_ie=1,
+            ieee80211d=True,
             country="US",
             additional_ap_parameters=Country3.ALL,
             supported_rates=SupportedRates.CCK,
@@ -494,7 +495,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
-            country_ie=1,
+            ieee80211d=True,
             country="XX",
             additional_ap_parameters=Country3.ALL,
             supported_rates=SupportedRates.CCK,
@@ -765,7 +766,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
-            country_ie=1,
+            ieee80211d=True,
             country="US",
             additional_ap_parameters=Country3.ALL,
         )
@@ -775,7 +776,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             profile_name="whirlwind_11ab_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
             ssid=self.open_network_5g["SSID"],
-            country_ie=1,
+            ieee80211d=True,
             country="XX",
             additional_ap_parameters=Country3.ALL,
         )
@@ -1072,7 +1073,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
-            country_ie=1,
+            ieee80211d=True,
             country="US",
             additional_ap_parameters=Country3.ALL,
             supported_rates=SupportedRates.OFDM,
@@ -1084,7 +1085,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
-            country_ie=1,
+            ieee80211d=True,
             country="XX",
             additional_ap_parameters=Country3.ALL,
             supported_rates=SupportedRates.OFDM,
@@ -1355,7 +1356,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
-            country_ie=1,
+            ieee80211d=True,
             country="US",
             additional_ap_parameters=Country3.ALL,
         )
@@ -1365,7 +1366,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
             profile_name="whirlwind_11ag_legacy",
             channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
             ssid=self.open_network_2g["SSID"],
-            country_ie=1,
+            ieee80211d=True,
             country="XX",
             additional_ap_parameters=Country3.ALL,
         )
