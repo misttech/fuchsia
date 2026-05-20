@@ -383,19 +383,6 @@ static int crash_stackstomp() {
   return 0;
 }
 
-// Define a little fragment of code that we can copy.
-extern "C" const uint8_t begin_func[], end_func[];
-__asm__(
-    ".pushsection .rodata.func\n"
-    "begin_func:"
-#if defined(__x86_64__) || defined(__aarch64__) || defined(__riscv)
-    "ret\n"
-#else
-#error "what machine?"
-#endif
-    "end_func:"
-    ".popsection");
-
 static bool has_user_code_execution_protection() {
 #if defined(__x86_64__)
   return x86_feature_test(X86_FEATURE_SMEP) || g_x86_feature_has_smap;
@@ -425,7 +412,34 @@ static int crash_user_execute() {
     return -1;
   }
 
-  const size_t func_size = static_cast<size_t>(end_func - begin_func);
+  // Define a little fragment of code that we can copy.
+  const void* begin_func;
+  size_t func_size;
+  __asm__(
+      ".pushsection .rodata.%=, \"a?\", %%progbits\n"
+      "0:\n"
+#if defined(__x86_64__) || defined(__aarch64__) || defined(__riscv)
+      "ret\n"
+#else
+#error "what machine?"
+#endif
+      "1:\n"
+      ".popsection\n"
+#if defined(__aarch64__)
+      "adrp %[ptr], 0b\n"
+      "add %[ptr], %[ptr], #:lo12:0b\n"
+      "mov %[size], #1b - 0b\n"
+#elif defined(__riscv)
+      "lla %[ptr], 0b\n"
+      "li %[size], 1b - 0b\n"
+#elif defined(__x86_64__)
+      "lea 0b(%%rip), %[ptr]\n"
+      "mov $1b - 0b, %[size]\n"
+#else
+#error "what machine?"
+#endif
+      : [ptr] "=r"(begin_func), [size] "=r"(func_size));
+
   ASSERT_MSG(func_size <= kUserMemorySize, "function does not fit in allocated user memory");
 
   zx_status_t status = mem->VmoWrite(begin_func, /* offset */ 0, func_size);
