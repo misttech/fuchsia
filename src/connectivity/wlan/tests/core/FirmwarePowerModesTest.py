@@ -32,6 +32,8 @@ from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
 from mobly import signals, test_runner
 from mobly.asserts import assert_equal, assert_true, fail
+from openwrt_access_point import AddrType as OpenWrtAddrType
+from openwrt_access_point import InterfaceName as OpenWrtInterfaceName
 from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
@@ -185,7 +187,10 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
         await asyncio.sleep(10)
 
         if isinstance(self.test_kit.access_point, OpenWrtAP):
-            ap_address = self.test_kit.access_point.get_addr("br-lan")
+            ap_address = self.test_kit.access_point.get_addr(
+                interface=OpenWrtInterfaceName.lan,
+                addr_type=OpenWrtAddrType.ipv4_private,
+            )
         elif isinstance(self.test_kit.access_point, AccessPoint):
             ap_test_interface = self.test_kit.access_point.wlan_5g
             ap_address = utils.get_addr(

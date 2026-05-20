@@ -25,6 +25,9 @@ from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals
 from mobly.config_parser import TestRunConfig
+from openwrt_access_point import AddrType as OpenWrtAddrType
+from openwrt_access_point import InterfaceName as OpenWrtInterfaceName
+from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_5G_CHANNEL,
     AccessPointConfig,
@@ -57,7 +60,7 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
         self.log = logging.getLogger()
         self.fuchsia_device: FuchsiaDevice | None = None
         if self.openwrt_aps:
-            self.openwrt_ap = self.openwrt_aps[0]
+            self.openwrt_ap: OpenWrtAP = self.openwrt_aps[0]
         elif self.access_points:
             self.access_point: AccessPoint = self.access_points[0]
         else:
@@ -141,7 +144,10 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
             self.openwrt_ap.verify_wifi_status(band=Band.BAND_5G)
 
             router_ip = IPv4Address(
-                self.openwrt_ap.get_addr("br-lan", "ipv4_private")
+                self.openwrt_ap.get_addr(
+                    interface=OpenWrtInterfaceName.lan,
+                    addr_type=OpenWrtAddrType.ipv4_private,
+                )
             )
             network = IPv4Network(f"{router_ip}/24", strict=False)
 

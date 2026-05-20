@@ -21,6 +21,8 @@ from antlion.test_utils.abstract_devices.wlan_device import AssociationMode
 from antlion.utils import PingResult, rand_ascii_str
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from mobly import asserts, signals, test_runner
+from openwrt_access_point import AddrType as OpenWrtAddrType
+from openwrt_access_point import InterfaceName as OpenWrtInterfaceName
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
@@ -144,8 +146,14 @@ class PingTest(base_test.WifiBaseTest):
             self.openwrt_ap.verify_wifi_status(band)
 
             # Retrieve Gateway IPs.
-            self.ap_ipv4 = self.openwrt_ap.get_addr("br-lan", "ipv4_private")
-            self.ap_ipv6 = self.openwrt_ap.get_addr("br-lan", "ipv6_link_local")
+            self.ap_ipv4 = self.openwrt_ap.get_addr(
+                OpenWrtInterfaceName.lan,
+                OpenWrtAddrType.ipv4_private,
+            )
+            self.ap_ipv6 = self.openwrt_ap.get_addr(
+                OpenWrtInterfaceName.lan,
+                OpenWrtAddrType.ipv6_link_local,
+            )
         else:
             assert self.access_point is not None
             setup_ap(

@@ -10,7 +10,7 @@ import os
 import re
 import time
 from enum import StrEnum
-from typing import Dict, List
+from typing import List
 
 from antlion.controllers.utils_lib.commands.tcpdump import LinuxTcpdumpCommand
 from libs.ssh import connection, settings
@@ -77,6 +77,24 @@ def get_info(objects: List["OpenWrtAP"]) -> List[Json]:
 class Radio(StrEnum):
     RADIO_2G = "radio0"
     RADIO_5G = "radio1"
+
+
+class AddrType(StrEnum):
+    ipv4_private = "ipv4_private"
+    """Any 192.168, 172.16, 10, or 169.254 addresses"""
+    ipv4_public = "ipv4_public"
+    """Any IPv4 public addresses"""
+    ipv6_link_local = "ipv6_link_local"
+    """Any fe80:: addresses"""
+    ipv6_private_local = "ipv6_private_local"
+    """Any fd00:: addresses"""
+    ipv6_public = "ipv6_public"
+    """Any publicly routable addresses"""
+
+
+class InterfaceName(StrEnum):
+    lan = "br-lan"
+    """The default LAN interface."""
 
 
 class OpenWrtAP:
@@ -356,15 +374,15 @@ class OpenWrtAP:
 
     def get_addr(
         self,
-        interface: str,
-        addr_type: str = "ipv4_private",
+        interface: InterfaceName,
+        addr_type: AddrType,
         timeout_sec: int = 30,
     ) -> str:
         """Get the requested type of IP address for an interface.
 
         Args:
-            interface: The interface name on the device (e.g., 'br-lan').
-            addr_type: Type of address to get (e.g., 'ipv4_private', 'ipv6_link_local').
+            interface: The interface name on the device.
+            addr_type: Type of address to get.
             timeout_sec: Seconds to wait to acquire an address.
 
         Returns:
@@ -395,11 +413,11 @@ class OpenWrtAP:
 
     def get_interface_ip_addresses(
         self, interface: str
-    ) -> Dict[str, List[str]]:
+    ) -> dict[AddrType, list[str]]:
         """Gets all of the IP addresses associated with a particular interface name.
 
         Args:
-            interface: The interface name on the device (e.g., 'br-lan').
+            interface: The interface name on the device.
 
         Returns:
             A dictionary of the various IP addresses:
@@ -418,11 +436,11 @@ class OpenWrtAP:
             if len(line.split()) > 3
         ]
 
-        ipv4_private_addresses = []
-        ipv4_public_addresses = []
-        ipv6_link_local_addresses = []
-        ipv6_private_local_addresses = []
-        ipv6_public_addresses = []
+        ipv4_private_addresses: list[str] = []
+        ipv4_public_addresses: list[str] = []
+        ipv6_link_local_addresses: list[str] = []
+        ipv6_private_local_addresses: list[str] = []
+        ipv6_public_addresses: list[str] = []
 
         for addr in addrs:
             on_device_ip = ipaddress.ip_address(addr)
@@ -448,11 +466,11 @@ class OpenWrtAP:
                     ipv6_public_addresses.append(str(on_device_ip))
 
         return {
-            "ipv4_private": ipv4_private_addresses,
-            "ipv4_public": ipv4_public_addresses,
-            "ipv6_link_local": ipv6_link_local_addresses,
-            "ipv6_private_local": ipv6_private_local_addresses,
-            "ipv6_public": ipv6_public_addresses,
+            AddrType.ipv4_private: ipv4_private_addresses,
+            AddrType.ipv4_public: ipv4_public_addresses,
+            AddrType.ipv6_link_local: ipv6_link_local_addresses,
+            AddrType.ipv6_private_local: ipv6_private_local_addresses,
+            AddrType.ipv6_public: ipv6_public_addresses,
         }
 
     def download_logs(self, path: str) -> None:
