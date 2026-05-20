@@ -23,6 +23,7 @@ if (is_host) {
       "//scripts/lib/ffx_cmd",
       "//scripts/lib/package_server",
       "//src/lib/debug/dap/python:lib",
+      "//src/lib/debug/dap/python/zxdb:zxdb_dap",
     ]
   }
 

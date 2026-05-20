@@ -89,7 +89,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(resp.success)
         self.assertIn("Not connected", resp.message or "")
 
-    @patch("daemon.daemon.DapClient")
+    @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_continue(self, mock_dap_client_class: Mock) -> None:
         mock_dap_client = mock_dap_client_class.return_value
 
@@ -107,7 +107,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(resp.success)
         mock_dap_client.continue_thread.assert_called_once()
 
-    @patch("daemon.daemon.DapClient")
+    @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_pause_sync(self, mock_dap_client_class: Mock) -> None:
         mock_dap_client = mock_dap_client_class.return_value
 
@@ -139,7 +139,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         daemon = Daemon(port=15678)
         self.assertIn("threads", daemon.registry.handlers)
 
-    @patch("daemon.daemon.DapClient")
+    @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_threads(self, mock_dap_client_class: Mock) -> None:
         mock_dap_client = mock_dap_client_class.return_value
         mock_threads_resp = Mock()

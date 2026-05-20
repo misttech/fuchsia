@@ -13,7 +13,6 @@ from typing import Any, Final, TypeVar, cast, final
 
 from async_utils.command import AsyncCommand
 from ffx_cmd.lib import FfxCmd
-from pydap.client import DapClient
 from pydap.models import (
     ContinueArguments,
     InitializeArguments,
@@ -37,6 +36,7 @@ from shared.protocol import (
     deserialize_request,
     serialize,
 )
+from zxdb_dap import ZxdbDapClient
 
 # TODO(https://fxbug.dev/504962182): Replace this with something more appropriate.
 UDS_PATH: Final[Path] = Path("/tmp/fx-debug-daemon.sock")
@@ -125,7 +125,7 @@ class Daemon:
         ready_fd: int | None = None,
     ) -> None:
         self.registry = CommandHandlerRegistry()
-        self.dap_client = DapClient()
+        self.dap_client = ZxdbDapClient()
         self.background_tasks: set[asyncio.Task[None]] = set()
         self.active_handlers: set[asyncio.Task[Any]] = set()
         self.event_queue: asyncio.Queue[Any] = asyncio.Queue()
