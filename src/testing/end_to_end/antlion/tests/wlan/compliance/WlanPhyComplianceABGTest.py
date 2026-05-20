@@ -164,7 +164,7 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
         channel: int,
         ssid: str,
         profile_name: str,
-        force_wmm: bool = False,
+        force_wmm: bool | None = None,
         additional_ap_parameters: HostapdOptions | None = None,
         frag_threshold: int | None = None,
         rts_threshold: int | None = None,

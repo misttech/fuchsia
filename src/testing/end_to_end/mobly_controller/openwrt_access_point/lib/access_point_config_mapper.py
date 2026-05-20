@@ -114,7 +114,8 @@ class AccessPointConfigMapper:
         """Maps RadioConfig to legacy hostapd options for legacy AP support."""
         mapping = {
             "country_ie": "ieee80211d",
-            "basic_rate": "basic_rates",
+            "frag": "fragm_threshold",
+            "rts": "rts_threshold",
         }
         hostapd_options: dict[str, object] = {}
 
@@ -124,7 +125,11 @@ class AccessPointConfigMapper:
         # 2. Map custom_uci_options on radio
         for k, v in radio_config.custom_uci_options.items():
             hostapd_key = mapping.get(k, k)
-            if isinstance(v, list):
+            if k in ("supported_rates", "basic_rates") and isinstance(v, list):
+                hostapd_options[hostapd_key] = " ".join(
+                    str(int(x) // 100) for x in v
+                )
+            elif isinstance(v, list):
                 hostapd_options[hostapd_key] = " ".join(str(x) for x in v)
             else:
                 hostapd_options[hostapd_key] = v
