@@ -8,7 +8,10 @@ import asyncio
 import copy
 import json
 import os
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 from portpicker import portpicker
@@ -114,6 +117,30 @@ class EventFuture:
         return _wait().__await__()
 
 
+def get_build_root() -> Path:
+    # //out/default/host_x64/obj/src/developer/debug/e2e_tests/dap_integration_tests/dap_integration_test/dap_integration_test.pyz
+    curr = Path(sys.argv[0]).resolve()
+    # //out/default
+    return curr.parent.parent.parent.parent.parent.parent.parent.parent.parent
+
+
+def get_ffx_bin() -> str:
+    build_root = get_build_root()
+    DAP_E2E_TESTS_FFX_TEST_DATA = os.environ.get("DAP_E2E_TESTS_FFX_TEST_DATA")
+    if DAP_E2E_TESTS_FFX_TEST_DATA is None:
+        raise RuntimeError(
+            "DAP_E2E_TESTS_FFX_TEST_DATA environment variable not set"
+        )
+    # The DAP_E2E_TESTS_FFX_TEST_DATA is calculated by rebase_path(ffx_test_host_tools_out_dir, root_build_dir).
+    # root_build_dir is //out/default.
+    ffx_bin = str((build_root / DAP_E2E_TESTS_FFX_TEST_DATA / "ffx").resolve())
+
+    if not Path(ffx_bin).exists():
+        raise RuntimeError(f"ffx binary not found at: {ffx_bin}")
+
+    return ffx_bin
+
+
 class DapTestFramework:
     """Base class for DAP integration tests."""
 
@@ -129,56 +156,93 @@ class DapTestFramework:
         self._writer: Optional[asyncio.StreamWriter] = None
         self.pending_futures: List[RequestFuture] = []
         self.event_expectations: List[EventFuture] = []
+        self._isolate_dir: Optional[tempfile.TemporaryDirectory[str]] = None
 
     async def start_server(self, port: int) -> None:
         """Starts the DAP server via FfxCmd and waits for it to be ready."""
         # Imported locally to allow hermetic unit testing without Fuchsia SDK dependencies.
         import signal
 
-        import package_server
         from ffx_cmd.lib import FfxCmd
 
-        async with package_server.ensure_running():
-            ffx_cmd = FfxCmd()
-            args = [
-                "debug",
-                "connect",
-                "--new-agent",
-                "--",
-                "--enable-debug-adapter",
-                f"--debug-adapter-port={port}",
-                f"--signal-when-ready={os.getpid()}",
-            ]
+        # Instantiate FfxCmd using create_test_inner() to bypass the default
+        # FfxCmd constructor's build directory lookup, which fails in isolated
+        # test execution environments like CQ.
+        # Ensure FUCHSIA_SSH_KEY is absolute, matching GetFfxEnv() in ffx_debug_agent_bridge.cc
+        ssh_key = os.environ.get("FUCHSIA_SSH_KEY")
+        if ssh_key:
+            os.environ["FUCHSIA_SSH_KEY"] = str(Path(ssh_key).resolve())
 
-            print(f"Starting DAP server via FfxCmd...")
-            self.proc = await ffx_cmd.start(*args)
+        build_root = get_build_root()
+        extra_args = []
+        self._isolate_dir = tempfile.TemporaryDirectory(
+            prefix="ffx_isolate_", dir=os.environ.get("FUCHSIA_TEST_OUTDIR")
+        )
+        extra_args.extend(["--isolate-dir", self._isolate_dir.name])
+        # Replicate GetFfxArgV() config construction
+        DAP_E2E_TESTS_FFX_TEST_DATA = os.environ.get(
+            "DAP_E2E_TESTS_FFX_TEST_DATA", ""
+        )
+        ffx_test_data_dir = (build_root / DAP_E2E_TESTS_FFX_TEST_DATA).resolve()
 
-            # Setup signal handler to wait for zxdb to be ready
-            loop = asyncio.get_running_loop()
-            signal_fut = loop.create_future()
+        ffx_config = (
+            "log.level=debug,"
+            "ffx.isolated=true,"
+            "fastboot.usb.disabled=true,"
+            "discovery.mdns.enabled=false,"
+            f"ffx.subtool-search-paths={ffx_test_data_dir}"
+        )
 
-            def handle_sigusr1() -> None:
-                if not signal_fut.done():
-                    signal_fut.set_result(True)
+        test_outdir = os.environ.get("FUCHSIA_TEST_OUTDIR")
+        if test_outdir:
+            ffx_config += f",log.dir={test_outdir}"
 
-            loop.add_signal_handler(signal.SIGUSR1, handle_sigusr1)
+        extra_args.extend(["--config", ffx_config])
 
-            print("Waiting for SIGUSR1 from zxdb...")
-            try:
-                await asyncio.wait_for(signal_fut, timeout=30.0)
-                print("Received SIGUSR1 from zxdb. Server is ready.")
-            except asyncio.TimeoutError:
-                print("Timed out waiting for SIGUSR1 from zxdb.")
-                if self.proc:
-                    self.proc.terminate()
-                raise RuntimeError("Timed out waiting for DAP server to start")
-            finally:
-                loop.remove_signal_handler(signal.SIGUSR1)
+        device_addr = os.environ.get("FUCHSIA_DEVICE_ADDR", "")
+        if device_addr:
+            extra_args.append("--target")
+            ssh_port = os.environ.get("FUCHSIA_SSH_PORT")
+            if ssh_port:
+                device_addr = f"{device_addr}:{ssh_port}"
+            extra_args.append(device_addr)
 
+        ffx_cmd = FfxCmd(FfxCmd.create_test_inner(get_ffx_bin(), *extra_args))
+        args = [
+            "debug",
+            "connect",
+            "--new-agent",
+            "--",
+            "--enable-debug-adapter",
+            f"--debug-adapter-port={port}",
+            f"--signal-when-ready={os.getpid()}",
+        ]
+
+        self.proc = await ffx_cmd.start(*args)
+        # Setup signal handler to wait for zxdb to be ready
+        loop = asyncio.get_running_loop()
+        signal_fut = loop.create_future()
+
+        def handle_sigusr1() -> None:
+            if not signal_fut.done():
+                signal_fut.set_result(True)
+
+        loop.add_signal_handler(signal.SIGUSR1, handle_sigusr1)
+
+        print("Waiting for SIGUSR1 from zxdb...")
+        try:
+            await asyncio.wait_for(signal_fut, timeout=30.0)
+            print("Received SIGUSR1 from zxdb. Server is ready.")
+        except asyncio.TimeoutError:
+            print("Timed out waiting for SIGUSR1 from zxdb.")
+            if self.proc:
+                self.proc.terminate()
+            raise RuntimeError("Timed out waiting for DAP server to start")
+        finally:
+            loop.remove_signal_handler(signal.SIGUSR1)
         print(f"Connecting to DAP server on port {port}...")
         reader, writer = await asyncio.open_connection("localhost", port)
         self._writer = writer
-
         # Start background task for protocol handling
         self._client_task = asyncio.create_task(
             self.client.run(reader, self.event_queue)
@@ -512,6 +576,10 @@ class DapTestFramework:
                 pass
             except Exception as e:
                 print(f"Teardown: error draining server process: {e}")
+
+        if self._isolate_dir:
+            self._isolate_dir.cleanup()
+            self._isolate_dir = None
 
 
 class DapTestCase(unittest.IsolatedAsyncioTestCase):

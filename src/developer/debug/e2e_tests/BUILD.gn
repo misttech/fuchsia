@@ -165,6 +165,9 @@ if (is_host && has_board) {
 group("tests") {
   testonly = true
   if (has_board) {
-    deps = [ ":zxdb_e2e_tests($host_toolchain)" ]
+    deps = [
+      ":zxdb_e2e_tests($host_toolchain)",
+      "dap_integration_tests:e2e_tests",
+    ]
   }
 }

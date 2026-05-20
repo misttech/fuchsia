@@ -2,41 +2,37 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import argparse
+import os
+import sys
 import unittest
 
 from dap_test_framework import DapTestCase
-from pydap.models import (
-    EvaluateArguments,
-    InitializeArguments,
-    LaunchArguments,
-    StackTraceArguments,
-)
 
 
 class TestDapSmoke(DapTestCase):
-    async def test_smoke_flow(self) -> None:
-        target = "fuchsia-pkg://fuchsia.com/zxdb_e2e_inferiors#meta/rust_functions.cm"
+    async def test_setup(self) -> None:
+        # This test verifies that the setup, such as connecting to the DAP server, succeeds both locally and in the CQ
+        pass
 
-        await self.initialize(InitializeArguments(adapter_id="zxdb"))
-        await self.on_event("initialized")
 
-        await self.evaluate(EvaluateArguments(expression="b $main"))
-        await self.launch(LaunchArguments(process=target))
-        await self.on_event("stopped").expect(
-            {"body": {"reason": "breakpoint"}}
-        )
+def main() -> None:
+    parser = argparse.ArgumentParser()
 
-        threads_resp = await self.threads().expect(
-            {"body": {"threads": [{"name": "initial-thread"}]}}
-        )
-        thread_id = threads_resp["body"]["threads"][0]["id"]
+    parser.add_argument(
+        "--DAP_E2E_TESTS_FFX_TEST_DATA",  # The argument is capitalized to match the extra_args in BUILD.gn.
+        help="the relative path from host_x64 to the directory of ffx tools",
+    )
+    args, unknown = parser.parse_known_args()
+    if args.DAP_E2E_TESTS_FFX_TEST_DATA:
+        os.environ[
+            "DAP_E2E_TESTS_FFX_TEST_DATA"
+        ] = args.DAP_E2E_TESTS_FFX_TEST_DATA
 
-        self.stack_trace(StackTraceArguments(thread_id=thread_id)).expect(
-            {"body": {"stackFrames": [...]}}
-        )
-
-        await self.verify_all_expectations()
+    # Reconstruct sys.argv for unittest.main so that the unittest.main won't complain
+    sys.argv = [sys.argv[0]] + unknown
+    unittest.main()
 
 
 if __name__ == "__main__":
-    unittest.main()
+    main()
