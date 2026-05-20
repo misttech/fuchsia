@@ -32,9 +32,10 @@ use netstack3_base::{
     DeviceIdContext, DeviceIdentifier as _, ErrorAndSerializer, EventContext, FrameDestination,
     HandleableTimer, InstantContext, InterfaceProperties, IpAddressId, IpDeviceAddr,
     IpDeviceAddressIdContext, IpExt, MarkDomain, Marks, Matcher as _, MatcherBindingsTypes,
-    NestedIntoCoreTimerCtx, NetworkSerializationContext, NotFoundError, ResourceCounterContext,
-    RngContext, SendFrameErrorReason, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
-    TimerHandler, TxMetadata as _, TxMetadataBindingsTypes, WeakIpAddressId, WrapBroadcastMarker,
+    NestedIntoCoreTimerCtx, NetworkParsingContext, NetworkSerializationContext, NotFoundError,
+    ResourceCounterContext, RngContext, SendFrameErrorReason, StrongDeviceIdentifier,
+    TimerBindingsTypes, TimerContext, TimerHandler, TxMetadata as _, TxMetadataBindingsTypes,
+    WeakIpAddressId, WrapBroadcastMarker,
 };
 use netstack3_filter::{
     self as filter, ConnectionDirection, ConntrackConnection, FilterBindingsContext,
@@ -452,7 +453,7 @@ where
         src_ip: I::RecvSrcAddr,
         dst_ip: SpecifiedAddr<I::Addr>,
         buffer: B,
-        info: &LocalDeliveryPacketInfo<I, H>,
+        info: &mut LocalDeliveryPacketInfo<I, H>,
         early_demux_socket: Option<Self::EarlyDemuxSocket>,
     ) -> Result<(), (B, I::IcmpError)>;
 }
@@ -1775,7 +1776,7 @@ pub trait IpTransportDispatchContext<I: IpLayerIpExt, BC>: DeviceIdContext<AnyDe
         dst_ip: SpecifiedAddr<I::Addr>,
         proto: I::Proto,
         body: B,
-        info: &LocalDeliveryPacketInfo<I, H>,
+        info: &mut LocalDeliveryPacketInfo<I, H>,
         early_demux_socket: Option<Self::EarlyDemuxSocket>,
     ) -> Result<(), I::IcmpError>;
 }
@@ -2677,7 +2678,7 @@ fn dispatch_receive_ipv4_packet<
     let (prefix, options, body) = packet.parts_with_body_mut();
     let buffer = Buf::new(body, ..);
     let header_info = Ipv4HeaderInfo { prefix, options: options.as_ref() };
-    let receive_info = LocalDeliveryPacketInfo { meta: receive_meta, header_info, marks };
+    let mut receive_info = LocalDeliveryPacketInfo { meta: receive_meta, header_info, marks };
 
     core_ctx
         .dispatch_receive_ip_packet(
@@ -2687,7 +2688,7 @@ fn dispatch_receive_ipv4_packet<
             dst_ip,
             proto,
             buffer,
-            &receive_info,
+            &mut receive_info,
             early_demux_socket,
         )
         .or_else(|icmp_error| {
@@ -2820,7 +2821,7 @@ fn dispatch_receive_ipv6_packet<
     let (fixed, extension, body) = packet.parts_with_body_mut();
     let buffer = Buf::new(body, ..);
     let header_info = Ipv6HeaderInfo { fixed, extension };
-    let receive_info = LocalDeliveryPacketInfo { meta, header_info, marks };
+    let mut receive_info = LocalDeliveryPacketInfo { meta, header_info, marks };
 
     core_ctx
         .dispatch_receive_ip_packet(
@@ -2830,7 +2831,7 @@ fn dispatch_receive_ipv6_packet<
             dst_ip,
             proto,
             buffer,
-            &receive_info,
+            &mut receive_info,
             early_demux_socket,
         )
         .or_else(|icmp_error| {
@@ -3498,6 +3499,7 @@ pub fn receive_ipv4_packet<
     device: &CC::DeviceId,
     frame_dst: Option<FrameDestination>,
     device_ip_layer_metadata: DeviceIpLayerMetadata<BC>,
+    parsing_context: NetworkParsingContext,
     buffer: B,
 ) {
     if !core_ctx.is_ip_device_enabled(&device) {
@@ -3603,6 +3605,7 @@ pub fn receive_ipv4_packet<
                 // being delivered to a transparent proxy.
                 broadcast: None,
                 transparent_override: Some(TransparentLocalDelivery { addr, port }),
+                parsing_context,
             };
 
             // Short-circuit the routing process and override local demux, providing a local
@@ -3675,6 +3678,7 @@ pub fn receive_ipv4_packet<
                 let receive_meta = ReceiveIpPacketMeta {
                     broadcast: address_status.to_broadcast_marker(),
                     transparent_override: None,
+                    parsing_context,
                 };
                 dispatch_receive_ipv4_packet(
                     core_ctx,
@@ -3718,6 +3722,7 @@ pub fn receive_ipv4_packet<
             let receive_meta = ReceiveIpPacketMeta {
                 broadcast: address_status.to_broadcast_marker(),
                 transparent_override: None,
+                parsing_context,
             };
             dispatch_receive_ipv4_packet(
                 core_ctx,
@@ -3887,6 +3892,7 @@ pub fn receive_ipv6_packet<
     device: &CC::DeviceId,
     frame_dst: Option<FrameDestination>,
     device_ip_layer_metadata: DeviceIpLayerMetadata<BC>,
+    parsing_context: NetworkParsingContext,
     buffer: B,
 ) {
     if !core_ctx.is_ip_device_enabled(&device) {
@@ -4044,6 +4050,7 @@ pub fn receive_ipv6_packet<
             let receive_meta = ReceiveIpPacketMeta {
                 broadcast: None,
                 transparent_override: Some(TransparentLocalDelivery { addr, port }),
+                parsing_context,
             };
 
             // Short-circuit the routing process and override local demux, providing a local
@@ -4112,8 +4119,11 @@ pub fn receive_ipv6_packet<
 
             // If we also have an interest in the packet, deliver it locally.
             if let Some(_) = address_status {
-                let receive_meta =
-                    ReceiveIpPacketMeta { broadcast: None, transparent_override: None };
+                let receive_meta = ReceiveIpPacketMeta {
+                    broadcast: None,
+                    transparent_override: None,
+                    parsing_context,
+                };
 
                 dispatch_receive_ipv6_packet(
                     core_ctx,
@@ -4176,7 +4186,11 @@ pub fn receive_ipv6_packet<
                         InternalForwarding::NotUsed => {}
                     }
 
-                    let meta = ReceiveIpPacketMeta { broadcast: None, transparent_override: None };
+                    let meta = ReceiveIpPacketMeta {
+                        broadcast: None,
+                        transparent_override: None,
+                        parsing_context,
+                    };
                     dispatch_receive_ipv6_packet(
                         core_ctx,
                         bindings_ctx,

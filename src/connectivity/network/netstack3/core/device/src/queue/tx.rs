@@ -12,7 +12,8 @@ use derivative::Derivative;
 use log::trace;
 use netstack3_base::sync::Mutex;
 use netstack3_base::{
-    Device, DeviceIdContext, ErrorAndSerializer, NetworkSerializationContext, NetworkSerializer,
+    ChecksumOffloadSpec, Device, DeviceIdContext, ErrorAndSerializer, NetworkSerializationContext,
+    NetworkSerializer,
 };
 use packet::{Buf, FragmentedBuffer as _, NoReuseBufferProvider, ReusableBuffer, new_buf_vec};
 
@@ -28,6 +29,7 @@ use crate::internal::socket::{DeviceSocketHandler, ParseSentFrameError, SentFram
 pub struct TransmitQueueState<Meta, Buffer, Allocator> {
     pub(super) allocator: ByteSliceAllocator<Allocator, Buffer>,
     pub(super) queue: Option<fifo::Queue<Meta, Buffer>>,
+    pub(super) checksum_offload_spec: ChecksumOffloadSpec,
 }
 
 /// Holds queue and dequeue state for the transmit queue.
@@ -44,12 +46,13 @@ pub struct TransmitQueue<Meta, Buffer, Allocator> {
 }
 
 impl<Meta, Buffer, Allocator> TransmitQueue<Meta, Buffer, Allocator> {
-    pub(crate) fn new(allocator: Allocator) -> Self {
+    pub(crate) fn new(allocator: Allocator, checksum_offload_spec: ChecksumOffloadSpec) -> Self {
         Self {
             deque: Mutex::new(DequeueState::default()),
             queue: Mutex::new(TransmitQueueState {
                 allocator: ByteSliceAllocator::new(allocator),
                 queue: None,
+                checksum_offload_spec,
             }),
         }
     }
@@ -278,8 +281,9 @@ impl<
         S: NetworkSerializer,
         S::Buffer: ReusableBuffer,
     {
-        let (len, result) =
-            self.with_transmit_queue_mut(device_id, |TransmitQueueState { allocator, queue }| {
+        let (len, result) = self.with_transmit_queue_mut(
+            device_id,
+            |TransmitQueueState { allocator, queue, checksum_offload_spec }| {
                 let queue_len = queue.as_ref().map_or(0, |q| q.len());
                 let inserter = match queue {
                     None => None,
@@ -288,9 +292,10 @@ impl<
                         None => return Err(TransmitQueueFrameError::QueueFull(body)),
                     },
                 };
+                let mut context = NetworkSerializationContext::new(checksum_offload_spec.clone());
                 let body = body
                     .serialize_outer(
-                        &mut NetworkSerializationContext::default(),
+                        &mut context,
                         NoReuseBufferProvider(BufferAllocAdaptor {
                             allocator: &mut *allocator,
                             queue_len,
@@ -304,6 +309,9 @@ impl<
                             ),
                         })
                     })?;
+                // TODO(https://fxbug.dev/512101182): Insert the checksum
+                // offloading result into the queue along with the buffer so
+                // that it can be passed down to netdevice.
                 let len = body.len();
                 let result = insert_and_notify::<_, _, CC>(
                     bindings_ctx,
@@ -313,7 +321,8 @@ impl<
                     allocator.get_buffer(),
                 );
                 Ok((len, result))
-            })?;
+            },
+        )?;
 
         handle_post_enqueue(self, bindings_ctx, device_id, result)
             .map(|()| len)

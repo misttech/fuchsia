@@ -18,8 +18,8 @@ use netstack3_base::socket::{
 };
 use netstack3_base::{
     BidirectionalConverter as _, Control, CounterContext, CtxPair, EitherDeviceId, IpDeviceAddr,
-    Marks, Mss, NetworkParsingContext, NotFoundError, Payload, Segment, SegmentHeader, SeqNum,
-    StrongDeviceIdentifier, VerifiedTcpSegment, WeakDeviceIdentifier,
+    Marks, Mss, NotFoundError, Payload, Segment, SegmentHeader, SeqNum, StrongDeviceIdentifier,
+    VerifiedTcpSegment, WeakDeviceIdentifier,
 };
 use netstack3_filter::{
     FilterIpExt, SocketIngressFilterResult, SocketOpsFilter, TransportPacketSerializer,
@@ -135,11 +135,11 @@ where
         remote_ip: I::RecvSrcAddr,
         local_ip: SpecifiedAddr<I::Addr>,
         mut buffer: B,
-        info: &LocalDeliveryPacketInfo<I, H>,
+        info: &mut LocalDeliveryPacketInfo<I, H>,
         early_demux_socket: Option<Self::EarlyDemuxSocket>,
     ) -> Result<(), (B, I::IcmpError)> {
         let LocalDeliveryPacketInfo { meta, header_info, marks } = info;
-        let ReceiveIpPacketMeta { broadcast, transparent_override } = meta;
+        let ReceiveIpPacketMeta { broadcast, transparent_override, parsing_context } = meta;
         if let Some(delivery) = transparent_override {
             warn!(
                 "TODO(https://fxbug.dev/337009139): transparent proxy not supported for TCP \
@@ -188,7 +188,7 @@ where
         let packet = match buffer.parse_with::<_, TcpSegment<_>>(TcpParseArgs::with_context(
             remote_ip.addr(),
             local_ip.addr(),
-            &mut NetworkParsingContext::default(),
+            parsing_context,
         )) {
             Ok(packet) => packet,
             Err(err) => {

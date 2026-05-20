@@ -175,6 +175,7 @@ where
             frame_dst,
             ip_layer_metadata,
             marker: IpVersionMarker { .. },
+            parsing_context,
         } = self;
         let device = device.into();
         match I::VERSION {
@@ -184,6 +185,7 @@ where
                 &device,
                 frame_dst,
                 ip_layer_metadata,
+                parsing_context,
                 frame,
             ),
             IpVersion::V6 => ip::receive_ipv6_packet(
@@ -192,6 +194,7 @@ where
                 &device,
                 frame_dst,
                 ip_layer_metadata,
+                parsing_context,
                 frame,
             ),
         }

@@ -507,7 +507,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
         dst_ip: SpecifiedAddr<Ipv4Addr>,
         proto: Ipv4Proto,
         body: B,
-        info: &LocalDeliveryPacketInfo<Ipv4, H>,
+        info: &mut LocalDeliveryPacketInfo<Ipv4, H>,
         early_demux_socket: Option<Self::EarlyDemuxSocket>,
     ) -> Result<(), Icmpv4Error> {
         match proto {
@@ -613,7 +613,7 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::IcmpAllSocketsSet<
         dst_ip: SpecifiedAddr<Ipv6Addr>,
         proto: Ipv6Proto,
         body: B,
-        info: &LocalDeliveryPacketInfo<Ipv6, H>,
+        info: &mut LocalDeliveryPacketInfo<Ipv6, H>,
         early_demux_socket: Option<Self::EarlyDemuxSocket>,
     ) -> Result<(), Icmpv6Error> {
         match proto {

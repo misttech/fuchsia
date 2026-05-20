@@ -80,7 +80,7 @@ where
 
                 let ret = tx_queue_ctx.with_transmit_queue_mut(
                     device_id,
-                    |TransmitQueueState { allocator: _, queue }| {
+                    |TransmitQueueState { allocator: _, queue, checksum_offload_spec: _ }| {
                         queue.as_mut().map(|q| q.dequeue_into(dequed_packets, batch_size.into()))
                     },
                 );
@@ -108,7 +108,11 @@ where
                             // delivered to packet sockets.
                             tx_queue_ctx.with_transmit_queue_mut(
                                 device_id,
-                                |TransmitQueueState { allocator: _, queue }| {
+                                |TransmitQueueState {
+                                     allocator: _,
+                                     queue,
+                                     checksum_offload_spec: _,
+                                 }| {
                                     queue.as_mut().unwrap().requeue_items(dequed_packets);
                                 },
                             );
@@ -166,7 +170,7 @@ where
 
                 let prev_queue = tx_queue_ctx.with_transmit_queue_mut(
                     device_id,
-                    |TransmitQueueState { allocator: _, queue }| {
+                    |TransmitQueueState { allocator: _, queue, checksum_offload_spec: _ }| {
                         match config {
                             TransmitQueueConfiguration::None => core::mem::take(queue),
                             TransmitQueueConfiguration::Fifo => {

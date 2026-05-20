@@ -5974,7 +5974,7 @@ mod tests {
                         Ipv4::recv_src_addr(*meta.src_ip),
                         meta.dst_ip,
                         buffer,
-                        &LocalDeliveryPacketInfo {
+                        &mut LocalDeliveryPacketInfo {
                             marks: core_ctx.recv_packet_marks,
                             ..Default::default()
                         },
@@ -5998,7 +5998,7 @@ mod tests {
                         Ipv6::recv_src_addr(*meta.src_ip),
                         meta.dst_ip,
                         buffer,
-                        &LocalDeliveryPacketInfo {
+                        &mut LocalDeliveryPacketInfo {
                             marks: core_ctx.recv_packet_marks,
                             ..Default::default()
                         },
@@ -10022,7 +10022,7 @@ mod tests {
             Ipv6::recv_src_addr(REMOTE_IP),
             SpecifiedAddr::new(LOCAL_IP).unwrap(),
             syn.clone(),
-            &Default::default(),
+            &mut Default::default(),
             None,
         )
         .expect("failed to deliver bytes");
@@ -10034,7 +10034,7 @@ mod tests {
             Ipv6::recv_src_addr(REMOTE_IP),
             SpecifiedAddr::new(LOCAL_IP).unwrap(),
             syn,
-            &Default::default(),
+            &mut Default::default(),
             None,
         )
         .expect("failed to deliver bytes");

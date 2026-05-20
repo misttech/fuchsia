@@ -12,10 +12,10 @@ use log::debug;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6, Mtu};
 use netstack3_base::sync::{Mutex, RwLock};
 use netstack3_base::{
-    BroadcastIpExt, CoreTimerContext, Device, DeviceIdContext, NetworkSerializer,
-    ReceivableFrameMeta, RecvFrameContext, RecvIpFrameMeta, ResourceCounterContext, SendFrameError,
-    SendFrameErrorReason, SendableFrameMeta, TimerContext, TxMetadataBindingsTypes,
-    WeakDeviceIdentifier,
+    BroadcastIpExt, ChecksumOffloadSpec, CoreTimerContext, Device, DeviceIdContext,
+    NetworkParsingContext, NetworkSerializer, ReceivableFrameMeta, RecvFrameContext,
+    RecvIpFrameMeta, ResourceCounterContext, SendFrameError, SendFrameErrorReason,
+    SendableFrameMeta, TimerContext, TxMetadataBindingsTypes, WeakDeviceIdentifier,
 };
 use netstack3_ip::{DeviceIpLayerMetadata, IpPacketDestination};
 use packet::BufferMut;
@@ -126,7 +126,7 @@ impl DeviceStateSpec for PureIpDevice {
     {
         PureIpDeviceState {
             dynamic_state: RwLock::new(DynamicPureIpDeviceState { mtu }),
-            tx_queue: TransmitQueue::new(tx_allocator),
+            tx_queue: TransmitQueue::new(tx_allocator, ChecksumOffloadSpec::default()),
             counters: PureIpDeviceCounters::default(),
         }
     }
@@ -210,6 +210,7 @@ where
                         device_id,
                         None,
                         DeviceIpLayerMetadata::default(),
+                        NetworkParsingContext::default(),
                     ),
                     buffer,
                 )
@@ -224,6 +225,7 @@ where
                         device_id,
                         None,
                         DeviceIpLayerMetadata::default(),
+                        NetworkParsingContext::default(),
                     ),
                     buffer,
                 )

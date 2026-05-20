@@ -15,9 +15,10 @@ use net_types::ethernet::Mac;
 use net_types::ip::{Ipv4, Ipv6, Mtu};
 use netstack3_base::sync::Mutex;
 use netstack3_base::{
-    AnyDevice, BroadcastIpExt, CoreTimerContext, Device, DeviceIdAnyCompatContext, DeviceIdContext,
-    FrameDestination, NetworkSerializer, RecvFrameContext, RecvIpFrameMeta, ResourceCounterContext,
-    SendFrameError, SendFrameErrorReason, SendableFrameMeta, StrongDeviceIdentifier, TimerContext,
+    AnyDevice, BroadcastIpExt, ChecksumOffloadSpec, CoreTimerContext, Device,
+    DeviceIdAnyCompatContext, DeviceIdContext, FrameDestination, NetworkParsingContext,
+    NetworkSerializer, RecvFrameContext, RecvIpFrameMeta, ResourceCounterContext, SendFrameError,
+    SendFrameErrorReason, SendableFrameMeta, StrongDeviceIdentifier, TimerContext,
     TxMetadataBindingsTypes, WeakDeviceIdentifier,
 };
 use netstack3_ip::{DeviceIpLayerMetadata, IpPacketDestination};
@@ -98,7 +99,7 @@ impl DeviceStateSpec for LoopbackDevice {
             counters: Default::default(),
             mtu,
             rx_queue: Default::default(),
-            tx_queue: TransmitQueue::new(tx_allocator),
+            tx_queue: TransmitQueue::new(tx_allocator, ChecksumOffloadSpec::default()),
         }
     }
 
@@ -320,6 +321,7 @@ where
                         target_device,
                         Some(frame_dest),
                         ip_layer_metadata,
+                        NetworkParsingContext::default(),
                     ),
                     buf,
                 );
@@ -334,6 +336,7 @@ where
                         target_device,
                         Some(frame_dest),
                         ip_layer_metadata,
+                        NetworkParsingContext::default(),
                     ),
                     buf,
                 );

@@ -13,9 +13,9 @@ use core::fmt::Debug;
 use packet::{BufferMut, SerializeError};
 use thiserror::Error;
 
-use crate::NetworkSerializer;
 use crate::error::ErrorAndSerializer;
 use crate::socket::SocketCookie;
+use crate::{NetworkParsingContext, NetworkSerializer};
 
 /// A context for receiving frames.
 ///
@@ -221,6 +221,8 @@ pub struct RecvIpFrameMeta<D, M, I: Ip> {
     pub ip_layer_metadata: M,
     /// A marker for the Ip version in this frame.
     pub marker: IpVersionMarker<I>,
+    /// The parsing context for the received frame.
+    pub parsing_context: NetworkParsingContext,
 }
 
 impl<D, M, I: Ip> RecvIpFrameMeta<D, M, I> {
@@ -230,8 +232,15 @@ impl<D, M, I: Ip> RecvIpFrameMeta<D, M, I> {
         device: D,
         frame_dst: Option<FrameDestination>,
         ip_layer_metadata: M,
+        parsing_context: NetworkParsingContext,
     ) -> RecvIpFrameMeta<D, M, I> {
-        RecvIpFrameMeta { device, frame_dst, ip_layer_metadata, marker: IpVersionMarker::new() }
+        RecvIpFrameMeta {
+            device,
+            frame_dst,
+            ip_layer_metadata,
+            marker: IpVersionMarker::new(),
+            parsing_context,
+        }
     }
 }
 

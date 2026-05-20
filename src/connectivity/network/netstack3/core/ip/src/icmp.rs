@@ -967,11 +967,11 @@ impl<
         src_ip: Ipv4SourceAddr,
         dst_ip: SpecifiedAddr<Ipv4Addr>,
         mut buffer: B,
-        info: &LocalDeliveryPacketInfo<Ipv4, H>,
+        info: &mut LocalDeliveryPacketInfo<Ipv4, H>,
         _early_demux_socket: Option<Never>,
     ) -> Result<(), (B, Icmpv4Error)> {
         let LocalDeliveryPacketInfo { meta, header_info: _, marks } = info;
-        let ReceiveIpPacketMeta { broadcast: _, transparent_override } = meta;
+        let ReceiveIpPacketMeta { broadcast: _, transparent_override, parsing_context: _ } = meta;
         if let Some(delivery) = transparent_override {
             unreachable!(
                 "cannot perform transparent local delivery {delivery:?} to an ICMP socket; \
@@ -1978,11 +1978,11 @@ impl<
         src_ip: Ipv6SourceAddr,
         dst_ip: SpecifiedAddr<Ipv6Addr>,
         mut buffer: B,
-        info: &LocalDeliveryPacketInfo<Ipv6, H>,
+        info: &mut LocalDeliveryPacketInfo<Ipv6, H>,
         _early_demux_socket: Option<Never>,
     ) -> Result<(), (B, Icmpv6Error)> {
         let LocalDeliveryPacketInfo { meta, header_info, marks } = info;
-        let ReceiveIpPacketMeta { broadcast: _, transparent_override } = meta;
+        let ReceiveIpPacketMeta { broadcast: _, transparent_override, parsing_context: _ } = meta;
         if let Some(delivery) = transparent_override {
             unreachable!(
                 "cannot perform transparent local delivery {delivery:?} to an ICMP socket; \
@@ -2841,7 +2841,7 @@ mod tests {
             _src_ip: I::RecvSrcAddr,
             _dst_ip: SpecifiedAddr<I::Addr>,
             _buffer: B,
-            _info: &LocalDeliveryPacketInfo<I, H>,
+            _info: &mut LocalDeliveryPacketInfo<I, H>,
             _early_demux_socket: Option<Never>,
         ) -> Result<(), (B, I::IcmpError)> {
             unimplemented!()
@@ -3317,7 +3317,7 @@ mod tests {
                     .wrap_body(Buf::new(original_packet, ..))
                     .serialize_vec_outer(&mut NetworkSerializationContext::default())
                     .unwrap(),
-                &LocalDeliveryPacketInfo::default(),
+                &mut LocalDeliveryPacketInfo::default(),
                 None,
             )
             .unwrap();
@@ -3584,7 +3584,7 @@ mod tests {
                     .wrap_body(Buf::new(original_packet, ..))
                     .serialize_vec_outer(&mut NetworkSerializationContext::default())
                     .unwrap(),
-                &LocalDeliveryPacketInfo::default(),
+                &mut LocalDeliveryPacketInfo::default(),
                 None,
             )
             .unwrap();

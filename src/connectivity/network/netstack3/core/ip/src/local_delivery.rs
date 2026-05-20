@@ -8,7 +8,7 @@ use core::num::NonZeroU16;
 
 use net_types::SpecifiedAddr;
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6};
-use netstack3_base::{IpExt, Marks};
+use netstack3_base::{IpExt, Marks, NetworkParsingContext};
 use packet_formats::ip::DscpAndEcn;
 use packet_formats::ipv4::Ipv4Header as _;
 use packet_formats::ipv4::options::Ipv4Option;
@@ -34,6 +34,9 @@ pub struct ReceiveIpPacketMeta<I: IpExt> {
 
     /// Destination overrides for the transparent proxy.
     pub transparent_override: Option<TransparentLocalDelivery<I>>,
+
+    /// The parsing context for the received packet.
+    pub parsing_context: NetworkParsingContext,
 }
 
 /// Information for an incoming packet.
@@ -142,7 +145,11 @@ pub(crate) mod testutil {
     /// prevent accidental usage.
     impl<I: IpExt> Default for ReceiveIpPacketMeta<I> {
         fn default() -> Self {
-            Self { broadcast: None, transparent_override: None }
+            Self {
+                broadcast: None,
+                transparent_override: None,
+                parsing_context: NetworkParsingContext::default(),
+            }
         }
     }
 

@@ -1461,11 +1461,11 @@ fn receive_ip_packet<
     src_ip: I::RecvSrcAddr,
     dst_ip: SpecifiedAddr<I::Addr>,
     mut buffer: B,
-    info: &LocalDeliveryPacketInfo<I, H>,
+    info: &mut LocalDeliveryPacketInfo<I, H>,
     early_demux_socket: Option<DualStackUdpSocketId<I, CC::WeakDeviceId, BC>>,
 ) -> Result<(), (B, I::IcmpError)> {
     let LocalDeliveryPacketInfo { meta, header_info, marks: _ } = info;
-    let ReceiveIpPacketMeta { broadcast, transparent_override } = meta;
+    let ReceiveIpPacketMeta { broadcast, transparent_override, parsing_context } = meta;
 
     trace_duration!("udp::receive_ip_packet");
     CounterContext::<UdpCountersWithoutSocket<I>>::counters(core_ctx).rx.increment();
@@ -1475,7 +1475,7 @@ fn receive_ip_packet<
     let Ok(packet) = buffer.parse_with::<_, UdpPacket<_>>(UdpParseArgs::with_context(
         src_ip,
         dst_ip.get(),
-        &mut NetworkParsingContext::default(),
+        parsing_context,
     )) else {
         // There isn't much we can do if the UDP packet is
         // malformed.
@@ -1918,7 +1918,7 @@ impl<
         src_ip: I::RecvSrcAddr,
         dst_ip: SpecifiedAddr<I::Addr>,
         buffer: B,
-        info: &LocalDeliveryPacketInfo<I, H>,
+        info: &mut LocalDeliveryPacketInfo<I, H>,
         early_demux_socket: Option<Self::EarlyDemuxSocket>,
     ) -> Result<(), (B, I::IcmpError)> {
         receive_ip_packet::<I, _, _, _, _>(
@@ -3600,7 +3600,7 @@ pub(crate) mod testutils {
             src_ip: I::RecvSrcAddr,
             dst_ip: SpecifiedAddr<I::Addr>,
             buffer: B,
-            info: &LocalDeliveryPacketInfo<I, H>,
+            info: &mut LocalDeliveryPacketInfo<I, H>,
             early_demux_socket: Option<Self::EarlyDemuxSocket>,
         ) -> Result<(), (B, I::IcmpError)> {
             receive_ip_packet::<I, _, _, _, _>(
@@ -3828,7 +3828,7 @@ mod tests {
             I::into_recv_src_addr(src_ip),
             SpecifiedAddr::new(dst_ip).unwrap(),
             buffer,
-            &LocalDeliveryPacketInfo {
+            &mut LocalDeliveryPacketInfo {
                 header_info: FakeIpHeaderInfo { dscp_and_ecn, ..Default::default() },
                 ..Default::default()
             },

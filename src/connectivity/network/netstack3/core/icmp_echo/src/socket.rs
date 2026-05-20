@@ -1151,11 +1151,11 @@ impl<I: IpExt, BC: IcmpEchoBindingsContext<I, CC::DeviceId>, CC: IcmpEchoBoundSt
         src_ip: I::RecvSrcAddr,
         dst_ip: SpecifiedAddr<I::Addr>,
         mut buffer: B,
-        info: &LocalDeliveryPacketInfo<I, H>,
+        info: &mut LocalDeliveryPacketInfo<I, H>,
         _early_demux_socket: Option<Never>,
     ) -> Result<(), (B, I::IcmpError)> {
         let LocalDeliveryPacketInfo { meta, header_info: _, marks: _ } = info;
-        let ReceiveIpPacketMeta { broadcast: _, transparent_override } = meta;
+        let ReceiveIpPacketMeta { broadcast: _, transparent_override, parsing_context: _ } = meta;
         if let Some(delivery) = transparent_override.as_ref() {
             unreachable!(
                 "cannot perform transparent local delivery {delivery:?} to an ICMP socket; \
@@ -1629,7 +1629,7 @@ mod tests {
             I::RecvSrcAddr::new(src_ip.get()).unwrap(),
             dst_ip,
             reply.clone(),
-            &LocalDeliveryPacketInfo::default(),
+            &mut LocalDeliveryPacketInfo::default(),
             None,
         )
         .unwrap();
@@ -1680,7 +1680,7 @@ mod tests {
             I::RecvSrcAddr::new(I::TEST_ADDRS.remote_ip.get()).unwrap(),
             I::TEST_ADDRS.local_ip,
             reply,
-            &LocalDeliveryPacketInfo::default(),
+            &mut LocalDeliveryPacketInfo::default(),
             None,
         )
         .unwrap();
@@ -1719,7 +1719,7 @@ mod tests {
             I::RecvSrcAddr::new(src_ip.get()).unwrap(),
             dst_ip,
             reply,
-            &LocalDeliveryPacketInfo::default(),
+            &mut LocalDeliveryPacketInfo::default(),
             None,
         )
         .unwrap();

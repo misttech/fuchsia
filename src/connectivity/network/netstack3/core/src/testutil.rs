@@ -38,9 +38,9 @@ use netstack3_base::testutil::{
 use netstack3_base::{
     AddressResolutionFailed, CtxPair, DeferredResourceRemovalContext, EventContext,
     FrameDestination, InstantBindingsTypes, InstantContext, IpDeviceAddr, LinkDevice, MarkDomain,
-    Marks, MatcherBindingsTypes, NotFoundError, ReferenceNotifiers, RemoveResourceResult,
-    RngContext, TimerBindingsTypes, TimerContext, TimerHandler, TxMetadataBindingsTypes,
-    WorkQueueReport,
+    Marks, MatcherBindingsTypes, NetworkParsingContext, NotFoundError, ReferenceNotifiers,
+    RemoveResourceResult, RngContext, TimerBindingsTypes, TimerContext, TimerHandler,
+    TxMetadataBindingsTypes, WorkQueueReport,
 };
 use netstack3_datagram::PendingDatagramSocketError;
 use netstack3_device::ethernet::{
@@ -314,6 +314,9 @@ where
                 device,
                 frame_dst,
                 DeviceIpLayerMetadata::with_marks(marks),
+                // TODO(https://fxbug.dev/512101182): Support receiving an IP
+                // packet with a user-supplied parsing context.
+                NetworkParsingContext::default(),
                 buffer,
             ),
             IpVersion::V6 => ip::receive_ipv6_packet(
@@ -322,6 +325,9 @@ where
                 device,
                 frame_dst,
                 DeviceIpLayerMetadata::with_marks(marks),
+                // TODO(https://fxbug.dev/512101182): Support receiving an IP
+                // packet with a user-supplied parsing context.
+                NetworkParsingContext::default(),
                 buffer,
             ),
         }

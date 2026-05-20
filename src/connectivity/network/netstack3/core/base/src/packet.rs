@@ -444,7 +444,7 @@ impl ChecksumRxOffloading {
 }
 
 /// Context for parsing network packets in netstack3.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct NetworkParsingContext {
     /// Hardware checksum offloading context.
     checksum_offload: ChecksumRxOffloading,
