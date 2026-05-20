@@ -42,10 +42,7 @@ pub mod tests {
         Anon, FdFlags, FdNumber, FileHandle, FileObject, NamespaceNode, anon_fs,
     };
     use starnix_logging::log_warn;
-    use starnix_sync::{
-        BinderProcessSharedMemoryLevel, FileOpsCore, InterruptibleEvent, Locked,
-        ResourceAccessorLevel, Unlocked,
-    };
+    use starnix_sync::{FileOpsCore, InterruptibleEvent, Locked, ResourceAccessorLevel, Unlocked};
     use starnix_types::convert::IntoFidl;
     use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef};
     use starnix_types::user_buffer::UserBuffer;
@@ -151,11 +148,8 @@ pub mod tests {
             }
         }
 
-        fn lock_shared_memory(
-            &self,
-        ) -> starnix_sync::MappedLockDepGuard<'_, SharedMemory, BinderProcessSharedMemoryLevel>
-        {
-            starnix_sync::LockDepGuard::map(self.proc.shared_memory.lock(), |value| {
+        fn lock_shared_memory(&self) -> starnix_sync::MappedMutexGuard<'_, SharedMemory> {
+            starnix_sync::MutexGuard::map(self.proc.shared_memory.lock(), |value| {
                 value.as_mut().unwrap()
             })
         }
@@ -4264,7 +4258,7 @@ pub mod tests {
             );
 
             // Freeze the receiver process.
-            receiver.proc.freeze_state.lock().freeze();
+            receiver.proc.lock().freeze();
 
             // Check that there is a frozen reply command for the sending thread.
             assert!(sender.thread.lock().command_queue.commands.is_empty());
@@ -4413,7 +4407,7 @@ pub mod tests {
                 Some(Command::FrozenBinder(binder_frozen_state_info { is_frozen: 0, .. }))
             );
 
-            owner.proc.freeze_state.lock().freeze();
+            owner.proc.lock().freeze();
 
             // The client process should have a notification waiting.
             assert_matches!(
@@ -4484,7 +4478,7 @@ pub mod tests {
                 state.command_queue.waiters.wait_async(&fake_waiter);
             }
 
-            owner.proc.freeze_state.lock().freeze();
+            owner.proc.lock().freeze();
 
             // The client thread should have no notification.
             assert!(client.thread.lock().command_queue.is_empty());

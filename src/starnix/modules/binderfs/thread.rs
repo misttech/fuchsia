@@ -13,7 +13,7 @@ use starnix_core::task::{
 };
 
 use starnix_logging::{log_trace, log_warn, trace_instaflow_begin, trace_instaflow_end};
-use starnix_sync::{LockDepGuard, LockDepMutex, TerminalLock, lockdep_ordered_lock};
+use starnix_sync::{Mutex, MutexGuard, ordered_lock};
 use starnix_uapi::vfs::FdEvents;
 
 use crossbeam::queue::SegQueue;
@@ -156,7 +156,7 @@ pub struct BinderThread {
     pub thread: Arc<zx::Thread>,
 
     /// The mutable state of the binder thread, protected by a single lock.
-    pub state: LockDepMutex<BinderThreadState, TerminalLock>,
+    pub state: Mutex<BinderThreadState>,
 
     /// A hint as to the registration state of the thread. This is eventually consistent with the
     /// state protected by the lock.
@@ -179,7 +179,7 @@ impl BinderThread {
         let inner_state = BinderThreadState::new(tid, binder_proc.base.identifier);
         let command_queue_waiters = inner_state.command_queue.waiters.clone();
         let available_threads = binder_proc.base.available_threads.clone();
-        let state = LockDepMutex::new(inner_state);
+        let state = Mutex::new(inner_state);
 
         OwnedRef::new_cyclic(|weak_self| Self {
             weak_self,
@@ -201,7 +201,7 @@ impl BinderThread {
         t1: &'a Self,
         t2: &'a Self,
     ) -> (BinderThreadGuard<'a>, BinderThreadGuard<'a>) {
-        let (g1, g2) = lockdep_ordered_lock(&t1.state, &t2.state);
+        let (g1, g2) = ordered_lock(&t1.state, &t2.state);
         (BinderThreadGuard { guard: g1, thread: t1 }, BinderThreadGuard { guard: g2, thread: t2 })
     }
 }
@@ -237,7 +237,7 @@ pub struct BinderThreadState {
 }
 
 pub struct BinderThreadGuard<'a> {
-    guard: LockDepGuard<'a, BinderThreadState, TerminalLock>,
+    guard: MutexGuard<'a, BinderThreadState>,
     thread: &'a BinderThread,
 }
 

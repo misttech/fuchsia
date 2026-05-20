@@ -9,7 +9,7 @@ use bitflags::bitflags;
 use starnix_core::task::SchedulerState;
 use starnix_core::vfs::FdNumber;
 use starnix_logging::{log_error, log_trace, log_warn, track_stub};
-use starnix_sync::{LockDepGuard, LockDepMutex, TerminalLock};
+use starnix_sync::{Mutex, MutexGuard};
 use starnix_types::ownership::{DropGuard, Releasable, WeakRef};
 use starnix_uapi::arc_key::ArcKey;
 use starnix_uapi::errors::{Errno, errno, error};
@@ -436,7 +436,7 @@ pub struct BinderObject {
     /// The flags for the binder object.
     pub flags: BinderObjectFlags,
     /// Mutable state for the binder object, protected behind a mutex.
-    state: LockDepMutex<BinderObjectMutableState, TerminalLock>,
+    state: Mutex<BinderObjectMutableState>,
 }
 
 /// Assert that a dropped object from a live process has no reference.
@@ -551,7 +551,7 @@ impl BinderObject {
             owner: owner.weak_self.clone(),
             local,
             flags,
-            state: LockDepMutex::new(BinderObjectMutableState {
+            state: Mutex::new(BinderObjectMutableState {
                 strong_count: ObjectReferenceCount::WaitingAck(1),
                 ..Default::default()
             }),
@@ -573,7 +573,7 @@ impl BinderObject {
     }
 
     /// Locks the mutable state of the binder object for exclusive access.
-    pub fn lock(&self) -> LockDepGuard<'_, BinderObjectMutableState, TerminalLock> {
+    pub fn lock(&self) -> MutexGuard<'_, BinderObjectMutableState> {
         self.state.lock()
     }
 
