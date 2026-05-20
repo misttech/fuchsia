@@ -2,7 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_sync::{MappedMutexGuard, MappedRwLockReadGuard, MappedRwLockWriteGuard, MutexGuard, RwLockReadGuard, RwLockWriteGuard};
+use fuchsia_sync::{
+    MappedMutexGuard, MappedRwLockReadGuard, MappedRwLockWriteGuard, MutexGuard, RwLockReadGuard,
+    RwLockWriteGuard,
+};
 use std::marker::PhantomData;
 
 #[cfg(feature = "detect_lock_dep_cycles")]
@@ -274,6 +277,12 @@ impl<T, L: crate::LockLevel> LockDepMutex<T, L> {
     }
 }
 
+impl<T, L: crate::LockLevel> From<T> for LockDepMutex<T, L> {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
 impl<T: Default, L: crate::LockLevel> Default for LockDepMutex<T, L> {
     fn default() -> Self {
         Self::new(T::default())
@@ -419,6 +428,12 @@ impl<T, L: crate::LockLevel> LockDepRwLock<T, L> {
 impl<T: Default, L: crate::LockLevel> Default for LockDepRwLock<T, L> {
     fn default() -> Self {
         Self::new(T::default())
+    }
+}
+
+impl<T, L: crate::LockLevel> From<T> for LockDepRwLock<T, L> {
+    fn from(value: T) -> Self {
+        Self::new(value)
     }
 }
 
@@ -757,4 +772,3 @@ mod tests {
         }
     }
 }
-
