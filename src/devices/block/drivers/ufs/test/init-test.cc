@@ -105,7 +105,7 @@ TEST_F(InitTest, Inspect) {
   auto reference_clock =
       controller->node().get_property<inspect::StringPropertyValue>("reference_clock");
   ASSERT_NE(reference_clock, nullptr);
-  EXPECT_EQ(reference_clock->value(), "19.2 MHz");
+  EXPECT_EQ(reference_clock->value(), "38.4 MHz");
 
   const auto* attributes = controller->GetByPath({"attributes"});
   ASSERT_NE(attributes, nullptr);

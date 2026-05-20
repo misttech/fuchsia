@@ -57,7 +57,8 @@ zx::result<> UfsPdev::InitResources() {
   if (phy_client_end.is_ok()) {
     ufs_phy_.Bind(std::move(phy_client_end.value()));
   } else {
-    auto default_phy_client_end = driver_incoming()->Connect<fuchsia_hardware_ufs_phy::Service::Phy>();
+    auto default_phy_client_end =
+        driver_incoming()->Connect<fuchsia_hardware_ufs_phy::Service::Phy>();
     if (default_phy_client_end.is_ok()) {
       ufs_phy_.Bind(std::move(default_phy_client_end.value()));
     } else {
@@ -76,10 +77,7 @@ zx_status_t UfsPdev::StopResources() {
   return ZX_OK;
 }
 
-zx::result<> UfsPdev::InitQuirk() {
-  skip_high_speed_gear_quirk_ = true;
-  return zx::ok();
-}
+zx::result<> UfsPdev::InitQuirk() { return zx::ok(); }
 
 zx::result<> UfsPdev::PdevNotifyEventCallback(NotifyEvent event, uint64_t data) {
   switch (event) {

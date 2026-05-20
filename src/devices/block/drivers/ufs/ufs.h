@@ -246,14 +246,13 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
     return well_known_lun_set_.find(lun) != well_known_lun_set_.end();
   }
 
-  bool skip_high_speed_gear_quirk() const { return skip_high_speed_gear_quirk_; }
+  bool intel_quirk() const { return intel_quirk_; }
 
   bool IsResumed() const { return device_manager_->IsResumed(); }
 
   const inspect::Inspector &inspect() { return component_inspector_->inspector(); }
 
  protected:
-
   // Initialize the UFS controller and bind the logical units.
   // Declare this as virtual to delay driver initialization in tests.
   virtual zx_status_t Init();
@@ -391,7 +390,7 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
   uint32_t max_transfer_bytes_ = kMaxTransferSize1MiB;
 
   bool qemu_quirk_ = false;
-  bool skip_high_speed_gear_quirk_ = false;
+  bool intel_quirk_ = false;
 
   std::mutex lock_;
 

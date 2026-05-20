@@ -584,7 +584,9 @@ zx::result<bool> DeviceManager::NeedWriteBoosterBufferFlush() {
 
 zx::result<> DeviceManager::InitReferenceClock(inspect::Node &controller_node) {
   // Intel UFSHCI reference clock = 19.2MHz
-  constexpr AttributeReferenceClock reference_clock = AttributeReferenceClock::k19_2MHz;
+  const AttributeReferenceClock reference_clock = controller_.intel_quirk()
+                                                      ? AttributeReferenceClock::k19_2MHz
+                                                      : AttributeReferenceClock::k38_4MHz;
   if (auto result = WriteAttribute(Attributes::bRefClkFreq, reference_clock); result.is_error()) {
     return result.take_error();
   }
@@ -630,12 +632,16 @@ zx::result<> DeviceManager::InitUniproAttributes(inspect::Node &unipro_node) {
   if (host_t_activate.is_error()) {
     return host_t_activate.take_error();
   }
-  // Intel Lake-field UFSHCI has a quirk. We need to add 200us to the PEER's PA_TActivate.
-  DmePeerSetUicCommand dme_peer_set_t_activate(controller_, PA_TActivate, 0, 0,
-                                               host_t_activate.value() + 2);
-  if (auto result = dme_peer_set_t_activate.SendCommand(); result.is_error()) {
-    return result.take_error();
+
+  if (controller_.intel_quirk()) {
+    // Intel Lake-field UFSHCI has a quirk. We need to add 200us to the PEER's PA_TActivate.
+    DmePeerSetUicCommand dme_peer_set_t_activate(controller_, PA_TActivate, 0, 0,
+                                                 host_t_activate.value() + 2);
+    if (auto result = dme_peer_set_t_activate.SendCommand(); result.is_error()) {
+      return result.take_error();
+    }
   }
+
   zx::result<uint32_t> device_t_activate = DmePeerGet(PA_TActivate);
   if (device_t_activate.is_error()) {
     return device_t_activate.take_error();
@@ -664,10 +670,6 @@ zx::result<> DeviceManager::InitUniproAttributes(inspect::Node &unipro_node) {
 }
 
 zx::result<> DeviceManager::InitUicPowerMode(inspect::Node &unipro_node) {
-  if (controller_.skip_high_speed_gear_quirk()) {
-    return zx::ok();
-  }
-
   if (zx::result<> result = controller_.Notify(NotifyEvent::kPrePowerModeChange, 0);
       result.is_error()) {
     return result.take_error();
@@ -800,12 +802,14 @@ zx::result<> DeviceManager::InitUicPowerMode(inspect::Node &unipro_node) {
     return result.take_error();
   }
 
-  // Intel Lake-field UFSHCI has a quirk. We need to wait 1250us and clear dme error.
-  usleep(1250);
-  // Test with dme_peer_get to make sure there are no errors.
-  zx::result<uint32_t> device_granularity = DmePeerGet(PA_Granularity);
-  if (device_granularity.is_error()) {
-    return device_granularity.take_error();
+  if (controller_.intel_quirk()) {
+    //  Intel Lake-field UFSHCI has a quirk. We need to wait 1250us and clear dme error.
+    usleep(1250);
+    // Test with dme_peer_get to make sure there are no errors.
+    zx::result<uint32_t> device_granularity = DmePeerGet(PA_Granularity);
+    if (device_granularity.is_error()) {
+      return device_granularity.take_error();
+    }
   }
 
   properties_.pa_active_tx_data_lanes =

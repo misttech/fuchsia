@@ -142,8 +142,11 @@ zx::result<> UfsPci::InitQuirk() {
   // Device ID = 0x0013: QEMU UFS Host Controller
   constexpr uint16_t kRedHatVendorId = 0x1b36;
   constexpr uint16_t kQemuUfsHostController = 0x0013;
+  constexpr uint16_t kIntelVendorId = 0x8086;
   if ((info.vendor_id == kRedHatVendorId) && (info.device_id == kQemuUfsHostController)) {
     qemu_quirk_ = true;
+  } else if (info.vendor_id == kIntelVendorId) {
+    intel_quirk_ = true;
   }
   fdf::info("PCI device info: Vendor ID = 0x{:x}, Device ID = 0x{:x}", info.vendor_id,
             info.device_id);
