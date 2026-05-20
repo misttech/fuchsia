@@ -20,7 +20,10 @@ use starnix_core::mutable_state::Guard;
 use starnix_core::task::{CurrentTask, Kernel, Task, ThreadGroupKey};
 use starnix_core::vfs::FdNumber;
 use starnix_logging::{log_trace, log_warn, track_stub};
-use starnix_sync::{Mutex, MutexGuard};
+use starnix_sync::{
+    BinderFreezeLevel, BinderProcessSharedMemoryLevel, BinderProcessStateLevel, LockDepGuard,
+    LockDepMutex,
+};
 use starnix_types::ownership::{
     DropGuard, OwnedRef, Releasable, ReleaseGuard, Share, TempRef, WeakRef, release_after,
 };
@@ -58,8 +61,6 @@ pub struct BinderProcessState {
     pub active_transactions: BTreeMap<UserAddress, ReleaseGuard<ActiveTransaction>>,
     /// The list of processes that should be notified if this process dies.
     pub death_subscribers: Vec<(WeakRef<BinderProcess>, binder_uintptr_t)>,
-    /// The list of processes that should be notified if this process is frozen.
-    pub freeze_subscribers: Vec<(WeakRef<BinderProcess>, binder_uintptr_t)>,
     /// Whether the binder connection for this process is closed. Once closed, any blocking
     /// operation will be aborted and return an EBADF error.
     pub closed: bool,
@@ -67,22 +68,28 @@ pub struct BinderProcessState {
     /// interrupted either just before or while waiting must abort the operation and return a EINTR
     /// error.
     pub interrupted: bool,
-    /// Status of the binder freeze.
-    pub freeze_status: FreezeStatus,
     /// Pending commands.
     pub command_queue: std::collections::VecDeque<Command>,
 }
 
-impl BinderProcessState {
+#[derive(Debug, Default)]
+pub struct BinderFreezeState {
+    /// The list of processes that should be notified if this process is frozen.
+    pub freeze_subscribers: Vec<(WeakRef<BinderProcess>, binder_uintptr_t)>,
+    /// Status of the binder freeze.
+    pub freeze_status: FreezeStatus,
+}
+
+impl BinderFreezeState {
     pub fn freeze(&mut self) {
         self.freeze_status.frozen = true;
         self.freeze_status.has_async_recv = false;
         self.freeze_status.has_sync_recv = false;
         self.freeze_subscribers.retain(|(proc, cookie)| {
-            let Some(proc) = proc.upgrade() else {
+            let Some(p) = proc.upgrade() else {
                 return false; // remove if the process is already dead
             };
-            proc.enqueue_command(Command::FrozenBinder(binder_frozen_state_info {
+            p.enqueue_command(Command::FrozenBinder(binder_frozen_state_info {
                 cookie: *cookie,
                 is_frozen: 1,
                 reserved: 0,
@@ -107,7 +114,9 @@ impl BinderProcessState {
             true
         });
     }
+}
 
+impl BinderProcessState {
     pub fn has_pending_transactions(&self) -> bool {
         !self.active_transactions.is_empty()
     }
@@ -334,10 +343,13 @@ pub struct BinderProcess {
     // `BinderProcess`.
     /// The [`SharedMemory`] region mapped in both the driver and the binder process. Allows for
     /// transactions to copy data once from the sender process into the receiver process.
-    pub shared_memory: Mutex<Option<SharedMemory>>,
+    pub shared_memory: LockDepMutex<Option<SharedMemory>, BinderProcessSharedMemoryLevel>,
+
+    /// The freeze state of the `BinderProcess`.
+    pub freeze_state: LockDepMutex<BinderFreezeState, BinderFreezeLevel>,
 
     /// The main mutable state of the `BinderProcess`.
-    pub state: Mutex<BinderProcessState>,
+    pub state: LockDepMutex<BinderProcessState, BinderProcessStateLevel>,
 
     /// A WaitQueue used solely to notify process-level waiters (like `epoll` waiters) about
     /// FD events when commands are available.
@@ -348,10 +360,13 @@ pub struct BinderProcess {
     pub available_threads: Arc<SegQueue<WeakRef<BinderThread>>>,
 }
 
-pub struct BinderProcessGuard<'a>(Guard<'a, BinderProcess, MutexGuard<'a, BinderProcessState>>);
+pub struct BinderProcessGuard<'a>(
+    Guard<'a, BinderProcess, LockDepGuard<'a, BinderProcessState, BinderProcessStateLevel>>,
+);
 
 impl<'a> Deref for BinderProcessGuard<'a> {
-    type Target = Guard<'a, BinderProcess, MutexGuard<'a, BinderProcessState>>;
+    type Target =
+        Guard<'a, BinderProcess, LockDepGuard<'a, BinderProcessState, BinderProcessStateLevel>>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -371,22 +386,17 @@ impl BinderProcess {
         remote_resource_accessor: Option<Arc<RemoteResourceAccessor>>,
     ) -> OwnedRef<BinderProcess> {
         log_trace!("new BinderProcess id={}", identifier);
-        let result = OwnedRef::new_cyclic(|weak_self| Self {
+        OwnedRef::new_cyclic(|weak_self| Self {
             weak_self,
             identifier,
             key,
             remote_resource_accessor,
             shared_memory: Default::default(),
+            freeze_state: Default::default(),
             state: Default::default(),
             process_waiters: Default::default(),
             available_threads: Arc::new(SegQueue::new()),
-        });
-        #[cfg(any(test, debug_assertions))]
-        {
-            let _l1 = result.shared_memory.lock();
-            let _l2 = result.lock();
-        }
-        result
+        })
     }
 
     pub fn lock<'a>(&'a self) -> BinderProcessGuard<'a> {
@@ -684,9 +694,9 @@ impl BinderProcess {
             }
         };
         let owner = proxy.owner.upgrade().ok_or_else(|| errno!(ENOENT))?;
-        let mut owner = owner.lock();
+        let mut owner_freeze_state = owner.freeze_state.lock();
         // Check if the subscriber already exists
-        if owner
+        if owner_freeze_state
             .freeze_subscribers
             .iter()
             .find(|(bp, c)| bp.as_ptr() == self.weak_self.as_ptr() && *c == cookie)
@@ -694,10 +704,10 @@ impl BinderProcess {
         {
             return error!(EINVAL);
         }
-        owner.freeze_subscribers.push((self.weak_self.clone(), cookie));
+        owner_freeze_state.freeze_subscribers.push((self.weak_self.clone(), cookie));
         let info = binder_frozen_state_info {
             cookie,
-            is_frozen: if owner.freeze_status.frozen { 1 } else { 0 },
+            is_frozen: if owner_freeze_state.freeze_status.frozen { 1 } else { 0 },
             reserved: 0,
         };
         self.enqueue_command(Command::FrozenBinder(info));
@@ -724,14 +734,14 @@ impl BinderProcess {
             }
         };
         let owner = owner.upgrade().ok_or_else(|| errno!(ENOENT))?;
-        let mut owner = owner.lock();
-        if let Some((idx, _)) = owner
+        let mut owner_freeze_state = owner.freeze_state.lock();
+        if let Some((idx, _)) = owner_freeze_state
             .freeze_subscribers
             .iter()
             .enumerate()
             .find(|(_idx, (proc, c))| proc.as_ptr() == self.weak_self.as_ptr() && *c == cookie)
         {
-            owner.freeze_subscribers.swap_remove(idx);
+            owner_freeze_state.freeze_subscribers.swap_remove(idx);
         }
         self.enqueue_command(Command::ClearFreezeNotificationDone(cookie));
         Ok(())

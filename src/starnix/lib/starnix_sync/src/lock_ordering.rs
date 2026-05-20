@@ -57,6 +57,19 @@ lock_ordering! {
     UninterruptibleLock => DeviceRegistryState,
     FileOpsCore => DeviceRegistryState,
 
+    // Binderfs locks
+    UninterruptibleLock => RemoteBinderHandleLevel,
+    RemoteBinderHandleLevel => BinderProcsLevel,
+    FileObjectOffset => BinderFsDevicesLevel,
+    BinderFsDevicesLevel => FileOpsCore,
+    BinderProcsLevel => BinderProcessSharedMemoryLevel,
+    BinderProcessSharedMemoryLevel => BinderFreezeLevel,
+    BinderFreezeLevel => BinderProcessStateLevel,
+    BinderProcessSharedMemoryLevel => DeviceRegistryState,
+    BinderProcessStateLevel => BinderContextManagerLevel,
+    BinderContextManagerLevel => TerminalLock,
+    FileOpsCore => BinderContextManagerLevel,
+
     // Terminal Level. No lock level should ever be defined after this. Can be used for any locks
     // that is never acquired before any other lock.
     UninterruptibleLock => TerminalLock,
