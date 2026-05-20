@@ -1023,6 +1023,29 @@ TEST(IobSharedRegion, InvalidArgs) {
   EXPECT_STATUS(zx_iob_create_shared_region(0, page_size + 3, &handle), ZX_ERR_INVALID_ARGS);
 }
 
+TEST(IobSharedRegion, OutOfRange) {
+  NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
+
+  zx::handle handle;
+
+  // Near integer limit
+  const uint64_t large_size = std::numeric_limits<uint64_t>::max() - zx_system_get_page_size() + 1;
+  ASSERT_EQ(0, large_size % zx_system_get_page_size());
+  EXPECT_STATUS(zx_iob_create_shared_region(0, large_size, handle.reset_and_get_address()),
+                ZX_ERR_OUT_OF_RANGE);
+
+  // Larger than the maximum VMO size
+  uint64_t max_vmo_size;
+  {
+    zx::vmo unbounded_vmo_for_size_check;
+    ASSERT_OK(zx::vmo::create(0, ZX_VMO_UNBOUNDED, &unbounded_vmo_for_size_check));
+    ASSERT_OK(unbounded_vmo_for_size_check.get_size(&max_vmo_size));
+  }
+  EXPECT_STATUS(zx_iob_create_shared_region(0, max_vmo_size + zx_system_get_page_size(),
+                                            handle.reset_and_get_address()),
+                ZX_ERR_OUT_OF_RANGE);
+}
+
 TEST(IobSharedRegion, CreateSucceeds) {
   NEEDS_NEXT_SKIP(zx_iob_create_shared_region);
 

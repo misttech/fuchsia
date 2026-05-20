@@ -283,6 +283,8 @@ closed protocol Iob {
     /// `ZX_ERR_INVALID_ARGS` `options` was nonzero (there are no non-default options supported at
     /// this time), or `size` was zero or not a multiple of the page size.
     ///
+    /// `ZX_ERR_OUT_OF_RANGE` Requested size is too large.
+    ///
     /// `ZX_ERR_NO_MEMORY` Failure due to lack of memory to allocate the shared region.
     @next
     strict CreateSharedRegion(struct {
