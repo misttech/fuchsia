@@ -217,6 +217,10 @@ async fn download_trace(
     };
 
     if let Ok(bytes) = &result {
+        if let Err(e) = output.sync_all().await {
+            log::error!("Failed to sync trace data to disk: {:?}", e);
+            return Err(bug!("Failed to sync trace data to disk: {e}").into());
+        }
         let duration = start_time.elapsed();
         let kbytes = *bytes / 1024;
 
