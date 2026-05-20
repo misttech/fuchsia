@@ -734,7 +734,7 @@ class HypervisorName {
 
   // Returns a string representation of name of the hypervisor, valid for as
   // long as the associated HypervisorName is in scope.
-  std::string_view name() const {
+  std::string_view name() const [[clang::lifetimebound]] {
     std::string_view name{str_.data(), str_.size()};
     return name.substr(0, name.find_first_of('\0'));
   }
