@@ -162,6 +162,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "usb_policy",
+    experimental = True,
     allowed_in = [
         "standard::eng",
         "standard::userdebug",
@@ -177,6 +178,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "usb_policy_starnix",
+    experimental = True,
     allowed_in = [
         "standard::eng",
         "standard::userdebug",
@@ -348,6 +350,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "cqhci_driver",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -375,6 +378,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "interconnect_driver",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -394,6 +398,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "trusted_execution_environment",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -750,6 +755,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "timekeeper_persistence",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -760,6 +766,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "timekeeper_wake_alarms",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -917,6 +924,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "dso_runner",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -1014,6 +1022,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "bootstrap_realm_vsock_development_access",
+    experimental = True,
     allowed_in = [
         "embeddable::userdebug",
         "embeddable::eng",
@@ -1387,6 +1396,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "bluetooth_hfp_hf",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -1542,6 +1552,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "usb_adb_function",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -1552,6 +1563,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "fastbootd_usb_support",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -1565,6 +1577,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "nanohub_support",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -1581,6 +1594,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "fastrpc_support",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -1597,6 +1611,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "hvdcp_opti_support",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -1913,6 +1928,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "vsock_service_bootstrap",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -2306,6 +2322,7 @@ icu_assembly_input_bundle(
 # buildifier: leave-alone
 icu_assembly_input_bundle(
     name = "ui_eng_dso",
+    experimental = True,
     allowed_in = [
         "eng",
         # Experimental AIBs must be allowed on userdebug
@@ -2345,6 +2362,7 @@ icu_assembly_input_bundle(
 # buildifier: leave-alone
 icu_assembly_input_bundle(
     name = "ui_userdebug_dso",
+    experimental = True,
     allowed_in = [
         "userdebug",
     ],
@@ -2446,6 +2464,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "sensors_framework_eng",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -2491,6 +2510,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "power_framework_sag",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -2504,6 +2524,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "power_framework_broker",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -2543,6 +2564,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "power_framework_development_support",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -2832,6 +2854,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "recovery_android",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -2847,6 +2870,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "session_manager_enable_pkg_cache",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",
@@ -2862,6 +2886,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "gnss",
+    experimental = True,
     allowed_in = [
         "userdebug",
         "eng",

@@ -14,7 +14,6 @@ from assembly.assembly_input_bundle import AssemblyInputBundle
 
 # Define fields that are not yet supported by the Bazel assembly_input_bundle rule
 UNSUPPORTED_FIELDS = {
-    "experimental",
     "kernel",
     "qemu_kernel",
     "boot_args",

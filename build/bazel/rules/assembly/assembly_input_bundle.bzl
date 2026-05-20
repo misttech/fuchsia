@@ -17,6 +17,9 @@ def _assembly_input_bundle_impl(ctx):
     args.add("create")
     args.add("--outdir", out_dir.path)
 
+    if ctx.attr.experimental:
+        args.add("--experimental")
+
     # Validate and add the allowed_in, scrutiny_required, and auto_include_in values.
     for value in ctx.attr.allowed_in:
         _validate_allowed_in_value("allowed_in", value)
@@ -90,6 +93,7 @@ _assembly_input_bundle = rule(
         "allowed_in": attr.string_list(),
         "scrutiny_required": attr.string_list(),
         "auto_include_in": attr.string_list(),
+        "experimental": attr.bool(),
         "base_packages": attr.label_list(providers = [FuchsiaPackageInfo]),
         "cache_packages": attr.label_list(providers = [FuchsiaPackageInfo]),
         "flexible_packages": attr.label_list(providers = [FuchsiaPackageInfo]),
@@ -113,6 +117,7 @@ def assembly_input_bundle(
         allowed_in = [],
         scrutiny_required = [],
         auto_include_in = [],
+        experimental = False,
         base_packages = [],
         cache_packages = [],
         flexible_packages = [],
@@ -128,6 +133,14 @@ def assembly_input_bundle(
 
     Args:
         name: The name of the target.
+
+        experimental: [boolean, default False]
+            Whether this AIB is experimental and should be excluded from the scrutiny goldens.
+            Experimental AIBs must be available in userdebug and never in user. Experimental AIBs
+            are allowed in any feature set level.
+
+            The typical way to mark an AIB as available in userdebug but not user is to
+            set `experimental = true` and `allowed_in = ["userdebug", "eng"]`.
 
         allowed_in: [list of strings] Which feature set + build type combinations this AIB is
            allowed to be included in. Assembly asserts during product assembly that
@@ -178,6 +191,7 @@ def assembly_input_bundle(
     """
     _assembly_input_bundle(
         name = name,
+        experimental = experimental,
         allowed_in = allowed_in,
         scrutiny_required = scrutiny_required,
         auto_include_in = auto_include_in,
