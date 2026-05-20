@@ -18,8 +18,9 @@
 
 namespace {
 
-// These are actually defined with internal linkage in the __asm__ in TestMain.
+// These are actually defined in the __asm__ in TestMain.
 extern "C" void ExceptionSite(), ExceptionResume();
+
 const uint64_t kExceptionSite = reinterpret_cast<uintptr_t>(ExceptionSite);
 const uint64_t kExceptionResume = reinterpret_cast<uintptr_t>(ExceptionResume);
 
@@ -68,8 +69,12 @@ int TestMain(void* bootloader_data, ktl::optional<EarlyBootZbi> zbi, arch::Early
   __asm__(
       R"""(
       mov x0, %[before]
+.globl ExceptionSite
+.hidden ExceptionSite
 ExceptionSite:
       brk #0
+.globl ExceptionResume
+.hidden ExceptionResume
 ExceptionResume:
       mov %[after], x0
       )"""
@@ -80,8 +85,12 @@ ExceptionResume:
   __asm__(
       R"""(
       mv a0, %[before]
+.globl ExceptionSite
+.hidden ExceptionSite
 ExceptionSite:
       unimp
+.globl ExceptionResume
+.hidden ExceptionResume
 ExceptionResume:
       mv %[after], a0
       )"""
@@ -91,8 +100,12 @@ ExceptionResume:
 #elif defined(__x86_64__)
   __asm__(
       R"""(
+.globl ExceptionSite
+.hidden ExceptionSite
 ExceptionSite:
       ud2
+.globl ExceptionResume
+.hidden ExceptionResume
 ExceptionResume:
       )"""
       : "=a"(interrupted_register)
