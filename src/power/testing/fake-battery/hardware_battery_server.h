@@ -27,6 +27,11 @@ class HardwareBatteryServer : public fidl::Server<fuchsia_hardware_power_source:
     status.voltage_uv(4752000);
     status.current_ua(250014);
 
+    fuchsia_hardware_power_source::SinkRole sink_role;
+    sink_role.type(fuchsia_hardware_power_source::SourceType::kAc);
+    sink_role.name("Fake AC Charger");
+    status.current_role(fuchsia_hardware_power_source::Role::WithSink(std::move(sink_role)));
+
     battery_status_.source_status(status);
     battery_status_.charge_status(fuchsia_hardware_power_battery::ChargeStatus::kCharging);
     battery_status_.level_percent(98.7f);

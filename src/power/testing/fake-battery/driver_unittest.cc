@@ -5,6 +5,7 @@
 #include "driver.h"
 
 #include <fidl/fuchsia.hardware.power.battery/cpp/wire.h>
+#include <fidl/fuchsia.hardware.power.source/cpp/wire.h>
 #include <fidl/fuchsia.power.battery/cpp/wire.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
@@ -84,6 +85,16 @@ TEST_F(FakeBatteryDriverTest, CanGetInfoNewProtocol) {
   ASSERT_EQ(status.charge_status(), hbattery::wire::ChargeStatus::kCharging);
   ASSERT_TRUE(status.has_time_remaining());
   ASSERT_EQ(status.time_remaining(), zx::sec(59).to_nsecs());
+
+  // Verify source_status and current_role (AC Charger)
+  ASSERT_TRUE(status.has_source_status());
+  const auto& source_status = status.source_status();
+  ASSERT_TRUE(source_status.has_current_role());
+  const auto& current_role = source_status.current_role();
+  ASSERT_TRUE(current_role.is_sink());
+  const auto& sink = current_role.sink();
+  ASSERT_TRUE(sink.has_type());
+  ASSERT_EQ(sink.type(), fuchsia_hardware_power_source::wire::SourceType::kAc);
 }
 
 TEST_F(FakeBatteryDriverTest, CanWatchNewProtocol) {
