@@ -27,10 +27,12 @@ rustc_library("lib") {
     "//sdk/fidl/fuchsia.process:fuchsia.process_rust",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_rust",
     "//sdk/rust/zx",
+    "//src/lib/async-utils",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
+    "//src/sys/lib/cm_types",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
@@ -39,6 +41,11 @@ rustc_library("lib") {
   sources = [ "src/lib.rs" ]
 }
 
-fuchsia_unittest_package("service-broker-unittests") {
+fuchsia_unittest_component("service-broker-unittests-component") {
+  component_name = "service-broker-unittests"
   deps = [ ":lib_test" ]
+}
+
+fuchsia_test_package("service-broker-unittests") {
+  test_components = [ ":service-broker-unittests-component" ]
 }

@@ -3,23 +3,26 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result, bail, format_err};
+use async_utils::async_once::Once;
+use cm_types::Name;
 use fidl::AsHandleRef;
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_data as fdata;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_process as fprocess;
+use fidl_fuchsia_process_lifecycle as fpl;
 use fuchsia_component::directory::AsRefDirectory;
 use fuchsia_component::server::{ServiceFs, ServiceObj, ServiceObjTrait};
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use futures::prelude::*;
-use std::clone::Clone;
-use {
-    fidl_fuchsia_data as fdata, fidl_fuchsia_io as fio, fidl_fuchsia_process as fprocess,
-    fidl_fuchsia_process_lifecycle as fpl,
-};
+use std::sync::Arc;
 
 async fn wait_for_first_instance(svc: &fio::DirectoryProxy) -> Result<String> {
     const INPUT_SERVICE: &str = "input";
     let (service_dir, request) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     svc.as_ref_directory().open(INPUT_SERVICE, fio::Flags::PROTOCOL_DIRECTORY, request.into())?;
     let watcher = Watcher::new(&service_dir).await.context("failed to create watcher")?;
+
     let mut stream =
         watcher.map(|result| result.context("failed to get watcher event")).try_filter_map(|msg| {
             futures::future::ok(match msg.event {
@@ -33,46 +36,58 @@ async fn wait_for_first_instance(svc: &fio::DirectoryProxy) -> Result<String> {
                 _ => None,
             })
         });
-    let first = stream.try_next().await?.unwrap();
+
+    let first = stream.try_next().await?.ok_or_else(|| {
+        format_err!("Watcher stream closed unexpectedly before finding an instance")
+    })?;
+
     let filename = first.to_str().ok_or_else(|| format_err!("to_str for filename failed"))?;
     Ok(format!("{INPUT_SERVICE}/{filename}"))
 }
 
-async fn connect_request(svc: fio::DirectoryProxy, request: zx::Channel, protocol_name: &str) {
-    let instance_dir = wait_for_first_instance(&svc).await;
-    let Ok(instance_dir) = instance_dir else {
-        log::error!("[service-broker] Failed to forward connection for {protocol_name}");
-        return;
-    };
+async fn connect_request(
+    svc: &fio::DirectoryProxy,
+    request: zx::Channel,
+    protocol_name: &Name,
+    instance_dir: &str,
+) {
+    let target_path = format!("{instance_dir}/{}", protocol_name.as_str());
 
-    if let Err(e) = svc.as_ref_directory().open(
-        format!("{instance_dir}/{protocol_name}").as_str(),
-        fio::Flags::PROTOCOL_SERVICE,
-        request,
-    ) {
-        log::error!(
-            "[service-broker] Failed to forward connection to {instance_dir}/{protocol_name}: {e}"
-        );
+    if let Err(e) = svc.as_ref_directory().open(&target_path, fio::Flags::PROTOCOL_SERVICE, request)
+    {
+        log::error!("[service-broker] Failed to forward connection to {target_path}: {e}");
     }
 }
 
 async fn first_instance_to_protocol<'a>(
     svc: fio::DirectoryProxy,
     fs: &mut ServiceFs<ServiceObj<'a, ()>>,
-    protocol_name: &str,
+    protocol_name: Name,
     scope: &'a fuchsia_async::Scope,
 ) -> Result<()> {
-    if protocol_name == "" {
-        bail!("Invalid protocol name provided");
-    }
-
-    let protocol_name = protocol_name.to_string();
+    let cached_instance: Arc<Once<String>> = Arc::new(Once::new());
+    let svc_arc = Arc::new(svc);
 
     fs.dir("svc").add_service_at("output", move |request: zx::Channel| {
-        let svc = Clone::clone(&svc);
+        let svc = Arc::clone(&svc_arc);
         let protocol_name = protocol_name.clone();
+        let cached_instance = Arc::clone(&cached_instance);
+
         scope.spawn(async move {
-            connect_request(svc, request, &protocol_name).await;
+            // Safely initializes the path once. All subsequent connection requests
+            // will instantly resolve the string without hitting the filesystem.
+            let init_future = async || wait_for_first_instance(&svc).await;
+
+            match cached_instance.get_or_try_init(init_future).await {
+                Ok(instance_dir) => {
+                    connect_request(&svc, request, &protocol_name, instance_dir).await;
+                }
+                Err(e) => {
+                    log::error!(
+                        "[service-broker] Failed to resolve first instance: {e}, {protocol_name}"
+                    );
+                }
+            }
         });
 
         Some(())
@@ -105,7 +120,7 @@ async fn filter_and_rename<T: ServiceObjTrait>(
     _filter: &Vec<String>,
     _rename: &Vec<String>,
 ) -> Result<()> {
-    unimplemented!();
+    bail!("filter_and_rename policy is not yet implemented");
     // Add a bunch of directories which forward requests?
 }
 
@@ -167,7 +182,12 @@ pub async fn main(
     let mut fs = ServiceFs::new();
     match get_program_string(&program, "policy")? {
         "first_instance_to_protocol" => {
-            let protocol_name = get_program_string(&program, "protocol_name")?;
+            let protocol_name_str = get_program_string(&program, "protocol_name")?;
+
+            let protocol_name = Name::new(protocol_name_str).map_err(|e| {
+                format_err!("Invalid protocol_name '{protocol_name_str}' in program dict: {e}")
+            })?;
+
             first_instance_to_protocol(svc, &mut fs, protocol_name, &scope).await
         }
         "first_instance_to_default" => first_instance_to_default(svc, &mut fs).await,
@@ -189,8 +209,116 @@ pub async fn main(
 
 #[cfg(test)]
 mod tests {
-    #[fuchsia::test]
-    async fn smoke_test() {
-        assert!(true);
+    use super::*;
+    use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
+    use fidl_fuchsia_data as fdata;
+    use fuchsia_async as fasync;
+    use futures::StreamExt;
+
+    fn make_program_dict(entries: Vec<(&str, fdata::DictionaryValue)>) -> fdata::Dictionary {
+        let entries = entries
+            .into_iter()
+            .map(|(k, v)| fdata::DictionaryEntry { key: k.to_string(), value: Some(Box::new(v)) })
+            .collect();
+        fdata::Dictionary { entries: Some(entries), ..Default::default() }
+    }
+
+    #[test]
+    fn test_get_program_string() {
+        let dict = make_program_dict(vec![(
+            "policy",
+            fdata::DictionaryValue::Str("first_instance_to_protocol".to_string()),
+        )]);
+
+        assert_eq!(get_program_string(&dict, "policy").unwrap(), "first_instance_to_protocol");
+
+        let err = get_program_string(&dict, "missing_key").unwrap_err();
+        assert_eq!(err.to_string(), "missing_key not found in program or is not a string");
+    }
+
+    #[test]
+    fn test_get_program_strvec() {
+        let dict = make_program_dict(vec![(
+            "filter",
+            fdata::DictionaryValue::StrVec(vec!["fuchsia.foo.Bar".to_string()]),
+        )]);
+
+        let vec = get_program_strvec(&dict, "filter").unwrap().unwrap();
+        assert_eq!(vec.len(), 1);
+        assert_eq!(vec[0], "fuchsia.foo.Bar");
+
+        assert!(get_program_strvec(&dict, "rename").unwrap().is_none());
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_filter_and_rename_graceful_failure() {
+        let (dir_proxy, _server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+        let mut fs = ServiceFs::<ServiceObj<'_, ()>>::new();
+
+        let result = filter_and_rename(dir_proxy, &mut fs, &vec![], &vec![]).await;
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "filter_and_rename policy is not yet implemented"
+        );
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_broker_caching_and_routing_end_to_end() {
+        let (svc_dir, svc_server_end) = create_proxy::<fio::DirectoryMarker>();
+        let mut fake_svc_fs = ServiceFs::new();
+
+        fake_svc_fs.dir("input").dir("instance_123").add_service_at(
+            "my_protocol",
+            |req: zx::Channel| {
+                let _ = req.write(&[1], &mut []);
+                Some(())
+            },
+        );
+
+        fasync::Task::spawn(async move {
+            fake_svc_fs.serve_connection(svc_server_end).unwrap();
+            fake_svc_fs.collect::<()>().await;
+        })
+        .detach();
+
+        let ns_entries = vec![fprocess::NameInfo {
+            path: "/svc".to_string(),
+            directory: svc_dir.into_channel().unwrap().into_zx_channel().into(),
+        }];
+
+        let (out_dir, out_server_end) = create_proxy::<fio::DirectoryMarker>();
+        let (_, lifecycle_server_end) = create_endpoints::<fpl::LifecycleMarker>();
+
+        let program_dict = make_program_dict(vec![
+            ("policy", fdata::DictionaryValue::Str("first_instance_to_protocol".to_string())),
+            ("protocol_name", fdata::DictionaryValue::Str("my_protocol".to_string())),
+        ]);
+
+        fasync::Task::spawn(async move {
+            let res =
+                main(ns_entries, out_server_end, lifecycle_server_end, Some(program_dict)).await;
+            assert!(res.is_ok(), "Broker main task failed");
+        })
+        .detach();
+
+        let (client_end, server_end) = zx::Channel::create();
+
+        out_dir
+            .open("svc/output", fio::Flags::PROTOCOL_SERVICE, &fio::Options::default(), server_end)
+            .expect("Failed to send open request to broker");
+
+        let signals = fasync::OnSignals::new(&client_end, zx::Signals::CHANNEL_READABLE)
+            .await
+            .expect("Failed waiting for signal. Routing may have dropped the channel.");
+
+        assert!(signals.contains(zx::Signals::CHANNEL_READABLE));
+
+        let (client_end2, server_end2) = zx::Channel::create();
+        out_dir
+            .open("svc/output", fio::Flags::PROTOCOL_SERVICE, &fio::Options::default(), server_end2)
+            .unwrap();
+
+        let _ = fasync::OnSignals::new(&client_end2, zx::Signals::CHANNEL_READABLE).await.unwrap();
     }
 }
