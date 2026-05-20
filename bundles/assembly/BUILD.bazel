@@ -1843,6 +1843,17 @@ assembly_input_bundle(
         "standard::userdebug",
         "utility::userdebug",
     ],
+    config_data = [
+        {
+            "package_name": "sshd-host",
+            "files": [
+                {
+                    "source": "//third_party/openssh-portable/fuchsia:sshd_config",
+                    "destination": "sshd_config",
+                },
+            ],
+        },
+    ],
 )
 
 # Configuration that goes along with core_realm_development_access which is
@@ -1853,6 +1864,17 @@ assembly_input_bundle(
     auto_include_in = [
         "utility::eng",
         "standard::eng",
+    ],
+    config_data = [
+        {
+            "package_name": "sshd-host",
+            "files": [
+                {
+                    "source": "//third_party/openssh-portable/fuchsia:sshd_config_eng",
+                    "destination": "sshd_config",
+                },
+            ],
+        },
     ],
 )
 
@@ -1918,6 +1940,17 @@ assembly_input_bundle(
     allowed_in = [
         "userdebug",
         "eng",
+    ],
+    config_data = [
+        {
+            "package_name": "mdns",
+            "files": [
+                {
+                    "source": "//src/connectivity/network/mdns/service/config:fuchsia_udp.config",
+                    "destination": "fuchsia_udp.config",
+                },
+            ],
+        },
     ],
 )
 
@@ -2021,6 +2054,17 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "cobalt_user_config",
+    config_data = [
+        {
+            "package_name": "cobalt",
+            "files": [
+                {
+                    "source": "//src/cobalt/bin/app/configs:user_config.json",
+                    "destination": "config.json",
+                },
+            ],
+        },
+    ],
 )
 
 # buildifier: leave-alone
@@ -2030,6 +2074,17 @@ assembly_input_bundle(
         "userdebug",
         "eng",
     ],
+    config_data = [
+        {
+            "package_name": "cobalt",
+            "files": [
+                {
+                    "source": "//src/cobalt/bin/app/configs:userdebug_config.json",
+                    "destination": "config.json",
+                },
+            ],
+        },
+    ],
 )
 
 # buildifier: leave-alone
@@ -2037,6 +2092,17 @@ assembly_input_bundle(
     name = "cobalt_default_config",
     allowed_in = [
         "eng",
+    ],
+    config_data = [
+        {
+            "package_name": "cobalt",
+            "files": [
+                {
+                    "source": "//src/cobalt/bin/app/configs:default_config.json",
+                    "destination": "config.json",
+                },
+            ],
+        },
     ],
 )
 
@@ -2092,6 +2158,15 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/developer/memory/pressure_signaler",
     ],
     config_data = [
+        {
+            "package_name": "cobalt",
+            "files": [
+                {
+                    "source": "@gn_targets//src/cobalt/bin/app:global_metrics_registry_pb",
+                    "destination": "global_metrics_registry.pb",
+                },
+            ],
+        },
         {
             "package_name": "triage-detect",
             "files": [
@@ -2558,6 +2633,17 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "diagnostics_triage_detect_mali",
+    config_data = [
+        {
+            "package_name": "triage-detect",
+            "files": [
+                {
+                    "source": "//src/diagnostics/config/triage/detect:mali-detect.triage",
+                    "destination": "mali-detect.triage",
+                },
+            ],
+        },
+    ],
 )
 
 # Driver Framework Support
@@ -4817,6 +4903,17 @@ assembly_input_bundle(
         "//src/developer/adb/bin/adb-file-sync:meta/adb-file-sync.core_shard.cml",
         "//src/developer/adb/bin/adb-reboot:meta/adb-reboot.core_shard.cml",
         "//src/developer/adb/bin/adb-sideload:meta/adb-sideload.core_shard.cml",
+    ],
+    config_data = [
+        {
+            "package_name": "cobalt",
+            "files": [
+                {
+                    "source": "@gn_targets//src/cobalt/bin/app:global_metrics_registry_pb",
+                    "destination": "global_metrics_registry.pb",
+                },
+            ],
+        },
     ],
 )
 

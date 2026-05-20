@@ -17,7 +17,6 @@ UNSUPPORTED_FIELDS = {
     "kernel",
     "qemu_kernel",
     "bootfs_files",
-    "config_data",
     "blobs",
     "bootfs_files_package",
 }
@@ -33,7 +32,6 @@ def is_supported_file(path: Path) -> bool:
 
     top_dir = parts[0]
     dir_to_fields = {
-        "config_data": "config_data",
         "bootfs": "bootfs_files",
         "kernel": "kernel",
     }

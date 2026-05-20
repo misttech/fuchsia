@@ -546,6 +546,7 @@ group("factory_reset_trigger") {
 
 group("common_standard") {
   deps = [
+    ":global_metrics_registry_pb",
     "//bundles/assembly/bazel_inputs/src/cobalt/bin/app:cobalt",
     "//bundles/assembly/bazel_inputs/src/cobalt/bin/system-metrics:cobalt_system_metrics",
     "//bundles/assembly/bazel_inputs/src/developer/memory/pressure_signaler",
@@ -556,6 +557,12 @@ group("common_standard") {
     "//bundles/assembly/bazel_inputs/src/sys/activity",
     "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/system-updater",
   ]
+}
+
+bazel_input_file("global_metrics_registry_pb") {
+  generator = "//src/cobalt/bin/app:global_metrics_registry"
+  outputs = [ "$root_gen_dir/src/cobalt/bin/app/global_metrics_registry.pb" ]
+  gn_targets_name = "global_metrics_registry_pb"
 }
 
 group("standard_userdebug") {

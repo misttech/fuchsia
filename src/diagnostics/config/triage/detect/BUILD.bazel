@@ -13,6 +13,7 @@ exports_files(
         "sysmem-detect.triage",
         "wlan-detect.triage",
         "omaha-client-detect.triage",
+        "mali-detect.triage",
     ],
     visibility = ["//bundles/assembly:__subpackages__"],
 )
