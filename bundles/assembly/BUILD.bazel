@@ -2091,6 +2091,54 @@ assembly_input_bundle(
         # Memory pressure monitoring
         "//bundles/assembly/bazel_inputs/src/developer/memory/pressure_signaler",
     ],
+    config_data = [
+        {
+            "package_name": "triage-detect",
+            "files": [
+                {
+                    "source": "//src/diagnostics/config/triage/detect:session-detect.triage",
+                    "destination": "session-detect.triage",
+                },
+                {
+                    "source": "//src/diagnostics/config/triage/detect:sysmem-detect.triage",
+                    "destination": "sysmem-detect.triage",
+                },
+                {
+                    "source": "//src/diagnostics/config/triage/detect:wlan-detect.triage",
+                    "destination": "wlan-detect.triage",
+                },
+            ],
+        },
+        {
+            "package_name": "diagnostics-persistence",
+            "files": [
+                {
+                    "source": "//src/diagnostics/config/persistence:dhcp_client.persist",
+                    "destination": "dhcp_client.persist",
+                },
+                {
+                    "source": "//src/diagnostics/config/persistence:netstack.persist",
+                    "destination": "netstack.persist",
+                },
+                {
+                    "source": "//src/diagnostics/config/persistence:netstack3.persist",
+                    "destination": "netstack3.persist",
+                },
+                {
+                    "source": "//src/diagnostics/config/persistence:wlan.persist",
+                    "destination": "wlan.persist",
+                },
+                {
+                    "source": "//src/diagnostics/config/persistence:power.persist",
+                    "destination": "power.persist",
+                },
+                {
+                    "source": "//src/diagnostics/config/persistence:network_policy.persist",
+                    "destination": "network_policy.persist",
+                },
+            ],
+        },
+    ],
     core_shards = [
         "//src/diagnostics/realm:meta/diagnostics.core_shard.cml",
         "//src/diagnostics/persistence:meta/diagnostics-persistence.core_shard.cml",
@@ -2138,6 +2186,21 @@ assembly_input_bundle(
     name = "standard_userdebug",
     auto_include_in = [
         "standard::userdebug",
+    ],
+    config_data = [
+        {
+            "package_name": "triage-detect",
+            "files": [
+                {
+                    "source": "//src/diagnostics/detect/configs:enable-filing.json",
+                    "destination": "config.json",
+                },
+                {
+                    "source": "//src/diagnostics/detect/configs:cobalt-detect.triage",
+                    "destination": "cobalt-detect.triage",
+                },
+            ],
+        },
     ],
 )
 
@@ -2251,6 +2314,17 @@ assembly_input_bundle(
     allowed_in = [
         "userdebug",
         "eng",
+    ],
+    config_data = [
+        {
+            "package_name": "memory_monitor",
+            "files": [
+                {
+                    "source": "//src/developer/memory/monitor/config:send_critical_pressure_crash_reports",
+                    "destination": "send_critical_pressure_crash_reports",
+                },
+            ],
+        },
     ],
 )
 
@@ -3225,6 +3299,17 @@ assembly_input_bundle(
             ],
         },
     ],
+    config_data = [
+        {
+            "package_name": "triage-detect",
+            "files": [
+                {
+                    "source": "//src/diagnostics/config/triage/detect:omaha-client-detect.triage",
+                    "destination": "omaha-client-detect.triage",
+                },
+            ],
+        },
+    ],
 )
 
 # buildifier: leave-alone
@@ -3233,6 +3318,26 @@ assembly_input_bundle(
     allowed_in = [
         "userdebug",
         "eng",
+    ],
+    config_data = [
+        {
+            "package_name": "omaha-client",
+            "files": [
+                {
+                    "source": "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/omaha-client:empty_eager_package_config",
+                    "destination": "eager_package_config.json",
+                },
+            ],
+        },
+        {
+            "package_name": "pkg-resolver",
+            "files": [
+                {
+                    "source": "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/omaha-client:empty_eager_package_config",
+                    "destination": "eager_package_config.json",
+                },
+            ],
+        },
     ],
 )
 

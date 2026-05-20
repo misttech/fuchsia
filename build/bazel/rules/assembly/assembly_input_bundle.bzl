@@ -231,6 +231,47 @@ def _assembly_input_bundle_impl(ctx):
         args.add("--drivers-list", drivers_file)
         inputs.append(drivers_file)
 
+    # Handle config_data
+    config_data_list = []
+    if ctx.attr.config_data:
+        parsed_config_data = json.decode(ctx.attr.config_data)
+        path_map = {}
+        for dep in ctx.attr.config_data_inputs:
+            lbl = str(dep.label)
+            files = dep.files.to_list()
+            if len(files) > 1:
+                fail(
+                    ("Label '%s' resolved to multiple files, but only single " +
+                     "files are supported in the 'source' field of 'config_data'.") % lbl,
+                )
+            if not files:
+                fail("Label '%s' did not resolve to any files in config_data" % lbl)
+            path_map[lbl] = files[0].path
+            inputs.extend(files)
+
+        for pkg in parsed_config_data:
+            package_name = pkg["package_name"]
+            for file in pkg["files"]:
+                lbl = file["source"]
+                if lbl in path_map:
+                    source_path = path_map[lbl]
+                else:
+                    fail("Config data source %s not found in inputs" % lbl)
+                config_data_list.append({
+                    "package_name": package_name,
+                    "source": source_path,
+                    "destination": file["destination"],
+                })
+
+    if config_data_list:
+        config_data_file = ctx.actions.declare_file(ctx.label.name + "_config_data.json")
+        ctx.actions.write(
+            output = config_data_file,
+            content = json.encode(config_data_list),
+        )
+        args.add("--config-data-list", config_data_file)
+        inputs.append(config_data_file)
+
     ctx.actions.run(
         inputs = inputs,
         outputs = [out_dir],
@@ -273,6 +314,8 @@ _assembly_input_bundle = rule(
         "compiled_packages_inputs": attr.label_list(allow_files = True),
         "drivers": attr.string(),
         "drivers_inputs": attr.label_list(providers = [FuchsiaPackageInfo]),
+        "config_data": attr.string(),
+        "config_data_inputs": attr.label_list(allow_files = True),
         "_tool": attr.label(
             default = "//build/assembly/scripts:assembly_input_bundle_tool",
             executable = True,
@@ -305,6 +348,7 @@ def assembly_input_bundle(
         toolbox_shards = [],
         compiled_packages = [],
         drivers = [],
+        config_data = [],
         **kwargs):
     """Creates an Assembly Input Bundle.
 
@@ -434,6 +478,20 @@ def assembly_input_bundle(
               }
             ]
 
+        config_data: [list of dicts] List of dicts that describe config data associated with a given package.
+            Example:
+            config_data = [
+              {
+                "package_name": "example_package",
+                "files": [
+                  {
+                    "source": "//src/path_to_config:config1.json",
+                    "destination": "config1.json"
+                  },
+                ]
+              }
+            ]
+
         **kwargs: Other arguments to pass to the rule.
     """
 
@@ -494,6 +552,26 @@ def assembly_input_bundle(
             drivers_inputs.append(driver_label)
     drivers_inputs = depset(drivers_inputs).to_list()
 
+    # Extract labels from config_data to pass to the rule and canonicalize them.
+    #
+    # We canonicalize the labels here (converting them to strings using str(Label(...))).
+    # This is done because the rule implementation needs to look up these labels in the
+    # config_data_inputs list to get their file paths. Since str(dep.label) in the
+    # implementation returns a canonical label string, we must ensure the strings in our JSON
+    # match that canonical format.
+    #
+    #  e.g.  //some/path/to:foo/bar.cml => "@@//some/path/to:foo/bar.cml"
+
+    config_data_inputs = []
+    for pkg in config_data:
+        if "files" in pkg:
+            for file in pkg["files"]:
+                if "source" in file:
+                    source_label = str(Label(file["source"]))
+                    file["source"] = source_label
+                    config_data_inputs.append(source_label)
+    config_data_inputs = depset(config_data_inputs).to_list()
+
     _assembly_input_bundle(
         name = name,
         experimental = experimental,
@@ -520,6 +598,8 @@ def assembly_input_bundle(
         compiled_packages_inputs = compiled_packages_inputs,
         drivers = json.encode(drivers),
         drivers_inputs = drivers_inputs,
+        config_data = json.encode(config_data),
+        config_data_inputs = config_data_inputs,
         **kwargs
     )
 

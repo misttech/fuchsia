@@ -6,3 +6,13 @@
 exports_files(
     ["brcmfmac-detect.triage"],
 )
+
+exports_files(
+    [
+        "session-detect.triage",
+        "sysmem-detect.triage",
+        "wlan-detect.triage",
+        "omaha-client-detect.triage",
+    ],
+    visibility = ["//bundles/assembly:__subpackages__"],
+)

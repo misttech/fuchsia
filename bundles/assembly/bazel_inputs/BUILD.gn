@@ -936,7 +936,7 @@ group("omaha_client") {
 }
 
 group("omaha_client_empty_eager_config") {
-  deps = []
+  deps = [ "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/omaha-client:empty_eager_package_config" ]
 }
 
 group("product_provided_update_checker") {
