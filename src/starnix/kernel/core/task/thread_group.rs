@@ -50,6 +50,30 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use zx::{Koid, Status};
 
+#[derive(Debug)]
+pub struct ZirconProcess {
+    process: zx::Process,
+    koid: Result<Koid, Status>,
+}
+
+impl ZirconProcess {
+    pub fn new(process: zx::Process) -> Self {
+        let koid = process.koid();
+        Self { process, koid }
+    }
+
+    pub fn koid(&self) -> Result<Koid, Status> {
+        self.koid
+    }
+}
+
+impl std::ops::Deref for ZirconProcess {
+    type Target = zx::Process;
+    fn deref(&self) -> &Self::Target {
+        &self.process
+    }
+}
+
 /// A weak reference to a thread group that can be used in set and maps.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ThreadGroupKey {
@@ -239,7 +263,7 @@ pub struct ThreadGroup {
     /// groups share an address space. To implement that situation, we might
     /// need to break the 1-to-1 mapping between thread groups and zx::process
     /// or teach zx::process to share address spaces.
-    pub process: zx::Process,
+    pub process: ZirconProcess,
 
     /// A handle to the restricted address space for the Zircon process object.
     pub root_vmar: zx::Vmar,
@@ -697,6 +721,7 @@ impl ThreadGroup {
         L: LockBefore<ProcessGroupState>,
     {
         Arc::new_cyclic(|weak_self| {
+            let process = ZirconProcess::new(process);
             let mut thread_group = ThreadGroup {
                 weak_self: weak_self.clone(),
                 kernel,

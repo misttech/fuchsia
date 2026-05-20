@@ -851,7 +851,7 @@ impl Kernel {
             };
 
             let tg_node = thread_groups.create_child(format!("{}", thread_group.leader));
-            if let Ok(koid) = &thread_group.process.koid() {
+            if let Ok(koid) = thread_group.process.koid() {
                 tg_node.record_int("koid", koid.raw_koid() as i64);
             }
             tg_node.record_int("pid", thread_group.leader as i64);
