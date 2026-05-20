@@ -1024,7 +1024,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
   ubsan = {
@@ -9922,7 +9922,7 @@ Valid values: "cpp", "rust"
 
 **Current value (from the default):** `"cpp"`
 
-From //src/graphics/display/drivers/virtio-gpu-display/BUILD.gn:15
+From //src/graphics/display/drivers/virtio-gpu-display/BUILD.gn:14
 
 ### virtmagma_debug
 
