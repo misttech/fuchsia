@@ -9,8 +9,8 @@
 #include <inttypes.h>
 #include <lib/arch/intrin.h>
 #include <lib/ktrace.h>
+#include <lib/mmio-ptr/mmio-ptr.h>
 #include <lib/root_resource_filter.h>
-#include <reg.h>
 #include <trace.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
@@ -35,17 +35,17 @@
 // TODO-rvbringup: have the offsets of each hart target be defined in ZBI from device tree
 #ifdef SIFIVE_HIFIVE_UNLEASHED_HACK
 #define PLIC_HART_IDX(hart) ((hart) ? (2 * (hart)) : ~0U)
-#define PLIC_PRIORITY(plic_base, irq) (plic_base + 4 * (irq))
+#define PLIC_PRIORITY(plic_base, irq) (plic_base + (irq))
 #else
 #define PLIC_HART_IDX(hart) ((2 * (hart)) + 1)
-#define PLIC_PRIORITY(plic_base, irq) (plic_base + 4 + 4 * (irq))
+#define PLIC_PRIORITY(plic_base, irq) (plic_base + 1 + (irq))
 #endif
 
-#define PLIC_PENDING(plic_base, irq) (plic_base + 0x1000 + (4 * ((irq) / 32)))
+#define PLIC_PENDING(plic_base, irq) (plic_base + 0x400 + ((irq) / 32))
 #define PLIC_ENABLE(plic_base, irq, hart) \
-  (plic_base + 0x2000 + (0x80 * PLIC_HART_IDX(hart)) + (4 * ((irq) / 32)))
-#define PLIC_THRESHOLD(plic_base, hart) (plic_base + 0x200000 + (0x1000 * PLIC_HART_IDX(hart)))
-#define PLIC_COMPLETE(plic_base, hart) (plic_base + 0x200004 + (0x1000 * PLIC_HART_IDX(hart)))
+  (plic_base + 0x800 + (0x20 * PLIC_HART_IDX(hart)) + ((irq) / 32))
+#define PLIC_THRESHOLD(plic_base, hart) (plic_base + 0x80000 + (0x400 * PLIC_HART_IDX(hart)))
+#define PLIC_COMPLETE(plic_base, hart) (plic_base + 0x80001 + (0x400 * PLIC_HART_IDX(hart)))
 #define PLIC_CLAIM(plic_base, hart) PLIC_COMPLETE(plic_base, hart)
 
 #define LOCAL_TRACE 0
@@ -53,7 +53,7 @@
 namespace {
 
 // values read from zbi
-vaddr_t plic_base = 0;
+MMIO_PTR volatile uint32_t* plic_base = nullptr;
 interrupt_vector_t plic_max_int = 0;
 
 bool plic_is_valid_interrupt(interrupt_vector_t vector, uint32_t flags) {
@@ -67,17 +67,17 @@ uint32_t plic_get_max_vector() { return plic_max_int; }
 void plic_init_percpu_early() {}
 
 void plic_enable_vector(interrupt_vector_t vector, uint32_t hart_id) {
-  const uintptr_t plic_enable_reg = PLIC_ENABLE(plic_base, vector, hart_id);
-  uint32_t val = readl(plic_enable_reg);
+  MMIO_PTR volatile uint32_t* plic_enable_reg = PLIC_ENABLE(plic_base, vector, hart_id);
+  uint32_t val = MmioRead32(plic_enable_reg);
   val |= (1U << (vector % 32));
-  writel(val, plic_enable_reg);
+  MmioWrite32(val, plic_enable_reg);
 }
 
 void plic_disable_vector(interrupt_vector_t vector, uint32_t hart_id) {
-  const uintptr_t plic_enable_reg = PLIC_ENABLE(plic_base, vector, hart_id);
-  uint32_t val = readl(plic_enable_reg);
+  MMIO_PTR volatile uint32_t* plic_enable_reg = PLIC_ENABLE(plic_base, vector, hart_id);
+  uint32_t val = MmioRead32(plic_enable_reg);
   val &= ~(1U << (vector % 32));
-  writel(val, plic_enable_reg);
+  MmioWrite32(val, plic_enable_reg);
 }
 
 zx_status_t plic_mask_interrupt(interrupt_vector_t vector) {
@@ -161,7 +161,7 @@ interrupt_vector_t plic_remap_interrupt(interrupt_vector_t vector) {
 void plic_handle_irq(iframe_t* frame) {
   // get the current vector
   const uint32_t curr_hart_id = riscv64_curr_hart_id();
-  const uint32_t vector = readl(PLIC_CLAIM(plic_base, curr_hart_id));
+  const uint32_t vector = MmioRead32(PLIC_CLAIM(plic_base, curr_hart_id));
   LTRACEF_LEVEL(2, "vector %u\n", vector);
 
   DEBUG_ASSERT(curr_hart_id == riscv64_boot_hart_id());
@@ -184,7 +184,7 @@ void plic_handle_irq(iframe_t* frame) {
   pdev_invoke_int_if_present(vector);
 
   // EOI
-  writel(vector, PLIC_COMPLETE(plic_base, curr_hart_id));
+  MmioWrite32(vector, PLIC_COMPLETE(plic_base, curr_hart_id));
 
   LTRACEF_LEVEL(2, "cpu %u exit\n", cpu);
 
@@ -275,24 +275,28 @@ void PLICInitPostVm(const zbi_dcfg_riscv_plic_driver_t& config) {
   plic_max_int = config.num_irqs;
 
   // Map the mmio region.
+  void* plic_base_void = nullptr;
   zx_status_t status = VmAspace::kernel_aspace()->AllocPhysical(
-      "plic", config.size_bytes, reinterpret_cast<void**>(&plic_base), PAGE_SIZE_SHIFT,
-      config.mmio_phys, 0,
+      "plic", config.size_bytes, &plic_base_void, PAGE_SIZE_SHIFT, config.mmio_phys, 0,
       ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE | ARCH_MMU_FLAG_UNCACHED_DEVICE);
   if (status != ZX_OK) {
     panic("Could not allocate PLIC mmio region: %d\n", status);
   }
+  plic_base =
+      reinterpret_cast<MMIO_PTR volatile uint32_t*>(reinterpret_cast<uintptr_t>(plic_base_void));
+
   dprintf(INFO, "PLIC: num_irqs %u\n", plic_max_int);
-  dprintf(INFO, "PLIC: mmio region [%#lx, %#lx)\n", plic_base, plic_base + config.size_bytes);
+  dprintf(INFO, "PLIC: mmio region [%#lx, %#lx)\n", reinterpret_cast<uintptr_t>(plic_base),
+          reinterpret_cast<uintptr_t>(plic_base) + config.size_bytes);
 
   // mask all irqs and set their priority to 1
   for (uint i = 1; i < plic_max_int; i++) {
     plic_disable_vector(i, riscv64_boot_hart_id());
-    writel(1, PLIC_PRIORITY(plic_base, i));
+    MmioWrite32(1, PLIC_PRIORITY(plic_base, i));
   }
 
   // set global priority threshold to 0
-  writel(0, PLIC_THRESHOLD(plic_base, riscv64_boot_hart_id()));
+  MmioWrite32(0, PLIC_THRESHOLD(plic_base, riscv64_boot_hart_id()));
 
   pdev_register_interrupts(&plic_ops);
 

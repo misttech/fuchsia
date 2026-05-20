@@ -20,7 +20,6 @@
 #include <lib/system-topology.h>
 #include <lib/zbi-format/kernel.h>
 #include <platform.h>
-#include <reg.h>
 #include <string-file.h>
 #include <trace.h>
 #include <zircon/time.h>

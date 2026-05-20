@@ -5,10 +5,10 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/boot-options/boot-options.h>
+#include <lib/mmio-ptr/mmio-ptr.h>
 #include <lib/zbi-format/driver-config.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <platform.h>
-#include <reg.h>
 #include <string.h>
 #include <zircon/types.h>
 
@@ -100,10 +100,10 @@ class GenericWatchdog32 {
  private:
   static bool TranslatePAddr(uint64_t* paddr);
   void TakeAction(const zbi_dcfg_generic32_watchdog_action_t& action) TA_REQ(lock_) {
-    uint32_t val = readl(action.addr);
+    uint32_t val = MmioRead32(reinterpret_cast<MMIO_PTR volatile uint32_t*>(action.addr));
     val &= ~action.clr_mask;
     val |= action.set_mask;
-    writel(val, action.addr);
+    MmioWrite32(val, reinterpret_cast<MMIO_PTR volatile uint32_t*>(action.addr));
   }
 
   zx_instant_boot_t PetLocked() TA_REQ(lock_) {

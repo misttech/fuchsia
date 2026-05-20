@@ -7,8 +7,8 @@
 #include <lib/arch/intrin.h>
 #include <lib/counters.h>
 #include <lib/fit/defer.h>
+#include <lib/mmio-ptr/mmio-ptr.h>
 #include <platform.h>
-#include <reg.h>
 #include <trace.h>
 #include <zircon/errors.h>
 #include <zircon/rights.h>
@@ -245,7 +245,8 @@ MsixInterruptDispatcherImpl::MsixInterruptDispatcherImpl(fbl::RefPtr<MsiAllocati
                                                          RegisterIntFn register_int_fn)
     : MsiInterruptDispatcher(ktl::move(alloc), ktl::move(mapping), base_irq_id, msi_id,
                              register_int_fn),
-      table_entries_(reinterpret_cast<MsixTableEntry*>(this->mapping()->base() + table_offset)) {
+      table_entries_(reinterpret_cast<MMIO_PTR volatile MsixTableEntry*>(this->mapping()->base() +
+                                                                         table_offset)) {
   // Disable the vector, set up the address and data registers, then re-enable
   // it for our given msi_id. Per PCI Local Bus Spec v3 section 6.8.2
   // implementation notes, all accesses to these registers must be DWORD or
@@ -256,29 +257,35 @@ MsixInterruptDispatcherImpl::MsixInterruptDispatcherImpl(fbl::RefPtr<MsiAllocati
   // multiple table entries at the same vector, but requires us to specify the
   // vector in the data field.
   MaskInterrupt();
-  writel(allocation()->block().tgt_addr & UINT32_MAX, &table_entries_[msi_id].msg_addr);
-  writel(static_cast<uint32_t>(allocation()->block().tgt_addr >> 32),
-         &table_entries_[msi_id].msg_upper_addr);
-  writel(allocation()->block().tgt_data + msi_id, &table_entries_[msi_id].msg_data);
+  MmioWrite32(allocation()->block().tgt_addr & UINT32_MAX, &table_entries_[msi_id].msg_addr);
+  MmioWrite32(static_cast<uint32_t>(allocation()->block().tgt_addr >> 32),
+              &table_entries_[msi_id].msg_upper_addr);
+  MmioWrite32(allocation()->block().tgt_data + msi_id, &table_entries_[msi_id].msg_data);
   arch::DeviceMemoryBarrier();
 }
 
 void MsixInterruptDispatcherImpl::MaskInterrupt() {
   kcounter_add(dispatcher_msi_mask_count, 1);
-  RMWREG32(&table_entries_[msi_id()].vector_control, kMsixVectorControlMaskBit, 1, 1);
+  MMIO_PTR volatile uint32_t* reg_ptr = &table_entries_[msi_id()].vector_control;
+  uint32_t reg = MmioRead32(reg_ptr);
+  reg |= (1U << kMsixVectorControlMaskBit);
+  MmioWrite32(reg, reg_ptr);
   arch::DeviceMemoryBarrier();
 }
 
 void MsixInterruptDispatcherImpl::UnmaskInterrupt() {
   kcounter_add(dispatcher_msi_unmask_count, 1);
-  RMWREG32(&table_entries_[msi_id()].vector_control, kMsixVectorControlMaskBit, 1, 0);
+  MMIO_PTR volatile uint32_t* reg_ptr = &table_entries_[msi_id()].vector_control;
+  uint32_t reg = MmioRead32(reg_ptr);
+  reg &= ~(1U << kMsixVectorControlMaskBit);
+  MmioWrite32(reg, reg_ptr);
   arch::DeviceMemoryBarrier();
 }
 
 MsixInterruptDispatcherImpl::~MsixInterruptDispatcherImpl() {
   MaskInterrupt();
-  writel(0, &table_entries_[msi_id()].msg_addr);
-  writel(0, &table_entries_[msi_id()].msg_upper_addr);
-  writel(0, &table_entries_[msi_id()].msg_data);
+  MmioWrite32(0, &table_entries_[msi_id()].msg_addr);
+  MmioWrite32(0, &table_entries_[msi_id()].msg_upper_addr);
+  MmioWrite32(0, &table_entries_[msi_id()].msg_data);
   arch::DeviceMemoryBarrier();
 }

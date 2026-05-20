@@ -6,6 +6,7 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MSI_INTERRUPT_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MSI_INTERRUPT_DISPATCHER_H_
 
+#include <lib/mmio-ptr/mmio-ptr.h>
 #include <sys/types.h>
 #include <zircon/types.h>
 
@@ -166,7 +167,7 @@ class MsixInterruptDispatcherImpl : public MsiInterruptDispatcher {
   void UnmaskInterrupt() final;
 
  private:
-  volatile MsixTableEntry* const table_entries_ = {};
+  MMIO_PTR volatile MsixTableEntry* const table_entries_ = {};
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_MSI_INTERRUPT_DISPATCHER_H_

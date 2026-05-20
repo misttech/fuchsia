@@ -5,8 +5,8 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/cbuf.h>
+#include <lib/mmio-ptr/mmio-ptr.h>
 #include <lib/zbi-format/driver-config.h>
-#include <reg.h>
 #include <stdio.h>
 #include <string.h>
 #include <trace.h>
@@ -17,9 +17,9 @@
 #include <dev/interrupt.h>
 #include <kernel/thread.h>
 
-static vaddr_t preset_base;
-static vaddr_t hiu_base;
-static vaddr_t hdmitx_base;
+static MMIO_PTR volatile uint8_t* preset_base;
+static MMIO_PTR volatile uint8_t* hiu_base;
+static MMIO_PTR volatile uint8_t* hdmitx_base;
 
 #define TOP_OFFSET_MASK (0x0UL << 24)
 #define DWC_OFFSET_MASK (0x10UL << 24)
@@ -30,14 +30,19 @@ static vaddr_t hdmitx_base;
 #define DISPLAY_SET_MASK(mask, start, count, value) \
   ((mask & ~DISPLAY_MASK(start, count)) | (((value) << (start)) & DISPLAY_MASK(start, count)))
 
-#define READ32_PRESET_REG(a) readl(preset_base + a)
-#define WRITE32_PRESET_REG(a, v) writel(v, preset_base + a)
+#define READ32_PRESET_REG(a) \
+  MmioRead32(reinterpret_cast<MMIO_PTR volatile uint32_t*>(preset_base + a))
+#define WRITE32_PRESET_REG(a, v) \
+  MmioWrite32(v, reinterpret_cast<MMIO_PTR volatile uint32_t*>(preset_base + a))
 
-#define READ32_HDMITX_REG(a) readl(hdmitx_base + a)
-#define WRITE32_HDMITX_REG(a, v) writel(v, hdmitx_base + a)
+#define READ32_HDMITX_REG(a) \
+  MmioRead32(reinterpret_cast<MMIO_PTR volatile uint32_t*>(hdmitx_base + a))
+#define WRITE32_HDMITX_REG(a, v) \
+  MmioWrite32(v, reinterpret_cast<MMIO_PTR volatile uint32_t*>(hdmitx_base + a))
 
-#define READ32_HHI_REG(a) readl(hiu_base + a)
-#define WRITE32_HHI_REG(a, v) writel(v, hiu_base + a)
+#define READ32_HHI_REG(a) MmioRead32(reinterpret_cast<MMIO_PTR volatile uint32_t*>(hiu_base + a))
+#define WRITE32_HHI_REG(a, v) \
+  MmioWrite32(v, reinterpret_cast<MMIO_PTR volatile uint32_t*>(hiu_base + a))
 
 #define SET_BIT32(x, dest, value, count, start)                                    \
   WRITE32_##x##_REG(dest, (READ32_##x##_REG(dest) & ~DISPLAY_MASK(start, count)) | \
@@ -75,9 +80,11 @@ void AmlogicS912HdcpInit(const zbi_dcfg_amlogic_hdcp_driver_t& config) {
   ASSERT(config.hdmitx_phys);
 
   // get virtual addresses of our peripheral bases
-  preset_base = periph_paddr_to_vaddr(config.preset_phys);
-  hiu_base = periph_paddr_to_vaddr(config.hiu_phys);
-  hdmitx_base = periph_paddr_to_vaddr(config.hdmitx_phys);
+  preset_base =
+      reinterpret_cast<MMIO_PTR volatile uint8_t*>(periph_paddr_to_vaddr(config.preset_phys));
+  hiu_base = reinterpret_cast<MMIO_PTR volatile uint8_t*>(periph_paddr_to_vaddr(config.hiu_phys));
+  hdmitx_base =
+      reinterpret_cast<MMIO_PTR volatile uint8_t*>(periph_paddr_to_vaddr(config.hdmitx_phys));
   ASSERT(preset_base);
   ASSERT(hiu_base);
   ASSERT(hdmitx_base);

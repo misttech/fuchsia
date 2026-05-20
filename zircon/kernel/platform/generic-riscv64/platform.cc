@@ -18,7 +18,6 @@
 #include <lib/persistent-debuglog.h>
 #include <lib/system-topology.h>
 #include <platform.h>
-#include <reg.h>
 #include <string-file.h>
 #include <trace.h>
 

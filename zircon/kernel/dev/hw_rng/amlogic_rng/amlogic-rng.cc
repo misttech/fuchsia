@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/mmio-ptr/mmio-ptr.h>
 #include <lib/zbi-format/driver-config.h>
-#include <reg.h>
 
 #include <arch/arm64/periphmap.h>
 #include <dev/hw_rng.h>
@@ -23,9 +23,9 @@
 namespace {
 
 // Register for RNG data
-static vaddr_t rng_data = 0;
+static MMIO_PTR volatile uint32_t* rng_data = nullptr;
 // Register whose 1st bit indicates RNG status: 1->ready, 0->not ready.
-static vaddr_t rng_status = 0;
+static MMIO_PTR volatile uint32_t* rng_status = nullptr;
 // Hardware RNG refresh time in microsecond.
 static uint64_t rng_refresh_interval_usec = 0;
 // Hardware RNG Version.
@@ -36,19 +36,19 @@ constexpr size_t kRngDrawSize = 4;
 // Max number of retry
 constexpr size_t kMaxRetry = 10000;
 
-bool rng_v1_is_ready() { return (readl(rng_status) & AML_RNG_READY) == 1; }
+bool rng_v1_is_ready() { return (MmioRead32(rng_status) & AML_RNG_READY) == 1; }
 
 bool rng_v2_is_ready() {
   constexpr size_t kTimeoutCount = 100;
 
   // 1. Send a request.
-  uint32_t status = readl(rng_status);
-  writel(status | (1 << 31), rng_status);
+  uint32_t status = MmioRead32(rng_status);
+  MmioWrite32(status | (1 << 31), rng_status);
 
   // 2. Check whether the request has responded
   do {
     size_t count = 0;
-    status = readl(rng_status) & (1 << 31);
+    status = MmioRead32(rng_status) & (1 << 31);
     if (count++ >= kTimeoutCount) {
       return false;
     }
@@ -57,7 +57,7 @@ bool rng_v2_is_ready() {
   // 3. check whether the random seed has returned.
   do {
     size_t count = 0;
-    status = readl(rng_status) & (1 << 0);
+    status = MmioRead32(rng_status) & (1 << 0);
     if (count++ >= kTimeoutCount) {
       return false;
     }
@@ -100,7 +100,7 @@ size_t amlogic_hw_rng_get_entropy(void* buf, size_t len) {
       retry++;
     }
 
-    uint32_t read_buf = readl(rng_data);
+    uint32_t read_buf = MmioRead32(rng_data);
     static_assert(sizeof(read_buf) == kRngDrawSize);
 
     size_t read_size = ktl::min(len, kRngDrawSize);
@@ -126,8 +126,10 @@ void AmlogicRngInit(const ZbiAmlogicRng& info) {
   ASSERT(info.config.rng_data_phys);
   ASSERT(info.config.rng_status_phys);
 
-  rng_data = periph_paddr_to_vaddr(info.config.rng_data_phys);
-  rng_status = periph_paddr_to_vaddr(info.config.rng_status_phys);
+  rng_data = reinterpret_cast<MMIO_PTR volatile uint32_t*>(
+      periph_paddr_to_vaddr(info.config.rng_data_phys));
+  rng_status = reinterpret_cast<MMIO_PTR volatile uint32_t*>(
+      periph_paddr_to_vaddr(info.config.rng_status_phys));
   rng_refresh_interval_usec = info.config.rng_refresh_interval_usec;
   rng_version = info.version;
 

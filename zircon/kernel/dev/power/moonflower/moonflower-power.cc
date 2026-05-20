@@ -6,7 +6,6 @@
 #include <lib/ddk/platform-defs.h>
 #include <lib/mmio-ptr/mmio-ptr.h>
 #include <lib/zbi-format/driver-config.h>
-#include <reg.h>
 #include <trace.h>
 #include <zircon/types.h>
 
@@ -98,35 +97,36 @@ constexpr size_t kPowerDomainCount = 1;
 constexpr uint32_t kDomainId = 0;
 constexpr uint64_t kMaxOppIndex = 3;
 
-vaddr_t opp_index_reg = 0;
+MMIO_PTR volatile uint32_t* opp_index_reg = nullptr;
 
 zx_status_t moonflower_opp_set(uint32_t domain_id, uint64_t opp) {
-  if (opp_index_reg == 0) {
+  if (opp_index_reg == nullptr) {
     return ZX_ERR_BAD_STATE;
   }
   if (domain_id != kDomainId || opp > kMaxOppIndex) {
     return ZX_ERR_INVALID_ARGS;
   }
 
-  writel(static_cast<uint32_t>(kMaxOppIndex - opp), opp_index_reg);
+  MmioWrite32(static_cast<uint32_t>(kMaxOppIndex - opp), opp_index_reg);
   return ZX_OK;
 }
 
 zx::result<uint64_t> moonflower_opp_get(uint32_t domain_id) {
-  if (opp_index_reg == 0) {
+  if (opp_index_reg == nullptr) {
     return zx::error(ZX_ERR_BAD_STATE);
   }
   if (domain_id != kDomainId) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  return zx::ok<uint32_t>(kMaxOppIndex - readl(opp_index_reg));
+  return zx::ok<uint32_t>(kMaxOppIndex - MmioRead32(opp_index_reg));
 }
 
 zx::result<size_t> moonflower_opp_get_domain_count() { return zx::ok(kPowerDomainCount); }
 
 void init_opp_reg() {
-  opp_index_reg = periph_paddr_to_vaddr(0xf521000 + 0x920);
+  opp_index_reg =
+      reinterpret_cast<MMIO_PTR volatile uint32_t*>(periph_paddr_to_vaddr(0xf521000 + 0x920));
   dprintf(INFO, "POWER: current opp %" PRIu64 "\n", moonflower_opp_get(kDomainId).value_or(-1));
 }
 
