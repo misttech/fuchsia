@@ -374,24 +374,23 @@ impl UnixControlData {
                 let actual_pid = current_task.get_pid();
 
                 // Validate pid: must match sender's PID, or sender has CAP_SYS_ADMIN
-                if credentials.pid != actual_pid && !task_creds.has_capability(CAP_SYS_ADMIN) {
-                    return error!(EPERM);
+                if credentials.pid != actual_pid {
+                    security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
+                    current_task.get_task(credentials.pid)?.live()?;
                 }
                 // Validate uid: must match sender's uid/euid/suid, or sender has CAP_SETUID
                 if credentials.uid != task_creds.uid
                     && credentials.uid != task_creds.euid
                     && credentials.uid != task_creds.saved_uid
-                    && !task_creds.has_capability(CAP_SETUID)
                 {
-                    return error!(EPERM);
+                    security::check_task_capable(current_task, CAP_SETUID)?;
                 }
                 // Validate gid: must match sender's gid/egid/sgid, or sender has CAP_SETGID
                 if credentials.gid != task_creds.gid
                     && credentials.gid != task_creds.egid
                     && credentials.gid != task_creds.saved_gid
-                    && !task_creds.has_capability(CAP_SETGID)
                 {
-                    return error!(EPERM);
+                    security::check_task_capable(current_task, CAP_SETGID)?;
                 }
 
                 Ok(UnixControlData::Credentials(credentials))

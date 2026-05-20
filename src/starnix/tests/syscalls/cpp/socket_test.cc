@@ -16,6 +16,7 @@
 #include <sys/epoll.h>
 #include <sys/prctl.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/un.h>
@@ -1383,7 +1384,7 @@ class ScmCredentialsTest : public testing::Test {
   struct msghdr msg_ = {};
 };
 
-TEST_F(ScmCredentialsTest, ForgeryPid) {
+TEST_F(ScmCredentialsTest, PidForgeryRequiresCapSysAdmin) {
   Caps no_caps = {};
   SenderCredentials sender = {
       .uid = 100, .euid = 100, .suid = 100, .gid = 200, .egid = 200, .sgid = 200};
@@ -1395,26 +1396,29 @@ TEST_F(ScmCredentialsTest, ForgeryPid) {
   TestForgery(1, 100, 200, sender, {.has_cap_sys_admin = true}, {.success = true});
 }
 
-TEST_F(ScmCredentialsTest, ForgeryNonExistingPid) {
+TEST_F(ScmCredentialsTest, ZombiePidForgeryFails) {
   Caps no_caps = {};
   SenderCredentials sender = {
       .uid = 100, .euid = 100, .suid = 100, .gid = 200, .egid = 200, .sgid = 200};
 
-  // PID of a process that has already exited.
-  pid_t dead_pid;
-  {
-    test_helper::ForkHelper helper;
-    dead_pid = helper.RunInForkedProcess([] {});
-    ASSERT_TRUE(helper.WaitForChildren());
-  }
+  pid_t zombie_pid;
+  test_helper::ForkHelper helper;
+  zombie_pid = helper.RunInForkedProcess([] { _exit(0); });
 
-  // Nonexisting PID not allowed
-  TestForgery(-1, 100, 200, sender, no_caps, {.error = EPERM});
-  TestForgery(dead_pid, 100, 200, sender, no_caps, {.error = EPERM});
+  fbl::unique_fd pid_fd(static_cast<int>(syscall(SYS_pidfd_open, zombie_pid, 0u)));
+  ASSERT_THAT(pid_fd.get(), SyscallSucceeds());
 
-  // Nonexisting PID not allowed even if we have CAP_SYS_ADMIN
-  TestForgery(-1, 100, 200, sender, {.has_cap_sys_admin = true}, {.error = ESRCH});
-  TestForgery(dead_pid, 100, 200, sender, {.has_cap_sys_admin = true}, {.error = ESRCH});
+  pollfd pfd = {.fd = pid_fd.get(), .events = POLLIN};
+  ASSERT_EQ(poll(&pfd, 1, -1), 1);
+  EXPECT_EQ(pfd.revents, POLLIN);
+
+  // Without CAP_SYS_ADMIN, it should fail with EPERM (forgery not allowed).
+  TestForgery(zombie_pid, 100, 200, sender, no_caps, {.error = EPERM});
+
+  // With CAP_SYS_ADMIN, it fails with ESRCH because the process is a zombie.
+  TestForgery(zombie_pid, 100, 200, sender, {.has_cap_sys_admin = true}, {.error = ESRCH});
+
+  ASSERT_TRUE(helper.WaitForChildren());
 }
 
 TEST_F(ScmCredentialsTest, ForgeryUid) {

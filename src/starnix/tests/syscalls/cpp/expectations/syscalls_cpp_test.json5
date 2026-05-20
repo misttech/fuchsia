@@ -176,9 +176,6 @@
                 "MountTest.RemountBindReadWriteToReadOnlyWithOpenWriterToBindFails",
                 "MountTest.RemountFilesystemReadWriteToReadOnlyWithOpenWriterToBindFails",
                 "MountTest.RemountReadWriteToReadOnlyWithOpenWriterFails",
-
-                // TODO(https://fxbug.dev/503425074): Fix and re-enable.
-                "ScmCredentialsTest.ForgeryNonExistingPid",
             ],
         },
     ],
