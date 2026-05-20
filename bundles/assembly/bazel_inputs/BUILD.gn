@@ -257,7 +257,7 @@ group("trusted_execution_environment") {
 
 group("bootstrap_eng") {
   testonly = true
-  deps = []
+  deps = [ "//bundles/assembly/bazel_inputs/src/devices/power/bin/vreg-ctl:vreg_ctl_pkg" ]
 }
 
 group("lspci") {
@@ -656,7 +656,7 @@ group("bluetooth_snoop_eager") {
 }
 
 group("bluetooth_affordances") {
-  deps = []
+  deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/testing/bt-affordances:bt-affordances-server" ]
 }
 
 group("bluetooth_pandora") {

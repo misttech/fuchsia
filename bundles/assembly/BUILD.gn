@@ -61,7 +61,10 @@ assert(is_fuchsia,
 # All of the platform assembly input bundles.
 group("assembly") {
   testonly = true
-  deps = [ ":platform" ]
+  deps = [
+    ":platform",
+    "//bundles/assembly/bazel",
+  ]
 
   # Coverage, profile and sanitizer builders rename the shared libs, therefore ignore them.
   # RISCV skips some artifacts, therefore we also ignore that.

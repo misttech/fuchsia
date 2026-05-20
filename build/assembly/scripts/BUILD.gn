@@ -120,6 +120,11 @@ python_binary("product_assembly_config_file") {
   ]
 }
 
+python_binary("compare_aibs") {
+  main_source = "compare_aibs.py"
+  deps = [ "//build/python/modules/assembly" ]
+}
+
 group("tests") {
   testonly = true
   deps = [

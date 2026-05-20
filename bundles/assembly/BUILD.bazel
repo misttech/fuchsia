@@ -416,6 +416,9 @@ assembly_input_bundle(
         "utility::eng",
         "standard::eng",
     ],
+    bootfs_packages = [
+        "//bundles/assembly/bazel_inputs/src/devices/power/bin/vreg-ctl:vreg_ctl_pkg",
+    ],
 )
 
 # lspci shell utility. Used in products that use PCI and have shell commands enabled.
@@ -464,7 +467,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "paver_legacy",
-    bootfs_packages = [
+    bootfs_or_base_packages = [
         "//bundles/assembly/bazel_inputs/src/bringup/bin/paver:package",
     ],
 )
@@ -1434,6 +1437,9 @@ assembly_input_bundle(
     name = "bluetooth_affordances",
     allowed_in = [
         "eng",
+    ],
+    flexible_packages = [
+        "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/testing/bt-affordances:bt-affordances-server",
     ],
 )
 
