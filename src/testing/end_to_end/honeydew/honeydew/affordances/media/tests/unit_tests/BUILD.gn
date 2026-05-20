@@ -4,17 +4,14 @@
 
 import("//build/python/python_host_test.gni")
 
-if (is_host) {
-  python_host_test("media_using_fc_test") {
-    main_source = "media_using_fc_test.py"
-    sources = [ "media_fakes.py" ]
-    libraries = [ "//src/testing/end_to_end/honeydew" ]
-    main_callable = "unittest.main"
-    extra_args = [ "-v" ]
-  }
+assert(is_host, "Python targets only supported on a host toolchain")
+
+python_host_test("media_using_fc_test") {
+  main_source = "media_using_fc_test.py"
+  libraries = [ "//src/testing/end_to_end/honeydew" ]
 }
 
-group("tests") {
+group("unit_tests") {
   testonly = true
-  public_deps = [ ":media_using_fc_test($host_toolchain)" ]
+  public_deps = [ ":media_using_fc_test" ]
 }

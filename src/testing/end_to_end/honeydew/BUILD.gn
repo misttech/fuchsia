@@ -272,7 +272,7 @@ group("unit_tests") {
       "honeydew/affordances/connectivity/wlan/wlan_policy_ap/tests/unit_tests:tests",
       "honeydew/affordances/hello_world/tests/unit_tests:tests",
       "honeydew/affordances/location/tests/unit_tests:tests",
-      "honeydew/affordances/media/tests/unit_tests:tests",
+      "honeydew/affordances/media/tests/unit_tests($host_toolchain)",
       "honeydew/affordances/power/system_power_state_controller/tests/unit_tests:tests",
       "honeydew/affordances/rtc/tests/unit_tests:tests",
       "honeydew/affordances/session/tests/unit_tests:tests",
