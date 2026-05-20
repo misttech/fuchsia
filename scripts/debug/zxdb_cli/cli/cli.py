@@ -46,6 +46,11 @@ async def main(args: list[str]) -> int:
     start_parser.add_argument(
         "--port", type=int, help="Port for DAP server", default=None
     )
+    start_parser.add_argument(
+        "--connect",
+        action="store_true",
+        help="Connect to existing DAP server",
+    )
     subparsers.add_parser("stop", help="Stop the daemon")
     subparsers.add_parser("get-state", help="Get state of session")
     attach_parser = subparsers.add_parser("attach", help="Attach to a process")
@@ -106,7 +111,7 @@ async def main(args: list[str]) -> int:
         try:
             req = deserialize_request(parsed_args.json)
             if isinstance(req, StartRequest):
-                return await start_daemon(req.port)
+                return await start_daemon(req.port, req.connect)
         except json.JSONDecodeError as e:
             print(f"Error: Invalid JSON: {e}")
             return 1
@@ -114,7 +119,7 @@ async def main(args: list[str]) -> int:
             print(f"Error: {e}")
             return 1
     elif parsed_args.command == "start":
-        return await start_daemon(parsed_args.port)
+        return await start_daemon(parsed_args.port, parsed_args.connect)
     elif parsed_args.command:
         try:
             args_dict = vars(parsed_args)
@@ -210,7 +215,9 @@ async def _try_connect_and_handshake() -> bool | None:
         return False
 
 
-async def start_daemon(port: int | None) -> int:
+async def start_daemon(
+    port: int | None, connect_to_existing: bool = False
+) -> int:
     """Spawns the daemon process and waits for it to be ready."""
     # Check if a daemon is already running. If the socket file exists, attempt
     # to connect to it to verify if it is active. If the connection is refused,
@@ -297,15 +304,8 @@ async def start_daemon(port: int | None) -> int:
         # Now that daemon signaled readiness, perform handshake
         result = await _try_connect_and_handshake()
         if result is True:
-            print(
-                json.dumps(
-                    {
-                        "success": True,
-                        "protocol_version": PROTOCOL_VERSION,
-                    }
-                )
-            )
-            return 0
+            start_req = StartRequest(port=port, connect=connect_to_existing)
+            return await send_command(start_req)
         elif result is None:
             print(
                 json.dumps(

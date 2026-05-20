@@ -13,18 +13,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="zxdb daemon")
     parser.add_argument("--port", type=int, help="Port for DAP server")
     parser.add_argument(
-        "--connect-to-existing",
-        action="store_true",
-        help="Connect to existing DAP server",
-    )
-    parser.add_argument(
         "--ready-fd", type=int, help="File descriptor to signal readiness"
     )
     parsed_args = parser.parse_args()
 
     daemon = Daemon(
         port=parsed_args.port,
-        connect_to_existing=parsed_args.connect_to_existing,
         ready_fd=parsed_args.ready_fd,
     )
     sys.exit(asyncio.run(daemon.run()))

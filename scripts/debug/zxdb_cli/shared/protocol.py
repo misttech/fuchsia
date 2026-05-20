@@ -6,7 +6,7 @@ import dataclasses
 import json
 from typing import Any
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -23,6 +23,9 @@ class StartRequest(BaseRequest):
     """Request to start the debugging session."""
 
     port: int | None = None
+
+    # Connect to an existing debug adapter on |port|.
+    connect: bool = False
     command: str = "start"
 
 
@@ -133,7 +136,10 @@ def make_request(data: dict[str, Any]) -> BaseRequest:
     req: BaseRequest
     match command:
         case "start":
-            req = StartRequest(port=data.get("port"))
+            req = StartRequest(
+                port=data.get("port"),
+                connect=data.get("connect", False),
+            )
         case "hello":
             version = data.get("version")
             if version is None:

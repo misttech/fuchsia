@@ -17,7 +17,12 @@ from typing import Any
 from cli.cli import main
 from daemon.daemon import UDS_PATH
 from portpicker import portpicker
-from shared.protocol import PROTOCOL_VERSION, HelloRequest, serialize
+from shared.protocol import (
+    PROTOCOL_VERSION,
+    HelloRequest,
+    StartRequest,
+    serialize,
+)
 
 DAEMON_CLEANUP_TIMEOUT = 5.0
 
@@ -90,6 +95,21 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
                             )
                         )
                         writer.write(resp_header + resp_body)
+                        await writer.drain()
+
+                        # Send initialized event
+                        event = {
+                            "seq": req["seq"] + 1,
+                            "type": "event",
+                            "event": "initialized",
+                        }
+                        event_body = json.dumps(event).encode("utf-8")
+                        event_header = (
+                            f"Content-Length: {len(event_body)}\r\n\r\n".encode(
+                                "utf-8"
+                            )
+                        )
+                        writer.write(event_header + event_body)
                         await writer.drain()
                     elif req.get("command") == "pause":
                         resp = {
@@ -248,7 +268,6 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
                 daemon_path,
                 "--port",
                 str(port),
-                "--connect-to-existing",
                 f"--ready-fd={write_fd}",
             ]
 
@@ -302,6 +321,18 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             reader, writer = await asyncio.open_unix_connection(UDS_PATH)
             req = HelloRequest(version=PROTOCOL_VERSION)
             writer.write(serialize(req).encode("utf-8"))
+            await writer.drain()
+            response = await asyncio.wait_for(reader.readline(), timeout=5.0)
+            writer.close()
+            await writer.wait_closed()
+
+            resp_dict = json.loads(response.decode("utf-8"))
+            self.assertTrue(resp_dict.get("success"))
+
+            # Send StartRequest to initialize DAP session
+            reader, writer = await asyncio.open_unix_connection(UDS_PATH)
+            start_req = StartRequest(port=port, connect=True)
+            writer.write(serialize(start_req).encode("utf-8"))
             await writer.drain()
             response = await asyncio.wait_for(reader.readline(), timeout=5.0)
             writer.close()
@@ -377,6 +408,85 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
 
             # Verify socket is deleted
             self.assertFalse(UDS_PATH.exists(), "Socket file was not deleted")
+
+        finally:
+            await _cleanup_process_group(proc)
+
+    async def test_daemon_idempotent_start(self) -> None:
+        """Tests that sending StartRequest twice is handled cleanly."""
+        # _setup_daemon_and_server() already sends an initial StartRequest.
+        proc, port = await self._setup_daemon_and_server()
+
+        try:
+            # Send StartRequest a second time
+            reader, writer = await asyncio.open_unix_connection(UDS_PATH)
+            start_req = StartRequest(port=port, connect=True)
+            writer.write(serialize(start_req).encode("utf-8"))
+            await writer.drain()
+            response = await asyncio.wait_for(reader.readline(), timeout=5.0)
+            writer.close()
+            await writer.wait_closed()
+
+            resp_dict = json.loads(response.decode("utf-8"))
+            self.assertTrue(resp_dict.get("success"))
+            self.assertEqual(resp_dict.get("message"), "Daemon already started")
+
+            # Stop via CLI
+            exit_code = await main(["stop"])
+            self.assertEqual(exit_code, 0)
+
+        finally:
+            await _cleanup_process_group(proc)
+
+    async def test_daemon_start_different_port(self) -> None:
+        """Tests that sending StartRequest with a different port fails if already running."""
+        # _setup_daemon_and_server() already sends an initial StartRequest.
+        proc, port = await self._setup_daemon_and_server()
+
+        try:
+            reader, writer = await asyncio.open_unix_connection(UDS_PATH)
+            # Use a different port
+            different_port = port + 1
+            start_req = StartRequest(port=different_port, connect=True)
+            writer.write(serialize(start_req).encode("utf-8"))
+            await writer.drain()
+            response = await asyncio.wait_for(reader.readline(), timeout=5.0)
+            writer.close()
+            await writer.wait_closed()
+
+            resp_dict = json.loads(response.decode("utf-8"))
+            self.assertFalse(resp_dict.get("success"))
+            self.assertIn("cannot switch to", resp_dict.get("message", ""))
+
+            # Stop via CLI
+            exit_code = await main(["stop"])
+            self.assertEqual(exit_code, 0)
+
+        finally:
+            await _cleanup_process_group(proc)
+
+    async def test_daemon_start_different_connect(self) -> None:
+        """Tests that sending StartRequest with a different connect value fails if already running."""
+        # _setup_daemon_and_server() already sends an initial StartRequest.
+        proc, port = await self._setup_daemon_and_server()
+
+        try:
+            reader, writer = await asyncio.open_unix_connection(UDS_PATH)
+            # Use a different connect value (already running with connect=True, so use False)
+            start_req = StartRequest(port=port, connect=False)
+            writer.write(serialize(start_req).encode("utf-8"))
+            await writer.drain()
+            response = await asyncio.wait_for(reader.readline(), timeout=5.0)
+            writer.close()
+            await writer.wait_closed()
+
+            resp_dict = json.loads(response.decode("utf-8"))
+            self.assertFalse(resp_dict.get("success"))
+            self.assertIn("cannot switch to", resp_dict.get("message", ""))
+
+            # Stop via CLI
+            exit_code = await main(["stop"])
+            self.assertEqual(exit_code, 0)
 
         finally:
             await _cleanup_process_group(proc)

@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import os
 import signal
+import uuid
 from collections.abc import Awaitable, Callable, Generator
 from pathlib import Path
 from typing import Any, Final, TypeVar, cast, final
@@ -29,6 +30,7 @@ from shared.protocol import (
     PauseRequest,
     Response,
     StackTraceRequest,
+    StartRequest,
     StopRequest,
     ThreadsRequest,
     WaitForEventRequest,
@@ -120,7 +122,6 @@ class Daemon:
     def __init__(
         self,
         port: int | None,
-        connect_to_existing: bool = False,
         ready_fd: int | None = None,
     ) -> None:
         self.registry = CommandHandlerRegistry()
@@ -133,6 +134,8 @@ class Daemon:
         self.stop_event = asyncio.Event()
         self.shutdown_complete_event = asyncio.Event()
         self.dap_ready_event = asyncio.Event()
+        self.dap_initialized_event = asyncio.Event()
+        self._start_lock = asyncio.Lock()
         # We use a regular dict to store events, keyed by sequence number which preserves insertion
         # order. This is relevant because it allows us to efficiently prune old events by iterating
         # from the beginning of the dict keys and breaking early when we reach a key that shouldn't
@@ -143,12 +146,15 @@ class Daemon:
         self.zxdb_writer: asyncio.StreamWriter | None = None
         self.zxdb_reader: asyncio.StreamReader | None = None
         self.port = port
-        self.connect_to_existing = connect_to_existing
+        self.connect_to_existing: bool | None = None
         self.active_processes: dict[int, str] = {}
         self.dap_proc: AsyncCommand | None = None
+        self.package_server_proc: Any = None
+        self.repo_name: str | None = None
         self.ready_fd = ready_fd
 
         self.registry.register("stop", self.handle_stop)
+        self.registry.register("start", self.handle_start)
         self.registry.register("hello", self.handle_hello)
         self.registry.register(
             "get-state",
@@ -204,6 +210,141 @@ class Daemon:
                     f"Timed out waiting for thread {thread_id} to stop"
                 )
 
+    def _check_already_running(self, req: StartRequest) -> Response | None:
+        if not self.dap_ready_event.is_set():
+            return None
+
+        if (
+            req.port is not None
+            and self.port is not None
+            and req.port != self.port
+        ):
+            return Response(
+                success=False,
+                message=f"Daemon already running on port {self.port}, cannot switch to {req.port}",
+            )
+        if req.connect != self.connect_to_existing:
+            return Response(
+                success=False,
+                message=f"Daemon already running with connect_to_existing={self.connect_to_existing}, cannot switch to {req.connect}",
+            )
+        return Response(
+            success=True,
+            body={"uds_path": str(UDS_PATH)},
+            message="Daemon already started",
+        )
+
+    async def _start_dap_server(self) -> Response | None:
+        import package_server
+
+        if not await package_server.is_running():
+            self.repo_name = f"tmp-{uuid.uuid4()}"
+            try:
+                self.package_server_proc = await package_server.start(
+                    self.repo_name
+                )
+            except Exception as e:
+                return Response(
+                    success=False,
+                    message=f"Failed to start package server: {e}",
+                )
+        else:
+            self.package_server_proc = None
+            self.repo_name = None
+
+        ffx_cmd = FfxCmd()
+        pid = os.getpid()
+        args = [
+            "debug",
+            "connect",
+            "--new-agent",
+            "--",
+            "--enable-debug-adapter",
+            f"--signal-when-ready={pid}",
+        ]
+        if self.port is not None:
+            args.extend(["--debug-adapter-port", str(self.port)])
+
+        try:
+            self.dap_proc = await ffx_cmd.start(*args)
+        except Exception as e:
+            return Response(success=False, message=f"Failed to start zxdb: {e}")
+
+        # Wait for signal from zxdb
+        loop = asyncio.get_running_loop()
+        signal_fut = loop.create_future()
+
+        def handle_sigusr1() -> None:
+            signal_fut.set_result(True)
+
+        loop.add_signal_handler(signal.SIGUSR1, handle_sigusr1)
+
+        try:
+            await asyncio.wait_for(signal_fut, timeout=30.0)
+            print("Received SIGUSR1 from zxdb.")
+            return None
+        except asyncio.TimeoutError:
+            print("Timed out waiting for SIGUSR1 from zxdb.")
+            return Response(
+                success=False,
+                message="Timed out waiting for SIGUSR1 from zxdb",
+            )
+        finally:
+            loop.remove_signal_handler(signal.SIGUSR1)
+
+    async def handle_start(self, req: BaseRequest) -> Response:
+        assert isinstance(req, StartRequest)
+
+        async with self._start_lock:
+            if resp := self._check_already_running(req):
+                return resp
+
+            if req.port is not None:
+                self.port = req.port
+            elif self.port is None:
+                self.port = DEFAULT_DAP_PORT
+            self.connect_to_existing = req.connect
+
+            startup_success = False
+            try:
+                if not self.connect_to_existing:
+                    if err_resp := await self._start_dap_server():
+                        return err_resp
+
+                # Now connect to the DAP server
+                connected = await self._connect_to_dap()
+                if not connected:
+                    return Response(
+                        success=False, message="Failed to connect to DAP server"
+                    )
+
+                startup_success = True
+                return Response(success=True, body={"uds_path": str(UDS_PATH)})
+            finally:
+                if not startup_success:
+                    for task in self.background_tasks:
+                        task.cancel()
+                    self.background_tasks.clear()
+                    if self.zxdb_writer:
+                        self.zxdb_writer.close()
+                        try:
+                            await self.zxdb_writer.wait_closed()
+                        except Exception:
+                            pass
+                        self.zxdb_writer = None
+                    if self.dap_proc:
+                        self.dap_proc.terminate()
+                        self.dap_proc = None
+                    if self.package_server_proc:
+                        self.package_server_proc.terminate()
+                        await self.package_server_proc.wait()
+                        self.package_server_proc = None
+                        import package_server
+
+                        if self.repo_name:
+                            await package_server.stop(self.repo_name)
+                            self.repo_name = None
+
     async def handle_stop(self, _req: StopRequest) -> Response:
         self.stop_event.set()
         return Response(success=True, message="Daemon stopping")
@@ -211,21 +352,12 @@ class Daemon:
     async def handle_hello(self, req: HelloRequest) -> Response:
         """Handles the hello handshake request.
 
-        Verifies the protocol version and blocks until the DAP server
-        connection is fully initialized.
+        Verifies the protocol version.
         """
         if req.version != PROTOCOL_VERSION:
             return Response(
                 success=False,
                 message=f"Protocol version mismatch. CLI version: {req.version}, Daemon version: {PROTOCOL_VERSION}",
-            )
-
-        try:
-            await asyncio.wait_for(self.dap_ready_event.wait(), timeout=10.0)
-        except asyncio.TimeoutError:
-            return Response(
-                success=False,
-                message="Timed out waiting for DAP connection to be ready",
             )
 
         return Response(
@@ -409,106 +541,10 @@ class Daemon:
             except OSError as e:
                 print(f"Failed to write to ready-fd: {e}")
 
-        if not self.connect_to_existing:
-            import package_server
-
-            async with package_server.ensure_running():
-                ffx_cmd = FfxCmd()
-                pid = os.getpid()
-                args = [
-                    "debug",
-                    "connect",
-                    "--new-agent",
-                    "--",
-                    "--enable-debug-adapter",
-                    f"--signal-when-ready={pid}",
-                ]
-                if self.port is not None:
-                    args.extend(["--debug-adapter-port", str(self.port)])
-                else:
-                    self.port = DEFAULT_DAP_PORT
-
-                self.dap_proc = await ffx_cmd.start(*args)
-
-                # Wait for signal from zxdb
-                loop = asyncio.get_running_loop()
-                signal_fut = loop.create_future()
-
-                def handle_sigusr1() -> None:
-                    signal_fut.set_result(True)
-
-                loop.add_signal_handler(signal.SIGUSR1, handle_sigusr1)
-
-                try:
-                    await asyncio.wait_for(signal_fut, timeout=30.0)
-                    print("Received SIGUSR1 from zxdb.")
-                except asyncio.TimeoutError:
-                    print("Timed out waiting for SIGUSR1 from zxdb.")
-                    if self.dap_proc:
-                        self.dap_proc.terminate()
-                    server.close()
-                    await server.wait_closed()
-                    UDS_PATH.unlink(missing_ok=True)
-                    return 1
-                finally:
-                    loop.remove_signal_handler(signal.SIGUSR1)
-
-                return await self._run_dap_session(server)
-        else:
-            return await self._run_dap_session(server)
-
-    async def _run_dap_session(self, server: asyncio.AbstractServer) -> int:
-        # Poll for connection to DAP port
-        connected = False
-        for _ in range(20):
-            if self.stop_event.is_set():
-                print("Stop event set during DAP polling. Exiting.")
-                return 0
-            try:
-                (
-                    self.zxdb_reader,
-                    self.zxdb_writer,
-                ) = await asyncio.open_connection("localhost", self.port)
-                connected = True
-                print("Connected to DAP server.")
-                break
-            except Exception:
-                try:
-                    await asyncio.wait_for(self.stop_event.wait(), timeout=1.0)
-                    print("Stop event set during DAP polling wait. Exiting.")
-                    return 0
-                except asyncio.TimeoutError:
-                    pass
-
-        if not connected:
-            print("Failed to connect to DAP server after polling.")
-            if self.dap_proc:
-                self.dap_proc.terminate()
-            server.close()
-            await server.wait_closed()
-            UDS_PATH.unlink(missing_ok=True)
-            return 1
-
-        assert self.zxdb_reader is not None
-        assert self.zxdb_writer is not None
-
-        # Run DAP client
-        self.background_tasks.add(
-            asyncio.create_task(
-                self.dap_client.run(self.zxdb_reader, self.event_queue)
-            )
-        )
-
-        self.background_tasks.add(asyncio.create_task(self._process_events()))
-
-        await self.dap_client.initialize(
-            self.zxdb_writer,
-            InitializeArguments(adapterID="zxdb"),
-        )
-        self.dap_ready_event.set()
-
+        # Wait for stop event (sent by handle_stop)
         await self.stop_event.wait()
 
+        # Cleanup
         if self.active_handlers:
             _done, pending = await asyncio.wait(
                 self.active_handlers, timeout=5.0
@@ -534,8 +570,73 @@ class Daemon:
         if self.dap_proc:
             self.dap_proc.terminate()
 
+        if self.package_server_proc:
+            self.package_server_proc.terminate()
+            await self.package_server_proc.wait()
+            import package_server
+
+            if self.repo_name:
+                await package_server.stop(self.repo_name)
+
         self.shutdown_complete_event.set()
         return 0
+
+    async def _connect_to_dap(self) -> bool:
+        connected = False
+        for _ in range(20):
+            if self.stop_event.is_set():
+                return False
+            try:
+                (
+                    self.zxdb_reader,
+                    self.zxdb_writer,
+                ) = await asyncio.open_connection("localhost", self.port)
+                connected = True
+                print("Connected to DAP server.")
+                break
+            except Exception:
+                try:
+                    await asyncio.wait_for(self.stop_event.wait(), timeout=1.0)
+                    return False
+                except asyncio.TimeoutError:
+                    pass
+
+        if not connected:
+            print("Failed to connect to DAP server after polling.")
+            return False
+
+        assert self.zxdb_reader is not None
+        assert self.zxdb_writer is not None
+
+        # Run DAP client
+        self.background_tasks.add(
+            asyncio.create_task(
+                self.dap_client.run(self.zxdb_reader, self.event_queue)
+            )
+        )
+
+        self.background_tasks.add(asyncio.create_task(self._process_events()))
+
+        await self.dap_client.initialize(
+            self.zxdb_writer,
+            InitializeArguments(adapterID="zxdb"),
+        )
+
+        # Wait for the "initialized" event from the DAP server.
+        try:
+            await asyncio.wait_for(
+                self.dap_initialized_event.wait(), timeout=5.0
+            )
+            print("Received 'initialized' event from DAP server.")
+        except asyncio.TimeoutError:
+            print("Timed out waiting for 'initialized' event from DAP server.")
+            return False
+        except Exception as e:
+            print(f"Error waiting for 'initialized' event: {e}")
+            return False
+
+        self.dap_ready_event.set()
+        return True
 
     async def handle_uds_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -584,6 +685,8 @@ class Daemon:
 
             if req.command == "stop":
                 await self.shutdown_complete_event.wait()
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             resp = Response(success=False, message=f"Error: {e}")
             writer.write(serialize(resp).encode("utf-8"))
@@ -606,7 +709,9 @@ class Daemon:
             event = await self.event_queue.get()
 
             # Internal daemon actions on all events
-            if event.get("event") == "stopped":
+            if event.get("event") == "initialized":
+                self.dap_initialized_event.set()
+            elif event.get("event") == "stopped":
                 thread_id = event.get("body", {}).get("threadId")
                 self.stopped_threads.add(thread_id)
                 self.event_waiter.notify_thread_stop(thread_id, event)
