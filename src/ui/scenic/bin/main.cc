@@ -45,8 +45,10 @@ int main(int argc, const char** argv) {
   inspect::ComponentInspector inspector(render_loop.dispatcher(), {});
 
   component::SyncServiceMemberWatcher<fuchsia_hardware_display::Service::Provider> watcher;
+
+  // Deadline: if it takes 10 minutes to connect to the display, is anything really OK?
   zx::result<fidl::ClientEnd<fuchsia_hardware_display::Provider>> provider_result =
-      watcher.GetNextInstance(/*stop_at_idle=*/false);
+      watcher.GetNextInstance(/*stop_at_idle=*/false, zx::deadline_after(zx::min(10)));
   if (provider_result.is_error()) {
     FX_CHECK(false) << "Failed to connect to display provider: " << provider_result.status_string();
   }
