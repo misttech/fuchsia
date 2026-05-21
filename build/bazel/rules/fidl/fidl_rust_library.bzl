@@ -32,6 +32,8 @@ def fidl_rust_library(
     _fidl_rust_library_flavor("fidl", name, fidl_library_name, fidl_ir_json, deps, contains_drivers, testonly, visibility)
     _fidl_rust_library_flavor("common", name, fidl_library_name, fidl_ir_json, deps, contains_drivers, testonly, ["//visibility:private"])
     _fidl_rust_library_flavor("fdomain", name, fidl_library_name, fidl_ir_json, deps, contains_drivers, testonly, visibility)
+    _fidl_rust_library_flex("fidl", name, fidl_library_name, testonly, visibility)
+    _fidl_rust_library_flex("fdomain", name, fidl_library_name, testonly, visibility)
 
 def _fidl_rust_flavor_crate_name(fidl_library_name, flavor):
     base = fidl_library_name.replace(".", "_")
@@ -125,6 +127,37 @@ def _fidl_rust_library_flavor(flavor, name, fidl_library_name, fidl_ir_json, dep
         srcs = [fidlgen_label],
         deps = library_deps,
         edition = "2018",
+        tags = ["noclippy"],
+        testonly = testonly,
+        visibility = visibility,
+    )
+
+def _fidl_rust_library_flex(flavor, name, fidl_library_name, testonly, visibility):
+    original_label = name + "_" + _fidl_rust_flavor_label_suffix(flavor)
+    original_crate_name = _fidl_rust_flavor_crate_name(fidl_library_name, flavor)
+
+    flex_label = original_label + "_flex"
+    flex_generate_label = flex_label + "_generate"
+
+    base_library_name = fidl_library_name.replace(".", "_")
+    flex_crate_name = "flex_%s" % base_library_name
+
+    flex_file_name = "bindings/rust/%s_%s_flex.rs" % (name.replace(".", "_"), flavor)
+
+    native.genrule(
+        name = flex_generate_label,
+        outs = [flex_file_name],
+        cmd = "echo 'pub use %s::*;' > $@" % original_crate_name,
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
+
+    rust_library(
+        name = flex_label,
+        crate_name = flex_crate_name,
+        srcs = [flex_generate_label],
+        deps = [":" + original_label],
+        edition = "2024",
         tags = ["noclippy"],
         testonly = testonly,
         visibility = visibility,
