@@ -360,10 +360,13 @@ pub struct BinderProcess {
     pub available_threads: Arc<SegQueue<WeakRef<BinderThread>>>,
 }
 
-pub struct BinderProcessGuard<'a>(Guard<'a, BinderProcess, LockDepGuard<'a, BinderProcessState>>);
+pub struct BinderProcessGuard<'a>(
+    Guard<'a, BinderProcess, LockDepGuard<'a, BinderProcessState, BinderProcessStateLevel>>,
+);
 
 impl<'a> Deref for BinderProcessGuard<'a> {
-    type Target = Guard<'a, BinderProcess, LockDepGuard<'a, BinderProcessState>>;
+    type Target =
+        Guard<'a, BinderProcess, LockDepGuard<'a, BinderProcessState, BinderProcessStateLevel>>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }

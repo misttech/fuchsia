@@ -369,7 +369,7 @@ struct RemoteBinderHandleState {
 }
 
 impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
-    fn lock(&self) -> LockDepGuard<'_, RemoteBinderHandleState> {
+    fn lock(&self) -> LockDepGuard<'_, RemoteBinderHandleState, RemoteBinderHandleLevel> {
         self.state.lock()
     }
 }

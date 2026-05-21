@@ -135,7 +135,7 @@ impl<T: fmt::Debug, L: LockAfter<UninterruptibleLock> + crate::LockLevel> fmt::D
 impl<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> LockFor<L> for OrderedMutex<T, L> {
     type Data = T;
     type Guard<'a>
-        = crate::LockDepGuard<'a, T>
+        = crate::LockDepGuard<'a, T, L>
     where
         T: 'a,
         L: 'a;
@@ -173,7 +173,7 @@ pub fn lock_both<'a, T, L: LockAfter<UninterruptibleLock> + crate::LockLevel, P>
     locked: &'a mut Locked<P>,
     m1: &'a OrderedMutex<T, L>,
     m2: &'a OrderedMutex<T, L>,
-) -> (crate::LockDepGuard<'a, T>, crate::LockDepGuard<'a, T>, &'a mut Locked<L>)
+) -> (crate::LockDepGuard<'a, T, L>, crate::LockDepGuard<'a, T, L>, &'a mut Locked<L>)
 where
     P: LockBefore<L>,
 {
@@ -206,12 +206,12 @@ impl<T: fmt::Debug, L: LockAfter<UninterruptibleLock> + crate::LockLevel> fmt::D
 impl<T, L: LockAfter<UninterruptibleLock> + crate::LockLevel> RwLockFor<L> for OrderedRwLock<T, L> {
     type Data = T;
     type ReadGuard<'a>
-        = crate::LockDepReadGuard<'a, T>
+        = crate::LockDepReadGuard<'a, T, L>
     where
         T: 'a,
         L: 'a;
     type WriteGuard<'a>
-        = crate::LockDepWriteGuard<'a, T>
+        = crate::LockDepWriteGuard<'a, T, L>
     where
         T: 'a,
         L: 'a;

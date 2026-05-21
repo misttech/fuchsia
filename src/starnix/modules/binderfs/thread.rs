@@ -237,7 +237,7 @@ pub struct BinderThreadState {
 }
 
 pub struct BinderThreadGuard<'a> {
-    guard: LockDepGuard<'a, BinderThreadState>,
+    guard: LockDepGuard<'a, BinderThreadState, TerminalLock>,
     thread: &'a BinderThread,
 }
 

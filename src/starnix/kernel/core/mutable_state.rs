@@ -182,14 +182,14 @@ macro_rules! ordered_state_accessor {
     ($base_name:ident, $field_name:ident, $base_type:ty, $lock_level:ident, $mutable_type:ty) => {
         paste::paste! {
         #[allow(dead_code)]
-        pub fn read<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> $crate::mutable_state::Guard<'a, $base_type, starnix_sync::LockDepReadGuard<'a, $mutable_type>>
+        pub fn read<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> $crate::mutable_state::Guard<'a, $base_type, starnix_sync::LockDepReadGuard<'a, $mutable_type, $lock_level>>
         where
             L: starnix_sync::LockBefore<$lock_level>
         {
             $crate::mutable_state::Guard::new(self, self.$field_name.read(locked))
         }
         #[allow(dead_code)]
-        pub fn write<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> $crate::mutable_state::Guard<'a, $base_type, starnix_sync::LockDepWriteGuard<'a, $mutable_type>>
+        pub fn write<'a, L>(self: &'a $base_type, locked: &'a mut starnix_sync::Locked<L>) -> $crate::mutable_state::Guard<'a, $base_type, starnix_sync::LockDepWriteGuard<'a, $mutable_type, $lock_level>>
         where
             L: starnix_sync::LockBefore<$lock_level>
         {
