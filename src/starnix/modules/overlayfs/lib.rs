@@ -16,11 +16,11 @@ use starnix_core::vfs::rw_queue::{RwQueueReadGuard, RwQueueWriteGuard};
 use starnix_core::vfs::{
     AppendLockWriteGuard, CacheMode, CheckAccessReason, DirEntry, DirEntryHandle,
     DirectoryEntryType, DirentSink, FallocMode, FileHandle, FileObject, FileOps, FileSystem,
-    FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeFlags, FsNodeHandle,
-    FsNodeInfo, FsNodeOps, FsStr, FsString, InputBuffer, MountInfo, OutputBuffer, RenameFlags,
-    SeekTarget, SymlinkTarget, UnlinkKind, ValueOrSize, VecInputBuffer, VecOutputBuffer, XattrOp,
-    default_seek, emit_dotdot, fileops_impl_directory, fileops_impl_noop_sync,
-    fileops_impl_seekable,
+    FileSystemHandle, FileSystemOps, FileSystemOptions, FsLockDepType, FsNode, FsNodeFlags,
+    FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, InputBuffer, MountInfo, OutputBuffer,
+    RenameFlags, SeekTarget, SymlinkTarget, UnlinkKind, ValueOrSize, VecInputBuffer,
+    VecOutputBuffer, XattrOp, default_seek, emit_dotdot, fileops_impl_directory,
+    fileops_impl_noop_sync, fileops_impl_seekable,
 };
 use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_sync::{
@@ -1374,6 +1374,11 @@ impl OverlayStack {
         let lower_fs = lower.entry().node.fs();
         let upper_fs = upper.entry().node.fs();
 
+        if upper_fs.fs_lockdep_type() == FsLockDepType::Recursive {
+            // Recursive filesystems (like OverlayFS itself) are not supported as upper filesystems.
+            return error!(EINVAL);
+        }
+
         if !Arc::ptr_eq(&upper_fs, &work.entry().node.fs()) {
             log_error!("overlayfs: upperdir and workdir must be on the same FS");
             return error!(EINVAL);
@@ -1513,6 +1518,10 @@ struct OverlayFs {
 }
 
 impl FileSystemOps for OverlayFs {
+    fn fs_lockdep_type(&self) -> FsLockDepType {
+        FsLockDepType::Recursive
+    }
+
     fn statfs(
         &self,
         locked: &mut Locked<FileOpsCore>,

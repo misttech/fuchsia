@@ -5,14 +5,17 @@
 use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::{
-    CheckAccessReason, FileHandle, FileObject, FsNodeHandle, FsNodeLinkBehavior, FsStr, FsString,
-    LookupVec, MountInfo, Mounts, NamespaceNode, UnlinkKind, path,
+    CheckAccessReason, FileHandle, FileObject, FsLockDepType, FsNodeHandle, FsNodeLinkBehavior,
+    FsStr, FsString, LookupVec, MountInfo, Mounts, NamespaceNode, UnlinkKind, path,
 };
 use atomic_bitflags::atomic_bitflags;
 use bitflags::bitflags;
 use fuchsia_rcu::{RcuOptionArc, RcuReadScope};
 use starnix_rcu::RcuString;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, RwLock, RwLockWriteGuard};
+use starnix_sync::{
+    DirEntryChildrenLevel, DirEntryChildrenRecursiveLevel, DynamicLockDepRwLock, FileOpsCore,
+    FuseDirEntryChildrenLevel, LockDepWriteGuard, LockEqualOrBefore, Locked, allow_subclass,
+};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::errors::{ENOENT, Errno};
 use starnix_uapi::file_mode::{Access, FileMode};
@@ -145,7 +148,7 @@ pub struct DirEntry {
     // a number of algorithms in the DirEntry operations also assume. This assumption can be broken
     // by the rename operation, which can move nodes around the hierarchy. See the referenced bug
     // for more details, the current mitigations, and potentials for long-term solutions.
-    children: RwLock<DirEntryChildren>,
+    children: DynamicLockDepRwLock<DirEntryChildren>,
 }
 type DirEntryChildren = BTreeMap<FsString, Weak<DirEntry>>;
 
@@ -159,18 +162,30 @@ impl DirEntry {
         local_name: FsString,
     ) -> DirEntryHandle {
         let ops = node.create_dir_entry_ops();
+        let fs_lockdep_type = node.fs().fs_lockdep_type();
         let result = Arc::new(DirEntry {
             node,
             ops,
             parent: RcuOptionArc::new(parent),
             flags: Default::default(),
             local_name: local_name.into(),
-            children: Default::default(),
+            children: match fs_lockdep_type {
+                FsLockDepType::Normal => {
+                    DynamicLockDepRwLock::new::<DirEntryChildrenLevel>(Default::default())
+                }
+                FsLockDepType::Recursive => {
+                    DynamicLockDepRwLock::new::<DirEntryChildrenRecursiveLevel>(Default::default())
+                }
+                FsLockDepType::Fuse => {
+                    DynamicLockDepRwLock::new::<FuseDirEntryChildrenLevel>(Default::default())
+                }
+            },
         });
         #[cfg(any(test, debug_assertions))]
         {
             // Taking this lock tells the lock tracing system about the parent/child ordering
             // relation.
+            let _token = allow_subclass();
             let _l1 = result.children.read();
         }
         result
@@ -667,6 +682,7 @@ impl DirEntry {
         if old_mount != new_mount {
             return error!(EXDEV);
         }
+
         // The mounts are equals, choose one.
         let mount = old_mount;
 
@@ -1133,7 +1149,7 @@ impl DirEntry {
 
 struct DirEntryLockedChildren<'a> {
     entry: &'a DirEntryHandle,
-    children: RwLockWriteGuard<'a, DirEntryChildren>,
+    children: LockDepWriteGuard<'a, DirEntryChildren>,
 }
 
 enum CreationResult<F> {
@@ -1272,10 +1288,12 @@ impl<'a> RenameGuard<'a> {
                     && old_parent.node.node_key() < new_parent.node.node_key())
             {
                 let old_parent_guard = old_parent.lock_children();
+                let _token = allow_subclass();
                 let new_parent_guard = new_parent.lock_children();
                 Self { old_parent_guard, new_parent_guard: Some(new_parent_guard) }
             } else {
                 let new_parent_guard = new_parent.lock_children();
+                let _token = allow_subclass();
                 let old_parent_guard = old_parent.lock_children();
                 Self { old_parent_guard, new_parent_guard: Some(new_parent_guard) }
             }

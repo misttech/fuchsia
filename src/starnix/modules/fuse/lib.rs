@@ -21,11 +21,11 @@ use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
 use starnix_core::vfs::{
     AppendLockWriteGuard, CacheMode, CheckAccessReason, DirEntry, DirEntryOps, DirectoryEntryType,
     DirentSink, FallocMode, FdNumber, FileObject, FileObjectState, FileOps, FileSystem,
-    FileSystemHandle, FileSystemOps, FileSystemOptions, FsNode, FsNodeFlags, FsNodeHandle,
-    FsNodeInfo, FsNodeOps, FsStr, FsString, NamespaceNode, PeekBufferSegmentsCallback, SeekTarget,
-    SymlinkTarget, ValueOrSize, WeakFileHandle, XattrOp, default_eof_offset, default_fcntl,
-    default_ioctl, default_seek, fileops_impl_nonseekable, fileops_impl_noop_sync, fs_args,
-    fs_node_impl_dir_readonly,
+    FileSystemHandle, FileSystemOps, FileSystemOptions, FsLockDepType, FsNode, FsNodeFlags,
+    FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, NamespaceNode,
+    PeekBufferSegmentsCallback, SeekTarget, SymlinkTarget, ValueOrSize, WeakFileHandle, XattrOp,
+    default_eof_offset, default_fcntl, default_ioctl, default_seek, fileops_impl_nonseekable,
+    fileops_impl_noop_sync, fs_args, fs_node_impl_dir_readonly,
 };
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{log_error, log_trace, log_warn, track_stub};
@@ -295,6 +295,10 @@ impl FuseFs {
 }
 
 impl FileSystemOps for FuseFs {
+    fn fs_lockdep_type(&self) -> FsLockDepType {
+        FsLockDepType::Fuse
+    }
+
     fn rename(
         &self,
         locked: &mut Locked<FileOpsCore>,

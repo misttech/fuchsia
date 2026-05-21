@@ -15,7 +15,10 @@ use linked_hash_map::LinkedHashMap;
 use ref_cast::RefCast;
 use smallvec::SmallVec;
 use starnix_crypt::CryptService;
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
+use starnix_sync::{
+    DynamicLockDepMutex, FileOpsCore, FsRename, FsRenameRecursive, FuseFsRenameLevel,
+    LockEqualOrBefore, Locked, Mutex,
+};
 use starnix_uapi::arc_key::ArcKey;
 use starnix_uapi::as_any::AsAny;
 use starnix_uapi::auth::FsCred;
@@ -28,6 +31,23 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock, Weak};
+
+#[derive(Debug, Default)]
+pub struct FileSystemRenameToken {}
+
+/// The type of the filesystem for LockDep purposes.
+///
+/// `Normal` filesystems use standard lock levels.
+/// `Recursive` filesystems (like OverlayFS) use lock levels that precede normal ones,
+/// allowing them to lock the underlying filesystem without violating the hierarchy.
+/// `Fuse` filesystems do blocking calls while holding locks and require specific lock
+/// ordering because of this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FsLockDepType {
+    Normal,
+    Recursive,
+    Fuse,
+}
 
 /// A file system that can be mounted in a namespace.
 pub struct FileSystem {
@@ -51,7 +71,7 @@ pub struct FileSystem {
     /// how rename operations can interleave.
     ///
     /// See DirEntry::rename.
-    pub rename_mutex: Mutex<()>,
+    pub rename_mutex: DynamicLockDepMutex<FileSystemRenameToken>,
 
     /// The FsNode cache for this file system.
     ///
@@ -157,13 +177,25 @@ impl FileSystem {
         let mount_options = security::sb_eat_lsm_opts(&kernel, &mut options.params)?;
         let security_state = security::file_system_init_security(&mount_options, &ops)?;
 
+        let fs_lockdep_type = ops.fs_lockdep_type();
+
         let file_system = Arc::new(FileSystem {
             kernel: kernel.weak_self.clone(),
             root: OnceLock::new(),
             ops: Box::new(ops),
             options,
             dev_id: kernel.device_registry.next_anonymous_dev_id(locked),
-            rename_mutex: Mutex::new(()),
+            rename_mutex: match fs_lockdep_type {
+                FsLockDepType::Normal => {
+                    DynamicLockDepMutex::new::<FsRename>(FileSystemRenameToken::default())
+                }
+                FsLockDepType::Recursive => {
+                    DynamicLockDepMutex::new::<FsRenameRecursive>(FileSystemRenameToken::default())
+                }
+                FsLockDepType::Fuse => {
+                    DynamicLockDepMutex::new::<FuseFsRenameLevel>(FileSystemRenameToken::default())
+                }
+            },
             node_cache,
             dcache: match cache_mode {
                 CacheMode::Permanent => DirEntryCache::Permanent(Mutex::new(HashSet::new())),
@@ -194,6 +226,11 @@ impl FileSystem {
 
     pub fn has_permanent_entries(&self) -> bool {
         matches!(self.dcache, DirEntryCache::Permanent(_))
+    }
+
+    /// Returns the `FsLockDepType` of this filesystem, delegated from `FileSystemOps`.
+    pub fn fs_lockdep_type(&self) -> FsLockDepType {
+        self.ops.fs_lockdep_type()
     }
 
     /// The root directory entry of this file system.
@@ -498,6 +535,14 @@ impl FileSystem {
 
 /// The filesystem-implementation-specific data for FileSystem.
 pub trait FileSystemOps: AsAny + Send + Sync + 'static {
+    /// Returns the `FsLockDepType` of this filesystem.
+    ///
+    /// Defaults to `FsLockDepType::Normal`. Filesystems that can be stacked (like OverlayFS)
+    /// should override this to return `FsLockDepType::Recursive`.
+    fn fs_lockdep_type(&self) -> FsLockDepType {
+        FsLockDepType::Normal
+    }
+
     /// Return information about this filesystem.
     ///
     /// A typical implementation looks like this:

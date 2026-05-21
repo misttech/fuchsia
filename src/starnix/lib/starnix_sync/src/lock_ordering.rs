@@ -7,7 +7,9 @@ use lock_ordering_macro::lock_ordering;
 
 lock_ordering! {
     // UninterruptibleLock represents a virtual level before which lock must be interruptible.
-    Unlocked => UninterruptibleLock,
+    Unlocked => FuseFsRenameLevel,
+    FuseFsRenameLevel => FuseDirEntryChildrenLevel,
+    FuseDirEntryChildrenLevel => UninterruptibleLock,
     // Artificial level for ResourceAccessor.add_file_with_flags(..)
     Unlocked => ResourceAccessorLevel,
     // Level for FileObject offset lock.
@@ -53,7 +55,7 @@ lock_ordering! {
     UninterruptibleLock => FastrpcInnerState,
     // MemoryXattrStorage
     UninterruptibleLock => MemoryXattrStorageLevel,
-    // DeviceRegistty
+    // DeviceRegistry
     UninterruptibleLock => DeviceRegistryState,
     FileOpsCore => DeviceRegistryState,
 
@@ -61,7 +63,8 @@ lock_ordering! {
     UninterruptibleLock => RemoteBinderHandleLevel,
     RemoteBinderHandleLevel => BinderProcsLevel,
     FileObjectOffset => BinderFsDevicesLevel,
-    BinderFsDevicesLevel => FileOpsCore,
+    DirEntryChildrenLevel => BinderFsDevicesLevel,
+    BinderFsDevicesLevel => DeviceRegistryState,
     BinderProcsLevel => BinderProcessSharedMemoryLevel,
     BinderProcessSharedMemoryLevel => BinderFreezeLevel,
     BinderFreezeLevel => BinderProcessStateLevel,
@@ -73,6 +76,12 @@ lock_ordering! {
     FileOpsCore => BinderObjectLevel,
     BinderProcessStateLevel => BinderObjectLevel,
     BinderObjectLevel => TerminalLock,
+
+    // VFS locks
+    BinderProcessSharedMemoryLevel => FsRenameRecursive,
+    FsRenameRecursive => DirEntryChildrenRecursiveLevel,
+    DirEntryChildrenRecursiveLevel => FsRename,
+    FsRename => DirEntryChildrenLevel,
 
     // Terminal Level. No lock level should ever be defined after this. Can be used for any locks
     // that is never acquired before any other lock.
