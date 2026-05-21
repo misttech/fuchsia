@@ -10,6 +10,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
 #include <sys/xattr.h>
@@ -25,11 +26,14 @@
 #include <optional>
 #include <ostream>
 
+#include <linux/capability.h>
 #include <linux/userfaultfd.h>
 
 #include "gtest/gtest.h"
 #include "src/lib/files/file.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/proc_test_base.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 #ifndef MREMAP_DONTUNMAP
@@ -807,3 +811,33 @@ TEST_F(UffdProcTest, RegisterThenMove) {
   ASSERT_TRUE(helper.WaitForChildren());
 }
 #endif
+
+TEST(UffdTest, NonUserModeOnlyRequiresCapSysPtrace) {
+  test_helper::ForkHelper helper;
+
+  // Subprocess 1: Without capability
+  helper.RunInForkedProcess([]() {
+    test_helper::UnsetCapabilityEffective(CAP_SYS_PTRACE);
+
+    int flags = O_CLOEXEC | O_NONBLOCK;  // Omitted UFFD_USER_MODE_ONLY
+    long ret = syscall(SYS_userfaultfd, flags);
+
+    EXPECT_THAT(ret, SyscallFailsWithErrno(EPERM));
+  });
+
+  // Subprocess 2: With capability
+  helper.RunInForkedProcess([]() {
+    ASSERT_TRUE(test_helper::HasCapabilityEffective(CAP_SYS_PTRACE))
+        << "Test must be run with CAP_SYS_PTRACE (e.g., as root)";
+
+    int flags = O_CLOEXEC | O_NONBLOCK;
+    long ret = syscall(SYS_userfaultfd, flags);
+
+    EXPECT_THAT(ret, SyscallSucceeds());
+    if (ret >= 0) {
+      close(static_cast<int>(ret));
+    }
+  });
+
+  EXPECT_TRUE(helper.WaitForChildren());
+}

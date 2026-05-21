@@ -142,12 +142,13 @@ pub fn dispatch_syscall(
         };
         pub use starnix_core::bpf::syscalls::sys_arch32_bpf;
         pub use starnix_core::mm::syscalls::{
-            sys_arch32_futex, sys_arch32_madvise, sys_arch32_membarrier, sys_arch32_mincore,
-            sys_arch32_mlock, sys_arch32_mlock2, sys_arch32_mlockall, sys_arch32_mmap2,
-            sys_arch32_mremap, sys_arch32_msync, sys_arch32_munlock, sys_arch32_munlockall,
-            sys_arch32_munmap, sys_arch32_process_mrelease, sys_arch32_process_vm_readv,
-            sys_arch32_set_robust_list, sys_arch32_userfaultfd, sys_brk as sys_arch32_brk,
-            sys_mprotect as sys_arch32_mprotect, sys_process_madvise as sys_arch32_process_madvise,
+            sys_arch32_futex, sys_arch32_get_robust_list, sys_arch32_madvise,
+            sys_arch32_membarrier, sys_arch32_mincore, sys_arch32_mlock, sys_arch32_mlock2,
+            sys_arch32_mlockall, sys_arch32_mmap2, sys_arch32_mremap, sys_arch32_msync,
+            sys_arch32_munlock, sys_arch32_munlockall, sys_arch32_munmap,
+            sys_arch32_process_mrelease, sys_arch32_process_vm_readv, sys_arch32_set_robust_list,
+            sys_arch32_userfaultfd, sys_brk as sys_arch32_brk, sys_mprotect as sys_arch32_mprotect,
+            sys_process_madvise as sys_arch32_process_madvise,
         };
         pub use starnix_core::perf::sys_arch32_perf_event_open;
         pub use starnix_core::signals::syscalls::{
@@ -334,6 +335,7 @@ pub fn dispatch_syscall(
             ftruncate64[4],
             ftruncate[2],
             futex[6],
+            get_robust_list[3],
             getcwd[2],
             getdents64[3],
             getegid32[0],

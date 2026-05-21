@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <stdint.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -17,12 +18,15 @@
 #include <thread>
 #include <vector>
 
+#include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
+#include <linux/capability.h>
 #include <linux/futex.h>
 
 #include "src/lib/files/directory.h"
 #include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -524,5 +528,82 @@ TEST(FutexTest, FutexSucceedsHighestRestrictedAddress) {
   EXPECT_EQ(errno, ETIMEDOUT);
   SAFE_SYSCALL(munmap(reinterpret_cast<void *>(highest_restricted_mode_address), page_size));
 }
+
+constexpr size_t kUser1Uid = 65533;
+
+struct GetRobustListTestCase {
+  bool same_user;
+  bool has_cap;
+  int expected_errno;
+};
+
+class GetRobustListTest : public ::testing::TestWithParam<GetRobustListTestCase> {};
+
+TEST_P(GetRobustListTest, DifferentUserRequiresCapSysPtrace) {
+  const GetRobustListTestCase &params = GetParam();
+
+  test_helper::ForkHelper tracer_helper;
+
+  // Start the tracer process.
+  tracer_helper.RunInForkedProcess([&]() {
+    test_helper::ForkHelper tracee_helper;
+
+    int pipe_fds[2];
+    SAFE_SYSCALL(pipe(pipe_fds));
+    fbl::unique_fd wait_fd(pipe_fds[0]);
+    fbl::unique_fd signal_fd(pipe_fds[1]);
+
+    // Start the tracee process as a child of the tracer.
+    pid_t tracee_pid = tracee_helper.RunInForkedProcess([&]() {
+      if (!params.same_user) {
+        SAFE_SYSCALL(setresuid(kUser1Uid, kUser1Uid, kUser1Uid));
+      }
+
+      struct robust_list_head head;
+      SAFE_SYSCALL(syscall(SYS_set_robust_list, &head, sizeof(head)));
+
+      // Signal that the tracee has done initializing.
+      char buf = 'a';
+      SAFE_SYSCALL(write(signal_fd.get(), &buf, sizeof(buf)));
+
+      // Wait until the tracer is done.
+      pause();
+    });
+
+    // Wait for the tracee to be ready.
+    char buf;
+    SAFE_SYSCALL(read(wait_fd.get(), &buf, sizeof(buf)));
+
+    if (!params.has_cap) {
+      test_helper::UnsetCapabilityEffective(CAP_SYS_PTRACE);
+    }
+
+    // Attempt to read the futex list.
+    struct robust_list_head *read_head = nullptr;
+    size_t read_len = 0;
+    long ret = syscall(SYS_get_robust_list, tracee_pid, &read_head, &read_len);
+
+    if (params.expected_errno == 0) {
+      EXPECT_THAT(ret, SyscallSucceeds());
+    } else {
+      EXPECT_THAT(ret, SyscallFailsWithErrno(params.expected_errno));
+    }
+
+    // Teardown the tracee.
+    SAFE_SYSCALL(kill(tracee_pid, SIGKILL));
+    tracee_helper.ExpectSignal(SIGKILL);
+
+    EXPECT_TRUE(tracee_helper.WaitForChildren());
+  });
+
+  EXPECT_TRUE(tracer_helper.WaitForChildren());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    GetRobustListTest, GetRobustListTest,
+    ::testing::Values(
+        GetRobustListTestCase{.same_user = true, .has_cap = false, .expected_errno = 0},
+        GetRobustListTestCase{.same_user = false, .has_cap = true, .expected_errno = 0},
+        GetRobustListTestCase{.same_user = false, .has_cap = false, .expected_errno = EPERM}));
 
 }  // anonymous namespace

@@ -22,7 +22,9 @@ use starnix_logging::{CATEGORY_STARNIX_MM, log_trace, trace_duration, track_stub
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_syscalls::SyscallArg;
 use starnix_types::time::{duration_from_timespec, time_from_timespec, timespec_from_time};
-use starnix_uapi::auth::{CAP_SYS_PTRACE, PTRACE_MODE_ATTACH_REALCREDS};
+use starnix_uapi::auth::{
+    CAP_SYS_PTRACE, PTRACE_MODE_ATTACH_REALCREDS, PTRACE_MODE_READ_REALCREDS,
+};
 use starnix_uapi::errors::{EINTR, Errno};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
@@ -493,7 +495,10 @@ pub fn sys_userfaultfd(
         return error!(ENOSYS);
     };
 
-    let user_mode_only = raw_flags & UFFD_USER_MODE_ONLY == 0;
+    let user_mode_only = raw_flags & UFFD_USER_MODE_ONLY != 0;
+    if !user_mode_only {
+        security::check_task_capable(current_task, CAP_SYS_PTRACE)?;
+    }
     let uff_handle = UserFaultFile::new(locked, current_task, open_flags, user_mode_only)?;
     current_task.add_file(locked, uff_handle, fd_flags)
 }
@@ -703,7 +708,7 @@ fn do_futex_wait_with_restart<Key: FutexKey>(
 }
 
 pub fn sys_get_robust_list(
-    _locked: &mut Locked<Unlocked>,
+    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     tid: tid_t,
     user_head_ptr: UserRef<UserAddress>,
@@ -715,10 +720,13 @@ pub fn sys_get_robust_list(
     if user_head_ptr.is_null() || user_len_ptr.is_null() {
         return error!(EFAULT);
     }
-    if tid != 0 {
-        security::check_task_capable(current_task, CAP_SYS_PTRACE)?;
-    }
-    let task = if tid == 0 { current_task.task.clone() } else { current_task.get_task(tid)? };
+    let task = if tid == 0 {
+        current_task.task.clone()
+    } else {
+        let task = current_task.get_task(tid)?;
+        current_task.check_ptrace_access_mode(locked, PTRACE_MODE_READ_REALCREDS, &task)?;
+        task
+    };
     current_task.write_object(user_head_ptr, &task.read().robust_list_head.addr())?;
     current_task.write_object(user_len_ptr, &std::mem::size_of::<robust_list_head>())?;
     Ok(())
@@ -804,10 +812,12 @@ pub fn sys_mincore(
 #[cfg(target_arch = "aarch64")]
 mod arch32 {
     use crate::mm::PAGE_SIZE;
+    use crate::mm::memory_accessor::MemoryAccessorExt;
     use crate::mm::syscalls::{UserAddress, sys_mmap};
     use crate::task::{CurrentTask, RobustListHeadPtr};
     use crate::vfs::FdNumber;
     use starnix_sync::{Locked, Unlocked};
+    use starnix_uapi::auth::PTRACE_MODE_READ_REALCREDS;
     use starnix_uapi::errors::Errno;
     use starnix_uapi::user_address::UserRef;
     use starnix_uapi::{error, uapi};
@@ -822,6 +832,36 @@ mod arch32 {
             return error!(EINVAL);
         }
         current_task.write().robust_list_head = RobustListHeadPtr::from_32(user_head);
+        Ok(())
+    }
+
+    pub fn sys_arch32_get_robust_list(
+        locked: &mut Locked<Unlocked>,
+        current_task: &CurrentTask,
+        tid: starnix_uapi::tid_t,
+        user_head_ptr: UserRef<u32>,
+        user_len_ptr: UserRef<u32>,
+    ) -> Result<(), Errno> {
+        if tid < 0 {
+            return error!(EINVAL);
+        }
+        if user_head_ptr.is_null() || user_len_ptr.is_null() {
+            return error!(EFAULT);
+        }
+        let task = if tid == 0 {
+            current_task.task.clone()
+        } else {
+            let task = current_task.get_task(tid)?;
+            current_task.check_ptrace_access_mode(locked, PTRACE_MODE_READ_REALCREDS, &task)?;
+            task
+        };
+
+        let addr = task.read().robust_list_head.addr().ptr() as u32;
+        current_task.write_object(user_head_ptr, &addr)?;
+        current_task.write_object(
+            user_len_ptr,
+            &(std::mem::size_of::<uapi::arch32::robust_list_head>() as u32),
+        )?;
         Ok(())
     }
 
