@@ -459,5 +459,5 @@ impl Driver for DwSpiDriver {
 }
 
 #[cfg(test)]
-#[path = "../tests/dw_spi_test.rs"]
+#[path = "tests.rs"]
 mod tests;

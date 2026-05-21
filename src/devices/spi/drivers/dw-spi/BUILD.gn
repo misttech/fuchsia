@@ -34,7 +34,7 @@ fuchsia_rust_driver("dw-spi-driver") {
   sources = [
     "src/lib.rs",
     "src/registers.rs",
-    "tests/dw_spi_test.rs",
+    "src/tests.rs",
   ]
   deps = [
     "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_rust_next",
