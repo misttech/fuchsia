@@ -726,7 +726,7 @@ class AIBCreator:
         if self.kernel.path:
             kernel_src_path: Any = self.kernel.path
             kernel_filename = os.path.basename(kernel_src_path)
-            kernel_dst_path = os.path.join("kernel", kernel_filename)
+            kernel_dst_path = "kernel/kernel.zbi"
             result.kernel.path = kernel_dst_path
 
             # Copy the kernel itself into the out-of-tree layout

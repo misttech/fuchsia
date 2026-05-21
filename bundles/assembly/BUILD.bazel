@@ -19,16 +19,19 @@ package(default_visibility = ["//visibility:public"])
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "zircon_eng",
+    kernel = "@gn_targets//bundles/assembly/bazel_inputs:zircon_eng_kernel",
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "zircon_user",
+    kernel = "@gn_targets//bundles/assembly/bazel_inputs:zircon_user_kernel",
 )
 
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "zircon_userdebug",
+    kernel = "@gn_targets//bundles/assembly/bazel_inputs:zircon_userdebug_kernel",
 )
 
 ########

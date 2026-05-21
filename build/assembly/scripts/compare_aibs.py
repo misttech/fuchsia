@@ -12,36 +12,6 @@ from pathlib import Path
 import serialization
 from assembly.assembly_input_bundle import AssemblyInputBundle
 
-# Define fields that are not yet supported by the Bazel assembly_input_bundle rule
-UNSUPPORTED_FIELDS = {
-    "kernel",
-    "blobs",
-}
-
-
-def is_supported_file(path: Path) -> bool:
-    if path.name == "assembly_config.json":
-        return True
-
-    parts = path.parts
-    if not parts:
-        return True
-
-    top_dir = parts[0]
-    dir_to_fields = {
-        "kernel": "kernel",
-    }
-
-    if top_dir in dir_to_fields:
-        field = dir_to_fields[top_dir]
-        if field in UNSUPPORTED_FIELDS:
-            return False
-
-    if top_dir not in ("packages", "blobs", "subpackages"):
-        return False
-
-    return True
-
 
 def compare_json(obj1: object, obj2: object, path: str = "") -> list[str]:
     """Recursively compares two JSON objects and returns a list of differences."""
@@ -109,21 +79,17 @@ def validate_aib(
     aib_name: str, dir1: Path, dir2: Path, compare_contents: bool
 ) -> bool:
     """Validates that corresponding AIBs are the same. Returns True if valid, False if diffs found."""
-    if compare_contents or aib_name == "resources":
+    # The 'resources' directory needs to be skipped, for now.
+    if aib_name == "resources":
+        return True
+
+    if compare_contents:
         diffs = []
         files1 = sorted(
-            [
-                p.relative_to(dir1)
-                for p in dir1.rglob("*")
-                if p.is_file() and is_supported_file(p.relative_to(dir1))
-            ]
+            [p.relative_to(dir1) for p in dir1.rglob("*") if p.is_file()]
         )
         files2 = sorted(
-            [
-                p.relative_to(dir2)
-                for p in dir2.rglob("*")
-                if p.is_file() and is_supported_file(p.relative_to(dir2))
-            ]
+            [p.relative_to(dir2) for p in dir2.rglob("*") if p.is_file()]
         )
 
         missing_in_2 = set(files1) - set(files2)
@@ -137,7 +103,10 @@ def validate_aib(
         for f in set(files1) & set(files2):
             if f.name == "assembly_config.json":
                 try:
-                    with open(dir1 / f) as file1, open(dir2 / f) as file2:
+                    with (
+                        open(dir1 / f) as file1,
+                        open(dir2 / f) as file2,
+                    ):
                         bundle1 = serialization.json_load(
                             AssemblyInputBundle, file1
                         )
@@ -146,9 +115,6 @@ def validate_aib(
                         )
                     cfg1 = serialization.instance_to_dict(bundle1)
                     cfg2 = serialization.instance_to_dict(bundle2)
-                    for field in UNSUPPORTED_FIELDS:
-                        cfg1.pop(field, None)
-                        cfg2.pop(field, None)
                     cfg_diffs = compare_json(cfg1, cfg2)
                     diffs.extend(cfg_diffs)
                 except Exception as e:
@@ -193,10 +159,6 @@ def validate_aib(
 
             cfg1 = serialization.instance_to_dict(bundle1)
             cfg2 = serialization.instance_to_dict(bundle2)
-
-            for field in UNSUPPORTED_FIELDS:
-                cfg1.pop(field, None)
-                cfg2.pop(field, None)
 
             diffs = compare_json(cfg1, cfg2)
             if not diffs:

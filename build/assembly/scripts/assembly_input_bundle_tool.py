@@ -145,6 +145,9 @@ def create_bundle(args: argparse.Namespace) -> int:
     if args.qemu_kernel:
         aib_creator.qemu_kernel = args.qemu_kernel
 
+    if args.kernel:
+        aib_creator.kernel.path = args.kernel
+
     if args.memory_buckets:
         add_memory_buckets(aib_creator, args.memory_buckets)
 
@@ -573,6 +576,9 @@ def main() -> int:
     )
     bundle_creation_parser.add_argument(
         "--qemu-kernel", help="Path to the qemu kernel"
+    )
+    bundle_creation_parser.add_argument(
+        "--kernel", help="Path to the Zircon kernel ZBI"
     )
     bundle_creation_parser.add_argument(
         "--depfile",

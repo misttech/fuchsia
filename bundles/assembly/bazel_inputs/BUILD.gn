@@ -23,20 +23,34 @@ import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 import("//build/components.gni")
 import("//build/icu/config.gni")
 import("//build/icu/icu_assembly_input_bundle.gni")
+import("//bundles/assembly/bazel_inputs/export_kernel.gni")
 import("//third_party/sbase/binaries.gni")
 import("//zircon/kernel/phys/qemu.gni")
 
 group("zircon_eng") {
   testonly = true
-  deps = []
+  deps = [ ":zircon_eng_kernel" ]
+}
+
+export_kernel_to_bazel("zircon_eng_kernel") {
+  testonly = true
+  kernel_zbi = "//zircon/kernel/image/eng"
 }
 
 group("zircon_user") {
-  deps = []
+  deps = [ ":zircon_user_kernel" ]
+}
+
+export_kernel_to_bazel("zircon_user_kernel") {
+  kernel_zbi = "//zircon/kernel/image/user"
 }
 
 group("zircon_userdebug") {
-  deps = []
+  deps = [ ":zircon_userdebug_kernel" ]
+}
+
+export_kernel_to_bazel("zircon_userdebug_kernel") {
+  kernel_zbi = "//zircon/kernel/image/userdebug"
 }
 
 group("embeddable") {
@@ -386,6 +400,7 @@ fuchsia_package("bootstrap_eng.bootfs_files_package") {
     "//src/ui/backlight/bin/backlight:bootfs",
     "//src/ui/input/bin/hid:bootfs",
     "//src/ui/tools/print-input-report:bootfs",
+    "//src/ui/tools/print-input-report-new:bootfs",
     "//src/zircon/tests/evil:bootfs",
   ]
 }
