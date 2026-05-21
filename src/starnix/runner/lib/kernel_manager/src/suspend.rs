@@ -162,7 +162,7 @@ pub async fn suspend_container(
 
         let wake_sources = suspend_context.wake_sources.lock();
         let mut wait_items: Vec<zx::WaitItem<'_>> =
-            wake_sources.iter().map(|(_, w)| w.as_wait_item()).collect();
+            wake_sources.values().map(|w| w.as_wait_item()).collect();
 
         // TODO: We will likely have to handle a larger number of wake sources in the
         // future, at which point we may want to consider a Port-based approach. This
@@ -186,13 +186,10 @@ pub async fn suspend_container(
         log::info!("Finished waiting on container wake proxies.");
 
         let mut resume_reasons: Vec<String> = Vec::new();
-        for wait_item in &wait_items {
+        for (wake_source, wait_item) in wake_sources.values().zip(&wait_items) {
             if (wait_item.pending() & wait_item.waiting_for()) != zx::Signals::NONE {
-                let koid = wait_item.handle().koid().unwrap();
-                if let Some(event) = wake_sources.get(&koid) {
-                    log::info!("Woke container from sleep for: {}", event.name,);
-                    resume_reasons.push(event.name.clone());
-                }
+                log::info!("Woke container from sleep for: {}", wake_source.name,);
+                resume_reasons.push(wake_source.name.clone());
             }
         }
 
