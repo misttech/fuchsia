@@ -523,6 +523,12 @@ func fuchsiaLogChecks() []FailureModeCheck {
 			Type:   syslogType,
 		},
 		&stringInLogCheck{
+			// LINT.IfChange(starnix_task_not_live)
+			String: "tid is not live, tid=",
+			// LINT.ThenChange(//src/starnix/kernel/core/task/tracing.rs:starnix_task_not_live)
+			Type: syslogType,
+		},
+		&stringInLogCheck{
 			// LINT.IfChange(starnix_panic_tefmo)
 			String: "STARNIX KERNEL PANIC",
 			// LINT.ThenChange(//src/starnix/kernel/main.rs:starnix_panic_tefmo)

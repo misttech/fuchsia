@@ -134,7 +134,9 @@ impl TracePerformanceEventManager {
         let ids = pid_table.task_ids();
         for tid in &ids {
             let task = pid_table.get_task(*tid).expect("Empty mapping for {tid}.");
-            let live = task.live().expect("tid {tid} is not live.");
+            // LINT.IfChange(starnix_task_not_live)
+            let live = task.live().unwrap_or_else(|_| panic!("tid is not live, tid={tid}"));
+            // LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go:starnix_task_not_live)
             let pair = KoidPair {
                 process: task.thread_group().get_process_koid().ok(),
                 thread: live.thread.read().koid(),
