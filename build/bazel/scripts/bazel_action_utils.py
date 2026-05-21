@@ -597,8 +597,19 @@ class BazelStderrDebugLineFilter(stdio_redirection.OutputSink):
                     self._prefix_start = self.DEBUG_PREFIX_COLORED
                     continue
 
-                if regular_match == 2:
-                    assert regular_pos == 0
+                # Because the regular prefix is included in the colored one,
+                # a full regular match must be ignored if there is a partial
+                # colored match. Consider the following input:
+                #
+                #  "\x1b[33m DEBUG: "
+                #
+                # This will get |colored_match == 1| because this is missing
+                # the final "\x1b[0m" sequence, but |regular_match == 2|
+                # because it includes the full regular prefix.
+                #
+                # So only process full regular matches if there is no
+                # possible partial colored match before.
+                if regular_match == 2 and regular_pos == 0:
                     self._prefix_start = self.DEBUG_PREFIX
                     continue
 
