@@ -9,8 +9,9 @@ import logging
 import os
 import re
 import time
+from dataclasses import dataclass
 from enum import StrEnum
-from typing import List
+from typing import Any, Dict, List
 
 from antlion.controllers.utils_lib.commands.tcpdump import LinuxTcpdumpCommand
 from libs.ssh import connection, settings
@@ -97,6 +98,23 @@ class InterfaceName(StrEnum):
     """The default LAN interface."""
 
 
+@dataclass
+class StationStatus:
+    """Represents the connection status of a station on OpenWrt."""
+
+    auth: bool
+    assoc: bool
+    authorized: bool
+
+
+@dataclass
+class InterfaceStatus:
+    """Represents the status of a station on a specific interface."""
+
+    band: Band
+    status: StationStatus
+
+
 class OpenWrtAP:
     """A basic client to interact with an OpenWRT AP via SSH."""
 
@@ -143,32 +161,39 @@ class OpenWrtAP:
         Args:
             bss: The BSS configuration containing SSID, password, band, etc.
         """
-        self.ssh.run(f"uci set wireless.{bss.name}='wifi-iface'")
-        self.ssh.run(f"uci set wireless.{bss.name}.device='{radio}'")
-        self.ssh.run(f"uci set wireless.{bss.name}.network='lan'")
-        self.ssh.run(f"uci set wireless.{bss.name}.mode='ap'")
-        self.ssh.run(f"uci set wireless.{bss.name}.ssid='{bss.ssid}'")
+        section_name = f"{bss.name}_{radio}"
+        self.ssh.run(f"uci set wireless.{section_name}='wifi-iface'")
+        self.ssh.run(f"uci set wireless.{section_name}.device='{radio}'")
+        self.ssh.run(f"uci set wireless.{section_name}.network='lan'")
+        self.ssh.run(f"uci set wireless.{section_name}.mode='ap'")
+        self.ssh.run(f"uci set wireless.{section_name}.ssid='{bss.ssid}'")
         encryption = bss.security.uci_encryption
 
-        self.ssh.run(f"uci set wireless.{bss.name}.encryption='{encryption}'")
+        self.ssh.run(
+            f"uci set wireless.{section_name}.encryption='{encryption}'"
+        )
 
         if bss.password and not isinstance(bss.security, SecurityOpen):
-            self.ssh.run(f"uci set wireless.{bss.name}.key='{bss.password}'")
+            self.ssh.run(
+                f"uci set wireless.{section_name}.key='{bss.password}'"
+            )
 
         hidden = "1" if bss.hidden else "0"
-        self.ssh.run(f"uci set wireless.{bss.name}.hidden='{hidden}'")
+        self.ssh.run(f"uci set wireless.{section_name}.hidden='{hidden}'")
 
         for option, value in bss.custom_uci_options.items():
             if isinstance(value, list):
                 for item in value:
                     self.ssh.run(
-                        f"uci add_list wireless.{bss.name}.{option}='{item}'"
+                        f"uci add_list wireless.{section_name}.{option}='{item}'"
                     )
             elif isinstance(value, bool):
                 v = str(int(value))
-                self.ssh.run(f"uci set wireless.{bss.name}.{option}='{v}'")
+                self.ssh.run(f"uci set wireless.{section_name}.{option}='{v}'")
             else:
-                self.ssh.run(f"uci set wireless.{bss.name}.{option}='{value}'")
+                self.ssh.run(
+                    f"uci set wireless.{section_name}.{option}='{value}'"
+                )
 
     def configure_wifi(self, config: AccessPointConfig) -> None:
         """Configures the Wi-Fi on the Access Point.
@@ -295,6 +320,35 @@ class OpenWrtAP:
             return True
         except Exception:
             return False
+
+    def get_sta_status(self, mac: str) -> Dict[str, InterfaceStatus]:
+        """Get station status for all interfaces on OpenWrt."""
+        result = {}
+        for band in [Band.BAND_2G, Band.BAND_5G]:
+            phy = "phy0" if band == Band.BAND_2G else "phy1"
+            try:
+                res = self.ssh.run(f"ubus list hostapd.{phy}*")
+                interfaces = res.stdout.decode("utf-8").splitlines()
+                for iface in interfaces:
+                    iface = iface.strip()
+                    clients_res = self.ssh.run(
+                        f"ubus call {iface} get_clients"
+                    ).stdout.decode()
+                    clients_data = json.loads(clients_res)
+                    clients = clients_data.get("clients", {})
+                    for client_mac, status in clients.items():
+                        if client_mac.lower() == mac.lower():
+                            result[iface] = InterfaceStatus(
+                                band=band,
+                                status=StationStatus(
+                                    auth=status.get("auth", False),
+                                    assoc=status.get("assoc", False),
+                                    authorized=status.get("authorized", False),
+                                ),
+                            )
+            except Exception as e:
+                _LOGGER.error(f"Failed to get status for band {band}: {e}")
+        return result
 
     # TODO(https://fxbug.dev/487804746): Use async functions in this file.
     def verify_wifi_status(

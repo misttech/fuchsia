@@ -19,7 +19,9 @@ import fidl_fuchsia_wlan_sme as fidl_sme
 from antlion import utils
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
-from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
+from antlion.controllers.ap_lib.hostapd_security import (
+    Security as DeprecatedSecurity,
+)
 from common.utils.ies import read_ssid
 from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
@@ -31,6 +33,26 @@ from mobly.asserts import (
     assert_not_equal,
     assert_true,
     fail,
+)
+from openwrt_access_point import OpenWrtAP, StationStatus
+from openwrt_access_point.lib.access_point_config import (
+    DEFAULT_2G_CHANNEL,
+    DEFAULT_5G_CHANNEL,
+    AccessPointConfig,
+    Band,
+    BssSettings,
+    RadioConfig,
+    Security,
+    SecurityOpen,
+    SecurityWep,
+    SecurityWpa,
+    SecurityWpa2,
+    SecurityWpa2Wpa3Mixed,
+    SecurityWpa3,
+    SecurityWpaWpa2Mixed,
+)
+from openwrt_access_point.lib.access_point_config_mapper import (
+    AccessPointConfigMapper as ConfigMapper,
 )
 
 # Allows test to raise an error if the permutation logic is changed accidentally.
@@ -46,45 +68,52 @@ TEST_WEP_PASSWORD_LITERAL = "1234567891234"
 
 @dataclass
 class TestParams:
-    dut_security_mode: SecurityMode
-    origin_security_mode: SecurityMode
+    dut_security_mode: Security
+    origin_security_mode: Security
     origin_band: hostapd_constants.BandType
-    target_security_mode: SecurityMode
+    target_security_mode: Security
     target_band: hostapd_constants.BandType
     should_roam_succeed: bool
 
 
-_DUT_SECURITY_MODES: frozenset[SecurityMode] = frozenset(
+@dataclass
+class RoamTestParameters:
+    ssid: str
+    origin_password: str | None
+    target_password: str | None
+
+
+_DUT_SECURITY_MODES: frozenset[Security] = frozenset(
     [
-        SecurityMode.OPEN,
-        SecurityMode.WEP,
-        SecurityMode.WPA,
-        SecurityMode.WPA2,
-        SecurityMode.WPA3,
+        SecurityOpen(),
+        SecurityWep(),
+        SecurityWpa(),
+        SecurityWpa2(),
+        SecurityWpa3(),
     ]
 )
 
-_AP_SECURITY_MODES: frozenset[SecurityMode] = _DUT_SECURITY_MODES | frozenset(
+_AP_SECURITY_MODES: frozenset[Security] = _DUT_SECURITY_MODES | frozenset(
     [
-        SecurityMode.WPA_WPA2,
-        SecurityMode.WPA2_WPA3,
+        SecurityWpaWpa2Mixed(),
+        SecurityWpa2Wpa3Mixed(),
     ]
 )
 
 _DUT_SECURITY_MODE_TO_COMPATIBLE_AP_MODES: dict[
-    SecurityMode, frozenset[SecurityMode]
+    Security, frozenset[Security]
 ] = {
-    SecurityMode.OPEN: frozenset([SecurityMode.OPEN]),
-    SecurityMode.WEP: frozenset([SecurityMode.WEP]),
-    SecurityMode.WPA: frozenset([SecurityMode.WPA, SecurityMode.WPA_WPA2]),
-    SecurityMode.WPA2: frozenset(
+    SecurityOpen(): frozenset([SecurityOpen()]),
+    SecurityWep(): frozenset([SecurityWep()]),
+    SecurityWpa(): frozenset([SecurityWpa(), SecurityWpaWpa2Mixed()]),
+    SecurityWpa2(): frozenset(
         [
-            SecurityMode.WPA2,
-            SecurityMode.WPA_WPA2,
-            SecurityMode.WPA2_WPA3,
+            SecurityWpa2(),
+            SecurityWpaWpa2Mixed(),
+            SecurityWpa2Wpa3Mixed(),
         ]
     ),
-    SecurityMode.WPA3: frozenset([SecurityMode.WPA3, SecurityMode.WPA2_WPA3]),
+    SecurityWpa3(): frozenset([SecurityWpa3(), SecurityWpa2Wpa3Mixed()]),
 }
 
 
@@ -167,6 +196,15 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             arg_sets=test_args,
         )
 
+    def skip_if_wep_not_supported(self, test_params: TestParams) -> None:
+        # TODO(b/490162087): Remove this skip once OpenWrt supports WEP security
+        if isinstance(self.test_kit.access_point, OpenWrtAP) and (
+            isinstance(test_params.dut_security_mode, SecurityWep)
+            or isinstance(test_params.origin_security_mode, SecurityWep)
+            or isinstance(test_params.target_security_mode, SecurityWep)
+        ):
+            raise signals.TestSkip("OpenWrt does not support WEP security")
+
     def name_func(
         self,
         test_params: TestParams,
@@ -176,27 +214,26 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             if test_params.should_roam_succeed
             else "should_fail"
         )
-        return f"test_roam_request_{test_params.dut_security_mode}_dut_from_{test_params.origin_security_mode}_{test_params.origin_band.name}_to_{test_params.target_security_mode}_{test_params.target_band.name}_{expected_result}"
+        dut_security_mode: str = test_params.dut_security_mode.uci_encryption
+        origin_security_mode: str = (
+            test_params.origin_security_mode.uci_encryption
+        )
+        target_security_mode: str = (
+            test_params.target_security_mode.uci_encryption
+        )
+        return f"test_roam_request_{dut_security_mode}_dut_from_{origin_security_mode}_{test_params.origin_band.name}_to_{target_security_mode}_{test_params.target_band.name}_{expected_result}"
 
-    def setup_aps(
-        self, test_params: TestParams
-    ) -> tuple[str, Security, Security]:
+    async def setup_aps(self, test_params: TestParams) -> RoamTestParameters:
         ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
         origin_password = None
         target_password = None
-        if test_params.origin_security_mode is not SecurityMode.OPEN:
+        if not isinstance(test_params.origin_security_mode, SecurityOpen):
             # Length 13, so it can be used for WEP or WPA
             origin_password = utils.rand_ascii_str(13)
             target_password = origin_password
-        elif test_params.target_security_mode is not SecurityMode.OPEN:
+        elif not isinstance(test_params.target_security_mode, SecurityOpen):
             # If the origin is open but the target is not, generate password for target.
             target_password = utils.rand_ascii_str(13)
-        origin_ap_security_config = Security(
-            test_params.origin_security_mode, password=origin_password
-        )
-        target_ap_security_config = Security(
-            test_params.target_security_mode, password=target_password
-        )
 
         # Ensure the bands are a 2.4GHz and 5GHz pair. This test uses a single AP, and therefore
         # does not support the the same origin and target band.
@@ -210,25 +247,40 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             f"Test expects one 2.4GHz AP and one 5GHz AP. Got origin: {test_params.origin_band}, target {test_params.target_band}",
         )
 
-        if test_params.origin_band == hostapd_constants.BandType.BAND_2G:
-            security_2g = origin_ap_security_config
-            security_5g = target_ap_security_config
-        else:
-            security_2g = target_ap_security_config
-            security_5g = origin_ap_security_config
-
         if not self.test_kit.access_point:
             raise signals.TestAbortClass(
                 "No access point configured for this test."
             )
+
         # Setup 2.4GHz AP
         if isinstance(self.test_kit.access_point, AccessPoint):
+            origin_security_mode = ConfigMapper.to_hostapd_security(
+                test_params.origin_security_mode
+            )
+            target_security_mode = ConfigMapper.to_hostapd_security(
+                test_params.target_security_mode
+            )
+
+            origin_security_config = DeprecatedSecurity(
+                origin_security_mode, password=origin_password
+            )
+            target_security_config = DeprecatedSecurity(
+                target_security_mode, password=target_password
+            )
+
+            if test_params.origin_band == hostapd_constants.BandType.BAND_2G:
+                deprecated_security_2g = origin_security_config
+                deprecated_security_5g = target_security_config
+            else:
+                deprecated_security_2g = target_security_config
+                deprecated_security_5g = origin_security_config
+
             setup_ap(
                 access_point=self.test_kit.access_point,
                 profile_name="whirlwind",
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
                 ssid=ssid,
-                security=security_2g,
+                security=deprecated_security_2g,
             )
 
             # Setup 5GHz AP
@@ -237,10 +289,49 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                 profile_name="whirlwind",
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
                 ssid=ssid,
-                security=security_5g,
+                security=deprecated_security_5g,
             )
+        elif isinstance(self.test_kit.access_point, OpenWrtAP):
+            if test_params.origin_band == hostapd_constants.BandType.BAND_2G:
+                security_2g = test_params.origin_security_mode
+                security_5g = test_params.target_security_mode
+                password_2g = origin_password
+                password_5g = target_password
+            else:
+                security_2g = test_params.target_security_mode
+                security_5g = test_params.origin_security_mode
+                password_2g = target_password
+                password_5g = origin_password
 
-        return (ssid, origin_ap_security_config, target_ap_security_config)
+            self.test_kit.access_point.configure_wifi(
+                AccessPointConfig(
+                    radios=[
+                        RadioConfig(
+                            channel=DEFAULT_2G_CHANNEL,
+                            bss_settings=[
+                                BssSettings(
+                                    ssid=ssid,
+                                    password=password_2g,
+                                    security=security_2g,
+                                )
+                            ],
+                        ),
+                        RadioConfig(
+                            channel=DEFAULT_5G_CHANNEL,
+                            bss_settings=[
+                                BssSettings(
+                                    ssid=ssid,
+                                    password=password_5g,
+                                    security=security_5g,
+                                )
+                            ],
+                        ),
+                    ]
+                )
+            )
+            self.test_kit.access_point.verify_wifi_status(band=Band.BAND_2G)
+            self.test_kit.access_point.verify_wifi_status(band=Band.BAND_5G)
+        return RoamTestParameters(ssid, origin_password, target_password)
 
     async def _test_logic(
         self,
@@ -250,24 +341,38 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             raise signals.TestAbortClass(
                 "No access point configured for this test."
             )
+        self.skip_if_wep_not_supported(test_params)
         # Setup APs using test params
-        (
-            ssid,
-            origin_ap_security_config,
-            target_ap_security_config,
-        ) = self.setup_aps(test_params)
+        roam_params = await self.setup_aps(test_params)
+        ssid = roam_params.ssid
+        origin_password = roam_params.origin_password
+        roam_params.target_password
+
+        origin_band = (
+            Band.BAND_2G
+            if test_params.origin_band == hostapd_constants.BandType.BAND_2G
+            else Band.BAND_5G
+        )
+        target_band = (
+            Band.BAND_5G
+            if test_params.origin_band == hostapd_constants.BandType.BAND_2G
+            else Band.BAND_2G
+        )
 
         # Passive scan on the channels used in this test, which are the default channels for 2.4GHz and 5GHz APs.
+        if isinstance(self.test_kit.access_point, OpenWrtAP):
+            channels = [DEFAULT_2G_CHANNEL.number, DEFAULT_5G_CHANNEL.number]
+        else:
+            channels = [
+                hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+            ]
+
         scan_results = (
             (
                 await self.test_kit.client_sme.scan_for_controller(
                     req=fidl_sme.ScanRequest(
-                        passive=fidl_sme.PassiveScanRequest(
-                            channels=[
-                                hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                                hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                            ]
-                        )
+                        passive=fidl_sme.PassiveScanRequest(channels=channels)
                     )
                 )
             )
@@ -327,57 +432,45 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             server = ctx.server
 
             match test_params.origin_security_mode:
-                case SecurityMode.OPEN:
+                case SecurityOpen():
                     protocol = fidl_security.Protocol.OPEN
                     credentials = None
-                case SecurityMode.WEP:
+                case SecurityWep():
                     protocol = fidl_security.Protocol.WEP
                     credentials = fidl_security.Credentials(
                         wep=fidl_security.WepCredentials(
                             TEST_WEP_PASSWORD_LITERAL.encode("ascii")
                         )
                     )
-                case SecurityMode.WPA:
+                case SecurityWpa():
                     protocol = fidl_security.Protocol.WPA1
-                    if origin_ap_security_config.password is None:
+                    if origin_password is None:
                         raise signals.TestError("Password is required for WPA.")
                     credentials = fidl_security.Credentials(
                         wpa=fidl_security.WpaCredentials(
-                            passphrase=list(
-                                origin_ap_security_config.password.encode(
-                                    "ascii"
-                                )
-                            )
+                            passphrase=list(origin_password.encode("ascii"))
                         )
                     )
-                case SecurityMode.WPA2 | SecurityMode.WPA_WPA2:
+                case SecurityWpa2() | SecurityWpaWpa2Mixed():
                     protocol = fidl_security.Protocol.WPA2_PERSONAL
-                    if origin_ap_security_config.password is None:
+                    if origin_password is None:
                         raise signals.TestError(
                             "Password is required for WPA2/WPA_WPA2."
                         )
                     credentials = fidl_security.Credentials(
                         wpa=fidl_security.WpaCredentials(
-                            passphrase=list(
-                                origin_ap_security_config.password.encode(
-                                    "ascii"
-                                )
-                            )
+                            passphrase=list(origin_password.encode("ascii"))
                         )
                     )
-                case SecurityMode.WPA3 | SecurityMode.WPA2_WPA3:
+                case SecurityWpa3() | SecurityWpa2Wpa3Mixed():
                     protocol = fidl_security.Protocol.WPA3_PERSONAL
-                    if origin_ap_security_config.password is None:
+                    if origin_password is None:
                         raise signals.TestError(
                             "Password is required for WPA3/WPA2_WPA3."
                         )
                     credentials = fidl_security.Credentials(
                         wpa=fidl_security.WpaCredentials(
-                            passphrase=list(
-                                origin_ap_security_config.password.encode(
-                                    "ascii"
-                                )
-                            )
+                            passphrase=list(origin_password.encode("ascii"))
                         )
                     )
                 case _:
@@ -427,6 +520,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                 )
 
             # Verify that DUT is actually associated (as seen from AP).
+            target_iface = None
             if isinstance(self.test_kit.access_point, AccessPoint):
                 client_mac = await self._get_client_mac()
                 if (
@@ -459,6 +553,32 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                     raise signals.TestError(
                         f"DUT is not authorized on the {test_params.origin_band} band"
                     )
+            elif isinstance(self.test_kit.access_point, OpenWrtAP):
+                client_mac = await self._get_client_mac()
+
+                sta_status_dict = self.test_kit.access_point.get_sta_status(
+                    client_mac
+                )
+                sta_status = next(
+                    (
+                        s.status
+                        for s in sta_status_dict.values()
+                        if s.band == origin_band
+                    ),
+                    StationStatus(auth=False, assoc=False, authorized=False),
+                )
+                if not sta_status.auth:
+                    raise signals.TestError(
+                        f"DUT is not authenticated on the {test_params.origin_band} band"
+                    )
+                if not sta_status.assoc:
+                    raise signals.TestError(
+                        f"DUT is not associated on the {test_params.origin_band} band"
+                    )
+                if not sta_status.authorized:
+                    raise signals.TestError(
+                        f"DUT is not authorized on the {test_params.origin_band} band"
+                    )
             else:
                 raise signals.TestError(
                     "No access point configured for this test."
@@ -469,7 +589,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
 
             # Add a delay to let the connection stabalized, and avoid sending the roam request too
             # quickly after the initial connection (b/484056019).
-            time.sleep(10)
+            await asyncio.sleep(10)
             roam_request = fidl_sme.RoamRequest(bss_description=target_bss_desc)
             logger.info(f"RoamRequest: {roam_request!r}")
             self.test_kit.client_sme.roam(req=roam_request)
@@ -505,38 +625,74 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                             logger.info(
                                 f"ConnectTransactionOnRoamResultRequest received: {next_txn}"
                             )
+
                             assert_equal(
-                                next_txn,
-                                fidl_sme.ConnectTransactionOnRoamResultRequest(
-                                    result=fidl_sme.RoamResult(
-                                        bssid=target_bss_desc.bssid,
-                                        status_code=fidl_ieee80211.StatusCode.SUCCESS,
-                                        original_association_maintained=False,
-                                        bss_description=target_bss_desc,
-                                        disconnect_info=None,
-                                        is_credential_rejected=False,
-                                    )
-                                ),
+                                next_txn.result.status_code,
+                                fidl_ieee80211.StatusCode.SUCCESS,
+                                "Roam status code is not SUCCESS",
+                            )
+                            assert_equal(
+                                next_txn.result.bssid,
+                                target_bss_desc.bssid,
+                                "Roamed to wrong BSSID",
                             )
                             # Verify DUT is connected to the AP using the target interface
-                            assert_true(
-                                self.test_kit.access_point.sta_authenticated(
-                                    target_iface, client_mac
-                                ),
-                                f"DUT is not authenticated on the {test_params.target_band} band",
-                            )
-                            assert_true(
-                                self.test_kit.access_point.sta_associated(
-                                    target_iface, client_mac
-                                ),
-                                f"DUT is not associated on the {test_params.target_band} band",
-                            )
-                            assert_true(
-                                self.test_kit.access_point.sta_authorized(
-                                    target_iface, client_mac
-                                ),
-                                f"DUT is not 802.1X authorized on the {test_params.target_band} band",
-                            )
+                            if (
+                                isinstance(
+                                    self.test_kit.access_point, AccessPoint
+                                )
+                                and target_iface
+                            ):
+                                assert_true(
+                                    self.test_kit.access_point.sta_authenticated(
+                                        target_iface, client_mac
+                                    ),
+                                    f"DUT is not authenticated on the {test_params.target_band} band",
+                                )
+                                assert_true(
+                                    self.test_kit.access_point.sta_associated(
+                                        target_iface, client_mac
+                                    ),
+                                    f"DUT is not associated on the {test_params.target_band} band",
+                                )
+                                assert_true(
+                                    self.test_kit.access_point.sta_authorized(
+                                        target_iface, client_mac
+                                    ),
+                                    f"DUT is not 802.1X authorized on the {test_params.target_band} band",
+                                )
+                            elif isinstance(
+                                self.test_kit.access_point, OpenWrtAP
+                            ):
+                                sta_status_dict = (
+                                    self.test_kit.access_point.get_sta_status(
+                                        client_mac
+                                    )
+                                )
+                                status = next(
+                                    (
+                                        s.status
+                                        for s in sta_status_dict.values()
+                                        if s.band == target_band
+                                    ),
+                                    StationStatus(
+                                        auth=False,
+                                        assoc=False,
+                                        authorized=False,
+                                    ),
+                                )
+                                assert_true(
+                                    status.auth,
+                                    f"DUT is not authenticated on the {test_params.target_band} band",
+                                )
+                                assert_true(
+                                    status.assoc,
+                                    f"DUT is not associated on the {test_params.target_band} band",
+                                )
+                                assert_true(
+                                    status.authorized,
+                                    f"DUT is not authorized on the {test_params.target_band} band",
+                                )
                         else:
                             assert_not_equal(
                                 txn.result.status_code,
