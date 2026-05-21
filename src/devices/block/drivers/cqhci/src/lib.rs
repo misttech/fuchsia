@@ -172,6 +172,10 @@ struct CqhciDriver {
 
 driver_register!(Suspendable<CqhciDriver>);
 
+#[cfg(test)]
+pub(crate) static SHUTTING_DOWN_FLAG: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 struct RpmbService {
     scope: Scope,
     command_queue: Weak<CommandQueue>,
@@ -432,6 +436,9 @@ impl Driver for CqhciDriver {
 
     async fn stop(&self) {
         info!("cqhci driver stopping");
+        #[cfg(test)]
+        SHUTTING_DOWN_FLAG.store(true, std::sync::atomic::Ordering::SeqCst);
+
         let Some(command_queue) = self.command_queue.lock().take() else { unreachable!() };
         // This will resume if currently suspended.
         *self.resume_tx.lock() = None;

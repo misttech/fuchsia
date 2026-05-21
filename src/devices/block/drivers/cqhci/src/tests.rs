@@ -20,12 +20,10 @@ use fidl_next_fuchsia_mem as fmem;
 use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
-use futures::future::join;
 use futures::{FutureExt as _, StreamExt as _};
 use sdmmc_spec::{CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, SdhciInterruptStatusRegister};
 use std::pin::pin;
 use std::sync::Arc;
-use std::time::Duration;
 use test_case::test_case;
 use zx;
 
@@ -740,13 +738,23 @@ async fn test_shutdown_with_active_dcmd() {
     // Make sure no future DCMDs block.
     blocker.block(0);
 
-    // Unblock the DCMD in 10ms.
-    let _unblock_task = fixture.scope.spawn(async move {
-        fasync::Timer::new(std::time::Duration::from_millis(10)).await;
-        drop(unblock);
-    });
-
-    started_driver.stop_driver().await;
+    crate::SHUTTING_DOWN_FLAG.store(false, std::sync::atomic::Ordering::SeqCst);
+    let mut stop_driver = started_driver.stop_driver().boxed().fuse();
+    futures::select! {
+        _ = stop_driver => {}
+        default => {
+            // Drive shutdown concurrently with unblocking to ensure progress.
+            // Since stop_driver() blocks on active tasks (which requires dropping unblock),
+            // we loop-yield until SHUTTING_DOWN_FLAG is set to guarantee that the driver task
+            // has entered stop() and set shutting_down=true. Only then do we drop unblock
+            // to fail the enqueued flush1 task instead of letting it succeed.
+            while !crate::SHUTTING_DOWN_FLAG.load(std::sync::atomic::Ordering::Relaxed) {
+                fasync::yield_now().await;
+            }
+            drop(unblock);
+        }
+    }
+    stop_driver.await;
 
     futures::join!(flush0_task, flush1_task);
 }
@@ -778,13 +786,23 @@ async fn test_shutdown_with_blocked_transfers() {
     // Wait for 31 requests to be enqueued and submitted to the hardware.
     let unblock: Vec<_> = blocker.take(31).collect().await;
 
-    join(started_driver.stop_driver(), async {
-        // The halt timeout is disabled in tests, so unblock the 31 requests after a short while so
-        // that the shutdown can complete.
-        fasync::Timer::new(Duration::from_millis(10)).await;
-        drop(unblock);
-    })
-    .await;
+    crate::SHUTTING_DOWN_FLAG.store(false, std::sync::atomic::Ordering::SeqCst);
+    let mut stop_driver = started_driver.stop_driver().boxed().fuse();
+    futures::select! {
+        _ = stop_driver => {}
+        default => {
+            // Drive shutdown concurrently with unblocking to ensure progress.
+            // Since stop_driver() blocks on active tasks (which requires dropping unblock),
+            // we loop-yield until SHUTTING_DOWN_FLAG is set to guarantee that the driver task
+            // has entered stop() and set shutting_down=true. Only then do we drop unblock
+            // to fail the enqueued transfers instead of letting them succeed.
+            while !crate::SHUTTING_DOWN_FLAG.load(std::sync::atomic::Ordering::Relaxed) {
+                fasync::yield_now().await;
+            }
+            drop(unblock);
+        }
+    }
+    stop_driver.await;
 
     read_scope.await;
 }
