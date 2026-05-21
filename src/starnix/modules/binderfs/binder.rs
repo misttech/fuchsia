@@ -45,9 +45,8 @@ use starnix_logging::{
     CATEGORY_STARNIX, log_error, log_trace, log_warn, trace_duration, track_stub, with_zx_name,
 };
 use starnix_sync::{
-    BinderContextManagerLevel, BinderProcsLevel, FileOpsCore, InterruptibleEvent, LockDepMutex,
-    LockDepRwLock, LockEqualOrBefore, Locked, Mutex, ResourceAccessorLevel, Unlocked,
-    lockdep_ordered_lock_vec,
+    FileOpsCore, InterruptibleEvent, LockEqualOrBefore, Locked, Mutex, ResourceAccessorLevel,
+    RwLock, Unlocked, ordered_lock_vec,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::convert::IntoFidl as _;
@@ -766,24 +765,14 @@ impl BinderDriver {
                     }
 
                     release_iter_after!(target_binder_procs, current_task.kernel(), {
-                        let freeze_locks =
-                            target_binder_procs.iter().map(|p| &p.freeze_state).collect::<Vec<_>>();
-                        // Do not allow freezing process with more than 16 binders as lockdep
-                        // doesn't support it.
-                        if freeze_locks.len() > 16 {
-                            return error!(ENOTSUP);
-                        }
-                        let mut target_binder_procs_freeze_locked =
-                            lockdep_ordered_lock_vec(&freeze_locks);
+                        let locks =
+                            target_binder_procs.iter().map(|p| &p.state).collect::<Vec<_>>();
+                        let mut target_binder_procs_locked =
+                            ordered_lock_vec::<BinderProcessState>(&locks);
                         if !freezing {
                             target_binder_procs_locked.iter_mut().for_each(|bp| bp.thaw());
                             return Ok(SUCCESS);
                         }
-
-                        let state_locks =
-                            target_binder_procs.iter().map(|p| &p.state).collect::<Vec<_>>();
-                        let target_binder_procs_state_locked =
-                            lockdep_ordered_lock_vec(&state_locks);
 
                         // Clone threads in the proc to lock them all until freeze is done.
                         let threads: Vec<OwnedRef<BinderThread>> = target_binder_procs_locked
@@ -794,7 +783,8 @@ impl BinderDriver {
                         release_iter_after!(threads, current_task.kernel(), {
                             let threads_locks =
                                 threads.iter().map(|t| &t.state).collect::<Vec<_>>();
-                            let threads_locked = lockdep_ordered_lock_vec(&threads_locks);
+                            let threads_locked =
+                                ordered_lock_vec::<BinderThreadState>(&threads_locks);
 
                             // Avoid freezing the target procs if there is any pending transaction
                             if target_binder_procs_locked
