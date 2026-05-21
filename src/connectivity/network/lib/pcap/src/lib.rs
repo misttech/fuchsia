@@ -23,6 +23,13 @@ use thiserror::Error;
 use zerocopy::byteorder::little_endian::{U16, U32, U64};
 use zerocopy::{Immutable, IntoBytes};
 
+/// Generated bindings for libpcap.
+#[cfg(feature = "compile")]
+mod bindings;
+/// Module for compiling pcap filters using libpcap.
+#[cfg(feature = "compile")]
+pub mod compile;
+
 /// Link type of an interface.
 ///
 /// The values are defined in the pcap linktype [pcapng RFC].
@@ -535,7 +542,7 @@ impl<'a> PcapNgBlock<'a> for ParsedEnhancedPacket<'a> {
 
 fn parse_block<'a, T: PcapNgBlock<'a>>(input: &'a [u8]) -> PcapResult<'a, T> {
     let (input, block_type) = nom::number::complete::le_u32(input)?;
-    if block_type != T::BLOCK_TYPE.into() {
+    if block_type != u32::from(T::BLOCK_TYPE) {
         return Err(nom::Err::Error(ParsingError::UnexpectedBlockType {
             got: block_type,
             want: T::BLOCK_TYPE,
@@ -875,7 +882,7 @@ mod tests {
             let (rem, option) = parse_idb_option(options_buf).expect("parse option failed");
             options_buf = rem;
             if let InterfaceDescriptionOption::EndOfOpt = option {
-                assert_eq!(options_buf, &[]);
+                assert_eq!(options_buf, &[] as &[u8]);
                 end_of_opt_found = true;
                 break;
             }

@@ -16,6 +16,7 @@ use log::warn;
 use pcap::LinkType;
 use vfs::file::File as _;
 
+use crate::bindings::bpf::{SocketFilterProgram, ValidVerifiedProgram};
 use crate::bindings::devices::HasDeviceName as _;
 use crate::bindings::socket::packet::SocketState;
 use crate::bindings::util::{RemoveResourceResultExt as _, ResultExt as _, ScopeExt as _};
@@ -99,7 +100,7 @@ pub(crate) fn handle_start_rolling(
 > {
     let fnet_debug::CommonPacketCaptureParams {
         interfaces,
-        bpf_program: _,
+        bpf_program,
         snap_len,
         __source_breaking: _,
     } = common_params;
@@ -158,6 +159,36 @@ pub(crate) fn handle_start_rolling(
     const MIN_CHUNK_COUNT: u32 = 8;
     let chunk_size = std::cmp::min(fnet_debug::DEFAULT_SNAP_LEN, capture_size / MIN_CHUNK_COUNT);
 
+    let bpf_filter = match bpf_program {
+        Some(program) => {
+            let valid_program: ValidVerifiedProgram = program.try_into().map_err(|e| {
+                warn!("invalid BPF program: {e:?}");
+                fnet_debug::PacketCaptureStartError::InvalidBpfFilter
+            })?;
+
+            if valid_program.code.is_empty() {
+                warn!("empty BPF code not allowed");
+                return Err(fnet_debug::PacketCaptureStartError::InvalidBpfFilter);
+            }
+
+            if !valid_program.struct_access_instructions.is_empty()
+                || !valid_program.maps.is_empty()
+            {
+                warn!("struct access or maps not allowed in socket filter");
+                return Err(fnet_debug::PacketCaptureStartError::InvalidBpfFilter);
+            }
+
+            let maps_cache = ctx.bindings_ctx().ebpf_manager.maps_cache();
+            let program = SocketFilterProgram::new(valid_program, maps_cache).map_err(|e| {
+                warn!("failed to create BPF program: {e:?}");
+                fnet_debug::PacketCaptureStartError::InvalidBpfFilter
+            })?;
+
+            Some(program)
+        }
+        None => None,
+    };
+
     let snap_len = match snap_len {
         None | Some(0) => fnet_debug::DEFAULT_SNAP_LEN,
         Some(l) => l,
@@ -173,7 +204,9 @@ pub(crate) fn handle_start_rolling(
         std::time::SystemTime::now(),
         zx::BootInstant::get(),
         fppacket::Kind::Link,
+        bpf_filter,
     ));
+
     ctx.api().device_socket().set_device_and_protocol(
         &id,
         TargetDevice::SpecificDevice(&device_id),

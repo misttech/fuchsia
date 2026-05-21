@@ -8,13 +8,14 @@ use fidl_fuchsia_net as _;
 use fidl_fuchsia_net_debug as fnet_debug;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
-
 use fuchsia_async as fasync;
+
 use net_declare::{fidl_subnet, net_ip_v4, std_ip_v4};
 use netemul::RealmUdpSocket as _;
 use netstack_testing_common::realms::{Netstack3, TestRealmExt as _, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
 use packet::ParsablePacket as _;
+use test_case::test_case;
 
 async fn send_and_recv_udp(
     realm: &netemul::TestRealm<'_>,
@@ -33,43 +34,46 @@ async fn send_and_recv_udp(
     assert_eq!(from_addr, bind_addr);
 }
 
-fn assert_single_udp_packet<'a>(
+fn assert_udp_packets<'a>(
     packets_iter: pcap::PcapNgPacketIter<'a>,
-    expected_ip: net_types::ip::Ipv4Addr,
-    expected_port: u16,
-    expected_payload: &[u8],
+    expected_packets: &[(net_types::ip::Ipv4Addr, u16, &[u8])],
 ) {
     let packets = packets_iter.collect::<Result<Vec<_>, _>>().expect("EPB parse error");
-    let [epb] = &packets[..] else {
-        panic!("expected exactly one packet in the capture, got {:?}", packets);
-    };
-    assert_eq!(epb.interface_id, 0);
-    assert_eq!(usize::try_from(epb.original_length).unwrap(), epb.packet_data.len());
-    assert_eq!(usize::try_from(epb.captured_length).unwrap(), epb.packet_data.len());
-    let buf = &epb.packet_data;
-    let (mut body, _src_mac, _dst_mac, src_ip, dst_ip, proto, _ttl) =
-        packet_formats::testutil::parse_ip_packet_in_ethernet_frame::<net_types::ip::Ipv4>(
-            &buf,
-            packet_formats::ethernet::EthernetFrameLengthCheck::NoCheck,
+
+    assert_eq!(packets.len(), expected_packets.len());
+
+    for (epb, expected) in packets.into_iter().zip(expected_packets) {
+        let (expected_ip, expected_port, expected_payload) = expected;
+        assert_eq!(epb.interface_id, 0);
+        assert_eq!(usize::try_from(epb.original_length).unwrap(), epb.packet_data.len());
+        assert_eq!(usize::try_from(epb.captured_length).unwrap(), epb.packet_data.len());
+        let buf = &epb.packet_data;
+        let (mut body, _src_mac, _dst_mac, src_ip, dst_ip, proto, _ttl) =
+            packet_formats::testutil::parse_ip_packet_in_ethernet_frame::<net_types::ip::Ipv4>(
+                &buf,
+                packet_formats::ethernet::EthernetFrameLengthCheck::NoCheck,
+            )
+            .expect("failed to parse IP packet");
+
+        assert_eq!(proto, packet_formats::ip::Ipv4Proto::Proto(packet_formats::ip::IpProto::Udp));
+        let udp = packet_formats::udp::UdpPacket::parse(
+            &mut body,
+            packet_formats::udp::UdpParseArgs::new(src_ip, dst_ip),
         )
-        .expect("failed to parse IP packet");
+        .expect("failed to parse UDP packet");
 
-    assert_eq!(proto, packet_formats::ip::Ipv4Proto::Proto(packet_formats::ip::IpProto::Udp));
-    let udp = packet_formats::udp::UdpPacket::parse(
-        &mut body,
-        packet_formats::udp::UdpParseArgs::new(src_ip, dst_ip),
-    )
-    .expect("failed to parse UDP packet");
-
-    assert_eq!(udp.src_port().map(|p| p.get()), Some(expected_port));
-    assert_eq!(udp.dst_port().get(), expected_port);
-    assert_eq!(src_ip, expected_ip);
-    assert_eq!(dst_ip, expected_ip);
-    assert_eq!(body, expected_payload);
+        assert_eq!(udp.src_port().map(|p| p.get()), Some(*expected_port));
+        assert_eq!(udp.dst_port().get(), *expected_port);
+        assert_eq!(src_ip, *expected_ip);
+        assert_eq!(dst_ip, *expected_ip);
+        assert_eq!(body, *expected_payload);
+    }
 }
 
 #[netstack_test]
-async fn rolling_packet_capture_test(name: &str) {
+#[test_case(false; "no_bpf")]
+#[test_case(true; "use_bpf")]
+async fn rolling_packet_capture_test(name: &str, use_bpf: bool) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
 
@@ -83,8 +87,16 @@ async fn rolling_packet_capture_test(name: &str) {
         .expect("failed to get loopback properties")
         .expect("loopback not found");
 
+    let bpf_program = use_bpf.then(|| {
+        pcap::compile::compile_filter(
+            "ip src 127.0.0.1 and ip dst 127.0.0.1 and udp src port 12345 and udp dst port 12345",
+        )
+        .expect("failed to compile filter")
+    });
+
     let common_params = fnet_debug::CommonPacketCaptureParams {
         interfaces: Some(fnet_debug::InterfaceSpecifier::InterfaceIds(vec![loopback_id.get()])),
+        bpf_program,
         ..Default::default()
     };
 
@@ -98,9 +110,12 @@ async fn rolling_packet_capture_test(name: &str) {
         .into_proxy();
 
     // Bind a UDP socket and send a packet to trigger capture.
-    const PORT: u16 = 9875;
-    const PAYLOAD: [u8; 4] = [1, 2, 3, 4];
-    send_and_recv_udp(&realm, (std_ip_v4!("127.0.0.1"), PORT).into(), &PAYLOAD).await;
+    const PORT1: u16 = 12345;
+    const PORT2: u16 = 54321;
+    const PAYLOAD1: [u8; 4] = [1, 2, 3, 4];
+    const PAYLOAD2: [u8; 4] = [5, 6, 7, 8];
+    send_and_recv_udp(&realm, (std_ip_v4!("127.0.0.1"), PORT1).into(), &PAYLOAD1).await;
+    send_and_recv_udp(&realm, (std_ip_v4!("127.0.0.1"), PORT2).into(), &PAYLOAD2).await;
 
     // Stop and download.
     let (file_client, file_server) = fidl::endpoints::create_endpoints();
@@ -125,12 +140,20 @@ async fn rolling_packet_capture_test(name: &str) {
         }
     );
 
-    assert_single_udp_packet(
-        cap.packet_blocks(),
-        net_declare::net_ip_v4!("127.0.0.1"),
-        PORT,
-        &PAYLOAD,
-    );
+    if use_bpf {
+        assert_udp_packets(
+            cap.packet_blocks(),
+            &[(net_declare::net_ip_v4!("127.0.0.1"), PORT1, &PAYLOAD1[..])],
+        );
+    } else {
+        assert_udp_packets(
+            cap.packet_blocks(),
+            &[
+                (net_declare::net_ip_v4!("127.0.0.1"), PORT1, &PAYLOAD1[..]),
+                (net_declare::net_ip_v4!("127.0.0.1"), PORT2, &PAYLOAD2[..]),
+            ],
+        );
+    };
 }
 
 #[netstack_test]
@@ -207,11 +230,9 @@ async fn packet_capture_multiple_interfaces_test(name: &str) {
     let cap = pcap::parse_pcapng(&bytes).expect("could not parse file with pcap library");
 
     // Verify capture contains PAYLOAD1 but not PAYLOAD2.
-    assert_single_udp_packet(
+    assert_udp_packets(
         cap.packet_blocks(),
-        net_declare::net_ip_v4!("192.0.2.1"),
-        PORT,
-        &PAYLOAD1,
+        &[(net_declare::net_ip_v4!("192.0.2.1"), PORT, &PAYLOAD1[..])],
     );
 }
 

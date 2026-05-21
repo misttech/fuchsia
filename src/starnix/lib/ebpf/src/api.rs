@@ -151,6 +151,11 @@ impl EbpfInstruction {
     pub fn set_imm(&mut self, imm: i32) {
         *self = EbpfInstruction((self.0 & 0xffff_ffff) | ((imm as u32 as u64) << 32))
     }
+
+    #[inline(always)]
+    pub fn get(&self) -> u64 {
+        self.0
+    }
 }
 
 // The different operation types

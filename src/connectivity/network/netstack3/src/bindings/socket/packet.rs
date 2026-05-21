@@ -93,6 +93,7 @@ impl SocketState {
         start_system_time: std::time::SystemTime,
         start_boot_time: zx::BootInstant,
         kind: fppacket::Kind,
+        bpf_filter: Option<SocketFilterProgram>,
     ) -> Self {
         Self {
             queue: Queue::RollingPcap {
@@ -102,7 +103,7 @@ impl SocketState {
                 start_boot_time,
             },
             kind,
-            bpf_filter: RwLock::new(None),
+            bpf_filter: RwLock::new(bpf_filter),
         }
     }
 
