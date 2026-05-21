@@ -32,8 +32,8 @@ use starnix_types::time::{
 };
 use starnix_types::user_buffer::UserBuffer;
 use starnix_uapi::auth::{
-    CAP_BLOCK_SUSPEND, CAP_DAC_READ_SEARCH, CAP_LEASE, CAP_SYS_ADMIN, CAP_WAKE_ALARM, Credentials,
-    PTRACE_MODE_ATTACH_REALCREDS,
+    CAP_BLOCK_SUSPEND, CAP_DAC_READ_SEARCH, CAP_LEASE, CAP_SYS_ADMIN, CAP_WAKE_ALARM, Capabilities,
+    Credentials, PTRACE_MODE_ATTACH_REALCREDS,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{
@@ -948,6 +948,15 @@ pub fn sys_faccessat2(
         let mut temporary_creds = Credentials::clone(&current_task.current_creds());
         temporary_creds.fsuid = temporary_creds.uid;
         temporary_creds.fsgid = temporary_creds.gid;
+
+        // access() for root users should use permitted capabilities instead of effective capabilities.
+        // access() for non-root users should use an empty set of capabilities.
+        if temporary_creds.uid == 0 {
+            temporary_creds.cap_effective = temporary_creds.cap_permitted;
+        } else {
+            temporary_creds.cap_effective = Capabilities::empty();
+        }
+
         current_task.override_creds(temporary_creds.into(), access_check)
     } else {
         access_check()
