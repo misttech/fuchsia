@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, Node, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use fdf_power::{Suspendable, SuspendableDriver};
 use log::info;
-use zx::Status;
 
 /// The implementation of our driver will live in this object, which implements [`Driver`].
 #[allow(unused)]
@@ -23,7 +22,7 @@ driver_register!(Suspendable<PowerRustDriver>);
 impl Driver for PowerRustDriver {
     const NAME: &str = "example_power_rust_driver";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         info!(concat!(
             "PowerRustDriver::start() was invoked. Use this function to do basic initialization ",
             "like taking ownership over the node proxy, creating children, and connecting ",

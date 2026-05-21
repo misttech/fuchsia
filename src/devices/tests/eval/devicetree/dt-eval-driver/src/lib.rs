@@ -2,13 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, Node, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use fidl_fidl_examples_echo as fecho;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt, TryStreamExt};
 use std::sync::Arc;
-use zx::Status;
 
 enum IncomingRequest {
     EchoService(fecho::EchoServiceRequest),
@@ -34,7 +33,7 @@ driver_register!(DtEvalDriver);
 impl Driver for DtEvalDriver {
     const NAME: &str = "dt-eval-driver";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let node = context.take_node()?;
 
         let scope = Arc::new(fasync::Scope::new_with_name("dt-eval-driver"));

@@ -10,7 +10,7 @@ use crate::partition::EmmcPartition;
 use block_server::callback_interface::SessionManager;
 use block_server::{BlockServer, RequestId};
 use cqhci_config::Config;
-use fdf_component::{Driver, DriverContext, Node, ServiceInstance, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, Node, ServiceInstance, driver_register};
 use fdf_power::{Suspendable, SuspendableDriver};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_driver_framework::{
@@ -31,7 +31,6 @@ use fuchsia_sync::Mutex;
 use futures::StreamExt as _;
 use futures::channel::oneshot;
 use log::{debug, error, info, warn};
-use zx::Status;
 
 mod command_queue;
 mod dma_buffer;
@@ -46,14 +45,6 @@ pub fn partition_name(id: EmmcPartitionId) -> &'static str {
         EmmcPartitionId::UserDataPartition => "user",
         EmmcPartitionId::BootPartition1 => "boot1",
         EmmcPartitionId::BootPartition2 => "boot2",
-    }
-}
-
-pub fn to_status(error: anyhow::Error) -> zx::Status {
-    if let Some(root_cause) = error.root_cause().downcast_ref::<zx::Status>() {
-        *root_cause
-    } else {
-        zx::Status::INTERNAL
     }
 }
 
@@ -253,7 +244,7 @@ fn get_cqhci_client(
 impl Driver for CqhciDriver {
     const NAME: &str = "cqhci";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let config = context.take_config::<Config>().map_err(|error| {
             error!(error:?; "Failed to take config");
             error
@@ -299,18 +290,17 @@ impl Driver for CqhciDriver {
                 &context.start_args.power_element_args
             {
                 let token = token.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
-                if let Err(error) = configure_power_management(&context, token).await {
+                configure_power_management(&context, token).await.inspect_err(|error| {
                     error!(error:?; "Failed to configure power management");
-                    return Err(error);
-                }
+                })?;
                 info!("Configured power management successfully (cqhci)");
             }
         }
 
-        let command_queue =
-            CommandQueue::initialize(vmar, cqhci, rpmb, &mut host_info).await.map_err(|error| {
+        let command_queue = CommandQueue::initialize(vmar, cqhci, rpmb, &mut host_info)
+            .await
+            .inspect_err(|error| {
                 error!(error:?; "Failed to initialize command queueing");
-                to_status(error)
             })?;
 
         let mut fs = ServiceFs::new();

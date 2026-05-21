@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, Node, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use fidl_fuchsia_device_fs as fdf_devfs;
 use fidl_fuchsia_driver_framework as fdf_fidl;
 use fidl_fuchsia_hardware_rtc as frtc;
@@ -93,7 +93,7 @@ driver_register!(AmlRtcDriver);
 impl Driver for AmlRtcDriver {
     const NAME: &str = "aml-rtc";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let node = context.take_node()?;
 
         let pdev = context

@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, Node, NodeBuilder, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, Node, NodeBuilder, driver_register};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_driver_framework::NodeMarker;
 use log::info;
-use zx::Status;
 
 /// The implementation of our driver will live in this object, which implements [`Driver`].
 #[allow(unused)]
@@ -26,7 +25,7 @@ driver_register!(SimpleRustDriver);
 impl Driver for SimpleRustDriver {
     const NAME: &str = "simple_rust_driver";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         info!(concat!(
             "SimpleRustDriver::start() was invoked. Use this function to do basic initialization ",
             "like taking ownership over the node proxy, creating children, and connecting ",

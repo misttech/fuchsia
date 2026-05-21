@@ -4,9 +4,8 @@
 
 use crate::resources::PlatformResources;
 
-use fdf_component::{Driver, DriverContext, Node, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use log::info;
-use zx::Status;
 
 /// Interfaces with the Fuchsia Driver Framework.
 struct VirtioGpuDisplayDriver {
@@ -20,7 +19,7 @@ driver_register!(VirtioGpuDisplayDriver);
 impl Driver for VirtioGpuDisplayDriver {
     const NAME: &str = "virtio-gpu-display";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         info!("VirtioGpuDisplayDriver::start()");
 
         #[allow(unused)]

@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
+use fdf_component::{
+    Driver, DriverContext, DriverError, Node, NodeBuilder, ServiceOffer, driver_register,
+};
 use fidl_next::{Request, Responder, ServerEnd};
 use fidl_next_fuchsia_hardware_adcimpl as adcimpl;
 use fidl_next_fuchsia_hardware_adcimpl::device::{GetResolution, GetSample};
@@ -270,7 +272,7 @@ impl adcimpl::ServiceHandler for Service {
 impl Driver for AmlSaradc {
     const NAME: &str = "aml-saradc";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let node = context.take_node()?;
 
         let pdev = context

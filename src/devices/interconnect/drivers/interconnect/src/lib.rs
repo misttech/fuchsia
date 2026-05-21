@@ -4,7 +4,10 @@
 
 use crate::graph::{NodeGraph, NodeId, Path, PathId};
 use fdf_component::inspect_publisher::ContentPublisher;
-use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
+use fdf_component::{
+    Driver, DriverContext, DriverError, FlexibleExt, Node, NodeBuilder, ServiceOffer,
+    driver_register,
+};
 use fidl_fuchsia_driver_framework::NodeControllerProxy;
 use fidl_next::{Client, FlexibleResult, FrameworkError, ServerEnd};
 use fuchsia_component::server::ServiceFs;
@@ -164,7 +167,7 @@ impl InterconnectDriver {
         graph: NodeGraph,
         sync_complete_rx: oneshot::Receiver<()>,
         conn_rx: mpsc::UnboundedReceiver<(ServerEnd<icc::Path>, String)>,
-    ) -> Result<Self, Status> {
+    ) -> Result<Self, DriverError> {
         let graph = Rc::new(RefCell::new(graph));
         let children = Rc::new(children);
         let sync_state = Rc::new(Cell::new(false));
@@ -254,7 +257,7 @@ impl InterconnectDriver {
 impl Driver for InterconnectDriver {
     const NAME: &str = "interconnect";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let node = context.take_node()?;
 
         let inspect_publisher = context.inspect_content_publisher()?;
@@ -262,30 +265,27 @@ impl Driver for InterconnectDriver {
         let device_service: fdf_component::ServiceInstance<icc::Service> =
             context.incoming.service().connect_next()?;
         let (device_client, device_server) = fidl_next::fuchsia::create_channel();
-        device_service.device(device_server).map_err(|err| {
+        device_service.device(device_server).inspect_err(|err| {
             error!("Error connecting to interconnect device at driver startup: {err}");
-            Status::INTERNAL
         })?;
         let device = device_client.spawn();
 
         let node_graph = device
             .get_node_graph()
             .await
-            .map_err(|err| {
+            .inspect_err(|err| {
                 error!("Failed to get node graph with {err}");
-                Status::INTERNAL
             })?
-            .unwrap(); // Flexible::FrameworkErr means the method is not implemented
+            .into_driver_result()?;
         let mut graph = NodeGraph::new(node_graph.nodes, node_graph.edges)?;
 
         let path_endpoints = device
             .get_path_endpoints()
             .await
-            .map_err(|err| {
+            .inspect_err(|err| {
                 error!("Failed to get path endpoints with {err}");
-                Status::INTERNAL
             })?
-            .unwrap(); // Flexible::FrameworkErr means the method is not implemented
+            .into_driver_result()?; // Flexible::FrameworkErr means the method is not implemented
         let paths: Vec<_> = Result::from_iter(path_endpoints.paths.into_iter().map(|path| {
             let path_id = PathId(path.id.ok_or(Status::INVALID_ARGS)?);
             let path_name = path.name.ok_or(Status::INVALID_ARGS)?;

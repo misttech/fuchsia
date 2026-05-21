@@ -2,14 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
+use fdf_component::{
+    Driver, DriverContext, DriverError, Node, NodeBuilder, ServiceOffer, driver_register,
+};
 use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_driver_framework::NodeControllerMarker;
+use fidl_fuchsia_hardware_interconnect as icc;
+use fidl_fuchsia_interconnect_test as ft;
 use fuchsia_component::server::ServiceFs;
 use futures::{StreamExt, TryStreamExt};
 use log::{info, warn};
 use zx::Status;
-use {fidl_fuchsia_hardware_interconnect as icc, fidl_fuchsia_interconnect_test as ft};
 
 driver_register!(FakeInterconnectDriver);
 
@@ -23,7 +26,7 @@ struct FakeInterconnectDriver {
 impl Driver for FakeInterconnectDriver {
     const NAME: &str = "fake_interconnect";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let node = context.take_node()?;
 
         let mut outgoing = ServiceFs::new();

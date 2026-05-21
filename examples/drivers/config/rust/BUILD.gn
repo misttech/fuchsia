@@ -43,6 +43,7 @@ fuchsia_rust_driver("driver") {
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/runtime/rust",
     "//sdk/rust/zx",
+    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:log",
   ]
 }

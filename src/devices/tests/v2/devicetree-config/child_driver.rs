@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, driver_register};
 use log::info;
 use pdev::PlatformDevice;
 use serde::Deserialize;
@@ -27,7 +27,7 @@ driver_register!(ChildDriver);
 impl Driver for ChildDriver {
     const NAME: &str = "devicetree-config-child";
 
-    async fn start(context: DriverContext) -> Result<Self, Status> {
+    async fn start(context: DriverContext) -> Result<Self, DriverError> {
         log::info!("Child driver starting");
 
         // Connect to PlatformDevice service (default instance)

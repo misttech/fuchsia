@@ -4,7 +4,7 @@
 
 mod ramdisk;
 
-use fdf_component::{Driver, DriverContext, Node, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use fidl::endpoints::{RequestStream, ServiceMarker};
 use fidl_fuchsia_driver_framework as fdf;
 use fidl_fuchsia_hardware_ramdisk as framdisk;
@@ -186,7 +186,7 @@ impl RamdiskControllerInner {
 impl Driver for RamdiskController {
     const NAME: &str = "ramdisk";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let node = context.take_node()?;
         let node_token = context.start_args.node_token.take();
         let volume_svc_dir = Simple::new();

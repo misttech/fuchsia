@@ -28,6 +28,7 @@ fuchsia_rust_driver("driver") {
     "//src/devices/bind/fuchsia.test:fuchsia.test_rust",
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
+    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:log",
   ]
   test_deps = [

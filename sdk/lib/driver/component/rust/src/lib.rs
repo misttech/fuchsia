@@ -9,9 +9,8 @@
 
 use core::future::Future;
 
-use zx::Status;
-
 mod context;
+mod error;
 mod incoming;
 pub mod macros;
 mod node;
@@ -19,6 +18,7 @@ mod server;
 pub mod testing;
 
 pub use context::*;
+pub use error::{DriverError, FlexibleExt, FlexibleResultExt};
 pub use incoming::*;
 pub use node::*;
 
@@ -40,7 +40,7 @@ pub trait Driver: Sized + Send + 'static {
     /// In order for the driver to be properly considered started, it must return [`Status::OK`]
     /// and bind the client end for the [`DriverStartArgs::node`] given in
     /// [`DriverContext::start_args`].
-    fn start(context: DriverContext) -> impl Future<Output = Result<Self, Status>> + Send;
+    fn start(context: DriverContext) -> impl Future<Output = Result<Self, DriverError>> + Send;
 
     /// This will be called when the driver has been asked to stop, and should do any
     /// asynchronous cleanup necessary before the driver is fully shut down.

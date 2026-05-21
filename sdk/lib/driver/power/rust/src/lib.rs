@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use core::future::Future;
-use fdf_component::{Driver, DriverContext};
+use fdf_component::{Driver, DriverContext, DriverError};
 use fidl_fuchsia_hardware_power as fhw_power;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_power_broker as fpower_broker;
@@ -101,7 +101,7 @@ async fn run_element_runner<T: SuspendableDriver>(
 impl<T: SuspendableDriver + Send + Sync> Driver for Suspendable<T> {
     const NAME: &str = T::NAME;
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let mut runner = context
             .start_args
             .power_element_args
@@ -188,7 +188,7 @@ mod tests {
     impl Driver for TestDriver {
         const NAME: &str = "test_driver";
 
-        async fn start(_context: DriverContext) -> Result<Self, Status> {
+        async fn start(_context: DriverContext) -> Result<Self, DriverError> {
             Ok(Self {
                 suspend_called: Arc::new(AtomicBool::new(false)),
                 resume_called: Arc::new(AtomicBool::new(false)),

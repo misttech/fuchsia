@@ -5,9 +5,8 @@
 // [START include]
 use example_config_driver_config::Config;
 // [END include]
-use fdf_component::{Driver, DriverContext, Node, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use log::info;
-use zx::Status;
 
 /// The implementation of our driver will live in this object, which implements [`Driver`].
 #[allow(unused)]
@@ -25,7 +24,7 @@ driver_register!(ConfigRustDriver);
 impl Driver for ConfigRustDriver {
     const NAME: &str = "example_config_rust_driver";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         // [START use]
         let config = context.take_config::<Config>()?;
         info!("My config value is: {}", config.suspend_enabled);

@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceOffer, driver_register};
+use fdf_component::{
+    Driver, DriverContext, DriverError, Node, NodeBuilder, ServiceOffer, driver_register,
+};
 use fidl_next::{Request, Responder, ServerEnd};
 use fidl_next_fuchsia_hardware_i2c as i2c;
 use fuchsia_async::{Scope, ScopeHandle};
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt as _;
 use log::info;
-use zx::Status;
 
 /// The implementation of our driver will live in this object, which implements [`Driver`].
 #[allow(unused)]
@@ -54,7 +55,7 @@ impl i2c::ServiceHandler for Service {
 impl Driver for ZirconTransportParent {
     const NAME: &str = "zircon_parent_rust_next_driver";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         info!(
             "Binding node client. Every driver needs to do this for the driver to be considered loaded."
         );

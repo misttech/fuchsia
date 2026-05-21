@@ -16,7 +16,7 @@ use fidl_fuchsia_driver_framework::DriverRequest;
 
 use fdf::{AsyncDispatcher, DriverHandle, Message, fdf_handle_t};
 
-use crate::{Driver, DriverContext};
+use crate::{Driver, DriverContext, DriverError};
 use fdf_sys::fdf_dispatcher_get_current_dispatcher;
 use fidl_fuchsia_driver_framework::DriverStartArgs;
 use fuchsia_async::LocalExecutorBuilder;
@@ -157,7 +157,7 @@ impl<T: Driver> DriverServer<T> {
 
         log::debug!("driver starting");
 
-        let driver = T::start(context).await?;
+        let driver = T::start(context).await.map_err(DriverError::log_to_status)?;
         self.driver.set(driver).map_err(|_| ()).expect("Driver received start message twice");
         Ok(())
     }
@@ -211,6 +211,7 @@ impl<T: Driver> DriverServer<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DriverError;
 
     use fdf::{CurrentDispatcher, OnDispatcher};
     use fdf_env::test::spawn_in_driver;
@@ -228,7 +229,7 @@ mod tests {
     impl Driver for TestDriver {
         const NAME: &str = "test_driver";
 
-        async fn start(context: DriverContext) -> Result<Self, Status> {
+        async fn start(context: DriverContext) -> Result<Self, DriverError> {
             let DriverContext { root_dispatcher, start_args, .. } = context;
             println!("created new test driver on dispatcher: {root_dispatcher:?}");
             println!("driver start message: {start_args:?}");
@@ -276,6 +277,157 @@ mod tests {
                 .unwrap();
 
             client.stop().await.unwrap();
+            client_task.await.unwrap();
+
+            unsafe {
+                destroy_func(driver_server as *mut c_void);
+            }
+        })
+    }
+
+    struct TestDriverAnyhowSuccess;
+
+    impl Driver for TestDriverAnyhowSuccess {
+        const NAME: &str = "test_driver_anyhow_success";
+
+        async fn start(_context: DriverContext) -> Result<Self, DriverError> {
+            Ok(Self)
+        }
+        async fn stop(&self) {}
+    }
+
+    #[test]
+    fn test_anyhow_success() {
+        let registration = crate::macros::make_driver_registration::<TestDriverAnyhowSuccess>();
+        let initialize_func = registration.v1.initialize.expect("initializer");
+        let destroy_func = registration.v1.destroy.expect("destroy function");
+
+        let (server_chan, client_chan) = Channel::<[fidl_next::Chunk]>::create();
+
+        spawn_in_driver("driver anyhow success", async move {
+            let client_end: ClientEnd<fidl_next_fuchsia_driver_framework::Driver, _> =
+                ClientEnd::from_untyped(fdf_fidl::DriverChannel::new(client_chan));
+            let dispatcher = ClientDispatcher::new(client_end);
+            let client = dispatcher.client();
+
+            let client_task = CurrentDispatcher
+                .spawn(async move {
+                    dispatcher.run(DriverClient).await.unwrap_err();
+                })
+                .unwrap();
+
+            let channel_handle = server_chan.into_driver_handle().into_raw().get();
+            let driver_server = unsafe { initialize_func(channel_handle) } as usize;
+            assert_ne!(driver_server, 0);
+
+            client
+                .start(fidl_next_fuchsia_driver_framework::DriverStartArgs::default())
+                .await
+                .unwrap()
+                .unwrap();
+
+            client.stop().await.unwrap();
+            client_task.await.unwrap();
+
+            unsafe {
+                destroy_func(driver_server as *mut c_void);
+            }
+        })
+    }
+
+    struct TestDriverAnyhowFailure;
+
+    impl Driver for TestDriverAnyhowFailure {
+        const NAME: &str = "test_driver_anyhow_failure";
+
+        async fn start(_context: DriverContext) -> Result<Self, DriverError> {
+            Err(anyhow::anyhow!(Status::INVALID_ARGS).into())
+        }
+        async fn stop(&self) {}
+    }
+
+    #[test]
+    fn test_anyhow_failure() {
+        let registration = crate::macros::make_driver_registration::<TestDriverAnyhowFailure>();
+        let initialize_func = registration.v1.initialize.expect("initializer");
+        let destroy_func = registration.v1.destroy.expect("destroy function");
+
+        let (server_chan, client_chan) = Channel::<[fidl_next::Chunk]>::create();
+
+        spawn_in_driver("driver anyhow failure", async move {
+            let client_end: ClientEnd<fidl_next_fuchsia_driver_framework::Driver, _> =
+                ClientEnd::from_untyped(fdf_fidl::DriverChannel::new(client_chan));
+            let dispatcher = ClientDispatcher::new(client_end);
+            let client = dispatcher.client();
+
+            let client_task = CurrentDispatcher
+                .spawn(async move {
+                    dispatcher.run(DriverClient).await.unwrap_err();
+                })
+                .unwrap();
+
+            let channel_handle = server_chan.into_driver_handle().into_raw().get();
+            let driver_server = unsafe { initialize_func(channel_handle) } as usize;
+            assert_ne!(driver_server, 0);
+
+            let res = client
+                .start(fidl_next_fuchsia_driver_framework::DriverStartArgs::default())
+                .await
+                .unwrap();
+
+            assert_eq!(res.unwrap_err(), Status::INVALID_ARGS.into_raw());
+
+            client_task.await.unwrap();
+
+            unsafe {
+                destroy_func(driver_server as *mut c_void);
+            }
+        })
+    }
+
+    struct TestDriverAnyhowFailureDefault;
+
+    impl Driver for TestDriverAnyhowFailureDefault {
+        const NAME: &str = "test_driver_anyhow_failure_default";
+
+        async fn start(_context: DriverContext) -> Result<Self, DriverError> {
+            Err(anyhow::anyhow!("some generic error").into())
+        }
+        async fn stop(&self) {}
+    }
+
+    #[test]
+    fn test_anyhow_failure_default() {
+        let registration =
+            crate::macros::make_driver_registration::<TestDriverAnyhowFailureDefault>();
+        let initialize_func = registration.v1.initialize.expect("initializer");
+        let destroy_func = registration.v1.destroy.expect("destroy function");
+
+        let (server_chan, client_chan) = Channel::<[fidl_next::Chunk]>::create();
+
+        spawn_in_driver("driver anyhow failure default", async move {
+            let client_end: ClientEnd<fidl_next_fuchsia_driver_framework::Driver, _> =
+                ClientEnd::from_untyped(fdf_fidl::DriverChannel::new(client_chan));
+            let dispatcher = ClientDispatcher::new(client_end);
+            let client = dispatcher.client();
+
+            let client_task = CurrentDispatcher
+                .spawn(async move {
+                    dispatcher.run(DriverClient).await.unwrap_err();
+                })
+                .unwrap();
+
+            let channel_handle = server_chan.into_driver_handle().into_raw().get();
+            let driver_server = unsafe { initialize_func(channel_handle) } as usize;
+            assert_ne!(driver_server, 0);
+
+            let res = client
+                .start(fidl_next_fuchsia_driver_framework::DriverStartArgs::default())
+                .await
+                .unwrap();
+
+            assert_eq!(res.unwrap_err(), Status::INTERNAL.into_raw());
+
             client_task.await.unwrap();
 
             unsafe {

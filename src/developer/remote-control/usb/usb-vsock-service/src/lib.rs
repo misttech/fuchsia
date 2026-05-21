@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, Node, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use fidl::endpoints::create_endpoints;
+use fidl_fuchsia_hardware_overnet as overnet;
+use fidl_fuchsia_hardware_vsock as vsock;
 use fuchsia_async::scope::ScopeStream;
 use fuchsia_async::{Scope, Socket, TimeoutExt};
 use fuchsia_component::server::ServiceFs;
@@ -21,7 +23,6 @@ use usb_vsock::{
     UsbPacketBuilder, VsockPacketIterator,
 };
 use zx::{SocketOpts, Status};
-use {fidl_fuchsia_hardware_overnet as overnet, fidl_fuchsia_hardware_vsock as vsock};
 
 mod vsock_service;
 
@@ -398,7 +399,7 @@ impl UsbCallbackHandler {
 impl Driver for UsbVsockServiceDriver {
     const NAME: &str = "usb-vsock-service";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let node = context.take_node()?;
         let scope = Scope::new_with_name(Self::NAME);
         let mut outgoing = ServiceFs::new();

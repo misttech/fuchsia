@@ -394,7 +394,7 @@ mod convert {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Node, NodeBuilder, ServiceInstance, ServiceOffer};
+    use crate::{DriverError, Node, NodeBuilder, ServiceInstance, ServiceOffer};
     use fidl_next::{Request, Responder};
     use fidl_next_fuchsia_examples as fexample;
     use fidl_next_fuchsia_examples::echo::{EchoString, SendString};
@@ -452,7 +452,7 @@ mod tests {
     impl Driver for TestDriver {
         const NAME: &'static str = "test-driver";
 
-        async fn start(mut context: crate::DriverContext) -> Result<Self, Status> {
+        async fn start(mut context: crate::DriverContext) -> Result<Self, DriverError> {
             let service_proxy: ServiceInstance<fexample::EchoService> =
                 context.incoming.service().connect_next()?;
             let (client_end, server_end) = fidl_next::fuchsia::create_channel();

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, Node, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
 use fuchsia_sync::Mutex;
@@ -24,7 +24,7 @@ driver_register!(WlanifDriver);
 impl Driver for WlanifDriver {
     const NAME: &str = "wlanif";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         info!("wlanif driver starting...");
 
         let node = context.take_node()?;
@@ -65,7 +65,7 @@ impl Driver for WlanifDriver {
                 Ok(handle) => handle,
                 Err(e) => {
                     error!("Failed to start FullMAC MLME: {:?}", e);
-                    return Err(Status::INTERNAL);
+                    return Err(Status::INTERNAL.into());
                 }
             };
 

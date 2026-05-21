@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceInstance, driver_register};
+use anyhow::{Context as _, Error};
+use fdf_component::{
+    Driver, DriverContext, DriverError, Node, NodeBuilder, ServiceInstance, driver_register,
+};
 use fidl_next_fuchsia_hardware_i2c as i2c;
-use log::{error, info};
-use zx::Status;
+use log::info;
 
 /// The implementation of our driver will live in this object, which implements [`Driver`].
 #[allow(unused)]
@@ -22,14 +24,14 @@ driver_register!(ZirconTransportChild);
 impl Driver for ZirconTransportChild {
     const NAME: &str = "zircon_child_rust_next_driver";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         info!(
             "Binding node client. Every driver needs to do this for the driver to be considered loaded."
         );
         let node = context.take_node()?;
 
-        let device = get_i2c_device(&context).unwrap().spawn();
-        let device_name = device.get_name().await.unwrap().unwrap().name.to_string();
+        let device = get_i2c_device(&context)?.spawn();
+        let device_name = device.get_name().await?.map_err(zx::Status::from_raw)?.name.to_string();
         info!("i2c device name: {device_name}");
 
         info!("Adding child node with i2c device name as a property value");
@@ -48,15 +50,14 @@ impl Driver for ZirconTransportChild {
     }
 }
 
-fn get_i2c_device(context: &DriverContext) -> Result<fidl_next::ClientEnd<i2c::Device>, Status> {
+fn get_i2c_device(context: &DriverContext) -> Result<fidl_next::ClientEnd<i2c::Device>, Error> {
     let service_proxy: ServiceInstance<i2c::Service> = context.incoming.service().connect_next()?;
 
     let (client_end, server_end) = fidl_next::fuchsia::create_channel();
 
-    service_proxy.device(server_end).map_err(|err| {
-        error!("Error connecting to i2c device proxy at driver startup: {err}");
-        Status::INTERNAL
-    })?;
+    service_proxy
+        .device(server_end)
+        .context("Error connecting to i2c device proxy at driver startup")?;
 
     Ok(client_end)
 }

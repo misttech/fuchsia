@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, Node, NodeBuilder, driver_register};
+use anyhow::{Context as _, Error};
+use fdf_component::{Driver, DriverContext, DriverError, Node, NodeBuilder, driver_register};
 use fidl_fuchsia_hardware_i2c as i2c;
-use log::{error, info};
-use zx::Status;
+use log::info;
 
 /// The implementation of our driver will live in this object, which implements [`Driver`].
 #[allow(unused)]
@@ -22,14 +22,14 @@ driver_register!(ZirconChildDriver);
 impl Driver for ZirconChildDriver {
     const NAME: &str = "zircon_child_rust_driver";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         info!(
             "Binding node client. Every driver needs to do this for the driver to be considered loaded."
         );
         let node = context.take_node()?;
 
-        let device = get_i2c_device(&context).unwrap();
-        let device_name = device.get_name().await.unwrap().unwrap();
+        let device = get_i2c_device(&context)?;
+        let device_name = device.get_name().await?.map_err(zx::Status::from_raw)?;
         info!("i2c device name: {device_name}");
 
         info!("Adding child node with i2c device name as a property value");
@@ -46,13 +46,13 @@ impl Driver for ZirconChildDriver {
     }
 }
 
-fn get_i2c_device(context: &DriverContext) -> Result<i2c::DeviceProxy, Status> {
+fn get_i2c_device(context: &DriverContext) -> Result<i2c::DeviceProxy, Error> {
     let service_proxy = context.incoming.service_marker(i2c::ServiceMarker).connect()?;
 
-    service_proxy.connect_to_device().map_err(|err| {
-        error!("Error connecting to i2c device proxy at driver startup: {err}");
-        Status::INTERNAL
-    })
+    let proxy = service_proxy
+        .connect_to_device()
+        .context("Error connecting to i2c device proxy at driver startup")?;
+    Ok(proxy)
 }
 
 #[cfg(test)]

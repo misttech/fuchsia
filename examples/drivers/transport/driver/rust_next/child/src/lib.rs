@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fdf_component::{Driver, DriverContext, Node, NodeBuilder, ServiceInstance, driver_register};
+use anyhow::Context as _;
+use fdf_component::{
+    Driver, DriverContext, DriverError, FlexibleResultExt, Node, NodeBuilder, ServiceInstance,
+    driver_register,
+};
 use fidl_next_fuchsia_hardware_i2cimpl as i2cimpl;
-use log::{error, info};
-use zx::Status;
+use log::info;
 
 /// The implementation of our driver will live in this object, which implements [`Driver`].
 #[allow(unused)]
@@ -22,14 +25,14 @@ driver_register!(DriverTransportChild);
 impl Driver for DriverTransportChild {
     const NAME: &str = "driver_child_rust_next_driver";
 
-    async fn start(mut context: DriverContext) -> Result<Self, Status> {
+    async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         info!(
             "Binding node client. Every driver needs to do this for the driver to be considered loaded."
         );
         let node = context.take_node()?;
 
-        let device = get_i2cimpl_device(&context).unwrap().spawn();
-        let transfer_size = device.get_max_transfer_size().await.unwrap().unwrap().size;
+        let device = get_i2cimpl_device(&context)?.spawn();
+        let transfer_size = device.get_max_transfer_size().await?.into_driver_result()?.size;
         info!("i2cimpl max transfer size: {transfer_size}");
 
         info!("Adding child node with i2cimpl max transfer size as a property value");
@@ -38,7 +41,7 @@ impl Driver for DriverTransportChild {
             .build();
         node.add_child(child_node).await?;
 
-        device.set_bitrate(0x5u32).await.unwrap().unwrap();
+        device.set_bitrate(0x5u32).await?.into_driver_result()?;
 
         Ok(Self { node })
     }
@@ -52,16 +55,15 @@ impl Driver for DriverTransportChild {
 
 fn get_i2cimpl_device(
     context: &DriverContext,
-) -> Result<fidl_next::ClientEnd<i2cimpl::Device>, Status> {
+) -> Result<fidl_next::ClientEnd<i2cimpl::Device>, anyhow::Error> {
     let service_proxy: ServiceInstance<i2cimpl::Service> =
         context.incoming.service().connect_next()?;
 
     let (client_end, server_end) = fdf_fidl::create_channel();
 
-    service_proxy.device(server_end).map_err(|err| {
-        error!("Error connecting to i2cimpl device proxy at driver startup: {err}");
-        Status::INTERNAL
-    })?;
+    service_proxy
+        .device(server_end)
+        .context("Error connecting to i2cimpl device proxy at driver startup")?;
 
     Ok(client_end)
 }
