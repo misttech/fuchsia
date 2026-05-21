@@ -4541,7 +4541,7 @@ mod tests {
     }
 
     #[test]
-    fn test_type_constraint() {
+    fn test_type_constraint_ge_gt() {
         let mut context = ComputationContext::default();
         let (new_lhs, new_rhs) = Type::constraint(
             &mut context,
@@ -4566,7 +4566,7 @@ mod tests {
             panic!("Expected ScalarValue");
         }
 
-        let (new_lhs, new_rhs) = Type::constraint(
+        let (new_lhs, _) = Type::constraint(
             &mut context,
             JumpType::Gt,
             JumpWidth::W64,
@@ -4581,5 +4581,90 @@ mod tests {
         } else {
             panic!("Expected ScalarValue");
         }
+    }
+
+    #[test]
+    fn test_type_constraint_lt_le() {
+        let mut context = ComputationContext::default();
+        let (new_lhs, _) = Type::constraint(
+            &mut context,
+            JumpType::Lt,
+            JumpWidth::W64,
+            Type::UNKNOWN_SCALAR,
+            Type::from(10),
+        )
+        .unwrap();
+
+        if let Type::ScalarValue(data1) = new_lhs {
+            assert_eq!(data1.min(), 0);
+            assert_eq!(data1.max(), 9);
+        } else {
+            panic!("Expected ScalarValue");
+        }
+
+        let (new_lhs, _) = Type::constraint(
+            &mut context,
+            JumpType::Le,
+            JumpWidth::W64,
+            Type::UNKNOWN_SCALAR,
+            Type::from(10),
+        )
+        .unwrap();
+
+        if let Type::ScalarValue(data1) = new_lhs {
+            assert_eq!(data1.min(), 0);
+            assert_eq!(data1.max(), 10);
+        } else {
+            panic!("Expected ScalarValue");
+        }
+    }
+
+    #[test]
+    fn test_type_constraint_w32() {
+        let mut context = ComputationContext::default();
+        let (new_lhs, _) = Type::constraint(
+            &mut context,
+            JumpType::Eq,
+            JumpWidth::W32,
+            Type::ScalarValue(ScalarValueData::UNKNOWN_WRITTEN),
+            Type::from(10),
+        )
+        .unwrap();
+        if let Type::ScalarValue(data1) = new_lhs {
+            assert_eq!(data1.min(), 10);
+            assert_eq!(data1.max(), 0xffff_ffff_0000_000a);
+        } else {
+            panic!("Expected ScalarValue");
+        }
+    }
+
+    #[test]
+    fn test_type_constraint_null_or() {
+        let mut context = ComputationContext::default();
+        let id = MemoryId::new();
+        let null_or = Type::NullOr { id: id.clone(), inner: Box::new(Type::UNKNOWN_SCALAR) };
+        let (new_lhs, _) =
+            Type::constraint(&mut context, JumpType::Eq, JumpWidth::W64, null_or, Type::from(0))
+                .unwrap();
+        if let Type::ScalarValue(data) = new_lhs {
+            assert_eq!(data.value, 0);
+        } else {
+            panic!("Expected zero ScalarValue");
+        }
+    }
+
+    #[test]
+    fn test_type_constraint_array_bounds() {
+        let mut context = ComputationContext::default();
+        let id = MemoryId::new();
+        let _ = Type::constraint(
+            &mut context,
+            JumpType::Le,
+            JumpWidth::W64,
+            Type::PtrToArray { id: id.clone(), offset: 22.into() },
+            Type::PtrToEndArray { id: id.clone() },
+        )
+        .unwrap();
+        assert_eq!(context.array_bounds.get(&id), Some(&22));
     }
 }
