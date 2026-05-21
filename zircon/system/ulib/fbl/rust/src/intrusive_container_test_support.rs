@@ -4,15 +4,15 @@
 
 #![cfg(test)]
 
+use crate::WavlTreeKeyable;
 use crate::doubly_linked_list::DoublyLinkedListNode;
 use crate::opaque_ref_counted::OpaqueRefCounted;
 use crate::recyclable::Recyclable;
 use crate::ref_counted::{HasRefCount, RefCounted};
 use crate::ref_ptr::RefPtr;
 use crate::singly_linked_list::SinglyLinkedListNode;
-use crate::tag::DefaultObjectTag;
 use crate::unique_ptr::UniquePtr;
-use crate::{DoublyLinkedListContainable, SinglyLinkedListContainable};
+use crate::wavl_tree::WavlTreeNode;
 use core::ffi::c_void;
 use core::ptr::NonNull;
 use kalloc::Box;
@@ -121,7 +121,11 @@ pub extern "C" fn rust_free_shared_unique_object(ptr: *mut c_void) {
     }
 }
 
-#[derive(crate::SinglyLinkedListContainable, crate::DoublyLinkedListContainable)]
+#[derive(
+    crate::SinglyLinkedListContainable,
+    crate::DoublyLinkedListContainable,
+    crate::WavlTreeContainable,
+)]
 #[repr(C)]
 pub struct SharedUniqueObject {
     pub value: i32,
@@ -129,8 +133,16 @@ pub struct SharedUniqueObject {
     sll_node: SinglyLinkedListNode<SharedUniqueObject>,
     #[dll_node]
     dll_node: DoublyLinkedListNode<SharedUniqueObject>,
+    #[wavl_node]
+    wavl_node: WavlTreeNode<SharedUniqueObject>,
     pub allocated_in_rust: bool,
     pub destruction_flag: *mut bool,
+}
+
+impl WavlTreeKeyable<i32> for SharedUniqueObject {
+    fn get_key(&self) -> &i32 {
+        &self.value
+    }
 }
 
 impl SharedUniqueObject {
@@ -139,6 +151,7 @@ impl SharedUniqueObject {
             value,
             sll_node: SinglyLinkedListNode::new(),
             dll_node: DoublyLinkedListNode::new(),
+            wavl_node: WavlTreeNode::new(),
             allocated_in_rust: true,
             destruction_flag: core::ptr::null_mut(),
         }
@@ -184,26 +197,29 @@ impl TestValue for SharedUniqueObject {
     }
 }
 
+#[derive(
+    crate::SinglyLinkedListContainable,
+    crate::DoublyLinkedListContainable,
+    crate::WavlTreeContainable,
+)]
 #[repr(C)]
 pub struct SharedRefObject {
     ref_count: RefCounted,
     __fbl_ref_counted_guard: (),
     pub value: i32,
+    #[sll_node]
     sll_node: SinglyLinkedListNode<SharedRefObject>,
+    #[dll_node]
     dll_node: DoublyLinkedListNode<SharedRefObject>,
+    #[wavl_node]
+    wavl_node: WavlTreeNode<SharedRefObject>,
     pub allocated_in_rust: bool,
     pub destruction_flag: *mut bool,
 }
 
-impl SinglyLinkedListContainable<SharedRefObject, DefaultObjectTag> for SharedRefObject {
-    fn get_node(&self) -> &SinglyLinkedListNode<SharedRefObject> {
-        &self.sll_node
-    }
-}
-
-impl DoublyLinkedListContainable<SharedRefObject, DefaultObjectTag> for SharedRefObject {
-    fn get_node(&self) -> &DoublyLinkedListNode<SharedRefObject> {
-        &self.dll_node
+impl WavlTreeKeyable<i32> for SharedRefObject {
+    fn get_key(&self) -> &i32 {
+        &self.value
     }
 }
 
@@ -247,6 +263,7 @@ impl TestValue for SharedRefObject {
             value: value,
             sll_node: SinglyLinkedListNode::new(),
             dll_node: DoublyLinkedListNode::new(),
+            wavl_node: WavlTreeNode::new(),
             allocated_in_rust: true,
             destruction_flag: core::ptr::null_mut(),
         })
@@ -281,14 +298,16 @@ unsafe impl Recyclable for OpaqueRefCounted<CppRefObject> {
 ::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, value) == 0);
 ::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, sll_node) == 8);
 ::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, dll_node) == 16);
-::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, allocated_in_rust) == 32);
-::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, destruction_flag) == 40);
-::zr::static_assert!(core::mem::size_of::<SharedUniqueObject>() == 48);
+::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, wavl_node) == 32);
+::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, allocated_in_rust) == 64);
+::zr::static_assert!(core::mem::offset_of!(SharedUniqueObject, destruction_flag) == 72);
+::zr::static_assert!(core::mem::size_of::<SharedUniqueObject>() == 80);
 
 ::zr::static_assert!(core::mem::offset_of!(SharedRefObject, ref_count) == 0);
 ::zr::static_assert!(core::mem::offset_of!(SharedRefObject, value) == 4);
 ::zr::static_assert!(core::mem::offset_of!(SharedRefObject, sll_node) == 8);
 ::zr::static_assert!(core::mem::offset_of!(SharedRefObject, dll_node) == 16);
-::zr::static_assert!(core::mem::offset_of!(SharedRefObject, allocated_in_rust) == 32);
-::zr::static_assert!(core::mem::offset_of!(SharedRefObject, destruction_flag) == 40);
-::zr::static_assert!(core::mem::size_of::<SharedRefObject>() == 48);
+::zr::static_assert!(core::mem::offset_of!(SharedRefObject, wavl_node) == 32);
+::zr::static_assert!(core::mem::offset_of!(SharedRefObject, allocated_in_rust) == 64);
+::zr::static_assert!(core::mem::offset_of!(SharedRefObject, destruction_flag) == 72);
+::zr::static_assert!(core::mem::size_of::<SharedRefObject>() == 80);

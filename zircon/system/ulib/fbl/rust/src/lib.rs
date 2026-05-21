@@ -28,6 +28,7 @@ mod string_buffer;
 mod tag;
 mod unique_ptr;
 mod vector;
+mod wavl_tree;
 
 #[cfg(test)]
 mod intrusive_container_test_support;
@@ -41,7 +42,8 @@ pub use doubly_linked_list::{
     ReverseIterator,
 };
 pub use fbl_macros::{
-    DoublyLinkedListContainable, Recyclable, SinglyLinkedListContainable, ref_counted,
+    DoublyLinkedListContainable, Recyclable, SinglyLinkedListContainable, WavlTreeContainable,
+    ref_counted,
 };
 pub use inline_array::InlineArray;
 pub use opaque_ref_counted::OpaqueRefCounted;
@@ -58,3 +60,4 @@ pub use string_buffer::StringBuffer;
 pub use tag::DefaultObjectTag;
 pub use unique_ptr::UniquePtr;
 pub use vector::Vector;
+pub use wavl_tree::{WavlTree, WavlTreeContainable, WavlTreeKeyable, WavlTreeNode};

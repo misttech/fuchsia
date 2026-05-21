@@ -220,3 +220,69 @@ pub fn derive_doubly_linked_list_containable(item: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+/// Derive macro to implement `WavlTreeContainable` for a struct.
+///
+/// Mark fields that are nodes with `#[wavl_node]`. To support multiple trees, use
+/// `#[wavl_node(tag = MyTag)]`.
+#[proc_macro_derive(WavlTreeContainable, attributes(wavl_node))]
+pub fn derive_wavl_tree_containable(item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    let name = &input.ident;
+
+    let fields = match input.data {
+        syn::Data::Struct(s) => s.fields,
+        _ => panic!("WavlTreeContainable derive only supports structs"),
+    };
+
+    let mut impls = Vec::new();
+
+    for field in fields {
+        for attr in &field.attrs {
+            if attr.path().is_ident("wavl_node") {
+                let field_name = field.ident.as_ref().unwrap();
+                let mut tag = None;
+                let mut rank = None;
+
+                let _ = attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("tag") {
+                        let value = meta.value()?;
+                        let parsed_tag: syn::Type = value.parse()?;
+                        tag = Some(parsed_tag);
+                        Ok(())
+                    } else if meta.path.is_ident("rank") {
+                        let value = meta.value()?;
+                        let parsed_rank: syn::Type = value.parse()?;
+                        rank = Some(parsed_rank);
+                        Ok(())
+                    } else {
+                        let path_str = meta.path.to_token_stream().to_string();
+                        panic!("unsupported attribute: {}", path_str)
+                    }
+                });
+
+                let tag_type = tag.unwrap_or_else(|| syn::parse_quote! { ::fbl::DefaultObjectTag });
+                let rank_type = rank.unwrap_or_else(|| syn::parse_quote! { bool });
+
+                impls.push(quote! {
+                    impl ::fbl::WavlTreeContainable<#name, #tag_type> for #name {
+                        type Rank = #rank_type;
+                        fn get_node(&self) -> &::fbl::WavlTreeNode<#name, Self::Rank> {
+                            &self.#field_name
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    if impls.is_empty() {
+        panic!("At least one field must be marked with #[wavl_node]");
+    }
+
+    let expanded = quote! {
+        #(#impls)*
+    };
+
+    TokenStream::from(expanded)
+}
