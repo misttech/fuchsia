@@ -6,3 +6,7 @@ fuchsia.sestarnix: sid_to_security_context_c0_c255
 fuchsia.sestarnix: compute_access_decision_simple
 fuchsia.sestarnix: compute_access_decision_c0_c255
 fuchsia.sestarnix: concurrent_access_cache_get
+fuchsia.sestarnix: binder_transaction
+fuchsia.sestarnix: check_file_ioctl_access
+fuchsia.sestarnix: file_permission
+fuchsia.sestarnix: fs_node_permission

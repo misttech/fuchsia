@@ -19,5 +19,12 @@
             storage: "tmp",
             path: "/tmp",
         },
+        {
+            protocol: [
+                "fuchsia.power.cpu.DomainController",
+                "fuchsia.time.Maintenance",
+            ],
+            availability: "optional",
+        },
     ],
 }

@@ -19,9 +19,26 @@ rustc_binary("bin") {
   source_root = "src/main.rs"
   sources = [ "src/main.rs" ]
 
+  # Disable LTO to keep compile/link times fast when linking starnix_core, and to prevent
+  # cross-crate optimizations from skewing the microbenchmark measurements.
+  _lto_config = [ "//build/config/lto" ]
+  _thinlto_config = [ "//build/config/lto:thinlto" ]
+  if (configs + _lto_config - _lto_config != configs) {
+    configs -= _lto_config
+  }
+  if (configs + _thinlto_config - _thinlto_config != configs) {
+    configs -= _thinlto_config
+  }
+
   deps = [
     "//src/developer/fuchsia-criterion",
+    "//src/lib/diagnostics/inspect/rust",
+    "//src/lib/fuchsia-async",
+    "//src/starnix/kernel/core",
     "//src/starnix/lib/selinux",
+    "//src/starnix/lib/starnix_registers",
+    "//src/starnix/lib/starnix_sync",
+    "//src/starnix/lib/starnix_uapi",
     "//third_party/rust_crates:criterion",
   ]
 

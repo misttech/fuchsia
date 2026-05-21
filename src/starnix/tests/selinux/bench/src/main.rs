@@ -6,13 +6,90 @@
 
 use criterion::{Benchmark, Criterion};
 use fuchsia_criterion::FuchsiaCriterion;
+use security::PermissionFlags;
 use selinux::policy::{AccessVector, KernelAccessDecision};
 use selinux::{AccessQueryArgs, ConcurrentAccessCache, KernelClass, SecurityId};
+use starnix_core::fs::tmpfs::TmpFs;
+use starnix_core::security;
+use starnix_core::task::container_namespace::ContainerNamespace;
+use starnix_core::task::{CurrentTask, Kernel, KernelFeatures, SchedulerManager, SystemLimits};
+use starnix_core::testing::{AutoReleasableTask, PanickingFile};
+use starnix_core::vfs::FsContext;
+use starnix_sync::{Locked, Unlocked};
 use std::num::NonZeroU32;
+use std::sync::Arc;
 use std::time::Duration;
 
 const POLICY_BYTES: &[u8] =
     include_bytes!("../../../../lib/selinux/testdata/policies/aosp_sepolicy");
+
+fn create_test_kernel(
+    _locked: &mut Locked<Unlocked>,
+    security_server: Option<Arc<selinux::SecurityServer>>,
+) -> Arc<Kernel> {
+    Kernel::new(
+        b"".into(),
+        KernelFeatures::default(),
+        SystemLimits::default(),
+        ContainerNamespace::new(),
+        SchedulerManager::empty_for_tests(),
+        /* crash_reporter_proxy=*/ None,
+        fuchsia_inspect::Node::default(),
+        security::testing::kernel_state(security_server),
+        /* time_adjustment_proxy=*/ None,
+        /* device_tree=*/ None,
+    )
+    .expect("failed to create kernel")
+}
+
+fn create_kernel_task_and_unlocked_with_selinux()
+-> (Arc<Kernel>, AutoReleasableTask, &'static mut Locked<Unlocked>, Arc<selinux::SecurityServer>) {
+    let security_server = selinux::SecurityServer::new_default();
+    security_server.load_policy(POLICY_BYTES.to_vec()).unwrap();
+
+    // SAFETY: We need Unlocked for test setup.
+    let locked = unsafe { starnix_sync::Unlocked::new() };
+
+    let kernel = create_test_kernel(locked, Some(security_server.clone()));
+
+    let file_system = TmpFs::new_fs(locked, &kernel);
+    let fs = FsContext::new(starnix_core::vfs::Namespace::new(file_system));
+
+    let task = starnix_core::execution::create_system_task(locked, &kernel, fs)
+        .expect("failed to create system task");
+
+    // Set the system task for testing so that release()'s time_stats() assertion succeeds!
+    let shared_task = CurrentTask::new(
+        task.task.clone(),
+        starnix_core::task::ThreadState::<starnix_registers::HeapRegs>::default().into(),
+    );
+    kernel.kthreads.init(shared_task).expect("failed to initialize kthreads");
+
+    let mut creds = (*task.real_creds()).clone();
+    creds.security_state =
+        starnix_core::security::task_for_context(&task, b"u:r:kernel:s0".into()).unwrap();
+    task.set_creds(creds);
+
+    (kernel, task.into(), locked, security_server)
+}
+
+fn create_file_bench(
+    name: &'static str,
+    hook_closure: impl Fn(&CurrentTask, &starnix_core::vfs::FileObject) + Send + Sync + 'static,
+) -> Benchmark {
+    let executor = fuchsia_async::LocalExecutor::default();
+    let (kernel, task, locked, _security_server) = create_kernel_task_and_unlocked_with_selinux();
+    let task = Box::leak(Box::new(task));
+    let file = Box::leak(Box::new(PanickingFile::new_file(locked, task)));
+
+    Benchmark::new(name, move |bench| {
+        let _kernel = &kernel;
+        let _executor = &executor;
+        bench.iter(|| {
+            hook_closure(&**task, &**file);
+        })
+    })
+}
 
 fn load_policy_bench() -> Benchmark {
     Benchmark::new("load_policy", move |b| {
@@ -104,6 +181,53 @@ fn concurrent_access_cache_get_bench() -> Benchmark {
     })
 }
 
+fn file_permission_bench() -> Benchmark {
+    create_file_bench("file_permission", |task, file| {
+        let _ = criterion::black_box(
+            security::file_permission(task, file, PermissionFlags::READ).unwrap(),
+        );
+    })
+}
+
+fn fs_node_permission_bench() -> Benchmark {
+    create_file_bench("fs_node_permission", |task, file| {
+        let _ = criterion::black_box(
+            security::fs_node_permission(
+                task,
+                file.node(),
+                PermissionFlags::READ,
+                security::Auditable::None,
+            )
+            .unwrap(),
+        );
+    })
+}
+
+fn check_file_ioctl_access_bench() -> Benchmark {
+    create_file_bench("check_file_ioctl_access", |task, file| {
+        let _ = criterion::black_box(
+            security::check_file_ioctl_access(task, file, starnix_uapi::TCGETS).unwrap(),
+        );
+    })
+}
+
+fn binder_transaction_bench() -> Benchmark {
+    let executor = fuchsia_async::LocalExecutor::default();
+    let (kernel, task, _locked, _security_server) = create_kernel_task_and_unlocked_with_selinux();
+    let task = Box::leak(Box::new(task));
+    let connection_state = Box::leak(Box::new(security::binder_connection_alloc(task)));
+
+    Benchmark::new("binder_transaction", move |b| {
+        let _kernel = &kernel;
+        let _executor = &executor;
+        b.iter(|| {
+            let _ = criterion::black_box(
+                security::binder_transaction(task, task, connection_state).unwrap(),
+            );
+        })
+    })
+}
+
 fn main() {
     // List of benchmark programs is passed as the argument list from the
     // component manifest. The arguments passed by the test executor are
@@ -145,4 +269,8 @@ fn main() {
         compute_access_decision_bench("c0_c255", b"u:r:kernel:s0:c0.c255"),
     );
     c.bench("fuchsia.sestarnix", concurrent_access_cache_get_bench());
+    c.bench("fuchsia.sestarnix", file_permission_bench());
+    c.bench("fuchsia.sestarnix", fs_node_permission_bench());
+    c.bench("fuchsia.sestarnix", check_file_ioctl_access_bench());
+    c.bench("fuchsia.sestarnix", binder_transaction_bench());
 }
