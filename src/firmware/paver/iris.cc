@@ -69,7 +69,8 @@ zx::result<std::unique_ptr<DevicePartitioner>> IrisPartitioner::Initialize(
 
 bool IrisPartitioner::SupportsPartition(const PartitionSpec& spec) const {
   if (spec.partition == Partition::kBootloaderA || spec.partition == Partition::kBootloaderB) {
-    return !spec.content_type.empty();
+    // TODO(b/515134439): Support recover_zbi once recovery image is supported.
+    return !spec.content_type.empty() && spec.content_type != "recovery_zbi";
   }
 
   constexpr PartitionSpec non_bootloader_specs[] = {
