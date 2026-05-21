@@ -38,6 +38,8 @@ func main() {
 	flag.Var(&serialLogPaths, "serial-log", "Repeated flag, path to a file containing the serial log. Optional.")
 	outputsDir := flag.String("outputs-dir", "", "If set, will produce text output files for the produced tests in this dir. Optional.")
 	jsonOutput := flag.String("json-output", "", "Output summary.json to this path.")
+	var checksConfigPaths flagmisc.StringsValue
+	flag.Var(&checksConfigPaths, "checks-config", "Repeated flag, path to a file containing FailureModeChecks to load. Optional.")
 	flag.Parse()
 
 	if *help || flag.NArg() > 0 || *swarmingSummaryPath == "" {
@@ -125,6 +127,18 @@ func main() {
 	// check finds a failure mode, then we skip running later checks because we assume
 	// they'll add no useful information.
 	checks := []tefmocheck.FailureModeCheck{}
+
+	// Parse FailureModeChecks from external sources if provided.
+	for _, configPath := range checksConfigPaths {
+		checksFromFile, err := tefmocheck.LoadChecksFromFile(configPath)
+		if err != nil {
+			// If a configuration file is explicitly requested, failing to load it
+			// must be a fatal error.
+			log.Fatalf("failed to load checks from %s: %v", configPath, err)
+		}
+		checks = append(checks, checksFromFile...)
+	}
+
 	checks = append(checks, &tefmocheck.CdcEthernetStateCheck{
 		RequiredTags: map[string]string{
 			"device_type": "Sorrel",

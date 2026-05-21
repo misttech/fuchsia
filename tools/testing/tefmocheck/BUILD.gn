@@ -29,9 +29,12 @@ if (is_host) {
       "task_state_check.go",
       "task_state_check_test.go",
       "types.go",
+      "yaml_loader.go",
+      "yaml_loader_test.go",
     ]
     deps = [
       "//third_party/golibs:golang.org/x/sync",
+      "//third_party/golibs:gopkg.in/yaml.v2",
       "//tools/botanist:constants",
       "//tools/build",
       "//tools/lib/ffxutil:constants",

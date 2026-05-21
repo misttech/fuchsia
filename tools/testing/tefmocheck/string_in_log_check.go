@@ -80,6 +80,71 @@ type stringInLogCheck struct {
 	line string
 }
 
+// stringInLogCheckConfig represents the YAML schema for a stringInLogCheck.
+// Note we are only mapping "public" fields. If a field is added/modified/removed
+// in stringInLogCheck, the same will need to be done in this struct as well.
+type stringInLogCheckConfig struct {
+	String        string   `yaml:"string"`
+	LogTypes      []string `yaml:"log_types"`
+	OnlyOnStates  []string `yaml:"only_on_states"`
+	ExceptStrings []string `yaml:"except_strings"`
+	ExceptBlocks  []struct {
+		Start string `yaml:"start_string"`
+		End   string `yaml:"end_string"`
+	} `yaml:"except_blocks"`
+	SkipPassedTask        bool `yaml:"skip_passed_task"`
+	SkipAllPassedTests    bool `yaml:"skip_all_passed_tests"`
+	SkipPassedTest        bool `yaml:"skip_passed_test"`
+	IgnoreFlakes          bool `yaml:"ignore_flakes"`
+	AlwaysFlake           bool `yaml:"always_flake"`
+	AttributeToTest       bool `yaml:"attribute_to_test"`
+	AddTag                bool `yaml:"add_tag"`
+	InfraFailure          bool `yaml:"infra_failure"`
+	EmitSyntheticTestCase bool `yaml:"emit_synthetic_test_case"`
+}
+
+// toChecks converts a stringInLogCheckConfig to a slice of FailureModeCheck.
+func (c *stringInLogCheckConfig) toChecks() ([]FailureModeCheck, error) {
+	if c.String == "" {
+		return nil, fmt.Errorf("string_in_log_check 'string' field is required")
+	}
+	if len(c.LogTypes) == 0 {
+		return nil, fmt.Errorf("string_in_log_check 'log_types' field is required and must be a list of strings; given: %v", c.LogTypes)
+	}
+	var exceptBlocks []*logBlock
+	for _, b := range c.ExceptBlocks {
+		exceptBlocks = append(exceptBlocks, &logBlock{
+			startString: b.Start,
+			endString:   b.End,
+		})
+	}
+	var ret []FailureModeCheck
+	for _, t := range c.LogTypes {
+		lType, err := parseLogType(t)
+		if err != nil {
+			return nil, fmt.Errorf("for string %q: %w", c.String, err)
+		}
+		check := &stringInLogCheck{
+			String:                c.String,
+			OnlyOnStates:          c.OnlyOnStates,
+			ExceptStrings:         c.ExceptStrings,
+			ExceptBlocks:          exceptBlocks,
+			SkipPassedTask:        c.SkipPassedTask,
+			SkipAllPassedTests:    c.SkipAllPassedTests,
+			SkipPassedTest:        c.SkipPassedTest,
+			IgnoreFlakes:          c.IgnoreFlakes,
+			AlwaysFlake:           c.AlwaysFlake,
+			Type:                  lType,
+			AttributeToTest:       c.AttributeToTest,
+			AddTag:                c.AddTag,
+			InfraFailure:          c.InfraFailure,
+			emitSyntheticTestCase: c.EmitSyntheticTestCase,
+		}
+		ret = append(ret, check)
+	}
+	return ret, nil
+}
+
 func (c *stringInLogCheck) Check(to *TestingOutputs) bool {
 	c.swarmingResult = to.SwarmingSummary.Results
 	if !c.swarmingResult.Failure && c.swarmingResult.State == "COMPLETED" {
