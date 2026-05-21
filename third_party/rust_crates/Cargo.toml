@@ -347,7 +347,6 @@ syn = { version = "2.0.117", features = ["full", "visit", "visit-mut", "extra-tr
 synstructure = "0.13.2"
 tar = "0.4.25"
 term_grid = "0.2.0"
-termios = "0.3.3"
 # TODO(https://fxbug.dev/106164) Enable the "rt" and "net" features here once gnaw
 # supports target-specific feature resolution
 tokio = { version = "=1.38.1", default-features = false }

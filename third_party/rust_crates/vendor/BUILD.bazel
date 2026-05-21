@@ -2905,18 +2905,6 @@ alias(
 )
 
 alias(
-    name = "termios-0.3.3",
-    actual = "//third_party/rust_crates/vendor/termios-0.3.3:termios",
-    tags = ["manual"],
-)
-
-alias(
-    name = "termios",
-    actual = "//third_party/rust_crates/vendor/termios-0.3.3:termios",
-    tags = ["manual"],
-)
-
-alias(
     name = "test-case-3.3.1",
     actual = "//third_party/rust_crates/vendor/test-case-3.3.1:test_case",
     tags = ["manual"],
