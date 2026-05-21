@@ -40,7 +40,7 @@ def _fidl_rust_flavor_crate_name(fidl_library_name, flavor):
     if flavor == "fidl":
         return "fidl_%s" % base
     elif flavor == "common":
-        return "fidl_%s__common" % base
+        return "fidl_%s_common" % base
     elif flavor == "fdomain":
         return "fdomain_%s" % base
     else:
@@ -51,7 +51,7 @@ def _fidl_rust_flavor_file_name(name, flavor):
     if flavor == "fidl":
         return "%s.rs" % base
     elif flavor == "common":
-        return "%s__common.rs" % base
+        return "%s_common.rs" % base
     elif flavor == "fdomain":
         return "%s__fdomain.rs" % base
     else:
