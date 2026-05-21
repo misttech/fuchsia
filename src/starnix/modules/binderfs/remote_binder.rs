@@ -367,7 +367,11 @@ struct RemoteBinderHandleState {
 }
 
 impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
+<<<<<<< HEAD
+    fn lock(&self) -> LockDepGuard<'_, RemoteBinderHandleState, RemoteBinderHandleLevel> {
+=======
     fn lock(&self) -> MutexGuard<'_, RemoteBinderHandleState> {
+>>>>>>> 1ce9b375184 (Revert "[starnix] Migrate binderfs locks to LockDep and fix violations")
         self.state.lock()
     }
 }

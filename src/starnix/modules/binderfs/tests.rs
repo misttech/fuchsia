@@ -151,8 +151,16 @@ pub mod tests {
             }
         }
 
+<<<<<<< HEAD
+        fn lock_shared_memory(
+            &self,
+        ) -> starnix_sync::MappedLockDepGuard<'_, SharedMemory, BinderProcessSharedMemoryLevel>
+        {
+            starnix_sync::LockDepGuard::map(self.proc.shared_memory.lock(), |value| {
+=======
         fn lock_shared_memory(&self) -> starnix_sync::MappedMutexGuard<'_, SharedMemory> {
             starnix_sync::MutexGuard::map(self.proc.shared_memory.lock(), |value| {
+>>>>>>> 1ce9b375184 (Revert "[starnix] Migrate binderfs locks to LockDep and fix violations")
                 value.as_mut().unwrap()
             })
         }
