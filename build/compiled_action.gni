@@ -115,6 +115,7 @@ template("_compiled_action_target") {
                              "tool_output_name",
                              "disable_rustdoc",
                              "visibility",
+                             "validations",
                            ])
     if (!defined(deps)) {
       deps = []

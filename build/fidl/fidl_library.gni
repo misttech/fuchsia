@@ -357,6 +357,7 @@ template("fidl_library") {
     if (!defined(available)) {
       available = [ "fuchsia:$fidl_target_api_levels" ]
     }
+    validations = [ ":${verification_target_name}" ]
   }
 
   # LINT.ThenChange(//build/bazel/rules/fidl/fidl_library.bzl:ir_compilation)
@@ -587,10 +588,7 @@ template("fidl_library") {
       ":$lint_target_name",
     ]
 
-    deps = [
-             ":$plasa_fragment_target_name",
-             ":$verification_target_name",
-           ] + category_allowlist_deps
+    deps = [ ":$plasa_fragment_target_name" ] + category_allowlist_deps
   }
 
   # LINT.IfChange(idk_atom)

@@ -120,6 +120,7 @@ template("fidlc") {
                              "sources",
                              "testonly",
                              "visibility",
+                             "validations",
                            ])
     tool = "//tools/fidl/fidlc:fidlc"
     inputs = [ response_file ]
