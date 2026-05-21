@@ -4,6 +4,7 @@
 
 """Assembly related Providers."""
 
+load("@fuchsia_rules_common//assembly:providers.bzl", _PlatformArtifactsInfo = "PlatformArtifactsInfo")
 load("//fuchsia/private:providers.bzl", _FuchsiaProductBundleInfo = "FuchsiaProductBundleInfo")
 
 FuchsiaConfigDataInfo = provider(
@@ -65,13 +66,7 @@ FuchsiaVirtualDeviceInfo = provider(
     },
 )
 
-FuchsiaPlatformArtifactsInfo = provider(
-    doc = """A set of platform artifacts used by product assembly.""",
-    fields = {
-        "root": "The root directory for these artifacts",
-        "files": "All files contained in the bundle",
-    },
-)
+FuchsiaPlatformArtifactsInfo = _PlatformArtifactsInfo
 
 FuchsiaLegacyBundleInfo = provider(
     doc = """A legacy AIB used by product assembly.""",

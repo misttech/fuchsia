@@ -60,3 +60,11 @@ FuchsiaStarnixContainerInfo = provider(
         "system_file_override_deletions": "List of paths to files to delete",
     },
 )
+
+PlatformArtifactsInfo = provider(
+    doc = "A set of platform artifacts used by product assembly.",
+    fields = {
+        "root": "The root directory for these artifacts",
+        "files": "All files contained in the bundle",
+    },
+)
