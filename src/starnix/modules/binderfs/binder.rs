@@ -46,7 +46,7 @@ use starnix_logging::{
 use starnix_sync::{
     BinderContextManagerLevel, BinderProcsLevel, FileOpsCore, InterruptibleEvent, LockDepMutex,
     LockDepRwLock, LockEqualOrBefore, Locked, Mutex, ResourceAccessorLevel, Unlocked,
-    lockdep_ordered_lock_vec,
+    ordered_lock_vec,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::convert::IntoFidl as _;
@@ -766,8 +766,7 @@ impl BinderDriver {
                         if freeze_locks.len() > 16 {
                             return error!(ENOTSUP);
                         }
-                        let mut target_binder_procs_freeze_locked =
-                            lockdep_ordered_lock_vec(&freeze_locks);
+                        let mut target_binder_procs_freeze_locked = ordered_lock_vec(&freeze_locks);
                         if !freezing {
                             target_binder_procs_freeze_locked.iter_mut().for_each(|bp| bp.thaw());
                             return Ok(SUCCESS);
@@ -775,8 +774,7 @@ impl BinderDriver {
 
                         let state_locks =
                             target_binder_procs.iter().map(|p| &p.state).collect::<Vec<_>>();
-                        let target_binder_procs_state_locked =
-                            lockdep_ordered_lock_vec(&state_locks);
+                        let target_binder_procs_state_locked = ordered_lock_vec(&state_locks);
 
                         // Clone threads in the proc to lock them all until freeze is done.
                         let threads: Vec<OwnedRef<BinderThread>> = target_binder_procs_state_locked
@@ -787,7 +785,7 @@ impl BinderDriver {
                         release_iter_after!(threads, current_task.kernel(), {
                             let threads_locks =
                                 threads.iter().map(|t| &t.state).collect::<Vec<_>>();
-                            let threads_locked = lockdep_ordered_lock_vec(&threads_locks);
+                            let threads_locked = ordered_lock_vec(&threads_locks);
 
                             // Avoid freezing the target procs if there is any pending transaction
                             if target_binder_procs_state_locked
