@@ -15,7 +15,7 @@ use starnix_core::vfs::{
     NamespaceNode, SpecialNode, fileops_impl_dataless, fileops_impl_nonseekable,
     fileops_impl_noop_sync, fs_node_impl_dir_readonly,
 };
-use starnix_sync::{BinderFsDevicesLevel, FileOpsCore, LockDepMutex, Locked, Unlocked};
+use starnix_sync::{FileOpsCore, Locked, Mutex, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
@@ -58,7 +58,7 @@ pub struct BinderFsDir {
 
 #[derive(Debug)]
 pub struct BinderFsState {
-    devices: LockDepMutex<BTreeMap<FsString, DeviceId>, BinderFsDevicesLevel>,
+    devices: Mutex<BTreeMap<FsString, DeviceId>>,
 }
 
 impl BinderFsDir {

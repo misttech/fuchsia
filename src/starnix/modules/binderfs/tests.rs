@@ -151,11 +151,16 @@ pub mod tests {
             }
         }
 
+<<<<<<< HEAD
         fn lock_shared_memory(
             &self,
         ) -> starnix_sync::MappedLockDepGuard<'_, SharedMemory, BinderProcessSharedMemoryLevel>
         {
             starnix_sync::LockDepGuard::map(self.proc.shared_memory.lock(), |value| {
+=======
+        fn lock_shared_memory(&self) -> starnix_sync::MappedMutexGuard<'_, SharedMemory> {
+            starnix_sync::MutexGuard::map(self.proc.shared_memory.lock(), |value| {
+>>>>>>> 1ce9b375184 (Revert "[starnix] Migrate binderfs locks to LockDep and fix violations")
                 value.as_mut().unwrap()
             })
         }
@@ -4264,7 +4269,7 @@ pub mod tests {
             );
 
             // Freeze the receiver process.
-            receiver.proc.freeze_state.lock().freeze();
+            receiver.proc.lock().freeze();
 
             // Check that there is a frozen reply command for the sending thread.
             assert!(sender.thread.lock().command_queue.commands.is_empty());
@@ -4413,7 +4418,7 @@ pub mod tests {
                 Some(Command::FrozenBinder(binder_frozen_state_info { is_frozen: 0, .. }))
             );
 
-            owner.proc.freeze_state.lock().freeze();
+            owner.proc.lock().freeze();
 
             // The client process should have a notification waiting.
             assert_matches!(
@@ -4484,7 +4489,7 @@ pub mod tests {
                 state.command_queue.waiters.wait_async(&fake_waiter);
             }
 
-            owner.proc.freeze_state.lock().freeze();
+            owner.proc.lock().freeze();
 
             // The client thread should have no notification.
             assert!(client.thread.lock().command_queue.is_empty());
@@ -4657,35 +4662,6 @@ pub mod tests {
             // Clean up the blocked thread.
             event.notify();
             blocked_thread.join().unwrap();
-        })
-        .await;
-    }
-
-    #[fuchsia::test]
-    async fn binder_object_multiple_registration() {
-        spawn_kernel_and_run(async |locked, current_task| {
-            let device = BinderDevice::default();
-            let owner = BinderProcessFixture::new(locked, current_task, &device);
-
-            let local = LocalBinderObject {
-                weak_ref_addr: UserAddress::from(0x1),
-                strong_ref_addr: UserAddress::from(0x2),
-            };
-
-            // Register the object once.
-            let _guard1 = owner.proc.lock().find_or_register_object(
-                &owner.thread,
-                local,
-                BinderObjectFlags::empty(),
-            );
-
-            // Register the same object again. This will find the existing object
-            // and call `inc_strong_unchecked`, which triggered the deadlock.
-            let _guard2 = owner.proc.lock().find_or_register_object(
-                &owner.thread,
-                local,
-                BinderObjectFlags::empty(),
-            );
         })
         .await;
     }
