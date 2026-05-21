@@ -86,24 +86,6 @@ platform_artifacts("platform") {
   version = build_info_version
 }
 
-# TODO(https://fxbug.dev/483063916): Remove these targets by pointing all
-# references to the above :platform target.
-platform_artifacts("eng") {
-  testonly = true
-  deps = platform_aib_labels
-  version = build_info_version
-}
-platform_artifacts("userdebug") {
-  testonly = true
-  deps = platform_aib_labels
-  version = build_info_version
-}
-platform_artifacts("user") {
-  testonly = true
-  deps = platform_aib_labels
-  version = build_info_version
-}
-
 ########
 #
 # The Zircon kernel images by build type

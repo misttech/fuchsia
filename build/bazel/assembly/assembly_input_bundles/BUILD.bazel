@@ -16,28 +16,27 @@ fuchsia_platform_artifacts(
 )
 
 fuchsia_platform_artifacts(
+    name = "platform",
+    applicable_licenses = [
+        "@gn_targets//bundles/assembly:platform.bazel_inputs.license",
+    ],
+    directory = "@gn_targets//bundles/assembly:platform.bazel_inputs.directory",
+    files = "@gn_targets//bundles/assembly:platform.bazel_inputs",
+)
+
+# TODO(https://fxbug.dev/483063916): Remove these aliases when all references
+# point to :platform instead.
+alias(
     name = "platform_user",
-    applicable_licenses = [
-        "@gn_targets//bundles/assembly:user.bazel_inputs.license",
-    ],
-    directory = "@gn_targets//bundles/assembly:user.bazel_inputs.directory",
-    files = "@gn_targets//bundles/assembly:user.bazel_inputs",
+    actual = ":platform",
 )
 
-fuchsia_platform_artifacts(
+alias(
     name = "platform_userdebug",
-    applicable_licenses = [
-        "@gn_targets//bundles/assembly:userdebug.bazel_inputs.license",
-    ],
-    directory = "@gn_targets//bundles/assembly:userdebug.bazel_inputs.directory",
-    files = "@gn_targets//bundles/assembly:userdebug.bazel_inputs",
+    actual = ":platform",
 )
 
-fuchsia_platform_artifacts(
+alias(
     name = "platform_eng",
-    applicable_licenses = [
-        "@gn_targets//bundles/assembly:eng.bazel_inputs.license",
-    ],
-    directory = "@gn_targets//bundles/assembly:eng.bazel_inputs.directory",
-    files = "@gn_targets//bundles/assembly:eng.bazel_inputs",
+    actual = ":platform",
 )

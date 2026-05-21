@@ -221,36 +221,24 @@ template("bazel_product_bundle") {
   }
   not_needed([ "_overrides_match_found" ])
 
-  if (defined(invoker.use_bringup_platform_bundles) &&
-      invoker.use_bringup_platform_bundles) {
-    # Use of the bringup AIB set takes precedence over the other sets of AIBs that
-    # could be used.
-    _bazel_inputs += [ "//bundles/assembly:bringup" ]
-  } else if (defined(invoker.allow_eng_platform_bundle_use) &&
-             invoker.allow_eng_platform_bundle_use) {
-    # Some product bundles have eng artifacts in recovery slot and userdebug
-    # artifacts in the main slot.
-    _bazel_inputs += [
-      # bringup is also needed for zedboot images
-      "//bundles/assembly:bringup",
+  # The bringup AIBs are always included because all but a very few products
+  # will need them for their recovery image.  In a few CLs, this will change
+  # to being just the bazel_inputs targets, and at that point, the bringup
+  # set is a strict subset of the main set, and so this will have no additional
+  # cost.
+  _bazel_inputs += [ "//bundles/assembly:bringup" ]
 
-      "//bundles/assembly:eng",
-      "//bundles/assembly:userdebug",
-    ]
-    not_needed(invoker, [ "allow_userdebug_platform_bundle_use" ])
-  } else {
-    if (defined(invoker.allow_userdebug_platform_bundle_use) &&
-        invoker.allow_userdebug_platform_bundle_use) {
-      # Some product bundles have user artifacts in recovery slot and userdebug
-      # artifacts in the main slot.
-      _bazel_inputs += [
-        "//bundles/assembly:user",
-        "//bundles/assembly:userdebug",
-      ]
-    } else {
-      _bazel_inputs += [ "//bundles/assembly:user" ]
-    }
+  _bringup_only = defined(invoker.use_bringup_platform_bundles) &&
+                  invoker.use_bringup_platform_bundles
+
+  if (!_bringup_only) {
+    _bazel_inputs += [ "//bundles/assembly:platform" ]
   }
+  not_needed(invoker,
+             [
+               "allow_userdebug_platform_bundle_use",
+               "allow_eng_platform_bundle_use",
+             ])
 
   _generate_image_metadata = use_bazel_images_only
   if (defined(invoker.generate_image_metadata)) {
