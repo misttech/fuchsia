@@ -329,15 +329,17 @@
       "description": "OTA channel information.",
       "type": "object",
       "required": [
-        "current_channel",
-        "next_channel"
+        "current_channel"
       ],
       "properties": {
         "current_channel": {
           "type": "string"
         },
         "next_channel": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

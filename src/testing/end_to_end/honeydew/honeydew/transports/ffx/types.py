@@ -126,7 +126,7 @@ class UpdateData:
     """OTA channel information."""
 
     current_channel: str
-    next_channel: str
+    next_channel: str | None
 
 
 @dataclass(frozen=True)

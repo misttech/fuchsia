@@ -286,7 +286,11 @@ async fn gather_update_show(
     channel_control: ChannelControlProxy,
 ) -> Result<UpdateData> {
     let current_channel = channel_provider.get_current().await?;
-    let next_channel = channel_control.get_target().await?;
+    let next_channel = match channel_control.get_target().await {
+        Ok(channel) => Some(channel),
+        Err(fidl::Error::ClientChannelClosed { status: zx_status::Status::NOT_FOUND, .. }) => None,
+        Err(e) => Err(e)?,
+    };
 
     Ok(UpdateData { current_channel, next_channel })
 }
@@ -605,7 +609,7 @@ mod tests {
         let result =
             gather_update_show(provider_proxy, control_proxy).await.expect("gather update show");
         assert_eq!(result.current_channel, "fake_channel".to_string());
-        assert_eq!(result.next_channel, "fake_target".to_string());
+        assert_eq!(result.next_channel, Some("fake_target".to_string()));
     }
 
     #[fuchsia::test]

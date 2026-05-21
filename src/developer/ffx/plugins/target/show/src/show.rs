@@ -118,7 +118,7 @@ pub struct ProductData {
 #[derive(Debug, JsonSchema, PartialEq, Serialize)]
 pub struct UpdateData {
     pub current_channel: String,
-    pub next_channel: String,
+    pub next_channel: Option<String>,
 }
 
 /// Information about the Fuchsia build.
@@ -345,7 +345,7 @@ impl From<&UpdateData> for ShowEntry {
                     "Next channel",
                     "next_channel",
                     "Channel used for the next update.",
-                    &Some(value.next_channel.clone()),
+                    &value.next_channel.clone(),
                 ),
             ],
         )
@@ -633,7 +633,7 @@ mod tests {
     fn test_update_to_showentry() {
         let data = UpdateData {
             current_channel: "fake_channel".to_string(),
-            next_channel: "fake_target".to_string(),
+            next_channel: Some("fake_target".to_string()),
         };
         let result: ShowEntry = (&data).into();
         assert_eq!(result.title, "Update");
