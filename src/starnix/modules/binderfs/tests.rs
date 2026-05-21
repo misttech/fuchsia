@@ -42,7 +42,10 @@ pub mod tests {
         Anon, FdFlags, FdNumber, FileHandle, FileObject, NamespaceNode, anon_fs,
     };
     use starnix_logging::log_warn;
-    use starnix_sync::{FileOpsCore, InterruptibleEvent, Locked, ResourceAccessorLevel, Unlocked};
+    use starnix_sync::{
+        BinderProcessSharedMemoryLevel, FileOpsCore, InterruptibleEvent, Locked,
+        ResourceAccessorLevel, Unlocked,
+    };
     use starnix_types::convert::IntoFidl;
     use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef};
     use starnix_types::user_buffer::UserBuffer;
@@ -148,8 +151,11 @@ pub mod tests {
             }
         }
 
-        fn lock_shared_memory(&self) -> starnix_sync::MappedMutexGuard<'_, SharedMemory> {
-            starnix_sync::MutexGuard::map(self.proc.shared_memory.lock(), |value| {
+        fn lock_shared_memory(
+            &self,
+        ) -> starnix_sync::MappedLockDepGuard<'_, SharedMemory, BinderProcessSharedMemoryLevel>
+        {
+            starnix_sync::LockDepGuard::map(self.proc.shared_memory.lock(), |value| {
                 value.as_mut().unwrap()
             })
         }
@@ -4258,7 +4264,7 @@ pub mod tests {
             );
 
             // Freeze the receiver process.
-            receiver.proc.lock().freeze();
+            receiver.proc.freeze_state.lock().freeze();
 
             // Check that there is a frozen reply command for the sending thread.
             assert!(sender.thread.lock().command_queue.commands.is_empty());
@@ -4407,7 +4413,7 @@ pub mod tests {
                 Some(Command::FrozenBinder(binder_frozen_state_info { is_frozen: 0, .. }))
             );
 
-            owner.proc.lock().freeze();
+            owner.proc.freeze_state.lock().freeze();
 
             // The client process should have a notification waiting.
             assert_matches!(
@@ -4478,7 +4484,7 @@ pub mod tests {
                 state.command_queue.waiters.wait_async(&fake_waiter);
             }
 
-            owner.proc.lock().freeze();
+            owner.proc.freeze_state.lock().freeze();
 
             // The client thread should have no notification.
             assert!(client.thread.lock().command_queue.is_empty());
@@ -4651,6 +4657,35 @@ pub mod tests {
             // Clean up the blocked thread.
             event.notify();
             blocked_thread.join().unwrap();
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn binder_object_multiple_registration() {
+        spawn_kernel_and_run(async |locked, current_task| {
+            let device = BinderDevice::default();
+            let owner = BinderProcessFixture::new(locked, current_task, &device);
+
+            let local = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1),
+                strong_ref_addr: UserAddress::from(0x2),
+            };
+
+            // Register the object once.
+            let _guard1 = owner.proc.lock().find_or_register_object(
+                &owner.thread,
+                local,
+                BinderObjectFlags::empty(),
+            );
+
+            // Register the same object again. This will find the existing object
+            // and call `inc_strong_unchecked`, which triggered the deadlock.
+            let _guard2 = owner.proc.lock().find_or_register_object(
+                &owner.thread,
+                local,
+                BinderObjectFlags::empty(),
+            );
         })
         .await;
     }

@@ -9,8 +9,7 @@ use crate::objects::{
     SerializedBinderObject, TransactionData,
 };
 use crate::process::{
-    ActiveTransaction, BinderProcess, BinderProcessGuard, BinderProcessState, RequestType,
-    TransientTransactionState,
+    ActiveTransaction, BinderProcess, BinderProcessGuard, RequestType, TransientTransactionState,
 };
 use crate::resource_accessor::{
     RemoteIoctl, RemoteMemoryAccessor, RemoteResourceAccessor, ResourceAccessor,
@@ -45,8 +44,9 @@ use starnix_logging::{
     CATEGORY_STARNIX, log_error, log_trace, log_warn, trace_duration, track_stub, with_zx_name,
 };
 use starnix_sync::{
-    FileOpsCore, InterruptibleEvent, LockEqualOrBefore, Locked, Mutex, ResourceAccessorLevel,
-    RwLock, Unlocked, ordered_lock_vec,
+    BinderContextManagerLevel, BinderProcsLevel, FileOpsCore, InterruptibleEvent, LockDepMutex,
+    LockDepRwLock, LockEqualOrBefore, Locked, Mutex, ResourceAccessorLevel, Unlocked,
+    lockdep_ordered_lock_vec,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::convert::IntoFidl as _;
@@ -422,14 +422,14 @@ impl<'a> OperationContext<'a> {
 #[derive(Debug)]
 pub struct BinderDriver {
     /// The context manager, the object represented by the zero handle.
-    pub context_manager: Mutex<Option<Arc<BinderObject>>>,
+    pub context_manager: LockDepMutex<Option<Arc<BinderObject>>, BinderContextManagerLevel>,
 
     /// Manages the internal state of each process interacting with the binder driver.
     ///
     /// The Driver owns the BinderProcess. There can be at most one connection to the binder driver
     /// per process. When the last file descriptor to the binder in the process is closed, the
     /// value is removed from the map.
-    pub procs: RwLock<BTreeMap<u64, OwnedRef<BinderProcess>>>,
+    pub procs: LockDepRwLock<BTreeMap<u64, OwnedRef<BinderProcess>>, BinderProcsLevel>,
 
     /// The identifier to use for the next created `BinderProcess`.
     next_identifier: AtomicCounter<u64>,
@@ -449,17 +449,11 @@ impl Releasable for BinderDriver {
 impl Default for BinderDriver {
     #[allow(clippy::let_and_return)]
     fn default() -> Self {
-        let driver = Self {
+        Self {
             context_manager: Default::default(),
             procs: Default::default(),
             next_identifier: Default::default(),
-        };
-        #[cfg(any(test, debug_assertions))]
-        {
-            let _l1 = driver.context_manager.lock();
-            let _l2 = driver.procs.read();
         }
-        driver
     }
 }
 
@@ -765,17 +759,27 @@ impl BinderDriver {
                     }
 
                     release_iter_after!(target_binder_procs, current_task.kernel(), {
-                        let locks =
-                            target_binder_procs.iter().map(|p| &p.state).collect::<Vec<_>>();
-                        let mut target_binder_procs_locked =
-                            ordered_lock_vec::<BinderProcessState>(&locks);
+                        let freeze_locks =
+                            target_binder_procs.iter().map(|p| &p.freeze_state).collect::<Vec<_>>();
+                        // Do not allow freezing process with more than 16 binders as lockdep
+                        // doesn't support it.
+                        if freeze_locks.len() > 16 {
+                            return error!(ENOTSUP);
+                        }
+                        let mut target_binder_procs_freeze_locked =
+                            lockdep_ordered_lock_vec(&freeze_locks);
                         if !freezing {
-                            target_binder_procs_locked.iter_mut().for_each(|bp| bp.thaw());
+                            target_binder_procs_freeze_locked.iter_mut().for_each(|bp| bp.thaw());
                             return Ok(SUCCESS);
                         }
 
+                        let state_locks =
+                            target_binder_procs.iter().map(|p| &p.state).collect::<Vec<_>>();
+                        let target_binder_procs_state_locked =
+                            lockdep_ordered_lock_vec(&state_locks);
+
                         // Clone threads in the proc to lock them all until freeze is done.
-                        let threads: Vec<OwnedRef<BinderThread>> = target_binder_procs_locked
+                        let threads: Vec<OwnedRef<BinderThread>> = target_binder_procs_state_locked
                             .iter()
                             .map(|p| p.thread_pool.threads.values().map(|t| OwnedRef::share(t)))
                             .flatten()
@@ -783,11 +787,10 @@ impl BinderDriver {
                         release_iter_after!(threads, current_task.kernel(), {
                             let threads_locks =
                                 threads.iter().map(|t| &t.state).collect::<Vec<_>>();
-                            let threads_locked =
-                                ordered_lock_vec::<BinderThreadState>(&threads_locks);
+                            let threads_locked = lockdep_ordered_lock_vec(&threads_locks);
 
                             // Avoid freezing the target procs if there is any pending transaction
-                            if target_binder_procs_locked
+                            if target_binder_procs_state_locked
                                 .iter()
                                 .any(|binder_process| binder_process.has_pending_transactions())
                                 || threads_locked
@@ -803,7 +806,9 @@ impl BinderDriver {
                                 return error!(EAGAIN);
                             }
 
-                            target_binder_procs_locked.iter_mut().for_each(|bp| bp.freeze());
+                            target_binder_procs_freeze_locked.iter_mut().for_each(|bp| {
+                                bp.freeze();
+                            });
                             Ok(SUCCESS)
                         })
                     })
@@ -826,9 +831,9 @@ impl BinderDriver {
                     let mut has_async_recv = false;
                     release_iter_after!(target_binder_procs, current_task.kernel(), {
                         target_binder_procs.iter().for_each(|binder_proc| {
-                            let binder_proc_state = binder_proc.lock();
-                            has_sync_recv |= binder_proc_state.freeze_status.has_sync_recv;
-                            has_async_recv |= binder_proc_state.freeze_status.has_async_recv;
+                            let freeze_state = binder_proc.freeze_state.lock();
+                            has_sync_recv |= freeze_state.freeze_status.has_sync_recv;
+                            has_async_recv |= freeze_state.freeze_status.has_async_recv;
                         });
                     });
                     memory_accessor.write_object(
@@ -1008,12 +1013,12 @@ impl BinderDriver {
                 let oneway = data.transaction_data.flags & transaction_flags_TF_ONE_WAY != 0;
                 // Track freeze status if the target proc is frozen
                 let is_target_frozen = {
-                    let mut state = target_proc.lock();
-                    if state.freeze_status.frozen {
-                        state.freeze_status.has_sync_recv |= !oneway;
-                        state.freeze_status.has_async_recv |= oneway;
+                    let mut freeze_state = target_proc.freeze_state.lock();
+                    if freeze_state.freeze_status.frozen {
+                        freeze_state.freeze_status.has_sync_recv |= !oneway;
+                        freeze_state.freeze_status.has_async_recv |= oneway;
                     }
-                    state.freeze_status.frozen
+                    freeze_state.freeze_status.frozen
                 };
                 // If the target proc is frozen in the sync transaction, reply with the Frozen error
                 if is_target_frozen && !oneway {
