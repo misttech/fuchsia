@@ -121,7 +121,7 @@ impl<D: DeviceOps> crate::MlmeImpl for ClientMlme<D> {
         &mut self,
         req: wlan_sme::MlmeRequest,
     ) -> Result<(), anyhow::Error> {
-        Self::handle_mlme_req(self, req).await.map_err(From::from)
+        ClientMlme::<D>::handle_mlme_request(self, req).await.map_err(From::from)
     }
     async fn handle_mac_frame_rx(
         &mut self,
@@ -287,9 +287,8 @@ impl<D: DeviceOps> ClientMlme<D> {
         }
     }
 
-    pub async fn handle_mlme_req(&mut self, req: wlan_sme::MlmeRequest) -> Result<(), Error> {
+    pub async fn handle_mlme_request(&mut self, req: wlan_sme::MlmeRequest) -> Result<(), Error> {
         use wlan_sme::MlmeRequest as Req;
-
         match req {
             // Handle non station specific MLME messages first (Join, Scan, etc.)
             Req::Scan(req) => Ok(self.on_sme_scan(req).await),
@@ -334,7 +333,7 @@ impl<D: DeviceOps> ClientMlme<D> {
                 }
                 Some(sta) => Ok(sta
                     .bind(&mut self.ctx, &mut self.scanner, &mut self.channel_state)
-                    .handle_mlme_req(other_message)
+                    .handle_mlme_request(other_message)
                     .await),
             },
         }
@@ -1025,9 +1024,9 @@ impl<'a, D: DeviceOps> BoundClient<'a, D> {
         self.sta.state.replace(next_state);
     }
 
-    pub async fn handle_mlme_req(&mut self, msg: wlan_sme::MlmeRequest) {
+    pub async fn handle_mlme_request(&mut self, msg: wlan_sme::MlmeRequest) {
         // Safe: |state| is never None and always replaced with Some(..).
-        let next_state = self.sta.state.take().unwrap().handle_mlme_req(self, msg).await;
+        let next_state = self.sta.state.take().unwrap().handle_mlme_request(self, msg).await;
         self.sta.state.replace(next_state);
     }
 
@@ -1453,7 +1452,7 @@ mod tests {
         }
 
         async fn close_controlled_port(&mut self) {
-            self.handle_mlme_req(wlan_sme::MlmeRequest::SetCtrlPort(
+            self.handle_mlme_request(wlan_sme::MlmeRequest::SetCtrlPort(
                 fidl_mlme::SetControlledPortRequest {
                     peer_sta_address: BSSID.to_array(),
                     state: fidl_mlme::ControlledPortState::Closed,
@@ -2320,7 +2319,7 @@ mod tests {
         client.move_to_associated_state();
 
         assert!(m.fake_device_state.lock().keys.is_empty());
-        client.handle_mlme_req(crate::test_utils::fake_set_keys_req((*BSSID).into())).await;
+        client.handle_mlme_request(crate::test_utils::fake_set_keys_req((*BSSID).into())).await;
         assert_eq!(m.fake_device_state.lock().keys.len(), 1);
 
         let sent_key = crate::test_utils::fake_key((*BSSID).into());
@@ -2566,7 +2565,7 @@ mod tests {
         let mut mlme = mock_objects.make_mlme().await;
 
         let (responder, receiver) = Responder::new();
-        mlme.handle_mlme_req(wlan_sme::MlmeRequest::QueryDeviceInfo(responder))
+        mlme.handle_mlme_request(wlan_sme::MlmeRequest::QueryDeviceInfo(responder))
             .await
             .expect("Failed to send MlmeRequest::Connect");
         assert_eq!(
@@ -2588,7 +2587,7 @@ mod tests {
         let mut me = m.make_mlme().await;
 
         let (responder, receiver) = Responder::new();
-        me.handle_mlme_req(wlan_sme::MlmeRequest::QueryMacSublayerSupport(responder))
+        me.handle_mlme_request(wlan_sme::MlmeRequest::QueryMacSublayerSupport(responder))
             .await
             .expect("Failed to send MlmeRequest::Connect");
         let resp = receiver.await.unwrap();
@@ -2612,7 +2611,7 @@ mod tests {
 
         let (responder, receiver) = Responder::new();
         assert_matches!(
-            me.handle_mlme_req(wlan_sme::MlmeRequest::QuerySecuritySupport(responder)).await,
+            me.handle_mlme_request(wlan_sme::MlmeRequest::QuerySecuritySupport(responder)).await,
             Ok(())
         );
         let resp = receiver.await.unwrap();
@@ -2627,7 +2626,7 @@ mod tests {
         let mut me = m.make_mlme().await;
 
         let (responder, receiver) = Responder::new();
-        me.handle_mlme_req(wlan_sme::MlmeRequest::QuerySpectrumManagementSupport(responder))
+        me.handle_mlme_request(wlan_sme::MlmeRequest::QuerySpectrumManagementSupport(responder))
             .await
             .expect("Failed to send MlmeRequest::QuerySpectrumManagementSupport");
         assert_eq!(receiver.await.unwrap().dfs.unwrap().supported, Some(true));
@@ -2651,7 +2650,7 @@ mod tests {
             security_ie: vec![],
             owe_public_key: None,
         };
-        me.handle_mlme_req(wlan_sme::MlmeRequest::Connect(connect_req))
+        me.handle_mlme_request(wlan_sme::MlmeRequest::Connect(connect_req))
             .await
             .expect("Failed to send MlmeRequest::Connect");
 
@@ -2817,7 +2816,7 @@ mod tests {
             ],
             owe_public_key: None,
         };
-        me.handle_mlme_req(wlan_sme::MlmeRequest::Connect(connect_req))
+        me.handle_mlme_request(wlan_sme::MlmeRequest::Connect(connect_req))
             .await
             .expect("Failed to send MlmeRequest::Connect");
 
@@ -2974,7 +2973,7 @@ mod tests {
         assert_eq!(m.fake_device_state.lock().link_status, LinkStatus::DOWN);
 
         // Send a request to open controlled port
-        me.handle_mlme_req(wlan_sme::MlmeRequest::SetCtrlPort(
+        me.handle_mlme_request(wlan_sme::MlmeRequest::SetCtrlPort(
             fidl_mlme::SetControlledPortRequest {
                 peer_sta_address: BSSID.to_array(),
                 state: fidl_mlme::ControlledPortState::Open,
@@ -3005,7 +3004,7 @@ mod tests {
             security_ie: vec![],
             owe_public_key: None,
         };
-        me.handle_mlme_req(wlan_sme::MlmeRequest::Connect(connect_req))
+        me.handle_mlme_request(wlan_sme::MlmeRequest::Connect(connect_req))
             .await
             .expect("Failed to send MlmeRequest::Connect.");
 
@@ -3083,7 +3082,7 @@ mod tests {
             security_ie: vec![],
             owe_public_key: None,
         };
-        me.handle_mlme_req(wlan_sme::MlmeRequest::Connect(connect_req))
+        me.handle_mlme_request(wlan_sme::MlmeRequest::Connect(connect_req))
             .await
             .expect("Failed to send MlmeRequest::Connect.");
 
@@ -3123,7 +3122,7 @@ mod tests {
         let mut me = m.make_mlme().await;
 
         let reconnect_req = fidl_mlme::ReconnectRequest { peer_sta_address: [1, 2, 3, 4, 5, 6] };
-        let result = me.handle_mlme_req(wlan_sme::MlmeRequest::Reconnect(reconnect_req)).await;
+        let result = me.handle_mlme_request(wlan_sme::MlmeRequest::Reconnect(reconnect_req)).await;
         assert_matches!(result, Err(Error::Status(_, zx::Status::BAD_STATE)));
 
         // Verify a connect confirm message was sent
@@ -3149,7 +3148,7 @@ mod tests {
         let mut me = m.make_mlme().await;
 
         let (responder, receiver) = Responder::new();
-        me.handle_mlme_req(wlan_sme::MlmeRequest::GetIfaceStats(responder))
+        me.handle_mlme_request(wlan_sme::MlmeRequest::GetIfaceStats(responder))
             .await
             .expect("Failed to send MlmeRequest::GetIfaceStats.");
         assert_eq!(
@@ -3164,7 +3163,7 @@ mod tests {
         let mut me = m.make_mlme().await;
 
         let (responder, receiver) = Responder::new();
-        me.handle_mlme_req(wlan_sme::MlmeRequest::GetIfaceHistogramStats(responder))
+        me.handle_mlme_request(wlan_sme::MlmeRequest::GetIfaceHistogramStats(responder))
             .await
             .expect("Failed to send MlmeRequest::GetIfaceHistogramStats");
         assert_eq!(
