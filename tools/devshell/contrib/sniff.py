@@ -237,7 +237,7 @@ def is_target_ready():
     if not can_run_cmd("fx shell exit"):
         print("failed to run: the target device unreachable by 'fx shell'")
         return False
-    if not can_run_cmd("fx shell which tcpdump"):
+    if not can_run_cmd("fx shell tcpdump --version"):
         msg = (
             "failed to run: the target does not have 'tcpdump'. "
             "Build with '--with-base //third_party/tcpdump' "
