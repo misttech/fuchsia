@@ -227,6 +227,28 @@ impl FxFile {
         self.increment_open_count().then(|| OpenedNode(self))
     }
 
+    /// Create an OpenedNode if it is already open, if not, return the bare Arc.
+    fn hold_open(self: Arc<Self>) -> Result<OpenedNode<FxFile>, Arc<Self>> {
+        let mut old = self.load_state();
+        loop {
+            if old.open_count() == 0 {
+                return Err(self);
+            }
+
+            assert!(old.open_count() < MAX_OPEN_COUNTS);
+
+            match self.state.compare_exchange_weak(
+                old.0,
+                old.0 + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Ok(OpenedNode(self)),
+                Err(new_value) => old.0 = new_value,
+            }
+        }
+    }
+
     /// Persists any unflushed data to disk.
     ///
     /// Flush may be triggered as a background task so this requires an OpenedNode to
@@ -752,26 +774,39 @@ impl PagerBacked for FxFile {
 
         let byte_count = range.len();
         self.handle.owner().clone().report_pager_dirty(byte_count, move || {
-            match self.handle.mark_dirty(range) {
+            // We hold the node open here if it is already open. If the node has been closed then
+            // any mark_dirty requests that arrive should be racing, likely with caller shutdown. If
+            // the node closes while this mark dirty is in-flight, then this node closure will do
+            // all the proper clean up, including marking IS_DIRTY if the file has dirty bytes that
+            // need cleaning.
+            let this = match self.hold_open() {
+                Ok(opened_node) => opened_node,
+                Err(this) => {
+                    this.handle.owner().report_pager_clean(byte_count);
+                    range.report_failure(zx::Status::BAD_STATE);
+                    return;
+                }
+            };
+            match this.handle.mark_dirty(range) {
                 Ok(dirty_bytes) => {
                     // If there's a whole batch worth to write. Just write it. Spurious failures
                     // here are fine. This is best effort so keep it cheap.
                     if dirty_bytes > BACKGROUND_FLUSH_THRESHOLD
-                        && !self.background_flush_running.swap(true, Ordering::Relaxed)
+                        && !this.background_flush_running.swap(true, Ordering::Relaxed)
                     {
-                        let owner = self.handle.owner().clone();
+                        let owner = this.handle.owner().clone();
                         owner.spawn(async move {
                             // Ignore the result, the flush call already logs the errors.
-                            let _ = self.handle.flush(FlushType::Background).await;
+                            let _ = this.handle.flush(FlushType::Background).await;
                             // If this future gets dropped before resetting this it means the
                             // volume is shutting down anyways.
-                            self.background_flush_running.store(false, Ordering::Relaxed);
+                            this.background_flush_running.store(false, Ordering::Relaxed);
                         });
                     }
                 }
                 Err(_) => {
                     // Undo the report of the dirty pages since mark_dirty failed.
-                    self.handle.owner().report_pager_clean(byte_count)
+                    this.handle.owner().report_pager_clean(byte_count)
                 }
             }
         });
@@ -3051,6 +3086,142 @@ mod tests {
             .expect("unlink failed")
             .map_err(Status::from_raw)
             .expect("unlink error");
+
+        fixture.close().await;
+    }
+
+    // Ensures that closing a file connection immediately blocks any future stream writes to the
+    // underlying VMO with a BAD_STATE error, and that the file can still be safely unlinked
+    // once the stream write has been rejected and cleanup has occurred.
+    #[fuchsia::test]
+    async fn test_close_file_before_writing_to_stream() {
+        const FILE_NAME: &str = "foo";
+
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+        let file = open_file_checked(
+            &root,
+            FILE_NAME,
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+
+        let stream = file.describe().await.unwrap().stream.unwrap();
+
+        close_file_checked(file).await;
+
+        unblock(move || {
+            stream
+                .write_at(zx::StreamWriteOptions::empty(), 0, &[1, 2, 3, 4])
+                .expect_err("Write should get BAD_STATE");
+        })
+        .await;
+
+        // Wait a bit to ensure that the stream has been closed and the zero children signal has
+        // been processed.
+        fasync::Timer::new(Duration::from_millis(100)).await;
+
+        // Now unlink the file.
+        root.unlink(FILE_NAME, &fio::UnlinkOptions::default())
+            .await
+            .expect("unlink wire call failed")
+            .expect("unlink failed");
+
+        fixture.close().await;
+    }
+
+    // Ensures that closing a file connection blocks stream writes, but reopening the file
+    // restores write capabilities. By using a duplicated stream handle from the first open,
+    // we prove that when the file is reopened, the pager is marked open again, and writes
+    // on the original stream handle succeed once more. This also confirms that the file remains
+    // in the Fxfs node caches and is correctly reused when reopened.
+    #[fuchsia::test]
+    async fn test_close_and_reopen_file_stream() {
+        const FILE_NAME: &str = "foo";
+
+        let fixture = TestFixture::new().await;
+        let root = fixture.root();
+        let file = open_file_checked(
+            &root,
+            FILE_NAME,
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE
+                | fio::Flags::PROTOCOL_FILE,
+            &Default::default(),
+        )
+        .await;
+
+        let page_size = zx::system_get_page_size() as u64;
+
+        file.resize(8 * page_size)
+            .await
+            .expect("resize failed")
+            .map_err(Status::from_raw)
+            .expect("resize error");
+
+        let stream1 = file.describe().await.unwrap().stream.unwrap();
+        let stream1_dup = stream1.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+
+        close_file_checked(file).await;
+
+        // Stream writes on the duplicated stream handle should now fail because all active
+        // connections are closed and the handle open status is false.
+        // Write at offset 0 (page 0).
+        let stream1_dup_clone = stream1_dup.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        unblock(move || {
+            stream1_dup_clone
+                .write_at(zx::StreamWriteOptions::empty(), 0, &[1, 2, 3, 4])
+                .expect_err("Write should get BAD_STATE");
+        })
+        .await;
+
+        // Open the file again. This retrieves the node from the dirent cache and sets its pager
+        // status to open, enabling stream writes on all stream handles pointing to its VMO.
+        let file2 = open_file_checked(
+            &root,
+            FILE_NAME,
+            fio::Flags::PROTOCOL_FILE | fio::PERM_READABLE | fio::PERM_WRITABLE,
+            &Default::default(),
+        )
+        .await;
+
+        let stream2 = file2.describe().await.unwrap().stream.unwrap();
+
+        // Now both the old duplicated stream and the new stream should succeed.
+        // Write at page-separated offsets to prevent kernel dirty page caching from hiding races:
+        // Page 1 and Page 2.
+        let stream1_dup_clone2 = stream1_dup.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        let stream2_clone = stream2.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+        unblock(move || {
+            stream1_dup_clone2
+                .write_at(zx::StreamWriteOptions::empty(), 1 * page_size, &[5, 6, 7, 8])
+                .expect("Write on re-opened stream 1 dup should succeed");
+            stream2_clone
+                .write_at(zx::StreamWriteOptions::empty(), 2 * page_size, &[9, 10, 11, 12])
+                .expect("Write on new stream 2 should succeed");
+        })
+        .await;
+
+        // Close the reopened connection.
+        close_file_checked(file2).await;
+
+        // Writes on both streams should fail again.
+        // Write at new page-separated offsets:
+        // Page 3 and Page 4.
+        unblock(move || {
+            stream1_dup
+                .write_at(zx::StreamWriteOptions::empty(), 3 * page_size, &[13, 14, 15, 16])
+                .expect_err("Write on stream 1 dup should fail after final close");
+            stream2
+                .write_at(zx::StreamWriteOptions::empty(), 4 * page_size, &[17, 18, 19, 20])
+                .expect_err("Write on stream 2 should fail after final close");
+        })
+        .await;
 
         fixture.close().await;
     }
