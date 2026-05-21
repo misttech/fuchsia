@@ -1,6 +1,7 @@
 # Copyright 2025 The Fuchsia Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+# LINT.IfChange
 
 
 from antlion.controllers.ap_lib import (
@@ -596,3 +597,6 @@ def asus_rtn66u(
     )
 
     return config
+
+
+# LINT.ThenChange(//src/testing/end_to_end/mobly_controller/openwrt_access_point/lib/profiles/asus.py)

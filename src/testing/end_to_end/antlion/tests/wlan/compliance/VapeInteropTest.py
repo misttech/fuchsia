@@ -20,7 +20,7 @@ from openwrt_access_point.lib.access_point_config import (
     SecurityOpen,
     SecurityWpa2,
 )
-from openwrt_access_point.lib.profiles import actiontec
+from openwrt_access_point.lib.profiles import actiontec, asus
 
 
 class VapeInteropTest(base_test.WifiBaseTest):
@@ -195,25 +195,44 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_asus_rtac66u_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtac66u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtac66u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtac66u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
+
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_asus_rtac66u_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtac66u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtac66u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtac66u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
+
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -224,25 +243,44 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_asus_rtac66u_5ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtac66u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtac66u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtac66u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+            )
+
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_asus_rtac66u_5ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtac66u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtac66u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtac66u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
+
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -253,25 +291,43 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_asus_rtac86u_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtac86u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtac86u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtac86u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
+
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_asus_rtac86u_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtac86u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtac86u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtac86u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -282,25 +338,42 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_asus_rtac86u_5ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtac86u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtac86u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtac86u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_asus_rtac86u_5ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtac86u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtac86u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtac86u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -311,25 +384,42 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_asus_rtac5300_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtac5300",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtac5300(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtac5300",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_asus_rtac5300_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtac5300",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtac5300(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtac5300",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -340,25 +430,42 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_asus_rtac5300_5ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtac5300",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtac5300(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtac5300",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_asus_rtac5300_5ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtac5300",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtac5300(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtac5300",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -369,25 +476,43 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_asus_rtn56u_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtn56u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtn56u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtn56u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_asus_rtn56u_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtn56u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtn56u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtn56u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
+
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -398,25 +523,44 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_asus_rtn56u_5ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtn56u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtn56u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtn56u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+            )
+
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_asus_rtn56u_5ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtn56u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtn56u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtn56u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
+
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -427,25 +571,43 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_asus_rtn66u_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtn66u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtn66u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtn66u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_asus_rtn66u_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtn66u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtn66u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtn66u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
+
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
@@ -456,25 +618,43 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_asus_rtn66u_5ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtn66u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtn66u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtn66u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+            )
+
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_asus_rtn66u_5ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="asus_rtn66u",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = asus.asus_rtn66u(
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+                password=self.password,
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="asus_rtn66u",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
 
         asserts.assert_true(
             self.dut.associate(
