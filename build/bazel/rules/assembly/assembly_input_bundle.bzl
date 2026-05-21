@@ -97,6 +97,10 @@ def _assembly_input_bundle_impl(ctx):
             args.add("--memory-buckets", memory_bucket_file)
             inputs.append(memory_bucket_file)
 
+    if ctx.file.qemu_kernel:
+        args.add("--qemu-kernel", ctx.file.qemu_kernel.path)
+        inputs.append(ctx.file.qemu_kernel)
+
     # Handle shards and generate compiled packages JSON
     compiled_packages = {}
 
@@ -316,6 +320,7 @@ _assembly_input_bundle = rule(
         "drivers_inputs": attr.label_list(providers = [FuchsiaPackageInfo]),
         "config_data": attr.string(),
         "config_data_inputs": attr.label_list(allow_files = True),
+        "qemu_kernel": attr.label(allow_single_file = True),
         "_tool": attr.label(
             default = "//build/assembly/scripts:assembly_input_bundle_tool",
             executable = True,
@@ -349,6 +354,7 @@ def assembly_input_bundle(
         compiled_packages = [],
         drivers = [],
         config_data = [],
+        qemu_kernel = None,
         **kwargs):
     """Creates an Assembly Input Bundle.
 
@@ -492,6 +498,8 @@ def assembly_input_bundle(
               }
             ]
 
+        qemu_kernel: [label] Optional label to a single file to use as the qemu kernel.
+
         **kwargs: Other arguments to pass to the rule.
     """
 
@@ -600,6 +608,7 @@ def assembly_input_bundle(
         drivers_inputs = drivers_inputs,
         config_data = json.encode(config_data),
         config_data_inputs = config_data_inputs,
+        qemu_kernel = qemu_kernel,
         **kwargs
     )
 

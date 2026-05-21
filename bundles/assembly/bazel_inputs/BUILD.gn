@@ -18,9 +18,11 @@
 # The idea is that eventually, all of those inputs will be created within Bazel itself, and then
 # this GN file, and those in the subdirectories below this one, will all be deleted.
 
+import("//build/bazel/bazel_inputs.gni")
 import("//build/icu/config.gni")
 import("//build/icu/icu_assembly_input_bundle.gni")
 import("//third_party/sbase/binaries.gni")
+import("//zircon/kernel/phys/qemu.gni")
 
 group("zircon_eng") {
   testonly = true
@@ -1301,7 +1303,20 @@ group("example_assembly_bundle") {
 }
 
 group("emulator_support") {
-  deps = []
+  deps = [ ":qemu_kernel_input" ]
+}
+
+# We do this because we need to have a stable target name for getting the qemu kernel into Bazel.
+#
+# We have a group that provides a consistent target for the "generator"
+group("qemu_kernel") {
+  public_deps = qemu_boot_shim.deps
+}
+
+# And then this can use that group and a path pulled from the qemu.gni file.
+bazel_input_file("qemu_kernel_input") {
+  generator = ":qemu_kernel"
+  outputs = [ qemu_boot_shim.path ]
 }
 
 group("no_intl_timezones") {

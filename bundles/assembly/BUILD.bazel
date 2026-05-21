@@ -4555,6 +4555,7 @@ assembly_input_bundle(
 # buildifier: leave-alone
 assembly_input_bundle(
     name = "emulator_support",
+    qemu_kernel = "@gn_targets//bundles/assembly/bazel_inputs:qemu_kernel",
 )
 
 # buildifier: leave-alone
