@@ -5,13 +5,17 @@ use anyhow::Result;
 use fuchsia_async::{Interval, MonotonicDuration};
 use fuchsia_trace::{category_enabled, counter};
 use fuchsia_trace_observer::TraceObserver;
+use futures::future::FutureExt;
 use futures::{StreamExt, select};
 use log::debug;
 use stalls::StallProvider;
 use stalls::refaults::RefaultProvider;
 use std::ffi::CStr;
+
 const CATEGORY_MEMORY_KERNEL: &'static CStr = c"memory:kernel";
-use futures::future::FutureExt;
+// LINT.IfChange
+const SAMPLE_INTERVAL: MonotonicDuration = MonotonicDuration::from_millis(200);
+// LINT.ThenChange(//src/performance/memory/attribution/monitor/tests/traces/lib.rs)
 
 // Continuously monitors the 'memory:kernel' trace category on a dedicated thread.
 // Once enabled, it periodically records memory statistics until the category is disabled.
@@ -50,8 +54,7 @@ pub async fn serve_forever_loop(
     debug!("Start serving traces");
     let trace_observer = TraceObserver::new();
     loop {
-        let delay_in_secs = 1;
-        let mut interval = Interval::new(MonotonicDuration::from_seconds(1));
+        let mut interval = Interval::new(SAMPLE_INTERVAL);
         while category_enabled(CATEGORY_MEMORY_KERNEL) {
             if let Err(err) = publish_one_sample(
                 &kernel_stats,
@@ -62,7 +65,7 @@ pub async fn serve_forever_loop(
             {
                 log::warn!("Failed to trace on category {:?} : {:?}", CATEGORY_MEMORY_KERNEL, err);
             }
-            debug!("Wait for {} second(s)", delay_in_secs);
+            debug!("Wait for {} ms", SAMPLE_INTERVAL.into_millis());
             select! {
                 _ = interval.next() => (),
                 _ = trace_observer.on_state_changed().fuse() => (),

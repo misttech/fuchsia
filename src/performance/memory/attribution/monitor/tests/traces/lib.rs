@@ -13,6 +13,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Once};
 use std::time::Duration;
 
+// LINT.IfChange
+const TRACE_SAMPLE_INTERVAL: fuchsia_async::MonotonicDuration =
+    fuchsia_async::MonotonicDuration::from_millis(200);
+// LINT.ThenChange(//src/performance/memory/attribution/monitor/src/traces/kernel.rs)
+
 #[derive(Clone)]
 struct FakeStallProvider {}
 
@@ -144,10 +149,17 @@ pub extern "C" fn rs_test_trace_two_records() {
         "Task should be waiting for the timer"
     );
     // One record has been written, the watcher is waiting for the timer.
-    executor.set_fake_time(start_time + fuchsia_async::MonotonicDuration::from_millis(980));
-    assert_eq!(false, executor.wake_expired_timers(), "Time should not wake until 1 second passed");
+    executor.set_fake_time(
+        start_time + TRACE_SAMPLE_INTERVAL - fuchsia_async::MonotonicDuration::from_millis(10),
+    );
+    assert_eq!(
+        false,
+        executor.wake_expired_timers(),
+        "Time should not wake until {}ms passed",
+        TRACE_SAMPLE_INTERVAL.into_millis()
+    );
 
-    executor.set_fake_time(start_time + fuchsia_async::MonotonicDuration::from_millis(1000));
+    executor.set_fake_time(start_time + TRACE_SAMPLE_INTERVAL);
     assert_eq!(true, executor.wake_expired_timers(), "Time should wake now");
     assert!(
         executor.run_until_stalled(&mut fut).is_pending(),
