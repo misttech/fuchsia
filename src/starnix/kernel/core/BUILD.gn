@@ -86,6 +86,7 @@ _starnix_core_sources = [
   "mm/vmsplice.rs",
   "mutable_state.rs",
   "perf/event.rs",
+  "perf/lockless_ring_buffer.rs",
   "perf/mod.rs",
   "power/manager.rs",
   "power/mod.rs",

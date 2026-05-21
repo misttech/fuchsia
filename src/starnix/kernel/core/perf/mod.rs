@@ -60,6 +60,8 @@ const FXT_MAGIC_BYTES: [u8; 8] = [0x10, 0x00, 0x04, 0x46, 0x78, 0x54, 0x16, 0x00
 mod event;
 pub use event::{TraceEvent, TraceEventQueue, TraceEventQueueList};
 
+pub mod lockless_ring_buffer;
+
 #[repr(C)]
 #[derive(Copy, Clone, IntoBytes, Immutable)]
 struct PerfMetadataHeader {
