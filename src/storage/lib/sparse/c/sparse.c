@@ -4,6 +4,7 @@
 
 #include "sparse.h"
 
+#include <inttypes.h>
 #include <sparse_format.h>
 #include <stdbool.h>
 #include <string.h>
@@ -58,7 +59,7 @@ static void DumpStruct(SparseLogFn log, const void* s, size_t size) {
 //
 // Return true if it is valid, false otherwise.
 static bool IsValidFileHeader(const sparse_header_t* header) {
-  return header && LE64(header->magic) == SPARSE_HEADER_MAGIC &&
+  return header && LE32(header->magic) == SPARSE_HEADER_MAGIC &&
          LE16(header->major_version) <= 0x1 && sizeof(*header) <= LE16(header->file_hdr_sz) &&
          sizeof(chunk_header_t) <= LE16(header->chunk_hdr_sz) && LE32(header->blk_sz) % 4 == 0;
 }
@@ -90,7 +91,7 @@ bool sparse_is_sparse_image(SparseIoBufferOps* handle_ops, SparseIoBufferHandle 
 }
 
 static bool sparse_write_fill(SparseIoInterface* io, SparseLogFn log, SparseIoBufferHandle src,
-                              uint32_t fill, size_t out_offset, size_t write_bytes) {
+                              uint32_t fill, uint64_t out_offset, uint64_t write_bytes) {
   static bool fill_cache_valid = false;
   uint32_t tmp;
   if (!io->handle_ops.read(io->fill_handle, 0, (uint8_t*)&tmp, sizeof(tmp))) {
@@ -112,9 +113,9 @@ static bool sparse_write_fill(SparseIoInterface* io, SparseLogFn log, SparseIoBu
   // Remember that the fill buffer size must be a multiple of both the block size
   // and the storage buffer alignment.
   size_t fill_size = io->handle_ops.size(io->fill_handle);
-  for (size_t i = 0; i < write_bytes / fill_size; i++, out_offset += fill_size) {
+  for (uint64_t i = 0; i < write_bytes / fill_size; i++, out_offset += fill_size) {
     if (!io->write(io->ctx, out_offset, io->fill_handle, 0, fill_size)) {
-      log("Failed to write sparse fill block of size %z\n", fill_size);
+      log("Failed to write sparse fill block of size %zu\n", fill_size);
       return false;
     }
   }
@@ -123,7 +124,7 @@ static bool sparse_write_fill(SparseIoInterface* io, SparseLogFn log, SparseIoBu
   size_t trailing_bytes = write_bytes % fill_size;
   if (trailing_bytes) {
     if (!io->write(io->ctx, out_offset, io->fill_handle, 0, trailing_bytes)) {
-      log("Failed to write sparse fill chunk of size %z\n", trailing_bytes);
+      log("Failed to write sparse fill chunk of size %zu\n", trailing_bytes);
       return false;
     }
   }
@@ -150,6 +151,7 @@ bool sparse_unpack_image(SparseIoInterface* io, SparseLogFn log, SparseIoBufferH
 
   uint64_t in_offset = file_header.file_hdr_sz;
   uint64_t out_offset = 0;
+  uint64_t total_expected_size = (uint64_t)LE32(file_header.total_blks) * LE32(file_header.blk_sz);
   for (size_t i = 0; i < LE32(file_header.total_chunks); i++) {
     if (in_offset + sizeof(chunk_header_t) > size) {
       log("Chunk header exceeds handle length\n");
@@ -172,13 +174,20 @@ bool sparse_unpack_image(SparseIoInterface* io, SparseLogFn log, SparseIoBufferH
           return false;
         }
 
-        size_t data_len = (size_t)LE32(chunk.chunk_sz) * LE32(file_header.blk_sz);
+        uint64_t data_len = (uint64_t)LE32(chunk.chunk_sz) * LE32(file_header.blk_sz);
         if (in_offset + data_len > size) {
           log("chunk exceeds handle length\n");
           return false;
         }
+        if (out_offset + data_len > total_expected_size || out_offset + data_len < out_offset) {
+          log("raw chunk write out of bounds: out_offset=%" PRIu64 " + data_len=%" PRIu64
+              " > total_expected=%" PRIu64 "\n",
+              out_offset, data_len, total_expected_size);
+          return false;
+        }
         if (!io->write(io->ctx, out_offset, src, in_offset, data_len)) {
-          log("Failed to write %lu @ %lu from %lu\n", data_len, out_offset, in_offset);
+          log("Failed to write %" PRIu64 " @ %" PRIu64 " from %" PRIu64 "\n", data_len, out_offset,
+              in_offset);
           return false;
         }
         in_offset += data_len;
@@ -190,7 +199,14 @@ bool sparse_unpack_image(SparseIoInterface* io, SparseLogFn log, SparseIoBufferH
           DumpStruct(log, &chunk, sizeof(chunk));
           return false;
         }
-        out_offset += (size_t)LE32(chunk.chunk_sz) * LE32(file_header.blk_sz);
+        uint64_t skip_len = (uint64_t)LE32(chunk.chunk_sz) * LE32(file_header.blk_sz);
+        if (out_offset + skip_len > total_expected_size || out_offset + skip_len < out_offset) {
+          log("dont_care chunk skips out of bounds: out_offset=%" PRIu64 " + skip_len=%" PRIu64
+              " > total_expected=%" PRIu64 "\n",
+              out_offset, skip_len, total_expected_size);
+          return false;
+        }
+        out_offset += skip_len;
         break;
       case CHUNK_TYPE_FILL:
         if (!ValidateChunkSize(&file_header, &chunk, sizeof(uint32_t))) {
@@ -211,7 +227,13 @@ bool sparse_unpack_image(SparseIoInterface* io, SparseLogFn log, SparseIoBufferH
         fill = LE32(fill);
         in_offset += sizeof(fill);
 
-        size_t write_size = LE32(file_header.blk_sz) * LE32(chunk.chunk_sz);
+        uint64_t write_size = (uint64_t)LE32(file_header.blk_sz) * LE32(chunk.chunk_sz);
+        if (out_offset + write_size > total_expected_size || out_offset + write_size < out_offset) {
+          log("fill chunk write out of bounds: out_offset=%" PRIu64 " + write_size=%" PRIu64
+              " > total_expected=%" PRIu64 "\n",
+              out_offset, write_size, total_expected_size);
+          return false;
+        }
         if (!sparse_write_fill(io, log, src, fill, out_offset, write_size)) {
           return false;
         }
@@ -230,6 +252,14 @@ bool sparse_unpack_image(SparseIoInterface* io, SparseLogFn log, SparseIoBufferH
         log("unexpected chunk type: 0x%08X\n", LE16(chunk.chunk_type));
         return false;
     }
+  }
+
+  if (out_offset != total_expected_size) {
+    log("unpacked size mismatch: unpacked %" PRIu64 " blocks, expected %" PRIu64
+        " blocks (total_expected_size=%" PRIu64 ")\n",
+        out_offset / LE32(file_header.blk_sz), (uint64_t)LE32(file_header.total_blks),
+        total_expected_size);
+    return false;
   }
 
   return true;

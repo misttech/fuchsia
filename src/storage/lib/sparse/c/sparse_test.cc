@@ -393,3 +393,74 @@ INSTANTIATE_TEST_SUITE_P(
     [](const testing::TestParamInfo<FuchsiaSparseWriterBadChunkTest::ParamType> &info) {
       return std::string(info.param.name.begin(), info.param.name.end());
     });
+
+TEST(FuchsiaSparseWriterSecurityTest, TestBadMagicNumber) {
+  TestSparseIo test_storage(kDiskSize);
+  std::vector<uint8_t> image_data =
+      MakeSparseImage<sizeof(sparse_header_t), sizeof(chunk_header_t)>({});
+  // Corrupt magic
+  reinterpret_cast<sparse_header_t *>(image_data.data())->magic = 0xDEADC0DE;
+  TestSparseIoBuffer sparse_image(std::move(image_data));
+
+  SparseIoInterface io = test_storage.Interface();
+  ASSERT_FALSE(sparse_unpack_image(&io, sparse_nop_logger, &sparse_image));
+}
+
+TEST(FuchsiaSparseWriterSecurityTest, TestUnpackedSizeMismatch) {
+  TestSparseIo test_storage(kDiskSize);
+  // Create image with total_blks = 10 but no chunks (unpacked blocks = 0)
+  std::vector<uint8_t> image_data =
+      MakeSparseImage<sizeof(sparse_header_t), sizeof(chunk_header_t)>({});
+  reinterpret_cast<sparse_header_t *>(image_data.data())->total_blks = 10;
+  TestSparseIoBuffer sparse_image(std::move(image_data));
+
+  SparseIoInterface io = test_storage.Interface();
+  ASSERT_FALSE(sparse_unpack_image(&io, sparse_nop_logger, &sparse_image));
+}
+
+TEST(FuchsiaSparseWriterSecurityTest, TestOutputOffsetOverflowRawChunk) {
+  TestSparseIo test_storage(kDiskSize);
+  // Set total_blks to a small value, say 2.
+  // Add a RAW chunk that attempts to write 5 blocks (exceeding total_blks).
+  const SparseDataDescriptor descriptors[] = {{.type = SparseDataDescriptor::SparseChunkType::kRaw,
+                                               .output_blocks = 5,
+                                               .payload = 0x11111111}};
+  std::vector<uint8_t> image_data =
+      MakeSparseImage<sizeof(sparse_header_t), sizeof(chunk_header_t)>(descriptors);
+  reinterpret_cast<sparse_header_t *>(image_data.data())->total_blks = 2;
+  TestSparseIoBuffer sparse_image(std::move(image_data));
+
+  SparseIoInterface io = test_storage.Interface();
+  ASSERT_FALSE(sparse_unpack_image(&io, sparse_nop_logger, &sparse_image));
+}
+
+TEST(FuchsiaSparseWriterSecurityTest, TestOutputOffsetOverflowFillChunk) {
+  TestSparseIo test_storage(kDiskSize);
+  // Set total_blks to a small value, say 2.
+  // Add a FILL chunk that attempts to write 5 blocks (exceeding total_blks).
+  const SparseDataDescriptor descriptors[] = {{.type = SparseDataDescriptor::SparseChunkType::kFill,
+                                               .output_blocks = 5,
+                                               .payload = 0x11111111}};
+  std::vector<uint8_t> image_data =
+      MakeSparseImage<sizeof(sparse_header_t), sizeof(chunk_header_t)>(descriptors);
+  reinterpret_cast<sparse_header_t *>(image_data.data())->total_blks = 2;
+  TestSparseIoBuffer sparse_image(std::move(image_data));
+
+  SparseIoInterface io = test_storage.Interface();
+  ASSERT_FALSE(sparse_unpack_image(&io, sparse_nop_logger, &sparse_image));
+}
+
+TEST(FuchsiaSparseWriterSecurityTest, TestOutputOffsetOverflowDontCareChunk) {
+  TestSparseIo test_storage(kDiskSize);
+  // Set total_blks to a small value, say 2.
+  // Add a DONT_CARE chunk that attempts to skip 5 blocks (exceeding total_blks).
+  const SparseDataDescriptor descriptors[] = {
+      {.type = SparseDataDescriptor::SparseChunkType::kDontCare, .output_blocks = 5}};
+  std::vector<uint8_t> image_data =
+      MakeSparseImage<sizeof(sparse_header_t), sizeof(chunk_header_t)>(descriptors);
+  reinterpret_cast<sparse_header_t *>(image_data.data())->total_blks = 2;
+  TestSparseIoBuffer sparse_image(std::move(image_data));
+
+  SparseIoInterface io = test_storage.Interface();
+  ASSERT_FALSE(sparse_unpack_image(&io, sparse_nop_logger, &sparse_image));
+}
