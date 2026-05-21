@@ -18,16 +18,22 @@ rustc_binary("bin") {
   deps = [
     "//sdk/fidl/fuchsia.erofs:fuchsia.erofs_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+    "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-runtime",
+    "//src/storage/erofs",
     "//src/storage/lib/vfs/rust:vfs",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
   ]
 
-  sources = [ "src/main.rs" ]
+  sources = [
+    "src/directory.rs",
+    "src/file.rs",
+    "src/main.rs",
+  ]
 }
 
 fuchsia_component("erofs_component") {
@@ -47,8 +53,8 @@ rustc_test("erofs_integration_test_bin") {
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component-test",
+    "//src/lib/fuchsia-fs",
   ]
 
   sources = [ "tests/integration_test.rs" ]
@@ -58,5 +64,6 @@ fuchsia_unittest_package("erofs_integration_tests") {
   deps = [
     ":erofs_component",
     ":erofs_integration_test_bin",
+    "//src/storage/erofs/testing:simple_erofs_image",
   ]
 }

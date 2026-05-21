@@ -8,7 +8,7 @@ use thiserror::Error;
 use zerocopy::{FromBytes, IntoBytes};
 
 /// Errors that can occur during reading from a reader.
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug, Clone, PartialEq)]
 pub enum ReaderError {
     #[error("Failed to set up reader with status: {}", _0)]
     Setup(zx::Status),

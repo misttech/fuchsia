@@ -24,7 +24,7 @@ bitflags! {
 }
 
 /// Errors that can occur while interacting with an EROFS image.
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Error, Clone, PartialEq)]
 pub enum ErofsError {
     #[error("Unsupported compression algorithms: 0x{:X}", _0)]
     UnsupportedCompressionAlgs(u16),
@@ -37,8 +37,20 @@ pub enum ErofsError {
     ReadError(#[from] ReaderError),
 }
 
+#[cfg(target_os = "fuchsia")]
+impl ErofsError {
+    pub fn to_status(self) -> zx::Status {
+        match self {
+            Self::UnsupportedCompressionAlgs(_) => zx::Status::NOT_SUPPORTED,
+            Self::UnsupportedFeatureIncompat(_, _) => zx::Status::NOT_SUPPORTED,
+            Self::Parse(_) => zx::Status::IO_DATA_INTEGRITY,
+            Self::ReadError(_) => zx::Status::IO,
+        }
+    }
+}
+
 /// Errors that can occur during parsing of an EROFS image.
-#[derive(Debug, Error, PartialEq)]
+#[derive(Debug, Error, Clone, PartialEq)]
 pub enum ParsingError {
     #[error("Invalid super block magic: 0x{:X}, should be 0x{:X}", _0, format::EROFS_MAGIC)]
     InvalidSuperBlockMagic(u32),
@@ -51,6 +63,8 @@ pub enum ParsingError {
     InvalidInodeDataLayout(u16),
     #[error("Invalid directory entry")]
     InvalidDirectoryEntry,
+    #[error("Invalid file type: {}", _0)]
+    InvalidFileType(u8),
     #[error("Directory entry name was not valid utf8")]
     InvalidDirectoryEntryName(#[source] std::str::Utf8Error),
     #[error("Inline data layout missing inline data")]
@@ -93,6 +107,7 @@ struct NodeInner {
     mode: u16,
     size: u64,
     data_union: InodeDataUnion,
+    ino: u32,
 }
 
 impl NodeInner {
@@ -143,13 +158,48 @@ impl DirectoryNode {
     pub fn size(&self) -> u64 {
         self.0.size
     }
+    pub fn ino(&self) -> u32 {
+        self.0.ino
+    }
+}
+
+/// File type for a directory entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FileType {
+    #[default]
+    Unknown = 0,
+    RegFile = 1,
+    Dir = 2,
+    ChrDev = 3,
+    BlkDev = 4,
+    Fifo = 5,
+    Sock = 6,
+    Symlink = 7,
+}
+
+impl TryFrom<u8> for FileType {
+    type Error = ParsingError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(FileType::Unknown),
+            1 => Ok(FileType::RegFile),
+            2 => Ok(FileType::Dir),
+            3 => Ok(FileType::ChrDev),
+            4 => Ok(FileType::BlkDev),
+            5 => Ok(FileType::Fifo),
+            6 => Ok(FileType::Sock),
+            7 => Ok(FileType::Symlink),
+            _ => Err(ParsingError::InvalidFileType(value)),
+        }
+    }
 }
 
 /// A directory entry in the EROFS image.
 #[derive(Debug, Clone, Default)]
 pub struct DirectoryEntry {
     pub nid: u64,
-    pub file_type: u8,
+    pub file_type: FileType,
     pub name: String,
 }
 
@@ -160,6 +210,9 @@ pub struct FileNode(NodeInner);
 impl FileNode {
     pub fn size(&self) -> u64 {
         self.0.size
+    }
+    pub fn ino(&self) -> u32 {
+        self.0.ino
     }
 }
 
@@ -191,6 +244,7 @@ impl Node {
             mode: inode.mode.get(),
             size: inode.size.get().into(),
             data_union,
+            ino: inode.ino.get(),
         }))
     }
 
@@ -206,6 +260,7 @@ impl Node {
             mode: inode.mode.get(),
             size: inode.size.get(),
             data_union,
+            ino: inode.ino.get(),
         }))
     }
 
@@ -233,6 +288,13 @@ impl Node {
         match self {
             Node::Directory(node) => node.size(),
             Node::File(node) => node.size(),
+        }
+    }
+
+    pub fn ino(&self) -> u32 {
+        match self {
+            Node::Directory(node) => node.ino(),
+            Node::File(node) => node.ino(),
         }
     }
 }
@@ -318,7 +380,7 @@ impl ErofsParser {
     }
 
     /// Returns the node with the given nid.
-    fn node(&self, nid: u64) -> Result<Node, ErofsError> {
+    pub fn node(&self, nid: u64) -> Result<Node, ErofsError> {
         Node::from_nid(nid, self.meta_addr, &self.reader)
     }
 
@@ -479,7 +541,7 @@ impl ErofsParser {
                     .to_string();
                 entries[entries_filled] = DirectoryEntry {
                     nid: dirents[i].nid.get(),
-                    file_type: dirents[i].file_type,
+                    file_type: dirents[i].file_type.try_into()?,
                     name,
                 };
                 entries_filled += 1;
