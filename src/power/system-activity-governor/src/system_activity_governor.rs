@@ -653,25 +653,17 @@ enum LeaseTakenAction {
 
 /// Detects situations where the system repeatedly takes leases and drops them
 /// without entering suspend, potentially indicating a bug or an infinite loop.
-/// It reports when the lease is taken for the `CYCLE_THRESHOLD`th time
-/// (5th time) within a short period, rate-limited by `REPORT_INTERVAL`.
+/// It reports when the lease is taken for the `CYCLE_THRESHOLD`th time.
 struct NoSuspendDetector {
     active_count: std::cell::Cell<u32>,
     cycle_count: std::cell::Cell<u32>,
-    last_report_time: std::cell::Cell<Option<fasync::MonotonicInstant>>,
 }
 
 impl NoSuspendDetector {
     const CYCLE_THRESHOLD: u32 = 5;
-    const REPORT_INTERVAL: fasync::MonotonicDuration =
-        fasync::MonotonicDuration::from_seconds(1200);
 
     fn new() -> Self {
-        Self {
-            active_count: std::cell::Cell::new(0),
-            cycle_count: std::cell::Cell::new(0),
-            last_report_time: std::cell::Cell::new(None),
-        }
+        Self { active_count: std::cell::Cell::new(0), cycle_count: std::cell::Cell::new(0) }
     }
 
     fn on_lease_taken(&self) -> LeaseTakenAction {
@@ -681,18 +673,8 @@ impl NoSuspendDetector {
             let cycles = self.cycle_count.get() + 1;
             self.cycle_count.set(cycles);
 
-            if cycles >= Self::CYCLE_THRESHOLD {
-                let now = fasync::MonotonicInstant::now();
-                let should_report = match self.last_report_time.get() {
-                    None => true,
-                    Some(last) => now - last >= Self::REPORT_INTERVAL,
-                };
-
-                if should_report {
-                    self.last_report_time.set(Some(now));
-                    self.cycle_count.set(0);
-                    action = LeaseTakenAction::ShouldReport;
-                }
+            if cycles == Self::CYCLE_THRESHOLD {
+                action = LeaseTakenAction::ShouldReport;
             }
         }
         self.active_count.set(active + 1);
@@ -987,9 +969,9 @@ impl SystemActivityGovernor {
             }
             .boxed_local()
         };
-
         let suspend_blockers_node =
             inspect_root.create_lazy_child_with_thread_local("suspend_blockers", callback);
+
         let loop_detector =
             if use_suspender { Some(std::rc::Rc::new(NoSuspendDetector::new())) } else { None };
 

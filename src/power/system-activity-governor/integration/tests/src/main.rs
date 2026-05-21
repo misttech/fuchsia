@@ -4394,7 +4394,7 @@ async fn test_activity_governor_early_lease_dropped_before_dependency_registrati
 
 #[fuchsia::test]
 async fn test_no_suspend_loop_files_report() -> Result<()> {
-    let (realm, _activity_governor_moniker) = create_realm_ext(ftest::RealmOptions {
+    let (realm, activity_governor_moniker) = create_realm_ext(ftest::RealmOptions {
         use_suspender: Some(true),
         stuck_warning_timeout_seconds: Some(1),
         ..Default::default()
@@ -4404,6 +4404,11 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
     let querier = realm
         .connect_to_protocol::<fidl_fuchsia_feedback_testing::FakeCrashReporterQuerierMarker>()
         .await?;
+
+    let suspend_device = realm.connect_to_protocol::<tsc::DeviceMarker>().await?;
+    set_up_default_suspender(&suspend_device).await;
+
+    let _suspend_controller = create_suspend_topology(&realm).await?;
 
     let element_info_provider = realm
         .connect_to_service_instance::<fbroker::ElementInfoProviderServiceMarker>(
@@ -4424,6 +4429,10 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
 
     let aa_status = status_endpoints.get("application_activity").unwrap();
 
+    // Block suspends by holding a wake lease.
+    let wake_lease =
+        activity_governor.acquire_wake_lease("prevent-suspend").await.unwrap().unwrap();
+
     // Trigger "boot complete" signal to allow element transitions.
     {
         let boot_control = realm.connect_to_protocol::<fsystem::BootControlMarker>().await?;
@@ -4433,10 +4442,6 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
 
     // Clear initial state
     let _ = querier.watch_file().await?;
-
-    // Block suspends by holding a wake lease.
-    let wake_lease =
-        activity_governor.acquire_wake_lease("prevent-suspend").await.unwrap().unwrap();
 
     let prevent_suspend_koid = wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
     let prevent_suspend_koid_str = prevent_suspend_koid.as_str();
@@ -4454,9 +4459,8 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
         while aa_status.watch_power_level().await?.unwrap() != 0 {}
 
         // Wait for the lease node to disappear from Inspect.
-        // TODO(fxbug.dev/497906970): after landing http://fxrev.dev/1569459, update the condition.
         block_until_inspect_matches!(
-            _activity_governor_moniker,
+            activity_governor_moniker,
             root: contains {
                 ref fobs::WAKE_LEASES_NODE: {
                     active_count: 1u64,
@@ -4482,6 +4486,100 @@ async fn test_no_suspend_loop_files_report() -> Result<()> {
     };
 
     assert_eq!(num_filed, 1);
+
+    // Cycle Application Activity again 5 times to verify no new report is filed.
+    for _ in 0..5 {
+        let lease = activity_governor.take_application_activity_lease("cycle-lease").await?;
+        while aa_status.watch_power_level().await?.unwrap() != 1 {}
+        drop(lease);
+        while aa_status.watch_power_level().await?.unwrap() != 0 {}
+
+        block_until_inspect_matches!(
+            activity_governor_moniker,
+            root: contains {
+                ref fobs::WAKE_LEASES_NODE: {
+                    active_count: 1u64,
+                    oldest_active: {
+                        var prevent_suspend_koid_str: contains {
+                            ref fobs::WAKE_LEASE_ITEM_NAME: "prevent-suspend",
+                        }
+                    }
+                },
+            }
+        );
+    }
+
+    // Verify NO new crash report is filed
+    let mut watch_fut = Box::pin(querier.watch_file().fuse());
+    let mut timeout_fut2 =
+        Box::pin(fasync::Timer::new(fasync::MonotonicDuration::from_seconds(1).after_now()).fuse());
+
+    futures::select! {
+        num = watch_fut => return Err(anyhow::anyhow!("Unexpected crash report filed: {}", num?)),
+        _ = timeout_fut2 => {
+            // Timeout is expected!
+            log::info!("No new crash report filed as expected.");
+        },
+    };
+
+    // Drop the wake lease to allow suspend.
+    drop(wake_lease);
+
+    // Wait for suspend to be attempted.
+    assert_eq!(0, suspend_device.await_suspend().await.unwrap().unwrap().state_index.unwrap());
+
+    // Resume system.
+    suspend_device
+        .resume(&tsc::DeviceResumeRequest::Result(tsc::SuspendResult {
+            suspend_duration: Some(1i64),
+            suspend_overhead: Some(1i64),
+            ..Default::default()
+        }))
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Take a new wake lease to prevent suspension while we cycle AA.
+    let wake_lease =
+        activity_governor.acquire_wake_lease("prevent-suspend-again").await.unwrap().unwrap();
+
+    let prevent_suspend_again_koid =
+        wake_lease.basic_info().unwrap().related_koid.raw_koid().to_string();
+    let prevent_suspend_again_koid_str = prevent_suspend_again_koid.as_str();
+
+    // Cycle Application Activity again 5 times.
+    for _ in 0..5 {
+        let lease = activity_governor.take_application_activity_lease("cycle-lease-again").await?;
+        while aa_status.watch_power_level().await?.unwrap() != 1 {}
+        drop(lease);
+        while aa_status.watch_power_level().await?.unwrap() != 0 {}
+
+        block_until_inspect_matches!(
+            activity_governor_moniker,
+            root: contains {
+                ref fobs::WAKE_LEASES_NODE: {
+                    active_count: 1u64,
+                    oldest_active: {
+                        var prevent_suspend_again_koid_str: contains {
+                            ref fobs::WAKE_LEASE_ITEM_NAME: "prevent-suspend-again",
+                        }
+                    }
+                },
+            }
+        );
+    }
+
+    // Verify a NEW crash report is filed
+    let mut timeout_fut3 = Box::pin(
+        fasync::Timer::new(fasync::MonotonicDuration::from_seconds(60).after_now()).fuse(),
+    );
+
+    let num_filed = futures::select! {
+        num = watch_fut => num?,
+        _ = timeout_fut3 => return Err(anyhow::anyhow!("Timeout waiting for NEW crash report")),
+    };
+
+    assert_eq!(num_filed, 2);
 
     drop(wake_lease);
     Ok(())
