@@ -2449,14 +2449,6 @@ if (current_os == "fuchsia") {
   }
 }
 
-group("vm-device") {
-  public_deps = [ ":vm-device-v0_1_0" ]
-}
-
-group("vm-device-0.1.0") {
-  public_deps = [ ":vm-device-v0_1_0" ]
-}
-
 group("vt100") {
   public_deps = [ ":vt100-v0_16_2" ]
 }
@@ -22946,35 +22938,6 @@ rustc_library("vk-sys-v0_7_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":vk-sys-v0_7_0.license" ]
-}
-
-license("vm-device-v0_1_0.license") {
-  public_package_name = "vm_device"
-  license_files = [ "//third_party/rust_crates/vendor/vm-device-0.1.0/LICENSE" ]
-}
-
-rustc_library("vm-device-v0_1_0") {
-  crate_name = "vm_device"
-  source_root = "//third_party/rust_crates/vendor/vm-device-0.1.0/src/lib.rs"
-  output_name = "vm_device-63a24e49faaabd29"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=63a24e49faaabd29",
-    "-Cextra-filename=-63a24e49faaabd29",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":vm-device-v0_1_0.license" ]
 }
 
 license("vt100-v0_16_2.license") {

@@ -3241,18 +3241,6 @@ alias(
 )
 
 alias(
-    name = "vm-device-0.1.0",
-    actual = "//third_party/rust_crates/vendor/vm-device-0.1.0:vm_device",
-    tags = ["manual"],
-)
-
-alias(
-    name = "vm-device",
-    actual = "//third_party/rust_crates/vendor/vm-device-0.1.0:vm_device",
-    tags = ["manual"],
-)
-
-alias(
     name = "vt100-0.16.2",
     actual = "//third_party/rust_crates/forks/vt100-0.16.2:vt100",
     tags = ["manual"],

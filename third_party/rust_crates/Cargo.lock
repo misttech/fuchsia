@@ -1902,7 +1902,6 @@ dependencies = [
  "uuid 1.1.2",
  "valico",
  "vk-sys",
- "vm-device",
  "vt100",
  "vte",
  "wait-timeout",
@@ -5767,12 +5766,6 @@ name = "vk-sys"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "584003afc735800b0619a724332f37a28788f56fa9349874ee2f50874be0d239"
-
-[[package]]
-name = "vm-device"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "599adbdaddea4947ca23c085d2b8e47f3499ccda35438424526f3853748a8eb6"
 
 [[package]]
 name = "vt100"
