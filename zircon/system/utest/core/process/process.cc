@@ -148,21 +148,6 @@ TEST(ProcessTest, ProcessStartNoHandle) {
   zx_handle_close(proc);
 }
 
-#if defined(__x86_64__)
-
-#include <cpuid.h>
-
-// This is based on code from kernel/ which isn't usable by code in system/.
-enum { X86_CPUID_ADDR_WIDTH = 0x80000008 };
-
-static uint32_t x86_linear_address_width() {
-  uint32_t eax, ebx, ecx, edx;
-  __cpuid(X86_CPUID_ADDR_WIDTH, eax, ebx, ecx, edx);
-  return (eax >> 8) & 0xff;
-}
-
-#endif
-
 TEST(ProcessTest, ProcessStartNonUserspaceEntry) {
   auto test_process_start = [&](uintptr_t entry, zx_status_t expected) {
     zx_handle_t proc;
@@ -193,7 +178,8 @@ TEST(ProcessTest, ProcessStartNonUserspaceEntry) {
   test_process_start(kernel_pc, ZX_ERR_INVALID_ARGS);
 
 #if defined(__x86_64__)
-  uintptr_t non_canonical_pc = ((uintptr_t)1) << (x86_linear_address_width() - 1);
+  uintptr_t non_canonical_pc;
+  ASSERT_NO_FATAL_FAILURE(core_test_utils::X86LowestNonCanonicalAddr(non_canonical_pc));
   test_process_start(non_canonical_pc, ZX_ERR_INVALID_ARGS);
 #endif  // defined(__x86_64__)
 }

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <errno.h>
+#include <lib/core-test-utils.h>
 #include <sys/mman.h>
 #include <unistd.h>
 #include <zircon/process.h>
@@ -13,21 +14,6 @@
 
 namespace {
 
-#if defined(__x86_64__)
-
-#include <cpuid.h>
-
-// This is based on code from kernel/ which isn't usable by code in system/.
-enum { X86_CPUID_ADDR_WIDTH = 0x80000008 };
-
-uint32_t x86_linear_address_width() {
-  uint32_t eax, ebx, ecx, edx;
-  __cpuid(X86_CPUID_ADDR_WIDTH, eax, ebx, ecx, edx);
-  return (eax >> 8) & 0xff;
-}
-
-#endif
-
 TEST(MemoryMappingTest, AddressSpaceLimitsTest) {
 #if defined(__x86_64__)
   size_t page_size = getpagesize();
@@ -35,16 +21,17 @@ TEST(MemoryMappingTest, AddressSpaceLimitsTest) {
   EXPECT_OK(zx_vmo_create(page_size, 0, &vmo));
   EXPECT_NE(vmo, ZX_HANDLE_INVALID, "vm_object_create");
 
+  zx_info_vmar_t vmar_info;
+  zx_status_t status = zx_object_get_info(zx_vmar_root_self(), ZX_INFO_VMAR, &vmar_info,
+                                          sizeof(vmar_info), nullptr, nullptr);
+  ASSERT_OK(status, "get_info");
+
   // This is the lowest non-canonical address on x86-64.  We want to
   // make sure that userland cannot map a page immediately below
   // this address.  See docs/sysret_problem.md for an explanation of
   // the reason.
-  uintptr_t noncanon_addr = ((uintptr_t)1) << (x86_linear_address_width() - 1);
-
-  zx_info_vmar_t vmar_info;
-  zx_status_t status = zx_object_get_info(zx_vmar_root_self(), ZX_INFO_VMAR, &vmar_info,
-                                          sizeof(vmar_info), nullptr, nullptr);
-  EXPECT_OK(status, "get_info");
+  uintptr_t noncanon_addr;
+  ASSERT_NO_FATAL_FAILURE(core_test_utils::X86LowestNonCanonicalAddr(noncanon_addr));
 
   // Check that we cannot map a page ending at |noncanon_addr|.
   size_t offset = noncanon_addr - page_size - vmar_info.base;

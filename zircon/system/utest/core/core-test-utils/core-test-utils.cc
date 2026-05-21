@@ -5,7 +5,11 @@
 #include <lib/core-test-utils.h>
 #include <lib/standalone-test/standalone.h>
 #include <lib/zx/vmo.h>
+#include <zircon/process.h>
+#include <zircon/syscalls.h>
+#include <zircon/syscalls/object.h>
 
+#include <bit>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -76,5 +80,19 @@ std::optional<std::string_view> SkipBug363254896() {
 #endif
   return std::nullopt;
 }
+
+#ifdef __x86_64__
+void X86LowestNonCanonicalAddr(uintptr_t& out) {
+  zx_info_vmar_t vmar_info;
+  ASSERT_OK(zx_object_get_info(zx_vmar_root_self(), ZX_INFO_VMAR, &vmar_info, sizeof(vmar_info),
+                               nullptr, nullptr));
+  // The end of the user's would-be address space may have been reserved (e.g.,
+  // for "sysret" protection schemes), which means that the end of the VMAR may
+  // be strictly smaller than the conventional hardware limit. We can recover
+  // the latter however by taking the minimal power of 2 address greater or
+  // equal to the computed end.
+  out = std::bit_ceil(vmar_info.base + vmar_info.len);
+}
+#endif
 
 }  // namespace core_test_utils

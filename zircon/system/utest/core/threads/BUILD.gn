@@ -24,6 +24,7 @@ source_set("threads") {
     "//zircon/system/ulib/test-exceptions",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
+    "//zircon/system/utest/core/core-test-utils",
   ]
 }
 

@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/core-test-utils.h>
 #include <lib/fit/defer.h>
 #include <lib/stdcompat/span.h>
 #include <lib/test-exceptions/exception-catcher.h>
@@ -1407,13 +1408,7 @@ TEST(Threads, ThreadLocalRegisterState) {
 #include <cpuid.h>
 
 // This is based on code from kernel/ which isn't usable by code in system/.
-enum { X86_CPUID_ADDR_WIDTH = 0x80000008, X86_CPUID_HYP_VENDOR = 0x40000000 };
-
-uint32_t x86_linear_address_width() {
-  uint32_t eax, ebx, ecx, edx;
-  __cpuid(X86_CPUID_ADDR_WIDTH, eax, ebx, ecx, edx);
-  return (eax >> 8) & 0xff;
-}
+enum { X86_CPUID_HYP_VENDOR = 0x40000000 };
 
 bool x86_is_kvm_hypervisor() {
   uint32_t regs[4];
@@ -1446,7 +1441,8 @@ TEST(Threads, ThreadStartInvalidEntry) {
   test_thread_start(kernel_pc, ZX_ERR_INVALID_ARGS);
 
 #if defined(__x86_64__)
-  uintptr_t non_canonical_pc = ((uintptr_t)1) << (x86_linear_address_width() - 1);
+  uintptr_t non_canonical_pc;
+  ASSERT_NO_FATAL_FAILURE(core_test_utils::X86LowestNonCanonicalAddr(non_canonical_pc));
   test_thread_start(non_canonical_pc, ZX_ERR_INVALID_ARGS);
 #endif  // defined(__x86_64__)
 }
@@ -1476,7 +1472,8 @@ TEST(Threads, NoncanonicalRipAddressSyscall) {
   ASSERT_OK(test_thread.thread().read_state(ZX_THREAD_STATE_GENERAL_REGS, &regs, sizeof(regs)));
 
   // Example addresses to test.
-  uintptr_t noncanonical_addr = ((uintptr_t)1) << (x86_linear_address_width() - 1);
+  uintptr_t noncanonical_addr;
+  ASSERT_NO_FATAL_FAILURE(core_test_utils::X86LowestNonCanonicalAddr(noncanonical_addr));
   uintptr_t canonical_addr = noncanonical_addr - 1;
   uint64_t kKernelAddr = 0xffffff8000000000UL;
 
@@ -1518,7 +1515,8 @@ TEST(Threads, NoncanonicalRipAddressSyscall) {
 // See docs/concepts/kernel/sysret_problem.md
 TEST(Threads, NoncanonicalRipAddressIRETQ) {
   // Example addresses to test.
-  uintptr_t noncanonical_addr = ((uintptr_t)1) << (x86_linear_address_width() - 1);
+  uintptr_t noncanonical_addr;
+  ASSERT_NO_FATAL_FAILURE(core_test_utils::X86LowestNonCanonicalAddr(noncanonical_addr));
   uintptr_t kernel_addr = 0xffffff8000000000UL;
 
   // canonical address that is safe to resume the thread to.
@@ -2261,7 +2259,8 @@ TEST(Threads, StartRegsNoncanonicalTp) {
   constexpr std::string_view kName = "Threads.StartRegsNoncanonicalTp";
   ASSERT_OK(zx::thread::create(*zx::process::self(), kName.data(), kName.size(), 0, &thread));
 
-  const uint64_t non_canonical_fsbase = uint64_t{1} << (x86_linear_address_width() - 1);
+  uintptr_t non_canonical_fsbase;
+  ASSERT_NO_FATAL_FAILURE(core_test_utils::X86LowestNonCanonicalAddr(non_canonical_fsbase));
 
   ASSERT_EQ(zx_thread_start_regs(thread.get(), 0, 0, 0, 0, non_canonical_fsbase, 0),
             ZX_ERR_INVALID_ARGS);
