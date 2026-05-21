@@ -30,7 +30,9 @@ use starnix_logging::{
     CATEGORY_STARNIX, log_error, log_warn, trace_duration, trace_flow_begin, trace_flow_end,
     trace_flow_step,
 };
-use starnix_sync::{FileOpsCore, Locked, Mutex, MutexGuard, Unlocked};
+use starnix_sync::{
+    FileOpsCore, LockDepGuard, LockDepMutex, Locked, Mutex, RemoteBinderHandleLevel, Unlocked,
+};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{EAGAIN, EINTR, Errno, ErrnoCode};
@@ -279,7 +281,7 @@ enum NotificationType {
 /// remote fuchsia component.
 struct RemoteBinderHandle<F: RemoteControllerConnector> {
     kernel: Arc<Kernel>,
-    state: Mutex<RemoteBinderHandleState>,
+    state: LockDepMutex<RemoteBinderHandleState, RemoteBinderHandleLevel>,
     waiters: WaitQueue,
 
     /// Marker struct, needed because the struct is parametrized by `F`.
@@ -367,11 +369,7 @@ struct RemoteBinderHandleState {
 }
 
 impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
-<<<<<<< HEAD
     fn lock(&self) -> LockDepGuard<'_, RemoteBinderHandleState, RemoteBinderHandleLevel> {
-=======
-    fn lock(&self) -> MutexGuard<'_, RemoteBinderHandleState> {
->>>>>>> 1ce9b375184 (Revert "[starnix] Migrate binderfs locks to LockDep and fix violations")
         self.state.lock()
     }
 }
@@ -469,7 +467,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
     fn new(current_task: &CurrentTask) -> Arc<Self> {
         Arc::new(Self {
             kernel: current_task.kernel().clone(),
-            state: Mutex::new(RemoteBinderHandleState {
+            state: LockDepMutex::new(RemoteBinderHandleState {
                 thread_group: Arc::downgrade(&current_task.thread_group()),
                 koid_to_task: Default::default(),
                 unassigned_tasks: Default::default(),
@@ -1128,6 +1126,7 @@ mod tests {
     use starnix_core::power::{OwnedMessageCounter, WakeupSourceOrigin};
     use starnix_core::testing::*;
     use starnix_core::vfs::{FileSystemOptions, WhatToMount};
+    use starnix_sync::TerminalLock;
     use starnix_task_command::TaskCommand;
     use starnix_types::PAGE_SIZE;
     use starnix_uapi::auth::Credentials;
@@ -1139,10 +1138,8 @@ mod tests {
     use std::sync::LazyLock;
 
     static REMOTE_CONTROLLER_CLIENT: LazyLock<
-        Mutex<BTreeMap<String, ClientEnd<fbinder::RemoteControllerMarker>>>,
-    > = LazyLock::new(|| {
-        Mutex::<BTreeMap<String, ClientEnd<fbinder::RemoteControllerMarker>>>::default()
-    });
+        LockDepMutex<BTreeMap<String, ClientEnd<fbinder::RemoteControllerMarker>>, TerminalLock>,
+    > = LazyLock::new(Default::default);
 
     struct TestRemoteControllerConnector {}
 
