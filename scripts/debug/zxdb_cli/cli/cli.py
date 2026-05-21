@@ -53,6 +53,16 @@ async def main(args: list[str]) -> int:
     )
     subparsers.add_parser("stop", help="Stop the daemon")
     subparsers.add_parser("get-state", help="Get state of session")
+    detach_parser = subparsers.add_parser(
+        "detach", help="Detach from a process"
+    )
+    detach_parser.add_argument(
+        "pid", type=int, nargs="?", help="PID of process to detach from"
+    )
+    detach_parser.add_argument(
+        "--all", action="store_true", help="Detach from all processes"
+    )
+
     attach_parser = subparsers.add_parser("attach", help="Attach to a process")
     attach_parser.add_argument("filter", help="Process name or ID to attach to")
     subparsers.add_parser("threads", help="Get list of threads")
@@ -124,13 +134,14 @@ async def main(args: list[str]) -> int:
         try:
             args_dict = vars(parsed_args)
             req = make_request(args_dict)
-            return await send_command(req)
         except ValueError as e:
             print(f"Error: {e}")
             return 1
 
     assert req is not None
     assert isinstance(req, BaseRequest)
+    if parsed_args.ack_seq is not None:
+        req.ack_seq = parsed_args.ack_seq
     return await send_command(req)
 
 

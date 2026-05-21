@@ -45,6 +45,15 @@ class StopRequest(BaseRequest):
 
 
 @dataclasses.dataclass(kw_only=True)
+class DetachRequest(BaseRequest):
+    """Request to detach from a process."""
+
+    pid: int | None = None
+    all: bool = False
+    command: str = "detach"
+
+
+@dataclasses.dataclass(kw_only=True)
 class GetStateRequest(BaseRequest):
     """Request current state of threads."""
 
@@ -147,6 +156,20 @@ def make_request(data: dict[str, Any]) -> BaseRequest:
             req = HelloRequest(version=version)
         case "stop":
             req = StopRequest()
+        case "detach":
+            raw_pid = data.get("pid")
+            raw_all = data.get("all", False)
+            if raw_all and raw_pid is not None:
+                raise ValueError("Cannot specify both PID and all")
+            if not raw_all and raw_pid is None:
+                raise ValueError("PID is required when all is not specified")
+
+            try:
+                pid = int(raw_pid) if raw_pid is not None else None
+            except ValueError:
+                raise ValueError("pid must be an integer")
+
+            req = DetachRequest(pid=pid, all=data.get("all", False))
         case "get-state":
             req = GetStateRequest()
         case "attach":

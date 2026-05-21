@@ -11,6 +11,7 @@ group("tests") {
   deps = [
     ":daemon_events_test($host_toolchain)",
     ":daemon_test($host_toolchain)",
+    ":daemon_zxdb_mixin_test($host_toolchain)",
   ]
 }
 
@@ -53,6 +54,15 @@ if (is_host) {
 
   python_host_test("daemon_events_test") {
     main_source = "tests/test_events.py"
+    libraries = [ ":daemon_lib" ]
+
+    # Explicitly depend on pydantic-core's test_data. This is to ensure that the module's DSO is
+    # bundled together with our test so the top-level pydantic module loads correctly.
+    test_data_deps = [ "//prebuilt/third_party/pydantic-core:test_data" ]
+  }
+
+  python_host_test("daemon_zxdb_mixin_test") {
+    main_source = "tests/test_zxdb_mixin.py"
     libraries = [ ":daemon_lib" ]
 
     # Explicitly depend on pydantic-core's test_data. This is to ensure that the module's DSO is

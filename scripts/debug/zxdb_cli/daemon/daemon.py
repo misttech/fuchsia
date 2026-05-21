@@ -24,6 +24,7 @@ from shared.protocol import (
     AttachRequest,
     BaseRequest,
     ContinueRequest,
+    DetachRequest,
     GetStateRequest,
     HelloRequest,
     PauseRequest,
@@ -36,7 +37,7 @@ from shared.protocol import (
     deserialize_request,
     serialize,
 )
-from zxdb_dap import ZxdbDapClient
+from zxdb_dap import ZxdbDapClient, ZxdbDetachArguments
 
 # TODO(https://fxbug.dev/504962182): Replace this with something more appropriate.
 UDS_PATH: Final[Path] = Path("/tmp/fx-debug-daemon.sock")
@@ -156,6 +157,7 @@ class Daemon:
         self.registry.register("stop", self.handle_stop)
         self.registry.register("start", self.handle_start)
         self.registry.register("hello", self.handle_hello)
+        self.registry.register("detach", self.handle_detach)
         self.registry.register(
             "get-state",
             self.handle_get_state,
@@ -348,6 +350,50 @@ class Daemon:
     async def handle_stop(self, _req: StopRequest) -> Response:
         self.stop_event.set()
         return Response(success=True, message="Daemon stopping")
+
+    async def handle_detach(self, req: BaseRequest) -> Response:
+        assert isinstance(req, DetachRequest)
+        if req.all and req.pid is not None:
+            return Response(
+                success=False,
+                message="Cannot specify both PID and 'all' in detach request",
+            )
+        if not req.all and req.pid is None:
+            return Response(
+                success=False,
+                message="PID is required when 'all' is not specified",
+            )
+
+        if not self.zxdb_writer:
+            return Response(
+                success=False, message="Not connected to zxdb DAP server"
+            )
+
+        try:
+            if req.all:
+                args = ZxdbDetachArguments(all=True)
+            else:
+                args = ZxdbDetachArguments(pid=req.pid)
+            resp = await self.dap_client.zxdb_detach(self.zxdb_writer, args)
+            if not resp.get("success"):
+                return Response(
+                    success=False,
+                    message=resp.get(
+                        "message", "Failed to detach from process"
+                    ),
+                )
+            if req.all:
+                self.active_processes.clear()
+            elif req.pid is not None and req.pid in self.active_processes:
+                del self.active_processes[req.pid]
+
+            # Synthesize and enqueue detached event
+            await self.event_queue.put(
+                {"event": "detached", "body": {"pid": req.pid, "all": req.all}}
+            )
+            return Response(success=True)
+        except Exception as e:
+            return Response(success=False, message=f"Failed to detach: {e}")
 
     async def handle_hello(self, req: HelloRequest) -> Response:
         """Handles the hello handshake request.
@@ -704,6 +750,7 @@ class Daemon:
             "terminated",
             "thread",
             "process",
+            "detached",
         }
         while True:
             event = await self.event_queue.get()
@@ -740,5 +787,5 @@ class Daemon:
                     oldest_seq = next(iter(self.all_events))
                     del self.all_events[oldest_seq]
 
-            async with self.new_event_condition:
-                self.new_event_condition.notify_all()
+                async with self.new_event_condition:
+                    self.new_event_condition.notify_all()

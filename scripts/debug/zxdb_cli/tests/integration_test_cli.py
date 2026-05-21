@@ -57,6 +57,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
         if UDS_PATH.exists():
             UDS_PATH.unlink()
         self.fake_dap_server: asyncio.AbstractServer | None = None
+        self.received_dap_requests: list[dict[str, Any]] = []
 
     async def asyncTearDown(self) -> None:
         if self.fake_dap_server:
@@ -78,6 +79,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
                             content_length = int(line.split(":")[1].strip())
                     body = await reader.readexactly(content_length)
                     req = json.loads(body.decode("utf-8"))
+                    self.received_dap_requests.append(req)
 
                     if req.get("command") == "initialize":
                         resp = {
@@ -230,6 +232,39 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
                             )
                         )
                         writer.write(event_header + event_body)
+                        await writer.drain()
+                    elif req.get("command") == "zxdb.Detach":
+                        resp = {
+                            "seq": req["seq"],
+                            "type": "response",
+                            "request_seq": req["seq"],
+                            "success": True,
+                            "command": "zxdb.Detach",
+                        }
+                        resp_body = json.dumps(resp).encode("utf-8")
+                        resp_header = (
+                            f"Content-Length: {len(resp_body)}\r\n\r\n".encode(
+                                "utf-8"
+                            )
+                        )
+                        writer.write(resp_header + resp_body)
+                        await writer.drain()
+                    elif req.get("command") == "threads":
+                        resp = {
+                            "seq": req["seq"],
+                            "type": "response",
+                            "request_seq": req["seq"],
+                            "success": True,
+                            "command": "threads",
+                            "body": {"threads": []},
+                        }
+                        resp_body = json.dumps(resp).encode("utf-8")
+                        resp_header = (
+                            f"Content-Length: {len(resp_body)}\r\n\r\n".encode(
+                                "utf-8"
+                            )
+                        )
+                        writer.write(resp_header + resp_body)
                         await writer.drain()
             except (asyncio.IncompleteReadError, ConnectionResetError):
                 pass
@@ -617,22 +652,13 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(exit_code, 0)
 
             # Capture stdout to read the JSON response from wait-for-event
-            saved_stdout = sys.stdout
-            try:
-                out = StringIO()
-                sys.stdout = out
-
-                # Give daemon time to process the event
-                await asyncio.sleep(0.1)
-
+            out = StringIO()
+            with contextlib.redirect_stdout(out):
                 exit_code = await main(
                     ["wait-for-event", "--last-seen-seq", "0"]
                 )
-                self.assertEqual(exit_code, 0)
-
-                output = out.getvalue().strip()
-            finally:
-                sys.stdout = saved_stdout
+            self.assertEqual(exit_code, 0)
+            output = out.getvalue().strip()
 
             # Parse output
             resp = json.loads(output)
@@ -657,22 +683,13 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(exit_code, 0)
 
             # Capture stdout to read the JSON response from wait-for-event
-            saved_stdout = sys.stdout
-            try:
-                out = StringIO()
-                sys.stdout = out
-
-                # Give daemon time to process the event
-                await asyncio.sleep(0.1)
-
+            out = StringIO()
+            with contextlib.redirect_stdout(out):
                 exit_code = await main(
                     ["wait-for-event", "--last-seen-seq", "0"]
                 )
-                self.assertEqual(exit_code, 0)
-
-                output = out.getvalue().strip()
-            finally:
-                sys.stdout = saved_stdout
+            self.assertEqual(exit_code, 0)
+            output = out.getvalue().strip()
 
             # Parse output
             resp = json.loads(output)
@@ -693,6 +710,164 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             assert process_event is not None
             self.assertEqual(process_event["body"]["systemProcessId"], 1234)
             self.assertEqual(process_event["body"]["name"], "test_process")
+
+            # Stop via CLI
+            exit_code = await main(["stop"])
+            self.assertEqual(exit_code, 0)
+
+        finally:
+            await _cleanup_process_group(proc)
+
+    async def test_detach_command(self) -> None:
+        proc, _port = await self._setup_daemon_and_server()
+
+        try:
+            # Attach to trigger process event
+            exit_code = await main(["attach", "test_process"])
+            self.assertEqual(exit_code, 0)
+
+            # Wait for the process event (seq 1) instead of sleeping
+            out = StringIO()
+            with contextlib.redirect_stdout(out):
+                exit_code = await main(
+                    ["wait-for-event", "--last-seen-seq", "0", "--timeout", "5"]
+                )
+            self.assertEqual(exit_code, 0)
+            output = out.getvalue().strip()
+
+            resp = json.loads(output)
+            self.assertTrue(resp.get("success"))
+            events = resp.get("events", [])
+            self.assertGreater(len(events), 0)
+            self.assertEqual(events[0]["event"], "process")
+            self.assertEqual(events[0]["body"]["systemProcessId"], 1234)
+
+            # Detach via CLI
+            exit_code = await main(["detach", "1234"])
+            self.assertEqual(exit_code, 0)
+
+            # Wait for synthesized detached event (seq 2) instead of sleeping
+            out = StringIO()
+            with contextlib.redirect_stdout(out):
+                exit_code = await main(
+                    ["wait-for-event", "--last-seen-seq", "1", "--timeout", "5"]
+                )
+            self.assertEqual(exit_code, 0)
+            output = out.getvalue().strip()
+
+            resp = json.loads(output)
+            self.assertTrue(resp.get("success"))
+            events = resp.get("events", [])
+            self.assertGreater(len(events), 0)
+            self.assertEqual(events[0]["event"], "detached")
+            self.assertEqual(events[0]["body"]["pid"], 1234)
+
+            # Verify zxdb.Detach was received by fake server (should be immediate now)
+            detach_req = next(
+                (
+                    r
+                    for r in self.received_dap_requests
+                    if r.get("command") == "zxdb.Detach"
+                ),
+                None,
+            )
+            self.assertIsNotNone(
+                detach_req,
+                "zxdb.Detach command was not received by fake server",
+            )
+            # This assertion is redundant with the testing assertion made directly above, but is
+            # actually necessary for mypy to be able to deduce that |detach_req| is definitely a
+            # DetachRequest type and not None.
+            assert detach_req is not None
+            self.assertEqual(detach_req.get("arguments", {}).get("pid"), 1234)
+
+            # Verify active processes cleaned up in state
+            f = StringIO()
+            with contextlib.redirect_stdout(f):
+                exit_code = await main(["get-state"])
+            self.assertEqual(exit_code, 0)
+            state_resp = json.loads(f.getvalue())
+            self.assertTrue(state_resp.get("success"))
+            self.assertEqual(state_resp.get("body", {}).get("processes"), {})
+
+            # Stop via CLI
+            exit_code = await main(["stop"])
+            self.assertEqual(exit_code, 0)
+
+        finally:
+            await _cleanup_process_group(proc)
+
+    async def test_detach_all_command(self) -> None:
+        proc, _port = await self._setup_daemon_and_server()
+
+        try:
+            # Attach to trigger process event
+            exit_code = await main(["attach", "test_process"])
+            self.assertEqual(exit_code, 0)
+
+            # Wait for the process event (seq 1)
+            out = StringIO()
+            with contextlib.redirect_stdout(out):
+                exit_code = await main(
+                    ["wait-for-event", "--last-seen-seq", "0", "--timeout", "5"]
+                )
+            self.assertEqual(exit_code, 0)
+            output = out.getvalue().strip()
+
+            resp = json.loads(output)
+            self.assertTrue(resp.get("success"))
+            events = resp.get("events", [])
+            self.assertGreater(len(events), 0)
+            self.assertEqual(events[0]["event"], "process")
+            self.assertEqual(events[0]["body"]["systemProcessId"], 1234)
+
+            # Detach all via CLI
+            exit_code = await main(["detach", "--all"])
+            self.assertEqual(exit_code, 0)
+
+            # Wait for synthesized detached event (seq 2)
+            out = StringIO()
+            with contextlib.redirect_stdout(out):
+                exit_code = await main(
+                    ["wait-for-event", "--last-seen-seq", "1", "--timeout", "5"]
+                )
+            self.assertEqual(exit_code, 0)
+            output = out.getvalue().strip()
+
+            resp = json.loads(output)
+            self.assertTrue(resp.get("success"))
+            events = resp.get("events", [])
+            self.assertGreater(len(events), 0)
+            self.assertEqual(events[0]["event"], "detached")
+            self.assertTrue(events[0]["body"]["all"])
+
+            # Verify zxdb.Detach (all: True) was received by fake server
+            detach_req = next(
+                (
+                    r
+                    for r in self.received_dap_requests
+                    if r.get("command") == "zxdb.Detach"
+                ),
+                None,
+            )
+            self.assertIsNotNone(
+                detach_req,
+                "zxdb.Detach command was not received by fake server",
+            )
+            # This assertion is redundant with the testing assertion made directly above, but is
+            # actually necessary for mypy to be able to deduce that |detach_req| is definitely a
+            # DetachRequest type and not None.
+            assert detach_req is not None
+            self.assertTrue(detach_req.get("arguments", {}).get("all"))
+
+            # Verify active processes cleaned up in state
+            f = StringIO()
+            with contextlib.redirect_stdout(f):
+                exit_code = await main(["get-state"])
+            self.assertEqual(exit_code, 0)
+            state_resp = json.loads(f.getvalue())
+            self.assertTrue(state_resp.get("success"))
+            self.assertEqual(state_resp.get("body", {}).get("processes"), {})
 
             # Stop via CLI
             exit_code = await main(["stop"])
