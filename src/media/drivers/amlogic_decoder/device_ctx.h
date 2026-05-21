@@ -23,6 +23,25 @@ namespace amlogic_decoder {
 
 class DeviceCtx;
 
+}  // namespace amlogic_decoder
+
+namespace fidl {
+
+// This is temporary to enable a soft transition of fuchsia_hardware_mediacodec::Device from closed
+// to open.
+template <typename Protocol>
+struct UnknownMethodMetadata<
+    Protocol, std::enable_if_t<std::is_same_v<Protocol, fuchsia_hardware_mediacodec::Device> &&
+                                   Protocol::kOpenness == ::fidl::internal::Openness::kClosed,
+                               void>> {
+  uint64_t method_ordinal{};
+  UnknownMethodType unknown_method_type{};
+};
+
+}  // namespace fidl
+
+namespace amlogic_decoder {
+
 using DdkDeviceType =
     ddk::Device<DeviceCtx, ddk::Messageable<fuchsia_hardware_mediacodec::Device>::Mixin,
                 ddk::Suspendable, ddk::Unbindable>;
@@ -62,11 +81,19 @@ class DeviceCtx : public DdkDeviceType,
   // AmlogicVideo::Owner implementation
   void SetThreadProfile(zx::unowned_thread thread, ThreadRole role) const override;
 
-  // mediacodec impl.
+  // fuchsia_hardware_mediacodec::Device impl.
   void GetCodecFactory(GetCodecFactoryRequestView request,
                        GetCodecFactoryCompleter::Sync& completer) override;
   void SetAuxServiceDirectory(SetAuxServiceDirectoryRequestView request,
                               SetAuxServiceDirectoryCompleter::Sync& completer) override;
+  // Switch from "virtual" to "override" after fuchsia.hardware.mediacodec.Device switches to open.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winconsistent-missing-override"
+#pragma GCC diagnostic ignored "-Wno-suggest-override"
+  virtual void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_mediacodec::Device> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer);
+#pragma GCC diagnostic pop
 
  private:
   void TeardownDeviceFidl();

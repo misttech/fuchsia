@@ -136,6 +136,13 @@ void DeviceCtx::SetAuxServiceDirectory(SetAuxServiceDirectoryRequestView request
       fidl::InterfaceHandle<fuchsia::io::Directory>(request->service_directory.TakeChannel()));
 }
 
+void DeviceCtx::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_hardware_mediacodec::Device> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  LOG(WARNING, "handle_unknown_method: %" PRId64, metadata.method_ordinal);
+  // ~completer
+}
+
 CodecMetrics& DeviceCtx::metrics() { return driver_->metrics(); }
 
 CodecDiagnostics& DeviceCtx::diagnostics() { return driver_->diagnostics(); }
