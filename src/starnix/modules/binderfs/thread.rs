@@ -13,7 +13,7 @@ use starnix_core::task::{
 };
 
 use starnix_logging::{log_trace, log_warn, trace_instaflow_begin, trace_instaflow_end};
-use starnix_sync::{Mutex, MutexGuard, ordered_lock};
+use starnix_sync::{LockDepGuard, LockDepMutex, TerminalLock, lockdep_ordered_lock};
 use starnix_uapi::vfs::FdEvents;
 
 use crossbeam::queue::SegQueue;
@@ -201,7 +201,7 @@ impl BinderThread {
         t1: &'a Self,
         t2: &'a Self,
     ) -> (BinderThreadGuard<'a>, BinderThreadGuard<'a>) {
-        let (g1, g2) = ordered_lock(&t1.state, &t2.state);
+        let (g1, g2) = lockdep_ordered_lock(&t1.state, &t2.state);
         (BinderThreadGuard { guard: g1, thread: t1 }, BinderThreadGuard { guard: g2, thread: t2 })
     }
 }

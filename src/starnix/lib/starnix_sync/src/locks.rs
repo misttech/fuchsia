@@ -49,59 +49,37 @@ impl<'a, T> crate::AsyncUnlockable for MutexGuard<'a, T> {
     }
 }
 
-/// A generic mutex for the ordered_lock operations.
-pub trait MutexLike {
-    type Guard<'a>
-    where
-        Self: 'a;
-
-    /// Lock the mutex. `level` is the index of the locked mutex in the lock ordering.
-    fn lock(&self, level: usize) -> Self::Guard<'_>;
-}
-
-impl<T> MutexLike for Mutex<T> {
-    type Guard<'a>
-        = MutexGuard<'a, T>
-    where
-        T: 'a;
-    #[inline(always)]
-    fn lock(&self, _level: usize) -> Self::Guard<'_> {
-        return self.lock();
-    }
-}
-
 /// Lock `m1` and `m2` in a consistent order (using the memory address of m1 and m2 and returns the
 /// associated guard. This ensure that `ordered_lock(m1, m2)` and `ordered_lock(m2, m1)` will not
 /// deadlock.
-pub fn ordered_lock<'a, M: MutexLike>(m1: &'a M, m2: &'a M) -> (M::Guard<'a>, M::Guard<'a>) {
-    let ptr1: *const M = m1;
-    let ptr2: *const M = m2;
+pub fn ordered_lock<'a, T>(
+    m1: &'a Mutex<T>,
+    m2: &'a Mutex<T>,
+) -> (MutexGuard<'a, T>, MutexGuard<'a, T>) {
+    let ptr1: *const Mutex<T> = m1;
+    let ptr2: *const Mutex<T> = m2;
     if ptr1 < ptr2 {
-        let g1 = m1.lock(0);
-        let g2 = m2.lock(1);
+        let g1 = m1.lock();
+        let g2 = m2.lock();
         (g1, g2)
     } else {
-        let g2 = m2.lock(0);
-        let g1 = m1.lock(1);
+        let g2 = m2.lock();
+        let g1 = m1.lock();
         (g1, g2)
     }
 }
 
 /// Acquires multiple mutexes in a consistent order based on their memory addresses.
 /// This helps prevent deadlocks.
-pub fn ordered_lock_vec<'a, M: MutexLike>(mutexes: &[&'a M]) -> Vec<M::Guard<'a>> {
+pub fn ordered_lock_vec<'a, T>(mutexes: &[&'a Mutex<T>]) -> Vec<MutexGuard<'a, T>> {
     // Create a vector of tuples containing the mutex and its original index.
     let mut indexed_mutexes = mutexes.iter().enumerate().map(|(i, m)| (i, *m)).collect::<Vec<_>>();
 
     // Sort the indexed mutexes by their memory addresses.
-    indexed_mutexes.sort_by_key(|(_, m)| *m as *const M);
+    indexed_mutexes.sort_by_key(|(_, m)| *m as *const Mutex<T>);
 
     // Acquire the locks in the sorted order.
-    let mut guards = indexed_mutexes
-        .into_iter()
-        .enumerate()
-        .map(|(j, (i, m))| (i, m.lock(j)))
-        .collect::<Vec<_>>();
+    let mut guards = indexed_mutexes.into_iter().map(|(i, m)| (i, m.lock())).collect::<Vec<_>>();
 
     // Reorder the guards to match the original order of the mutexes.
     guards.sort_by_key(|(i, _)| *i);
