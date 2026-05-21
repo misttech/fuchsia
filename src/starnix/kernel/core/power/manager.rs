@@ -213,7 +213,7 @@ impl SuspendResumeManager {
     }
 }
 
-pub type EbpfSuspendGuard<'a> = LockDepReadGuard<'a, (), EbpfSuspendLock>;
+pub type EbpfSuspendGuard<'a> = LockDepReadGuard<'a, ()>;
 
 #[derive(Clone, Debug)]
 pub enum SuspendEvent {

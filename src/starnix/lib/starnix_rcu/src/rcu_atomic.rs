@@ -45,7 +45,7 @@ impl<T: AsAtomic, L: LockLevel> RcuAtomic<T, L> {
 
 pub struct RcuAtomicGuard<'a, T: AsAtomic, L: LockLevel> {
     parent: &'a RcuAtomic<T, L>,
-    guard: LockDepGuard<'a, T, L>,
+    guard: LockDepGuard<'a, T>,
 }
 
 impl<'a, T: AsAtomic, L: LockLevel> Deref for RcuAtomicGuard<'a, T, L> {

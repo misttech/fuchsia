@@ -655,7 +655,7 @@ impl DeviceRegistry {
         &'a self,
         locked: &'a mut Locked<L>,
         mode: DeviceMode,
-    ) -> MappedLockDepGuard<'a, RegisteredDevices, starnix_sync::DeviceRegistryState>
+    ) -> MappedLockDepGuard<'a, RegisteredDevices>
     where
         L: LockBefore<starnix_sync::DeviceRegistryState>,
     {

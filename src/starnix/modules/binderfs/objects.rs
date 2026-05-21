@@ -573,7 +573,7 @@ impl BinderObject {
     }
 
     /// Locks the mutable state of the binder object for exclusive access.
-    pub fn lock(&self) -> LockDepGuard<'_, BinderObjectMutableState, BinderObjectLevel> {
+    pub fn lock(&self) -> LockDepGuard<'_, BinderObjectMutableState> {
         self.state.lock()
     }
 
