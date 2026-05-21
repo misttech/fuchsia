@@ -15,9 +15,7 @@ from assembly.assembly_input_bundle import AssemblyInputBundle
 # Define fields that are not yet supported by the Bazel assembly_input_bundle rule
 UNSUPPORTED_FIELDS = {
     "kernel",
-    "bootfs_files",
     "blobs",
-    "bootfs_files_package",
 }
 
 
@@ -31,7 +29,6 @@ def is_supported_file(path: Path) -> bool:
 
     top_dir = parts[0]
     dir_to_fields = {
-        "bootfs": "bootfs_files",
         "kernel": "kernel",
     }
 

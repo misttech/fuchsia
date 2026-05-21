@@ -19,6 +19,8 @@
 # this GN file, and those in the subdirectories below this one, will all be deleted.
 
 import("//build/bazel/bazel_inputs.gni")
+import("//build/bazel/export_fuchsia_package_to_bazel.gni")
+import("//build/components.gni")
 import("//build/icu/config.gni")
 import("//build/icu/icu_assembly_input_bundle.gni")
 import("//third_party/sbase/binaries.gni")
@@ -39,6 +41,7 @@ group("zircon_userdebug") {
 
 group("embeddable") {
   deps = [
+    ":embeddable.bootfs_files_package.bazel_input",
     "//bundles/assembly/bazel_inputs/src/bringup/bin/critical-services:package",
     "//bundles/assembly/bazel_inputs/src/devices/bus/drivers/platform:package",
     "//bundles/assembly/bazel_inputs/src/diagnostics/archivist:package",
@@ -46,16 +49,55 @@ group("embeddable") {
   ]
 }
 
+fuchsia_package("embeddable.bootfs_files_package") {
+  deps = [
+    "//build/info/bootfs",
+    "//src/bringup:bootfs",
+  ]
+}
+
+export_fuchsia_package_to_bazel("embeddable.bootfs_files_package.bazel_input") {
+  package = ":embeddable.bootfs_files_package"
+}
+
 group("component_manager") {
-  deps = []
+  deps = [ ":component_manager.bootfs_files_package.bazel_input" ]
+}
+
+fuchsia_package("component_manager.bootfs_files_package") {
+  deps = [ "//src/sys/component_manager:bootfs" ]
+}
+
+export_fuchsia_package_to_bazel(
+    "component_manager.bootfs_files_package.bazel_input") {
+  package = ":component_manager.bootfs_files_package"
 }
 
 group("component_manager_with_tracing") {
-  deps = []
+  deps = [ ":component_manager_with_tracing.bootfs_files_package.bazel_input" ]
+}
+
+fuchsia_package("component_manager_with_tracing.bootfs_files_package") {
+  deps = [ "//src/sys/component_manager:bootfs_with_tracing" ]
+}
+
+export_fuchsia_package_to_bazel(
+    "component_manager_with_tracing.bootfs_files_package.bazel_input") {
+  package = ":component_manager_with_tracing.bootfs_files_package"
 }
 
 group("component_manager_with_tracing_and_heapdump") {
-  deps = []
+  deps = [ ":component_manager_with_tracing_and_heapdump.bootfs_files_package.bazel_input" ]
+}
+
+fuchsia_package(
+    "component_manager_with_tracing_and_heapdump.bootfs_files_package") {
+  deps = [ "//src/sys/component_manager:bootfs_with_tracing_and_heapdump" ]
+}
+
+export_fuchsia_package_to_bazel(
+    "component_manager_with_tracing_and_heapdump.bootfs_files_package.bazel_input") {
+  package = ":component_manager_with_tracing_and_heapdump.bootfs_files_package"
 }
 
 group("bootstrap") {
@@ -71,10 +113,18 @@ group("bootstrap") {
     "//bundles/assembly/bazel_inputs/src/devices/i2c/drivers/i2c:package",
     "//bundles/assembly/bazel_inputs/src/devices/spi/drivers/spi:package",
     "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/usb-bus:package",
-    "//bundles/assembly/bazel_inputs/src/sys/instrumentation_data_processor:instrumentation_data_processor_pkg",
     "//bundles/assembly/bazel_inputs/src/sysmem/server:pkg",
     "//bundles/assembly/bazel_inputs/src/zircon/bin/role_manager:package",
   ]
+
+  # Enabling profiling fundamentally changes how the platform is
+  # compiled and requires the addition of instrumentation_data_processor
+  # package in bootfs packages to collect and process profiles.
+  #
+  # This needs to always be included as a GN dep to satisfy the GN->Bazel
+  # bridge mechanics, which can't quite figure out that it's only needed when
+  # `is_profile` is true.
+  deps += [ "//bundles/assembly/bazel_inputs/src/sys/instrumentation_data_processor:instrumentation_data_processor_pkg" ]
 }
 
 group("display_drivers_boot") {
@@ -175,11 +225,50 @@ group("usb_ums_function") {
 }
 
 group("embeddable_userdebug") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/developer/console:package" ]
+  deps = [
+    ":embeddable_userdebug.bootfs_files_package.bazel_input",
+    "//bundles/assembly/bazel_inputs/src/developer/console:package",
+  ]
+}
+
+fuchsia_package("embeddable_userdebug.bootfs_files_package") {
+  deps = [
+    "//src/bringup/bin/debuglog:bootfs",
+    "//src/bringup/bin/dlog:bootfs",
+    "//src/bringup/bin/waitfor:bootfs",
+    "//src/developer/forensics/crasher/cpp:bootfs",
+    "//src/sys/bin/psutils:bootfs",
+    "//src/sys/tools/component:bootfs",
+    "//src/zircon/bin/kcounter:bootfs",
+    "//zircon/third_party/uapp/dash:bootfs",
+  ]
+}
+
+export_fuchsia_package_to_bazel(
+    "embeddable_userdebug.bootfs_files_package.bazel_input") {
+  package = ":embeddable_userdebug.bootfs_files_package"
 }
 
 group("bootstrap_userdebug") {
-  deps = []
+  deps = [ ":bootstrap_userdebug.bootfs_files_package.bazel_input" ]
+}
+
+fuchsia_package("bootstrap_userdebug.bootfs_files_package") {
+  deps = [
+    "//src/connectivity/network/bin/ping:bootfs",
+    "//src/devices/block/bin/fvm-check:bootfs",
+    "//src/devices/usb/bin/usbctl",
+    "//src/storage/bin/dd:bootfs",
+    "//src/storage/bin/df:bootfs",
+    "//src/zircon/bin/kstress:bootfs",
+    "//src/zircon/bin/ktrace:bootfs",
+    "//src/zircon/bin/loadgen:bootfs",
+  ]
+}
+
+export_fuchsia_package_to_bazel(
+    "bootstrap_userdebug.bootfs_files_package.bazel_input") {
+  package = ":bootstrap_userdebug.bootfs_files_package"
 }
 
 group("embeddable_eng") {
@@ -265,15 +354,70 @@ group("trusted_execution_environment") {
 
 group("bootstrap_eng") {
   testonly = true
-  deps = [ "//bundles/assembly/bazel_inputs/src/devices/power/bin/vreg-ctl:vreg_ctl_pkg" ]
+  deps = [
+    ":bootstrap_eng.bootfs_files_package.bazel_input",
+    "//bundles/assembly/bazel_inputs/src/devices/power/bin/vreg-ctl:vreg_ctl_pkg",
+  ]
+}
+
+fuchsia_package("bootstrap_eng.bootfs_files_package") {
+  testonly = true
+  deps = [
+    "//src/devices/acpi/bin/acpidump:bootfs",
+    "//src/devices/block/bin/blktest:bootfs",
+    "//src/devices/block/bin/sdio:bootfs",
+    "//src/devices/cpu/bin/cpuctl:bootfs",
+    "//src/devices/gpio/bin/gpioutil:bootfs",
+    "//src/devices/i2c/bin:bootfs",
+    "//src/devices/power/bin/batteryutil:bootfs",
+    "//src/devices/power/bin/lspwr:bootfs",
+    "//src/devices/ram/bin/ram-info:bootfs",
+    "//src/devices/registers/bin/register-util:bootfs",
+    "//src/devices/serial/bin/serialutil:bootfs",
+    "//src/devices/spi/bin/spiutil:bootfs",
+    "//src/devices/spmi/bin/spmi-ctl:bootfs",
+    "//src/devices/suspend/bin/suspendctl:bootfs",
+    "//src/devices/tee/bin:bootfs",
+    "//src/devices/thermal/bin/temperature-cli:bootfs",
+    "//src/devices/thermal/bin/thermal-cli:bootfs",
+    "//src/devices/usb/bin/lsusb:bootfs",
+    "//src/security/bin/syscall-check:bootfs",
+    "//src/sys/tools/package:bootfs",
+    "//src/ui/backlight/bin/backlight:bootfs",
+    "//src/ui/input/bin/hid:bootfs",
+    "//src/ui/tools/print-input-report:bootfs",
+    "//src/zircon/tests/evil:bootfs",
+  ]
+}
+
+export_fuchsia_package_to_bazel(
+    "bootstrap_eng.bootfs_files_package.bazel_input") {
+  testonly = true
+  package = ":bootstrap_eng.bootfs_files_package"
 }
 
 group("lspci") {
-  deps = []
+  deps = [ ":lspci.bootfs_files_package.bazel_input" ]
+}
+
+fuchsia_package("lspci.bootfs_files_package") {
+  deps = [ "//src/devices/pci/bin:bootfs" ]
+}
+
+export_fuchsia_package_to_bazel("lspci.bootfs_files_package.bazel_input") {
+  package = ":lspci.bootfs_files_package"
 }
 
 group("ufsutil") {
-  deps = []
+  deps = [ ":ufsutil.bootfs_files_package.bazel_input" ]
+}
+
+fuchsia_package("ufsutil.bootfs_files_package") {
+  deps = [ "//src/devices/block/bin/ufsutil:bootfs" ]
+}
+
+export_fuchsia_package_to_bazel("ufsutil.bootfs_files_package.bazel_input") {
+  package = ":ufsutil.bootfs_files_package"
 }
 
 group("kernel_debug_broker_userdebug") {
@@ -345,11 +489,34 @@ group("sl4f") {
 }
 
 group("clock_development_tools") {
-  deps = []
+  deps = [ ":clock_development_tools.bootfs_files_package.bazel_input" ]
+}
+
+fuchsia_package("clock_development_tools.bootfs_files_package") {
+  deps = [ "//src/devices/clock/bin/clock:bootfs" ]
+}
+
+export_fuchsia_package_to_bazel(
+    "clock_development_tools.bootfs_files_package.bazel_input") {
+  package = ":clock_development_tools.bootfs_files_package"
 }
 
 group("partitioning_tools") {
-  deps = []
+  deps = [ ":partitioning_tools.bootfs_files_package.bazel_input" ]
+}
+
+fuchsia_package("partitioning_tools.bootfs_files_package") {
+  deps = [
+    "//src/storage/bin/disk-pave:bootfs",
+    "//src/storage/bin/mount:bootfs",
+    "//src/storage/bin/umount:bootfs",
+    "//src/storage/tools/logs/run-with-logs:bootfs",
+  ]
+}
+
+export_fuchsia_package_to_bazel(
+    "partitioning_tools.bootfs_files_package.bazel_input") {
+  package = ":partitioning_tools.bootfs_files_package"
 }
 
 group("core_realm") {
@@ -477,9 +644,23 @@ group("bootstrap_realm_development_access") {
 
 group("bootstrap_realm_vsock_development_access") {
   deps = [
+    ":bootstrap_realm_vsock_development_access.bootfs_files_package.bazel_input",
     "//bundles/assembly/bazel_inputs/src/developer/remote-control:remote-control-package",
     "//bundles/assembly/bazel_inputs/src/developer/vsock-sshd-host",
   ]
+}
+
+fuchsia_package(
+    "bootstrap_realm_vsock_development_access.bootfs_files_package") {
+  deps = [
+    "//src/developer/remote-control/runner:bootfs",
+    "//src/developer/vsock-sshd-host:bootfs",
+  ]
+}
+
+export_fuchsia_package_to_bazel(
+    "bootstrap_realm_vsock_development_access.bootfs_files_package.bazel_input") {
+  package = ":bootstrap_realm_vsock_development_access.bootfs_files_package"
 }
 
 group("mdns") {
@@ -548,6 +729,7 @@ group("factory_reset_trigger") {
 
 group("common_standard") {
   deps = [
+    ":common_standard.bootfs_files_package.bazel_input",
     ":global_metrics_registry_pb",
     "//bundles/assembly/bazel_inputs/src/cobalt/bin/app:cobalt",
     "//bundles/assembly/bazel_inputs/src/cobalt/bin/system-metrics:cobalt_system_metrics",
@@ -565,6 +747,15 @@ bazel_input_file("global_metrics_registry_pb") {
   generator = "//src/cobalt/bin/app:global_metrics_registry"
   outputs = [ "$root_gen_dir/src/cobalt/bin/app/global_metrics_registry.pb" ]
   gn_targets_name = "global_metrics_registry_pb"
+}
+
+fuchsia_package("common_standard.bootfs_files_package") {
+  deps = [ "//src/sys/core:bootfs" ]
+}
+
+export_fuchsia_package_to_bazel(
+    "common_standard.bootfs_files_package.bazel_input") {
+  package = ":common_standard.bootfs_files_package"
 }
 
 group("standard_userdebug") {
@@ -723,8 +914,19 @@ group("full_drivers") {
 }
 
 group("starnix_support") {
-  deps =
-      [ "//bundles/assembly/bazel_inputs/src/starnix/runner:starnix_package" ]
+  deps = [
+    ":starnix_support.bootfs_files_package.bazel_input",
+    "//bundles/assembly/bazel_inputs/src/starnix/runner:starnix_package",
+  ]
+}
+
+fuchsia_package("starnix_support.bootfs_files_package") {
+  deps = [ "//src/starnix/config:bootfs" ]
+}
+
+export_fuchsia_package_to_bazel(
+    "starnix_support.bootfs_files_package.bazel_input") {
+  package = ":starnix_support.bootfs_files_package"
 }
 
 group("usb_adb_function") {
@@ -770,6 +972,7 @@ group("tracing") {
 group("testing_support") {
   testonly = true
   deps = [
+    ":testing_support.bootfs_files_package.bazel_input",
     "//bundles/assembly/bazel_inputs/src/connectivity/network/testing/netemul/runner:package",
     "//bundles/assembly/bazel_inputs/src/lib/fuchsia-component-test/realm_builder_server:pkg",
     "//bundles/assembly/bazel_inputs/src/performance/experimental/profiler",
@@ -799,6 +1002,17 @@ group("testing_support") {
   ]
 }
 
+fuchsia_package("testing_support.bootfs_files_package") {
+  testonly = true
+  deps = [ "//src/tests/microbenchmarks/config:bootfs" ]
+}
+
+export_fuchsia_package_to_bazel(
+    "testing_support.bootfs_files_package.bazel_input") {
+  testonly = true
+  package = ":testing_support.bootfs_files_package"
+}
+
 group("camera") {
   deps = [
     "//bundles/assembly/bazel_inputs/src/camera/bin/device:camera_device",
@@ -817,7 +1031,23 @@ group("fshost_common") {
 
 group("fshost_eng") {
   testonly = true
-  deps = []
+  deps = [ ":fshost_eng.bootfs_files_package.bazel_input" ]
+}
+
+fuchsia_package("fshost_eng.bootfs_files_package") {
+  testonly = true
+  deps = [
+    "//src/devices/block/bin/biotime:bootfs",
+    "//src/devices/block/bin/gpt:bootfs",
+    "//src/devices/block/bin/iochk:bootfs",
+    "//src/devices/block/bin/iotime:bootfs",
+    "//src/devices/block/bin/lsblk:bootfs",
+  ]
+}
+
+export_fuchsia_package_to_bazel("fshost_eng.bootfs_files_package.bazel_input") {
+  testonly = true
+  package = ":fshost_eng.bootfs_files_package"
 }
 
 group("fshost_non_eng") {
@@ -1077,11 +1307,20 @@ group("location_emergency") {
 
 group("intel_hda") {
   deps = [
+    ":intel_hda.bootfs_files_package.bazel_input",
     "//bundles/assembly/bazel_inputs/src/media/audio/drivers/intel-hda/codecs/hdmi:package",
     "//bundles/assembly/bazel_inputs/src/media/audio/drivers/intel-hda/codecs/qemu:package",
     "//bundles/assembly/bazel_inputs/src/media/audio/drivers/intel-hda/codecs/realtek:package",
     "//bundles/assembly/bazel_inputs/src/media/audio/drivers/intel-hda/controller:package",
   ]
+}
+
+fuchsia_package("intel_hda.bootfs_files_package") {
+  deps = [ "//src/media/audio/bin/ihda:bootfs" ]
+}
+
+export_fuchsia_package_to_bazel("intel_hda.bootfs_files_package.bazel_input") {
+  package = ":intel_hda.bootfs_files_package"
 }
 
 group("audio_development_support") {

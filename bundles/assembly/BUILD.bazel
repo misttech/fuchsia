@@ -53,6 +53,7 @@ assembly_input_bundle(
     auto_include_in = [
         "everything",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:embeddable.bootfs_files_package",
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/bringup/bin/critical-services:package",
         "//bundles/assembly/bazel_inputs/src/diagnostics/archivist:package",
@@ -81,6 +82,7 @@ assembly_input_bundle(
     scrutiny_required = [
         "everything",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:component_manager.bootfs_files_package",
 )
 
 # This AIB contains Component Manager with tracing, which should not
@@ -91,6 +93,7 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:component_manager_with_tracing.bootfs_files_package",
     root_shards = [
         "//src/sys/component_manager:meta/component_manager_root_trace.root_shard.cml",
     ],
@@ -105,6 +108,7 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:component_manager_with_tracing_and_heapdump.bootfs_files_package",
 )
 
 # The most minimal AIB that is included in assembled systems that are meant to be
@@ -503,6 +507,7 @@ assembly_input_bundle(
         "userdebug",
         "eng",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:embeddable_userdebug.bootfs_files_package",
     # tools
     # shell
     bootfs_packages = [
@@ -547,6 +552,7 @@ assembly_input_bundle(
         "utility::userdebug",
         "utility::eng",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:bootstrap_userdebug.bootfs_files_package",
 )
 
 # The most-common, most-basic, AIB that is included in all eng systems.
@@ -820,6 +826,7 @@ assembly_input_bundle(
         "utility::eng",
         "standard::eng",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:bootstrap_eng.bootfs_files_package",
     bootfs_packages = [
         "//bundles/assembly/bazel_inputs/src/devices/power/bin/vreg-ctl:vreg_ctl_pkg",
     ],
@@ -833,6 +840,7 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:lspci.bootfs_files_package",
 )
 
 # ufsutil shell utility. Used in products that use UFS and have shell commands enabled.
@@ -843,6 +851,7 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:ufsutil.bootfs_files_package",
 )
 
 # The kernel_debug_broker AIB is included by all eng and userdebug products.
@@ -1098,6 +1107,7 @@ assembly_input_bundle(
         "userdebug",
         "eng",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:clock_development_tools.bootfs_files_package",
 )
 
 # Includes the CLIs necessary for the Fuchsia installer.
@@ -1107,6 +1117,7 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:partitioning_tools.bootfs_files_package",
 )
 
 ########
@@ -1909,6 +1920,7 @@ assembly_input_bundle(
         "embeddable::userdebug",
         "embeddable::eng",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:bootstrap_realm_vsock_development_access.bootfs_files_package",
     bootfs_packages = [
         # SSH is necessary for remote access for development
         "//bundles/assembly/bazel_inputs/src/developer/vsock-sshd-host",
@@ -2139,6 +2151,7 @@ assembly_input_bundle(
         "standard",
     ],
     memory_buckets = ["//src/developer/memory/buckets:buckets.json5"],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:common_standard.bootfs_files_package",
     base_packages = [
         # The SWD stack artifacts that enable OTAs
         "//bundles/assembly/bazel_inputs/src/sys/pkg/bin/system-updater",
@@ -2742,6 +2755,7 @@ assembly_input_bundle(
     core_shards = [
         "//src/starnix/runner:meta/starnix_runner.core_shard.cml",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:starnix_support.bootfs_files_package",
     memory_buckets = ["//src/developer/memory/buckets:starnix.json5"],
 )
 
@@ -2904,6 +2918,7 @@ assembly_input_bundle(
     auto_include_in = [
         "standard::eng",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:testing_support.bootfs_files_package",
     cache_packages = [
         # test-manager and all of its runners:
         "//bundles/assembly/bazel_inputs/src/sys/test_manager:pkg",
@@ -3085,6 +3100,7 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:fshost_eng.bootfs_files_package",
     compiled_packages = [
         {
             "bootfs_package": True,
@@ -3874,6 +3890,7 @@ assembly_input_bundle(
     allowed_in = [
         "eng",
     ],
+    bootfs_files_package = "//bundles/assembly/bazel_inputs:intel_hda.bootfs_files_package",
     drivers = [
         {
             "set": "bootfs",

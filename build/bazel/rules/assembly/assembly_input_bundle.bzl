@@ -97,6 +97,12 @@ def _assembly_input_bundle_impl(ctx):
             args.add("--memory-buckets", memory_bucket_file)
             inputs.append(memory_bucket_file)
 
+    if ctx.attr.bootfs_files_package:
+        dep = ctx.attr.bootfs_files_package
+        args.add("--bootfs-files-package", dep[FuchsiaPackageInfo].package_manifest.path)
+        inputs.append(dep[FuchsiaPackageInfo].package_manifest)
+        inputs.extend(dep[FuchsiaPackageInfo].files)
+
     if ctx.file.qemu_kernel:
         args.add("--qemu-kernel", ctx.file.qemu_kernel.path)
         inputs.append(ctx.file.qemu_kernel)
@@ -320,6 +326,7 @@ _assembly_input_bundle = rule(
         "drivers_inputs": attr.label_list(providers = [FuchsiaPackageInfo]),
         "config_data": attr.string(),
         "config_data_inputs": attr.label_list(allow_files = True),
+        "bootfs_files_package": attr.label(providers = [FuchsiaPackageInfo]),
         "qemu_kernel": attr.label(allow_single_file = True),
         "_tool": attr.label(
             default = "//build/assembly/scripts:assembly_input_bundle_tool",
@@ -355,6 +362,7 @@ def assembly_input_bundle(
         drivers = [],
         config_data = [],
         qemu_kernel = None,
+        bootfs_files_package = None,
         **kwargs):
     """Creates an Assembly Input Bundle.
 
@@ -399,6 +407,12 @@ def assembly_input_bundle(
         system_packages: [list of labels] Package targets to include in the system package set.
 
         bootfs_packages: [list of labels] Package targets to include in the bootfs package set.
+
+        bootfs_files_package: [label] A label pointing to a package target
+            containing bootfs files to include in the assembly input bundle.
+            This package is typically generated in GN to handle resource/binary
+            aggregation.
+
 
         bootfs_or_base_packages: [list of labels] Package targets to include in the bootfs_or_base
             package set.
@@ -609,6 +623,7 @@ def assembly_input_bundle(
         config_data = json.encode(config_data),
         config_data_inputs = config_data_inputs,
         qemu_kernel = qemu_kernel,
+        bootfs_files_package = bootfs_files_package,
         **kwargs
     )
 
