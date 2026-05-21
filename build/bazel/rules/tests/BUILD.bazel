@@ -83,6 +83,7 @@ filegroup(
     testonly = True,
     srcs = [
         # Host tools not in the IDK
+        "//tools/cargo-gnaw:cargo-gnaw-bin",
         "//tools/fidl/fidlgen_rust",
 
         # Miscellaneous libraries.
