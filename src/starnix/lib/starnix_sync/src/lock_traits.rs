@@ -9,7 +9,7 @@ pub trait LockLevel {
     /// The unique identifier for this lock level.
     const LOCK_ID: usize;
     /// The name of the lock level.
-    fn name() -> &'static str;
+    const NAME: &'static str;
 }
 
 /// Describes how to apply a lock type to the implementing type.

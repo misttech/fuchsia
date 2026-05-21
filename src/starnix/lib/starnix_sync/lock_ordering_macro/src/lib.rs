@@ -154,7 +154,7 @@ pub fn lock_ordering(input: TokenStream) -> TokenStream {
             }
             impl starnix_sync::LockLevel for #level {
                 const LOCK_ID: usize = #id;
-                fn name() -> &'static str { #name }
+                const NAME: &'static str = #name;
             }
         });
     }
