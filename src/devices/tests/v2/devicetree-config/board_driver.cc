@@ -10,7 +10,7 @@
 #include <lib/driver/devicetree/manager/manager.h>
 #include <lib/driver/devicetree/manager/publisher-dev.h>
 #include <lib/driver/devicetree/visitors/default/bind-property/bind-property.h>
-#include <lib/driver/devicetree/visitors/drivers/fuchsia-config/fuchsia-config.h>
+#include <lib/driver/devicetree/visitors/default/fuchsia-config/fuchsia-config.h>
 #include <lib/driver/devicetree/visitors/registry.h>
 
 #include <vector>
@@ -69,7 +69,7 @@ class BoardDriver final : public fdf::DriverBase {
       return;
     }
 
-    reg_status = registry.RegisterVisitor<fuchsia_config_dt::FuchsiaConfig>();
+    reg_status = registry.RegisterVisitor<fdf_devicetree::FuchsiaConfigVisitor>();
     if (reg_status.is_error()) {
       FDF_LOG(ERROR, "Failed to register FuchsiaConfig visitor: %s", reg_status.status_string());
       completer(reg_status.take_error());

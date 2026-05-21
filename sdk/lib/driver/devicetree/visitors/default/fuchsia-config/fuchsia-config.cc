@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "fuchsia-config.h"
+#include "lib/driver/devicetree/visitors/default/fuchsia-config/fuchsia-config.h"
 
 #include <endian.h>
 #include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
@@ -10,7 +10,7 @@
 #include <lib/driver/devicetree/visitors/registration.h>
 #include <lib/driver/logging/cpp/logger.h>
 
-namespace fuchsia_config_dt {
+namespace fdf_devicetree {
 
 namespace {
 
@@ -62,11 +62,11 @@ void FlattenProperties(fdf_devicetree::Node& node, const std::string& prefix,
 
 }  // namespace
 
-zx::result<> FuchsiaConfig::Visit(fdf_devicetree::Node& node,
-                                  const devicetree::PropertyDecoder& decoder) {
+zx::result<> FuchsiaConfigVisitor::Visit(fdf_devicetree::Node& node,
+                                         const devicetree::PropertyDecoder& decoder) {
   for (auto& child : node.children()) {
     if (child.name() == "fuchsia,config") {
-      FDF_LOG(INFO, "Found fuchsia,config child in node '%s'", node.name().c_str());
+      FDF_LOG(DEBUG, "Found fuchsia,config child in node '%s'", node.name().c_str());
 
       fuchsia_driver_metadata::Dictionary dictionary;
       std::vector<fuchsia_driver_metadata::DictionaryEntry> entries;
@@ -93,6 +93,6 @@ zx::result<> FuchsiaConfig::Visit(fdf_devicetree::Node& node,
   return zx::ok();
 }
 
-}  // namespace fuchsia_config_dt
+}  // namespace fdf_devicetree
 
-REGISTER_DEVICETREE_VISITOR(fuchsia_config_dt::FuchsiaConfig);
+REGISTER_DEVICETREE_VISITOR(fdf_devicetree::FuchsiaConfigVisitor);

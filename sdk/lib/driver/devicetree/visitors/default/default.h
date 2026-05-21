@@ -12,6 +12,7 @@
 #include "lib/driver/devicetree/visitors/default/boot-metadata/boot-metadata.h"
 #include "lib/driver/devicetree/visitors/default/bti/bti.h"
 #include "lib/driver/devicetree/visitors/default/driver-host/driver-host.h"
+#include "lib/driver/devicetree/visitors/default/fuchsia-config/fuchsia-config.h"
 #include "lib/driver/devicetree/visitors/default/mmio/mmio.h"
 #include "lib/driver/devicetree/visitors/default/smc/smc.h"
 
@@ -27,7 +28,7 @@ namespace fdf_devicetree {
 template <typename... AdditionalVisitors>
 using DefaultVisitors =
     MultiVisitor<BindPropertyVisitor, MmioVisitor, BtiVisitor, BootMetadataVisitor, SmcVisitor,
-                 DriverHostVisitor, AdditionalVisitors...>;
+                 DriverHostVisitor, FuchsiaConfigVisitor, AdditionalVisitors...>;
 
 }  // namespace fdf_devicetree
 

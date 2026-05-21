@@ -9,6 +9,7 @@ group("tests") {
     "boot-metadata:tests",
     "bti:tests",
     "driver-host:tests",
+    "fuchsia-config:tests",
     "mmio:tests",
     "smc:tests",
   ]
@@ -30,6 +31,7 @@ sdk_source_set("default") {
     "boot-metadata",
     "bti",
     "driver-host",
+    "fuchsia-config",
     "mmio",
     "smc",
     "//sdk/lib/driver/logging/cpp",

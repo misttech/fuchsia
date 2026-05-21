@@ -10,12 +10,14 @@
 #include <lib/driver/devicetree/visitors/registry.h>
 
 #include <gtest/gtest.h>
-namespace fuchsia_config_dt {
+namespace fdf_devicetree {
 
-class FuchsiaConfigTester : public fdf_devicetree::testing::VisitorTestHelper<FuchsiaConfig> {
+class FuchsiaConfigTester
+    : public fdf_devicetree::testing::VisitorTestHelper<FuchsiaConfigVisitor> {
  public:
   FuchsiaConfigTester(std::string_view dtb_path)
-      : fdf_devicetree::testing::VisitorTestHelper<FuchsiaConfig>(dtb_path, "FuchsiaConfigTest") {}
+      : fdf_devicetree::testing::VisitorTestHelper<FuchsiaConfigVisitor>(dtb_path,
+                                                                         "FuchsiaConfigTest") {}
 };
 
 TEST(FuchsiaConfigTest, TestMetadataAndBindProperty) {
@@ -78,4 +80,4 @@ TEST(FuchsiaConfigTest, TestMetadataAndBindProperty) {
   ASSERT_TRUE(nested_val->int64_vec().has_value());
 }
 
-}  // namespace fuchsia_config_dt
+}  // namespace fdf_devicetree

@@ -16,27 +16,24 @@ group("tests") {
   testonly = true
 }
 
-devicetree_visitor("fuchsia-config") {
-  deps = [ ":fuchsia-config-impl" ]
-}
-
-source_set("fuchsia-config-impl") {
-  sources = [
-    "fuchsia-config.cc",
-    "fuchsia-config.h",
-  ]
+sdk_source_set("fuchsia-config") {
+  sdk_name = "devicetree-fuchsia-config"
+  category = "internal"
+  include_base = "//sdk"
+  sources = [ "fuchsia-config.cc" ]
+  public = [ "fuchsia-config.h" ]
   deps = [
     "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
-    "//sdk/lib/driver/devicetree/manager",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
   ]
+  public_deps = [ "//sdk/lib/driver/devicetree/manager:node" ]
 }
 
 test("fuchsia-config-test-bin") {
   sources = [ "test/fuchsia-config-test.cc" ]
   deps = [
-    ":fuchsia-config-impl",
+    ":fuchsia-config",
     "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
