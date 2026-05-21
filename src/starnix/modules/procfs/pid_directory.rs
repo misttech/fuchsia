@@ -58,7 +58,7 @@ fn task_entries(scope: TaskEntryScope) -> Vec<(FsString, FileMode)> {
         (b"cwd".into(), mode!(IFLNK, 0o777)),
         (b"exe".into(), mode!(IFLNK, 0o777)),
         (b"fd".into(), mode!(IFDIR, 0o500)),
-        (b"fdinfo".into(), mode!(IFDIR, 0o777)),
+        (b"fdinfo".into(), mode!(IFDIR, 0o555)),
         (b"io".into(), mode!(IFREG, 0o400)),
         (b"limits".into(), mode!(IFREG, 0o444)),
         (b"maps".into(), mode!(IFREG, 0o444)),
@@ -597,14 +597,17 @@ impl FsNodeOps for FdInfoDirectory {
 
     fn create_file_ops(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
+        locked: &mut Locked<FileOpsCore>,
         _node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        Ok(VecDirectory::new_file(fds_to_directory_entries(
-            Task::from_weak(&self.task)?.live()?.files.get_all_fds(),
-        )))
+        let task = Task::from_weak(&self.task)?;
+        current_task
+            .check_ptrace_access_mode(locked, PTRACE_MODE_READ_FSCREDS, &task)
+            .map_err(|_| errno!(EACCES))?;
+
+        Ok(VecDirectory::new_file(fds_to_directory_entries(task.live()?.files.get_all_fds())))
     }
 
     fn lookup(

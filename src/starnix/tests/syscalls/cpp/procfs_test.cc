@@ -1089,7 +1089,13 @@ TEST_P(ProcMmTest, ReadBeforeAfterExec) {
 INSTANTIATE_TEST_SUITE_P(ProcMmTest, ProcMmTest, ::testing::Values("maps", "smaps"),
                          [](const auto& info) { return info.param; });
 
-class ProcfsAccessTest : public ProcTestBase, public ::testing::WithParamInterface<const char*> {};
+struct ProcfsAccessParam {
+  const char* path;
+  bool requires_ptrace;
+};
+
+class ProcfsAccessTest : public ProcTestBase,
+                         public ::testing::WithParamInterface<ProcfsAccessParam> {};
 
 // Verify that an unprivileged process cannot read sensitive files of another process.
 // This reproduces the bug where Starnix allows access without proper checks.
@@ -1107,7 +1113,7 @@ TEST_P(ProcfsAccessTest, AccessDeniedToNonOwner) {
 
     ASSERT_NE(getuid(), 0u);
 
-    std::string path = fxl::StringPrintf("/proc/%d/%s", parent_pid, GetParam());
+    std::string path = fxl::StringPrintf("/proc/%d/%s", parent_pid, GetParam().path);
 
     // Access to the file should be denied, either via permissions, or lack of CAP_SYS_PTRACE.
     EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
@@ -1142,9 +1148,13 @@ TEST_P(ProcfsAccessTest, AccessDeniedToNonOwnerWithoutCapPtrace) {
     ASSERT_FALSE(test_helper::HasCapabilityEffective(CAP_SYS_PTRACE));
     ASSERT_NE(getuid(), 0u);
 
-    // Without CAP_SYS_PTRACE access should be denied, even with CAP_DAC_* available.
-    std::string path = fxl::StringPrintf("/proc/%d/%s", parent_pid, GetParam());
-    EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
+    // Without CAP_SYS_PTRACE access should be denied if it requires ptrace.
+    std::string path = fxl::StringPrintf("/proc/%d/%s", parent_pid, GetParam().path);
+    if (GetParam().requires_ptrace) {
+      EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
+    } else {
+      EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallSucceeds());
+    }
   });
   ASSERT_TRUE(helper.WaitForChildren());
 }
@@ -1179,19 +1189,23 @@ TEST_P(ProcfsAccessTest, AccessGrantedWithCapPtrace) {
     ASSERT_NE(getuid(), 0u);
 
     // With CAP_SYS_PTRACE, CAP_DAC_OVERRIDE and CAP_DAC_READ_SEARCH, access should be granted.
-    std::string path = fxl::StringPrintf("/proc/%d/%s", parent_pid, GetParam());
+    std::string path = fxl::StringPrintf("/proc/%d/%s", parent_pid, GetParam().path);
     EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallSucceeds());
   });
   ASSERT_TRUE(helper.WaitForChildren());
 }
 
 TEST_P(ProcfsAccessTest, AccessGrantedToSelf) {
-  std::string path = fxl::StringPrintf("/proc/self/%s", GetParam());
+  std::string path = fxl::StringPrintf("/proc/self/%s", GetParam().path);
   EXPECT_THAT(open(path.c_str(), O_RDONLY), SyscallSucceeds());
 }
 
-INSTANTIATE_TEST_SUITE_P(ProcfsAccessTest, ProcfsAccessTest,
-                         ::testing::Values("auxv", "environ", "maps", "mem", "pagemap", "smaps"),
-                         [](const auto& info) { return info.param; });
+INSTANTIATE_TEST_SUITE_P(
+    ProcfsAccessTest, ProcfsAccessTest,
+    ::testing::Values(ProcfsAccessParam{"auxv", true}, ProcfsAccessParam{"environ", true},
+                      ProcfsAccessParam{"maps", true}, ProcfsAccessParam{"mem", true},
+                      ProcfsAccessParam{"pagemap", true}, ProcfsAccessParam{"smaps", true},
+                      ProcfsAccessParam{"fdinfo", true}, ProcfsAccessParam{"fd", false}),
+    [](const auto& info) { return info.param.path; });
 
 }  // namespace
