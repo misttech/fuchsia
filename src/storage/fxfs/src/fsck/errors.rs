@@ -4,8 +4,8 @@
 
 use crate::log::*;
 use crate::lsm_tree::types::ItemRef;
-use crate::object_store::ObjectDescriptor;
 use crate::object_store::allocator::{AllocatorKey, AllocatorValue};
+use crate::object_store::{ObjectDescriptor, ProjectId};
 use fxfs_crypto::WrappingKeyId;
 use std::ops::Range;
 
@@ -113,7 +113,7 @@ pub enum FsckWarning {
     OrphanedKeys(u64, u64),
     OrphanedExtendedAttribute(u64, u64, u64),
     OrphanedExtendedAttributeRecord(u64, u64),
-    ProjectUsageInconsistent(u64, u64, (i64, i64), (i64, i64)),
+    ProjectUsageInconsistent(u64, ProjectId, (i64, i64), (i64, i64)),
 }
 
 impl FsckWarning {
@@ -251,12 +251,12 @@ pub enum FsckError {
     MultipleLinksToDirectory(u64, u64),
     NextObjectIdInUse(u64, u64),
     NonFileMarkedAsVerified(u64, u64),
-    NonRootProjectIdMetadata(u64, u64, u64),
+    NonRootProjectIdMetadata(u64, u64, ProjectId),
     ObjectCountMismatch(u64, u64, u64),
     ObjectHasChildren(u64, u64),
     OverwriteExtentFlagUnset(u64, u64, u64),
-    ProjectOnGraveyard(u64, u64, u64),
-    ProjectUsedWithNoUsageTracking(u64, u64, u64),
+    ProjectOnGraveyard(u64, ProjectId, u64),
+    ProjectUsedWithNoUsageTracking(u64, ProjectId, u64),
     RefCountMismatch(u64, u64, u64),
     RootObjectHasParent(u64, u64, u64),
     SubDirCountMismatch(u64, u64, u64, u64),

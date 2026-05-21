@@ -5,6 +5,7 @@
 //! Efficient serialization and deserialization for `Vec<T>` and `Box<[T]>` where `T` supports
 //! zerocopy.
 
+use fprint::TypeFingerprint;
 use serde::{Deserializer, Serializer};
 use std::marker::PhantomData;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -169,6 +170,10 @@ where
         };
         Ok(T::from_vec(vec))
     }
+}
+
+pub fn fingerprint<T: TypeFingerprint>() -> String {
+    format!("AsBytes<{}>", T::fingerprint())
 }
 
 #[cfg(test)]

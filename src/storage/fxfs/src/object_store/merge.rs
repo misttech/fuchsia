@@ -262,9 +262,9 @@ mod tests {
     use crate::lsm_tree::cache::NullCache;
     use crate::lsm_tree::types::{Item, LayerIterator, MergeableKey, Value};
     use crate::lsm_tree::{LSMTree, Query};
-    use crate::object_store::VOLUME_DATA_KEY_ID;
     use crate::object_store::extent_record::ExtentValue;
     use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectValue, Timestamp};
+    use crate::object_store::{ProjectId, VOLUME_DATA_KEY_ID};
     use anyhow::Error;
 
     async fn test_merge<K: MergeableKey, V: Value + PartialEq>(
@@ -1066,7 +1066,7 @@ mod tests {
                 Timestamp::default(),
                 Timestamp::default(),
                 Timestamp::default(),
-                0,
+                None,
                 None,
             ),
         );
@@ -1084,7 +1084,7 @@ mod tests {
                         Timestamp::default(),
                         Timestamp::default(),
                         Timestamp::default(),
-                        0,
+                        None,
                         None,
                     ),
                 ),
@@ -1333,7 +1333,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_project_usage() {
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
-        let key = ObjectKey::project_usage(5, 6);
+        let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
 
         tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 100, nodes: 1000 }))
             .expect("insert error");
@@ -1369,8 +1369,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_project_usage_gap_layer() {
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
-        let key = ObjectKey::project_usage(5, 6);
-        let key2 = ObjectKey::project_usage(5, 7);
+        let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
+        let key2 = ObjectKey::project_usage(5, ProjectId::new(7).unwrap());
 
         tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 100, nodes: 1000 }))
             .expect("insert error");
@@ -1424,7 +1424,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_project_usage_to_zero() {
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
-        let key = ObjectKey::project_usage(5, 6);
+        let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
 
         tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 4, nodes: 8 }))
             .expect("insert error");
@@ -1445,7 +1445,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_project_usage_recover_from_zero() {
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
-        let key = ObjectKey::project_usage(5, 6);
+        let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
 
         tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 4, nodes: 8 }))
             .expect("insert error");
@@ -1475,7 +1475,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_merge_project_usage_layer_merge_to_negative() {
         let tree = LSMTree::new(merge, Box::new(NullCache {}));
-        let key = ObjectKey::project_usage(5, 6);
+        let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
 
         tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 4, nodes: 8 }))
             .expect("insert error");

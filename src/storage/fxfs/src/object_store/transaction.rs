@@ -7,7 +7,6 @@ use crate::filesystem::{FxFilesystem, TxnGuard};
 use crate::log::*;
 use crate::lsm_tree::types::Item;
 use crate::object_handle::INVALID_OBJECT_ID;
-use crate::object_store::AttributeKey;
 use crate::object_store::allocator::{AllocatorItem, Reservation};
 use crate::object_store::object_manager::{ObjectManager, reserved_space_from_journal_usage};
 use crate::object_store::object_record::{
@@ -15,6 +14,7 @@ use crate::object_store::object_record::{
     ObjectItemV46, ObjectItemV47, ObjectItemV49, ObjectItemV50, ObjectItemV55, ObjectKey,
     ObjectKeyData, ObjectValue, ProjectProperty,
 };
+use crate::object_store::{AttributeKey, ProjectId};
 use crate::serialized_types::{Migrate, Versioned, migrate_nodefault, migrate_to_version};
 use anyhow::Error;
 use either::{Either, Left, Right};
@@ -101,7 +101,6 @@ pub enum MutationV55 {
 
 #[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[migrate_to_version(MutationV55)]
-#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum MutationV54 {
     ObjectStore(ObjectStoreMutationV54),
     EncryptedObjectStore(#[serde(with = "crate::zerocopy_serialization")] Box<[u8]>),
@@ -114,9 +113,7 @@ pub enum MutationV54 {
     CreateInternalDir(u64),
 }
 
-#[derive(
-    Migrate, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint, Versioned,
-)]
+#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[migrate_to_version(MutationV54)]
 pub enum MutationV50 {
     ObjectStore(ObjectStoreMutationV50),
@@ -256,7 +253,6 @@ pub struct ObjectStoreMutationV55 {
 #[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[migrate_to_version(ObjectStoreMutationV55)]
 #[migrate_nodefault]
-#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct ObjectStoreMutationV54 {
     pub item: crate::object_store::object_record::ObjectItemV54,
     pub op: Operation,
@@ -265,7 +261,6 @@ pub struct ObjectStoreMutationV54 {
 #[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[migrate_to_version(ObjectStoreMutationV54)]
 #[migrate_nodefault]
-#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct ObjectStoreMutationV50 {
     pub item: ObjectItemV50,
     pub op: OperationV32,
@@ -349,26 +344,6 @@ impl PartialEq for ObjectStoreMutation {
 }
 
 impl Eq for ObjectStoreMutation {}
-
-impl Ord for ObjectStoreMutationV50 {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.item.key.cmp(&other.item.key)
-    }
-}
-
-impl PartialOrd for ObjectStoreMutationV50 {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for ObjectStoreMutationV50 {
-    fn eq(&self, other: &Self) -> bool {
-        self.item.key.eq(&other.item.key)
-    }
-}
-
-impl Eq for ObjectStoreMutationV50 {}
 
 impl Ord for AllocatorItem {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -535,7 +510,7 @@ pub enum LockKey {
 
     ProjectId {
         store_object_id: u64,
-        project_id: u64,
+        project_id: ProjectId,
     },
 
     /// Used to lock any truncate operations for a file.

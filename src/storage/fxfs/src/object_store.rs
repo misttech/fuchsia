@@ -85,6 +85,7 @@ pub use object_record::{
     FxfsKeyV40, FxfsKeyV49, ObjectAttributes, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue,
     ProjectProperty, RootDigest,
 };
+pub use project_id::{ProjectId, ProjectIdExt};
 pub use transaction::Mutation;
 
 // For encrypted stores, the lower 32 bits of the object ID are encrypted to make side-channel
@@ -1289,7 +1290,7 @@ impl ObjectStore {
                             now.clone(),
                             now.clone(),
                             now,
-                            0,
+                            None,
                             None
                         ),
                     ),
@@ -1745,7 +1746,7 @@ impl ObjectStore {
             if let ObjectValue::Object { attributes: ObjectAttributes { project_id, .. }, .. } =
                 mutation.item.value
             {
-                if project_id != 0 {
+                if let Some(project_id) = project_id {
                     transaction.add(
                         self.store_object_id,
                         Mutation::merge_object(

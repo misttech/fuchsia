@@ -42,7 +42,7 @@ fn inode_to_object_attributes(inode: &Inode, allocated_size: u64) -> ObjectAttri
     ObjectAttributes {
         creation_time: clamp_timestamp(inode.header.ctime, inode.header.ctime_nanos),
         modification_time: clamp_timestamp(inode.header.mtime, inode.header.mtime_nanos),
-        project_id: 0,
+        project_id: None,
         posix_attributes: Some(PosixAttributes {
             mode: mode.bits() as u32,
             uid: inode.header.uid,

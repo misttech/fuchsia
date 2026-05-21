@@ -215,7 +215,7 @@ impl<S: HandleOwner> Directory<S> {
                     attributes: ObjectAttributes {
                         creation_time: now.clone(),
                         modification_time: now.clone(),
-                        project_id: 0,
+                        project_id: None,
                         posix_attributes: None,
                         allocated_size: 0,
                         access_time: now.clone(),
@@ -712,7 +712,7 @@ impl<S: HandleOwner> Directory<S> {
         else {
             return Err(anyhow!(FxfsError::Inconsistent));
         };
-        if project_id > 0 {
+        if let Some(project_id) = project_id {
             // This mutation must be present as well since we've just created the object. So this
             // replaces it.
             let mut mutation = transaction
@@ -724,7 +724,7 @@ impl<S: HandleOwner> Directory<S> {
                 ..
             } = &mut mutation.item.value
             {
-                *child_project_id = project_id;
+                *child_project_id = Some(project_id);
             } else {
                 return Err(anyhow!(FxfsError::Inconsistent));
             }
@@ -873,7 +873,7 @@ impl<S: HandleOwner> Directory<S> {
                                 link,
                                 Timestamp::now(),
                                 Timestamp::now(),
-                                0,
+                                None,
                             ),
                         ),
                     );
@@ -900,7 +900,7 @@ impl<S: HandleOwner> Directory<S> {
                     self.store().store_object_id(),
                     Mutation::insert_object(
                         ObjectKey::object(reserved_symlink_id.release()),
-                        ObjectValue::symlink(link, Timestamp::now(), Timestamp::now(), 0),
+                        ObjectValue::symlink(link, Timestamp::now(), Timestamp::now(), None),
                     ),
                 );
                 transaction.add(

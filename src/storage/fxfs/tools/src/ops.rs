@@ -13,7 +13,7 @@ use fxfs::object_store::directory::{ReplacedChild, replace_child};
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{
-    Directory, HandleOptions, NewChildStoreOptions, ObjectDescriptor, ObjectStore,
+    Directory, HandleOptions, NewChildStoreOptions, ObjectDescriptor, ObjectStore, ProjectId,
     SetExtendedAttributeMode, StoreObjectHandle, StoreOptions, StoreOwner,
 };
 use fxfs_crypto::{Crypt, WrappingKeyId};
@@ -296,7 +296,7 @@ pub async fn mkdir(
 
 pub async fn set_project_limit(
     vol: &Arc<ObjectStore>,
-    project_id: u64,
+    project_id: ProjectId,
     byte_limit: u64,
     node_limit: u64,
 ) -> Result<(), Error> {
@@ -305,7 +305,7 @@ pub async fn set_project_limit(
 
 pub async fn set_project_for_node(
     vol: &Arc<ObjectStore>,
-    project_id: u64,
+    project_id: ProjectId,
     path: &Path,
 ) -> Result<(), Error> {
     let dir = walk_dir(vol, path.parent().unwrap()).await?;

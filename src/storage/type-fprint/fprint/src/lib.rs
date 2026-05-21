@@ -4,6 +4,7 @@
 pub use macros::*;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::num::NonZeroU64;
 use std::ops::Range;
 
 /// A TypeFingerprint is able to return a string that represents the layout of a type.
@@ -24,7 +25,8 @@ macro_rules! impl_fprint_simple {
 }
 
 impl_fprint_simple!(
-    bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64, str, String
+    bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64, str, String,
+    NonZeroU64
 );
 
 // Arrays return their inner type and length (up to a maximum).
@@ -225,5 +227,39 @@ mod tests {
             Buzz::fingerprint(),
             "enum {A(Foo),B(struct {Foo}),C(struct {foo:Foo,bar:struct {Foo},bizz:u64})}"
         );
+    }
+
+    mod custom_serializer {
+        pub fn fingerprint<T>() -> String {
+            "custom_fingerprint".to_string()
+        }
+    }
+
+    #[allow(dead_code)]
+    #[derive(TypeFingerprint)]
+    struct TestWithSerde {
+        #[serde(with = "custom_serializer")]
+        value: u64,
+    }
+
+    #[allow(dead_code)]
+    #[derive(TypeFingerprint)]
+    struct TestWithMultipleSerdeAttrs {
+        #[serde(default, rename = "some_value", with = "custom_serializer")]
+        value: u64,
+    }
+
+    #[allow(dead_code)]
+    #[derive(TypeFingerprint)]
+    struct TestWithListSerdeAttrs {
+        #[serde(rename(serialize = "foo", deserialize = "bar"), with = "custom_serializer")]
+        value: u64,
+    }
+
+    #[test]
+    fn test_serde_with() {
+        assert_eq!(TestWithSerde::fingerprint(), "struct {value:custom_fingerprint}");
+        assert_eq!(TestWithMultipleSerdeAttrs::fingerprint(), "struct {value:custom_fingerprint}");
+        assert_eq!(TestWithListSerdeAttrs::fingerprint(), "struct {value:custom_fingerprint}");
     }
 }

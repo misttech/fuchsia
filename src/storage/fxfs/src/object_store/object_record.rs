@@ -13,6 +13,7 @@ use crate::lsm_tree::types::{
     FuzzyHash, Item, ItemRef, LayerKey, LegacyItem, MergeType, OrdLowerBound, OrdUpperBound,
     SortByU64, Value,
 };
+use crate::object_store::ProjectId;
 use crate::object_store::extent_record::{
     ExtentKey, ExtentKeyPartitionIterator, ExtentKeyV32, ExtentValue, ExtentValueV38,
 };
@@ -98,7 +99,7 @@ pub enum ObjectKeyDataV54 {
     /// Project ID info. This should only be attached to the volume's root node. Used to address the
     /// configured limit and the usage tracking which are ordered after the `project_id` to provide
     /// locality of the two related values.
-    Project { project_id: u64, property: ProjectPropertyV32 },
+    Project { project_id: ProjectId, property: ProjectPropertyV32 },
     /// An extended attribute associated with an object. It stores the name used for the extended
     /// attribute, which has a maximum size of 255 bytes enforced by fuchsia.io.
     ExtendedAttribute {
@@ -309,7 +310,7 @@ impl ObjectKey {
     }
 
     /// Creates an ObjectKey for a ProjectLimit entry.
-    pub fn project_limit(object_id: u64, project_id: u64) -> Self {
+    pub fn project_limit(object_id: u64, project_id: ProjectId) -> Self {
         Self {
             object_id,
             data: ObjectKeyData::Project { project_id, property: ProjectProperty::Limit },
@@ -317,7 +318,7 @@ impl ObjectKey {
     }
 
     /// Creates an ObjectKey for a ProjectUsage entry.
-    pub fn project_usage(object_id: u64, project_id: u64) -> Self {
+    pub fn project_usage(object_id: u64, project_id: ProjectId) -> Self {
         Self {
             object_id,
             data: ObjectKeyData::Project { project_id, property: ProjectProperty::Usage },
@@ -722,8 +723,9 @@ pub struct ObjectAttributesV49 {
     pub creation_time: TimestampV49,
     /// The timestamp at which the object's data was last modified (i.e. mtime).
     pub modification_time: TimestampV49,
-    /// The project id to associate this object's resource usage with. Zero means none.
-    pub project_id: u64,
+    /// The project id to associate this object's resource usage with.
+    #[serde(with = "crate::object_store::project_id::optional_project_id")]
+    pub project_id: Option<ProjectId>,
     /// Mode, uid, gid, and rdev
     pub posix_attributes: Option<PosixAttributesV32>,
     /// The number of bytes allocated to all extents across all attributes for this object.
@@ -913,7 +915,7 @@ impl ObjectValue {
         modification_time: Timestamp,
         access_time: Timestamp,
         change_time: Timestamp,
-        project_id: u64,
+        project_id: Option<ProjectId>,
         posix_attributes: Option<PosixAttributes>,
     ) -> ObjectValue {
         ObjectValue::Object {
@@ -965,7 +967,7 @@ impl ObjectValue {
         link: impl Into<Box<[u8]>>,
         creation_time: Timestamp,
         modification_time: Timestamp,
-        project_id: u64,
+        project_id: Option<ProjectId>,
     ) -> ObjectValue {
         ObjectValue::Object {
             kind: ObjectKind::Symlink { refs: 1, link: link.into() },
@@ -982,7 +984,7 @@ impl ObjectValue {
         link: impl Into<Box<[u8]>>,
         creation_time: Timestamp,
         modification_time: Timestamp,
-        project_id: u64,
+        project_id: Option<ProjectId>,
     ) -> ObjectValue {
         ObjectValue::Object {
             kind: ObjectKind::EncryptedSymlink { refs: 1, link: link.into() },

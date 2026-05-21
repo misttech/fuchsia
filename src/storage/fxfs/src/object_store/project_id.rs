@@ -9,18 +9,21 @@ use crate::object_store::transaction::{LockKey, Mutation, Options, lock_keys};
 use crate::object_store::{
     ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectProperty,
 };
-use anyhow::{Error, ensure};
+use anyhow::Error;
+use fprint::TypeFingerprint;
+use fxfs_macros::SerializeKey;
+use serde::{Deserialize, Serialize};
+use std::num::NonZeroU64;
 
 impl ObjectStore {
     /// Adds a mutation to set the project limit as an attribute with `bytes` and `nodes` to root
     /// node.
     pub async fn set_project_limit(
         &self,
-        project_id: u64,
+        project_id: ProjectId,
         bytes: u64,
         nodes: u64,
     ) -> Result<(), Error> {
-        ensure!(project_id != 0, FxfsError::OutOfRange);
         let root_id = self.root_directory_object_id();
         let mut transaction = self
             .filesystem()
@@ -48,7 +51,7 @@ impl ObjectStore {
 
     /// Clear the limit for a project by tombstoning the limits and usage attributes for the
     /// given `project_id`. Fails if the project is still in use by one or more nodes.
-    pub async fn clear_project_limit(&self, project_id: u64) -> Result<(), Error> {
+    pub async fn clear_project_limit(&self, project_id: ProjectId) -> Result<(), Error> {
         let root_id = self.root_directory_object_id();
         let mut transaction = self
             .filesystem()
@@ -72,8 +75,11 @@ impl ObjectStore {
     }
 
     /// Apply a `project_id` to a given node. Fails if node is not found or target project is zero.
-    pub async fn set_project_for_node(&self, node_id: u64, project_id: u64) -> Result<(), Error> {
-        ensure!(project_id != 0, FxfsError::OutOfRange);
+    pub async fn set_project_for_node(
+        &self,
+        node_id: u64,
+        project_id: ProjectId,
+    ) -> Result<(), Error> {
         let root_id = self.root_directory_object_id();
         let mut transaction = self
             .filesystem()
@@ -101,10 +107,10 @@ impl ObjectStore {
         }
         let storage_size = attributes.allocated_size.try_into().map_err(|_| FxfsError::TooBig)?;
         let old_project_id = attributes.project_id;
-        if old_project_id == project_id {
+        if old_project_id == Some(project_id) {
             return Ok(());
         }
-        attributes.project_id = project_id;
+        attributes.project_id = Some(project_id);
 
         transaction.add(
             self.store_object_id,
@@ -120,7 +126,7 @@ impl ObjectStore {
                 ObjectValue::BytesAndNodes { bytes: storage_size, nodes: 1 },
             ),
         );
-        if old_project_id != 0 {
+        if let Some(old_project_id) = old_project_id {
             transaction.add(
                 self.store_object_id,
                 Mutation::merge_object(
@@ -134,7 +140,7 @@ impl ObjectStore {
     }
 
     /// Return the project_id associated with the given `node_id`.
-    pub async fn get_project_for_node(&self, node_id: u64) -> Result<u64, Error> {
+    pub async fn get_project_for_node(&self, node_id: u64) -> Result<Option<ProjectId>, Error> {
         match self.tree().find(&ObjectKey::object(node_id)).await?.ok_or(FxfsError::NotFound)?.value
         {
             ObjectValue::Object { attributes, .. } => match attributes.project_id {
@@ -162,9 +168,9 @@ impl ObjectStore {
                 ObjectValue::Object { kind, attributes } => (kind, attributes),
                 _ => return Err(FxfsError::Inconsistent.into()),
             };
-        if attributes.project_id == 0 {
+        let Some(old_project_id) = attributes.project_id else {
             return Ok(());
-        }
+        };
         // Make sure the object kind makes sense.
         match kind {
             ObjectKind::File { .. } | ObjectKind::Directory { .. } => (),
@@ -175,8 +181,7 @@ impl ObjectStore {
             }
             ObjectKind::Graveyard => return Err(FxfsError::Inconsistent.into()),
         }
-        let old_project_id = attributes.project_id;
-        attributes.project_id = 0;
+        attributes.project_id = None;
         let storage_size = attributes.allocated_size;
         transaction.add(
             self.store_object_id,
@@ -207,9 +212,10 @@ impl ObjectStore {
     /// resume the listing.
     pub async fn list_projects(
         &self,
-        start_id: u64,
+        start_id: Option<ProjectId>,
         max_entries: usize,
-    ) -> Result<(Vec<u64>, Option<u64>), Error> {
+    ) -> Result<(Vec<ProjectId>, Option<ProjectId>), Error> {
+        let start_id = start_id.unwrap_or(ProjectId::SORTED_START);
         let root_dir_id = self.root_directory_object_id();
         let layer_set = self.tree().layer_set();
         let mut merger = layer_set.merger();
@@ -217,7 +223,7 @@ impl ObjectStore {
             .query(Query::FullRange(&ObjectKey::project_limit(root_dir_id, start_id)))
             .await?;
         let mut entries = Vec::new();
-        let mut prev_entry = 0;
+        let mut prev_entry: Option<ProjectId> = None;
         let mut next_entry = None;
         while let Some(ItemRef { key: ObjectKey { object_id, data: key_data }, value, .. }) =
             iter.get()
@@ -229,12 +235,12 @@ impl ObjectStore {
             match key_data {
                 ObjectKeyData::Project { project_id, .. } => {
                     // Bypass deleted or repeated entries.
-                    if *value != ObjectValue::None && prev_entry < *project_id {
+                    if *value != ObjectValue::None && prev_entry < Some(*project_id) {
                         if entries.len() == max_entries {
                             next_entry = Some(*project_id);
                             break;
                         }
-                        prev_entry = *project_id;
+                        prev_entry = Some(*project_id);
                         entries.push(*project_id);
                     }
                 }
@@ -253,7 +259,7 @@ impl ObjectStore {
     /// fields not found will return None for them.
     pub async fn project_info(
         &self,
-        project_id: u64,
+        project_id: ProjectId,
     ) -> Result<(Option<(u64, u64)>, Option<(u64, u64)>), Error> {
         let root_id = self.root_directory_object_id();
         let layer_set = self.tree().layer_set();
@@ -297,4 +303,228 @@ impl ObjectStore {
     }
 }
 
-// Tests are done end to end from the Fuchsia endpoint and so are in platform/fuchsia/volume.rs
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Debug,
+    Serialize,
+    Deserialize,
+    Hash,
+    TypeFingerprint,
+    SerializeKey,
+)]
+#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+#[repr(transparent)]
+pub struct ProjectId(NonZeroU64);
+
+impl ProjectId {
+    pub const SORTED_START: Self = Self::new(1).unwrap();
+
+    pub const fn new(project_id: u64) -> Option<Self> {
+        match NonZeroU64::new(project_id) {
+            None => None,
+            Some(non_zero) => Some(Self(non_zero)),
+        }
+    }
+
+    /// Returns the underlying `u64`.
+    pub const fn raw(self) -> u64 {
+        self.0.get()
+    }
+}
+
+impl log::kv::ToValue for ProjectId {
+    fn to_value(&self) -> log::kv::Value<'_> {
+        log::kv::Value::from(self.0)
+    }
+}
+
+impl std::fmt::Display for ProjectId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+/// An extension trait for project ids that makes working with `Option<ProjectId>` simpler.
+pub trait ProjectIdExt {
+    /// Returns the underlying `u64`.
+    fn raw(self) -> u64;
+}
+
+impl ProjectIdExt for Option<ProjectId> {
+    fn raw(self) -> u64 {
+        match self {
+            None => 0,
+            Some(project_id) => project_id.raw(),
+        }
+    }
+}
+
+pub mod optional_project_id {
+    use super::{ProjectId, ProjectIdExt};
+    use serde::{Deserializer, Serializer};
+
+    /// Serialize `Option<ProjectId>` as a u64.
+    pub fn serialize<S>(value: &Option<ProjectId>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(value.raw())
+    }
+
+    /// Deserialize `Option<ProjectId>` from a u64.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<ProjectId>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_u64(Visitor)
+    }
+
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = Option<ProjectId>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(formatter, "a u64",)
+        }
+
+        fn visit_u64<E>(self, raw: u64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(ProjectId::new(raw))
+        }
+    }
+
+    pub fn fingerprint<T>() -> String {
+        "u64".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // ObjectStore project id tests are done end to end from the Fuchsia endpoint and so are in
+    // platform/fuchsia/volume.rs
+
+    use super::{ProjectId, ProjectIdExt};
+    use crate::serialized_types::{LATEST_VERSION, Versioned};
+    use serde::{Deserialize, Serialize};
+
+    // Versioned is used here to get the same bincode settings as would be used when the ProjectId
+    // is contained inside of a Versioned struct.
+    impl Versioned for ProjectId {}
+
+    #[test]
+    fn test_project_id_serialization_matches_u64() {
+        fn verify_matches(x: u64) {
+            // 1. Serialize x as u64
+            let mut u64_buf = Vec::new();
+            x.serialize_into(&mut u64_buf).unwrap();
+
+            // 2. Serialize ProjectId
+            let project_id = ProjectId::new(x).unwrap();
+            let mut project_id_buf = Vec::new();
+            project_id.serialize_into(&mut project_id_buf).unwrap();
+
+            // 3. Verify binary match
+            assert_eq!(u64_buf, project_id_buf);
+
+            // 4. Deserialize u64 bytes as ProjectId
+            let deserialized_project_id =
+                ProjectId::deserialize_from(&mut u64_buf.as_slice(), LATEST_VERSION).unwrap();
+            assert_eq!(deserialized_project_id, project_id);
+
+            // 5. Deserialize ProjectId bytes as u64
+            let deserialized_u64 =
+                u64::deserialize_from(&mut project_id_buf.as_slice(), LATEST_VERSION).unwrap();
+            assert_eq!(deserialized_u64, x);
+        }
+
+        verify_matches(1);
+        verify_matches(2);
+        verify_matches(u16::MAX as u64 - 1);
+        verify_matches(u16::MAX as u64);
+        verify_matches(u16::MAX as u64 + 1);
+        verify_matches(u32::MAX as u64 - 1);
+        verify_matches(u32::MAX as u64);
+        verify_matches(u32::MAX as u64 + 1);
+        verify_matches(u64::MAX - 1);
+        verify_matches(u64::MAX);
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Versioned)]
+    struct OptionWrapper {
+        #[serde(with = "super::optional_project_id")]
+        project_id: Option<ProjectId>,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Versioned)]
+    struct U64Wrapper {
+        project_id: u64,
+    }
+
+    #[test]
+    fn test_optional_project_id_serialization_matches_u64() {
+        fn verify_matches(x: u64) {
+            // 1. Serialize x as u64 inside wrapper
+            let u64_wrapper = U64Wrapper { project_id: x };
+            let mut u64_buf = Vec::new();
+            u64_wrapper.serialize_into(&mut u64_buf).unwrap();
+
+            // 2. Serialize Option<ProjectId> inside wrapper
+            let opt_project_id = OptionWrapper { project_id: ProjectId::new(x) };
+            let mut opt_buf = Vec::new();
+            opt_project_id.serialize_into(&mut opt_buf).unwrap();
+
+            // 3. Verify their binary representations match exactly
+            assert_eq!(u64_buf, opt_buf);
+
+            // 4. Deserialize the serialized u64 bytes as Option<ProjectId>
+            let deserialized_opt =
+                OptionWrapper::deserialize_from(&mut u64_buf.as_slice(), LATEST_VERSION).unwrap();
+            assert_eq!(deserialized_opt, opt_project_id);
+
+            // 5. Deserialize the serialized Option<ProjectId> bytes as u64
+            let deserialized_u64 =
+                U64Wrapper::deserialize_from(&mut opt_buf.as_slice(), LATEST_VERSION).unwrap();
+            assert_eq!(deserialized_u64, u64_wrapper);
+        }
+
+        verify_matches(0);
+        verify_matches(1);
+        verify_matches(2);
+        verify_matches(u16::MAX as u64 - 1);
+        verify_matches(u16::MAX as u64);
+        verify_matches(u16::MAX as u64 + 1);
+        verify_matches(u32::MAX as u64 - 1);
+        verify_matches(u32::MAX as u64);
+        verify_matches(u32::MAX as u64 + 1);
+        verify_matches(u64::MAX - 1);
+        verify_matches(u64::MAX);
+    }
+
+    #[test]
+    fn test_option_project_id_sorting() {
+        let none = ProjectId::new(0);
+        assert!(none.is_none());
+
+        let one = ProjectId::new(1);
+        let max = ProjectId::new(u64::MAX);
+
+        // None should be sorted before all project ids.
+        assert!(none < one);
+        assert!(none < max);
+        assert!(one < max);
+    }
+
+    #[test]
+    fn test_project_id_raw() {
+        assert_eq!(ProjectId::new(0).raw(), 0);
+        assert_eq!(ProjectId::new(1).raw(), 1);
+        assert_eq!(ProjectId::new(u64::MAX).raw(), u64::MAX);
+    }
+}

@@ -582,7 +582,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                     anyhow!(FxfsError::Inconsistent).context("Allocated size underflow")
                 })?;
 
-            if *project_id != 0 {
+            if let Some(project_id) = project_id {
                 // The allocated and deallocated shouldn't exceed the max size of the file which is
                 // bound within i64.
                 let diff = i64::try_from(allocated).unwrap() - i64::try_from(deallocated).unwrap();

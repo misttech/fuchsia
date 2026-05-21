@@ -11,7 +11,7 @@ use crate::ops;
 use anyhow::{Context, Error, bail};
 use chrono::Local;
 use fxfs::filesystem::{FxFilesystem, OpenFxFilesystem, SyncOptions};
-use fxfs::object_store::ObjectStore;
+use fxfs::object_store::{ObjectStore, ProjectId};
 use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::new_insecure_crypt;
 use fxfs_make_blob_image::{CompressionAlgorithm, FxBlobBuilder};
@@ -26,7 +26,7 @@ use storage_device::fake_device::FakeDevice;
 const FSCRYPT_UNICODE_FILE_PATH: &str = "fscrypt/Straße.txt";
 const FXFS_GOLDEN_IMAGE_DIR: &str = "src/storage/fxfs/testdata";
 const IMAGE_BLOCKS: u64 = 8192;
-const PROJECT_ID: u64 = 4;
+const PROJECT_ID: ProjectId = ProjectId::new(4).unwrap();
 
 /// Uses FUCHSIA_DIR environment variable to generate a path to the expected location of golden
 /// images. Note that we do this largely for ergonomics because this binary is typically invoked

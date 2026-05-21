@@ -32,8 +32,11 @@ use fxfs::filesystem::{self, SyncOptions};
 use fxfs::future_with_guard::FutureWithGuard;
 use fxfs::log::*;
 use fxfs::object_store::directory::Directory;
+use fxfs::object_store::project_id::ProjectIdExt;
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
-use fxfs::object_store::{DirType, HandleOptions, HandleOwner, ObjectDescriptor, ObjectStore};
+use fxfs::object_store::{
+    DirType, HandleOptions, HandleOwner, ObjectDescriptor, ObjectStore, ProjectId,
+};
 use refaults_vmo::PageRefaultCounter;
 use std::future::Future;
 use std::pin::pin;
@@ -734,35 +737,54 @@ impl FxVolume {
             let store_id = this.store.store_object_id();
 
             match request {
-                ProjectIdRequest::SetLimit { responder, project_id, bytes, nodes } => responder
-                    .send(
-                    this.store().set_project_limit(project_id, bytes, nodes).await.map_err(
-                        |error| {
+                ProjectIdRequest::SetLimit { responder, project_id, bytes, nodes } => {
+                    let result = if let Some(project_id) = ProjectId::new(project_id) {
+                        this.store()
+                        .set_project_limit(project_id, bytes, nodes)
+                        .await
+                        .map_err(|error| {
                             error!(error:?, store_id, project_id; "Failed to set project limit");
                             map_to_raw_status(error)
-                        },
-                    ),
-                )?,
-                ProjectIdRequest::Clear { responder, project_id } => responder.send(
-                    this.store().clear_project_limit(project_id).await.map_err(|error| {
-                        error!(error:?, store_id, project_id; "Failed to clear project limit");
-                        map_to_raw_status(error)
-                    }),
-                )?,
+                        })
+                    } else {
+                        Err(zx::Status::OUT_OF_RANGE.into_raw())
+                    };
+                    responder.send(result)?
+                }
+                ProjectIdRequest::Clear { responder, project_id } => {
+                    let result = if let Some(project_id) = ProjectId::new(project_id) {
+                        this.store().clear_project_limit(project_id).await.map_err(|error| {
+                            error!(error:?, store_id, project_id; "Failed to clear project limit");
+                            map_to_raw_status(error)
+                        })
+                    } else {
+                        Err(zx::Status::OUT_OF_RANGE.into_raw())
+                    };
+                    responder.send(result)?
+                }
                 ProjectIdRequest::SetForNode { responder, node_id, project_id } => {
-                    responder
-                        .send(this.store().set_project_for_node(node_id, project_id).await.map_err(
-                        |error| {
+                    let result = if let Some(project_id) = ProjectId::new(project_id) {
+                        this.store()
+                        .set_project_for_node(node_id, project_id)
+                        .await
+                        .map_err(|error| {
                             error!(error:?, store_id, node_id, project_id; "Failed to apply node.");
                             map_to_raw_status(error)
-                        },
-                    ))?
+                        })
+                    } else {
+                        Err(zx::Status::OUT_OF_RANGE.into_raw())
+                    };
+                    responder.send(result)?
                 }
                 ProjectIdRequest::GetForNode { responder, node_id } => responder.send(
-                    this.store().get_project_for_node(node_id).await.map_err(|error| {
-                        error!(error:?, store_id, node_id; "Failed to get node.");
-                        map_to_raw_status(error)
-                    }),
+                    this.store()
+                        .get_project_for_node(node_id)
+                        .await
+                        .map(ProjectIdExt::raw)
+                        .map_err(|error| {
+                            error!(error:?, store_id, node_id; "Failed to get node.");
+                            map_to_raw_status(error)
+                        }),
                 )?,
                 ProjectIdRequest::ClearForNode { responder, node_id } => responder.send(
                     this.store().clear_project_for_node(node_id).await.map_err(|error| {
@@ -807,17 +829,18 @@ impl FxVolume {
         let (entries, token) = self
             .store()
             .list_projects(
-                match last_token {
-                    None => 0,
-                    Some(v) => v.value,
-                },
+                last_token.as_ref().and_then(|v| ProjectId::new(v.value)),
                 Self::MAX_PROJECT_ENTRIES,
             )
             .await?;
-        Ok((entries, token.map(|value| ProjectIterToken { value })))
+        Ok((
+            entries.into_iter().map(ProjectId::raw).collect(),
+            token.map(|value| ProjectIterToken { value: value.raw() }),
+        ))
     }
 
     async fn project_info(&self, project_id: u64) -> Result<(BytesAndNodes, BytesAndNodes), Error> {
+        let project_id = ProjectId::new(project_id).ok_or(FxfsError::OutOfRange)?;
         let (limit, usage) = self.store().project_info(project_id).await?;
         // At least one of them needs to be around to return anything.
         ensure!(limit.is_some() || usage.is_some(), FxfsError::NotFound);
@@ -1639,6 +1662,20 @@ mod tests {
                 .await
                 .unwrap()
                 .expect_err("Should not set limits for project id 0");
+
+            assert_eq!(
+                project_proxy.clear(0).await.unwrap().expect_err("Should not clear project id 0"),
+                Status::OUT_OF_RANGE.into_raw()
+            );
+
+            assert_eq!(
+                project_proxy
+                    .info(0)
+                    .await
+                    .unwrap()
+                    .expect_err("Should not get info for project id 0"),
+                Status::OUT_OF_RANGE.into_raw()
+            );
 
             project_proxy
                 .set_limit(PROJECT_ID, BYTES_LIMIT_1, NODES_LIMIT_1)

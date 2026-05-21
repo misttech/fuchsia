@@ -22,7 +22,7 @@ use crate::object_store::{
     AttributeKey, ChildValue, DEFAULT_DATA_ATTRIBUTE_ID, DirType, EncryptionKeys, ExtentValue,
     FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, HandleOptions, Mutation, NewChildStoreOptions,
     ObjectAttributes, ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore,
-    ObjectValue, RootDigest, StoreInfo, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
+    ObjectValue, ProjectId, RootDigest, StoreInfo, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
 };
 use crate::round::round_down;
 use crate::serialized_types::VersionedLatest;
@@ -2235,7 +2235,6 @@ async fn test_file_length_mismatch() {
                     attributes: ObjectAttributes {
                         creation_time: Timestamp::now(),
                         modification_time: Timestamp::now(),
-                        project_id: 0,
                         allocated_size: 123,
                         ..Default::default()
                     },
@@ -3480,7 +3479,7 @@ async fn test_project_accounting() {
         if let ObjectValue::Object { attributes: ObjectAttributes { project_id, .. }, .. } =
             &mut mutation.item.value
         {
-            *project_id = 3;
+            *project_id = ProjectId::new(3);
         } else {
             panic!("Unexpected object type");
         }
@@ -3494,7 +3493,10 @@ async fn test_project_accounting() {
             .new_transaction(
                 lock_keys![
                     LockKey::object(store_id, root_directory.object_id()),
-                    LockKey::ProjectId { store_object_id: store_id, project_id: 4 },
+                    LockKey::ProjectId {
+                        store_object_id: store_id,
+                        project_id: ProjectId::new(4).unwrap()
+                    },
                 ],
                 Options::default(),
             )
@@ -3503,14 +3505,14 @@ async fn test_project_accounting() {
         transaction.add(
             store_id,
             Mutation::merge_object(
-                ObjectKey::project_usage(root_directory.object_id(), 4),
+                ObjectKey::project_usage(root_directory.object_id(), ProjectId::new(4).unwrap()),
                 ObjectValue::BytesAndNodes { bytes: 0, nodes: 2 },
             ),
         );
         transaction.add(
             store_id,
             Mutation::insert_object(
-                ObjectKey::project_limit(root_directory.object_id(), 4),
+                ObjectKey::project_limit(root_directory.object_id(), ProjectId::new(4).unwrap()),
                 ObjectValue::BytesAndNodes { bytes: 0, nodes: 0 },
             ),
         );
@@ -3526,7 +3528,7 @@ async fn test_project_accounting() {
         if let ObjectValue::Object { attributes: ObjectAttributes { project_id, .. }, .. } =
             &mut mutation.item.value
         {
-            *project_id = 4;
+            *project_id = ProjectId::new(4);
         } else {
             panic!("Unexpected object type");
         }
@@ -3539,7 +3541,10 @@ async fn test_project_accounting() {
             .new_transaction(
                 lock_keys![
                     LockKey::object(store_id, root_directory.object_id()),
-                    LockKey::ProjectId { store_object_id: store_id, project_id: 5 },
+                    LockKey::ProjectId {
+                        store_object_id: store_id,
+                        project_id: ProjectId::new(5).unwrap()
+                    },
                 ],
                 Options::default(),
             )
@@ -3548,14 +3553,14 @@ async fn test_project_accounting() {
         transaction.add(
             store_id,
             Mutation::merge_object(
-                ObjectKey::project_usage(root_directory.object_id(), 5),
+                ObjectKey::project_usage(root_directory.object_id(), ProjectId::new(5).unwrap()),
                 ObjectValue::BytesAndNodes { bytes: 0, nodes: 1 },
             ),
         );
         transaction.add(
             store_id,
             Mutation::insert_object(
-                ObjectKey::project_limit(root_directory.object_id(), 5),
+                ObjectKey::project_limit(root_directory.object_id(), ProjectId::new(5).unwrap()),
                 ObjectValue::BytesAndNodes { bytes: 0, nodes: 0 },
             ),
         );
@@ -3571,7 +3576,7 @@ async fn test_project_accounting() {
         if let ObjectValue::Object { attributes: ObjectAttributes { project_id, .. }, .. } =
             &mut mutation.item.value
         {
-            *project_id = 5;
+            *project_id = ProjectId::new(5);
         } else {
             panic!("Unexpected object type");
         }
@@ -3586,12 +3591,12 @@ async fn test_project_accounting() {
 
     assert!(test.errors().contains(&FsckIssue::Error(FsckError::ProjectUsedWithNoUsageTracking(
         store_id,
-        3,
+        ProjectId::new(3).unwrap(),
         orphaned_object_id
     ))));
     assert!(test.errors().contains(&FsckIssue::Warning(FsckWarning::ProjectUsageInconsistent(
         store_id,
-        4,
+        ProjectId::new(4).unwrap(),
         (0, 2),
         (0, 1)
     ))));

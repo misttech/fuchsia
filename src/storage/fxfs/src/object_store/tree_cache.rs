@@ -148,7 +148,7 @@ mod tests {
         let cache = TreeCache::new();
         let key = ObjectKey::object(1);
         let now = Timestamp::now();
-        let value = ObjectValue::file(1, 0, now, now, now, now, 0, None);
+        let value = ObjectValue::file(1, 0, now, now, now, now, None, None);
 
         let placeholder = match cache.lookup_or_reserve(&key) {
             ObjectCacheResult::Placeholder(placeholder) => placeholder,
@@ -177,7 +177,7 @@ mod tests {
 
         for i in 1..(ITEM_LIMIT as u64 + 2) {
             let key = ObjectKey::object(i);
-            let value = ObjectValue::file(1, 0, now, now, now, now, 0, None);
+            let value = ObjectValue::file(1, 0, now, now, now, now, None, None);
             let placeholder = match cache.lookup_or_reserve(&key) {
                 ObjectCacheResult::Placeholder(placeholder) => placeholder,
                 _ => panic!("Expected cache miss with placeholder returned."),
@@ -203,8 +203,8 @@ mod tests {
         let cache = TreeCache::new();
         let key = ObjectKey::object(1);
         let now = Timestamp::now();
-        let value1 = ObjectValue::file(1, 0, now, now, now, now, 0, None);
-        let value2 = ObjectValue::file(2, 0, now, now, now, now, 0, None);
+        let value1 = ObjectValue::file(1, 0, now, now, now, now, None, None);
+        let value2 = ObjectValue::file(2, 0, now, now, now, now, None, None);
 
         let placeholder = match cache.lookup_or_reserve(&key) {
             ObjectCacheResult::Placeholder(placeholder) => placeholder,
@@ -242,8 +242,8 @@ mod tests {
         let cache = TreeCache::new();
         let key = ObjectKey::object(1);
         let now = Timestamp::now();
-        let value1 = ObjectValue::file(1, 0, now, now, now, now, 0, None);
-        let value2 = ObjectValue::file(2, 0, now, now, now, now, 0, None);
+        let value1 = ObjectValue::file(1, 0, now, now, now, now, None, None);
+        let value2 = ObjectValue::file(2, 0, now, now, now, now, None, None);
 
         let placeholder1 = match cache.lookup_or_reserve(&key) {
             ObjectCacheResult::Placeholder(placeholder) => placeholder,

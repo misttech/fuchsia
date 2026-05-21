@@ -243,6 +243,16 @@ impl SerializeKey for std::ops::Range<u64> {
     }
 }
 
+impl SerializeKey for std::num::NonZeroU64 {
+    fn serialize_key_to<B: Buffer>(&self, serializer: &mut KeySerializer<'_, B>) {
+        self.get().serialize_key_to(serializer);
+    }
+    fn deserialize_key_from(deserializer: &mut KeyDeserializer<'_>) -> Result<Self, Error> {
+        let raw = u64::deserialize_key_from(deserializer)?;
+        Self::new(raw).ok_or_else(|| anyhow::anyhow!("Expected non-zero value"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

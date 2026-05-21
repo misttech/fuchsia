@@ -29,8 +29,7 @@ impl From<ObjectKeyDataV43> for ObjectKeyDataV54 {
     }
 }
 
-#[derive(Eq, Ord, Hash, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint)]
-#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
+#[derive(Serialize, Deserialize, TypeFingerprint)]
 pub enum ObjectKeyDataV43 {
     Object,
     Keys,
@@ -42,7 +41,7 @@ pub enum ObjectKeyDataV43 {
         object_id: u64,
     },
     Project {
-        project_id: u64,
+        project_id: ProjectId,
         property: ProjectPropertyV32,
     },
     ExtendedAttribute {
@@ -60,21 +59,9 @@ pub enum ObjectKeyDataV43 {
     EncryptedChild(EncryptedChild),
 }
 
-#[derive(
-    Eq,
-    Ord,
-    Hash,
-    PartialEq,
-    PartialOrd,
-    Migrate,
-    Serialize,
-    Deserialize,
-    TypeFingerprint,
-    Versioned,
-)]
+#[derive(Migrate, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[migrate_to_version(ObjectKeyV54)]
 #[migrate_nodefault]
-#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct ObjectKeyV43 {
     pub object_id: u64,
     pub data: ObjectKeyDataV43,
@@ -104,14 +91,13 @@ impl From<ObjectKeyDataV40> for ObjectKeyDataV43 {
 }
 
 #[derive(Serialize, Deserialize, TypeFingerprint)]
-#[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum ObjectKeyDataV40 {
     Object,
     Keys,
     Attribute(u64, AttributeKeyV32),
     Child { name: String },
     GraveyardEntry { object_id: u64 },
-    Project { project_id: u64, property: ProjectPropertyV32 },
+    Project { project_id: ProjectId, property: ProjectPropertyV32 },
     ExtendedAttribute { name: Vec<u8> },
     GraveyardAttributeEntry { object_id: u64, attribute_id: u64 },
     EncryptedChild { name: Vec<u8> },
@@ -373,7 +359,8 @@ pub enum ObjectValueV40 {
 pub struct ObjectAttributesV32 {
     pub creation_time: TimestampV32,
     pub modification_time: TimestampV32,
-    pub project_id: u64,
+    #[serde(with = "crate::object_store::project_id::optional_project_id")]
+    pub project_id: Option<ProjectId>,
     pub posix_attributes: Option<PosixAttributesV32>,
     pub allocated_size: u64,
     pub access_time: TimestampV32,

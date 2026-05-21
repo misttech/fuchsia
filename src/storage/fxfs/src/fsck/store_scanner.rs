@@ -15,7 +15,7 @@ use crate::object_store::{
     AttributeKey, ChildValue, DEFAULT_DATA_ATTRIBUTE_ID, DirType, EXTENDED_ATTRIBUTE_RANGE_END,
     EXTENDED_ATTRIBUTE_RANGE_START, ExtendedAttributeValue, ExtentKey, ExtentMode, ExtentValue,
     FSCRYPT_KEY_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, ObjectAttributes,
-    ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue,
+    ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectId,
     ProjectProperty, RootDigest, VOLUME_DATA_KEY_ID,
 };
 use crate::range::RangeExt;
@@ -136,10 +136,10 @@ struct ScannedStore<'a> {
     is_encrypted: bool,
     current_object: Option<CurrentObject>,
     root_dir_id: u64,
-    stored_project_usages: BTreeMap<u64, (i64, i64)>,
-    total_project_usages: BTreeMap<u64, (i64, i64)>,
+    stored_project_usages: BTreeMap<ProjectId, (i64, i64)>,
+    total_project_usages: BTreeMap<ProjectId, (i64, i64)>,
     /// Tracks project ids used and an example node to examine if it should not have been included.
-    used_project_ids: BTreeMap<u64, u64>,
+    used_project_ids: BTreeMap<ProjectId, u64>,
 }
 
 struct CurrentObject {
@@ -198,7 +198,7 @@ impl<'a> ScannedStore<'a> {
                         kind: ObjectKind::File { refs },
                         attributes: ObjectAttributes { project_id, allocated_size, .. },
                     } => {
-                        if *project_id > 0 {
+                        if let Some(project_id) = project_id {
                             self.used_project_ids.insert(*project_id, key.object_id);
                             let entry = self.total_project_usages.entry(*project_id).or_default();
                             entry.0 += i64::try_from(*allocated_size).unwrap();
@@ -236,7 +236,7 @@ impl<'a> ScannedStore<'a> {
                         kind: ObjectKind::Directory { sub_dirs, dir_type },
                         attributes: ObjectAttributes { project_id, allocated_size, .. },
                     } => {
-                        if *project_id > 0 {
+                        if let Some(project_id) = project_id {
                             self.used_project_ids.insert(*project_id, key.object_id);
                             let entry = self.total_project_usages.entry(*project_id).or_default();
                             // Increment only nodes.
@@ -276,10 +276,10 @@ impl<'a> ScannedStore<'a> {
                     }
                     ObjectValue::Object { kind: ObjectKind::Graveyard, attributes } => {
                         self.objects.insert(key.object_id, ScannedObject::Graveyard);
-                        if attributes.project_id != 0 {
+                        if let Some(project_id) = attributes.project_id {
                             self.fsck.error(FsckError::ProjectOnGraveyard(
                                 self.store_id,
-                                attributes.project_id,
+                                project_id,
                                 key.object_id,
                             ))?;
                         }
@@ -288,7 +288,7 @@ impl<'a> ScannedStore<'a> {
                         kind: ObjectKind::Symlink { refs, .. },
                         attributes: ObjectAttributes { project_id, allocated_size, .. },
                     } => {
-                        if *project_id > 0 {
+                        if let Some(project_id) = project_id {
                             self.used_project_ids.insert(*project_id, key.object_id);
                             let entry = self.total_project_usages.entry(*project_id).or_default();
                             // Increment only nodes.
@@ -320,7 +320,7 @@ impl<'a> ScannedStore<'a> {
                         kind: ObjectKind::EncryptedSymlink { refs, .. },
                         attributes: ObjectAttributes { project_id, allocated_size, .. },
                     } => {
-                        if *project_id > 0 {
+                        if let Some(project_id) = project_id {
                             self.used_project_ids.insert(*project_id, key.object_id);
                             let entry = self.total_project_usages.entry(*project_id).or_default();
                             // Increment only nodes.
