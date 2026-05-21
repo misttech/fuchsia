@@ -1832,11 +1832,10 @@ async fn test_activity_governor_take_application_activity_lease() -> Result<()> 
     Ok(())
 }
 
-async fn get_diagnostics_hierarchy_for(moniker: &String) -> Result<DiagnosticsHierarchy> {
+async fn get_diagnostics_hierarchy_for(moniker: &str) -> Result<DiagnosticsHierarchy> {
     let mut reader = ArchiveReader::inspect();
-
     reader
-        .select_all_for_component(format!("{}/{}", REALM_FACTORY_CHILD_NAME, &moniker))
+        .select_all_for_component(format!("{}/{}", REALM_FACTORY_CHILD_NAME, moniker))
         .with_minimum_schema_count(1);
 
     let inspect = reader
