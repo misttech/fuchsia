@@ -1282,6 +1282,16 @@
                 // Failing new tests from gvisor.
                 "MountTest.BindMountDirectoryOntoFileFails",
                 "MountTest.BindMountFileOntoDirectoryFails",
+                "MountTest.OverlayfsSgidBitIsCopiedUp",
+                "PrctlTest.TaggedAddrCtrl",
+                "ProcSelfSetgroupsTest.AllowAfterDenyFails",
+                "ProcSelfSetgroupsTest.BadValueReturnsEINVAL",
+                "ProcSelfSetgroupsTest.ChildUserNamespaceInheritsDeny",
+                "ProcSelfSetgroupsTest.DenyAfterGidMapFails",
+                "ProcSelfSetgroupsTest.DenyTogglesReadback",
+                "ProcSelfSetgroupsTest.ExistsAndInheritsParentState",
+                "ProcSelfSetgroupsTest.SetgroupsSyscallFailsAfterDeny",
+                "ProcSelfSetgroupsTest.SetgroupsSyscallFailsBeforeGidMap",
 
                 // TODO(https://fxbug.dev/507804638): Flakey, needs investigation.
                 "AffinityTest.SetAffinityOtherUidRequiresCapSysNice",
