@@ -348,20 +348,10 @@ pub struct BinderProcess {
     pub available_threads: Arc<SegQueue<WeakRef<BinderThread>>>,
 }
 
-<<<<<<< HEAD
-pub struct BinderProcessGuard<'a>(
-    Guard<'a, BinderProcess, LockDepGuard<'a, BinderProcessState, BinderProcessStateLevel>>,
-);
-
-impl<'a> Deref for BinderProcessGuard<'a> {
-    type Target =
-        Guard<'a, BinderProcess, LockDepGuard<'a, BinderProcessState, BinderProcessStateLevel>>;
-=======
 pub struct BinderProcessGuard<'a>(Guard<'a, BinderProcess, MutexGuard<'a, BinderProcessState>>);
 
 impl<'a> Deref for BinderProcessGuard<'a> {
     type Target = Guard<'a, BinderProcess, MutexGuard<'a, BinderProcessState>>;
->>>>>>> 1ce9b375184 (Revert "[starnix] Migrate binderfs locks to LockDep and fix violations")
     fn deref(&self) -> &Self::Target {
         &self.0
     }

@@ -573,11 +573,7 @@ impl BinderObject {
     }
 
     /// Locks the mutable state of the binder object for exclusive access.
-<<<<<<< HEAD
-    pub fn lock(&self) -> LockDepGuard<'_, BinderObjectMutableState, BinderObjectLevel> {
-=======
     pub fn lock(&self) -> MutexGuard<'_, BinderObjectMutableState> {
->>>>>>> 1ce9b375184 (Revert "[starnix] Migrate binderfs locks to LockDep and fix violations")
         self.state.lock()
     }
 

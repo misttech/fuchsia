@@ -237,11 +237,7 @@ pub struct BinderThreadState {
 }
 
 pub struct BinderThreadGuard<'a> {
-<<<<<<< HEAD
-    guard: LockDepGuard<'a, BinderThreadState, TerminalLock>,
-=======
     guard: MutexGuard<'a, BinderThreadState>,
->>>>>>> 1ce9b375184 (Revert "[starnix] Migrate binderfs locks to LockDep and fix violations")
     thread: &'a BinderThread,
 }
 
