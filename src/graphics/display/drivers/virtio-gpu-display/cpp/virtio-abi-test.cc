@@ -72,4 +72,36 @@ static_assert(std::is_standard_layout_v<AttachResourceBackingCommand<2>>);
 static_assert(sizeof(AttachResourceBackingCommand<2>) == 64);
 static_assert(alignof(AttachResourceBackingCommand<2>) == 8);
 
+static_assert(std::is_standard_layout_v<CursorPosition>);
+static_assert(sizeof(CursorPosition) == 16);
+static_assert(alignof(CursorPosition) == 4);
+
+static_assert(std::is_standard_layout_v<UpdateCursorCommand>);
+static_assert(sizeof(UpdateCursorCommand) == 56);
+static_assert(alignof(UpdateCursorCommand) == 8);
+
+static_assert(std::is_standard_layout_v<SetScanoutBlobCommand>);
+static_assert(sizeof(SetScanoutBlobCommand) == 96);
+static_assert(alignof(SetScanoutBlobCommand) == 8);
+
+static_assert(std::is_standard_layout_v<CreateBlobResourceCommand<0>>);
+static_assert(sizeof(CreateBlobResourceCommand<0>) == 56);
+static_assert(alignof(CreateBlobResourceCommand<0>) == 8);
+
+static_assert(std::is_standard_layout_v<GetCapsetInfoCommand>);
+static_assert(sizeof(GetCapsetInfoCommand) == 32);
+static_assert(alignof(GetCapsetInfoCommand) == 8);
+
+static_assert(std::is_standard_layout_v<GetCapsetInfoResponse>);
+static_assert(sizeof(GetCapsetInfoResponse) == 40);
+static_assert(alignof(GetCapsetInfoResponse) == 8);
+
+static_assert(std::is_standard_layout_v<GetCapsetCommand>);
+static_assert(sizeof(GetCapsetCommand) == 32);
+static_assert(alignof(GetCapsetCommand) == 8);
+
+static_assert(std::is_standard_layout_v<GetCapsetResponse>);
+static_assert(sizeof(GetCapsetResponse) == 24);
+static_assert(alignof(GetCapsetResponse) == 8);
+
 }  // namespace virtio_abi
