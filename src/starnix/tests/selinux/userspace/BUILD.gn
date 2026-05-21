@@ -145,6 +145,7 @@ test_names = [
   "ptrace",
   "selinuxfs",
   "socket",
+  "sys_power",
   "syslog",
   "timerslack",
   "tun_tap",

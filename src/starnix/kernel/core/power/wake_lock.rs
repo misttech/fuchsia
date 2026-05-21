@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 use crate::power::WakeupSourceOrigin;
+use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::FsNodeOps;
 use crate::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
 use itertools::Itertools;
+use starnix_uapi::auth::CAP_BLOCK_SUSPEND;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error};
 use std::borrow::Cow;
@@ -28,6 +30,7 @@ impl BytesFileOps for PowerWakeLockFile {
     ///    The second part is a timeout in nanoseconds, after which the wakeup source is
     ///    automatically deactivated.
     fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        security::check_task_capable(current_task, CAP_BLOCK_SUSPEND)?;
         let lock_str = std::str::from_utf8(&data).map_err(|_| errno!(EINVAL))?;
         let clean_str = lock_str.trim_end_matches('\n');
         let mut clean_str_split = clean_str.split(' ');
@@ -89,6 +92,7 @@ impl PowerWakeUnlockFile {
 impl BytesFileOps for PowerWakeUnlockFile {
     /// Writing a string to this file deactivates the wakeup source with that name.
     fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        security::check_task_capable(current_task, CAP_BLOCK_SUSPEND)?;
         let lock_str = std::str::from_utf8(&data).map_err(|_| errno!(EINVAL))?;
         let clean_lock_str = lock_str.trim_end_matches('\n').to_string();
         if !current_task
