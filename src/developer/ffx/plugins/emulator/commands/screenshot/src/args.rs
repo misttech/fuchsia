@@ -29,7 +29,7 @@ The resolution is the same as the emulator's primary display device.
 This command will fail if:
 - The emulator is not in the 'Running' state.
 - A virtual display is not enabled in the emulator configuration.
-- The output path already exists.
+- The output path is a directory.
 - The parent directory is not writable.
 
 If the parent directory of the output path does not exist, ffx will

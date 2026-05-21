@@ -27,7 +27,7 @@
     }
   ],
   "notes": [
-    "The screenshot is captured as a PNG file in RGB color space.\nThe resolution is the same as the emulator's primary display device.\n\nThis command will fail if:\n- The emulator is not in the 'Running' state.\n- A virtual display is not enabled in the emulator configuration.\n- The output path already exists.\n- The parent directory is not writable.\n\nIf the parent directory of the output path does not exist, ffx will\nattempt to create it automatically."
+    "The screenshot is captured as a PNG file in RGB color space.\nThe resolution is the same as the emulator's primary display device.\n\nThis command will fail if:\n- The emulator is not in the 'Running' state.\n- A virtual display is not enabled in the emulator configuration.\n- The output path is a directory.\n- The parent directory is not writable.\n\nIf the parent directory of the output path does not exist, ffx will\nattempt to create it automatically."
   ],
   "commands": [],
   "positionals": [

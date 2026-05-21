@@ -75,6 +75,7 @@ pub trait EmulatorEngine: Send + Sync {
     /// Takes a screenshot of the emulator's primary display and saves it to the given path.
     ///
     /// On success, returns [`Ok(())`] and creates a valid PNG file at `path`.
+    /// If a file already exists at `path`, it will be overwritten.
     ///
     /// The output is a PNG file in RGB color space; it has the same resolution
     /// as the emulator's primary display device.
@@ -84,7 +85,7 @@ pub trait EmulatorEngine: Send + Sync {
     /// This method will panic if:
     /// * The emulator is not in the [`EngineState::Running`] state.
     /// * A virtual display is not enabled in the emulator configuration.
-    /// * The `path` already exists.
+    /// * The output path is a directory.
     /// * The parent directory of `path` is not writable.
     ///
     /// # Errors

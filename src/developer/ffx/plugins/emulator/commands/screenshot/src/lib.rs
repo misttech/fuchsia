@@ -99,9 +99,9 @@ impl ScreenshotTool {
             ));
         }
 
-        if absolute_path.exists() {
+        if absolute_path.is_dir() {
             return Err(user_error!(
-                "The output path already exists: {}. Overwriting is not supported.",
+                "The output path is a directory: {}. Please specify a file path.",
                 absolute_path.display()
             ));
         }
@@ -230,7 +230,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_validate_preconditions_file_exists() {
+    async fn test_validate_preconditions_overwrites_file() {
         const EXISTING_PATH: &str = "existing.png";
         let env = ffx_config::test_init().unwrap();
         let temp = tempdir().unwrap();
@@ -248,7 +248,27 @@ mod tests {
         };
 
         let res = tool.validate_preconditions(&engine, &file_path);
+        assert!(res.is_ok(), "Expected OK for existing file, got {:?}", res.unwrap_err());
+    }
+
+    #[fuchsia::test]
+    async fn test_validate_preconditions_is_dir() {
+        let env = ffx_config::test_init().unwrap();
+        let temp = tempdir().unwrap();
+        let dir_path = temp.path().to_path_buf();
+
+        let mut config = EmulatorConfiguration::default();
+        config.device.screen.width = 800;
+        config.device.screen.height = 600;
+        let engine = StubEngine { state: EngineState::Running, config };
+
+        let tool = ScreenshotTool {
+            cmd: ScreenshotCommand { name: None, output: dir_path.clone() },
+            context: env.context.clone(),
+        };
+
+        let res = tool.validate_preconditions(&engine, &dir_path);
         assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("already exists"));
+        assert!(res.unwrap_err().to_string().contains("is a directory"));
     }
 }

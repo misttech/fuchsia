@@ -66,7 +66,7 @@ pub(crate) fn check_screenshot_preconditions(engine: &dyn EmulatorEngine, absolu
         config.device.screen.height
     );
     assert!(absolute_path.is_absolute(), "Path must be absolute ({:?})", absolute_path);
-    assert!(!absolute_path.exists(), "Output path must not exist ({:?})", absolute_path);
+    assert!(!absolute_path.is_dir(), "Output path must not be a directory ({:?})", absolute_path);
     if let Some(parent) = absolute_path.parent() {
         assert!(parent.is_dir(), "Parent path must be a directory ({:?})", parent);
     }
@@ -2259,8 +2259,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    #[should_panic(expected = "Output path must not exist")]
-    fn test_check_screenshot_preconditions_file_exists() {
+    fn test_check_screenshot_preconditions_overwrites_file() {
         const EXISTING_PATH: &str = "existing.png";
         let temp = tempdir().unwrap();
         let file_path = temp.path().join(EXISTING_PATH);
@@ -2277,5 +2276,24 @@ mod tests {
         let engine =
             crate::QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()));
         check_screenshot_preconditions(&engine, &file_path);
+    }
+
+    #[fuchsia::test]
+    #[should_panic(expected = "Output path must not be a directory")]
+    fn test_check_screenshot_preconditions_is_dir() {
+        let temp = tempdir().unwrap();
+        let dir_path = temp.path().to_path_buf();
+
+        let mut config = EmulatorConfiguration::default();
+        config.device.screen.width = 100;
+        config.device.screen.height = 100;
+        let mut data = EmulatorInstanceData::new(config, EngineType::Qemu, EngineState::Running);
+        // Set the emulator PID to a fake ID so that `get_engine_state()` returns Running.
+        let fake_emulator_pid = std::process::id();
+        data.set_pid(fake_emulator_pid);
+        let env = ffx_config::test_init().unwrap();
+        let engine =
+            crate::QemuEngine::new(&env.context, data, EmulatorInstances::new(PathBuf::new()));
+        check_screenshot_preconditions(&engine, &dir_path);
     }
 }
