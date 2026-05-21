@@ -655,3 +655,42 @@ def _validate_allowed_in_value(list_name, value):
             return
 
     fail("'%s' is an invalid value for '%s'.  The valid values are '" % (value, list_name) + "', '".join(_build_types + _feature_set_levels) + "' or a '<feature_set_level>::<build_type>'.")
+
+def _assembly_resources_directory_impl(ctx):
+    out_dir = ctx.actions.declare_directory(ctx.label.name)
+
+    # We're using a shell script to create the resources directory because we cannot have
+    # Bazel directly copy files into a directory that we declare with declare_directory().
+    cmds = [
+        "mkdir -p %s" % out_dir.path,
+        "printf '{}' > %s/assembly_config.json" % out_dir.path,
+    ]
+
+    for f in ctx.files.sources:
+        dest_name = f.basename
+        if dest_name == "latest_commit_date.txt" or dest_name == "build_info_version.txt":
+            dest_name = "version.txt"
+        cmds.append("cp %s %s/%s" % (f.path, out_dir.path, dest_name))
+
+    ctx.actions.run_shell(
+        inputs = ctx.files.sources,
+        outputs = [out_dir],
+        command = "\n".join(cmds),
+        mnemonic = "AssemblyResourcesDirectory",
+        progress_message = "Creating Assembly Resources Directory %s" % ctx.label.name,
+    )
+
+    return [
+        DefaultInfo(files = depset([out_dir])),
+    ]
+
+assembly_resources_directory = rule(
+    implementation = _assembly_resources_directory_impl,
+    attrs = {
+        "sources": attr.label_list(
+            allow_files = True,
+            mandatory = True,
+            doc = "List of resource files to be added to the directory.",
+        ),
+    },
+)

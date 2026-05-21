@@ -1711,4 +1711,8 @@ group("gnss") {
 }
 
 group("resources") {
+  deps = [
+    "//bundles/assembly/bazel_inputs/src/diagnostics/sampler:default-config",
+    "//bundles/assembly/bazel_inputs/src/lib/icu/tzdata:revision_txt",
+  ]
 }

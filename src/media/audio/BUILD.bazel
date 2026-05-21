@@ -4,9 +4,8 @@
 
 exports_files(
     [
-        "meta/no_remote_feedback_id.core_shard.cml",
-        "flash_ts/meta/flash_ts_feedback_id.core_shard.cml.template",
-        "sysinfo/meta/sysinfo_feedback_id.core_shard.cml.template",
+        "meta/multizone_leader.core_shard.cml.template",
+        "meta/multizone_leader.core_shard_eng.cml",
     ],
     visibility = ["//bundles/assembly:__subpackages__"],
 )

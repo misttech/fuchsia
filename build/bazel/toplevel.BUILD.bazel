@@ -66,6 +66,7 @@ exports_files(
 
     # zoneinfo resources
     glob(["prebuilt/third_party/zoneinfo/**"]) +
+    glob(["prebuilt/third_party/tzres/*"]) +
 
     # prebuilt drivers
     glob(

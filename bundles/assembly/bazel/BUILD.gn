@@ -56,6 +56,12 @@ foreach(aib_name, platform_aib_names) {
     gn_aib_dir = "${gn_out_dir}/${aib_name}"
     bazel_aib_dir = "$target_out_dir/bazel_built_aibs/${aib_name}"
 
+    hermetic_deps = false
+    hermetic_action_ignored_prefixes = [
+      "${gn_aib_dir}",
+      "${bazel_aib_dir}",
+    ]
+
     inputs = [
       "${gn_aib_dir}/assembly_config.json",
       "${bazel_aib_dir}/assembly_config.json",

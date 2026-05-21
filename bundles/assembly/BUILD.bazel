@@ -5,6 +5,7 @@
 load(
     "//build/bazel/rules/assembly:assembly_input_bundle.bzl",
     "assembly_input_bundle",
+    "assembly_resources_directory",
 )
 load("//build/bazel/rules/icu:icu_assembly_input_bundle.bzl", "icu_assembly_input_bundle")
 load("//third_party/sbase:binaries.bzl", "sbase_binaries")
@@ -4716,8 +4717,51 @@ assembly_input_bundle(
 
 # Static resources files to make available to product assembly subsystems.
 # buildifier: leave-alone
-assembly_input_bundle(
+assembly_resources_directory(
     name = "resources",
+    sources = [
+        "//src/sys/core:core_component_id_index.json5",
+        "//build/info:version",
+
+        # Platform configs for the component_manager config.
+        "//src/security/policy:component_manager_policy.json5",
+        "//src/security/policy:component_manager_policy_base.json5",
+        "//src/security/policy:component_manager_policy_build_type_base.json5",
+        "//src/security/policy:component_manager_policy_eng.json5",
+        "//src/security/policy:component_manager_policy_user.json5",
+        "//src/security/policy:component_manager_policy_userdebug.json5",
+        "//src/security/policy:subsystems/component_manager_policy_starnix.json5",
+        "//src/sys/component_manager/configs:bootfs_config.json5",
+
+        # Networking resources.
+        "//src/connectivity/policy/netcfg/config:netcfg_default.json5",
+
+        # ICU resources.
+        "//:prebuilt/third_party/tzres/metaZones.res",
+        "//:prebuilt/third_party/tzres/timezoneTypes.res",
+        "//:prebuilt/third_party/tzres/zoneinfo64.res",
+        "@gn_targets//src/lib/icu/tzdata:revision",
+
+        # Diagnostics sampler resources.
+        "@gn_targets//src/diagnostics/config/sampler:default-config",
+
+        # Core shard templates.
+        "//src/connectivity/weave:meta/weavestack.core_shard.cml.template",
+        "//src/developer/forensics/feedback_id:flash_ts/meta/flash_ts_feedback_id.core_shard.cml.template",
+        "//src/developer/forensics/feedback_id:sysinfo/meta/sysinfo_feedback_id.core_shard.cml.template",
+        "//src/lib/assembly/platform_configuration:src/subsystems/meta/tee-clients.core_shard.cml",
+        "//src/media/audio:meta/multizone_leader.core_shard.cml.template",
+        "//src/media/audio:meta/multizone_leader.core_shard_eng.cml",
+        "//src/recovery/system:meta/bootfs_recovery.bootstrap_shard.cml.template",
+        "//src/security/bin/tee_manager:meta/no_tee_manager.core_shard.cml",
+        "//src/security/bin/tee_manager:meta/no_tee_manager.session.core_shard.cml",
+        "//src/security/bin/tee_manager:meta/proprietary_tee_manager.no_session.core_shard.cml.template",
+        "//src/security/bin/tee_manager:meta/proprietary_tee_manager.session.core_shard.cml.template",
+        "//src/security/bin/tee_manager:meta/tee_manager.core_shard.cml",
+
+        # Default recovery logo
+        "//src/recovery/system:res/fuchsia-logo.riv",
+    ],
 )
 
 # Sets a low timeout for rebooting when the device runs out-of-memory.

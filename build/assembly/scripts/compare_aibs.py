@@ -79,10 +79,6 @@ def validate_aib(
     aib_name: str, dir1: Path, dir2: Path, compare_contents: bool
 ) -> bool:
     """Validates that corresponding AIBs are the same. Returns True if valid, False if diffs found."""
-    # The 'resources' directory needs to be skipped, for now.
-    if aib_name == "resources":
-        return True
-
     if compare_contents:
         diffs = []
         files1 = sorted(
