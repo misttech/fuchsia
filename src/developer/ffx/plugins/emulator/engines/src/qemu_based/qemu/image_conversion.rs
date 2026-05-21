@@ -303,11 +303,44 @@ mod tests {
         // Read the generated PNG file
         let generated_bytes = std::fs::read(png_output).expect("failed to read generated png");
 
-        // Full content byte-for-byte comparison
+        // Decode the generated PNG to get width, height, and pixels
+        let generated_decoder = png::Decoder::new(std::io::Cursor::new(generated_bytes));
+        let mut generated_reader =
+            generated_decoder.read_info().expect("failed to read generated PNG info");
+        let mut generated_buf = vec![0; generated_reader.output_buffer_size().unwrap()];
+        let generated_info = generated_reader
+            .next_frame(&mut generated_buf)
+            .expect("failed to decode generated PNG frame");
+        let generated_pixels = &generated_buf[..generated_info.buffer_size()];
+
+        // Decode the golden PNG to get width, height, and pixels
+        let golden_decoder = png::Decoder::new(std::io::Cursor::new(GOLDEN_PNG));
+        let mut golden_reader = golden_decoder.read_info().expect("failed to read golden PNG info");
+        let mut golden_buf = vec![0; golden_reader.output_buffer_size().unwrap()];
+        let golden_info =
+            golden_reader.next_frame(&mut golden_buf).expect("failed to decode golden PNG frame");
+        let golden_pixels = &golden_buf[..golden_info.buffer_size()];
+
+        // Compare the decoded properties and pixel data.
         assert_eq!(
-            generated_bytes, GOLDEN_PNG,
-            "The generated PNG file does not match the golden image from test_data. \
-             This could be due to changes in image encoding or pixel data handling."
+            generated_info.width, golden_info.width,
+            "The width of the generated PNG file does not match the golden image from test_data."
+        );
+        assert_eq!(
+            generated_info.height, golden_info.height,
+            "The height of the generated PNG file does not match the golden image from test_data."
+        );
+        assert_eq!(
+            generated_info.color_type, golden_info.color_type,
+            "The color type of the generated PNG file does not match the golden image from test_data."
+        );
+        assert_eq!(
+            generated_info.bit_depth, golden_info.bit_depth,
+            "The bit depth of the generated PNG file does not match the golden image from test_data."
+        );
+        assert_eq!(
+            generated_pixels, golden_pixels,
+            "The decoded pixels of the generated PNG file do not match the golden image from test_data."
         );
     }
 }

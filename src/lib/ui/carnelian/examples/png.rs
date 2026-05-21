@@ -156,7 +156,7 @@ impl ViewAssistant for PngViewAssistant {
             let file = File::open(format!("/pkg/data/static/{}", filename)).unwrap_or_else(|e| {
                 panic!("failed to open file /pkg/data/static/{}: {:?}", filename, e)
             });
-            let decoder = png::Decoder::new(file);
+            let decoder = png::Decoder::new(std::io::BufReader::new(file));
             let mut reader = decoder.read_info().unwrap();
             let image = render_context.new_image_from_png(&mut reader).unwrap_or_else(|e| {
                 panic!("failed to decode file /pkg/data/static/{}: {:?}", filename, e)

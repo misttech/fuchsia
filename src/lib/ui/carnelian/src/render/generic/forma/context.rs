@@ -4,7 +4,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::io::Read;
+
 use std::{mem, ptr, u32};
 
 use anyhow::Error;
@@ -17,20 +17,20 @@ use fidl_fuchsia_sysmem2::{
     AllocatorBindSharedCollectionRequest, AllocatorMarker, BufferCollectionConstraints,
     BufferCollectionMarker, BufferCollectionSetConstraintsRequest,
     BufferCollectionSynchronousProxy, BufferCollectionTokenMarker, BufferMemoryConstraints,
-    BufferUsage, CoherencyDomain, ImageFormatConstraints, CPU_USAGE_WRITE_OFTEN,
+    BufferUsage, CPU_USAGE_WRITE_OFTEN, CoherencyDomain, ImageFormatConstraints,
 };
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_framebuffer::sysmem::set_allocator_name;
 use fuchsia_trace::{duration_begin, duration_end};
 use zx::sys;
 
+use crate::ViewAssistantContext;
 use crate::drawing::DisplayRotation;
 use crate::render::generic::forma::image::VmoImage;
 use crate::render::generic::forma::{
     Forma, FormaComposition, FormaImage, FormaPathBuilder, FormaRasterBuilder,
 };
 use crate::render::generic::{Context, CopyRegion, PostCopy, PreClear, PreCopy, RenderExt};
-use crate::ViewAssistantContext;
 
 fn buffer_collection_constraints(width: u32, height: u32) -> BufferCollectionConstraints {
     let image_format_constraints = ImageFormatConstraints {
@@ -191,7 +191,7 @@ impl Context<Forma> for FormaContext {
         image
     }
 
-    fn new_image_from_png<R: Read>(
+    fn new_image_from_png<R: std::io::BufRead + std::io::Seek>(
         &mut self,
         reader: &mut png::Reader<R>,
     ) -> Result<FormaImage, Error> {

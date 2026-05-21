@@ -4,7 +4,7 @@
 
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::io::Read;
+
 use std::ops::Add;
 use std::{error, fmt, u32};
 
@@ -106,7 +106,7 @@ pub trait Context<B: Backend> {
     /// Creates a new image with `size`.
     fn new_image(&mut self, size: Size2D<u32>) -> B::Image;
     /// Creates a new image from PNG `reader`.
-    fn new_image_from_png<R: Read>(
+    fn new_image_from_png<R: std::io::BufRead + std::io::Seek>(
         &mut self,
         reader: &mut png::Reader<R>,
     ) -> Result<B::Image, Error>;

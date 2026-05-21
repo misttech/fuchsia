@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::io::Read;
 use std::sync::Arc;
 use std::{mem, slice};
 
@@ -59,7 +58,9 @@ impl VmoImage {
         }
     }
 
-    pub fn from_png<R: Read>(reader: &mut png::Reader<R>) -> Result<Self, Error> {
+    pub fn from_png<R: std::io::BufRead + std::io::Seek>(
+        reader: &mut png::Reader<R>,
+    ) -> Result<Self, Error> {
         let info = reader.info();
         let color_type = info.color_type;
         let (width, height) = info.size();

@@ -13,7 +13,7 @@ use anyhow::Error;
 use display_utils::PixelFormat;
 use euclid::default::{Point2D, Rect, Size2D, Transform2D, Vector2D};
 use euclid::{point2, size2};
-use std::io::Read;
+
 use std::ops::Add;
 use std::{mem, u32};
 /// Rendering context and API start point.
@@ -108,7 +108,7 @@ impl Context {
         }
     }
     /// Creates a new image from PNG `reader`.
-    pub fn new_image_from_png<R: Read>(
+    pub fn new_image_from_png<R: std::io::BufRead + std::io::Seek>(
         &mut self,
         reader: &mut png::Reader<R>,
     ) -> Result<Image, Error> {
