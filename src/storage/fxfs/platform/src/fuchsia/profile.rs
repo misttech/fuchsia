@@ -731,6 +731,8 @@ mod tests {
     use async_trait::async_trait;
     use delivery_blob::CompressionMode;
     use event_listener::{Event, EventListener};
+    use fidl_fuchsia_io as fio;
+    use fuchsia_async as fasync;
     use fuchsia_hash::Hash;
     use fuchsia_sync::Mutex;
     use fxfs::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
@@ -742,7 +744,6 @@ mod tests {
     use std::time::Duration;
     use storage_device::buffer::{BufferRef, MutableBufferRef};
     use storage_device::buffer_allocator::{BufferAllocator, BufferFuture, BufferSource};
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     struct FakeReaderWriterInner {
         data: Vec<u8>,
@@ -1139,7 +1140,7 @@ mod tests {
             // Page in the zero offsets only to avoid readahead strangeness.
             for i in 0..message_count {
                 let hash =
-                    fixture.write_blob(i.to_le_bytes().as_slice(), CompressionMode::Never).await;
+                    fixture.write_blob(i.to_string().as_bytes(), CompressionMode::Never).await;
                 let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
                 recorder.record_open(blob.clone()).unwrap();
                 hashes.push(hash);
