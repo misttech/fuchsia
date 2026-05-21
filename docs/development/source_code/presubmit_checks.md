@@ -110,7 +110,37 @@ Block to be changed.
 ```
 
 IfThisThenThat supports absolute file paths (those that start with `/`), and
-relative paths (those that do not start with `/`).
+relative paths (those that do not start with `/`). Use `//` to reference the
+checkout's top directory.
+
+Multiple file paths are possible in `LINT.IfChange()` as long as they are
+comma-separated. Whitespace and multi-line definitions are supported, e.g.:
+
+```py
+# LINT.IfChange
+... some definitions
+# LINT.ThenChange(
+#    //build/config/foo.gni,
+#    //build/script/foo.py,
+# )
+```
+
+It is possible to name each block with `LINT.IfChange(name)` and reference it
+later `LINT.IfChange(path/to/file:name)`. E.g.:
+
+```py
+# From //build/config/foo.gni
+
+# LINT.IfChange(foo_modes)
+foo_modes = [ ... ]
+# LINT.ThenChange(//build/scripts/foo.py:foo_modes)
+
+# From //build/scripts/foo.py
+
+# LINT.IfChange(foo_modes)
+FOO_MODES = { ... }
+# LINT.ThenChange(//build/config/foo.gni:foo_modes)
+```
 
 If the text within the `LINT.IfChange/ThenChange` directives is altered, so too
 must the other file that is pointed to. Files should always have the LINT
