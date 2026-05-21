@@ -1,117 +1,122 @@
 ---
 name: update-assembly-bundles
-description: Skill for updating assembly_input_bundle Bazel targets based on GN targets.
+description: >
+  Skill for maintaining Assembly Input Bundle Bazel targets and managing their
+  GN inputs bridge.
 ---
 
 # Updating Assembly Input Bundle Bazel Targets
 
 ## Overview
 
-This skill provides guidance on how to update `assembly_input_bundle` (or
-`icu_assembly_input_bundle`) targets in `bundles/assembly/BUILD.bazel` to match
-their counterparts in `bundles/assembly/BUILD.gn`, following specific
-guidelines.
+Platform `assembly_input_bundle` (and `icu_assembly_input_bundle`) targets are
+defined natively in Bazel within `bundles/assembly/BUILD.bazel`. Because much
+of the Fuchsia build still operates in GN, artifacts produced by GN (packages,
+compiled configs) must be bridged into Bazel via
+`bundles/assembly/bazel_inputs`.
+
+This skill provides guidance on how to maintain these AIB targets and properly
+manage the GN/Bazel bridge when adding, removing, or renaming inputs. For full
+architectural background, see `//bundles/assembly/README.md`.
 
 ## Guidelines
 
-1.  **Allowed Parameters:** We can currently only migrate a subset of
-    parameters—those which have already been added to the Bazel rule. You must
-    get this list of allowed parameters from the Bazel rule definition (e.g., in
-    `build/bazel/rules/assembly/assembly_input_bundle.bzl`) **EVERY time** you
-    use this skill, to account for changes in the rule. The `testonly` parameter
-    MUST NOT be migrated.
-1.  **Source File Inputs**: When the input to the GN template is a source file,
-    That same path should be used, but it needs to be converted to a proper
-    Bazel label for a file.  The directory of the file should become the package
-    path, e.g. `//src/foo/tools/bar` becomes a Bazel label of
-    `//src/foo/tools:bar` and a BUILD.bazel file (with license) added in that
-    directory if one currently doesn't exist.  There MUST be an
-    `exports_files()` rule in the BUILD.bazel that will export the source files
-    in question.
-    * Place `exports_files()` near the top of the `BUILD.bazel` file, after any
-      `load()` and `package()` functions, but before any other targets.
-    * Set the visibility on files that need to be used with `exports_files()` to
-      `["//bundles/assembly:__subpackages__"]`.
-    * If multiple files are exported from the same `BUILD.bazel` file, and have
-      the same visibility, combine them into a single `exports_files()` rule.
-    * For files located in a `meta/` subdirectory (e.g.,
-      `//path/to/folder/meta/file.cml`), put the `exports_files()` rule in the
-      parent directory's `BUILD.bazel` (e.g., `//path/to/folder/BUILD.bazel`),
-      NOT in `meta/BUILD.bazel`. The label should be
-      `//path/to/folder:meta/file.cml`.
-1.  **GN Target Dependencies:** For each GN dependency that is a GN target (not
-    a source file!), we need to have a `bazel_inputs` entry for it in the
-    `bundles/assembly/bazel_inputs` directory tree.
-    *   If the target is `//src/foo:bar`, then the entry should be
-        `//bundles/assembly/bazel_inputs/src/foo:bar`.
-    *   Packages should be exported to Bazel using the
-        `export_fuchsia_package_to_bazel()` template in a `BUILD.gn` file
-        located in the `bazel_inputs` entry directory (e.g.,
-        `//bundles/assembly/bazel_inputs/src/foo/BUILD.gn`), NOT in the
-        original source directory.
-    *   Packages should be imported in Bazel using the `prebuilt_package()` rule
-        in a corresponding `BUILD.bazel` file.
-    *   All target names must match the original name found in the
-        `//bundles/assembly/BUILD.gn` file.
-    *   For **single-file GN target dependencies** (GN targets that output a
-        single file to be consumed by assembly, such as config JSONs or version
-        files, rather than full fuchsia packages):
-        *   Define a `bazel_input_file()` target in a `BUILD.gn` under
-            `bundles/assembly/bazel_inputs/...` as usual, pointing to the
-            generator.
-        *   Add the `bazel_input_file` target to the corresponding group (e.g.,
-            `resources`) in `bundles/assembly/bazel_inputs/BUILD.gn` to ensure
-            the workspace generator collects it.
-        *   Do **NOT** define a local `BUILD.bazel` package file or
-            `filegroup()` target redirection in `bazel_inputs/`.
-        *   Instead, reference the generated `@gn_targets` label directly in
-            the consumer target (e.g. in `bundles/assembly/BUILD.bazel`). The
-            generated label in `@gn_targets` will be in the generator's
-            original directory and name, of the form
-            `@gn_targets//<generator_dir>:<generator_name>`.
-    *   There MUST be a group target in `bundles/assembly/bazel_inputs/BUILD.gn`
-        with the same name as the `assembly_input_bundle` or
-        `icu_assembly_input_bundle` target, and it must contain references to
-        the targets that are exported to Bazel.
-1.  **Comments Preservation:** All comments for an assembly input bundle that
-    are found in `//bundles/assembly/BUILD.gn` MUST be copied to the
-    corresponding target in `BUILD.bazel`, including any comments before
-    parameters to the template, and within lists of arguments to the template.
-    The order of comments and the dependencies MUST be preserved.
-1.  **Target Order:** Targets in `bundles/assembly/BUILD.bazel` should be kept
-    in the same order that they are in the `BUILD.gn` file.
-1.  **Buildifier Comment:** Each target in `//bundles/assembly/build.bazel` MUST
-    carry a `# buildifier: leave-alone` comment directly above the target, so
-    that buildifier keeps the ordering of parameters in the order we want them
-    in.
-1.  **ICU Targets:** Targets that use the `icu_assembly_input_bundle()` template
-    should use the corresponding `icu_assembly_input_bundle()` Bazel rule, with
-    its additional parameters. For these targets, use a the
-    `icu_aib_bazel_inputs()` template in `//bundles/assembly/BUILD.gn` instead
-    of a `group()`.
-1.  **Orphaned Bazel Targets:** If you find a Bazel target that does not have a
-    corresponding GN target in `bundles/assembly/BUILD.gn`, you must flag this
-    to the user for instructions on how to proceed.
+1.  **Source File Inputs**: When an AIB input is a pure source file in version
+    control (not generated by a build action), reference it directly in
+    `BUILD.bazel` using a proper Bazel label. The directory of the file
+    becomes the package path (e.g., `//src/foo/tools/bar` becomes
+    `//src/foo/tools:bar`). A `BUILD.bazel` file must exist in that directory
+    with an `exports_files()` rule.
+    *   Place `exports_files()` near the top of the `BUILD.bazel` file, after
+        `load()` and `package()`.
+    *   Set visibility to `["//bundles/assembly:__subpackages__"]`.
+    *   Combine multiple exported files into a single `exports_files()` rule if
+        visibility matches.
+    *   For files in a `meta/` subdirectory (`//path/to/meta/file.cml`), place
+        `exports_files()` in the parent directory (`//path/to/BUILD.bazel`).
+        Label is `//path/to:meta/file.cml`. Do **not** create
+        `meta/BUILD.bazel`.
+2.  **GN Target Dependencies (Packages & Generated Files):** For any dependency
+    produced by a GN build target, you must manage a bridging entry in
+    `//bundles/assembly/bazel_inputs/...`.
+    *   **Fuchsia Packages:**
+        *   Export from GN: In
+            `//bundles/assembly/bazel_inputs/<pkg_dir>/BUILD.gn`, use
+            `export_fuchsia_package_to_bazel("package")` pointing to
+            `//<pkg_dir>:<pkg_name>`.
+        *   Import to Bazel: In
+            `//bundles/assembly/bazel_inputs/<pkg_dir>/BUILD.bazel`, use
+            `prebuilt_package("package", archive =
+            "@gn_targets//bundles/assembly/bazel_inputs/<pkg_dir>:package")`.
+        *   Register in GN AIB Group: In
+            `//bundles/assembly/bazel_inputs/BUILD.gn`, ensure the target
+            (`"//bundles/assembly/bazel_inputs/<pkg_dir>:package"`) is listed
+            in the `deps` of the group corresponding to the AIB.
+    *   **Single File Outputs (Configs, version files, etc.):**
+        *   Export from GN: In
+            `//bundles/assembly/bazel_inputs/<file_dir>/BUILD.gn`, use
+            `bazel_input_file("<target_name>")` pointing to the generator
+            target and exact output path.
+        *   Register in GN Group: Add
+            `"//bundles/assembly/bazel_inputs/<file_dir>:<target_name>"` to the
+            corresponding resource group (e.g. `group("resources")` or specific
+            AIB group) in `//bundles/assembly/bazel_inputs/BUILD.gn`.
+        *   **Crucial Best Practice:** Do **NOT** define a local `BUILD.bazel`
+            package file or `filegroup()` redirection in `bazel_inputs/`.
+            Reference the generated `@gn_targets` label directly in
+            `bundles/assembly/BUILD.bazel`. Note that the target name in
+            `@gn_targets` will match the generator target's original name
+            (`@gn_targets//<file_dir>:<generator_name>`).
+3.  **Buildifier Comment:** Each AIB target in
+    `//bundles/assembly/BUILD.bazel` MUST carry a `# buildifier: leave-alone`
+    comment directly above it so buildifier does not reorder parameters
+    against our preferences.
+4.  **ICU Targets:** Targets using `icu_assembly_input_bundle()` in Bazel
+    require specific flavor handling. When registering their inputs in
+    `bundles/assembly/bazel_inputs/BUILD.gn`, use the `icu_aib_bazel_inputs()`
+    template instead of a standard `group()`.
+
+---
 
 ## Workflow
 
-When requested to update Bazel targets based on GN targets:
+When executing tasks that modify AIB contents or structure:
 
-1.  **Read Allowed Parameters:** Check the Bazel rule definition for
-    `assembly_input_bundle` to know which parameters are supported. You MUST do
-    this **every time** you use this skill.
-1.  **Locate the GN Target:** Find the target in `bundles/assembly/BUILD.gn`.
-1.  **Locate/Create the Bazel Target:** Find or create the corresponding target
-    in `bundles/assembly/BUILD.bazel`.
-1.  **Update Targets and Dependencies:** Follow the guidelines above to handle
-    packages, dependencies, and comments.
-1.  **Format files:** Use `fx format-code` to ensure that the files are
-    formatted correctly.
+### Adding Inputs from GN
+*   **Package:** Create export `BUILD.gn` and import `BUILD.bazel` in
+    `bazel_inputs/<dir>`. Add export target to AIB group in
+    `bazel_inputs/BUILD.gn`. Add import label to
+    `bundles/assembly/BUILD.bazel`.
+*   **File:** Create `bazel_input_file` in `bazel_inputs/<dir>/BUILD.gn`. Add
+    to group in `bazel_inputs/BUILD.gn`. Add `@gn_targets//<dir>:<gen_name>`
+    directly to `bundles/assembly/BUILD.bazel`.
+
+### Deleting Inputs from GN
+*   Remove references from `bundles/assembly/BUILD.bazel` and
+    `bundles/assembly/bazel_inputs/BUILD.gn`.
+*   If no other AIB uses the input, delete the `BUILD.gn` and `BUILD.bazel`
+    files in `bazel_inputs/<dir>` (and delete the directory if empty).
+
+### Renaming Targets
+*   **Package:** Update `package` parameter in
+    `export_fuchsia_package_to_bazel`. If directory changed, move
+    `bazel_inputs/<old_dir>` to `bazel_inputs/<new_dir>` and update all
+    reference paths.
+*   **File:** Update `generator` and `outputs` in `bazel_input_file`. Update
+    `@gn_targets` label in `BUILD.bazel`.
+
+### Post-Migration Cleanup (GN -> Native Bazel)
+When a package or file has been fully migrated to build natively in Bazel:
+1.  Remove bridging scaffolding: delete entry from `bazel_inputs/BUILD.gn` and
+    delete the `BUILD.gn` and `BUILD.bazel` files in `bazel_inputs/<dir>`.
+2.  Update `bundles/assembly/BUILD.bazel`: replace the `bazel_inputs` or
+    `@gn_targets` label with the true native Bazel label (`//<dir>:<target>`).
+
+### Final Steps
+1.  Format modified files using `fx format-code`.
+2.  Run verification build.
 
 ## Verification
 
-After updating the targets:
-1.  Run `fx build //bundles/assembly/bazel` to ensure the Bazel targets are
-    valid and build correctly. GEMINI.md states to always run `fx build` without
-    additional arguments, but in this case, we MUST run this specific build
-    command.
+After any modifications:
+1.  Run `fx build` to confirm your changes compile correctly.
