@@ -23,7 +23,7 @@ def _skill_format(ctx):
 
     procs = []
     for f in skill_files:
-        file_path = get_fuchsia_dir(ctx) + "/" + f
+        file_path = ctx.scm.root + "/" + f
         procs.append(
             os_exec(
                 ctx,
