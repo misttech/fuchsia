@@ -9,7 +9,7 @@ if (is_host) {
     testonly = true
     deps = [
       "cli:cli_test",
-      "daemon:daemon_test",
+      "daemon:tests",
       "tests:cli_integration_test",
     ]
   }
