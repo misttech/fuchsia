@@ -2341,18 +2341,6 @@ alias(
 )
 
 alias(
-    name = "rust_icu_uchar-5.6.0",
-    actual = "//third_party/rust_crates/vendor/rust_icu_uchar-5.6.0:rust_icu_uchar",
-    tags = ["manual"],
-)
-
-alias(
-    name = "rust_icu_uchar",
-    actual = "//third_party/rust_crates/vendor/rust_icu_uchar-5.6.0:rust_icu_uchar",
-    tags = ["manual"],
-)
-
-alias(
     name = "rust_icu_udat-5.6.0",
     actual = "//third_party/rust_crates/vendor/rust_icu_udat-5.6.0:rust_icu_udat",
     tags = ["manual"],

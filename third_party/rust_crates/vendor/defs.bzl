@@ -553,7 +553,6 @@ _NORMAL_DEPENDENCIES = {
             "rust_icu_common": Label("//third_party/rust_crates/vendor/rust_icu_common-5.6.0:rust_icu_common"),
             "rust_icu_sys": Label("//third_party/rust_crates/vendor/rust_icu_sys-5.6.0:rust_icu_sys"),
             "rust_icu_ucal": Label("//third_party/rust_crates/vendor/rust_icu_ucal-5.6.0:rust_icu_ucal"),
-            "rust_icu_uchar": Label("//third_party/rust_crates/vendor/rust_icu_uchar-5.6.0:rust_icu_uchar"),
             "rust_icu_udat": Label("//third_party/rust_crates/vendor/rust_icu_udat-5.6.0:rust_icu_udat"),
             "rust_icu_udata": Label("//third_party/rust_crates/vendor/rust_icu_udata-5.6.0:rust_icu_udata"),
             "rust_icu_uenum": Label("//third_party/rust_crates/vendor/rust_icu_uenum-5.6.0:rust_icu_uenum"),

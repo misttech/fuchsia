@@ -1724,18 +1724,6 @@ if (current_os == "fuchsia") {
 }
 
 if (current_os == "fuchsia") {
-  group("rust_icu_uchar") {
-    public_deps = [ ":rust_icu_uchar-v5_6_0" ]
-  }
-}
-
-if (current_os == "fuchsia") {
-  group("rust_icu_uchar-5.6.0") {
-    public_deps = [ ":rust_icu_uchar-v5_6_0" ]
-  }
-}
-
-if (current_os == "fuchsia") {
   group("rust_icu_udat") {
     public_deps = [ ":rust_icu_udat-v5_6_0" ]
   }
@@ -17449,45 +17437,6 @@ icu_rustc_library("rust_icu_ucal-v5_6_0") {
   visibility += [ "//src/lib/intl/lookup/rust:*" ]
 
   applicable_licenses = [ ":rust_icu_ucal-v5_6_0.license" ]
-}
-
-license("rust_icu_uchar-v5_6_0.license") {
-  public_package_name = "rust_icu_uchar"
-  license_files =
-      [ "//third_party/rust_crates/vendor/rust_icu_uchar-5.6.0/LICENSE" ]
-}
-
-icu_rustc_library("rust_icu_uchar-v5_6_0") {
-  crate_name = "rust_icu_uchar"
-  source_root =
-      "//third_party/rust_crates/vendor/rust_icu_uchar-5.6.0/src/lib.rs"
-  output_name = "rust_icu_uchar-467c14c6433c3884"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs += [ "//src/lib/icu:version" ]
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":log-v0_4_29" ]
-  deps += [ ":paste-v1_0_15($host_toolchain)" ]
-  deps += [ ":rust_icu_common-v5_6_0" ]
-  deps += [ ":rust_icu_sys-v5_6_0" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=467c14c6433c3884",
-    "-Cextra-filename=-467c14c6433c3884",
-    "--cfg=feature=\"icu_version_67_plus\"",
-    "--cfg=feature=\"icu_version_in_env\"",
-    "--cfg=feature=\"renaming\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":rust_icu_uchar-v5_6_0.license" ]
 }
 
 license("rust_icu_udat-v5_6_0.license") {

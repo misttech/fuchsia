@@ -290,7 +290,6 @@ pkcs1 = "0.7.5"
 rust_icu_common = { version = "5.6.0", default-features = false, features = ["renaming"] }
 rust_icu_sys = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
 rust_icu_ucal = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
-rust_icu_uchar = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env", "icu_version_67_plus"] }
 rust_icu_udat = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
 rust_icu_udata = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
 rust_icu_uenum = { version = "5.6.0", default-features = false, features = ["renaming", "icu_version_in_env"] }
@@ -976,9 +975,6 @@ visibility = [
   "//src/lib/icu_data/rust/icu_data:*",
   "//src/lib/intl/lookup/rust:*",
 ]
-[gn.package.rust_icu_uchar."5.6.0"]
-configs = [ "//src/lib/icu:version" ]
-target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 [gn.package.rust_icu_udat."5.6.0"]
 configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
