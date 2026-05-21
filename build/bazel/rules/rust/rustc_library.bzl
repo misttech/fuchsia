@@ -8,7 +8,7 @@ load("@rules_rust//rust:defs.bzl", "rust_library")
 load("//build/bazel/host_tests:host_rustc_test.bzl", "host_rustc_test")
 load("//build/bazel/rules/rust:common.bzl", "with_fuchsia_rustc_flags")
 
-def _rustc_library_impl(name, with_host_unit_tests, test_deps, lint_config, rustc_flags, **kwargs):
+def _rustc_library_impl(name, with_host_unit_tests, test_deps, lint_config, rustc_flags, visibility = None, **kwargs):
     if lint_config == None:
         lint_config = "//build/config/rust/lints:clippy_warn_production"
 
@@ -18,6 +18,7 @@ def _rustc_library_impl(name, with_host_unit_tests, test_deps, lint_config, rust
         name = name,
         rustc_flags = rustc_flags,
         lint_config = lint_config,
+        visibility = visibility,
         **kwargs
     )
 
@@ -28,6 +29,7 @@ def _rustc_library_impl(name, with_host_unit_tests, test_deps, lint_config, rust
             rustc_flags = rustc_flags,
             deps = test_deps,
             crate_features = kwargs.get("crate_features", []),
+            visibility = visibility,
         )
 
 rustc_library = macro(
