@@ -39,6 +39,7 @@ class DeviceEnumerationTest : public zxtest::Test {
   void Verify(Requirement requirement, bool fail_on_unexpected_nodes = false);
   void VerifyNodes(cpp20::span<const char*> node_monikers, bool fail_on_unexpected_nodes = false);
   void VerifyOneOf(cpp20::span<const char*> node_monikers);
+  bool HasNode(const std::string& node) const { return node_info_.contains(node); }
 
  private:
   using MatchResult = fit::result<std::string, std::vector<std::string>>;
