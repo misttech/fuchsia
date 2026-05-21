@@ -1300,8 +1300,7 @@ impl<'a> RenameGuard<'a> {
 /// lock on the parent's child list.
 impl Drop for DirEntry {
     fn drop(&mut self) {
-        let scope = RcuReadScope::new();
-        let maybe_parent = self.parent_ref(&scope);
+        let maybe_parent = self.parent();
         self.parent.update(None);
         if let Some(parent) = maybe_parent {
             parent.internal_remove_child(self);
