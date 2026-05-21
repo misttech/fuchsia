@@ -33,9 +33,11 @@
 #endif  // __riscv
 
 #include <gtest/gtest.h>
+#include <linux/capability.h>
 
 #include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -2098,6 +2100,49 @@ TEST(PtraceTest, PtraceAttachesDuringPpollAndSignal) {
 
   // Continue the child without delivering the captured signal.
   ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+}
+
+TEST(PtraceTest, AttachDeniedWithoutCapSysPtrace) {
+  if (!test_helper::HasCapabilityPermitted(CAP_SYS_PTRACE)) {
+    GTEST_SKIP() << "Needs the CAP_SYS_PTRACE capability.";
+  }
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    pid_t parent_pid = getppid();
+
+    // Drop all capabilities to ensure the child is less privileged than the parent.
+    test_helper::DropAllCapabilities();
+
+    // Verify that a less privileged process cannot attach without CAP_SYS_PTRACE.
+    EXPECT_THAT(ptrace(PTRACE_ATTACH, parent_pid, nullptr, nullptr), SyscallFailsWithErrno(EPERM));
+  });
+}
+
+TEST(PtraceTest, AttachAllowedWithCapSysPtrace) {
+  if (!test_helper::HasCapabilityPermitted(CAP_SYS_PTRACE) ||
+      !test_helper::HasCapabilityPermitted(CAP_SYSLOG)) {
+    GTEST_SKIP() << "Needs CAP_SYS_PTRACE and CAP_SYSLOG capabilities.";
+  }
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    pid_t parent_pid = getppid();
+
+    // Drop a specific capability to make child's caps a non-superset of parent's.
+    test_helper::UnsetCapabilityEffective(CAP_SYSLOG);
+    test_helper::UnsetCapabilityPermitted(CAP_SYSLOG);
+
+    // Verify that CAP_SYS_PTRACE allows attaching to a process with non-superset capabilities.
+    ASSERT_THAT(ptrace(PTRACE_ATTACH, parent_pid, nullptr, nullptr), SyscallSucceeds());
+
+    // Clean up: detach so parent can continue.
+    int status;
+    ASSERT_EQ(parent_pid, waitpid(parent_pid, &status, 0));
+    ASSERT_TRUE(WIFSTOPPED(status));
+
+    ASSERT_THAT(ptrace(PTRACE_DETACH, parent_pid, nullptr, nullptr), SyscallSucceeds());
+  });
 }
 
 }  // namespace

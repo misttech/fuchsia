@@ -390,11 +390,6 @@ impl Credentials {
         self.egid == gid || self.groups.contains(&gid)
     }
 
-    /// Returns whether or not the task has the given `capability`.
-    pub fn has_capability(&self, capability: Capabilities) -> bool {
-        self.cap_effective.contains(capability)
-    }
-
     /// Updates the `securebits` field, taking into account *`_LOCKED` bits.
     pub fn set_securebits(&mut self, securebits: SecureBits) -> Result<(), Errno> {
         // If a lock bit is set then neither it nor the corresponding `SECBIT_*` can be changed.

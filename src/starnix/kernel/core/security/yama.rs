@@ -127,7 +127,7 @@ pub(super) fn ptrace_traceme(
     match ptrace_scope {
         SCOPE_CLASSIC | SCOPE_RESTRICTED => Ok(()),
         SCOPE_ADMIN_ONLY => {
-            if parent_tracer_task.real_creds().has_capability(CAP_SYS_PTRACE) {
+            if parent_tracer_task.real_creds().cap_effective.contains(CAP_SYS_PTRACE) {
                 Ok(())
             } else {
                 error!(EPERM)

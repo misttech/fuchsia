@@ -1753,6 +1753,12 @@
             ]
         },
         {
+            "name": "PtraceTest.PtraceAttachDeniedWithoutSelinuxCapSysPtrace",
+            "audit_expectations": [
+                "avc: denied { sys_ptrace } scontext=test_u:test_r:test_ptrace_parent_allow_t:s0 tcontext=test_u:test_r:test_ptrace_parent_allow_t:s0 tclass=capability permissive=0"
+            ]
+        },
+        {
             "name": "PtraceTest.PtraceAttachThenExecAllowed",
             "audit_expectations": [
                 "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_ptrace_parent_allow_t:s0 tcontext=test_u:test_r:test_ptrace_child_t:s0 tclass=process permissive=0",

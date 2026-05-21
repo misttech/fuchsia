@@ -6,8 +6,10 @@
 #include <sys/ptrace.h>
 
 #include <gtest/gtest.h>
+#include <linux/capability.h>
 
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -333,6 +335,39 @@ TEST(PtraceTest, ReadProcMaps) {
     EXPECT_THAT(open(("/proc/" + std::to_string(pid) + "/maps").c_str(), O_RDONLY),
                 SyscallSucceeds());
     kill(pid, 9);
+  }));
+}
+
+TEST(PtraceTest, PtraceAttachDeniedWithoutSelinuxCapSysPtrace) {
+  constexpr char kParentSecurityContext[] = "test_u:test_r:test_ptrace_parent_allow_t:s0";
+
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs(kParentSecurityContext, [&] {
+    pid_t parent_pid = getpid();
+    pid_t pid = fork();
+    ASSERT_GE(pid, 0);
+
+    if (pid == 0) {
+      // Child process (tracer).
+
+      // Drop a specific capability to make child's caps a non-superset of parent's.
+      test_helper::UnsetCapabilityEffective(CAP_SYSLOG);
+      test_helper::UnsetCapabilityPermitted(CAP_SYSLOG);
+
+      // Verify that SELinux 'capability:sys_ptrace' permission is required, even if the tracer has
+      // 'CAP_SYS_PTRACE'.
+      EXPECT_THAT(ptrace(PTRACE_ATTACH, parent_pid, nullptr, nullptr),
+                  SyscallFailsWithErrno(EPERM));
+
+      _exit(EXIT_SUCCESS);
+    } else {
+      // Parent process (tracee).
+      int wstatus;
+      ASSERT_THAT(waitpid(pid, &wstatus, 0), SyscallSucceeds());
+      EXPECT_TRUE(WIFEXITED(wstatus));
+      EXPECT_EQ(WEXITSTATUS(wstatus), 0);
+    }
   }));
 }
 

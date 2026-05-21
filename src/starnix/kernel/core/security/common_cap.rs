@@ -25,7 +25,8 @@ pub(super) fn capable(
 ) -> Result<(), Errno> {
     current_task
         .current_creds()
-        .has_capability(capability)
+        .cap_effective
+        .contains(capability)
         .then_some(())
         .ok_or_else(|| errno!(EPERM))
 }
@@ -86,7 +87,7 @@ fn check_ptrace_access(tracer: &Task, tracee: &Task, mode: PtraceAccessMode) -> 
             if use_effective { tracer_creds.cap_effective } else { tracer_creds.cap_permitted };
         tracer_caps.contains(tracee.real_creds().cap_permitted)
     };
-    if !tracee_has_lesser_caps && !tracer_creds.has_capability(CAP_SYS_PTRACE) {
+    if !tracee_has_lesser_caps && !tracer_creds.cap_effective.contains(CAP_SYS_PTRACE) {
         error!(EPERM)
     } else {
         Ok(())
