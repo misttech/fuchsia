@@ -79,7 +79,7 @@ def validate_aib(
     aib_name: str, dir1: Path, dir2: Path, compare_contents: bool
 ) -> bool:
     """Validates that corresponding AIBs are the same. Returns True if valid, False if diffs found."""
-    if compare_contents:
+    if compare_contents or aib_name == "resources":
         diffs = []
         files1 = sorted(
             [p.relative_to(dir1) for p in dir1.rglob("*") if p.is_file()]
@@ -161,7 +161,7 @@ def validate_aib(
                 return True
 
             print(
-                f"\n\nassembly_config.json differences found for AIB:  '{aib_name}'",
+                f"\n\nassembly_config.json implementation differences found for AIB:  '{aib_name}'",
                 file=sys.stderr,
             )
             for d in diffs:
@@ -173,23 +173,25 @@ def validate_aib(
             return False
     else:
         print(
-            "assembly_config.json missing in one of the directories.",
+            f"assembly_config.json missing in one of the directories for {aib_name}.",
             file=sys.stderr,
         )
         return False
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Compare two AIB directories.")
+    parser = argparse.ArgumentParser(
+        description="Compare two platform artifacts directories."
+    )
     parser.add_argument(
         "dir1",
         type=Path,
-        help="Path to first AIB directory (GN)",
+        help="Path to first platform artifacts directory (GN)",
     )
     parser.add_argument(
         "dir2",
         type=Path,
-        help="Path to second AIB directory (Bazel)",
+        help="Path to second platform artifacts directory (Bazel)",
     )
     parser.add_argument(
         "--compare-contents",
@@ -210,15 +212,62 @@ def main() -> int:
         print(f"Error: {args.dir2} is not a directory", file=sys.stderr)
         return 1
 
-    if args.dir1.name != args.dir2.name:
+    pa1_path = args.dir1 / "platform_artifacts.json"
+    pa2_path = args.dir2 / "platform_artifacts.json"
+
+    if not pa1_path.is_file():
+        print(f"Error: Missing {pa1_path}", file=sys.stderr)
+        return 1
+    if not pa2_path.is_file():
+        print(f"Error: Missing {pa2_path}", file=sys.stderr)
+        return 1
+
+    try:
+        with open(pa1_path) as f:
+            pa1 = json.load(f)
+        with open(pa2_path) as f:
+            pa2 = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"Error decoding platform_artifacts.json: {e}", file=sys.stderr)
+        return 1
+
+    aibs1 = set(pa1.get("assembly_input_bundles", []))
+    aibs2 = set(pa2.get("assembly_input_bundles", []))
+
+    if aibs1 != aibs2:
         print(
-            f"Error: Directory names differ: {args.dir1.name} != {args.dir2.name}",
+            "\n\nError: The sets of Assembly Input Bundles differ between directories:",
             file=sys.stderr,
         )
+        missing_in_2 = sorted(list(aibs1 - aibs2))
+        added_in_2 = sorted(list(aibs2 - aibs1))
+        for aib in missing_in_2:
+            print(f"  Missing in second directory: {aib}", file=sys.stderr)
+        for aib in added_in_2:
+            print(f"  Extra in second directory: {aib}", file=sys.stderr)
+        print("\n\n", file=sys.stderr)
+        return 1
 
-    aib_name = args.dir1.name
+    has_errors = False
+    for aib_name in sorted(list(aibs1)):
+        aib_dir1 = args.dir1 / aib_name
+        aib_dir2 = args.dir2 / aib_name
 
-    if not validate_aib(aib_name, args.dir1, args.dir2, args.compare_contents):
+        if not aib_dir1.is_dir():
+            print(f"Error: Missing AIB directory {aib_dir1}", file=sys.stderr)
+            has_errors = True
+            continue
+        if not aib_dir2.is_dir():
+            print(f"Error: Missing AIB directory {aib_dir2}", file=sys.stderr)
+            has_errors = True
+            continue
+
+        if not validate_aib(
+            aib_name, aib_dir1, aib_dir2, args.compare_contents
+        ):
+            has_errors = True
+
+    if has_errors:
         return 1
 
     if args.stamp:

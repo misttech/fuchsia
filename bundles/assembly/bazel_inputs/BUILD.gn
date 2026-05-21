@@ -24,8 +24,41 @@ import("//build/components.gni")
 import("//build/icu/config.gni")
 import("//build/icu/icu_assembly_input_bundle.gni")
 import("//bundles/assembly/bazel_inputs/export_kernel.gni")
+import("//bundles/assembly/platform_aibs.gni")
 import("//third_party/sbase/binaries.gni")
 import("//zircon/kernel/phys/qemu.gni")
+
+_AIB_TOOLS_DEPS = [
+  # The tools need to build the AIBs and platform_artifacts containers
+  "//build/assembly/tools/assembly:bazel_input($host_toolchain)",
+  "//build/assembly/tools/assembly_config:bazel_input($host_toolchain)",
+
+  # Tools included by the AIBs.
+  "//src/storage/bin/fvm:bazel_input($host_toolchain)",
+  "//src/storage/blobfs/tools:bazel_input($host_toolchain)",
+  "//src/storage/fxfs/fxfs_pbtool:bazel_input($host_toolchain)",
+  "//src/sys/pkg/bin/package-tool:bazel_input($host_toolchain)",
+  "//tools/cmc:bazel_input($host_toolchain)",
+  "//zircon/tools/zbi:bazel_input($host_toolchain)",
+]
+
+# All AIB Bazel inputs needed by //bundles/assembly/bazel:bringup
+group("bringup_inputs") {
+  testonly = true
+  deps = _AIB_TOOLS_DEPS
+  foreach(aib, bringup_platform_aib_names) {
+    deps += [ ":${aib}" ]
+  }
+}
+
+# All AIB Bazel inputs needed by //bundles/assembly/bazel:platform
+group("platform_inputs") {
+  testonly = true
+  deps = _AIB_TOOLS_DEPS
+  foreach(aib, platform_aib_names) {
+    deps += [ ":${aib}" ]
+  }
+}
 
 group("zircon_eng") {
   testonly = true

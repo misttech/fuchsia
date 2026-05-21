@@ -68,3 +68,11 @@ PlatformArtifactsInfo = provider(
         "files": "All files contained in the bundle",
     },
 )
+
+AssemblyInputBundleInfo = provider(
+    doc = "A set of assembly inputs used by product assembly.",
+    fields = {
+        "name": "The name of the Assembly Input Bundle",
+        "directory": "The directory to the Assembly Input Bundle",
+    },
+)

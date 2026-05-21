@@ -2,15 +2,41 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@fuchsia_icu_config//:constants.bzl", "icu_flavors")
 load(
     "//build/bazel/rules/assembly:assembly_input_bundle.bzl",
     "assembly_input_bundle",
     "assembly_resources_directory",
 )
+load("//build/bazel/rules/assembly:platform_artifacts.bzl", "platform_artifacts")
 load("//build/bazel/rules/icu:icu_assembly_input_bundle.bzl", "icu_assembly_input_bundle")
+load("//build/bazel/rules/icu:icu_names.bzl", "icu_flavored_name")
 load("//third_party/sbase:binaries.bzl", "sbase_binaries")
+load(
+    ":platform_aibs.bzl",
+    "bringup_platform_aib_names",
+    "icu_platform_aib_base_names",
+    "platform_aib_names",
+)
 
 package(default_visibility = ["//visibility:public"])
+
+platform_artifacts(
+    name = "bringup",
+    assembly_input_bundles = [":" + name for name in bringup_platform_aib_names],
+)
+
+platform_artifacts(
+    name = "platform",
+    assembly_input_bundles = [
+        ":" + name
+        for name in platform_aib_names + [
+            icu_flavored_name(base_name, flavor)
+            for base_name in icu_platform_aib_base_names
+            for flavor in icu_flavors
+        ]
+    ],
+)
 
 ########
 #

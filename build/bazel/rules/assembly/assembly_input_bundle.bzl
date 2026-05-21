@@ -8,6 +8,7 @@ load(
     "BUILD_TYPES",
     "FEATURE_SET_LEVELS",
 )
+load("@fuchsia_rules_common//assembly:providers.bzl", "AssemblyInputBundleInfo")
 load("@fuchsia_rules_common//packages:providers.bzl", "FuchsiaPackageInfo")
 
 def _assembly_input_bundle_impl(ctx):
@@ -298,6 +299,10 @@ def _assembly_input_bundle_impl(ctx):
 
     return [
         DefaultInfo(files = depset([out_dir])),
+        AssemblyInputBundleInfo(
+            name = ctx.label.name,
+            directory = out_dir.path,
+        ),
     ]
 
 _assembly_input_bundle = rule(
@@ -682,6 +687,10 @@ def _assembly_resources_directory_impl(ctx):
 
     return [
         DefaultInfo(files = depset([out_dir])),
+        AssemblyInputBundleInfo(
+            name = ctx.label.name,
+            directory = out_dir.path,
+        ),
     ]
 
 assembly_resources_directory = rule(

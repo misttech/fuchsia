@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_inputs.gni")
 import("//build/go/go_binary.gni")
 import("//build/sdk/sdk_host_tool.gni")
 import("//build/zbi/zbi.gni")
@@ -29,6 +30,11 @@ if (is_host) {
     category = "partner"
     output_name = "zbi"
     deps = [ ":zbi" ]
+  }
+
+  bazel_input_file("bazel_input") {
+    generator = ":zbi"
+    outputs = [ "${root_out_dir}/zbi" ]
   }
 }
 

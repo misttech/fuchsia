@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_inputs.gni")
 import("//build/sdk/sdk_host_tool.gni")
 
 source_set("blobfs_creator") {
@@ -56,4 +57,9 @@ sdk_host_tool("blobfs_sdk") {
   output_name = "blobfs"
   sdk_name = "blobfs_do_not_depend"
   deps = [ ":blobfs" ]
+}
+
+bazel_input_file("bazel_input") {
+  generator = ":blobfs"
+  outputs = [ "${root_out_dir}/blobfs" ]
 }

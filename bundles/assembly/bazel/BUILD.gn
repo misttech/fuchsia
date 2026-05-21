@@ -2,90 +2,123 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/bazel/bazel_build_group.gni")
+import("//build/bazel/bazel_build_action.gni")
 import("//build/python/python_action.gni")
-import("//bundles/assembly/platform_aibs.gni")
 
 group("bazel") {
   testonly = true
   deps = [
-    ":bazel_built",
-    ":verifications",
+    ":bringup",
+    ":platform",
+    ":verify_bringup",
+    ":verify_platform",
   ]
 }
 
-# Build all of the Bazel AIB targets (this is a temporary way to stitch them into the
-# build graph and make sure that their inputs are all prepped.
-bazel_build_group("bazel_built") {
+# Use the platform artifacts targets to get all the Bazel-built AIBs, so they can be
+# compared with the GN-built ones.
+
+# Construct the 'bringup' platform artifacts set
+bazel_build_action("bringup") {
   testonly = true
   no_sdk = true
-
-  subtargets = []
-  foreach(aib_name, platform_aib_names) {
-    subtargets += [
-      {
-        bazel_target = "//bundles/assembly:${aib_name}"
-        gn_target_name = "bazel_${aib_name}"
-        deps = [
-          "//bundles/assembly/bazel_inputs:${aib_name}",
-          "//src/sys/pkg/bin/package-tool:bazel_input($host_toolchain)",
-        ]
-
-        directory_outputs = [
-          {
-            bazel_dir = "{{BAZEL_TARGET_OUT_PATH}}"
-            ninja_dir = "bazel_built_aibs/${aib_name}"
-            tracked_files = [ "assembly_config.json" ]
-          },
-        ]
-      },
-    ]
-  }
+  bazel_target = "//bundles/assembly:bringup"
+  deps = [
+    # The AIB Bazel inputs
+    "//bundles/assembly/bazel_inputs:bringup_inputs",
+  ]
+  directory_outputs = [
+    {
+      bazel_dir = "{{BAZEL_TARGET_OUT_PATH}}"
+      ninja_dir = "bringup"
+      tracked_files = [ "platform_artifacts/platform_artifacts.json" ]
+    },
+  ]
 }
 
-verifications = []
-
-foreach(aib_name, platform_aib_names) {
-  verifications += [ ":verify_${aib_name}" ]
-  python_action("verify_${aib_name}") {
-    testonly = true
-    binary_label = "//build/assembly/scripts:compare_aibs($host_toolchain)"
-
-    gn_out_dir =
-        get_label_info("//bundles/assembly:${aib_name}", "target_out_dir")
-    gn_aib_dir = "${gn_out_dir}/${aib_name}"
-    bazel_aib_dir = "$target_out_dir/bazel_built_aibs/${aib_name}"
-
-    hermetic_deps = false
-    hermetic_action_ignored_prefixes = [
-      "${gn_aib_dir}",
-      "${bazel_aib_dir}",
-    ]
-
-    inputs = [
-      "${gn_aib_dir}/assembly_config.json",
-      "${bazel_aib_dir}/assembly_config.json",
-    ]
-    outputs = [ "$target_gen_dir/verify_${aib_name}.stamp" ]
-    args = [
-      rebase_path(gn_aib_dir, root_build_dir),
-      rebase_path(bazel_aib_dir, root_build_dir),
-      "--stamp",
-      rebase_path(outputs[0], root_build_dir),
-    ]
-
-    if (aib_name == "resources") {
-      args += [ "--compare-contents" ]
-    }
-
-    deps = [
-      ":bazel_${aib_name}",
-      "//bundles/assembly:${aib_name}",
-    ]
-  }
-}
-
-group("verifications") {
+# Construct the main platform artifacts set
+bazel_build_action("platform") {
   testonly = true
-  deps = verifications
+  no_sdk = true
+  bazel_target = "//bundles/assembly:platform"
+  deps = [
+    # The AIB Bazel inputs
+    "//bundles/assembly/bazel_inputs:platform_inputs",
+  ]
+  directory_outputs = [
+    {
+      bazel_dir = "{{BAZEL_TARGET_OUT_PATH}}"
+      ninja_dir = "platform"
+      tracked_files = [ "platform_artifacts/platform_artifacts.json" ]
+    },
+  ]
+}
+
+# And verify each matches the GN ones
+gn_out_dir = get_label_info("//bundles/assembly:anything", "target_out_dir")
+
+python_action("verify_bringup") {
+  testonly = true
+  hermetic_deps = false
+  binary_label = "//build/assembly/scripts:compare_aibs($host_toolchain)"
+
+  gn_artifacts_dir = "${gn_out_dir}/bringup/platform_artifacts"
+  bazel_artifacts_dir = "$target_out_dir/bringup/platform_artifacts"
+
+  hermetic_deps = false
+  hermetic_action_ignored_prefixes = [
+    "${gn_artifacts_dir}",
+    "${bazel_artifacts_dir}",
+  ]
+
+  inputs = [
+    "${gn_artifacts_dir}/platform_artifacts.json",
+    "${bazel_artifacts_dir}/platform_artifacts.json",
+  ]
+  outputs = [ "$target_gen_dir/verify_bringup.stamp" ]
+
+  args = [
+    rebase_path(gn_artifacts_dir, root_build_dir),
+    rebase_path(bazel_artifacts_dir, root_build_dir),
+    "--stamp",
+    rebase_path(outputs[0], root_build_dir),
+  ]
+
+  deps = [
+    ":bringup",
+    "//bundles/assembly:bringup",
+  ]
+}
+
+python_action("verify_platform") {
+  testonly = true
+  hermetic_deps = false
+  binary_label = "//build/assembly/scripts:compare_aibs($host_toolchain)"
+
+  gn_artifacts_dir = "${gn_out_dir}/platform/platform_artifacts"
+  bazel_artifacts_dir = "$target_out_dir/platform/platform_artifacts"
+
+  hermetic_deps = false
+  hermetic_action_ignored_prefixes = [
+    "${gn_artifacts_dir}",
+    "${bazel_artifacts_dir}",
+  ]
+
+  inputs = [
+    "${gn_artifacts_dir}/platform_artifacts.json",
+    "${bazel_artifacts_dir}/platform_artifacts.json",
+  ]
+  outputs = [ "$target_gen_dir/verify_platform.stamp" ]
+
+  args = [
+    rebase_path(gn_artifacts_dir, root_build_dir),
+    rebase_path(bazel_artifacts_dir, root_build_dir),
+    "--stamp",
+    rebase_path(outputs[0], root_build_dir),
+  ]
+
+  deps = [
+    ":platform",
+    "//bundles/assembly:platform",
+  ]
 }
