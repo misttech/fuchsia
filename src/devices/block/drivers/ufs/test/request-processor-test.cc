@@ -73,8 +73,10 @@ TEST_F(RequestProcessorTest, FillDescriptorAndSendRequest) {
   dut_->GetTransferRequestProcessor().EnableCompletion();
   ASSERT_EQ(slot.state, SlotState::kScheduled);
 
-  ASSERT_EQ(dut_->GetTransferRequestProcessor().ProcessCompletionOfIoRequests(), 1U);
-  ASSERT_EQ(slot.state, SlotState::kFree);
+  // Wait for request slot to be freed.
+  auto wait_for_slot_freed = [&]() -> bool { return slot.state == SlotState::kFree; };
+  ASSERT_OK(dut_->WaitWithTimeout(wait_for_slot_freed, zx::sec(10),
+                                  "Timeout waiting for slot to be freed", zx::msec(100)));
 
   // Check Utp Transfer Request Descriptor
   auto descriptor = dut_->GetTransferRequestProcessor()
