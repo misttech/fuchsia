@@ -212,7 +212,9 @@ fn compute_transport_checksum_serialize<A: IpAddress>(
 }
 
 /// Computes just the pseudo-header portion of a TCP or UDP checksum.
-fn compute_transport_pseudo_header_checksum<A: IpAddress>(
+///
+/// Returns the one's complement sum, as expected by hardware offloading engines.
+fn compute_transport_pseudo_header_partial_checksum<A: IpAddress>(
     src_ip: A,
     dst_ip: A,
     proto: u8,
@@ -231,7 +233,7 @@ fn compute_transport_pseudo_header_checksum<A: IpAddress>(
         transport_len,
     )
     .ok()?;
-    Some(checksum.checksum())
+    checksum.partial_checksum()
 }
 
 /// Compute the checksum used by TCP and UDP.

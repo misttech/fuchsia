@@ -33,7 +33,7 @@ use crate::error::{ParseError, ParseResult};
 use crate::ip::IpProto;
 use crate::{
     TransportChecksumAction, compute_transport_checksum_parts,
-    compute_transport_checksum_serialize, compute_transport_pseudo_header_checksum,
+    compute_transport_checksum_serialize, compute_transport_pseudo_header_partial_checksum,
 };
 
 use self::data_offset_reserved_flags::DataOffsetReservedFlags;
@@ -1059,13 +1059,15 @@ impl<A: IpAddress, C: TcpSerializationContext> PacketBuilder<C> for TcpSegmentBu
                 target,
                 body,
             ),
-            TransportChecksumAction::ComputePartial => compute_transport_pseudo_header_checksum(
-                self.src_ip,
-                self.dst_ip,
-                IpProto::Tcp.into(),
-                target,
-                body,
-            ),
+            TransportChecksumAction::ComputePartial => {
+                compute_transport_pseudo_header_partial_checksum(
+                    self.src_ip,
+                    self.dst_ip,
+                    IpProto::Tcp.into(),
+                    target,
+                    body,
+                )
+            }
         }
         .unwrap_or_else(|| {
             panic!(
@@ -1899,11 +1901,12 @@ mod tests {
         )
         .expect("failed to update checksum");
 
-        // ComputePartial should produce the pseudo-header checksum.
+        // ComputePartial should produce the uncomplemented pseudo-header checksum.
         let buf = serializer
             .serialize_vec_outer(&mut ForceChecksumAction(TransportChecksumAction::ComputePartial))
             .unwrap();
-        assert_eq!(&buf.as_ref()[CHECKSUM_OFFSET..CHECKSUM_OFFSET + 2], c.checksum());
+        let [c0, c1] = c.checksum();
+        assert_eq!(&buf.as_ref()[CHECKSUM_OFFSET..CHECKSUM_OFFSET + 2], [!c0, !c1]);
 
         // ComputeFull should produce a checksum that verifies.
         let buf = serializer

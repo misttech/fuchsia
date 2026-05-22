@@ -261,6 +261,22 @@ impl Checksum {
         !normalize(sum)
     }
 
+    /// Computes the one's complement sum and returns the array representation.
+    ///
+    /// `partial_checksum` returns the one's complement sum of all data added
+    /// using `add_bytes` so far. Calling `partial_checksum` does *not* reset
+    /// the checksum. More bytes may be added after calling `partial_checksum`,
+    /// and they will be added to the checksum as expected.
+    ///
+    /// `partial_checksum` will return `None` if an odd number of bytes have
+    /// been added so far.
+    pub fn partial_checksum(&self) -> Option<[u8; 2]> {
+        if self.trailing_byte.is_some() {
+            return None;
+        }
+        Some(normalize(self.sum).to_ne_bytes())
+    }
+
     /// Computes the checksum, and returns the array representation.
     ///
     /// `checksum` returns the checksum of all data added using `add_bytes` so
@@ -353,6 +369,36 @@ mod tests {
                 c.add_bytes(&[0xFF, 0xFF]);
             }
             assert_eq!(c.checksum(), [0u8; 2]);
+        }
+    }
+
+    #[test]
+    fn test_partial_checksum() {
+        for buf in IPV4_HEADERS {
+            // Partial checksum should compute for even length slices.
+            for i in (0..buf.len()).step_by(2) {
+                let mut part = Checksum::new();
+                part.add_bytes(&buf[..i]);
+
+                let mut c = Checksum::new();
+                c.add_bytes(
+                    &part
+                        .partial_checksum()
+                        .expect("partial checksum should compute for even length slices"),
+                );
+                c.add_bytes(&buf[i..]);
+                assert_eq!(c.checksum(), [0u8; 2]);
+            }
+            // Partial checksum should not compute for odd length slices.
+            for i in (1..buf.len()).step_by(2) {
+                let mut part = Checksum::new();
+                part.add_bytes(&buf[..i]);
+                assert_eq!(part.partial_checksum(), None);
+            }
+            // Partial checksum should be the complement of the checksum.
+            let mut c = Checksum::new();
+            c.add_bytes(buf);
+            assert_eq!(c.partial_checksum(), Some([0xFF; 2]));
         }
     }
 
