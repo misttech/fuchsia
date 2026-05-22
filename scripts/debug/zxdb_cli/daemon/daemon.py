@@ -590,6 +590,13 @@ class Daemon:
         # Wait for stop event (sent by handle_stop)
         await self.stop_event.wait()
 
+        if self.connect_to_existing and self.zxdb_writer:
+            try:
+                args = ZxdbDetachArguments(all=True)
+                await self.dap_client.zxdb_detach(self.zxdb_writer, args)
+            except Exception:
+                pass
+
         # Cleanup
         if self.active_handlers:
             _done, pending = await asyncio.wait(

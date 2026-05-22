@@ -175,6 +175,40 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(threads[1]["id"], 2)
         self.assertEqual(threads[1]["name"], "worker")
 
+    @patch("daemon.daemon.asyncio.start_unix_server")
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_run_cleanup_detach_on_existing_session(
+        self, mock_dap_client_class: Mock, mock_start_unix_server: Mock
+    ) -> None:
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_dap_client.zxdb_detach = AsyncMock()
+
+        daemon = Daemon(port=15678)
+        daemon.connect_to_existing = True
+        daemon.zxdb_writer = Mock()  # Simulate active connection
+
+        # Mock the unix server
+        mock_server = AsyncMock()
+        mock_server.close = Mock()  # close is synchronous
+        mock_start_unix_server.return_value = mock_server
+
+        # Start run() in a task
+        run_task = asyncio.create_task(daemon.run())
+
+        # Let it run and reach the wait
+        await asyncio.sleep(0.05)
+
+        # Trigger stop
+        daemon.stop_event.set()
+
+        # Wait for run to complete
+        await run_task
+
+        # Verify zxdb_detach was called with all=True
+        mock_dap_client.zxdb_detach.assert_called_once()
+        args, kwargs = mock_dap_client.zxdb_detach.call_args
+        self.assertTrue(args[1].detach_all)
+
 
 if __name__ == "__main__":
     unittest.main()

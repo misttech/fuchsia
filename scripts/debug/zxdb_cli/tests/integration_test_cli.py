@@ -876,6 +876,38 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
         finally:
             await _cleanup_process_group(proc)
 
+    async def test_stop_detaches_existing_session(self) -> None:
+        """Tests that stopping the daemon detaches from all processes if connected to existing."""
+        # _setup_daemon_and_server starts fake DAP, starts daemon, and connects
+        proc, port = await self._setup_daemon_and_server()
+
+        try:
+            # Stop via CLI
+            exit_code = await main(["stop"])
+            self.assertEqual(exit_code, 0)
+
+            # Wait for daemon to exit
+            await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=5.0)
+
+            # Verify that the fake DAP server received "zxdb.Detach" request
+            detach_request = None
+            for req in self.received_dap_requests:
+                if req.get("command") == "zxdb.Detach":
+                    detach_request = req
+                    break
+
+            self.assertIsNotNone(
+                detach_request, "zxdb.Detach was not received by DAP server"
+            )
+            assert detach_request is not None
+            self.assertTrue(
+                detach_request["arguments"].get("all"),
+                "zxdb.Detach did not specify 'all'",
+            )
+
+        finally:
+            await _cleanup_process_group(proc)
+
 
 if __name__ == "__main__":
     unittest.main()
