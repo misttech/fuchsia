@@ -68,7 +68,7 @@ impl Session {
     }
 
     /// Sends a [`Buffer`] to the network device in this session.
-    pub fn send(&self, buffer: Buffer<Tx>) -> Result<()> {
+    pub fn send(&self, buffer: Buffer<Tx>) {
         self.inner.send(buffer)
     }
 
@@ -315,12 +315,14 @@ impl Inner {
     }
 
     /// Sends the [`Buffer`] to the driver.
-    fn send(&self, mut buffer: Buffer<Tx>) -> Result<()> {
-        buffer.pad()?;
-        buffer.commit();
+    ///
+    /// Note: Transmit is completely infallible because the buffer layout and
+    /// zero-padding are already fully resolved and verified upfront during
+    /// buffer allocation (see `AllocGuard::init` in `pool.rs` for details
+    /// and design tradeoffs).
+    fn send(&self, buffer: Buffer<Tx>) {
         self.tx_idle_listeners.tx_started();
         self.tx_pending.extend(std::iter::once(buffer.leak()));
-        Ok(())
     }
 
     /// Receives a [`Buffer`] from the driver.
@@ -1081,7 +1083,7 @@ mod tests {
             tx_idle_listeners: TxIdleListeners::new(),
         });
 
-        inner.send(buf).expect("can send");
+        inner.send(buf);
 
         let mut task = Task { inner };
 

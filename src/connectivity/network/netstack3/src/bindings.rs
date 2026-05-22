@@ -685,10 +685,9 @@ fn send_netdevice_frame(
                         }
                     }
                 };
-            if let Err(err) = tx_buffer.write_at(0, buf_vec.as_ref()) {
-                warn!("failed to write to tx buffer: {:?}", err);
-                return Ok(());
-            }
+            let buf_len = buf_vec.as_ref().len();
+            let written = tx_buffer.io_mut().write_at(0, buf_vec.as_ref());
+            debug_assert_eq!(written, buf_len);
             tx_buffer
         }
     };

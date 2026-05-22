@@ -240,10 +240,8 @@ impl NetdeviceWorker {
                     // TODO(https://fxbug.dev/42051635): pass strongly owned
                     // buffers down to the stack instead of copying it out when
                     // it's fragmented.
-                    rx.read_at(0, linearized).map_err(|e| {
-                        error!("failed to read from buffer {:?}", e);
-                        Error::Client(e)
-                    })?;
+                    let read_len = rx.io().read_at(0, linearized);
+                    debug_assert_eq!(read_len, frame_length);
                     linearized
                 }
             };
@@ -811,7 +809,7 @@ impl PortHandler {
         let Self { port_id, inner: Inner { session, .. }, .. } = self;
         tx.set_port(*port_id);
         tx.set_frame_type(frame_type);
-        session.send(tx)?;
+        session.send(tx);
         Ok(())
     }
 

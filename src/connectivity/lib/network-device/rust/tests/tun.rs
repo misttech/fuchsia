@@ -41,7 +41,7 @@ async fn test_rx() {
             let () = tun.write_frame(&frame).await.unwrap().expect("failed to write frame");
             let buff = session.recv().await.expect("failed to recv buffer");
             let mut bytes = [0u8; DATA_LEN];
-            buff.read_at(0, &mut bytes[..]).expect("failed to read from the buffer");
+            assert_eq!(buff.io().read_at(0, &mut bytes[..]), DATA_LEN);
             for i in bytes.iter() {
                 assert_eq!(*i, DATA_BYTE);
             }
@@ -63,12 +63,15 @@ async fn test_tx() {
             let mut buffer =
                 session.alloc_tx_buffer(DATA_LEN).await.expect("failed to alloc tx buffer");
             assert_eq!(
-                buffer.write(&[DATA_BYTE; DATA_LEN][..]).expect("failed to write into the buffer"),
+                buffer
+                    .io_mut()
+                    .write(&[DATA_BYTE; DATA_LEN][..])
+                    .expect("failed to write into the buffer"),
                 DATA_LEN
             );
             buffer.set_port(port);
             buffer.set_frame_type(netdev::FrameType::Ethernet);
-            session.send(buffer).expect("failed to send the buffer");
+            session.send(buffer);
             let frame = tun
                 .read_frame()
                 .await
@@ -87,21 +90,21 @@ async fn test_tx() {
 // half of the buffers, round robin on index.
 async fn echo(session: Session, port: Port, frame_count: u32) {
     for i in 0..frame_count {
-        let mut buffer = session.recv().await.expect("failed to recv from session");
-        assert_eq!(buffer.cap(), DATA_LEN);
+        let buffer = session.recv().await.expect("failed to recv from session");
+        assert_eq!(buffer.len(), DATA_LEN);
         let mut bytes = [0u8; DATA_LEN];
-        assert_eq!(buffer.read(&mut bytes[..]).unwrap(), DATA_LEN);
+        assert_eq!(buffer.io().read(&mut bytes[..]).unwrap(), DATA_LEN);
         assert_eq!(u32::from_le_bytes(bytes), i);
         if i % 2 == 0 {
             let buffer = buffer.into_tx().await;
-            session.send(buffer).expect("failed to send the buffer back on the zero-copy path");
+            session.send(buffer);
         } else {
             let mut buffer =
                 session.alloc_tx_buffer(DATA_LEN).await.expect("no tx buffer available");
             buffer.set_frame_type(netdev::FrameType::Ethernet);
             buffer.set_port(port);
-            assert_eq!(buffer.write(&bytes).unwrap(), DATA_LEN);
-            session.send(buffer).expect("failed to send the buffer back on the copying path");
+            assert_eq!(buffer.io_mut().write(&bytes).unwrap(), DATA_LEN);
+            session.send(buffer);
         }
     }
 }
@@ -193,15 +196,19 @@ async fn test_echo_pair() {
                             buffer.set_port(port2);
                             let mut bytes = i.to_le_bytes();
                             assert_eq!(
-                                buffer.write(&bytes[..]).expect("failed to write into the buffer"),
+                                buffer
+                                    .io_mut()
+                                    .write(&bytes[..])
+                                    .expect("failed to write into the buffer"),
                                 DATA_LEN
                             );
-                            session2.send(buffer).expect("failed to send the buffer");
+                            session2.send(buffer);
 
-                            let mut buffer =
+                            let buffer =
                                 session2.recv().await.expect("failed to recv from the session");
                             assert_eq!(
                                 buffer
+                                    .io()
                                     .read(&mut bytes[..])
                                     .expect("failed to read from the buffer"),
                                 DATA_LEN
@@ -307,12 +314,15 @@ fn tx_wait_idle() {
             .expect("failed to collect tx buffers");
         for mut buffer in buffers {
             assert_eq!(
-                buffer.write(&[DATA_BYTE; DATA_LEN][..]).expect("failed to write into the buffer"),
+                buffer
+                    .io_mut()
+                    .write(&[DATA_BYTE; DATA_LEN][..])
+                    .expect("failed to write into the buffer"),
                 DATA_LEN
             );
             buffer.set_port(port);
             buffer.set_frame_type(netdev::FrameType::Ethernet);
-            session.send(buffer).expect("failed to send the buffer");
+            session.send(buffer);
         }
     });
 

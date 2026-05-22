@@ -90,11 +90,6 @@ impl<K: AllocKind> Descriptor<K> {
         this.data_length
     }
 
-    fn tail_length(&self) -> u16 {
-        let Self(this, _marker) = self;
-        this.tail_length
-    }
-
     fn port(&self) -> Port {
         let Self(
             sys::buffer_descriptor {
@@ -170,21 +165,6 @@ impl Descriptor<Tx> {
     fn set_frame_type(&mut self, frame_type: netdev::FrameType) {
         let Self(this, _marker) = self;
         this.frame_type = frame_type.into_primitive();
-    }
-
-    /// # Panics
-    ///
-    /// * `used` is larger than the capacity of of the buffer.
-    /// * `used` is so small that the resulting `tail` for the buffer is not
-    ///   representable by a u16.
-    fn commit(&mut self, used: u32) {
-        let Self(this, _marker) = self;
-        // The following addition can't overflow because
-        // data_length + tail_length <= buffer_length <= u32::MAX.
-        let total = this.data_length + u32::from(this.tail_length);
-        let tail = total.checked_sub(used).unwrap();
-        this.data_length = used;
-        this.tail_length = u16::try_from(tail).unwrap();
     }
 }
 
@@ -591,6 +571,13 @@ mod types {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+
+    impl<K: AllocKind> Descriptor<K> {
+        pub(crate) fn tail_length(&self) -> u16 {
+            let Self(this, _marker) = self;
+            this.tail_length
+        }
+    }
 
     // Safety: These are safe because none of the values are zero.
     const TX_BUFFERS: NonZeroU16 = NonZeroU16::new(1).unwrap();

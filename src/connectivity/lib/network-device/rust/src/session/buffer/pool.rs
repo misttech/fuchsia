@@ -360,6 +360,36 @@ impl Pool {
         let alloc = AllocGuard::new(descs, self.clone());
         Ok(alloc.into())
     }
+
+    fn get_slice<'a, K: AllocKind>(&self, desc: &'a DescId<K>) -> &'a [u8] {
+        let desc = self.descriptors.borrow(desc);
+        let offset = usize::try_from(desc.offset() + u64::from(desc.head_length()))
+            .expect("usize must hold u64");
+        let len = usize::try_from(desc.data_length()).expect("usize must hold u32");
+        // Safety: The descriptor is describing a buffer from this pool. It must
+        // be valid to create a slice into that region. We hold a immutable
+        // reference to the underlying descriptor, this means no one else should
+        // have mutable reference to this memory region.
+        unsafe {
+            let ptr = self.base.as_ptr().add(offset);
+            std::slice::from_raw_parts(ptr, len)
+        }
+    }
+
+    fn get_slice_mut<'a, K: AllocKind>(&self, desc: &'a mut DescId<K>) -> &'a mut [u8] {
+        let desc = self.descriptors.borrow_mut(desc);
+        let offset = usize::try_from(desc.offset() + u64::from(desc.head_length()))
+            .expect("usize must hold u64");
+        let len = usize::try_from(desc.data_length()).expect("usize must hold u32");
+        // Safety: The descriptor is describing a buffer from this pool. It must
+        // be valid to create a slice into that region. We hold a mutable
+        // reference to the underlying descriptor, this means we are currently
+        // the only one has access to this memory region.
+        unsafe {
+            let ptr = self.base.as_ptr().add(offset);
+            std::slice::from_raw_parts_mut(ptr, len)
+        }
+    }
 }
 
 impl Drop for Pool {
@@ -404,142 +434,28 @@ impl TxFreeList {
 }
 
 /// The buffer that can be used by the [`Session`](crate::session::Session).
-///
-/// All [`Buffer`]s implement [`std::io::Read`] and [`Buffer<Tx>`]s implement
-/// [`std::io::Write`].
 pub struct Buffer<K: AllocKind> {
     /// The descriptors allocation.
     alloc: AllocGuard<K>,
-    /// Underlying memory regions.
-    parts: Chained<BufferPart>,
-    /// The current absolute position to read/write within the [`Buffer`].
-    pos: usize,
-}
-
-impl<K: AllocKind> Debug for Buffer<K> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self { alloc, parts, pos } = self;
-        f.debug_struct("Buffer")
-            .field("cap", &self.cap())
-            .field("alloc", alloc)
-            .field("parts", parts)
-            .field("pos", pos)
-            .finish()
-    }
 }
 
 impl<K: AllocKind> Buffer<K> {
-    /// Gets the capacity of the buffer in bytes as requested for allocation.
-    pub fn cap(&self) -> usize {
-        self.parts.iter().fold(0, |acc, part| acc + part.cap)
-    }
-
-    /// Gets the length of the buffer which is actually used.
+    /// Returns the length of data region of the buffer.
     pub fn len(&self) -> usize {
-        self.parts.iter().fold(0, |acc, part| acc + part.len)
+        self.parts().map(|s| s.len()).sum()
     }
 
-    /// Writes bytes to the buffer.
-    ///
-    /// Writes up to `src.len()` bytes into the buffer beginning at `offset`,
-    /// returning how many bytes were written successfully. Partial write is
-    /// not considered as an error.
-    pub fn write_at(&mut self, offset: usize, src: &[u8]) -> Result<()> {
-        if self.cap() < offset + src.len() {
-            return Err(Error::TooSmall { size: self.cap(), offset, length: src.len() });
-        }
-        let mut part_start = 0;
-        let mut total = 0;
-        for part in self.parts.iter_mut() {
-            if offset + total < part_start + part.cap {
-                let written = part.write_at(offset + total - part_start, &src[total..])?;
-                total += written;
-                if total == src.len() {
-                    break;
-                }
-            } else {
-                part.len = part.cap;
-            }
-            part_start += part.cap;
-        }
-        assert_eq!(total, src.len());
-        Ok(())
+    /// Returns an iterator over the data slices of the buffer parts.
+    fn parts(&self) -> impl Iterator<Item = &[u8]> + '_ {
+        self.alloc.descs.iter().map(|desc| self.alloc.pool.get_slice(desc))
     }
 
-    /// Reads bytes from the buffer.
-    ///
-    /// Reads up to `dst.len()` bytes from the buffer beginning at `offset`,
-    /// returning how many bytes were read successfully. Partial read is
-    /// considered as an error.
-    pub fn read_at(&self, offset: usize, dst: &mut [u8]) -> Result<()> {
-        if self.len() < offset + dst.len() {
-            return Err(Error::TooSmall { size: self.len(), offset, length: dst.len() });
-        }
-        let mut part_start = 0;
-        let mut total = 0;
-        for part in self.parts.iter() {
-            if offset + total < part_start + part.cap {
-                let read = part.read_at(offset + total - part_start, &mut dst[total..])?;
-                total += read;
-                if total == dst.len() {
-                    break;
-                }
-            }
-            part_start += part.cap;
-        }
-        assert_eq!(total, dst.len());
-        Ok(())
-    }
-
-    /// Returns the buffer as an immutable slice if it's not fragmented.
-    pub fn as_slice(&self) -> Option<&[u8]> {
-        if self.parts.len() > 1 {
-            return None;
-        }
-        Some(self.parts[0].as_slice())
-    }
-
-    /// Returns this buffer as a mutable slice if it's not fragmented.
-    pub fn as_slice_mut(&mut self) -> Option<&mut [u8]> {
-        match &mut (*self.parts)[..] {
-            [] => Some(&mut []),
-            [one] => Some(one.as_slice_mut()),
-            _ => None,
-        }
-    }
-
-    /// Pads the [`Buffer`] to minimum tx buffer length requirements.
-    pub(in crate::session) fn pad(&mut self) -> Result<()> {
-        let num_parts = self.parts.len();
-        let BufferLayout { min_tx_tail, min_tx_data, min_tx_head: _, length: _ } =
-            self.alloc.pool.buffer_layout;
-        let mut target = min_tx_data;
-        for (i, part) in self.parts.iter_mut().enumerate() {
-            let grow_cap = if i == num_parts - 1 {
-                let descriptor =
-                    self.alloc.descriptors().last().expect("descriptor must not be empty");
-                let data_length = descriptor.data_length();
-                let tail_length = descriptor.tail_length();
-                // data_length + tail_length <= buffer_length <= usize::MAX.
-                let rest = usize::try_from(data_length).unwrap() + usize::from(tail_length);
-                match rest.checked_sub(usize::from(min_tx_tail)) {
-                    Some(grow_cap) => Some(grow_cap),
-                    None => break,
-                }
-            } else {
-                None
-            };
-            target -= part.pad(target, grow_cap)?;
-        }
-        if target != 0 {
-            return Err(Error::Pad(min_tx_data, self.cap()));
-        }
-        Ok(())
+    /// Returns an iterator over the mutable valid data slices of the buffer parts.
+    fn parts_mut(&mut self) -> impl Iterator<Item = &mut [u8]> + '_ {
+        self.alloc.descs.iter_mut().map(|desc| self.alloc.pool.get_slice_mut(desc))
     }
 
     /// Leaks the underlying buffer descriptors to the driver.
-    ///
-    /// Returns the head of the leaked allocation.
     pub(in crate::session) fn leak(mut self) -> DescId<K> {
         let descs = std::mem::replace(&mut self.alloc.descs, Chained::empty());
         descs.into_iter().next().unwrap()
@@ -554,79 +470,39 @@ impl<K: AllocKind> Buffer<K> {
     pub fn port(&self) -> Port {
         self.alloc.descriptor().port()
     }
-}
 
-/// A witness type that proves the buffer is backed by one part only
-/// and thus can be converted into `&[u8]`.
-pub struct SinglePartTxBuffer(Buffer<Tx>);
-
-impl SinglePartTxBuffer {
-    /// Creates a new [`SinglePartTxBuffer`] from a [`Buffer<Tx>`] if it is
-    /// backed by one part only.
-    ///
-    /// Returns [`None`] if the buffer is not backed by 1 part or it cannot fit
-    /// `len` bytes.
-    pub fn new(mut buffer: Buffer<Tx>, len: usize) -> Option<Self> {
-        if buffer.parts.len() != 1 {
-            None
-        } else {
-            let part = &mut buffer.parts[0];
-            if part.cap < len {
-                return None;
-            }
-            part.len = len;
-            Some(Self(buffer))
+    /// Returns the buffer data as a slice.
+    pub fn as_slice(&self) -> Option<&[u8]> {
+        if self.alloc.len() != 1 {
+            return None;
         }
+        self.parts().next()
     }
 
-    /// Converts back to a Tx buffer.
-    pub fn into_inner(self) -> Buffer<Tx> {
-        let Self(buffer) = self;
-        buffer
-    }
-}
-
-impl AsRef<[u8]> for SinglePartTxBuffer {
-    fn as_ref(&self) -> &[u8] {
-        // Safety: we have checked that there is 1 buffer part, so it must have
-        // been initialized.
-        unsafe { self.0.parts.storage[0].assume_init_ref().as_slice() }
-    }
-}
-
-impl AsMut<[u8]> for SinglePartTxBuffer {
-    fn as_mut(&mut self) -> &mut [u8] {
-        // Safety: we have checked that there is 1 buffer part, so it must have
-        // been initialized.
-        unsafe { self.0.parts.storage[0].assume_init_mut().as_slice_mut() }
-    }
-}
-
-impl packet::FragmentedBuffer for SinglePartTxBuffer {
-    fn len(&self) -> usize {
-        // Safety: we have checked that there is 1 buffer part, so it must have
-        // been initialized.
-        unsafe { self.0.parts.storage[0].assume_init_ref().len }
+    /// Returns the buffer data as a mutable slice.
+    pub fn as_slice_mut(&mut self) -> Option<&mut [u8]> {
+        if self.alloc.len() != 1 {
+            return None;
+        }
+        self.parts_mut().next()
     }
 
-    fn with_bytes<'a, R, F>(&'a self, f: F) -> R
-    where
-        F: for<'b> FnOnce(packet::FragmentedBytes<'b, 'a>) -> R,
-    {
-        f(packet::FragmentedBytes::new(&mut [self.as_ref()][..]))
+    /// Returns a wrapper for read-only operations.
+    pub fn io(&self) -> BufferIORef<'_, K> {
+        let mut len = 0;
+        let parts: Chained<&[u8]> = self.parts().inspect(|s| len += s.len()).collect();
+        BufferIO { parts, pos: 0, len, _marker: std::marker::PhantomData }
+    }
+
+    /// Returns a wrapper for read-write operations.
+    pub fn io_mut(&mut self) -> BufferIOMut<'_, K> {
+        let mut len = 0;
+        let parts: Chained<&mut [u8]> = self.parts_mut().inspect(|s| len += s.len()).collect();
+        BufferIO { parts, pos: 0, len, _marker: std::marker::PhantomData }
     }
 }
 
 impl Buffer<Tx> {
-    /// Commits the metadata for the buffer to descriptors.
-    pub(in crate::session) fn commit(&mut self) {
-        for (part, mut descriptor) in self.parts.iter_mut().zip(self.alloc.descriptors_mut()) {
-            // The following unwrap is safe because part.len must be smaller than
-            // buffer_length, which is a u32.
-            descriptor.commit(u32::try_from(part.len).unwrap())
-        }
-    }
-
     /// Sets the buffer's destination port.
     pub fn set_port(&mut self, port: Port) {
         self.alloc.descriptor_mut().set_port(port)
@@ -646,13 +522,166 @@ impl Buffer<Tx> {
 impl Buffer<Rx> {
     /// Turns an rx buffer into a tx one.
     pub async fn into_tx(self) -> Buffer<Tx> {
-        let Buffer { alloc, parts, pos } = self;
-        Buffer { alloc: alloc.into_tx().await, parts, pos }
+        let Buffer { alloc } = self;
+        Buffer { alloc: alloc.into_tx().await }
     }
 
     /// Retrieves RxFlags of an Rx Buffer.
     pub fn rx_flags(&self) -> Result<netdev::RxFlags> {
         self.alloc.descriptor().rx_flags()
+    }
+}
+
+impl<K: AllocKind> Debug for Buffer<K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { alloc } = self;
+        f.debug_struct("Buffer").field("alloc", alloc).finish()
+    }
+}
+
+/// A witness type that proves the buffer is backed by one part only
+/// and thus can be converted into `&[u8]`.
+pub struct SinglePartTxBuffer(Buffer<Tx>);
+
+impl SinglePartTxBuffer {
+    /// Creates a new [`SinglePartTxBuffer`] from a [`Buffer<Tx>`] if it is
+    /// backed by one part only.
+    pub fn new(buffer: Buffer<Tx>, len: usize) -> Option<Self> {
+        if buffer.alloc.len() != 1 {
+            None
+        } else {
+            let cap = usize::try_from(buffer.alloc.descriptor().data_length())
+                .expect("u32 must fit in a usize");
+            if cap < len {
+                return None;
+            }
+            Some(Self(buffer))
+        }
+    }
+
+    /// Converts back to a Tx buffer.
+    pub fn into_inner(self) -> Buffer<Tx> {
+        let Self(buffer) = self;
+        buffer
+    }
+}
+
+impl AsRef<[u8]> for SinglePartTxBuffer {
+    fn as_ref(&self) -> &[u8] {
+        // Safety: `SinglePartTxBuffer` is guaranteed to have exactly one part
+        // (verified on creation), so the first descriptor is always initialized.
+        let desc = unsafe { self.0.alloc.descs.storage[0].assume_init_ref() };
+        self.0.alloc.pool.get_slice(desc)
+    }
+}
+
+impl AsMut<[u8]> for SinglePartTxBuffer {
+    fn as_mut(&mut self) -> &mut [u8] {
+        // Safety: `SinglePartTxBuffer` is guaranteed to have exactly one part
+        // (verified on creation), so the first descriptor is always initialized.
+        let desc = unsafe { self.0.alloc.descs.storage[0].assume_init_mut() };
+        self.0.alloc.pool.get_slice_mut(desc)
+    }
+}
+
+impl packet::FragmentedBuffer for SinglePartTxBuffer {
+    fn len(&self) -> usize {
+        let desc = self.0.alloc.descriptor();
+        usize::try_from(desc.data_length()).expect("u32 must fit in a usize")
+    }
+
+    fn with_bytes<'a, R, F>(&'a self, f: F) -> R
+    where
+        F: for<'b> FnOnce(packet::FragmentedBytes<'b, 'a>) -> R,
+    {
+        f(packet::FragmentedBytes::new(&mut [self.as_ref()][..]))
+    }
+}
+
+/// A wrapper around [`Buffer`] for sequential I/O.
+///
+/// `T` must be a slice reference type, typically `&'a [u8]` for read-only
+/// operations, or `&'a mut [u8]` for read-write operations.
+pub struct BufferIO<T, K: AllocKind> {
+    parts: Chained<T>,
+    pos: usize,
+    len: usize,
+    _marker: std::marker::PhantomData<K>,
+}
+
+pub type BufferIORef<'a, K> = BufferIO<&'a [u8], K>;
+pub type BufferIOMut<'a, K> = BufferIO<&'a mut [u8], K>;
+
+impl<T> BufferIO<T, Tx>
+where
+    T: AsMut<[u8]>,
+{
+    /// Writes data from `src` into the TX buffer starting at the specified `offset`.
+    ///
+    /// This method is infallible. It returns the number of bytes successfully written.
+    ///
+    /// If the specified `offset` is greater than or equal to the total length of the
+    /// buffer, or if the buffer has no remaining capacity at the offset, `0` bytes
+    /// will be written.
+    ///
+    /// If `src` is larger than the remaining capacity of the buffer starting at
+    /// `offset`, a short write occurs: only the bytes that fit within the buffer
+    /// are written, and the returned value will be less than `src.len()`.
+    pub fn write_at(&mut self, mut offset: usize, src: &[u8]) -> usize {
+        let mut total = 0;
+
+        for slice in self.parts.iter_mut() {
+            let slice = slice.as_mut();
+            if offset < slice.len() {
+                let available = slice.len() - offset;
+                let to_copy = std::cmp::min(src.len() - total, available);
+                slice[offset..offset + to_copy].copy_from_slice(&src[total..total + to_copy]);
+                total += to_copy;
+                offset = 0;
+                if total == src.len() {
+                    break;
+                }
+            } else {
+                offset -= slice.len();
+            }
+        }
+        total
+    }
+}
+
+impl<T, K: AllocKind> BufferIO<T, K>
+where
+    T: AsRef<[u8]>,
+{
+    /// Reads data from the buffer starting at the specified `offset` into `dst`.
+    ///
+    /// This method is infallible. It returns the number of bytes successfully read.
+    ///
+    /// If the specified `offset` is greater than or equal to the total length of the
+    /// buffer, `0` bytes will be read.
+    ///
+    /// If the remaining data in the buffer starting at `offset` is less than the
+    /// size of `dst`, a short read occurs: only the available bytes are copied,
+    /// and the returned value will be less than `dst.len()`.
+    pub fn read_at(&self, mut offset: usize, dst: &mut [u8]) -> usize {
+        let mut total = 0;
+
+        for slice in self.parts.iter() {
+            let slice = slice.as_ref();
+            if offset < slice.len() {
+                let available = slice.len() - offset;
+                let to_copy = std::cmp::min(dst.len() - total, available);
+                dst[total..total + to_copy].copy_from_slice(&slice[offset..offset + to_copy]);
+                total += to_copy;
+                offset = 0;
+                if total == dst.len() {
+                    break;
+                }
+            } else {
+                offset -= slice.len();
+            }
+        }
+        total
     }
 }
 
@@ -854,11 +883,29 @@ impl<K: AllocKind> AllocGuard<K> {
 
 impl AllocGuard<Tx> {
     /// Initializes descriptors of a tx allocation.
-    fn init(&mut self, mut requested_bytes: usize) -> Result<()> {
+    ///
+    /// We choose to enforce and satisfy the `min_tx_data` layout requirement
+    /// (imposed by the device/driver) immediately during buffer allocation and
+    /// initialization here.
+    ///
+    /// Consequently, the allocated buffer's capacity (`target_len`) may be
+    /// larger than the `requested_bytes` if `requested_bytes` is smaller than
+    /// `min_tx_data`.
+    ///
+    /// While this means we might spend CPU cycles zero-padding buffers that are
+    /// subsequently dropped without being sent (a rare occurrence in typical
+    /// usage), this guarantees that buffer is always suitable for sending. This
+    /// also makes the transmit path (`Session::send`) infallible.
+    fn init(&mut self, requested_bytes: usize) -> Result<()> {
         let len = self.len();
-        let BufferLayout { min_tx_head, min_tx_tail, length: buffer_length, min_tx_data: _ } =
+        let BufferLayout { min_tx_head, min_tx_tail, length: buffer_length, min_tx_data } =
             self.pool.buffer_layout;
-        for (mut descriptor, clen) in self.descriptors_mut().zip((0..len).rev()) {
+
+        let target_len = requested_bytes.max(usize::from(min_tx_data));
+        let mut remaining_target = target_len;
+        let mut remaining_requested = requested_bytes;
+
+        for (desc_id, clen) in self.descs.iter_mut().zip((0..len).rev()) {
             let chain_length = ChainLength::try_from(clen).unwrap();
             let head_length = if clen + 1 == len { min_tx_head } else { 0 };
             let mut tail_length = if clen == 0 { min_tx_tail } else { 0 };
@@ -869,32 +916,53 @@ impl AllocGuard<Tx> {
                 u32::try_from(buffer_length - usize::from(head_length) - usize::from(tail_length))
                     .unwrap();
 
-            let data_length = match u32::try_from(requested_bytes) {
-                Ok(requested) => {
-                    if requested < available_bytes {
-                        // The requested bytes are less than what is available,
+            let data_length = match u32::try_from(remaining_target) {
+                Ok(target) => {
+                    if target < available_bytes {
+                        // The target bytes are less than what is available,
                         // we need to put the excess in the tail so that the
-                        // user cannot write more than they requested.
-                        tail_length = u16::try_from(available_bytes - requested)
+                        // user cannot write more than they requested (or padded).
+                        let excess = available_bytes - target;
+                        tail_length = u16::try_from(excess)
                             .ok_checked::<TryFromIntError>()
                             .and_then(|tail_adjustment| tail_length.checked_add(tail_adjustment))
                             .ok_or(Error::TxLength)?;
                     }
-                    requested.min(available_bytes)
+                    target.min(available_bytes)
                 }
                 Err(TryFromIntError { .. }) => available_bytes,
             };
 
-            requested_bytes -=
-                usize::try_from(data_length).unwrap_or_else(|TryFromIntError { .. }| {
-                    panic!(
-                        "data_length: {} must be smaller than requested_bytes: {}, which is a usize",
-                        data_length, requested_bytes
-                    )
-                });
-            descriptor.initialize(chain_length, head_length, data_length, tail_length);
+            let data_length_usize = usize::try_from(data_length).expect("u32 must fit in a usize");
+            let requested_in_part = std::cmp::min(remaining_requested, data_length_usize);
+            let pad_in_part = data_length_usize - requested_in_part;
+
+            // Initialize the descriptor.
+            {
+                let mut descriptor = self.pool.descriptors.borrow_mut(desc_id);
+                descriptor.initialize(chain_length, head_length, data_length, tail_length);
+            }
+
+            // Zero-pad any excess capacity in this buffer part that was allocated
+            // to satisfy the `min_tx_data` layout requirement but not requested by
+            // the caller.
+            //
+            // We decided to pad the buffer on initialization because the lazy commit
+            // model can only avoid padding for the following 2 cases:
+            // 1) User only allocates but never sends.
+            // 2) User writes past their requested size and meets the min_tx_data
+            //    requirement.
+            // Both should be uncommon, and in case 2) we can fix the client by
+            // requesting a larger size to avoid padding.
+            if pad_in_part > 0 {
+                let slice = self.pool.get_slice_mut(desc_id);
+                slice[requested_in_part..requested_in_part + pad_in_part].fill(0);
+            }
+
+            remaining_target -= data_length_usize;
+            remaining_requested -= requested_in_part;
         }
-        assert_eq!(requested_bytes, 0);
+        assert_eq!(remaining_target, 0);
         Ok(())
     }
 }
@@ -916,172 +984,31 @@ impl<K: AllocKind> Deref for AllocGuard<K> {
     }
 }
 
-/// A contiguous region of the buffer; corresponding to one descriptor.
-///
-/// [`BufferPart`] owns the memory range [ptr, ptr+cap).
-struct BufferPart {
-    /// The data region starts at `ptr`.
-    ptr: *mut u8,
-    /// The capacity for the region is `cap`.
-    cap: usize,
-    /// Used to indicate how many bytes are actually in the buffer, it
-    /// starts as 0 for a tx buffer and as `cap` for a rx buffer. It will
-    /// be used later as `data_length` in the descriptor.
-    len: usize,
-}
-
-impl BufferPart {
-    /// Creates a new [`BufferPart`] that owns the memory region.
-    ///
-    /// # Safety
-    ///
-    /// The caller must make sure the memory pointed by `ptr` lives longer than
-    /// `BufferPart` being constructed. Once a BufferPart is constructed, it is
-    /// assumed that the memory `[ptr..ptr+cap)` is always valid to read and
-    /// write.
-    unsafe fn new(ptr: *mut u8, cap: usize, len: usize) -> Self {
-        Self { ptr, cap, len }
-    }
-
-    /// Reads bytes from this buffer part.
-    ///
-    /// Reads up to `dst.len()` bytes from the region beginning at `offset`,
-    /// returning how many bytes were read successfully. Partial read is
-    /// not considered as an error.
-    fn read_at(&self, offset: usize, dst: &mut [u8]) -> Result<usize> {
-        let available = self.len.checked_sub(offset).ok_or(Error::Index(offset, self.len))?;
-        let to_copy = std::cmp::min(available, dst.len());
-        // Safety: both source memory region is valid for read the destination
-        // memory region is valid for write.
-        unsafe { std::ptr::copy_nonoverlapping(self.ptr.add(offset), dst.as_mut_ptr(), to_copy) }
-        Ok(to_copy)
-    }
-
-    /// Writes bytes to this buffer part.
-    ///
-    /// Writes up to `src.len()` bytes into the region beginning at `offset`,
-    /// returning how many bytes were written successfully. Partial write is
-    /// not considered as an error.
-    fn write_at(&mut self, offset: usize, src: &[u8]) -> Result<usize> {
-        let available = self.cap.checked_sub(offset).ok_or(Error::Index(offset, self.cap))?;
-        let to_copy = std::cmp::min(src.len(), available);
-        // Safety: both source memory region is valid for read the destination
-        // memory region is valid for write.
-        unsafe { std::ptr::copy_nonoverlapping(src.as_ptr(), self.ptr.add(offset), to_copy) }
-        self.len = std::cmp::max(self.len, offset + to_copy);
-        Ok(to_copy)
-    }
-
-    /// Pads this part of buffer to have length `target`.
-    ///
-    /// `limit` describes the limit for this region to grow beyond capacity.
-    /// `None` means the part is not allowed to grow and padding must be done
-    /// within the existing capacity, `Some(limit)` means this part is allowed
-    /// to extend its capacity up to the limit.
-    fn pad(&mut self, target: usize, limit: Option<usize>) -> Result<usize> {
-        if target <= self.len {
-            return Ok(target);
-        }
-        if let Some(limit) = limit {
-            if target > limit {
-                return Err(Error::Pad(target, self.cap));
-            }
-            if self.cap < target {
-                self.cap = target
-            }
-        }
-        let new_len = std::cmp::min(target, self.cap);
-        // Safety: This is safe because the destination memory region is valid
-        // for write.
-        unsafe {
-            std::ptr::write_bytes(self.ptr.add(self.len), 0, new_len - self.len);
-        }
-        self.len = new_len;
-        Ok(new_len)
-    }
-
-    /// Returns the buffer part as a slice.
-    fn as_slice_mut(&mut self) -> &mut [u8] {
-        // SAFETY: BufferPart requires the caller to guarantee the ptr used to
-        // create outlives its instance. BufferPart itself is not copy or clone
-        // so we can rely on unsafety of `new` to uphold this.
-        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
-    }
-
-    /// Returns the buffer part as an immutable slice.
-    fn as_slice(&self) -> &[u8] {
-        // SAFETY: BufferPart requires the caller to guarantee the ptr used to
-        // create outlives its instance. BufferPart itself is not copy or clone
-        // so we can rely on unsafety of `new` to uphold this.
-        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
-    }
-}
-
-// `Buffer` needs to be `Send` in order to be useful in async code. Instead
-// of marking `Buffer` as `Send` directly, `BufferPart` is `Send` already
-// and we can let the compiler do the deduction.
-unsafe impl Send for BufferPart {}
-
-impl Debug for BufferPart {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let BufferPart { len, cap, ptr } = &self;
-        f.debug_struct("BufferPart").field("ptr", ptr).field("len", len).field("cap", cap).finish()
-    }
-}
-
 impl<K: AllocKind> From<AllocGuard<K>> for Buffer<K> {
     fn from(alloc: AllocGuard<K>) -> Self {
-        let AllocGuard { pool, descs: _ } = &alloc;
-        let parts: Chained<BufferPart> = alloc
-            .descriptors()
-            .map(|descriptor| {
-                // The following unwraps are safe because they are already
-                // checked in `DeviceInfo::config`.
-                let offset = usize::try_from(descriptor.offset()).unwrap();
-                let head_length = usize::from(descriptor.head_length());
-                let data_length = usize::try_from(descriptor.data_length()).unwrap();
-                let len = match K::REFL {
-                    AllocKindRefl::Tx => 0,
-                    AllocKindRefl::Rx => data_length,
-                };
-                // Sanity check: make sure the layout is valid.
-                assert!(
-                    offset + head_length <= pool.bytes,
-                    "buffer part starts beyond the end of pool"
-                );
-                assert!(
-                    offset + head_length + data_length <= pool.bytes,
-                    "buffer part ends beyond the end of pool"
-                );
-                // This is safe because the `AllocGuard` makes sure the
-                // underlying memory is valid for the entire time when
-                // `BufferPart` is alive; `add` is safe because
-                // `offset + head_length is within the allocation and
-                // smaller than isize::MAX.
-                unsafe {
-                    BufferPart::new(pool.base.as_ptr().add(offset + head_length), data_length, len)
-                }
-            })
-            .collect();
-        Self { alloc, parts, pos: 0 }
+        Self { alloc }
     }
 }
 
-impl<K: AllocKind> Read for Buffer<K> {
+impl<T, K: AllocKind> Read for BufferIO<T, K>
+where
+    T: AsRef<[u8]>,
+{
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        self.read_at(self.pos, buf)
-            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
-        self.pos += buf.len();
-        Ok(buf.len())
+        let read_len = self.read_at(self.pos, buf);
+        self.pos += read_len;
+        Ok(read_len)
     }
 }
 
-impl Write for Buffer<Tx> {
+impl<T> Write for BufferIO<T, Tx>
+where
+    T: AsMut<[u8]>,
+{
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.write_at(self.pos, buf)
-            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
-        self.pos += buf.len();
-        Ok(buf.len())
+        let write_len = self.write_at(self.pos, buf);
+        self.pos += write_len;
+        Ok(write_len)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
@@ -1089,14 +1016,12 @@ impl Write for Buffer<Tx> {
     }
 }
 
-impl<K: AllocKind> Seek for Buffer<K> {
+impl<T, K: AllocKind> Seek for BufferIO<T, K> {
     fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
         let pos = match pos {
-            SeekFrom::Start(pos) => pos,
+            SeekFrom::Start(offset) => offset,
             SeekFrom::End(offset) => {
-                let end = i64::try_from(self.cap()).map_err(|TryFromIntError { .. }| {
-                    std::io::Error::from(std::io::ErrorKind::InvalidInput)
-                })?;
+                let end = i64::try_from(self.len).unwrap();
                 u64::try_from(end.wrapping_add(offset)).unwrap()
             }
             SeekFrom::Current(offset) => {
@@ -1341,6 +1266,7 @@ impl<T: RxLeaseHandlingStateContainer> RxLeaseWatcher<T> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     use assert_matches::assert_matches;
@@ -1424,14 +1350,16 @@ mod tests {
         // 0..offset being the SENTINEL_BYTE, offset being the WRITE_BYTE and the
         // rest being PAD_BYTE.
         fn check_write_and_pad(&mut self, offset: usize, pad_size: usize) {
-            self.write_at(offset, &[WRITE_BYTE][..]).expect("failed to write to self");
-            self.pad().expect("failed to pad");
+            {
+                let mut io = self.io_mut();
+                assert_eq!(io.write_at(offset, &[WRITE_BYTE][..]), 1);
+            }
             assert_eq!(self.len(), pad_size);
             // An arbitrary value that is not SENTINAL/WRITE/PAD_BYTE so that
             // we can make sure the write really happened.
             const INIT_BYTE: u8 = 42;
             let mut read_buf = vec![INIT_BYTE; pad_size];
-            self.read_at(0, &mut read_buf[..]).expect("failed to read from self");
+            assert_eq!(self.io().read_at(0, &mut read_buf[..]), read_buf.len());
             for (idx, byte) in read_buf.iter().enumerate() {
                 if idx < offset {
                     assert_eq!(*byte, SENTINEL_BYTE);
@@ -1711,18 +1639,19 @@ mod tests {
                     assert_eq!(descriptor.offset(), offset);
                 }
 
-                assert_eq!(buffer.parts.len(), 1);
-                let BufferPart { ptr, len, cap } = buffer.parts[0];
-                assert_eq!(len, 0);
-                assert_eq!(
-                    // Using wrapping_add because we will never dereference the
-                    // resulting pointer and it saves us an unsafe block.
-                    pool.base.as_ptr().wrapping_add(
-                        usize::try_from(offset).unwrap() + usize::from(DEFAULT_MIN_TX_BUFFER_HEAD),
-                    ),
-                    ptr
-                );
-                assert_eq!(data_len, u32::try_from(cap).unwrap());
+                {
+                    let mut slices = buffer.parts();
+                    let slice = slices.next().expect("should have one slice");
+                    assert_matches!(slices.next(), None);
+                    assert_eq!(slice.len(), usize::try_from(data_len).unwrap());
+                    assert_eq!(
+                        slice.as_ptr(),
+                        pool.base.as_ptr().wrapping_add(
+                            usize::try_from(offset).unwrap()
+                                + usize::from(DEFAULT_MIN_TX_BUFFER_HEAD),
+                        )
+                    );
+                }
                 buffer
             })
         })
@@ -1738,8 +1667,10 @@ mod tests {
             - usize::from(DEFAULT_MIN_TX_BUFFER_TAIL);
         let buffers = std::iter::from_fn(|| {
             pool.alloc_tx_buffer_now_or_never(alloc_len).map(|buffer| {
-                assert_eq!(buffer.parts.len(), 4);
-                for (idx, descriptor) in buffer.alloc.descriptors().enumerate() {
+                assert_eq!(buffer.parts().count(), 4);
+                for (idx, (descriptor, slice)) in
+                    buffer.alloc.descriptors().zip(buffer.parts()).enumerate()
+                {
                     let chain_length = ChainLength::try_from(buffer.alloc.len() - idx - 1).unwrap();
                     let head_length = if idx == 0 { DEFAULT_MIN_TX_BUFFER_HEAD } else { 0 };
                     let tail_length = if chain_length == ChainLength::ZERO {
@@ -1761,17 +1692,13 @@ mod tests {
                         assert_eq!(descriptor.nxt(), Some(buffer.alloc[idx + 1].get()));
                     }
 
-                    let BufferPart { ptr, cap, len } = buffer.parts[idx];
-                    assert_eq!(len, 0);
+                    assert_eq!(slice.len(), usize::try_from(data_len).unwrap());
                     assert_eq!(
-                        // Using wrapping_add because we will never dereference
-                        // the resulting ptr and it saves us an unsafe block.
+                        slice.as_ptr(),
                         pool.base.as_ptr().wrapping_add(
                             usize::try_from(offset).unwrap() + usize::from(head_length),
-                        ),
-                        ptr
+                        )
                     );
-                    assert_eq!(data_len, u32::try_from(cap).unwrap());
                 }
                 buffer
             })
@@ -1819,14 +1746,96 @@ mod tests {
             pool.alloc_tx_buffer_now_or_never(alloc_bytes).expect("failed to allocate");
         // Because we have to accommodate the space for head and tail, there
         // would be 2 parts instead of 1.
-        assert_eq!(buffer.parts.len(), 2);
-        assert_eq!(buffer.cap(), alloc_bytes);
+        assert_eq!(buffer.parts().count(), 2);
+        assert_eq!(buffer.len(), alloc_bytes);
         let write_buf = (0..u8::try_from(DEFAULT_BUFFER_LENGTH.get()).unwrap()).collect::<Vec<_>>();
-        buffer.write_at(0, &write_buf[..]).expect("failed to write into buffer");
+        assert_eq!(buffer.io_mut().write_at(0, &write_buf[..]), write_buf.len());
         let mut read_buf = [0xff; DEFAULT_BUFFER_LENGTH.get()];
-        buffer.read_at(0, &mut read_buf[..]).expect("failed to read from buffer");
+        assert_eq!(buffer.io().read_at(0, &mut read_buf[..]), read_buf.len());
         for (idx, byte) in read_buf.iter().enumerate() {
             assert_eq!(*byte, write_buf[idx]);
+        }
+    }
+
+    #[test]
+    fn buffer_write_at_short() {
+        let pool = Pool::new_test_default();
+        let alloc_bytes = DEFAULT_BUFFER_LENGTH.get();
+        let mut buffer =
+            pool.alloc_tx_buffer_now_or_never(alloc_bytes).expect("failed to allocate");
+        assert_eq!(buffer.parts().count(), 2);
+        assert_eq!(buffer.len(), alloc_bytes);
+
+        let write_buf = vec![WRITE_BYTE; alloc_bytes + 10];
+
+        // Test short write (writing more than buffer capacity)
+        assert_eq!(buffer.io_mut().write_at(0, &write_buf[..]), alloc_bytes);
+
+        // Verify short write
+        let mut read_buf = vec![0; alloc_bytes];
+        assert_eq!(buffer.io().read_at(0, &mut read_buf[..]), alloc_bytes);
+        for byte in read_buf.iter() {
+            assert_eq!(*byte, WRITE_BYTE);
+        }
+
+        // Test write with offset past end
+        assert_eq!(buffer.io_mut().write_at(alloc_bytes + 1, &write_buf[..]), 0);
+
+        // Test write with offset inside buffer but src extending past end
+        let offset = alloc_bytes / 2;
+        let expected_write = alloc_bytes - offset;
+        let write_buf = vec![2; alloc_bytes]; // Different byte to distinguish
+        assert_eq!(buffer.io_mut().write_at(offset, &write_buf[..]), expected_write);
+
+        // Verify the write
+        let mut read_buf = vec![0; alloc_bytes];
+        assert_eq!(buffer.io().read_at(0, &mut read_buf[..]), alloc_bytes);
+        for (idx, byte) in read_buf.iter().enumerate() {
+            if idx < offset {
+                assert_eq!(*byte, WRITE_BYTE);
+            } else {
+                assert_eq!(*byte, 2);
+            }
+        }
+    }
+
+    #[test]
+    fn buffer_read_at_short() {
+        let pool = Pool::new_test_default();
+        let alloc_bytes = DEFAULT_BUFFER_LENGTH.get();
+        let mut buffer =
+            pool.alloc_tx_buffer_now_or_never(alloc_bytes).expect("failed to allocate");
+        assert_eq!(buffer.parts().count(), 2);
+        assert_eq!(buffer.len(), alloc_bytes);
+
+        let write_buf = vec![WRITE_BYTE; alloc_bytes];
+        assert_eq!(buffer.io_mut().write_at(0, &write_buf[..]), alloc_bytes);
+
+        // Test short read (reading more than buffer capacity)
+        let mut read_buf = vec![0xff; alloc_bytes + 10];
+        assert_eq!(buffer.io().read_at(0, &mut read_buf[..]), alloc_bytes);
+        for (idx, byte) in read_buf.iter().enumerate() {
+            if idx < alloc_bytes {
+                assert_eq!(*byte, WRITE_BYTE);
+            } else {
+                assert_eq!(*byte, 0xff);
+            }
+        }
+
+        // Test read with offset past end
+        assert_eq!(buffer.io().read_at(alloc_bytes + 1, &mut read_buf[..]), 0);
+
+        // Test read with offset inside buffer but dst extending past end
+        let offset = alloc_bytes / 2;
+        let expected_read = alloc_bytes - offset;
+        let mut read_buf = vec![0xff; alloc_bytes];
+        assert_eq!(buffer.io().read_at(offset, &mut read_buf[..]), expected_read);
+        for (idx, byte) in read_buf.iter().enumerate() {
+            if idx < expected_read {
+                assert_eq!(*byte, WRITE_BYTE);
+            } else {
+                assert_eq!(*byte, 0xff);
+            }
         }
     }
 
@@ -1838,24 +1847,21 @@ mod tests {
             pool.alloc_tx_buffer_now_or_never(alloc_bytes).expect("failed to allocate");
         // Because we have to accommodate the space for head and tail, there
         // would be 2 parts instead of 1.
-        assert_eq!(buffer.parts.len(), 2);
-        assert_eq!(buffer.cap(), alloc_bytes);
+        assert_eq!(buffer.parts().count(), 2);
+        assert_eq!(buffer.len(), alloc_bytes);
         let write_buf = (0..u8::try_from(DEFAULT_BUFFER_LENGTH.get()).unwrap()).collect::<Vec<_>>();
-        assert_eq!(
-            buffer.write(&write_buf[..]).expect("failed to write into buffer"),
-            write_buf.len()
-        );
+
+        let mut io = buffer.io_mut();
+
+        assert_eq!(io.write(&write_buf[..]).expect("failed to write into buffer"), write_buf.len());
         const SEEK_FROM_END: usize = 64;
         const READ_LEN: usize = 12;
         assert_eq!(
-            buffer.seek(SeekFrom::End(-i64::try_from(SEEK_FROM_END).unwrap())).unwrap(),
-            u64::try_from(buffer.cap() - SEEK_FROM_END).unwrap()
+            io.seek(SeekFrom::End(-i64::try_from(SEEK_FROM_END).unwrap())).unwrap(),
+            u64::try_from(io.len - SEEK_FROM_END).unwrap()
         );
         let mut read_buf = [0xff; READ_LEN];
-        assert_eq!(
-            buffer.read(&mut read_buf[..]).expect("failed to read from buffer"),
-            read_buf.len()
-        );
+        assert_eq!(io.read(&mut read_buf[..]).expect("failed to read from buffer"), read_buf.len());
         assert_eq!(&write_buf[..READ_LEN], &read_buf[..]);
     }
 
@@ -1869,7 +1875,7 @@ mod tests {
                 .expect("there are multiple owners of the underlying VMO")
                 .fill_sentinel_bytes();
             let mut buffer =
-                pool.alloc_tx_buffer_now_or_never(pad_size).expect("failed to allocate buffer");
+                pool.alloc_tx_buffer_now_or_never(offset + 1).expect("failed to allocate buffer");
             buffer.check_write_and_pad(offset, pad_size);
         }
     }
@@ -1890,11 +1896,7 @@ mod tests {
             let mut alloc =
                 pool.alloc_tx_now_or_never(BUFFER_PARTS).expect("failed to alloc descriptors");
             alloc
-                .init(
-                    DEFAULT_BUFFER_LENGTH.get() * usize::from(BUFFER_PARTS)
-                        - usize::from(DEFAULT_MIN_TX_BUFFER_HEAD)
-                        - usize::from(DEFAULT_MIN_TX_BUFFER_TAIL),
-                )
+                .init(usize::try_from(offset).unwrap() + 1)
                 .expect("head/body/tail sizes are representable with u16/u32/u16");
             let mut buffer = Buffer::try_from(alloc).unwrap();
             buffer.check_write_and_pad(offset.try_into().unwrap(), pad_size.try_into().unwrap());
@@ -1920,64 +1922,29 @@ mod tests {
             }
         });
         assert_eq!(buffer.alloc.len(), netdev::MAX_DESCRIPTOR_CHAIN.into());
-        buffer.write_at(write_offset, &[WRITE_BYTE][..]).expect("failed to write to buffer");
+        assert_eq!(buffer.io_mut().write_at(write_offset, &[WRITE_BYTE][..]), 1);
         // The accumulator is Some if we haven't found the part where the byte
         // was written, None if we've already found it.
         assert_eq!(
-            buffer.parts.iter().zip(expected_caps).fold(
+            buffer.parts().zip(expected_caps).fold(
                 Some(write_offset),
-                |offset, (part, expected_cap)| {
-                    // The cap must match the expectation.
-                    assert_eq!(part.cap, expected_cap);
-
+                |offset, (slice, expected_cap)| {
+                    assert_eq!(slice.len(), expected_cap);
                     match offset {
                         Some(offset) => {
                             if offset >= expected_cap {
-                                // The part should have used all the capacity.
-                                assert_eq!(part.len, part.cap);
-                                Some(offset - part.len)
+                                Some(offset - slice.len())
                             } else {
-                                // The part should end right after our byte.
-                                assert_eq!(part.len, offset + 1);
-                                let mut buf = [0];
-                                // Verify that the byte is indeed written.
-                                assert_matches!(part.read_at(offset, &mut buf), Ok(1));
-                                assert_eq!(buf[0], WRITE_BYTE);
+                                assert_eq!(slice[offset], WRITE_BYTE);
                                 None
                             }
                         }
-                        None => {
-                            // We should have never written in this part.
-                            assert_eq!(part.len, 0);
-                            None
-                        }
+                        None => None,
                     }
                 }
             ),
             None
-        )
-    }
-
-    #[test]
-    fn buffer_commit() {
-        let pool = Pool::new_test_default();
-        for offset in 0..MAX_BUFFER_BYTES {
-            let mut buffer = pool
-                .alloc_tx_buffer_now_or_never(MAX_BUFFER_BYTES)
-                .expect("failed to allocate buffer");
-            buffer.write_at(offset, &[1][..]).expect("failed to write to buffer");
-            buffer.commit();
-            for (part, descriptor) in buffer.parts.iter().zip(buffer.alloc.descriptors()) {
-                let head_length = descriptor.head_length();
-                let tail_length = descriptor.tail_length();
-                let data_length = descriptor.data_length();
-                assert_eq!(u32::try_from(part.len).unwrap(), data_length);
-                assert_eq!(
-                    u32::from(head_length + tail_length) + data_length,
-                    u32::try_from(DEFAULT_BUFFER_LENGTH.get()).unwrap(),
-                );
-            }
-        }
+        );
     }
 
     #[test]
@@ -1994,29 +1961,24 @@ mod tests {
             let pool = pool.clone();
             move || pool.alloc_tx_buffer_now_or_never(MIN_TX_DATA)
         })) {
-            buffer.write_at(0, &[WRITE_SENTINAL_BYTE; MIN_TX_DATA]).expect("failed to write");
+            assert_eq!(
+                buffer.io_mut().write_at(0, &[WRITE_SENTINAL_BYTE; MIN_TX_DATA]),
+                MIN_TX_DATA
+            );
         }
         let mut allocated =
             pool.alloc_tx_buffer_now_or_never(16).expect("failed to allocate buffer");
-        assert_eq!(allocated.cap(), ALLOC_SIZE);
-        const WRITE_BUF_SIZE: usize = ALLOC_SIZE + 1;
-        assert_matches!(
-            allocated.write_at(0, &[WRITE_BYTE; WRITE_BUF_SIZE]),
-            Err(Error::TooSmall { size: ALLOC_SIZE, offset: 0, length: WRITE_BUF_SIZE })
-        );
-        allocated.write_at(0, &[WRITE_BYTE; ALLOC_SIZE]).expect("failed to write to buffer");
-        assert_matches!(allocated.pad(), Ok(()));
-        assert_eq!(allocated.cap(), MIN_TX_DATA);
+        assert_eq!(allocated.len(), MIN_TX_DATA);
+        const WRITE_BUF_SIZE: usize = MIN_TX_DATA + 1;
+        assert_eq!(allocated.io_mut().write_at(0, &[WRITE_BYTE; WRITE_BUF_SIZE]), MIN_TX_DATA);
+        assert_eq!(allocated.io_mut().write_at(0, &[WRITE_BYTE; ALLOC_SIZE]), ALLOC_SIZE);
         assert_eq!(allocated.len(), MIN_TX_DATA);
         const READ_BUF_SIZE: usize = MIN_TX_DATA + 1;
         let mut read_buf = [READ_SENTINAL_BYTE; READ_BUF_SIZE];
-        assert_matches!(
-            allocated.read_at(0, &mut read_buf[..]),
-            Err(Error::TooSmall { size: MIN_TX_DATA, offset: 0, length: READ_BUF_SIZE })
-        );
-        allocated.read_at(0, &mut read_buf[..MIN_TX_DATA]).expect("failed to read from buffer");
+        assert_eq!(allocated.io().read_at(0, &mut read_buf[..]), MIN_TX_DATA);
+        assert_eq!(allocated.io().read_at(0, &mut read_buf[..MIN_TX_DATA]), MIN_TX_DATA);
         assert_eq!(&read_buf[..ALLOC_SIZE], &[WRITE_BYTE; ALLOC_SIZE][..]);
-        assert_eq!(&read_buf[ALLOC_SIZE..MIN_TX_DATA], &[0x0; ALLOC_SIZE][..]);
+        assert_eq!(&read_buf[ALLOC_SIZE..MIN_TX_DATA], &[WRITE_BYTE; ALLOC_SIZE][..]);
         assert_eq!(&read_buf[MIN_TX_DATA..], &[READ_SENTINAL_BYTE; 1][..]);
     }
 

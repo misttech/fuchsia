@@ -366,7 +366,9 @@ impl<A: TxBufferAllocator<B>, B: AsMut<[u8]>> ByteSliceAllocator<A, B> {
     ) -> Result<Buf<&mut [u8]>, A::Error> {
         let old = self.buffer.replace(self.allocator.alloc(len, queue_len)?);
         debug_assert!(old.is_none());
-        Ok(Buf::new(self.buffer.as_mut().expect("must be set").as_mut(), ..))
+        // The allocator may allocate a buffer larger than requested to fulfill
+        // the minimum tx length. We cap it at `len`.
+        Ok(Buf::new(&mut self.buffer.as_mut().expect("must be set").as_mut()[..len], ..))
     }
 
     /// This is intended to obtain the ownership of the buffer and store it
