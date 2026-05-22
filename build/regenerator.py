@@ -424,11 +424,11 @@ def main() -> int:
         )
         # LINT.IfChange
         _idk_repository_name = "fuchsia_in_tree_idk"
-        _canonical_idk_repository_name = "+fuchsia_idk+fuchsia_in_tree_idk"
+        _canonical_idk_repository_name = "fuchsia_in_tree_idk+"
         idk_repository_path = Path(
             f"{build_dir}/regenerator_outputs/fuchsia_in_tree_idk"
         )
-        # LINT.ThenChange(//build/bazel/toplevel.WORKSPACE.bzlmod)
+        # LINT.ThenChange(//build/bazel/toplevel.MODULE.bazel)
         generate_repository.GenerateIdkRepository(
             _canonical_idk_repository_name,
             idk_repository_path,

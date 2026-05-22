@@ -54,7 +54,7 @@ _INPUT_MODE_SDK = "sdk"
 _INPUT_MODE_IDK = "idk"
 
 _CANONICAL_FUCHSIA_SDK_REPO_NAME = "rules_fuchsia++fuchsia_sdk_ext+fuchsia_sdk"
-_CANONICAL_IN_TREE_IDK_REPO_NAME = "+fuchsia_idk+fuchsia_in_tree_idk"
+_CANONICAL_IN_TREE_IDK_REPO_NAME = "fuchsia_in_tree_idk+"
 _CANONICAL_RULES_FUCHSIA_REPO_NAME = "rules_fuchsia+"
 
 # Maps from apparent repo names to canonical repo names.

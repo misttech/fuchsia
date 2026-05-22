@@ -45,12 +45,14 @@ local_path_override(
     path = "{}/third_party/googletest/src".format(_FUCHSIA_SOURCE_ROOT),
 )
 
-fuchsia_idk = use_extension(
-    "//:module_extensions/fuchsia_idk_extensions.bzl",
-    "fuchsia_idk",
+# Define @fuchsia_in_tree_idk to point to an empty IDK repository.
+# This will always be overridden by bazel_tests.py when running the test suite
+# against the real in-tree IDK using --override-repository=fuchsia_in_tree_idk=/path/to/idk.
+bazel_dep(name = "fuchsia_in_tree_idk", version = "")
+local_path_override(
+    module_name = "fuchsia_in_tree_idk",
+    path = "stub_fuchsia_in_tree_idk",
 )
-fuchsia_idk.in_tree_repository(path = "stub_fuchsia_in_tree_idk")
-use_repo(fuchsia_idk, "fuchsia_in_tree_idk")
 
 bazel_dep(name = "fuchsia_sdk_common", version = "")
 local_path_override(
