@@ -59,12 +59,6 @@ Session::~Session() {
 
 void Session::Run() { block_server_session_run(session_); }
 
-BlockServer::BlockServer(BlockServer&& other)
-    : interface_(other.interface_), server_(other.server_) {
-  other.interface_ = nullptr;
-  other.server_ = nullptr;
-}
-
 BlockServer::~BlockServer() {
   if (server_) {
     block_server_delete(server_);

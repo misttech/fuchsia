@@ -135,8 +135,8 @@ class BlockServer {
   // Constructs a new server.
   BlockServer(const PartitionInfo&, Interface*);
   BlockServer(const BlockServer&) = delete;
+  BlockServer(BlockServer&&) = delete;
   BlockServer& operator=(const BlockServer&) = delete;
-  BlockServer(BlockServer&&);
   BlockServer& operator=(BlockServer&&) = delete;
 
   // Destroys the server.  This will trigger termination and then block until:

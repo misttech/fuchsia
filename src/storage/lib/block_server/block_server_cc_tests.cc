@@ -53,7 +53,8 @@ class TestInterface : public Interface {
     });
   }
 
-  block_server::BlockServer TakeServer() { return *std::move(server_); }
+  // Deletes the server instance.
+  void ResetServer() { server_.reset(); }
 
   BlockServer& server() { return *server_; }
   int threads_running() const { return threads_running_; }
@@ -217,7 +218,7 @@ TEST(BlockServer, Termination) {
     client = *std::move(client_result);
   }
 
-  test_interface.TakeServer();
+  test_interface.ResetServer();
 
   EXPECT_EQ(test_interface.threads_running(), 0);
 }
@@ -248,8 +249,7 @@ TEST(BlockServer, AsyncTermination) {
   client = *std::move(client_result);
 
   sync_completion_t completion;
-  block_server::BlockServer server = test_interface.TakeServer();
-  server.DestroyAsync([&] {
+  test_interface.server().DestroyAsync([&] {
     EXPECT_EQ(test_interface.threads_running(), 0);
     sync_completion_signal(&completion);
   });
@@ -290,7 +290,7 @@ TEST(BlockServer, FailedOnNewSession) {
   auto client_result = block_client::RemoteBlockDevice::Create(*std::move(client_end));
   EXPECT_EQ(client_result.status_value(), ZX_ERR_PEER_CLOSED);
 
-  test_interface.TakeServer();
+  test_interface.ResetServer();
   EXPECT_EQ(test_interface.threads_running(), 0);
 }
 
@@ -517,7 +517,7 @@ TEST(BlockServer, SimulatedBarrierFlushFailure) {
 
   ASSERT_EQ(client->FifoTransaction(&request, 1), ZX_ERR_IO);
 
-  test_interface.TakeServer();
+  test_interface.ResetServer();
   EXPECT_EQ(test_interface.threads_running(), 0);
 }
 
@@ -569,7 +569,7 @@ TEST(BlockServer, SimulatedBarrierWriteFailure) {
 
   ASSERT_EQ(client->FifoTransaction(&request, 1), ZX_ERR_IO);
 
-  test_interface.TakeServer();
+  test_interface.ResetServer();
   EXPECT_EQ(test_interface.threads_running(), 0);
 }
 
@@ -621,7 +621,7 @@ TEST(BlockServer, SimulatedFuaFlushFailure) {
 
   ASSERT_EQ(client->FifoTransaction(&request, 1), ZX_ERR_IO);
 
-  test_interface.TakeServer();
+  test_interface.ResetServer();
   EXPECT_EQ(test_interface.threads_running(), 0);
 }
 
@@ -673,7 +673,7 @@ TEST(BlockServer, SimulatedFuaWriteFailure) {
 
   ASSERT_EQ(client->FifoTransaction(&request, 1), ZX_ERR_IO);
 
-  test_interface.TakeServer();
+  test_interface.ResetServer();
   EXPECT_EQ(test_interface.threads_running(), 0);
 }
 
