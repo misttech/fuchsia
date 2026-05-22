@@ -30,6 +30,14 @@
 
 namespace arm_smmu {
 
+namespace {
+struct FaultBuffer {
+  DECLARE_SPINLOCK(FaultBuffer) lock_;
+  TA_GUARDED(lock_) char buffer_[1024] { 0 };
+};
+FaultBuffer g_fault_buffer;
+}  // namespace
+
 fbl::DoublyLinkedList<fbl::RefPtr<Smmu>> Smmu::instances_;
 
 namespace {
@@ -274,16 +282,6 @@ zx_status_t Smmu::Init(const zbi_dcfg_arm_smmu_driver_t& config) {
     op_mode_ = ArmSmmuMode::kPassthru;
   }
 
-  // TODO(johngro): Remove this when we get to the point that we fully support using the context
-  // banks for translation.
-  if (op_mode_ == ArmSmmuMode::kEnforced) {
-    dprintf(INFO,
-            "WARNING - Full SMMU enforcement has been requested, but it is not supported yet.  "
-            "Degrading %s operational mode to Passthru mode instead.\n",
-            name());
-    op_mode_ = ArmSmmuMode::kPassthru;
-  }
-
   // This code currently depends on stream-matching support and does not support
   // the older stream indexing mode.
   if (idr0_.SMS() == 0) {
@@ -482,6 +480,11 @@ zx_status_t Smmu::Init(const zbi_dcfg_arm_smmu_driver_t& config) {
     }
     num_cbs_ = static_cast<uint32_t>(context_irqs.size());
   }
+
+  // Now that everything has been either locked down or adopted, globally
+  // invalidate all of the non-secure, non-hypervisor TLB entries, providing us
+  // a well define starting state for the TLB cache.
+  InvalidateAllTLBEntries();
 
   // Finally, enable global interrupts.
   Guard<SpinLock, IrqSave> irq_guard{&irq_lock_};
@@ -684,7 +687,9 @@ void Smmu::UnregisterInterrupts() {
         // only two types of places that we hold the irq_lock in this code.
         // During dispatch, where we hold only the irq_lock_, and when
         // creating/destroying associations between context interrupts and
-        // BtiContexts, when we also hold the top level `lock_` mutex.
+        // BtiContexts, or when re-enabling a context bank interrupt after a
+        // fault.  In each of these situations, we also hold the top level
+        // `lock_` mutex.
         //
         // The IRQ handler is not going to mutate our interrupt tables, so it is
         // fine if there is an IRQ in flight for us to drop the lock here and
@@ -852,12 +857,15 @@ void Smmu::HandleContextIrq(uint32_t cb_ndx) {
     // The only way to restore functionality at this point is for the driver to
     // take control of its hardware, and release the quarantine state on the BTI.
     Guard<SpinLock, IrqSave> guard{&target->lock_};
-    PrintCommonContextIrqFaultDetails(cb_ndx);
+
+    char bti_name[ZX_MAX_NAME_LEN];
+    target->name_.get(ktl::size(bti_name), bti_name);
+    PrintCommonContextIrqFaultDetails(cb_ndx, bti_name);
     target->HandleFaultLocked();
   }
 }
 
-void Smmu::PrintCommonContextIrqFaultDetails(uint32_t cb_ndx) {
+void Smmu::PrintCommonContextIrqFaultDetails(uint32_t cb_ndx, const char* bti_name) {
   // Unconditionally disable the context bank interrupt at the context bank
   // level.
   hwreg::RegisterMmio cb_base = get_cb_base(cb_ndx);
@@ -885,41 +893,52 @@ void Smmu::PrintCommonContextIrqFaultDetails(uint32_t cb_ndx) {
   const char* const fault_name =
       fault_ndx < kFaultNames.size() ? kFaultNames[fault_ndx] : "Unknown";
 
-  // TODO(johngro): If we have an associated BTI Dispatcher, fetch its name so
-  // we can print it here as well.
+  {
+    // Render our string into the global fault buffer while holding the global
+    // fault buffer lock.  Sharing a global fault buffer allows us to render the
+    // string without needing a large stack allocation at hard IRQ time.
+    //
+    // It is assumed that systems will not be taking large numbers of concurrent
+    // SMMU faults, meaning that this lock should never be anything resembling a
+    // significant choke point.
+    Guard<SpinLock, IrqSave> guard{&g_fault_buffer.lock_};
+    StringFile f{g_fault_buffer.buffer_};
 
-  // clang-format off
-  dprintf(INFO, "%s: %s \"%s\" fault has occurred in context bank %u%s. (FSR = 0x%08x)\n",
-          name(),
-          fsr.MULTI() ? "More than one" : "A",
-          fault_name,
-          cb_ndx,
-          fsr.SS() ? ", and the context is now stalled" : "",
-          fsr.reg_value());
-  // clang-format on
-  dprintf(INFO, "%s: Stream ID         : 0x%x\n", name(), cbfrsynra.StreamID());
-  dprintf(INFO, "%s: Fault Address     : 0x%016lx\n", name(), far.FADDR());
-  dprintf(INFO, "%s: Stalled           : %s\n", name(), fsr.SS() ? "yes" : "no");
-  dprintf(INFO, "%s: Permission Fault  : %s\n", name(), fsr.PF() ? "yes" : "no");
-  dprintf(INFO, "%s: Access Fault      : %s\n", name(), fsr.AFF() ? "yes" : "no");
-  dprintf(INFO, "%s: Translation Fault : %s\n", name(), fsr.TF() ? "yes" : "no");
-  constexpr uint32_t kOtherFaultMask = 0x1F0;
-  if (fsr.reg_value() & kOtherFaultMask) {
-    dprintf(INFO, "%s: Other faults present (FSR = 0x%08x)\n", name(), fsr.reg_value());
-  }
-
-  if (fsr.PF() || fsr.AFF() || fsr.TF()) {
     // clang-format off
-    dprintf(INFO, "%s: %s%s %s %s fault%s at page table level %u (FSYNR0 = 0x%08x)\n",
-            name(),
-            fsynr0.AFR() ? "Asynchronous, " : "",
-            fsynr0.PNU() ? "Privileged" : "Non-Privileged",
-            fsynr0.IND() ? "instruction" : "data",
-            fsynr0.WNR() ? "write" : "read",
-            fsynr0.PTWF() ? ", during a page-table walk," : "",
-            fsynr0.PLVL(),
-            fsynr0.reg_value());
+    fprintf(&f, "%s \"%s\" fault has occurred in context bank %u%s. (FSR = 0x%08x)\n",
+            fsr.MULTI() ? "More than one" : "A",
+            fault_name,
+            cb_ndx,
+            fsr.SS() ? ", and the context is now stalled" : "",
+            fsr.reg_value());
     // clang-format on
+    fprintf(&f, "SMMU              : %s\n", name());
+    fprintf(&f, "BTI Name          : %s\n", bti_name ? bti_name : "<unknown>");
+    fprintf(&f, "Stream ID         : 0x%x\n", cbfrsynra.StreamID());
+    fprintf(&f, "Fault Address     : 0x%016lx\n", far.FADDR());
+    fprintf(&f, "Stalled           : %s\n", fsr.SS() ? "yes" : "no");
+    fprintf(&f, "Permission Fault  : %s\n", fsr.PF() ? "yes" : "no");
+    fprintf(&f, "Access Fault      : %s\n", fsr.AFF() ? "yes" : "no");
+    fprintf(&f, "Translation Fault : %s\n", fsr.TF() ? "yes" : "no");
+    constexpr uint32_t kOtherFaultMask = 0x1F0;
+    if (fsr.reg_value() & kOtherFaultMask) {
+      fprintf(&f, "Other faults present (FSR = 0x%08x)\n", fsr.reg_value());
+    }
+
+    if (fsr.PF() || fsr.AFF() || fsr.TF()) {
+      // clang-format off
+      fprintf(&f, "%s%s %s %s fault%s at page table level %u (FSYNR0 = 0x%08x)\n",
+              fsynr0.AFR() ? "Asynchronous, " : "",
+              fsynr0.PNU() ? "Privileged" : "Non-Privileged",
+              fsynr0.IND() ? "instruction" : "data",
+              fsynr0.WNR() ? "write" : "read",
+              fsynr0.PTWF() ? ", during a page-table walk," : "",
+              fsynr0.PLVL(),
+              fsynr0.reg_value());
+      // clang-format on
+    }
+
+    DRIVER_OOPS("%s", ktl::move(f).take().data());
   }
 
   // Clear any of the fault bookkeeping so we are ready to receive a new context
@@ -993,6 +1012,19 @@ void Smmu::Lockdown() {
 
     ContextBank::Disable(*this, i);
   }
+}
+
+void Smmu::InvalidateAllTLBEntries() {
+  // Invalidate all TLB entries tagged as Non-secure, Non-hyp.
+  gr0::TLBIALLNSNH::Get().FromValue(0).WriteTo(&gr0_base_);
+  gr0::TLBGSYNC::Get().FromValue(0).WriteTo(&gr0_base_);
+  while (gr0::TLBGSTATUS::Get().ReadFrom(&gr0_base_).GSACTIVE() != 0) {
+    arch::Yield();
+  }
+
+  // See Section 5.4.2 "TLB maintenance operation processing"'s SYNC assembly
+  // example.  We need a `dsb sy` instruction following this operation.
+  arch::DeviceMemoryBarrier();
 }
 
 void Smmu::ShutdownBti(SmmuBti& bti) {

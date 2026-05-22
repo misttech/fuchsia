@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <dev/arm_smmu/context_bank.h>
+#include <dev/arm_smmu/device_aspace.h>
 #include <dev/arm_smmu/smmu.h>
 #include <dev/arm_smmu/smmu_registers.h>
 #include <fbl/ref_ptr.h>
@@ -17,6 +18,150 @@ ContextBank::~ContextBank() {
   DEBUG_ASSERT(gr1_base_.base() == 0);
   DEBUG_ASSERT(cb_base_.base() == 0);
   DEBUG_ASSERT(mode_ == BtiMode::kShutdown);
+}
+
+// -- Notes about TLB invalidation operations --
+//
+// Barriers:
+//
+// TLB operations are generally performed after making changes to the Page Table
+// Entries (PTEs) in RAM, to either define a new mapping in, or to remove an
+// existing mapping from, a device's address space.
+//
+// In either case, it is important to make sure that after we make changes to
+// the PTEs:
+//
+// 1) The changes have been flushed from the CPU's data cache to physical
+//    memory, so that the HW is guaranteed to to see the new values the next
+//    time it goes to physical memory to perform a page table walk.
+// 2) TLB entries for the region of the device's address space have been
+//    properly invalidated after changes to the PTEs are made and before other
+//    code starts to run.
+//
+// For #1, it is expected that anyone manipulating page table entries in RAM
+// will perform an `arch::CleanDataCacheRange` on all of the pages which they
+// manipulated as part of their PTE maintenance _before_  TLB invalidation takes
+// place.  This is currently handled by the DeviceAspace helper class.
+// Additionally, the ARM64 implementation of `arch::CleanDataCacheRange` ends
+// with a `dsb sy` barrier ensuring that all modified bytes must be flushed all
+// of the way to physical memory before subsequent instructions are allowed to
+// execute.
+//
+// For #2, all of the TLB invalidation operations end by calling
+// `TLBSyncInvalidateOperation` (below), which ends by calling
+// `arch::DeviceMemoryBarrier`.  On ARM64 Zircon, this will issue a `dsb sy`
+// instruction, as is suggested by section 5.4.2 of the ARM SMMUv2 spec.  This
+// should ensure that all requested TLB entries have been properly invalidated
+// before execution continues.  This avoids potential hazards such as returning
+// a page of memory to the PMM which is still referenced by a stale table-entry
+// in the TLBs, despite having been invalidated in the PTEs residing in physical
+// memory.
+//
+// ASIDs:
+//
+// All context banks managed by the SMMU driver are assigned a unique ASID
+// during initialization.  This is for a couple of reasons, but the most
+// important is to avoid any potential of TLB aliasing, as alluded to by the ARM
+// SMMUv2 spec.  TLB behavior requirements are discussed in sections 2.5 and
+// 2.6, however this discussion is far from clear, precise, and obvious.  What
+// determines if a TLB cache hit happens?  It depends on the precise definition
+// of a Translation Context, vs. a Translation Context Bank, vs a Translation
+// Regime, vs a set of "attributes" vs a "TLB tag" and so on.
+//
+// There is one statement made (immediately before section 2.5.1) which does
+// seem unusually clear.  It reads:
+//
+// ```
+// If multiple context banks have the same attributes but describe different
+// translations, the results of a TLB lookup are UNPREDICTABLE. For example,
+// where two context banks use the same ASID and VMID, each context bank might
+// use TLB entries that are intended to be used by the other context bank.
+// ```
+//
+// To avoid any chance of two context banks accidentally colliding over TLB
+// entries for each other, we ensure that all context bank hardware has a unique
+// ASID assigned to it during startup, and we make sure that all TLB entries
+// have been invalidated (globally) at the end of initialization.
+//
+// Following this, we can target all of the TLB entries for a given context bank
+// for invalidating using the unique ASID we have assigned to that context bank.
+//
+void ContextBank::TLBSyncInvalidateOperation(hwreg::RegisterMmio& cb_base) {
+  s1cbr::TLBSYNC::Get().FromValue(0).WriteTo(&cb_base);
+  while (s1cbr::TLBSTATUS::Get().ReadFrom(&cb_base).SACTIVE() != 0) {
+    arch::Yield();
+  }
+
+  // See Section 5.4.2 "TLB maintenance operation processing"'s SYNC assembly
+  // example.  We need a `dsb sy` instruction following this operation.
+  arch::DeviceMemoryBarrier();
+}
+
+void ContextBank::TLBInvalidateByAsid(uint16_t asid, hwreg::RegisterMmio& cb_base) {
+  // Note that the |asid| passed here does not necessarily have to the same as
+  // the ASID assigned to this context bank in the registers pointed to by
+  // |cb_base|, however they currently always should be.
+  s1cbr::TLBIASID::Get().FromValue(0).set_ASID(asid).WriteTo(&cb_base);
+  TLBSyncInvalidateOperation(cb_base);
+}
+
+void ContextBank::TLBInvalidateRegion(uint64_t base_va, uint64_t size, uint16_t asid,
+                                      hwreg::RegisterMmio& cb_base) {
+  DEBUG_ASSERT((base_va & kPageMask) == 0);
+  DEBUG_ASSERT((size & kPageMask) == 0);
+
+  // If the number of page entries to invalidate is below our (arbitrary)
+  // acceptable threshold, invalidate TLB entries based on device virtual
+  // addresses.  Otherwise, simply invalidate the entire TLB for this context
+  // bank.
+  constexpr uint64_t kInvalidateAllPageCountThreshold = 256;
+  const uint64_t page_count = size >> DeviceAspace::kPageShift;
+  if (page_count > kInvalidateAllPageCountThreshold) {
+    TLBInvalidateByAsid(asid, cb_base);
+  } else {
+    // TODO(johngro): Figure out exactly what rules our behavior has to conform
+    // to here. Specifically, how many individual virtual address invalidate
+    // operations are we allowed to queue before we must throttle ourselves,
+    // either by explicitly sync'ing queued operations, or via some other
+    // mechanism.
+    //
+    // Section 5.4.2 "TLB maintenance operation processing" of the SMMUv2 docs
+    // says a couple of different things on this topic.  Specifically, they say:
+    //
+    // """
+    // An SMMU must accept an unbounded number of memory-mapped TLB maintenance
+    // operations without relying on the forward progress of client
+    // transactions.
+    // """
+    //
+    // Which seems to imply that there is no limit.  We are free to queue VA
+    // invalidate operations as much as we want.  But, just after this they say:
+    //
+    // """
+    // Note: Software must ensure that it limits the number of TLB Invalidate
+    // and SYNC operations issued to the same TLB invalidation resource. Failure
+    // to adhere to this can result in a situation where new operations are
+    // continuously added at a rate that prevents all operations being
+    // completed, preventing the TLB status from reporting that the context bank
+    // is inactive.
+    // """
+    //
+    // But they provide no guidance as to what this limit should be.  Are we
+    // limited in the number of VA invalidate operations we are allowed to post
+    // before syncing, or are they just saying "hey, be careful.  If you are
+    // constantly invaliding your TLBs, you can run into a situation where no
+    // one ever sees the SYNC state of their invalidation operation complete.
+    //
+    // I think that they are saying the latter, and that we can queue as many VA
+    // invalidate operations as we want before sync, but it would be good to
+    // confirm this.
+    //
+    const uint64_t final_va = base_va + size;
+    for (uint64_t va = base_va; va < final_va; va += DeviceAspace::kPageSize) {
+      s1cbr::TLBIVA_AArch64::Get().FromValue(0).set_ASID(asid).set_Address(va).WriteTo(&cb_base);
+    }
+    TLBSyncInvalidateOperation(cb_base);
+  }
 }
 
 ktl::unique_ptr<ContextBank> ContextBank::Create(Smmu& smmu, uint32_t cb_ndx) {
@@ -73,8 +218,8 @@ zx::result<ktl::unique_ptr<ContextBank>> ContextBank::CreateAndAdopt(Smmu& smmu,
   return zx::ok(ktl::move(cb));
 }
 
-uint64_t ContextBank::aspace_size() {
-  if (mode() == BtiMode::kTranslation) {
+uint64_t ContextBank::aspace_size_for_mode(BtiMode mode) {
+  if (mode == BtiMode::kTranslation) {
     // We currently only support AArch64 addressing, and only ever use the
     // bottom half of our address space (via TTBR0).  Computing the effective
     // size of our address space can be done using TCR.T0SZ with the formula:
@@ -84,16 +229,18 @@ uint64_t ContextBank::aspace_size() {
     // See Section 1.5.1 "Defining the VA subranges for stage 1 translations"
     // for more details.
     //
-    DEBUG_ASSERT(addr_mode() == AddrMode::k64Bit);  // We should always be using 64 bit mode
     s1cbr::TCR_64Bit tcr = s1cbr::TCR_64Bit::Get().ReadFrom(&cb_base_);
+    uint32_t t0sz = tcr.T0SZ();
 
     // We should never configure for a full 64-bit address space as doing so
     // would make it impossible to report our actual `aspace_size` in byte
     // units, which is what the current ABI demands.
-    DEBUG_ASSERT(tcr.T0SZ() != 0);
+    if (t0sz == 0) {
+      t0sz = 16;
+    }
 
-    return uint64_t{1} << (64 - tcr.T0SZ());
-  } else if (mode() == BtiMode::kBypass) {
+    return uint64_t{1} << (64 - t0sz);
+  } else if (mode == BtiMode::kBypass) {
     // When we are operating in passthru mode, the addresses we will be
     // returning for pinned memory will be PA/IPAs of the underlying VMO.  The max physical address
     // we can encounter should be determined by our page size and translation table format.  For
@@ -241,13 +388,16 @@ void ContextBank::SetMode(SmmuBti& owner, BtiMode target_mode) {
   //
   // 1) Adopted context banks.
   // 2) Context bank which have already shut down.
-  // 3) To attempt to move from mode X -> mode X.
-  // 4) To attempt to move from non-faulting mode -> a non-faulting mode.
+  // 3) To attempt to move from non-faulting mode -> a different non-faulting mode.
   DEBUG_ASSERT(mode_ != BtiMode::kAdopted);
   DEBUG_ASSERT(mode_ != BtiMode::kShutdown);
-  DEBUG_ASSERT(mode_ != target_mode);
-  DEBUG_ASSERT(!(((mode_ == BtiMode::kTranslation) || (mode_ == BtiMode::kBypass)) &&
-                 ((target_mode == BtiMode::kTranslation) || (target_mode == BtiMode::kBypass))));
+  DEBUG_ASSERT(!(((mode_ == BtiMode::kTranslation) && (target_mode == BtiMode::kBypass)) ||
+                 ((mode_ == BtiMode::kBypass) && (target_mode == BtiMode::kTranslation))));
+
+  // If we are already in the proper mode, no action is needed.
+  if (mode_ == target_mode) {
+    return;
+  }
 
   // Start by disabling ourselves at the register level.  During operation, we
   // expect to only ever see the following mode transitions.
@@ -268,10 +418,9 @@ void ContextBank::SetMode(SmmuBti& owner, BtiMode target_mode) {
   //
   DisableRegs(gr1_base_, cb_base_, cb_ndx_);
 
-  // If we have any page tables allocated, free them now.
+  // Our TTBRs are now all disabled.
   for (TTBRInfo& ttbr : ttbrs_) {
     if (ttbr.enabled) {
-      DEBUG_ASSERT(false);  // TODO(johngro): walk and free pages here
       ttbr.enabled = false;
     }
   }
@@ -294,11 +443,11 @@ void ContextBank::SetMode(SmmuBti& owner, BtiMode target_mode) {
   // register values instead of assuming that they stuck.
   s1cbr::TCR_64Bit::Get()
       .ReadFrom(&cb_base_)
-      .set_TG0(0)           // TTBR0 uses 4k pages
-      .set_T0SZ(16)         // TTBR0 has a 48-bit address space.
-      .set_TG1(2)           // _If_ we used TTBR1, we'd use 4k pages.
-      .set_T1SZ(0x3f)       // Smallest we can make the TTBR1 aspace size is 2 bytes.
-      .WriteTo(&cb_base_);  // We don't enable TTBR1, so T1SZ is unused anyway.
+      .set_TG0(0)                 // TTBR0 uses 4k pages
+      .set_T0SZ(kDefaultTCRT0SZ)  // TTBR0 has a 48-bit address space.
+      .set_TG1(2)                 // _If_ we used TTBR1, we'd use 4k pages.
+      .set_T1SZ(0x3f)             // Smallest we can make the TTBR1 aspace size is 2 bytes.
+      .WriteTo(&cb_base_);        // We don't enable TTBR1, so T1SZ is unused anyway.
 
   // Finally, set up for our new mode of operation.
   switch (target_mode) {
@@ -341,6 +490,7 @@ void ContextBank::SetMode(SmmuBti& owner, BtiMode target_mode) {
     case BtiMode::kShutdown:
       gr1_base_ = hwreg::RegisterMmio{0};
       cb_base_ = hwreg::RegisterMmio{0};
+      ttbrs_[0].ttbr_paddr = 0;
       break;
 
     // From a disabled state, entering either bypass or translate mode involves
@@ -356,10 +506,30 @@ void ContextBank::SetMode(SmmuBti& owner, BtiMode target_mode) {
           //.set_IRPTNDX(0)                   // We only support SMMUv2, which has an interrupt
           .WriteTo(&gr1_base_);  // per context bank, and IRPTNDX is ignored.
 
-      s1cbr::SCTLR::Get()
-          .ReadFrom(&cb_base_)
-          .set_M(1)  // MMU enabled => Translation enabled
+      DEBUG_ASSERT(ttbrs_[0].enabled == false);
+      DEBUG_ASSERT(ttbrs_[0].ttbr_paddr != 0);
+
+      // Configure the TTBR0 base address and ASID, enable page table walking
+      // from TTBR0, but not TTBR1, and finally, enabled the MMU.  Note that we
+      // should have already invalidated any TLB entries which were using our
+      // ASID during DisableRegs.
+      s1cbr::TTBR0_64Bit::Get()
+          .FromValue(0)
+          .set_ASID(asid())
+          .SetBaseAddrFromValue(ttbrs_[0].ttbr_paddr)
           .WriteTo(&cb_base_);
+      s1cbr::TCR_64Bit::Get().ReadFrom(&cb_base_).set_EPD0(0).set_EPD1(1).WriteTo(&cb_base_);
+      s1cbr::SCTLR::Get()
+          .FromValue(0)
+          .set_M(1)  // - MMU Enabled
+          //.set_E(0)      // - Translation tables are expected to use little endian.
+          //.set_CFCFG(0)  // - Terminate transactions when a fault occurs.
+          //.set_CFRE(0)   // - Do not return an ABORT during a fault.  Just RAZ/WI instead.
+          //.set_WXN(0)    // - Disabled Writeable Execute Never
+          //.set_UWXN(0)   // - Disabled Unprivileged Writeable Execute Never
+          .WriteTo(&cb_base_);
+
+      ttbrs_[0].enabled = true;
       break;
 
     case BtiMode::kBypass:
@@ -371,8 +541,13 @@ void ContextBank::SetMode(SmmuBti& owner, BtiMode target_mode) {
           .WriteTo(&gr1_base_);  // per context bank, and IRPTNDX is ignored.
 
       s1cbr::SCTLR::Get()
-          .ReadFrom(&cb_base_)
-          .set_M(0)  // MMU disabled => Translation disabled => passthru
+          .FromValue(0)
+          //.set_M(0)      // - MMU Disabled
+          //.set_E(0)      // - Translation tables are expected to use little endian.
+          //.set_CFCFG(0)  // - Terminate transactions when a fault occurs.
+          //.set_CFRE(0)   // - Do not return an ABORT during a fault.  Just RAZ/WI instead.
+          //.set_WXN(0)    // - Disabled Writeable Execute Never
+          //.set_UWXN(0)   // - Disabled Unprivileged Writeable Execute Never
           .WriteTo(&cb_base_);
       break;
 
@@ -420,44 +595,49 @@ void ContextBank::DisableRegs(hwreg::RegisterMmio gr1_base, hwreg::RegisterMmio 
   // are disabled, translation is being demanded, but no translation table walks
   // can take place, guaranteeing a fault even if we failed to configure this CB
   // for S1TS2Fault.
-  //
-  // Make sure we set some other expected values while we are messing with the
-  // SCLTR.
-  //
-  // - Translation tables (E=0) are expected to use little endian.
-  // - Terminate transactions (CFCFG=0) when a fault occurs.
-  // - Do not return an ABORT to the initiator during a fault (CFRE=0).  Simply
-  //   implement RAZ/WI behavior.
+  // clang-format off
   //
   // TODO(johngro): Research what the UCI bit _specifically_ controls, and
   // decide if we should be enabling it here, enabling it later, or leaving it
   // disabled at all times.
   //
   s1cbr::SCTLR::Get()
-      .ReadFrom(&cb_base)
-      .set_M(1)      // MMU Enabled
-      .set_E(0)      // Little endian
-      .set_UCI(0)    // Cache maintenance operations from EL0 are disabled.
-      .set_HUPCF(1)  // Process all transaction independently, even with a pending fault interrupt.
-      .set_CFIE(0)   // Disabled context fault interrupts by default.
-      .set_CFCFG(0)  // Terminate transactions on fault
-      .set_CFRE(0)   // Do not return an abort to transactions which fault.
+      .FromValue(0)
+      .set_M(1)       // - MMU Enabled
+      //.set_E(0)     // - Translation tables are expected to use little endian.
+      //.set_UCI(0)   // - Cache maintenance operations from EL0 are disabled.
+      .set_HUPCF(1)   // - Process all transaction independently, even with a pending fault IRQ.
+      //.set_CFIE(0)  // - Disabled context fault interrupts by default.
+      //.set_CFCFG(0) // - Terminate transactions when a fault occurs.
+      //.set_CFRE(0)  // - Do not return an ABORT during a fault.  Just RAZ/WI instead.
+      //.set_WXN(0)   // - Disabled Writeable Execute Never
+      //.set_UWXN(0)  // - Disabled Unprivileged Writeable Execute Never
       .WriteTo(&cb_base);
+  // clang-format on
 
   // Configure for S1TS2Bypass.  Since we have disabled the TTBRs but enabled
   // the MMU, this should result in a Stage 1 fault for every transaction.
   gr1::CBAR::Get(cb_ndx).FromValue(0).set_TYPE(CBAR_Type::kS1TS2Bypass).WriteTo(&gr1_base);
 
-  // Just for a bit of extra credit, zero out the TTBR address fields.
-  s1cbr::TTBR0_64Bit::Get().ReadFrom(&cb_base).set_BaseAddress(0).set_ASID(0).WriteTo(&cb_base);
-  s1cbr::TTBR1_64Bit::Get().ReadFrom(&cb_base).set_BaseAddress(0).set_ASID(0).WriteTo(&cb_base);
+  // Zero out the TTBR address fields and set their ASIDs to a value we will
+  // never use (0xFFFF).  We've already disabled the TTBRs at the  TCR level of
+  // things, but this will ensure that no matter what, we never manage to have a
+  // transaction hit the TLB cache because the ASIDs will not match.
+  s1cbr::TTBR0_64Bit::Get()
+      .ReadFrom(&cb_base)
+      .set_BaseAddress(0)
+      .set_ASID(kUnusedASID)
+      .WriteTo(&cb_base);
+  s1cbr::TTBR1_64Bit::Get()
+      .ReadFrom(&cb_base)
+      .set_BaseAddress(0)
+      .set_ASID(kUnusedASID)
+      .WriteTo(&cb_base);
 
-  // Invalidate all TLB entries for this context bank.
-  s1cbr::TLBIALL::Get().FromValue(0).WriteTo(&cb_base);
-  s1cbr::TLBSYNC::Get().FromValue(0).WriteTo(&cb_base);
-  while (s1cbr::TLBSTATUS::Get().ReadFrom(&cb_base).SACTIVE() != 0) {
-    arch::Yield();
-  }
+  // Purge any TLB entries which _might_ still be around using our assigned
+  // ASID.  This will call arch::DeviceMemoryBarrier (which will issue a `dsb
+  // sy` instruction on ARM) as a side effect.
+  TLBInvalidateByAsid(asid(cb_ndx), cb_base);
 }
 
 zx::result<> ContextBank::AdoptRegisterState(Smmu& smmu) {

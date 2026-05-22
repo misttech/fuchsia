@@ -14,16 +14,19 @@
 
 namespace arm_smmu {
 
-fbl::RefPtr<SmmuPmt> SmmuPmt::Create(SmmuBti& owner, PinnedVmObject pinned_vmo, BtiMode bti_mode) {
-  // We don't support translation mode yet.  We should never see a request for a translated PMT.
-  ZX_ASSERT(bti_mode != BtiMode::kTranslation);
-
+fbl::RefPtr<SmmuPmt> SmmuPmt::Create(SmmuBti& owner, PinnedVmObject pinned_vmo, BtiMode bti_mode,
+                                     DeviceAspace::Allocation map_location) {
   fbl::AllocChecker ac;
   fbl::RefPtr<SmmuPmt> new_pmt =
       AdoptRef(new (&ac) SmmuPmt(fbl::RefPtr<SmmuBti>{&owner}, ktl::move(pinned_vmo), bti_mode));
+
   if (!ac.check()) {
+    owner.ReleaseMapping(ktl::move(map_location));
     return nullptr;
   }
+
+  new_pmt->AssertOwnerPmtLockHeld();
+  new_pmt->map_location_ = ktl::move(map_location);
 
   return new_pmt;
 }
@@ -43,15 +46,19 @@ SmmuPmt::~SmmuPmt() {
   // we've never been exposed to any users, and the pinned memory will be
   // returned as our PinnedVmObject destructs.
   DEBUG_ASSERT((pinned_vmo().vmo() == nullptr) || (state() != State::kInitial));
+
+  // The only way it should be possible for us to end up with an active map
+  // location as we are being destructed would be for us to have successfully
+  // created the mapping, but for our BTI to enter the fault state as we are
+  // doing so.  Still, it _could_ happen, so be sure to check, just in case.
+  if (map_location_) {
+    DEBUG_ASSERT(state() == State::kInitial);
+    owner_->ReleaseMapping(ktl::move(map_location_));
+  }
 }
 
 zx::result<iommu::QueryAddressResult> SmmuPmt::QueryAddress(uint64_t query_offset,
                                                             size_t query_size) {
-  // TODO(johngro): This operation when in bypass mode is almost identical to
-  // the lookup performed by a StubPmt.  Consider factoring the operation out in
-  // a way which allows us to share code with them.
-  DEBUG_ASSERT(bti_mode_ == BtiMode::kBypass);
-
   if (!IsPageRounded(query_offset) || query_size == 0) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
@@ -75,8 +82,31 @@ zx::result<iommu::QueryAddressResult> SmmuPmt::QueryAddress(uint64_t query_offse
     return zx::error(ZX_ERR_BAD_STATE);
   }
 
+  // If we are in translation mode, we can just use our DeviceAspace allocation
+  // to figure out what address our hardware should be using.
+  if (bti_mode_ == BtiMode::kTranslation) {
+    if (!map_location_) {
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
+
+    // Make sure the query fits inside of the mapping in our device's address
+    // space.
+    const uint64_t size = map_location_->size;
+    if ((query_offset >= size) || (query_size > (size - query_offset))) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
+
+    const uint64_t base = map_location_->base;
+    return zx::ok(
+        iommu::QueryAddressResult{.device_vaddr = base + query_offset, .size = query_size});
+  }
+
   query_offset += pinned_vmo().offset();
   query_size = RoundUpPageSize(query_size);
+
+  // If we are not in translate mode, we must be in bypass mode and we should
+  // simply return the physical address of our pinned VMO.
+  ZX_DEBUG_ASSERT(bti_mode_ == BtiMode::kBypass);
 
   // The user wants to know the device's base virtual address for the continuous
   // range [query_offset, query_offset + query_size) in the pinned VMO.  Start

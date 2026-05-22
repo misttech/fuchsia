@@ -44,7 +44,7 @@ class ContextBank : public fbl::DoublyLinkedListable<ktl::unique_ptr<ContextBank
   AddrMode addr_mode() const { return addr_mode_; }
 
  private:
-  friend class std::default_delete<ContextBank>;
+  friend class ktl::default_delete<ContextBank>;
   friend class SmmuBti;
 
   // Info fetched from the TCR which tells us a few different things about how a
@@ -57,17 +57,54 @@ class ContextBank : public fbl::DoublyLinkedListable<ktl::unique_ptr<ContextBank
     uint64_t ttbr_paddr{0};
   };
 
+  // When we configure for translation, we use a 48-bit device address space.
+  static constexpr uint32_t kDefaultTCRT0SZ = 16;
+  static constexpr uint64_t kDefaultTTBR0AddrSpaceSz = uint64_t{1} << (64 - kDefaultTCRT0SZ);
+
+  // We need to allocate a unique ASID for every context bank in the system that
+  // we control.  For now, we just use a context bank's index with some upper
+  // bits set in it.
+  //
+  // TODO(johngro): We need to make sure that when we come out of the
+  // bootloaders and claim the hardware, that we do not end up adopting any
+  // hardware which is using one of the ASIDs we plan to use.  Currently, we
+  // have no reference hardware which enters the kernel with the hardware
+  // configured to perform address translation at all, so it isn't an issue yet.
+  // Some day, however, we should take the time to provide a 100% guarantee that
+  // there will be no collisions.
+  static constexpr uint16_t kUnusedASID = 0xFFFF;
+  static constexpr uint16_t kUpperASIDBits = 0x5A00;
+  static constexpr uint16_t kUpperASIDMask = 0xFF00;
+
   static ktl::unique_ptr<ContextBank> Create(Smmu& smmu, uint32_t cb_ndx) TA_REQ(smmu.get_lock());
   static zx::result<> ValidateNdx(Smmu& smmu, uint32_t cb_ndx) TA_REQ(smmu.get_lock());
   static void DisableRegs(hwreg::RegisterMmio gr1_base, hwreg::RegisterMmio cb_base,
                           uint32_t cb_ndx);
 
+  static uint16_t asid(uint32_t cb_ndx) {
+    DEBUG_ASSERT(cb_ndx <= 0xFF);
+    return static_cast<uint16_t>(cb_ndx | kUpperASIDBits);
+  }
+
   ContextBank(uint32_t cb_ndx);
   ~ContextBank();
 
+  // TLB Maintenance
+  static void TLBSyncInvalidateOperation(hwreg::RegisterMmio& cb_base);
+  static void TLBInvalidateByAsid(uint16_t asid, hwreg::RegisterMmio& cb_base);
+  static void TLBInvalidateRegion(uint64_t base_va, uint64_t size, uint16_t asid,
+                                  hwreg::RegisterMmio& cb_base);
+
+  void TLBInvalidateByAsid() { TLBInvalidateByAsid(asid(), cb_base_); }
+  void TLBInvalidateRegion(uint64_t base_va, uint64_t size) {
+    TLBInvalidateRegion(base_va, size, asid(), cb_base_);
+  }
+
   // aspace size accesses registers and should only be called from a
   // ContextBank's owning BTI, with the BTI's lock held.
-  uint64_t aspace_size();
+  uint64_t aspace_size_for_mode(BtiMode mode);
+  uint64_t aspace_size() { return aspace_size_for_mode(mode()); }
+  uint16_t asid() const { return asid(cb_ndx()); }
   uint32_t DecodeGranuleSizeBits(uint32_t reg_bits) const;
   void DecodeTtbrRegions(uint32_t t0sz, uint32_t t1sz);
   zx::result<> AdoptRegisterState(Smmu& smmu) TA_REQ(smmu.get_lock());

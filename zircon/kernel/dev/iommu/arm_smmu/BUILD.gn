@@ -12,11 +12,13 @@ source_set("arm_smmu") {
   sources = [
     "console.cc",
     "context_bank.cc",
+    "device_aspace.cc",
     "smmu.cc",
     "smmu_bti.cc",
     "smmu_mode.cc",
     "smmu_pmt.cc",
     "stream_match_reg_group.cc",
+    "translation_table_helper.cc",
     "utils.cc",
   ]
   deps = [
@@ -28,17 +30,22 @@ source_set("arm_smmu") {
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/root_resource_filter",
     "//zircon/system/ulib/hwreg",
+    "//zircon/system/ulib/region-alloc",
   ]
 }
 
 library_headers("headers") {
   headers = [
-    "dev/arm_smmu/smmu_bti.h",
     "dev/arm_smmu/context_bank.h",
+    "dev/arm_smmu/device_aspace.h",
+    "dev/arm_smmu/page_cache.h",
     "dev/arm_smmu/smmu.h",
+    "dev/arm_smmu/smmu_bti.h",
     "dev/arm_smmu/smmu_registers.h",
-    "dev/arm_smmu/utils.h",
     "dev/arm_smmu/stream_match_reg_group.h",
+    "dev/arm_smmu/translation_table_helper.h",
+    "dev/arm_smmu/utils.h",
+    "dev/arm_smmu/vmsav8_64.h",
   ]
   public_deps = [
     "//zircon/kernel/dev/interrupt",

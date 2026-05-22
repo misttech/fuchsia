@@ -1083,6 +1083,12 @@ class TLBIVA_AArch64 : public hwreg::RegisterBase<TLBIVA_AArch64, uint64_t, Enab
 
   DEF_FIELD(43, 0, Address_55_12);
   DEF_FIELD(63, 48, ASID);
+
+  TLBIVA_AArch64& set_Address(uint64_t addr) {
+    set_Address_55_12(addr >> 12);
+    return *this;
+  }
+  uint64_t Address() const { return Address_55_12() << 12; }
 };
 
 class TLBIVA_AArch32 : public hwreg::RegisterBase<TLBIVA_AArch32, uint32_t, EnablePrinting> {

@@ -8,8 +8,10 @@
 
 #include <arch/arm64/periphmap.h>
 #include <dev/arm_smmu/context_bank.h>
+#include <dev/arm_smmu/device_aspace.h>
 #include <dev/arm_smmu/smmu.h>
 #include <dev/arm_smmu/smmu_bti.h>
+#include <dev/arm_smmu/smmu_pmt.h>
 #include <dev/arm_smmu/smmu_registers.h>
 #include <dev/arm_smmu/stream_match_reg_group.h>
 #include <dev/arm_smmu/utils.h>
@@ -31,7 +33,7 @@ int usage(int ret = ZX_ERR_INVALID_ARGS) {
   printf("  help     : show this message\n");
   printf("  list     : list all discovered IOMMU instances and their currently managed BTIs.\n");
   printf("  set <id> : set the default SMMU to use with other commands.\n");
-  printf("  show <tgt> [-v]\n");
+  printf("  show <tgt> [-v] [-pmts]\n");
   printf("    Print the current high level status of the selected SMMU.\n");
   printf("    Use <tgt> to select a specific BTI to dump details about, or\n");
   printf("    \"all\" to show the status for the entire smmu\n");
@@ -43,9 +45,10 @@ int usage(int ret = ZX_ERR_INVALID_ARGS) {
   printf("    Attempt to invalidate all Stream IDs of the target BTI(s).\n");
   printf("\n");
   printf("Params:\n");
-  printf("  <tgt>  : One of (all | bti <N> | sid <Stream ID>)\n");
-  printf("  <--id> : The ID of the SMMU to operate on, instead of the current default.\n");
-  printf("  [-v]   : Optionally enable verbose output, for sub-commands who support it.\n");
+  printf("  <tgt>   : One of (all | bti <N> | sid <Stream ID>)\n");
+  printf("  <--id>  : The ID of the SMMU to operate on, instead of the current default.\n");
+  printf("  [-v]    : Optionally enable verbose output, for sub-commands who support it.\n");
+  printf("  [-pmts] : Show detailed PMT status when using the show command\n");
   return ret;
 }
 
@@ -182,7 +185,7 @@ zx::result<fbl::RefPtr<SmmuBti>> Smmu::FindCmdTarget(int argc, const cmd_args* a
       }
     }
 
-    printf("Failed to find %s target 0x%x\n", tgt_type, tgt_val);
+    printf("Failed to find %s target 0x%x in %s\n", tgt_type, tgt_val, name());
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 }
@@ -199,6 +202,7 @@ int Smmu::CmdShow(int argc, const cmd_args* argv, int cmd_ndx) const {
   }
 
   bool verbose = FindOptionalFlag(argc, argv, "-v");
+  bool show_pmts = FindOptionalFlag(argc, argv, "-pmts");
   fbl::RefPtr<SmmuBti> tgt = ktl::move(maybe_tgt.value());
   if (tgt == nullptr) {
     printf("Dumping configuration for %s\n", name());
@@ -214,10 +218,10 @@ int Smmu::CmdShow(int argc, const cmd_args* argv, int cmd_ndx) const {
         bti.name_.get(ktl::size(bti_name), bti_name);
         printf("\nBTI #%zu (\"%s\")\n", i++, bti_name);
       }
-      bti.CmdShow(1, verbose);
+      bti.CmdShow(1, show_pmts, verbose);
     }
   } else {
-    tgt->CmdShow(0, verbose);
+    tgt->CmdShow(0, show_pmts, verbose);
   }
 
   return ZX_OK;
@@ -225,20 +229,58 @@ int Smmu::CmdShow(int argc, const cmd_args* argv, int cmd_ndx) const {
 
 #define I(x) (ilvl + (x))
 #define INDENT(x) SMMU_FMT_INDENT(I(x))
-void SmmuBti::CmdShow(int ilvl, bool verbose) const {
+void SmmuBti::CmdShow(int ilvl, bool show_pmts, bool verbose) const {
   Guard<Mutex> pmt_guard{&pmt_lock_};
   Guard<SpinLock, IrqSave> guard{&lock_};
 
-  printf("%*sMode : %s%s\n", INDENT(0), BtiModeToString(mode_), orphaned_ ? " (orphaned)" : "");
+  printf("%*sMode              : %s%s\n", INDENT(0), BtiModeToString(mode_),
+         orphaned_ ? " (orphaned)" : "");
+  {
+    char bti_name[ZX_MAX_NAME_LEN];
+    name_.get(ktl::size(bti_name), bti_name);
+    printf("%*sName              : %s\n", INDENT(0), bti_name);
+  }
   {
     ktl::array<char, 128> sid_buffer{0};
-    printf("%*sStreamIDs :%s\n", INDENT(0), RenderSidList(sid_buffer));
+    printf("%*sStreamIDs         : %s\n", INDENT(0), RenderSidList(sid_buffer));
+  }
+  printf("%*sActive PMTs       : %zu\n", INDENT(0), active_pmt_list_.size());
+  printf("%*sQuarantined PMTs  : %lu\n", INDENT(0), quarantined_pmt_count_);
+  printf("%*sQuarantined Pages : %lu\n", INDENT(0), quarantined_page_count_);
+  if (aspace_ != nullptr) {
+    printf("%*sTLB Pages         : %u\n", INDENT(0), aspace_->page_cache().in_flight_pages());
+    printf("%*sCached TLB Pages  : %u\n", INDENT(0), aspace_->page_cache().cache_entries());
+  }
+
+  if ((show_pmts) && (mode_ == BtiMode::kTranslation)) {
+    size_t ndx{0};
+    uint64_t page_total{0};
+
+    for (const SmmuPmt& pmt : active_pmt_list_) {
+      pmt.AssertOwnerPmtLockHeld();
+      if (pmt.map_location()) {
+        const uint64_t base = pmt.map_location()->base;
+        const uint64_t size = pmt.map_location()->size;
+        const uint64_t page_size = size >> DeviceAspace::kPageShift;
+
+        printf("%*sPMT[%3zu] : [0x%lx, 0x%lx] (%lu Page%s)\n", INDENT(1), ndx, base,
+               base + size - 1, page_size, page_size == 1 ? "" : "s");
+        page_total += page_size;
+      } else {
+        // If we have an active PMT in a BTI operating in translation mode, we
+        // may not have our map_location any more because someone used the debug
+        // console to force-drop our mapping with the "lock" command.
+        printf("%*sPMT[%3zu] : ???\n", INDENT(1), ndx);
+      }
+      ++ndx;
+    }
+    printf("%*sCounted %lu mapped page%s.\n", INDENT(1), page_total, page_total == 1 ? "" : "s");
   }
 
   const size_t smrg_count = smrg_list_.size_slow();
   uint32_t smrg_num = 0;
   for (const StreamMatchRegGroup& smrg : smrg_list_) {
-    printf("%*sSMRG %u/%zu (index %u)\n", INDENT(0), ++smrg_num, smrg_count, smrg.smrg_ndx());
+    printf("\n%*sSMRG %u/%zu (index %u)\n", INDENT(0), ++smrg_num, smrg_count, smrg.smrg_ndx());
     printf("%*sMode  : %s\n", INDENT(1), ArmS2crTypeToString(smrg.mode()));
     printf("%*sMask  : 0x%04x\n", INDENT(1), smrg.stream_ids().mask());
     printf("%*sID    : 0x%04x\n", INDENT(1), smrg.stream_ids().id());
@@ -366,8 +408,47 @@ void SmmuBti::CmdLock(uint32_t ndx) {
   char bti_name[ZX_MAX_NAME_LEN];
   name_.get(ktl::size(bti_name), bti_name);
 
-  const zx::result<> result = [&]() {
+  // We are going to do one of two things, depending on whether we are in
+  // Enforced mode, or in Passthru mode.  If we are in enforced mode, we are
+  // going to simply go through our list of active PMTs, and remove all of
+  // their mappings from the Page Tables.  This does not actually "lock" the
+  // BTI, it just makes existing pinned memory in-accessible (assuming that
+  // there is any).
+  //
+  // When we are in passthru mode, we just force the BTI (and its associated
+  // context bank) into Fault mode, meaning that the MMU will be enabled, but
+  // the TTBRs will be disabled, causing every translation request to fail
+  // instead of passing through.
+  if (smmu_->op_mode() == ArmSmmuMode::kEnforced) {
+    Guard<Mutex> pmt_guard{&pmt_lock_};
+
+    // Go through this BTI's PMTs and release any mappings back to the BTI's
+    // address space.  Don't actually release the pinned memory yet, we are
+    // only trying to force some faults.
+    size_t released{0};
+    for (SmmuPmt& pmt : active_pmt_list_) {
+      pmt.AssertOwnerPmtLockHeld();
+
+      // In general, we should be able to assert that all active PMTs have a
+      // mapping during normal operation.  However, it is possible that someone
+      // has run this command twice and the mappings were already released.  To
+      // keep our reporting consistent, make sure to only count mappings we
+      // actually released.
+      if (pmt.map_location()) {
+        ReleaseMapping(pmt.TakeMapLocation());
+        ++released;
+      }
+    }
+    printf("%s: BTI index #%u (\"%s\") released %zu active mapping%s.\n", smmu_->name(), ndx,
+           bti_name, released, (released == 1) ? "" : "s");
+  } else {
     Guard<SpinLock, IrqSave> bti_guard{&lock_};
+
+    // If the SMMU is not operating in Enforced mode, it must be in passthru
+    // mode (if it was in disabled mode, there would be no constructed SmmuBti
+    // objects).
+    DEBUG_ASSERT(smmu_->op_mode() == ArmSmmuMode::kPassthru);
+
     // Force the BTI into fault mode.  This will lock things down if we
     // are in passthru mode, and prevent new PMTs from being created moving
     // forward.
@@ -383,15 +464,11 @@ void SmmuBti::CmdLock(uint32_t ndx) {
             .set_CFIE(1)
             .WriteTo(&context_bank_->cb_base_);
       }
+      printf("%s: BTI index #%u (\"%s\") set to mode FAULT.\n", smmu_->name(), ndx, bti_name);
+    } else {
+      printf("%s: Failed to set BTI index #%u (\"%s\") to mode FAULT (err %d).\n", smmu_->name(),
+             ndx, bti_name, result.error_value());
     }
-    return result;
-  }();
-
-  if (result.is_ok()) {
-    printf("%s: BTI index #%u (\"%s\") set to mode FAULT.\n", smmu_->name(), ndx, bti_name);
-  } else {
-    printf("%s: Failed to set BTI index #%u (\"%s\") to mode FAULT (err %d).\n", smmu_->name(), ndx,
-           bti_name, result.error_value());
   }
 }
 

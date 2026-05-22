@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 
+#include <dev/arm_smmu/device_aspace.h>
 #include <dev/arm_smmu/smmu.h>
 #include <dev/arm_smmu/utils.h>
 #include <dev/iommu/bti.h>
@@ -84,6 +85,8 @@ class SmmuBti final : public iommu::Bti, public fbl::DoublyLinkedListable<fbl::R
     return *smmu_;
   }
 
+  void ReleaseMapping(DeviceAspace::Allocation mapping) TA_REQ(pmt_lock_);
+
   // Routines used by PMTs when handling closure and leaking.
   //
   void OnPmtUnpin(SmmuPmt& pmt) TA_EXCL(lock_);
@@ -103,8 +106,18 @@ class SmmuBti final : public iommu::Bti, public fbl::DoublyLinkedListable<fbl::R
   friend class Smmu;
   friend class fbl::RefPtr<SmmuBti>;
 
+  static zx::result<ktl::unique_ptr<DeviceAspace>> CreateAspace();
+
+  // A callback we can inject into a DeviceAspace Map/Unmap/Shutdown operation
+  // which it can use to invalidate our TLBs at the proper point in its
+  // operation.
+  static void TlbInvalThunk(void* thiz, uint64_t base, uint64_t size);
+
   SmmuBti(fbl::RefPtr<Smmu> smmu, uint64_t bti_id);
   ~SmmuBti();
+
+  zx::result<> InitializeAspace() TA_REQ(pmt_lock_) TA_EXCL(lock_);
+  void AttachAspace(ktl::unique_ptr<DeviceAspace> aspace) TA_REQ(pmt_lock_, lock_);
 
   void AddSmrgLocked(Smmu& smmu, ktl::unique_ptr<StreamMatchRegGroup> smrg)
       TA_REQ(smmu.get_lock(), lock_);
@@ -118,7 +131,7 @@ class SmmuBti final : public iommu::Bti, public fbl::DoublyLinkedListable<fbl::R
   }
 
   // Console support
-  void CmdShow(int ilvl, bool verbose) const TA_EXCL(pmt_lock_, lock_);
+  void CmdShow(int ilvl, bool show_pmts, bool verbose) const TA_EXCL(pmt_lock_, lock_);
   void CmdLock(uint32_t ndx) TA_EXCL(pmt_lock_, lock_);
   zx::result<> InvalidateSids() TA_EXCL(lock_);
   const char* RenderSidList(ktl::span<char> buffer) const TA_REQ(lock_);
@@ -134,7 +147,7 @@ class SmmuBti final : public iommu::Bti, public fbl::DoublyLinkedListable<fbl::R
   TA_GUARDED(lock_) fbl::DoublyLinkedList<ktl::unique_ptr<StreamMatchRegGroup>> smrg_list_;
   TA_GUARDED(lock_) ktl::unique_ptr<ContextBank> context_bank_;
   TA_GUARDED(pmt_lock_) fbl::SizedDoublyLinkedList<fbl::RefPtr<SmmuPmt>> active_pmt_list_;
-  // Note, we don't need to actually hold referenced to "quarantined" PMTs.  If
+  // Note, we don't need to actually hold references to "quarantined" PMTs.  If
   // a user leaks a PMT without unpinning it, we simply enter the fault state
   // and lock down this BTI so that the actual initiator hardware cannot access
   // any memory anymore, after which we can return all pinned physical memory to
@@ -147,6 +160,9 @@ class SmmuBti final : public iommu::Bti, public fbl::DoublyLinkedListable<fbl::R
   // A flag indicating that the final user-mode handle to this BTI was closed,
   // but it still had PMTs (either active or quarantined) under its control.
   TA_GUARDED(pmt_lock_) bool orphaned_ { false };
+
+  // Protected by its own mutexes internally.
+  TA_GUARDED(pmt_lock_) ktl::unique_ptr<DeviceAspace> aspace_;
 };
 
 }  // namespace arm_smmu

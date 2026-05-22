@@ -126,10 +126,24 @@ void StreamMatchRegGroup::EnableForContextBank(SmmuBti& owner, uint32_t cb_ndx) 
     // For the S2CR, start with a value of 0.  This will set all of the overrides
     // for all of the hints (transient, instruction fetch, write allocation,
     // etc...) to "default".
+    //
+    // Then configure the register to indicate translation mode, and direct it
+    // to our context bank. Finally, attempt to configure PRIVCFG to
+    // unconditionally flag all transactions as "Unprivileged".  Whether or not
+    // this will actually change transactions depends on the IDR2.DIPANS bit.
+    //
+    // Forcing accesses to be unprivileged provides finer grained access control
+    // in translation mode when using VMSAv8-64 translation tables.
+    // Specifically, it is not possible to deny Read access to a privileged
+    // access when there exists a valid translation, but it is possible when
+    // accesses are unprivileged.  See section D8.4.1.2.6 Table D8-62 in the ARM
+    // ARM.
+    //
     gr0::S2CR_Translation::Get(smrg_ndx_)
         .FromValue(0)
         .set_TYPE(S2CR_Type::kTranslation)
         .set_CBNDX(cb_ndx_)
+        .set_PRIVCFG(0x2)
         .WriteTo(&gr0_base_);
 
     gr0::SMR::Get(smrg_ndx_)

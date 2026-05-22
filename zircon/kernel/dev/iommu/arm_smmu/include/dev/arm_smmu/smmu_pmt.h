@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#include <dev/arm_smmu/device_aspace.h>
 #include <dev/arm_smmu/utils.h>
 #include <dev/iommu/pmt.h>
 #include <fbl/intrusive_double_list.h>
@@ -23,10 +24,6 @@ namespace arm_smmu {
 
 class SmmuBti;
 
-// TODO(johngro) : Consider refactoring this into two further subclasses.  One
-// of which handles mappings and address lookups when we are operating in
-// Passthru mode, vs one which handles mappings and address lookup when we are
-// in enforcement mode.
 class SmmuPmt final : public iommu::Pmt, public fbl::DoublyLinkedListable<fbl::RefPtr<SmmuPmt>> {
  public:
   enum class State {
@@ -42,7 +39,8 @@ class SmmuPmt final : public iommu::Pmt, public fbl::DoublyLinkedListable<fbl::R
                    // quarantined.
   };
 
-  static fbl::RefPtr<SmmuPmt> Create(SmmuBti& owner, PinnedVmObject pinned_vmo, BtiMode bti_mode)
+  static fbl::RefPtr<SmmuPmt> Create(SmmuBti& owner, PinnedVmObject pinned_vmo, BtiMode bti_mode,
+                                     DeviceAspace::Allocation map_location)
       TA_REQ(owner.get_pmt_lock());
 
   SmmuPmt(const SmmuPmt&) = delete;
@@ -62,15 +60,28 @@ class SmmuPmt final : public iommu::Pmt, public fbl::DoublyLinkedListable<fbl::R
   //
   // end iommu::Pmt implementation
 
-  State state() const TA_REQ(owner_->get_pmt_lock()) { return state_; }
-  void set_state(State new_state) TA_REQ(owner_->get_pmt_lock()) { state_ = new_state; }
-
   void AssertOwnerPmtLockHeld() const TA_ASSERT(owner_->get_pmt_lock()) {
     owner_->get_pmt_lock().lock().AssertHeld();
   }
 
+  State state() const TA_REQ(owner_->get_pmt_lock()) { return state_; }
+  void set_state(State new_state) TA_REQ(owner_->get_pmt_lock()) { state_ = new_state; }
+
   PinnedVmObject TakePinnedVmo() TA_REQ(owner_->get_pmt_lock()) { return ktl::move(pinned_vmo_); }
   const PinnedVmObject& pinned_vmo() const TA_REQ(owner_->get_pmt_lock()) { return pinned_vmo_; }
+
+  DeviceAspace::Allocation TakeMapLocation() TA_REQ(owner_->get_pmt_lock()) {
+    return ktl::move(map_location_);
+  }
+
+  // Note: while PMT instances always have a "map location" which can be
+  // queried, the map location instance itself is not always valid.  Callers
+  // need to know that the location is valid (which can be tested using an
+  // implicit or explicit cast to bool, or a comparison against nullptr, before
+  // using it.
+  const DeviceAspace::Allocation& map_location() const TA_REQ(owner_->get_pmt_lock()) {
+    return map_location_;
+  }
 
  private:
   friend class fbl::RefPtr<SmmuPmt>;  // Only RefPtrs can destroy us.
@@ -78,16 +89,10 @@ class SmmuPmt final : public iommu::Pmt, public fbl::DoublyLinkedListable<fbl::R
   SmmuPmt(fbl::RefPtr<SmmuBti> owner, PinnedVmObject pinned_vmo, BtiMode bti_mode);
   ~SmmuPmt() final;
 
-  // Get a reference to our underlying pinned VMO.  Note that this needs to be
-  // done with our lock held, but performing queries such as "LookupContiguous"
-  // must be done with the lock dropped.
-  fbl::RefPtr<VmObject> get_pinned_vmo_reference() TA_REQ(owner_->get_pmt_lock()) {
-    return pinned_vmo_.vmo();
-  }
-
   const fbl::RefPtr<SmmuBti> owner_;
   const BtiMode bti_mode_;
   TA_GUARDED(owner_->get_pmt_lock()) State state_ { State::kInitial };
+  TA_GUARDED(owner_->get_pmt_lock()) DeviceAspace::Allocation map_location_ {};
 };
 
 }  // namespace arm_smmu

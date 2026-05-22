@@ -7,6 +7,7 @@
 #include <zircon/assert.h>
 
 #include <dev/arm_smmu/context_bank.h>
+#include <dev/arm_smmu/device_aspace.h>
 #include <dev/arm_smmu/smmu.h>
 #include <dev/arm_smmu/smmu_bti.h>
 #include <dev/arm_smmu/smmu_pmt.h>
@@ -49,6 +50,32 @@ zx::result<fbl::RefPtr<iommu::Pmt>> SmmuBti::Map(PinnedVmObject pinned_vmo, uint
   if (perms == 0) {
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
+
+  // TODO(johngro): Resolve this.  Right now, DWC3 tries to make write only
+  // mappings.  If we tell them no, things spiral out of control rapidly.
+  //
+  // 1) The driver does not come up.  This is obvious and expected.
+  // 2) Someone ends up closing their BTI.  This is not right.  DF is supposed
+  //    to be escrowing these things, no matter what happens with the driver who
+  //    uses the BTI.
+  // 3) Then, something goes wrong in the driver system such that an attempt to
+  //    `dm reboot` just hangs the shell.
+  //
+  // We need to figure out the proper policy here.  If someone wants a
+  // particular level of enforcement, and we cannot provide it, what should we
+  // be doing?  Deny the request and allow them to retry?  Silently accept the
+  // request and give them a less strict level of access?  Allow them to pass a
+  // flag which determines if they want strict or lax enforcement?
+#if 0
+  // It is not possible for an SMMU using VMSAv8-64 translation tables to create
+  // permissions which allow write, but do not allow read.  If someone asks for
+  // this configuration, reject the request so the driver knows that this is not
+  // possible, and does not accidentally end up providing read access to a
+  // device it didn't intend to provide.
+  if (((perms & IOMMU_FLAG_PERM_READ) == 0) && ((perms & IOMMU_FLAG_PERM_WRITE) != 0)) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+#endif
 
   // If there has been a request for a contiguous mapping, then check to see if
   // our pinned VMO is (in fact) contiguous before attempting obtaining our
@@ -98,50 +125,66 @@ zx::result<fbl::RefPtr<iommu::Pmt>> SmmuBti::Map(PinnedVmObject pinned_vmo, uint
     observed_mode = mode();
   }
 
+  // Perform our mapping if we are in translation mode.  Then, then create our
+  // PMT, giving it ownership of any new mapping we just created.
   Guard<Mutex> pmt_guard{&pmt_lock_};
-  fbl::RefPtr<SmmuPmt> pmt = SmmuPmt::Create(*this, ktl::move(pinned_vmo), observed_mode);
+  DeviceAspace::Allocation mapped_location;
+
+  if (observed_mode == BtiMode::kTranslation) {
+    DEBUG_ASSERT(aspace_ != nullptr);
+
+    DeviceAspace::TlbInvalOp tlb_inval_op{TlbInvalThunk, this};
+    zx::result<DeviceAspace::Allocation> maybe_location =
+        aspace_->Map(pinned_vmo, perms, tlb_inval_op);
+    if (!maybe_location.is_ok()) {
+      return maybe_location.take_error();
+    }
+
+    // Our DeviceAspace has updated our page tables, flushed the updates out of
+    // the CPU data cache, and invalidated the TLBs.  Take ownership of our new
+    // mapping and pass it along to the PMT we are about to create.
+    mapped_location = ktl::move(maybe_location.value());
+  }
+
+  // Create our PMT and give it our mapped location (if any).  If something goes wrong, the
+  // factory method will take care of removing the mapping via our ReleaseMapping method.
+  fbl::RefPtr<SmmuPmt> pmt =
+      SmmuPmt::Create(*this, ktl::move(pinned_vmo), observed_mode, ktl::move(mapped_location));
   if (pmt == nullptr) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
-  // Now enter our lock and attempt to finish the mapping operation.  We need to
-  // hold the state of the BTI constant during the rest of the process.
-  Guard<SpinLock, IrqSave> guard{&lock_};
+  {
+    // Now enter our lock and attempt to finish the mapping operation.  We need to
+    // hold the state of the BTI constant during the rest of the process.
+    Guard<SpinLock, IrqSave> guard{&lock_};
 
-  // We made it this far because we observed our BTI as being in either the
-  // Bypass or Translation state.  There is no legal way for a BTI to change from
-  // Bypass to Translation (or vice-versa) after being created, so if the
-  // current state does not match our observed state, then we must have either
-  // faulted or been shut down and will need to bail out.  The VMO which had
-  // been pinned has been transferred to our PMT and will be unpinned
-  // automatically as the PMT destructs.
-  //
-  // Note that this assumption is predicated on the notion that the Dispatcher
-  // level is holding locks which prevent us from:
-  //
-  // 1) Faulting at an IRQ level and having the driver level BTI enter the fault
-  //    state, then
-  // 2) Recovering from the fault with a syscall call to ReleaseQuarantine while
-  //    we were creating the PMT object.
-  if (mode() != observed_mode) {
-    return zx::error(ZX_ERR_BAD_STATE);
-  }
+    // We made it this far because we observed our BTI as being in either the
+    // Bypass or Translation state.  There is no legal way for a BTI to change from
+    // Bypass to Translation (or vice-versa) after being created, so if the
+    // current state does not match our observed state, then we must have either
+    // faulted or been shut down and will need to bail out.  The VMO which had
+    // been pinned has been transferred to our PMT and will be unpinned
+    // automatically as the PMT destructs.
+    //
+    // Note that this assumption is predicated on the notion that the Dispatcher
+    // level is holding locks which prevent us from:
+    //
+    // 1) Faulting at an IRQ level and having the driver level BTI enter the fault
+    //    state, then
+    // 2) Recovering from the fault with a syscall call to ReleaseQuarantine while
+    //    we were creating the PMT object.
+    if (mode() != observed_mode) {
+      return zx::error(ZX_ERR_BAD_STATE);
+    }
 
-  // Add the PMT to the list of active PMTs, and mark it as being in the kActive
-  // state.  If we are in bypass mode, this should be all we need to do in order
-  // to be finished.  If we are in translate mode, we will need reserve a region
-  // in our device's address space, then proceed to create the PTE needed to map
-  // those device vaddrs to the underlying paddrs of the PMT.
-  [&]() TA_REQ(pmt_lock_) {
-    pmt->AssertOwnerPmtLockHeld();
-    pmt->set_state(SmmuPmt::State::kActive);
-    active_pmt_list_.push_back(pmt);
-  }();
-
-  if (mode() == BtiMode::kTranslation) {
-    // We do not (yet) support translation mode, so we definitely should not
-    // find ourselves in translation mode.
-    ASSERT(false);
+    // Add the PMT to the list of active PMTs, and mark it as being in the kActive
+    // state.
+    [&]() TA_REQ(pmt_lock_) {
+      pmt->AssertOwnerPmtLockHeld();
+      pmt->set_state(SmmuPmt::State::kActive);
+      active_pmt_list_.push_back(pmt);
+    }();
   }
 
   return zx::ok(ktl::move(pmt));
@@ -241,13 +284,14 @@ void SmmuBti::OnDispatcherZeroHandles() {
     // These must either both be zero, or both be non-zero.
     DEBUG_ASSERT((quarantined_pmt_count == 0) == (quarantined_page_count == 0));
 
-    if (quarantined_page_count) {
+    if (quarantined_page_count && (smmu_->op_mode() != ArmSmmuMode::kEnforced)) {
       // If we have quarantined PMTs, we should already be in the kFault state.
       DEBUG_ASSERT(mode() == BtiMode::kFault);
       orphaned_ = true;
     } else {
-      // If we have no (logically) quarantined PMTs, then we are orphaned iff we
-      // have active PMTs which are still alive.
+      // If we have no (logically) quarantined PMTs, or we are operating in
+      // Enforced mode, then we are orphaned iff we have active PMTs which are
+      // still alive.
       orphaned_ = !active_pmt_list_.is_empty();
     }
 
@@ -380,7 +424,33 @@ fbl::RefPtr<SmmuBti> SmmuBti::Create(Smmu& smmu, ktl::unique_ptr<StreamMatchRegG
     }
 
     bti->AddSmrgLocked(smmu, ktl::move(smrg));
+  }
 
+  // If we are supposed to be operating in translation mode, we need to allocate
+  // and initialize a device address space in order to implement the bookkeeping
+  // we need for mapping memory.
+  //
+  // Note that we had to drop our spinlock to (potentially) initialize our
+  // address space, and re-acquire it afterwards.  We cannot hold our spinlock
+  // during aspace initialization as we will need to interact with the heap and
+  // the PMM in the process of doing so.
+  //
+  // We are in the process of constructing this BTI instance.  No other threads
+  // (nor any interrupt handlers) can know about it yet, so there are no
+  // concurrency issues we need to worry about, at least not yet.  The first
+  // time some other concurrent execution context could possibly become aware of
+  // us will be when we enabled context bank interrupts, at the very end of the
+  // second locked-scope below.
+  if (initial_mode == BtiMode::kTranslation) {
+    Guard<Mutex> pmt_guard{&bti->pmt_lock_};
+    if (zx::result<> res = bti->InitializeAspace(); !res.is_ok()) {
+      dprintf(INFO, "ERROR - failed to construct aspace for BTI (%d)\n", res.error_value());
+      return nullptr;
+    }
+  }
+
+  {
+    Guard<SpinLock, IrqSave> guard{&bti->lock_};
     // In theory, setting the initial mode can never fail.  All of the resources
     // which might be needed (the SMRG and Context Bank) have already been
     // allocated, we just need to set up their registers.  No PTE pages ever
@@ -410,41 +480,72 @@ void SmmuBti::Shutdown(Smmu& smmu) {
 
   {
     Guard<Mutex> pmt_guard{&pmt_lock_};
-    Guard<SpinLock, IrqSave> guard{&lock_};
-    DEBUG_ASSERT(mode() != BtiMode::kShutdown);
 
-    // Lock down all of the hardware, and place ourselves in the shutdown
-    // state first. This should never fail as we should never be shutting down
-    // any adopted configuration.
-    zx::result mode_res = SetModeLocked(BtiMode::kShutdown);
-    ASSERT(mode_res.is_ok());
+    {
+      Guard<SpinLock, IrqSave> guard{&lock_};
+      DEBUG_ASSERT(mode() != BtiMode::kShutdown);
 
-    // Mark our resources in the SMMU bookkeeping as being available for
-    // allocation once again.  We are finished messing with the registers; they
-    // belong to our SMMU instance once again.
-    for (const StreamMatchRegGroup& smrg : smrg_list_) {
-      DEBUG_ASSERT(!smmu.available_smrgs_.TestBit(smrg.smrg_ndx()));
-      smmu.available_smrgs_.SetBit(smrg.smrg_ndx());
+      // Lock down all of the hardware, and place ourselves in the shutdown
+      // state first. This should never fail as we should never be shutting down
+      // any adopted configuration.
+      zx::result mode_res = SetModeLocked(BtiMode::kShutdown);
+      ASSERT(mode_res.is_ok());
+
+      // Mark our resources in the SMMU bookkeeping as being available for
+      // allocation once again.  We are finished messing with the registers; they
+      // belong to our SMMU instance once again.
+      for (const StreamMatchRegGroup& smrg : smrg_list_) {
+        DEBUG_ASSERT(!smmu.available_smrgs_.TestBit(smrg.smrg_ndx()));
+        smmu.available_smrgs_.SetBit(smrg.smrg_ndx());
+      }
+
+      if (context_bank_ != nullptr) {
+        // At this point in time, we should be certain that we no longer have any
+        // registered context bank IRQs, and that there are not any context bank
+        // interrupts in flight targeting this BTI.  This was taken care of for us
+        // by our SMMU instance during Smmu::ShutdownBti.
+        DEBUG_ASSERT(!smmu.available_cbs_.TestBit(context_bank_->cb_ndx()));
+        smmu.available_cbs_.SetBit(context_bank_->cb_ndx());
+      }
+
+      // If we are shutting down, we should not have any active or quarantined PMTs left.
+      DEBUG_ASSERT(active_pmt_list_.is_empty());
+      DEBUG_ASSERT(quarantined_pmt_count_ == 0);
+      DEBUG_ASSERT(quarantined_page_count_ == 0);
+
+      // Move our resources outside of our spinlock's scope so that they can
+      // return to the heap after the lock has been dropped.
+      local_smrg_list = ktl::move(smrg_list_);
+      local_context_bank = ktl::move(context_bank_);
     }
 
-    if (context_bank_ != nullptr) {
-      // At this point in time, we should be certain that we no longer have any
-      // registered context bank IRQs, and that there are not any context bank
-      // interrupts in flight targeting this BTI.  This was taken care of for us
-      // by our SMMU instance during Smmu::ShutdownBti.
-      DEBUG_ASSERT(!smmu.available_cbs_.TestBit(context_bank_->cb_ndx()));
-      smmu.available_cbs_.SetBit(context_bank_->cb_ndx());
+    // If we have a device address space, clear mappings it may still have.
+    //
+    // Note: We do not need to actually perform any TLB invalidating during this
+    // process.  When we shutdown all of our hardware (above) we cleared and
+    // disabled the TTBRs in our context bank, and then invalidated all of our
+    // TLB entries using our CB's ASID.  The TLB cache cannot have any valid
+    // entries in it referring to any part of our PTEs, and there is no way for
+    // hardware to establish any new TLB entries since both of our TTBRs are
+    // disabled.
+    //
+    // TODO(johngro): Consider (as an optimization pass) changing the way that
+    // FreeTranslationTables works.  Right now it is doing stuff like flushing
+    // dirty PTEs to physical memory, and requiring a TLB invalidate callback.
+    // Provided we make the invariant for calling FreeTranslationTables "You
+    // must have disabled your HW and invalidated your TLBs before calling
+    // this), we don't need to do this stuff anymore.  We can optimize the
+    // method, remove the need to pass a callback, and even auto-invoke it from
+    // the destructor of the object instead of needing to manually call it.
+    // Then, all we need to do here, is reset our pointer.
+    //
+    if (aspace_ != nullptr) {
+      DEBUG_ASSERT(local_context_bank != nullptr);
+      auto thunk = [](void*, uint64_t, uint64_t) -> void {};
+      DeviceAspace::TlbInvalOp no_op{thunk, local_context_bank.get()};
+      aspace_->FreeTranslationTables(no_op);
+      aspace_ = nullptr;
     }
-
-    // If we are shutting down, we should not have any active or quarantined PMTs left.
-    DEBUG_ASSERT(active_pmt_list_.is_empty());
-    DEBUG_ASSERT(quarantined_pmt_count_ == 0);
-    DEBUG_ASSERT(quarantined_page_count_ == 0);
-
-    // Move our resources outside of our spinlock's scope so that they can
-    // return to the heap after the lock has been dropped.
-    local_smrg_list = ktl::move(smrg_list_);
-    local_context_bank = ktl::move(context_bank_);
   }
 
   // Now go ahead and destroy the resource bookkeeping.
@@ -477,6 +578,88 @@ void SmmuBti::AssertOwned(StreamMatchRegGroup& smrg) {
     }
     DEBUG_ASSERT(false);
   }
+}
+
+void SmmuBti::TlbInvalThunk(void* _thiz, uint64_t base, uint64_t size) {
+  DEBUG_ASSERT(_thiz != nullptr);
+  SmmuBti& thiz = *reinterpret_cast<SmmuBti*>(_thiz);
+
+  // This callback is being invoked from DeviceAspace code after it has made
+  // some number of modifications of the page tables as they currently exist in
+  // RAM.  Before it calls into our thunk to invalidate TLBs, it must flush the
+  // entries it modified from the CPU cache out to physical memory.  It does
+  // this by using an arch-agnostic calls to arch::CleanDataCacheRange for the
+  // regions which need to be flushed.
+  //
+  // Currently, on ARM, calls to arch::CleanDataCacheRange always end with a
+  // `dsb sy` instruction, which ensures that the cache flushes have all
+  // finished before proceeding, instead of potentially having the instruction
+  // lingering in the execution pipeline waiting to finish.  With all of the
+  // changes propagated to physical memory, we should be OK to begin the process
+  // of invalidating the TLB entries for the region of the device's address
+  // space which were updated.
+
+  // We should always have a context bank whenever we are being asked to
+  // invalidate our TLBs by our DeviceAspace.
+  Guard<SpinLock, IrqSave> guard{&thiz.lock_};
+  DEBUG_ASSERT(thiz.context_bank_ != nullptr);
+
+  // No size means flush everything.  Otherwise, just flush the requested range.
+  if (!size) {
+    thiz.context_bank_->TLBInvalidateByAsid();
+  } else {
+    thiz.context_bank_->TLBInvalidateRegion(base, size);
+  }
+}
+
+zx::result<ktl::unique_ptr<DeviceAspace>> SmmuBti::CreateAspace() {
+  // Allocations start at the second L3 page (index == 1 at L2) in the page
+  // tables. This is 2MB when page size is 4KB.
+  //
+  // All of our mappings are going to be done using the page tables specified by
+  // TTBR0, we are not going to be using TTBR1.  By default, given the way that
+  // we configure the hardware, this means that TTBR0 will control the mappings
+  // in the device address space on the range from `[0, kDefaultTTBR0AddrSpaceSz)`
+  //
+  // The actual range controlled by the DeviceAspace instance, however, will be
+  // `[2MB, kDefaultTTBR0AddrSpaceSz)` == `[lower_aspace_bound, kDefaultTTBR0AddrSpaceSz)`
+  //
+  // To construct the DeviceAspace object, we need to pass the base address and
+  // the size of the region to manage.  The base address is
+  // `lower_aspace_bound`, but the size of the managed space ends up being
+  // `kDefaultTTBR0AddrSpaceSz - lower_aspace_bound`.  Statically assert that
+  // this is computable before passing the value on to DeviceAspace::Create.
+  //
+  static_assert(kPageSize == 4096, "SMMU Device Address Space manager assumes 4k pages");
+  constexpr uint64_t lower_aspace_bound = DeviceAspace::kPageSize * 512;
+
+  static_assert(lower_aspace_bound < ContextBank::kDefaultTTBR0AddrSpaceSz);
+  constexpr uint64_t dev_aspace_size = ContextBank::kDefaultTTBR0AddrSpaceSz - lower_aspace_bound;
+
+  return DeviceAspace::Create(lower_aspace_bound, dev_aspace_size);
+}
+
+void SmmuBti::AttachAspace(ktl::unique_ptr<DeviceAspace> aspace) {
+  DEBUG_ASSERT(aspace_ == nullptr);
+  DEBUG_ASSERT(context_bank_->ttbrs_[0].ttbr_paddr == 0);
+
+  // Take ownership of the address space, and fill out its details in our TTBR0 bookkeeping.
+  aspace_ = ktl::move(aspace);
+  context_bank_->ttbrs_[0].granule_size_bits = aspace_->granule_size_bits();
+  context_bank_->ttbrs_[0].first_valid_addr = aspace_->first_valid_address();
+  context_bank_->ttbrs_[0].last_valid_addr = aspace_->last_valid_address();
+  context_bank_->ttbrs_[0].ttbr_paddr = aspace_->GetRootPaddr();
+}
+
+zx::result<> SmmuBti::InitializeAspace() {
+  zx::result<ktl::unique_ptr<DeviceAspace>> maybe_aspace = CreateAspace();
+  if (!maybe_aspace.is_ok()) {
+    return maybe_aspace.take_error();
+  }
+
+  Guard<SpinLock, IrqSave> guard{&lock_};
+  AttachAspace(ktl::move(maybe_aspace.value()));
+  return zx::ok();
 }
 
 void SmmuBti::AddSmrg(Smmu& smmu, ktl::unique_ptr<StreamMatchRegGroup> smrg) {
@@ -542,24 +725,34 @@ zx::result<> SmmuBti::SetModeLocked(BtiMode target_mode) {
     return zx::error{ZX_ERR_BAD_STATE};
   }
 
-  // We were not adopted, so we should be able to assert that we have a context
-  // bank.  Do so, then configure our context bank for its new mode.
+  // Record our new mode.
+  mode_ = target_mode;
+
+  // If we are changing to Fault mode while our SMMU is operating in Enforced
+  // mode, we are basically finished.  Access control is handled at the
+  // per-address level in our address space, we don't need to do anything
+  // special to protect ourselves against rogue hardware.
+  if ((mode_ == BtiMode::kFault) && (smmu_->op_mode() == ArmSmmuMode::kEnforced)) {
+    return zx::ok();
+  }
+
+  // We were not adopted, so we should be able to assert that we have a
+  // context bank.  Do so, then configure our context bank for its new mode.
   DEBUG_ASSERT(context_bank_ != nullptr);
-  context_bank_->SetMode(*this, target_mode);
+  context_bank_->SetMode(*this, mode_);
 
   for (StreamMatchRegGroup& smrg : smrg_list_) {
     // Except for when we are shutting down (and we disable access at all
     // levels), we control all of our enforcement policy through only the
     // context bank.  So, if we are shutting down, disable all of the match
     // registers, otherwise enable them and point them at our context bank.
-    if (target_mode == BtiMode::kShutdown) {
+    if (mode_ == BtiMode::kShutdown) {
       smrg.Disable(*this);
     } else {
       smrg.EnableForContextBank(*this, context_bank_->cb_ndx());
     }
   }
 
-  mode_ = target_mode;
   return zx::ok();
 }
 
@@ -637,6 +830,16 @@ const char* SmmuBti::RenderSidList(ktl::span<char> buffer) const {
   return ktl::move(f).take().data();
 }
 
+void SmmuBti::ReleaseMapping(DeviceAspace::Allocation mapping) {
+  if (mapping) {
+    // Give the mapping back to our DeviceAspace, which will manage the process
+    // of updating the translation table PTEs and flushing the CPU caches as
+    // well as invalidating the TLBs (using the callback we provide).
+    DeviceAspace::TlbInvalOp tlb_inval_op{TlbInvalThunk, this};
+    aspace_->Unmap(ktl::move(mapping), tlb_inval_op);
+  }
+}
+
 void SmmuBti::OnPmtUnpin(SmmuPmt& pmt) {
   // If there is still a PMO to unpin, move it outside of the scope of the lock
   // before doing so.
@@ -644,10 +847,14 @@ void SmmuBti::OnPmtUnpin(SmmuPmt& pmt) {
   // Use a local lambda to prevent the AssertOwnerPmtLockHeld from escaping the
   // scope of the Guard.
   PinnedVmObject released_vmo = [&]() {
+    // Release the mapping for this PMT, if any.  If the PMT has no mapping in
+    // the device's address space (as would be the case of this BTI is operating
+    // in passthru mode), then this will be a no-op.
     Guard<Mutex> pmt_guard{&pmt_lock_};
-    Guard<SpinLock, IrqSave> guard{&lock_};
-
     pmt.AssertOwnerPmtLockHeld();
+    ReleaseMapping(pmt.TakeMapLocation());
+
+    Guard<SpinLock, IrqSave> guard{&lock_};
     if (pmt.state() == SmmuPmt::State::kActive) {
       DEBUG_ASSERT(pmt.InContainer());
       active_pmt_list_.erase(pmt);
@@ -674,13 +881,15 @@ void SmmuBti::OnPmtZeroHandles(SmmuPmt& pmt) {
   // If there is still a PMO to unpin, move it outside of the scope of the lock
   // before doing so.
   //
-  // Use a small local lambda to prevent the AssertOwnerPmtLockHeld from escaping
-  // the scope of the Guard.
+  // Use a small local lambda to prevent the AssertOwnerPmtLockHeld from
+  // escaping the scope of the Guard.
   PinnedVmObject quarantined_vmo = [&]() {
+    // Release the mapping for this PMT, if any.
     Guard<Mutex> pmt_guard{&pmt_lock_};
-    Guard<SpinLock, IrqSave> guard{&lock_};
     pmt.AssertOwnerPmtLockHeld();
+    ReleaseMapping(pmt.TakeMapLocation());
 
+    Guard<SpinLock, IrqSave> guard{&lock_};
     DEBUG_ASSERT(pmt.state() != SmmuPmt::State::kInitial);
     if (pmt.state() == SmmuPmt::State::kActive) {
       // If a PMT has its last handle closed before being formally unpinned,
@@ -716,8 +925,9 @@ void SmmuBti::OnPmtZeroHandles(SmmuPmt& pmt) {
   // tasks.
   //
   // 1) If this PMT was leaked, we need to log a warning.
-  // 2) If we were orphaned, and this was the last PMT (active or quarantined),
-  //    then we have reached end of life and can clean up now.
+  // 2) If we were orphaned, and this was the last active PMT, and we either
+  //    have no quarantined PMTs, or are operating in Enforced mode, then we
+  //    have reached end of life and can clean up now.
   // 3) If we quarantined a pinned memory object, we can now return its pages to
   //    the PMM.  We don't need to actually keep it around, since we have either
   //    revoked access to that specific region of memory (if we are in enforced
@@ -733,7 +943,8 @@ void SmmuBti::OnPmtZeroHandles(SmmuPmt& pmt) {
 
   // #2 : Shutdown if it is time.
   DEBUG_ASSERT((quarantined_page_count == 0) == (quarantined_pmt_count == 0));
-  if (was_orphaned && !has_active_pmts && !quarantined_pmt_count) {
+  if (was_orphaned && !has_active_pmts &&
+      (!quarantined_pmt_count || smmu_->op_mode() == ArmSmmuMode::kEnforced)) {
     OnEndOfLife();
   }
 

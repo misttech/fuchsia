@@ -164,6 +164,7 @@ class Smmu final : public iommu::Iommu, public fbl::DoublyLinkedListable<fbl::Re
   void UnregisterInterrupts() TA_REQ(lock_) TA_EXCL(irq_lock_);
 
   void Lockdown() TA_REQ(lock_);
+  void InvalidateAllTLBEntries() TA_REQ(lock_);
 
   // Attempt to adopt an existing (valid) stream match register group and its
   // associated context bank (if any).
@@ -186,7 +187,8 @@ class Smmu final : public iommu::Iommu, public fbl::DoublyLinkedListable<fbl::Re
 
   void HandleGlobalIrq(uint32_t ndx) TA_EXCL(irq_lock_);
   void HandleContextIrq(uint32_t cb_ndx) TA_EXCL(irq_lock_);
-  void PrintCommonContextIrqFaultDetails(uint32_t cb_ndx) TA_EXCL(irq_lock_);
+  void PrintCommonContextIrqFaultDetails(uint32_t cb_ndx, const char* bti_name = nullptr)
+      TA_EXCL(irq_lock_);
 
   // See Section 9.6.1 : SMMU_IDR0 and SMMU_IDR1 for more details, in addition
   // to Section 8.1.1.

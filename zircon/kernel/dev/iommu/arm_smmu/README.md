@@ -19,6 +19,11 @@ and figure numbers in code comments have been taken from this document, and it
 is recommended that engineers working on the code familiarize themselves with
 it.
 
+Additionally,
+[`ARM DDI 0487K.a`](https://developer.arm.com/documentation/ddi0487/latest/),
+aka the "Arm Architecture Reference Manual for A-profile architecture".
+Specifically section `D8.3.1` "VMSAv8-64 descriptor formats".
+
 Hardware discovery currently depends on hardware descriptions being present in
 the device tree passed to physboot/Zircon by lower levels during boot.
 Documentation on how SMMU is described by the device tree can be found
@@ -838,6 +843,9 @@ A BTI's `pmt_lock_` is used:
 
 + When creating a new PMT and adding it to the active collection.
 + When removing a PMT from the active collection, whether it was leaked or not.
++ When manipulating page table entries when the BTI is operating in translation
+  mode, either to create or remove entries in response to the creation,
+  destructing, or quarantining of PMTs.
 + To protect the state of PMTs themselves (see below).
 
 #### PMT Locks
