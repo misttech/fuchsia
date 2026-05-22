@@ -112,6 +112,18 @@ impl<T> RcuPtr<T> {
         self.replace(ptr.as_mut_ptr())
     }
 
+    /// Swap the value of the RCU pointer with another pointer.
+    ///
+    /// Concurrent readers may continue to see the old value of the pointer until the RCU state
+    /// machine has made sufficient progress. To wait until all concurrent readers have dropped
+    /// their read guards, call `rcu_synchronize()`.
+    pub fn swap<'a>(&self, scope: &'a RcuReadScope, ptr: *mut T) -> RcuPtrRef<'a, T> {
+        let old_ptr = self.replace(ptr);
+        // SAFETY: The RCU state machine ensures that the pointer is valid for reads until we drop
+        // the RcuReadScope whose lifetime is described by the lifetime parameter.
+        unsafe { RcuPtrRef::new(scope, old_ptr) }
+    }
+
     /// Poison the RCU pointer.
     ///
     /// Poisoning the RCU pointer will cause readers to see a dangling pointer. Useful when the

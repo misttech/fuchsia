@@ -48,6 +48,16 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
         unsafe { self.replace(ptr) };
     }
 
+    /// Write a new Arc to the RCU wrapper and return a reference to the old value.
+    ///
+    /// Concurrent readers may continue to see the old Arc pointer until the RCU state machine has
+    /// made sufficient progress to ensure that no concurrent readers are holding read guards.
+    pub fn update_swap<'a>(&self, scope: &'a RcuReadScope, data: Arc<T>) -> &'a T {
+        let ptr = Self::into_ptr(data);
+        // SAFETY: We can pass `Self::into_ptr` to `Self::replace_swap`.
+        unsafe { self.replace_swap(scope, ptr) }
+    }
+
     /// Create a new `Arc` to the object referenced by the wrapped Arc.
     ///
     /// This function returns a new `Arc` to the object referenced by the wrapped Arc,
@@ -80,6 +90,20 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
         let old_ptr = self.ptr.replace(ptr);
         let arc = unsafe { Arc::from_raw(old_ptr) };
         rcu_drop(arc);
+    }
+
+    /// Replace the Arc pointer in the RCU wrapper with a new pointer and return a reference to the
+    /// old value.
+    ///
+    /// # Safety
+    ///
+    /// The caller must have obtained the pointer from `Self::into_ptr` or from `std::ptr::null_mut`.
+    unsafe fn replace_swap<'a>(&self, scope: &'a RcuReadScope, ptr: *mut T) -> &'a T {
+        let old_ptr_ref = self.ptr.swap(scope, ptr);
+        // SAFETY: `old_ptr_ref` points to an existing `Arc<T>` with a strong reference.
+        let arc = unsafe { Arc::from_raw(old_ptr_ref.as_ptr()) };
+        rcu_drop(arc);
+        old_ptr_ref.as_ref().unwrap()
     }
 }
 
@@ -142,6 +166,24 @@ mod tests {
         arc.update(DropCounter::new(43));
         assert_eq!(arc.read().value, 43);
         assert_eq!(drops.load(Ordering::Relaxed), 0);
+
+        rcu_synchronize();
+        assert_eq!(drops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_rcu_arc_update_swap() {
+        let object = DropCounter::new(42);
+        let drops = object.drops.clone();
+
+        let arc = RcuArc::from(object);
+        {
+            let scope = RcuReadScope::new();
+            let old_object = arc.update_swap(&scope, DropCounter::new(43));
+            assert_eq!(old_object.value, 42);
+            assert_eq!(arc.read().value, 43);
+            assert_eq!(drops.load(Ordering::Relaxed), 0);
+        }
 
         rcu_synchronize();
         assert_eq!(drops.load(Ordering::Relaxed), 1);
