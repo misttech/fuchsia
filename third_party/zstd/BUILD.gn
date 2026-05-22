@@ -75,6 +75,8 @@ if (verify_rust_zstd_sys_crate_binding_version) {
 }
 
 zstd_common_sources = [
+  "src/lib/common/allocations.h",
+  "src/lib/common/bits.h",
   "src/lib/common/bitstream.h",
   "src/lib/common/compiler.h",
   "src/lib/common/cpu.h",
@@ -89,18 +91,22 @@ zstd_common_sources = [
   "src/lib/common/mem.h",
   "src/lib/common/pool.c",
   "src/lib/common/pool.h",
+  "src/lib/common/portability_macros.h",
   "src/lib/common/threading.c",
   "src/lib/common/threading.h",
   "src/lib/common/xxhash.c",
   "src/lib/common/xxhash.h",
   "src/lib/common/zstd_common.c",
   "src/lib/common/zstd_deps.h",
-  "src/lib/common/zstd_errors.h",
   "src/lib/common/zstd_internal.h",
+  "src/lib/common/zstd_trace.h",
+  "src/lib/zdict.h",
   "src/lib/zstd.h",
+  "src/lib/zstd_errors.h",
 ]
 
 zstd_compress_sources = [
+  "src/lib/compress/clevels.h",
   "src/lib/compress/fse_compress.c",
   "src/lib/compress/hist.c",
   "src/lib/compress/hist.h",
@@ -122,6 +128,7 @@ zstd_compress_sources = [
   "src/lib/compress/zstd_lazy.h",
   "src/lib/compress/zstd_ldm.c",
   "src/lib/compress/zstd_ldm.h",
+  "src/lib/compress/zstd_ldm_geartab.h",
   "src/lib/compress/zstd_opt.c",
   "src/lib/compress/zstd_opt.h",
   "src/lib/compress/zstdmt_compress.c",
@@ -132,7 +139,6 @@ zstd_compress_sources = [
   "src/lib/dictBuilder/divsufsort.h",
   "src/lib/dictBuilder/fastcover.c",
   "src/lib/dictBuilder/zdict.c",
-  "src/lib/dictBuilder/zdict.h",
 ]
 
 zstd_decompress_sources = [
@@ -150,8 +156,8 @@ static_library("zstd") {
   public_configs = [ ":public.config" ]
 
   public = [
-    "include/zstd.h",
-    "include/zstd_errors.h",
+    "include/zstd/zstd.h",
+    "include/zstd/zstd_errors.h",
   ]
 
   sources =
@@ -234,6 +240,8 @@ static_library("zstd-decompress-standalone") {
   public_configs = [ ":public.config" ]
 
   sources = zstd_common_sources + zstd_decompress_sources
+
+  public = [ "include/zstd/zstd.h" ]
 
   configs += [ ":internal.config" ]
 
