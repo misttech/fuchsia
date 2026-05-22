@@ -78,6 +78,7 @@ class DriverServer final : public fdf::WireServer<fuchsia_driver_framework::Driv
     driver_->PrepareStop(fdf::PrepareStopCompleter([this](zx::result<> result) { StopBinding(); }));
   }
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
   void Suspend(fdf::Arena& arena, SuspendCompleter::Sync& completer) override {
     ZX_ASSERT(driver_);
 
@@ -103,6 +104,7 @@ class DriverServer final : public fdf::WireServer<fuchsia_driver_framework::Driv
 
     driver_->SystemResume(std::move(lease), std::move(resume_completer));
   }
+#endif
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_driver_framework::Driver> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override {
