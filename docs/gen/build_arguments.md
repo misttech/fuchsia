@@ -393,7 +393,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:218
+From //build/bazel/bazel_root_targets_list.gni:227
 
 ### bazel_upload_build_events
 
@@ -1020,7 +1020,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -1741,7 +1741,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/23/lib/x86_64-unknown-linux-gnu/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -2164,6 +2164,12 @@ artifact. Schema is:
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/go_test_parser_/go_test_parser"
   ninja = "go_test_parser"
+}]
+}, {
+  bazel_label = "//tools/staticanalysis/rfcmeta:rfcmeta"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/rfcmeta_/rfcmeta"
+  ninja = "rfcmeta"
 }]
 }, {
   bazel_label = "//tools/debug/covargs:covargs"
@@ -9303,10 +9309,11 @@ From //src/starnix/modules/kgsl/BUILD.gn:12
 
 Whether to use lockdep to detect cycles in the lock acquisition graph.
 Enabled by default in balanced and debug modes.
+TODO(https://fxbug.dev/515377211): Re-enable once fixed
 
 **Current value (from the default):** `false`
 
-From //src/starnix/lib/starnix_sync/build/args.gni:8
+From //src/starnix/lib/starnix_sync/build/args.gni:9
 
 ### sysmem_contiguous_guard_page_count
 
