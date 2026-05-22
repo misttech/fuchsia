@@ -34,6 +34,8 @@ type SpiChannel = table {
     8: clock_polarity_high bool;
     ///  Clock phase.
     9: clock_phase SpiClockPhase;
+    /// Maximum bus frequency in Hz.
+    10: max_frequency_hz uint32;
 };
 
 /// Passed to the spi driver in platform device metadata.

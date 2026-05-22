@@ -63,9 +63,19 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
     const std::vector<fuchsia_hardware_spi_businfo::SpiChannel>& channels = *decoded->channels();
     ASSERT_EQ(channels.size(), 4lu);
     EXPECT_EQ(channels[0].cs(), 0);
+    ASSERT_TRUE(channels[0].max_frequency_hz().has_value());
+    EXPECT_EQ(*channels[0].max_frequency_hz(), 1'000'000u);
+
     EXPECT_EQ(channels[1].cs(), 1);
+    EXPECT_FALSE(channels[1].max_frequency_hz().has_value());
+
     EXPECT_EQ(channels[2].cs(), 2);
+    ASSERT_TRUE(channels[2].max_frequency_hz().has_value());
+    EXPECT_EQ(*channels[2].max_frequency_hz(), 5'000'000u);
+
     EXPECT_EQ(channels[3].cs(), 3);
+    ASSERT_TRUE(channels[3].max_frequency_hz().has_value());
+    EXPECT_EQ(*channels[3].max_frequency_hz(), 5'000'000u);
   }
 
   auto child0_specs = spi_tester->GetCompositeNodeSpecs("child-0");

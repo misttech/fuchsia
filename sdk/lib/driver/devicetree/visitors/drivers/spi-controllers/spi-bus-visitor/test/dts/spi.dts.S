@@ -18,6 +18,7 @@
 		child@0 {
 			compatible = "fuchsia,test-spi-1";
 			reg = <0>;
+			spi-max-frequency = <1000000>;
 		};
 
 		child@1 {
@@ -30,6 +31,7 @@
 		child@2 {
 			compatible = "fuchsia,test-spi-3";
 			reg = <2>, <3>;
+			spi-max-frequency = <5000000>;
 		};
 	};
 };

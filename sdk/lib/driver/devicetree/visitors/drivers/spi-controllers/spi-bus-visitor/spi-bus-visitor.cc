@@ -109,6 +109,8 @@ zx::result<> SpiBusVisitor::ParseChild(SpiController& controller, fdf_devicetree
     return reg.take_error();
   }
 
+  auto max_frequency = child.GetProperty<uint32_t>("spi-max-frequency");
+
   for (uint32_t i = 0; i < reg->size(); i++) {
     const uint32_t chip_select = (*reg)[i];
 
@@ -125,7 +127,11 @@ zx::result<> SpiBusVisitor::ParseChild(SpiController& controller, fdf_devicetree
 
     fdf::debug("SPI channel {} to controller '{}'", chip_select, parent.name());
 
-    controller.channels.emplace_back(fuchsia_hardware_spi_businfo::SpiChannel{{.cs = chip_select}});
+    fuchsia_hardware_spi_businfo::SpiChannel channel{{.cs = chip_select}};
+    if (max_frequency.is_ok()) {
+      channel.max_frequency_hz(*max_frequency);
+    }
+    controller.channels.emplace_back(std::move(channel));
     AddChildNodeSpec(child, controller.bus_id, chip_select, i);
   }
 
