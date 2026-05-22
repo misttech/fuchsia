@@ -271,12 +271,12 @@ __NO_INLINE bool Mutex::AcquireContendedMutex(
     uintptr_t old_mutex_state = STATE_FREE;
     // Attempt to acquire the mutex by swapping out "STATE_FREE" for our current thread.
     //
-    // We use the weak form of compare exchange here: it saves an extra
-    // conditional branch on ARM, and if it fails spuriously, we'll just
-    // loop around and try again.
-    //
-    if (likely(val_.compare_exchange_weak(old_mutex_state, new_mutex_state,
-                                          ktl::memory_order_acquire, ktl::memory_order_relaxed))) {
+    // We use the strong form of compare exchange here because strong is easier
+    // to reason about and we're already in the slow path so any performance
+    // advantage of weak is negligible.
+    if (likely(val_.compare_exchange_strong(old_mutex_state, new_mutex_state,
+                                            ktl::memory_order_acquire,
+                                            ktl::memory_order_relaxed))) {
       spin_tracer.Finish(spin_tracing::FinishType::kLockAcquired, this->encoded_lock_id());
       RecordInitialAssignedCpu();
 

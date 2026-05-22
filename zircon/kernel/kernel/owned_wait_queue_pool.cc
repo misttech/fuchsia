@@ -17,7 +17,7 @@ namespace {
 
 KCOUNTER(owq_pool_excess_capacity, "owned_wait_queue.pool.excess_capacity")
 
-lazy_init::LazyInit<OwnedWaitQueuePool> g_pool;
+lazy_init::LazyInit<OwnedWaitQueuePool, lazy_init::CheckType::Basic> g_pool;
 
 void OwnedWaitQueuePoolInit(uint level) { g_pool.Initialize(); }
 
