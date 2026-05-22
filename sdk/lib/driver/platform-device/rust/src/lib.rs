@@ -5,7 +5,7 @@
 //! PlatformDevice interface.
 
 use fidl::{Persistable, Serializable};
-use fidl_fuchsia_hardware_platform_device as pdev_fidl;
+use fidl_fuchsia_hardware_platform_device as fpdev;
 use log::error;
 use mmio::region::MmioRegion;
 use mmio::vmo::{VmoMapping, VmoMemory};
@@ -34,7 +34,7 @@ pub trait PlatformDevice {
     ) -> impl Future<Output = Result<T, Status>>;
 }
 
-impl PlatformDevice for pdev_fidl::DeviceProxy {
+impl PlatformDevice for fpdev::DeviceProxy {
     type Mmio = MmioRegion<VmoMemory>;
 
     async fn map_mmio_by_id(&self, id: u32) -> Result<Self::Mmio, Status> {
@@ -99,7 +99,25 @@ impl PlatformDevice for pdev_fidl::DeviceProxy {
     }
 }
 
-fn map_mmio(mmio: pdev_fidl::Mmio) -> Result<MmioRegion<VmoMemory>, Status> {
+/// Extension trait for [`DriverContext`] to simplify connecting to a platform device in a driver's
+/// start routine.
+pub trait PdevExt {
+    /// Connects to the platform device ("pdev") in the incoming namespace.
+    fn connect_to_pdev(&self) -> Result<fpdev::DeviceProxy, fdf_component::DriverError>;
+}
+
+impl PdevExt for fdf_component::DriverContext {
+    fn connect_to_pdev(&self) -> Result<fpdev::DeviceProxy, fdf_component::DriverError> {
+        Ok(self
+            .incoming
+            .service_marker(fpdev::ServiceMarker)
+            .instance("pdev")
+            .connect()?
+            .connect_to_device()?)
+    }
+}
+
+fn map_mmio(mmio: fpdev::Mmio) -> Result<MmioRegion<VmoMemory>, Status> {
     let (Some(vmo), Some(offset), Some(size)) = (mmio.vmo, mmio.offset, mmio.size) else {
         error!("Mmio device missing vmo, offset or size");
         return Err(Status::INTERNAL);
@@ -125,7 +143,7 @@ mod tests {
     use zx::{Vmo, VmoOp};
 
     struct TestServer {
-        mmios: Vec<(&'static str, Option<pdev_fidl::Mmio>)>,
+        mmios: Vec<(&'static str, Option<fpdev::Mmio>)>,
         metadata: HashMap<&'static str, Vec<u8>>,
     }
 
@@ -137,7 +155,7 @@ mod tests {
         fn append_mmio(&mut self, name: &'static str, vmo: Vmo, offset: usize, size: usize) {
             self.mmios.push((
                 name,
-                Some(pdev_fidl::Mmio {
+                Some(fpdev::Mmio {
                     offset: Some(offset as u64),
                     size: Some(size as u64),
                     vmo: Some(vmo),
@@ -153,17 +171,17 @@ mod tests {
 
         async fn handle_requests(
             &mut self,
-            mut requests: pdev_fidl::DeviceRequestStream,
+            mut requests: fpdev::DeviceRequestStream,
         ) -> Result<(), fidl::Error> {
             while let Some(req) = requests.try_next().await? {
                 match req {
-                    pdev_fidl::DeviceRequest::GetMmioById { index, responder } => {
+                    fpdev::DeviceRequest::GetMmioById { index, responder } => {
                         responder.send(self.take_mmio_by_id(index).map_err(Status::into_raw))?;
                     }
-                    pdev_fidl::DeviceRequest::GetMmioByName { name, responder } => {
+                    fpdev::DeviceRequest::GetMmioByName { name, responder } => {
                         responder.send(self.take_mmio_by_name(&name).map_err(Status::into_raw))?;
                     }
-                    pdev_fidl::DeviceRequest::GetMetadata { id, responder } => {
+                    fpdev::DeviceRequest::GetMetadata { id, responder } => {
                         responder.send(self.get_metadata(&id).map_err(Status::into_raw))?;
                     }
                     _ => {
@@ -174,7 +192,7 @@ mod tests {
             Ok(())
         }
 
-        fn take_mmio_by_id(&mut self, id: u32) -> Result<pdev_fidl::Mmio, Status> {
+        fn take_mmio_by_id(&mut self, id: u32) -> Result<fpdev::Mmio, Status> {
             self.mmios
                 .get_mut(id as usize)
                 .ok_or(Status::NOT_FOUND)?
@@ -183,7 +201,7 @@ mod tests {
                 .ok_or(Status::ALREADY_BOUND)
         }
 
-        fn take_mmio_by_name(&mut self, name: &str) -> Result<pdev_fidl::Mmio, Status> {
+        fn take_mmio_by_name(&mut self, name: &str) -> Result<fpdev::Mmio, Status> {
             self.mmios
                 .iter_mut()
                 .find(|(n, _)| *n == name)
@@ -197,9 +215,8 @@ mod tests {
             self.metadata.get(id).map(|v| v.as_slice()).ok_or(Status::NOT_FOUND)
         }
 
-        fn run(mut self) -> (pdev_fidl::DeviceProxy, Task<Result<(), fidl::Error>>) {
-            let (proxy, stream) =
-                fidl::endpoints::create_proxy_and_stream::<pdev_fidl::DeviceMarker>();
+        fn run(mut self) -> (fpdev::DeviceProxy, Task<Result<(), fidl::Error>>) {
+            let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fpdev::DeviceMarker>();
             let server = Task::local(async move { self.handle_requests(stream).await });
             (proxy, server)
         }

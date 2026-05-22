@@ -13,6 +13,7 @@ rustc_library("pdev") {
   deps = [
     "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust",
     "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust",
+    "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/metadata/rust",
     "//sdk/lib/driver/mmio/rust:mmio",
     "//sdk/rust/zx-status",
