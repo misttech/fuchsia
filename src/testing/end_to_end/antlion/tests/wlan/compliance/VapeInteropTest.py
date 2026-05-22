@@ -20,7 +20,7 @@ from openwrt_access_point.lib.access_point_config import (
     SecurityOpen,
     SecurityWpa2,
 )
-from openwrt_access_point.lib.profiles import actiontec, asus
+from openwrt_access_point.lib.profiles import actiontec, asus, belkin
 
 
 class VapeInteropTest(base_test.WifiBaseTest):
@@ -666,25 +666,51 @@ class VapeInteropTest(base_test.WifiBaseTest):
         )
 
     def test_associate_belkin_f9k1001v5_24ghz_open(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="belkin_f9k1001v5",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-        )
+        if self.openwrt_ap:
+            config = belkin.belkin_f9k1001v5(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityOpen(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="belkin_f9k1001v5",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+            )
+
         asserts.assert_true(
             self.dut.associate(self.ssid, SecurityMode.OPEN),
             "Failed to connect.",
         )
 
     def test_associate_belkin_f9k1001v5_24ghz_wpa2(self) -> None:
-        setup_ap(
-            access_point=self.access_point,
-            profile_name="belkin_f9k1001v5",
-            channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-            ssid=self.ssid,
-            security=self.security_profile_wpa2,
-        )
+        if self.openwrt_ap:
+            config = belkin.belkin_f9k1001v5(
+                channel=BssChannel(
+                    Band.BAND_2G,
+                    hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                    HtMode(bw=20),
+                ),
+                ssid=self.ssid,
+                security=SecurityWpa2(),
+            )
+            self.openwrt_ap.configure_wifi(config)
+        else:
+            setup_ap(
+                access_point=self.access_point,
+                profile_name="belkin_f9k1001v5",
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
+                ssid=self.ssid,
+                security=self.security_profile_wpa2,
+            )
+
         asserts.assert_true(
             self.dut.associate(
                 self.ssid,
