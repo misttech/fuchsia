@@ -318,4 +318,9 @@ test_platforms = [
     sorrels = "2"
     testbed = "lacewing_bt_Sorrel"
   },
+  {
+    access_points = "1"
+    device_type = "Sorrel"
+    pool = "fuchsia.dev.tests.connectivity.openwrt"
+  },
 ]

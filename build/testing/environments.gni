@@ -220,6 +220,14 @@ wlan_sorrel_ap_env = {
   }
 }
 
+wlan_sorrel_ap_env_testbed_prototype = {
+  dimensions = {
+    access_points = "1"
+    device_type = device_types.sorrel
+    pool = "fuchsia.dev.tests.connectivity.openwrt"
+  }
+}
+
 linux_env = {
   dimensions = {
     os = "Linux"
