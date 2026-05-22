@@ -5,9 +5,8 @@
 """A macro for defining a Rust proc-macro with optional unit tests."""
 
 load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
-load("//build/bazel/host_tests:host_rustc_test.bzl", "host_rustc_test")
 load("//build/bazel/rules/rust:common.bzl", "with_fuchsia_rustc_flags")
-load("//build/bazel/rules/rust:rustc_test.bzl", "rustc_test")
+load("//build/bazel/rules/rust:generate_unit_tests.bzl", "generate_unit_tests")
 
 def _rustc_proc_macro_impl(name, with_host_unit_tests, with_unit_tests, test_deps, lint_config, rustc_flags, visibility = None, **kwargs):
     if lint_config == None:
@@ -23,35 +22,7 @@ def _rustc_proc_macro_impl(name, with_host_unit_tests, with_unit_tests, test_dep
         **kwargs
     )
 
-    if with_host_unit_tests and with_unit_tests:
-        fail("Cannot specify both with_host_unit_tests and with_unit_tests on {}".format(name))
-
-    if with_host_unit_tests:
-        host_rustc_test(
-            name = "{}_test".format(name),
-            crate = ":{}".format(name),
-            rustc_flags = rustc_flags,
-            deps = test_deps,
-            crate_features = kwargs.get("crate_features", []),
-            visibility = visibility,
-        )
-
-    if with_unit_tests:
-        test_kwargs = {}
-        if "target_compatible_with" in kwargs:
-            test_kwargs["target_compatible_with"] = kwargs["target_compatible_with"]
-        if "tags" in kwargs:
-            test_kwargs["tags"] = kwargs["tags"]
-
-        rustc_test(
-            name = "{}_test".format(name),
-            crate = ":{}".format(name),
-            rustc_flags = rustc_flags,
-            deps = test_deps,
-            crate_features = kwargs.get("crate_features", []),
-            visibility = visibility,
-            **test_kwargs
-        )
+    generate_unit_tests(name, with_host_unit_tests, with_unit_tests, test_deps, lint_config, rustc_flags, visibility, **kwargs)
 
 rustc_proc_macro = macro(
     doc = """`rustc_proc_macro` wrapper that optionally defines a test target.
