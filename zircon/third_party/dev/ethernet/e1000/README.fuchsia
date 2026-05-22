@@ -1,8 +1,9 @@
 Name: Fuchsia Intel Ethernet Driver
+URL: https://github.com/freebsd/freebsd/tree/master/sys/dev/e1000
+Revision: 3258eeeb442b48695165a6cb66aabd5b8422478c
 License File: LICENSE
-Description:
-
-Fuchsia Intel Ethernet Driver
+Description: Fuchsia Intel Ethernet Driver
+Local Modifications: Detailed below to make driver work for Fuchsia.
 =============================
 
 This directory contains a port of the FreeBSD Intel ethernet driver. Original

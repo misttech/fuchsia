@@ -1,17 +1,18 @@
 Name: modp_b64
 URL: https://github.com/client9/stringencoders
+Revision: 28ae396ae197cd859e9817ec801d8e500712b161
 License: BSD
 License File: LICENSE
-Description:
-The modp_b64.c file was modified to remove the inclusion of modp's config.h
+Description: The modp_b64.c file was modified to remove the inclusion of modp's config.h
 and to fix compilation errors that occur under VC8.  The file was renamed
 modp_b64.cc to force it to be compiled as C++ so that the inclusion of
 basictypes.h could be possible.
 
-The modp_b64.cc and modp_b64.h files were modified to make them safe on
-64-bit systems.
-The modp_b64.cc was modified to avoid misaligned read/write on
-little-endian hardware.
+Revision estimate comes from looking at git's latest commit prior to July 18/19 2017 from
+https://fuchsia.googlesource.com/fuchsia/+/8343a6bfcde395c4729d84d50c3b67d2d47d3205
 
-*.c file wa added to force GN to compile source as C, to avoid inclusion of C++
+Local Modifications: The modp_b64.cc and modp_b64.h files were modified to make them safe on
+64-bit systems. The modp_b64.cc was modified to avoid misaligned read/write on
+little-endian hardware.
+*.c file was added to force GN to compile source as C, to avoid inclusion of C++
 stdlib(std::string) in environments where its not allowed (e.g. kernel, physboot, etc).

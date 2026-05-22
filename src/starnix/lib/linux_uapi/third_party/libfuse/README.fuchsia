@@ -1,17 +1,13 @@
 Name: libfuse
 URL: https://android.googlesource.com/platform/external/libfuse
+Revision: 91c902a1d8e8335d88dc065b5b71d1e82f3207a7
 Security Critical: yes
 
 License File: LICENSE
   License: BSD-2-Clause, Copyright
 
-Upstream git: https://android.googlesource.com/platform/external/libfuse
-
-Description:
-  Header file for the API between kernel and userspace for fuse
-
-Local Modifications:
-  Added README.fuchsia.
-  Added LICENSE file.
-  Selected exclusively the fuse_kernel.h file
-  Selected the BSD license in the fuse_kernel.h file
+Description: Header file for the API between kernel and userspace for fuse
+Local Modifications: Added README.fuchsia.
+Added LICENSE file.
+Selected exclusively the fuse_kernel.h file
+Selected the BSD license in the fuse_kernel.h file

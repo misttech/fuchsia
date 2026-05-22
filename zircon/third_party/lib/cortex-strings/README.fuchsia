@@ -1,15 +1,13 @@
 Name: cortex-strings
-Source: https://git.linaro.org/toolchain/cortex-strings.git
+URL: https://git.linaro.org/toolchain/cortex-strings.git
 Revision: eb80ac77a6cdb3509d885d23d1dd343803381176
 License: BSD 3-clause
 License File: LICENSE
-Description:
+Description: A lightweight assembler library of string operations for ARM Cortex-A processors.
 
 NOTE: kernel/arch/arm64/user_copy.S has intimate knowledge of the
 src/aarch64/memcpy.S code and must be adjusted if that code changes.
-
-Modifications:
-- Kept only src/aarch64, removed everything else.
+Local Modifications: - Kept only src/aarch64, removed everything else.
 - sed -i 's/\.2d\[/.d[/' src/aarch64/*.S
   This works around https://bugs.llvm.org//show_bug.cgi?id=34488
   by making the code use the official syntax, not a variant GAS accepts.

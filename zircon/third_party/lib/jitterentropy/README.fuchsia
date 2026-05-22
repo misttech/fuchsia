@@ -1,13 +1,13 @@
 Name: jitterentropy
-Source: https://github.com/smuellerDD/jitterentropy-library
-Commit: 3804c8408e0152173ce9690c4618cc45541da2e8
+URL: https://github.com/smuellerDD/jitterentropy-library
+Revision: 3804c8408e0152173ce9690c4618cc45541da2e8
 License: Dual-licensed GPLv2/BSD-3-Clause
 License File: COPYING
 License File: COPYING.bsd
 Version: 2.1.0
 
-Modifications:
-- Removed the following files, since they used different licenses or contained
+Description: provides a noise source using the CPU execution timing jitter
+Local Modifications: Removed the following files, since they used different licenses or contained
   code from other projects with different licenses:
     * arch/
     * doc/jitterentropy.3

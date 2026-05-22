@@ -1,9 +1,10 @@
 Name: libvpx
-URL: https://chromium.googlesource.com/webm/libvpx/+/master
+URL: https://chromium.googlesource.com/webm/libvpx/
+Revision: 656e8ac61e76525bdffcbe03e0a18746ecd74b72
 Security Critical: yes
 
 License File: LICENSE
   License: BSD-3-Clause, Copyright
 
-Description:
-  Only the loop-filter code is used. It's modified to remove most functions, which are unnecessary.
+Description: Only the loop-filter code is used. It's modified to remove most functions, which are unnecessary.
+Local Modifications: removed most functions that are unnecessary

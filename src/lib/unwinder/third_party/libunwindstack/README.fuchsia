@@ -1,5 +1,6 @@
 Name: libunwindstack
-URL: https://android.googlesource.com/platform/system/unwinding/+/5150e1292ec6b16e4717e86b9e3cfb855eec18a3/libunwindstack/
+URL: https://android.googlesource.com/platform/system/unwinding/
+Revision: 5150e1292ec6b16e4717e86b9e3cfb855eec18a3
 Security Critical: yes
 
 License File: LICENSE
@@ -8,8 +9,7 @@ License File: LICENSE
 Source File: context.h
   License: BSD-2-Clause
 
-Description:
-  The files in this directory are pulled from the Android Open Source Project
+Description: The files in this directory are pulled from the Android Open Source Project
   https://android.googlesource.com/platform/system/unwinding/+/5150e1292ec6b16e4717e86b9e3cfb855eec18a3/libunwindstack/
   with context.h modified for Fuchsia.
 

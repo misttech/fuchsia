@@ -1,8 +1,7 @@
 Name: Vulkan-Tools
+URL: https://github.com/KhronosGroup/Vulkan-Tools
+Version: vulkan-sdk-1.4.304.1
+Revision: 4c25e78dd87720275ab069de1fe2e005cd528ed9
 License: Apache 2.0
 License File: src/LICENSE.txt
-Upstream Git: https://github.com/KhronosGroup/Vulkan-Tools
-Description:
-
-Provides Khronos official Vulkan Tools and Utilities.
-
+Description: Provides Khronos official Vulkan Tools and Utilities.
