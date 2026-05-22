@@ -439,7 +439,7 @@ enum NfaState {
 }
 
 /// A list of NFA states that have an explicit representation in the DFA.
-const NFA_STATES: &'static [NfaState] = &[
+const NFA_STATES: &[NfaState] = &[
     NfaState::StartRecord,
     NfaState::StartField,
     NfaState::EndFieldDelim,
@@ -455,21 +455,18 @@ const NFA_STATES: &'static [NfaState] = &[
 impl NfaState {
     /// Returns true if this state indicates that a field has been parsed.
     fn is_field_final(&self) -> bool {
-        match *self {
+        matches!(
+            *self,
             NfaState::End
-            | NfaState::EndRecord
-            | NfaState::CRLF
-            | NfaState::EndFieldDelim => true,
-            _ => false,
-        }
+                | NfaState::EndRecord
+                | NfaState::CRLF
+                | NfaState::EndFieldDelim
+        )
     }
 
     /// Returns true if this state indicates that a record has been parsed.
     fn is_record_final(&self) -> bool {
-        match *self {
-            NfaState::End | NfaState::EndRecord | NfaState::CRLF => true,
-            _ => false,
-        }
+        matches!(*self, NfaState::End | NfaState::EndRecord | NfaState::CRLF)
     }
 }
 
@@ -611,16 +608,14 @@ impl Reader {
     /// this method will fail to strip off the BOM if only part of the BOM is
     /// buffered. Hopefully that won't happen very often.
     fn strip_utf8_bom<'a>(&self, input: &'a [u8]) -> (&'a [u8], usize) {
-        let (input, nin) = if {
-            !self.has_read
-                && input.len() >= 3
-                && &input[0..3] == b"\xef\xbb\xbf"
-        } {
+        if !self.has_read
+            && input.len() >= 3
+            && &input[0..3] == b"\xef\xbb\xbf"
+        {
             (&input[3..], 3)
         } else {
             (input, 0)
-        };
-        (input, nin)
+        }
     }
 
     #[inline(always)]
@@ -819,7 +814,6 @@ impl Reader {
                 self.dfa.classes.add(b'\r');
                 self.dfa.classes.add(b'\n');
             }
-            _ => unreachable!(),
         }
         // Build the DFA transition table by computing the DFA state for all
         // possible combinations of state and input byte.
@@ -1239,11 +1233,11 @@ impl DfaClasses {
             panic!("added too many classes")
         }
         self.classes[b as usize] = self.next_class as u8;
-        self.next_class = self.next_class + 1;
+        self.next_class += 1;
     }
 
     fn num_classes(&self) -> usize {
-        self.next_class as usize
+        self.next_class
     }
 
     /// Scan and copy the input bytes to the output buffer quickly.
