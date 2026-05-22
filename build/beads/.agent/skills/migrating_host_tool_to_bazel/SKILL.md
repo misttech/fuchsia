@@ -10,14 +10,7 @@ description: >-
 
 # Host Tool Bazel Migration
 
-This skill guides you through migrating host tools from GN to Bazel. The host
-tool is provided to you as a GN target in `BUILD.gn` files.
-
-## Persona
-
-You are a Fuchsia build system expert with deep knowledge of both GN and Bazel.
-You are familiar with the Fuchsia build graph structure and the process of
-migrating build targets between GN and Bazel.
+This skill guides you through migrating host tools from GN to Bazel.
 
 ## Quick Checklist
 
@@ -56,26 +49,15 @@ Follow these steps to migrate the targets from GN to Bazel:
 
 ### 1. Create Bazel targets
 
-Create a `BUILD.bazel` file in the same directory as `BUILD.gn` if it doesn't
-exist. Define the equivalent Bazel targets.
-**NOTE:** Always add the standard Fuchsia copyright/license header formatted
-for Python (`#`) to all newly created `BUILD.bazel` files.
+Create `BUILD.bazel` in the same directory as `BUILD.gn` if missing.
+**NOTE:** Add the standard Fuchsia copyright header (`#`) to new `BUILD.bazel` files.
 
-Based on the source language the GN target is written in, reference the
-corresponding language-specific migration guide for more information:
+Refer to language-specific guides and examples:
 
-- [Go](references/go_migration.md) (See **Common Pitfalls** section for
-  important `importpath` and dependency tracking instructions).
+- [Go Migration Guide](references/go_migration.md) (See **Common Pitfalls** for `importpath` and dependency gotchas).
+- [Go Examples](examples/go)
 
-And the language-specific migration examples:
-
-- [Go examples](examples/go)
-
-**NOTE:** Set `target_compatible_with = HOST_CONSTRAINTS` (or
-`HOST_OS_CONSTRAINTS` for host tools included in the IDK) for the Bazel
-targets you create. See
-[target_compatible_with.md](references/target_compatible_with.md) for more
-information.
+**NOTE:** Set `target_compatible_with = HOST_CONSTRAINTS` (or `HOST_OS_CONSTRAINTS` for tools in the IDK) on your Bazel targets. See [target_compatible_with.md](references/target_compatible_with.md).
 
 ### 2. Verify Bazel Target Correctness
 
@@ -104,18 +86,27 @@ Follow the following steps for migrated library targets (e.g. `go_library`,
   output into GN as a `go_binary`.
 - **Missing `verify` Targets:** Every synchronized directory outputs a
   `verify_bazel2gn` target. You MUST manually add
-  `//{directory_path}:verify_bazel2gn` to `group("bazel2gn_verifications")`
-  in `//build/BUILD.gn` to hook it into the main build graph.
+  `"//{directory_path}:verify_bazel2gn"` to the `bazel2gn_verification_targets`
+  list in `//build/bazel2gn_verification_targets.gni` (or
+  `//sdk/fidl/bazel2gn_verification_targets.gni` for FIDL targets) to hook it
+  into the main build graph.
+- **Testing Host Tests:** If you need to add the migrated host tests to the active
+  build configuration for verification:
+  - **Pitfall:** Running `fx add-test` on host-only tests will fail with
+    unresolved target toolchain (e.g., `fuchsia:arm64`) dependencies.
+  - **Fix:** Always use `fx add-host-test` instead of `fx add-test` for host
+    tests.
 
 1. Remove the targets you've migrated from `{directory_path}/BUILD.gn`.
 
-2. Run the following command. If it fails with missing GN targets, sync
-   migrated targets back to GN using skill
-   [`syncing-bazel-to-gn`](../syncing_bazel_to_gn/SKILL.md):
-
-```bash
-fx set core.x64 --with '//bundles/buildbot/core' --with '//bundles/tests'
-```
+2. Run `fx gen` to validate the GN build graph.
+   - **NOTE:** If `fx gen` fails with missing GN targets, sync them back using
+     [`syncing-bazel-to-gn`](../syncing_bazel_to_gn/SKILL.md).
+   - Only if you suspect the tests are completely missing from the active build configuration, reconfigure the build using:
+     ```bash
+     fx set core.x64 --with '//bundles/buildbot/core' --with '//bundles/tests'
+     ```
+     _(Avoid running `fx set` if possible, as it is slow and overwrites the active board/product configuration)._
 
 ### 5. Format Code
 
@@ -127,10 +118,22 @@ fx format-code --parallel
 
 ### 6. Final Verification
 
-Run the following command and ensure it returns successfully, fix any build
-errors that arise:
+Ensure everything builds correctly using the new Bazel targets:
 
 ```bash
-fx set core.x64 --with '//bundles/buildbot/core' --with '//bundles/tests'
+# Regenerate build files
+fx gen
+
+# Build the Bazel-in-GN host tool target directly
+fx build --host //build/bazel/host:bazel_root_host_tools.{target_name}
+
+# Build all Bazel host tools to check for regressions
 fx build --host //build/bazel/host:bazel_root_host_tools
+```
+
+If you want to verify host tests, add and run them:
+
+```bash
+fx add-host-test //{directory_path}:{test_target_name}
+fx test //{directory_path}:{test_target_name}
 ```

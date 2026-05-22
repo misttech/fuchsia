@@ -314,5 +314,21 @@ synchronized back to GN as `go_binary` rules.
 - **Pitfall**: After creating a `BUILD.bazel` file, `bazel2gn` generates a
   self-verification target in GN (`verify_bazel2gn`). If not hooked up to the
   main build graph, `fx build` verifications will fail.
-- **Fix**: Always add `"//{directory_path}:verify_bazel2gn"` to the `deps`
-  array of `group("bazel2gn_verifications")` in `//build/BUILD.gn`.
+- **Fix**: Always add `"//{directory_path}:verify_bazel2gn"` to the
+  `bazel2gn_verification_targets` list in
+  `//build/bazel2gn_verification_targets.gni` (or
+  `//sdk/fidl/bazel2gn_verification_targets.gni` for FIDL targets).
+
+### 5. Test Dependencies After Library Sync
+
+When migrating test files (`*_test.go`) from a `go_library` to a `go_test`
+target in GN (as described in [go_test](#go_test)), the `go_library` will
+no longer depend on test-only libraries (e.g.,
+`//third_party/golibs:github.com/google/go-cmp`).
+- **Pitfall**: When `bazel2gn` syncs the `go_library` back to GN, the generated
+  GN library will NOT have these test dependencies. Consequently, the GN
+  `go_test` target (which embeds the library) will fail to compile due to
+  missing dependencies.
+- **Fix**: You must manually add the missing test-only dependencies to the
+  `deps` array of the `go_test` target in `BUILD.gn` (e.g.,
+  `deps = [ "//third_party/golibs:github.com/google/go-cmp" ]`).
