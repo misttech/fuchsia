@@ -164,6 +164,21 @@ TEST(JournalHeaderView, SequenceNumber) {
   ASSERT_EQ(sequence_number, header.SequenceNumber());
 }
 
-}  // namespace
+TEST(JournalHeaderView, LoadOversizedPayloadBlocks) {
+  uint8_t block[kBlockSize] = {};
+  std::span<uint8_t> span(block, kBlockSize);
 
+  // Create with valid payload blocks first.
+  JournalHeaderView header(span, kPayloadBlocks, kSequenceNumber);
+
+  // Manually overwrite payload_blocks to exceed the limit.
+  auto header_block = reinterpret_cast<JournalHeaderBlock*>(block);
+  header_block->payload_blocks = kMaxBlockDescriptors + 1;
+
+  auto loaded = fs::JournalHeaderView::Create(span, kSequenceNumber);
+  ASSERT_TRUE(loaded.is_error());
+  ASSERT_EQ(ZX_ERR_IO_DATA_INTEGRITY, loaded.error());
+}
+
+}  // namespace
 }  // namespace fs

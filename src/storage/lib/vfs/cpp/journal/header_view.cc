@@ -71,8 +71,12 @@ fpromise::result<JournalHeaderView, zx_status_t> JournalHeaderView::Create(
   if (block.size_bytes() < kJournalBlockSize) {
     return fpromise::error(ZX_ERR_BUFFER_TOO_SMALL);
   }
-  if (!IsHeader(reinterpret_cast<const JournalHeaderBlock*>(block.data()), sequence_number)) {
+  const JournalHeaderBlock* header = reinterpret_cast<const JournalHeaderBlock*>(block.data());
+  if (!IsHeader(header, sequence_number)) {
     return fpromise::error(ZX_ERR_BAD_STATE);
+  }
+  if (header->payload_blocks > kMaxBlockDescriptors) {
+    return fpromise::error(ZX_ERR_IO_DATA_INTEGRITY);
   }
   return fpromise::ok(JournalHeaderView(block));
 }
