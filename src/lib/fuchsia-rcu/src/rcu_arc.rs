@@ -5,6 +5,7 @@
 use crate::rcu_ptr::{RcuPtr, RcuReadGuard};
 use crate::rcu_read_scope::RcuReadScope;
 use crate::state_machine::rcu_drop;
+use crate::subtle::RcuPtrRef;
 use std::sync::Arc;
 
 /// An RCU (Read-Copy-Update) wrapper around an `Arc`.
@@ -63,14 +64,11 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
     /// This function returns a new `Arc` to the object referenced by the wrapped Arc,
     /// increasing the reference count of the object by one.
     pub fn to_arc(&self) -> Arc<T> {
-        let guard = self.read();
-        let ptr = guard.as_ptr();
-        // SAFETY: We can make a new Arc to the object by incrementing the strong count and then
-        // converting the pointer to an Arc.
-        unsafe {
-            Arc::increment_strong_count(ptr);
-            Arc::from_raw(ptr)
-        }
+        let scope = RcuReadScope::new();
+        let ptr = self.ptr.read(&scope);
+        // SAFETY: We can pass `self.ptr` to `rcu_ptr_to_arc` because it was obtained from
+        // `Arc::into_raw`.
+        unsafe { rcu_ptr_to_arc(ptr) }
     }
 
     /// Extract the raw pointer from an `Arc`.
@@ -129,6 +127,19 @@ impl<T: Send + Sync + 'static> From<Arc<T>> for RcuArc<T> {
 impl<T: Default + Send + Sync + 'static> Default for RcuArc<T> {
     fn default() -> Self {
         Self::new(Arc::new(T::default()))
+    }
+}
+
+/// Reconstruct an `Arc` from an `RcuPtrRef` by incrementing its strong count.
+///
+/// # Safety
+///
+/// The caller must guarantee that the pointer was obtained from `Arc::into_raw()`.
+pub unsafe fn rcu_ptr_to_arc<'a, T>(ptr: RcuPtrRef<'a, T>) -> Arc<T> {
+    let raw_ptr = ptr.as_ptr();
+    unsafe {
+        Arc::increment_strong_count(raw_ptr);
+        Arc::from_raw(raw_ptr)
     }
 }
 
