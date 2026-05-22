@@ -322,12 +322,20 @@ impl<T> MutexLike for DynamicLockDepMutex<T> {
         = LockDepGuard<'a, T>
     where
         T: 'a;
+    type Context = usize;
+
     #[inline(always)]
-    fn lock(&self, level: usize) -> Self::Guard<'_> {
+    fn context() -> Self::Context {
+        0
+    }
+
+    #[inline(always)]
+    fn lock(&self, level: &mut Self::Context) -> Self::Guard<'_> {
         let _token;
-        if level > 0 {
+        if *level > 0 {
             _token = allow_subclass();
         }
+        *level += 1;
         return self.lock();
     }
 }
@@ -392,9 +400,16 @@ impl<T, L> MutexLike for LockDepMutex<T, L> {
     where
         T: 'a,
         L: 'a;
+    type Context = <DynamicLockDepMutex<T> as MutexLike>::Context;
+
     #[inline(always)]
-    fn lock(&self, level: usize) -> Self::Guard<'_> {
-        MutexLike::lock(&self.inner, level)
+    fn context() -> Self::Context {
+        DynamicLockDepMutex::<T>::context()
+    }
+
+    #[inline(always)]
+    fn lock(&self, context: &mut Self::Context) -> Self::Guard<'_> {
+        MutexLike::lock(&self.inner, context)
     }
 }
 

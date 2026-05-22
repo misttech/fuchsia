@@ -54,9 +54,12 @@ pub trait MutexLike {
     type Guard<'a>
     where
         Self: 'a;
+    type Context;
+
+    fn context() -> Self::Context;
 
     /// Lock the mutex. `level` is the index of the locked mutex in the lock ordering.
-    fn lock(&self, level: usize) -> Self::Guard<'_>;
+    fn lock(&self, context: &mut Self::Context) -> Self::Guard<'_>;
 }
 
 impl<T> MutexLike for Mutex<T> {
@@ -64,8 +67,15 @@ impl<T> MutexLike for Mutex<T> {
         = MutexGuard<'a, T>
     where
         T: 'a;
+    type Context = ();
+
     #[inline(always)]
-    fn lock(&self, _level: usize) -> Self::Guard<'_> {
+    fn context() -> Self::Context {
+        ()
+    }
+
+    #[inline(always)]
+    fn lock(&self, _context: &mut Self::Context) -> Self::Guard<'_> {
         return self.lock();
     }
 }
@@ -74,15 +84,16 @@ impl<T> MutexLike for Mutex<T> {
 /// associated guard. This ensure that `ordered_lock(m1, m2)` and `ordered_lock(m2, m1)` will not
 /// deadlock.
 pub fn ordered_lock<'a, M: MutexLike>(m1: &'a M, m2: &'a M) -> (M::Guard<'a>, M::Guard<'a>) {
+    let mut context = M::context();
     let ptr1: *const M = m1;
     let ptr2: *const M = m2;
     if ptr1 < ptr2 {
-        let g1 = m1.lock(0);
-        let g2 = m2.lock(1);
+        let g1 = m1.lock(&mut context);
+        let g2 = m2.lock(&mut context);
         (g1, g2)
     } else {
-        let g2 = m2.lock(0);
-        let g1 = m1.lock(1);
+        let g2 = m2.lock(&mut context);
+        let g1 = m1.lock(&mut context);
         (g1, g2)
     }
 }
@@ -90,6 +101,8 @@ pub fn ordered_lock<'a, M: MutexLike>(m1: &'a M, m2: &'a M) -> (M::Guard<'a>, M:
 /// Acquires multiple mutexes in a consistent order based on their memory addresses.
 /// This helps prevent deadlocks.
 pub fn ordered_lock_vec<'a, M: MutexLike>(mutexes: &[&'a M]) -> Vec<M::Guard<'a>> {
+    let mut context = M::context();
+
     // Create a vector of tuples containing the mutex and its original index.
     let mut indexed_mutexes = mutexes.iter().enumerate().map(|(i, m)| (i, *m)).collect::<Vec<_>>();
 
@@ -97,11 +110,8 @@ pub fn ordered_lock_vec<'a, M: MutexLike>(mutexes: &[&'a M]) -> Vec<M::Guard<'a>
     indexed_mutexes.sort_by_key(|(_, m)| *m as *const M);
 
     // Acquire the locks in the sorted order.
-    let mut guards = indexed_mutexes
-        .into_iter()
-        .enumerate()
-        .map(|(j, (i, m))| (i, m.lock(j)))
-        .collect::<Vec<_>>();
+    let mut guards =
+        indexed_mutexes.into_iter().map(|(i, m)| (i, m.lock(&mut context))).collect::<Vec<_>>();
 
     // Reorder the guards to match the original order of the mutexes.
     guards.sort_by_key(|(i, _)| *i);
