@@ -16,9 +16,13 @@ zx_library("lz4") {
 
   sources = [
     "$lz4_lib/lz4.c",
+    "$lz4_lib/lz4.h",
     "$lz4_lib/lz4frame.c",
+    "$lz4_lib/lz4frame.h",
     "$lz4_lib/lz4hc.c",
+    "$lz4_lib/lz4hc.h",
     "$lz4_lib/xxhash.c",
+    "$lz4_lib/xxhash.h",
   ]
   defines = [
     "XXH_NAMESPACE=LZ4_",
