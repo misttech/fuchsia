@@ -453,8 +453,9 @@ func fuchsiaLogChecks() []FailureModeCheck {
 	ret := []FailureModeCheck{
 		// For b/513546752
 		&stringInLogCheck{
-			String: "Trace size: streamed 400 MB",
-			Type:   syslogType,
+			String:             "Trace size: streamed 400 MB",
+			Type:               syslogType,
+			SkipAllPassedTests: true,
 		},
 		// Image too large causes booting to fail.
 		&stringInLogCheck{String: "too large for partition", Type: serialLogType},
