@@ -3,6 +3,7 @@
   "scope": "core",
   "profiles": {
     // Fuchsia platform profiles.
+    "fuchsia.scenic.input": { "capacity": "450us", "period": "4ms" },
     "fuchsia.scenic.main": { "capacity": "16ms", "period": "16ms" },
     "fuchsia.media.audio.core.dispatch": { "priority": 24 },
     "fuchsia.media.audio.core.mixer": { "capacity": "4400us", "period": "10ms" },
