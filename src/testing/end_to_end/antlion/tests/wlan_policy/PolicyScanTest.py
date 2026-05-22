@@ -5,6 +5,7 @@
 # found in the LICENSE file.
 #
 
+import dataclasses
 import logging
 
 from antlion.controllers.ap_lib import (
@@ -13,6 +14,7 @@ from antlion.controllers.ap_lib import (
     hostapd_constants,
     hostapd_security,
 )
+from antlion.controllers.ap_lib.hostapd_security import SecurityMode
 from fuchsia_wlan_base_test.deprecated.wifi import base_test
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ConnectionState,
@@ -29,6 +31,17 @@ from openwrt_access_point.lib.access_point_config import (
     SecurityOpen,
     SecurityWpa2,
 )
+
+
+@dataclasses.dataclass(frozen=True)
+class NetworkInfo:
+    ssid: str
+    security: SecurityType
+    password: str | None = None
+
+
+AP_SSID_LENGTH = 8
+AP_PASSPHRASE_LENGTH = 10
 
 
 class PolicyScanTest(base_test.WifiBaseTest):
@@ -61,13 +74,24 @@ class PolicyScanTest(base_test.WifiBaseTest):
             )
 
         # Generate network params.
-
-        open_network = self.get_open_network(False, [])
-        self.open_network_2g = open_network["2g"]
-        self.open_network_5g = open_network["5g"]
-        wpa2_settings = self.get_psk_network(False, [])
-        self.wpa2_network_2g = wpa2_settings["2g"]
-        self.wpa2_network_5g = wpa2_settings["5g"]
+        self.open_network_2g = NetworkInfo(
+            ssid=AccessPointConfig.random_string(AP_SSID_LENGTH),
+            security=SecurityType.NONE,
+        )
+        self.wpa2_network_2g = NetworkInfo(
+            ssid=AccessPointConfig.random_string(AP_SSID_LENGTH),
+            security=SecurityType.WPA2,
+            password=AccessPointConfig.random_string(AP_PASSPHRASE_LENGTH),
+        )
+        self.open_network_5g = NetworkInfo(
+            ssid=AccessPointConfig.random_string(AP_SSID_LENGTH),
+            security=SecurityType.NONE,
+        )
+        self.wpa2_network_5g = NetworkInfo(
+            ssid=AccessPointConfig.random_string(AP_SSID_LENGTH),
+            security=SecurityType.WPA2,
+            password=AccessPointConfig.random_string(AP_PASSPHRASE_LENGTH),
+        )
 
         if self.openwrt_ap:
             config = AccessPointConfig(
@@ -76,13 +100,13 @@ class PolicyScanTest(base_test.WifiBaseTest):
                         channel=DEFAULT_2G_CHANNEL,
                         bss_settings=[
                             BssSettings(
-                                ssid=self.open_network_2g["SSID"],
+                                ssid=self.open_network_2g.ssid,
                                 security=SecurityOpen(),
                             ),
                             BssSettings(
-                                ssid=self.wpa2_network_2g["SSID"],
+                                ssid=self.wpa2_network_2g.ssid,
                                 security=SecurityWpa2(),
-                                password=self.wpa2_network_2g["password"],
+                                password=self.wpa2_network_2g.password,
                             ),
                         ],
                     ),
@@ -90,13 +114,13 @@ class PolicyScanTest(base_test.WifiBaseTest):
                         channel=DEFAULT_5G_CHANNEL,
                         bss_settings=[
                             BssSettings(
-                                ssid=self.open_network_5g["SSID"],
+                                ssid=self.open_network_5g.ssid,
                                 security=SecurityOpen(),
                             ),
                             BssSettings(
-                                ssid=self.wpa2_network_5g["SSID"],
+                                ssid=self.wpa2_network_5g.ssid,
                                 security=SecurityWpa2(),
-                                password=self.wpa2_network_5g["password"],
+                                password=self.wpa2_network_5g.password,
                             ),
                         ],
                     ),
@@ -110,48 +134,48 @@ class PolicyScanTest(base_test.WifiBaseTest):
             bss_settings_5g: list[hostapd_bss_settings.BssSettings] = []
             bss_settings_2g.append(
                 hostapd_bss_settings.BssSettings(
-                    name=self.wpa2_network_2g["SSID"],
-                    ssid=self.wpa2_network_2g["SSID"],
+                    name=self.wpa2_network_2g.ssid,
+                    ssid=self.wpa2_network_2g.ssid,
                     security=hostapd_security.Security(
-                        security_mode=self.wpa2_network_2g["security"],
-                        password=self.wpa2_network_2g["password"],
+                        security_mode=SecurityMode.WPA2,
+                        password=self.wpa2_network_2g.password,
                     ),
                 )
             )
             bss_settings_5g.append(
                 hostapd_bss_settings.BssSettings(
-                    name=self.wpa2_network_5g["SSID"],
-                    ssid=self.wpa2_network_5g["SSID"],
+                    name=self.wpa2_network_5g.ssid,
+                    ssid=self.wpa2_network_5g.ssid,
                     security=hostapd_security.Security(
-                        security_mode=self.wpa2_network_5g["security"],
-                        password=self.wpa2_network_5g["password"],
+                        security_mode=SecurityMode.WPA2,
+                        password=self.wpa2_network_5g.password,
                     ),
                 )
             )
-            self.ap_2g = hostapd_ap_preset.create_ap_preset(
+            ap_2g = hostapd_ap_preset.create_ap_preset(
                 iface_wlan_2g=self.access_points[0].wlan_2g,
                 iface_wlan_5g=self.access_points[0].wlan_5g,
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
-                ssid=self.open_network_2g["SSID"],
+                ssid=self.open_network_2g.ssid,
                 bss_settings=bss_settings_2g,
             )
-            self.ap_5g = hostapd_ap_preset.create_ap_preset(
+            ap_5g = hostapd_ap_preset.create_ap_preset(
                 iface_wlan_2g=self.access_points[0].wlan_2g,
                 iface_wlan_5g=self.access_points[0].wlan_5g,
                 channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
-                ssid=self.open_network_5g["SSID"],
+                ssid=self.open_network_5g.ssid,
                 bss_settings=bss_settings_5g,
             )
             # Start the networks
-            self.access_point.start_ap(hostapd_config=self.ap_2g)
-            self.access_point.start_ap(hostapd_config=self.ap_5g)
+            self.access_point.start_ap(hostapd_config=ap_2g)
+            self.access_point.start_ap(hostapd_config=ap_5g)
 
         # List of test SSIDs started by APs
-        self.all_ssids = [
-            self.open_network_2g["SSID"],
-            self.wpa2_network_2g["SSID"],
-            self.open_network_5g["SSID"],
-            self.wpa2_network_5g["SSID"],
+        self.all_ssids: list[str] = [
+            self.open_network_2g.ssid,
+            self.wpa2_network_2g.ssid,
+            self.open_network_5g.ssid,
+            self.wpa2_network_5g.ssid,
         ]
 
     def setup_test(self) -> None:
@@ -196,20 +220,16 @@ class PolicyScanTest(base_test.WifiBaseTest):
         """Connect to an open 2g network and perform a scan"""
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                self.open_network_2g["SSID"],
-                SecurityType(
-                    self.open_network_2g["security"].fuchsia_security_type()
-                ),
-                self.open_network_2g["password"],
+                self.open_network_2g.ssid,
+                self.open_network_2g.security,
+                self.open_network_2g.password,
             )
             fd.honeydew_fd.wlan_policy_deprecated_sync.connect(
-                self.open_network_2g["SSID"],
-                SecurityType(
-                    self.open_network_2g["security"].fuchsia_security_type()
-                ),
+                self.open_network_2g.ssid,
+                self.open_network_2g.security,
             )
             fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                self.open_network_2g["SSID"], ConnectionState.CONNECTED
+                self.open_network_2g.ssid, ConnectionState.CONNECTED
             )
 
             scan_results = (
@@ -222,20 +242,16 @@ class PolicyScanTest(base_test.WifiBaseTest):
         """Connect to a WPA2 2g network and perform a scan"""
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                self.wpa2_network_2g["SSID"],
-                SecurityType(
-                    self.wpa2_network_2g["security"].fuchsia_security_type()
-                ),
-                self.wpa2_network_2g["password"],
+                self.wpa2_network_2g.ssid,
+                self.wpa2_network_2g.security,
+                self.wpa2_network_2g.password,
             )
             fd.honeydew_fd.wlan_policy_deprecated_sync.connect(
-                self.wpa2_network_2g["SSID"],
-                SecurityType(
-                    self.wpa2_network_2g["security"].fuchsia_security_type()
-                ),
+                self.wpa2_network_2g.ssid,
+                self.wpa2_network_2g.security,
             )
             fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                self.wpa2_network_2g["SSID"], ConnectionState.CONNECTED
+                self.wpa2_network_2g.ssid, ConnectionState.CONNECTED
             )
 
             scan_results = (
@@ -248,20 +264,16 @@ class PolicyScanTest(base_test.WifiBaseTest):
         """Connect to an open 5g network and perform a scan"""
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                self.open_network_5g["SSID"],
-                SecurityType(
-                    self.open_network_5g["security"].fuchsia_security_type()
-                ),
-                self.open_network_5g["password"],
+                self.open_network_5g.ssid,
+                self.open_network_5g.security,
+                self.open_network_5g.password,
             )
             fd.honeydew_fd.wlan_policy_deprecated_sync.connect(
-                self.open_network_5g["SSID"],
-                SecurityType(
-                    self.open_network_5g["security"].fuchsia_security_type()
-                ),
+                self.open_network_5g.ssid,
+                self.open_network_5g.security,
             )
             fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                self.open_network_5g["SSID"], ConnectionState.CONNECTED
+                self.open_network_5g.ssid, ConnectionState.CONNECTED
             )
 
             scan_results = (
@@ -274,20 +286,16 @@ class PolicyScanTest(base_test.WifiBaseTest):
         """Connect to a WPA2 5g network and perform a scan"""
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy_deprecated_sync.save_network(
-                self.wpa2_network_5g["SSID"],
-                SecurityType(
-                    self.wpa2_network_5g["security"].fuchsia_security_type()
-                ),
-                self.wpa2_network_5g["password"],
+                self.wpa2_network_5g.ssid,
+                self.wpa2_network_5g.security,
+                self.wpa2_network_5g.password,
             )
             fd.honeydew_fd.wlan_policy_deprecated_sync.connect(
-                self.wpa2_network_5g["SSID"],
-                SecurityType(
-                    self.wpa2_network_5g["security"].fuchsia_security_type()
-                ),
+                self.wpa2_network_5g.ssid,
+                self.wpa2_network_5g.security,
             )
             fd.honeydew_fd.wlan_policy_deprecated_sync.wait_for_network_state(
-                self.wpa2_network_5g["SSID"], ConnectionState.CONNECTED
+                self.wpa2_network_5g.ssid, ConnectionState.CONNECTED
             )
 
             scan_results = (
