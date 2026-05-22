@@ -72,6 +72,10 @@ group("assembly") {
       current_cpu != "riscv64") {
     deps += [ "//bundles/assembly/scrutiny" ]
   }
+  metadata = {
+    # Only include the full set of platform artifacts in platform_artifacts.json
+    platform_artifacts_barrier = [ ":platform" ]
+  }
 }
 
 platform_artifacts("bringup") {
