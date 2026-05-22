@@ -4,22 +4,26 @@
 
 use crate::args;
 use anyhow::{Context, Error};
+use fidl_fuchsia_update_channel as fupdate_channel;
 use fidl_fuchsia_update_channelcontrol::{ChannelControlMarker, ChannelControlProxy};
 use fuchsia_component::client::connect_to_protocol;
 
-pub async fn handle_channel_control_cmd(cmd: args::channel::Command) -> Result<(), Error> {
+pub async fn handle_channel_cmd(cmd: args::channel::Command) -> Result<(), Error> {
+    let channel_provider = connect_to_protocol::<fupdate_channel::ProviderMarker>()
+        .context("Failed to connect to channel provider service")?;
     let channel_control = connect_to_protocol::<ChannelControlMarker>()
         .context("Failed to connect to channel control service")?;
-    handle_channel_control_cmd_impl(cmd, &channel_control).await
+    handle_channel_cmd_impl(cmd, &channel_provider, &channel_control).await
 }
 
-async fn handle_channel_control_cmd_impl(
+async fn handle_channel_cmd_impl(
     cmd: args::channel::Command,
+    channel_provider: &fupdate_channel::ProviderProxy,
     channel_control: &ChannelControlProxy,
 ) -> Result<(), Error> {
     match cmd {
-        args::channel::Command::Get(_) => {
-            let channel = channel_control.get_current().await?;
+        args::channel::Command::Get(args::channel::Get {}) => {
+            let channel = channel_provider.get_current().await?;
             println!("current channel: {channel}");
         }
         args::channel::Command::Target(_) => {
@@ -53,42 +57,50 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::prelude::*;
 
-    async fn perform_channel_control_test<V>(argument: args::channel::Command, verifier: V)
-    where
-        V: Fn(ChannelControlRequest),
+    async fn perform_channel_test<PV, CV>(
+        argument: args::channel::Command,
+        provider_verifier: PV,
+        control_verifier: CV,
+    ) where
+        PV: Fn(Option<fupdate_channel::ProviderRequest>),
+        CV: Fn(Option<ChannelControlRequest>),
     {
-        let (proxy, mut stream) = create_proxy_and_stream::<ChannelControlMarker>();
+        let (provider_proxy, mut provider_stream) =
+            create_proxy_and_stream::<fupdate_channel::ProviderMarker>();
+        let (control_proxy, mut control_stream) = create_proxy_and_stream::<ChannelControlMarker>();
         let fut = async move {
-            assert_matches!(handle_channel_control_cmd_impl(argument, &proxy).await, Ok(()));
+            assert_matches!(
+                handle_channel_cmd_impl(argument, &provider_proxy, &control_proxy).await,
+                Ok(())
+            );
         };
-        let stream_fut = async move {
-            let result = stream.next().await.unwrap();
-            match result {
-                Ok(cmd) => verifier(cmd),
-                err => panic!("Err in request handler: {err:?}"),
-            }
-        };
-        future::join(fut, stream_fut).await;
+        let provider_stream_fut =
+            async move { provider_verifier(provider_stream.try_next().await.unwrap()) };
+        let control_stream_fut =
+            async move { control_verifier(control_stream.try_next().await.unwrap()) };
+        let ((), (), ()) = futures::join!(fut, provider_stream_fut, control_stream_fut);
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn test_channel_get() {
-        perform_channel_control_test(args::channel::Command::Get(args::channel::Get {}), |cmd| {
-            match cmd {
-                ChannelControlRequest::GetCurrent { responder } => {
+        perform_channel_test(
+            args::channel::Command::Get(args::channel::Get {}),
+            |cmd| match cmd.unwrap() {
+                fupdate_channel::ProviderRequest::GetCurrent { responder } => {
                     responder.send("channel").unwrap();
                 }
-                request => panic!("Unexpected request: {request:?}"),
-            }
-        })
+            },
+            |cmd| assert_matches!(cmd, None),
+        )
         .await;
     }
 
     #[fasync::run_singlethreaded(test)]
     async fn test_channel_target() {
-        perform_channel_control_test(
+        perform_channel_test(
             args::channel::Command::Target(args::channel::Target {}),
-            |cmd| match cmd {
+            |cmd| assert_matches!(cmd, None),
+            |cmd| match cmd.unwrap() {
                 ChannelControlRequest::GetTarget { responder } => {
                     responder.send("target-channel").unwrap();
                 }
@@ -100,9 +112,10 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_channel_set() {
-        perform_channel_control_test(
+        perform_channel_test(
             args::channel::Command::Set(args::channel::Set { channel: "new-channel".to_string() }),
-            |cmd| match cmd {
+            |cmd| assert_matches!(cmd, None),
+            |cmd| match cmd.unwrap() {
                 ChannelControlRequest::SetTarget { channel, responder } => {
                     assert_eq!(channel, "new-channel");
                     responder.send().unwrap();
@@ -115,16 +128,18 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_channel_list() {
-        perform_channel_control_test(args::channel::Command::List(args::channel::List {}), |cmd| {
-            match cmd {
+        perform_channel_test(
+            args::channel::Command::List(args::channel::List {}),
+            |cmd| assert_matches!(cmd, None),
+            |cmd| match cmd.unwrap() {
                 ChannelControlRequest::GetTargetList { responder } => {
                     responder
                         .send(&["some-channel".to_owned(), "other-channel".to_owned()])
                         .unwrap();
                 }
                 request => panic!("Unexpected request: {request:?}"),
-            }
-        })
+            },
+        )
         .await;
     }
 }

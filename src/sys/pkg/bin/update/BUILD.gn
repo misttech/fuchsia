@@ -16,6 +16,7 @@ rustc_library("lib") {
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
     "//sdk/fidl/fuchsia.paver:fuchsia.paver_rust",
     "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
+    "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_rust",
     "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",

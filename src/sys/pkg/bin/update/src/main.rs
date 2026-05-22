@@ -19,7 +19,7 @@ mod revert;
 async fn handle_cmd(cmd: args::Command) -> Result<(), Error> {
     match cmd {
         args::Command::Channel(args::Channel { cmd }) => {
-            crate::channel::handle_channel_control_cmd(cmd).await?;
+            crate::channel::handle_channel_cmd(cmd).await?;
         }
         args::Command::CheckNow(check_now) => {
             crate::check::handle_check_now_cmd(check_now).await?;
