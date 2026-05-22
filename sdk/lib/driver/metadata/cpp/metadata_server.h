@@ -36,7 +36,7 @@ namespace fdf_metadata {
 // The parent driver can define a `MetadataServer<fuchsia_hardware_test::Metadata>` server
 // instance as one its members:
 //
-//   class ParentDriver : public fdf::DriverBase {
+//   class ParentDriver : public fdf::DriverBase2 {
 //    private:
 //     fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata> metadata_server_;
 //   }
@@ -45,7 +45,7 @@ namespace fdf_metadata {
 // child node by adding the metadata server's offers to the node-add arguments:
 //
 //   auto args = fuchsia_driver_framework::NodeAddArgs args{{.offers2 =
-//     std::vector{metadata_server_.MakeOffer()}}};
+//     std::vector{metadata_server_.CreateOffer()}}};
 //
 // The parent driver should also declare the metadata server's capability and offer it in the
 // driver's component manifest like so:

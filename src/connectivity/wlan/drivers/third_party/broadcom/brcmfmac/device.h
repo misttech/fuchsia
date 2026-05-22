@@ -58,10 +58,10 @@ class Device : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl>,
   // Device Initialization
   zx_status_t InitServerDispatcher();
   zx_status_t InitWlanPhyImpl();
-  // Initialize Device, services will be added to the |outgoing| directory.
-  zx_status_t InitDevice(fdf::OutgoingDirectory& outgoing);
+  zx_status_t InitDevice(fdf::OutgoingDirectory& outgoing,
+                         const std::shared_ptr<fdf::Namespace>& incoming);
   void InitPhyDevice();
-  virtual zx_status_t BusInit() = 0;
+  virtual zx_status_t BusInit(const std::shared_ptr<fdf::Namespace>& incoming) = 0;
   WlanInterface* GetClientInterface() { return client_interface_.get(); }
   WlanInterface* GetSoftApInterface() { return ap_interface_.get(); }
 
@@ -75,7 +75,6 @@ class Device : public fdf::WireServer<fuchsia_wlan_phyimpl::WlanPhyImpl>,
   virtual DeviceInspect* GetInspect() = 0;
   virtual fidl::WireClient<fdf::Node>& GetParentNode() = 0;
   virtual std::shared_ptr<fdf::OutgoingDirectory>& Outgoing() = 0;
-  virtual const std::shared_ptr<fdf::Namespace>& Incoming() const = 0;
   virtual fdf_dispatcher_t* GetDriverDispatcher() = 0;
 
   // WlanPhyImpl interface implementation.

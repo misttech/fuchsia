@@ -159,7 +159,7 @@ zx::result<std::optional<FidlType>> GetMetadataIfExists(
 // The parent driver can define a `MetadataServer<fuchsia_hardware_test::Metadata>` server
 // instance as one its members:
 //
-//   class ParentDriver : public fdf::DriverBase {
+//   class ParentDriver : public fdf::DriverBase2 {
 //    private:
 //     using MetadataServer = ddk::MetadataServer<fuchsia_hardware_test::Metadata>
 //

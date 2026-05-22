@@ -7,7 +7,7 @@
 #include <fidl/fuchsia.hardware.network.driver/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.network/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
 #include <lib/zircon-internal/align.h>
@@ -32,11 +32,11 @@ fuchsia_hardware_network::wire::StatusFlags ToStatusFlags(uint32_t ethernet_stat
 
 namespace netdevice_migration {
 
-NetdeviceMigration::NetdeviceMigration(fdf::DriverStartArgs start_args,
-                                       fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("netdevice-migration", std::move(start_args), std::move(driver_dispatcher)) {}
+NetdeviceMigration::NetdeviceMigration() : fdf::DriverBase2("netdevice-migration") {}
 
-zx::result<> NetdeviceMigration::Start() {
+zx::result<> NetdeviceMigration::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  node_name_ = context.node_name();
   auto cleanup = fit::defer([this] { Shutdown(); });
 
   zx::result ethernet = compat::ConnectBanjo<ddk::EthernetImplProtocolClient>(incoming());
@@ -168,7 +168,7 @@ zx::result<> NetdeviceMigration::Start() {
 
 zx_status_t NetdeviceMigration::DeviceAdd() {
   if (zx::result result =
-          compat_server_.Initialize(incoming(), outgoing(), node_name(), kChildNodeName);
+          compat_server_.Initialize(incoming(), outgoing(), node_name_, kChildNodeName);
       result.is_error()) {
     fdf::error("Failed to initialize compat server: {}", result);
     return result.status_value();
@@ -203,7 +203,7 @@ zx_status_t NetdeviceMigration::DeviceAdd() {
   return ZX_OK;
 }
 
-void NetdeviceMigration::PrepareStop(fdf::PrepareStopCompleter completer) {
+void NetdeviceMigration::Stop(fdf::StopCompleter completer) {
   Shutdown();
   completer(zx::ok());
 }
@@ -767,9 +767,9 @@ void NetdeviceMigration::SetMacParam(uint32_t param, int32_t value,
 
 void NetdeviceMigration::DeviceRemove() {
   // Remove the driver by destroying the node channel.
-  node().TakeChannel().reset();
+  take_node().reset();
 }
 
 }  // namespace netdevice_migration
 
-FUCHSIA_DRIVER_EXPORT(netdevice_migration::NetdeviceMigration);
+FUCHSIA_DRIVER_EXPORT2(netdevice_migration::NetdeviceMigration);

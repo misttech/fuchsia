@@ -9,8 +9,8 @@
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/fzl/owned-vmo-mapper.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <zircon/compiler.h>
@@ -30,19 +30,17 @@ constexpr size_t kPacketSize = 512;
 constexpr size_t kMaxRequestCount = 16;
 
 class UsbFastbootFunction
-    : public fdf::DriverBase,
+    : public fdf::DriverBase2,
       public fidl::WireServer<fuchsia_hardware_fastboot::FastbootImpl>,
       public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
-  explicit UsbFastbootFunction(fdf::DriverStartArgs start_args,
-                               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("usb_fastboot", std::move(start_args), std::move(driver_dispatcher)) {}
+  UsbFastbootFunction() : fdf::DriverBase2("usb_fastboot") {}
 
   virtual ~UsbFastbootFunction() = default;
 
   // Driver lifecycle methods.
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // For inspect test.
   zx::vmo inspect_vmo() { return inspect_.DuplicateVmo(); }

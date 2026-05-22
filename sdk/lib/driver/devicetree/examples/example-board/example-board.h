@@ -5,7 +5,7 @@
 #ifndef LIB_DRIVER_DEVICETREE_EXAMPLES_EXAMPLE_BOARD_EXAMPLE_BOARD_H_
 #define LIB_DRIVER_DEVICETREE_EXAMPLES_EXAMPLE_BOARD_EXAMPLE_BOARD_H_
 
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devicetree/manager/manager.h>
 #include <lib/driver/devicetree/visitors/registry.h>
 #include <lib/zx/result.h>
@@ -16,11 +16,10 @@
 namespace example_board {
 
 // Example device tree based board driver
-class ExampleBoard : public fdf::DriverBase {
+class ExampleBoard : public fdf::DriverBase2 {
  public:
-  ExampleBoard(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher dispatcher)
-      : fdf::DriverBase("example-board", std::move(start_args), std::move(dispatcher)) {}
-  zx::result<> Start() override;
+  ExampleBoard();
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
   fidl::SyncClient<fuchsia_driver_framework::Node> node_;

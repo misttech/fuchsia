@@ -45,15 +45,14 @@ fidl("fuchsia.examples.metadata") {
 Let's say we have a driver that wants to send metadata to its children:
 
 ```cpp
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
-class Sender : public fdf::DriverBase {
+class Sender : public fdf::DriverBase2 {
  public:
-  Sender(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("sender", std::move(start_args), std::move(driver_dispatcher)) {}
+  Sender() : fdf::DriverBase2("sender") {}
 };
 
-FUCHSIA_DRIVER_EXPORT(Sender);
+FUCHSIA_DRIVER_EXPORT2(Sender);
 ```
 
 It's component manifest is the following:
@@ -114,9 +113,9 @@ metadata, and pass the metadata server's offer created by
 // Defines fdf::MetadataServer.
 #include <lib/driver/metadata/cpp/metadata_server.h>
 
-class Sender : public fdf::DriverBase {
+class Sender : public fdf::DriverBase2 {
  public:
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     // Serve the metadata to the driver's outgoing directory.
     fuchsia_examples_metadata::Metadata metadata({.test_property = "test value"});
     ZX_ASSERT(metadata_server_.Serve(*outgoing(), dispatcher(), metadata).is_ok());
@@ -124,14 +123,14 @@ class Sender : public fdf::DriverBase {
     std::vector<fuchsia_driver_framework::Offer> offers;
 
     std::optional<fuchsia_driver_framework::Offer> metadata_offer =
-      metadata_server.CreateOffer();
+      metadata_server_.CreateOffer();
 
     // The metadata server should create an offer because it is serving
     // metadata.
     ZX_ASSERT(metadata_offer.has_value());
 
     // The metadata server's offer must be provided to the child node.
-    offers.push_back(metadata_offer);
+    offers.push_back(*metadata_offer);
 
     zx::result child = AddChild("child", {}, offers);
     if (child.is_error()) {
@@ -223,15 +222,14 @@ Let's say we have a driver that wants to retrieve metadata from its parent
 driver:
 
 ```cpp
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
-class Retriever : public fdf::DriverBase {
+class Retriever : public fdf::DriverBase2 {
  public:
-  Retriever(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("retriever", std::move(start_args), std::move(driver_dispatcher)) {}
+  Retriever() : fdf::DriverBase2("retriever") {}
 };
 
-FUCHSIA_DRIVER_EXPORT(Retriever);
+FUCHSIA_DRIVER_EXPORT2(Retriever);
 ```
 
 It's component manifest is the following:
@@ -287,11 +285,11 @@ needs to call `fdf_metadata::GetMetadata()`:
 // Defines fdf::GetMetadata().
 #include <lib/driver/metadata/cpp/metadata.h>
 
-class Retriever : public fdf::DriverBase {
+class Retriever : public fdf::DriverBase2 {
  public:
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     zx::result<fuchsia_examples_metadata::Metadata> metadata =
-      fdf_metadata::GetMetadata<fuchsia_examples_metadata::Metadata>(incoming());
+      fdf_metadata::GetMetadata<fuchsia_examples_metadata::Metadata>(context.incoming());
     ZX_ASSERT(!metadata.is_error());
 
     return zx::ok();
@@ -348,15 +346,14 @@ Let's say we have a driver that wants to retrieve metadata from its parent
 driver and forward that metadata to its child drivers:
 
 ```cpp
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
-class Forwarder : public fdf::DriverBase {
+class Forwarder : public fdf::DriverBase2 {
  public:
-  Forwarder(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase("forwarder", std::move(start_args), std::move(driver_dispatcher)) {}
+  Forwarder() : fdf::DriverBase2("forwarder") {}
 };
 
-FUCHSIA_DRIVER_EXPORT(Forwarder);
+FUCHSIA_DRIVER_EXPORT2(Forwarder);
 ```
 
 It's component manifest is the following:
@@ -420,15 +417,15 @@ is unable to retrieve metadata from its parent. Instead, it will return
 // Defines fdf::MetadataServer.
 #include <lib/driver/metadata/cpp/metadata_server.h>
 
-class Forwarder : public fdf::DriverBase {
+class Forwarder : public fdf::DriverBase2 {
  public:
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     // Retrieve the metadata from the driver's parent and serve it to the
     // driver's outgoing directory.
     zx::result is_serving = metadata_server_.ForwardAndServe(
       *outgoing(),
       dispatcher(),
-      incoming()).is_ok();
+      context.incoming()).is_ok();
     ZX_ASSERT(is_serving.is_ok());
 
     std::vector<fuchsia_driver_framework::Offer> offers;

@@ -13,9 +13,10 @@
 #include <fuchsia/hardware/nand/cpp/banjo.h>
 #include <lib/async/cpp/task.h>
 #include <lib/driver/compat/cpp/banjo_client.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/inspect/cpp/vmo/types.h>
 #include <lib/zbi-format/partition.h>
+#include <lib/zx/event.h>
 
 #include <atomic>
 #include <memory>
@@ -35,18 +36,16 @@ struct BlockParams {
   uint32_t num_pages;
 };
 
-class BlockDevice : public fdf::DriverBase,
+class BlockDevice : public fdf::DriverBase2,
                     public block_server::DriverInterface,
                     public ftl::FtlInstance,
                     public fidl::Server<fuchsia_driver_token::NodeToken> {
  public:
-  BlockDevice(fdf::DriverStartArgs start_args,
-              fdf::UnownedSynchronizedDispatcher driver_dispatcher);
-  ~BlockDevice() override = default;
+  BlockDevice();
+  ~BlockDevice() override;
 
-  void Start(fdf::StartCompleter completer) override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
-  void Stop() override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // fuchsia_driver_token::NodeToken implementation.
   void Get(GetCompleter::Sync& completer) override;
@@ -64,7 +63,7 @@ class BlockDevice : public fdf::DriverBase,
   zx_status_t FormatInternal();
 
   // Returns a read_only handle to the underlying Inspect VMO.
-  zx::vmo DuplicateInspectVmo() { return inspector().inspector().DuplicateVmo(); }
+  zx::vmo DuplicateInspectVmo() { return exposed_inspector_->inspector().DuplicateVmo(); }
 
   OperationCounters& nand_counters() { return nand_counters_; }
 
@@ -89,7 +88,9 @@ class BlockDevice : public fdf::DriverBase,
 
   uint8_t guid_[ZBI_PARTITION_GUID_LEN] = {};
 
-  Metrics metrics_;
+  std::optional<Metrics> metrics_;
+  std::optional<inspect::ComponentInspector> exposed_inspector_;
+  zx::event node_token_;
 
   // Keeps track of the nand operations being issued for each incoming block operation.
   OperationCounters nand_counters_ __TA_GUARDED(mutex_);

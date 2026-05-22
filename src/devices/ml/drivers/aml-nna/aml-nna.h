@@ -67,7 +67,7 @@ class AmlNnaDriver : public fdf::DriverBase2,
 
   explicit AmlNnaDriver() : fdf::DriverBase2(kDriverName) {}
 
-  // fdf::DriverBase implementation.
+  // fdf::DriverBase2 implementation.
   zx::result<> Start(fdf::DriverContext context) override;
 
   zx_status_t PowerDomainControl(bool turn_on);

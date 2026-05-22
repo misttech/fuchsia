@@ -4,16 +4,17 @@
 
 #include "sdk/lib/driver/metadata/cpp/tests/metadata_integration_test/metadata_forwarder_test_driver/metadata_forwarder_test_driver.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 
 #include <bind/fuchsia_driver_metadata_test_bind_library/cpp/bind.h>
 
 namespace fdf_metadata::test {
 
-zx::result<> MetadataForwarderTestDriver::Start() {
+zx::result<> MetadataForwarderTestDriver::Start(fdf::DriverContext context) {
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
-  zx::result result = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming());
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  zx::result result = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming);
   if (result.is_error()) {
     fdf::error("Failed to forward and serve metadata: {}", result);
     return result.take_error();
@@ -47,4 +48,4 @@ zx::result<> MetadataForwarderTestDriver::Start() {
 
 }  // namespace fdf_metadata::test
 
-FUCHSIA_DRIVER_EXPORT(fdf_metadata::test::MetadataForwarderTestDriver);
+FUCHSIA_DRIVER_EXPORT2(fdf_metadata::test::MetadataForwarderTestDriver);

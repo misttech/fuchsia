@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.hardware.test/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
@@ -16,30 +17,32 @@
 
 namespace fdf_metadata::test {
 
-class FakeDriver : public fdf::DriverBase {
+class FakeDriver : public fdf::DriverBase2 {
  public:
   static DriverRegistration GetDriverRegistration() {
-    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer<FakeDriver>::initialize,
-                                          fdf_internal::DriverServer<FakeDriver>::destroy);
+    return FUCHSIA_DRIVER_REGISTRATION_V1(fdf_internal::DriverServer2<FakeDriver>::initialize,
+                                          fdf_internal::DriverServer2<FakeDriver>::destroy);
   }
 
-  FakeDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("fake", std::move(start_args), std::move(driver_dispatcher)) {}
+  FakeDriver() : fdf::DriverBase2("fake") {}
 
-  zx::result<> Start() override { return zx::ok(); }
+  zx::result<> Start(fdf::DriverContext context) override {
+    incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+    return zx::ok();
+  }
 
   void Serve(const fuchsia_hardware_test::Metadata& metadata) {
     ASSERT_OK(metadata_server_.Serve(*outgoing(), dispatcher(), metadata));
   }
 
   void ForwardAndServe(bool expected_is_serving) {
-    zx::result is_serving = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming());
+    zx::result is_serving = metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), incoming_);
     ASSERT_OK(is_serving);
     ASSERT_EQ(is_serving.value(), expected_is_serving);
   }
 
   void ForwardAndServeFromPDev(bool expected_is_serving) {
-    zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>();
+    zx::result pdev = incoming_->Connect<fuchsia_hardware_platform_device::Service::Device>();
     ASSERT_OK(pdev);
     zx::result is_serving =
         metadata_server_.ForwardAndServe(*outgoing(), dispatcher(), pdev.value());
@@ -53,6 +56,7 @@ class FakeDriver : public fdf::DriverBase {
 
  private:
   fdf_metadata::MetadataServer<fuchsia_hardware_test::Metadata> metadata_server_;
+  std::shared_ptr<fdf::Namespace> incoming_;
 };
 
 class TestEnvironment : public fdf_testing::Environment {

@@ -7,30 +7,40 @@
 #include <fidl/fuchsia.hardware.block.volume/cpp/fidl.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
 #include <lib/ddk/driver.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_offers.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/trace/event.h>
 
 namespace ftl {
 
-BlockDevice::BlockDevice(fdf::DriverStartArgs start_args,
-                         fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : fdf::DriverBase("ftl", std::move(start_args), std::move(driver_dispatcher)),
-      metrics_(inspector().root().CreateChild("ftl")) {}
+BlockDevice::BlockDevice() : fdf::DriverBase2("ftl") {}
 
-void BlockDevice::Start(fdf::StartCompleter completer) {
+BlockDevice::~BlockDevice() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (volume_) {
+    volume_->Unmount();
+  }
+}
+
+zx::result<> BlockDevice::Start(fdf::DriverContext context) {
+  node_token_ = context.take_node_token();
+  exposed_inspector_.emplace(context.CreateInspector(this));
+  metrics_.emplace(exposed_inspector_->root().CreateChild("ftl"));
+
+  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+
   zx::result<ddk::NandProtocolClient> parent_client =
-      compat::ConnectBanjo<ddk::NandProtocolClient>(incoming());
+      compat::ConnectBanjo<ddk::NandProtocolClient>(incoming);
   if (parent_client.is_error()) {
     FDF_LOG(ERROR, "Failed to connect to parent nand protocol: %s", parent_client.status_string());
-    completer(parent_client.take_error());
-    return;
+    return parent_client.take_error();
   }
   parent_client->GetProto(&parent_);
 
   zx::result<ddk::BadBlockProtocolClient> bad_block_client =
-      compat::ConnectBanjo<ddk::BadBlockProtocolClient>(incoming());
+      compat::ConnectBanjo<ddk::BadBlockProtocolClient>(incoming);
   if (bad_block_client.is_ok()) {
     bad_block_client->GetProto(&bad_block_);
   } else {
@@ -39,8 +49,7 @@ void BlockDevice::Start(fdf::StartCompleter completer) {
 
   if (!InitFtl()) {
     FDF_LOG(ERROR, "Failed to initialize FTL");
-    completer(zx::error(ZX_ERR_INTERNAL));
-    return;
+    return zx::error(ZX_ERR_INTERNAL);
   }
 
   block_server::PartitionInfo partition_info = {
@@ -80,8 +89,7 @@ void BlockDevice::Start(fdf::StartCompleter completer) {
       outgoing()->AddService<fuchsia_hardware_block_volume::Service>(std::move(handler));
   if (add_block_result.is_error()) {
     FDF_LOG(ERROR, "Failed to add block protocol: %s", add_block_result.status_string());
-    completer(add_block_result.take_error());
-    return;
+    return add_block_result.take_error();
   }
 
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> node_result =
@@ -89,15 +97,14 @@ void BlockDevice::Start(fdf::StartCompleter completer) {
                std::vector{fdf::MakeOffer2<fuchsia_hardware_block_volume::Service>()});
   if (node_result.is_error()) {
     FDF_LOG(ERROR, "Failed to add child node: %s", node_result.status_string());
-    completer(node_result.take_error());
-    return;
+    return node_result.take_error();
   }
 
   ScheduleFlush();
-  completer(zx::ok());
+  return zx::ok();
 }
 
-void BlockDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
+void BlockDevice::Stop(fdf::StopCompleter completer) {
   std::lock_guard<std::mutex> lock(mutex_);
   shutdown_ = true;
   if (block_server_) {
@@ -110,13 +117,6 @@ void BlockDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
     });
   } else {
     completer(zx::ok());
-  }
-}
-
-void BlockDevice::Stop() {
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (volume_) {
-    volume_->Unmount();
   }
 }
 
@@ -136,11 +136,11 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
 
     switch (request.operation.tag) {
       case block_server::Operation::Tag::Read:
-        op_stats = &metrics_.read();
+        op_stats = &metrics_->read();
         [[fallthrough]];
       case block_server::Operation::Tag::Write: {
         if (request.operation.tag == block_server::Operation::Tag::Write) {
-          op_stats = &metrics_.write();
+          op_stats = &metrics_->write();
           pending_flush_ = true;
         }
 
@@ -178,7 +178,7 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
         break;
       }
       case block_server::Operation::Tag::Trim: {
-        op_stats = &metrics_.trim();
+        op_stats = &metrics_->trim();
         status = block_server::CheckIoRange(request, params_.num_pages);
         if (status != ZX_OK) {
           break;
@@ -188,7 +188,7 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
         break;
       }
       case block_server::Operation::Tag::Flush: {
-        op_stats = &metrics_.flush();
+        op_stats = &metrics_->flush();
         status = volume_->Flush();
         pending_flush_ = false;
         break;
@@ -214,14 +214,14 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
 
     Volume::Counters counters;
     if (volume_->GetCounters(&counters) == ZX_OK) {
-      metrics_.max_wear().Set(counters.wear_count);
-      metrics_.initial_bad_blocks().Set(counters.initial_bad_blocks);
-      metrics_.running_bad_blocks().Set(counters.running_bad_blocks);
-      metrics_.total_bad_blocks().Set(counters.initial_bad_blocks + counters.running_bad_blocks);
-      metrics_.worn_blocks_detected().Set(counters.worn_blocks_detected);
-      metrics_.projected_bad_blocks().Set(counters.initial_bad_blocks +
-                                          counters.running_bad_blocks +
-                                          counters.worn_blocks_detected);
+      metrics_->max_wear().Set(counters.wear_count);
+      metrics_->initial_bad_blocks().Set(counters.initial_bad_blocks);
+      metrics_->running_bad_blocks().Set(counters.running_bad_blocks);
+      metrics_->total_bad_blocks().Set(counters.initial_bad_blocks + counters.running_bad_blocks);
+      metrics_->worn_blocks_detected().Set(counters.worn_blocks_detected);
+      metrics_->projected_bad_blocks().Set(counters.initial_bad_blocks +
+                                           counters.running_bad_blocks +
+                                           counters.worn_blocks_detected);
     }
 
     if (block_server_) {
@@ -291,17 +291,17 @@ bool BlockDevice::InitFtl() {
   if (volume_->GetStats(&stats) == ZX_OK) {
     FDF_LOG(INFO, "FTL: Wear count: %u, Garbage level: %d%%", stats.wear_count,
             stats.garbage_level);
-    metrics_.max_wear().Set(stats.wear_count);
-    metrics_.initial_bad_blocks().Set(stats.initial_bad_blocks);
-    metrics_.running_bad_blocks().Set(stats.running_bad_blocks);
-    metrics_.total_bad_blocks().Set(stats.initial_bad_blocks + stats.running_bad_blocks);
-    metrics_.worn_blocks_detected().Set(stats.worn_blocks_detected);
-    metrics_.projected_bad_blocks().Set(stats.initial_bad_blocks + stats.running_bad_blocks +
-                                        stats.worn_blocks_detected);
+    metrics_->max_wear().Set(stats.wear_count);
+    metrics_->initial_bad_blocks().Set(stats.initial_bad_blocks);
+    metrics_->running_bad_blocks().Set(stats.running_bad_blocks);
+    metrics_->total_bad_blocks().Set(stats.initial_bad_blocks + stats.running_bad_blocks);
+    metrics_->worn_blocks_detected().Set(stats.worn_blocks_detected);
+    metrics_->projected_bad_blocks().Set(stats.initial_bad_blocks + stats.running_bad_blocks +
+                                         stats.worn_blocks_detected);
 
     static_assert(std::size(stats.map_block_end_page_failure_reasons) == Metrics::kReasonCount);
     for (int i = 0; i < Metrics::kReasonCount; ++i) {
-      metrics_.map_block_end_page_failure_reason(i).Set(
+      metrics_->map_block_end_page_failure_reason(i).Set(
           stats.map_block_end_page_failure_reasons[i]);
     }
   }
@@ -311,9 +311,14 @@ bool BlockDevice::InitFtl() {
 }
 
 void BlockDevice::Get(GetCompleter::Sync& completer) {
-  zx::event token = node_token();
-  if (token.is_valid()) {
-    completer.Reply(zx::ok(std::move(token)));
+  if (node_token_.is_valid()) {
+    zx::event token;
+    if (zx_status_t status = node_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &token); status == ZX_OK) {
+      completer.Reply(zx::ok(std::move(token)));
+      return;
+    } else {
+      completer.Reply(zx::error(status));
+    }
   } else {
     completer.Reply(zx::error(ZX_ERR_NOT_FOUND));
   }
@@ -321,4 +326,4 @@ void BlockDevice::Get(GetCompleter::Sync& completer) {
 
 }  // namespace ftl
 
-FUCHSIA_DRIVER_EXPORT(ftl::BlockDevice);
+FUCHSIA_DRIVER_EXPORT2(ftl::BlockDevice);

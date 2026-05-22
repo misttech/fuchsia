@@ -22,7 +22,7 @@ class TestRootDriver : public fdf::DriverBase, public fidl::Server<fuchsia_hardw
                  fdf::UnownedSynchronizedDispatcher driver_dispatcher)
       : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
 
-  // fdf::DriverBase implementation.
+  // fdf::DriverBase2 implementation.
   zx::result<> Start() override;
 
   // fidl::Server<fuchsia_hardware_test::Root> implementation.

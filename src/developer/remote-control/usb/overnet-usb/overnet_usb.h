@@ -13,7 +13,7 @@
 #include <lib/async-loop/loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/cpp/wait.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/structured_logger.h>
 #include <lib/fit/function.h>
@@ -39,16 +39,14 @@ using namespace fuchsia_driver_framework;
 
 class OvernetUsb;
 
-class OvernetUsb : public fdf::DriverBase,
+class OvernetUsb : public fdf::DriverBase2,
                    public fidl::WireServer<fuchsia_hardware_overnet::Usb>,
                    public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
-  explicit OvernetUsb(fdf::DriverStartArgs start_args,
-                      fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("overnet-usb", std::move(start_args), std::move(driver_dispatcher)) {}
+  OvernetUsb() : fdf::DriverBase2("overnet-usb") {}
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter Completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   void SetCallback(fuchsia_hardware_overnet::wire::UsbSetCallbackRequest* request,
                    SetCallbackCompleter::Sync& completer) override;

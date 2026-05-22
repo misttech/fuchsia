@@ -30,7 +30,7 @@ Replace DDK dependencies in source header files:
 * {DFv2}
 
   ```cpp
-  #include <lib/driver/component/cpp/driver_base.h>
+  #include <lib/driver/component/cpp/driver_base2.h>
   ```
 
 ### Build dependencies
@@ -83,19 +83,18 @@ simplifies writing DDK drivers in C++.
 
 * {DFv2}
 
-  In DFv2, the [`DriverBase`][driver-base] class is used to write drivers.
-  DFv2 drivers need to inherit from the `DriverBase` class instead of the
+  In DFv2, the [`DriverBase2`][driver-base] class is used to write drivers.
+  DFv2 drivers need to inherit from the `DriverBase2` class instead of the
   `ddk::Device` mixin, for example:
 
   ```cpp
-  #include <lib/driver/component/cpp/driver_base.h>
+  #include <lib/driver/component/cpp/driver_base2.h>
 
-  class SimpleDriver : public fdf::DriverBase {
+  class SimpleDriver : public fdf::DriverBase2 {
    public:
-    SimpleDriver(fdf::DriverStartArgs start_args,
-                 fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+    SimpleDriver();
 
-    zx::result<> Start() override;
+    zx::result<> Start(fdf::DriverContext context) override;
   };
   ```
 
@@ -124,7 +123,7 @@ static zx_driver_ops_t simple_driver_ops = [][5] -> zx_driver_ops_t {
 }();
 ```
 
-In DFv2, all of the DFv1 logic needs to go into the `DriverBase` class's
+In DFv2, all of the DFv1 logic needs to go into the `DriverBase2` class's
 `Start()` function in the following order: Constructor, Init hook, and
 Bind hook.
 
@@ -165,15 +164,15 @@ Bind hook.
 * {DFv2}
 
   ```cpp
-  class SimpleDriver : public fdf::DriverBase {
+  class SimpleDriver : public fdf::DriverBase2 {
    public:
-    SimpleDriver(fdf::DriverStartArgs start_args,
-                 fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+    SimpleDriver() : fdf::DriverBase2("simple_driver") {}
 
-    zx::result<> Start() override {
-       zxlogf(INFO, "SimpleDriver constructor logic");
-       zxlogf(INFO, "SimpleDriver initialized");
-       zxlogf(INFO, "SimpleDriver bind logic");
+    zx::result<> Start(fdf::DriverContext context) override {
+       fdf::info("SimpleDriver constructor logic");
+       fdf::info("SimpleDriver initialized");
+       fdf::info("SimpleDriver bind logic");
+       return zx::ok();
     }
   };
   ```
@@ -184,25 +183,20 @@ In DFv1, the destructor, `DdkSuspend()`, `DdkUnbind()`, and `DdkRelease()` are
 used for tearing down objects and threads (for more information on these hooks,
 see this [DFv1 simple driver example][dfv1-simple-driver]).
 
-In DFv2, the teardown logic needs to be implemented in `PrepareStop()` and
-`Stop()` methods of the `DriverBase` class, for example:
+In DFv2, the teardown logic needs to be implemented in the `Stop()` method (for asynchronous cleanup) or the destructor (for synchronous cleanup) of the `DriverBase2` class, for example:
 
 ```cpp
-class SimpleDriver : public fdf::DriverBase {
+class SimpleDriver : public fdf::DriverBase2 {
  public:
-  SimpleDriver(fdf::DriverStartArgs start_args,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher);
-  ...
-
-  zx::result<> PrepareStop(fdf::PrepareStopCompleter completer) override{
-     // Called before the driver dispatchers are shutdown. Only implement this function
-     // if you need to manually clean up objects (ex/ unique_ptrs) in the driver dispatchers");
-     completer(zx::ok());
+  SimpleDriver() : fdf::DriverBase2("simple_driver") {}
+  ~SimpleDriver() override {
+     // Perform synchronous teardowns here
   }
 
-  zx::result<> Stop() {
-     // This is called after all driver dispatchers are shutdown.
-     // Use this function to perform any remaining teardowns
+  void Stop(fdf::StopCompleter completer) override {
+     // Called before the driver dispatchers are shutdown. Only implement this function
+     // if you need to manually clean up objects asynchronously before dispatchers shutdown.
+     completer(zx::ok());
   }
 };
 ```
@@ -244,9 +238,9 @@ in the `.cc` file.
   example:
 
   ```cpp
-  #include <lib/driver/component/cpp/driver_export.h>
+  #include <lib/driver/component/cpp/driver_export2.h>
   ...
-  FUCHSIA_DRIVER_EXPORT(simple::SimpleDriver);
+  FUCHSIA_DRIVER_EXPORT2(simple::SimpleDriver);
   ```
 
 ### ddk::Messageable mixin
@@ -271,7 +265,7 @@ from the FIDL server.
 * {DFv2}
 
   ```cpp
-  class I2cDriver : public DriverBase, public fidl::WireServer<fuchsia_hardware_i2c::Device> {
+  class I2cDriver : public DriverBase2, public fidl::WireServer<fuchsia_hardware_i2c::Device> {
     ...
     // Functions from the fuchsia.hardware.i2c Device protocol
     void Transfer(TransferRequestView request, TransferCompleter::Sync& completer) override;
@@ -288,7 +282,7 @@ directory:
    `fdf::ServerBindingGroup` for driver transport, for example:
 
    ```cpp
-   class I2cDriver: public DriverBase {
+   class I2cDriver: public DriverBase2 {
      ...
      private:
        fidl::ServerBindingGroup<fidl_i2c::Device> bindings_;
@@ -353,7 +347,7 @@ a Banjo server. In DFv2, we replace the call with the
 
   ```cpp
   zx::result<ddk::MiscProtocolClient> client =
-       compat::ConnectBanjo<ddk::MiscProtocolClient>(incoming());
+       compat::ConnectBanjo<ddk::MiscProtocolClient>(incoming);
   ```
 
 ### FIDL connect functions
@@ -387,7 +381,7 @@ to the FIDL protocols.
 
   ```cpp
   zx::result<fidl::ClientEnd<fuchsia_examples_gizmo::Device>> connect_result =
-      incoming()->Connect<fuchsia_examples_gizmo::Service::Device>();
+      context.incoming().Connect<fuchsia_examples_gizmo::Service::Device>();
   if (connect_result.is_error()) {
     fdf::error("Failed to connect gizmo device protocol: {}", connect_result);
     return connect_result.take_error();
@@ -414,7 +408,7 @@ to the FIDL protocols.
 
   ```cpp
   zx::result<fidl::ClientEnd<fuchsia_examples_gizmo::Device>> connect_result =
-      incoming()->Connect<fuchsia_examples_gizmo::Service::Device>("gizmo");
+      context.incoming().Connect<fuchsia_examples_gizmo::Service::Device>("gizmo");
   if (connect_result.is_error()) {
     fdf::error("Failed to connect gizmo device protocol: {}", connect_result);
     return connect_result.take_error();
@@ -440,7 +434,7 @@ to the FIDL protocols.
 
   ```cpp
   zx::result<fidl::ClientEnd<fuchsia_examples_gizmo::Device>> connect_result =
-      incoming()->Connect<fuchsia_examples_gizmo::Service::Device>();
+      context.incoming().Connect<fuchsia_examples_gizmo::Service::Device>();
   if (connect_result.is_error()) {
     fdf::error("Failed to connect gizmo device protocol: {}", connect_result);
     return connect_result.take_error();
@@ -466,7 +460,7 @@ to the FIDL protocols.
 
   ```cpp
   zx::result<fidl::ClientEnd<fuchsia_examples_gizmo::Device>> connect_result =
-      incoming()->Connect<fuchsia_examples_gizmo::Service::Device>("gizmo_parent");
+      context.incoming().Connect<fuchsia_examples_gizmo::Service::Device>("gizmo_parent");
   if (connect_result.is_error()) {
     fdf::error("Failed to connect gizmo device protocol: {}", connect_result);
     return connect_result.take_error();
@@ -522,7 +516,7 @@ To migrate these metadata functions to DFv2, do the following:
   fidl::Arena arena;
   zx::result i2c_bus_metadata =
       compat::GetMetadata<fuchsia_hardware_i2c_businfo::wire::I2CBusMetadata>(
-          incoming(), arena, DEVICE_METADATA_I2C_CHANNELS);
+          incoming, arena, DEVICE_METADATA_I2C_CHANNELS);
   ```
 
 ## Migrate other interfaces {:#migrating-other-interfaces}

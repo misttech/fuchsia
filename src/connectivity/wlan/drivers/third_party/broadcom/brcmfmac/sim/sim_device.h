@@ -42,7 +42,7 @@ class SimDevice final : public fdf::DriverBase2, public Device {
   void handle_unknown_event(
       fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
 
-  zx_status_t BusInit() override;
+  zx_status_t BusInit(const std::shared_ptr<fdf::Namespace>& incoming) override;
 
   // Set the `simulation::Environment` instance and outgoing directory client (from start_args) that
   // the SimDevice will use. This should be called after `Start()` is called, but before any test
@@ -59,7 +59,6 @@ class SimDevice final : public fdf::DriverBase2, public Device {
   DeviceInspect* GetInspect() override { return inspect_.get(); }
   fidl::WireClient<fdf::Node>& GetParentNode() override { return parent_node_; }
   std::shared_ptr<fdf::OutgoingDirectory>& Outgoing() override { return outgoing(); }
-  const std::shared_ptr<fdf::Namespace>& Incoming() const override { return incoming_; }
 
   // Trampolines for DDK functions, for platforms that support them.
   zx_status_t LoadFirmware(const char* path, zx_handle_t* fw, size_t* size) override;
@@ -90,7 +89,6 @@ class SimDevice final : public fdf::DriverBase2, public Device {
   SimDataPath data_path_;
   fidl::WireClient<fdf::Node> parent_node_;
   libsync::Completion recovery_complete_;
-  std::shared_ptr<fdf::Namespace> incoming_;
 
   std::optional<inspect::ComponentInspector> component_inspector_;
 };

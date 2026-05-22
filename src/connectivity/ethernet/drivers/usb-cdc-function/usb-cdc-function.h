@@ -11,7 +11,7 @@
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/sync/cpp/completion.h>
 #include <zircon/listnode.h>
@@ -40,7 +40,7 @@ namespace fnetdev = fuchsia_hardware_network_driver;
 #define ETH_MTU 1514
 #define ETH_MAC_SIZE 6
 
-class UsbCdcFunction : public fdf::DriverBase,
+class UsbCdcFunction : public fdf::DriverBase2,
                        public fdf::WireServer<fnetdev::NetworkDeviceImpl>,
                        public fdf::WireServer<fnetdev::NetworkPort>,
                        public fdf::WireServer<fnetdev::MacAddr>,
@@ -52,9 +52,8 @@ class UsbCdcFunction : public fdf::DriverBase,
   static constexpr size_t kRxDepth = 16;
   static constexpr fdf_arena_tag_t kArenaTag = 'CDCE';
 
-  UsbCdcFunction(fdf::DriverStartArgs start_args,
-                 fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)),
+  UsbCdcFunction()
+      : fdf::DriverBase2(kDriverName),
         vmo_store_({
             .map =
                 vmo_store::MapOptions{
@@ -65,12 +64,14 @@ class UsbCdcFunction : public fdf::DriverBase,
 
   // Unhide the inherited Start and Stop methods to avoid ambiguity with the
   // fnetdev::NetworkDeviceImpl::Start and Stop methods.
-  using fdf::DriverBase::Start;
-  using fdf::DriverBase::Stop;
+  using fdf::DriverBase2::Start;
+  using fdf::DriverBase2::Stop;
 
-  // fdf::DriverBase implementation.
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  // fdf::DriverBase2 implementation.
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
+
+  const std::shared_ptr<fdf::Namespace> &incoming() const { return incoming_; }
 
   // NetworkDeviceImpl protocol:
   void Init(fnetdev::wire::NetworkDeviceImplInitRequest *request, fdf::Arena &arena,
@@ -163,6 +164,7 @@ class UsbCdcFunction : public fdf::DriverBase,
   fdf::WireClient<fuchsia_hardware_network_driver::NetworkDeviceIfc> netdevice_ifc_;
 
   compat::SyncInitializedDeviceServer child_;
+  std::shared_ptr<fdf::Namespace> incoming_;
 
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> child_controller_;
 
@@ -200,7 +202,7 @@ class UsbCdcFunction : public fdf::DriverBase,
   VmoStore vmo_store_;
 
   std::queue<fnetdev::wire::RxSpaceBuffer> rx_space_buffers_;
-  std::optional<fdf::PrepareStopCompleter> stop_completer_;
+  std::optional<fdf::StopCompleter> stop_completer_;
 
   struct {
     usb_interface_descriptor_t comm_intf;

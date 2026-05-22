@@ -9,7 +9,8 @@
 #include <fidl/fuchsia.hardware.usb.request/cpp/fidl.h>
 #include <fuchsia/hardware/ethernet/cpp/banjo.h>
 #include <lib/driver/compat/cpp/banjo_client.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -25,7 +26,6 @@
 #include <fbl/auto_lock.h>
 #include <fbl/condition_variable.h>
 #include <fbl/mutex.h>
-#include <sdk/lib/driver/component/cpp/driver_base.h>
 #include <usb-endpoint/usb-endpoint-client.h>
 #include <usb/cdc.h>
 #include <usb/request-fidl.h>
@@ -43,18 +43,17 @@ constexpr size_t INTR_MAX_PACKET = 8;
 class FakeUsbAx88179Function;
 
 class FakeUsbAx88179Function
-    : public fdf::DriverBase,
+    : public fdf::DriverBase2,
       public fidl::WireServer<fuchsia_hardware_ax88179::Hooks>,
       public fidl::Server<fuchsia_hardware_usb_function::UsbFunctionInterface> {
  public:
   static constexpr std::string kDriverName = "FakeUsbAx88179Function";
 
-  FakeUsbAx88179Function(fdf::DriverStartArgs start_args,
-                         fdf::UnownedSynchronizedDispatcher dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(dispatcher)),
+  FakeUsbAx88179Function()
+      : fdf::DriverBase2(kDriverName),
         connector_{fit::bind_member<&FakeUsbAx88179Function::DevfsConnect>(this)} {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   // UsbFunctionInterface:
   void Control(ControlRequest& request, ControlCompleter::Sync& completer) override;
@@ -123,7 +122,7 @@ void FakeUsbAx88179Function::SetOnline(SetOnlineRequestView request,
   completer.Reply(ZX_OK);
 }
 
-zx::result<> FakeUsbAx88179Function::Start() {
+zx::result<> FakeUsbAx88179Function::Start(fdf::DriverContext context) {
   fbl::AutoLock lock(&mtx_);
 
   descriptor_size_ = sizeof(descriptor_);
@@ -164,7 +163,7 @@ zx::result<> FakeUsbAx88179Function::Start() {
   };
 
   zx::result func =
-      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+      context.incoming().Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (func.is_error()) {
     fdf::error("Failed to connect to usb endpoint service: {}", func);
     return func.take_error();
@@ -357,4 +356,4 @@ void FakeUsbAx88179Function::IntrComplete(
 
 }  // namespace fake_usb_ax88179_function
 
-FUCHSIA_DRIVER_EXPORT(fake_usb_ax88179_function::FakeUsbAx88179Function);
+FUCHSIA_DRIVER_EXPORT2(fake_usb_ax88179_function::FakeUsbAx88179Function);

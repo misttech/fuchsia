@@ -339,8 +339,9 @@ void UsbFastbootFunction::handle_unknown_method(
   fdf::error("Unknown method {}", metadata.method_ordinal);
 }
 
-zx::result<> UsbFastbootFunction::Start() {
-  auto client = incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+zx::result<> UsbFastbootFunction::Start(fdf::DriverContext context) {
+  auto client =
+      context.incoming().Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (client.is_error()) {
     fdf::error("Failed to connect to UsbFunctionService: {}", client.status_string());
     return client.take_error();
@@ -444,8 +445,8 @@ zx::result<> UsbFastbootFunction::Start() {
   return zx::ok();
 }
 
-void UsbFastbootFunction::PrepareStop(fdf::PrepareStopCompleter completer) { completer(zx::ok()); }
+void UsbFastbootFunction::Stop(fdf::StopCompleter completer) { completer(zx::ok()); }
 
 }  // namespace usb_fastboot_function
 
-FUCHSIA_DRIVER_EXPORT(usb_fastboot_function::UsbFastbootFunction);
+FUCHSIA_DRIVER_EXPORT2(usb_fastboot_function::UsbFastbootFunction);

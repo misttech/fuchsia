@@ -50,7 +50,7 @@ class PmemDriver : public fdf::DriverBase2,
   PmemDriver() : fdf::DriverBase2(kDriverName) {}
   ~PmemDriver() override = default;
 
-  // fdf::DriverBase implementation.
+  // fdf::DriverBase2 implementation.
   zx::result<> Start(fdf::DriverContext context) final;
 
  private:

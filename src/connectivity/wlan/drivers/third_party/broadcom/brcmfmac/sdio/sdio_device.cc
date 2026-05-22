@@ -24,8 +24,8 @@
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/compat/cpp/metadata.h>
 #include <lib/driver/compat/cpp/symbols.h>
-#include <lib/driver/component/cpp/driver_base.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <lib/fit/defer.h>
 #include <lib/zircon-internal/align.h>
@@ -46,17 +46,17 @@ constexpr auto kOpenFlags = fuchsia_io::Flags::kPermReadBytes | fuchsia_io::Flag
 namespace wlan {
 namespace brcmfmac {
 
-SdioDevice::SdioDevice(fdf::DriverStartArgs start_args,
-                       fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("brcmfmac", std::move(start_args), std::move(driver_dispatcher)),
-      parent_node_(fidl::WireClient(std::move(node()), dispatcher())) {}
+SdioDevice::SdioDevice() : fdf::DriverBase2("brcmfmac") {}
 
 SdioDevice::~SdioDevice() = default;
 
-void SdioDevice::Start(fdf::StartCompleter completer) {
+void SdioDevice::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
   wlan::drivers::log::Instance::Init(Debug::kBrcmfMsgFilter);
+  component_inspector_.emplace(context.CreateInspector(this));
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  parent_node_.Bind(take_node(), dispatcher());
 
-  zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
+  zx::result pdev = incoming_->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (pdev.is_error()) {
     BRCMF_ERR("Failed to connect to platform device: %s", pdev.status_string());
     completer(pdev.take_error());
@@ -66,14 +66,14 @@ void SdioDevice::Start(fdf::StartCompleter completer) {
 
   zx::result<> result = [&]() -> zx::result<> {
     fidl::Arena arena;
-    zx_status_t status = InitDevice(*outgoing());
+    zx_status_t status = InitDevice(*outgoing(), incoming_);
     if (status != ZX_OK) {
       BRCMF_ERR("Init failed: %s", zx_status_get_string(status));
       return zx::error(status);
     }
 
     zx::result<std::unique_ptr<DeviceInspect>> result = DeviceInspect::Create(
-        fdf_dispatcher_get_async_dispatcher(GetDriverDispatcher()), inspector().root());
+        fdf_dispatcher_get_async_dispatcher(GetDriverDispatcher()), component_inspector_->root());
     if (result.is_error()) {
       BRCMF_ERR("Device Inspect create failed: %s", zx_status_get_string(status));
       return result.take_error();
@@ -92,7 +92,7 @@ void SdioDevice::Start(fdf::StartCompleter completer) {
   completer(zx::ok());
 }
 
-void SdioDevice::PrepareStop(fdf::PrepareStopCompleter completer) {
+void SdioDevice::Stop(fdf::StopCompleter completer) {
   SdioDevice::Shutdown([completer = std::move(completer)]() mutable { completer(zx::ok()); });
 }
 
@@ -105,12 +105,12 @@ void SdioDevice::Shutdown(fit::callback<void()>&& on_complete) {
   Device::Shutdown([on_complete = std::move(on_complete)]() mutable { on_complete(); });
 }
 
-zx_status_t SdioDevice::BusInit() {
+zx_status_t SdioDevice::BusInit(const std::shared_ptr<fdf::Namespace>& incoming) {
   zx_status_t status = ZX_OK;
 
   fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> fidl_gpios[GPIO_COUNT] = {};
 
-  auto client_end = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>("gpio-oob");
+  auto client_end = incoming->Connect<fuchsia_hardware_gpio::Service::Device>("gpio-oob");
   if (client_end.is_error() || !client_end->is_valid()) {
     BRCMF_ERR("Failed to connect to oob GPIO service: %s", client_end.status_string());
     return client_end.status_value();
@@ -124,7 +124,7 @@ zx_status_t SdioDevice::BusInit() {
   }
 
   // Attempt to connect to the DEBUG GPIO, ignore if not available.
-  client_end = incoming()->Connect<fuchsia_hardware_gpio::Service::Device>("gpio-debug");
+  client_end = incoming->Connect<fuchsia_hardware_gpio::Service::Device>("gpio-debug");
   if (client_end.is_error() || !client_end->is_valid()) {
     BRCMF_DBG(SDIO, "Failed to connect to debug GPIO service: %s", client_end.status_string());
   } else {
@@ -137,14 +137,14 @@ zx_status_t SdioDevice::BusInit() {
   ddk::SdioProtocolClient banjo_sdios[SDIO_FN_COUNT];
 
   zx::result sdio_client =
-      compat::ConnectBanjo<ddk::SdioProtocolClient>(incoming(), "sdio-function-1");
+      compat::ConnectBanjo<ddk::SdioProtocolClient>(incoming, "sdio-function-1");
   if (sdio_client.is_error()) {
     BRCMF_ERR("Failed to connect client status %s", sdio_client.status_string());
     return sdio_client.status_value();
   }
   banjo_sdios[SDIO_FN1_INDEX] = *sdio_client;
 
-  sdio_client = compat::ConnectBanjo<ddk::SdioProtocolClient>(incoming(), "sdio-function-2");
+  sdio_client = compat::ConnectBanjo<ddk::SdioProtocolClient>(incoming, "sdio-function-2");
   if (sdio_client.is_error()) {
     BRCMF_ERR("Failed to connect client status %s", sdio_client.status_string());
     return sdio_client.status_value();
@@ -182,7 +182,7 @@ zx_status_t SdioDevice::BusInit() {
 zx_status_t SdioDevice::LoadFirmware(const char* path, zx_handle_t* fw, size_t* size) {
   std::string full_filename = "/pkg/lib/firmware/";
   full_filename.append(path);
-  auto client = incoming()->Open<fuchsia_io::File>(full_filename.c_str(), kOpenFlags);
+  auto client = incoming_->Open<fuchsia_io::File>(full_filename.c_str(), kOpenFlags);
   if (client.is_error()) {
     BRCMF_INFO("Open firmware file failed: %s", zx_status_get_string(client.error_value()));
     return client.error_value();
@@ -220,7 +220,7 @@ zx::result<std::vector<uint8_t>> SdioDevice::DeviceGetPersistedMetadata(
     std::string_view metadata_serializable_name) {
   if (metadata_serializable_name == fuchsia_boot_metadata::MacAddressMetadata::kSerializableName) {
     zx::result metadata =
-        fdf_metadata::GetMetadata<fuchsia_boot_metadata::MacAddressMetadata>(incoming(), "pdev");
+        fdf_metadata::GetMetadata<fuchsia_boot_metadata::MacAddressMetadata>(incoming_, "pdev");
     if (metadata.is_error()) {
       BRCMF_ERR("Failed to get mac address metadata: %s", metadata.status_string());
       return metadata.take_error();
@@ -248,4 +248,4 @@ zx::result<fuchsia_wlan_broadcom::WifiConfig> SdioDevice::GetWifiConfig() {
 
 }  // namespace brcmfmac
 }  // namespace wlan
-FUCHSIA_DRIVER_EXPORT(::wlan::brcmfmac::SdioDevice);
+FUCHSIA_DRIVER_EXPORT2(::wlan::brcmfmac::SdioDevice);

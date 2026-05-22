@@ -25,7 +25,7 @@ class RamNandCtl : public fdf::DriverBase2,
 
   explicit RamNandCtl() : fdf::DriverBase2(kDriverName) {}
 
-  // fdf::DriverBase implementation.
+  // fdf::DriverBase2 implementation.
   zx::result<> Start(fdf::DriverContext context) override;
 
   // fidl::WireServer<fuchsia_hardware_nand::RamNandCtl> implementation.

@@ -73,7 +73,7 @@ class FtDevice : public fdf::DriverBase2,
 
   explicit FtDevice();
 
-  // fdf::DriverBase implementation.
+  // fdf::DriverBase2 implementation.
   zx::result<> Start(fdf::DriverContext context) override;
 
   // fidl::WireServer<fuchsia_input_report::InputDevice> implementation.

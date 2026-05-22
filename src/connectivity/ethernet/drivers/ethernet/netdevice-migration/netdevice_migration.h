@@ -10,7 +10,7 @@
 #include <fuchsia/hardware/ethernet/cpp/banjo.h>
 #include <lib/driver/compat/cpp/banjo_server.h>
 #include <lib/driver/compat/cpp/device_server.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/sync/cpp/completion.h>
 #include <zircon/system/public/zircon/compiler.h>
 
@@ -36,7 +36,7 @@ using Netbuf = eth::Operation<uint32_t>;
 using NetbufPool = eth::OperationPool<uint32_t>;
 
 class NetdeviceMigration
-    : public fdf::DriverBase,
+    : public fdf::DriverBase2,
       public ddk::EthernetIfcProtocol<NetdeviceMigration>,
       public fdf::WireServer<fuchsia_hardware_network_driver::NetworkDeviceImpl>,
       public fdf::WireServer<fuchsia_hardware_network_driver::NetworkPort>,
@@ -54,17 +54,16 @@ class NetdeviceMigration
   static constexpr uint32_t kMulticastFilterMax = netdev::wire::kMaxMacFilter;
   static constexpr const char kChildNodeName[] = "netdevice-migration-compat";
 
-  NetdeviceMigration(fdf::DriverStartArgs start_args,
-                     fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  NetdeviceMigration();
 
-  // DriverBase implementation. This overrides both of the Start methods and the Stop method to
-  // ensure that they are not hidden by the NetworkDeviceImpl methods with the same name.
-  zx::result<> Start() override;
-  // The documentation says that the asynchronous version will be preferred, make it behave as the
-  // synchronous version.
-  void Start(fdf::StartCompleter completer) override { completer(Start()); }
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
-  void Stop() override {}
+  using fdf::DriverBase2::Start;
+  using fdf::DriverBase2::Stop;
+
+  // DriverBase2 implementation.
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
+
+  const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
 
   // For EthernetIfcProtocol.
   void EthernetIfcStatus(uint32_t status) __TA_EXCLUDES(status_lock_);
@@ -148,6 +147,9 @@ class NetdeviceMigration
 
   network::SharedLock vmo_lock_ __TA_ACQUIRED_BEFORE(tx_lock_) __TA_ACQUIRED_AFTER(rx_lock_);
   std::unique_ptr<NetdeviceMigrationVmoStore> vmo_store_ __TA_GUARDED(vmo_lock_);
+
+  std::shared_ptr<fdf::Namespace> incoming_;
+  std::optional<std::string> node_name_;
 
   friend class NetdeviceMigrationTestHelper;
 };

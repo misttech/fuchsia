@@ -80,9 +80,8 @@ class Driver : public fdf::DriverBase2 {
 
   explicit Driver() : fdf::DriverBase2(kDriverName) {}
 
-  // fdf::DriverBase implementation.
+  // fdf::DriverBase2 implementation.
   zx::result<> Start(fdf::DriverContext context) override;
-
 
  private:
   std::vector<std::unique_ptr<NandPartDevice>> devices_;

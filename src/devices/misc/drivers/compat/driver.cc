@@ -322,20 +322,17 @@ std::optional<size_t> GlobalLoggerList::loggers_count_for_testing(const std::str
   return std::nullopt;
 }
 
-Driver::Driver(fdf::DriverStartArgs start_args, zx::vmo config_vmo,
-               fdf::UnownedSynchronizedDispatcher driver_dispatcher, device_t device,
-               const zx_protocol_device_t* ops, std::string_view driver_path)
-    : Base("compat", std::move(start_args), std::move(driver_dispatcher)),
-      executor_(dispatcher()),
+Driver::Driver(
+    zx::vmo config_vmo, fdf::UnownedSynchronizedDispatcher driver_dispatcher, device_t device,
+    const zx_protocol_device_t* ops, std::string_view driver_path,
+    std::optional<std::vector<fuchsia_driver_framework::NodePropertyEntry2>> node_properties)
+    : Base("compat"),
+      driver_dispatcher_(std::move(driver_dispatcher)),
+      executor_(driver_dispatcher_->async_dispatcher()),
       driver_path_(driver_path),
-      device_(device, ops, this, std::nullopt, nullptr, dispatcher()),
-      config_vmo_(std::move(config_vmo)) {
-  // Give the parent device the correct node.
-  device_.Bind({std::move(node()), dispatcher()});
-  // Call this so the parent device is in the post-init state.
-  device_.InitReply(ZX_OK);
-  ZX_ASSERT(url().has_value());
-}
+      device_(device, ops, this, std::nullopt, nullptr, driver_dispatcher_->async_dispatcher()),
+      config_vmo_(std::move(config_vmo)),
+      node_properties_(std::move(node_properties)) {}
 
 Driver::~Driver() {
   if (ShouldCallRelease()) {
@@ -344,14 +341,26 @@ Driver::~Driver() {
   dlclose(library_);
   {
     std::lock_guard guard(kGlobalLoggerListLock);
-    global_logger_list.RemoveLogger(driver_path(), inner_logger_, node_name());
+    global_logger_list.RemoveLogger(driver_path(), inner_logger_, node_name_);
   }
 }
 
-void Driver::Start(fdf::StartCompleter completer) {
-  service_validator_.emplace(node_offers());
+void Driver::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
+  DriverBaseInternalInit(context, fdf::UnownedSynchronizedDispatcher(driver_dispatcher_));
+  url_ = context.url();
+  node_name_ = context.node_name();
+  node_offers_ = context.node_offers();
+  incoming_ = context.take_incoming();
 
-  zx::result driver_vmo = LoadVmo(*incoming(), driver_path_.c_str(), kOpenFlags);
+  // Give the parent device the correct node.
+  device_.Bind({take_node(), dispatcher()});
+  // Call this so the parent device is in the post-init state.
+  device_.InitReply(ZX_OK);
+  ZX_ASSERT(url_.has_value());
+
+  service_validator_.emplace(node_offers_);
+
+  zx::result driver_vmo = LoadVmo(*incoming_, driver_path_.c_str(), kOpenFlags);
   if (driver_vmo.is_error()) {
     logger_->log(fdf::ERROR, "Failed to open driver vmo: {}", driver_vmo);
     completer(driver_vmo.take_error());
@@ -366,7 +375,8 @@ void Driver::Start(fdf::StartCompleter completer) {
     // We don't need to exit on this error, there will just be less debugging information.
   }
 
-  if (zx::result result = LoadDriver(driver_path_, std::move(driver_vmo.value()));
+  if (zx::result result =
+          LoadDriver(driver_path_, std::move(driver_vmo.value()), context.symbols());
       result.is_error()) {
     logger_->log(fdf::ERROR, "Failed to load driver: {}", result);
     completer(result.take_error());
@@ -387,7 +397,7 @@ void Driver::Start(fdf::StartCompleter completer) {
                            zx::make_result(result.error()));
             }
             if (zx::result result = StartDriver(); result.is_error()) {
-              logger_->log(fdf::ERROR, "Failed to start driver '{}': {}", url().value(), result);
+              logger_->log(fdf::ERROR, "Failed to start driver '{}': {}", url_.value(), result);
               device_.Unbind();
               CompleteStart(result.take_error());
               return error(result.error_value());
@@ -402,7 +412,7 @@ bool Driver::IsComposite() { return !parent_clients_.empty(); }
 
 zx_handle_t Driver::GetMmioResource() {
   if (!mmio_resource_.is_valid()) {
-    zx::result resource = ::GetMmioResource(*incoming());
+    zx::result resource = ::GetMmioResource(*incoming_);
     if (resource.is_ok()) {
       mmio_resource_ = std::move(resource.value());
     } else {
@@ -414,7 +424,7 @@ zx_handle_t Driver::GetMmioResource() {
 
 zx_handle_t Driver::GetMsiResource() {
   if (!msi_resource_.is_valid()) {
-    zx::result resource = ::GetMsiResource(*incoming());
+    zx::result resource = ::GetMsiResource(*incoming_);
     if (resource.is_ok()) {
       msi_resource_ = std::move(resource.value());
     } else {
@@ -426,7 +436,7 @@ zx_handle_t Driver::GetMsiResource() {
 
 zx_handle_t Driver::GetPowerResource() {
   if (!power_resource_.is_valid()) {
-    zx::result resource = ::GetPowerResource(*incoming());
+    zx::result resource = ::GetPowerResource(*incoming_);
     if (resource.is_ok()) {
       power_resource_ = std::move(resource.value());
     } else {
@@ -438,7 +448,7 @@ zx_handle_t Driver::GetPowerResource() {
 
 zx_handle_t Driver::GetIommuResource() {
   if (!iommu_resource_.is_valid()) {
-    zx::result resource = ::GetIommuResource(*incoming());
+    zx::result resource = ::GetIommuResource(*incoming_);
     if (resource.is_ok()) {
       iommu_resource_ = std::move(resource.value());
     } else {
@@ -450,7 +460,7 @@ zx_handle_t Driver::GetIommuResource() {
 
 zx_handle_t Driver::GetIoportResource() {
   if (!ioport_resource_.is_valid()) {
-    zx::result resource = ::GetIoportResource(*incoming());
+    zx::result resource = ::GetIoportResource(*incoming_);
     if (resource.is_ok()) {
       ioport_resource_ = std::move(resource.value());
     } else {
@@ -462,7 +472,7 @@ zx_handle_t Driver::GetIoportResource() {
 
 zx_handle_t Driver::GetIrqResource() {
   if (!irq_resource_.is_valid()) {
-    zx::result resource = ::GetIrqResource(*incoming());
+    zx::result resource = ::GetIrqResource(*incoming_);
     if (resource.is_ok()) {
       irq_resource_ = std::move(resource.value());
     } else {
@@ -474,7 +484,7 @@ zx_handle_t Driver::GetIrqResource() {
 
 zx_handle_t Driver::GetSmcResource() {
   if (!smc_resource_.is_valid()) {
-    zx::result resource = ::GetSmcResource(*incoming());
+    zx::result resource = ::GetSmcResource(*incoming_);
     if (resource.is_ok()) {
       smc_resource_ = std::move(resource.value());
     } else {
@@ -521,7 +531,15 @@ zx_status_t Driver::GetProperties(device_props_args_t* out_args,
     return out_value;
   };
 
-  auto props = node_properties_2(parent_node_name);
+  cpp20::span<const fuchsia_driver_framework::NodeProperty2> props;
+  if (node_properties_.has_value()) {
+    for (const auto& entry : node_properties_.value()) {
+      if (entry.name() == parent_node_name) {
+        props = entry.properties();
+        break;
+      }
+    }
+  }
   uint32_t str_prop_count = 0;
   for (auto& prop : props) {
     if (str_prop_count >= out_args->str_prop_count) {
@@ -538,7 +556,7 @@ zx_status_t Driver::GetProperties(device_props_args_t* out_args,
 
 zx_handle_t Driver::GetInfoResource() {
   if (!info_resource_.is_valid()) {
-    zx::result resource = ::GetInfoResource(*incoming());
+    zx::result resource = ::GetInfoResource(*incoming_);
     if (resource.is_ok()) {
       info_resource_ = std::move(resource.value());
     } else {
@@ -581,8 +599,8 @@ zx_status_t Driver::RunOnDispatcher(fit::callback<zx_status_t()> task) {
   return task_status;
 }
 
-void Driver::PrepareStop(fdf::PrepareStopCompleter completer) {
-  zx::result client = this->incoming()->Connect<fuchsia_system_state::SystemStateTransition>();
+void Driver::Stop(fdf::StopCompleter completer) {
+  zx::result client = this->incoming_->Connect<fuchsia_system_state::SystemStateTransition>();
   if (client.is_error()) {
     logger_->log(fdf::ERROR, "failed to connect to fuchsia.system.state/SystemStateTransition: {}",
                  client);
@@ -605,8 +623,10 @@ void Driver::PrepareStop(fdf::PrepareStopCompleter completer) {
       }));
 }
 
-zx::result<> Driver::LoadDriver(std::string_view module_name, zx::vmo driver_vmo) {
-  std::string_view url_str = url().value();
+zx::result<> Driver::LoadDriver(
+    std::string_view module_name, zx::vmo driver_vmo,
+    const std::optional<std::vector<fuchsia_driver_framework::NodeSymbol>>& symbols) {
+  std::string_view url_str = url_.value();
 
   auto result = driver_symbols::FindRestrictedSymbols(zx::unowned(driver_vmo), url_str);
   if (result.is_error()) {
@@ -623,7 +643,7 @@ zx::result<> Driver::LoadDriver(std::string_view module_name, zx::vmo driver_vmo
 
   // Find symbols
   module_name.remove_prefix(5);  // Remove leading "/pkg/"
-  auto* note = fdf_internal::GetSymbol<const zircon_driver_note_t*>(symbols(), module_name,
+  auto* note = fdf_internal::GetSymbol<const zircon_driver_note_t*>(symbols, module_name,
                                                                     "__zircon_driver_note__");
   if (note == nullptr) {
     logger_->log(fdf::ERROR, "Failed to load driver '{}', driver note not found", url_str);
@@ -632,7 +652,7 @@ zx::result<> Driver::LoadDriver(std::string_view module_name, zx::vmo driver_vmo
   driver_name_ = note->payload.name;
   logger_->log(fdf::INFO, "Loaded driver '{}'", driver_name_);
   record_ =
-      fdf_internal::GetSymbol<zx_driver_rec_t*>(symbols(), module_name, "__zircon_driver_rec__");
+      fdf_internal::GetSymbol<zx_driver_rec_t*>(symbols, module_name, "__zircon_driver_rec__");
   if (record_ == nullptr) {
     logger_->log(fdf::ERROR, "Failed to load driver '{}', driver record not found", url_str);
     return zx::error(ZX_ERR_BAD_STATE);
@@ -659,7 +679,7 @@ zx::result<> Driver::LoadDriver(std::string_view module_name, zx::vmo driver_vmo
   // Create our logger. This leaves out |DriverStartArgs.log_sink| because the DriverBase
   // constructor has already consumed it, so |Create2| will fallback to opening a log channel from
   // |incoming()|.
-  auto logger = fdf::Logger::Create2(*incoming(), dispatcher(), note->payload.name);
+  auto logger = fdf::Logger::Create2(*incoming_, dispatcher(), note->payload.name);
 
   // Move the logger over into a shared_ptr instead of unique_ptr so we can pass it to the global
   // logging manager and compat::Device.
@@ -667,14 +687,14 @@ zx::result<> Driver::LoadDriver(std::string_view module_name, zx::vmo driver_vmo
   device_.set_logger(inner_logger_);
   {
     std::lock_guard guard(kGlobalLoggerListLock);
-    record_->driver = global_logger_list.AddLogger(driver_path(), inner_logger_, node_name());
+    record_->driver = global_logger_list.AddLogger(driver_path(), inner_logger_, node_name_);
   }
 
   return zx::ok();
 }
 
 zx::result<> Driver::StartDriver() {
-  std::string_view url_str = url().value();
+  std::string_view url_str = url_.value();
   if (record_->ops->init != nullptr) {
     // If provided, run init.
     zx_status_t status = record_->ops->init(&context_);
@@ -713,7 +733,7 @@ zx::result<> Driver::StartDriver() {
 fpromise::promise<void, zx_status_t> Driver::ConnectToParentDevices() {
   bridge<void, zx_status_t> bridge;
   auto task = compat::ConnectToParentDevices(
-      dispatcher(), incoming().get(),
+      dispatcher(), incoming_.get(),
       [this, completer = std::move(bridge.completer)](
           zx::result<std::vector<compat::ParentDevice>> devices) mutable {
         if (devices.is_error()) {
@@ -779,7 +799,7 @@ zx::result<zx::vmo> Driver::LoadFirmware(Device* device, const char* filename, s
   std::string full_filename = "/pkg/lib/firmware/";
   full_filename.append(filename);
   fpromise::result connect_result = fpromise::run_single_threaded(
-      fdf::Open(*incoming(), dispatcher(), full_filename.c_str(), kOpenFlags));
+      fdf::Open(*incoming_, dispatcher(), full_filename.c_str(), kOpenFlags));
   if (connect_result.is_error()) {
     return zx::error(connect_result.take_error());
   }
@@ -819,7 +839,7 @@ zx_status_t Driver::AddDevice(Device* parent, device_add_args_t* args, zx_device
 }
 
 zx::result<> Driver::SetProfileByRole(zx::unowned_thread thread, std::string_view role) {
-  auto role_manager = incoming()->Connect<fuchsia_scheduler::RoleManager>();
+  auto role_manager = incoming_->Connect<fuchsia_scheduler::RoleManager>();
   if (role_manager.is_error()) {
     return role_manager.take_error();
   }

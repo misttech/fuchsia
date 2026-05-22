@@ -27,23 +27,23 @@ To create a header file for your DFv2 driver, do the following:
 1. Include the following interface to the header file:
 
    ```cpp
-   #include <lib/driver/component/cpp/driver_base.h>
+   #include <lib/driver/component/cpp/driver_base2.h>
    ```
 
-1. Add an interface for the [`DriverBase`][driver-base] class,
+1. Add an interface for the [`DriverBase2`][driver-base] class,
    for example:
 
    ```cpp
-   #include <lib/driver/component/cpp/driver_base.h>
+   #include <lib/driver/component/cpp/driver_base2.h>
 
    namespace skeleton {
 
-   class SkeletonDriver : public fdf::DriverBase {
+   class SkeletonDriver : public fdf::DriverBase2 {
     public:
-     SkeletonDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+     SkeletonDriver();
 
      // Called by the driver framework to initialize the driver instance.
-     zx::result<> SkeletonDriver::Start() override;
+     zx::result<> Start(fdf::DriverContext context) override;
    };
 
    }  // namespace skeleton
@@ -53,7 +53,7 @@ To create a header file for your DFv2 driver, do the following:
 
 ## Create a driver source file {:#create-a-driver-source-file .numbered}
 
-To implement the basic methods for the `DriverBase` class,
+To implement the basic methods for the `DriverBase2` class,
 do the following:
 
 1. Create a new source file (`.cc`) for the driver (for example,
@@ -72,13 +72,9 @@ do the following:
 
    namespace skeleton {
 
-   SkeletonDriver::SkeletonDriver(fdf::DriverStartArgs start_args,
-                              fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-       : DriverBase("skeleton_driver", std::move(start_args),
-             std::move(driver_dispatcher)) {
-   }
+   SkeletonDriver::SkeletonDriver() : DriverBase2("skeleton_driver") {}
 
-   zx::result<> SkeletonDriver::Start() {
+   zx::result<> SkeletonDriver::Start(fdf::DriverContext context) {
      return zx::ok();
    }
 
@@ -88,8 +84,7 @@ do the following:
    (Source: [`skeleton_driver.cc`][skeleton-driver-cc])
 
    This driver constructor needs to pass the driver name (for example,
-   `"skeleton_driver"`), `start_args`, and `driver_dispatcher` to the
-   `DriverBase` class.
+   `"skeleton_driver"`) to the `DriverBase2` class.
 
 ## Add the driver export macro {:#add-the-driver-export-macro .numbered}
 
@@ -98,39 +93,35 @@ To add the driver export macro, do the following:
 1. In the driver source file, include the following header file:
 
    ```cpp
-   #include <lib/driver/component/cpp/driver_export.h>
+   #include <lib/driver/component/cpp/driver_export2.h>
    ```
 
 1. Add the following macro (which exports the driver class) at the
    bottom of the driver source file:
 
    ```cpp
-   FUCHSIA_DRIVER_EXPORT(skeleton::SkeletonDriver);
+   FUCHSIA_DRIVER_EXPORT2(skeleton::SkeletonDriver);
    ```
 
    For example:
 
    ```cpp
-   #include <lib/driver/component/cpp/driver_base.h>
-   #include <lib/driver/component/cpp/driver_export.h>
+   #include <lib/driver/component/cpp/driver_base2.h>
+   #include <lib/driver/component/cpp/driver_export2.h>
 
    #include "skeleton_driver.h"
 
    namespace skeleton {
 
-   SkeletonDriver::SkeletonDriver(fdf::DriverStartArgs start_args,
-                              fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-       : DriverBase("skeleton_driver", std::move(start_args),
-             std::move(driver_dispatcher)) {
-   }
+   SkeletonDriver::SkeletonDriver() : DriverBase2("skeleton_driver") {}
 
-   zx::result<> SkeletonDriver::Start() {
+   zx::result<> SkeletonDriver::Start(fdf::DriverContext context) {
      return zx::ok();
    }
 
    }  // namespace skeleton
 
-   FUCHSIA_DRIVER_EXPORT(skeleton::SkeletonDriver);
+   FUCHSIA_DRIVER_EXPORT2(skeleton::SkeletonDriver);
    ```
 
    (Source: [`skeleton_driver.cc`][skeleton-driver-cc])
@@ -363,13 +354,13 @@ open protocol Node {
 ```
 
 To facilitate this, during startup the driver framework provides a client of
-the bound node's `Node` protocol to the DFv2 driver, through the `DriverBase`.
+the bound node's `Node` protocol to the DFv2 driver, through the `DriverBase2`.
 The driver can access its node client at any time to create child nodes on it.
 However directly using this FIDL library requires a setup that includes
 creating FIDL channel pairs and constructing the `NodeAddArgs` table.
-Therefore the `DriverBase` class provides a set of helper functions to make
+Therefore the `DriverBase2` class provides a set of helper functions to make
 adding child nodes easier. (To see these helpers, check out the
-[`driver_base.h`][driver-base-add-child] file.)
+[`driver_base2.h`][driver-base-add-child] file.)
 
 There are two types of nodes a DFv2 driver can add: **unowned** and **owned**.
 The main difference between an unowned node and an owned node is whether they
@@ -381,19 +372,19 @@ bound to a node, the bound driver becomes the owner of the node.
 On the other hand, owned nodes do not participate in matching since the driver
 that created the node is already the owner.
 
-#### DriverBase helper functions
+#### DriverBase2 helper functions
 
 The client to the node that your driver is currently bound to is stored in the
-`DriverBase` object. This allows the driver to use the `DriverBase` class's
+`DriverBase2` object. This allows the driver to use the `DriverBase2` class's
 `AddChild()` and `AddOwnedChild()` functions to add a child node to this node.
 
-However, to use these `DriverBase` helper functions, the node must not have been
+However, to use these `DriverBase2` helper functions, the node must not have been
 moved out of the driver. If the node is moved out or your target node is not the
 node that the driver is currently bound to (ie. for a grand-child node),
 you need to use the namespace methods available in the
 [`add_child.h`][fdf-add-child] file instead. These methods are the same as the
-`DriverBase` helper functions except they can be used to add a child to a node
-beyond the reach of the `DriverBase` object, by providing the correct parent
+`DriverBase2` helper functions except they can be used to add a child to a node
+beyond the reach of the `DriverBase2` object, by providing the correct parent
 node client as a target.
 
 Lastly, these helper functions take care of logging errors if they happen,
@@ -401,7 +392,7 @@ so no logging is needed by the driver.
 
 #### Create an unowned node
 
-To create an unowned node, a driver can use the `DriverBase::AddChild()` helper
+To create an unowned node, a driver can use the `DriverBase2::AddChild()` helper
 functions. These functions allow setting the
 properties on an unowned node, which the driver framework uses to find a matching
 driver. The return result of both is a client end to the `NodeController` protocol,
@@ -416,7 +407,7 @@ The example code below creates an unowned node under the driver's bound node:
 
 #### Create an owned node
 
-To create an owned node, a driver can use the `DriverBase::AddOwnedChild()` helper
+To create an owned node, a driver can use the `DriverBase2::AddOwnedChild()` helper
 functions. These functions do not provide a properties argument since an owned
 node does not participate in driver matching. The return result of both is an
 `OwnedChildNode` object that contains a client end to the `NodeController` (which
@@ -436,28 +427,20 @@ The example code below creates an owned node:
 ### Clean up the driver {:#clean-up-the-driver}
 
 If a DFv2 driver needs to perform teardowns before it is stopped (for example,
-stopping threads), then you need to override and implement additional
-`DriverBase` methods: `PrepareStop()` and `Stop()`
+stopping threads), then you need to override and implement the
+`DriverBase2`'s `Stop()` method (for asynchronous cleanup) or perform synchronous
+cleanup in the destructor.
 
-The `PrepareStop()` function is called before the driver's `fdf` dispatchers are
+The `Stop()` function is called before the driver's `fdf` dispatchers are
 shut down and the driver is deallocated. Therefore, the driver needs to
-implement `PrepareStop()if` it needs to perform certain operations before the
+implement `Stop()` if it needs to perform certain operations before the
 driver's dispatchers shut down, for example:
 
 ```cpp
-void SimpleDriver::PrepareStop(fdf::PrepareStopCompleter completer) {
+void SimpleDriver::Stop(fdf::StopCompleter completer) {
  // Teardown threads
-  fdf::info("Preparing to stop SimpleDriver");
-  completer(zx::ok());
-}
-```
-
-The `Stop()` function is called after all dispatchers belonging to this driver
-are shut down, for example:
-
-```cpp
-void SimpleDriver::Stop() {
   fdf::info("Stopping SimpleDriver");
+  completer(zx::ok());
 }
 ```
 
@@ -473,7 +456,7 @@ guide.
 
 [skeleton-driver]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/drivers/skeleton/
 [simple-driver]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/drivers/simple/
-[driver-base]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/component/cpp/driver_base.h
+[driver-base]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/component/cpp/driver_base2.h
 [skeleton-driver-h]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/drivers/skeleton/skeleton_driver.h
 [skeleton-driver-cc]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/drivers/skeleton/skeleton_driver.cc
 [build-gn]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/drivers/skeleton/BUILD.gn
@@ -487,6 +470,6 @@ guide.
 [bind-rules-tutorial]: /docs/development/drivers/tutorials/bind-rules-tutorial.md
 [set-up-compat-device-server]: /docs/development/drivers/migration/set-up-compat-device-server.md
 [simple-example]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/drivers/simple/dfv2/simple_driver.cc
-[driver-base-add-child]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/component/cpp/driver_base.h;l=225-258
+[driver-base-add-child]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/component/cpp/driver_base2.h;l=225-258
 [fdf-add-child]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/node/cpp/add_child.h
 [driver-matching]: /docs/concepts/drivers/driver_binding.md

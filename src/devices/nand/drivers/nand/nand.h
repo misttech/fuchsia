@@ -42,7 +42,7 @@ class NandDriver : public fdf::DriverBase2, public ddk::NandProtocol<NandDriver>
 
   explicit NandDriver() : fdf::DriverBase2(kDriverName) {}
 
-  // fdf::DriverBase implementation.
+  // fdf::DriverBase2 implementation.
   zx::result<> Start(fdf::DriverContext context) override;
   void Stop(fdf::StopCompleter completer) override;
 

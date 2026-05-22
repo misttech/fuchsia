@@ -7,23 +7,21 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.test/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/node/cpp/add_child.h>
 
 namespace fdf_metadata::test {
 
 // This driver's purpose is to forward metadata using `fdf::MetadataServer::ForwardAndServe()`.
-class MetadataForwarderTestDriver : public fdf::DriverBase {
+class MetadataForwarderTestDriver : public fdf::DriverBase2 {
  public:
   static constexpr std::string_view kDriverName = "forwarder";
   static constexpr std::string_view kChildNodeName = "forwarder";
 
-  MetadataForwarderTestDriver(fdf::DriverStartArgs start_args,
-                              fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
+  MetadataForwarderTestDriver() : fdf::DriverBase2(kDriverName) {}
 
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
  private:
 #if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)

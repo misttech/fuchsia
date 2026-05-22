@@ -9,7 +9,7 @@
 #include <fidl/fuchsia.scheduler/cpp/markers.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/fpromise/scope.h>
@@ -24,17 +24,17 @@ extern std::mutex kDriverGlobalsLock;
 namespace compat {
 
 // Driver is the compatibility driver that loads DFv1 drivers.
-class Driver : public fdf::DriverBase {
-  using Base = fdf::DriverBase;
+class Driver : public fdf::DriverBase2 {
+  using Base = fdf::DriverBase2;
 
  public:
-  Driver(fdf::DriverStartArgs start_args, zx::vmo config_vmo,
-         fdf::UnownedSynchronizedDispatcher driver_dispatcher, device_t device,
-         const zx_protocol_device_t* ops, std::string_view driver_path);
+  Driver(zx::vmo config_vmo, fdf::UnownedSynchronizedDispatcher driver_dispatcher, device_t device,
+         const zx_protocol_device_t* ops, std::string_view driver_path,
+         std::optional<std::vector<fuchsia_driver_framework::NodePropertyEntry2>> node_properties);
   ~Driver() override;
 
-  void Start(fdf::StartCompleter completer) override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // Returns the context that DFv1 driver provided.
   void* Context() const;
@@ -81,7 +81,7 @@ class Driver : public fdf::DriverBase {
   // them publicly since they are protected in DriverBase.
   async_dispatcher_t* dispatcher() { return Base::dispatcher(); }
   const async_dispatcher_t* dispatcher() const { return Base::dispatcher(); }
-  const fdf::Namespace& driver_namespace() { return *incoming(); }
+  const fdf::Namespace& driver_namespace() { return *incoming_; }
   fdf::OutgoingDirectory& outgoing() { return *Base::outgoing(); }
 
   uint32_t GetNextDeviceId() { return next_device_id_++; }
@@ -105,7 +105,9 @@ class Driver : public fdf::DriverBase {
   zx_status_t RunOnDispatcher(fit::callback<zx_status_t()> task);
 
   // Loads the driver using the provided `vmos`.
-  zx::result<> LoadDriver(std::string_view module_name, zx::vmo driver_vmo);
+  zx::result<> LoadDriver(
+      std::string_view module_name, zx::vmo driver_vmo,
+      const std::optional<std::vector<fuchsia_driver_framework::NodeSymbol>>& symbols);
   // Starts the DFv1 driver.
   zx::result<> StartDriver();
 
@@ -120,6 +122,7 @@ class Driver : public fdf::DriverBase {
            system_state_ == fuchsia_system_state::SystemPowerState::kFullyOn;
   }
 
+  fdf::UnownedSynchronizedDispatcher driver_dispatcher_;
   async::Executor executor_;
 
   std::shared_ptr<fdf::Logger> inner_logger_;
@@ -163,6 +166,12 @@ class Driver : public fdf::DriverBase {
 
   // NOTE: Must be the last member.
   fpromise::scope scope_;
+
+  std::unique_ptr<fdf::Namespace> incoming_;
+  std::optional<std::string> url_;
+  std::optional<std::string> node_name_;
+  std::vector<fuchsia_driver_framework::Offer> node_offers_;
+  std::optional<std::vector<fuchsia_driver_framework::NodePropertyEntry2>> node_properties_;
 };
 
 // |GlobalLoggerList| is global for the entire driver host process. It maintains a

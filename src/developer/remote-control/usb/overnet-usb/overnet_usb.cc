@@ -6,7 +6,8 @@
 
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <zircon/errors.h>
 #include <zircon/status.h>
 #include <zircon/types.h>
@@ -28,8 +29,8 @@
 namespace fendpoint = fuchsia_hardware_usb_endpoint;
 namespace ffunction = fuchsia_hardware_usb_function;
 
-zx::result<> OvernetUsb::Start() {
-  auto client = incoming()->Connect<ffunction::UsbFunctionService::Device>();
+zx::result<> OvernetUsb::Start(fdf::DriverContext context) {
+  auto client = context.incoming().Connect<ffunction::UsbFunctionService::Device>();
   if (client.is_error()) {
     FDF_SLOG(ERROR, "Failed to connect fidl protocol",
              KV("status", zx_status_get_string(client.error_value())));
@@ -154,7 +155,7 @@ void OvernetUsb::FidlConnect(fidl::ServerEnd<fuchsia_hardware_overnet::Usb> requ
                                    fidl::kIgnoreBindingClosure);
 }
 
-void OvernetUsb::PrepareStop(fdf::PrepareStopCompleter completer) {
+void OvernetUsb::Stop(fdf::StopCompleter completer) {
   Shutdown([completer = std::move(completer)]() mutable { completer(zx::ok()); });
 }
 
@@ -677,4 +678,4 @@ void OvernetUsb::ShutdownComplete() {
   }
 }
 
-FUCHSIA_DRIVER_EXPORT(OvernetUsb);
+FUCHSIA_DRIVER_EXPORT2(OvernetUsb);

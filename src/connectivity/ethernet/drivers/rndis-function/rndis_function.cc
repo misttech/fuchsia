@@ -6,7 +6,7 @@
 
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.network/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata.h>
 #include <zircon/status.h>
 
@@ -1023,9 +1023,9 @@ void RndisFunction::IndicateConnectionStatus(bool connected) {
   Notify();
 }
 
-zx::result<> RndisFunction::Start() {
+zx::result<> RndisFunction::Start(fdf::DriverContext context) {
   zx::result func =
-      incoming()->Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
+      context.incoming().Connect<fuchsia_hardware_usb_function::UsbFunctionService::Device>();
   if (func.is_error()) {
     fdf::error("Failed to connect to UsbFunctionService: {}", func);
     return func.take_error();
@@ -1180,7 +1180,8 @@ zx::result<> RndisFunction::Start() {
 
   // Get MAC address
   zx::result metadata_result =
-      fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::MacAddressMetadata>(incoming());
+      fdf_metadata::GetMetadataIfExists<fuchsia_boot_metadata::MacAddressMetadata>(
+          context.incoming());
   if (metadata_result.is_error()) {
     fdf::error("Failed to get MAC address metadata: {}", metadata_result);
     return metadata_result.take_error();
@@ -1368,7 +1369,7 @@ void RndisFunction::UpdatePortStatus() {
 }
 
 void RndisFunction::ContinueStop() {
-  if (!shutting_down_ || !prepare_stop_completer_.has_value()) {
+  if (!shutting_down_ || !stop_completer_.has_value()) {
     return;
   }
 
@@ -1380,14 +1381,14 @@ void RndisFunction::ContinueStop() {
     ep_info.ep.Close();
   }
 
-  auto completer = std::move(prepare_stop_completer_.value());
-  prepare_stop_completer_.reset();
+  auto completer = std::move(stop_completer_.value());
+  stop_completer_.reset();
   completer(zx::ok());
 }
 
-void RndisFunction::PrepareStop(fdf::PrepareStopCompleter completer) {
+void RndisFunction::Stop(fdf::StopCompleter completer) {
   shutting_down_ = true;
-  prepare_stop_completer_.emplace(std::move(completer));
+  stop_completer_.emplace(std::move(completer));
 
   for (auto& c : rx_completion_queue_) {
     bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(c.request().value())));
@@ -1477,4 +1478,4 @@ void RndisFunction::ReturnPendingRxSpace() {
   }
 }
 
-FUCHSIA_DRIVER_EXPORT(RndisFunction);
+FUCHSIA_DRIVER_EXPORT2(RndisFunction);

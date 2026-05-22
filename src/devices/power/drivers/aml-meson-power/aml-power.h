@@ -52,7 +52,7 @@ class AmlPower : public fdf::DriverBase2, public ddk::PowerImplProtocol<AmlPower
 
   explicit AmlPower() : fdf::DriverBase2(kDriverName) {}
 
-  // fdf::DriverBase implementation.
+  // fdf::DriverBase2 implementation.
   zx::result<> Start(fdf::DriverContext context) override;
 
   zx_status_t PowerImplGetPowerDomainStatus(uint32_t index, power_domain_status_t* out_status);

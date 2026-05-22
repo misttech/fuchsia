@@ -681,7 +681,7 @@ class DriverTest : public testing::Test {
     program_vec.push_back(std::move(program_entry));
     fdata::Dictionary program({.entries = std::move(program_vec)});
 
-    fdf::DriverStartArgs start_args({
+    fuchsia_driver_framework::DriverStartArgs start_args({
         .node = std::move(node_client.value()),
         .symbols = std::move(symbols),
         .url = std::string("fuchsia-pkg://fuchsia.com/driver#meta/driver.cm"),
@@ -716,8 +716,8 @@ class DriverTest : public testing::Test {
   void UnbindAndFreeDriver(std::unique_ptr<compat::Driver> driver) {
     libsync::Completion completion;
 
-    fdf::PrepareStopCompleter completer([&completion](zx::result<>) { completion.Signal(); });
-    driver->PrepareStop(std::move(completer));
+    fdf::StopCompleter completer([&completion](zx::result<>) { completion.Signal(); });
+    driver->Stop(std::move(completer));
 
     // Keep running the test loop while we're waiting for a signal on the dispatcher thread.
     // The dispatcher thread needs to interact with our Node servers, which run on the test loop.

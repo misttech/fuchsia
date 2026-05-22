@@ -40,8 +40,6 @@ void SimDevice::ShutdownImpl() {
 zx::result<> SimDevice::Start(fdf::DriverContext context) {
   component_inspector_.emplace(context.CreateInspector(this));
 
-  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
-
   parent_node_.Bind(take_node(), dispatcher());
 
   zx::result<std::unique_ptr<DeviceInspect>> result =
@@ -78,7 +76,7 @@ void SimDevice::Initialize(fit::callback<void(zx_status_t)>&& on_complete) {
     return;
   }
 
-  zx_status_t status = InitDevice(*outgoing());
+  zx_status_t status = InitDevice(*outgoing(), std::shared_ptr<fdf::Namespace>{});
   if (status != ZX_OK) {
     fdf::error("Failed to initialize device: {}", zx_status_get_string(status));
     on_complete(status);
@@ -94,7 +92,9 @@ void SimDevice::Initialize(fit::callback<void(zx_status_t)>&& on_complete) {
       });
 }
 
-zx_status_t SimDevice::BusInit() { return brcmf_sim_register(drvr()); }
+zx_status_t SimDevice::BusInit(const std::shared_ptr<fdf::Namespace>& incoming) {
+  return brcmf_sim_register(drvr());
+}
 
 zx_status_t SimDevice::LoadFirmware(const char* path, zx_handle_t* fw, size_t* size) {
   return ZX_ERR_NOT_SUPPORTED;

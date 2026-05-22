@@ -23,7 +23,7 @@ class StubDevice : public Device {
   StubDevice();
   ~StubDevice() override;
 
-  zx_status_t BusInit() override { return ZX_OK; }
+  zx_status_t BusInit(const std::shared_ptr<fdf::Namespace>& incoming) override { return ZX_OK; }
   // Device implementation.
   async_dispatcher_t* GetTimerDispatcher() override { return nullptr; }
   DeviceInspect* GetInspect() override { return nullptr; }
@@ -31,13 +31,11 @@ class StubDevice : public Device {
   zx::result<fuchsia_wlan_broadcom::WifiConfig> GetWifiConfig() override;
   fidl::WireClient<fdf::Node>& GetParentNode() override { return parent_node_; }
   std::shared_ptr<fdf::OutgoingDirectory>& Outgoing() override { return outgoing_dir_.value(); }
-  const std::shared_ptr<fdf::Namespace>& Incoming() const override { return incoming_dir_.value(); }
   fdf_dispatcher_t* GetDriverDispatcher() override { return nullptr; }
 
  protected:
   fidl::WireClient<fdf::Node> parent_node_;
   std::optional<std::shared_ptr<fdf::OutgoingDirectory>> outgoing_dir_;
-  std::optional<std::shared_ptr<fdf::Namespace>> incoming_dir_;
 };
 
 }  // namespace brcmfmac

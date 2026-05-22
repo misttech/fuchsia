@@ -4,12 +4,12 @@
 
 #include "cc_test_driver.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 
 namespace cc_test_driver {
 
-zx::result<> CCTestDriver::Start() { return zx::ok(); }
+zx::result<> CCTestDriver::Start(fdf::DriverContext context) { return zx::ok(); }
 
 }  // namespace cc_test_driver
 
-FUCHSIA_DRIVER_EXPORT(cc_test_driver::CCTestDriver);
+FUCHSIA_DRIVER_EXPORT2(cc_test_driver::CCTestDriver);

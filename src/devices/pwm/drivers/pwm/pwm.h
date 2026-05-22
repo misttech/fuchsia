@@ -55,7 +55,7 @@ class Pwm : public fdf::DriverBase2 {
 
   explicit Pwm() : fdf::DriverBase2(kDriverName) {}
 
-  // fdf::DriverBase implementation.
+  // fdf::DriverBase2 implementation.
   zx::result<> Start(fdf::DriverContext context) override;
 
  private:

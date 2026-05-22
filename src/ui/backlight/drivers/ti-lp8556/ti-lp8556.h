@@ -75,7 +75,7 @@ class TiLp8556 : public fdf::DriverBase2,
 
   TiLp8556();
 
-  // fdf::DriverBase implementation.
+  // fdf::DriverBase2 implementation.
   zx::result<> Start(fdf::DriverContext context) override;
 
   zx::result<> GetBacklightState(bool* power, double* brightness) const;

@@ -13,7 +13,7 @@
 #include <lib/async-loop/loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/driver/compat/cpp/compat.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/fit/function.h>
 
@@ -31,7 +31,7 @@
 
 namespace fnetdev = fuchsia_hardware_network_driver;
 
-class RndisFunction : public fdf::DriverBase,
+class RndisFunction : public fdf::DriverBase2,
                       public fdf::WireServer<fnetdev::NetworkDeviceImpl>,
                       public fdf::WireServer<fnetdev::NetworkPort>,
                       public fdf::WireServer<fnetdev::MacAddr>,
@@ -50,9 +50,8 @@ class RndisFunction : public fdf::DriverBase,
   static constexpr uint16_t kVendorDriverVersionMinor = 0;
   static constexpr uint8_t kPortId = 1;
 
-  RndisFunction(fdf::DriverStartArgs start_args,
-                fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)),
+  RndisFunction()
+      : fdf::DriverBase2(kDriverName),
         vmo_store_({
             .map =
                 vmo_store::MapOptions{
@@ -61,11 +60,11 @@ class RndisFunction : public fdf::DriverBase,
                 },
         }) {}
 
-  using fdf::DriverBase::Start;
-  using fdf::DriverBase::Stop;
+  using fdf::DriverBase2::Start;
+  using fdf::DriverBase2::Stop;
 
-  zx::result<> Start() override;
-  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // UsbFunctionInterface methods.
   void Control(ControlRequest &request, ControlCompleter::Sync &completer) override;
@@ -171,7 +170,7 @@ class RndisFunction : public fdf::DriverBase,
     }};
   }
 
-  std::optional<fdf::PrepareStopCompleter> prepare_stop_completer_;
+  std::optional<fdf::StopCompleter> stop_completer_;
 
   // In-direction (TX to host).
   usb::EndpointClient<RndisFunction> notification_ep_{usb::EndpointType::INTERRUPT, this,

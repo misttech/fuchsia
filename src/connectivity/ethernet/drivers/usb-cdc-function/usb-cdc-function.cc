@@ -11,7 +11,7 @@
 #include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/driver/compat/cpp/banjo_client.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/fdf/cpp/dispatcher.h>
@@ -520,7 +520,8 @@ void UsbCdcFunction::handle_unknown_method(
 }
 
 // NetworkDeviceImpl protocol:
-zx::result<> UsbCdcFunction::Start() {
+zx::result<> UsbCdcFunction::Start(fdf::DriverContext context) {
+  incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
   zx::result result = incoming()->Connect<ffunction::UsbFunctionService::Device>();
   if (result.is_error()) {
     fdf::error("could not connect to UsbFunctionService: {}", result.status_string());
@@ -652,7 +653,8 @@ zx::result<> UsbCdcFunction::Start() {
     return zx::error(status);
   }
 
-  if (zx::result result = child_.Initialize(incoming(), outgoing(), node_name(), "usb-cdc-netdev");
+  if (zx::result result =
+          child_.Initialize(incoming(), outgoing(), context.node_name(), "usb-cdc-netdev");
       result.is_error()) {
     fdf::error("Failed to initialize compat server: {}", result);
     return result.take_error();
@@ -684,7 +686,7 @@ zx::result<> UsbCdcFunction::Start() {
   return zx::ok();
 }
 
-void UsbCdcFunction::PrepareStop(fdf::PrepareStopCompleter completer) {
+void UsbCdcFunction::Stop(fdf::StopCompleter completer) {
   unbound_ = true;
   stop_completer_.emplace(std::move(completer));
 
@@ -1046,4 +1048,4 @@ void UsbCdcFunction::DisableAllEndpoints() {
 
 }  // namespace usb_cdc_function
 
-FUCHSIA_DRIVER_EXPORT(usb_cdc_function::UsbCdcFunction);
+FUCHSIA_DRIVER_EXPORT2(usb_cdc_function::UsbCdcFunction);

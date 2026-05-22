@@ -6,7 +6,8 @@
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devicetree/manager/manager.h>
 #include <lib/driver/devicetree/manager/publisher-dev.h>
 #include <lib/driver/devicetree/visitors/default/bind-property/bind-property.h>
@@ -17,17 +18,17 @@
 
 namespace devicetree_config {
 
-class BoardDriver final : public fdf::DriverBase {
+class BoardDriver final : public fdf::DriverBase2 {
  public:
-  BoardDriver(fdf::DriverStartArgs start_args, fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : fdf::DriverBase("devicetree-config-board", std::move(start_args),
-                        std::move(driver_dispatcher)) {}
+  BoardDriver() : fdf::DriverBase2("devicetree-config-board") {}
 
-  void Start(fdf::StartCompleter completer) override {
-    node_.Bind(std::move(node()));
+  void Start(fdf::DriverContext context, fdf::StartCompleter completer) override {
+    node_.Bind(take_node());
 
-    auto client_end = incoming()->Open<fuchsia_io::File>("/pkg/test-data/devicetree-config.dtb",
-                                                         fuchsia_io::Flags::kPermReadBytes);
+    auto incoming = context.take_incoming();
+
+    auto client_end = incoming->Open<fuchsia_io::File>("/pkg/test-data/devicetree-config.dtb",
+                                                       fuchsia_io::Flags::kPermReadBytes);
     if (client_end.is_error()) {
       FDF_LOG(ERROR, "Failed to open devicetree blob: %s", client_end.status_string());
       completer(client_end.take_error());
@@ -83,9 +84,10 @@ class BoardDriver final : public fdf::DriverBase {
       return;
     }
 
-    async::PostTask(dispatcher(), [this, manager = std::move(manager),
+    async::PostTask(dispatcher(), [this, incoming = std::move(incoming),
+                                   manager = std::move(manager),
                                    completer = std::move(completer)]() mutable {
-      zx::result pbus = incoming()->Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>();
+      zx::result pbus = incoming->Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>();
       if (pbus.is_error() || !pbus->is_valid()) {
         FDF_LOG(ERROR, "Failed to connect to platform bus: %s", pbus.status_string());
         completer(pbus.take_error());
@@ -93,7 +95,7 @@ class BoardDriver final : public fdf::DriverBase {
       }
 
       zx::result group_manager =
-          incoming()->Connect<fuchsia_driver_framework::CompositeNodeManager>();
+          incoming->Connect<fuchsia_driver_framework::CompositeNodeManager>();
       if (group_manager.is_error()) {
         FDF_LOG(ERROR, "Failed to connect to device group manager: %s",
                 group_manager.status_string());
@@ -122,4 +124,4 @@ class BoardDriver final : public fdf::DriverBase {
 
 }  // namespace devicetree_config
 
-FUCHSIA_DRIVER_EXPORT(devicetree_config::BoardDriver);
+FUCHSIA_DRIVER_EXPORT2(devicetree_config::BoardDriver);

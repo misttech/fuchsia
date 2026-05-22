@@ -14,7 +14,7 @@ namespace virtio {
 
 // The driver base implementation must be kept separate from the virtio Device implementation. The
 // virtio Device base class can only be constructed with a specific set of parameters that we cannot
-// provide in the fdf::DriverBase constructor.
+// provide in the fdf::DriverBase2 constructor.
 class VirtioNetDriver : public fdf::DriverBase2 {
  public:
   VirtioNetDriver();

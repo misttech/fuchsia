@@ -51,17 +51,19 @@ Driver* CompatDriverServer::CreateDriver(fuchsia_driver_framework::DriverStartAr
     start_completer(compat.take_error());
     return nullptr;
   }
+  auto node_properties = std::move(start_args.node_properties_2());
   zx::vmo config_vmo = std::move(start_args.config()).value_or(zx::vmo());
-  auto driver = std::make_unique<Driver>(std::move(start_args), std::move(config_vmo),
-                                         std::move(driver_dispatcher), *compat_device, ops,
-                                         "/pkg/" + *compat);
-  driver->Start(std::move(start_completer));
+  auto driver =
+      std::make_unique<Driver>(std::move(config_vmo), std::move(driver_dispatcher), *compat_device,
+                               ops, "/pkg/" + *compat, std::move(node_properties));
+  auto context = fdf::DriverContext(std::move(start_args));
+  driver->Start(std::move(context), std::move(start_completer));
   return driver.release();
 }
 
 void CompatDriverServer::Start(StartRequestView request, fdf::Arena& arena,
                                StartCompleter::Sync& completer) {
-  fdf::DriverStartArgs start_args = fidl::ToNatural(request->start_args);
+  fuchsia_driver_framework::DriverStartArgs start_args = fidl::ToNatural(request->start_args);
 
   fdf::StartCompleter start_completer(
       [reply_arena = std::move(arena), reply_completer = completer.ToAsync()](
@@ -81,8 +83,7 @@ void CompatDriverServer::Start(StartRequestView request, fdf::Arena& arena,
 
 void CompatDriverServer::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
   ZX_ASSERT(driver_.has_value());
-  driver_.value()->PrepareStop(
-      fdf::PrepareStopCompleter([this](zx::result<> result) { binding_.reset(); }));
+  driver_.value()->Stop(fdf::StopCompleter([this](zx::result<> result) { binding_.reset(); }));
 }
 
 void CompatDriverServer::Suspend(fdf::Arena& arena, SuspendCompleter::Sync& completer) {

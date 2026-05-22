@@ -23,7 +23,7 @@ class MetadataRetrieverTestDriver : public fdf::DriverBase,
                               fdf::UnownedSynchronizedDispatcher driver_dispatcher)
       : DriverBase(kDriverName, std::move(start_args), std::move(driver_dispatcher)) {}
 
-  // fdf::DriverBase implementation.
+  // fdf::DriverBase2 implementation.
   zx::result<> Start() override;
 
   // fidl::Server<fuchsia_hardware_test::MetadataRetriever> implementation.

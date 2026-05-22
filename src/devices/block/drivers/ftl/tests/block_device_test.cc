@@ -202,9 +202,7 @@ class FakeVolume final : public ftl::Volume {
 
 class TestFtlBlockDevice : public ftl::BlockDevice {
  public:
-  TestFtlBlockDevice(fdf::DriverStartArgs start_args,
-                     fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-      : ftl::BlockDevice(std::move(start_args), std::move(driver_dispatcher)) {
+  TestFtlBlockDevice() : ftl::BlockDevice() {
     auto volume = std::make_unique<FakeVolume>(static_cast<ftl::BlockDevice*>(this));
     volume_ptr_ = volume.get();
     SetVolumeForTest(std::move(volume));
@@ -214,8 +212,8 @@ class TestFtlBlockDevice : public ftl::BlockDevice {
 
   static DriverRegistration GetDriverRegistration() {
     return FUCHSIA_DRIVER_REGISTRATION_V1(
-        fdf_internal::DriverServer<TestFtlBlockDevice>::initialize,
-        fdf_internal::DriverServer<TestFtlBlockDevice>::destroy);
+        fdf_internal::DriverServer2<TestFtlBlockDevice>::initialize,
+        fdf_internal::DriverServer2<TestFtlBlockDevice>::destroy);
   }
 
  private:
@@ -385,7 +383,12 @@ TEST_F(BlockDeviceTest, ReadWrite) {
 
 TEST(BlockDeviceTest, Lifetime) {
   fdf_testing::BackgroundDriverTest<TestConfig> driver_test;
-  ASSERT_OK(driver_test.StartDriver());
+  zx::event node_token;
+  ASSERT_OK(zx::event::create(0, &node_token));
+  zx::event token_copy;
+  ASSERT_OK(node_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy));
+  ASSERT_OK(driver_test.StartDriverWithCustomStartArgs(
+      [&](fdf::DriverStartArgs& args) { args.node_token(std::move(token_copy)); }));
   ASSERT_OK(driver_test.StopDriver());
 }
 
@@ -735,7 +738,12 @@ TEST_F(BlockDeviceTest, ConcurrentRequests) {
 
 TEST(BlockDeviceTest, RaceConditionTeardown) {
   fdf_testing::BackgroundDriverTest<TestConfig> driver;
-  ASSERT_OK(driver.StartDriver());
+  zx::event node_token;
+  ASSERT_OK(zx::event::create(0, &node_token));
+  zx::event token_copy;
+  ASSERT_OK(node_token.duplicate(ZX_RIGHT_SAME_RIGHTS, &token_copy));
+  ASSERT_OK(driver.StartDriverWithCustomStartArgs(
+      [&](fdf::DriverStartArgs& args) { args.node_token(std::move(token_copy)); }));
   fidl::ClientEnd<fuchsia_io::Directory> svc_dir = driver.ConnectToDriverSvcDir();
   zx::result service = component::OpenServiceAt<fuchsia_hardware_block_volume::Service>(svc_dir);
   ASSERT_OK(service);

@@ -173,7 +173,8 @@ zx_status_t Device::InitWlanPhyImpl() {
   return ZX_OK;
 }
 
-zx_status_t Device::InitDevice(fdf::OutgoingDirectory& outgoing) {
+zx_status_t Device::InitDevice(fdf::OutgoingDirectory& outgoing,
+                               const std::shared_ptr<fdf::Namespace>& incoming) {
   auto netdev_dispatcher = fdf::SynchronizedDispatcher::Create(
       {}, "brcmfmac-netdev", [this](fdf_dispatcher_t*) { netdev_dispatcher_shutdown_.Signal(); });
   if (netdev_dispatcher.is_error()) {
@@ -182,7 +183,7 @@ zx_status_t Device::InitDevice(fdf::OutgoingDirectory& outgoing) {
   }
   netdev_dispatcher_ = std::move(netdev_dispatcher.value());
 
-  zx_status_t status = BusInit();
+  zx_status_t status = BusInit(incoming);
   if (status != ZX_OK) {
     BRCMF_ERR("Init failed: %s", zx_status_get_string(status));
     return status;

@@ -32,7 +32,7 @@ class UsbHidbus : public fdf::DriverBase2,
   explicit UsbHidbus();
   ~UsbHidbus() override;
 
-  // fdf::DriverBase implementation.
+  // fdf::DriverBase2 implementation.
   zx::result<> Start(fdf::DriverContext context) override;
   void Stop(fdf::StopCompleter completer) override;
 

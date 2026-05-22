@@ -3,7 +3,6 @@
 
 #include "src/connectivity/ethernet/drivers/virtio/virtio_net_driver.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/virtio/driver_utils.h>
 
@@ -28,7 +27,7 @@ zx::result<> VirtioNetDriver::Start(fdf::DriverContext context) {
 
   if (zx_status_t status = netdevice_->Init(); status != ZX_OK) {
     fdf::error("Failed to initialize net device: {}", zx_status_get_string(status));
-    // Call Shutdown to clean up any device state. The driver framework will not call PrepareStop
+    // Call Shutdown to clean up any device state. The driver framework will not call Stop
     // if Start fails so we need to perform this cleanup here.
     netdevice_->Shutdown();
     return zx::error(status);

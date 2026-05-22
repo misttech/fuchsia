@@ -40,7 +40,7 @@ to an interrupt.
 `IrqMethod` accepts a class instance method (i.e. a callback) that will be
 executed every time the corresponding interrupt is triggered. It also accepts a
 dispatcher used to execute the callback. It is recommended to use the driver's
-dispatcher `DriverBase::dispatcher()`. If the driver's dispatcher is
+dispatcher `DriverBase2::dispatcher()`. If the driver's dispatcher is
 synchronized (driver dispatchers are synchronized by default) then the execution
 of the callback will wait until the dispatcher is not currently executing other
 code. Keep in mind that this means the interrupt handler's callback execution
@@ -58,12 +58,12 @@ Here's an example of how a driver can listen to an interrupt using
 ```cpp {:.devsite-disable-click-to-copy}
 #include <lib/async/cpp/irq.h>
 
-class MyDriver : public fdf::DriverBase {
+class MyDriver : public fdf::DriverBase2 {
  public:
-  zx::result<> Start() override {
+  zx::result<> Start(fdf::DriverContext context) override {
     // Get the interrupt for a GPIO FIDL service.
     zx::result<fidl::ClientEnd<fuchsia_hardware_gpio::Gpio>> gpio =
-      incoming()->Connect<fuchsia_hardware_gpio::Service::Device>(kIrqGpioParentName);
+      context.incoming().Connect<fuchsia_hardware_gpio::Service::Device>(kIrqGpioParentName);
     if (gpio.is_error()) {
       fdf::error("Failed to connect to irq gpio: {}", gpio);
       return gpio.take_error();

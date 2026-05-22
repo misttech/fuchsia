@@ -106,7 +106,7 @@ For synchronous initialization, do the following:
 1. Add a `SyncInitializedDeviceServer` object to the class, for example:
 
    ```cpp {:.devsite-disable-click-to-copy}
-   class SimpleDriver : public fdf::DriverBase {
+   class SimpleDriver : public fdf::DriverBase2 {
     ...
        compat::SyncInitializedDeviceServer compat_server_;
     ...
@@ -128,8 +128,10 @@ For synchronous initialization, do the following:
 
    See below for the parameters of this function:
 
-   - The values of `incoming`, `outgoing`, and `node_name` can be passed by
-     invoking `DriverBase`'s accessors with the same names (see the example below).
+   - The value of `incoming` can be passed by taking and converting the incoming
+     namespace from `DriverContext` during `Start`. The value of `outgoing` can
+     be passed by invoking `DriverBase2`'s `outgoing()` accessor. The value of
+     `node_name` can be passed by invoking `DriverContext`'s `node_name()` accessor.
 
    - `child_node_name` is the name of the targeted child node for this
      `DeviceServer` object.
@@ -170,7 +172,7 @@ For asynchronous initialization, do the following:
    for example:
 
    ```cpp {:.devsite-disable-click-to-copy}
-   class SimpleDriver : public fdf::DriverBase {
+   class SimpleDriver : public fdf::DriverBase2 {
     ...
        compat::AsyncInitializedDeviceServer compat_server_;
     ...
@@ -208,10 +210,11 @@ For asynchronous initialization, do the following:
       async_completer_.reset();
    }
 
-   void SimpleDriver::Start(fdf::StartCompleter completer) {
+   void SimpleDriver::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
+      auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
       async_completer_.emplace(std::move(completer));
-      device_server_.Begin(incoming(), outgoing(), node_name(), child_name,
-      fit::bind_member<&MyDriver::OnDeviceServerInitialized>(this),
+      device_server_.Begin(incoming, outgoing(), context.node_name(), child_name,
+      fit::bind_member<&SimpleDriver::OnDeviceServerInitialized>(this),
       compat::ForwardMetadata::Some({DEVICE_METADATA_PRIVATE}));
    }
    ```
@@ -266,7 +269,7 @@ target child node, you need to add the protocol to the compat device server.
 Let's say your driver implements the `Misc` Banjo protocol, for example:
 
 ```cpp {:.devsite-disable-click-to-copy}
-class ParentBanjoTransportDriver : public fdf::DriverBase,
+class ParentBanjoTransportDriver : public fdf::DriverBase2,
                                    public ddk::MiscProtocol<ParentBanjoTransportDriver> {
 ...
 ```
@@ -292,7 +295,7 @@ To add the `Misc` Banjo protocol to the compat device server, do the following:
    `name` in lower case. So for the `Misc` Banjo protocol, the object looks like below:
 
    ```cpp {:.devsite-disable-click-to-copy}
-   class ParentBanjoTransportDriver : public fdf::DriverBase,
+   class ParentBanjoTransportDriver : public fdf::DriverBase2,
                                       public ddk::MiscProtocol<ParentBanjoTransportDriver> {
     ...
 
@@ -392,8 +395,11 @@ the driver's `DeviceServer` object:
   `ForwardMetadata::All()`, for example:
 
   ```cpp
+  // In Start(fdf::DriverContext context, fdf::StartCompleter completer):
+  // auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  //
   zx::result<> result = compat_server_.Initialize(
-         incoming(), outgoing(), node_name(), child_name,
+         incoming, outgoing(), context.node_name(), child_name,
          compat::ForwardMetadata::All());
   ```
 
@@ -404,8 +410,11 @@ the driver's `DeviceServer` object:
   The example below forwards metadata with the `DEVICE_METADATA_GPT_INFO` key only:
 
   ```cpp
+  // In Start(fdf::DriverContext context, fdf::StartCompleter completer):
+  // auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  //
   zx::result<> result = compat_server_.Initialize(
-         incoming(), outgoing(), node_name(), child_name,
+         incoming, outgoing(), context.node_name(), child_name,
          compat::ForwardMetadata::Some({DEVICE_METADATA_GPT_INFO}));
   ```
 
@@ -413,8 +422,11 @@ the driver's `DeviceServer` object:
   `ForwardMetadata::None()`, for example:
 
   ```cpp
+  // In Start(fdf::DriverContext context, fdf::StartCompleter completer):
+  // auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
+  //
   zx::result<> result = compat_server_.Initialize(
-         incoming(), outgoing(), node_name(), child_name,
+         incoming, outgoing(), context.node_name(), child_name,
                                 compat::ForwardMetadata::None());
   ```
 
@@ -446,7 +458,7 @@ To use this metadata library, do the following:
    ```cpp {:.devsite-disable-click-to-copy}
    fidl::Arena arena;
    zx::result<fuchsia_hardware_vreg::wire::Metadata> metadata = compat::GetMetadata<fuchsia_hardware_vreg::wire::Metadata>(
-             incoming(), arena, DEVICE_METADATA_VREG);
+             incoming, arena, DEVICE_METADATA_VREG);
    if (metadata.is_error()) {
      fdf::error("Failed to get metadata: {}", metadata);
      return completer(metadata.take_error());
@@ -461,7 +473,7 @@ To use this metadata library, do the following:
 
    ```cpp {:.devsite-disable-click-to-copy}
    zx::result<fuchsia_hardware_vreg::wire::Metadata> metadata = compat::GetMetadata<fuchsia_hardware_vreg::wire::Metadata>(
-        incoming(), arena, DEVICE_METADATA_VREG, "pdev");
+        incoming, arena, DEVICE_METADATA_VREG, "pdev");
    ```
 
 However, if the metadata type is a dynamically sized array, use
@@ -481,7 +493,7 @@ metadata as shown below:
 ```cpp {:.devsite-disable-click-to-copy}
 zx::result<std::vector<aml_voltage_table_t>>  voltage_table =
      compat::GetMetadataArray<aml_voltage_table_t>(
-      incoming(), DEVICE_METADATA_AML_VOLTAGE_TABLE);
+      incoming, DEVICE_METADATA_AML_VOLTAGE_TABLE);
  if (voltage_table.is_error()) {
    fdf::error("Failed to get voltage table metadata: {}", voltage_table);
    return zx::error(voltage_table.take_error());
@@ -494,7 +506,7 @@ parent node the metadata is from, for example:
 ```cpp {:.devsite-disable-click-to-copy}
 zx::result<std::vector<aml_voltage_table_t>> voltage_table =
      compat::GetMetadataArray<aml_voltage_table_t>(
-      incoming(), DEVICE_METADATA_AML_VOLTAGE_TABLE, "pdev");
+      incoming, DEVICE_METADATA_AML_VOLTAGE_TABLE, "pdev");
 ```
 
 <!-- Reference links -->
