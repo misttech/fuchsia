@@ -15,6 +15,7 @@ group("e2e_tests") {
     # group to ensure they are still included in the e2e test suite for
     # release testing.
     "//src/connectivity/wlan/tests/wlancfg:hidden_networks_test",
+    "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",
     "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test",
     "//src/connectivity/wlan/tests/wlancfg:start_stop_client_connections_test",
   ]
