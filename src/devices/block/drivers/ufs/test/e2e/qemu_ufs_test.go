@@ -8,7 +8,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
+	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/emulator"
 	"go.fuchsia.dev/fuchsia/tools/emulator/emulatortest"
@@ -51,8 +53,7 @@ func TestQemuWithUFSDisk(t *testing.T) {
 	emu.WaitForLogMessage("[driver, ufs] INFO: Bind Success")
 
 	// Check that the ufs disk is listed by fuchsia.
-	emu.RunCommand("lsblk")
-	emu.WaitForLogMessage("/00:02.0/00_02_0/ufs/scsi-block-device-0-0/block")
+	waitForDeviceInLsblk(t, emu, "/00:02.0/00_02_0/ufs/scsi-block-device-0-0/block")
 }
 
 func TestQemuWithUFSDiskAndRunBlktest(t *testing.T) {
@@ -107,12 +108,34 @@ func TestQemuWithUFSDiskAndRunBlktest(t *testing.T) {
 	emu.WaitForLogMessage("[driver, ufs] INFO: Bind Success")
 
 	// Check that the emulated disk is there.
-	emu.RunCommand("lsblk")
-	emu.WaitForLogMessage("/00:02.0/00_02_0/ufs/scsi-block-device-0-0/block")
-	emu.RunCommand("lsblk")
-	emu.WaitForLogMessage("/00:03.0/00_03_0/ufs/scsi-block-device-0-0/block")
+	waitForDeviceInLsblk(t, emu, "/00:02.0/00_02_0/ufs/scsi-block-device-0-0/block")
+	path := waitForDeviceInLsblk(t, emu, "/00:03.0/00_03_0/ufs/scsi-block-device-0-0/block")
 
 	// Run blktest
-	emu.RunCommand("blktest -d /dev/sys/platform/pt/PCI0/bus/00:03.0/00_03_0/ufs/scsi-block-device-0-0/block")
+	emu.RunCommand("blktest -d /block/" + path + "/fuchsia.storage.block.Block")
 	emu.WaitForLogMessage("[  PASSED  ]")
+}
+
+func waitForDeviceInLsblk(t *testing.T, emu *emulatortest.Instance, expectedPathSuffix string) string {
+	t.Helper()
+	// Matches a line of `lsblk` output containing a device, e.g.:
+	// ID   SIZE  TYPE        LABEL        FLAGS        DEVICE
+	// 001  10M   some_type   some_label   some_flags   $(expectedPathSuffix)
+	re := regexp.MustCompile(`^([0-9]+)\s+.*\s+(\S*` + regexp.QuoteMeta(expectedPathSuffix) + `)\s*$`)
+	for i := 0; i < 60; i++ {
+		emu.RunCommand("lsblk && echo \"LSBLK_DONE\"")
+		lines := emu.CaptureLinesContaining("", "LSBLK_DONE")
+		var blockId string
+		for _, line := range lines {
+			if match := re.FindStringSubmatch(line); match != nil {
+				blockId = match[1]
+			}
+		}
+		if blockId != "" {
+			return blockId
+		}
+		time.Sleep(1 * time.Second)
+	}
+	t.Fatalf("Device with path suffix %s did not appear in lsblk", expectedPathSuffix)
+	return ""
 }
