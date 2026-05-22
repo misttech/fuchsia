@@ -975,7 +975,7 @@ zx_status_t ProcessDispatcher::EnforceBasicPolicy(uint32_t condition) {
       JobPolicy::IncrementCounter(action, condition);
       return ZX_ERR_ACCESS_DENIED;
     case ZX_POL_ACTION_KILL:
-      Kill(ZX_TASK_RETCODE_POLICY_KILL);
+      Thread::Current::SignalPolicyKill();
       JobPolicy::IncrementCounter(action, condition);
       // Because we've killed, this return value will never make it out to usermode. However,
       // callers of this method will see and act on it.

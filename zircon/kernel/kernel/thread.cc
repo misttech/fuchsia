@@ -757,6 +757,13 @@ void Thread::Current::SignalPolicyException(uint32_t policy_exception_code,
   t->extra_policy_exception_data_ = policy_exception_data;
 }
 
+void Thread::Current::SignalPolicyKill() {
+  Thread* t = Thread::Current::Get();
+  SingleChainLockGuard guard{IrqSaveOption, t->get_lock(),
+                             CLT_TAG("Thread::Current::SignalPolicyKill")};
+  t->set_signals(THREAD_SIGNAL_POLICY_KILL);
+}
+
 void Thread::EraseFromListsLocked() {
   thread_list->erase(*this);
   if (migrate_list_node_.InContainer()) {
@@ -1503,6 +1510,23 @@ void Thread::Current::ProcessPendingSignals(GeneralRegsSource source, void* greg
                                    CLT_TAG("Thread::Current::ProcessPendingSignals")};
         arch_reset_suspended_general_regs(current_thread);
       }
+    }
+
+    // THREAD_SIGNAL_POLICY_KILL
+    //
+    if (signals & THREAD_SIGNAL_POLICY_KILL) {
+      DEBUG_ASSERT(has_user_thread);
+      // TODO(https://fxbug.dev/42077109): Consider wrapping this up in a method
+      // (e.g. Thread::Current::ClearSignals) and think hard about whether relaxed is sufficient.
+      current_thread->clear_signals(THREAD_SIGNAL_POLICY_KILL);
+
+      arch_enable_ints();
+      // Kill will begin the sequence, but won't actually terminate the calling thread.  Instead, it
+      // will raise THREAD_SIGNAL_KILL.  See that the signal was raised.  A subsequent iteration of
+      // this loop will process THREAD_SIGNAL_KILL.
+      ProcessDispatcher::GetCurrent()->Kill(ZX_TASK_RETCODE_POLICY_KILL);
+      DEBUG_ASSERT((current_thread->signals() & THREAD_SIGNAL_KILL) != 0);
+      arch_disable_ints();
     }
 
     // THREAD_SIGNAL_SUSPEND

@@ -107,6 +107,7 @@ typedef void (*thread_trampoline_routine)() __NO_RETURN;
 #define THREAD_SIGNAL_RESTRICTED_KICK        (1 << 3)
 #define THREAD_SIGNAL_SAMPLE_STACK           (1 << 4)
 #define THREAD_SIGNAL_CHECK_RSEQ             (1 << 5)
+#define THREAD_SIGNAL_POLICY_KILL            (1 << 6)
 // clang-format on
 
 // thread priority
@@ -974,6 +975,9 @@ struct Thread : public ChainLockable {
     // |policy_exception_code| should be a ZX_EXCP_POLICY_CODE_* value.
     static void SignalPolicyException(uint32_t policy_exception_code,
                                       uint32_t policy_exception_data);
+
+    // Raise a thread signal that when processed, will kill the calling thread.
+    static void SignalPolicyKill();
 
     // Process any pending thread signals.
     //
