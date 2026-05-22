@@ -7,7 +7,7 @@ use crate::task::{CurrentTask, CurrentTaskAndLocked, register_delayed_release};
 use crate::vfs::{FdNumber, FileHandle, FileReleaser};
 use bitflags::bitflags;
 use fuchsia_rcu::subtle::{RcuPtrRef, rcu_ptr_to_arc};
-use fuchsia_rcu::{RcuArc, RcuReadScope};
+use fuchsia_rcu::{RcuArc, RcuReadScope, rcu_drop};
 use fuchsia_rcu_collections::rcu_array::RcuArray;
 use linux_uapi::{FD_CLOEXEC, FIOCLEX, FIONCLEX};
 use starnix_sync::{
@@ -98,7 +98,12 @@ impl EncodedEntry {
         if !ptr.is_null() {
             // SAFETY: The pointer is valid because it was encoded in `self.value`.
             let file = unsafe { Arc::from_raw(ptr) };
-            register_delayed_release(FlushedFile(file, id));
+            // Concurrent readers expect the `FileHandle` to be retained for the entire RCU grace
+            // period. `FlushedFile` delayed release may be processed before the grace period
+            // expires. We must defer a reference to RCU to ensure delayed release does not drop the
+            // last reference and free the file before RCU readers are done with it.
+            register_delayed_release(FlushedFile(file.clone(), id));
+            rcu_drop(file)
         }
     }
 
