@@ -13,6 +13,7 @@ use fuchsia_component::server::ServiceFs;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use log::error;
+use pdev::PdevExt;
 use zx::Status;
 
 use fdf_metadata::MetadataServer;
@@ -275,13 +276,7 @@ impl Driver for AmlSaradc {
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let node = context.take_node()?;
 
-        let pdev = context
-            .incoming
-            .service_marker(fidl_fuchsia_hardware_platform_device::ServiceMarker)
-            .instance("pdev")
-            .connect()?
-            .connect_to_device()
-            .map_err(|_| Status::INTERNAL)?;
+        let pdev = context.connect_to_pdev()?;
 
         let adc_mmio = pdev
             .get_mmio_by_id(0)

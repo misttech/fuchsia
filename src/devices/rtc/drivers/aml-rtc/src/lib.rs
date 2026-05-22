@@ -15,6 +15,7 @@ use log::warn;
 use mmio::region::MmioRegion;
 use mmio::vmo::{VmoMapping, VmoMemory};
 use mmio::{register, register_block};
+use pdev::PdevExt;
 use std::cell::RefCell;
 use std::sync::Arc;
 use zx::Status;
@@ -96,12 +97,7 @@ impl Driver for AmlRtcDriver {
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         let node = context.take_node()?;
 
-        let pdev = context
-            .incoming
-            .service_marker(fidl_fuchsia_hardware_platform_device::ServiceMarker)
-            .connect()?
-            .connect_to_device()
-            .map_err(|_| Status::INTERNAL)?;
+        let pdev = context.connect_to_pdev()?;
 
         let mmio = pdev
             .get_mmio_by_id(0)

@@ -48,7 +48,7 @@ async fn test_init() {
     let gpio = FakeGpio::default();
 
     let mut harness = TestHarness::<DwSpiDriver>::new()
-        .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "default"))
+        .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
         .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
         .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
         .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))
@@ -112,7 +112,7 @@ async fn test_exchange_vector() {
     let gpio = FakeGpio::default();
 
     let mut harness = TestHarness::<DwSpiDriver>::new()
-        .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "default"))
+        .add_offer(pdev.serve(&mut service_fs, scope.to_handle(), "pdev"))
         .add_offer(powerdomain.serve(&mut service_fs, scope.to_handle(), "power-domain"))
         .add_offer(clock_bus.serve(&mut service_fs, scope.to_handle(), "clock-bus"))
         .add_offer(clock_regs.serve(&mut service_fs, scope.to_handle(), "clock-registers"))

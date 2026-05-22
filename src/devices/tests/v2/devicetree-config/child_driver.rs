@@ -4,7 +4,7 @@
 
 use fdf_component::{Driver, DriverContext, DriverError, driver_register};
 use log::info;
-use pdev::PlatformDevice;
+use pdev::{PdevExt, PlatformDevice};
 use serde::Deserialize;
 use zx::Status;
 
@@ -30,19 +30,7 @@ impl Driver for ChildDriver {
     async fn start(context: DriverContext) -> Result<Self, DriverError> {
         log::info!("Child driver starting");
 
-        // Connect to PlatformDevice service (default instance)
-        let service = context
-            .incoming
-            .service::<fidl_fuchsia_hardware_platform_device::ServiceProxy>()
-            .connect()
-            .map_err(|e| {
-                log::error!("Failed to connect to service: {:?}", e);
-                Status::INTERNAL
-            })?;
-        let pdev = service.connect_to_device().map_err(|e| {
-            log::error!("Failed to connect to device: {:?}", e);
-            Status::INTERNAL
-        })?;
+        let pdev = context.connect_to_pdev()?;
 
         let config: MyConfig = pdev.get_deserialized_metadata().await.map_err(|e| {
             log::error!("Failed to get deserialized metadata: {:?}", e);

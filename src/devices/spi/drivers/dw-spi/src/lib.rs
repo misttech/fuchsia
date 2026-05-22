@@ -7,7 +7,7 @@ use fdf_component::{
 };
 use fdf_metadata::MetadataServer;
 use fidl::Serializable;
-use fidl_fuchsia_hardware_platform_device as fpdev;
+
 use fidl_fuchsia_hardware_spi_businfo as fspi_businfo;
 use fidl_next::{Request, Responder, ServerEnd};
 use fidl_next_fuchsia_hardware_clock as fclock;
@@ -25,7 +25,7 @@ use log::{error, info, warn};
 use mmio::Register;
 use mmio::region::MmioRegion;
 use mmio::vmo::VmoMemory;
-use pdev::PlatformDevice;
+use pdev::{PdevExt, PlatformDevice};
 use zx::Status;
 mod registers;
 
@@ -340,15 +340,7 @@ impl Driver for DwSpiDriver {
     async fn start(mut context: DriverContext) -> Result<Self, DriverError> {
         info!("Starting dw-spi driver");
 
-        let pdev: fpdev::DeviceProxy = context
-            .incoming
-            .service_marker(fpdev::ServiceMarker)
-            .connect()?
-            .connect_to_device()
-            .map_err(|e| {
-                error!("Failed to connect to platform device: {:?}", e);
-                Status::INTERNAL
-            })?;
+        let pdev = context.connect_to_pdev()?;
 
         let powerdomain_service: fdf_component::ServiceInstance<fpowerdomain::Service> =
             context.incoming.service().instance("power-domain").connect_next()?;

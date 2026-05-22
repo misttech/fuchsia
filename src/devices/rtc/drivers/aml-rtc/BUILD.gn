@@ -26,6 +26,7 @@ fuchsia_rust_driver("aml-rtc-driver") {
     "//sdk/fidl/fuchsia.hardware.rtc:fuchsia.hardware.rtc_rust",
     "//sdk/lib/driver/component/rust",
     "//sdk/lib/driver/mmio/rust:mmio",
+    "//sdk/lib/driver/platform-device/rust:pdev",
     "//sdk/rust/zx",
     "//src/devices/rtc/lib/rtc:fuchsia_rtc",
     "//src/lib/fidl/rust/fidl",
