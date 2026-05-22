@@ -81,10 +81,10 @@ test("usb-fastboot-function-test-bin") {
     ":usb-fastboot-function-common",
     "//sdk/fidl/fuchsia.hardware.fastboot:fuchsia.hardware.fastboot_cpp_testing",
     "//sdk/lib/driver/testing/cpp",
-    "//sdk/lib/inspect/testing/cpp:zxtest",
+    "//sdk/lib/inspect/testing/cpp",
     "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
-    "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server-zxtest",
-    "//zircon/system/ulib/zxtest",
+    "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server",
+    "//src/lib/fxl/test:gtest_main",
   ]
 }
 

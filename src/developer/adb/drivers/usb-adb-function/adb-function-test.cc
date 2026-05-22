@@ -9,12 +9,14 @@
 #include <lib/async/default.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_test.h>
+#include <lib/fidl/cpp/wire/status.h>
 #include <lib/sync/completion.h>
+#include <lib/zx/result.h>
 
 #include <vector>
 
+#include <gtest/gtest.h>
 #include <usb/usb-request.h>
-#include <zxtest/zxtest.h>
 
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 
@@ -36,7 +38,7 @@ class AdbFakeUsb
       fidl::internal::NaturalCompleter<
           fuchsia_hardware_usb_function::UsbFunction::AllocResources>::Sync& completer) override {
     fuchsia_hardware_usb_function::UsbFunctionAllocResourcesResponse response;
-    EXPECT_EQ(request.endpoints().size(), 2);
+    EXPECT_EQ(request.endpoints().size(), 2u);
     EXPECT_EQ(request.interface_count(), 1u);
     EXPECT_EQ(request.strings().size(), 0u);
     response.interface_nums() = {0};
@@ -98,8 +100,10 @@ class UsbAdbEnvironment : public fdf_testing::Environment {
         .device = usb_function_bindings_.CreateHandler(&fake_dev_, dispatcher,
                                                        fidl::kIgnoreBindingClosure),
     });
-    EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_usb_function::UsbFunctionService>(
-        std::move(handler)));
+    EXPECT_TRUE(
+        to_driver_vfs
+            .AddService<fuchsia_hardware_usb_function::UsbFunctionService>(std::move(handler))
+            .is_ok());
 
     return zx::ok();
   }
@@ -120,11 +124,11 @@ class UsbAdbTestConfig final {
   using EnvironmentType = UsbAdbEnvironment;
 };
 
-class UsbAdbTest : public zxtest::Test {
+class UsbAdbTest : public ::testing::Test {
  public:
   fidl::WireSyncClient<fadb::UsbAdbImpl> NormalStartAdb() {
     auto [client_end, server_end] = fidl::Endpoints<fadb::UsbAdbImpl>::Create();
-    EXPECT_OK(client_->StartAdb(std::move(server_end)));
+    EXPECT_TRUE(client_->StartAdb(std::move(server_end)).ok());
     WaitConfigured();
     EnableUsb();
 
@@ -133,7 +137,7 @@ class UsbAdbTest : public zxtest::Test {
 
   void NormalStopDriver() {
     CancelAllUsbRxRequestsOnDeconfigure();
-    EXPECT_OK(driver_test_.StopDriver());
+    EXPECT_TRUE(driver_test_.StopDriver().is_ok());
   }
 
   void SetUp() override {
@@ -143,9 +147,9 @@ class UsbAdbTest : public zxtest::Test {
       env.fake_dev_.set_on_configured([&]() { configured.Signal(); });
     });
 
-    ASSERT_OK(driver_test_.StartDriver().status_value());
+    ASSERT_TRUE(driver_test_.StartDriver().is_ok());
     auto device = driver_test_.Connect<fadb::Service::Adb>();
-    EXPECT_OK(device.status_value());
+    EXPECT_TRUE(device.is_ok());
     client_.Bind(std::move(device.value()));
     configured.Wait();
     driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
@@ -165,7 +169,7 @@ class UsbAdbTest : public zxtest::Test {
         .configured = true,
         .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kFull,
     }});
-    EXPECT_TRUE(result.is_ok(), "%s", result.error_value().FormatDescription().c_str());
+    EXPECT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
   }
 
   zx_status_t WaitFunctionClosed() {
@@ -198,25 +202,25 @@ class UsbAdbTest : public zxtest::Test {
   }
 
   void SendTestData(fidl::WireSyncClient<fadb::UsbAdbImpl>& usb_impl, size_t size) {
-    uint8_t test_data[size];
+    std::vector<uint8_t> test_data(size);
 
     driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
-      for (uint32_t i = 0; i < sizeof(test_data) / kVmoDataSize; i++) {
+      for (uint32_t i = 0; i < test_data.size() / kVmoDataSize; i++) {
         env.fake_dev_.fake_endpoint(kBulkInEp).RequestComplete(ZX_OK, kVmoDataSize);
       }
-      if (sizeof(test_data) % kVmoDataSize) {
+      if (test_data.size() % kVmoDataSize) {
         env.fake_dev_.fake_endpoint(kBulkInEp).RequestComplete(ZX_OK,
-                                                               sizeof(test_data) % kVmoDataSize);
+                                                               test_data.size() % kVmoDataSize);
       }
     });
 
-    auto result =
-        usb_impl->QueueTx(fidl::VectorView<uint8_t>::FromExternal(test_data, sizeof(test_data)));
+    auto result = usb_impl->QueueTx(
+        fidl::VectorView<uint8_t>::FromExternal(test_data.data(), test_data.size()));
     ASSERT_TRUE(result.ok());
     ASSERT_TRUE(result->is_ok());
 
     driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
-      EXPECT_EQ(env.fake_dev_.fake_endpoint(kBulkInEp).pending_request_count(), 0);
+      EXPECT_EQ(env.fake_dev_.fake_endpoint(kBulkInEp).pending_request_count(), 0u);
     });
   }
 
@@ -251,11 +255,11 @@ class EventHandler : public fidl::WireSyncEventHandler<fadb::UsbAdbImpl> {
   std::queue<fadb::StatusFlags> expected_statuses_;
 };
 
-TEST_F(UsbAdbTest, StopBeforeUsbStartsUp) { EXPECT_OK(driver_test_.StopDriver()); }
+TEST_F(UsbAdbTest, StopBeforeUsbStartsUp) { EXPECT_TRUE(driver_test_.StopDriver().is_ok()); }
 
 TEST_F(UsbAdbTest, StartStop) {
   auto [client_end, server_end] = fidl::Endpoints<fadb::UsbAdbImpl>::Create();
-  EXPECT_OK(client_->StartAdb(std::move(server_end)));
+  EXPECT_TRUE(client_->StartAdb(std::move(server_end)).ok());
   auto usb_impl = fidl::WireSyncClient<fadb::UsbAdbImpl>(std::move(client_end));
 
   EventHandler handler;
@@ -271,7 +275,7 @@ TEST_F(UsbAdbTest, StartStop) {
 
   // Now we should get the event.
   handler.expected_statuses_.push(fadb::StatusFlags::kOnline);
-  EXPECT_OK(usb_impl.HandleOneEvent(handler));
+  EXPECT_TRUE(usb_impl.HandleOneEvent(handler).ok());
 
   libsync::Completion stop_requested;
   driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
@@ -281,7 +285,7 @@ TEST_F(UsbAdbTest, StartStop) {
   // Request a USB reset.
   libsync::Completion stop_finished;
   std::thread t([&]() {
-    EXPECT_OK(client_->StopAdb());
+    EXPECT_TRUE(client_->StopAdb().ok());
     stop_finished.Signal();
   });
 
@@ -300,16 +304,16 @@ TEST_F(UsbAdbTest, StartStop) {
   stop_requested.Wait();
   driver_test_.RunInEnvironmentTypeContext(
       [&](UsbAdbEnvironment& env) { env.CancelAllUsbRxRequests(); });
-  ASSERT_OK(WaitFunctionClosed());
+  ASSERT_EQ(ZX_OK, WaitFunctionClosed());
 
   handler.expected_statuses_.emplace(0);
-  EXPECT_OK(usb_impl.HandleOneEvent(handler));
+  EXPECT_TRUE(usb_impl.HandleOneEvent(handler).ok());
   EXPECT_EQ(usb_impl.HandleOneEvent(handler).status(), ZX_ERR_PEER_CLOSED);
 
   stop_finished.Wait();
   t.join();
 
-  EXPECT_OK(driver_test_.StopDriver());
+  EXPECT_TRUE(driver_test_.StopDriver().is_ok());
 }
 
 TEST_F(UsbAdbTest, StopDriverWhileConnected) {
@@ -317,13 +321,13 @@ TEST_F(UsbAdbTest, StopDriverWhileConnected) {
 
   EventHandler handler;
   handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
-  EXPECT_OK(usb_impl.HandleOneEvent(handler));
+  EXPECT_TRUE(usb_impl.HandleOneEvent(handler).ok());
 
   CancelAllUsbRxRequestsOnDeconfigure();
-  EXPECT_OK(driver_test_.StopDriver());
+  EXPECT_TRUE(driver_test_.StopDriver().is_ok());
 
   handler.expected_statuses_.emplace(0);
-  EXPECT_OK(usb_impl.HandleOneEvent(handler));
+  EXPECT_TRUE(usb_impl.HandleOneEvent(handler).ok());
 }
 
 TEST_F(UsbAdbTest, UsbStackRequestsStop) {
@@ -331,18 +335,18 @@ TEST_F(UsbAdbTest, UsbStackRequestsStop) {
 
   EventHandler handler;
   handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
-  EXPECT_OK(usb_impl.HandleOneEvent(handler));
+  EXPECT_TRUE(usb_impl.HandleOneEvent(handler).ok());
 
   fidl::Result result = iface_client_->SetConfigured({{
       .configured = false,
   }});
-  ASSERT_TRUE(result.is_ok(), "%s", result.error_value().FormatDescription().c_str());
+  ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
   driver_test_.RunInEnvironmentTypeContext(
       [](UsbAdbEnvironment& env) { env.CancelAllUsbRxRequests(); });
 
   handler.expected_statuses_.emplace(0);
-  EXPECT_OK(usb_impl.HandleOneEvent(handler));
-  EXPECT_OK(driver_test_.StopDriver());
+  EXPECT_TRUE(usb_impl.HandleOneEvent(handler).ok());
+  EXPECT_TRUE(driver_test_.StopDriver().is_ok());
 }
 
 TEST_F(UsbAdbTest, StartStopStartStop) {
@@ -350,47 +354,47 @@ TEST_F(UsbAdbTest, StartStopStartStop) {
     EventHandler handler;
     auto usb_impl = NormalStartAdb();
     handler.expected_statuses_.push(fadb::StatusFlags::kOnline);
-    EXPECT_OK(usb_impl.HandleOneEvent(handler));
+    EXPECT_TRUE(usb_impl.HandleOneEvent(handler).ok());
 
     CancelAllUsbRxRequestsOnDeconfigure();
-    EXPECT_OK(client_->StopAdb());
+    EXPECT_TRUE(client_->StopAdb().ok());
 
     handler.expected_statuses_.emplace(0);
-    EXPECT_OK(usb_impl.HandleOneEvent(handler));
+    EXPECT_TRUE(usb_impl.HandleOneEvent(handler).ok());
     EXPECT_EQ(usb_impl.HandleOneEvent(handler).status(), ZX_ERR_PEER_CLOSED);
-    ASSERT_OK(WaitFunctionClosed());
+    ASSERT_EQ(ZX_OK, WaitFunctionClosed());
   }
 
   {
     EventHandler handler;
     auto usb_impl = NormalStartAdb();
     handler.expected_statuses_.push(fadb::StatusFlags::kOnline);
-    EXPECT_OK(usb_impl.HandleOneEvent(handler));
+    EXPECT_TRUE(usb_impl.HandleOneEvent(handler).ok());
 
     CancelAllUsbRxRequestsOnDeconfigure();
-    EXPECT_OK(client_->StopAdb());
+    EXPECT_TRUE(client_->StopAdb().ok());
 
     handler.expected_statuses_.emplace(0);
-    EXPECT_OK(usb_impl.HandleOneEvent(handler));
+    EXPECT_TRUE(usb_impl.HandleOneEvent(handler).ok());
     EXPECT_EQ(usb_impl.HandleOneEvent(handler).status(), ZX_ERR_PEER_CLOSED);
-    ASSERT_OK(WaitFunctionClosed());
+    ASSERT_EQ(ZX_OK, WaitFunctionClosed());
   }
 
-  EXPECT_OK(driver_test_.StopDriver());
+  EXPECT_TRUE(driver_test_.StopDriver().is_ok());
 }
 
 TEST_F(UsbAdbTest, StartAdbAfterUsbConnectionEstablished) {
   EnableUsb();
 
   auto [client_end, server_end] = fidl::Endpoints<fadb::UsbAdbImpl>::Create();
-  EXPECT_OK(client_->StartAdb(std::move(server_end)));
+  EXPECT_TRUE(client_->StartAdb(std::move(server_end)).ok());
 
   auto usb_impl = fidl::WireSyncClient<fadb::UsbAdbImpl>(std::move(client_end));
 
   // We should get kOnline immediately, because we're already connected.
   EventHandler handler;
   handler.expected_statuses_.push(fadb::StatusFlags::kOnline);
-  EXPECT_OK(usb_impl.HandleOneEvent(handler));
+  EXPECT_TRUE(usb_impl.HandleOneEvent(handler).ok());
 
   ASSERT_NO_FATAL_FAILURE(NormalStopDriver());
 }
@@ -423,7 +427,7 @@ TEST_F(UsbAdbTest, RecvAdbMessage) {
 
   std::thread t([&]() {
     auto response = usb_impl->Receive();
-    ASSERT_OK(response.status());
+    ASSERT_EQ(ZX_OK, response.status());
     ASSERT_EQ(response.value().value()->data.size(), kReceiveSize);
   });
 

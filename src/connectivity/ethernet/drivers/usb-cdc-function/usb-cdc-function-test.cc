@@ -19,9 +19,11 @@
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/testing/cpp/driver_test.h>
+#include <lib/inspect/testing/cpp/inspect.h>
 #include <lib/sync/cpp/completion.h>
 
-#include <zxtest/zxtest.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 
@@ -39,7 +41,7 @@ class FakeNetworkDeviceIfc : public fidl::testing::WireTestBase<fnetdev::Network
   FakeNetworkDeviceIfc() = default;
 
   void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
-    ADD_FAILURE("FakeNetworkDeviceIfc not implemented: %s", name.c_str());
+    ADD_FAILURE() << "FakeNetworkDeviceIfc not implemented: " << name;
     if (completer.is_reply_needed()) {
       completer.Close(ZX_ERR_NOT_SUPPORTED);
     }
@@ -134,9 +136,9 @@ class FakeUsbFunction
       fidl::internal::NaturalCompleter<
           fuchsia_hardware_usb_function::UsbFunction::AllocResources>::Sync& completer) override {
     fuchsia_hardware_usb_function::UsbFunctionAllocResourcesResponse response;
-    ASSERT_EQ(request.endpoints().size(), 3);
-    ASSERT_EQ(request.interface_count(), 2);
-    ASSERT_EQ(request.strings().size(), 1);
+    ASSERT_EQ(request.endpoints().size(), 3u);
+    ASSERT_EQ(request.interface_count(), 2u);
+    ASSERT_EQ(request.strings().size(), 1u);
     response.interface_nums() = {kCommInterface, kDataInterface};
     response.endpoint_addrs() = {kIntrEp, kBulkInEp, kBulkOutEp};
     response.string_indices() = {1};
@@ -205,7 +207,7 @@ class UsbCdcTestConfig final {
   using EnvironmentType = Environment;
 };
 
-class UsbCdcTest : public zxtest::Test {
+class UsbCdcTest : public ::testing::Test {
  public:
   static constexpr fdf_arena_tag_t kArenaTag = 'TEST';
   static constexpr std::array<uint8_t, 6> kTestMac = {0, 1, 2, 3, 4, 5};
@@ -216,24 +218,25 @@ class UsbCdcTest : public zxtest::Test {
     libsync::Completion function_configured;
     driver_test_.RunInEnvironmentTypeContext([server = std::move(endpoints->server), &port_ready,
                                               &function_configured](Environment& env) mutable {
-      EXPECT_OK(env.metadata_server_.SetMetadata({{.mac_address = {{{.octets = kTestMac}}}}}));
+      EXPECT_TRUE(
+          env.metadata_server_.SetMetadata({{.mac_address = {{{.octets = kTestMac}}}}}).is_ok());
       fdf::BindServer(fdf::Dispatcher::GetCurrent()->get(), std::move(server), &env.fake_ifc_);
       env.fake_ifc_.set_on_add_port([&port_ready]() { port_ready.Signal(); });
       env.fake_usb_fidl_.set_on_configure(
           [&function_configured]() { function_configured.Signal(); });
     });
 
-    ASSERT_OK(driver_test_.StartDriver().status_value());
+    ASSERT_EQ(ZX_OK, driver_test_.StartDriver().status_value());
 
     // Connect to the driver
     auto connect_result = driver_test_.Connect<fnetdev::Service::NetworkDeviceImpl>();
-    ASSERT_OK(connect_result.status_value());
+    ASSERT_EQ(ZX_OK, connect_result.status_value());
 
     fdf::Arena arena(kArenaTag);
     net_impl_client_.Bind(std::move(connect_result.value()));
     auto init_result = net_impl_client_.buffer(arena)->Init(std::move(endpoints->client));
-    ASSERT_OK(init_result.status());
-    ASSERT_OK(init_result->s);
+    ASSERT_EQ(ZX_OK, init_result.status());
+    ASSERT_EQ(ZX_OK, init_result->s);
 
     port_ready.Wait();
     function_configured.Wait();
@@ -250,13 +253,13 @@ class UsbCdcTest : public zxtest::Test {
     });
   }
 
-  void TearDown() override { ASSERT_OK(driver_test_.StopDriver().status_value()); }
+  void TearDown() override { ASSERT_TRUE(driver_test_.StopDriver().status_value() == ZX_OK); }
 
   void StartNetworkDevice() {
     fdf::Arena arena(kArenaTag);
     auto start_result = net_impl_client_.buffer(arena)->Start();
-    ASSERT_OK(start_result.status());
-    ASSERT_OK(start_result->s);
+    ASSERT_EQ(ZX_OK, start_result.status());
+    ASSERT_EQ(ZX_OK, start_result->s);
   }
 
   void SetConfiguredAndEnable() {
@@ -266,14 +269,14 @@ class UsbCdcTest : public zxtest::Test {
           .configured = true,
           .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
       }});
-      ASSERT_TRUE(result.is_ok(), "%s", result.error_value().FormatDescription().c_str());
+      ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
     }
     {
       fidl::Result result = function_client_->SetInterface({{
           .interface = kDataInterface,
           .alt_setting = 1,
       }});
-      ASSERT_TRUE(result.is_ok(), "%s", result.error_value().FormatDescription().c_str());
+      ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
     }
   }
 
@@ -287,7 +290,7 @@ class UsbCdcTest : public zxtest::Test {
 TEST_F(UsbCdcTest, GetInfo) {
   fdf::Arena arena(kArenaTag);
   auto result = net_impl_client_.buffer(arena)->GetInfo();
-  ASSERT_OK(result.status());
+  ASSERT_EQ(ZX_OK, result.status());
   EXPECT_EQ(result->info.tx_depth(), UsbCdcFunction::kTxDepth);
   EXPECT_EQ(result->info.rx_depth(), UsbCdcFunction::kRxDepth);
 }
@@ -297,21 +300,21 @@ TEST_F(UsbCdcTest, GetMac) {
 
   fdf::Arena arena(kArenaTag);
   auto result = net_port_client_.buffer(arena)->GetMac();
-  ASSERT_OK(result.status());
+  ASSERT_EQ(ZX_OK, result.status());
   ASSERT_TRUE(result->mac_ifc.is_valid());
 
   fdf::WireSyncClient<fnetdev::MacAddr> mac_client;
   mac_client.Bind(std::move(result->mac_ifc));
 
   auto mac_result = mac_client.buffer(arena)->GetAddress();
-  ASSERT_OK(mac_result.status());
+  ASSERT_EQ(ZX_OK, mac_result.status());
 
   // TODO(https://fxbug.dev/476474119): The driver is currently flipping MAC
   // addresses, we should always use the local mac address provided by the
   // metadata and offer the other one to the host.
   std::array<uint8_t, 6> expected_mac = kTestMac;
   expected_mac[5] ^= 0x01;
-  EXPECT_BYTES_EQ(mac_result->mac.octets.data(), expected_mac.data(), expected_mac.size());
+  EXPECT_EQ(0, memcmp(mac_result->mac.octets.data(), expected_mac.data(), expected_mac.size()));
 }
 
 TEST_F(UsbCdcTest, TxFailsIfOffline) {
@@ -321,13 +324,13 @@ TEST_F(UsbCdcTest, TxFailsIfOffline) {
   constexpr uint32_t kBufferId = 100;
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(4096, 0, &vmo));
+  ASSERT_EQ(ZX_OK, zx::vmo::create(4096, 0, &vmo));
   uint8_t data[] = {0xAA, 0xBB, 0xCC, 0xDD};
-  ASSERT_OK(vmo.write(data, 0, sizeof(data)));
+  ASSERT_EQ(ZX_OK, vmo.write(data, 0, sizeof(data)));
   fdf::Arena arena(kArenaTag);
   auto prepare_result = net_impl_client_.buffer(arena)->PrepareVmo(kVmoId, std::move(vmo));
-  ASSERT_OK(prepare_result.status());
-  ASSERT_OK(prepare_result->s);
+  ASSERT_EQ(ZX_OK, prepare_result.status());
+  ASSERT_EQ(ZX_OK, prepare_result->s);
 
   fnetdev::wire::BufferRegion region = {.vmo = kVmoId, .offset = 0, .length = sizeof(data)};
   fnetdev::wire::TxBuffer buffer = {
@@ -339,7 +342,8 @@ TEST_F(UsbCdcTest, TxFailsIfOffline) {
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     env.fake_ifc_.set_on_complete_tx([&]() { sync_completion_signal(&tx_completed); });
   });
-  ASSERT_OK(net_impl_client_.buffer(arena)
+  ASSERT_EQ(ZX_OK,
+            net_impl_client_.buffer(arena)
                 ->QueueTx(fidl::VectorView<fnetdev::wire::TxBuffer>::FromExternal(&buffer, 1))
                 .status());
 
@@ -349,7 +353,7 @@ TEST_F(UsbCdcTest, TxFailsIfOffline) {
     auto buffer = env.fake_ifc_.PopCompleteTx();
     ASSERT_TRUE(buffer.has_value());
     EXPECT_EQ(buffer->id, kBufferId);
-    EXPECT_STATUS(buffer->status, ZX_ERR_BAD_STATE);
+    EXPECT_EQ(ZX_ERR_BAD_STATE, buffer->status);
   });
 }
 
@@ -361,13 +365,13 @@ TEST_F(UsbCdcTest, QueueTx) {
   constexpr uint32_t kBufferId = 100;
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(4096, 0, &vmo));
+  ASSERT_EQ(ZX_OK, zx::vmo::create(4096, 0, &vmo));
   uint8_t data[] = {0xAA, 0xBB, 0xCC, 0xDD};
-  ASSERT_OK(vmo.write(data, 0, sizeof(data)));
+  ASSERT_EQ(ZX_OK, vmo.write(data, 0, sizeof(data)));
   fdf::Arena arena(kArenaTag);
   auto prepare_result = net_impl_client_.buffer(arena)->PrepareVmo(kVmoId, std::move(vmo));
-  ASSERT_OK(prepare_result.status());
-  ASSERT_OK(prepare_result->s);
+  ASSERT_EQ(ZX_OK, prepare_result.status());
+  ASSERT_EQ(ZX_OK, prepare_result->s);
 
   fnetdev::wire::BufferRegion region = {.vmo = kVmoId, .offset = 0, .length = sizeof(data)};
   fnetdev::wire::TxBuffer buffer = {
@@ -379,11 +383,12 @@ TEST_F(UsbCdcTest, QueueTx) {
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     env.fake_ifc_.set_on_complete_tx([&]() { sync_completion_signal(&tx_completed); });
   });
-  ASSERT_OK(net_impl_client_.buffer(arena)
+  ASSERT_EQ(ZX_OK,
+            net_impl_client_.buffer(arena)
                 ->QueueTx(fidl::VectorView<fnetdev::wire::TxBuffer>::FromExternal(&buffer, 1))
                 .status());
 
-  EXPECT_STATUS(sync_completion_wait(&tx_completed, ZX_TIME_INFINITE_PAST), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(ZX_ERR_TIMED_OUT, sync_completion_wait(&tx_completed, ZX_TIME_INFINITE_PAST));
   driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
     env.fake_usb_fidl_.fake_endpoint(kBulkInEp).RequestComplete(ZX_OK, sizeof(data));
   });
@@ -394,7 +399,7 @@ TEST_F(UsbCdcTest, QueueTx) {
     auto buffer = env.fake_ifc_.PopCompleteTx();
     ASSERT_TRUE(buffer.has_value());
     EXPECT_EQ(buffer->id, kBufferId);
-    EXPECT_OK(buffer->status);
+    EXPECT_EQ(ZX_OK, buffer->status);
   });
 }
 
@@ -414,11 +419,11 @@ TEST_F(UsbCdcTest, Rx) {
   constexpr uint8_t kBufferId2 = 202;
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(4096, 0, &vmo));
+  ASSERT_EQ(ZX_OK, zx::vmo::create(4096, 0, &vmo));
   fdf::Arena arena(kArenaTag);
   auto prepare_result = net_impl_client_.buffer(arena)->PrepareVmo(kVmoId, std::move(vmo));
-  ASSERT_OK(prepare_result.status());
-  ASSERT_OK(prepare_result->s);
+  ASSERT_EQ(ZX_OK, prepare_result.status());
+  ASSERT_EQ(ZX_OK, prepare_result->s);
 
   {
     fnetdev::wire::RxSpaceBuffer buffer = {
@@ -426,13 +431,14 @@ TEST_F(UsbCdcTest, Rx) {
         .region = {.vmo = kVmoId, .offset = 0, .length = 2048},
     };
 
-    ASSERT_OK(
+    ASSERT_EQ(
+        ZX_OK,
         net_impl_client_.buffer(arena)
             ->QueueRxSpace(fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&buffer, 1))
             .status());
   }
 
-  EXPECT_STATUS(sync_completion_wait(&rx_completed, ZX_TIME_INFINITE_PAST), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(ZX_ERR_TIMED_OUT, sync_completion_wait(&rx_completed, ZX_TIME_INFINITE_PAST));
 
   // Complete 2 requests, but we only have one rx space already queued.
   // The pending request can be completed later.
@@ -450,7 +456,7 @@ TEST_F(UsbCdcTest, Rx) {
     EXPECT_EQ(buffer->meta().frame_type(), fuchsia_hardware_network::wire::FrameType::kEthernet);
     ASSERT_EQ(buffer->data().size(), 1u);
     auto& data = buffer->data()[0];
-    EXPECT_EQ(data.offset(), 0);
+    EXPECT_EQ(data.offset(), 0u);
     EXPECT_EQ(data.length(), kDataSize1);
     EXPECT_EQ(data.id(), kBufferId1);
   });
@@ -463,7 +469,8 @@ TEST_F(UsbCdcTest, Rx) {
         .region = {.vmo = kVmoId, .offset = 0, .length = 2048},
     };
 
-    ASSERT_OK(
+    ASSERT_EQ(
+        ZX_OK,
         net_impl_client_.buffer(arena)
             ->QueueRxSpace(fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&buffer, 1))
             .status());
@@ -478,7 +485,7 @@ TEST_F(UsbCdcTest, Rx) {
     EXPECT_EQ(buffer->meta().frame_type(), fuchsia_hardware_network::wire::FrameType::kEthernet);
     ASSERT_EQ(buffer->data().size(), 1u);
     auto& data = buffer->data()[0];
-    EXPECT_EQ(data.offset(), 0);
+    EXPECT_EQ(data.offset(), 0u);
     EXPECT_EQ(data.length(), kDataSize2);
     EXPECT_EQ(data.id(), kBufferId2);
   });
@@ -493,21 +500,21 @@ TEST_F(UsbCdcTest, Stop) {
   constexpr uint8_t kTxBufferId = 3;
 
   zx::vmo vmo;
-  ASSERT_OK(zx::vmo::create(4096, 0, &vmo));
+  ASSERT_EQ(ZX_OK, zx::vmo::create(4096, 0, &vmo));
   fdf::Arena arena(kArenaTag);
   auto prepare_result = net_impl_client_.buffer(arena)->PrepareVmo(kVmoId, std::move(vmo));
-  ASSERT_OK(prepare_result.status());
-  ASSERT_OK(prepare_result->s);
+  ASSERT_EQ(ZX_OK, prepare_result.status());
+  ASSERT_EQ(ZX_OK, prepare_result->s);
 
   fnetdev::wire::RxSpaceBuffer rx_buffer = {
       .id = kRxBufferId,
       .region = {.vmo = kVmoId, .offset = 0, .length = 2048},
   };
 
-  ASSERT_OK(net_impl_client_.buffer(arena)
-                ->QueueRxSpace(
-                    fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(&rx_buffer, 1))
-                .status());
+  ASSERT_EQ(ZX_OK, net_impl_client_.buffer(arena)
+                       ->QueueRxSpace(fidl::VectorView<fnetdev::wire::RxSpaceBuffer>::FromExternal(
+                           &rx_buffer, 1))
+                       .status());
 
   sync_completion_t rx_completed, tx_completed;
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
@@ -521,12 +528,13 @@ TEST_F(UsbCdcTest, Stop) {
       .data = fidl::VectorView<fnetdev::wire::BufferRegion>::FromExternal(&region, 1),
   };
 
-  ASSERT_OK(net_impl_client_.buffer(arena)
+  ASSERT_EQ(ZX_OK,
+            net_impl_client_.buffer(arena)
                 ->QueueTx(fidl::VectorView<fnetdev::wire::TxBuffer>::FromExternal(&tx_buffer, 1))
                 .status());
 
   auto result = net_impl_client_.buffer(arena)->Stop();
-  ASSERT_OK(result.status());
+  ASSERT_EQ(ZX_OK, result.status());
 
   sync_completion_wait(&rx_completed, ZX_TIME_INFINITE);
   sync_completion_wait(&tx_completed, ZX_TIME_INFINITE);

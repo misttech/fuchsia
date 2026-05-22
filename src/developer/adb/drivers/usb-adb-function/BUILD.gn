@@ -68,8 +68,8 @@ test("usb-adb-test") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/driver/testing/cpp",
     "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
-    "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server-zxtest",
-    "//zircon/system/ulib/zxtest",
+    "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server",
+    "//src/lib/fxl/test:gtest_main",
   ]
 }
 

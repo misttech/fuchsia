@@ -6,9 +6,9 @@
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_test.h>
+#include <lib/inspect/testing/cpp/inspect.h>
 
-#include <sdk/lib/inspect/testing/cpp/zxtest/inspect.h>
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 #include "src/firmware/drivers/usb-fastboot-function/usb_fastboot_function.h"
@@ -38,8 +38,8 @@ class FakeUsbFunction
       fidl::internal::NaturalCompleter<
           fuchsia_hardware_usb_function::UsbFunction::AllocResources>::Sync& completer) override {
     fuchsia_hardware_usb_function::UsbFunctionAllocResourcesResponse response;
-    ASSERT_EQ(request.endpoints().size(), 2);
-    ASSERT_EQ(request.interface_count(), 2);
+    ASSERT_EQ(request.endpoints().size(), 2u);
+    ASSERT_EQ(request.interface_count(), 2u);
     response.interface_nums() = {0, 1};
     response.endpoint_addrs() = {kBulkOutEp, kBulkInEp};
     response.string_indices() = {};
@@ -68,8 +68,10 @@ class UsbFastbootEnvironment : public fdf_testing::Environment {
         .device = usb_function_bindings_.CreateHandler(&fake_dev_, dispatcher,
                                                        fidl::kIgnoreBindingClosure),
     });
-    EXPECT_OK(to_driver_vfs.AddService<fuchsia_hardware_usb_function::UsbFunctionService>(
-        std::move(handler)));
+    EXPECT_TRUE(
+        to_driver_vfs
+            .AddService<fuchsia_hardware_usb_function::UsbFunctionService>(std::move(handler))
+            .is_ok());
 
     return zx::ok();
   }
@@ -85,12 +87,12 @@ class UsbFastbootTestConfig final {
   using EnvironmentType = UsbFastbootEnvironment;
 };
 
-class UsbFastbootFunctionTest : public zxtest::Test {
- public:
+class UsbFastbootFunctionTest : public ::testing::Test {
+ protected:
   void SetUp() override {
-    ASSERT_OK(driver_test_.StartDriver().status_value());
+    ASSERT_EQ(ZX_OK, driver_test_.StartDriver().status_value());
     auto device = driver_test_.Connect<fuchsia_hardware_fastboot::Service::Fastboot>();
-    EXPECT_OK(device.status_value());
+    EXPECT_EQ(ZX_OK, device.status_value());
     client_.Bind(std::move(device.value()));
 
     driver_test_.RunInEnvironmentTypeContext([this](UsbFastbootEnvironment& env) {
@@ -112,14 +114,14 @@ class UsbFastbootFunctionTest : public zxtest::Test {
           .configured = true,
           .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
       }});
-      ASSERT_TRUE(result.is_ok(), "%s", result.error_value().FormatDescription().c_str());
+      ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
     }
     {
       fidl::Result result = function_client_->SetInterface({{
           .interface = 0,
           .alt_setting = 1,
       }});
-      ASSERT_TRUE(result.is_ok(), "%s", result.error_value().FormatDescription().c_str());
+      ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
     }
   }
 
@@ -133,14 +135,14 @@ class UsbFastbootFunctionTest : public zxtest::Test {
 
 TEST_F(UsbFastbootFunctionTest, LifetimeTest) {
   // Lifetime tested in test Setup() and TearDown()
-  EXPECT_OK(driver_test_.StopDriver());
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
 }
 
 void ValidateVmo(const zx::vmo& vmo, std::string_view payload) {
   fzl::VmoMapper mapper;
-  ASSERT_OK(mapper.Map(vmo));
+  ASSERT_EQ(ZX_OK, mapper.Map(vmo));
   size_t content_size = 0;
-  ASSERT_OK(vmo.get_prop_content_size(&content_size));
+  ASSERT_EQ(ZX_OK, vmo.get_prop_content_size(&content_size));
   ASSERT_EQ(content_size, payload.size());
 }
 
@@ -148,7 +150,7 @@ TEST_F(UsbFastbootFunctionTest, ReceiveTestSinglePacket) {
   const std::string_view test_data = "getvar:all";
   EnableUsb();
 
-  std::thread t([&]() {
+  std::thread t([&] {
     auto res = client()->Receive(0);
     ValidateVmo(res.value()->data, test_data);
   });
@@ -158,7 +160,7 @@ TEST_F(UsbFastbootFunctionTest, ReceiveTestSinglePacket) {
   });
 
   t.join();
-  EXPECT_OK(driver_test_.StopDriver());
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
 }
 
 TEST_F(UsbFastbootFunctionTest, ReceiveStateReset) {
@@ -166,7 +168,7 @@ TEST_F(UsbFastbootFunctionTest, ReceiveStateReset) {
 
   {
     const std::string_view test_data = "getvar:all";
-    std::thread t1([&]() {
+    std::thread t1([&] {
       auto res = client()->Receive(0);
       ValidateVmo(res.value()->data, test_data);
     });
@@ -178,7 +180,7 @@ TEST_F(UsbFastbootFunctionTest, ReceiveStateReset) {
 
   {
     const std::string_view test_data = "getvar:max-download-size";
-    std::thread t1([&]() {
+    std::thread t1([&] {
       auto res = client()->Receive(0);
       ValidateVmo(res.value()->data, test_data);
     });
@@ -187,7 +189,7 @@ TEST_F(UsbFastbootFunctionTest, ReceiveStateReset) {
     });
     t1.join();
   }
-  EXPECT_OK(driver_test_.StopDriver());
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
 }
 
 TEST_F(UsbFastbootFunctionTest, ReceiveFailsOnError) {
@@ -202,18 +204,18 @@ TEST_F(UsbFastbootFunctionTest, ReceiveFailsOnError) {
   });
 
   t.join();
-  EXPECT_OK(driver_test_.StopDriver());
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
 }
 
 void InitializeSendVmo(fzl::OwnedVmoMapper& vmo, std::string_view data) {
-  ASSERT_OK(vmo.CreateAndMap(data.size(), "test"));
-  ASSERT_OK(vmo.vmo().set_prop_content_size(data.size()));
+  ASSERT_EQ(ZX_OK, vmo.CreateAndMap(data.size(), "test"));
+  ASSERT_EQ(ZX_OK, vmo.vmo().set_prop_content_size(data.size()));
   memcpy(vmo.start(), data.data(), data.size());
 }
 
 TEST_F(UsbFastbootFunctionTest, ReceiveFailsOnNonConfiguredInterface) {
   ASSERT_FALSE(client()->Receive(0)->is_ok());
-  EXPECT_OK(driver_test_.StopDriver());
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
 }
 
 TEST_F(UsbFastbootFunctionTest, Send) {
@@ -234,7 +236,7 @@ TEST_F(UsbFastbootFunctionTest, Send) {
   });
 
   t.join();
-  EXPECT_OK(driver_test_.StopDriver());
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
 }
 
 TEST_F(UsbFastbootFunctionTest, SendStatesReset) {
@@ -269,7 +271,7 @@ TEST_F(UsbFastbootFunctionTest, SendStatesReset) {
     });
     t.join();
   }
-  EXPECT_OK(driver_test_.StopDriver());
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
 }
 
 TEST_F(UsbFastbootFunctionTest, SendFailsOnNonConfiguredInterface) {
@@ -277,7 +279,7 @@ TEST_F(UsbFastbootFunctionTest, SendFailsOnNonConfiguredInterface) {
   fzl::OwnedVmoMapper send_vmo;
   InitializeSendVmo(send_vmo, send_data);
   ASSERT_FALSE(client()->Send(send_vmo.Release())->is_ok());
-  EXPECT_OK(driver_test_.StopDriver());
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
 }
 
 TEST_F(UsbFastbootFunctionTest, SendFailOnError) {
@@ -294,7 +296,7 @@ TEST_F(UsbFastbootFunctionTest, SendFailOnError) {
   });
 
   t.join();
-  EXPECT_OK(driver_test_.StopDriver());
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
 }
 
 TEST_F(UsbFastbootFunctionTest, SendFailsOnZeroContentSize) {
@@ -302,9 +304,9 @@ TEST_F(UsbFastbootFunctionTest, SendFailsOnZeroContentSize) {
   const std::string_view send_data = "OKAY0.4";
   fzl::OwnedVmoMapper send_vmo;
   InitializeSendVmo(send_vmo, send_data);
-  ASSERT_OK(send_vmo.vmo().set_prop_content_size(0));
+  ASSERT_EQ(ZX_OK, send_vmo.vmo().set_prop_content_size(0));
   ASSERT_FALSE(client()->Send(send_vmo.Release())->is_ok());
-  EXPECT_OK(driver_test_.StopDriver());
+  ASSERT_TRUE(driver_test_.StopDriver().is_ok());
 }
 
 }  // namespace

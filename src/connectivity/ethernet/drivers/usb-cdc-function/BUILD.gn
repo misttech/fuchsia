@@ -80,8 +80,9 @@ test("usb-cdc-function-test") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/testing/cpp",
-    "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server-zxtest",
-    "//zircon/system/ulib/zxtest",
+    "//sdk/lib/inspect/testing/cpp",
+    "//src/devices/usb/lib/usb-endpoint:fake-usb-endpoint-server",
+    "//src/lib/fxl/test:gtest_main",
   ]
 }
 
