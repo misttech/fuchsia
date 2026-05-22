@@ -193,6 +193,13 @@ case failures, this will not pause to let you debug those tests as well. See
 [debugging tests][zxdb-testing-docs] for details about how to debug multiple
 test failures that occur in parallel.
 
+You can also enable the Debug Adapter Protocol (DAP) server in `zxdb` by passing
+`--enable-debug-adapter`. This allows you to connect external tools (like
+zxdb-cli or VS Code) to the debugger. Note that `--enable-debug-adapter` requires
+either `--break-on-failure` or `--breakpoint=<location>` to be set, and is
+incompatible with `--use-existing-debugger`. You can optionally specify a port with
+`--debug-adapter-port=<port>`, an open port is randomly assigned if unspecified.
+
 ## Configuration options
 
 `fx test` is highly configurable, and a full list of options is
@@ -369,6 +376,13 @@ moniker, so they are easier to visually inspect.**
   tests. It is highly recommended to only use this option in conjunction with
   `--test-filter`. `--break-on-failure` may be used with many tests with minimal
   impact to performance.
+- **Debug Adapter Protocol (DAP) server can be enabled for zxdb**
+  - Use `--enable-debug-adapter` (in conjunction with `--break-on-failure` or
+    `--breakpoint`) to start the `zxdb` DAP server. Use this to interact with
+    `zxdb` from [`zxdb-cli`][zxdb-cli-source]  Incompatible with
+    `--use-existing-debugger`.
+  - Use `--debug-adapter-port=<port>` to specify the port for the DAP server
+    (an open port is randomly assigned if not specified).
 - **Command line arguments to the test are completely controlled by test runners**
   - Append `--` to your arguments to pass remaining arguments verbatim to the
   test. For example: `fx test foo -- --argument_for_test`
@@ -492,6 +506,7 @@ alias testlog='cat `fx test -pr path` | gunzip | jq -C | less -R'
 [build-event-protocol]: https://bazel.build/remote/bep
 [fxtest-python-event]: https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/scripts/fxtest/python/event.py
 [fxtest-source]: https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/scripts/fxtest/python
+[zxdb-cli-source]: https://cs.opensource.google/fuchsia/fuchsia/+/main:scripts/debug/zxdb_cli/
 [trf-docs]: /docs/development/testing/components/test_runner_framework.md
 [zxdb-docs]: /docs/development/debugger/commands.md
 [zxdb-testing-docs]: /docs/development/debugger/tests.md

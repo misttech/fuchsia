@@ -13,14 +13,20 @@ import sys
 import tempfile
 import typing
 
+from portpicker import portpicker
+
+from event import EventRecorder
 import test_list_file
 
 
 def spawn(
     tests: list[test_list_file.Test],
     on_debugger_ready: typing.Callable[[], typing.Any],
+    recorder: EventRecorder | None = None,
     break_on_failure: bool = False,
-    breakpoints: list[str] = [],
+    enable_debug_adapter: bool = False,
+    debug_adapter_port: int | None = None,
+    breakpoints: list[str] | None = None,
 ) -> subprocess.Popen[bytes]:
     """Spawn zxdb in a subprocess.
 
@@ -35,7 +41,11 @@ def spawn(
         tests (list[test_list_file.Test]): List of tests selected to be executed.
         on_debugger_ready (typing.Callable): An async closure to be issued when the debugger is
                                              ready for processes to be spawned.
+        recorder (event.EventRecorder | None): Recorder for events. Defaults to None.
         break_on_failure (bool): Whether or not we are in break-on-failure mode.
+        enable_debug_adapter (bool): Enables zxdb's DebugAdapter server.
+        debug_adapter_port (int | None): Sets the port for the DebugAdapter server. If None, a
+                                         random one is assigned.
         breakpoints (list[str]): List of breakpoint locations to install. Note: this may slow down
                                  test execution significantly.
 
@@ -45,6 +55,7 @@ def spawn(
         Note: The caller is responsible for killing the process group associated with the returned
         process.
     """
+    breakpoints = breakpoints or []
     fifo = os.path.join(
         tempfile.gettempdir()
         + "/zxdbpipe-"
@@ -79,6 +90,26 @@ def spawn(
     if break_on_failure:
         embedded_mode_context_args = ["--embedded-mode-context", "test failure"]
 
+    debug_adapter_args = []
+    if enable_debug_adapter:
+        debug_adapter_args = ["--enable-debug-adapter"]
+
+        port = (
+            debug_adapter_port
+            if debug_adapter_port is not None
+            else portpicker.pick_unused_port()
+        )
+        debug_adapter_args.append("--debug-adapter-port")
+        debug_adapter_args.append(f"{port}")
+
+        # Print a hint when using DAP mode for how to connect with zxdb-cli.
+        if recorder is not None:
+            recorder.emit_info_message(
+                f"""zxdb is in DAP mode listening on port {port}. Use
+`fx debug cli start --connect --port {port}` to connect
+with zxdb-cli."""
+            )
+
     zxdb_args = [
         "fx",
         "ffx",
@@ -94,6 +125,7 @@ def spawn(
         fifo,
         "--signal-when-ready",
         str(os.getpid()),
+        *debug_adapter_args,
     ]
 
     # Add the requested breakpoints.

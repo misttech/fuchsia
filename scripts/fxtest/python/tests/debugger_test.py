@@ -59,7 +59,7 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        debugger.spawn([test], callback, True, [])
+        debugger.spawn([test], callback, None, True, False, None, [])
 
         # Should have immediately called the mock, since debugger.spawn is synchronous.
         self.assertTrue(self.subprocess_mock_.called)
@@ -114,7 +114,7 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        debugger.spawn(tests, callback, True, [])
+        debugger.spawn(tests, callback, None, True, False, None, [])
 
         # Should have immediately called the mock, since debugger.spawn is synchronous.
         self.assertTrue(self.subprocess_mock_.called)
@@ -161,7 +161,9 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        debugger.spawn([test], callback, False, ["myfile.rs:1234"])
+        debugger.spawn(
+            [test], callback, None, False, False, None, ["myfile.rs:1234"]
+        )
 
         # Should have immediately called the mock, since debugger.spawn is synchronous.
         self.assertTrue(self.subprocess_mock_.called)
@@ -210,7 +212,9 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        debugger.spawn([test], callback, True, ["myfile.rs:1234"])
+        debugger.spawn(
+            [test], callback, None, True, False, None, ["myfile.rs:1234"]
+        )
 
         # Should have immediately called the mock, since debugger.spawn is synchronous.
         self.assertTrue(self.subprocess_mock_.called)
@@ -265,7 +269,7 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        debugger.spawn([test], mock_callback, True, [])
+        debugger.spawn([test], mock_callback, None, True, False, None, [])
 
         # Simulate the debugger sending sigusr1, there is no subprocess so our pid is the pid
         # listening. This kicks off the task that will notify the condition variable so that we may
@@ -277,3 +281,114 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
             await condvar.wait()
 
             mock_callback.assert_called_once()
+
+    @mock.patch("debugger.portpicker.pick_unused_port")
+    async def test_enable_debug_adapter_default(
+        self, mock_pick_unused_port: mock.MagicMock
+    ) -> None:
+        """Tests that --enable-debug-adapter argument default does not specify a port on zxdb's
+        command line"""
+        mock_pick_unused_port.return_value = 5678
+
+        # Don't need to do any waiting to check the arguments are correct.
+        async def callback() -> None:
+            pass
+
+        package_name = "fuchsia-pkg://fuchsia.com/foo_test#meta/foo_test.cm"
+        test = Test(
+            build=tests_json_file.TestEntry(
+                test=tests_json_file.TestSection(package_name, "", ""),
+            ),
+        )
+
+        debugger.spawn(
+            [test],
+            callback,
+            break_on_failure=True,
+            enable_debug_adapter=True,
+        )
+
+        # Should have immediately called the mock, since debugger.spawn is synchronous.
+        self.assertTrue(self.subprocess_mock_.called)
+
+        expected_args = [
+            "fx",
+            "ffx",
+            "debug",
+            "connect",
+            "--new-agent",
+            "--",
+            "--execute",
+            f"attach --weak --recursive {package_name}",
+            "--console-mode",
+            "embedded",
+            "--embedded-mode-context",
+            "test failure",
+            "--stream-file",
+            f"{self.fifo_path_}",
+            "--signal-when-ready",
+            str(os.getpid()),
+            "--enable-debug-adapter",
+            "--debug-adapter-port",
+            "5678",
+        ]
+
+        self.subprocess_mock_.assert_called_with(
+            args=expected_args,
+            start_new_session=True,
+            stderr=subprocess.STDOUT,
+        )
+
+    async def test_enable_debug_adapter_with_port(self) -> None:
+        """Tests that --enable-debug-adapter argument passes port number to zxdb's command line"""
+
+        # Don't need to do any waiting to check the arguments are correct.
+        async def callback() -> None:
+            pass
+
+        package_name = "fuchsia-pkg://fuchsia.com/foo_test#meta/foo_test.cm"
+        test = Test(
+            build=tests_json_file.TestEntry(
+                test=tests_json_file.TestSection(package_name, "", ""),
+            ),
+        )
+
+        debugger.spawn(
+            [test],
+            callback,
+            break_on_failure=True,
+            enable_debug_adapter=True,
+            debug_adapter_port=1234,
+        )
+
+        # Should have immediately called the mock, since debugger.spawn is synchronous.
+        self.assertTrue(self.subprocess_mock_.called)
+
+        # No embedded mode context will be given if break_on_failure is not specified.
+        expected_args = [
+            "fx",
+            "ffx",
+            "debug",
+            "connect",
+            "--new-agent",
+            "--",
+            "--execute",
+            f"attach --weak --recursive {package_name}",
+            "--console-mode",
+            "embedded",
+            "--embedded-mode-context",
+            "test failure",
+            "--stream-file",
+            f"{self.fifo_path_}",
+            "--signal-when-ready",
+            str(os.getpid()),
+            "--enable-debug-adapter",
+            "--debug-adapter-port",
+            "1234",
+        ]
+
+        self.subprocess_mock_.assert_called_with(
+            args=expected_args,
+            start_new_session=True,
+            stderr=subprocess.STDOUT,
+        )

@@ -1682,7 +1682,10 @@ class AsyncMain:
             maybe_debugger = debugger.spawn(
                 tests.selected,
                 on_debugger_ready,
+                recorder=recorder,
                 break_on_failure=flags.break_on_failure,
+                enable_debug_adapter=flags.enable_debug_adapter,
+                debug_adapter_port=flags.debug_adapter_port,
                 breakpoints=flags.breakpoints,
             )
 

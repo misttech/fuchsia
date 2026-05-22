@@ -108,6 +108,8 @@ class Flags:
     break_on_failure: bool
     breakpoints: typing.List[str]
     use_existing_debugger: bool
+    enable_debug_adapter: bool
+    debug_adapter_port: int | None
     use_test_pilot: bool
     extra_args: typing.List[str]
     env: typing.List[str]
@@ -170,9 +172,21 @@ class Flags:
             raise FlagError(
                 "--breakpoint does not support --use-existing-debugger."
             )
+        if self.use_existing_debugger and self.enable_debug_adapter:
+            raise FlagError(
+                "--enable-debug-adapter and --use-existing-debugger are mutually exclusive."
+            )
         if self.use_existing_debugger and not self.break_on_failure:
             raise FlagError(
                 "--break-on-failure must be set when passing --use-existing-debugger."
+            )
+        if self.enable_debug_adapter and not self.debugger_will_attach():
+            raise FlagError(
+                "--enable-debug-adapter must be used with either --breakpoint or --break-on-failure."
+            )
+        if self.debug_adapter_port and not self.enable_debug_adapter:
+            raise FlagError(
+                "--enable-debug-adapter must be set when passing --debug-adapter-port."
             )
         if self.replay_speed <= 0:
             raise FlagError("--replay-speed must be a positive number")
@@ -635,6 +649,22 @@ def parse_args(
         help="""If set, suppresses the automatic launch and attach of zxdb when `--break-on-failure`
         is set. Incompatible with `--breakpoint`.""",
         default=False,
+    )
+    execution.add_argument(
+        "--enable-debug-adapter",
+        help="""If set, spawns zxdb in Debug Adapter mode. This will not spawn a zxdb console
+        session. Instead, zxdb will be acting as a Debug Adapter server. This option is incompatible
+        with --use-existing-debugger.""",
+        action="store_true",
+        default=False,
+    )
+    execution.add_argument(
+        "--debug-adapter-port",
+        type=int,
+        help="""Specifies the PORT to use for the Debug Adapter Server. Must be used in conjunction
+        with --enable-debug-adapter. An open port is randomly assigned if not specified.""",
+        metavar="PORT",
+        default=None,
     )
     execution.add_argument(
         "--allow-temporary-package-server",
