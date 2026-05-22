@@ -8,11 +8,9 @@ import time
 import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_internal as f_wlan_internal
 import fuchsia_wlan_base_test
-import openwrt_access_point
 from antlion.controllers import access_point
 from antlion.controllers.ap_lib import hostapd_constants
 from mobly import asserts, signals, test_runner
-from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
@@ -38,22 +36,6 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             * Assigns `openwrt_ap` variable with OpenWrtAP object
         """
         await super().setup_class()
-
-        openwrt_aps: list[OpenWrtAP] | None = await self.register_controller(
-            openwrt_access_point, required=False, min_number=0
-        )
-        self.openwrt_ap: OpenWrtAP | None = (
-            openwrt_aps[0] if openwrt_aps else None
-        )
-
-        access_points: list[
-            access_point.AccessPoint
-        ] | None = await self.register_controller(
-            access_point, required=False, min_number=0
-        )
-        self.access_point: access_point.AccessPoint | None = (
-            access_points[0] if access_points else None
-        )
 
         await self.wait_for_interface(self.dut.netstack, PortClass.WLAN_CLIENT)
 

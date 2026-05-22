@@ -8,8 +8,6 @@ import logging
 import time
 
 import fuchsia_wlan_base_test
-import openwrt_access_point
-from antlion.controllers import access_point
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
@@ -27,8 +25,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     SecurityType,
 )
 from mobly import signals, test_runner
-from mobly.config_parser import TestRunConfig
-from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
@@ -54,31 +50,11 @@ class HiddenNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     * One Access Point
     """
 
-    def __init__(self, configs: TestRunConfig) -> None:
-        super().__init__(configs)
-        self.openwrt_ap: OpenWrtAP | None = None
-        self.access_point: access_point.AccessPoint | None = None
-        self.access_points: list[access_point.AccessPoint] = []
-        self.openwrt_aps: list[OpenWrtAP] = []
-
     async def setup_class(self) -> None:
         await super().setup_class()
         self.log = logging.getLogger()
 
-        self.access_points = await self.register_controller(
-            access_point,
-            required=False,
-        )
-        self.openwrt_aps = await self.register_controller(
-            openwrt_access_point,
-            required=False,
-        )
-
-        if self.openwrt_aps:
-            self.openwrt_ap = self.openwrt_aps[0]
-        elif self.access_points:
-            self.access_point = self.access_points[0]
-        else:
+        if not self.openwrt_aps and not self.access_points:
             raise signals.TestAbortClass("Requires at least one access point.")
 
         # Start an AP with a hidden network

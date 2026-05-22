@@ -6,8 +6,6 @@ import logging
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-import openwrt_access_point
-from antlion.controllers import access_point
 from antlion.controllers.access_point import setup_ap
 from antlion.controllers.ap_lib import hostapd_constants, hostapd_security
 from antlion.utils import rand_ascii_str
@@ -21,8 +19,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     WlanClientState,
 )
 from mobly import asserts, signals, test_runner
-from mobly.config_parser import TestRunConfig
-from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     AccessPointConfig,
@@ -46,27 +42,10 @@ class StartStopClientConnectionsTest(
     * One Access Point
     """
 
-    def __init__(self, configs: TestRunConfig) -> None:
-        super().__init__(configs)
-        self.openwrt_ap: OpenWrtAP | None = None
-        self.access_point: access_point.AccessPoint | None = None
-
     async def setup_class(self) -> None:
         await super().setup_class()
 
-        access_points = await self.register_controller(
-            access_point,
-            required=False,
-        )
-        openwrt_aps: list[OpenWrtAP] = await self.register_controller(
-            openwrt_access_point,
-            required=False,
-        )
-        if openwrt_aps:
-            self.openwrt_ap = openwrt_aps[0]
-        elif access_points:
-            self.access_point = access_points[0]
-        else:
+        if not self.openwrt_aps and not self.access_points:
             raise signals.TestAbortClass("Requires at least one access point.")
 
         self.ssid = rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)

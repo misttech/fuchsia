@@ -15,8 +15,6 @@ from datetime import timedelta
 import fidl_fuchsia_wlan_common as fw_common
 import fidl_fuchsia_wlan_device_service as fw_device_service
 import fidl_fuchsia_wlan_sme as fw_sme
-import openwrt_access_point
-from antlion import controllers
 from core_testing.handlers import DeviceWatcherEventHandler
 from fuchsia_controller_py import ZxStatus
 from fuchsia_wlan_base_test import FuchsiaWlanBaseTest
@@ -162,17 +160,10 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
             "DeviceMonitor.SetCountry() failed",
         )
 
-        access_points = await self.register_controller(
-            controllers.access_point, required=False
-        )
-        openwrt_aps = await self.register_controller(
-            openwrt_access_point, required=False
-        )
-
-        if openwrt_aps:
-            self.class_test_kit = ClassTestKit(access_point=openwrt_aps[0])
-        elif access_points:
-            self.class_test_kit = ClassTestKit(access_point=access_points[0])
+        if self.openwrt_ap:
+            self.class_test_kit = ClassTestKit(access_point=self.openwrt_ap)
+        elif self.access_point:
+            self.class_test_kit = ClassTestKit(access_point=self.access_point)
         else:
             raise signals.TestAbortClass("Requires at least one access point")
 

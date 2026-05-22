@@ -4,8 +4,11 @@
 
 import logging
 import time
+from typing import Any
 
 import fuchsia_base_test
+import openwrt_access_point
+from antlion.controllers import access_point
 from honeydew.affordances.connectivity.netstack.netstack import (
     AsyncNetstack,
     Netstack,
@@ -15,6 +18,8 @@ from honeydew.affordances.connectivity.netstack.types import (
     PortClass,
 )
 from mobly import signals
+from mobly.config_parser import TestRunConfig
+from openwrt_access_point import OpenWrtAP
 
 # Time to wait for a WLAN interface to become available.
 INTERFACE_TIMEOUT = 30
@@ -22,6 +27,35 @@ INTERFACE_TIMEOUT = 30
 
 class FuchsiaWlanBaseTest(fuchsia_base_test.FuchsiaBaseTest):
     """Wlan base test class."""
+
+    def __init__(self, configs: TestRunConfig) -> None:
+        super().__init__(configs)
+        self.openwrt_ap: OpenWrtAP | None = None
+        self.access_point: access_point.AccessPoint | None = None
+        self.access_points: list[access_point.AccessPoint] = []
+        self.openwrt_aps: list[OpenWrtAP] = []
+
+    async def setup_class(self) -> None:
+        await super().setup_class()
+
+        self.access_points = (
+            await self.register_controller(
+                access_point,
+                required=False,
+            )
+            or []
+        )
+        self.openwrt_aps = (
+            await self.register_controller(
+                openwrt_access_point,
+                required=False,
+            )
+            or []
+        )
+        if self.openwrt_aps:
+            self.openwrt_ap = self.openwrt_aps[0]
+        elif self.access_points:
+            self.access_point = self.access_points[0]
 
     async def wait_for_interface(
         self, netstack: AsyncNetstack, port_class: PortClass
