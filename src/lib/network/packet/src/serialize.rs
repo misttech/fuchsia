@@ -749,8 +749,8 @@ pub struct SerializeTarget<'a> {
 /// A `PacketBuilder` describes a packet's headers and footers, and is capable
 /// of serializing the header and the footer into an existing buffer via the
 /// `serialize` method. A `PacketBuilder` never describes a body.
-/// [`PacketBuilder::wrap_body`] must be used to create a packet serializer
-/// for a whole packet.
+/// [`NestablePacketBuilder::wrap_body`] must be used to create a packet
+/// serializer for a whole packet.
 ///
 /// `()` may be used as an "empty" `PacketBuilder` with no header, footer,
 /// minimum body length requirement, or maximum body length requirement.
@@ -1550,17 +1550,17 @@ pub trait Serializer<C: SerializationContext>: NestableSerializer + Sized {
     /// Serializes this `Serializer`, producing a buffer.
     ///
     /// As `Serializer`s can be nested using the [`Nested`] type (constructed
-    /// using [`PacketBuilder::wrap_body`] and [`NestableSerializer::wrap_in`]),
-    /// the `serialize` method is recursive - calling it on a `Nested` will
-    /// recurse into the inner `Serializer`, which might itself be a `Nested`,
-    /// and so on. `Nested` ensures that the serialization `context` is passed
-    /// down the stack of recursive calls. When the innermost `Serializer` is
-    /// reached, the contained buffer is passed to the `provider`, allowing it
-    /// to decide how to produce a buffer which is large enough to fit the
-    /// entire packet - either by reusing the existing buffer, or by discarding
-    /// it and allocating a new one. `constraints` specifies
-    /// [`PacketConstraints`] for the outer parts of the packet (header and
-    /// footer).
+    /// using [`NestablePacketBuilder::wrap_body`] and
+    /// [`NestableSerializer::wrap_in`]), the `serialize` method is recursive -
+    /// calling it on a `Nested` will recurse into the inner `Serializer`, which
+    /// might itself be a `Nested`, and so on. `Nested` ensures that the
+    /// serialization `context` is passed down the stack of recursive calls.
+    /// When the innermost `Serializer` is reached, the contained buffer is
+    /// passed to the `provider`, allowing it to decide how to produce a buffer
+    /// which is large enough to fit the entire packet - either by reusing the
+    /// existing buffer, or by discarding it and allocating a new one.
+    /// `constraints` specifies [`PacketConstraints`] for the outer parts of the
+    /// packet (header and footer).
     fn serialize<B: GrowBufferMut, P: BufferProvider<Self::Buffer, B>>(
         self,
         context: &mut C,
