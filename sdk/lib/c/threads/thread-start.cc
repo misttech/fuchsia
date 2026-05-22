@@ -17,16 +17,6 @@ extern "C" decltype(__sanitizer_thread_create_hook) __sanitizer_thread_create_ho
 extern "C" decltype(__sanitizer_thread_start_hook) __sanitizer_thread_start_hook [[gnu::weak]];
 
 namespace LIBC_NAMESPACE_DECL {
-
-// TODO(https://gcc.gnu.org/bugzilla/show_bug.cgi?id=123565): This has to
-// appear to have external linkage to work around a GCC bug with the new
-// extended asm outside of functions.  The definition in assembly will still
-// actually only define a local ELF symbol, just with different name mangling.
-// When the GCC bug is fixed, the main declaration below will work.
-#if defined(__aarch64__) && !defined(__clang__)
-[[noreturn]] void AsmTrampoline(uintptr_t arg1, uintptr_t arg2);
-#endif
-
 namespace {
 
 using SanitizerCreateHook = Weak<__sanitizer_thread_create_hook>;
@@ -69,9 +59,6 @@ using SanitizerStartHook = Weak<__sanitizer_thread_start_hook>;
 // required and the subtleties about pointers being visible to the snapshot
 // logic would be much simpler.
 
-// TODO(https://gcc.gnu.org/bugzilla/show_bug.cgi?id=123565):
-// Should be unconditional; see above.
-#if !(defined(__aarch64__) && !defined(__clang__))
 // A new thread starts at the AsmTrampoline entry point defined below in
 // assembly code.  That establishes normal ABI conditions by setting up the
 // shadow call stack and thread pointers.  It then tail-calls this function.
@@ -79,13 +66,7 @@ using SanitizerStartHook = Weak<__sanitizer_thread_start_hook>;
 // of the user's ThreadFunction.
 [[noreturn, clang::cfi_unchecked_callee]]
 void AsmTrampoline(uintptr_t arg1, uintptr_t arg2);
-#else
-// This applies to StartThread and prevents the buggy GCC from deciding that
-// there are no references to it and eliding the function (as well as warning
-// about it, which already breaks the build before the undefined references at
-// link time have a chance to).
-[[gnu::used]]
-#endif
+
 [[noreturn]] void StartThread(ThreadFunction* func, void* arg) {
   Thread& self = *__pthread_self();
 
